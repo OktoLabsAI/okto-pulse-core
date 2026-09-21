@@ -8823,3 +8823,73 @@ autoridade operacional Sprint. Leituras de policy por Card mantêm a compatibili
 autorizada até materialização F2B. Lista integral anterior de F2/F3/F4/F5,
 DEI/ARQ/VER/ADV, footprint, E2E/upgrade/rollback, benchmark e rollout segue ativa.
 Este turno produziu código, baseline executável, provas e commits; não é bloqueio.
+
+
+### F5 — retirada de Sprint dos agregados compartilhados (em execução)
+
+Base publicada e limpa: Core 0e7839d2 / Community 49a79840. A autorização
+F3 de Spec Done permanece aplicada, sem mudança adicional de autoridade.
+Plano-base F5.6 exige eliminar métricas Sprint sem produzir zeros artificiais.
+Investigação confirmou queries/contadores independentes nos agregados de
+funnel, overview REST/MCP, validações, velocidade, detalhe de Spec e Card.
+Avaliação de Spec, validações, denominadores de Cards, ownership e filtros
+continuam com seus cálculos próprios. Compromisso/forecast e Delivery
+Intelligence têm consumidores adicionais: continuam na fila, não são
+declarados retirados por este incremento.
+
+Proveniência anterior: provenance-f5-aggregates-before.json, 811/336 Python e
+874/420 payloads source/wheel/install idênticos. Captura em processo novo do
+par instalado: tests/fixtures/analytics_sprint_retirement_baseline.json,
+19 casos (seis readers × três janelas, mais usuário sem Board), relógio fixo,
+população mista com rejeições/sucessos, Bug/Test/Normal, arquivo e Board alheio.
+O teste compara integralmente os campos sobreviventes com essa baseline
+pré-alteração e proíbe consultas vivas de Sprint nos readers migrados.
+Captura não deve ser regenerada com a implementação nova.
+
+Resultado do incremento F5 (2026-09-21):
+- Core: removidos queries, métricas, chaves aninhadas, campo Sprint de Card e
+  séries de eventos Sprint exclusivamente dos agregados compartilhados citados.
+  O detalhe de Spec preserva obrigações/cenários/decisões; Card preserva as
+  validações projetadas e conclusões. Nenhum cálculo sobrevivente foi redefinido.
+- Community: overview visual sem KPI, ciclo ou avaliação Sprint; três painéis
+  de governança restantes preservados, inclusive Spec Evaluation. Tipos dos
+  consumidores e docstrings REST alinhados. Não há novo placeholder de zero.
+- Baseline executável: 19 comparações integrais passaram, além de quatro provas
+  de detalhe/escopo. O fake do contrato público remove a fonte Sprint e o campo
+  Card.sprint_id, falhando se algum agregado ainda os consultar. Testes com
+  persistência real continuam no lote REST/MCP e SQLite Community.
+- f5-aggregates-core.log: 232 passed/1 failed. A falha era a expectativa antiga
+  de sprints no funil (e ciclo Sprint na mesma asserção), atualizada para ausência
+  explícita; f5-aggregates-core-recheck.log: 1 passed. Total Core distinto: 233.
+- f5-aggregates-community.log: 47 passed, cobrindo adapters SQLite, transportes,
+  contratos analíticos e hardening CSV. f5-aggregates-ui.log: 32 passed em seis
+  arquivos, incluindo quatro novos casos de overview: payload novo, campos
+  antigos residuais ignorados, navegação/janela de datas e falha de leitura.
+  Total distinto deste incremento: 312 testes. Não foi execução integral das
+  suites nem novo Playwright/E2E de upgrade.
+- tsc/Vite/sync/verify aprovados. 78 arquivos SPA, agregado
+  97ace487c8064bd2ef61c79375511dac4875a28a2a18108042e900f328dd724b.
+- provenance-f5-aggregates.json prova antes dos testes os 811/336 Python e os
+  874/420 payloads source/wheel/install idênticos. Agregados Core
+  f95bd6c7f31dd1e2b2a0f6c8b387aaac9fd8eb9c0f7685bc1e0c8d19b36ad50b e Community
+  0472643d1ff4a9c6eaeb682c6a41111970c7acf1f5c1917d7fa0dfd974675fbd.
+  Wheels em wheels-f5-aggregates: Core SHA256
+  4489d27d56601ad9450f8712d355ffe03d3762c8776283423b3b21126ae9cfb5;
+  Community c3cf1969cc4bc42c5c956731464c4c0e58dca0850fad4d4ad82c20f8bf4d34ab.
+  Somente testes/ledger foram ajustados após essa prova; código empacotado está
+  inalterado. Processos de teste/build/closure encerrados antes dos commits.
+- closure-f5-aggregates.json: ok=true, findings=[], documentation_findings=[],
+  oito budgets 0/0. Nenhuma exceção introduzida. Catálogo MCP sem drift e sem
+  edição manual. Ruff e diff --check aprovados nos arquivos alterados.
+
+Próxima frente: retirar rotas e readers exclusivos de Sprint, delivery commitment,
+forecast de Sprint e resolver de escopo; preservar contribuição de agentes e
+demais métricas legítimas usadas por Delivery Intelligence. Os filtros precisam
+ser retirados junto de seus fingerprints, paginação, export e UI. Persistência,
+schema/certificado offline, DTOs e todos os critérios F2/F3/F4/F5, DEI/ARQ/VER/ADV,
+footprint, E2E/upgrade/rollback, benchmark e rollout anteriores permanecem na fila.
+Nenhuma migração real, release, tag, restart ou liberação de runtime intermediário.
+
+Distribuição pareada: Community commit 213eeed565732f1f26cbf9fed84725b2cc887723.
+Commit Core e pushes normais a seguir; confirmar árvores limpas e HEAD remoto
+antes de encerrar o checkpoint. O objetivo integral permanece ativo.

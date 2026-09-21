@@ -1,0 +1,2833 @@
+{
+  "source_commit": "0e7839d2c0df3d62f62f284e71f5d2326a9a5c5b",
+  "cases": {
+    "funnel-all": {
+      "stories": 1,
+      "ideations": 1,
+      "refinements": 1,
+      "specs": 1,
+      "sprints": 1,
+      "cards": 3,
+      "stories_converted": 1,
+      "story_conversion_pct": 100.0,
+      "story_ideation_links": 0,
+      "done": 2,
+      "ideations_done": 1,
+      "specs_done": 1,
+      "cards_impl": 1,
+      "cards_test": 1,
+      "cards_bug": 1,
+      "rules_count": 1,
+      "contracts_count": 0,
+      "specs_with_rules": 1,
+      "specs_with_contracts": 0,
+      "specs_with_tests": 0,
+      "spec_status_breakdown": {
+        "draft": 0,
+        "review": 0,
+        "approved": 0,
+        "validated": 0,
+        "in_progress": 0,
+        "done": 1,
+        "cancelled": 0
+      },
+      "card_status_breakdown": {
+        "not_started": 0,
+        "started": 0,
+        "in_progress": 1,
+        "validation": 0,
+        "rejected": 0,
+        "on_hold": 0,
+        "done": 2,
+        "cancelled": 0
+      },
+      "sprint_status_breakdown": {
+        "draft": 0,
+        "active": 0,
+        "review": 0,
+        "closed": 1,
+        "cancelled": 0
+      },
+      "bugs_total": 1,
+      "bugs_open": 1,
+      "bugs_by_severity": {
+        "critical": 1,
+        "major": 0,
+        "minor": 0
+      },
+      "avg_cycle_hours": 48.0,
+      "cycle_time_by_phase": {
+        "story": 72.0,
+        "ideation": 72.0,
+        "refinement": 72.0,
+        "spec": 72.0,
+        "sprint": null,
+        "card": 48.0
+      },
+      "refinements_done": 1,
+      "story_status_breakdown": {
+        "draft": 0,
+        "triage": 0,
+        "ready": 0,
+        "converted": 1
+      },
+      "stories_by_topic": []
+    },
+    "funnel-recent": {
+      "stories": 0,
+      "ideations": 0,
+      "refinements": 0,
+      "specs": 0,
+      "sprints": 0,
+      "cards": 1,
+      "stories_converted": 0,
+      "story_conversion_pct": 0,
+      "story_ideation_links": 0,
+      "done": 1,
+      "ideations_done": 0,
+      "specs_done": 0,
+      "cards_impl": 0,
+      "cards_test": 1,
+      "cards_bug": 0,
+      "rules_count": 0,
+      "contracts_count": 0,
+      "specs_with_rules": 0,
+      "specs_with_contracts": 0,
+      "specs_with_tests": 0,
+      "spec_status_breakdown": {
+        "draft": 0,
+        "review": 0,
+        "approved": 0,
+        "validated": 0,
+        "in_progress": 0,
+        "done": 0,
+        "cancelled": 0
+      },
+      "card_status_breakdown": {
+        "not_started": 0,
+        "started": 0,
+        "in_progress": 0,
+        "validation": 0,
+        "rejected": 0,
+        "on_hold": 0,
+        "done": 1,
+        "cancelled": 0
+      },
+      "sprint_status_breakdown": {
+        "draft": 0,
+        "active": 0,
+        "review": 0,
+        "closed": 0,
+        "cancelled": 0
+      },
+      "bugs_total": 0,
+      "bugs_open": 0,
+      "bugs_by_severity": {
+        "critical": 0,
+        "major": 0,
+        "minor": 0
+      },
+      "avg_cycle_hours": 24.0,
+      "cycle_time_by_phase": {
+        "story": null,
+        "ideation": null,
+        "refinement": null,
+        "spec": null,
+        "sprint": null,
+        "card": 24.0
+      },
+      "refinements_done": 0,
+      "story_status_breakdown": {
+        "draft": 0,
+        "triage": 0,
+        "ready": 0,
+        "converted": 0
+      },
+      "stories_by_topic": []
+    },
+    "funnel-empty": {
+      "stories": 0,
+      "ideations": 0,
+      "refinements": 0,
+      "specs": 0,
+      "sprints": 0,
+      "cards": 0,
+      "stories_converted": 0,
+      "story_conversion_pct": 0,
+      "story_ideation_links": 0,
+      "done": 0,
+      "ideations_done": 0,
+      "specs_done": 0,
+      "cards_impl": 0,
+      "cards_test": 0,
+      "cards_bug": 0,
+      "rules_count": 0,
+      "contracts_count": 0,
+      "specs_with_rules": 0,
+      "specs_with_contracts": 0,
+      "specs_with_tests": 0,
+      "spec_status_breakdown": {
+        "draft": 0,
+        "review": 0,
+        "approved": 0,
+        "validated": 0,
+        "in_progress": 0,
+        "done": 0,
+        "cancelled": 0
+      },
+      "card_status_breakdown": {
+        "not_started": 0,
+        "started": 0,
+        "in_progress": 0,
+        "validation": 0,
+        "rejected": 0,
+        "on_hold": 0,
+        "done": 0,
+        "cancelled": 0
+      },
+      "sprint_status_breakdown": {
+        "draft": 0,
+        "active": 0,
+        "review": 0,
+        "closed": 0,
+        "cancelled": 0
+      },
+      "bugs_total": 0,
+      "bugs_open": 0,
+      "bugs_by_severity": {
+        "critical": 0,
+        "major": 0,
+        "minor": 0
+      },
+      "avg_cycle_hours": null,
+      "cycle_time_by_phase": {
+        "story": null,
+        "ideation": null,
+        "refinement": null,
+        "spec": null,
+        "sprint": null,
+        "card": null
+      },
+      "refinements_done": 0,
+      "story_status_breakdown": {
+        "draft": 0,
+        "triage": 0,
+        "ready": 0,
+        "converted": 0
+      },
+      "stories_by_topic": []
+    },
+    "overview-all": {
+      "total_ideations": 1,
+      "ideations_done": 1,
+      "total_specs": 1,
+      "specs_done": 1,
+      "specs_with_tests": 0,
+      "total_sprints": 1,
+      "spec_status_breakdown": {
+        "draft": 0,
+        "review": 0,
+        "approved": 0,
+        "validated": 0,
+        "in_progress": 0,
+        "done": 1,
+        "cancelled": 0
+      },
+      "sprint_status_breakdown": {
+        "draft": 0,
+        "active": 0,
+        "review": 0,
+        "closed": 1,
+        "cancelled": 0
+      },
+      "card_status_breakdown": {
+        "not_started": 0,
+        "started": 0,
+        "in_progress": 1,
+        "validation": 0,
+        "rejected": 0,
+        "on_hold": 0,
+        "done": 2,
+        "cancelled": 0
+      },
+      "total_business_rules": 1,
+      "total_api_contracts": 0,
+      "specs_with_rules": 1,
+      "specs_with_contracts": 0,
+      "total_cards_impl": 1,
+      "total_cards_test": 1,
+      "total_cards_bug": 1,
+      "avg_completeness": 88.0,
+      "avg_drift": 8.0,
+      "avg_cycle_hours": 48.0,
+      "cycle_time": {
+        "ideation": 72.0,
+        "refinement": 72.0,
+        "spec": 72.0,
+        "sprint": null,
+        "card": 48.0
+      },
+      "spec_validation_gate": {
+        "total_submitted": 2,
+        "total_success": 1,
+        "total_failed": 1,
+        "success_rate": 50.0,
+        "avg_attempts_per_spec": 2.0,
+        "avg_scores": {
+          "confidence": 78.0,
+          "clarity": null,
+          "completeness": 83.0,
+          "assertiveness": 60.0,
+          "decidability": null,
+          "ambiguity": 30.0
+        },
+        "rejection_reasons": {
+          "confidence_below": 1,
+          "clarity_below": 0,
+          "completeness_below": 0,
+          "assertiveness_below": 0,
+          "decidability_below": 0,
+          "ambiguity_above": 0,
+          "reject_recommendation": 1
+        },
+        "specs_with_validation": 1
+      },
+      "task_validation_gate": {
+        "total_submitted": 3,
+        "total_success": 1,
+        "total_failed": 2,
+        "success_rate": 33.3,
+        "avg_attempts_per_card": 1.5,
+        "first_pass_rate": 0.0,
+        "avg_scores": {
+          "confidence": 72.3,
+          "completeness": 78.7,
+          "drift": 10.0
+        },
+        "rejection_reasons": {
+          "confidence_below": 2,
+          "completeness_below": 0,
+          "drift_above": 0,
+          "reject_recommendation": 2
+        },
+        "cards_with_validation": 2
+      },
+      "spec_evaluation": {
+        "total_submitted": 2,
+        "total_approve": 1,
+        "total_reject": 0,
+        "total_request_changes": 1,
+        "approve_rate": 50.0,
+        "avg_overall_score": 80.0,
+        "avg_dimension_scores": {},
+        "specs_with_evaluation": 1
+      },
+      "sprint_evaluation": {
+        "total_submitted": 1,
+        "total_approve": 0,
+        "total_reject": 0,
+        "approve_rate": 0.0,
+        "avg_overall_score": 30.0,
+        "avg_dimension_scores": {},
+        "sprints_with_evaluation": 1
+      },
+      "funnel": {
+        "ideations": 1,
+        "refinements": 1,
+        "specs": 1,
+        "sprints": 1,
+        "cards": 3,
+        "tests": 1,
+        "bugs": 1,
+        "done": 2
+      },
+      "velocity": [
+        {
+          "week": "2026-07-06",
+          "impl": 0,
+          "test": 0,
+          "bug": 0,
+          "validation_bounce": 0,
+          "spec_done": 0,
+          "sprint_done": 0
+        },
+        {
+          "week": "2026-07-13",
+          "impl": 0,
+          "test": 0,
+          "bug": 0,
+          "validation_bounce": 0,
+          "spec_done": 0,
+          "sprint_done": 0
+        },
+        {
+          "week": "2026-07-20",
+          "impl": 0,
+          "test": 0,
+          "bug": 0,
+          "validation_bounce": 0,
+          "spec_done": 0,
+          "sprint_done": 0
+        },
+        {
+          "week": "2026-07-27",
+          "impl": 0,
+          "test": 0,
+          "bug": 0,
+          "validation_bounce": 0,
+          "spec_done": 0,
+          "sprint_done": 0
+        },
+        {
+          "week": "2026-08-03",
+          "impl": 0,
+          "test": 0,
+          "bug": 0,
+          "validation_bounce": 0,
+          "spec_done": 0,
+          "sprint_done": 0
+        },
+        {
+          "week": "2026-08-10",
+          "impl": 0,
+          "test": 0,
+          "bug": 0,
+          "validation_bounce": 0,
+          "spec_done": 0,
+          "sprint_done": 0
+        },
+        {
+          "week": "2026-08-17",
+          "impl": 0,
+          "test": 0,
+          "bug": 0,
+          "validation_bounce": 0,
+          "spec_done": 0,
+          "sprint_done": 0
+        },
+        {
+          "week": "2026-08-24",
+          "impl": 0,
+          "test": 0,
+          "bug": 0,
+          "validation_bounce": 0,
+          "spec_done": 0,
+          "sprint_done": 0
+        },
+        {
+          "week": "2026-08-31",
+          "impl": 0,
+          "test": 0,
+          "bug": 0,
+          "validation_bounce": 0,
+          "spec_done": 0,
+          "sprint_done": 0
+        },
+        {
+          "week": "2026-09-07",
+          "impl": 0,
+          "test": 0,
+          "bug": 0,
+          "validation_bounce": 0,
+          "spec_done": 0,
+          "sprint_done": 0
+        },
+        {
+          "week": "2026-09-14",
+          "impl": 0,
+          "test": 0,
+          "bug": 0,
+          "validation_bounce": 0,
+          "spec_done": 0,
+          "sprint_done": 0
+        },
+        {
+          "week": "2026-09-21",
+          "impl": 1,
+          "test": 1,
+          "bug": 0,
+          "validation_bounce": 1,
+          "spec_done": 0,
+          "sprint_done": 0
+        }
+      ],
+      "boards": [
+        {
+          "board_id": "board-a",
+          "board_name": "Visible",
+          "ideations": 1,
+          "refinements": 1,
+          "specs": 1,
+          "sprints": 1,
+          "cards": 3,
+          "cards_done": 2,
+          "bugs": 1
+        }
+      ],
+      "total_bugs": 1,
+      "bugs_open": 1,
+      "bugs_done": 0,
+      "bugs_by_severity": {
+        "critical": 1,
+        "major": 0,
+        "minor": 0
+      },
+      "bug_rate_per_spec": [
+        {
+          "spec_id": "spec-a",
+          "spec_title": "spec-a",
+          "total_tasks": 3,
+          "bugs": 1,
+          "rate": 33.3
+        }
+      ],
+      "avg_triage_hours": 48.0
+    },
+    "overview-recent": {
+      "total_ideations": 0,
+      "ideations_done": 0,
+      "total_specs": 0,
+      "specs_done": 0,
+      "specs_with_tests": 0,
+      "total_sprints": 0,
+      "spec_status_breakdown": {
+        "draft": 0,
+        "review": 0,
+        "approved": 0,
+        "validated": 0,
+        "in_progress": 0,
+        "done": 0,
+        "cancelled": 0
+      },
+      "sprint_status_breakdown": {
+        "draft": 0,
+        "active": 0,
+        "review": 0,
+        "closed": 0,
+        "cancelled": 0
+      },
+      "card_status_breakdown": {
+        "not_started": 0,
+        "started": 0,
+        "in_progress": 0,
+        "validation": 0,
+        "rejected": 0,
+        "on_hold": 0,
+        "done": 1,
+        "cancelled": 0
+      },
+      "total_business_rules": 0,
+      "total_api_contracts": 0,
+      "specs_with_rules": 0,
+      "specs_with_contracts": 0,
+      "total_cards_impl": 0,
+      "total_cards_test": 1,
+      "total_cards_bug": 0,
+      "avg_completeness": null,
+      "avg_drift": null,
+      "avg_cycle_hours": 24.0,
+      "cycle_time": {
+        "ideation": null,
+        "refinement": null,
+        "spec": null,
+        "sprint": null,
+        "card": 24.0
+      },
+      "spec_validation_gate": {
+        "total_submitted": 0,
+        "total_success": 0,
+        "total_failed": 0,
+        "success_rate": null,
+        "avg_attempts_per_spec": null,
+        "avg_scores": {
+          "confidence": null,
+          "clarity": null,
+          "completeness": null,
+          "assertiveness": null,
+          "decidability": null,
+          "ambiguity": null
+        },
+        "rejection_reasons": {
+          "confidence_below": 0,
+          "clarity_below": 0,
+          "completeness_below": 0,
+          "assertiveness_below": 0,
+          "decidability_below": 0,
+          "ambiguity_above": 0,
+          "reject_recommendation": 0
+        },
+        "specs_with_validation": 0
+      },
+      "task_validation_gate": {
+        "total_submitted": 0,
+        "total_success": 0,
+        "total_failed": 0,
+        "success_rate": null,
+        "avg_attempts_per_card": null,
+        "first_pass_rate": null,
+        "avg_scores": {
+          "confidence": null,
+          "completeness": null,
+          "drift": null
+        },
+        "rejection_reasons": {
+          "confidence_below": 0,
+          "completeness_below": 0,
+          "drift_above": 0,
+          "reject_recommendation": 0
+        },
+        "cards_with_validation": 0
+      },
+      "spec_evaluation": {
+        "total_submitted": 0,
+        "total_approve": 0,
+        "total_reject": 0,
+        "total_request_changes": 0,
+        "approve_rate": null,
+        "avg_overall_score": null,
+        "avg_dimension_scores": {},
+        "specs_with_evaluation": 0
+      },
+      "sprint_evaluation": {
+        "total_submitted": 0,
+        "total_approve": 0,
+        "total_reject": 0,
+        "approve_rate": null,
+        "avg_overall_score": null,
+        "avg_dimension_scores": {},
+        "sprints_with_evaluation": 0
+      },
+      "funnel": {
+        "ideations": 0,
+        "refinements": 0,
+        "specs": 0,
+        "sprints": 0,
+        "cards": 1,
+        "tests": 1,
+        "bugs": 0,
+        "done": 1
+      },
+      "velocity": [
+        {
+          "week": "2026-07-06",
+          "impl": 0,
+          "test": 0,
+          "bug": 0,
+          "validation_bounce": 0,
+          "spec_done": 0,
+          "sprint_done": 0
+        },
+        {
+          "week": "2026-07-13",
+          "impl": 0,
+          "test": 0,
+          "bug": 0,
+          "validation_bounce": 0,
+          "spec_done": 0,
+          "sprint_done": 0
+        },
+        {
+          "week": "2026-07-20",
+          "impl": 0,
+          "test": 0,
+          "bug": 0,
+          "validation_bounce": 0,
+          "spec_done": 0,
+          "sprint_done": 0
+        },
+        {
+          "week": "2026-07-27",
+          "impl": 0,
+          "test": 0,
+          "bug": 0,
+          "validation_bounce": 0,
+          "spec_done": 0,
+          "sprint_done": 0
+        },
+        {
+          "week": "2026-08-03",
+          "impl": 0,
+          "test": 0,
+          "bug": 0,
+          "validation_bounce": 0,
+          "spec_done": 0,
+          "sprint_done": 0
+        },
+        {
+          "week": "2026-08-10",
+          "impl": 0,
+          "test": 0,
+          "bug": 0,
+          "validation_bounce": 0,
+          "spec_done": 0,
+          "sprint_done": 0
+        },
+        {
+          "week": "2026-08-17",
+          "impl": 0,
+          "test": 0,
+          "bug": 0,
+          "validation_bounce": 0,
+          "spec_done": 0,
+          "sprint_done": 0
+        },
+        {
+          "week": "2026-08-24",
+          "impl": 0,
+          "test": 0,
+          "bug": 0,
+          "validation_bounce": 0,
+          "spec_done": 0,
+          "sprint_done": 0
+        },
+        {
+          "week": "2026-08-31",
+          "impl": 0,
+          "test": 0,
+          "bug": 0,
+          "validation_bounce": 0,
+          "spec_done": 0,
+          "sprint_done": 0
+        },
+        {
+          "week": "2026-09-07",
+          "impl": 0,
+          "test": 0,
+          "bug": 0,
+          "validation_bounce": 0,
+          "spec_done": 0,
+          "sprint_done": 0
+        },
+        {
+          "week": "2026-09-14",
+          "impl": 0,
+          "test": 0,
+          "bug": 0,
+          "validation_bounce": 0,
+          "spec_done": 0,
+          "sprint_done": 0
+        },
+        {
+          "week": "2026-09-21",
+          "impl": 0,
+          "test": 1,
+          "bug": 0,
+          "validation_bounce": 0,
+          "spec_done": 0,
+          "sprint_done": 0
+        }
+      ],
+      "boards": [
+        {
+          "board_id": "board-a",
+          "board_name": "Visible",
+          "ideations": 0,
+          "refinements": 0,
+          "specs": 0,
+          "sprints": 0,
+          "cards": 1,
+          "cards_done": 1,
+          "bugs": 0
+        }
+      ],
+      "total_bugs": 0,
+      "bugs_open": 0,
+      "bugs_done": 0,
+      "bugs_by_severity": {
+        "critical": 0,
+        "major": 0,
+        "minor": 0
+      },
+      "bug_rate_per_spec": [],
+      "avg_triage_hours": null
+    },
+    "overview-empty": {
+      "total_ideations": 0,
+      "ideations_done": 0,
+      "total_specs": 0,
+      "specs_done": 0,
+      "specs_with_tests": 0,
+      "total_sprints": 0,
+      "spec_status_breakdown": {
+        "draft": 0,
+        "review": 0,
+        "approved": 0,
+        "validated": 0,
+        "in_progress": 0,
+        "done": 0,
+        "cancelled": 0
+      },
+      "sprint_status_breakdown": {
+        "draft": 0,
+        "active": 0,
+        "review": 0,
+        "closed": 0,
+        "cancelled": 0
+      },
+      "card_status_breakdown": {
+        "not_started": 0,
+        "started": 0,
+        "in_progress": 0,
+        "validation": 0,
+        "rejected": 0,
+        "on_hold": 0,
+        "done": 0,
+        "cancelled": 0
+      },
+      "total_business_rules": 0,
+      "total_api_contracts": 0,
+      "specs_with_rules": 0,
+      "specs_with_contracts": 0,
+      "total_cards_impl": 0,
+      "total_cards_test": 0,
+      "total_cards_bug": 0,
+      "avg_completeness": null,
+      "avg_drift": null,
+      "avg_cycle_hours": null,
+      "cycle_time": {
+        "ideation": null,
+        "refinement": null,
+        "spec": null,
+        "sprint": null,
+        "card": null
+      },
+      "spec_validation_gate": {
+        "total_submitted": 0,
+        "total_success": 0,
+        "total_failed": 0,
+        "success_rate": null,
+        "avg_attempts_per_spec": null,
+        "avg_scores": {
+          "confidence": null,
+          "clarity": null,
+          "completeness": null,
+          "assertiveness": null,
+          "decidability": null,
+          "ambiguity": null
+        },
+        "rejection_reasons": {
+          "confidence_below": 0,
+          "clarity_below": 0,
+          "completeness_below": 0,
+          "assertiveness_below": 0,
+          "decidability_below": 0,
+          "ambiguity_above": 0,
+          "reject_recommendation": 0
+        },
+        "specs_with_validation": 0
+      },
+      "task_validation_gate": {
+        "total_submitted": 0,
+        "total_success": 0,
+        "total_failed": 0,
+        "success_rate": null,
+        "avg_attempts_per_card": null,
+        "first_pass_rate": null,
+        "avg_scores": {
+          "confidence": null,
+          "completeness": null,
+          "drift": null
+        },
+        "rejection_reasons": {
+          "confidence_below": 0,
+          "completeness_below": 0,
+          "drift_above": 0,
+          "reject_recommendation": 0
+        },
+        "cards_with_validation": 0
+      },
+      "spec_evaluation": {
+        "total_submitted": 0,
+        "total_approve": 0,
+        "total_reject": 0,
+        "total_request_changes": 0,
+        "approve_rate": null,
+        "avg_overall_score": null,
+        "avg_dimension_scores": {},
+        "specs_with_evaluation": 0
+      },
+      "sprint_evaluation": {
+        "total_submitted": 0,
+        "total_approve": 0,
+        "total_reject": 0,
+        "approve_rate": null,
+        "avg_overall_score": null,
+        "avg_dimension_scores": {},
+        "sprints_with_evaluation": 0
+      },
+      "funnel": {
+        "ideations": 0,
+        "refinements": 0,
+        "specs": 0,
+        "sprints": 0,
+        "cards": 0,
+        "tests": 0,
+        "bugs": 0,
+        "done": 0
+      },
+      "velocity": [
+        {
+          "week": "2026-07-06",
+          "impl": 0,
+          "test": 0,
+          "bug": 0,
+          "validation_bounce": 0,
+          "spec_done": 0,
+          "sprint_done": 0
+        },
+        {
+          "week": "2026-07-13",
+          "impl": 0,
+          "test": 0,
+          "bug": 0,
+          "validation_bounce": 0,
+          "spec_done": 0,
+          "sprint_done": 0
+        },
+        {
+          "week": "2026-07-20",
+          "impl": 0,
+          "test": 0,
+          "bug": 0,
+          "validation_bounce": 0,
+          "spec_done": 0,
+          "sprint_done": 0
+        },
+        {
+          "week": "2026-07-27",
+          "impl": 0,
+          "test": 0,
+          "bug": 0,
+          "validation_bounce": 0,
+          "spec_done": 0,
+          "sprint_done": 0
+        },
+        {
+          "week": "2026-08-03",
+          "impl": 0,
+          "test": 0,
+          "bug": 0,
+          "validation_bounce": 0,
+          "spec_done": 0,
+          "sprint_done": 0
+        },
+        {
+          "week": "2026-08-10",
+          "impl": 0,
+          "test": 0,
+          "bug": 0,
+          "validation_bounce": 0,
+          "spec_done": 0,
+          "sprint_done": 0
+        },
+        {
+          "week": "2026-08-17",
+          "impl": 0,
+          "test": 0,
+          "bug": 0,
+          "validation_bounce": 0,
+          "spec_done": 0,
+          "sprint_done": 0
+        },
+        {
+          "week": "2026-08-24",
+          "impl": 0,
+          "test": 0,
+          "bug": 0,
+          "validation_bounce": 0,
+          "spec_done": 0,
+          "sprint_done": 0
+        },
+        {
+          "week": "2026-08-31",
+          "impl": 0,
+          "test": 0,
+          "bug": 0,
+          "validation_bounce": 0,
+          "spec_done": 0,
+          "sprint_done": 0
+        },
+        {
+          "week": "2026-09-07",
+          "impl": 0,
+          "test": 0,
+          "bug": 0,
+          "validation_bounce": 0,
+          "spec_done": 0,
+          "sprint_done": 0
+        },
+        {
+          "week": "2026-09-14",
+          "impl": 0,
+          "test": 0,
+          "bug": 0,
+          "validation_bounce": 0,
+          "spec_done": 0,
+          "sprint_done": 0
+        },
+        {
+          "week": "2026-09-21",
+          "impl": 0,
+          "test": 0,
+          "bug": 0,
+          "validation_bounce": 0,
+          "spec_done": 0,
+          "sprint_done": 0
+        }
+      ],
+      "boards": [
+        {
+          "board_id": "board-a",
+          "board_name": "Visible",
+          "ideations": 0,
+          "refinements": 0,
+          "specs": 0,
+          "sprints": 0,
+          "cards": 0,
+          "cards_done": 0,
+          "bugs": 0
+        }
+      ],
+      "total_bugs": 0,
+      "bugs_open": 0,
+      "bugs_done": 0,
+      "bugs_by_severity": {
+        "critical": 0,
+        "major": 0,
+        "minor": 0
+      },
+      "bug_rate_per_spec": [],
+      "avg_triage_hours": null
+    },
+    "validations-all": {
+      "spec_validation_gate": {
+        "total_submitted": 2,
+        "total_success": 1,
+        "total_failed": 1,
+        "success_rate": 50.0,
+        "avg_attempts_per_spec": 2.0,
+        "avg_scores": {
+          "confidence": 78.0,
+          "clarity": null,
+          "completeness": 83.0,
+          "assertiveness": 60.0,
+          "decidability": null,
+          "ambiguity": 30.0
+        },
+        "rejection_reasons": {
+          "confidence_below": 1,
+          "clarity_below": 0,
+          "completeness_below": 0,
+          "assertiveness_below": 0,
+          "decidability_below": 0,
+          "ambiguity_above": 0,
+          "reject_recommendation": 1
+        },
+        "specs_with_validation": 1,
+        "per_spec": [
+          {
+            "spec_id": "spec-a",
+            "title": "spec-a",
+            "status": "done",
+            "attempts": 2,
+            "last_outcome": "success",
+            "last_completeness": 96,
+            "last_assertiveness": 60,
+            "last_ambiguity": 30,
+            "success_count": 1,
+            "failed_count": 1,
+            "rejection_reasons": {
+              "confidence_below": 1,
+              "clarity_below": 0,
+              "completeness_below": 0,
+              "assertiveness_below": 0,
+              "decidability_below": 0,
+              "ambiguity_above": 0,
+              "reject_recommendation": 1
+            },
+            "current_validation_id": null
+          }
+        ]
+      },
+      "task_validation_gate": {
+        "total_submitted": 4,
+        "total_success": 2,
+        "total_failed": 2,
+        "success_rate": 50.0,
+        "avg_attempts_per_card": 1.33,
+        "first_pass_rate": 33.3,
+        "avg_scores": {
+          "confidence": 78.0,
+          "completeness": 83.0,
+          "drift": 8.0
+        },
+        "rejection_reasons": {
+          "confidence_below": 2,
+          "completeness_below": 0,
+          "drift_above": 0,
+          "reject_recommendation": 2
+        },
+        "cards_with_validation": 3,
+        "per_card": [
+          {
+            "card_id": "card-normal",
+            "title": "card-normal",
+            "card_type": "normal",
+            "spec_id": "spec-a",
+            "sprint_id": "old-a",
+            "status": "done",
+            "attempts": 2,
+            "last_outcome": "success",
+            "last_confidence": 95,
+            "last_completeness": 96,
+            "last_drift": 2,
+            "success_count": 1,
+            "failed_count": 1,
+            "rejection_reasons": {
+              "confidence_below": 1,
+              "completeness_below": 0,
+              "drift_above": 0,
+              "reject_recommendation": 1
+            }
+          },
+          {
+            "card_id": "card-bug",
+            "title": "card-bug",
+            "card_type": "bug",
+            "spec_id": "spec-a",
+            "sprint_id": "old-a",
+            "status": "in_progress",
+            "attempts": 1,
+            "last_outcome": "failed",
+            "last_confidence": 61,
+            "last_completeness": 70,
+            "last_drift": 14,
+            "success_count": 0,
+            "failed_count": 1,
+            "rejection_reasons": {
+              "confidence_below": 1,
+              "completeness_below": 0,
+              "drift_above": 0,
+              "reject_recommendation": 1
+            }
+          },
+          {
+            "card_id": "card-test",
+            "title": "card-test",
+            "card_type": "test",
+            "spec_id": "spec-a",
+            "sprint_id": "old-a",
+            "status": "done",
+            "attempts": 1,
+            "last_outcome": "success",
+            "last_confidence": 95,
+            "last_completeness": 96,
+            "last_drift": 2,
+            "success_count": 1,
+            "failed_count": 0,
+            "rejection_reasons": {
+              "confidence_below": 0,
+              "completeness_below": 0,
+              "drift_above": 0,
+              "reject_recommendation": 0
+            }
+          }
+        ]
+      },
+      "spec_evaluation": {
+        "total_submitted": 2,
+        "total_approve": 1,
+        "total_reject": 0,
+        "total_request_changes": 1,
+        "approve_rate": 50.0,
+        "avg_overall_score": 80.0,
+        "avg_dimension_scores": {},
+        "specs_with_evaluation": 1
+      },
+      "sprint_evaluation": {
+        "total_submitted": 1,
+        "total_approve": 0,
+        "total_reject": 0,
+        "approve_rate": 0.0,
+        "avg_overall_score": 30.0,
+        "avg_dimension_scores": {},
+        "sprints_with_evaluation": 1
+      }
+    },
+    "validations-recent": {
+      "spec_validation_gate": {
+        "total_submitted": 0,
+        "total_success": 0,
+        "total_failed": 0,
+        "success_rate": null,
+        "avg_attempts_per_spec": null,
+        "avg_scores": {
+          "confidence": null,
+          "clarity": null,
+          "completeness": null,
+          "assertiveness": null,
+          "decidability": null,
+          "ambiguity": null
+        },
+        "rejection_reasons": {
+          "confidence_below": 0,
+          "clarity_below": 0,
+          "completeness_below": 0,
+          "assertiveness_below": 0,
+          "decidability_below": 0,
+          "ambiguity_above": 0,
+          "reject_recommendation": 0
+        },
+        "specs_with_validation": 0,
+        "per_spec": []
+      },
+      "task_validation_gate": {
+        "total_submitted": 1,
+        "total_success": 1,
+        "total_failed": 0,
+        "success_rate": 100.0,
+        "avg_attempts_per_card": 1.0,
+        "first_pass_rate": 100.0,
+        "avg_scores": {
+          "confidence": 95.0,
+          "completeness": 96.0,
+          "drift": 2.0
+        },
+        "rejection_reasons": {
+          "confidence_below": 0,
+          "completeness_below": 0,
+          "drift_above": 0,
+          "reject_recommendation": 0
+        },
+        "cards_with_validation": 1,
+        "per_card": [
+          {
+            "card_id": "card-test",
+            "title": "card-test",
+            "card_type": "test",
+            "spec_id": "spec-a",
+            "sprint_id": "old-a",
+            "status": "done",
+            "attempts": 1,
+            "last_outcome": "success",
+            "last_confidence": 95,
+            "last_completeness": 96,
+            "last_drift": 2,
+            "success_count": 1,
+            "failed_count": 0,
+            "rejection_reasons": {
+              "confidence_below": 0,
+              "completeness_below": 0,
+              "drift_above": 0,
+              "reject_recommendation": 0
+            }
+          }
+        ]
+      },
+      "spec_evaluation": {
+        "total_submitted": 0,
+        "total_approve": 0,
+        "total_reject": 0,
+        "total_request_changes": 0,
+        "approve_rate": null,
+        "avg_overall_score": null,
+        "avg_dimension_scores": {},
+        "specs_with_evaluation": 0
+      },
+      "sprint_evaluation": {
+        "total_submitted": 0,
+        "total_approve": 0,
+        "total_reject": 0,
+        "approve_rate": null,
+        "avg_overall_score": null,
+        "avg_dimension_scores": {},
+        "sprints_with_evaluation": 0
+      }
+    },
+    "validations-empty": {
+      "spec_validation_gate": {
+        "total_submitted": 0,
+        "total_success": 0,
+        "total_failed": 0,
+        "success_rate": null,
+        "avg_attempts_per_spec": null,
+        "avg_scores": {
+          "confidence": null,
+          "clarity": null,
+          "completeness": null,
+          "assertiveness": null,
+          "decidability": null,
+          "ambiguity": null
+        },
+        "rejection_reasons": {
+          "confidence_below": 0,
+          "clarity_below": 0,
+          "completeness_below": 0,
+          "assertiveness_below": 0,
+          "decidability_below": 0,
+          "ambiguity_above": 0,
+          "reject_recommendation": 0
+        },
+        "specs_with_validation": 0,
+        "per_spec": []
+      },
+      "task_validation_gate": {
+        "total_submitted": 0,
+        "total_success": 0,
+        "total_failed": 0,
+        "success_rate": null,
+        "avg_attempts_per_card": null,
+        "first_pass_rate": null,
+        "avg_scores": {
+          "confidence": null,
+          "completeness": null,
+          "drift": null
+        },
+        "rejection_reasons": {
+          "confidence_below": 0,
+          "completeness_below": 0,
+          "drift_above": 0,
+          "reject_recommendation": 0
+        },
+        "cards_with_validation": 0,
+        "per_card": []
+      },
+      "spec_evaluation": {
+        "total_submitted": 0,
+        "total_approve": 0,
+        "total_reject": 0,
+        "total_request_changes": 0,
+        "approve_rate": null,
+        "avg_overall_score": null,
+        "avg_dimension_scores": {},
+        "specs_with_evaluation": 0
+      },
+      "sprint_evaluation": {
+        "total_submitted": 0,
+        "total_approve": 0,
+        "total_reject": 0,
+        "approve_rate": null,
+        "avg_overall_score": null,
+        "avg_dimension_scores": {},
+        "sprints_with_evaluation": 0
+      }
+    },
+    "mcp-all": {
+      "board_id": "board-a",
+      "ideation_count": 1,
+      "refinement_count": 1,
+      "spec_count": 1,
+      "sprint_count": 1,
+      "task_count": {
+        "total": 4,
+        "impl": 2,
+        "tests": 1,
+        "bugs": 1
+      },
+      "avg_completeness": 88.0,
+      "avg_drift": 8.0,
+      "avg_cycle_hours": 56.0,
+      "cycle_time": {
+        "ideation": null,
+        "refinement": null,
+        "spec": null,
+        "sprint": 72.0,
+        "card": 56.0
+      },
+      "task_validation_gate": {
+        "total_submitted": 4,
+        "total_success": 2,
+        "total_failed": 2,
+        "success_rate": 50.0,
+        "avg_attempts_per_card": 1.33,
+        "first_pass_rate": 33.3,
+        "avg_scores": {
+          "confidence": 78.0,
+          "completeness": 83.0,
+          "drift": 8.0
+        },
+        "rejection_reasons": {
+          "confidence_below": 2,
+          "completeness_below": 0,
+          "drift_above": 0,
+          "reject_recommendation": 2
+        },
+        "cards_with_validation": 3
+      },
+      "spec_validation_gate": {
+        "total_submitted": 2,
+        "total_success": 1,
+        "total_failed": 1,
+        "success_rate": 50.0,
+        "avg_attempts_per_spec": 2.0,
+        "avg_scores": {
+          "confidence": 78.0,
+          "clarity": null,
+          "completeness": 83.0,
+          "assertiveness": 60.0,
+          "decidability": null,
+          "ambiguity": 30.0
+        },
+        "rejection_reasons": {
+          "confidence_below": 1,
+          "clarity_below": 0,
+          "completeness_below": 0,
+          "assertiveness_below": 0,
+          "decidability_below": 0,
+          "ambiguity_above": 0,
+          "reject_recommendation": 1
+        },
+        "specs_with_validation": 1
+      },
+      "sprint_evaluation": {
+        "total_submitted": 1,
+        "avg_overall_score": 30.0
+      },
+      "funnel": {
+        "ideations": 1,
+        "refinements": 1,
+        "specs": 1,
+        "sprints": 1,
+        "cards": 4,
+        "done": 3
+      },
+      "bugs": {
+        "total": 1,
+        "open": 1,
+        "done": 0,
+        "by_severity": {
+          "critical": 1,
+          "major": 0,
+          "minor": 0
+        }
+      }
+    },
+    "mcp-recent": {
+      "board_id": "board-a",
+      "ideation_count": 0,
+      "refinement_count": 0,
+      "spec_count": 0,
+      "sprint_count": 0,
+      "task_count": {
+        "total": 1,
+        "impl": 0,
+        "tests": 1,
+        "bugs": 0
+      },
+      "avg_completeness": 96.0,
+      "avg_drift": 2.0,
+      "avg_cycle_hours": 24.0,
+      "cycle_time": {
+        "ideation": null,
+        "refinement": null,
+        "spec": null,
+        "sprint": null,
+        "card": 24.0
+      },
+      "task_validation_gate": {
+        "total_submitted": 1,
+        "total_success": 1,
+        "total_failed": 0,
+        "success_rate": 100.0,
+        "avg_attempts_per_card": 1.0,
+        "first_pass_rate": 100.0,
+        "avg_scores": {
+          "confidence": 95.0,
+          "completeness": 96.0,
+          "drift": 2.0
+        },
+        "rejection_reasons": {
+          "confidence_below": 0,
+          "completeness_below": 0,
+          "drift_above": 0,
+          "reject_recommendation": 0
+        },
+        "cards_with_validation": 1
+      },
+      "spec_validation_gate": {
+        "total_submitted": 0,
+        "total_success": 0,
+        "total_failed": 0,
+        "success_rate": null,
+        "avg_attempts_per_spec": null,
+        "avg_scores": {
+          "confidence": null,
+          "clarity": null,
+          "completeness": null,
+          "assertiveness": null,
+          "decidability": null,
+          "ambiguity": null
+        },
+        "rejection_reasons": {
+          "confidence_below": 0,
+          "clarity_below": 0,
+          "completeness_below": 0,
+          "assertiveness_below": 0,
+          "decidability_below": 0,
+          "ambiguity_above": 0,
+          "reject_recommendation": 0
+        },
+        "specs_with_validation": 0
+      },
+      "sprint_evaluation": {
+        "total_submitted": 0,
+        "avg_overall_score": null
+      },
+      "funnel": {
+        "ideations": 0,
+        "refinements": 0,
+        "specs": 0,
+        "sprints": 0,
+        "cards": 1,
+        "done": 1
+      },
+      "bugs": {
+        "total": 0,
+        "open": 0,
+        "done": 0,
+        "by_severity": {
+          "critical": 0,
+          "major": 0,
+          "minor": 0
+        }
+      }
+    },
+    "mcp-empty": {
+      "board_id": "board-a",
+      "ideation_count": 0,
+      "refinement_count": 0,
+      "spec_count": 0,
+      "sprint_count": 0,
+      "task_count": {
+        "total": 0,
+        "impl": 0,
+        "tests": 0,
+        "bugs": 0
+      },
+      "avg_completeness": null,
+      "avg_drift": null,
+      "avg_cycle_hours": null,
+      "cycle_time": {
+        "ideation": null,
+        "refinement": null,
+        "spec": null,
+        "sprint": null,
+        "card": null
+      },
+      "task_validation_gate": {
+        "total_submitted": 0,
+        "total_success": 0,
+        "total_failed": 0,
+        "success_rate": null,
+        "avg_attempts_per_card": null,
+        "first_pass_rate": null,
+        "avg_scores": {
+          "confidence": null,
+          "completeness": null,
+          "drift": null
+        },
+        "rejection_reasons": {
+          "confidence_below": 0,
+          "completeness_below": 0,
+          "drift_above": 0,
+          "reject_recommendation": 0
+        },
+        "cards_with_validation": 0
+      },
+      "spec_validation_gate": {
+        "total_submitted": 0,
+        "total_success": 0,
+        "total_failed": 0,
+        "success_rate": null,
+        "avg_attempts_per_spec": null,
+        "avg_scores": {
+          "confidence": null,
+          "clarity": null,
+          "completeness": null,
+          "assertiveness": null,
+          "decidability": null,
+          "ambiguity": null
+        },
+        "rejection_reasons": {
+          "confidence_below": 0,
+          "clarity_below": 0,
+          "completeness_below": 0,
+          "assertiveness_below": 0,
+          "decidability_below": 0,
+          "ambiguity_above": 0,
+          "reject_recommendation": 0
+        },
+        "specs_with_validation": 0
+      },
+      "sprint_evaluation": {
+        "total_submitted": 0,
+        "avg_overall_score": null
+      },
+      "funnel": {
+        "ideations": 0,
+        "refinements": 0,
+        "specs": 0,
+        "sprints": 0,
+        "cards": 0,
+        "done": 0
+      },
+      "bugs": {
+        "total": 0,
+        "open": 0,
+        "done": 0,
+        "by_severity": {
+          "critical": 0,
+          "major": 0,
+          "minor": 0
+        }
+      }
+    },
+    "velocity_day-all": [
+      {
+        "day": "2026-08-23",
+        "impl": 0,
+        "test": 0,
+        "bug": 0,
+        "validation_bounce": 0,
+        "spec_done": 0,
+        "sprint_done": 0
+      },
+      {
+        "day": "2026-08-24",
+        "impl": 0,
+        "test": 0,
+        "bug": 0,
+        "validation_bounce": 0,
+        "spec_done": 0,
+        "sprint_done": 0
+      },
+      {
+        "day": "2026-08-25",
+        "impl": 0,
+        "test": 0,
+        "bug": 0,
+        "validation_bounce": 0,
+        "spec_done": 0,
+        "sprint_done": 0
+      },
+      {
+        "day": "2026-08-26",
+        "impl": 0,
+        "test": 0,
+        "bug": 0,
+        "validation_bounce": 0,
+        "spec_done": 0,
+        "sprint_done": 0
+      },
+      {
+        "day": "2026-08-27",
+        "impl": 0,
+        "test": 0,
+        "bug": 0,
+        "validation_bounce": 0,
+        "spec_done": 0,
+        "sprint_done": 0
+      },
+      {
+        "day": "2026-08-28",
+        "impl": 0,
+        "test": 0,
+        "bug": 0,
+        "validation_bounce": 0,
+        "spec_done": 0,
+        "sprint_done": 0
+      },
+      {
+        "day": "2026-08-29",
+        "impl": 0,
+        "test": 0,
+        "bug": 0,
+        "validation_bounce": 0,
+        "spec_done": 0,
+        "sprint_done": 0
+      },
+      {
+        "day": "2026-08-30",
+        "impl": 0,
+        "test": 0,
+        "bug": 0,
+        "validation_bounce": 0,
+        "spec_done": 0,
+        "sprint_done": 0
+      },
+      {
+        "day": "2026-08-31",
+        "impl": 0,
+        "test": 0,
+        "bug": 0,
+        "validation_bounce": 0,
+        "spec_done": 0,
+        "sprint_done": 0
+      },
+      {
+        "day": "2026-09-01",
+        "impl": 0,
+        "test": 0,
+        "bug": 0,
+        "validation_bounce": 0,
+        "spec_done": 0,
+        "sprint_done": 0
+      },
+      {
+        "day": "2026-09-02",
+        "impl": 0,
+        "test": 0,
+        "bug": 0,
+        "validation_bounce": 0,
+        "spec_done": 0,
+        "sprint_done": 0
+      },
+      {
+        "day": "2026-09-03",
+        "impl": 0,
+        "test": 0,
+        "bug": 0,
+        "validation_bounce": 0,
+        "spec_done": 0,
+        "sprint_done": 0
+      },
+      {
+        "day": "2026-09-04",
+        "impl": 0,
+        "test": 0,
+        "bug": 0,
+        "validation_bounce": 0,
+        "spec_done": 0,
+        "sprint_done": 0
+      },
+      {
+        "day": "2026-09-05",
+        "impl": 0,
+        "test": 0,
+        "bug": 0,
+        "validation_bounce": 0,
+        "spec_done": 0,
+        "sprint_done": 0
+      },
+      {
+        "day": "2026-09-06",
+        "impl": 0,
+        "test": 0,
+        "bug": 0,
+        "validation_bounce": 0,
+        "spec_done": 0,
+        "sprint_done": 0
+      },
+      {
+        "day": "2026-09-07",
+        "impl": 0,
+        "test": 0,
+        "bug": 0,
+        "validation_bounce": 0,
+        "spec_done": 0,
+        "sprint_done": 0
+      },
+      {
+        "day": "2026-09-08",
+        "impl": 0,
+        "test": 0,
+        "bug": 0,
+        "validation_bounce": 0,
+        "spec_done": 0,
+        "sprint_done": 0
+      },
+      {
+        "day": "2026-09-09",
+        "impl": 0,
+        "test": 0,
+        "bug": 0,
+        "validation_bounce": 0,
+        "spec_done": 0,
+        "sprint_done": 0
+      },
+      {
+        "day": "2026-09-10",
+        "impl": 0,
+        "test": 0,
+        "bug": 0,
+        "validation_bounce": 0,
+        "spec_done": 0,
+        "sprint_done": 0
+      },
+      {
+        "day": "2026-09-11",
+        "impl": 0,
+        "test": 0,
+        "bug": 0,
+        "validation_bounce": 0,
+        "spec_done": 0,
+        "sprint_done": 0
+      },
+      {
+        "day": "2026-09-12",
+        "impl": 0,
+        "test": 0,
+        "bug": 0,
+        "validation_bounce": 0,
+        "spec_done": 0,
+        "sprint_done": 0
+      },
+      {
+        "day": "2026-09-13",
+        "impl": 0,
+        "test": 0,
+        "bug": 0,
+        "validation_bounce": 0,
+        "spec_done": 0,
+        "sprint_done": 0
+      },
+      {
+        "day": "2026-09-14",
+        "impl": 0,
+        "test": 0,
+        "bug": 0,
+        "validation_bounce": 0,
+        "spec_done": 0,
+        "sprint_done": 0
+      },
+      {
+        "day": "2026-09-15",
+        "impl": 0,
+        "test": 0,
+        "bug": 0,
+        "validation_bounce": 0,
+        "spec_done": 0,
+        "sprint_done": 0
+      },
+      {
+        "day": "2026-09-16",
+        "impl": 0,
+        "test": 0,
+        "bug": 0,
+        "validation_bounce": 0,
+        "spec_done": 0,
+        "sprint_done": 0
+      },
+      {
+        "day": "2026-09-17",
+        "impl": 0,
+        "test": 0,
+        "bug": 0,
+        "validation_bounce": 0,
+        "spec_done": 0,
+        "sprint_done": 0
+      },
+      {
+        "day": "2026-09-18",
+        "impl": 0,
+        "test": 0,
+        "bug": 0,
+        "validation_bounce": 0,
+        "spec_done": 0,
+        "sprint_done": 0
+      },
+      {
+        "day": "2026-09-19",
+        "impl": 0,
+        "test": 0,
+        "bug": 0,
+        "validation_bounce": 0,
+        "spec_done": 0,
+        "sprint_done": 0
+      },
+      {
+        "day": "2026-09-20",
+        "impl": 0,
+        "test": 0,
+        "bug": 0,
+        "validation_bounce": 0,
+        "spec_done": 0,
+        "sprint_done": 0
+      },
+      {
+        "day": "2026-09-21",
+        "impl": 1,
+        "test": 1,
+        "bug": 0,
+        "validation_bounce": 2,
+        "spec_done": 1,
+        "sprint_done": 1
+      }
+    ],
+    "velocity_day-recent": [
+      {
+        "day": "2026-08-23",
+        "impl": 0,
+        "test": 0,
+        "bug": 0,
+        "validation_bounce": 0,
+        "spec_done": 0,
+        "sprint_done": 0
+      },
+      {
+        "day": "2026-08-24",
+        "impl": 0,
+        "test": 0,
+        "bug": 0,
+        "validation_bounce": 0,
+        "spec_done": 0,
+        "sprint_done": 0
+      },
+      {
+        "day": "2026-08-25",
+        "impl": 0,
+        "test": 0,
+        "bug": 0,
+        "validation_bounce": 0,
+        "spec_done": 0,
+        "sprint_done": 0
+      },
+      {
+        "day": "2026-08-26",
+        "impl": 0,
+        "test": 0,
+        "bug": 0,
+        "validation_bounce": 0,
+        "spec_done": 0,
+        "sprint_done": 0
+      },
+      {
+        "day": "2026-08-27",
+        "impl": 0,
+        "test": 0,
+        "bug": 0,
+        "validation_bounce": 0,
+        "spec_done": 0,
+        "sprint_done": 0
+      },
+      {
+        "day": "2026-08-28",
+        "impl": 0,
+        "test": 0,
+        "bug": 0,
+        "validation_bounce": 0,
+        "spec_done": 0,
+        "sprint_done": 0
+      },
+      {
+        "day": "2026-08-29",
+        "impl": 0,
+        "test": 0,
+        "bug": 0,
+        "validation_bounce": 0,
+        "spec_done": 0,
+        "sprint_done": 0
+      },
+      {
+        "day": "2026-08-30",
+        "impl": 0,
+        "test": 0,
+        "bug": 0,
+        "validation_bounce": 0,
+        "spec_done": 0,
+        "sprint_done": 0
+      },
+      {
+        "day": "2026-08-31",
+        "impl": 0,
+        "test": 0,
+        "bug": 0,
+        "validation_bounce": 0,
+        "spec_done": 0,
+        "sprint_done": 0
+      },
+      {
+        "day": "2026-09-01",
+        "impl": 0,
+        "test": 0,
+        "bug": 0,
+        "validation_bounce": 0,
+        "spec_done": 0,
+        "sprint_done": 0
+      },
+      {
+        "day": "2026-09-02",
+        "impl": 0,
+        "test": 0,
+        "bug": 0,
+        "validation_bounce": 0,
+        "spec_done": 0,
+        "sprint_done": 0
+      },
+      {
+        "day": "2026-09-03",
+        "impl": 0,
+        "test": 0,
+        "bug": 0,
+        "validation_bounce": 0,
+        "spec_done": 0,
+        "sprint_done": 0
+      },
+      {
+        "day": "2026-09-04",
+        "impl": 0,
+        "test": 0,
+        "bug": 0,
+        "validation_bounce": 0,
+        "spec_done": 0,
+        "sprint_done": 0
+      },
+      {
+        "day": "2026-09-05",
+        "impl": 0,
+        "test": 0,
+        "bug": 0,
+        "validation_bounce": 0,
+        "spec_done": 0,
+        "sprint_done": 0
+      },
+      {
+        "day": "2026-09-06",
+        "impl": 0,
+        "test": 0,
+        "bug": 0,
+        "validation_bounce": 0,
+        "spec_done": 0,
+        "sprint_done": 0
+      },
+      {
+        "day": "2026-09-07",
+        "impl": 0,
+        "test": 0,
+        "bug": 0,
+        "validation_bounce": 0,
+        "spec_done": 0,
+        "sprint_done": 0
+      },
+      {
+        "day": "2026-09-08",
+        "impl": 0,
+        "test": 0,
+        "bug": 0,
+        "validation_bounce": 0,
+        "spec_done": 0,
+        "sprint_done": 0
+      },
+      {
+        "day": "2026-09-09",
+        "impl": 0,
+        "test": 0,
+        "bug": 0,
+        "validation_bounce": 0,
+        "spec_done": 0,
+        "sprint_done": 0
+      },
+      {
+        "day": "2026-09-10",
+        "impl": 0,
+        "test": 0,
+        "bug": 0,
+        "validation_bounce": 0,
+        "spec_done": 0,
+        "sprint_done": 0
+      },
+      {
+        "day": "2026-09-11",
+        "impl": 0,
+        "test": 0,
+        "bug": 0,
+        "validation_bounce": 0,
+        "spec_done": 0,
+        "sprint_done": 0
+      },
+      {
+        "day": "2026-09-12",
+        "impl": 0,
+        "test": 0,
+        "bug": 0,
+        "validation_bounce": 0,
+        "spec_done": 0,
+        "sprint_done": 0
+      },
+      {
+        "day": "2026-09-13",
+        "impl": 0,
+        "test": 0,
+        "bug": 0,
+        "validation_bounce": 0,
+        "spec_done": 0,
+        "sprint_done": 0
+      },
+      {
+        "day": "2026-09-14",
+        "impl": 0,
+        "test": 0,
+        "bug": 0,
+        "validation_bounce": 0,
+        "spec_done": 0,
+        "sprint_done": 0
+      },
+      {
+        "day": "2026-09-15",
+        "impl": 0,
+        "test": 0,
+        "bug": 0,
+        "validation_bounce": 0,
+        "spec_done": 0,
+        "sprint_done": 0
+      },
+      {
+        "day": "2026-09-16",
+        "impl": 0,
+        "test": 0,
+        "bug": 0,
+        "validation_bounce": 0,
+        "spec_done": 0,
+        "sprint_done": 0
+      },
+      {
+        "day": "2026-09-17",
+        "impl": 0,
+        "test": 0,
+        "bug": 0,
+        "validation_bounce": 0,
+        "spec_done": 0,
+        "sprint_done": 0
+      },
+      {
+        "day": "2026-09-18",
+        "impl": 0,
+        "test": 0,
+        "bug": 0,
+        "validation_bounce": 0,
+        "spec_done": 0,
+        "sprint_done": 0
+      },
+      {
+        "day": "2026-09-19",
+        "impl": 0,
+        "test": 0,
+        "bug": 0,
+        "validation_bounce": 0,
+        "spec_done": 0,
+        "sprint_done": 0
+      },
+      {
+        "day": "2026-09-20",
+        "impl": 0,
+        "test": 0,
+        "bug": 0,
+        "validation_bounce": 0,
+        "spec_done": 0,
+        "sprint_done": 0
+      },
+      {
+        "day": "2026-09-21",
+        "impl": 0,
+        "test": 1,
+        "bug": 0,
+        "validation_bounce": 0,
+        "spec_done": 1,
+        "sprint_done": 1
+      }
+    ],
+    "velocity_day-empty": [
+      {
+        "day": "2026-08-23",
+        "impl": 0,
+        "test": 0,
+        "bug": 0,
+        "validation_bounce": 0,
+        "spec_done": 0,
+        "sprint_done": 0
+      },
+      {
+        "day": "2026-08-24",
+        "impl": 0,
+        "test": 0,
+        "bug": 0,
+        "validation_bounce": 0,
+        "spec_done": 0,
+        "sprint_done": 0
+      },
+      {
+        "day": "2026-08-25",
+        "impl": 0,
+        "test": 0,
+        "bug": 0,
+        "validation_bounce": 0,
+        "spec_done": 0,
+        "sprint_done": 0
+      },
+      {
+        "day": "2026-08-26",
+        "impl": 0,
+        "test": 0,
+        "bug": 0,
+        "validation_bounce": 0,
+        "spec_done": 0,
+        "sprint_done": 0
+      },
+      {
+        "day": "2026-08-27",
+        "impl": 0,
+        "test": 0,
+        "bug": 0,
+        "validation_bounce": 0,
+        "spec_done": 0,
+        "sprint_done": 0
+      },
+      {
+        "day": "2026-08-28",
+        "impl": 0,
+        "test": 0,
+        "bug": 0,
+        "validation_bounce": 0,
+        "spec_done": 0,
+        "sprint_done": 0
+      },
+      {
+        "day": "2026-08-29",
+        "impl": 0,
+        "test": 0,
+        "bug": 0,
+        "validation_bounce": 0,
+        "spec_done": 0,
+        "sprint_done": 0
+      },
+      {
+        "day": "2026-08-30",
+        "impl": 0,
+        "test": 0,
+        "bug": 0,
+        "validation_bounce": 0,
+        "spec_done": 0,
+        "sprint_done": 0
+      },
+      {
+        "day": "2026-08-31",
+        "impl": 0,
+        "test": 0,
+        "bug": 0,
+        "validation_bounce": 0,
+        "spec_done": 0,
+        "sprint_done": 0
+      },
+      {
+        "day": "2026-09-01",
+        "impl": 0,
+        "test": 0,
+        "bug": 0,
+        "validation_bounce": 0,
+        "spec_done": 0,
+        "sprint_done": 0
+      },
+      {
+        "day": "2026-09-02",
+        "impl": 0,
+        "test": 0,
+        "bug": 0,
+        "validation_bounce": 0,
+        "spec_done": 0,
+        "sprint_done": 0
+      },
+      {
+        "day": "2026-09-03",
+        "impl": 0,
+        "test": 0,
+        "bug": 0,
+        "validation_bounce": 0,
+        "spec_done": 0,
+        "sprint_done": 0
+      },
+      {
+        "day": "2026-09-04",
+        "impl": 0,
+        "test": 0,
+        "bug": 0,
+        "validation_bounce": 0,
+        "spec_done": 0,
+        "sprint_done": 0
+      },
+      {
+        "day": "2026-09-05",
+        "impl": 0,
+        "test": 0,
+        "bug": 0,
+        "validation_bounce": 0,
+        "spec_done": 0,
+        "sprint_done": 0
+      },
+      {
+        "day": "2026-09-06",
+        "impl": 0,
+        "test": 0,
+        "bug": 0,
+        "validation_bounce": 0,
+        "spec_done": 0,
+        "sprint_done": 0
+      },
+      {
+        "day": "2026-09-07",
+        "impl": 0,
+        "test": 0,
+        "bug": 0,
+        "validation_bounce": 0,
+        "spec_done": 0,
+        "sprint_done": 0
+      },
+      {
+        "day": "2026-09-08",
+        "impl": 0,
+        "test": 0,
+        "bug": 0,
+        "validation_bounce": 0,
+        "spec_done": 0,
+        "sprint_done": 0
+      },
+      {
+        "day": "2026-09-09",
+        "impl": 0,
+        "test": 0,
+        "bug": 0,
+        "validation_bounce": 0,
+        "spec_done": 0,
+        "sprint_done": 0
+      },
+      {
+        "day": "2026-09-10",
+        "impl": 0,
+        "test": 0,
+        "bug": 0,
+        "validation_bounce": 0,
+        "spec_done": 0,
+        "sprint_done": 0
+      },
+      {
+        "day": "2026-09-11",
+        "impl": 0,
+        "test": 0,
+        "bug": 0,
+        "validation_bounce": 0,
+        "spec_done": 0,
+        "sprint_done": 0
+      },
+      {
+        "day": "2026-09-12",
+        "impl": 0,
+        "test": 0,
+        "bug": 0,
+        "validation_bounce": 0,
+        "spec_done": 0,
+        "sprint_done": 0
+      },
+      {
+        "day": "2026-09-13",
+        "impl": 0,
+        "test": 0,
+        "bug": 0,
+        "validation_bounce": 0,
+        "spec_done": 0,
+        "sprint_done": 0
+      },
+      {
+        "day": "2026-09-14",
+        "impl": 0,
+        "test": 0,
+        "bug": 0,
+        "validation_bounce": 0,
+        "spec_done": 0,
+        "sprint_done": 0
+      },
+      {
+        "day": "2026-09-15",
+        "impl": 0,
+        "test": 0,
+        "bug": 0,
+        "validation_bounce": 0,
+        "spec_done": 0,
+        "sprint_done": 0
+      },
+      {
+        "day": "2026-09-16",
+        "impl": 0,
+        "test": 0,
+        "bug": 0,
+        "validation_bounce": 0,
+        "spec_done": 0,
+        "sprint_done": 0
+      },
+      {
+        "day": "2026-09-17",
+        "impl": 0,
+        "test": 0,
+        "bug": 0,
+        "validation_bounce": 0,
+        "spec_done": 0,
+        "sprint_done": 0
+      },
+      {
+        "day": "2026-09-18",
+        "impl": 0,
+        "test": 0,
+        "bug": 0,
+        "validation_bounce": 0,
+        "spec_done": 0,
+        "sprint_done": 0
+      },
+      {
+        "day": "2026-09-19",
+        "impl": 0,
+        "test": 0,
+        "bug": 0,
+        "validation_bounce": 0,
+        "spec_done": 0,
+        "sprint_done": 0
+      },
+      {
+        "day": "2026-09-20",
+        "impl": 0,
+        "test": 0,
+        "bug": 0,
+        "validation_bounce": 0,
+        "spec_done": 0,
+        "sprint_done": 0
+      },
+      {
+        "day": "2026-09-21",
+        "impl": 0,
+        "test": 0,
+        "bug": 0,
+        "validation_bounce": 0,
+        "spec_done": 1,
+        "sprint_done": 1
+      }
+    ],
+    "velocity_week-all": [
+      {
+        "week": "2026-07-06",
+        "impl": 0,
+        "test": 0,
+        "bug": 0,
+        "validation_bounce": 0,
+        "spec_done": 0,
+        "sprint_done": 0
+      },
+      {
+        "week": "2026-07-13",
+        "impl": 0,
+        "test": 0,
+        "bug": 0,
+        "validation_bounce": 0,
+        "spec_done": 0,
+        "sprint_done": 0
+      },
+      {
+        "week": "2026-07-20",
+        "impl": 0,
+        "test": 0,
+        "bug": 0,
+        "validation_bounce": 0,
+        "spec_done": 0,
+        "sprint_done": 0
+      },
+      {
+        "week": "2026-07-27",
+        "impl": 0,
+        "test": 0,
+        "bug": 0,
+        "validation_bounce": 0,
+        "spec_done": 0,
+        "sprint_done": 0
+      },
+      {
+        "week": "2026-08-03",
+        "impl": 0,
+        "test": 0,
+        "bug": 0,
+        "validation_bounce": 0,
+        "spec_done": 0,
+        "sprint_done": 0
+      },
+      {
+        "week": "2026-08-10",
+        "impl": 0,
+        "test": 0,
+        "bug": 0,
+        "validation_bounce": 0,
+        "spec_done": 0,
+        "sprint_done": 0
+      },
+      {
+        "week": "2026-08-17",
+        "impl": 0,
+        "test": 0,
+        "bug": 0,
+        "validation_bounce": 0,
+        "spec_done": 0,
+        "sprint_done": 0
+      },
+      {
+        "week": "2026-08-24",
+        "impl": 0,
+        "test": 0,
+        "bug": 0,
+        "validation_bounce": 0,
+        "spec_done": 0,
+        "sprint_done": 0
+      },
+      {
+        "week": "2026-08-31",
+        "impl": 0,
+        "test": 0,
+        "bug": 0,
+        "validation_bounce": 0,
+        "spec_done": 0,
+        "sprint_done": 0
+      },
+      {
+        "week": "2026-09-07",
+        "impl": 0,
+        "test": 0,
+        "bug": 0,
+        "validation_bounce": 0,
+        "spec_done": 0,
+        "sprint_done": 0
+      },
+      {
+        "week": "2026-09-14",
+        "impl": 0,
+        "test": 0,
+        "bug": 0,
+        "validation_bounce": 0,
+        "spec_done": 0,
+        "sprint_done": 0
+      },
+      {
+        "week": "2026-09-21",
+        "impl": 1,
+        "test": 1,
+        "bug": 0,
+        "validation_bounce": 2,
+        "spec_done": 1,
+        "sprint_done": 1
+      }
+    ],
+    "velocity_week-recent": [
+      {
+        "week": "2026-07-06",
+        "impl": 0,
+        "test": 0,
+        "bug": 0,
+        "validation_bounce": 0,
+        "spec_done": 0,
+        "sprint_done": 0
+      },
+      {
+        "week": "2026-07-13",
+        "impl": 0,
+        "test": 0,
+        "bug": 0,
+        "validation_bounce": 0,
+        "spec_done": 0,
+        "sprint_done": 0
+      },
+      {
+        "week": "2026-07-20",
+        "impl": 0,
+        "test": 0,
+        "bug": 0,
+        "validation_bounce": 0,
+        "spec_done": 0,
+        "sprint_done": 0
+      },
+      {
+        "week": "2026-07-27",
+        "impl": 0,
+        "test": 0,
+        "bug": 0,
+        "validation_bounce": 0,
+        "spec_done": 0,
+        "sprint_done": 0
+      },
+      {
+        "week": "2026-08-03",
+        "impl": 0,
+        "test": 0,
+        "bug": 0,
+        "validation_bounce": 0,
+        "spec_done": 0,
+        "sprint_done": 0
+      },
+      {
+        "week": "2026-08-10",
+        "impl": 0,
+        "test": 0,
+        "bug": 0,
+        "validation_bounce": 0,
+        "spec_done": 0,
+        "sprint_done": 0
+      },
+      {
+        "week": "2026-08-17",
+        "impl": 0,
+        "test": 0,
+        "bug": 0,
+        "validation_bounce": 0,
+        "spec_done": 0,
+        "sprint_done": 0
+      },
+      {
+        "week": "2026-08-24",
+        "impl": 0,
+        "test": 0,
+        "bug": 0,
+        "validation_bounce": 0,
+        "spec_done": 0,
+        "sprint_done": 0
+      },
+      {
+        "week": "2026-08-31",
+        "impl": 0,
+        "test": 0,
+        "bug": 0,
+        "validation_bounce": 0,
+        "spec_done": 0,
+        "sprint_done": 0
+      },
+      {
+        "week": "2026-09-07",
+        "impl": 0,
+        "test": 0,
+        "bug": 0,
+        "validation_bounce": 0,
+        "spec_done": 0,
+        "sprint_done": 0
+      },
+      {
+        "week": "2026-09-14",
+        "impl": 0,
+        "test": 0,
+        "bug": 0,
+        "validation_bounce": 0,
+        "spec_done": 0,
+        "sprint_done": 0
+      },
+      {
+        "week": "2026-09-21",
+        "impl": 0,
+        "test": 1,
+        "bug": 0,
+        "validation_bounce": 0,
+        "spec_done": 1,
+        "sprint_done": 1
+      }
+    ],
+    "velocity_week-empty": [
+      {
+        "week": "2026-07-06",
+        "impl": 0,
+        "test": 0,
+        "bug": 0,
+        "validation_bounce": 0,
+        "spec_done": 0,
+        "sprint_done": 0
+      },
+      {
+        "week": "2026-07-13",
+        "impl": 0,
+        "test": 0,
+        "bug": 0,
+        "validation_bounce": 0,
+        "spec_done": 0,
+        "sprint_done": 0
+      },
+      {
+        "week": "2026-07-20",
+        "impl": 0,
+        "test": 0,
+        "bug": 0,
+        "validation_bounce": 0,
+        "spec_done": 0,
+        "sprint_done": 0
+      },
+      {
+        "week": "2026-07-27",
+        "impl": 0,
+        "test": 0,
+        "bug": 0,
+        "validation_bounce": 0,
+        "spec_done": 0,
+        "sprint_done": 0
+      },
+      {
+        "week": "2026-08-03",
+        "impl": 0,
+        "test": 0,
+        "bug": 0,
+        "validation_bounce": 0,
+        "spec_done": 0,
+        "sprint_done": 0
+      },
+      {
+        "week": "2026-08-10",
+        "impl": 0,
+        "test": 0,
+        "bug": 0,
+        "validation_bounce": 0,
+        "spec_done": 0,
+        "sprint_done": 0
+      },
+      {
+        "week": "2026-08-17",
+        "impl": 0,
+        "test": 0,
+        "bug": 0,
+        "validation_bounce": 0,
+        "spec_done": 0,
+        "sprint_done": 0
+      },
+      {
+        "week": "2026-08-24",
+        "impl": 0,
+        "test": 0,
+        "bug": 0,
+        "validation_bounce": 0,
+        "spec_done": 0,
+        "sprint_done": 0
+      },
+      {
+        "week": "2026-08-31",
+        "impl": 0,
+        "test": 0,
+        "bug": 0,
+        "validation_bounce": 0,
+        "spec_done": 0,
+        "sprint_done": 0
+      },
+      {
+        "week": "2026-09-07",
+        "impl": 0,
+        "test": 0,
+        "bug": 0,
+        "validation_bounce": 0,
+        "spec_done": 0,
+        "sprint_done": 0
+      },
+      {
+        "week": "2026-09-14",
+        "impl": 0,
+        "test": 0,
+        "bug": 0,
+        "validation_bounce": 0,
+        "spec_done": 0,
+        "sprint_done": 0
+      },
+      {
+        "week": "2026-09-21",
+        "impl": 0,
+        "test": 0,
+        "bug": 0,
+        "validation_bounce": 0,
+        "spec_done": 1,
+        "sprint_done": 1
+      }
+    ],
+    "overview-no-access": {
+      "total_ideations": 0,
+      "total_specs": 0,
+      "total_sprints": 0,
+      "total_cards_impl": 0,
+      "total_cards_test": 0,
+      "total_cards_bug": 0,
+      "spec_status_breakdown": {},
+      "sprint_status_breakdown": {},
+      "card_status_breakdown": {},
+      "total_business_rules": 0,
+      "total_api_contracts": 0,
+      "specs_with_rules": 0,
+      "specs_with_contracts": 0,
+      "spec_validation_gate": {
+        "total_submitted": 0,
+        "total_success": 0,
+        "total_failed": 0,
+        "success_rate": null,
+        "avg_attempts_per_spec": null,
+        "avg_scores": {
+          "confidence": null,
+          "clarity": null,
+          "completeness": null,
+          "assertiveness": null,
+          "decidability": null,
+          "ambiguity": null
+        },
+        "rejection_reasons": {
+          "confidence_below": 0,
+          "clarity_below": 0,
+          "completeness_below": 0,
+          "assertiveness_below": 0,
+          "decidability_below": 0,
+          "ambiguity_above": 0,
+          "reject_recommendation": 0
+        },
+        "specs_with_validation": 0
+      },
+      "task_validation_gate": {
+        "total_submitted": 0,
+        "total_success": 0,
+        "total_failed": 0,
+        "success_rate": null,
+        "avg_attempts_per_card": null,
+        "first_pass_rate": null,
+        "avg_scores": {
+          "confidence": null,
+          "completeness": null,
+          "drift": null
+        },
+        "rejection_reasons": {
+          "confidence_below": 0,
+          "completeness_below": 0,
+          "drift_above": 0,
+          "reject_recommendation": 0
+        },
+        "cards_with_validation": 0
+      },
+      "spec_evaluation": {
+        "total_submitted": 0,
+        "total_approve": 0,
+        "total_reject": 0,
+        "total_request_changes": 0,
+        "approve_rate": null,
+        "avg_overall_score": null,
+        "avg_dimension_scores": {},
+        "specs_with_evaluation": 0
+      },
+      "sprint_evaluation": {
+        "total_submitted": 0,
+        "total_approve": 0,
+        "total_reject": 0,
+        "approve_rate": null,
+        "avg_overall_score": null,
+        "avg_dimension_scores": {},
+        "sprints_with_evaluation": 0
+      },
+      "funnel": {
+        "ideations": 0,
+        "refinements": 0,
+        "specs": 0,
+        "sprints": 0,
+        "cards": 0,
+        "tests": 0,
+        "bugs": 0,
+        "done": 0
+      },
+      "velocity": [],
+      "boards": [],
+      "total_bugs": 0,
+      "bugs_open": 0,
+      "bugs_done": 0,
+      "bugs_by_severity": {
+        "critical": 0,
+        "major": 0,
+        "minor": 0
+      },
+      "bug_rate_per_spec": [],
+      "avg_triage_hours": null
+    }
+  }
+}

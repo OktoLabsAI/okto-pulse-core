@@ -530,16 +530,15 @@ async def compute_funnel(
     """Compute the full funnel for a board.
 
     Returns the same rich shape as REST `/boards/{id}/analytics/funnel`:
-      - Per-level counts: stories, ideations, refinements, specs, sprints, cards.
+      - Per-level counts: stories, ideations, refinements, specs, cards.
       - Done counts: done, ideations_done, specs_done, refinements_done.
       - Card type breakdown: cards_impl, cards_test, cards_bug.
       - BR/Contract aggregation: rules_count, contracts_count,
         specs_with_rules, specs_with_contracts.
-      - Status breakdowns: spec_status_breakdown, card_status_breakdown,
-        sprint_status_breakdown.
+      - Status breakdowns: spec_status_breakdown, card_status_breakdown.
       - Bug metrics: bugs_total, bugs_open, bugs_by_severity.
       - Cycle time: avg_cycle_hours + cycle_time_by_phase{ideation, refinement,
-        spec, sprint, card}.
+        spec, card}.
 
     MCP previously returned only 6 keys (ideations/refinements/specs/cards/done)
     — migration unifies to the full shape.
@@ -560,7 +559,6 @@ async def compute_funnel(
         filters=artifact_filters,
     )
     spec_objs = await _analytics_list(db, "spec", filters=artifact_filters)
-    sprint_objs = await _analytics_list(db, "sprint", filters=artifact_filters)
     all_cards = await _analytics_list(db, "card", filters=artifact_filters)
     counts.update(
         {
@@ -568,7 +566,6 @@ async def compute_funnel(
             "ideations": len(board_ideations),
             "refinements": len(board_refinements),
             "specs": len(spec_objs),
-            "sprints": len(sprint_objs),
             "cards": len(all_cards),
         }
     )
@@ -620,9 +617,6 @@ async def compute_funnel(
     counts["spec_status_breakdown"] = _status_breakdown(spec_objs, SpecStatus)
     counts["card_status_breakdown"] = _status_breakdown(all_cards, CardStatus)
 
-    # Sprints
-    counts["sprint_status_breakdown"] = _status_breakdown(sprint_objs, SprintStatus)
-
     # Bug metrics
     bug_cards = card_partitions["bug"]
     counts["bugs_total"] = len(bug_cards)
@@ -664,7 +658,6 @@ async def compute_funnel(
         "ideation": _phase_ct(board_ideations, str(IdeationStatus.DONE)),
         "refinement": _phase_ct(board_refinements, str(RefinementStatus.DONE)),
         "spec": _phase_ct(spec_objs, str(SpecStatus.DONE)),
-        "sprint": _phase_ct(sprint_objs, str(SprintStatus.CLOSED)),
         "card": counts["avg_cycle_hours"],
     }
     counts["refinements_done"] = sum(
@@ -717,7 +710,6 @@ async def compute_velocity(
       - impl / test / bug — cards done in the bucket (by card_type)
       - validation_bounce — failed task validations in the bucket
       - spec_done — spec_moved events where new_status == 'done'
-      - sprint_done — sprint_moved events where new_status == 'closed'
 
     MCP previously hardcoded weekly 12 buckets and only returned impl/test.
     Service delega para os builders existentes em api/analytics.py.
@@ -738,7 +730,6 @@ async def compute_velocity(
     done_cards = [c for c in all_cards if c.status == CardStatus.DONE]
 
     spec_moves = await _load_lifecycle_moves(db, board_id, "spec_moved")
-    sprint_moves = await _load_lifecycle_moves(db, board_id, "sprint_moved")
 
     periods = days if granularity == "day" else weeks
     return _build_velocity_buckets(
@@ -747,7 +738,6 @@ async def compute_velocity(
         periods=periods,
         granularity=granularity,
         spec_moves=spec_moves,
-        sprint_moves=sprint_moves,
     )
 
 
@@ -1375,7 +1365,6 @@ async def compute_mcp_board_analytics(
         ideations = await _analytics_list(db, "ideation", filters=filters)
         refinements = await _analytics_list(db, "refinement", filters=filters)
         specs = await _analytics_list(db, "spec", filters=filters)
-        sprints = await _analytics_list(db, "sprint", filters=filters)
         cards = await _analytics_list(db, "card", filters=filters)
 
         card_partitions = partition_analytics_cards(cards)
@@ -1429,24 +1418,10 @@ async def compute_mcp_board_analytics(
                         times.append(round(hours, 1))
             return round(sum(times) / len(times), 1) if times else None
 
-        sprint_evals_total = 0
-        sprint_eval_scores = []
-        for sprint in sprints:
-            evaluations = getattr(sprint, "evaluations", None) or []
-            if isinstance(evaluations, list):
-                sprint_evals_total += len(evaluations)
-                for evaluation in evaluations:
-                    if (
-                        isinstance(evaluation, dict)
-                        and evaluation.get("overall_score") is not None
-                    ):
-                        sprint_eval_scores.append(int(evaluation["overall_score"]))
-
         funnel = {
             "ideations": len(ideations),
             "refinements": len(refinements),
             "specs": len(specs),
-            "sprints": len(sprints),
             "cards": len(cards),
             "done": len(done_cards),
         }
@@ -1461,7 +1436,6 @@ async def compute_mcp_board_analytics(
             "ideation_count": len(ideations),
             "refinement_count": len(refinements),
             "spec_count": len(specs),
-            "sprint_count": len(sprints),
             "task_count": {
                 "total": len(cards),
                 "impl": len(impl_cards),
@@ -1475,19 +1449,10 @@ async def compute_mcp_board_analytics(
                 "ideation": _lifecycle_cycle_time(ideations, "done"),
                 "refinement": _lifecycle_cycle_time(refinements, "done"),
                 "spec": _lifecycle_cycle_time(specs, "done"),
-                "sprint": _lifecycle_cycle_time(sprints, "closed"),
                 "card": avg_cycle_hours,
             },
             "task_validation_gate": task_validation_gate,
             "spec_validation_gate": spec_validation_gate,
-            "sprint_evaluation": {
-                "total_submitted": sprint_evals_total,
-                "avg_overall_score": (
-                    round(sum(sprint_eval_scores) / len(sprint_eval_scores), 1)
-                    if sprint_eval_scores
-                    else None
-                ),
-            },
             "funnel": funnel,
             "bugs": {
                 "total": len(bug_cards),
@@ -2109,7 +2074,7 @@ def _compute_velocity(
     done_cards: list, weeks: int, all_cards: list | None = None
 ) -> list[dict]:
     """Weekly velocity — backward-compat shim for callers that don't need
-    spec/sprint overlays. Delegates to the bucket builder with spec/sprint
+    Spec overlays. Delegates to the bucket builder with Spec
     event dicts empty."""
     return _build_velocity_buckets(
         done_cards=done_cards,
@@ -2117,7 +2082,6 @@ def _compute_velocity(
         periods=weeks,
         granularity="week",
         spec_moves=[],
-        sprint_moves=[],
     )
 
 
@@ -2137,7 +2101,6 @@ def _build_velocity_buckets(
     periods: int,
     granularity: str,
     spec_moves: list[tuple[datetime, str]],
-    sprint_moves: list[tuple[datetime, str]],
 ) -> list[dict]:
     """Shared bucket builder for week and day granularities.
 
@@ -2145,7 +2108,6 @@ def _build_velocity_buckets(
     - ``impl`` / ``test`` / ``bug`` — cards of that type moved to done in the bucket.
     - ``validation_bounce`` — task validations that failed in the bucket.
     - ``spec_done`` — spec_moved events where details.new_status == 'done'.
-    - ``sprint_done`` — sprint_moved events where details.new_status == 'closed'.
     """
     now = datetime.now(timezone.utc)
     buckets: dict[str, dict[str, int]] = {}
@@ -2162,7 +2124,6 @@ def _build_velocity_buckets(
             "bug": 0,
             "validation_bounce": 0,
             "spec_done": 0,
-            "sprint_done": 0,
         }
 
     for c in done_cards:
@@ -2212,15 +2173,6 @@ def _build_velocity_buckets(
         if key in buckets:
             buckets[key]["spec_done"] += 1
 
-    for dt, status_val in sprint_moves:
-        if status_val != "closed":
-            continue
-        if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=timezone.utc)
-        key = _bucket_key(dt, granularity)
-        if key in buckets:
-            buckets[key]["sprint_done"] += 1
-
     period_label = "day" if granularity == "day" else "week"
     return [
         {
@@ -2230,7 +2182,6 @@ def _build_velocity_buckets(
             "bug": v["bug"],
             "validation_bounce": v["validation_bounce"],
             "spec_done": v["spec_done"],
-            "sprint_done": v["sprint_done"],
         }
         for k, v in sorted(buckets.items())
     ]
@@ -2259,12 +2210,10 @@ async def compute_overview(
         return {
             "total_ideations": 0,
             "total_specs": 0,
-            "total_sprints": 0,
             "total_cards_impl": 0,
             "total_cards_test": 0,
             "total_cards_bug": 0,
             "spec_status_breakdown": {},
-            "sprint_status_breakdown": {},
             "card_status_breakdown": {},
             "total_business_rules": 0,
             "total_api_contracts": 0,
@@ -2273,12 +2222,10 @@ async def compute_overview(
             "spec_validation_gate": aggregate_spec_validation_gate([]),
             "task_validation_gate": aggregate_task_validation_gate([]),
             "spec_evaluation": _aggregate_spec_evaluation([]),
-            "sprint_evaluation": _aggregate_sprint_evaluation([]),
             "funnel": {
                 "ideations": 0,
                 "refinements": 0,
                 "specs": 0,
-                "sprints": 0,
                 "cards": 0,
                 "tests": 0,
                 "bugs": 0,
@@ -2314,8 +2261,6 @@ async def compute_overview(
     test_cards = card_partitions["test"]
     bug_cards_all = card_partitions["bug"]
 
-    sprints = await _analytics_list(db, "sprint", filters=artifact_filters)
-
     # Self-reported scores (from card.conclusions — the implementer's report)
     concl_completeness: list[float] = []
     concl_drift: list[float] = []
@@ -2336,7 +2281,6 @@ async def compute_overview(
         "ideations": len(ideations),
         "refinements": len(refinements),
         "specs": len(specs),
-        "sprints": len(sprints),
         "cards": len(cards),
         "tests": len(test_cards),
         "bugs": len(bug_cards_all),
@@ -2352,7 +2296,6 @@ async def compute_overview(
         b_cards = [c for c in cards if c.board_id == b.id]
         b_done = [c for c in b_cards if c.status == CardStatus.DONE]
         b_bugs = [c for c in b_cards if classify_analytics_card(c) == "bug"]
-        b_sprints = [sp for sp in sprints if sp.board_id == b.id]
         board_stats.append(
             {
                 "board_id": b.id,
@@ -2360,7 +2303,6 @@ async def compute_overview(
                 "ideations": sum(1 for i in ideations if i.board_id == b.id),
                 "refinements": sum(1 for r in refinements if r.board_id == b.id),
                 "specs": sum(1 for s in specs if s.board_id == b.id),
-                "sprints": len(b_sprints),
                 "cards": len(b_cards),
                 "cards_done": len(b_done),
                 "bugs": len(b_bugs),
@@ -2370,7 +2312,6 @@ async def compute_overview(
     # Status breakdowns (full)
     ideations_done = sum(1 for i in ideations if i.status == IdeationStatus.DONE)
     spec_status_breakdown = _spec_status_breakdown(specs)
-    sprint_status_breakdown = _sprint_status_breakdown(sprints)
     card_status_breakdown = _card_status_breakdown(cards)
     specs_done = spec_status_breakdown.get("done", 0)
     specs_with_tests = sum(
@@ -2408,7 +2349,6 @@ async def compute_overview(
         [c for c in cards if classify_analytics_card(c) != "test"]
     )
     spec_evaluation = _aggregate_spec_evaluation(specs)
-    sprint_evaluation = _aggregate_sprint_evaluation(sprints)
 
     # Bugs per spec
     bugs_per_spec: dict[str, int] = {}
@@ -2492,7 +2432,6 @@ async def compute_overview(
         "ideation": _lifecycle_ct(ideations, str(IdeationStatus.DONE)),
         "refinement": _lifecycle_ct(refinements, str(RefinementStatus.DONE)),
         "spec": _lifecycle_ct(specs, str(SpecStatus.DONE)),
-        "sprint": _lifecycle_ct(sprints, str(SprintStatus.CLOSED)),
         "card": avg_cycle_hours,
     }
 
@@ -2502,9 +2441,7 @@ async def compute_overview(
         "total_specs": len(specs),
         "specs_done": specs_done,
         "specs_with_tests": specs_with_tests,
-        "total_sprints": len(sprints),
         "spec_status_breakdown": spec_status_breakdown,
-        "sprint_status_breakdown": sprint_status_breakdown,
         "card_status_breakdown": card_status_breakdown,
         "total_business_rules": total_brs,
         "total_api_contracts": total_contracts,
@@ -2523,7 +2460,6 @@ async def compute_overview(
         "spec_validation_gate": spec_validation_gate,
         "task_validation_gate": task_validation_gate,
         "spec_evaluation": spec_evaluation,
-        "sprint_evaluation": sprint_evaluation,
         "funnel": funnel,
         "velocity": velocity,
         "boards": board_stats,
@@ -2544,7 +2480,7 @@ async def _load_lifecycle_moves(
     board_id: str,
     action: str,
 ) -> list[tuple[datetime, str]]:
-    """Read ActivityLog rows for a lifecycle action (spec_moved / sprint_moved)
+    """Read ActivityLog rows for a lifecycle action
     and return (created_at, new_status) tuples for the aggregator."""
     rows = await _analytics_list(
         db,
@@ -2643,7 +2579,7 @@ async def compute_quality(db, board_id: str, *, dt_from=None, dt_to=None) -> dic
 
 async def compute_validations(db, board_id: str, *, dt_from=None, dt_to=None) -> dict:
     """Validation-gate panel reader (spec R01A REST-FU2c) — spec/task validation
-    gates + spec/sprint evaluations with per-spec/per-card breakdown. Transport-free
+    gates + Spec evaluations with per-spec/per-card breakdown. Transport-free
     body of the legacy board_validations endpoint."""
     filters = _artifact_filters(
         board_id,
@@ -2653,7 +2589,6 @@ async def compute_validations(db, board_id: str, *, dt_from=None, dt_to=None) ->
     )
     specs = await _analytics_list(db, "spec", filters=filters)
     cards = await _analytics_list(db, "card", filters=filters)
-    sprints = await _analytics_list(db, "sprint", filters=filters)
 
     # Per-spec breakdown for Spec Validation Gate — walks full history (D4)
     per_spec: list[dict] = []
@@ -2703,7 +2638,6 @@ async def compute_validations(db, board_id: str, *, dt_from=None, dt_to=None) ->
                 .replace("CardType.", "")
                 .lower(),
                 "spec_id": c.spec_id,
-                "sprint_id": c.sprint_id,
                 "status": c.status.value
                 if hasattr(c.status, "value")
                 else str(c.status),
@@ -2743,7 +2677,6 @@ async def compute_validations(db, board_id: str, *, dt_from=None, dt_to=None) ->
             "per_card": per_card,
         },
         "spec_evaluation": _aggregate_spec_evaluation(specs),
-        "sprint_evaluation": _aggregate_sprint_evaluation(sprints),
     }
 
 
@@ -4265,56 +4198,6 @@ async def _spec_detail(db: Any, board_id: str, spec_id: str) -> dict:
     # Bug stats for this spec
     bug_cards = [c for c in cards if classify_analytics_card(c) == "bug"]
 
-    # Sprint breakdown
-    sprints = await _analytics_list(
-        db,
-        "sprint",
-        filters=(
-            _af("spec_id", "eq", spec_id),
-            _af("archived", "is_false"),
-        ),
-    )
-    sprint_summaries = []
-    for sp in sprints:
-        sp_cards = [c for c in cards if getattr(c, "sprint_id", None) == sp.id]
-        sp_done = [c for c in sp_cards if c.status == CardStatus.DONE]
-        sp_concls = [_extract_conclusion(c) for c in sp_done if _extract_conclusion(c)]
-        sp_completeness = [
-            cn.get("completeness")
-            for cn in sp_concls
-            if cn.get("completeness") is not None
-        ]
-        sp_drift = [cn.get("drift") for cn in sp_concls if cn.get("drift") is not None]
-        sp_cycle = []
-        for c in sp_done:
-            delta = _hours_between(c.created_at, c.updated_at)
-            if delta is not None:
-                sp_cycle.append(round(delta, 1))
-        sprint_summaries.append(
-            {
-                "sprint_id": sp.id,
-                "title": sp.title,
-                "status": sp.status.value,
-                "tasks_total": len(sp_cards),
-                "tasks_done": len(sp_done),
-                "progress": round(len(sp_done) / len(sp_cards) * 100, 1)
-                if sp_cards
-                else 0,
-                "avg_completeness": round(
-                    sum(sp_completeness) / len(sp_completeness), 1
-                )
-                if sp_completeness
-                else None,
-                "avg_drift": round(sum(sp_drift) / len(sp_drift), 1)
-                if sp_drift
-                else None,
-                "avg_cycle_hours": round(sum(sp_cycle) / len(sp_cycle), 1)
-                if sp_cycle
-                else None,
-                "evaluations_count": len(sp.evaluations or []),
-            }
-        )
-
     return {
         "spec_id": spec.id,
         "title": spec.title,
@@ -4345,7 +4228,6 @@ async def _spec_detail(db: Any, board_id: str, spec_id: str) -> dict:
         "decisions_coverage": coverage_summary["decisions_coverage_pct"],
         "decisions_uncovered_ids": coverage_summary["decisions_uncovered_ids"],
         "bugs_count": len(bug_cards),
-        "sprints": sprint_summaries,
     }
 
 
@@ -4425,7 +4307,6 @@ async def _card_detail(db: Any, board_id: str, card_id: str) -> dict:
         "is_test": classify_analytics_card(card) == "test",
         "card_type": card_type,
         "spec_id": card.spec_id,
-        "sprint_id": card.sprint_id,
         "completeness": concl.get("completeness") if concl else None,
         "drift": concl.get("drift") if concl else None,
         "conclusions": card.conclusions,

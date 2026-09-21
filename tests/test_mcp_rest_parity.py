@@ -250,7 +250,6 @@ class TestFunnelParity:
             "ideations",
             "refinements",
             "specs",
-            "sprints",
             "cards",
             "done",
             "ideations_done",
@@ -265,7 +264,6 @@ class TestFunnelParity:
             "specs_with_contracts",
             "spec_status_breakdown",
             "card_status_breakdown",
-            "sprint_status_breakdown",
             "bugs_total",
             "bugs_open",
             "bugs_by_severity",
@@ -279,13 +277,14 @@ class TestFunnelParity:
             "stories_by_topic",
         ):
             assert k in funnel, f"funnel missing key: {k}"
+        assert "sprints" not in funnel
+        assert "sprint_status_breakdown" not in funnel
         cycle = funnel["cycle_time_by_phase"]
         assert set(cycle.keys()) == {
             "story",
             "ideation",
             "refinement",
             "spec",
-            "sprint",
             "card",
         }
 
@@ -337,7 +336,6 @@ class TestVelocityParity:
             "bug",
             "validation_bounce",
             "spec_done",
-            "sprint_done",
         ):
             assert k in buckets[0], f"velocity bucket missing migrated key: {k}"
 

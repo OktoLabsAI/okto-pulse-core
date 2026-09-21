@@ -2,13 +2,8 @@
 
 Validates the OpenAPI contract: both `/analytics/overview` and
 `/boards/{id}/analytics/funnel` expose cycle time for every funnel phase —
-ideation, refinement, spec, sprint, card.
+ideation, refinement, spec, card.
 """
-
-import os
-import sys
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from fastapi.routing import APIRoute
 
@@ -16,7 +11,7 @@ from okto_pulse.community.api.analytics import _hours_between, router
 from okto_pulse.core.services.analytics_service import _hours_between as service_hours_between
 
 
-EXPECTED_PHASES = {"ideation", "refinement", "spec", "sprint", "card"}
+EXPECTED_PHASES = {"ideation", "refinement", "spec", "card"}
 
 
 class TestFunnelPhasesContract:
@@ -87,11 +82,11 @@ class TestCycleTimeBuilder:
 
 
 class TestExpectedShape:
-    """Snapshot-style test: ensure all 5 funnel phases are represented."""
+    """Snapshot-style test: ensure all 4 funnel phases are represented."""
 
     def test_phases_set_complete(self):
         # Every phase from ideation → card must be a key in the response.
         # This guards against regressions where adding a new phase enum
         # doesn't propagate to analytics output.
-        assert len(EXPECTED_PHASES) == 5
-        assert {"ideation", "refinement", "spec", "sprint", "card"} == EXPECTED_PHASES
+        assert len(EXPECTED_PHASES) == 4
+        assert {"ideation", "refinement", "spec", "card"} == EXPECTED_PHASES
