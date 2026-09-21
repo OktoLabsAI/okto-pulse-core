@@ -53,11 +53,6 @@ class CriticalAction(str, Enum):
     SPEC_CLOSEOUT = "spec.closeout"
     SPEC_CANCEL = "spec.cancel"
     SPEC_ARCHIVE = "spec.archive"
-    SPRINT_MOVE_STATUS = "sprint.move_status"
-    SPRINT_SUBMIT_EVALUATION = "sprint.submit_evaluation"
-    SPRINT_CLOSEOUT = "sprint.closeout"
-    SPRINT_CANCEL = "sprint.cancel"
-    SPRINT_ARCHIVE = "sprint.archive"
     IDEATION_MOVE_STATUS = "ideation.move_status"
     IDEATION_CLOSEOUT = "ideation.closeout"
     IDEATION_CANCEL = "ideation.cancel"
@@ -111,11 +106,6 @@ CRITICAL_ACTION_REGISTRY: tuple[CriticalActionDefinition, ...] = (
     CriticalActionDefinition(CriticalAction.SPEC_CLOSEOUT, "spec", "closeout", "Complete a spec."),
     CriticalActionDefinition(CriticalAction.SPEC_CANCEL, "spec", "cancellation", "Cancel a spec."),
     CriticalActionDefinition(CriticalAction.SPEC_ARCHIVE, "spec", "archive", "Archive a spec."),
-    CriticalActionDefinition(CriticalAction.SPRINT_MOVE_STATUS, "sprint", "status_move", "Move a sprint between workflow states."),
-    CriticalActionDefinition(CriticalAction.SPRINT_SUBMIT_EVALUATION, "sprint", "evaluation", "Submit sprint evaluation."),
-    CriticalActionDefinition(CriticalAction.SPRINT_CLOSEOUT, "sprint", "closeout", "Close a sprint."),
-    CriticalActionDefinition(CriticalAction.SPRINT_CANCEL, "sprint", "cancellation", "Cancel a sprint."),
-    CriticalActionDefinition(CriticalAction.SPRINT_ARCHIVE, "sprint", "archive", "Archive a sprint."),
     CriticalActionDefinition(CriticalAction.IDEATION_MOVE_STATUS, "ideation", "status_move", "Move an ideation between workflow states."),
     CriticalActionDefinition(CriticalAction.IDEATION_CLOSEOUT, "ideation", "closeout", "Complete an ideation."),
     CriticalActionDefinition(CriticalAction.IDEATION_CANCEL, "ideation", "cancellation", "Cancel an ideation."),
@@ -134,7 +124,7 @@ NON_CRITICAL_MUTATION_EXCLUSIONS: tuple[NonCriticalMutationExclusion, ...] = (
         reason=(
             "Stories are discovery/planning helpers in BG-01 v1 and are not "
             "first-line gate-sensitive entities. Critical full-context guard "
-            "coverage starts at ideation/refinement/spec/card/test/bug/sprint."
+            "coverage starts at ideation/refinement/spec/card/test/bug."
         ),
     ),
     NonCriticalMutationExclusion(
@@ -304,7 +294,6 @@ def build_default_full_context_resolvers(
     return {
         "card": resolver,
         "spec": resolver,
-        "sprint": resolver,
         "ideation": resolver,
         "refinement": resolver,
     }

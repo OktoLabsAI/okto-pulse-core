@@ -9744,3 +9744,63 @@ E2E pareado/rollback, footprint MCP, benchmark e rollout continuam pendentes.
 Objetivo integral ativo. Sem migração real, deploy, release, tag, merge ou restart.
 
 Community commit: 742b5a6; commit Core e pushes pareados a seguir, com verificação dos HEADs remotos e árvores limpas.
+
+### F3 — ações e contexto crítico sem Sprint operacional
+
+Em execução sobre Core784b4ec3 / Community742b5a6, par limpo/publicado.
+Investigação seguiu registry CriticalAction→guard→port→leitor SQL→fingerprint→
+audit. Cinco ações Sprint e resolver padrão ainda registrados; reader Community
+consultava Sprint do Card e contava Sprints da Spec. Nenhum consumer produtivo
+revalida recibo histórico por ctx_sha256_v1; o valor é emitido em audit_details,
+sem parse posterior como CriticalAction. Algoritmo de hash não foi alterado.
+Retiradas ações/resolver/leituras/contagem Sprint; snapshot Card exclui sprint_id
+mas conserva migrated_validation_policy/proveniência. Audit logs existentes não
+são migrados nem recalculados. Reader de teste Core acompanha contrato produtivo.
+Mutation permission helper deixa de classificar sprint_id como assign e recusa
+explicitamente sua presença (inclusive null), assim como os DTOs já faziam;
+assignee_id mantém card.entity.assign, demais flags/gates inalterados.
+Testes novos cobrem recusa antes de policy/SQL, dependências/testes preservados,
+fingerprint insensível a conteúdo Sprint mas sensível a Spec e audit antigo
+inalterado. Ruff aprovado; build pareado/proveniência/suites/closure pendentes.
+Sem dado real migrado nem liberação do runtime intermediário.
+
+Validação final do incremento (2026-09-21):
+- Core119 passed em f3-critical-context-core.log: guard/registry/wiring/audit,
+  permissões granulares REST/MCP, CRUD UoW, DTOs Sprint retirados, Done Spec,
+  novas recusas pré-policy/custom resolver e catálogo MCP gerado.
+- Community36 passed em f3-critical-context-community.log (73s): reader SQL real
+  com/sem policy migrada, Card/Spec sem consulta de tabela Sprint nem escrita,
+  dependências/testes/counters Card preservados; fingerprint permanece igual
+  após editar só Sprint e muda ao editar Spec; audit antigo fica idêntico.
+  Inclui application persistence e caracterização/seleção/reuso de Delivery,
+  preservando os contratos que dependem da admissão de contexto.
+- Frontend122 passed em f3-critical-context-ui.log: CardModal, dependências e
+  validation tabs de Spec. Aviso jsdom de canvas não implementado, sem falhas.
+  Total distinto277, sem retestes/falhas. Não equivale à matriz integral/E2E.
+- provenance-f3-critical-context.json e wheels-f3-critical-context:804/335 Python,
+  867/419 payloads fonte/wheel/site-packages byte-idênticos antes das suites.
+  Core agregadoeb65acc4ce991042fb041e2aafebddb29695c5eff046af57ae21c898ecef2840;
+  Communitya60ae4576bc540e4ae9ee94c8c706a7bb3a4e120d3f4691a5be1f0c1ae9ed210.
+  Wheel Core1827b86e107526ec11787c05a6ca0f66d719ba8983b3dd90f02da4aa404f927b;
+  Community245bab66db896e720caf80a68a2e123b936e312b16f650fb2917a1cbe0b381f0.
+  Nenhuma edição produtiva/reinstalação durante suites. Handles encerrados.
+- closure-f3-critical-context.json exit0,ok=true,findings=[],documentation_findings=[],
+  oito budgets0/0. Sem drift de README; Ruff/diff --check aprovados.
+  Nenhuma tool alterada; gate do catálogo gerado aprovado.
+- Frontend produtivo não alterado; verify:frontend-dist aprovou78 arquivos/hash
+  0f84989255db06e8990dd00a48bd3aad148089debd4eb1656399514ba10cdfdf.
+
+Retomada: CriticalAction/resolver não conhecem Sprint; campo de assignment legado
+recusado. Próxima frente concreta: domain/entities.py ainda declara sprints em
+Board/Spec; não foram encontrados consumers .sprints no Core. Community
+sqlalchemy_application_persistence tem mapas sprint/sprint_history/sprint_qa_item,
+parent scopes, QA relationship e coleção carregável; foram localizados mas não
+revisados integralmente. Rastrear seus callers e separar capture/offline da
+persistência operacional antes de retirar, preservando os contratos públicos.
+Manifests semânticos v1/quality, ACKs exatos e ORM/schema continuam dependentes
+da caracterização histórica; não cortar às cegas. Terminal offline runtime_ready,
+matriz DEI/ARQ/VER/ADV, E2E pareado/rollback, footprint MCP, benchmark e rollout
+seguem pendentes. Objetivo integral ativo. Sem migração real, deploy, release,
+tag, merge nem restart de runtime do usuário.
+
+Community commit730a303; commit Core/pushes pareados a seguir com verificação dos HEADs remotos e árvores limpas.

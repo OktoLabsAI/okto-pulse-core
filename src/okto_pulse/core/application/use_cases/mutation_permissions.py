@@ -9,7 +9,7 @@ from okto_pulse.core.application.use_cases.authorization import PermissionRequir
 from okto_pulse.core.domain.sdlc_registry import transition_permission_flag
 
 
-_CARD_ASSIGN_FIELDS = {"assignee_id", "sprint_id"}
+_CARD_ASSIGN_FIELDS = {"assignee_id"}
 _CARD_LABEL_FIELDS = {"labels"}
 _CARD_LINK_SPEC_FIELDS = {"spec_id"}
 _CARD_LINK_TEST_FIELDS = {"test_scenario_ids", "linked_test_task_ids"}
@@ -135,6 +135,10 @@ def card_update_permission_requirements(
     state: str | None = None,
 ) -> tuple[PermissionRequirement, ...]:
     fields = payload_fields_set(data)
+    if "sprint_id" in fields:
+        # DTOs already reject this field; transport-free callers must not
+        # reclassify a retired relationship as an ordinary content update.
+        raise ValueError("sprint_id_retired")
     operations: set[str] = set()
     if fields & _CARD_ASSIGN_FIELDS:
         operations.add("card.entity.assign")
