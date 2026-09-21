@@ -12089,3 +12089,109 @@ efeitos reais de fila/ACK/auditoria antes de definir revalidação pós-escrita.
 
 Commit Community: ebd9cdddbb53ea6d27d931f62ba7b4144d374e5f. Core segue com
 Protocol/planner/testes e este ledger; publicação pareada após prova pós-commits.
+
+### KG8.3 — execução exact em geração preservada (em validação)
+
+Retomada limpa do par6943266664f1e27370948580b10af553b8fb2e2e /
+ebd9cdddbb53ea6d27d931f62ba7b4144d374e5f, ambos publicados. Turno anterior foi
+progresso. Lidos worker exact, reserva/capability, composição Community, fila/ACK,
+active-set Grafx, janela offline e KG8.3. Objetivo integral continua ativo.
+
+Ensaio novo usa SQL+Grafx reais descartáveis, geração já existente e history/as_of
+capturado antes da projeção. Sem servidor/scheduler, purga ou mock de commit. O
+lineage da reserva da fixture é SHA do plano esperado; isso caracteriza o seam,
+não substitui o futuro binding de instalador a manifesto/backup/builds/geração.
+Prova prévia provenance-kg-exact-characterization.json confirmou806/344Python e
+869/428payloads idênticos ao par instalado antes de qualquer comportamento.
+
+Primeiras reproduções, preservadas nos logs:
+- kg-exact-characterization.log/2395: falha de fixture, embedding8 com schema384;
+  commit nativo foi compensado, não houve ACK de sucesso. Ajustado para384.
+- kg-exact-characterization-dim.log/84224: ACK e histórico passaram; assert final
+  procurava root Spec em Decision, enquanto contrato real usa Entity. Corrigido
+  o assert, sem alterar produto.
+- kg-exact-characterization-cleanup.log/44652:2passed34.69s. Fonte de negócio
+  permaneceu intacta; mudaram app_settings/consolidation_audit/domain_events/
+  exact_rebuild_consolidation_ack_journal/global_update_outbox/kuzu_node_refs.
+  Não excluir essas tabelas de migração genericamente: são apenas os efeitos
+  observados nesta população. Cleanup teve ACK, mas nó sintético já portava outra
+  revocation_reason e corretamente não a sobrescreveu. Fixture de membro ativo
+  ajustada para provar tombstone source_projection_removed, além de history.
+- kg-exact-characterization-owned.log/24061:1passed/1failed25.52s; fixture
+  usou None em superseded_by não-nullable. Corrigido para string vazia.
+
+Port público Core offline_kg_recovery expõe Protocol e factories sobre a mesma
+capability opaca existente. Reserva exata vincula Board/source/lineage a token
+vivo; renova antes do lote, verifica operação/token/TTL e lifetime externo, passa
+probe próprio ao worker existente e revoga no fim. Não expõe internals de lock
+ou factory de worker ao futuro adapter. Contenção não toma owner alheio; release
+usa CAS inclusive em erro de construção. Sem implementação física no Core.
+
+Teste nativo foi convertido para consumir esse port dentro da janela offline;
+testes Core cobrem autoridade falsa/Board errado/lifetime morto, lineage ausente,
+capability em outro run, token/operation/TTL/lifetime/scope perdidos, renovação
+recusada, contenção e falha de construção. Aguardam build/install/prova antes de
+rodar. Ainda não é coordenador completo de materialização/cutover nem autorização
+de dado real; não cria API/CLI pública de manutenção. Frontend sem alterações.
+
+Primeira rodada do port: install71389/proveniência808/344Python871/428payloads;
+Core86613 exit0:112passed5skipped9.73s (skips legados de formato filesystem, cujo
+owner é Community). Community93606 exit1:29passed1failed66.69s; no cleanup, o nó
+sintético não tinha aresta de propriedade exata e corretamente não foi assumido
+como derivado. Fixture agora contém owner Entity com source_ref exato e edge/rule
+RDL válido; um segundo nó sem edge deve continuar intacto. Closure40192 exit1 só
+por matriz README; findings arquiteturais vazios e budgets0. Renderer oficial
+atualizou ambos READMEs após término de todos os handles.
+
+Revisão das regressões post-commit mostrou que a nova fachada não deve descartar
+resultado typed retornado pelo worker após perda de authority: ACK durável é
+fato, não autorização para outro lote. Removida checagem redundante que convertia
+esse resultado em erro genérico antes de devolvê-lo. Próximo lote e saída normal
+continuam fail-closed. Ensaio nativo adicional derruba lifetime logo após commit
+SQL do ACK e exige ACKCOMMITTED, grafo finalizado/histórico íntegro e recusa de
+continuação. Rebuild pareado/testes finais em andamento, sem escrita real.
+
+### KG8.3 — reserva pública e ensaio exact validados
+
+Todos os handles encerrados. Install15191 exit0 e provenance-kg-exact-reservation-final.json
+confirmam808/344Python871/428payloads idênticos antes de iniciar os processos.
+Core38104 exit0:112passed5skipped9.05s; Community59575 exit0:31passed81.33s.
+Logs kg-exact-reservation-core-final.log e kg-exact-reservation-community-final.log.
+Total143 testes distintos passaram. Os5skips preexistentes em single_writer_lock
+declaram ownership Community para formato de manifesto, stale-recovery CAS,
+serialização/stale handling/concorrência de recovery lock; não foram removidos
+nem apresentados como testes executados. Rodadas anteriores/falhas de fixture
+permanecem nos logs discriminados acima.
+
+Os3 cenários nativos usam a porta pública nova: projeção normal, cleanup RDL com
+aresta/rule/owner exatos, e perda de lifetime imediatamente após commit SQL do
+ACK real. Confirmados UUID/binding/as_of inalterados, source Spec materializada,
+fila drenada apenas com ACK por trabalho, e fontes SQL do domínio preservadas.
+Cleanup mantém identidade/histórico, grava source_projection_removed no membro
+owned e preserva outro nó de ref semelhante sem prova de propriedade. No cenário
+post-commit, ACK é devolvido, native graph finaliza e contexto/continuação recusam
+authority perdida; não há compensação indevida de trabalho já committed.
+
+Closure72362 exit0:oktrue/findings/documentação vazios,8budgets0, arquivo
+closure-kg-exact-reservation-final.json. Renderer oficial atualizou importrows
+Core7440->7452 nos dois READMEs; Community1171. RuffF/E9/diff--check verdes.
+Wheels-kg-exact-reservation-final aggregates:
+Corea17bd7c94741488b725b36bdfc40f62b24c98d552e99724796b3ee1e312fa3c9;
+Community1bf39ea7c646eba2f7f3ca6f7899fc1f3419889b31de196cbfbaa10ec01fab1f.
+Código produtivo Community não mudou neste incremento: ensaio e matriz apenas.
+Sem frontend/API/MCP alterados, teste frontend não se aplica. Nenhum dado/runtime
+real, release/tag/deploy/merge afetado. Commit/push pareados e prova pós-commit
+devem conservar exatamente estes payloads.
+
+Próximo passo concreto: usar reserve_offline_consolidation no coordenador interno
+do candidato, com capability emitida somente durante a janela offline real e
+lineage ligado ao seed/manifesto/builds/generation. Não usar o SHA sintético da
+fixture como política do instalador. Composição deve isolar registries/SQL/rotas
+do original; enqueue também exige fences antes/depois do commit. Seis tabelas
+observadas são efeito a vincular a recibos, não whitelist global para ignorar
+drift. Retomada após escrita precisa de journal/ACK, não do replay byte-a-byte
+de candidato pristine. Integração ao candidato restaurado, reconciliação integral,
+schema/hashdelta autorizado, cutover/admissão e backlog completo continuam abertos.
+
+Commit Community: f423cc0d09cd4bc48d61b01be548d38198b4d0d4. Core publica a porta,
+política de reserva, testes, matriz e ledger; provar os bytes após commit e publicar.
