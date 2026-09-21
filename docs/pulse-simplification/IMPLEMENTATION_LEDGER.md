@@ -9174,3 +9174,35 @@ legada de policy exige coordenação com o corte offline. Demais pendências do
 ledger (schema, certificado runtime_ready, histórico, E2E/upgrade/rollback,
 benchmark, footprint e matriz integral) continuam ativas. Sem migração real,
 restart de runtime, release ou tag. Objetivo integral ainda não concluído.
+
+Complemento de verificação C7 (2026-09-21): o inventário posterior encontrou
+um teste de lista exata de campos não incluído na seleção anterior. Atualizado
+somente o contrato retirado: test_c7_card_page_item_schema deixa de exigir
+sprint_id e verifica sua ausência na serialização; preserva todas as asserções
+de enums, métricas, nulidade e privacidade Q&A. Prova pareada imediatamente antes:
+provenance-f5-sprint-surfaces-c7.json, 804/335 Python e 867/419 payloads idênticos.
+f5-sprint-surfaces-c7.log: 13 passed. Total distinto do incremento: 321.
+Nenhum payload produtivo mudou; não houve rebuild ou reinstalação adicional.
+Os commits 3ef0377fa67100a20b3c05dc92f1324d4a1b306e /
+31b359eff6f6cec89654e548b2c45076a96dece1 foram publicados e HEAD=remoto
+confirmado nos dois repositórios. Este complemento terá commit próprio no Core.
+
+Investigação para retomada dos contratos completos (sem alteração produtiva):
+- CardResponse usa validator AFTER com read_migrated_validation_policy(self).
+  Remover sprint_id sem validar a entrada bruta antes esconderia a combinação
+  inválida de override migrado e vínculo Sprint ainda ativo. Preservar a prova
+  de rejeição dessa combinação ao retirar o campo da saída.
+- CardCreate/CardUpdate aceitam extras por omissão: campo retirado deve causar
+  erro explícito, inclusive null/vazio, e não desaparecer silenciosamente.
+- main.update_card ainda verifica par Spec/Sprint e origem de hotfix; delete_card
+  ainda verifica Sprint.origin_bug_id. Coordenar retirada com testes reais de
+  preflight/CAS, Spec Done, cross-Board, regressão e captura F2B. Não apagar
+  simplesmente a leitura de policy anterior ao corte de migração.
+- Além de DTOs, restam refs em discovery_selector_catalog, context_projection,
+  campos MCP e _CARD_ASSIGN_FIELDS. Frontend mantém tipos CardSummaryForSpec,
+  Card e UpdateCardRequest; source_sprint_id do override é proveniência opaca.
+- Testes conhecidos a revisar: test_card_relation_preflight_invariants,
+  test_sprint_origin_lifecycle_guards, test_card_cross_board_hardening,
+  test_card_validation_config_read, tests de discovery e CardModal.
+O teste C7 está encerrado (exit 0); nenhum processo de validação desta etapa
+permanece ativo. Objetivo integral continua ativo; esta é uma entrega parcial.

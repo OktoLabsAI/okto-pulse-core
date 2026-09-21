@@ -12,7 +12,6 @@ EXPECTED_FIELDS = {
     "id",
     "board_id",
     "spec_id",
-    "sprint_id",
     "title",
     "description",
     "status",
@@ -57,7 +56,6 @@ ITEM = {
     "id": "card-1",
     "board_id": "board-1",
     "spec_id": None,
-    "sprint_id": None,
     "title": "Lightweight card",
     "description": None,
     "status": "in_progress",
@@ -108,7 +106,7 @@ def test_card_page_item_accepts_orm_nulls_and_reuses_domain_enums() -> None:
     item = CardPageItem.model_validate(ITEM)
 
     assert item.spec_id is None
-    assert item.sprint_id is None
+    assert "sprint_id" not in item.model_dump()
     assert item.labels is None
     assert item.status.value == "in_progress"
     assert item.priority.value == "high"
