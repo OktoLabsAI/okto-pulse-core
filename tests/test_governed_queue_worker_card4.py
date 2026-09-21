@@ -1079,10 +1079,12 @@ async def test_delete_between_extraction_and_publish_blocks_legacy_commit(monkey
         observed.append("extract")
         return worker_result
 
-    async def _passthrough(_db, _entry, _artifact, result):
+    async def _passthrough(_db, _entry, _artifact, result, *, persistence=None):
+        assert persistence is store
         return result
 
-    async def _resolve(_db, _board_id, result):
+    async def _resolve(_db, _board_id, result, *, persistence=None):
+        assert persistence is store
         return result
 
     async def _begin(*_args, **_kwargs):

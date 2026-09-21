@@ -47,10 +47,21 @@ from kg_registry_testing import configure_real_graph_test_kg_registry
 from sqlalchemy_domain_event_delivery_store import build_test_event_processor
 
 
-async def _seed_board_spec_card(db_factory, board_id: str, spec_id: str) -> str:
+@pytest.fixture(autouse=True)
+def _real_delivery_evidence_adapter(monkeypatch, _register_test_relational_application_adapter):
+    """Completion must use the actual card ledger, not the Spec-only test stub."""
+    from okto_pulse.community.adapters.relational_application import CommunityRelationalApplicationAdapter
+    from okto_pulse.core.ports.relational_application import require_relational_application_adapter
+
+    monkeypatch.setattr(require_relational_application_adapter(), 'delivery_evidence',
+        CommunityRelationalApplicationAdapter().delivery_evidence)
+
+
+async def _seed_board_spec_card(db_factory, board_id: str, spec_id: str, *, delivery_mode: str) -> str:
     """Board + spec(in_progress) + 1 card normal em in_progress. Retorna card_id."""
     async with db_factory() as db:
-        db.add(Board(id=board_id, name="valdone", owner_id="owner-valdone"))
+        db.add(Board(id=board_id, name="valdone", owner_id="owner-valdone",
+            settings={'delivery_evidence_gate': delivery_mode}))
         db.add(
             Spec(
                 id=spec_id,
@@ -89,7 +100,7 @@ async def _seed_board_spec_card(db_factory, board_id: str, spec_id: str) -> str:
     return card_id
 
 
-async def _approve_via_validation_gate(db_factory, board_id: str, card_id: str) -> dict:
+async def _approve_via_validation_gate(db_factory, board_id: str, card_id: str, *, expected_status='done') -> dict:
     """move→validation (com executor report) + resources N/A + submit_task_validation
     approve, tudo numa sessão; commit ao final para persistir os DomainEventRow."""
     async with db_factory() as db:
@@ -132,6 +143,10 @@ async def _approve_via_validation_gate(db_factory, board_id: str, card_id: str) 
                 "recommendation": "approve",
             },
         )
+        assert result['card_status'] == expected_status, result
+        if expected_status == 'rejected':
+            assert any(failure['code'] == 'delivery_evidence_incomplete'
+                for failure in result['completion_gate_failures'])
         await db.commit()
     return result
 
@@ -172,7 +187,9 @@ async def test_validation_gate_emits_card_moved_done(db_factory):
     DomainEventRow card.moved (validation→done) que o ConsolidationEnqueuer consome."""
     board_id = f"valdone-{uuid.uuid4().hex[:10]}"
     spec_id = f"spec-{uuid.uuid4().hex[:8]}"
-    card_id = await _seed_board_spec_card(db_factory, board_id, spec_id)
+    # This minimal fixture has no execution proof. Select the existing advisory
+    # policy explicitly; the blocking counterpart below must remain rejected.
+    card_id = await _seed_board_spec_card(db_factory, board_id, spec_id, delivery_mode='advisory')
 
     result = await _approve_via_validation_gate(db_factory, board_id, card_id)
     assert result["outcome"] == "success"
@@ -205,7 +222,8 @@ async def test_validation_gate_emits_card_moved_done(db_factory):
 
 
 @pytest.mark.asyncio
-async def test_validation_gate_promotes_card_to_canonical(db_factory):
+@pytest.mark.parametrize('delivery_mode,expected_status', [('advisory', 'done'), ('blocking', 'rejected')])
+async def test_validation_gate_promotes_card_to_canonical(db_factory, delivery_mode, expected_status):
     """ts_2d919388 (parte 2): após o evento, o enqueuer cria ConsolidationQueue(card)
     e, drenada a fila, card:<id> aparece em canonical-only (graph_layer=canonical)."""
     configure_real_graph_test_kg_registry()
@@ -215,9 +233,9 @@ async def test_validation_gate_promotes_card_to_canonical(db_factory):
         lambda: bootstrap_board_graph(board_id),
         task_name="test.validation-done.bootstrap-board",
     )
-    card_id = await _seed_board_spec_card(db_factory, board_id, spec_id)
+    card_id = await _seed_board_spec_card(db_factory, board_id, spec_id, delivery_mode=delivery_mode)
 
-    await _approve_via_validation_gate(db_factory, board_id, card_id)
+    await _approve_via_validation_gate(db_factory, board_id, card_id, expected_status=expected_status)
 
     # O ConsolidationEnqueuer consome os DomainEventRow via dispatcher.
     dispatcher = build_test_event_processor(db_factory)
@@ -278,6 +296,9 @@ async def test_validation_gate_promotes_card_to_canonical(db_factory):
     canonical = await _count_nodes(board_id, ref_prefix, canonical_only=True)
 
     assert total > 0, "o card não materializou nenhum node (teste vacuoso)"
+    if expected_status == 'rejected':
+        assert canonical == 0, 'validation approve cannot bypass blocking delivery evidence'
+        return
     assert canonical > 0, (
         "card done NÃO promoveu para canonical no KG — canonical-only por "
         f"{ref_prefix!r} retornou zero (o node ficou working)"

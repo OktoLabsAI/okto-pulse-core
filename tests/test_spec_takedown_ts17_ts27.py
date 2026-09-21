@@ -383,7 +383,7 @@ async def test_ts24_post_recheck_stale_publication_is_observable_then_converges(
         ),
     )
 
-    async def _passthrough(_db, _entry, _artifact_or_board, result):
+    async def _passthrough(_db, _entry, _artifact_or_board, result, *, persistence=None):
         return result
 
     monkeypatch.setattr(

@@ -11503,3 +11503,158 @@ terminal. Preservar os recibos sem congelar futuras mutações normais. Restam
 fontes vazias, compatibilidade semântica histórica, F4/F5, auditoria integral
 BASE/KG/DEI/ARQVER/ADV, E2E de instalação e benchmarks/rollout. Sem release/tag/
 deploy/merge; autorização e deprecation de F2B, grants F2A e gate F3 mantidos.
+
+### KG8.3 — fonte final e preparação determinística para o candidato (em implementação)
+
+Turno anterior classificado como progresso: par9bb19519/41e1402d publicado,
+limpo e byte-verificado; estado conferido novamente. O rebuild antigo usa fila/
+worker normal e purge/rematerialização da rota atual. Não basta chamá-lo no fim
+do bootstrap, pois writers normais seguem bloqueados e KG8.3 exige candidato
+reconciliado e geração nova. Em particular, um hash estrutural esperado não
+substitui as propostas reais emitidas pelo worker nem seus intents de limpeza.
+
+Implementação atual (ainda não validada): extrai apenas a preparação de fontes,
+nós, arestas, endpoints relacionais, missing links e active sets do processador
+Core, mantendo o worker normal no mesmo caminho. Porta pública
+core.ports.deterministic_projection permite ao Community preparar a mesma
+projeção, com provider explícito e checagem de Board, sem importar o privado.
+Nenhuma política de extração foi duplicada em Community e nenhuma gravação de
+grafo/fila/ACK é feita pela porta de preparação. Core mantém lógica/Protocol;
+SQLAlchemy/SQLite/publicação continuam em Community/adapters.
+
+Coordenador interno prepare_offline_retirement_projection_inputs completa/
+revalida bootstrap e, sob os mesmos fences de schema/startup/binding, prepara
+um artefato privado create-only. BEGIN IMMEDIATE fixa SQL; PRAGMA query_only e
+sessões read-only impedem gravações; snapshot completo é comparado ao recibo
+antes/depois, bindings e stamps de grafos também são revalidados. Captura todos
+os Boards/realms, fontes e cognição durável, preserva as partições do enumerador
+Core, e guarda as propostas reais. Ausência de fonte/Board divergente/Sprint
+ou fonte sem classificação demonstrada falha fechado. Emissão esperada ainda
+não certifica materialização, reconciliação, cutover ou runtime_ready.
+
+Faltam nesta frente: validar a porta e o consumo do fixture real; depois executar
+as propostas no candidato isolado, incluir closure de dependências (Code Evidence
+histórica inclusive), preservar cognição e temporalidade, reconciliar conjuntos
+ativos/endpoints, geração nova e cutover. Não reduzir a entrega ao artefato de
+preparação e não tratar seus hashes como prova de grafo pronto. Nenhuma alteração
+semântica/autoridade nova requer decisão neste recorte; autorizações anteriores
+mantidas. Não há suíte viva neste momento; build/install/paridade precederão os
+testes de comportamento. Modificações ainda sem commit.
+
+Primeira validação: build/install wheels-kg-projection-inputs e
+provenance-kg-projection-inputs.json confirmaram806/343Python869/427payloads iguais.
+10941 encerrou exit0/14passed3.42s (porta nova + adapters de consolidação existentes).
+53067 encerrou exit0/1passed37.75s: fixture congelada v034 atravessou bootstrap,
+preparou Spec/Card finais e manteve dump SQL byte-equivalente e runtime bloqueado.
+Nenhuma sessão de grafo foi iniciada. Sem edição produtiva durante essas suítes.
+
+Após encerramento, acrescentados guard de identidade da fonte/cognição por Board,
+proteção do backup original contra destino aninhado e deadline do censo SQLite.
+Novos negativos cobrem concorrência SQL, gravação acidental pelo preparador,
+restauração do query_only da conexão e destination antes de transformar dados.
+É necessário rebuild/install/prova para essas mudanças antes de novos testes.
+
+Investigação adicional: _default_materialiser em core/kg/rebuild_deterministic.py
+é explicitamente identity materialiser (um nó por fonte, nenhuma aresta). O adapter
+antigo instancia DeterministicStructuralRebuilder sem materialiser específico.
+Seu hash, isoladamente, portanto não demonstra as propostas reais da projeção.
+A porta nova prepara a emissão real compartilhada com o worker, mas não altera
+o hash/gate legado nem afirma materialização. A autorização de delta controlado
+para o cutover deve continuar vinculada ao manifesto/backup/par, conforme KG8.3.
+
+Validação guarded: wheels-kg-projection-guarded instalados, prova
+provenance-kg-projection-guarded.json confirma806/343Python869/427payloads iguais.
+Community87158 encerrou exit0:17passed342.52s, incluindo três testes novos,
+bootstrap/replay e closure CodeEvidence/rebuild real existente. Core82844 ainda
+em execução274casos; houve falha em validation_gate_promotes_card_to_canonical.
+Reprodução isolada81503 iniciada com o mesmo payload, sem edição/reinstall.
+Investigar causa antes de concluir regressão ou alterar semântica.
+Closure72601 terminou exit1 somente por matriz README desatualizada;
+findings de produto vazios e oito budgets0. Renderer oficial atualizou
+Community-to-Core import rows1170→1171 nos READMEs. Builds finais ainda pendentes.
+Identificado limite agregado a aplicar na acumulação de planos antes do seal;
+a edição aguarda todas as suítes encerrarem. Artefato continua preparatório,
+sem prova de candidato materializado/reconciliado ou autorização de runtime.
+
+Investigação executada sem alterar o código das suítes vivas. O par anterior
+9bb19519/41e1402d foi montado em worktrees descartáveis projection-baseline,
+com venv próprio e wheels-f2-native-documented. Apenas finais de linha dos
+payloads dessas cópias foram alinhados aos wheels, após igualdade normalizada;
+provenance-projection-baseline.json confirma804/342Python867/426payloads iguais.
+85701 encerrou1: falha canônica do Card reproduzida antes desta extração;
+replay cognitivo Spec passou isolado (1failed1passed42.41s). Não relaxar gate.
+
+Core82844 parou de progredir no setup do caso seguinte, bootstrap de índices
+Grafx. Duas capturas py-spy do PID41764 mostram espera em _open_lock_file/
+_publish_page/_undo_pages/create_index. Processo de teste identificado pelo
+comando completo e encerrado pontualmente;82844 exit1. Logs/stacks retidos.
+Esta suíte interrompida NÃO é uma prova274verde; casos restantes serão rodados
+com timeout efetivo em processo novo. Nenhum runtime de usuário foi parado.
+Após todos os handles terminarem, limitado o acúmulo de propostas Core e
+Community antes de ler a próxima fonte/Board; negativos testam parada antecipada
+e ausência de publicação. READMEs também registram Core import rows7421→7436.
+Builds wheels-kg-projection-final passaram; reinstall em andamento, depois prova
+byte-a-byte e novos processos. Falha canônica ainda em investigação causal.
+
+### KG8.3 — validação da preparação final e limites deste incremento
+
+Par instalado final: wheels-kg-projection-final, provenance-kg-projection-final.json:
+806/343Python,869/427payloads idênticos. Core aggregate
+4b0d61110699e4cdeaf35270a0ae8846ecd1920150838fbca358948eb7d0ef41;
+Community aggregate5844ddd20c2ea57d700878e9274dc91010e4e1e4eba586dc2f9cf2d727844e8d.
+Closure21816 exit0: closure-kg-projection-final.json oktrue,
+findings/documentation_findings vazios, oito budgets0. RuffF/E9 e diff--check
+passaram. Nenhuma mudança produtiva depois dessa prova; ajustes finais só em testes.
+
+Resultados e investigação, sem esconder a execução interrompida:
+- Community87158:17passed342.52s;76351:4passed97.73s. União18casos distintos
+  (os três primeiros testes novos repetiram; agregado é o quarto novo caso).
+- Core82844 interrompido por espera nativa comprovada em duas stacks, conforme
+  registro acima. Quatro casos tinham falhado: dois de validação→done, mock do
+  provider em delete_between_extraction e replay cognitivo Spec.
+- 30339:30passed1failed101.43s. Os seis casos de replay cognitivo passaram em
+  processo novo; o único erro foi outro mock sem o novo keyword persistence,
+  observado como TypeError da task antes de seu evento de commit (não falha do CAS).
+- Mocks de test_governed_queue_worker_card4 e test_spec_takedown_ts17_ts27
+  atualizados para aceitar o provider explícito. Asserções de fencing, ausência
+  de publicação e convergência preservadas. Ambos passaram em52525.
+- A falha canônica anterior foi reproduzida no par9bb19519/41e1402d byte-verificado.
+  Diagnóstico40687 mostrou completion_outcome=rejected por adaptador card-ledger
+  ausente. Com o adapter real, a fixture minimalista ainda não possui execução
+  comprovada: a rejeição blocking é correta e não deve ser mascarada.
+  O teste agora compõe o adapter real, exige status terminal explicitamente e
+  testa ambos os modos existentes: advisory→done→canonical; blocking sem prova
+  →rejected→zero canonical (total de nós positivo em ambos). A configuração
+  advisory é explícita apenas na fixture positiva; default/gates de produto
+  permanecem blocking. Não alegar evidência de execução inexistente.
+- 88047:4passed34.21s (eventos, projeção nos dois modos, manifesto).
+  projection_result_inventory.py consolida276casos Core distintos com resultado
+  final PASSED, incluindo os12 novos da porta. Isso NÃO significa que a suíte
+  única274tenha terminado: seu bloqueio nativo/isolation precisa permanecer
+  registrado para o saneamento da suíte ampla, sem atribuir causa sem prova.
+
+O incremento disponibiliza fonte final autenticada e propostas reais do mesmo
+preparador usado pelo worker normal, sob os fences de bootstrap/SQL/binding.
+Inclui proveniência do backup/par/run, cognição durável, relógio do census,
+classificação, endpoints e active-set intents, limites individuais/agregados,
+create-only e revalidação antes/depois. Não cria endpoint/tool/CLI de manutenção.
+Não houve mudança de frontend/REST/DTO público/assets/MCP/catalog; não cabe teste
+frontend novo neste recorte interno. Nenhuma fixture congelada foi regenerada.
+
+Próxima implementação obrigatória: aplicar closure histórica CodeEvidence usando
+_resolve_evidence_dependency_closure existente (candidatos manifest-bound),
+construir/materializar candidato isolado com schema final e história preservada,
+reconciliar fontes/arestas/active sets/órfãos/temporalidade; provar delta esperado
+por manifesto/backup/par; gerar nova geração e cutover retomável, consultas e
+admissão terminal. O documento de propostas ainda não é prova de grafo pronto.
+Seu leitor valida hash/formato/canonicalização; o futuro consumidor deve validar
+contrato completo e revalidar a origem, sem tratar documento JSON como autoridade.
+Permanecem backlog fontes vazias, demais critérios BASE/KG/DEI/ARQVER/ADV,
+instalação pareada/rollback de runtime, F4/F5, benchmarks e rollout. Objetivo
+integral continua ativo, sem release/tag/deploy/merge nem intervenção em dados reais.
+
+Community commit10ecf502bae5bccfe563f97a1ac2332445b1ab13 consolida a captura
+privada sob fences e os quatro testes novos. Core commit deste registro consolida
+a porta/preparador compartilhado e as regressões corrigidas. Prova pós-commits
+provenance-kg-projection-committed.json deve vincular os mesmos payloads ao par
+final; pushes somente feature/v0.4.0, conferindo local=remote e working trees limpas.

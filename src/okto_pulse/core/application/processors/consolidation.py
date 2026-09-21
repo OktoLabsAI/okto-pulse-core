@@ -2259,6 +2259,8 @@ async def _materialize_lineage_endpoint_nodes(
     entry: ConsolidationQueueRecord,
     artifact,
     result: WorkerResult,
+    *,
+    persistence=None,
 ) -> WorkerResult:
     """Add local parent/root nodes needed by deterministic lineage edges.
 
@@ -2273,7 +2275,7 @@ async def _materialize_lineage_endpoint_nodes(
             if getattr(link, "story_id", None)
         ]
         if story_ids:
-            stories = await get_consolidation_persistence_port().list_artifacts(
+            stories = await (persistence or get_consolidation_persistence_port()).list_artifacts(
                 db,
                 artifact_type="story",
                 artifact_ids=story_ids,
@@ -2289,7 +2291,7 @@ async def _materialize_lineage_endpoint_nodes(
         return result
 
     if entry.artifact_type == "refinement" and getattr(artifact, "ideation_id", None):
-        ideation = await get_consolidation_persistence_port().load_artifact(
+        ideation = await (persistence or get_consolidation_persistence_port()).load_artifact(
             db,
             artifact_type="ideation",
             artifact_id=artifact.ideation_id,
@@ -2306,7 +2308,7 @@ async def _materialize_lineage_endpoint_nodes(
 
     if entry.artifact_type == "spec":
         if getattr(artifact, "refinement_id", None):
-            refinement = await get_consolidation_persistence_port().load_artifact(
+            refinement = await (persistence or get_consolidation_persistence_port()).load_artifact(
                 db,
                 artifact_type="refinement",
                 artifact_id=artifact.refinement_id,
@@ -2320,7 +2322,7 @@ async def _materialize_lineage_endpoint_nodes(
                     rule_slot="refinement",
                 )
         elif getattr(artifact, "ideation_id", None):
-            ideation = await get_consolidation_persistence_port().load_artifact(
+            ideation = await (persistence or get_consolidation_persistence_port()).load_artifact(
                 db,
                 artifact_type="ideation",
                 artifact_id=artifact.ideation_id,
@@ -2343,6 +2345,8 @@ async def _materialize_authoritative_overlap_endpoint_nodes(
     entry: ConsolidationQueueRecord,
     artifact: Any,
     result: WorkerResult,
+    *,
+    persistence=None,
 ) -> WorkerResult:
     """Stage complete authoritative target roots before overlap relations.
 
@@ -2369,7 +2373,7 @@ async def _materialize_authoritative_overlap_endpoint_nodes(
     if not overlap_target_ids:
         return result
 
-    persistence = get_consolidation_persistence_port()
+    persistence = persistence or get_consolidation_persistence_port()
     existing_refs = {node.source_artifact_ref for node in result.nodes}
     for raw_peer_id in overlap_target_ids:
         peer_id = str(raw_peer_id or "").strip()
@@ -2467,6 +2471,8 @@ async def _resolve_missing_link_candidates(
     db: Any,
     board_id: str,
     result: WorkerResult,
+    *,
+    persistence=None,
 ) -> WorkerResult:
     """Resolve structured cross-artifact Bug links before commit.
 
@@ -2491,7 +2497,7 @@ async def _resolve_missing_link_candidates(
     if not target_ids:
         return result
 
-    rows = await get_consolidation_persistence_port().list_artifacts(
+    rows = await (persistence or get_consolidation_persistence_port()).list_artifacts(
         db,
         artifact_type="card",
         artifact_ids=tuple(target_ids),
@@ -2506,7 +2512,7 @@ async def _resolve_missing_link_candidates(
         if card.id in test_task_ids and card.spec_id
     }
     if spec_ids:
-        specs = await get_consolidation_persistence_port().list_artifacts(
+        specs = await (persistence or get_consolidation_persistence_port()).list_artifacts(
             db,
             artifact_type="spec",
             artifact_ids=tuple(spec_ids),
@@ -3018,46 +3024,13 @@ async def _process_stale_reconcile_entry(
     return True
 
 
-async def _process_queue_entry(
-    db: Any,
-    entry: ConsolidationQueueRecord,
-    *,
-    blocking_execution: BlockingExecutionPort | None = None,
-    clock: WorkerClockPort | None = None,
-    stale_reconcile_telemetry: dict[str, object] | None = None,
-    deferred_session_ids: list[str] | None = None,
-    enter_graph_write: _GraphWriteEnter | None = None,
-) -> bool | StaleSweepRunReceipt:
-    """Process one queue entry through the primitives pipeline.
-    Returns True on success, False on failure."""
+async def _prepare_deterministic_projection(db, entry, *, persistence=None):
+    """Read the same authoritative inputs for live consolidation and offline planning.
 
-    if entry.artifact_type == "sprint":
-        # Only the fenced offline migration may supersede historical work.
-        # Never run a stale sweep/reconcile or create a new graph projection.
-        raise ValueError("retired_sprint_work_requires_offline_cutover")
-
-    if _work_kind(entry) == "stale_sweep":
-        return await _process_stale_sweep_entry(
-            db,
-            entry,
-            clock=clock,
-        )
-    if _work_kind(entry) == "stale_reconcile":
-        return await _process_stale_reconcile_entry(
-            db,
-            entry,
-            blocking_execution=blocking_execution,
-            clock=clock,
-            telemetry_details=stale_reconcile_telemetry,
-            enter_graph_write=enter_graph_write,
-        )
-    if _work_kind(entry) != "consolidate":
-        logger.warning(
-            "unsupported consolidation work_kind: %s",
-            _work_kind(entry),
-        )
-        return False
-
+    No queue mutation, graph session, reconciliation, ACK or cognitive extraction
+    is performed here. True is the existing cancelled-source no-op; False means
+    that the source cannot be loaded or its type is unsupported.
+    """
     if entry.artifact_type not in {
         "story",
         "ideation",
@@ -3071,7 +3044,7 @@ async def _process_queue_entry(
     }:
         logger.warning("unknown artifact_type: %s", entry.artifact_type)
         return False
-    persistence = get_consolidation_persistence_port()
+    persistence = persistence or get_consolidation_persistence_port()
     artifact = await persistence.load_artifact(
         db,
         artifact_type=entry.artifact_type,
@@ -3177,18 +3150,68 @@ async def _process_queue_entry(
             entry,
             artifact,
             worker_result,
+            persistence=persistence,
         )
         worker_result = await _materialize_authoritative_overlap_endpoint_nodes(
             db,
             entry,
             artifact,
             worker_result,
+            persistence=persistence,
         )
         worker_result = await _resolve_missing_link_candidates(
             db,
             entry.board_id,
             worker_result,
+            persistence=persistence,
         )
+    return worker_result, artifact
+
+
+async def _process_queue_entry(
+    db: Any,
+    entry: ConsolidationQueueRecord,
+    *,
+    blocking_execution: BlockingExecutionPort | None = None,
+    clock: WorkerClockPort | None = None,
+    stale_reconcile_telemetry: dict[str, object] | None = None,
+    deferred_session_ids: list[str] | None = None,
+    enter_graph_write: _GraphWriteEnter | None = None,
+) -> bool | StaleSweepRunReceipt:
+    """Process one queue entry through the primitives pipeline.
+    Returns True on success, False on failure."""
+
+    if entry.artifact_type == "sprint":
+        # Only the fenced offline migration may supersede historical work.
+        # Never run a stale sweep/reconcile or create a new graph projection.
+        raise ValueError("retired_sprint_work_requires_offline_cutover")
+
+    if _work_kind(entry) == "stale_sweep":
+        return await _process_stale_sweep_entry(
+            db,
+            entry,
+            clock=clock,
+        )
+    if _work_kind(entry) == "stale_reconcile":
+        return await _process_stale_reconcile_entry(
+            db,
+            entry,
+            blocking_execution=blocking_execution,
+            clock=clock,
+            telemetry_details=stale_reconcile_telemetry,
+            enter_graph_write=enter_graph_write,
+        )
+    if _work_kind(entry) != "consolidate":
+        logger.warning(
+            "unsupported consolidation work_kind: %s",
+            _work_kind(entry),
+        )
+        return False
+
+    preparation = await _prepare_deterministic_projection(db, entry)
+    if isinstance(preparation, bool):
+        return preparation
+    worker_result, artifact = preparation
     node_candidates = [_worker_node_to_candidate(n) for n in worker_result.nodes]
     edge_candidates = [_worker_edge_to_candidate(e) for e in worker_result.edges]
     raw_content = worker_result.raw_content
