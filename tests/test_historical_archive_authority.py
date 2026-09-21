@@ -10,16 +10,19 @@ from okto_pulse.core.ports.historical_archive import (
     archive_section_is_readable, capture_archive_read_sections, parse_archive_read_grant,
 )
 from okto_pulse.core.ports.permission_policy import PermissionSet
+from okto_pulse.core.ports.historical_archive_authority import capture_authenticated_human_sections_v034
 
 
-AUTHORITIES = dict(content_permission="sprint.entity.read", qa_permission="sprint.qa.read",
-    evaluations_permission="sprint.evaluations.read", history_permission="sprint.history_read")
+# Generic capture accepts currently registered source authorities. Sprint's
+# original decisions belong to the separately frozen v0.3.4 migration port.
+AUTHORITIES = dict(content_permission="spec.entity.read", qa_permission="spec.qa.read",
+    evaluations_permission="spec.evaluations.read", history_permission="spec.history_read")
 SCOPE = ArchiveSourceScope("realm-a", "board-a", "opaque-origin", "original-id")
 
 
 @pytest.mark.parametrize(("root", "qa", "evaluations", "history"), list(product((False, True), repeat=4)))
 def test_source_root_and_each_section_are_preserved(root, qa, evaluations, history):
-    permissions = PermissionSet({"board": {"read": True}, "sprint": {
+    permissions = PermissionSet({"board": {"read": True}, "spec": {
         "entity": {"read": root}, "qa": {"read": qa},
         "evaluations": {"read": evaluations}, "history_read": history,
     }})
@@ -29,10 +32,18 @@ def test_source_root_and_each_section_are_preserved(root, qa, evaluations, histo
 
 def test_absent_legacy_leaves_use_existing_policy_while_explicit_denials_win():
     assert capture_archive_read_sections(PermissionSet({}), **AUTHORITIES) == ArchiveReadSections(True, True, True, True)
-    sections = capture_archive_read_sections(PermissionSet({"sprint": {"qa": {"read": False}}}), **AUTHORITIES)
+    sections = capture_archive_read_sections(PermissionSet({"spec": {"qa": {"read": False}}}), **AUTHORITIES)
     assert sections == ArchiveReadSections(True, False, True, True)
     reviewed = PermissionSet({}, owner_review_required=True, review_reason="unknown_lineage")
     assert capture_archive_read_sections(reviewed, **AUTHORITIES) == ArchiveReadSections(False, False, False, False)
+
+
+def test_retired_source_requires_frozen_capture_and_never_live_permission_registration():
+    original = {"sprint": {"qa": {"read": False}}}
+    with pytest.raises(ValueError, match="source_authority_unknown"):
+        capture_archive_read_sections(PermissionSet(original),
+            **{key: value.replace("spec.", "sprint.") for key, value in AUTHORITIES.items()})
+    assert capture_authenticated_human_sections_v034(original) == ArchiveReadSections(True, False, True, True)
 
 
 @pytest.mark.parametrize("changed", ["realm_id", "board_id", "origin_kind", "origin_id", "actor_id", "actor_kind", "grant", "current_board_access", "current_section_permission"])

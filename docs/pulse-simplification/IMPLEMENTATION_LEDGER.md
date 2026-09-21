@@ -9679,3 +9679,68 @@ para _EXACT_REBUILD_SOURCE_ARTIFACT_TYPES usado em ACK/journal.
 Corte schema/terminal offline runtime_ready, matriz integral DEI/ARQ/VER/ADV,
 E2E pareado/rollback, footprint MCP, benchmark e rollout permanecem pendentes.
 Objetivo integral ativo; este incremento não libera runtime intermediário.
+
+### F3 — exportação operacional sem Sprint
+
+Em execução sobre Core615b6864 / Communityfa67572, árvores limpas/publicadas.
+Trilha investigada: tipo Core→permissão raiz→read port→adapter SQL→REST→renderers
+passivos→tipos/dialog frontend. Export ainda aceitava Sprint raiz, consultava
+sprints na seção de Spec e projetava cards.sprint_id como campo bruto.
+Removidos tipo/permission mapping/REST allowlist/assembler Sprint e seção Spec;
+Card base não seleciona nem projeta vínculo operacional legado. Overrides
+migrados/proveniência e histórico de avaliações continuam no conteúdo permitido.
+Não há mudança de permissão nas seções remanescentes nem no arquivo F2A.
+Renderer passivo conserva interpretação de documentos históricos já produzidos,
+sem reintroduzir entidade/autorização Sprint. Teste usa payload v1 sintético
+histórico, não é baseline capturado nem prova do upgrade integral T45.
+Testes novos cobrem recusa REST pré-materialização, enum fechado, SQL real sem
+consulta Sprint/sem escrita e preservação dos registros legados após export.
+Frontend retira tipo/label Sprint; suites do diálogo/API/wiring serão executadas.
+Ruff passou. Build/proveniência/suites/closure pendentes; sem migração real.
+
+Validação final do incremento (2026-09-21):
+- Core rodada inicial110 passed/17 failed (f3-entity-export-core.log). Falhas
+  localizadas em test_historical_archive_authority: teste genérico de captura
+  consultava sprint.* no registry vivo já retirado. Port/registry produtivos
+  não mudaram neste incremento; o adapter sprint_retirement_access usa a porta
+  congelada historical_archive_authority v034. Nenhuma permissão foi reaberta.
+- Teste genérico passou a usar as mesmas quatro seções de Spec, ainda registradas;
+  acrescentada recusa explícita de captura Sprint pelo catálogo vivo e preservação
+  de sua negação de QA pela porta congelada. Matriz histórica original executada
+  sem edição/regeneração. f3-entity-export-authority-final.log:374 passed (34 da
+  autoridade genérica/retirada,340 v034). Core total distinto468 (127-33+374).
+  Inclui contrato de export, consistent read/escopo, histórico, catálogo MCP e
+  integridade da fonte imutável de policy v034. Sem alteração semântica produtiva
+  durante a correção; somente testes depois da primeira rodada.
+- Community65 passed em f3-entity-export-community.log (54s): export reader,
+  REST/renderers, limite explícito, snapshot fingerprint, conteúdo rich media,
+  project structure e leitura do arquivo histórico. Sprint raiz retorna404 antes
+  de materializar; seção sprints em Spec é desconhecida antes do SQL; Spec ainda
+  inclui Cards; base Card omite sprint_id. SQL real não lê Sprint nem escreve,
+  e a fixture confirma que Card/Sprint históricos permanecem inalterados.
+- Frontend21 passed em f3-entity-export-ui.log: diálogo/API/wiring de export.
+  Total distinto554; repetições não somadas. Não prova T45 integral nem E2E final.
+- Build tsc/Vite/sync e verify:frontend-dist aprovados:78 arquivos/hash
+  0f84989255db06e8990dd00a48bd3aad148089debd4eb1656399514ba10cdfdf.
+- provenance-f3-entity-export.json, wheels-f3-entity-export:804/335 Python,
+  867/419 payloads fonte/wheel/site-packages idênticos byte a byte antes das suites.
+  Core agregado5f8950cdf7185875604fa174fb5420dc856b9ce57375449d04ccee408d8e0e8f;
+  Community2ae5f2dc25502a20f832b6f6844b5782021a4feba1c06fd896df50463e366b09.
+  Wheel Core4b4deabc0975ed01616d6db497bcd3ad1aeebb8f43e913f365c9afba97c7a44e;
+  Communityc847828c1f110289a0a1bf49972a1058461d19ae7bcd8199d277c275284c5980.
+  Nenhuma edição produtiva ou reinstalação durante testes ativos.
+- closure-f3-entity-export.json exit0,ok=true,findings=[],documentation_findings=[];
+  oito budgets0/0. Sem drift de README; Ruff/diff --check aprovados; catálogo
+  gerado passou byte a byte e nenhuma tool mudou. Todos os handles encerrados.
+
+Retomada: export vivo não enumera Sprint; renderer conserva somente leitura
+passiva dos documentos existentes. Remanescentes localizados (não revisados por
+inteiro): CriticalAction.SPRINT_* e suas cinco definições em critical_context_guard;
+_CARD_ASSIGN_FIELDS em mutation_permissions ainda contém sprint_id. Investigar
+consumidores/recibos e retirar operações antes de cortar ORM/UoW/enums. Manifests
+semânticos v1/quality e ACKs exatos requerem caracterização histórica própria.
+Corte schema/terminal offline runtime_ready, matriz integral DEI/ARQ/VER/ADV,
+E2E pareado/rollback, footprint MCP, benchmark e rollout continuam pendentes.
+Objetivo integral ativo. Sem migração real, deploy, release, tag, merge ou restart.
+
+Community commit: 742b5a6; commit Core e pushes pareados a seguir, com verificação dos HEADs remotos e árvores limpas.

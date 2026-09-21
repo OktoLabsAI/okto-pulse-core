@@ -39,7 +39,6 @@ class EntityExportType(str, Enum):
     IDEATION = "ideation"
     REFINEMENT = "refinement"
     SPEC = "spec"
-    SPRINT = "sprint"
     CARD = "card"
     TEST_SCENARIO = "test_scenario"
 
