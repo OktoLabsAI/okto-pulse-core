@@ -11797,3 +11797,133 @@ ativo; outros critérios BASE/KG/DEI/ARQVER/ADV, F4/F5, instalação e benchmark
 continuam no backlog consolidado, sem release/tag/deploy/merge.
 
 Commit Community do incremento: 1829c14d35ee04dee02bf5b2fda6b5240e53944f. Core registra apenas o ledger neste par; validação pós-commit e pushes seguem antes da próxima alteração.
+
+### KG8.3 — retomada do candidato restaurado (em implementação)
+
+Par anterior publicado e limpo: Core5b694378043985b2a9397fd8c75eb5d193f56b6a /
+Community1829c14d35ee04dee02bf5b2fda6b5240e53944f. Prova pós-commits
+provenance-kg-native-candidate-committed.json confirmou os mesmos806/344Python
+e869/428payloads; ambos HEAD=origin/feature/v0.4.0.
+
+Investigação da retomada: o recibo metadata-only não atesta payloads; o lease é
+legitimamente alterado por okto_grafx.backup.restore_backup, preservando UUID e
+epoch e liberando apenas a cópia. Leituras geram mutexes nativos vazios. Não
+interpretar/regravar formatos nativos próprios, nem dispensar histórico/lease.
+Implementação em curso reconstrói referência descartável pelo mesmo caminho de
+restore/composição, sob os mesmos guards, e compara inventário/bytes completo
+com candidato existente. Exclui apenas mutexes vazios de startup e nomes nativos
+fechados sob control das gerações ativas selecionadas; nunca leases, commit.state,
+histórico, arquivos desconhecidos nem bytes de gerações inativas/audit.
+
+Replay exige confirmação explícita de candidato offline além da original e
+adquire mutexes de startup do candidato. Não sobrescreve/adota conteúdo divergente;
+recibo adulterado, SQL/arquivo extra/histórico alterado ou nova erasure recusam.
+Modo publish=False é privado à composição de recovery, limpa referência ao sair,
+e não altera a API pública de restore. Perda de resposta após publicação deve
+retomar usando seed retido, sem exigir hash devolvido pela resposta perdida.
+Custo conhecido: uma restauração adicional e duas leituras de payload no replay;
+não é otimização de materialização nem prova terminal/cutover.
+
+Testes preparados (ainda não executados): replay de Board com histórico, recusa de
+mutação de system-history.dat, perda de resposta após rename, adulteração de
+recibo/SQL/arquivo extra, erasure posterior e limpeza da referência. Sem mudanças
+Core produtivo, frontend, REST, MCP ou autoridade. Build/install/prova precederão
+execução comportamental. Não houve suite viva durante as alterações.
+
+Validação em curso wheels-kg-candidate-replay: install63005 exit0, prova
+provenance-kg-candidate-replay.json806/344Python869/428payloads iguais. Closure87080
+exit0/oktrue/findings/documentação vazios e8budgets0. RuffF/E9 e diff--check passam.
+Suíte8537: Board histórico+replay+adulteração temporal e perda de resposta+negativos
+passaram; faltam terminar outros casos. Regressão80862 continua, não interrompida.
+Captura py-spy30904 em kg-candidate-replay-live-stack.txt mostrou verificação nativa
+em progresso, sem evidência de deadlock. Nenhuma edição produtiva durante suítes.
+
+Revisão adicional: reject_filesystem_alias_ancestry cobre symlinks/reparse points,
+mas não hardlinks. Antes de aceitar o replay como cópia independente, rejeitar
+payload com st_nlink != 1; caso contrário bytes iguais poderiam compartilhar um
+inode com a origem e prejudicar futura materialização. Correção/teste ficam para
+após término de todos os handles vivos, com rebuild/prova antes do reteste.
+
+8537 exit0:4passed392.50s;80862 exit0:33passed629.58s. Todos os handles encerrados.
+Só depois disso a proteção de hardlinks foi aplicada: qualquer payload/mutex com
+st_nlink != 1 é recusado; mutexes de startup são pré-validados antes de FileLock
+poder truncar/abrir um alias. Teste inclui mutex compartilhado vazio e não vazio,
+preservando o arquivo externo, e recibo byte-idêntico compartilhado. Ensaio de
+2Boards+Global agora também faz replay; esses acréscimos ainda aguardam novo par
+wheels/prova/reteste. Public restore manteve comportamento (33 regressões verdes).
+
+Próxima dependência investigada durante os testes (sem edição produtiva):
+reproduce_cancelled_refinement_plan.py/.json no scratch, executado contra os bytes
+provados por provenance-kg-candidate-replay-final.json, confirma que prepare()
+para Refinement cancelled retorna RDL active_refs/active_edges vazios, enquanto
+prepare_board() retorna plans=[] e skipped_cancelled_count=1. Enumerador exclui
+cancelados de materializable_sources; logo o plano agregado ainda não leva essa
+limpeza explícita ao futuro executor. Reprodução usa fonte sintética e port de
+leitura, não dados reais nem um novo gate. Antes de aplicar planos ao candidato
+nativo preservado, incluir/reconciliar cleanup já exigido pelo worker sem inflar
+census/denominador, reativar raiz cancelada ou inventar arestas. Investigar também
+expired working/active sets e compatibilidade dos planos retidos; esta reprodução
+não autoriza reinterpretação silenciosa de artefatos anteriores.
+
+Composição futura localizada: configure_community_kg_registry(session_factory,
+settings explícitos) registra readers, fonte cognitiva, ledger de equivalência,
+subtypes, providers de grafo/rota/audit/ingestão/health. Não é chamada de materialização
+nem inicia o process_exact_batch por si. Preferir isolamento de processo e sessão
+exclusiva do candidato, sem create_app/init_db/start de scheduler. Worker exige
+reserva viva token/epoch e lineage; drain_until_idle de ingestão apenas observa
+profundidade e não fornece as disposições exatas exigidas para terminalidade.
+
+Install48962 exit0 e provenance-kg-candidate-replay-final.json provam806/344Python,
+869/428payloads iguais. Closure53292 exit0/oktrue/8budgets0/sem findings. Suite95336
+passou Board nativo e source drift; teste novo de alias falhou antes do ataque ao
+mutex: a fixture fazia unlink() após FileLock do Windows já remover o rendezvous
+em _release (fonte instalada inspecionada). Apenas teste corrigido para
+unlink(missing_ok=True), sem alteração/reinstall produtivos. Reteste60590 usa o
+mesmo par provado;95336 continua no ensaio2Boards+Global. Confirmar traceback e
+terminais antes de contabilizar todos os casos e publicar.
+
+### KG8.3 — replay do candidato restaurado validado
+
+Todos os handles encerrados.95336 exit1:3passed/1failed362.07s; o traceback confirmou
+exclusivamente FileNotFoundError no mutex.unlink da fixture (linha173), após
+FileLock já remover seu arquivo.60590 exit0:1passed39.64s após missing_ok=True.
+Nenhum código produtivo mudou para tratar a falha. O ensaio2Boards+Global passou
+incluindo replay; Board histórico passou incluindo mutação de system-history.dat.
+Somados aos33 casos públicos de recuperação (80862 exit0/629.58s), são37 testes
+distintos aprovados, sem contar as repetições da primeira rodada como casos novos.
+Não alegar uma única suíte ininterrupta verde: os logs preservam a falha da fixture
+e seu reteste. Nenhuma suíte viva permanece; nenhuma reinstalação/edição produtiva
+ocorreu durante suítes vivas.
+
+Par final wheels-kg-candidate-replay-final e prova provenance-kg-candidate-replay-final.json:
+Core806Python869payloads aggregate54612f7ce3862acd57d344f8d89b20847123395aa36facbce87db746f69bc2cc;
+Community344Python428payloads aggregate710278f54f2a0c620b2a86cb49607e2f7381934ffc4ac366a540639301f07983.
+Closure53292 exit0 (closure-kg-candidate-replay-final.json): oktrue, nenhum finding
+ou drift documental, oito budgets0. RuffF/E9/diff--check serão confirmados antes
+do commit; prova pós-commits vinculará os mesmos payloads ao par publicado.
+
+Resultado: replay após perda de resposta autentica candidato restored_not_materialized
+pelo seed e pela reconstrução descartável feita pelo Grafx. Compara payloads e
+inventário completos, incluindo SQL, recibo, binding, lease, índices, história,
+uploads e arquivos de audit/gerações retidas. Só mutexes vazios reconhecidos das
+gerações ativas/startup são rendezvous. Hardlinks, aliases, arquivos extras e
+conteúdo divergente recusam sem overwrite; mutex compartilhado é recusado ANTES
+de abrir FileLock. Guard de erasure permanece cobrindo reconstrução, comparação
+e saída. Diretórios de referência são descartados tanto no sucesso quanto na falha.
+
+Ainda não há materialização final, reconciliação, cutover nem admissão terminal.
+O replay intencionalmente recusa candidato que já recebeu escrita; fase posterior
+precisa de seus próprios checkpoints. Custo de replay é uma reconstrução adicional
+mais leituras integrais, não um benchmark otimizado. Teste de perda de resposta usa
+exceção após rename, não kill/power-loss/E2E de instalador. Sem runtime real, dados
+reais, frontend, REST, MCP ou catálogo alterados; testes frontend não se aplicam a
+este incremento. Core produtivo permanece intacto, ledger apenas.
+
+Próximo passo concreto: resolver a omissão reproduzida de cleanup de Refinement
+cancelado nos planos agregados; compor aplicação governada exclusivamente sobre
+o candidato, sem usar purga da rota ativa, sem authority baseada em recibo antigo
+e sem tratar fila vazia/enqueue como conclusão. Depois reconciliar fontes,
+active sets, arestas, ausência de órfãos, temporalidade e delta vinculado ao par/
+backup/manifesto antes de cutover. Backlog integral anterior segue ativo.
+
+Commit Community: abfe30fe4392ec34bf5cef8d84cf693301818516. RuffF/E9 e diff--check confirmados verdes antes do commit. Core publica somente este ledger; prova pós-commits e pushes seguem sem alteração de payload.
