@@ -10105,3 +10105,94 @@ ou restart de runtime do usuário. As pendências de exceções/autoria Sprint a
 não foram modificadas nem anunciadas como concluídas.
 
 Community commit096aeff; commit Core/pushes pareados a seguir, verificando HEADs remotos e árvores limpas.
+
+### F3 — autoridade de exceções Sprint recusada no contrato público
+
+Em execução sobre Core10cdc855 / Community096aeff. Turno anterior foi progresso:
+loaders/listeners retirados, baseline semântica e261 testes publicados. Investigação
+confirmou que REQUEST de waiver usa ausência de current_subject somente na checagem
+de edição; APPROVE/REVOKE usam head/evento histórico, e revogação de skip usa o
+predecessor persistido. Não são leituras nem replay por si só.
+
+Preflight provenance-f3-exception-baseline.json confirmou par anterior instalado
+byte-idêntico. Reprodução f3-exception-baseline3.log:1 passed em5.82s, com sujeito
+Sprint atual ausente e adapter sem patch aceitando REQUEST/APPROVE/REVOKE de waiver
+e REVOKE de skip. REQUEST/APPROVE persistidos; duas revogações verificadas dentro
+de savepoint e revertidas para conservar heads antigos na fixture.
+A preparação é explicitamente sintética: banco parte da baseline semântica real,
+mas seu receipt PASSED não tinha finding; um receipt FAILED foi criado pelo
+construtor Core com snapshot antigo capturado, restaurando o loader SOMENTE nessa
+preparação. Skip antigo foi construído pelo Core e inserido por helper relacional.
+Não se afirma que esses dois registros foram capturados de uma instalação legada.
+O código sob reprodução usa adapter real sem patches e confirma gravação nova.
+Primeiras tentativas de captura falharam por ausência de finding no receipt PASSED
+e por IDs de skip não hex64; fixtures corrigidas sem alteração de produto.
+
+Fixtures congeladas Community:
+- tests/fixtures/f3_semantic_exception_baseline.json, SHA256
+  a86355133186d4c10734990425d139b9d2287e63565078d73d80c39989ca8347;
+- tests/fixtures/f3_semantic_exception_baseline.sqlite3.zip, SHA256
+  dd13ac211a622cdfd660d599f098883bde59342b90ca66d8894b7bff2d4e81c4.
+Metadados distinguem as origens, registram par fonte e mutations completas. Código
+de captura retirado do módulo de regressão; não regenerar fixtures para passar.
+
+Core expõe require_writable_policy_subject_type na porta pública guideline_policy;
+retém enum completo para histórico e recusa novas mutações Sprint. Casos de uso de
+assessment, request/review/revoke/revalidate waiver e create/revoke skip aplicam o
+contrato depois de replay exato. Adapter Community consome a mesma regra pública
+após replay, antes de criar/transicionar exceção: sem regra duplicada no mecanismo.
+Locks e capacidades/independência existentes permanecem. Funções puras de domínio
+continuam reconstruindo documentos históricos; não se alteram hashes/recibos.
+Painel global de waivers mostra histórico Sprint somente para leitura e omite
+Approve/Reject/Revoke/Revalidate nas suas linhas; cinco status cobertos por teste.
+Build de frontend em andamento. Suites/proveniência/closure finais ainda pendentes.
+
+Validação final do incremento (2026-09-21):
+- Core45, Community103 e frontend63 casos distintos aprovados: total211. Logs
+  f3-exception-{core,community,ui}.log e f3-exception-core-final2.log. Community
+  concluiu em92.82s; reteste Core8 em1.27s. Captura1 separada; retestes não somados.
+  Primeira rodada Core37 passed/8 failed por fixture alterando target sem limpar
+  revision_digest; segunda tentativa ainda falhou por actor REST sem contexto de
+  compartilhamento e sem flags históricas exigidas. Fixture agora usa owner do
+  Board, assessor correspondente e capacidades nativas requeridas explicitamente.
+  Guards de permissão/digest não foram relaxados. Sem falhas abertas nas suites.
+- Oito casos Core provam recusa em sete caminhos e replay de assessment Sprint
+  antes de lookup vivo/commit. Community prova replay REQUEST/APPROVE/skip CREATE
+  completo e recusa de cinco novas mutações, com/sem tabela Sprint. Compara todas
+  as tabelas semantic_*, eventos e Board antes/depois; só identity UPDATEs dos
+  mutexes SQLite são permitidos, sem mudança de valor ou nova autoridade.
+  Suites existentes preservam independência, revogação/revalidação dos sujeitos
+  ativos, filtros/transportes, recibos/findings e capacidades anteriores.
+- Frontend63 passed, incluindo cinco status históricos Sprint sem botões de
+  mutação e com evidências/histórico expansíveis. tsc/Vite/sync aprovados; warning
+  de chunks>500kB existente, sem erro. verify:frontend-dist confirmou78 arquivos,
+  hash39c833dc81cb4beb27296ca11be0f329f64a18dc58948bc1edc94b0a89ec5e54.
+- provenance-f3-exception.json antes das suites:804/335 Python e867/419 payloads
+  fonte/wheel/site-packages byte-idênticos. Core agregado
+  4a5d2245e6ba90416b9254c5c2c11b50931f9c44a13277f7ad09dbb9370ec034;
+  Community7fec099448eca7619f57a0102931fbd6836fdb874d7bcc4bc699e7977e69918b.
+  Wheel Core356d4c46dd7c5c217e490dfbd53bc9b411bc128590139dcf38ab409a1a15de2f;
+  Community9899ab5b4ff0d4772563516fe68ba4b29c839638774621d05e5c09d25ee5f324.
+  Correções posteriores só em testes/ledger. Nenhuma edição produtiva/reinstall
+  com suites ativas. Todos os handles encerrados.
+- closure-f3-exception.json exit0,ok=true,findings/docs vazios,oito budgets0/0.
+  Ruff/diff --check e catálogo MCP aprovados. Tools/schemas MCP não alterados.
+
+Retomada: contratos públicos ainda misturam entidades históricas e autoria nova.
+MCP policy_governance_tools.py define PolicyEntityTypeValue (inclui Sprint) usado
+em GuidelineMetricInput.target_entity_types e em queries/submissões. REST
+api/policy_governance.py tem enum próprio e usa target_entity_types em input e
+response. Separar autoria/leitura sem apagar definições normativas antigas nem
+recalcular hashes. Examinar Core Create/Publish/import de Guideline e UI editor;
+não remover silenciosamente target de uma revisão existente. A adoção de revisão
+histórica contendo target Sprint não deve ser confundida com criar artefato Sprint.
+O replay demonstrado neste incremento é Core assessment e adapter waiver/skip.
+Core CreateSemanticPolicySkipUseCase ainda preserva sua ordem anterior: autoridade
+viva antes de lookup de replay. Não foi alterada essa política de currentness nem
+se provou replay público de skip Sprint após retirada; investigar no fechamento
+dos contratos, sem enfraquecer replay de entidades ativas por conveniência.
+Schema/ORM, ACKs exatos, terminal offline runtime_ready, matriz DEI/ARQ/VER/ADV,
+E2E pareado/rollback, footprint MCP, benchmark e rollout seguem pendentes.
+Objetivo integral ativo. Sem dados reais, deploy/release/tag/merge/restart do usuário.
+
+Community commitc79f6ab; commit Core/pushes pareados a seguir, verificando HEADs remotos e árvores limpas.

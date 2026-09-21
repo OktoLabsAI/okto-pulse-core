@@ -81,6 +81,7 @@ from okto_pulse.core.ports.guideline_policy import (
     GuidelinePolicyLifecycleConflict,
     GuidelinePolicyPersistencePort,
     GuidelinePolicySubjectConflict,
+    require_writable_policy_subject_type,
     GuidelinePolicyVersionConflict,
     GuidelineRetirementReplay,
     GuidelineRevisionNoopReplay,
@@ -1434,7 +1435,7 @@ async def require_policy_assessment_lifecycle(
 ) -> None:
     """Admit edition-capable subjects only at their SDLC validation gate.
 
-    Sprint, Card, and Test Scenario retain the legacy version-fenced policy
+    Card and Test Scenario retain the legacy version-fenced policy
     flow because they do not own a human-validation lifecycle edition.
     """
 
@@ -1518,6 +1519,7 @@ class RecordSemanticGuidelineAssessmentUseCase:
                 replace(replay, replayed=True)
             )
 
+        require_writable_policy_subject_type(submission.subject.entity_type)
         subject_snapshot = await semantic_port.resolve_policy_subject_snapshot(
             board_id=command.board_id,
             entity_type=submission.subject.entity_type,

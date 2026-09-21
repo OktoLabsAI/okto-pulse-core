@@ -153,6 +153,18 @@ class GuidelinePolicySubjectConflict(GuidelinePolicyPersistenceError):
     code = "guideline_policy_subject_conflict"
 
 
+def require_writable_policy_subject_type(entity_type: PolicyEntityType) -> None:
+    """Admit a new policy mutation after checking for exact historical replay.
+
+    Historical receipts keep the full PolicyEntityType vocabulary. A retired
+    subject cannot acquire new policy authority through any edition's adapter.
+    """
+    if not isinstance(entity_type, PolicyEntityType):
+        raise GuidelinePolicySubjectConflict("semantic_policy_subject_type_invalid")
+    if entity_type is PolicyEntityType.SPRINT:
+        raise GuidelinePolicySubjectConflict("semantic_policy_subject_type_retired")
+
+
 class GuidelinePolicyVersionConflict(GuidelinePolicyPersistenceError):
     code = "guideline_policy_version_conflict"
 
@@ -1862,6 +1874,7 @@ class GuidelinePolicyPersistencePort(
 
 
 __all__ = [
+    "require_writable_policy_subject_type",
     "GuidelineAdoptionReplay",
     "GuidelineDefaultMaterializationProof",
     "GuidelineImpactListQuery",

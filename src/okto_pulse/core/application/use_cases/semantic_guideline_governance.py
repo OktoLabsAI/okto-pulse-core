@@ -103,6 +103,7 @@ from okto_pulse.core.domain.guideline_semantic_findings import (
 from okto_pulse.core.domain.quality_assessment import EvidenceRef
 from okto_pulse.core.ports.guideline_policy import (
     GuidelinePolicyIdempotencyConflict,
+    require_writable_policy_subject_type,
     SemanticAssessmentListQuery,
     SemanticFindingListQuery,
     SemanticGuidelineAssessmentPersistencePort,
@@ -1226,6 +1227,7 @@ class RequestSemanticMetricWaiverUseCase:
                 "semantic_guideline_finding",
                 command.finding_id,
             )
+        require_writable_policy_subject_type(finding.subject.entity_type)
         if (
             finding.metric_result_id != command.metric_result_id
             or finding.receipt_id != command.receipt_id
@@ -1359,6 +1361,7 @@ async def _transition_waiver(
         board_id=command.board_id,
         waiver_id=command.waiver_id,
     )
+    require_writable_policy_subject_type(current.anchor.subject.entity_type)
     if event_type in {
         SemanticMetricWaiverEventType.APPROVE,
         SemanticMetricWaiverEventType.REJECT,
@@ -1726,6 +1729,7 @@ class RevalidateSemanticMetricWaiverUseCase:
             board_id=command.board_id,
             waiver_id=command.waiver_id,
         )
+        require_writable_policy_subject_type(current.anchor.subject.entity_type)
         if actor.actor_id in {
             current.requested_by,
             current.anchor.assessment_assessor_id,
@@ -1993,6 +1997,7 @@ class CreateSemanticPolicySkipUseCase:
                     "semantic_skip_idempotency_conflict"
                 )
             return SemanticPolicySkipMutationResult(replay, replayed=True)
+        require_writable_policy_subject_type(scope.subject.entity_type)
         mutation = create_semantic_policy_skip(
             skip_id=self._id_factory(
                 "semantic-policy-skip",
@@ -2062,6 +2067,7 @@ class RevokeSemanticPolicySkipUseCase:
         )
         if current is None:
             raise EntityNotFoundError("semantic_policy_skip", command.skip_id)
+        require_writable_policy_subject_type(current.scope.subject.entity_type)
         mutation = revoke_semantic_policy_skip(
             current,
             event_id=self._id_factory(
