@@ -11710,3 +11710,90 @@ resolver existente e a fixture real da cadeia. Core deste registro publica o
 Protocol e a validação de seleção no plan/v2. Prova pós-commits em
 provenance-kg-dependency-committed.json; publicar o par em feature/v0.4.0 e
 verificar local=remote/árvores limpas. O objetivo integral permanece ativo.
+
+### KG8.3 — construção de candidato nativo privado (em implementação)
+
+Par3e687616/f56811de e árvores limpas confirmados; turno anterior foi progresso.
+A montagem reutiliza a recuperação conjunta v7, capturando uma fonte pós-bootstrap
+separada do rollback original. Seed externo autentica o par/run, projection plan/v2,
+snapshot completo e uma generation nova. Restauração exige confirmação explícita
+sobre TODOS os participantes e handles fornecidos closed/close_complete; não infere
+isso de PID/lock, não para runtime. Monta SQL/uploads/artefatos/grafos em diretório
+privado novo, recompõe bindings locais e mantém os bindings originais inalterados.
+Estado restored_not_materialized não admite runtime e ainda exige aplicar os planos.
+
+Refatoração interna de restore_joint_recovery_snapshot expõe context manager privado
+com estágio sob os mesmos guards de erasure até publicação. A recomposição ocorre
+nesse estágio: uma falha remove a saída parcial e permite repetir com o seed retido.
+A API original delega ao mesmo caminho sem callback nem mudança de comportamento.
+Candidatos publicados são create-only; reuso após perda de resposta dependerá da
+verificação da fase seguinte, não de sobrescrita ou adoção automática. Cutover
+retomável completo continua pendente. A fixture nova verifica história/cursor/UUID,
+SQL, generation nova, rejeição de handles abertos e falha/retry de recomposição.
+Nada foi executado contra runtime real. Build/install/prova precedem os testes.
+
+Primeira prova: provenance-kg-native-candidate.json confirma806/344Python,
+869/428payloads iguais após build/install wheels-kg-native-candidate.
+60626 exit0:1passed126.86s — candidato privado real, falha de recomposição e retry,
+UUID/histórico/cursor antigos preservados, nova geração, SQL preservado e admissão
+bloqueada. Captura py-spy durante a execução mostrou uma abertura Grafx transitória;
+o processo terminou normalmente, não foi interrompido por duração.
+73524 exit0: closure-kg-native-candidate.json oktrue, findings/documentação vazios,
+oito budgets0. Regressões36038 (32casos), negativos93444 e ensaio89700 de dois Boards
+mais Global ainda em execução. Os dois últimos acrescentam apenas testes, sem
+edição produtiva/reinstall enquanto suítes vivas. A captura do seed usa builds
+sintéticos da fixture; não alegar novo E2E de instalação do predecessor.
+
+O candidato mantém artefatos de audit/história copiados como fontes históricas;
+a próxima fase deverá vincular autorização/recibos à nova geração, sem tratar
+recibos antigos como autorização atual. Rotas ausentes permanecem ausentes neste
+passo de restauração e precisam de criação explícita para projeção final quando
+houver fontes remanescentes. Isso ainda não é candidato materializado/reconciliado.
+
+### KG8.3 — candidato privado construído e validado
+
+Todos os handles encerrados:60626 exit0/1passed126.86s;93444 exit0/2passed85.23s;
+89700 exit0/1passed182.62s;36038 exit0/32passed611.93s. São36 testes distintos
+aprovados neste incremento, incluindo Board histórico, dois Boards+Global,
+failure/retry de layout, drift de fonte, privacidade após composição, caminhos
+v1-v6/v7 existentes, adulteração, ausência, routing, WAL e restauração conjunta.
+Nenhuma edição produtiva/reinstall ocorreu durante as suítes. RuffF/E9 e
+diff--check passaram. Closure73524 oktrue, findings/documentação vazios,8budgets0.
+
+Par wheels-kg-native-candidate, provenance-kg-native-candidate.json:
+Core806Python869payloads, aggregate54612f7ce3862acd57d344f8d89b20847123395aa36facbce87db746f69bc2cc;
+Community344Python428payloads, aggregate855c444e452e7d97237ecf2255ce7dc7b0c24784d56b57e10c12b515b80578fb.
+Prova pós-commits provenance-kg-native-candidate-committed.json deve vincular os
+mesmos bytes ao par publicado. Core produtivo não mudou; apenas este ledger.
+Sem alterações frontend/REST/MCP/catálogo; nenhum teste frontend novo aplicável.
+
+Community retirement_graph_candidate oferece preparação do seed autenticado e
+montagem create-only do candidato em layout consumível por runtimes explícitos:
+database.sqlite3, uploads, kg-artifacts com bindings e diretórios nativos em
+gerações novas, candidate-receipt. A restauração/composição permanece sob os
+guards de erasure até o rename final. Operador conserva o seed antes de encerrar
+originais; restauração exige confirmação estrita e handles efetivamente fechados.
+Não automatiza shutdown, não muda binding original, não toca dados reais.
+Cópia pós-bootstrap é fonte do candidato, não substitui o backup do predecessor.
+
+Limite explícito: restored_not_materialized ainda contém a projeção antiga
+preservada e NÃO é runtime_ready. A fase seguinte precisa verificar/reusar um
+candidato já publicado após perda de resposta; o restore create-only não adota
+nem sobrescreve destino existente. Ainda faltam aplicação dos planos v2,
+reconciliação de active sets/órfãos/arestas/temporalidade e delta por manifesto,
+cutover com checkpoints e admissão terminal. Não comparar para sempre todo o
+SQL com o snapshot de restauração depois que os writers operacionais forem
+legitimamente reabertos.
+
+Seam já localizado para aplicação: core.services.application_kg.
+create_consolidation_processor é público; process_exact_batch exige
+ConsolidationClaimScope/reservation_lineage_id e probe vivo, retorna disposições
+exatas. Reutilizar esse caminho e a adoção ordenada de fontes em
+CommunityBoardRebuildIngestionAdapter, sem usar seu purge da rota ativa nem
+ignorar confirmações. Composição deve apontar exclusivamente para o candidato e
+não iniciar servidores/scheduler normais. Isolar registries/paths e validar a
+reserva, origem e geração durante cada efeito. O objetivo integral permanece
+ativo; outros critérios BASE/KG/DEI/ARQVER/ADV, F4/F5, instalação e benchmarks
+continuam no backlog consolidado, sem release/tag/deploy/merge.
+
+Commit Community do incremento: 1829c14d35ee04dee02bf5b2fda6b5240e53944f. Core registra apenas o ledger neste par; validação pós-commit e pushes seguem antes da próxima alteração.
