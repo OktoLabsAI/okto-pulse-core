@@ -7994,3 +7994,80 @@ Spec Done continua pendente; gates de execução não foram alterados. F2A/F2C/F
 F4, matriz integral e rollout ainda exigem conclusão. Objetivo integral ativo.
 
 Ruff/diff --check e verify:frontend-dist aprovados. Commit Community 5f31e85c008aad6192bfe8dd3361ae0eb9ffc4b4; par para push normal em feature/v0.4.0, com HEAD/ls-remote conferidos ao encerrar.
+
+### 2026-09-20 — Configuração canônica de validação na leitura do Card (pré-requisito F3)
+
+Retomada do par fff6f1a2/5f31e85c, preservando o objetivo integral. A investigação
+das superfícies REST/UI de Sprint encontrou um consumidor legítimo remanescente:
+CardModal buscava Sprint para recalcular limites de validação. Remover essa rota
+diretamente quebraria a validação e a preservação F2B. Resolvido o pré-requisito
+pela projeção tipada validation_config no GetCardUseCase; a política e sua
+precedência continuam no resolver existente do Core, sem mudar gates de execução.
+
+Autoridade: a leitura passa por card -> Board -> ator antes da projeção, usando a
+mesma cadeia de acesso das antigas leituras de Spec/Sprint. As fontes vinculadas
+devem existir no mesmo Board; ausência ou vínculo cross-Board mantém o Card
+legível, mas retorna configuração indisponível e impede envio pela UI. A redação
+de histórico pela permissão card.validation.read continua intacta. A projeção é
+somente leitura, não concede ao executor edição de policy nem grava/commita.
+O campo está no DTO de resposta; somente o GET autorizado o preenche nesta etapa.
+
+Frontend: usa o valor/proveniência do Core, deixa de buscar Sprint e de duplicar
+o algoritmo de precedência. Removida a informação operacional Sprint do painel
+de referências do Card. Permanecem o controle de respostas fora de ordem, o
+bloqueio durante atualização, retry e limites históricos capturados na avaliação.
+Os quatro testes da antiga função JS foram substituídos pela cobertura do
+resolver canônico, da leitura real e do modal; não há mais algoritmo JS a testar.
+Os campos migrados por Card continuam de compatibilidade, com proveniência e
+deprecation já autorizadas, sem novo campo editável ou alteração na política.
+
+Evidências em PULSE_REFACTOR/.validation-v040:
+- card-policy-ui-build.log: tsc/Vite aprovados; 78 arquivos sincronizados,
+  SHA256 77f76159d8d967617a6d36a9b189a6ea0891da244cb4452014bb787f15f758c5.
+  verify:frontend-dist confirmou o mesmo payload ao final.
+- provenance-card-policy.json e provenance-card-policy-final.json: 812/337 .py e
+  875/421 payloads byte a byte idênticos entre árvores, wheels e instalação, antes
+  dos testes. O par foi reinstalado após regeneração oficial dos READMEs; ambos
+  os agregados finais são iguais aos inicialmente testados. Não houve mudança de
+  produto depois da primeira prova, somente fixtures/testes e matriz documental.
+- Wheels finais: Core
+  8153698bcd263679aed02ea649d65adc267239d6dc4b70d46b6d17f28782ff2f;
+  Community 17d81b6fd4a9011af88e57a9f0351c032033cc33154bc2526bfd38c58041af3f.
+- card-policy-core.log: 70 passed (configuração, CRUD, autorização de validação,
+  política migrada e contexto MCP). Inclui 90/60, herança atual, false/zero,
+  rejeição de Board alheio e ausência de commit.
+- card-policy-community-r3.log: 5 passed com CommunityUnitOfWorkFactory e
+  persistência SQL real descartável; leitura preserva fonte, valores e negações,
+  e não grava. Os primeiros ensaios falharam por fixture sem realm_id e depois
+  porta de conhecimento não registrada; corrigida a composição da fixture,
+  sem mudar código de produto ou contornar autorização. Os 9 testes de rotas de
+  autorização passaram nas execuções anteriores (card-policy-community-r2.log).
+- card-policy-community-final.log: repetidos os mesmos 5 casos com observadores
+  de SQL/commit do engine, confirmando zero INSERT/UPDATE/DELETE/REPLACE e zero
+  commits após a seed, além da comparação do estado persistido original.
+- card-policy-ui-r2.log: 69 passed. A primeira rodada teve 56 passes e 3 falhas;
+  faltava fornecer config canônica no caso de polling, causando falhas em cascata.
+  Atualizada somente a fixture de respostas, preservadas as verificações de
+  ordem, histórico e navegação. Todo o arquivo CardModal e três suites adjacentes
+  passaram. Total backend/frontend desta etapa: 153 testes distintos aprovados.
+- card-policy-catalog.log: mais 4 testes de drift byte a byte do catálogo passaram,
+  totalizando 157 testes distintos aprovados nesta etapa. Nenhuma edição manual
+  do catálogo nem alteração no registry de tools.
+- closure-card-policy-final.json: ok=true, findings=[] e documentation_findings=[],
+  oito budgets 0/0, 7.502 imports Core/1.183 Community -> Core, 25 dependências.
+  A primeira closure apontou somente a matriz README desatualizada; regenerada
+  pelo renderer oficial, reconstruído/reinstalado/provado o par e repetida closure.
+- Ruff e diff --check aprovados. Nenhum processo de runtime/dado real tocado.
+  Estes testes não representam E2E integral instalado nem conclusão do pacote.
+
+Retomada: agora a retirada das rotas/telas dedicadas a Sprint não depende de
+getSprint no modal de Card. Permanecem as demais superfícies operacionais,
+analytics, contratos/schema/registry, conclusão do coordenador offline, F2A/C/D,
+F4 e matriz/rollout integrais. A decisão F3 sobre tarefas normais em Spec Done
+continua pendente; não confundir o sim para F2A histórico com essa autorização.
+O gate de footprint MCP previamente vermelho (54.328 > 50.800) permanece uma
+pendência conhecida; seu limite não foi alterado. Objetivo integral ativo.
+
+Commit Community desta etapa: a12f496a2c7d202c022634f7c888dc22978f5043.
+Todas as execuções acima encerradas; par preparado para push normal em
+feature/v0.4.0 e conferência de HEAD/ls-remote ao encerrar o checkpoint.

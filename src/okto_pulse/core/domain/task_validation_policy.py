@@ -13,6 +13,30 @@ ATTRIBUTES = ("require_task_validation", "validation_min_confidence", "validatio
 BOARD_ATTRIBUTES = ("require_task_validation", "min_confidence", "min_completeness", "max_drift")
 DEFAULTS = (True, 70, 80, 50)
 
+ValidationPolicySource = Literal["card_compatibility", "sprint", "spec", "board", "default"]
+
+
+class ResolvedTaskValidationSources(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    required: ValidationPolicySource
+    min_confidence: ValidationPolicySource
+    min_completeness: ValidationPolicySource
+    max_drift: ValidationPolicySource
+
+
+class ResolvedTaskValidationConfig(BaseModel):
+    """Read projection of the existing Core policy; never an editable override."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    required: bool
+    min_confidence: int
+    min_completeness: int
+    max_drift: int
+    resolved_from: ValidationPolicySource
+    resolved_sources: ResolvedTaskValidationSources
+
 
 class MigratedTaskValidationOverrides(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True, frozen=True)

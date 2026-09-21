@@ -25,7 +25,7 @@ from okto_pulse.core.discovery_params_schema import (
 )
 from okto_pulse.core.domain.requirement_verification import VerificationQualifiedModel
 from okto_pulse.core.domain.execution_contract import SpecExecutionContract, SpecExecutionContractAdoption
-from okto_pulse.core.domain.task_validation_policy import MigratedTaskValidationPolicy, reject_migrated_validation_policy_write, read_migrated_validation_policy
+from okto_pulse.core.domain.task_validation_policy import MigratedTaskValidationPolicy, ResolvedTaskValidationConfig, reject_migrated_validation_policy_write, read_migrated_validation_policy
 from okto_pulse.core.models.delivery_selection import DeliverySelectionInput, DeliverySelectionManifest
 from okto_pulse.core.domain.card_completion import (
     REJECTION_CODE_MAX_LENGTH,
@@ -3630,6 +3630,11 @@ class CardResponse(BaseSchema):
     sprint_id: str | None = None
     migrated_validation_policy: MigratedTaskValidationPolicy | None = Field(
         default=None, description="Deprecated migration-only policy preservation; read-only historical provenance.",
+    )
+    validation_config: ResolvedTaskValidationConfig | None = Field(
+        default=None,
+        description="Effective Core task-validation policy for this read; null when its source is unavailable.",
+        json_schema_extra={"readOnly": True},
     )
     title: str
     description: str | None
