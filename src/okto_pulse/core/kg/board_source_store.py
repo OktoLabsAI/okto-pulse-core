@@ -137,24 +137,6 @@ REFINEMENT_CONTENT_COLUMNS: tuple[str, ...] = (
     "labels",
 )
 
-SPRINT_CONTENT_COLUMNS: tuple[str, ...] = (
-    "title",
-    "description",
-    "spec_id",
-    "spec_version",
-    "status",
-    "lane_type",
-    "origin_sprint_id",
-    "origin_bug_id",
-    "objective",
-    "expected_outcome",
-    "test_scenario_ids",
-    "business_rule_ids",
-    "evaluations",
-    "version",
-    "labels",
-)
-
 CARD_CONTENT_COLUMNS: tuple[str, ...] = (
     "title",
     "description",
@@ -163,7 +145,6 @@ CARD_CONTENT_COLUMNS: tuple[str, ...] = (
     "priority",
     "card_type",
     "spec_id",
-    "sprint_id",
     "test_scenario_ids",
     "conclusions",
     "screen_mockups",
@@ -510,7 +491,6 @@ __all__ = [
     "SPEC_CONTENT_COLUMNS_V2",
     "SPEC_SOURCE_MANIFEST_VERSION",
     "SOURCE_PROJECTION_HASH_FIELDS_V3",
-    "SPRINT_CONTENT_COLUMNS",
     "STORY_CONTENT_COLUMNS",
     "bug_has_minimal_evidence",
     "canonical_content_hash",

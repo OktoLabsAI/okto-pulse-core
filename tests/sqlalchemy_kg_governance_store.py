@@ -8,7 +8,7 @@ from typing import Any, Sequence
 from sqlalchemy import delete, func, select, update
 from sqlalchemy.orm.attributes import flag_modified
 
-from okto_pulse.core.domain.enums import SpecStatus, SprintStatus
+from okto_pulse.core.domain.enums import SpecStatus
 from sqlalchemy_test_models import (
     Board,
     Card,
@@ -19,7 +19,6 @@ from sqlalchemy_test_models import (
     KuzuNodeRef,
     Refinement,
     Spec,
-    Sprint,
     Story,
 )
 from okto_pulse.core.ports.kg_events import HISTORICAL_PROGRESS_SETTINGS_KEY
@@ -101,14 +100,6 @@ class TestSqlAlchemyKGGovernanceStore:
                         (SpecStatus.DONE, SpecStatus.APPROVED, SpecStatus.VALIDATED)
                     ),
                     Spec.archived.is_(False),
-                ),
-            ),
-            (
-                "sprint",
-                select(Sprint.id).where(
-                    Sprint.board_id == board_id,
-                    Sprint.status == SprintStatus.CLOSED,
-                    Sprint.archived.is_(False),
                 ),
             ),
             ("card", select(Card.id).where(Card.board_id == board_id)),

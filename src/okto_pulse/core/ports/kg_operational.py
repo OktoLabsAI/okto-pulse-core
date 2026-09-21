@@ -186,7 +186,7 @@ class KGOperationalReadModelPort(Protocol):
         context: Any,
         *,
         board_id: str,
-        depth: int = 5,
+        depth: int = 4,
     ) -> Mapping[str, Any]:
         ...
 

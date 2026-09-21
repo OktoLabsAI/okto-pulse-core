@@ -176,7 +176,6 @@ from sqlalchemy_test_models import (  # noqa: E402
     Refinement,
     PermissionPreset,
     Spec,
-    Sprint,
 )
 from okto_pulse.core.ports.kg_operational import (  # noqa: E402
     KGCanonicalDebtSignal,
@@ -1340,7 +1339,7 @@ class _CoreTestKGOperationalReadModel(KGOperationalReadModelPort):
         context,
         *,
         board_id: str,
-        depth: int = 5,
+        depth: int = 4,
     ) -> dict:
         q_rows = (
             (
@@ -1404,11 +1403,6 @@ class _CoreTestKGOperationalReadModel(KGOperationalReadModelPort):
             .scalars()
             .all()
         )
-        sprints = (
-            (await context.execute(select(Sprint).where(Sprint.board_id == board_id)))
-            .scalars()
-            .all()
-        )
         cards = (
             (await context.execute(select(Card).where(Card.board_id == board_id)))
             .scalars()
@@ -1425,16 +1419,9 @@ class _CoreTestKGOperationalReadModel(KGOperationalReadModelPort):
                 specs_by_refinement[row.refinement_id].append(row)
             else:
                 specs_orphan.append(row)
-        sprints_by_spec: dict[str, list] = defaultdict(list)
-        for row in sprints:
-            sprints_by_spec[row.spec_id].append(row)
-        cards_by_sprint: dict[str, list] = defaultdict(list)
-        cards_by_spec_direct: dict[str, list] = defaultdict(list)
+        cards_by_spec: dict[str, list] = defaultdict(list)
         for row in cards:
-            if getattr(row, "sprint_id", None):
-                cards_by_sprint[row.sprint_id].append(row)
-            else:
-                cards_by_spec_direct[row.spec_id].append(row)
+            cards_by_spec[row.spec_id].append(row)
 
         levels_counter = {
             lvl: {
@@ -1444,7 +1431,7 @@ class _CoreTestKGOperationalReadModel(KGOperationalReadModelPort):
                 "failed": 0,
                 "not_queued": 0,
             }
-            for lvl in ("ideations", "refinements", "specs", "sprints", "cards")
+            for lvl in ("ideations", "refinements", "specs", "cards")
         }
 
         def _tally(level: str, art_type: str, art_id: str) -> None:
@@ -1465,34 +1452,18 @@ class _CoreTestKGOperationalReadModel(KGOperationalReadModelPort):
                 "children": [],
             }
 
-        def _sprint_node(row) -> dict:
-            meta = _queue_meta("sprint", row.id)
-            _tally("sprints", "sprint", row.id)
-            children = [_card_node(c) for c in cards_by_sprint.get(row.id, [])]
-            if depth < 5:
-                children = []
-            return {
-                "id": row.id,
-                "type": "sprint",
-                "title": row.title,
-                **meta,
-                "children": children,
-            }
-
         def _spec_node(row) -> dict:
             meta = _queue_meta("spec", row.id)
             _tally("specs", "spec", row.id)
-            sp_children = [_sprint_node(sp) for sp in sprints_by_spec.get(row.id, [])]
-            direct_cards = [_card_node(c) for c in cards_by_spec_direct.get(row.id, [])]
+            direct_cards = [_card_node(c) for c in cards_by_spec.get(row.id, [])]
             if depth < 4:
-                sp_children = []
                 direct_cards = []
             return {
                 "id": row.id,
                 "type": "spec",
                 "title": row.title,
                 **meta,
-                "children": sp_children + direct_cards,
+                "children": direct_cards,
             }
 
         def _refinement_node(row) -> dict:
@@ -1529,6 +1500,8 @@ class _CoreTestKGOperationalReadModel(KGOperationalReadModelPort):
             )
         for row in specs_orphan:
             tree.append(_spec_node(row))
+        for row in cards_by_spec.get(None, []):
+            tree.append(_card_node(row))
 
         total_pending = sum(
             sum(v for k, v in counts.items() if k in ("pending", "in_progress"))

@@ -171,7 +171,7 @@ def test_enumerate_orders_by_artifact_type_then_created_at_then_id_then_version(
     assert [r.id for r in result.legacy_unknown] == ["s-1:d-1"]
 
 
-def test_closed_sprint_is_working_not_canonical():
+def test_retired_sprint_is_unknown_and_cannot_be_rebuilt():
     rows = [
         _row(artifact_type="sprint", id_="sp-1", status="closed"),
         _row(artifact_type="spec", id_="s-1", status="done"),
@@ -180,8 +180,9 @@ def test_closed_sprint_is_working_not_canonical():
     result = enum.enumerate(board_id="b1")
 
     assert [r.id for r in result.sources] == ["s-1"]
-    assert [r.id for r in result.skipped_by_maturity] == ["sp-1"]
-    assert result.skipped_by_maturity[0].reason_code == "sprint_not_canonical"
+    assert result.skipped_by_maturity == ()
+    assert [r.id for r in result.legacy_unknown] == ["sp-1"]
+    assert result.legacy_unknown[0].reason_code == "unknown_artifact_type"
 
 
 def test_ideation_and_intermediate_statuses_stay_out_of_canonical():

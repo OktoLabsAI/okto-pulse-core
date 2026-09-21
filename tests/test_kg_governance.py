@@ -94,6 +94,28 @@ async def _seed_board_with_spec(db_factory, board_id: str) -> None:
 
 class TestHistoricalOptIn:
     @pytest.mark.asyncio
+    async def test_historical_start_keeps_card_work_without_enqueuing_sprint(self, db_factory):
+        from sqlalchemy_test_models import Card, ConsolidationQueue, Sprint, SprintStatus
+
+        board_id = "historical-with-retired-sprint"
+        await _seed_board_with_spec(db_factory, board_id)
+        async with db_factory() as db:
+            spec = (await db.execute(select(Spec).where(Spec.board_id == board_id))).scalar_one()
+            db.add(Sprint(id="historical-old", board_id=board_id, spec_id=spec.id,
+                title="Historical", status=SprintStatus.CLOSED, created_by="test-user"))
+            db.add(Card(id="historical-card", board_id=board_id, spec_id=spec.id,
+                sprint_id="historical-old", title="Card", created_by="test-user"))
+            await db.commit()
+            result = await start_historical_consolidation(db, board_id)
+            assert result["total_artifacts"] == 2
+            rows = (await db.execute(select(ConsolidationQueue).where(
+                ConsolidationQueue.board_id == board_id))).scalars().all()
+            assert {(row.artifact_type, row.artifact_id) for row in rows} == {
+                ("spec", spec.id), ("card", "historical-card"),
+            }
+            assert (await db.get(Sprint, "historical-old")).status == SprintStatus.CLOSED
+
+    @pytest.mark.asyncio
     async def test_start_creates_queue_entry(self, db_factory):
         await _seed_board_with_spec(db_factory, "board-hist-1")
         async with db_factory() as db:

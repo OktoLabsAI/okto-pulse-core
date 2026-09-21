@@ -9,10 +9,11 @@ from okto_pulse.core.kg.board_source_store import (
     REFINEMENT_CONTENT_COLUMNS,
     SPEC_CONTENT_COLUMNS_V1,
     SPEC_CONTENT_COLUMNS_V2,
-    SPRINT_CONTENT_COLUMNS,
     STORY_CONTENT_COLUMNS,
     _canonical_content_hash,
 )
+from source_reader_schema_testing import SPRINT_CONTENT_COLUMNS
+
 from okto_pulse.core.kg.source_maturity import (
     CANONICAL_ARTIFACT_TYPES,
     REBUILD_ARTIFACT_TYPES,
@@ -77,7 +78,6 @@ def test_source_content_column_contracts_are_verbatim() -> None:
         "priority",
         "card_type",
         "spec_id",
-        "sprint_id",
         "test_scenario_ids",
         "conclusions",
         "screen_mockups",
@@ -95,7 +95,7 @@ def test_source_content_column_contracts_are_verbatim() -> None:
     assert "version" not in STORY_CONTENT_COLUMNS
 
 
-def test_content_hashes_match_pinned_core_contracts() -> None:
+def test_content_hashes_match_pinned_core_and_historical_contracts() -> None:
     cases = (
         (
             STORY_CONTENT_COLUMNS,
@@ -128,7 +128,7 @@ def test_content_hashes_match_pinned_core_contracts() -> None:
             "f04dfc89c7566bf7fb348c463cbb5ac645e6bab2ec327d2a2d084ce5f42beb71",
         ),
         (
-            CARD_CONTENT_COLUMNS,
+            CARD_CONTENT_COLUMNS[:7] + ("sprint_id",) + CARD_CONTENT_COLUMNS[7:],
             _card_row(),
             "8ecdc7ad757f2f7cddc421737afe5233aec2e158a01a383ac2c09ded6e407730",
         ),
@@ -143,6 +143,14 @@ def test_content_hashes_match_pinned_core_contracts() -> None:
         assert _canonical_content_hash(row, columns) == expected
 
 
+def test_current_card_hash_ignores_retired_sprint_link_but_preserves_content():
+    card = _card_row()
+    expected = _canonical_content_hash(card, CARD_CONTENT_COLUMNS)
+    assert "sprint_id" not in CARD_CONTENT_COLUMNS
+    assert _canonical_content_hash({**card, "sprint_id": "another"}, CARD_CONTENT_COLUMNS) == expected
+    assert _canonical_content_hash({**card, "title": "Changed"}, CARD_CONTENT_COLUMNS) != expected
+
+
 def test_derived_source_fields_stay_outside_hash_contracts() -> None:
     derived_fields = {
         "has_minimal_evidence",
@@ -155,7 +163,6 @@ def test_derived_source_fields_stay_outside_hash_contracts() -> None:
         IDEATION_CONTENT_COLUMNS,
         REFINEMENT_CONTENT_COLUMNS,
         SPEC_CONTENT_COLUMNS_V2,
-        SPRINT_CONTENT_COLUMNS,
         CARD_CONTENT_COLUMNS,
         AMENDMENT_CONTENT_COLUMNS,
     )
@@ -178,7 +185,6 @@ def test_source_maturity_tracks_rebuild_and_canonical_artifact_sets() -> None:
         "ideation",
         "refinement",
         "spec",
-        "sprint",
         "task",
         "test",
         "bug",

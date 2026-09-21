@@ -10,8 +10,27 @@ from okto_pulse.core.kg.board_source_store import (
     IDEATION_CONTENT_COLUMNS,
     REFINEMENT_CONTENT_COLUMNS,
     SPEC_CONTENT_COLUMNS_V2,
-    SPRINT_CONTENT_COLUMNS,
     STORY_CONTENT_COLUMNS,
+)
+
+
+# Frozen v0.3.4 fixture only; no live Sprint content contract.
+SPRINT_CONTENT_COLUMNS: tuple[str, ...] = (
+    "title",
+    "description",
+    "spec_id",
+    "spec_version",
+    "status",
+    "lane_type",
+    "origin_sprint_id",
+    "origin_bug_id",
+    "objective",
+    "expected_outcome",
+    "test_scenario_ids",
+    "business_rule_ids",
+    "evaluations",
+    "version",
+    "labels",
 )
 
 
@@ -67,6 +86,7 @@ _SOURCE_TABLE_COLUMNS: dict[str, set[str]] = {
         "updated_at",
         "archived",
         "status",
+        "sprint_id",  # legacy fixtures may retain the old column
         *CARD_CONTENT_COLUMNS,
     },
     "amendment_hotfix_revisions": {

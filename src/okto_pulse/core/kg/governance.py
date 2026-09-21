@@ -454,7 +454,7 @@ async def start_historical_consolidation(
     board_id: str,
 ) -> dict:
     """Populate consolidation_queue with low-priority entries for all done
-    specs/sprints in the board. Returns counts."""
+    surviving artifacts in the board. Returns counts."""
     import uuid
 
     store = get_kg_governance_store()
@@ -490,7 +490,6 @@ async def start_historical_consolidation(
             "ideation",
             "refinement",
             "spec",
-            "sprint",
             "card",
         )
     }
@@ -529,7 +528,6 @@ async def start_historical_consolidation(
             "ideation",
             "refinement",
             "spec",
-            "sprint",
             "card",
         )
         for artifact in by_type[artifact_type]
@@ -550,13 +548,12 @@ async def start_historical_consolidation(
 
     logger.info(
         "governance.historical_start board=%s stories=%d ideations=%d "
-        "refinements=%d specs=%d sprints=%d cards=%d total=%d",
+        "refinements=%d specs=%d cards=%d total=%d",
         board_id,
         len(by_type["story"]),
         len(by_type["ideation"]),
         len(by_type["refinement"]),
         len(by_type["spec"]),
-        len(by_type["sprint"]),
         len(by_type["card"]),
         total,
     )
@@ -647,7 +644,7 @@ async def retry_pending_entry(
 ) -> dict | None:
     """Re-queue a failed/done ConsolidationQueue entry so the worker reprocesses
     it (write, commits internally). ``recursive=True`` also re-enqueues
-    descendants below the artifact in the Ideation→Refinement→Spec→Sprint→Card
+    descendants below the artifact in the Ideation→Refinement→Spec→Card
     hierarchy.
 
     Returns ``None`` when the entry does not exist (so this module stays

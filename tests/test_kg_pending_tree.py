@@ -43,19 +43,19 @@ async def test_pending_tree_empty_board(db_factory):
         )
         await db.commit()
         result = await list_pending_tree(
-            "bt-empty", 5, actor=_actor("bt-empty"), uow=SQLAlchemyUnitOfWork(db)
+            "bt-empty", 4, actor=_actor("bt-empty"), uow=SQLAlchemyUnitOfWork(db)
         )
     assert result["board_id"] == "bt-empty"
     assert result["tree"] == []
     assert result["total_pending"] == 0
     assert set(result["levels"].keys()) == {
-        "ideations", "refinements", "specs", "sprints", "cards",
+        "ideations", "refinements", "specs", "cards",
     }
 
 
 @pytest.mark.asyncio
 async def test_pending_tree_hierarchical_shape(db_factory):
-    """Seed a single ideation→refinement→spec→sprint→card chain and
+    """Seed a single ideation→refinement→spec→card chain with historical Sprint metadata and
     verify the tree produced by the endpoint matches the parent links."""
     from sqlalchemy_test_models import (
         Board, Card, Ideation, Refinement, Spec, Sprint,
@@ -95,7 +95,7 @@ async def test_pending_tree_hierarchical_shape(db_factory):
 
     async with factory() as db:
         result = await list_pending_tree(
-            "bt-1", 5, actor=_actor("bt-1"), uow=SQLAlchemyUnitOfWork(db)
+            "bt-1", 4, actor=_actor("bt-1"), uow=SQLAlchemyUnitOfWork(db)
         )
 
     assert len(result["tree"]) == 1
@@ -108,9 +108,7 @@ async def test_pending_tree_hierarchical_shape(db_factory):
     assert ref_node["id"] == "r-1"
     spec_node = ref_node["children"][0]
     assert spec_node["type"] == "spec"
-    sprint_node = spec_node["children"][0]
-    assert sprint_node["type"] == "sprint"
-    card_node = sprint_node["children"][0]
+    card_node = spec_node["children"][0]
     assert card_node["type"] == "card"
     assert card_node["id"] == "c-1"
 

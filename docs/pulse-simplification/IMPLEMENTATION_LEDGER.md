@@ -9535,3 +9535,84 @@ Objetivo integral ativo. Próxima frente concreta: produtores/inventário de fil
 histórica e pending tree/maturidade (acima), depois leitores F2B/schema/UoW e
 terminal offline; demais pendências integrais de matriz, footprint, E2E pareado,
 benchmark e rollout permanecem. Não liberar este estado intermediário.
+
+### F3/F5 — produtores e inventário KG sem Sprint operacional
+
+Em execução sobre Core a985050a / Community 0ed4f59, par limpo/publicado.
+Turno anterior foi progresso: archive/restore/Spec delete, 351 testes/closure0.
+Governança histórica e leitor SQL deixam de enumerar/enfileirar Sprint. Reader
+BoardSourceReader não exige/lê a tabela Sprint; contrato/hash vivo Card ignora
+sprint_id. As colunas históricas Sprint migraram para fixture de teste; todos os
+hashes v0.3.4 fixados permanecem iguais, incluindo Card/Sprint históricos.
+Maturidade/rebuild excluem Sprint do catálogo; payload antigo torna-se unknown,
+sem entrar working/canonical. A remoção dirigida/offline continua dona do histórico.
+Pending tree usa Ideation→Refinement→Spec→Card, profundidade padrão/máxima4, sem
+consulta de Sprint, mantendo os Cards inclusive com metadado legado. Retry direto
+Sprint não altera a fila; recursivo atua em Spec/Card. DLQ geral ignora Sprint;
+seleção explícita mista falha atomicamente antes de qualquer mutação.
+Frontend retira nível/ícone/tipo Sprint; teste mantém100 Cards nos quatro níveis,
+expande107 nós e conserva o limite500ms de montagem (não é benchmark do fluxo).
+Novos testes SQL reais cobrem inventário/árvore/retry/DLQ e ausência de query
+Sprint. Permissões, escopo de Board e Code Traceability não foram relaxados.
+Contratos de ACK histórico _EXACT_REBUILD_SOURCE_ARTIFACT_TYPES ainda não alterados:
+analisar uso em journals/replay antes de cortar leitura de recibos preexistentes.
+Ruff aprovado; build frontend em execução. Proveniência/suites/closure pendentes.
+Sem liberação de runtime intermediário, migração real ou reinício do usuário.
+
+Primeira validação: Core160 passed, frontend25 passed; closure inicial ok=true,
+findings/docs vazios e oito budgets0. Community38 passed, duas falhas e dois
+erros: fixture nova usava AsyncSession simples em vez de CommunitySemanticSession;
+caso de coluna obrigatória ainda usava tabela Sprint retirada; novo guard DLQ
+precedia o motivo work_superseded já contratado. Com todos os handles encerrados,
+fixture composta corrigida, teste de coluna comum passa a usar Refinement,
+e guard Sprint movido depois do reconhecimento de supersession (negação e
+atomicidade preservadas). Novo teste confirma que schema Sprint incompleto não
+contamina a completude do inventário vivo.
+Investigação F2 confirmou cards.spec_id=NULL como válido mesmo com sprint_id.
+Árvore agora inclui esse Card diretamente no Board, sem inventar Spec ou consultar
+Sprint. Teste SQL adiciona esse caso; fixture frontend mantém exatamente100 Cards,
+um deles na raiz do Board, total107 nós. Rebuild/reinstall pareados e retestes
+necessários antes de commit. Primeiro build frontend havia falhado só na proteção
+de resposta Sprint antiga do NodeSourceLink; type fechado e allowlist runtime
+mantêm proveniência sem navegação, com fixture explicitamente histórica.
+
+Validação final do incremento (2026-09-21):
+- Core inicial160 passed (f3-kg-inventory-core.log), incluindo hashes históricos
+  fixados, rebuild/maturidade, governança, pending tree, REST/retry, decisões,
+  amendment e catálogo MCP. Após ajuste Board-root/replay, subconjunto51 passou
+  em f3-kg-inventory-core-final.log; repetições não somadas.
+- Community final43 passed (f3-kg-inventory-community-final.log, 80s). Sem falhas
+  pendentes da rodada inicial. Inclui SQL real, Card com/sem Spec, ausência de
+  consulta Sprint, não reentrada via retry/DLQ, atomicidade mista, escopo Code
+  Traceability, snapshot completo sem tabela Sprint e work retirement histórico.
+- Frontend25 passed inicialmente; PendingQueueTree três casos repetidos após
+  fixture Board-root (f3-kg-inventory-ui-final.log). Mesmos100 Cards,107 nós
+  expandidos, sem nível/ícone Sprint, provenance antigo sem link operacional.
+  Total distinto228; não equivale à matriz integral nem E2E final de upgrade.
+- Build tsc/Vite/sync passou. Primeiro tsc exigiu ajustar NodeSourceLink/teste
+  histórico ao tipo fechado; allowlist runtime preserva a recusa. tsc final e
+  verify:frontend-dist passaram,78 arquivos/hash
+  8f8306963c86c094d08d0f156d46bd77c4f3079715ab13d810ce34ccc13c04d0.
+- Dois preflights fonte/wheel/install byte a byte antes das suites, inicial e
+  final. provenance-f3-kg-inventory-final.json:804/335 Python,867/419 payloads.
+  Core agregado91bd9be4326acf7a7d609c1cd2b38254e46f25687fdd0d0c3358201d6001e1a8;
+  Community b2a3bc0ae4dba6625d02eabdd219066eccf1f9a8eaa72caf192519c90aaed7f2.
+  Wheel Core e0a59b1cd396a662e85bdaeda0cbab35e63c71b208bab598459db63d515431d0;
+  Community68cf917670883e4c6a2ee6f20272db67e3132ac9ca2dfd78016f25a7a84fa4df.
+  Nenhuma edição produtiva/reinstalação com testes ativos; rodada inicial
+  encerrada antes de ajustar Board-root/DLQ. Handles finais todos encerrados.
+- closure-f3-kg-inventory-final.json exit0,ok=true,findings=[],
+  documentation_findings=[],oito budgets0/0. Ruff/diff --check aprovados.
+  Nenhuma tool alterada; gate byte a byte do catálogo MCP passou.
+- Community commit36e12dd; Core/pushes pareados a seguir com verificação remoto/
+  árvores limpas. Sem dados reais migrados, deploy/release/tag/merge/restart.
+
+Retomada: separar resolver vivo Card/Spec/Board do resolver histórico Sprint
+usado pelo plano F2B, preservando os hashes/paridade e deprecation autorizada.
+Retirar leituras Sprint de main/card_crud/MCP/context_projection antes de cortar
+ORM/UoW/enums; dados ainda não migrados devem falhar fechado, sem fallback de
+policy. Inventariar export/telemetria e snapshots semânticos/históricos antes de
+remover suas referências. ACKs históricos de rebuild requerem tratamento próprio
+para não invalidar silenciosamente journals antigos. Corte schema/terminal
+offline runtime_ready, matriz DEI/ARQ/VER/ADV, E2E pareado/rollback, footprint MCP,
+benchmark e rollout continuam pendentes. Objetivo integral ativo, não concluído.

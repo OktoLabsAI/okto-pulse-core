@@ -501,7 +501,7 @@ class ListPendingUseCase:
 class ListPendingTreeCommand:
     __slots__ = ("board_id", "depth")
 
-    def __init__(self, board_id: str, *, depth: int = 5) -> None:
+    def __init__(self, board_id: str, *, depth: int = 4) -> None:
         self.board_id = board_id
         self.depth = depth
 

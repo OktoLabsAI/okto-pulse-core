@@ -73,7 +73,7 @@ async def list_pending_entries(
 
 
 async def build_pending_tree(
-    context: Any, board_id: str, *, depth: int = 5
+    context: Any, board_id: str, *, depth: int = 4
 ) -> dict[str, Any]:
     """Build the hierarchical pending-queue view."""
     payload = await get_kg_operational_read_model_port().build_pending_tree(

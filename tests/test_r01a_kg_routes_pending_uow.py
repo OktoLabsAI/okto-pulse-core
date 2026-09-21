@@ -129,7 +129,7 @@ async def _seed_pending_entry(
 
 
 async def _seed_chain() -> dict[str, str]:
-    """Seed a single ideation→refinement→spec→sprint→card chain. Returns the ids."""
+    """Seed a single ideation→refinement→spec→card chain with historical Sprint metadata. Returns the ids."""
     from sqlalchemy_test_models import (
         Board, Card, Ideation, Refinement, Spec, Sprint,
     )
@@ -238,7 +238,7 @@ async def test_pending_tree_empty_board_200(client) -> None:
     assert body["tree"] == []
     assert body["total_pending"] == 0
     assert set(body["levels"].keys()) == {
-        "ideations", "refinements", "specs", "sprints", "cards",
+        "ideations", "refinements", "specs", "cards",
     }
 
 
@@ -256,9 +256,7 @@ async def test_pending_tree_hierarchical_shape_200(client) -> None:
     assert ref_node["type"] == "refinement"
     spec_node = ref_node["children"][0]
     assert spec_node["type"] == "spec"
-    sprint_node = spec_node["children"][0]
-    assert sprint_node["type"] == "sprint"
-    card_node = sprint_node["children"][0]
+    card_node = spec_node["children"][0]
     assert card_node["type"] == "card"
     assert card_node["id"] == ids["card"]
 
@@ -390,14 +388,16 @@ async def test_retry_recursive_reopens_descendants_200(client) -> None:
     assert resp.status_code == 200, resp.text
     body = resp.json()
     assert body["recursive"] is True
-    assert body["reopened_count"] >= 3
-    for eid in (spec_entry_id, sprint_entry_id, card_entry_id):
+    assert body["reopened_count"] == 2
+    assert sprint_entry_id not in body["reopened_ids"]
+    for eid in (spec_entry_id, card_entry_id):
         assert eid in body["reopened_ids"]
 
     async with get_session_factory()() as db:
-        for eid in (spec_entry_id, sprint_entry_id, card_entry_id):
+        for eid in (spec_entry_id, card_entry_id):
             refreshed = await db.get(ConsolidationQueue, eid)
             assert refreshed.status == "pending"
+        assert (await db.get(ConsolidationQueue, sprint_entry_id)).status == "done"
 
 
 # --- service reader + use case (transport-free) -----------------------------
