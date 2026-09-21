@@ -12254,3 +12254,62 @@ identidades/arestas/endpoints/temporalidade/órfãos, cutover retomável e contr
 terminal de admissão. Migração de schema físico incompatível que preserve história,
 Boards vazios, demais gates do pacote e rollout continuam abertos. Manter o
 backlog consolidado já registrado; este incremento não conclui a iniciativa.
+
+### 2026-09-21 — checkpoint de candidato projetado: validação em andamento
+
+Base Core156d5cadebd637fdaa6bc18c29deafd8027d664c / Community
+40a342e443611d3b43f2487a829e1f18af6cf8ae, ambos publicados e limpos.
+O candidato publicado precisa retomar sem repetir mutações: a execução produz
+ACKs duráveis e estado SQL/grafo privados, mas o replay pristine byte-a-byte
+não se aplica após projeção. Implementação em validação registra um digest do
+inventário completo do stage após fechar engines, antes do recibo final; o
+recibo final contém o digest selado do checkpoint. Retomada exige o digest
+externo do recibo retornado ao instalador, confirmação offline do original e
+do candidato, e mantém a reserva SQL/rotas de origem durante leitura. Verifica
+conteúdo, binding/geração, snapshot SQL, membership exata e cadeia do journal
+ACK SQL com os recibos tipados, sem reexecutar trabalho. Ainda devolve
+projected_not_reconciled: não prova convergência semântica, cutover ou admissão.
+Testes novos cobrem digest externo errado, falta de fence offline, acréscimo de
+arquivo após checkpoint e replay idêntico com/sem histórico nativo. Código/fixture
+alterados aguardam build pareado, prova byte-a-byte, testes e auditoria closure.
+
+Validação intermediária do checkpoint: wheels-kg-candidate-checkpoint instalados e
+provenance-kg-candidate-checkpoint.json comprovou Core808/871 e Community346/430
+Python/payload byte-identical. Community12044:4 passed em87.50s no candidato sem
+grafo prévio, cobrindo ACK real, retry, retomada com digest externo, fences,
+recusa de digest errado e drift de arquivo. Community54695:1 passed em170.66s
+sobre grafo nativo com UUID/cursor/as_of preservados e retomada autenticada.
+Closure43731:8budgets0/findings vazios, somente README drift; matrizes regeneradas
+pelo renderer oficial. Ajustes finais ainda sem teste: leitura bounded de recibos
+antes de JSON e recusa de replay com digest externo quando destino não existe.
+Reconstruir par, provar bytes, executar teste afetado e closure final. A
+verificação do checkpoint autentica estado congelado, mas não constitui
+reconciliação semântica nem libera runtime.
+
+Validação final do checkpoint: install58229 exit0; provenance-kg-candidate-
+checkpoint-final.json confirmou Core808/871 e Community346/430 arquivos Python/
+payload idênticos entre working tree, wheel e site-packages. Community44306:
+4 passed em99.31s; cobre leitura bounded, destino ausente, digest inválido,
+replay sem fence, integridade do inventário e igualdade do recibo no retry.
+O ensaio nativo Community54695:1 passed em170.66s ocorreu antes apenas dos
+dois ajustes de leitura bounded e destino ausente, cujos ramos relevantes foram
+cobertos por Community44306. Closure70473:oktrue, findings/documentação vazios,
+8budgets0. Renderer oficial atualizou as matrizes README. Ruff F/E9 nos Python
+alterados Community e git diff --check passaram. Um ruff invocado sem caminhos
+Core varreu testes não alterados e apontou dois imports preexistentes; não é
+gate desta mudança e não foi relatado como verde. Core não alterou Python.
+Wheels-kg-candidate-checkpoint-final aggregates: Core
+ d3ade7b969a9a2787a68c5cdbd84bd3ccd01d43fd908037c347e35f96d254746;
+Community 05eb08de43f52ec2a076a6e42f3f2e0b21602c7208bc753777620fdddfe45005.
+Community commit f327515d7506c2e79fcea67d44a0d02be0337091. Core README/ledger
+serão commitados e pushes conferidos. Nenhum frontend/API/MCP alterado; teste
+frontend não se aplica. Sem dados ou runtime real, release, tag, deploy ou merge.
+
+Retomada: checkpoint confirma imutabilidade e ACKs do candidato publicado com
+digest externo, original e candidato offline, fonte/rotas originais sob fence.
+Receipts v2 anteriores sem checkpoint não são adotados pela nova verificação;
+reconstruir de seed em destino privado novo se necessário. Estado permanece
+projected_not_reconciled e runtime admission continua recusada. Próximo trabalho
+é reconciliar efeitos SQL por recibo e grafo com fonte/active sets/cognição,
+antes de contrato terminal e cutover. A sequência e os demais gaps do plano
+consolidado permanecem abertos; meta integral não concluída.
