@@ -27,7 +27,7 @@ from sqlalchemy_test_models import (
     SprintLaneType,
     SprintStatus,
 )
-from okto_pulse.core.models.schemas import CardMove, SprintCreate, SprintMove
+from okto_pulse.core.models.schemas import CardMove
 from okto_pulse.core.services.amendment_revision import AmendmentRevisionService
 from okto_pulse.core.services.bug_regression_preview import (
     BugRegressionScenarioPreviewService,
@@ -40,7 +40,7 @@ from okto_pulse.core.services.bug_regression_observability import (
     get_bug_regression_metric_samples,
     reset_bug_regression_observability_for_tests,
 )
-from okto_pulse.core.services.main import CardOperationError, CardService, SprintService
+from okto_pulse.core.services.main import CardOperationError, CardService
 
 
 pytestmark = pytest.mark.asyncio
@@ -312,7 +312,7 @@ async def test_active_hotfix_lane_does_not_bypass_missing_bug_test_task():
     assert payload["remediation_path"] == "path_b_semantic_gap"
     assert payload["semantic_gap_required"] is True
     assert payload["eligible_scenarios_count"] == 0
-    assert payload["hotfix_lane_status"] == "not_applicable"
+    assert "hotfix_lane_status" not in payload
     assert payload["actions"][0]["primary"] is True
 
 
@@ -719,15 +719,16 @@ async def test_bug_gate_path_a_preserves_locked_spec_canonical_content():
     ],
     ids=["draft", "review", "closed", "cancelled"],
 )
-async def test_inactive_hotfix_lane_blocks_with_activate_hotfix_remediation(
+async def test_retired_lane_state_does_not_block_valid_regression(
     lane_status: SprintStatus,
 ):
-    """Inactive hotfix lane blocks before the bug gate and exposes remediation facts."""
+    """Old execution lane rows cannot block eligible post-delivery regression."""
     from okto_pulse.core.infra.database import get_session_factory
 
     factory = get_session_factory()
     board_id = f"hotfix-inactive-board-{uuid.uuid4().hex[:8]}"
     spec_id = f"hotfix-inactive-spec-{uuid.uuid4().hex[:8]}"
+    origin_id = f"origin-{uuid.uuid4().hex[:8]}"
     bug_id = f"bug-{uuid.uuid4().hex[:8]}"
     test_id = f"test-{uuid.uuid4().hex[:8]}"
     hotfix_sprint_id = f"hotfix-sprint-{uuid.uuid4().hex[:8]}"
@@ -748,7 +749,7 @@ async def test_inactive_hotfix_lane_blocks_with_activate_hotfix_remediation(
                 "id": scenario_id,
                 "title": "Existing regression scenario",
                 "linked_criteria": [0],
-                "linked_task_ids": [test_id],
+                "linked_task_ids": [origin_id],
                 "status": "passed",
             }],
             business_rules=[],
@@ -763,12 +764,17 @@ async def test_inactive_hotfix_lane_blocks_with_activate_hotfix_remediation(
             lane_type=SprintLaneType.HOTFIX,
             created_by=USER_ID,
         ))
+        db.add(Card(id=origin_id, board_id=board_id, spec_id=spec_id,
+                    title="Delivered origin", status=CardStatus.DONE,
+                    card_type=CardType.NORMAL, created_by=USER_ID,
+                    created_at=now - timedelta(minutes=1)))
         db.add(Card(
             id=bug_id,
             board_id=board_id,
             spec_id=spec_id,
             sprint_id=hotfix_sprint_id,
             title="Hotfix bug",
+            origin_task_id=origin_id,
             status=CardStatus.NOT_STARTED,
             card_type=CardType.BUG,
             severity=BugSeverity.MAJOR,
@@ -792,22 +798,16 @@ async def test_inactive_hotfix_lane_blocks_with_activate_hotfix_remediation(
         ))
         await db.flush()
 
-        with pytest.raises(CardOperationError) as exc:
-            await CardService(db).move_card(
-                bug_id,
-                USER_ID,
-                CardMove(status=CardStatus.IN_PROGRESS),
-            )
-
-    assert exc.value.code == "sprint_not_active"
-    assert exc.value.remediation == "activate_hotfix_lane"
-    assert exc.value.facts["lane_type"] == "hotfix"
-    assert exc.value.facts["sprint_status"] == lane_status.value
-    assert exc.value.facts["next_action"] == "activate_hotfix_lane"
+        moved = await CardService(db).move_card(
+            bug_id, USER_ID, CardMove(status=CardStatus.IN_PROGRESS),
+        )
+        assert moved.status == CardStatus.IN_PROGRESS
+        assert (await db.get(Sprint, hotfix_sprint_id)).status == lane_status
 
 
-async def test_done_spec_bug_without_lane_reports_assign_hotfix_lane():
-    """A post-closure bug without sprint assignment points to hotfix lane assignment."""
+
+async def test_done_spec_bug_without_regression_still_blocked():
+    """Removing execution lanes does not remove the regression evidence gate."""
     from okto_pulse.core.infra.database import get_session_factory
 
     factory = get_session_factory()
@@ -878,16 +878,14 @@ async def test_done_spec_bug_without_lane_reports_assign_hotfix_lane():
             )
         original_sprint = await db.get(Sprint, original_sprint_id)
 
-    assert exc.value.code == "sprint_required"
-    assert exc.value.remediation == "assign_hotfix_lane"
-    assert exc.value.facts["lane_type"] == "hotfix"
-    assert exc.value.facts["next_action"] == "assign_hotfix_lane"
+    assert exc.value.code == "missing_regression_test_task"
+    assert exc.value.workflow_remediation.next_action.value == "escalate_semantic_gap"
     assert original_sprint.status == SprintStatus.CLOSED
     assert "reopen" not in str(exc.value).lower()
 
 
-async def test_post_closure_bug_uses_hotfix_lane_without_reopening_history():
-    """Closed sprint block is remediated by an active hotfix lane, not by reopening."""
+async def test_post_closure_bug_executes_without_rewriting_historical_assignment():
+    """Valid post-delivery regression needs no lane mutation or reopening."""
     from okto_pulse.core.infra.database import get_session_factory
 
     factory = get_session_factory()
@@ -971,47 +969,6 @@ async def test_post_closure_bug_uses_hotfix_lane_without_reopening_history():
         await db.flush()
 
         card_service = CardService(db)
-        sprint_service = SprintService(db)
-
-        with pytest.raises(CardOperationError) as blocked:
-            await card_service.move_card(
-                bug_id,
-                USER_ID,
-                CardMove(status=CardStatus.IN_PROGRESS),
-            )
-        assert blocked.value.code == "sprint_not_active"
-        assert blocked.value.remediation == "assign_hotfix_lane"
-        assert blocked.value.facts["sprint_status"] == SprintStatus.CLOSED.value
-        assert blocked.value.facts["lane_type"] == SprintLaneType.NORMAL.value
-        assert "reopen" not in str(blocked.value).lower()
-
-        hotfix = await sprint_service.create_sprint(
-            board_id,
-            USER_ID,
-            SprintCreate(
-                title="Active post-closure hotfix lane",
-                spec_id=spec_id,
-                lane_type=SprintLaneType.HOTFIX,
-                origin_sprint_id=original_sprint_id,
-                origin_bug_id=bug_id,
-            ),
-        )
-        assert hotfix is not None
-        assert hotfix.status == SprintStatus.DRAFT
-        assert hotfix.lane_type == SprintLaneType.HOTFIX
-        assert hotfix.origin_sprint_id == original_sprint_id
-        assert hotfix.origin_bug_id == bug_id
-        assert hotfix.normal_sprint_created is False
-
-        assigned = await sprint_service.assign_tasks(hotfix.id, [bug_id, test_id], USER_ID)
-        assert assigned == 2
-        activated = await sprint_service.move_sprint(
-            hotfix.id,
-            USER_ID,
-            SprintMove(status=SprintStatus.ACTIVE),
-        )
-        assert activated.status == SprintStatus.ACTIVE
-
         moved = await card_service.move_card(
             bug_id,
             USER_ID,
@@ -1023,9 +980,9 @@ async def test_post_closure_bug_uses_hotfix_lane_without_reopening_history():
 
     assert moved is not None
     assert moved.status == CardStatus.IN_PROGRESS
-    assert moved.sprint_id == hotfix.id
-    assert bug.sprint_id == hotfix.id
-    assert regression.sprint_id == hotfix.id
+    assert moved.sprint_id == original_sprint_id
+    assert bug.sprint_id == original_sprint_id
+    assert regression.sprint_id == original_sprint_id
     assert original_sprint.status == SprintStatus.CLOSED
 
 

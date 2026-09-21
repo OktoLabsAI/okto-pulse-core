@@ -43,6 +43,8 @@ from sqlalchemy_test_models import (
     Spec,
     SpecHistory,
     SpecStatus,
+    Sprint,
+    SprintStatus,
 )
 from okto_pulse.core.models.schemas import SpecMove, SpecUpdate
 from okto_pulse.core.domain.code_traceability import (
@@ -1945,9 +1947,11 @@ class TestLockRelease:
         assert spec_is_content_locked(spec) is True
         assert spec.status == SpecStatus.APPROVED
 
+    @pytest.mark.parametrize("historical_sprint_status", [None, *SprintStatus])
     async def test_forward_execution_lifecycle_preserves_current_validation(
         self,
         db_factory,
+        historical_sprint_status,
     ):
         """validated -> in_progress -> done remains in the validated edition."""
 
@@ -1969,6 +1973,21 @@ class TestLockRelease:
             initial_edition = validated.edition
             validated.skip_qualitative_validation = True
 
+            # This legacy fixture has no adopted execution contract. The new
+            # planning gate must reject it while preserving Current validation.
+            with pytest.raises(ValueError, match="spec_execution_contract_adoption_required"):
+                await _move_spec(
+                    service, db, spec_id, USER_ID,
+                    SpecMove(status=SpecStatus.IN_PROGRESS),
+                )
+            assert validated.current_validation_id == current_id
+            assert validated.status == SpecStatus.VALIDATED
+
+            # Isolate validation-pointer ownership, like the accepted lint and
+            # delivery ports above. This is not proof of a complete execution plan.
+            from unittest.mock import AsyncMock
+            accepted_planning = AsyncMock(return_value=None)
+            service.require_execution_contract_ready = accepted_planning
             in_progress = await _move_spec(
                 service,
                 db,
@@ -1979,7 +1998,16 @@ class TestLockRelease:
             assert in_progress.current_validation_id == current_id
             assert in_progress.edition == initial_edition
             assert spec_is_content_locked(in_progress) is True
+            accepted_planning.assert_awaited_once()  # Planning runs under the board fence.
 
+            if historical_sprint_status is not None:
+                historical_sprint = Sprint(
+                    id=str(uuid.uuid4()), board_id=board_id, spec_id=spec_id,
+                    title="Retired execution lane", status=historical_sprint_status,
+                    created_by=USER_ID,
+                )
+                db.add(historical_sprint)
+                await db.flush()
             done = await _move_spec(
                 service,
                 db,
@@ -1987,6 +2015,8 @@ class TestLockRelease:
                 USER_ID,
                 SpecMove(status=SpecStatus.DONE),
             )
+            if historical_sprint_status is not None:
+                assert historical_sprint.status is historical_sprint_status
 
         assert done.status == SpecStatus.DONE
         assert done.current_validation_id == current_id

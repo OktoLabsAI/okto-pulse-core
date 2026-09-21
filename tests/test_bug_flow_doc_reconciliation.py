@@ -17,6 +17,7 @@ Covers the spec's six acceptance criteria:
 - AC6 (ts_4f725f5e) — edited resources remain valid registered MCP resources.
 """
 
+import ast
 import re
 from pathlib import Path
 
@@ -58,7 +59,7 @@ def _cards_md_reconciled(text: str) -> bool:
     has_unchanged_content = "leave validated spec content unchanged" in low
     has_lineage = "origin_task_id" in low and "affected_task_ids" in low
     has_semantic_gap = "path b" in low and "semantic gap" in low
-    has_hotfix_lane = "path c" in low and "hotfix lane" in low
+    no_execution_lane = "path c" not in low and "hotfix lane" not in low
     return (
         no_stale
         and has_reuse
@@ -66,7 +67,7 @@ def _cards_md_reconciled(text: str) -> bool:
         and has_unchanged_content
         and has_lineage
         and has_semantic_gap
-        and has_hotfix_lane
+        and no_execution_lane
     )
 
 
@@ -107,8 +108,8 @@ def test_ac1_cards_md_carries_traceability_only_reuse_rule() -> None:
     assert "leave validated spec content unchanged" in low
     assert "path b" in low
     assert "semantic gap" in low
-    assert "path c" in low
-    assert "hotfix lane" in low
+    assert "path c" not in low
+    assert "hotfix lane" not in low
 
 
 # ---------------------------------------------------------------------------
@@ -171,9 +172,11 @@ def test_ac4_canonical_sources_intact() -> None:
 
     # The relaxed move-card bug gate text in services/main.py is intact.
     gate = _read(GATE_MAIN)
-    assert "class SpecLockedError(Exception):" in gate
-    assert "leave spec content unchanged for Path A regression evidence" in gate
-    assert "The referenced scenario may be an existing scenario on a" in gate
+    assert "class SpecLockedError(Exception):" in _read(CORE_DIR / "domain" / "spec_content_lock.py")
+    strings = " ".join(node.value for node in ast.walk(ast.parse(gate))
+                       if isinstance(node, ast.Constant) and isinstance(node.value, str))
+    assert "leave spec content unchanged for Path A regression evidence" in strings
+    assert "The referenced scenario may be an existing scenario on a" in strings
 
 
 # ---------------------------------------------------------------------------
@@ -203,8 +206,8 @@ def test_ac5_error_guidance_routes_semantic_gap_without_spec_editing() -> None:
     assert "path b" in low
     assert "semantic gap" in low
     assert "leave the current validated spec content unchanged for simple path a reuse" in low
-    assert "assign_hotfix_lane" in low
-    assert "activate_hotfix_lane" in low
+    assert "assign_hotfix_lane" not in low
+    assert "activate_hotfix_lane" not in low
     assert "in_progress -> approved" not in low
     assert "in_progress to approved" not in low
 
@@ -309,13 +312,13 @@ def test_ac7_exposed_path_b_resources_serve_reconciled_content() -> None:
         _srv._load_resource_file(registry["okto-pulse://reference/card_types"])
     )
 
-    # 3. The served cards workflow points Path B at the formal amendment lineage
-    #    (not a generic refinement/hotfix-spec detour) and keeps Path C non-substitutive.
+    # Formal amendment lineage remains required; execution lanes are retired.
     cards_low = _srv._load_resource_file(registry["okto-pulse://workflows/cards"]).lower()
     assert "amendmenthotfixrevision" in cards_low or "amendment revision" in cards_low
-    # Path C is non-substitutive (markdown emphasis may wrap "not", so match the
-    # distinctive tail rather than the full sentence).
-    assert "replace path b" in cards_low
+    for uri in _PATH_B_RESOURCE_URIS:
+        served = _srv._load_resource_file(registry[uri]).lower()
+        for retired in ("path c", "assign_hotfix_lane", "activate_hotfix_lane"):
+            assert retired not in served, (uri, retired)
 
     # Negative-wiring: the forbidden-phrase guard is NOT vacuous — synthetic stale
     # remediation text must trip at least one forbidden marker (teeth-by-construction,
@@ -359,7 +362,7 @@ _CHECKLIST_REQUIRED = (
     "re-executable",
     "test_file_path",
     "canonical debt",
-    "dead-letter",
+    "dlq",
     "coverage_pending",
     "do not close",
     "no administrative shortcut",

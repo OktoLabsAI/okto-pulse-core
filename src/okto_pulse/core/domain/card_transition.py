@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from okto_pulse.core.domain.enums import CardStatus, CardType, SpecStatus, SprintStatus
+from okto_pulse.core.domain.enums import CardStatus, CardType, SpecStatus
 from okto_pulse.core.domain.spec_dependency import (
     spec_dependency_blocked_guidance,
     spec_dependency_blocking_facts,
@@ -53,13 +53,6 @@ class CardTransitionFacts:
     spec_id: str | None = None
     spec_title: str | None = None
     spec_status: SpecStatus | None = None
-    sprint_count: int = 0
-    sprint_id: str | None = None
-    sprint_exists: bool = True
-    sprint_status: SprintStatus | None = None
-    sprint_title: str | None = None
-    sprint_is_hotfix: bool = False
-    hotfix_count: int = 0
     validation_required: bool = False
     pending_scenarios: tuple[PendingScenario, ...] = ()
     require_test_task_for_bug: bool = True
@@ -203,51 +196,6 @@ def spec_maturity_block(facts: CardTransitionFacts) -> CardTransitionBlock | Non
     return None
 
 
-def sprint_assignment_block(facts: CardTransitionFacts) -> CardTransitionBlock | None:
-    if facts.new_status is CardStatus.CANCELLED:
-        return None
-    old_level = CARD_STATUS_ORDER.get(facts.old_status, 0)
-    new_level = CARD_STATUS_ORDER.get(facts.new_status, 0)
-    moves_forward = new_level > old_level
-    if not (moves_forward and facts.spec_id and facts.sprint_count > 0):
-        return None
-
-    post_closure_bug = facts.card_type is CardType.BUG and (
-        facts.spec_status is SpecStatus.DONE or facts.hotfix_count > 0
-    )
-    assign_remediation = (
-        "assign_hotfix_lane" if post_closure_bug else "assign_sprint"
-    )
-    if not facts.sprint_id:
-        return _blocked(
-            "sprint_required",
-            "This spec uses sprints. Card must be assigned to a sprint before advancing. "
-            "Use okto_pulse_update_card or assign_tasks_to_sprint to assign it.",
-            remediation=assign_remediation,
-            facts={"card_id": facts.card_id, "spec_id": facts.spec_id},
-        ).block
-    if not facts.sprint_exists:
-        return _blocked(
-            "sprint_not_found",
-            "Card's assigned sprint no longer exists. Assign it to an active sprint before advancing.",
-            remediation=assign_remediation,
-            facts={"card_id": facts.card_id, "sprint_id": facts.sprint_id},
-        ).block
-    if facts.sprint_status is not SprintStatus.ACTIVE:
-        remediation = (
-            "activate_hotfix_lane"
-            if facts.sprint_is_hotfix
-            else ("assign_hotfix_lane" if post_closure_bug else "activate_sprint")
-        )
-        return _blocked(
-            "sprint_not_active",
-            f"Card's sprint '{facts.sprint_title or facts.sprint_id}' is not active "
-            f"(status: '{facts.sprint_status.value if facts.sprint_status else 'unknown'}'). "
-            "Only cards in active sprints can advance.",
-            remediation=remediation,
-            facts={"card_id": facts.card_id, "sprint_id": facts.sprint_id},
-        ).block
-    return None
 
 
 def validation_gate_block(facts: CardTransitionFacts) -> CardTransitionBlock | None:
@@ -336,7 +284,6 @@ def evaluate_card_transition(facts: CardTransitionFacts) -> CardTransitionDecisi
         completed_spec_execution_block,
         spec_dependency_block,
         spec_maturity_block,
-        sprint_assignment_block,
         validation_gate_block,
         test_completion_block,
         bug_regression_evidence_block,
@@ -363,7 +310,6 @@ __all__ = [
     "evaluate_card_transition",
     "spec_dependency_block",
     "spec_maturity_block",
-    "sprint_assignment_block",
     "test_completion_block",
     "validation_gate_block",
 ]

@@ -139,17 +139,6 @@ Bug regression decision rule:
     closure-ready; a generic authoring detour without amendment lineage and
     validator coverage confirmation does not satisfy the gate. Do not move a spec directly from in_progress to approved for the simple Path A reuse case.
 
-    Path C is hotfix execution lane ONLY — it does NOT replace the Path B
-    amendment lineage. When a done spec or closed origin sprint blocks bug
-    execution, use the returned next_action (`assign_hotfix_lane` or
-    `activate_hotfix_lane`) to put the bug and its regression test card on an
-    active `lane_type="hotfix"` sprint. Cards are same-spec by default. The exact
-    cross-spec Path B test task may join the original-spec lane only after its
-    non-blocking complete amendment and persisted validator attestation bind the
-    bug, task, scenario and revision spec. The lane only unblocks execution; the
-    regression must still satisfy Path A reuse or the Path B amendment lineage
-    above. Keep the original closed sprint unchanged.
-
 ## `okto_pulse_delete_card`
 
 Delete a card from the board. This operation is permanent and cannot be undone.

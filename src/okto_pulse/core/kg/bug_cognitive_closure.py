@@ -157,8 +157,7 @@ def build_bug_path_b_remediation(
 ) -> BugWorkflowRemediationMessage:
     """Consume the EXISTING ``BugWorkflowRemediationPath.PATH_B_SEMANTIC_GAP`` for
     a locked-spec bug semantic gap (fr_0092774e / dec_085b0f9e). Reuses the
-    canonical remediation builder — it never merges with
-    ``PATH_C_HOTFIX_LANE`` and never creates a Path B lineage store of its own."""
+    canonical remediation builder and the existing Path B lineage authority."""
     return BugWorkflowRemediationMessageBuilder().build_semantic_gap(
         reason_code=reason_code,
     )

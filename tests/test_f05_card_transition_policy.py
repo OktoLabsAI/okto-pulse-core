@@ -7,7 +7,7 @@ from okto_pulse.core.domain.card_transition import (
     PendingScenario,
     evaluate_card_transition,
 )
-from okto_pulse.core.domain.enums import CardStatus, CardType, SpecStatus, SprintStatus
+from okto_pulse.core.domain.enums import CardStatus, CardType, SpecStatus
 
 
 def _facts(**overrides) -> CardTransitionFacts:  # noqa: ANN003
@@ -28,19 +28,6 @@ def _facts(**overrides) -> CardTransitionFacts:  # noqa: ANN003
     [
         ({"archived": True}, "card_archived"),
         ({"spec_status": SpecStatus.VALIDATED}, "spec_status_too_early"),
-        ({"sprint_count": 1, "sprint_id": None}, "sprint_required"),
-        (
-            {"sprint_count": 1, "sprint_id": "s", "sprint_exists": False},
-            "sprint_not_found",
-        ),
-        (
-            {
-                "sprint_count": 1,
-                "sprint_id": "s",
-                "sprint_status": SprintStatus.DRAFT,
-            },
-            "sprint_not_active",
-        ),
         (
             {
                 "old_status": CardStatus.IN_PROGRESS,
@@ -125,10 +112,13 @@ def test_f05_cancellation_does_not_start_execution() -> None:
         _facts(
             new_status=CardStatus.CANCELLED,
             spec_status=SpecStatus.APPROVED,
-            sprint_count=1,
-            sprint_id=None,
             card_type=CardType.BUG,
             has_regression_test_evidence=False,
         )
     )
     assert decision.allowed is True
+
+
+def test_normal_execution_needs_no_sprint_facts():
+    assert evaluate_card_transition(_facts()).allowed
+    assert not any("sprint" in name or "hotfix" in name for name in CardTransitionFacts.__dataclass_fields__)

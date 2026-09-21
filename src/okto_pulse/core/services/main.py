@@ -33,7 +33,6 @@ from okto_pulse.core.domain.card_transition import (
     bug_regression_gate_applies,
     completed_spec_execution_block,
     spec_maturity_block,
-    sprint_assignment_block,
     test_completion_block,
     validation_gate_block,
 )
@@ -4775,53 +4774,6 @@ class CardService:
                         reason_codes=(maturity.code,),
                     )
                 )
-            sprints = await _application_list(
-                self.db,
-                "sprint",
-                filters=(
-                    _apf("spec_id", "eq", card.spec_id),
-                    _apf("archived", "is_false"),
-                ),
-            )
-            if sprints:
-                sprint = (
-                    await _application_get(self.db, "sprint", card.sprint_id)
-                    if getattr(card, "sprint_id", None)
-                    else None
-                )
-                sprint_block = sprint_assignment_block(
-                    CardTransitionFacts(
-                        card_id=card.id,
-                        old_status=CardStatus.VALIDATION,
-                        new_status=CardStatus.DONE,
-                        card_type=getattr(card, "card_type", CardType.NORMAL),
-                        spec_id=card.spec_id,
-                        spec_status=spec.status,
-                        sprint_count=len(sprints),
-                        sprint_id=getattr(card, "sprint_id", None),
-                        sprint_exists=sprint is not None if card.sprint_id else True,
-                        sprint_status=sprint.status if sprint is not None else None,
-                        sprint_title=sprint.title if sprint is not None else None,
-                        sprint_is_hotfix=(
-                            sprint.lane_type == SprintLaneType.HOTFIX
-                            if sprint is not None
-                            else False
-                        ),
-                        hotfix_count=sum(
-                            1
-                            for item in sprints
-                            if item.lane_type == SprintLaneType.HOTFIX
-                        ),
-                    )
-                )
-                if sprint_block is not None:
-                    failures.append(
-                        CompletionGateFailure(
-                            code=sprint_block.code,
-                            summary=sprint_block.detail,
-                            reason_codes=(sprint_block.code,),
-                        )
-                    )
 
         dependencies_met, blocking_dependencies = await self.check_dependencies_met(
             card.id
@@ -6465,98 +6417,6 @@ class CardService:
                 )
                 if maturity_block is not None:
                     raise ValueError(maturity_block.detail)
-
-        # Sprint gate: if spec has sprints, card must have sprint_id and sprint must be active
-        if new_level > old_level and card.spec_id:
-            spec_for_sprint = await _application_get(self.db, "spec", card.spec_id)
-            if spec_for_sprint:
-                spec_sprints = await _application_list(
-                    self.db,
-                    "sprint",
-                    filters=(
-                        _apf("spec_id", "eq", card.spec_id),
-                        _apf("archived", "is_false"),
-                    ),
-                )
-                sprint_count = len(spec_sprints)
-                if sprint_count > 0:
-                    hotfix_count = sum(
-                        1
-                        for sprint in spec_sprints
-                        if sprint.lane_type == SprintLaneType.HOTFIX
-                    )
-                    sprint_obj = (
-                        await _application_get(self.db, "sprint", card.sprint_id)
-                        if card.sprint_id
-                        else None
-                    )
-                    transition_facts = CardTransitionFacts(
-                        card_id=card.id,
-                        old_status=old_status,
-                        new_status=data.status,
-                        card_type=getattr(card, "card_type", CardType.NORMAL),
-                        spec_id=card.spec_id,
-                        spec_status=spec_for_sprint.status,
-                        sprint_count=sprint_count,
-                        sprint_id=card.sprint_id,
-                        sprint_exists=sprint_obj is not None
-                        if card.sprint_id
-                        else True,
-                        sprint_status=sprint_obj.status if sprint_obj else None,
-                        sprint_title=sprint_obj.title if sprint_obj else None,
-                        sprint_is_hotfix=(
-                            sprint_obj.lane_type == SprintLaneType.HOTFIX
-                            if sprint_obj
-                            else False
-                        ),
-                        hotfix_count=hotfix_count,
-                    )
-                    sprint_block = sprint_assignment_block(transition_facts)
-                    if sprint_block is not None:
-                        lane_type = (
-                            sprint_obj.lane_type.value
-                            if sprint_obj
-                            else (
-                                "hotfix"
-                                if sprint_block.remediation == "assign_hotfix_lane"
-                                else None
-                            )
-                        )
-                        error_facts = {
-                            "card_id": card.id,
-                            "spec_id": card.spec_id,
-                            "spec_status": spec_for_sprint.status.value,
-                            "lane_type": lane_type,
-                            "next_action": sprint_block.remediation,
-                        }
-                        if card.sprint_id:
-                            error_facts["sprint_id"] = card.sprint_id
-                        if sprint_obj:
-                            error_facts["sprint_status"] = sprint_obj.status.value
-                        workflow_message = (
-                            f"Card's sprint '{sprint_obj.title}' is not active "
-                            f"(status: '{sprint_obj.status.value}')."
-                            if sprint_block.code == "sprint_not_active" and sprint_obj
-                            else None
-                        )
-                        raise CardOperationError(
-                            sprint_block.code,
-                            sprint_block.detail,
-                            remediation=sprint_block.remediation,
-                            facts=error_facts,
-                            workflow_remediation=(
-                                BugWorkflowRemediationMessageBuilder().build_from_sprint_lane_block(
-                                    code=sprint_block.code,
-                                    remediation=sprint_block.remediation
-                                    or "assign_sprint",
-                                    facts=error_facts,
-                                    message=workflow_message,
-                                )
-                                if getattr(card, "card_type", CardType.NORMAL)
-                                == CardType.BUG
-                                else None
-                            ),
-                        )
 
         # Task requirement link gate: normal task cards must be traceable to at
         # least one FR/TR/BR/IR/OR before execution starts. Human-only skips are
@@ -11798,50 +11658,6 @@ class SpecService:
             enforce=True,
         )
 
-        # A done spec is one of the two eligibility anchors for a hotfix lane.
-        # Reopening it must not silently invalidate lanes that have no valid,
-        # closed same-spec origin sprint.  This preflight deliberately runs
-        # before authorization/audit and before any entity mutation.
-        if spec.status == SpecStatus.DONE and data.status == SpecStatus.DRAFT:
-            hotfix_sprints = await _application_list(
-                self.db,
-                "sprint",
-                filters=(
-                    _apf("spec_id", "eq", spec.id),
-                    _apf("lane_type", "eq", SprintLaneType.HOTFIX),
-                ),
-            )
-            ineligible_sprint_ids: list[str] = []
-            for hotfix in hotfix_sprints:
-                origin_sprint = (
-                    await _application_get(self.db, "sprint", hotfix.origin_sprint_id)
-                    if hotfix.origin_sprint_id
-                    else None
-                )
-                has_closed_origin = bool(
-                    origin_sprint
-                    and origin_sprint.id != hotfix.id
-                    and origin_sprint.board_id == hotfix.board_id
-                    and origin_sprint.spec_id == hotfix.spec_id
-                    and origin_sprint.status == SprintStatus.CLOSED
-                )
-                if not has_closed_origin:
-                    ineligible_sprint_ids.append(hotfix.id)
-
-            if ineligible_sprint_ids:
-                raise SprintOperationError(
-                    "hotfix_spec_reopen_conflict",
-                    "Cannot reopen the spec: one or more hotfix lanes rely on "
-                    "the spec remaining done.",
-                    remediation="close_and_link_same_spec_origin_sprint_before_reopening_spec",
-                    facts={
-                        "spec_id": spec.id,
-                        "target_status": data.status.value,
-                        "dependent_sprint_ids": sorted(ineligible_sprint_ids)[:20],
-                        "dependent_sprint_count": len(ineligible_sprint_ids),
-                    },
-                )
-
         critical_actor_name = actor_name or await resolve_actor_name(
             self.db, user_id, spec.board_id
         )
@@ -12000,37 +11816,6 @@ class SpecService:
                         f"Uncovered: {'; '.join(uncovered[:5])}"
                         f"{f' (and {len(uncovered) - 5} more)' if len(uncovered) > 5 else ''}. "
                         f"Create test scenarios for all criteria, or set skip_test_coverage flag in the spec."
-                    )
-
-        # Sprint done gate: all sprints must be closed|cancelled (min 1 closed)
-        if data.status == SpecStatus.DONE:
-            spec_sprints = await _application_list(
-                self.db,
-                "sprint",
-                filters=(
-                    _apf("spec_id", "eq", spec_id),
-                    _apf("archived", "is_false"),
-                ),
-            )
-            if spec_sprints:
-                pending = [
-                    s
-                    for s in spec_sprints
-                    if s.status not in (SprintStatus.CLOSED, SprintStatus.CANCELLED)
-                ]
-                has_closed = any(s.status == SprintStatus.CLOSED for s in spec_sprints)
-                if pending:
-                    sprint_list = "; ".join(
-                        f"'{s.title}' ({s.status.value})" for s in pending[:5]
-                    )
-                    raise ValueError(
-                        f"Cannot move spec to 'done': {len(pending)} sprint(s) are not closed or cancelled. "
-                        f"Pending: {sprint_list}. Close or cancel all sprints first."
-                    )
-                if not has_closed:
-                    raise ValueError(
-                        "Cannot move spec to 'done': at least 1 sprint must be closed "
-                        "(all are cancelled). Close at least one sprint."
                     )
 
         # Enforce all linked tasks (non-bug) must be done/cancelled before spec can be done
@@ -19448,6 +19233,20 @@ class ArchiveService:
                 card,
                 operation="restore_tree",
             )
+            if card.archived:
+                restored_status = card.status
+                if card.pre_archive_status:
+                    try:
+                        restored_status = CardStatus(card.pre_archive_status)
+                    except (ValueError, KeyError):
+                        pass
+                if restored_status in (CardStatus.STARTED, CardStatus.IN_PROGRESS):
+                    # Removing the archive flag resumes executable work even
+                    # when its stored status does not change. Historical and
+                    # paused restoration keeps its existing contract.
+                    await CardService(self.db).require_content_mutation_allowed(
+                        card, operation="restore_card_execution",
+                    )
 
         spec_board_ids = sorted(
             {str(spec.board_id) for spec in tree["specs"] if spec.archived}

@@ -44,7 +44,6 @@ from okto_pulse.core.domain.enums import (
     CardType,
     SpecStatus,
     SprintLaneType,
-    SprintStatus,
     TestScenarioStatus,
 )
 from okto_pulse.core.domain.spec_dependency import (
@@ -933,24 +932,6 @@ class ListAllowedTransitionsUseCase:
                         f"{len(uncovered)} acceptance criteria lack test scenarios "
                         f"({'; '.join(uncovered[:5])})."
                     )
-            sprints = await services.sprints.list_sprints(spec.id)
-            pending_sprints = [
-                sprint
-                for sprint in sprints
-                if sprint.status not in (SprintStatus.CLOSED, SprintStatus.CANCELLED)
-            ]
-            if pending_sprints:
-                return (
-                    "sprints_incomplete: close or cancel every sprint before "
-                    "completing the spec."
-                )
-            if sprints and not any(
-                sprint.status == SprintStatus.CLOSED for sprint in sprints
-            ):
-                return (
-                    "sprints_incomplete: at least one sprint must be closed; "
-                    "all current sprints are cancelled."
-                )
             pending_cards = [
                 card
                 for card in (getattr(spec, "cards", None) or [])
@@ -1432,11 +1413,6 @@ class ListAllowedTransitionsUseCase:
                 dependency_readiness.unfinished_blocking_count
             )
             dependency_blockers_truncated = dependency_readiness.blockers_truncated
-        sprints = (
-            await services.sprints.list_sprints(card.spec_id)
-            if getattr(card, "spec_id", None)
-            else []
-        )
         sprint = (
             await services.sprints.get_sprint(card.sprint_id)
             if getattr(card, "sprint_id", None)
@@ -1538,15 +1514,6 @@ class ListAllowedTransitionsUseCase:
             spec_id=getattr(card, "spec_id", None),
             spec_title=getattr(spec, "title", None),
             spec_status=getattr(spec, "status", None),
-            sprint_count=len(sprints),
-            sprint_id=getattr(card, "sprint_id", None),
-            sprint_exists=sprint is not None if card.sprint_id else True,
-            sprint_status=getattr(sprint, "status", None),
-            sprint_title=getattr(sprint, "title", None),
-            sprint_is_hotfix=bool(sprint and sprint.lane_type == SprintLaneType.HOTFIX),
-            hotfix_count=sum(
-                1 for item in sprints if item.lane_type == SprintLaneType.HOTFIX
-            ),
             validation_required=validation_required,
             pending_scenarios=tuple(pending_scenarios),
             require_test_task_for_bug=bool(

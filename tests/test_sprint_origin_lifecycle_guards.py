@@ -211,23 +211,21 @@ async def test_reopening_closed_origin_is_blocked_before_mutation_or_audit(db_fa
 
 
 @pytest.mark.asyncio
-async def test_reopening_done_spec_with_bug_only_hotfix_is_zero_write_conflict(db_factory):
-    ids = await _seed_lineage(
-        db_factory, spec_status=SpecStatus.DONE, with_origin=False
-    )
+async def test_reopening_done_spec_preserves_retired_lane_history(db_factory):
+    ids = await _seed_lineage(db_factory, spec_status=SpecStatus.DONE, with_origin=False)
     before = await _audit_counts(db_factory, ids)
-
     async with db_factory() as db:
-        with pytest.raises(SprintOperationError) as exc:
-            await SpecService(db).move_spec(
-                ids["spec"], ACTOR, SpecMove(status=SpecStatus.DRAFT)
-            )
-
-    assert exc.value.code == "hotfix_spec_reopen_conflict"
-    async with db_factory() as db:
-        spec = await db.get(Spec, ids["spec"])
-        assert spec is not None and spec.status == SpecStatus.DONE
-    assert await _audit_counts(db_factory, ids) == before
+        spec = await SpecService(db).move_spec(ids["spec"], ACTOR, SpecMove(status=SpecStatus.DRAFT))
+        assert spec.status is SpecStatus.DRAFT
+        assert spec.edition == 2
+        lane = await db.get(Sprint, ids["hotfix"])
+        assert lane.status is SprintStatus.DRAFT
+        assert lane.origin_sprint_id is None
+        assert lane.origin_bug_id == ids["bug"]
+        await db.commit()
+    after = await _audit_counts(db_factory, ids)
+    assert after[1] == before[1]  # No new Sprint history is manufactured.
+    assert after[2] > before[2]  # The authorized Spec revision is recorded.
 
 
 @pytest.mark.asyncio

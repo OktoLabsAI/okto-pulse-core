@@ -48,7 +48,6 @@ class CardOperationError(ValueError):
                     "next_action",
                     "semantic_gap_required",
                     "eligible_scenarios_count",
-                    "hotfix_lane_status",
                     "actions",
                 ):
                     payload[key] = serialized[key]

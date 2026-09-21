@@ -8394,3 +8394,115 @@ Fechamento: closure-f3-content-final.json ok=true, findings=[] e
 documentation_findings=[], oito budgets 0/0. Todos os processos de validação
 encerrados. Commit Community f76bb240e888b09bf12090cde698101eb43a65cd;
 par pronto para push normal e conferência de sincronização em feature/v0.4.0.
+
+### 2026-09-20 — F3: restauração, admissão sem Sprint e retirada de Path C
+
+Partida publicada: Core a229289b4b4aa8a76551fe235424d4988d114c41 /
+Community f76bb240e888b09bf12090cde698101eb43a65cd. A autorização de bloquear
+conteúdo/início/reabertura Normal em Spec Done permanece resolvida; não repetir
+pedido. Não houve nova autoridade, migração de dados reais ou aumento de budget.
+
+Reprodução adicional do desvio de restore_tree: provenance-f3-restore-baseline.json
+comprovou identidade source/wheel/install do par de partida. O primeiro teste
+usou root `card`, que a operação não suporta: suas 36 falhas não provam o bug.
+Corrigido para root `spec` (forma já suportada para restaurar descendentes),
+f3-restore-baseline-r2.log demonstrou 2 falhas/34 passes: Normal arquivado em
+Started/In Progress voltou a executar sob Spec Done. ArchiveService agora faz
+preflight antes de qualquer restauração, usando a fachada pública transacional
+existente. Restauração de histórico/pausa e Bug/Test conserva os controles próprios.
+A matriz cobre 2 estados de Spec x 3 tipos de Card x 6 estados históricos.
+
+F3 itens 2/3/5: retirados sprint_assignment_block, os sete fatos de Sprint em
+CardTransitionFacts, o gate de lane no avanço e no avaliador de conclusão do Card,
+e a exigência de Sprints fechadas/mínimo de uma fechada na conclusão da Spec.
+Preview e mutação foram alterados juntos. Requisitos, maturidade, dependências,
+validação, cenários, provas de entrega, cobertura e política continuam nos seus
+caminhos. O read de policy legada por Sprint continua nesta etapa, até o cutover
+preservar os overrides por Card já autorizado em F2B; não zerar esse read antes
+da migração fiel das policies. Sprint ainda NÃO está totalmente retirado do domínio.
+
+A investigação encontrou mais um gate exclusivo: Spec Done -> Draft era recusada
+se uma hotfix lane dependesse da Spec permanecer Done. Retirado conforme F3;
+o teste passa a exigir a nova edição e seu histórico sem fabricar mudanças no
+histórico da lane antiga. As demais operações de SprintService serão retiradas
+na frente restante, não declaradas concluídas neste checkpoint.
+
+Retirados Path C/standard_sprint, ações assign/activate lane, hotfix_lane_status,
+formatter e helpers exclusivos do contrato de remediation. Atualizados serializer
+de CardOperationError, export público e allowlist de métricas para não acessar
+campo inexistente. Path A e Path B (inclusive validator coverage) preservados.
+Frontend remove o conceito/contagem de lane nos painéis, alinha os tipos ao Path B
+amendment já existente e reconhece esse caminho mesmo antes da lista de revisions
+carregar; coverage_pending continua sem indicar fechamento pronto.
+
+Resources servidos de cards/errors/tool-docs atualizados. tools_catalog.md NÃO
+foi editado; seu teste de drift passou no primeiro lote. tool-docs/card.md tem
+origem histórica nos scripts R1 de captura/compactação, mas o parágrafo retirado
+não está nos sidecars nem no docstring compacto vivo. Portanto a correção foi no
+resource long-form canônico, sem regenerar arquivos pela captura antiga e sem
+reintroduzir tools removidas. Testes de conteúdo servido preservam lineage,
+SpecLockedError e checklist de prova, e proíbem as instruções de lane retiradas.
+Dois asserts antigos foram reconciliados ao código já existente: SpecLockedError
+vive em domain/spec_content_lock e literais concatenados são lidos pelo AST;
+a documentação usa DLQ para dead-letter. Nenhum gate foi relaxado por esses ajustes.
+
+Validação parcial até aqui (logs em PULSE_REFACTOR/.validation-v040):
+- f3-lanes-core.log: 194 passed/28 failed. Fixtures novas tentavam aresta Normal
+  NotStarted -> InProgress (deve passar por Started), faltava origin_task_id no
+  Bug antes mascarado pelo bloqueio de lane e havia expectations de Path C.
+- f3-lanes-core-r2.log: 43 passed/7 failed. Spec sintética sem contexto autoritativo
+  foi barrada por code_delivery_context_required antes do gate em teste; corrigida
+  a fixture usando o manifest/proveniência de contexto direto existente. A última
+  falha documental era concatenação de literal. f3-lanes-core-r3.log: 30 passed.
+  União do primeiro conjunto: 222 testes distintos aprovados após as correções.
+- f3-lanes-ui.log: 73 passed (CardModal e PathBRemediationPanel).
+- tsc/Vite + sync + verify:frontend-dist: 78 arquivos; árvore
+  639c408cac92294bc31b6aa0e0f3988edf5380c516dc22a9d9afeb16a3a2bf52.
+- provenance-f3-lanes.json e provenance-f3-lanes-final.json: 811/336 .py,
+  874/420 payloads source/wheel/install byte a byte. Par final reconstruído após
+  remover o gate de reabertura; todos os processos anteriores foram encerrados
+  antes da reinstalação. Nenhum processo de runtime do usuário foi reiniciado.
+- closure-f3-lanes.json ok=true, findings=[], documentation_findings=[], oito
+  budgets 0/0. Ruff/diff --check passaram. Validação final do par em andamento:
+  f3-lanes-final-core.log, f3-lanes-community.log, closure-f3-lanes-final.json.
+
+Retomada integral: finalizar estes resultados/commit/push e continuar F3 no
+service catalog, modelos/DTOs, registry/permissões, APIs genéricas, analytics,
+KG e schema/cutover offline. Inventariar outros guards de vínculo de origem
+em SprintService/Card update/delete antes de afirmar ausência completa. F2A/B/C/D
+coordenador terminal, F4/F5, matriz DEI/ARQ/VER/ADV, rollout/upgrade/rollback,
+footprint MCP e E2E do runtime pareado continuam pendentes. O journal offline não
+é certificado runtime_ready e não pode ser apagado para liberar bootstrap.
+Este incremento não encerra a iniciativa nem afirma novo E2E integral/Playwright.
+
+Fechamento do incremento:
+- f3-lanes-final-core.log: 305 passed/2 failed. O teste novo de reabertura
+  esquecia o commit da transação pertencente ao chamador: corrigido no teste;
+  o histórico da nova edição e a ausência de novo histórico de Sprint passaram.
+- A suite antiga de ownership da validação tinha uma fixture sem adoption do
+  execution contract. O teste agora primeiro prova a recusa específica e a
+  preservação de Current, depois usa planning aceito como colaborador isolado
+  (como já fazia para lint e delivery) para testar ownership do ponteiro.
+  Não constitui prova de um plano completo. A contagem esperada da chamada foi
+  corrigida para uma verificação sob fence, conforme o serviço real.
+- f3-lanes-final-core-r2.log: 1 passed/1 failed (contagem da chamada acima);
+  f3-lanes-final-core-r3.log: 1 passed. f3-lanes-spec-closure.log: 6 passed,
+  ampliando esse mesmo contrato de conclusão para None e todos os cinco estados
+  históricos de Sprint, sem alterar seus estados nem Current/edition da Spec.
+- União final sem duplicatas: 421 Core + 18 Community (f3-lanes-community.log,
+  incluindo portas reais/fence F3 e contratos REST) + 73 frontend = 512 testes.
+  Os testes de catalog drift, Path B, restore/resequence, dependências, gates
+  de validação, links de requisitos e policy migrada integram os lotes descritos.
+- closure-f3-lanes-final.json: ok=true, findings=[], documentation_findings=[],
+  oito budgets 0/0; 7.497 imports Core, 1.175 Community, 25 dependências.
+- Agregados finais source/wheel/install: Core
+  e2c31ac4cadd8522cb9a941041d7dbc0369b2146f235eb28ef5449c3eec7b534;
+  Community 28857c2434a26cb4748b6efdadfe338fce8038860c5e7e1ddf07aaedefeb1e9c.
+  Wheels finais: Core e88e7c8743d6f48c341b874dfbb1ebef23afd082eee2947a5848f1c75eb36df2;
+  Community 42fb3859242735a5fe06e7e36a05b099c9f7667db930b5762b50ee2a3f936b45.
+- Todos os processos de validação encerrados. Alterações após a prova final
+  restritas a testes/ledger; nenhum payload de produto alterado. Sem novo E2E
+  integral/Playwright, sem release/tag/deploy/migração de dados reais.
+- Community commit 5aa4dda2a272084de497be8a0bb6952f7f024c0a; preparar commit
+  Core e push normal do par. Objetivo integral continua pendente conforme a
+  lista de retomada acima, com o ledger como ponto de continuidade.

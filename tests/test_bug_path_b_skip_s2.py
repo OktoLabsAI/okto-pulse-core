@@ -220,9 +220,9 @@ async def test_tsc4f11007_open_canonical_debt_blocks_no_action(tmp_path, db_fact
     assert _item(store, board, gen).status == CognitiveItemStatus.PENDING.value
 
 
-def test_bug_path_b_remediation_consumes_semantic_gap_not_hotfix_lane():
+def test_bug_path_b_remediation_requires_semantic_gap_resolution():
     msg = build_bug_path_b_remediation()
     assert msg.remediation_path == BugWorkflowRemediationPath.PATH_B_SEMANTIC_GAP
-    # distinto do hotfix lane (dec_085b0f9e): NUNCA fundir Path B com Path C.
-    assert msg.remediation_path != BugWorkflowRemediationPath.PATH_C_HOTFIX_LANE
+    # A semantic gap requires amendment lineage rather than same-spec reuse.
+    assert msg.remediation_path != BugWorkflowRemediationPath.PATH_A_REUSE_SCENARIO
     assert msg.semantic_gap_required is True

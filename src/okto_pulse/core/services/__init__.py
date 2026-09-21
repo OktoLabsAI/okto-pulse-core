@@ -67,7 +67,6 @@ _register_exports(
 _register_exports(
     "okto_pulse.core.services.bug_workflow_remediation",
     (
-        "BugWorkflowHotfixLaneStatus",
         "BugWorkflowNextAction",
         "BugWorkflowRemediationAction",
         "BugWorkflowRemediationMessage",
@@ -283,7 +282,6 @@ __all__ = [
     "BugRegressionScenarioEligibilityResult",
     "EligibleBugRegressionScenario",
     "RejectedBugRegressionScenario",
-    "BugWorkflowHotfixLaneStatus",
     "BugWorkflowNextAction",
     "BugWorkflowRemediationAction",
     "BugWorkflowRemediationMessage",

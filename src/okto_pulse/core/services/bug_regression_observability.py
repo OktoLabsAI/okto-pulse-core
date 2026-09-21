@@ -59,7 +59,6 @@ _ALLOWED_LABEL_KEYS = frozenset(
         "coverage_state",
         "next_action",
         "remediation_path",
-        "hotfix_lane_status",
         "surface",
     }
 )
