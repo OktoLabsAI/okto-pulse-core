@@ -12313,3 +12313,31 @@ projected_not_reconciled e runtime admission continua recusada. Próximo trabalh
 é reconciliar efeitos SQL por recibo e grafo com fonte/active sets/cognição,
 antes de contrato terminal e cutover. A sequência e os demais gaps do plano
 consolidado permanecem abertos; meta integral não concluída.
+
+### 2026-09-21 — observação do delta SQL do candidato projetado
+
+Após os commits b187bf3a/f327515d, branches locais limpas e iguais ao remoto,
+inspecionei de modo somente leitura a fixture descartável
+pytest-612/test_failed_private_execution_0. O script descartável
+PULSE_REFACTOR/.validation-v040/inspect_candidate_sql_delta.py gerou
+sql-delta-observation.json comparando os registros das174 tabelas entre
+source.sqlite3 e projected/database.sqlite3. Nenhum dado real foi lido.
+
+Mudaram SETE tabelas, não apenas as seis antes observadas no ensaio exato:
+app_settings (1 insert), consolidation_audit (3 inserts), domain_events
+(3 inserts), exact_rebuild_consolidation_ack_journal (3 inserts),
+global_update_outbox (3 inserts), kuzu_node_refs (4 inserts) e
+global_discovery_source_revision (1 linha atualizada). Três ACKs explicam os
+IDs de sessão/evento/outbox e 4 referências de nó. A revisão global da fonte
+subiu de9 para34; fence_version/trigger_manifest_version/incarnation_id
+mantiveram identidade. O código existente em legacy_rebuild_reconciliation.py
+instala triggers AFTER INSERT/UPDATE/DELETE da consolidation_queue que
+incrementam revision e geram mutation_nonce aleatório. Portanto 25 incrementos
+não podem ser inferidos só da contagem de ACKs; o recibo atual não enumera as
+mutações intermediárias da fila. Não classificar a sétima tabela como desvio
+arbitrário nem como delta plenamente provado. Investigar a trilha de operações
+de fila e formular verificador por identidade/efeito; se não puder provar a
+atualização da revisão sem relaxar proteção, manter projected_not_reconciled.
+A fixture de projeção exata anterior mudou só seis tabelas porque parte de um
+contexto distinto. O critério de auditoria é o candidato integrado de upgrade.
+Nenhuma semântica/policy/gate alterada nesta observação; backlog integral segue.
