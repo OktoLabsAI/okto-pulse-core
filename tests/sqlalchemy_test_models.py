@@ -2,6 +2,7 @@
 
 import uuid
 from datetime import datetime
+from enum import Enum
 from typing import TYPE_CHECKING
 
 from sqlalchemy import (
@@ -34,12 +35,27 @@ from okto_pulse.core.domain.enums import (
     IdeationStatus,
     RefinementStatus,
     SpecStatus,
-    SprintLaneType,
-    SprintStatus,
     StoryStatus,
 )
 
 Base = declarative_base()
+
+
+class SprintStatus(str, Enum):
+    """Frozen legacy fixture values, intentionally absent from the Core package."""
+
+    DRAFT = "draft"
+    ACTIVE = "active"
+    REVIEW = "review"
+    CLOSED = "closed"
+    CANCELLED = "cancelled"
+
+
+class SprintLaneType(str, Enum):
+    """Frozen lane values used only to construct pre-retirement test storage."""
+
+    NORMAL = "normal"
+    HOTFIX = "hotfix"
 
 if TYPE_CHECKING:
     pass

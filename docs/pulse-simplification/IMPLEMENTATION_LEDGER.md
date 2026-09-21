@@ -10296,3 +10296,84 @@ CONTRIBUTING ainda descreve mecanismos obsoletos. Nenhum deploy/release/tag/merg
 migração real ou restart do runtime do usuário. Objetivo integral permanece ativo.
 
 Community commitc13813a5633f10e3e5dc6931f001c0424818f89f; commit Core e pushes pareados a seguir, com verificação dos HEADs remotos e árvores limpas.
+
+### F3 — enums Sprint fora do domínio vivo e correção dos guias de contribuição
+
+Em execução sobre Core69f06ba6 / Communityc13813a; árvores limpas no início.
+Turno anterior foi progresso: autoria normativa e import sem novos alvos Sprint,
+420 testes e commits/pushes pareados. Objetivo integral continua ativo.
+Inspeção de todos os consumidores produtivos de SprintStatus/SprintLaneType:
+Core só definia/reexportava; Community sqlalchemy_models.py era o único consumidor.
+Não há novo gate a definir: o plano-base F3 item1 manda retirar esses enums vivos.
+Proveniência baseline wheels-f3-authoring-final comprovada antes da reprodução
+(provenance-f3-enums-baseline.json). f3-enums-baseline.log:3 falhas esperadas/1
+pass (SprintLaneType já não era reexportado por core.models); os outros3 caminhos
+publicavam os tipos retirados.
+
+Core removeu os dois enums e reexport de models. A tabela congelada original de
+valores do teste R01C não foi editada: tipos ativos continuam comparados ao Core,
+e os dois retirados às fixtures históricas de teste. O helper SQLAlchemy exclusivo
+de testes guarda os valores antigos, sem empacotá-los como domínio. Community
+adapters/legacy_sprint_values.py define HistoricalSprintStatus/LaneType, usados só
+pelo mapeamento relacional legado interno até o corte físico. Status5/lane2 e
+rejeição de valores desconhecidos permanecem iguais, sem valor substituto.
+Nenhuma tabela/dado real foi alterado. A propriedade normal_sprint_created não
+tinha consumidores produtivos e foi removida do mapping. Comentários do serviço
+de cancelamento agora citam somente os quatro fluxos vivos; lógica intacta.
+
+CONTRIBUTING dos dois repos corrigidos: Core não contém ORM/router concreto,
+Okto Grafx substitui a menção Ladybug, fontes/instalação pareadas e processo fresco
+são exigidos para validação. Core setup instala Community local explicitamente.
+O fallback atual do CI Community para main foi descrito como insuficiente para
+provar mudanças pareadas; não se afirmou alterar esse workflow. Release mesma
+tag permanece. Documentados ports públicos, budgets zero e catálogo MCP gerado.
+
+wheels-f3-enums construído/reinstalado, provenance-f3-enums.json antes das suites:
+804/336 Python,867/420 payloads fonte/wheel/install byte-idênticos. Core179 testes
+aprovados, frontend6 em BoardStageContent aprovado. Community/closure em andamento.
+Sem edição de produto/reinstall com suites ativas. Frontend produto não mudou.
+
+Validação final (2026-09-21):275 testes distintos aprovados, sem retestes somados.
+- f3-enums-core.log:179 passed em27.73s. Quatro caminhos de acesso público aos
+  enums retirados ausentes; schema/enum R01C preservados; Spec Done, admissão sem
+  Sprint, origens históricas/hotfix, serviço retirado, bug/regressão e validação
+  de Spec mantiveram os gates. Catálogo MCP byte-a-byte aprovado, sem regeneração
+  porque tools/schemas MCP não mudaram.
+- f3-enums-community.log:86 passed em167.72s. Decodificadores congelados5 status/2
+  lanes, nulls e valores desconhecidos;10 combinações persistidas e relidas sem
+  alteração das strings SQL, antes/depois de commit. Inventário KG e lineage
+  continuam recusando entidades vivas Sprint. Inventário/preflight/arquivo
+  histórico descartável e preservação dos overrides Card aprovados.
+- f3-enums-docs.log:4 passed em5.23s (contratos de contribuição existentes).
+  f3-enums-ui.log:6 passed em2.83s (BoardStageContent). Frontend não foi alterado;
+  build empacotado anterior permanece. Não alegar novo build UI neste incremento.
+- closure-f3-enums.json:exit0,ok=true,findings/docs vazios,8 budgets0/0; sem
+  alteração na matriz README. Ruff dos arquivos alterados e diff --check passaram.
+- provenance-f3-enums.json:Core804/Community336 Python;867/420 payloads exatos.
+  Agregado Core8e0ec07b94c0ec4558fc30f12a1d7e9fd8658ea3621c251646b98fe0d6ff673c;
+  Community5b9cf41c2d4dfcd59d9f19fb171693df9f0ed6c4e9a51cef705e1d052cc8f7e6.
+  Wheel Corec8dd1f5eaf97385353460dc8516449079a1fe737f092d86d8958b3e062e3c151;
+  Community56c8329e5c7286f64cdd98a88de61b23e2b0e7d850e22171692c023da9374907.
+  Nenhuma edição de produto ou reinstall após essa prova durante as suites.
+  Mudanças posteriores só CONTRIBUTING/ledger. Todos os handles encerrados.
+
+Retomada: SprintStatus/LaneType não existem mais no pacote Core; a decodificação
+histórica de armazenamento fica interna à edição. Isso NÃO conclui F2C: mappings
+Sprint/SprintHistory/QA/baseline, FKs/listas de tabelas e instalação limpa ainda
+precisam do corte atômico coordenado com runtime_ready. Não mover os decodificadores
+para uma porta de ciclo de vida nem recriar entidade pública. O valor histórico
+SPRINT em PolicyEntityType ainda existe para recibos/patch replay; investigar
+separação final das superfícies públicas. Pendências de import diagnostics/replay
+skip, ACK/outbox/Okto Grafx, terminal offline, matrizes DEI/ARQ/VER/ADV, E2E
+pareado/rollback, footprint MCP e benchmark/rollout continuam. Guias CONTRIBUTING
+obsoletos identificados anteriormente foram corrigidos neste incremento.
+Sem dados reais, release/tag/merge/deploy ou restart do runtime do usuário.
+
+Próximo ponto concreto de investigação: Community retirement_offline_run.py
+resume_offline_retirement_materialization termina em materialization_retired;
+retirement_runtime_admission.py ainda recusa qualquer journal retido e efeitos
+retidos sem journal, antes de migração/seed. Não apagar esses sinais ou liberar
+startup como atalho. O contrato terminal deve provar schema/graph/permissions
+antes de alterar esse gate. Inspeção somente leitura neste turno.
+Community commitba41bdaea0e5d682692a88c447956be6f84b4db2; commit Core e pushes
+pareados a seguir, verificando os HEADs remotos e árvores limpas.

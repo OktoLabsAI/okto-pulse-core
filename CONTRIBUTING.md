@@ -16,7 +16,7 @@ git clone https://github.com/OktoLabsAI/okto-pulse.git
 cd okto-pulse-core
 
 # Install Python dependencies (requires Python 3.11+)
-pip install -e ".[dev]"
+pip install -e ../okto-pulse -e ".[dev]"
 
 # Run the fast/default suite
 pytest -q -m "not e2e and not real_kg and not stress" tests
@@ -28,13 +28,20 @@ pytest -q -m "not e2e and not real_kg and not stress" tests
 | --- | --- | --- |
 | Fast/default | `pytest -q -m "not e2e and not real_kg and not stress" tests` | The `[dev]` extra and a sibling Community checkout; this is the normal pre-PR suite. |
 | End to end (`e2e`) | `pytest -q -m e2e tests` | A local Community checkout and its persistence/KG dependencies; slower and opens real board stores. |
-| Real KG (`real_kg`) | `pytest -q -m real_kg tests` | Ladybug/KG runtime supplied by the Community environment; integration-level runtime. |
+| Real KG (`real_kg`) | `pytest -q -m real_kg tests` | Okto Grafx runtime supplied by the Community environment; integration-level runtime. |
 | Destructive stress (`stress`) | `python scripts/run_kg_ci_destructive_stress.py` | An edition-provided local stress adapter and disposable KG data; intentionally slow and opt-in. |
 | Explicit timeouts (`timeout`) | `pytest -q -m timeout tests` | Runs tests carrying a per-test timeout override; the marker changes the timeout, not product behavior. |
 | Documentation only | `python scripts/check_markdown_links.py` | Python standard library only; no external URLs are fetched. |
 
 Use `pytest --collect-only` after setup to verify the contributor environment
 without executing the suite.
+
+For paired changes, record both checkout commits and validate that exact pair.
+Before behavioral validation of an installed build, compare the Python files in
+`site-packages/okto_pulse/` byte for byte with both `src/` trees. Reinstalling does
+not refresh an already running process; use a fresh disposable test process.
+When running directly from sources, include both repositories in `PYTHONPATH`
+(`core/src;community/src` on Windows, using the actual checkout paths).
 
 ## How to Contribute
 
@@ -87,15 +94,29 @@ Types: `feat`, `fix`, `docs`, `style`, `refactor`, `test`, `chore`
 
 ```
 okto-pulse-core/
-├── src/okto_pulse/       # Core engine (FastAPI, SQLAlchemy, MCP)
-│   ├── models/           # SQLAlchemy models
-│   ├── services/         # Business logic
-│   ├── routes/           # API endpoints
-│   └── mcp/              # MCP server and tools
+├── src/okto_pulse/core/   # Edition-independent engine
+│   ├── ports/            # Public Protocol contracts
+│   ├── domain/           # Domain rules and live types
+│   ├── models/schemas.py # Pydantic transport contracts
+│   ├── application/      # Use cases and governance
+│   ├── services/         # Business rules and gates
+│   ├── kg/               # Graph semantics and interfaces
+│   └── mcp/              # MCP server, tools, and resources
 ├── LICENSE               # Elastic License 2.0
 ├── CLA.md                # Contributor License Agreement
 └── TRADEMARKS.md         # Trademark policy
 ```
+
+Concrete adapters belong to the sibling Community package: SQLAlchemy, Okto
+Grafx, filesystem, scheduler, telemetry, and HTTP clients. REST routers also live
+in Community. Core consumes public ports; Community adapters must not reach into
+private Core modules. Add a public port when one is missing. Run
+`okto-pulse-saas-closure` for the exact repository and wheel pair; every
+transitional budget must remain zero.
+
+The MCP tool catalog is generated from the live registry. Regenerate it with
+`python -m okto_pulse.core.mcp.tools_catalog_generator` after tool changes and run
+`tests/test_mcp_tools_catalog_drift.py`; do not edit the catalog by hand.
 
 ## Code of Conduct
 

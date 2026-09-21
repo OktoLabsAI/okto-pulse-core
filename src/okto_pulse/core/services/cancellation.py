@@ -1,8 +1,7 @@
 """Shared cancellation-justification policy (ITEM 17).
 
-Single source of truth applied by the five status-transition flows
-(``move_ideation`` / ``move_refinement`` / ``move_spec`` / ``move_sprint`` /
-``move_card``):
+Single source of truth applied by the four status-transition flows
+(``move_ideation`` / ``move_refinement`` / ``move_spec`` / ``move_card``):
 
 - transition TO ``cancelled`` REQUIRES a non-empty ``cancellation_reason``
   (otherwise the structured ``cancellation_reason_required`` error is raised
@@ -12,7 +11,7 @@ Single source of truth applied by the five status-transition flows
   ``cancellation_*`` fields.
 
 The entity only needs the three nullable columns ``cancellation_reason`` /
-``cancelled_at`` / ``cancelled_by`` (Ideation, Refinement, Spec, Sprint, Card).
+``cancelled_at`` / ``cancelled_by`` (Ideation, Refinement, Spec, Card).
 """
 
 from __future__ import annotations

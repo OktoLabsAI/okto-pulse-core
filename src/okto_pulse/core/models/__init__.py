@@ -14,7 +14,6 @@ if TYPE_CHECKING:  # real imports for static analysis only — never run at impo
         RefinementStatus,
         SpecStatus,
         StoryStatus,
-        SprintStatus,
     )
     from okto_pulse.core.models.schemas import (
         ActivityLogResponse,
@@ -163,7 +162,6 @@ _ENUM_NAMES = (
     "RefinementStatus",
     "SpecStatus",
     "StoryStatus",
-    "SprintStatus",
 )
 _SCHEMA_NAMES = (
     "ActivityLogResponse",
@@ -334,7 +332,6 @@ __all__ = [
     "RefinementStatus",
     "SpecStatus",
     "StoryStatus",
-    "SprintStatus",
     # Read projections
     "with_knowledge_governance",
     # Selective Knowledge propagation v2
