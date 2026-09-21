@@ -6,6 +6,7 @@ from okto_pulse.core.runtime_context import register_runtime_value, require_runt
 
 from dataclasses import dataclass
 from typing import Any, Protocol, Sequence
+from okto_pulse.core.domain.enums import CardStatus, CardType
 
 
 @dataclass(frozen=True, slots=True)
@@ -26,6 +27,9 @@ class ResourcePropagationSpecFact:
 class ResourcePropagationCardRecord:
     id: str
     board_id: str
+    spec_id: str | None
+    status: CardStatus
+    card_type: CardType
     knowledge_bases: list[Any]
     screen_mockups: list[Any]
 

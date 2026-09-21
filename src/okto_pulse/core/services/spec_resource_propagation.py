@@ -6,6 +6,8 @@ import copy
 from typing import Any
 
 from okto_pulse.core.domain.card_completion import card_is_rejected
+from okto_pulse.core.services.card_errors import CardOperationError
+from okto_pulse.core.services.card_operational_freeze import require_normal_card_spec_content_allowed
 from okto_pulse.core.models.schemas import (
     ArchitectureDesignUpdate,
     ArchitectureWarningAcknowledgementRequest,
@@ -95,6 +97,22 @@ class SpecResourcePropagationService:
                 "resource_types": resource_types,
                 "results": {},
                 "skipped": True,
+            }
+
+        try:
+            await require_normal_card_spec_content_allowed(
+                self.db, board_id=board_id, card_type=card.card_type,
+                spec_ids=(card.spec_id,), operation="propagate_spec_resources", card=card,
+            )
+        except CardOperationError as error:
+            if error.code != "normal_card_spec_done":
+                raise
+            # Board/Spec fanout may continue for eligible Bug/Test targets;
+            # a frozen normal target retains its existing approved snapshots.
+            return {
+                "enabled": True, "reason": error.code, "spec_id": spec_id,
+                "card_id": card_id, "resource_types": resource_types,
+                "results": {}, "skipped": True,
             }
 
         # Resolve authority before the first resource mutation.  A port/read

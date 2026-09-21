@@ -8302,3 +8302,95 @@ provas e closure terminaram. Commit Community
 ba050beed80f0efa4be9344411ecb91284b914f6; preparar par Core/Community para push
 normal em feature/v0.4.0 e conferir HEAD remoto e árvores limpas. Nenhum runtime
 do usuário foi parado/reiniciado, nem dados reais migrados.
+
+### 2026-09-20 — F3: conteúdo auxiliar e propagação automática
+
+Partida publicada e limpa: Core 22666b6000037a67048f38bdf39e578e1f2806a1 /
+Community ba050beed80f0efa4be9344411ecb91284b914f6. Criada a fachada pública
+CardService.require_content_mutation_allowed, acessível pelo catálogo tipado
+existente, para compor Rejected + F3 sem extrair contexto de edição nas use cases.
+Aplicada a dependências do Card (add/remove), deleção do Card, upload/delete de
+anexos, replace/drop/refresh de Knowledge e cópia de Architecture pela use case.
+Recusas precedem storage, persistência de conteúdo e commit. Replays sem efeito
+continuam seguindo o comportamento idempotente existente.
+
+SpecResourcePropagationService agora pula explicitamente Normal em Spec Done,
+preservando seus snapshots, e mantém fanout para Bug/Test elegíveis. Não captura
+conflitos de vínculo, falhas de porta ou outros erros como se fossem sucesso.
+Reutiliza a trava e o CAS públicos do checkpoint anterior, sem adaptador no Core.
+
+Divergência real investigada: ResourcePropagationCardRecord não transportava
+status; o guard card_is_rejected, já existente, recebia um record sem esse fato
+e retornava falso. Completada a porta com spec_id, status e card_type tipados e
+obrigatórios, preenchidos pelo adaptador Community e pelo adapter de testes Core.
+Não foi inventada nova autoridade para Rejected: corrigiu-se a perda dos fatos
+necessários ao gate que já existia. As três fixtures unitárias de transformação
+de snapshots declaram explicitamente seu Card sintético legado sem vínculo;
+elas não são usadas como prova de isolamento ou de admissão em Spec real.
+A prova de gates usa os adaptadores reais Community e fixtures SQL completas.
+
+Frontend: anexos, deleção, dependências, Knowledge e Architecture respeitam o
+estado de conteúdo congelado no CardModal/CardResourcesPanel. As abas e leituras
+continuam disponíveis. Os testes exercitam os três tipos de Card, conferindo
+affordances de anexos/delete e os props readOnly/locked dos recursos.
+
+Classificação que evita ampliar a autorização por analogia: as implementações
+SpecService de append FR/TR/Decision e unlink de scenario backlink documentam
+esses vínculos como metadata de rastreabilidade, fora do snapshot semântico.
+O adapter de versionamento também exclui lifecycle, conclusions, validations,
+rejection records, archive e position do conteúdo semântico do Card. Portanto,
+não aplicar cegamente o guard de conteúdo em todo caller do antigo freeze de
+Rejected. Esses caminhos precisam manter os controles próprios e ser testados
+como história/evidência/colaboração conforme seu efeito; não há autorização
+genérica para proibir append histórico ou alterar gates de validação/waiver.
+Essa classificação refina a lista investigativa anterior, não reabre a decisão F3.
+
+Evidências em PULSE_REFACTOR/.validation-v040:
+- f3-content-core.log: 166 passed, 1 falha de fixture de compensação de anexo
+  (Card sintético sem card_type/spec_id). Corrigida a fixture, sem default novo
+  no serviço. f3-content-core-r2.log: 48 passed e uma falha no novo teste de Q&A:
+  a própria regra pré-existente recusou self-answer. O teste foi corrigido para
+  provar essa recusa e então aceitar resposta de outro principal, sem mudar
+  policy. f3-content-collaboration-r3.log: 1 passed.
+  União sem duplicatas: 176 testes Core aprovados; inclui nove casos novos
+  adicionados após a primeira execução (quatro use cases x duas origens Sprint
+  e a prova de colaboração), além da fixture de compensação corrigida.
+- Negativos F3 cobrem 16 operações com/sem Sprint histórica, medindo zero DML
+  e usando sentinela que falha se o storage for acessado antes da recusa.
+  Q&A, comentários e leitura funcionam em Card Normal Done/Spec Done; o mesmo
+  principal continua proibido de responder à própria pergunta pela policy.
+- f3-content-community.log: 23 passed, incluindo os 3 testes de corrida/CAS,
+  6 casos de projeção/propagação real e 14 contratos REST de rejeição/permissão.
+  Normal Done e Rejected (inclusive Bug) não fazem DML de propagação; Normal
+  aberto e Bug/Test Done conservam admissão e snapshots existentes. Os casos
+  positivos usam origem sem novo mockup; não alegam validação de design system
+  nem cópia de novo mockup nesse teste. As suites Core cobrem a cópia de recursos.
+- f3-content-ui.log: 79 passed (CardModal + CardKnowledgeTab).
+  Total deste checkpoint: 176 + 23 + 79 = 278 testes distintos aprovados.
+- tsc/Vite, sync e verify:frontend-dist: 78 arquivos,
+  árvore 524dac680074d4492a6673c8960bc247d4f68b355535d035135eae1dc5db1d8c.
+  Ruff e diff --check passaram. Sem nova execução Playwright/E2E integral.
+- provenance-f3-content.json e provenance-f3-content-final.json provam 811/336
+  .py e 874/420 payloads source/wheel/install idênticos. Agregados iniciais/finais:
+  Core bd75683b67a59ef69d6191fceff0d17cc3a5b23710f71dc61336a0e15aad0262;
+  Community c05da1cc94bb8d77b842b524c12bac71a486ecdbaab02e07290ad641ebdfdc8a.
+- Closure inicial findings=[], oito budgets 0/0, somente matrizes README em drift.
+  Renderer oficial: Core 7.497 imports, Community 1.175, dependências 25.
+  Ambos wheels finais reconstruídos/reinstalados após encerrar testes; payloads
+  iguais aos testados. Core b2c0e19d753ab1fb72c3dec30eeaa5ff8839cd280227c0564718f60b64f9c2fe;
+  Community e4f60ee6290bd35aff638da7704af5e34ed24f33acdcef4c934110c7e1343eb8.
+
+Retomada: auditar efeitos de restore_tree/import e delete_spec_unlink_card,
+além dos entry points de recursos abaixo das use cases. Restore repõe
+pre_archive_status; precisa de reprodução para distinguir restauração histórica
+de retomada de execução normal em Spec Done, sem reescrever histórico. A lista
+anterior de evidências/waivers/backlinks continua como inventário a classificar,
+nunca como autorização automática de bloqueio mais amplo. Ainda falta retirar
+Sprint dos gates/domínio/superfícies genéricas e completar o corte offline/schema,
+F4/F5, matriz integral, footprint e rollout. Objetivo integral ativo; nenhuma
+migração real, nova permissão ou aumento de budget realizado.
+
+Fechamento: closure-f3-content-final.json ok=true, findings=[] e
+documentation_findings=[], oito budgets 0/0. Todos os processos de validação
+encerrados. Commit Community f76bb240e888b09bf12090cde698101eb43a65cd;
+par pronto para push normal e conferência de sincronização em feature/v0.4.0.

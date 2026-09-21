@@ -1,4 +1,5 @@
 from __future__ import annotations
+from okto_pulse.core.domain.enums import CardStatus, CardType
 
 import copy
 from types import SimpleNamespace
@@ -239,6 +240,7 @@ class _AutoStore:
         return ResourcePropagationCardRecord(
             id=card_id,
             board_id="board-1",
+            spec_id=None, status=CardStatus.NOT_STARTED, card_type=CardType.NORMAL,
             knowledge_bases=copy.deepcopy(self.card.knowledge_bases),
             screen_mockups=[],
         )

@@ -1,6 +1,7 @@
 """Application/MCP contracts for selective Knowledge propagation v2 (IMP4)."""
 
 from __future__ import annotations
+from okto_pulse.core.domain.enums import CardStatus, CardType
 
 from datetime import datetime, timezone
 import hashlib
@@ -646,6 +647,7 @@ async def test_v2_resource_exclusion_preserves_non_knowledge_autocopy(
         id="card-1",
         board_id="board-1",
         knowledge_bases=[],
+        spec_id=None, status=CardStatus.NOT_STARTED, card_type=CardType.NORMAL,
         screen_mockups=[],
     )
     spec = ResourcePropagationSpecFact(

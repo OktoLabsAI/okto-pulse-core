@@ -1,4 +1,5 @@
 from __future__ import annotations
+from okto_pulse.core.domain.enums import CardStatus, CardType
 
 import copy
 import json
@@ -132,6 +133,7 @@ def _card(*, knowledge_bases: list[Any] | None = None) -> ResourcePropagationCar
         id="card-1",
         board_id="board-1",
         knowledge_bases=copy.deepcopy(knowledge_bases or []),
+        spec_id=None, status=CardStatus.NOT_STARTED, card_type=CardType.NORMAL,
         screen_mockups=[],
     )
 

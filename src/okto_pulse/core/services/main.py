@@ -4268,6 +4268,16 @@ class CardService:
 
     # ---- Dependency methods ----
 
+    async def require_content_mutation_allowed(
+        self, card: ApplicationRecord, *, operation: str,
+    ) -> None:
+        """Public application-catalog gate for Card-owned content writers."""
+        require_card_operational_mutation_allowed(card, operation=operation)
+        await require_normal_card_spec_content_allowed(
+            self.db, board_id=card.board_id, card_type=card.card_type,
+            spec_ids=(card.spec_id,), operation=operation, card=card,
+        )
+
     async def add_dependency(
         self, card_id: str, depends_on_id: str
     ) -> ApplicationRecord:
@@ -4298,10 +4308,7 @@ class CardService:
         card = await self.get_card(card_id)
         if card is None:
             raise ValueError("Card not found")
-        require_card_operational_mutation_allowed(
-            card,
-            operation="add_dependency",
-        )
+        await self.require_content_mutation_allowed(card, operation="add_dependency")
         # Check circular
         if await self._would_create_cycle(card_id, depends_on_id):
             raise CardOperationError(
@@ -4331,10 +4338,7 @@ class CardService:
             card = await self.get_card(card_id)
             if card is None:
                 raise ValueError("Card not found")
-            require_card_operational_mutation_allowed(
-                card,
-                operation="remove_dependency",
-            )
+            await self.require_content_mutation_allowed(card, operation="remove_dependency")
         for row in rows:
             await _application_delete(self.db, row)
         return bool(rows)
@@ -7611,7 +7615,7 @@ class CardService:
         card = await self.get_card(card_id)
         if not card:
             return False
-        require_card_operational_mutation_allowed(card, operation="delete_card")
+        await self.require_content_mutation_allowed(card, operation="delete_card")
 
         board_id = card.board_id
 
@@ -8077,10 +8081,7 @@ class AttachmentService:
         card = await _application_get(self.db, "card", card_id)
         if not card:
             return None
-        require_card_operational_mutation_allowed(
-            card,
-            operation="upload_attachment",
-        )
+        await CardService(self.db).require_content_mutation_allowed(card, operation="upload_attachment")
 
         # Delegate to the registered storage provider
         storage = get_storage_provider()
@@ -8125,10 +8126,7 @@ class AttachmentService:
             return False
         card = await _application_get(self.db, "card", attachment.card_id)
         if card is not None:
-            require_card_operational_mutation_allowed(
-                card,
-                operation="delete_attachment",
-            )
+            await CardService(self.db).require_content_mutation_allowed(card, operation="delete_attachment")
 
         receipt = await self.delete_attachment_object(attachment)
         try:

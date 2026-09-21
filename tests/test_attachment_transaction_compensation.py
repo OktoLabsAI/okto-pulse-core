@@ -56,7 +56,7 @@ class _MemoryStorage:
 @pytest.mark.asyncio
 async def test_upload_staging_failure_removes_unowned_object(monkeypatch) -> None:
     storage = _MemoryStorage()
-    card = SimpleNamespace(id=CARD_ID, board_id=BOARD_ID)
+    card = SimpleNamespace(id=CARD_ID, board_id=BOARD_ID, card_type="normal", spec_id=None)
 
     async def _get(*_args, **_kwargs):
         return card

@@ -54,9 +54,6 @@ from okto_pulse.core.services.application_schemas import (
 from okto_pulse.core.services.architecture import (
     stable_architecture_finding_key,
 )
-from okto_pulse.core.services.card_operational_freeze import (
-    require_card_operational_mutation_allowed,
-)
 from okto_pulse.core.domain.human_validation_cycle import require_draft_mutation
 
 
@@ -1249,9 +1246,8 @@ class CopyArchitectureFromSpecToCardUseCase:
         )
         if spec.board_id != card.board_id or getattr(card, "spec_id", None) != spec.id:
             raise EntityNotFoundError("spec", command.spec_id)
-        require_card_operational_mutation_allowed(
-            card,
-            operation="copy_architecture_to_card",
+        await uow.services.cards.require_content_mutation_allowed(
+            card, operation="copy_architecture_to_card",
         )
         service = uow.services.architecture_propagation
         designs, _plan = await service.copy_effective_spec_to_card(
