@@ -10457,3 +10457,92 @@ Continuam as demais pendências já listadas: histórico/policy replay e transpo
 matrizes DEI/ARQ/VER/ADV, rollout/E2E pareado, footprint MCP e benchmark. Não
 apagar journal, inventar recibo terminal ou dispensar gates para liberar startup.
 Community commit003dfecaeee12eef3f7b3c110c34b86556c67335. Commit Core e pushes pareados a seguir; conferir HEAD remoto e árvores limpas.
+
+### F2D — corte físico coordenado (em implementação, 2026-09-21)
+
+Turno anterior classificado como progresso: commits Corebd3a1962/Community003dfeca
+pushed e árvores limpas. provenance-f2-schema-baseline.json confirmou o par
+instalado antes de investigação executável. Reprodução SQLite em memória:
+reconstrução de Cards com foreign_keys=ON apagou filho ON DELETE CASCADE; OFF
+preservou o filho. Em ambos os casos ROLLBACK restaurou filho e coluna original.
+
+Implementação em validação: retirement_schema_storage preserva SQL original de
+cada declaração sobrevivente de Cards, remove somente sprint_id e sua FK conhecida,
+recusa dependentes não classificados, compara células das4 tabelas retiradas aos
+arquivos já verificados, preserva rowid/JSON bruto/filhos/indexes/triggers/views e
+compara hashes dos dados sobreviventes. retirement_schema_cutover restringe
+foreign_keys=OFF e legacy_alter_table=ON à conexão reservada e restaura ambos no
+finally, invalidando conexão em falha de restauração. DDL e checkpoint schema
+ordinal7 usam a mesma transação; journal anterior3/5/6 expande para7. Coordenador
+mantém as três exclusões e revalida permissões/grafo/outbox antes e depois.
+Retomada das etapas anteriores aceita o oitavo registro e deve usar evidências
+retidas. Não há novo endpoint/tool/CLI pública, nem autorização de startup.
+
+Testes em preparação: preservação de filhos/DDL/valores brutos; recusa de origem
+alterada/coluna ainda vinculada/dependentes desconhecidos; falha após DROP;
+perda de resposta pós-commit e reabertura; falha/corrupção por trigger do checkpoint;
+restauração de PRAGMAs. Nenhum resultado comportamental do código novo ainda.
+Próximo passo: reconstruir ambos os wheels, provar identidade e executar.
+Mappings/steps ainda precisam convergir para instalação limpa. schema_retired
+NÃO é runtime_ready; startup continua bloqueado e dados reais não são tocados.
+
+Validação inicial do corte:17 testes storage/journal passaram em7.31s;3 testes
+integrados offline passaram em113.33s, incluindo perda de resposta/reabertura,
+rollback de DDL e restauração de foreign_keys/legacy_alter_table. Closure inicial
+passou com8 budgets0/0, sem drift documental. Revisão adicional reproduziu duas
+falhas no código NOVO: trigger com nome cards era confundido com a tabela cards,
+permitindo perder uma proteção ou ignorar referência a Sprint. Dois negativos
+reproduziram o problema (f2-schema-names-baseline.log,2 failed esperados).
+Após todos os processos terminarem, classificação corrigida para identidade
+(type,name). Rebuild/reinstall/prova e regressões finais pendentes. Não alterar
+o baseline/guard para aceitar a perda do trigger.
+
+Provas finais já concluídas neste turno:19 storage/journal em9.08s (inclui as
+2 regressões de nomes homônimos);25 offline/admissão em188.17s (inclui ausência do
+checkpoint schema depois do corte, que é recusada sem recaptura);4 catálogo MCP
+em2.37s;68 UI BoardStageContent/CardModal em36.75s. Regressão de permissões ainda
+em execução: f2-schema-final-permissions.log. Frontend não alterado, sem novo
+build UI. O teste de schema real usa Base.metadata mais fixtures de integração;
+NÃO substitui validação integral de todas as migrations/bootstrap da instalação.
+Closure-f2-schema-final passou:ok=true,findings/docs vazios,8 budgets0/0, sem
+alteração de matriz README. Ruff e diff --check passaram.
+
+Próxima dependência concreta: remover Sprint do metadata operacional também
+exige revisar GLOBAL_DISCOVERY_SOURCE_REVISION_TABLES (sqlalchemy_models.py,
+ainda contém sprints), manifesto de triggers do source fence, e
+_PROTECTED_SEMANTIC_MODELS (Sprint/SprintQAItem) no adapter de versionamento.
+Card_validation_retirement._load_policy_layers usa Sprint.__table__ e precisará
+ler a estrutura histórica sem mapping operacional. As fixtures de upgrade devem
+preservar o schema anterior de forma explícita; não adicionar mappings legados
+novamente ao Base da instalação limpa. Só então completar contrato terminal e
+prova de convergência/migração/rollback antes de abrir runtime_admission.
+Investigar também upgrade de origem sem nenhuma Sprint: o journal atual exige
+references não vazio e o capture cria documentos a partir das origens/referências.
+Ainda não foi reproduzido o fluxo completo desse caso, nem declarada compatibilidade
+com ele. Instalação limpa e legado vazio não devem ser confundidos com permissão
+para fabricar arquivo, recibo ou sinal runtime_ready.
+
+Fechamento do incremento de corte físico (2026-09-21):141 testes distintos
+aprovados no build final, sem somar tentativas/retestes:4 Core +69 Community +68 UI.
+Community:19 storage/journal,25 offline/admissão e25 permissões/cleanup (388.06s).
+Os dois negativos de trigger homônimo falharam no build inicial como esperado e
+passaram após correção; a correção não relaxa o comportamento esperado.
+
+provenance-f2-schema-final.json prova source/wheel/site-packages idênticos:
+Core804 Python/867 payloads;Community338 Python/422 payloads. Core agregado
+7e348caf0c392a03f158f3677b88db47831c236976e7742915158527efffaaa2;
+Community agregado502575a259e70d0f3315556a6fdddae395429f8e70458cd32be01b45eeed02c6.
+Core wheeld81b11de70cfc088fbec883572ff862adb0b498be4f0cfa14891cec0a4e3347a;
+Community wheel389691ff19a919a44a36c9925764f7bc6974c3fa71f4c257b7e92cb5ffe34876.
+Sem edição de produto/reinstall durante as suites finais. Todos os handles
+encerrados. closure-f2-schema-final:exit0,ok=true,8 budgets0/0,findings e docs vazios.
+Nenhum dado real ou runtime do usuário alterado; sem release/tag/merge/deploy.
+
+A função interna resume_offline_retirement_schema agora realiza o corte físico
+real e retorna schema_retired. A origem e as evidências são retidas, checkpoint
+perdido não é recapturado e schema+recibo fazem rollback juntos. Isso NÃO conclui
+F2D: modelos operacionais/migrations/bootstrap ainda precisam convergir, o caso de
+legado vazio requer investigação e runtime_ready ainda não existe. Gate de
+startup permanece fechado. Prosseguir pela lista de dependências acima, mantendo
+a iniciativa completa e os critérios DEI/ARQ/VER/ADV/E2E/rollout ainda pendentes.
+Community commit89f495cac475077ea448ce2e22837314a3d770b2. Commit Core e pushes pareados a seguir; conferir HEAD remoto e árvores limpas.
