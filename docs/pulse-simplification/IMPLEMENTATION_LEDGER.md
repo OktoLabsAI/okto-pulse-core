@@ -10761,3 +10761,100 @@ perdido. Depois investigar as3 colunas permission_migration_review ausentes.
 Não rodar bootstrap geral antes de capturar a autoridade original. O contrato
 terminal runtime_ready, a retomada sem repetir escritores de bootstrap e o
 rollback com o par predecessor continuam pendentes; iniciativa NÃO concluída.
+
+### F2D — preparação aditiva dos Cards reais v034 (em implementação)
+
+Par anterior publicado e conferido limpo:Core1fe5472d77f899d7ee242723412f8bedcc072569 /
+Community82fd6e8092eda37a5963d011d068ba4f5087b558, HEAD=origin/feature/v0.4.0.
+A preparação agora usa conexão explícita do coordenador, sem engine ambiente:
+helper compartilhado com o passo aditivo normal valida JSON nullable sem default/
+generated. Captura arquivo/contexto e células antigas antes de qualquer DDL;
+ALTER e transformações pertencem ao mesmo BEGIN IMMEDIATE. Somente quando falta
+coluna, captura limitada de todos os Cards permite verificar também não ligados:
+apenas a nova célula NULL é autorizada; hashes de contexto só são normalizados
+se a linha completa corresponde exatamente à saída esperada. A releitura final
+inclui esses Cards para detectar triggers tardios. Replay com recibo e coluna
+perdida falha, sem reconstruir policy. Comentário de depreciação F2B mantido.
+Novos ensaios usam cópias da fixture original congelada, acrescentando Card sem
+Sprint/contexto explícito apenas na cópia. Validação ainda pendente; build das
+duas wheels concluído, instalação em andamento. Não afirmar upgrade concluído.
+
+Validação intermediária:provenance-f2-v034-cards.json confirmou804/338Python,
+867/422payloads das duas fontes/wheels/instalações. closure-f2-v034-cards.json
+encerrou exit0/oktrue,8budgets0/0/findings[]; frontend121testes aprovados
+(CardModal + HistoricalArchivesPanel + historical-archives-api + usePermissions).
+Probe5 (terminal-v034-candidate-5) passou Cards/contexto/trabalho/graph e falhou
+na instalação de review:agents.permission_migration_review ausente. Fonte v034
+permanece congelada; nova cópia e recibos retidos. Suíte Python de Cards ainda
+em execução, sem editar produto/reinstalar durante o processo. Próxima alteração
+planejada:helper aditivo com conexão explícita nas3 camadas, dentro da instalação
+de review, depois da comparação com checkpoint predecessor e antes de qualquer
+normalização. Replay com evidência retida deve recusar colunas perdidas.
+
+Suíte de Cards encerrada exit0:69 testes aprovados em404.77s, incluindo6 casos
+novos sobre a base real e2 negativos adicionais de schema default/generated.
+Só após o término iniciou-se alteração de produto para reviews. Helper de schema
+agora recebe a conexão da transação, valida as3 formas antes de DDL e retorna as
+colunas ausentes. Instalação verifica checkpoint original antes de criá-las;
+qualquer evidência anterior de review OU cleanup impede recriação de uma coluna
+perdida, inclusive quando a nova chamada usa outra migration_id. Auditoria e
+normalização compartilham a mesma transação. Novos14 casos de regressão v034
+cobrem allow/deny/review, rollback precoce/tardio, perda das3 colunas, schema
+incompatível e outra migração com evidência remanescente. Validação pendente.
+
+Probe6 terminou exit0 em schema_retired na cópia terminal-v034-candidate-6.
+Regressão automatizada test_retirement_v034_coordinator.py passou (40.50s):
+backup original igual,8 etapas compostas,corte físico,FKcheck vazio,retomada por
+nova conexão sem escrita e admissão ainda recusada. Seus IDs do build destino
+são sintéticos declarados; não é E2E do par publicado nem rollback operacional.
+Probe bootstrap1 (outra cópia do candidato6) concluiu lifecycle completo,FKcheck
+vazio,admissão ainda bloqueada. Mudaram11 tabelas; Cards:apenas card-a.position0->1;
+Specs:adição NULL de architecture_adoption/execution_contract; Boards sem delta.
+Não usar esse bootstrap investigativo como recibo terminal nem repetir writers
+na retomada. F2D ainda requer contrato persistido para esse trecho.
+
+Suíte aditiva:3 falhas/119passes em691.03s. Falhas reais e restritas a updated_at
+nos presets:SQLAlchemy onupdate reescreveu timestamp de autoria ao instalar
+review/retirar flags. Não relaxar o teste. Após término da suíte, update interno
+passou a atribuir cada coluna onupdate a si própria (sem serializar datetime),
+compartilhado pelos2 escritores. Tempo da migração fica na auditoria existente.
+Novo caso com timestamp2001 testa instalação isolada. Correção em validação,
+wheels-f2-v034-additive-final das duas árvores; nenhuma suite ativa durante edit.
+Core479passes e frontend121passes, inalterados por essa correção Community.
+
+Fechamento do incremento aditivo F2D (2026-09-21):Community
+c069ff92f6b1bfe9633d989e3e0f191ce890e254. 724 testes distintos aprovados:
+-69 Cards/contexto/storage (f2-v034-cards-tests; repetidos aprovados na suíte
+ampliada, antes da correção restrita aos timestamps de permissões);
+-55 permissões/coordenador no build final (f2-v034-additive-final-tests,
+98.66s), incluindo15 casos de origem real e corte completo/retomada;
+-479 Core de autoridade/retirement (f2-v034-additive-core,20.10s);
+-121 frontend (f2-v034-cards-ui,58.46s),4 arquivos, incluindo CardModal.
+Core e frontend não sofreram alterações de produto neste incremento. Não somar
+novamente os119passes da tentativa com3falhas nem a regressão isolada do
+coordenador:estão contidos nos grupos acima. Ruff F/E9 e diff --check aprovados.
+
+Build final:wheels-f2-v034-additive-final; pip encerrado antes da verificação.
+provenance-f2-v034-additive-final.json:804/338Python,867/422payloads idênticos
+fonte/wheel/site-packages, processos novos após instalação. Core agregado
+7e348caf0c392a03f158f3677b88db47831c236976e7742915158527efffaaa2;
+Community3dd3df49501274ea43db8101a3979d500d08186b2277a54cc32b5bdff3943423.
+Wheel Core d81b11de70cfc088fbec883572ff862adb0b498be4f0cfa14891cec0a4e3347a;
+Communitye43f0ab444a00527fcdd4cb095916eee1fe25fc3299d9ad994509c4e4b56bcc8.
+closure-f2-v034-additive-final.json encerrou exit0/oktrue,findings e
+ documentation_findings vazios,8budgets0/0. Sem novos módulos operacionais,
+imports privados do Core, mecanismo no Core, exceções ou alteração de catálogo.
+Nenhuma fixture congelada foi regenerada. Sem build de frontend necessário:
+fontes/assets inalterados, testes da superfície executados.
+
+Retomada:preparação real v034 agora alcança schema_retired com evidência e replay,
+mas NÃO runtime_ready. Próxima dependência é compor bootstrap e recibo terminal
+sob os mesmos fences, preservando o recibo estrito de schema (hash de todos os
+dados sobreviventes), a autoridade original, os artefatos privados e o backup.
+Um retry após resposta perdida NÃO deve reaplicar escritores/auditorias de
+bootstrap. Não liberar runtime apagando journal nem aceitando apenas ausência
+de Sprint; verificar cadeia terminal, fontes/LSN/outbox/grafo e versão do par.
+Também permanecem caso sem origens/referências, rollback com startup do par
+predecessor, E2E do par publicado e demais frentes do plano/complementos.
+Nenhum serviço do usuário, banco real, release, tag ou deploy foi alterado.
+A iniciativa continua ativa e incompleta.
