@@ -12341,3 +12341,16 @@ atualização da revisão sem relaxar proteção, manter projected_not_reconcile
 A fixture de projeção exata anterior mudou só seis tabelas porque parte de um
 contexto distinto. O critério de auditoria é o candidato integrado de upgrade.
 Nenhuma semântica/policy/gate alterada nesta observação; backlog integral segue.
+
+Observação aprofundada na mesma fixture: o script read-only passou assertions
+com os conjuntos EXATOS de PK/event_id para consolidation_audit.session_id,
+domain_events.id, global_update_outbox.event_id e exact_rebuild_* .queue_id
+iguais aos IDs dos três recibos tipados; nenhuma dessas tabelas removeu linha.
+As quatro kuzu_node_refs adicionadas têm session_id no conjunto dos ACKs e a
+contagem igual à soma de node_ref_count. sql-delta-observation.json contém
+receipt_identity_sets_match=true. Isto classifica identidades observadas, mas
+não prova ainda valores completos das linhas, hash de refs, app_settings nem
+os25 incrementos da revisão global. Próximo passo é elevar a caracterização a
+um verificador de delta bounded por registro/recibo e registrar explicitamente
+as transições de trigger que continuam sem prova, sem transformar seis/sete
+nomes de tabela em whitelist genérica.
