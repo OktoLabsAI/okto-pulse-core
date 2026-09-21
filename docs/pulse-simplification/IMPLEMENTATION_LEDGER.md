@@ -8071,3 +8071,78 @@ pendência conhecida; seu limite não foi alterado. Objetivo integral ativo.
 Commit Community desta etapa: a12f496a2c7d202c022634f7c888dc22978f5043.
 Todas as execuções acima encerradas; par preparado para push normal em
 feature/v0.4.0 e conferência de HEAD/ls-remote ao encerrar o checkpoint.
+
+### 2026-09-20 — Retirada das superfícies dedicadas REST/UI de Sprint (F3)
+
+Retomada verificada do par 9f230a83/a12f496a com árvores limpas. Turno anterior
+classificado como progresso publicado. Removidos o router Community api/sprints.py
+e seu registro (12 operações HTTP), cliente CRUD/sugestão/histórico no frontend,
+SprintsPanel/SprintModal/SprintSuggestionModal, ambas as implementações da aba
+Sprint de Spec, sugestões automáticas pós-validação e entrada no Board. Removidos
+os DTOs/constantes exclusivos de Sprint no frontend; TaskValidationGateOverride
+foi preservado por continuar compartilhado por Spec/Card.
+
+Investigação de consumidores encontrou também links oriundos de KG, Discovery e
+readiness cognitivo. Removida a navegação/enriquecimento para a entidade retirada;
+referências históricas permanecem legíveis, sem reinterpretar ID Sprint como
+Card/Spec. ModalStack recusa destinos não suportados, preservando a pilha atual.
+GetCard e sua projeção canônica de policy permanecem; gates de execução e decisão
+F3 sobre tarefa normal em Spec Done não foram alterados.
+
+Testes exclusivos da operação retirada (SprintModal, SprintsTab e REST Sprint)
+foram substituídos por negativos de inexistência e navegação legada. Nas suites
+compartilhadas, removidos somente casos da entidade retirada; limites SQL,
+negações, QA, paginação e demais entidades permanecem cobertos. O teste genérico
+de RequestValidationError foi preservado com rota de prova independente de Sprint.
+As use cases Core sprints_crud e testes diretos de autoridade ainda existem nesta
+etapa: não são mais expostas pelo router retirado; remoção interna e superfícies
+genéricas/analytics/export/registry/schema continuam como trabalho seguinte.
+
+Evidências em PULSE_REFACTOR/.validation-v040:
+- sprint-surfaces-build-ui-final-r2.log: tsc/Vite passaram, 78 arquivos,
+  árvore 95cb892eff039db70643f56bc19581a10052e2dbd46e677c1adf0fd4055d6ffe.
+  Builds intermediários revelaram consumidores KG/Discovery e fixtures incompletas;
+  corrigidos tipos/consumidores e onClose da fixture antes dos testes.
+- provenance-sprint-surfaces.json: 812/336 .py e 875/420 payloads source/wheel/install
+  idênticos, incluindo prova de ausência do módulo Python removido na instalação.
+- sprint-surfaces-core.log: 44 passed; sprint-surfaces-ui.log: 175 passed (15 suites).
+- sprint-surfaces-browser.log: 1 Chromium aprovado sobre frontend_dist instalado,
+  com preferência localStorage e URL legadas de Sprint: Board/Spec sem aba Sprint,
+  Spec -> lineage -> Card, zero requests Sprint, zero escritas/erros de browser.
+  Todas as APIs foram interceptadas; não é E2E do runtime integral. Servidor
+  descartável 127.0.0.1:5189 iniciado após a instalação/prova e encerrado pelo handle.
+- sprint-surfaces-community.log: 108 passed, incluindo 24 chamadas HTTP diretas
+  às 12 rotas removidas, ausência do módulo e schemas de request no OpenAPI,
+  paginação/QA/autorização/limites SQL das entidades preservadas e policy do Card.
+  Total desta etapa: 152 backend + 175 Vitest + 1 Chromium = 328 testes distintos.
+- A closure inicial terminou com findings=[] e oito budgets 0/0; apontou somente
+  matriz README desatualizada após redução dos imports Community -> Core de
+  1.183 para 1.175. Matriz regenerada pelo renderer oficial e wheels reconstruídos
+  para a prova final. Core continua em 7.502 imports e 25 dependências no par.
+- Todas as suites e o servidor estático encerraram antes de reinstalar o par
+  final. Nenhum código de produto alterado após a primeira prova de identidade;
+  somente ledger e matriz README. Ruff/diff --check e verify:frontend-dist passaram.
+- provenance-sprint-surfaces-final.json confirma identidade integral do par final
+  e agregados iguais aos testados. Wheels finais: Core
+  44ab7796781f27452184cae46ddd13531349430283b52f574eaa1b2c2aea6518;
+  Community ef17d2d7fce32e9dfc2a375184c0a439da9a6bb00bdfcf53cd0b43636b7541ae.
+  Agregado Core 22c4f84d7ddfe4645b7a3e754d127a91b3240cdbb6390ba60df2a2f0c597612b;
+  Community 6fb0d304a0521ade0957d7625757bcbdf4698cfd52b94ff2b9613dae83abe0ee.
+
+Retomada investigada: sprints_crud.py (12 use cases, 36 contratos/exportações)
+agora só é importado em produção por application/use_cases/__init__.py. A remoção
+interna é independente do gate de execução pendente. Permanecem explicitamente
+analytics.py (painéis/per-Sprint e filtros sprint_id), boards.py/cards_pagination.py,
+policy_governance.py, canais genéricos e serializers/export; specs.py ainda traduz
+SprintOperationError do gate de fechamento atual. Não declarar zero capacidade
+operacional Sprint em todo o produto até retirar também essas superfícies e
+coordenar schema/registry/cleanup offline. A decisão F3 continua isolada.
+
+Objetivo integral ativo. Permanecem F2A/C/D, F4/F5, matriz/rollout completos,
+coordenador offline terminal e pendência de footprint; nenhum dado real migrado.
+
+Fechamento deste checkpoint: closure-sprint-surfaces-final.json ok=true,
+findings=[] e documentation_findings=[], oito budgets 0/0. Builds, instalação,
+provas, testes e closure encerrados. Commit Community
+a39f7c261416f6186536889801a195ed7d1f211b. Par preparado para push normal em
+feature/v0.4.0 e conferência final de HEAD/ls-remote/árvores limpas.

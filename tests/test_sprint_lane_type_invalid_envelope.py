@@ -1,37 +1,20 @@
-"""Remaining REST invalid-lane envelope and transport-neutral domain guards.
+"""Remaining enum normalizer and generic REST envelope boundedness guards.
 
-Dedicated MCP removal is covered by test_sprint_mcp_retirement.py.
+Dedicated Sprint REST routes are removed; negative route coverage lives in
+Community test_sprint_rest_retirement.py. Legacy enum migration/service cleanup
+remains separate from the retired HTTP feature.
 """
 
-from __future__ import annotations
-
-
-import uuid
 from pathlib import Path
 
-import pytest_asyncio
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from sqlalchemy import func, select
+from pydantic import BaseModel
 
 from okto_pulse.community.app import install_request_validation_handler
-from okto_pulse.community.api import auth_deps as _auth_mod
-from okto_pulse.community.api.deps import get_unit_of_work
+from okto_pulse.core.domain.enums import SprintLaneType
 from okto_pulse.core.inbound.enum_error_envelope import canonical_enum_error
-from okto_pulse.core.runtime_registry import resolve_unit_of_work_factory
-from sqlalchemy_test_models import (
-    Board,
-    Card,
-    CardStatus,
-    CardType,
-    Spec,
-    SpecStatus,
-    Sprint,
-    SprintLaneType,
-    SprintStatus,
-)
 
-USER_ID = "lane-type-user"
 INVALID_LANE = "release_validation"
 EXPECTED_ENVELOPE = {
     "code": "invalid_lane_type",
@@ -40,229 +23,25 @@ EXPECTED_ENVELOPE = {
     "accepted_values": ["normal", "hotfix"],
     "mutation_applied": False,
 }
-# Substrings that would betray a raw Pydantic / traceback leak.
-LEAK_MARKERS = ("pydantic", "errors.pydantic.dev", "traceback", "Traceback", "stack")
 
 
-def _id(prefix: str) -> str:
-    return f"{prefix}-{uuid.uuid4()}"
+class GenericRequest(BaseModel):
+    title: str
 
 
-def _spec(spec_id: str, board_id: str, status: SpecStatus) -> Spec:
-    return Spec(
-        id=spec_id,
-        board_id=board_id,
-        title="Lane Type Spec",
-        status=status,
-        archived=False,
-        acceptance_criteria=["AC1"],
-        functional_requirements=["FR1"],
-        test_scenarios=[],
-        business_rules=[],
-        api_contracts=[],
-        technical_requirements=[],
-        decisions=[],
-        created_by=USER_ID,
-    )
-
-
-async def _seed(db_factory):
-    """Seed a board with a normal spec, a done spec, and two draft sprints."""
-    board_id = _id("lane-board")
-    spec_normal_id = _id("lane-spec-normal")
-    spec_done_id = _id("lane-spec-done")
-    sprint_normal_id = _id("lane-sprint-normal")
-    sprint_hotfix_id = _id("lane-sprint-hotfix")
-    origin_bug_id = _id("lane-origin-bug")
-
-    async with db_factory() as db:
-        db.add(
-            Board(
-                id=board_id,
-                name="Lane Type Board",
-                owner_id=USER_ID,
-                realm_id="local",
-            )
-        )
-        db.add(_spec(spec_normal_id, board_id, SpecStatus.IN_PROGRESS))
-        db.add(_spec(spec_done_id, board_id, SpecStatus.DONE))
-        db.add(Card(
-            id=origin_bug_id,
-            board_id=board_id,
-            spec_id=spec_done_id,
-            title="Explicit hotfix origin bug",
-            status=CardStatus.NOT_STARTED,
-            card_type=CardType.BUG,
-            archived=False,
-            created_by=USER_ID,
-        ))
-        db.add(Sprint(
-            id=sprint_normal_id, board_id=board_id, spec_id=spec_normal_id,
-            title="Normal Lane Sprint", status=SprintStatus.DRAFT,
-            lane_type=SprintLaneType.NORMAL, created_by=USER_ID,
-        ))
-        db.add(Sprint(
-            id=sprint_hotfix_id, board_id=board_id, spec_id=spec_done_id,
-            title="Hotfix Lane Sprint", status=SprintStatus.DRAFT,
-            lane_type=SprintLaneType.HOTFIX, created_by=USER_ID,
-        ))
-        await db.commit()
-
-    return {
-        "board_id": board_id,
-        "spec_normal_id": spec_normal_id,
-        "spec_done_id": spec_done_id,
-        "sprint_normal_id": sprint_normal_id,
-        "sprint_hotfix_id": sprint_hotfix_id,
-        "origin_bug_id": origin_bug_id,
-    }
-
-
-async def _count_sprints(db_factory, board_id: str) -> int:
-    async with db_factory() as db:
-        return (await db.execute(
-            select(func.count()).select_from(Sprint).where(Sprint.board_id == board_id)
-        )).scalar() or 0
-
-
-async def _lane_of(db_factory, sprint_id: str) -> SprintLaneType:
-    async with db_factory() as db:
-        sprint = await db.get(Sprint, sprint_id)
-        return sprint.lane_type
-
-
-def _assert_no_leak(raw_text: str) -> None:
-    for marker in LEAK_MARKERS:
-        assert marker not in raw_text, f"raw response leaked {marker!r}: {raw_text}"
-
-
-# ============================================================================
-# REST surface
-# ============================================================================
-
-
-@pytest_asyncio.fixture
-async def rest_ctx(db_factory):
-    """Minimal FastAPI app wired exactly like production for sprint routes:
-    the sprint router + the canonical RequestValidationError handler installed
-    by the SAME installer ``create_app`` uses (no copy-drift)."""
-    ids = await _seed(db_factory)
-
-    from okto_pulse.community.api.sprints import router as sprints_router
-
+def test_rest_unmapped_validation_error_uses_default():
     app = FastAPI()
     install_request_validation_handler(app)
-    app.include_router(sprints_router)
 
-    async def _override_uow():
-        async with db_factory() as session:
-            try:
-                yield resolve_unit_of_work_factory().wrap(session)
-                await session.commit()
-            except BaseException:
-                await session.rollback()
-                raise
+    @app.post("/probe")
+    def probe(data: GenericRequest):
+        raise AssertionError("invalid request reached writer")
 
-    app.dependency_overrides[get_unit_of_work] = _override_uow
-    app.dependency_overrides[_auth_mod.require_user] = lambda: USER_ID
-    app.dependency_overrides[_auth_mod.get_realm_id] = lambda: "local"
-
-    return TestClient(app), ids
-
-
-def _create_body(spec_id: str, lane_type: str, title: str) -> dict:
-    return {"title": title, "spec_id": spec_id, "lane_type": lane_type}
-
-
-async def test_ts_lane_01_rest_create_invalid_lane_type(rest_ctx, db_factory):
-    """TS-LANE-01: REST create with release_validation → envelope, no sprint created."""
-    client, ids = rest_ctx
-    board_id, spec_id = ids["board_id"], ids["spec_normal_id"]
-    before = await _count_sprints(db_factory, board_id)
-
-    resp = client.post(
-        f"/boards/{board_id}/specs/{spec_id}/sprints",
-        json=_create_body(spec_id, INVALID_LANE, "Should Not Persist"),
-    )
-
-    assert resp.status_code == 422
-    assert resp.json() == EXPECTED_ENVELOPE
-    _assert_no_leak(resp.text)
-    # Fail-closed: nothing persisted.
-    assert await _count_sprints(db_factory, board_id) == before
-    async with db_factory() as db:
-        leaked = (await db.execute(
-            select(func.count()).select_from(Sprint).where(Sprint.title == "Should Not Persist")
-        )).scalar() or 0
-    assert leaked == 0
-
-
-async def test_ts_lane_02_rest_update_invalid_keeps_normal(rest_ctx, db_factory):
-    """TS-LANE-02: REST update release_validation on a normal sprint → envelope, stays normal."""
-    client, ids = rest_ctx
-    sprint_id = ids["sprint_normal_id"]
-    assert await _lane_of(db_factory, sprint_id) == SprintLaneType.NORMAL
-
-    resp = client.patch(f"/sprints/{sprint_id}", json={"lane_type": INVALID_LANE})
-
-    assert resp.status_code == 422
-    assert resp.json() == EXPECTED_ENVELOPE
-    _assert_no_leak(resp.text)
-    assert await _lane_of(db_factory, sprint_id) == SprintLaneType.NORMAL
-
-
-async def test_ts_lane_05_rest_valid_values_persist(rest_ctx, db_factory):
-    """TS-LANE-05 (REST half): normal + hotfix create still work and persist."""
-    client, ids = rest_ctx
-
-    normal = client.post(
-        f"/boards/{ids['board_id']}/specs/{ids['spec_normal_id']}/sprints",
-        json=_create_body(ids["spec_normal_id"], "normal", "REST Normal Create"),
-    )
-    assert normal.status_code == 201
-    assert normal.json()["lane_type"] == "normal"
-
-    # Hotfix is eligible on a DONE spec with explicit bug lineage.
-    hotfix_body = _create_body(
-        ids["spec_done_id"], "hotfix", "REST Hotfix Create"
-    )
-    hotfix_body["origin_bug_id"] = ids["origin_bug_id"]
-    hotfix = client.post(
-        f"/boards/{ids['board_id']}/specs/{ids['spec_done_id']}/sprints",
-        json=hotfix_body,
-    )
-    assert hotfix.status_code == 201
-    assert hotfix.json()["lane_type"] == "hotfix"
-
-    async with db_factory() as db:
-        rows = (await db.execute(
-            select(Sprint.title, Sprint.lane_type).where(
-                Sprint.title.in_(["REST Normal Create", "REST Hotfix Create"])
-            )
-        )).all()
-    persisted = {title: lane for title, lane in rows}
-    assert persisted["REST Normal Create"] == SprintLaneType.NORMAL
-    assert persisted["REST Hotfix Create"] == SprintLaneType.HOTFIX
-
-
-async def test_rest_unmapped_validation_error_uses_default(rest_ctx):
-    """Boundedness guard (FR #3): a non-lane_type validation error keeps FastAPI's
-    default 422 shape (``detail`` list) — the canonical envelope must NOT swallow it."""
-    client, ids = rest_ctx
-    # Missing required ``title`` and ``spec_id`` → default RequestValidationError.
-    resp = client.post(
-        f"/boards/{ids['board_id']}/specs/{ids['spec_normal_id']}/sprints",
-        json={"lane_type": "normal"},
-    )
-    assert resp.status_code == 422
-    body = resp.json()
-    assert "detail" in body
-    assert body.get("code") != "invalid_lane_type"
-
-
-# ============================================================================
-# Transport-neutrality + bounded enum (unit)
-# ============================================================================
+    with TestClient(app) as client:
+        response = client.post("/probe", json={})
+    assert response.status_code == 422
+    assert isinstance(response.json()["detail"], list)
+    assert response.json().get("code") != "invalid_lane_type"
 
 
 def test_ts_lane_06_enum_bounded_and_service_transport_neutral():
