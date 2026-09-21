@@ -66,3 +66,14 @@ def make_deterministic_projection_planner(persistence: ConsolidationPersistenceP
         dependencies: DeterministicProjectionDependencies | None = None) -> DeterministicProjectionPlanner:
     from okto_pulse.core.application.deterministic_projection import CoreDeterministicProjectionPlanner
     return CoreDeterministicProjectionPlanner(persistence, dependencies=dependencies)
+
+
+def require_board_projection_cleanup(document: bytes) -> None:
+    """Require existing terminal-Refinement cleanup in a retained Board plan.
+
+    This checks coverage of that domain rule, not source authenticity, complete
+    materialization, reconciliation or cutover authority. Incomplete old plans
+    are refused, never rewritten or augmented while reading.
+    """
+    from okto_pulse.core.application.deterministic_projection import require_terminal_cleanup
+    require_terminal_cleanup(document)

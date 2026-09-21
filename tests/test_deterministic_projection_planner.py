@@ -10,7 +10,7 @@ import pytest
 from okto_pulse.core.application.processors import consolidation as live
 from okto_pulse.core.ports.consolidation import ConsolidationProjectionInputs
 from okto_pulse.core.ports.deterministic_projection import (
-    DeterministicProjectionSource, make_deterministic_projection_planner,
+    DeterministicProjectionSource, make_deterministic_projection_planner, require_board_projection_cleanup,
 )
 
 
@@ -76,6 +76,87 @@ async def test_cancelled_source_remains_explicitly_skipped():
     plan = await make_deterministic_projection_planner(persistence(spec(status='cancelled'))).prepare(None,
         DeterministicProjectionSource('board', 'spec', 'spec-one'))
     assert json.loads(plan.document)['disposition'] == 'skipped_cancelled'
+
+
+def terminal_row(status='cancelled'):
+    return {'artifact_type': 'refinement', 'id': 'refinement-one', 'status': status,
+        'source_ref': 'refinement:refinement-one', 'source_version': 'v1', 'content_hash': 'a' * 64,
+        'created_at': '2026-09-21T00:00:00Z'}
+
+
+async def terminal_board(*, status='cancelled', port=None):
+    port = port or persistence(spec(id='refinement-one', status=status))
+    return await make_deterministic_projection_planner(port).prepare_board(None, board_id='board',
+        source_rows=(terminal_row(status),), cognitive_rows=(), captured_at=datetime(2026, 9, 21, tzinfo=timezone.utc))
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('status', ['cancelled', 'archived'])
+async def test_terminal_refinement_cleanup_matches_live_without_reviving_root_or_census(status, monkeypatch):
+    port = persistence(spec(id='refinement-one', status=status))
+    encoded = await terminal_board(status=status, port=port)
+    board = json.loads(encoded)
+    assert board['census']['skipped_cancelled_count'] == 1
+    assert board['census']['eligible_count'] == 0
+    assert len(board['plans']) == 1 and board['dependency_closure'] == []
+    plan = board['plans'][0]
+    assert plan['disposition'] == 'prepared'
+    assert plan['projection']['nodes'] == plan['projection']['edges'] == []
+    assert plan['projection']['relational_projection_active_set_intent'] == {
+        'owner_type': 'refinement', 'owner_id': 'refinement-one', 'namespace': 'rdl',
+        'active_refs': [], 'active_edges': [],
+    }
+    require_board_projection_cleanup(encoded)
+    port.load_projection_inputs.assert_not_awaited()
+    class Captured(Exception):
+        pass
+    async def begin(request, **kwargs):
+        assert request.raw_content == plan['projection']['raw_content']
+        assert request.deterministic_candidates == []
+        raise Captured
+    monkeypatch.setattr(live, 'get_consolidation_persistence_port', lambda: port)
+    monkeypatch.setattr(live, 'begin_consolidation', begin)
+    with pytest.raises(Captured):
+        await live._process_queue_entry(None, SimpleNamespace(board_id='board', artifact_type='refinement',
+            artifact_id='refinement-one', work_kind='consolidate'))
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('damage', ['missing', 'wrong_owner', 'retained_child', 'duplicate', 'foreign_board'])
+async def test_retained_terminal_cleanup_is_complete_and_owner_scoped(damage):
+    board = json.loads(await terminal_board())
+    if damage == 'missing':
+        board['plans'] = []  # A pre-fix v2 document: never silently augment it.
+    elif damage == 'wrong_owner':
+        board['plans'][0]['projection']['relational_projection_active_set_intent']['owner_id'] = 'another'
+    elif damage == 'retained_child':
+        board['plans'][0]['projection']['relational_projection_active_set_intent']['active_refs'] = ['refinement:stale']
+    elif damage == 'duplicate':
+        board['plans'].append(board['plans'][0])
+    else:
+        board['plans'][0]['source']['board_id'] = 'another'
+    encoded = json.dumps(board, ensure_ascii=False, sort_keys=True, separators=(',', ':')).encode()
+    with pytest.raises(ValueError, match='cleanup_|scope_or_duplicate'):
+        require_board_projection_cleanup(encoded)
+    assert json.loads(encoded) == board
+
+
+@pytest.mark.asyncio
+async def test_reopened_refinement_cannot_use_earlier_terminal_census():
+    port = persistence(spec(id='refinement-one', status='done', ideation_id=None,
+        in_scope=[], out_of_scope=[], analysis='Reopened source', labels=[]))
+    with pytest.raises(ValueError, match='cleanup_source_changed'):
+        await terminal_board(port=port)
+
+
+@pytest.mark.asyncio
+async def test_terminal_cleanup_is_included_in_aggregate_byte_limit(monkeypatch):
+    from okto_pulse.core.application import deterministic_projection as module
+    raw = json.dumps({'sources': (terminal_row(),), 'cognitive': ()}, ensure_ascii=False,
+        sort_keys=True, separators=(',', ':')).encode()
+    monkeypatch.setattr(module, '_BOARD_PLAN_LIMIT', len(raw) + 1)
+    with pytest.raises(ValueError, match='census_limit'):
+        await terminal_board()
 
 
 @pytest.mark.asyncio

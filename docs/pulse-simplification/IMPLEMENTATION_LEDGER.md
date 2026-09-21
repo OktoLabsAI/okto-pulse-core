@@ -11927,3 +11927,84 @@ active sets, arestas, ausência de órfãos, temporalidade e delta vinculado ao 
 backup/manifesto antes de cutover. Backlog integral anterior segue ativo.
 
 Commit Community: abfe30fe4392ec34bf5cef8d84cf693301818516. RuffF/E9 e diff--check confirmados verdes antes do commit. Core publica somente este ledger; prova pós-commits e pushes seguem sem alteração de payload.
+
+### KG8.3 — cleanup terminal no plano agregado (em validação)
+
+Turno anterior classificado como progresso: par707d8db723ee758bb94ff8f86e4028627ed38b53 /
+abfe30fe4392ec34bf5cef8d84cf693301818516 publicado; checkouts limpos na retomada.
+Nenhum processo de teste pendente. Revisitados Core planner/worker/classificador,
+Community reader SQL/artefatos/seed, CONTRIBUTING e KG3/8.3/8.4. A reprodução
+reproduce-cancelled-refinement-plan.json provou a omissão, sem inferir alteração
+de regra: o worker já faz empty replacement RDL em cancelado/arquivado, enquanto
+o enumerador mantém esses donos fora de materializable_sources.
+
+Correção: extrair o mesmo WorkerResult terminal do worker para função pura Core;
+planner agrega esse resultado após revalidar a fonte pelo port. Nodes/edges vazios,
+active_refs/active_edges vazios e owner/namespace exatos, sem reativar raiz nem
+inflar denominator/census. Fonte reaberta no intervalo recusa; cleanup participa
+do teto agregado64MiB. A serialização de resultados normais permanece idêntica.
+
+Port público require_board_projection_cleanup verifica somente a cobertura dessa
+regra no plano retido, não autentica a fonte nem certifica materialização/cutover.
+Community verifica SHA de cada plano e chama o port; não importa privado nem
+replica regra. Formatv2 mantém forma/semântica de plano esperado, agora sem omissão.
+Compatibilidade explícita: v2 sem necessidade de cleanup continua válido; v2 que
+omitiu cleanup requerido recusa. Nenhuma complementação/regravação em leitura,
+nenhuma recaptura silenciosa de fontes. Nova preparação autorizada sobre a fonte
+fenced e retida será necessária quando um artefato antigo estiver incompleto.
+
+Testes novos cobrem cancelled/archived, paridade com live worker, owner/escopo,
+filho indevido, duplicata, plano pre-fix incompleto, fonte reaberta, bound agregado,
+SQL real sem writes e artefato de hashes válidos com cleanup omitido. RuffF/E9 e
+diff--check passaram; comportamentais aguardam build/install/prova do novo par.
+Não alterados gates de workflow/autoridade/história, frontend, REST ou MCP.
+
+Primeira validação: install37408 exit0/provenance-kg-terminal-cleanup.json igual
+806/344Python869/428payloads. Core10173 exit1:78passed/1failed6.61s; a fixture de
+Refinement reaberto reutilizava stub de Spec sem ideation_id/in_scope/out_of_scope/
+analysis/labels, e falhou no serializer normal antes do guard em teste. Corrigida
+somente fixture com os campos de Refinement. Community35389 exit0:7passed (SQL
+cancelado/arquivado e projeção do predecessor/closure de evidências incluídos).
+Closure22727 exit1 exclusivamente readme_closure_matrix_mismatch nos dois READMEs;
+nenhum finding arquitetural,8budgets0. Renderer oficial update_closure_readmes.py
+regenerou as duas matrizes depois de todos os handles terminarem. Rebuild pareado
+seguirá para alinhar metadados dos wheels e repetir testes/closure afetados.
+
+### KG8.3 — cleanup terminal agregado validado
+
+Todos os handles encerrados. Final install77971 exit0/provenance-kg-terminal-cleanup-final.json
+confirma806/344Python869/428payloads. Core7485 exit0:79passed5.26s; Community35389
+exit0:7passed81.53s (código produtivo igual antes/depois da regeneração documental).
+Total86 testes distintos. A rodada Core10173 tinha78passed e uma fixture inválida;
+sua falha/traceback permanecem em kg-terminal-cleanup-core.log. Final inteiro do
+Core verde em kg-terminal-cleanup-core-final.log. Nenhum teste novo frontend:
+este incremento não altera UI/API/MCP. MCP catalog permaneceu intocado.
+
+Reprodução pós-correção reproduce-cancelled-refinement-plan-after.json agora contém
+um plano prepared de empty replacement RDL (nodes/edges/active_refs/active_edges
+vazios), com skipped_cancelled_count=1. Não mudou o denominator. O teste live
+confirma que esse trabalho chega ao begin_consolidation em vez de virar no-op.
+A suite real SQL valida tanto status cancelled quanto archived=True/status done,
+com Spec sobrevivente normal; fontes e banco permanecem idênticos após leitura.
+
+Closure72252 exit0 (closure-kg-terminal-cleanup-final.json): oktrue/findings e
+documentação vazios,8budgets0. Matriz regenerada pelo renderer oficial: Core7440
+import rows (antes7436), Community1171. RuffF/E9 e diff--check finais verdes.
+Wheels-kg-terminal-cleanup-final aggregates:
+Core59ac2866c48ac623f628bbf324bfef8dd82e03eeb923c4a9649e7a118c0911fb;
+Community5c253a340e278851c42409124efbe67a70e9be4b9db1f75a7fa3e7315d3f7144.
+Prova pós-commits deve conservar esses bytes e vincular ao par publicado.
+
+Limites/retomada: preparar cleanup não o aplica no grafo. Falta execução governada
+no candidato e reconciliação/cutover/admissão. O futuro consumidor precisa validar
+o contrato completo dos planos e sua correspondência às fontes retidas; o port
+novo só cobre cleanup terminal e não pode ser usado como certificado integral.
+Adoção na fila terá de incluir essas ações de cleanup mesmo fora do denominator,
+com ACK somente depois do commit do active set. Preservar história nativa e fonte
+cognitiva literal, sem purge físico da cópia nem reaproveitar aprovação de geração
+antiga. Revalidar dados de domínio separadamente dos efeitos operacionais legítimos
+de fila/ACK/auditoria; investigar os deltas reais antes de escolher exclusões.
+Objetivo integral e backlog consolidado permanecem ativos; nenhum release/tag/
+deploy/merge, runtime real ou dado real alterado.
+
+Commit Community: 89a52caf84f55063691d60fdd48b4fb23c8e5b27. Core segue com worker/planner/port/testes, matriz regenerada e este ledger; após o commit, provar novamente os bytes e publicar o par.

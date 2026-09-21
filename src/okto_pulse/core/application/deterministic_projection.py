@@ -12,6 +12,82 @@ from okto_pulse.core.ports.deterministic_projection import (
 _BOARD_PLAN_LIMIT = 64 * 1024 * 1024
 
 
+def _encode(value):
+    return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(',', ':'), allow_nan=False).encode('utf-8')
+
+
+def _projection_plan(source, result):
+    from okto_pulse.core.application.processors.consolidation import (
+        _worker_node_to_candidate, _worker_edge_to_candidate,
+    )
+    projection = None if result is True else {
+        'nodes': [_worker_node_to_candidate(node).model_dump(mode='json') for node in result.nodes],
+        'edges': [_worker_edge_to_candidate(edge).model_dump(mode='json') for edge in result.edges],
+        'missing_link_candidates': [asdict(item) for item in result.missing_link_candidates],
+        'spec_lineage_parent_intent': result.spec_lineage_parent_intent.value,
+        'relational_projection_candidate_ids': sorted(result.relational_projection_candidate_ids),
+        'relational_projection_active_set_intent': (asdict(result.relational_projection_active_set_intent)
+            if result.relational_projection_active_set_intent is not None else None),
+        'content_hash': result.content_hash, 'raw_content': result.raw_content,
+    }
+    return DeterministicProjectionPlan(_encode({'format': 'deterministic-projection-plan/v1',
+        'source': asdict(source), 'disposition': 'skipped_cancelled' if result is True else 'prepared',
+        'projection': projection}))
+
+
+def _terminal_refinements(board_id, rows):
+    from okto_pulse.core.kg.source_maturity import classify_source_for_kg, DISPOSITION_SKIPPED_CANCELLED
+    sources = set()
+    for row in rows:
+        if type(row) is not dict:
+            raise ValueError('deterministic_projection_census_invalid')
+        if str(row.get('artifact_type') or '').strip().lower() != 'refinement':
+            continue
+        status = row.get('source_artifact_status') or row.get('artifact_status') or row.get('status') or ''
+        if classify_source_for_kg(artifact_type='refinement', artifact_status=status,
+                content_hash=row.get('content_hash')).disposition == DISPOSITION_SKIPPED_CANCELLED:
+            source = DeterministicProjectionSource(board_id, 'refinement', row.get('id'))
+            if source in sources:
+                raise ValueError('deterministic_projection_duplicate_source')
+            sources.add(source)
+    return tuple(sorted(sources, key=lambda item: item.artifact_id))
+
+
+def _cleanup_plan(source):
+    from okto_pulse.core.application.processors.consolidation import _cancelled_refinement_projection
+    return _projection_plan(source, _cancelled_refinement_projection(source.artifact_id))
+
+
+def require_terminal_cleanup(document):
+    if type(document) is not bytes or not 0 < len(document) <= _BOARD_PLAN_LIMIT:
+        raise ValueError('deterministic_projection_census_limit')
+    value = json.loads(document)
+    if (type(value) is not dict or set(value) != {'format', 'board_id', 'captured_at', 'source_rows',
+            'cognitive_rows', 'census', 'dependency_closure', 'plans'}
+            or value['format'] != 'deterministic-board-projection-plan/v2' or _encode(value) != document
+            or type(value['board_id']) is not str or not value['board_id'].strip() or len(value['board_id']) > 256
+            or type(value['source_rows']) is not list or len(value['source_rows']) > 100_000
+            or type(value['plans']) is not list or len(value['plans']) > 100_000):
+        raise ValueError('deterministic_projection_board_plan_invalid')
+    required = set(_terminal_refinements(value['board_id'], value['source_rows']))
+    found, seen = set(), set()
+    for plan in value['plans']:
+        if type(plan) is not dict or type(plan.get('source')) is not dict:
+            raise ValueError('deterministic_projection_board_plan_invalid')
+        source = DeterministicProjectionSource(**plan['source'])
+        if source.board_id != value['board_id'] or source in seen:
+            raise ValueError('deterministic_projection_plan_scope_or_duplicate')
+        seen.add(source)
+        if source.artifact_type == 'refinement':
+            exact_cleanup = _encode(plan) == _cleanup_plan(source).document
+            if (source in required) != exact_cleanup:
+                raise ValueError('deterministic_projection_cleanup_mismatch')
+            if exact_cleanup:
+                found.add(source)
+    if found != required:
+        raise ValueError('deterministic_projection_cleanup_missing')
+
+
 class _BoardProjectionReader:
     """Only the three source reads used by projection preparation are exposed."""
 
@@ -129,6 +205,17 @@ class CoreDeterministicProjectionPlanner:
             if accumulated_bytes > _BOARD_PLAN_LIMIT:
                 raise ValueError('deterministic_projection_census_limit')
             plans.append(json.loads(planned.document))
+        # Cancelled/archived Refinements are outside the materializable census,
+        # but the live worker still replaces their owned RDL namespace with an
+        # empty active set. Preserve that intent without reviving their roots.
+        for source in _terminal_refinements(board_id, captured['sources']):
+            planned = await self.prepare(context, source)
+            if planned.document != _cleanup_plan(source).document:
+                raise ValueError('deterministic_projection_cleanup_source_changed')
+            accumulated_bytes += len(planned.document)
+            if accumulated_bytes > _BOARD_PLAN_LIMIT:
+                raise ValueError('deterministic_projection_census_limit')
+            plans.append(json.loads(planned.document))
         result = json.dumps({'format': 'deterministic-board-projection-plan/v2',
             'board_id': board_id, 'captured_at': captured_at.isoformat(), 'source_rows': captured['sources'],
             'cognitive_rows': captured['cognitive'], 'census': census.to_dict(),
@@ -136,31 +223,15 @@ class CoreDeterministicProjectionPlanner:
             ensure_ascii=False, sort_keys=True, separators=(',', ':'), allow_nan=False).encode()
         if len(result) > _BOARD_PLAN_LIMIT:
             raise ValueError('deterministic_projection_census_limit')
+        require_terminal_cleanup(result)
         return result
 
     async def prepare(self, context, source):
         if type(source) is not DeterministicProjectionSource:
             raise TypeError('deterministic_projection_source_required')
-        from okto_pulse.core.application.processors.consolidation import (
-            _prepare_deterministic_projection, _worker_node_to_candidate, _worker_edge_to_candidate,
-        )
+        from okto_pulse.core.application.processors.consolidation import _prepare_deterministic_projection
         preparation = await _prepare_deterministic_projection(context, source,
             persistence=_BoardProjectionReader(self.persistence, source.board_id))
         if preparation is False:
             raise ValueError('deterministic_projection_source_unavailable')
-        document = {'format': 'deterministic-projection-plan/v1', 'source': asdict(source),
-            'disposition': 'skipped_cancelled' if preparation is True else 'prepared', 'projection': None}
-        if preparation is not True:
-            result, artifact = preparation
-            document['projection'] = {
-                'nodes': [_worker_node_to_candidate(node).model_dump(mode='json') for node in result.nodes],
-                'edges': [_worker_edge_to_candidate(edge).model_dump(mode='json') for edge in result.edges],
-                'missing_link_candidates': [asdict(item) for item in result.missing_link_candidates],
-                'spec_lineage_parent_intent': result.spec_lineage_parent_intent.value,
-                'relational_projection_candidate_ids': sorted(result.relational_projection_candidate_ids),
-                'relational_projection_active_set_intent': (asdict(result.relational_projection_active_set_intent)
-                    if result.relational_projection_active_set_intent is not None else None),
-                'content_hash': result.content_hash, 'raw_content': result.raw_content,
-            }
-        return DeterministicProjectionPlan(json.dumps(document, ensure_ascii=False, sort_keys=True,
-            separators=(',', ':'), allow_nan=False).encode('utf-8'))
+        return _projection_plan(source, True if preparation is True else preparation[0])

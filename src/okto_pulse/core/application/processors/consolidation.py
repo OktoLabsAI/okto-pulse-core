@@ -3024,6 +3024,16 @@ async def _process_stale_reconcile_entry(
     return True
 
 
+def _cancelled_refinement_projection(artifact_id):
+    """The same empty RDL replacement for live consolidation and offline plans."""
+    return WorkerResult(
+        raw_content=f"relational-projection-cleanup:refinement:{artifact_id}:cancelled",
+        relational_projection_active_set_intent=RelationalProjectionActiveSetIntent(
+            owner_type="refinement", owner_id=artifact_id, namespace="rdl", active_refs=(),
+        ),
+    )
+
+
 async def _prepare_deterministic_projection(db, entry, *, persistence=None):
     """Read the same authoritative inputs for live consolidation and offline planning.
 
@@ -3116,20 +3126,7 @@ async def _prepare_deterministic_projection(db, entry, *, persistence=None):
         # A cancelled Refinement still owns an RDL projection namespace. Run
         # an empty replacement so its relationally-derived children converge
         # without re-materializing the cancelled root.
-        worker_result = WorkerResult(
-            raw_content=(
-                "relational-projection-cleanup:"
-                f"refinement:{entry.artifact_id}:cancelled"
-            ),
-            relational_projection_active_set_intent=(
-                RelationalProjectionActiveSetIntent(
-                    owner_type="refinement",
-                    owner_id=entry.artifact_id,
-                    namespace="rdl",
-                    active_refs=(),
-                )
-            ),
-        )
+        worker_result = _cancelled_refinement_projection(entry.artifact_id)
     else:
         projection_inputs = None
         if entry.artifact_type in {"ideation", "refinement", "spec"}:
