@@ -1549,7 +1549,7 @@ async def test_spec_context_does_not_read_or_publish_retired_sprints(monkeypatch
     from unittest.mock import AsyncMock
 
     from sqlalchemy_test_models import Sprint, SprintStatus
-    from okto_pulse.core.services.main import SprintService
+    from okto_pulse.core.ports.application_persistence import get_application_persistence_port
 
     board_id, spec_id, sprint_id, card_id = (
         _id("retired-context-board"), _id("retired-context-spec"),
@@ -1579,8 +1579,15 @@ async def test_spec_context_does_not_read_or_publish_retired_sprints(monkeypatch
             monkeypatch.setattr(uow, "commit", commits)
             yield uow
 
-    sprint_read = AsyncMock(side_effect=AssertionError("retired Sprint was queried"))
-    monkeypatch.setattr(SprintService, "list_board_sprints", sprint_read)
+    persistence = get_application_persistence_port()
+    actual_list = persistence.list
+    sprint_reads = []
+    async def observed_list(context, query):
+        if query.entity == "sprint":
+            sprint_reads.append(query.entity)
+            raise AssertionError("retired Sprint was queried")
+        return await actual_list(context, query)
+    monkeypatch.setattr(persistence, "list", observed_list)
     monkeypatch.setattr(mcp_server, "get_unit_of_work_factory_for_mcp", lambda: observed_uow)
     monkeypatch.setattr(mcp_server, "_get_agent_ctx", AsyncMock(return_value=_stub_ctx(board_id)))
     monkeypatch.setattr(mcp_server, "check_permission", lambda *args: None)
@@ -1589,7 +1596,7 @@ async def test_spec_context_does_not_read_or_publish_retired_sprints(monkeypatch
     tool = await mcp_server.mcp.get_tool("okto_pulse_get_spec_context")
     result = json.loads(await tool.fn(board_id=board_id, spec_id=spec_id, profile=profile))
 
-    sprint_read.assert_not_awaited()
+    assert sprint_reads == []
     commits.assert_not_awaited()
     assert "sprints" not in result
     assert sprint_id not in json.dumps(result)

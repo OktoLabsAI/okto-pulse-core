@@ -1,6 +1,5 @@
 """Anti-regression test for spec 233eaad3 — guarantees that the
-validation gates (submit_spec_validation, submit_spec_evaluation, and
-submit_sprint_evaluation) were NOT modified.
+Spec validation gate was NOT modified. Sprint evaluation is retired under F3.
 
 The Analytics cancelled-card filter affects ``spec_coverage_summary``
 (which the gates consume internally), but the gate functions themselves
@@ -42,9 +41,6 @@ EXPECTED_HASHES = {
     "submit_spec_validation": (
         "478c0747f8ad13cd4c48cdee07d4c7373836a3ae6ae3999ac3a19b3e087a0611"
     ),
-    "submit_evaluation": (
-        "90dc97c780b0c0f2297f7be6c627708bfaddc42f8f1a62b1138a80aea675ef9a"
-    ),
 }
 
 
@@ -82,13 +78,6 @@ class TestValidationGatesUnchanged:
         assert "approved" in src, "approved status check missing"
         assert "validated" in src, "validated status promotion missing"
 
-    def test_submit_evaluation_has_marker_strings(self):
-        """SprintService.submit_evaluation (sprint_evaluation) deve continuar
-        gravando sprint_evaluation_submitted no activity log."""
-        src = _function_source(MAIN_PY, "submit_evaluation")
-        assert "sprint_evaluation_submitted" in src, (
-            "sprint_evaluation_submitted activity log marker missing"
-        )
 
     def test_versioned_baseline_hashes_are_unchanged(self):
         """Fail deterministically when a protected gate changes."""
@@ -96,7 +85,6 @@ class TestValidationGatesUnchanged:
             "submit_spec_validation": _hash(
                 _function_source(MAIN_PY, "submit_spec_validation")
             ),
-            "submit_evaluation": _hash(_function_source(MAIN_PY, "submit_evaluation")),
         }
 
         assert current_hashes == EXPECTED_HASHES, (

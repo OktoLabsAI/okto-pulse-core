@@ -49,17 +49,13 @@ from sqlalchemy_test_models import (
     SprintLaneType,
     SprintStatus,
 )
-from okto_pulse.core.models.schemas import CardMove, SprintCreate, SprintMove
+from okto_pulse.core.models.schemas import CardMove
 from okto_pulse.core.services.amendment_revision import AmendmentRevisionService
 from okto_pulse.core.services.amendment_revision_api import AmendmentRevisionApiService
 from okto_pulse.core.services.bug_regression_preview import (
     BugRegressionScenarioPreviewService,
 )
-from okto_pulse.core.services.main import (
-    CardOperationError,
-    CardService,
-    SprintService,
-)
+from okto_pulse.core.services.main import CardOperationError, CardService
 
 pytestmark = pytest.mark.asyncio
 
@@ -523,14 +519,12 @@ async def test_676b_eligible_amendment_unblocks_content_locked_bug_without_bypas
 
 
 # ---------------------------------------------------------------------------
-# Path B + Path C composition — a validator-confirmed test task on the revision
-# spec can execute in the original-spec hotfix lane.  This is the narrow
-# cross-spec exception required by the public workflow; all unconfirmed or
-# unrelated cross-spec cards remain rejected by sprint assignment.
+# Cross-spec regression keeps its formal amendment and validator coverage
+# requirements after operational Sprint retirement.
 # ---------------------------------------------------------------------------
 
 
-async def _prepare_cross_spec_hotfix(db, *, confirmed: bool):
+async def _prepare_cross_spec_regression(db, *, confirmed: bool):
     ids = await _seed_e2e(db)
     test_task = await db.get(Card, ids["test"])
     test_task.spec_id = ids["other_spec"]
@@ -567,60 +561,25 @@ async def _prepare_cross_spec_hotfix(db, *, confirmed: bool):
             reviewer_name=USER_ID,
         )
 
-    sprint = await SprintService(db).create_sprint(
-        ids["board"],
-        USER_ID,
-        SprintCreate(
-            title="Path B evidence hotfix",
-            spec_id=ids["spec"],
-            lane_type=SprintLaneType.HOTFIX,
-            origin_bug_id=ids["bug"],
-        ),
-        skip_ownership_check=True,
-    )
-    assert sprint is not None
-    ids["hotfix"] = sprint.id
     return ids
 
 
-async def test_confirmed_path_b_test_can_join_and_activate_path_c_hotfix():
-    """The exact validator-confirmed revision task satisfies Path C directly."""
+async def test_confirmed_cross_spec_regression_can_start_bug_without_lane():
     from okto_pulse.core.infra.database import get_session_factory
-
     async with get_session_factory()() as db:
-        ids = await _prepare_cross_spec_hotfix(db, confirmed=True)
-        service = SprintService(db)
-
-        assigned = await service.assign_tasks(
-            ids["hotfix"],
-            [ids["bug"], ids["test"]],
-            USER_ID,
+        ids = await _prepare_cross_spec_regression(db, confirmed=True)
+        moved = await CardService(db).move_card(
+            ids["bug"], USER_ID, CardMove(status=CardStatus.IN_PROGRESS),
         )
-        assert assigned == 2
-        activated = await service.move_sprint(
-            ids["hotfix"],
-            USER_ID,
-            SprintMove(status=SprintStatus.ACTIVE),
-        )
-        assert activated is not None
-        assert activated.status == SprintStatus.ACTIVE
+        assert moved.status is CardStatus.IN_PROGRESS
         assert (await db.get(Card, ids["test"])).spec_id == ids["other_spec"]
-        assert (await db.get(Card, ids["test"])).sprint_id == ids["hotfix"]
+        assert (await db.get(Card, ids["test"])).sprint_id is None
 
 
-async def test_unconfirmed_cross_spec_test_still_fails_hotfix_assignment_atomically():
-    """Complete lineage alone never opens the cross-spec sprint boundary."""
+async def test_unconfirmed_cross_spec_regression_still_blocks_bug_start():
     from okto_pulse.core.infra.database import get_session_factory
-
     async with get_session_factory()() as db:
-        ids = await _prepare_cross_spec_hotfix(db, confirmed=False)
-        service = SprintService(db)
-
-        with pytest.raises(ValueError, match="belongs to a different spec"):
-            await service.assign_tasks(
-                ids["hotfix"],
-                [ids["bug"], ids["test"]],
-                USER_ID,
-            )
+        ids = await _prepare_cross_spec_regression(db, confirmed=False)
+        await _assert_gate_blocks(db, ids, "coverage_pending")
         assert (await db.get(Card, ids["bug"])).sprint_id is None
         assert (await db.get(Card, ids["test"])).sprint_id is None

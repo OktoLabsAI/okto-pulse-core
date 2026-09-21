@@ -564,8 +564,6 @@ async def test_bg01_4_inventory_has_no_silent_service_layer_gaps():
         ("SpecService", "submit_spec_validation"),
         ("IdeationService", "move_ideation"),
         ("RefinementService", "move_refinement"),
-        ("SprintService", "move_sprint"),
-        ("SprintService", "submit_evaluation"),
         ("StoryService", "move_story"),
         ("StoryService", "archive_story"),
         ("ArchiveService", "archive_tree"),

@@ -43,7 +43,6 @@ from okto_pulse.core.domain.enums import (
     CardStatus,
     CardType,
     SpecStatus,
-    SprintLaneType,
     TestScenarioStatus,
 )
 from okto_pulse.core.domain.spec_dependency import (
@@ -305,10 +304,14 @@ class ListAllowedTransitionsResult:
 
 def _authority_for(entity_type: str):
     normalized = (entity_type or "").strip().lower()
+    # The registry still supplies historical permission fingerprints until the
+    # coordinated permission cutover. It cannot advertise a retired operation.
+    if normalized == "sprint":
+        raise CommandValidationError("Invalid entity_type: Sprint lifecycle is retired")
     try:
         return lifecycle_definition(normalized)
     except ValueError as exc:
-        allowed = ", ".join(sorted(SDLC_REGISTRY))
+        allowed = ", ".join(sorted(set(SDLC_REGISTRY) - {"sprint"}))
         raise CommandValidationError(
             f"Invalid entity_type. Must be one of: {allowed}"
         ) from exc
@@ -614,10 +617,6 @@ class ListAllowedTransitionsUseCase:
                     entity,
                     transition.to_status,
                     dependency_readiness=dependency_readiness,
-                )
-            elif entity_type == "sprint":
-                return await self._sprint_blocked_reason(
-                    services, entity, transition.to_status
                 )
             elif entity_type == "card":
                 return await self._card_blocked_reason(
@@ -974,177 +973,6 @@ class ListAllowedTransitionsUseCase:
                 return self._exception_reason(exc)
         return None
 
-    async def _sprint_blocked_reason(
-        self,
-        services: ApplicationServiceCatalog,
-        sprint: Any,
-        target_status: str,
-    ) -> str | None:
-        list_assigned_cards = getattr(services.sprints, "list_assigned_cards", None)
-        if callable(list_assigned_cards):
-            cards = list(await list_assigned_cards(sprint.id))
-        else:
-            # Compatibility for persistence-neutral test/service catalogs. Real
-            # runtime catalogs expose list_assigned_cards and never trust an ORM
-            # relationship that may predate a re-assignment in this transaction.
-            cards = [
-                card
-                for card in (getattr(sprint, "cards", None) or [])
-                if not bool(getattr(card, "archived", False))
-            ]
-        if target_status == "active":
-            if not cards:
-                return "sprint_empty: assign at least one card before activation."
-            if getattr(sprint, "lane_type", None) == SprintLaneType.HOTFIX:
-                bug_ids = {card.id for card in cards if card.card_type == CardType.BUG}
-                test_ids = {
-                    card.id for card in cards if card.card_type == CardType.TEST
-                }
-                origin_bug = next(
-                    (
-                        card
-                        for card in cards
-                        if card.id == sprint.origin_bug_id
-                        and card.card_type == CardType.BUG
-                    ),
-                    None,
-                )
-                linked = set(getattr(origin_bug, "linked_test_task_ids", None) or [])
-                if (
-                    not sprint.origin_bug_id
-                    or sprint.origin_bug_id not in bug_ids
-                    or not linked.intersection(test_ids)
-                ):
-                    return (
-                        "hotfix_regression_lineage_required: assign the origin "
-                        "bug and one explicitly linked regression test card."
-                    )
-
-        if target_status == "review":
-            spec = await services.specs.get_spec(sprint.spec_id)
-            board = await services.boards.get_board(sprint.board_id)
-            skip_coverage = bool(
-                getattr(sprint, "skip_test_coverage", False)
-                or (
-                    (getattr(board, "settings", None) or {}).get(
-                        "skip_test_coverage_global", False
-                    )
-                    if board
-                    else False
-                )
-            )
-            if spec and not skip_coverage:
-                from okto_pulse.core.services.sprint_scope import SprintScopeResolver
-
-                scope = SprintScopeResolver.resolve(
-                    sprint=sprint,
-                    spec=spec,
-                    cards=cards,
-                )
-                pending = [
-                    scenario
-                    for scenario in scope.items.get("test_scenarios", ())
-                    if scenario.get("status") != "passed"
-                ]
-                if pending:
-                    return (
-                        "scoped_tests_incomplete: every scoped test scenario "
-                        "must pass before review."
-                    )
-
-        if target_status == "closed":
-            if any(
-                card.status not in (CardStatus.DONE, CardStatus.CANCELLED)
-                for card in cards
-            ):
-                return (
-                    "sprint_has_incomplete_cards: complete or cancel every "
-                    "assigned card before closing."
-                )
-            spec = await services.specs.get_spec(sprint.spec_id)
-            board = await services.boards.get_board(sprint.board_id)
-            if spec is not None:
-                from okto_pulse.core.services.main import (
-                    scenario_has_authenticated_required_evidence,
-                )
-                from okto_pulse.core.services.sprint_scope import (
-                    SprintScopeResolver,
-                    completion_blockers,
-                )
-
-                settings = (getattr(board, "settings", None) or {}) if board else {}
-                skip_evidence = bool(settings.get("skip_test_evidence_global", False))
-                scope = SprintScopeResolver.resolve(
-                    sprint=sprint,
-                    spec=spec,
-                    cards=cards,
-                )
-                scope_blockers = completion_blockers(
-                    scope,
-                    skip_test_coverage=bool(
-                        getattr(sprint, "skip_test_coverage", False)
-                        or settings.get("skip_test_coverage_global", False)
-                    ),
-                    skip_test_evidence=skip_evidence,
-                    skip_rules_coverage=bool(
-                        getattr(sprint, "skip_rules_coverage", False)
-                        or settings.get("skip_rules_coverage_global", False)
-                    ),
-                    evidence_validator=lambda scenario: (
-                        scenario_has_authenticated_required_evidence(
-                            board_id=sprint.board_id,
-                            spec_id=spec.id,
-                            scenario=scenario,
-                            acceptance_criteria=list(
-                                getattr(spec, "acceptance_criteria", None) or []
-                            ),
-                        )
-                    ),
-                )
-                if scope_blockers:
-                    codes = ", ".join(blocker.code for blocker in scope_blockers[:5])
-                    return (
-                        "sprint_scope_gate_blocked: resolve scoped coverage, "
-                        f"evidence, and rules blockers ({codes})."
-                    )
-            if not bool(getattr(sprint, "skip_qualitative_validation", False)):
-                evaluations = [
-                    item
-                    for item in (getattr(sprint, "evaluations", None) or [])
-                    if not item.get("stale")
-                ]
-                if any(item.get("recommendation") == "reject" for item in evaluations):
-                    return (
-                        "sprint_evaluation_rejected: replace the rejecting "
-                        "evaluation before closing."
-                    )
-                approvals = [
-                    item
-                    for item in evaluations
-                    if item.get("recommendation") == "approve"
-                ]
-                if not approvals:
-                    return (
-                        "sprint_evaluation_required: submit an approving sprint "
-                        "evaluation before closing."
-                    )
-                threshold = getattr(sprint, "validation_threshold", None) or (
-                    (getattr(board, "settings", None) or {}).get(
-                        "validation_threshold_global",
-                        70,
-                    )
-                    if board
-                    else 70
-                )
-                average = sum(item.get("overall_score", 0) for item in approvals) / len(
-                    approvals
-                )
-                if average < threshold:
-                    return (
-                        "sprint_evaluation_below_threshold: average approval "
-                        f"score {average:.0f} is below {threshold}."
-                    )
-        return None
 
     async def _bug_regression_blocked_reason(
         self,
@@ -1413,11 +1241,6 @@ class ListAllowedTransitionsUseCase:
                 dependency_readiness.unfinished_blocking_count
             )
             dependency_blockers_truncated = dependency_readiness.blockers_truncated
-        sprint = (
-            await services.sprints.get_sprint(card.sprint_id)
-            if getattr(card, "sprint_id", None)
-            else None
-        )
         pending_scenarios: list[PendingScenario] = []
         if (
             target == CardStatus.DONE
@@ -1486,11 +1309,8 @@ class ListAllowedTransitionsUseCase:
                     )
         validation_required = False
         if target == CardStatus.DONE:
-            config = services.cards._resolve_validation_config(
-                card,
-                spec,
-                sprint,
-                board_settings,
+            config = await services.cards.validation_config_for_card(
+                card, spec=spec, board_settings=board_settings,
             )
             validation_required = bool(config["required"])
         (
@@ -1615,8 +1435,6 @@ class ListAllowedTransitionsUseCase:
             return await services.stories.get_story(entity_id)
         if entity_type == "card":
             return await services.cards.get_card(entity_id)
-        if entity_type == "sprint":
-            return await services.sprints.get_sprint(entity_id)
         if entity_type == "test_scenario":
             matches: list[_TestScenarioTransitionEntity] = []
             specs = await services.specs.list_specs(

@@ -14,18 +14,10 @@ from sqlalchemy_test_models import (
     CardType,
     Spec,
     SpecStatus,
-    Sprint,
-    SprintStatus,
 )
-from okto_pulse.core.models.schemas import CardCreate, CardMove, CardUpdate, SprintMove
+from okto_pulse.core.models.schemas import CardCreate, CardMove, CardUpdate
 from okto_pulse.core.domain.spec_validation import SpecValidationGateNotReady
-from okto_pulse.core.services.main import (
-    CardOperationError,
-    CardService,
-    SpecService,
-    SprintOperationError,
-    SprintService,
-)
+from okto_pulse.core.services.main import CardOperationError, CardService, SpecService
 from okto_pulse.core.services.resource_gate import (
     ResourceGateService,
     ResourceGateViolation,
@@ -185,94 +177,8 @@ async def test_card_service_enforces_max_scenarios_on_create_and_update(db_facto
         assert update_exc.value.code == "max_scenarios_per_card_exceeded"
 
 
-@pytest.mark.asyncio
-async def test_sprint_close_blocks_non_terminal_cards(db_factory):
-    async with db_factory() as db:
-        board_id, spec_id = await _seed_board_and_spec(
-            db,
-            spec_status=SpecStatus.IN_PROGRESS,
-        )
-        sprint = Sprint(
-            id=_id("sprint"),
-            board_id=board_id,
-            spec_id=spec_id,
-            title="Sprint with unfinished work",
-            status=SprintStatus.REVIEW,
-            skip_qualitative_validation=True,
-            created_by=USER_ID,
-        )
-        card = Card(
-            id=_id("card"),
-            board_id=board_id,
-            spec_id=spec_id,
-            sprint_id=sprint.id,
-            title="Still open",
-            status=CardStatus.NOT_STARTED,
-            card_type=CardType.NORMAL,
-            created_by=USER_ID,
-        )
-        db.add_all([sprint, card])
-        await db.flush()
-
-        with pytest.raises(SprintOperationError) as exc:
-            await SprintService(db).move_sprint(
-                sprint.id,
-                USER_ID,
-                SprintMove(status=SprintStatus.CLOSED),
-            )
-        assert exc.value.code == "sprint_has_incomplete_cards"
-        assert exc.value.facts["open_cards"][0]["id"] == card.id
 
 
-@pytest.mark.asyncio
-async def test_sprint_close_allows_terminal_cards(db_factory):
-    async with db_factory() as db:
-        board_id, spec_id = await _seed_board_and_spec(
-            db,
-            spec_status=SpecStatus.IN_PROGRESS,
-        )
-        sprint = Sprint(
-            id=_id("sprint"),
-            board_id=board_id,
-            spec_id=spec_id,
-            title="Sprint with complete work",
-            status=SprintStatus.REVIEW,
-            skip_qualitative_validation=True,
-            created_by=USER_ID,
-        )
-        db.add_all(
-            [
-                sprint,
-                Card(
-                    id=_id("card"),
-                    board_id=board_id,
-                    spec_id=spec_id,
-                    sprint_id=sprint.id,
-                    title="Done work",
-                    status=CardStatus.DONE,
-                    card_type=CardType.NORMAL,
-                    created_by=USER_ID,
-                ),
-                Card(
-                    id=_id("card"),
-                    board_id=board_id,
-                    spec_id=spec_id,
-                    sprint_id=sprint.id,
-                    title="Cancelled work",
-                    status=CardStatus.CANCELLED,
-                    card_type=CardType.NORMAL,
-                    created_by=USER_ID,
-                ),
-            ]
-        )
-        await db.flush()
-
-        moved = await SprintService(db).move_sprint(
-            sprint.id,
-            USER_ID,
-            SprintMove(status=SprintStatus.CLOSED),
-        )
-        assert moved.status == SprintStatus.CLOSED
 
 
 @pytest.mark.asyncio

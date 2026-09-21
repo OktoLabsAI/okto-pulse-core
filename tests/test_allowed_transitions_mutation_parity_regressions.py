@@ -26,7 +26,6 @@ from okto_pulse.core.domain.enums import (
     IdeationStatus,
     RefinementStatus,
     SpecStatus,
-    SprintStatus,
 )
 from okto_pulse.core.domain.code_traceability import (
     CodeInvestigationCurrentnessUnknown,
@@ -54,7 +53,7 @@ from okto_pulse.core.services.main import (
     SpecService,
 )
 from okto_pulse.core.services.resource_gate import ResourceGateService
-from sqlalchemy_test_models import Board, Card, Ideation, Refinement, Spec, Sprint
+from sqlalchemy_test_models import Board, Card, Ideation, Refinement, Spec
 
 
 USER_ID = "allowed-transition-parity-user"
@@ -484,172 +483,10 @@ async def test_spec_done_preview_uses_canonical_cognitive_gate(db_factory) -> No
     assert "cognitive_consolidation_pending" in (done.blocked_reason or "")
 
 
-def _sprint_scope_case(
-    case: str,
-    *,
-    board_id: str,
-    spec_id: str,
-    sprint_id: str,
-) -> tuple[Spec, Sprint, list[Card]]:
-    scenario_id = f"scenario-{case}"
-    rule_id = f"rule-{case}"
-    scenarios: list[dict] = []
-    rules: list[dict] = []
-    sprint_scenario_ids: list[str] = []
-    sprint_rule_ids: list[str] = []
-    cards: list[Card] = []
-
-    if case == "coverage":
-        scenarios = [
-            {
-                "id": scenario_id,
-                "title": "Scoped but not executed",
-                "status": "draft",
-            }
-        ]
-        sprint_scenario_ids = [scenario_id]
-    elif case == "evidence":
-        scenarios = [
-            {
-                "id": scenario_id,
-                "title": "Successful status without authenticated evidence",
-                "status": "passed",
-            }
-        ]
-        cards = [
-            Card(
-                id=_id("scope-test-card"),
-                board_id=board_id,
-                spec_id=spec_id,
-                sprint_id=sprint_id,
-                title="Assigned test card",
-                card_type=CardType.TEST,
-                status=CardStatus.DONE,
-                test_scenario_ids=[scenario_id],
-                position=0,
-                created_by=USER_ID,
-            )
-        ]
-    elif case == "rules":
-        rules = [
-            {
-                "id": rule_id,
-                "title": "Scoped rule without an assigned-card backlink",
-                "linked_task_ids": [],
-            }
-        ]
-        sprint_rule_ids = [rule_id]
-    else:  # pragma: no cover - test helper misuse
-        raise AssertionError(case)
-
-    spec = Spec(
-        id=spec_id,
-        board_id=board_id,
-        title=f"Sprint scope spec: {case}",
-        status=SpecStatus.IN_PROGRESS,
-        acceptance_criteria=[],
-        test_scenarios=scenarios,
-        business_rules=rules,
-        created_by=USER_ID,
-    )
-    sprint = Sprint(
-        id=sprint_id,
-        board_id=board_id,
-        spec_id=spec_id,
-        title=f"Sprint scope: {case}",
-        status=SprintStatus.REVIEW,
-        test_scenario_ids=sprint_scenario_ids,
-        business_rule_ids=sprint_rule_ids,
-        skip_qualitative_validation=True,
-        created_by=USER_ID,
-    )
-    return spec, sprint, cards
 
 
-@pytest.mark.asyncio
-@pytest.mark.parametrize(
-    ("case", "expected_code"),
-    [
-        ("coverage", "sprint_test_not_successful"),
-        ("evidence", "sprint_test_evidence_missing"),
-        ("rules", "sprint_business_rule_uncovered"),
-    ],
-)
-async def test_sprint_closed_preview_applies_canonical_scope_blockers(
-    db_factory,
-    case: str,
-    expected_code: str,
-) -> None:
-    board_id = _id(f"sprint-{case}-board")
-    spec_id = _id(f"sprint-{case}-spec")
-    sprint_id = _id(f"sprint-{case}")
-    spec, sprint, cards = _sprint_scope_case(
-        case,
-        board_id=board_id,
-        spec_id=spec_id,
-        sprint_id=sprint_id,
-    )
-    await _persist(db_factory, _board(board_id), spec, sprint, *cards)
-
-    async with db_factory() as db:
-        closed = await _preview_transition(
-            db,
-            board_id=board_id,
-            entity_type="sprint",
-            entity_id=sprint_id,
-            to_status="closed",
-        )
-
-    assert closed.blocked_reason is not None
-    assert "sprint_scope_gate_blocked" in closed.blocked_reason
-    assert expected_code in closed.blocked_reason
 
 
-@pytest.mark.asyncio
-async def test_sprint_closed_preview_blocks_approval_below_threshold(
-    db_factory,
-) -> None:
-    board_id = _id("sprint-threshold-board")
-    spec_id = _id("sprint-threshold-spec")
-    sprint_id = _id("sprint-threshold")
-    await _persist(
-        db_factory,
-        _board(board_id, settings={"validation_threshold_global": 70}),
-        Spec(
-            id=spec_id,
-            board_id=board_id,
-            title="Threshold spec",
-            status=SpecStatus.IN_PROGRESS,
-            created_by=USER_ID,
-        ),
-        Sprint(
-            id=sprint_id,
-            board_id=board_id,
-            spec_id=spec_id,
-            title="Below-threshold sprint",
-            status=SprintStatus.REVIEW,
-            evaluations=[
-                {
-                    "recommendation": "approve",
-                    "overall_score": 40,
-                    "stale": False,
-                }
-            ],
-            skip_qualitative_validation=False,
-            created_by=USER_ID,
-        ),
-    )
-
-    async with db_factory() as db:
-        closed = await _preview_transition(
-            db,
-            board_id=board_id,
-            entity_type="sprint",
-            entity_id=sprint_id,
-            to_status="closed",
-        )
-
-    assert "sprint_evaluation_below_threshold" in (closed.blocked_reason or "")
 
 
 @pytest.mark.asyncio

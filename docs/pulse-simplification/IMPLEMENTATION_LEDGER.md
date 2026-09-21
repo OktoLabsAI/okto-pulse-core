@@ -8506,3 +8506,111 @@ Fechamento do incremento:
 - Community commit 5aa4dda2a272084de497be8a0bb6952f7f024c0a; preparar commit
   Core e push normal do par. Objetivo integral continua pendente conforme a
   lista de retomada acima, com o ledger como ponto de continuidade.
+
+### 2026-09-21 — F3: retirada do serviço operacional de Sprint
+
+Partida publicada e limpa: Core 286845abc22f18262c4b7318b4b0aa9e36e27a3d /
+Community 5aa4dda2a272084de497be8a0bb6952f7f024c0a. O turno anterior foi progresso:
+commits/pushes verificados e 512 testes distintos, não mera atualização de status.
+
+Retirados SprintService (22 métodos, incluindo CRUD, transições, assignment,
+evaluations, histórico operacional e sugestão), SprintOperationError, o helper
+exclusivo de critical action e sua exposição no catálogo/Protocol de serviços.
+Removidas as duas entradas de cobertura de mutation guard exclusivas do serviço
+apagado; o inventário das demais operações continua exato. Community specs.py
+não importa/captura mais o erro de lane que a reabertura da Spec já não produz.
+SprintQAService, analytics, modelos e contratos de persistência ainda existem;
+não confundir a retirada deste serviço com conclusão integral de F3.
+
+Preview de Card agora pede validation_config_for_card ao serviço público de Card,
+sem acessar SprintService nem extrair contexto de edição. Essa fachada apenas
+preserva o read legado de policy existente até o offline F2B materializar os
+campos por Card. Comentário explícito de depreciação: remover o read após o
+cutover fiel, nunca antecipar perda de overrides nem conceder writes ao executor.
+Quatro testes com porta real comparam 0/60/90/100 antes e depois da captura por
+Card e conservam a origem histórica. O DTO do executor permanece sem esse writer.
+
+ListAllowedTransitions removeu o avaliador/load de Sprint e recusa esse tipo
+na autoridade de descoberta; REST e MCP convergem para a operação retirada.
+Tipo AllowedTransitionEntityType do frontend deixou de oferecer Sprint. Os
+metadados da conclusão de Spec e reference/transitions.md não exigem mais Sprint.
+
+Dependência material confirmada por execução, não omitida: retirar simultaneamente
+a entrada Sprint de SDLC_REGISTRY quebrou o import da policy em
+permissions.py:771 (historical transition fingerprint). Essa mesma definição
+alimenta fingerprints e grants versionados ainda usados até o corte de permissões.
+A tentativa inicial f3-service-core.log / f3-service-collect-community.log falhou
+no carregamento, antes de testes. A entrada foi preservada nesta etapa, com recusa
+explícita de descoberta e sem serviço operacional; não foi alterado nenhum
+fingerprint, grant, deny ou budget para fazer o import passar. Retirar a entrada
+junto com permissões/presets/normalização na próxima frente. O avaliador puro
+historical_permission_policy_v034.py já está congelado e independente de lifecycle;
+usá-lo para provar os ceilings do arquivo, sem substituir autoridade viva por ele.
+Esse é um vínculo de cutover do plano único, não uma nova exceção arquitetural.
+
+Testes: excluídas apenas classes/casos exclusivos das operações Sprint apagadas
+(e o arquivo test_sprint_origin_invariants, só create/update desse serviço).
+Preservados casos compartilhados de Card/Spec, cancellation, architecture, evidência,
+contexto e analytics restante. O antigo teste de composição Path B/Path C agora
+exercita diretamente início de Bug com Test cross-spec: cobertura confirmada passa,
+linhagem sem confirmação continua coverage_pending. A sentinela de Spec context
+foi movida do serviço retirado para a porta de persistência, proibindo a consulta
+real a Sprint, além de verificar ausência no payload. O hash exato de
+submit_spec_validation foi mantido; só a verificação exclusiva do método de
+Sprint evaluation apagado foi retirada.
+
+Evidências até aqui em PULSE_REFACTOR/.validation-v040:
+- provenance-f3-service-r2.json: 811/336 .py e 874/420 payloads source/wheel/install
+  idênticos; reconstrução/reinstalação após término dos processos do lote inicial.
+- f3-service-core-r2.log: 162 passed (admissão, preview/REST/MCP, Path B, policy,
+  context projection, mutation inventory e catálogo gerado).
+- f3-service-community.log: 51 passed (REST de dependências de Spec, fence real F3,
+  rejected/permissões de Card). f3-service-ui.log: 103 passed em CardModal e
+  hooks/projeções de lifecycle/policy. tsc/Vite/sync passaram; a mudança só de
+  tipo não alterou os 78 payloads SPA, árvore permanece
+  639c408cac92294bc31b6aa0e0f3988edf5380c516dc22a9d9afeb16a3a2bf52.
+- Coleta integral, não execução integral: 13.222 Core e 5.801 Community, sem
+  falha de import/collection após a correção do acoplamento histórico.
+- closure-f3-service.json: findings=[], todos os oito budgets 0/0; somente
+  matrizes README precisam do renderer oficial (Core imports 7.497 -> 7.482,
+  Community 1.175, dependências 25). Não afrouxar o gate de documentação.
+- f3-service-regressions.log ainda em execução; finalizar o lote e a distribuição
+  pareada antes do commit/push. Sem nova execução Playwright/E2E integral.
+
+Retomada: além de fechar estas provas, retirar os consumidores restantes de Sprint
+(analytics/filtros, QA/contextos/histórico operacional, DTOs/catalog/repos/KG),
+coordenar permissões/registry e captura histórica no corte offline, então schema e
+certificado terminal. A lista integral anterior F2/F3/F4/F5, DEI/ARQ/VER/ADV,
+footprint, upgrade/rollback, benchmark e rollout permanece ativa. Nenhum release,
+merge, tag, deploy, migração de dados reais ou restart do runtime do usuário.
+
+Fechamento das verificações do incremento:
+- f3-service-regressions.log: 107 passed nos oito arquivos compartilhados
+  alterados (architecture, paginação MCP, cancellation, hardening, Evidence V2,
+  reabertura/origem, analytics legado e autoridade/escopo). Soma sem duplicatas:
+  269 Core + 51 Community + 103 frontend = 423 testes aprovados.
+- Ruff e diff --check passaram nos dois repos. verify:frontend-dist confirmou
+  os 78 payloads. Catálogo MCP preservado byte a byte pelo teste de drift.
+- Renderer oficial atualizou somente a contagem Core da matriz README para
+  7.482. Ambos wheels finais reconstruídos/reinstalados depois de encerrar todas
+  as suites. provenance-f3-service-final.json prova novamente as árvores completas
+  source/wheel/install; os agregados são iguais aos do par r2 testado.
+  Core 6e608e0af71a021bcc179faf9faae47450d494ac906d2b9cecb96cca413c2b30;
+  Community a21882b434e19d16bb71e9d833db67f236cace860ba46006789fe36de0f9c71b.
+  SHA256 wheels: Core b78b19a5537f537f19bd2001fdf0ff2481c3e8b271ba3ae2649aaf67c1d3e482;
+  Community 99dc504eec6898d2fe196c122fe5a1909a03825fc549811b4787649b7dc7601e.
+- Uma tentativa PowerShell de imprimir a comparação usou pipeline inválido
+  após foreach; falhou no parse e não executou verificação/mutação. Corrigida
+  com captura em array, a prova e comparação efetivamente executaram e passaram.
+- Aguardando somente closure-f3-service-final.json e publicação pareada. Não
+  declarar a iniciativa completa: o registry histórico ainda depende do corte
+  de permissões; Sprint QA/analytics/persistência e as demais frentes do plano
+  continuam explicitamente no inventário de retomada.
+
+Resultado final: closure-f3-service-final.json concluído com ok=true,
+findings=[], documentation_findings=[] e oito budgets em 0/0. O relatório
+persistido é a evidência terminal; o handle de execução já estava encerrado
+na retomada da observação. Community commit
+67c1d58ed902954550b36d94b07933bed6f6cbfc. Preparar commit Core e publicar o par
+por push normal; verificar HEAD remoto e árvore limpa nos dois repositórios.
+Nenhuma alteração de produto após a prova de identidade final.

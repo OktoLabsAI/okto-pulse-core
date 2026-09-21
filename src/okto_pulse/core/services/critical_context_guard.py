@@ -224,20 +224,6 @@ CRITICAL_MUTATION_GUARD_COVERAGE: tuple[CriticalMutationGuardCoverage, ...] = (
         "refinement",
         "Refinement lifecycle movement can complete or cancel the refinement.",
     ),
-    CriticalMutationGuardCoverage(
-        "SprintService",
-        "move_sprint",
-        CriticalAction.SPRINT_MOVE_STATUS,
-        "sprint",
-        "Sprint status movement includes activation, review, closeout and cancellation.",
-    ),
-    CriticalMutationGuardCoverage(
-        "SprintService",
-        "submit_evaluation",
-        CriticalAction.SPRINT_SUBMIT_EVALUATION,
-        "sprint",
-        "Sprint evaluation can unblock sprint closeout.",
-    ),
 )
 
 

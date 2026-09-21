@@ -496,7 +496,7 @@ _CORE_RESOURCE_TABLE = [
     (
         "okto-pulse://reference/transitions",
         "reference/transitions.md",
-        "Status transitions matrix — cards/sprints/specs.",
+        "Status transitions matrix — cards/specs.",
     ),
     (
         "okto-pulse://reference/list_tools",

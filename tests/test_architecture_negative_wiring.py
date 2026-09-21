@@ -27,7 +27,6 @@ from okto_pulse.core.services.architecture import (
 from okto_pulse.core.services.architecture_observability import (
     get_architecture_metric_labels,
 )
-from okto_pulse.core.services.main import SprintService
 from okto_pulse.core.services.resource_gate import ResourceGateViolation
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -341,20 +340,6 @@ def test_rest_and_mcp_done_blocker_payloads_preserve_same_remediation_details() 
     }
 
 
-def test_sprint_close_remains_out_of_scope_for_architecture_finding_gate_v1() -> None:
-    source = inspect.getsource(SprintService.move_sprint)
-
-    for token in (
-        "ArchitectureFindingGate",
-        "ResourceGateService",
-        "validate_or_raise_entity_completion",
-        "validate_or_raise_spec_resource_task_coverage",
-        "architecture_findings_block_done",
-    ):
-        assert token not in source, (
-            "Sprint-level Architecture Finding Gate is explicitly out of scope "
-            f"for v1, but SprintService.move_sprint references {token!r}."
-        )
 
 
 def test_architecture_metric_labels_exclude_raw_finding_or_diagram_fields() -> None:

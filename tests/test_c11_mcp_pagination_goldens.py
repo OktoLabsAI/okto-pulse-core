@@ -20,14 +20,7 @@ from pydantic import TypeAdapter
 from mcp_runtime_testing import register_mcp_test_runtime
 from okto_pulse.core.application.use_cases.entity_pagination import EntityPageService
 from okto_pulse.core.mcp import server as mcp_server
-from okto_pulse.core.services.main import (
-    BoardService,
-    IdeationService,
-    RefinementService,
-    SpecService,
-    SprintService,
-    StoryService,
-)
+from okto_pulse.core.services.main import BoardService, IdeationService, RefinementService, SpecService, StoryService
 from sqlalchemy_test_models import (
     Board,
     Card,
@@ -1172,11 +1165,6 @@ async def test_both_mcp_tools_execute_through_entity_page_service_without_full_f
         patch.object(
             RefinementService,
             "list_refinements",
-            legacy_full_fetch_forbidden,
-        ),
-        patch.object(
-            SprintService,
-            "list_sprints",
             legacy_full_fetch_forbidden,
         ),
         patch.object(

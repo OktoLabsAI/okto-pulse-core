@@ -346,7 +346,6 @@ SDLC_REGISTRY: Mapping[str, LifecycleDefinition] = MappingProxyType(
                         preconditions=(
                             "spec_gate_matrix_ready",
                             "all_cards_terminal",
-                            "all_sprints_terminal",
                             "resource_gate_ready",
                             "cognitive_gate_ready",
                         ),
@@ -354,7 +353,6 @@ SDLC_REGISTRY: Mapping[str, LifecycleDefinition] = MappingProxyType(
                         reason_codes=(
                             "coverage_incomplete",
                             "cards_incomplete",
-                            "sprints_incomplete",
                             "resource_gate_blocked",
                             "cognitive_gate_blocked",
                             "transition_not_allowed",

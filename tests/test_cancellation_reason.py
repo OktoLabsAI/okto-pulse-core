@@ -14,7 +14,7 @@ Helper (pure unit tests over SimpleNamespace entities):
 
 Integration (service move flows over the test DB):
   - CardService.move_card, SpecService.move_spec, IdeationService.move_ideation,
-    RefinementService.move_refinement, SprintService.move_sprint
+    RefinementService.move_refinement
   - reopen clears (spec/ideation/refinement cancelled → draft;
     card cancelled → not_started)
   - MCP full entity reads expose the cancellation audit record
@@ -44,15 +44,12 @@ from sqlalchemy_test_models import (
     RefinementStatus,
     Spec,
     SpecStatus,
-    Sprint,
-    SprintStatus,
 )
 from okto_pulse.core.models.schemas import (
     CardMove,
     IdeationMove,
     RefinementMove,
     SpecMove,
-    SprintMove,
 )
 from okto_pulse.core.services.cancellation import (
     CancellationReasonRequiredError,
@@ -254,17 +251,6 @@ async def _seed_spec(db_factory) -> str:
     return spec_id
 
 
-async def _seed_sprint(db_factory) -> str:
-    spec_id = await _seed_spec(db_factory)
-    sprint_id = str(uuid.uuid4())
-    async with db_factory() as db:
-        db.add(Sprint(
-            id=sprint_id, spec_id=spec_id, board_id=BOARD_ID,
-            title="Cancellable Sprint", status=SprintStatus.DRAFT,
-            created_by=USER_ID,
-        ))
-        await db.commit()
-    return sprint_id
 
 
 async def _seed_card(db_factory, status=CardStatus.NOT_STARTED) -> str:
@@ -488,37 +474,6 @@ class TestMoveRefinementCancellation:
             )
             assert reopened.status == RefinementStatus.DRAFT
             assert reopened.version == 2
-            assert reopened.cancellation_reason is None
-            assert reopened.cancelled_at is None
-            assert reopened.cancelled_by is None
-
-
-@pytest.mark.asyncio
-class TestMoveSprintCancellation:
-    async def test_cancel_requires_reason_then_persists_then_reopen_clears(self, db_factory):
-        from okto_pulse.core.services.main import SprintService
-        sprint_id = await _seed_sprint(db_factory)
-        async with db_factory() as db:
-            with pytest.raises(CancellationReasonRequiredError):
-                await SprintService(db).move_sprint(
-                    sprint_id, USER_ID, SprintMove(status=SprintStatus.CANCELLED)
-                )
-        async with db_factory() as db:
-            moved = await SprintService(db).move_sprint(
-                sprint_id, USER_ID,
-                SprintMove(
-                    status=SprintStatus.CANCELLED,
-                    cancellation_reason="Sprint plan superseded",
-                ),
-            )
-            assert moved.cancellation_reason == "Sprint plan superseded"
-            assert moved.cancelled_by == USER_ID
-            assert moved.cancelled_at is not None
-        async with db_factory() as db:
-            reopened = await SprintService(db).move_sprint(
-                sprint_id, USER_ID, SprintMove(status=SprintStatus.DRAFT)
-            )
-            assert reopened.status == SprintStatus.DRAFT
             assert reopened.cancellation_reason is None
             assert reopened.cancelled_at is None
             assert reopened.cancelled_by is None

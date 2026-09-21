@@ -694,13 +694,15 @@ async def test_read_model_does_not_enforce_invalid_backend_moves() -> None:
             )
 
 
+@pytest.mark.parametrize("entity_type", ["task", "sprint"])
 def test_rest_endpoint_rejects_invalid_type_or_missing_status(
     client: TestClient,
+    entity_type: str,
 ) -> None:
     board_id = _id("af23-board")
     response = client.get(
         f"{PREFIX}/boards/{board_id}/allowed-transitions",
-        params={"entity_type": "task", "current_status": "draft"},
+        params={"entity_type": entity_type, "current_status": "draft"},
     )
     assert response.status_code == 400
     assert "Invalid entity_type" in response.json()["detail"]
