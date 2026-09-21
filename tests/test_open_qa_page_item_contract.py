@@ -15,8 +15,6 @@ from okto_pulse.core.models.schemas import (
     RefinementSummary,
     SpecPageItem,
     SpecSummary,
-    SprintPageItem,
-    SprintSummary,
 )
 
 
@@ -29,8 +27,6 @@ from okto_pulse.core.models.schemas import (
         RefinementSummary,
         SpecPageItem,
         SpecSummary,
-        SprintPageItem,
-        SprintSummary,
         CardPageItem,
         CardSummary,
     ),
@@ -57,7 +53,6 @@ def test_open_qa_count_is_optional_omittable_and_non_negative(
         "refinement_list",
         "refinement_board",
         "spec_list",
-        "sprint_list",
         "card_list",
         "kanban_column",
     ),

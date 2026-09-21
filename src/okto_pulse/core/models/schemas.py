@@ -47,8 +47,6 @@ from okto_pulse.core.domain.enums import (
     IdeationStatus,
     RefinementStatus,
     SpecStatus,
-    SprintLaneType,
-    SprintStatus,
     StoryStatus,
     TestScenarioStatus,
 )
@@ -877,26 +875,6 @@ class SpecPageItem(BaseSchema):
     )
 
 
-class SprintPageItem(BaseSchema):
-    """Lean Sprint projection for paginated lists (FR4)."""
-
-    id: str
-    spec_id: str
-    board_id: str
-    title: str
-    description: str | None = None
-    objective: str | None = None
-    expected_outcome: str | None = None
-    status: SprintStatus
-    created_by: str
-    created_at: datetime
-    updated_at: datetime
-    archived: bool = False
-    open_qa_count: int | None = Field(
-        default=None,
-        ge=0,
-        exclude_if=lambda value: value is None,
-    )
 
 
 class StorySummary(BaseSchema):
@@ -3789,7 +3767,6 @@ class CardPageItem(BaseSchema):
     id: str
     board_id: str
     spec_id: str | None
-    sprint_id: str | None
     title: str
     description: str | None
     status: CardStatus
@@ -4901,199 +4878,20 @@ class ActivityLogResponse(BaseSchema):
 # ============================================================================
 
 
-class SprintCreate(BaseModel):
-    """Schema for creating a sprint."""
-
-    title: str = Field(..., min_length=1, max_length=500)
-    description: str | None = None
-    objective: str | None = None
-    expected_outcome: str | None = None
-    spec_id: str
-    lane_type: SprintLaneType = SprintLaneType.NORMAL
-    origin_sprint_id: str | None = None
-    origin_bug_id: str | None = None
-    test_scenario_ids: list[str] | None = None
-    business_rule_ids: list[str] | None = None
-    start_date: datetime | None = None
-    end_date: datetime | None = None
-    labels: list[str] | None = None
 
 
-class SprintUpdate(BaseModel):
-    """Schema for updating a sprint."""
-
-    title: str | None = Field(None, min_length=1, max_length=500)
-    description: str | None = None
-    objective: str | None = None
-    expected_outcome: str | None = None
-    lane_type: SprintLaneType | None = None
-    origin_sprint_id: str | None = None
-    origin_bug_id: str | None = None
-    test_scenario_ids: list[str] | None = None
-    business_rule_ids: list[str] | None = None
-    start_date: datetime | None = None
-    end_date: datetime | None = None
-    labels: list[str] | None = None
-    skip_test_coverage: bool | None = None
-    skip_rules_coverage: bool | None = None
-    skip_qualitative_validation: bool | None = None
-    validation_threshold: int | None = None
-    require_task_validation: bool | None = Field(
-        None,
-        description="Override do sprint para exigir Task Validation; None herda da spec/board.",
-    )
-    validation_min_confidence: int | None = Field(None, ge=0, le=100)
-    validation_min_completeness: int | None = Field(None, ge=0, le=100)
-    validation_max_drift: int | None = Field(None, ge=0, le=100)
-    expected_version: int | None = Field(
-        None,
-        ge=1,
-        description="Optimistic-lock version read by the caller.",
-    )
 
 
-class SprintMove(BaseModel):
-    """Schema for changing sprint status."""
-
-    status: SprintStatus
-    cancellation_reason: str | None = Field(
-        None,
-        description="Justificativa do cancelamento. Obrigatoria quando status='cancelled'; ignorada nos demais.",
-    )
-    expected_version: int | None = Field(
-        None,
-        ge=1,
-        description="Optimistic-lock version read by the caller.",
-    )
 
 
-class SprintEvaluationCreate(BaseModel):
-    """Schema for submitting a sprint evaluation (4 dimensions + overall)."""
-
-    breakdown_completeness: int = Field(..., ge=0, le=100)
-    breakdown_justification: str
-    granularity: int = Field(..., ge=0, le=100)
-    granularity_justification: str
-    dependency_coherence: int = Field(..., ge=0, le=100)
-    dependency_justification: str
-    test_coverage_quality: int = Field(..., ge=0, le=100)
-    test_coverage_justification: str
-    overall_score: int = Field(..., ge=0, le=100)
-    overall_justification: str
-    recommendation: str = Field(..., pattern=r"^(approve|request_changes|reject)$")
 
 
-class SprintQAResponse(BaseSchema):
-    """Schema for sprint Q&A item response."""
-
-    id: str
-    sprint_id: str
-    question: str
-    question_type: str
-    choices: list[dict] | None = None
-    allow_free_text: bool = False
-    answer: str | None = None
-    selected: list[str] | None = None
-    asked_by: str
-    answered_by: str | None = None
-    created_at: datetime
-    answered_at: datetime | None = None
 
 
-class SprintHistoryResponse(BaseSchema):
-    """Schema for sprint history entry."""
-
-    id: str
-    sprint_id: str
-    action: str
-    actor_type: str
-    actor_id: str
-    actor_name: str
-    changes: list | None = None
-    summary: str | None = None
-    version: int | None = None
-    created_at: datetime
 
 
-class SprintSummary(BaseSchema):
-    """Schema for sprint summary (used in lists and spec responses)."""
-
-    # Count of unanswered Q&A (answered_at IS NULL) — drives the "open Q&A" badge.
-    open_qa_count: int | None = Field(
-        default=None,
-        ge=0,
-        exclude_if=lambda value: value is None,
-    )
-    id: str
-    spec_id: str
-    board_id: str
-    title: str
-    description: str | None = None
-    objective: str | None = None
-    expected_outcome: str | None = None
-    status: SprintStatus
-    lane_type: SprintLaneType = SprintLaneType.NORMAL
-    origin_sprint_id: str | None = None
-    origin_bug_id: str | None = None
-    normal_sprint_created: bool = False
-    spec_version: int
-    start_date: datetime | None = None
-    end_date: datetime | None = None
-    test_scenario_ids: list[str] | None = None
-    business_rule_ids: list[str] | None = None
-    version: int
-    labels: list[str] | None = None
-    created_by: str
-    created_at: datetime
-    updated_at: datetime
-    archived: bool = False
-    cancellation_reason: str | None = None
-    cancelled_at: datetime | None = None
-    cancelled_by: str | None = None
 
 
-class SprintResponse(BaseSchema):
-    """Schema for full sprint response."""
-
-    id: str
-    spec_id: str
-    board_id: str
-    title: str
-    description: str | None = None
-    objective: str | None = None
-    expected_outcome: str | None = None
-    status: SprintStatus
-    lane_type: SprintLaneType = SprintLaneType.NORMAL
-    origin_sprint_id: str | None = None
-    origin_bug_id: str | None = None
-    normal_sprint_created: bool = False
-    spec_version: int
-    start_date: datetime | None = None
-    end_date: datetime | None = None
-    test_scenario_ids: list[str] | None = None
-    business_rule_ids: list[str] | None = None
-    evaluations: list | None = None
-    skip_test_coverage: bool = False
-    skip_rules_coverage: bool = False
-    skip_qualitative_validation: bool = False
-    validation_threshold: int | None = None
-    require_task_validation: bool | None = None
-    validation_min_confidence: int | None = None
-    validation_min_completeness: int | None = None
-    validation_max_drift: int | None = None
-    version: int
-    labels: list[str] | None = None
-    archived: bool = False
-    pre_archive_status: str | None = None
-    # Cancellation justification (ITEM 17) — set only while status == cancelled.
-    cancellation_reason: str | None = None
-    cancelled_at: datetime | None = None
-    cancelled_by: str | None = None
-    created_by: str
-    created_at: datetime
-    updated_at: datetime
-    cards: list[CardSummaryForSpec] = []
-    qa_items: list[SprintQAResponse] = []
 
 
 # ============================================================================

@@ -111,6 +111,21 @@ class _InMemoryPort:
 B1_SCOPE = (ApplicationFilter("board_id", "eq", "b1"),)
 
 
+@pytest.mark.asyncio
+async def test_retired_sprint_surface_is_rejected_before_persistence():
+    with pytest.raises(ValueError, match='page_request_unknown_surface'):
+        await list_entities_page(None, PageRequest(surface='sprint_list', scope=B1_SCOPE, offset=0, limit=25))
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('dimension', ['filters', 'any_filters', 'any_groups'])
+async def test_retired_sprint_filter_cannot_narrow_card_pages(dimension):
+    predicate = (ApplicationFilter('sprint_id', 'eq', 'legacy'),)
+    with pytest.raises(ValueError, match='page_request_filter_field_not_allowed'):
+        await list_entities_page(None, PageRequest(surface='card_list', scope=B1_SCOPE, offset=0, limit=25,
+            **{dimension: (predicate,) if dimension == 'any_groups' else predicate}))
+
+
 def _request(**overrides: Any) -> PageRequest:
     base: dict[str, Any] = {
         "surface": "card_list",

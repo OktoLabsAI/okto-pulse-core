@@ -12,18 +12,6 @@ from fastapi.testclient import TestClient
 from pydantic import BaseModel
 
 from okto_pulse.community.app import install_request_validation_handler
-from okto_pulse.core.domain.enums import SprintLaneType
-from okto_pulse.core.inbound.enum_error_envelope import canonical_enum_error
-
-INVALID_LANE = "release_validation"
-EXPECTED_ENVELOPE = {
-    "code": "invalid_lane_type",
-    "field": "lane_type",
-    "received_value": INVALID_LANE,
-    "accepted_values": ["normal", "hotfix"],
-    "mutation_applied": False,
-}
-
 
 class GenericRequest(BaseModel):
     title: str
@@ -44,14 +32,8 @@ def test_rest_unmapped_validation_error_uses_default():
     assert response.json().get("code") != "invalid_lane_type"
 
 
-def test_ts_lane_06_enum_bounded_and_service_transport_neutral():
-    """TS-LANE-06: enum stays {normal, hotfix} and SprintService imports no
-    REST/MCP/envelope component (stays transport-neutral)."""
-    assert [member.value for member in SprintLaneType] == ["normal", "hotfix"]
-
-    # The envelope's accepted set is derived from the enum, never hardcoded apart.
-    assert EXPECTED_ENVELOPE["accepted_values"] == [m.value for m in SprintLaneType]
-
+def test_services_remain_transport_neutral():
+    """Domain services do not import inbound exception rendering."""
     service_src = Path(
         "src/okto_pulse/core/services/main.py"
     ).read_text(encoding="utf-8")
@@ -68,21 +50,3 @@ def test_ts_lane_06_enum_bounded_and_service_transport_neutral():
         assert token not in service_src, (
             f"SprintService module must stay transport-neutral; found {token!r}"
         )
-
-
-def test_canonical_enum_error_is_bounded_to_lane_type():
-    """The normalizer only fires for an ``enum``-typed lane_type error; any other
-    shape returns None so the caller keeps default handling."""
-    lane_error = [{"type": "enum", "loc": ["body", "lane_type"], "input": INVALID_LANE}]
-    assert canonical_enum_error(lane_error) == EXPECTED_ENVELOPE
-
-    # Unmapped field → None.
-    assert canonical_enum_error(
-        [{"type": "enum", "loc": ["body", "status"], "input": "weird"}]
-    ) is None
-    # Mapped field but non-enum error type → None (do not over-match).
-    assert canonical_enum_error(
-        [{"type": "string_type", "loc": ["body", "lane_type"], "input": 5}]
-    ) is None
-    # Empty / missing loc → None.
-    assert canonical_enum_error([{"type": "enum", "loc": [], "input": "x"}]) is None

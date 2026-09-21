@@ -9111,3 +9111,66 @@ findings=[], documentation_findings=[] e oito budgets 0/0. Todos os handles
 encerrados. Community commit e748c00d4e556fcace37f5f16cb4687d5dc15966.
 Commit Core e pushes normais pareados a seguir; conferir árvores limpas e
 igualdade HEAD/remoto. Objetivo integral continua ativo, não concluído.
+
+### F3/F5 — superfícies polimórficas, DTOs Sprint e paginação de Cards
+
+Em execução sobre Core acfa5345 / Community e748c00, par limpo/publicado.
+Turno anterior foi progresso: analytics Sprint retirado, 394 testes, closure zero.
+Investigação: ResolveKGNodeSourceUseCase ainda continha um destino operacional
+para serviço sprints já removido. Agora referências diretas/indiretas cujo dono
+é Sprint retornam unsupported com proveniência intacta, sem procurar serviço ou
+abrir entidade. Board/realm e acesso a evidências indiretas mantidos. UI já tinha
+fallback sem navegação; novo teste cobre a resposta unsupported do backend.
+Entity pagination ainda declarava sprint_list e filtro/projeção Card.sprint_id.
+Retirados a superfície, catálogo enum Sprint, campo filtrável e projeção da lista.
+REST rejeita sprint_id explicitamente (inclusive vazio), sem ignorar pedido antigo.
+CardPageItem deixa de emitir a chave; Cards de diferentes Sprints históricos agora
+compõem a mesma população quando passam pelos filtros remanescentes. Fixture C7
+mantém o registro d-sprint para provar essa inclusão, total_filtered 30→31; os
+outros filtros, contagem geral, ordenação, paginação, limite SQL e privacidade
+continuam exigidos, sem apagar o registro que revela a mudança autorizada.
+Removidos nove DTOs exclusivos Sprint e exports SDK; testes mistos de overrides
+Spec e badges Q&A continuam. O normalizador inbound de lane_type era exclusivo
+Sprint: retirado junto do caller REST, preservando scenario_type e fallback 422.
+As mutações/CardCreate/CardUpdate e CardResponse completos ainda exigem retirada
+coordenada de vínculos/origens; a leitura interna de policy legada F2B permanece
+até a captura da migração. Não alegar conclusão F3/F5 ou de toda persistência.
+Validação pareada, testes Core/Community/frontend e closure pendentes.
+Validação final do incremento (2026-09-21):
+- Core: 123 testes distintos aprovados. O primeiro log registrou 118 passed,
+  quatro falhas por offset obrigatório ausente em fixtures novas e um erro de
+  setup por dois-pontos no ID parametrizado (nome de log inválido no Windows).
+  Corrigidas somente essas fixtures; f5-sprint-surfaces-core-fixed.log: 54 passed,
+  incluindo todos os cinco casos. Nenhum gate ou comportamento afrouxado.
+- Community: 147 passed (f5-sprint-surfaces-community.log), incluindo paginação
+  SQLite real, mesma população C7, contagens, privacidade e rejeição do filtro.
+- Frontend: 38 passed em seis arquivos (f5-sprint-surfaces-ui.log), cobrindo
+  fallback de proveniência Sprint e paginação/contagens/refresh. Total: 308
+  testes distintos. Coleta integral sem erros: Core 13.606 / Community 5.810;
+  coleta não equivale à execução completa nem a E2E de upgrade/rollback.
+- Antes dos testes: source/wheel/install byte a byte nos dois pacotes,
+  provenance-f5-sprint-surfaces.json: 804/335 Python e 867/419 payloads.
+- Ruff, diff --check e gate do catálogo MCP passaram. Nenhuma alteração manual
+  no catálogo. SPA produtiva inalterada, verify:frontend-dist aprovado:
+  78 arquivos, 95640fb1eb409412e98a7acdeea6d587b2455b4d9c186bbeba2cc50d83ee0954.
+- Primeiro closure: findings=[], budgets zero; apenas matrizes README divergiam.
+  Gerador oficial atualizou Core imports 7418→7417; Community 1167, dependências25.
+  Wheels finais reconstruídos/instalados após término de todos os testes.
+  f5-sprint-surfaces-final-payload-parity.json confirma todos os payloads finais
+  iguais aos testados; somente metadados README externos ao payload mudaram.
+- provenance-f5-sprint-surfaces-final.json: fonte/wheel/install idênticos.
+  Core agregado 6a6892f64071150155d134ad98769e388476e9703ccbd7a4bcae74de98972472;
+  Community 9ff159672ab1d86174e13762d461c7f0df3a14bdb300c3cec09c428770dcee85.
+  Wheel Core 4f3adc4f1848f5a5daf2a68d30563e35b7753535f296fa6c0fe62371f949f645;
+  Community 16778b7a8354536043147e86a28e5f1a105095ea829a0330e3c6c4227da4257e.
+- closure-f5-sprint-surfaces-final.json: ok=true, findings=[], documentação sem
+  drift, todos os oito budgets 0/0. Observação do handle se perdeu na compactação;
+  relatório final íntegro e ausência de processo confirmados, sem repetir o job.
+- Community commit 31b359e; commit Core e pushes pareados a seguir.
+
+Próxima frente: contratos completos e mutações Card.sprint_id/origens, mantendo
+Spec/Board, gates críticos, Spec Done, regressão e captura F2B. Leitura interna
+legada de policy exige coordenação com o corte offline. Demais pendências do
+ledger (schema, certificado runtime_ready, histórico, E2E/upgrade/rollback,
+benchmark, footprint e matriz integral) continuam ativas. Sem migração real,
+restart de runtime, release ou tag. Objetivo integral ainda não concluído.
