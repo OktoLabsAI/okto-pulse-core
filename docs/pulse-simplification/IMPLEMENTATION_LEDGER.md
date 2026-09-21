@@ -9206,3 +9206,60 @@ Investigação para retomada dos contratos completos (sem alteração produtiva)
   test_card_validation_config_read, tests de discovery e CardModal.
 O teste C7 está encerrado (exit 0); nenhum processo de validação desta etapa
 permanece ativo. Objetivo integral continua ativo; esta é uma entrega parcial.
+
+### F3/F5 — contratos completos de Card sem vínculo público de Sprint
+
+Em execução sobre Core 42c0869f / Community 31b359e, ambos limpos/publicados.
+Turno anterior foi progresso: superfícies/DTOs e C7, 321 testes, closure zero.
+Retirados sprint_id de CardCreate/CardUpdate/CardResponse/CardSummaryForSpec e
+seus tipos TypeScript. Antes de extra=ignore, requests com a chave legada falham
+explicitamente (também null/vazio). Adicionadas provas REST de 422 sem alcançar
+persistência e contratos OpenAPI, além dos testes Core tipados.
+CardResponse valida a entrada bruta antes de perder sprint_id na projeção;
+continua rejeitando override migrado com vínculo ainda ativo, escopo errado ou
+contrato inválido. Proveniência source_sprint_id e deprecation F2B preservadas;
+nenhuma nova capacidade para o executor. Validador after também permanece.
+Fixtures de frontend agora consomem o DTO real sem o campo removido; os cenários
+de policy resolvida, overrides históricos e retry continuam. Testes reais de
+relações preservam preflight cross-Board e zero-write; casos de atribuição Sprint
+agora esperam incompatibilidade. Sucessos de alteração/limpeza de Spec usam
+fixture explicitamente pós-desvinculação; não simulam migração pelo endpoint.
+Guards internos de relação/origem e leitura de policy legada ainda pendentes do
+corte coordenado: esta entrega não é schema novo pronto para deploy. Nenhum dado
+real alterado, nenhum runtime reiniciado. Validação pareada/UI/closure pendente.
+
+Validação deste incremento (2026-09-21):
+- f5-card-wire-core.log: 142 passed, incluindo DTOs, override migrado, preflight
+  relacional real, Spec Done, autorização central e UoW MCP, catálogo sem drift.
+- f5-card-wire-community.log: 38 passed e três falhas exclusivamente de fixture
+  nova: POST usa require_principal, PATCH usa require_user. A fixture cobria só
+  o segundo e falhava antes da validação. Corrigido override da dependência de
+  POST; f5-card-wire-community-fixed.log: sete passed, incluindo os três casos.
+  Community total distinto 41. Nenhum handler, gate ou autenticação alterados.
+- Frontend: 74 passed em CardModal, CreateCardModal.knowledgePropagation e
+  api.taskValidation; f5-card-wire-ui.log. Total distinto: 257 testes.
+- tsc/Vite/sync aprovados; mudança só de tipos não mudou o payload SPA.
+  verify:frontend-dist: 78 arquivos, hash
+  95640fb1eb409412e98a7acdeea6d587b2455b4d9c186bbeba2cc50d83ee0954.
+- Antes de qualquer teste comportamental: wheels-f5-card-wire instalados juntos;
+  provenance-f5-card-wire.json confirma todos os 804/335 Python e 867/419 payloads
+  iguais byte a byte entre fonte/wheel/install. Nenhuma edição de produto ou
+  reinstalação ocorreu com testes ativos. Todos os handles agora encerrados.
+  Core agregado 785a285c7a12a6b57a20cdeff9aab42fa2e066874a9cbd2d769d7a976a72c4d5;
+  Community 9ff159672ab1d86174e13762d461c7f0df3a14bdb300c3cec09c428770dcee85.
+  Wheel Core eb90a2a037ae8c4d1b6b9585848e013348e8071d851f565561b86a3311401118;
+  Community 16778b7a8354536043147e86a28e5f1a105095ea829a0330e3c6c4227da4257e.
+- closure-f5-card-wire.json: ok=true, findings=[], documentation_findings=[],
+  oito budgets 0/0. Sem drift de matriz README. Gerador oficial do catálogo MCP
+  executado: saída sem alteração. Ruff e diff --check aprovados.
+- Community commit 00d44db; commit Core e pushes normais pareados a seguir.
+
+Retomada: remover relações/origens operacionais internas (main.update_card,
+main.delete_card, CardCreated, context_projection, discovery e consolidação) com
+schema/migração F2 coordenados. Ainda não anunciar encerramento F3/F5: DTOs públicos
+não equivalem a retirada do ORM/UoW, policy reader antigo ou certificado offline.
+Preservar captura histórica e paridade F2B antes do corte; não implementar
+reatribuição pela API para facilitar o upgrade. As demais pendências integrais
+(schema/terminal runtime_ready, E2E instalado/upgrade/rollback, footprint,
+benchmark, rollout e matriz DEI/ARQ/VER/ADV) continuam no objetivo ativo.
+Não houve migração real, release, tag, merge nem reinício de runtime do usuário.

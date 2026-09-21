@@ -2815,7 +2815,6 @@ class CardSummaryForSpec(BaseSchema):
     priority: CardPriority
     assignee_id: str | None
     card_type: str = "normal"
-    sprint_id: str | None = None
 
 
 class SpecResponse(BaseSchema):
@@ -2929,10 +2928,18 @@ CardInitialStatus: TypeAlias = Literal[
 ]
 
 
+def reject_retired_card_sprint_write(value):
+    """Reject obsolete input explicitly instead of silently dropping an extra."""
+    if isinstance(value, Mapping) and "sprint_id" in value:
+        raise ValueError("card_sprint_link_retired")
+    return value
+
+
 class CardCreate(BaseModel):
     """Schema for creating a card."""
 
     _migration_only_policy = model_validator(mode="before")(reject_migrated_validation_policy_write)
+    _retired_sprint_link = model_validator(mode="before")(reject_retired_card_sprint_write)
 
     title: str = Field(
         ...,
@@ -2968,9 +2975,6 @@ class CardCreate(BaseModel):
     )
     spec_id: str | None = Field(
         None, description="ID da spec a qual este card esta vinculado."
-    )
-    sprint_id: str | None = Field(
-        None, description="ID do sprint ao qual este card pertence."
     )
     test_scenario_ids: list[str] | None = Field(
         None,
@@ -3029,6 +3033,7 @@ class CardUpdate(BaseModel):
     """Schema for updating a card."""
 
     _migration_only_policy = model_validator(mode="before")(reject_migrated_validation_policy_write)
+    _retired_sprint_link = model_validator(mode="before")(reject_retired_card_sprint_write)
 
     title: str | None = Field(
         None,
@@ -3066,9 +3071,6 @@ class CardUpdate(BaseModel):
         None, description="Novas tags de categorizacao do card."
     )
     spec_id: str | None = Field(None, description="Novo ID da spec vinculada ao card.")
-    sprint_id: str | None = Field(
-        None, description="Novo ID do sprint ao qual o card pertence."
-    )
     test_scenario_ids: list[str] | None = Field(
         None,
         description=(
@@ -3597,6 +3599,14 @@ class CardRejectionCauseResponse(BaseModel):
 class CardResponse(BaseSchema):
     """Schema for card response."""
 
+    @model_validator(mode="before")
+    @classmethod
+    def validate_raw_migration_policy_scope(cls, value):
+        # Deprecated migration compatibility: inspect the persisted legacy link
+        # before projection drops it, so a corrupt double source cannot be hidden.
+        read_migrated_validation_policy(value)
+        return value
+
     @model_validator(mode="after")
     def validate_migration_policy_scope(self):
         read_migrated_validation_policy(self)
@@ -3605,7 +3615,6 @@ class CardResponse(BaseSchema):
     id: str
     board_id: str
     spec_id: str | None = None
-    sprint_id: str | None = None
     migrated_validation_policy: MigratedTaskValidationPolicy | None = Field(
         default=None, description="Deprecated migration-only policy preservation; read-only historical provenance.",
     )

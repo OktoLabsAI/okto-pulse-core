@@ -334,19 +334,19 @@ async def test_service_update_rejects_relation_before_in_memory_mutation(
             lambda graph: CardUpdate(
                 title="must not persist", sprint_id=f"missing-{uuid.uuid4().hex}"
             ),
-            "Sprint not found on this board",
+            "card_sprint_link_retired",
         ),
         (
             lambda graph: CardUpdate(
                 title="must not persist", sprint_id=graph["sprint_b"]
             ),
-            "Sprint not found on this board",
+            "card_sprint_link_retired",
         ),
         (
             lambda graph: CardUpdate(
                 title="must not persist", sprint_id=graph["sprint_a2"]
             ),
-            "Sprint must belong to the card's resulting spec",
+            "card_sprint_link_retired",
         ),
         (
             lambda graph: CardUpdate(
@@ -377,38 +377,33 @@ async def test_update_relation_preflight_rejects_without_partial_card_change(
     assert await _update_activity_count(_relation_graph) == 0
 
 
-@pytest.mark.asyncio
-async def test_update_accepts_coherent_same_board_spec_and_sprint(
-    _relation_graph,
-) -> None:
-    result = await _run_update(
-        _relation_graph,
-        CardUpdate(
-            title="Coherent update",
-            spec_id=_relation_graph["spec_a2"],
-            sprint_id=_relation_graph["sprint_a2"],
-        ),
-    )
+async def _prepare_detached_card(graph):
+    # Post-cutover fixture: policy/history capture is covered by migration tests.
+    # Runtime update must neither assign nor clear this retired persisted column.
+    async with graph["factory"]() as db:
+        card = await db.get(Card, graph["update_card"])
+        card.sprint_id = None
+        await db.commit()
 
+
+@pytest.mark.asyncio
+async def test_update_accepts_same_board_spec_without_sprint(_relation_graph):
+    await _prepare_detached_card(_relation_graph)
+    result = await _run_update(_relation_graph, CardUpdate(
+        title="Coherent update", spec_id=_relation_graph["spec_a2"],
+    ))
     assert result.card.spec_id == _relation_graph["spec_a2"]
-    assert result.card.sprint_id == _relation_graph["sprint_a2"]
     stored = await _stored_update_card(_relation_graph)
     assert stored.title == "Coherent update"
     assert stored.spec_id == _relation_graph["spec_a2"]
-    assert stored.sprint_id == _relation_graph["sprint_a2"]
+    assert stored.sprint_id is None
 
 
 @pytest.mark.asyncio
-async def test_update_can_clear_spec_only_when_resulting_sprint_is_also_clear(
-    _relation_graph,
-) -> None:
-    result = await _run_update(
-        _relation_graph,
-        CardUpdate(spec_id=None, sprint_id=None),
-    )
-
+async def test_update_can_clear_spec_without_sprint(_relation_graph):
+    await _prepare_detached_card(_relation_graph)
+    result = await _run_update(_relation_graph, CardUpdate(spec_id=None))
     assert result.card.spec_id is None
-    assert result.card.sprint_id is None
     stored = await _stored_update_card(_relation_graph)
     assert stored.spec_id is None
     assert stored.sprint_id is None
