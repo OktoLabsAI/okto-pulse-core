@@ -10858,3 +10858,116 @@ Também permanecem caso sem origens/referências, rollback com startup do par
 predecessor, E2E do par publicado e demais frentes do plano/complementos.
 Nenhum serviço do usuário, banco real, release, tag ou deploy foi alterado.
 A iniciativa continua ativa e incompleta.
+
+### F2D — composição transacional do lifecycle terminal (em implementação)
+
+Turno anterior classificado como progresso:par485e5612/c069ff92 publicado;
+revalidação inicial confirmou ambos limpos em feature/v0.4.0. Antes de editar,
+provenance-f2-terminal-authority.json repetiu igualdade das2 árvores instaladas.
+Regressão do coordenador ampliada com agentes inativos, flags malformadas,
+negações e linhagem de presets na cópia da origem real. Primeiro ensaio falhou
+por ausência de BEGIN no leitor do teste (gate transacional correto; produto
+inalterado). Corrigido o harness:2passes em41s, incluindo lifecycle completo e
+paridade de todas as decisões remanescentes pela porta pública congelada.
+Runtime continua bloqueado. Não é recibo terminal nem upgrade publicado E2E.
+
+Investigação:o lifecycle usa diversas conexões/commits e repete auditorias em um
+novo bootstrap. Escrever um recibo só depois disso deixaria uma janela de resposta
+perdida. Próximo passo mecânico em avaliação:binding escopado pela porta pública
+do runtime e conexão SQLite única com savepoints internos, sem permitir que os
+escritores confirmem a transação externa. Executar lifecycle real e provar
+rollback completo/commit e não-escape antes de ligar ao coordenador ou admissão.
+Não contornar gates, apagar journal ou reescrever o banco por troca de arquivo.
+
+Implementação inicial:porta pública database_runtime_scope preserva o binding
+anterior e isola contextos concorrentes; nenhuma mecânica SQL entrou no Core.
+Community relational_schema_transaction reserva conexão nova e usa savepoints
+para engine scopes e sessões ORM. Não está ligado à admissão nem produz ready.
+Primeiro ensaio:13 Core passaram após corrigir o teardown do fake no teste;
+Community9passes/4falhas. Duas falhas provaram que evento de commit/rollback
+síncrono rejeitado deixa o objeto transacional SQLAlchemy desativado, embora a
+transação SQLite real continue aberta; rollback pela fachada não a encerrava.
+Correção:qualquer tentativa de fronteira externa invalida a conexão nativa e
+falha também se o escritor engolir a exceção. Duas falhas adicionais eram FK0
+na conexão recém-aberta do ensaio:scope agora habilita/verifica FK1 ANTES de
+BEGIN IMMEDIATE, sem desativar enforcement nem relaxar o migrator.
+
+Setup/listeners têm finally próprio; novos negativos cobrem exceção após commits
+internos, erro de setup, commit SQL com comentários, callbacks síncronos e erro
+engolido. Caso de cancelamento acrescentado (executar isolado se a suíte atual
+já o coletou antes da adição). README dos2 repos regenerados pelo renderer oficial
+após closure inicial:findings[],8budgets0/0,apenas drift documental por339o módulo.
+Build atual wheels-f2-terminal-transaction-fixed instalado e verificado por
+provenance-f2-terminal-transaction-fixed.json:804/339Python,867/423payloads iguais.
+Suíte Community handle4911 e closure handle73405 em andamento; não editar produto
+nem reinstalar antes de terminalidade. Logs f2-terminal-transaction-fixed-tests
+ e closure-f2-terminal-transaction-fixed. Core13passes no log
+f2-terminal-transaction-core-2; erro inicial era isolamento do harness, não gate.
+
+Validação ORM:17passes em96.64s;13Corepasses; closure ORM exit0/oktrue,8budgets0,
+findings/documentation_findings vazios. O primeiro teste de falha tardia não
+atingiu o callable:factory usa DATA_BOOTSTRAP_STEP_CALLABLES já registrado,
+não getattr no módulo; corrigida injeção no mapa real, sem alterar produto.
+A composição passou o BEGIN IMMEDIATE de Session.execute reconhecendo a reserva
+externa já existente, além do caminho da fachada engine. Setup dos testes
+Community também passou a preservar ausência inicial de runtime, em vez de
+assumir um binding que o harness não oferece.
+
+Auditoria de efeitos externos encontrou _remove_known_fixture_graph_if_present:
+passo histórico restrito ao home canônico pode usar shutil.rmtree. Isso não pode
+ser incluído numa promessa de rollback SQL. Engine escopado agora declara que
+não permite efeitos externos de schema; se aquele diretório realmente existir,
+o passo falha antes de tocar no filesystem e o coordenador deve tratar o caso.
+Não omitir o passo silenciosamente, não relaxar FK e não apagar evidência.
+Novo negativo preserva bytes do artefato e rollback SQL. Faltas transacionais
+mais amplas/efeitos indiretos ainda devem ser auditados ao compor o terminal.
+Build final desta investigação:wheels-f2-terminal-transaction-final; instalação
+em andamento. Suíte real terá falha tardia após import, rollback completo,
+reexecução com rollback e commit. Ainda nenhuma alteração de runtime admission.
+
+Fechamento da composição transacional F2D (2026-09-21):Community
+c79a3ae44ffa8f892e938bdae61571f5f0662b0f. 33 testes distintos aprovados:
+20Community (f2-terminal-transaction-final-tests,102.94s) e13Core
+(f2-terminal-transaction-final-core,5.68s). Incluem lifecycle real da origem v034
+com/sem agentes, falha depois do importador real via mapa registrado, rollback
+integral do dump, nova execução com rollback e commit; paridade remanescente,
+backup original e startup ainda fechado. Negativos incluem commits SQL/callbacks,
+exceção engolida, cancelamento, falha de setup, concorrente SQLite e filesystem.
+O reparo histórico fora do escopo continua passando. Não somar as execuções
+intermediárias dos mesmos casos. Ruff F/E9 e diff --check passaram.
+
+Wheels finais:wheels-f2-terminal-transaction-final; pip terminou antes de
+provenance-f2-terminal-transaction-final.json.804/339Python,867/423payloads iguais
+nas duas árvores/wheels/instalações. Core agregado
+c2b76566ffdab7abb66d6039160b4799573a5e7f91e4f5d035b366b4ba0fb069;
+Community9d50600dc1b694e8fc887896e869744eba111b10747542367f4843d0ad62ce5f.
+Wheel Core289d29bedd5e0e9179a159f7b2fd3042f53b8f7fef8fea91177c2163749d5229;
+Community2d416e4f226dc29fed165bcfc9540655f06fc21b31e9d690b80de3c26b3d7295.
+closure-f2-terminal-transaction-final.json:exit0,oktrue,findings e documentação
+vazios,8budgets0/0. READMEs derivados do renderer oficial. Sem novos DTOs/tools/
+endpoints/assets/frontend neste incremento; nenhuma superfície de UI foi alterada.
+
+Contrato mecânico entregue:database_runtime_scope é porta pública de composição
+pura no Core. schema_transaction_runtime fica inteiramente no Community; recebe
+conexão nova, liga/verifica FK1, obtém BEGIN IMMEDIATE e liga engine scopes/sessões
+por savepoints. O caller verifica dependências e grava recibo dentro do escopo;
+só pode confirmar a transação externa depois de sair. Em erro deve fazer rollback
+ou encerrar a conexão. Tentativa de encerrar fronteira externa invalida a conexão
+nativa e falha inclusive se o callback capturar o erro. Operações de engine fora
+da interface suportada não recebem fallback. Não é um sandbox para código
+arbitrário; os callables reais do lifecycle foram exercitados. O efeito externo
+histórico conhecido falha antes de apagar o diretório e requer coordenação própria.
+
+Retomada concreta:usar essa composição para o próximo checkpoint terminal sob
+schema/startup/publication fences. Dentro da mesma transação, validar o recibo
+schema_retired original ANTES do lifecycle, validar após lifecycle autoridade,
+artefatos/contagens/schema/graph/outbox e registrar a transição. No replay, ler
+primeiro o checkpoint novo:reexecutar retire_schema depois do bootstrap daria
+erro correto, pois seu hash contém os dados pré-bootstrap. Não enfraquecer esse
+hash nem repetir writers/no-op audits para suprir resposta perdida. Expandir e
+verificar journal/guard de ordinal com compatibilidade dos recibos anteriores.
+Somente então definir admissão terminal e integrá-la, distinguindo recibos da
+migração de dados vivos que podem mudar legitimamente após a ativação. Ainda
+pendentes fonte sem origens, rollback operacional com par predecessor, E2E do
+par publicado e todas as demais frentes do pacote. Nenhum runtime real alterado.
+Objetivo completo continua ativo e NÃO alcançado.

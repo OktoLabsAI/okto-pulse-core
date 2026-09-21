@@ -9,7 +9,7 @@ installed integrations, but they are not members of the port.
 from __future__ import annotations
 
 from collections.abc import AsyncGenerator, AsyncIterator, Callable
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, contextmanager
 from pathlib import Path
 from typing import Any, AsyncContextManager, Protocol, runtime_checkable
 
@@ -17,6 +17,8 @@ from okto_pulse.core.runtime_context import (
     register_runtime_value,
     reset_runtime_values,
     resolve_runtime_value,
+    runtime_value_scope,
+    snapshot_runtime_values,
 )
 
 _RELATIONAL_RUNTIME_KEY = "ports.relational_runtime"
@@ -58,6 +60,18 @@ def reset_database_runtime_for_tests() -> None:
     """Drop the registered runtime for isolated tests."""
 
     reset_runtime_values(_RELATIONAL_RUNTIME_KEY)
+
+
+@contextmanager
+def database_runtime_scope(*, runtime: RelationalRuntime):
+    """Bind an edition runtime for this context, restoring the enclosing binding.
+
+    Composition may isolate a migration's work without replacing the runtime
+    used by other contexts. Transaction mechanics remain entirely edition-owned.
+    """
+    with runtime_value_scope(snapshot_runtime_values()):
+        configure_database_runtime(runtime=runtime)
+        yield runtime
 
 
 def is_database_runtime_configured() -> bool:
@@ -193,6 +207,7 @@ __all__ = [
     "cancel_safe_session_scope",
     "close_db",
     "configure_database_runtime",
+    "database_runtime_scope",
     "get_db",
     "get_db_session",
     "get_engine",
