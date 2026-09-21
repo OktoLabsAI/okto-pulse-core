@@ -9040,3 +9040,74 @@ conclui F5 nem o objetivo integral.
 Distribuição pareada: Community commit 559d583652e0a273178e635f94f448c9bbe50864.
 Commit Core e pushes normais a seguir; verificar HEAD remoto e árvores limpas.
 Objetivo integral permanece ativo; a próxima frente está definida acima.
+
+### F3/F5 — retirada dos leitores e superfícies exclusivas de analytics Sprint
+
+Em execução sobre Core 4fc70bba / Community 559d583 (par limpo/publicado).
+Turno anterior foi progresso: DI por Card, 265 testes, closure zero, pushes.
+Investigação confirmou que compute_sprints_analytics era o último consumidor
+operacional do resolver de escopo e DeliveryCommitmentService; o compartilhado
+scenario_has_required_evidence continua em test_scenario_lifecycle, inalterado.
+Remoção coordenada: endpoints analytics/sprints e analytics/sprint/{id}, detalhe
+polimórfico Sprint e CSV, use cases/exports/Protocols/catálogo, cinco leitores/
+agregadores Sprint, portas de compromisso/baseline, serviço/resolver, adapter e
+registro de activation baseline. O reader SQL de analytics deixa de aceitar Sprint.
+UI remove renderer/client/tipos de Sprint; URL antiga usa fallback existente ao
+Board e conserva o período. Testes de frontend obrigatórios incluídos.
+Tabelas/ORM de baseline ainda ficam para a captura histórica bruta e para o corte
+atômico F2; não há perda de história nem porta operacional substituta.
+Testes exclusivos dos módulos retirados substituídos por provas de ausência.
+Os dois testes mistos dos escritores estreitos de Spec foram preservados: leitura
+fresca de status draft/passed/failed e links com versão sem bump; retiradas apenas
+as asserções do cache Sprint que deixa de existir. Reviewer separation e os testes
+de evidência/currentness compartilhados continuam exigidos. Nenhum gate relaxado.
+Validação de wheels, suites, UI e closure pendente antes de commits.
+
+Validação do incremento (2026-09-21):
+- Core: f5-sprint-analytics-core.log, 208 passed. Complemento extra: 9 passed,
+  incluindo dois casos já contados, duas novas provas CSV de tipo inválido/Sprint
+  e cinco gates do manifesto público. Total Core distinto: 215.
+- Community: f5-sprint-analytics-community.log, 81 passed, incluindo archive
+  capture, leitura histórica sem origem operacional, UoW de contribuição por Card,
+  REST/CSV e adapter provenance. Frontend: 98 passed em todos os 17 arquivos de
+  analytics, incluindo fallback da URL Sprint ao Board e visões remanescentes.
+  Total distinto: 394 testes. Nenhum teste de evidência compartilhada relaxado.
+- Coletas completas: 13.596 Core / 5.808 Community, sem erro de import; coleta Core
+  antecedeu os dois casos adicionais de CSV executados no log extra. Isto não é
+  execução completa das suites nem novo E2E instalado de upgrade/rollback.
+- tsc/Vite/sync e verify:frontend-dist passaram. SPA 78 arquivos; agregado
+  95640fb1eb409412e98a7acdeea6d587b2455b4d9c186bbeba2cc50d83ee0954.
+- Preflight source/wheel/install antes dos testes: 804/335 Python e 867/419
+  payloads completos, idênticos. Módulos removidos ausentes também no install;
+  novas provas find_spec e contratos/rotas não permitem permanência acidental.
+- Primeiro closure: findings=[], oito budgets 0/0; apenas matrizes README
+  divergentes. Gerador oficial usado: Core imports 7450→7418, Community 1169→1167,
+  dependências 25. Manifestos de contratos públicos Core/Community deixam de
+  anunciar o serviço retirado; seus gates passaram.
+- Após READMEs, wheels-f5-sprint-analytics-final reconstruídos e reinstalados.
+  provenance-f5-sprint-analytics-final.json confirma source/wheel/install. A prova
+  f5-sprint-analytics-final-payload-parity.json compara todos os 867/419 payloads
+  finais aos testados, inclusive SPA, sem diferença. Só metadados README externos
+  ao payload mudaram; comportamento não foi repetido sem necessidade.
+  Core agregado 707fae50cea66d3cc3e4d7a10652d13e381ff12b1bb136abaf07658bf1d6e782;
+  Community 24c4403fe68b2ca04b6a1566a081529340576d9c3c1e1288f6bd41378c9b3672.
+  Wheel Core 16443e9dfe2c964f020ea6fb949b015ad773dc5d2040c70e4311549dfbe2ac37;
+  Community d992606732ca478d54612585cc6077f711ae5c1297dd9a6501c83525ba4695bf.
+- Ruff e diff --check aprovados. Catálogo MCP sem drift (gate executado, nenhuma
+  edição manual). Final closure está em execução antes de commits/pushes.
+
+Próxima frente: retirar as superfícies Sprint polimórficas restantes, começando
+por entity_pagination e kg_node_source, e seguir getters/repositórios/UoW, DTOs,
+Card.sprint_id/origens, arquivo/export/descendentes. A leitura de policy Sprint em
+card_crud ainda é compatibilidade F2B pré-captura, não deve ser simplesmente
+apagada antes do corte coordenado de migração. Schema/ORM legados, encerramento
+atômico offline e certificado runtime_ready continuam pendentes. Preservação
+histórica e os demais critérios F2/F3/F4/F5, DEI/ARQ/VER/ADV, footprint,
+E2E/upgrade/rollback, benchmark e rollout permanecem ativos. Nenhuma migração real,
+release, tag, restart ou liberação de runtime intermediário neste incremento.
+
+Fechamento: closure-f5-sprint-analytics-final.json terminou com ok=true,
+findings=[], documentation_findings=[] e oito budgets 0/0. Todos os handles
+encerrados. Community commit e748c00d4e556fcace37f5f16cb4687d5dc15966.
+Commit Core e pushes normais pareados a seguir; conferir árvores limpas e
+igualdade HEAD/remoto. Objetivo integral continua ativo, não concluído.

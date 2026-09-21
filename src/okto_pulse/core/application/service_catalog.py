@@ -408,24 +408,7 @@ class CoreAnalyticsOperations:
             spec_id,
         )
 
-    async def sprint(self, board_id: str, sprint_id: str):  # noqa: ANN201
-        from okto_pulse.core.services.analytics_service import compute_sprint_analytics
 
-        return await compute_sprint_analytics(
-            self.__relational_context,
-            board_id,
-            sprint_id,
-        )
-
-    async def sprints(self, board_id: str, *, dt_from, dt_to):  # noqa: ANN001, ANN201
-        from okto_pulse.core.services.analytics_service import compute_sprints_analytics
-
-        return await compute_sprints_analytics(
-            self.__relational_context,
-            board_id,
-            dt_from=dt_from,
-            dt_to=dt_to,
-        )
 
     async def agents(self, board_id: str, *, dt_from, dt_to):  # noqa: ANN001, ANN201
         from okto_pulse.core.services.analytics_service import compute_agents
@@ -475,7 +458,6 @@ class CoreAnalyticsOperations:
             _ideation_detail,
             _refinement_detail,
             _spec_detail,
-            _sprint_detail,
         )
 
         reader = {
@@ -483,7 +465,6 @@ class CoreAnalyticsOperations:
             "ideation": _ideation_detail,
             "card": _card_detail,
             "refinement": _refinement_detail,
-            "sprint": _sprint_detail,
         }[entity_type]
         return await reader(self.__relational_context, board_id, entity_id)
 

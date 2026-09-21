@@ -1,4 +1,4 @@
-"""Focused contracts for the canonical SDLC and sprint lifecycle authority."""
+"""Focused contracts for the canonical SDLC, narrow Spec writes and reviewer separation."""
 
 from types import SimpleNamespace
 import uuid
@@ -16,10 +16,6 @@ from okto_pulse.core.services.card_traceability import (
 from okto_pulse.core.services.reviewer_separation import (
     evaluate_reviewer_separation,
 )
-from okto_pulse.core.services.sprint_scope import (
-    SprintScopeResolver,
-    completion_blockers,
-)
 from sqlalchemy_test_models import (
     Board,
     Card,
@@ -27,8 +23,6 @@ from sqlalchemy_test_models import (
     CardType,
     Spec,
     SpecStatus,
-    Sprint,
-    SprintStatus,
 )
 
 
@@ -96,109 +90,12 @@ def test_traceability_validates_all_targets_before_mutation_and_is_idempotent() 
     assert spec.business_rules[0]["linked_task_ids"] == ["card-1"]
 
 
-def test_sprint_scope_union_is_version_cached_and_evidence_is_proportional() -> None:
-    SprintScopeResolver.clear_cache()
-    sprint = SimpleNamespace(
-        id="sprint-1",
-        version=1,
-        test_scenario_ids=["ts-explicit"],
-        business_rule_ids=["br-1"],
-    )
-    spec = SimpleNamespace(
-        id="spec-1",
-        version=1,
-        functional_requirements=[],
-        acceptance_criteria=[],
-        test_scenarios=[
-            {"id": "ts-explicit", "status": "passed", "linked_task_ids": []},
-            {"id": "ts-card", "status": "passed", "linked_task_ids": []},
-        ],
-        business_rules=[{"id": "br-1", "linked_task_ids": []}],
-        technical_requirements=[],
-        api_contracts=[],
-        integration_requirements=[],
-        observability_requirements=[],
-        decisions=[],
-    )
-    card = SimpleNamespace(
-        id="card-1",
-        version=1,
-        status="done",
-        card_type="test",
-        test_scenario_ids=["ts-card"],
-    )
-
-    first = SprintScopeResolver.resolve(sprint=sprint, spec=spec, cards=[card])
-    cached = SprintScopeResolver.resolve(sprint=sprint, spec=spec, cards=[card])
-    # Identity/provenance is cached, but mutable payload dictionaries are always
-    # reprojected into a fresh SprintScope.
-    assert cached is not first
-    assert cached.ids("test_scenarios") == first.ids("test_scenarios")
-    assert cached.provenance == first.provenance
-    assert set(first.ids("test_scenarios")) == {"ts-explicit", "ts-card"}
-    blocker_codes = {item.code for item in completion_blockers(first)}
-    assert blocker_codes == {
-        "sprint_test_evidence_missing",
-        "sprint_business_rule_uncovered",
-    }
-
-    spec.version = 2
-    assert SprintScopeResolver.resolve(sprint=sprint, spec=spec, cards=[card]) is not first
 
 
-def test_sprint_scope_dry_retry_reprojects_narrow_scenario_status_both_directions() -> None:
-    """A writer may change scenario state without bumping ``Spec.version``."""
-    SprintScopeResolver.clear_cache()
-    sprint = SimpleNamespace(
-        id="sprint-narrow-status",
-        version=1,
-        test_scenario_ids=["ts-1"],
-        business_rule_ids=[],
-    )
-    spec = SimpleNamespace(
-        id="spec-narrow-status",
-        version=1,
-        functional_requirements=[],
-        acceptance_criteria=[],
-        test_scenarios=[
-            {"id": "ts-1", "status": "draft", "linked_task_ids": []}
-        ],
-        business_rules=[],
-        technical_requirements=[],
-        api_contracts=[],
-        integration_requirements=[],
-        observability_requirements=[],
-        decisions=[],
-    )
-
-    draft = SprintScopeResolver.resolve(sprint=sprint, spec=spec, cards=[])
-    assert [item.code for item in completion_blockers(draft)] == [
-        "sprint_test_not_successful"
-    ]
-
-    # Narrow draft -> passed mutation, no semantic version bump and no explicit
-    # resolver invalidation. A dry retry must immediately unblock.
-    spec.test_scenarios = [
-        {"id": "ts-1", "status": "passed", "linked_task_ids": []}
-    ]
-    passed = SprintScopeResolver.resolve(sprint=sprint, spec=spec, cards=[])
-    assert passed.items["test_scenarios"][0]["status"] == "passed"
-    assert completion_blockers(passed) == ()
-
-    # Reverse direction is the safety-critical branch: cached "passed" content
-    # must never make a failed scenario pass open.
-    spec.test_scenarios = [
-        {"id": "ts-1", "status": "failed", "linked_task_ids": []}
-    ]
-    failed = SprintScopeResolver.resolve(sprint=sprint, spec=spec, cards=[])
-    assert failed.items["test_scenarios"][0]["status"] == "failed"
-    assert [item.code for item in completion_blockers(failed)] == [
-        "sprint_test_not_successful"
-    ]
 
 
 @pytest.mark.asyncio
-async def test_real_scenario_status_writer_refreshes_scope_both_directions(
+async def test_real_scenario_status_writer_is_current_in_fresh_reads(
     db_factory,
 ) -> None:
     """The real narrow writer must not leave either stale fail-closed/open state."""
@@ -209,12 +106,6 @@ async def test_real_scenario_status_writer_refreshes_scope_both_directions(
     spec_id = f"scope-status-spec-{suffix}"
     scenario_id = f"scope-status-ts-{suffix}"
     actor_id = f"scope-status-actor-{suffix}"
-    sprint = SimpleNamespace(
-        id=f"scope-status-sprint-{suffix}",
-        version=1,
-        test_scenario_ids=[scenario_id],
-        business_rule_ids=[],
-    )
 
     async with db_factory() as db:
         db.add(
@@ -251,13 +142,9 @@ async def test_real_scenario_status_writer_refreshes_scope_both_directions(
         )
         await db.commit()
 
-    SprintScopeResolver.clear_cache()
     async with db_factory() as db:
         spec = await SpecService(db).get_spec(spec_id)
-        before = SprintScopeResolver.resolve(sprint=sprint, spec=spec, cards=[])
-        assert [item.code for item in completion_blockers(before)] == [
-            "sprint_test_not_successful"
-        ]
+        assert spec.test_scenarios[0]["status"] == "draft"
 
     async with db_factory() as db:
         service = SpecService(db)
@@ -270,14 +157,11 @@ async def test_real_scenario_status_writer_refreshes_scope_both_directions(
         assert result["new_status"] == "passed"
         assert (await service.get_spec(spec_id)).version == 11
 
-    # The resolver cache is still primed with the same semantic versions. A
-    # fresh DB read must nevertheless project the narrow writer's current data.
+    # A fresh read observes narrow writes without a semantic-version bump.
     async with db_factory() as db:
         service = SpecService(db)
         spec = await service.get_spec(spec_id)
-        passed = SprintScopeResolver.resolve(sprint=sprint, spec=spec, cards=[])
-        assert passed.items["test_scenarios"][0]["status"] == "passed"
-        assert completion_blockers(passed) == ()
+        assert spec.test_scenarios[0]["status"] == "passed"
 
         recovery = await service.set_test_scenario_status(
             spec_id,
@@ -297,72 +181,14 @@ async def test_real_scenario_status_writer_refreshes_scope_both_directions(
 
     async with db_factory() as db:
         spec = await SpecService(db).get_spec(spec_id)
-        failed = SprintScopeResolver.resolve(sprint=sprint, spec=spec, cards=[])
-        assert failed.items["test_scenarios"][0]["status"] == "failed"
-        assert [item.code for item in completion_blockers(failed)] == [
-            "sprint_test_not_successful"
-        ]
+        assert spec.test_scenarios[0]["status"] == "failed"
 
 
-def test_sprint_scope_dry_retry_re_resolves_narrow_link_membership() -> None:
-    """Linked-task membership is fingerprinted even without version bumps."""
-    SprintScopeResolver.clear_cache()
-    sprint = SimpleNamespace(
-        id="sprint-narrow-links",
-        version=1,
-        test_scenario_ids=[],
-        business_rule_ids=[],
-    )
-    spec = SimpleNamespace(
-        id="spec-narrow-links",
-        version=1,
-        functional_requirements=[
-            {"id": "fr-1", "linked_task_ids": []}
-        ],
-        acceptance_criteria=[],
-        test_scenarios=[],
-        business_rules=[],
-        technical_requirements=[],
-        api_contracts=[],
-        integration_requirements=[],
-        observability_requirements=[],
-        decisions=[],
-    )
-    card = SimpleNamespace(
-        id="card-1",
-        version=1,
-        status="not_started",
-        card_type="normal",
-        test_scenario_ids=[],
-    )
 
-    unlinked = SprintScopeResolver.resolve(
-        sprint=sprint, spec=spec, cards=[card]
-    )
-    assert unlinked.ids("functional_requirements") == ()
-
-    spec.functional_requirements = [
-        {"id": "fr-1", "linked_task_ids": ["card-1"]}
-    ]
-    linked = SprintScopeResolver.resolve(
-        sprint=sprint, spec=spec, cards=[card]
-    )
-    assert linked.ids("functional_requirements") == ("fr-1",)
-    assert linked.provenance["functional_requirements"]["fr-1"] == (
-        "assigned_card_link",
-    )
-
-    spec.functional_requirements = [
-        {"id": "fr-1", "linked_task_ids": []}
-    ]
-    unlinked_again = SprintScopeResolver.resolve(
-        sprint=sprint, spec=spec, cards=[card]
-    )
-    assert unlinked_again.ids("functional_requirements") == ()
 
 
 @pytest.mark.asyncio
-async def test_locked_traceability_narrow_writer_refreshes_scope_without_version_bump(
+async def test_locked_traceability_narrow_writer_persists_links_without_version_bump(
     db_factory,
 ) -> None:
     """Exercise the real no-version-bump writer, not only an in-memory mutation."""
@@ -371,7 +197,6 @@ async def test_locked_traceability_narrow_writer_refreshes_scope_without_version
     suffix = uuid.uuid4().hex[:8]
     board_id = f"scope-link-board-{suffix}"
     spec_id = f"scope-link-spec-{suffix}"
-    sprint_id = f"scope-link-sprint-{suffix}"
     card_id = f"scope-link-card-{suffix}"
     requirement_id = f"scope-link-fr-{suffix}"
     actor_id = f"scope-link-actor-{suffix}"
@@ -409,37 +234,21 @@ async def test_locked_traceability_narrow_writer_refreshes_scope_without_version
             )
         )
         await db.flush()
-        sprint = Sprint(
-            id=sprint_id,
-            board_id=board_id,
-            spec_id=spec_id,
-            title="Scope link sprint",
-            status=SprintStatus.DRAFT,
-            version=1,
-            created_by=actor_id,
-        )
         card = Card(
             id=card_id,
             board_id=board_id,
             spec_id=spec_id,
-            sprint_id=sprint_id,
             title="Scope link card",
             status=CardStatus.NOT_STARTED,
             card_type=CardType.NORMAL,
             created_by=actor_id,
         )
-        db.add_all([sprint, card])
+        db.add(card)
         await db.commit()
 
         service = SpecService(db)
         spec = await service.get_spec(spec_id)
-        SprintScopeResolver.clear_cache()
-        before = SprintScopeResolver.resolve(
-            sprint=sprint,
-            spec=spec,
-            cards=[card],
-        )
-        assert before.ids("functional_requirements") == ()
+        assert spec.functional_requirements[0]["linked_task_ids"] == []
 
         updated, changed, task_ids = (
             await service.append_locked_traceability_task_link(
@@ -457,15 +266,9 @@ async def test_locked_traceability_narrow_writer_refreshes_scope_without_version
 
         fresh_spec = await service.get_spec(spec_id)
         assert fresh_spec.version == 7
-        after = SprintScopeResolver.resolve(
-            sprint=sprint,
-            spec=fresh_spec,
-            cards=[card],
-        )
-        assert after.ids("functional_requirements") == (requirement_id,)
-        assert after.provenance["functional_requirements"][requirement_id] == (
-            "assigned_card_link",
-        )
+        assert fresh_spec.functional_requirements[0]["id"] == requirement_id
+        assert fresh_spec.functional_requirements[0]["linked_task_ids"] == [card_id]
+
 
 
 @pytest.mark.parametrize(

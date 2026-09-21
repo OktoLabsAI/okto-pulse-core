@@ -2365,28 +2365,6 @@ def _amendment_revision_test_store():
     reset_amendment_revision_store_for_tests()
 
 
-@pytest.fixture(autouse=True)
-def _sprint_activation_baseline_test_store():
-    from okto_pulse.core.ports.sprint_activation_baseline import (
-        register_sprint_activation_baseline_store,
-        reset_sprint_activation_baseline_store_for_tests,
-    )
-
-    class _Store:
-        def __init__(self):
-            self.rows = {}
-
-        async def get(self, context, *, board_id, sprint_id):
-            return self.rows.get((board_id, sprint_id))
-
-        async def save_if_absent(self, context, baseline):
-            return self.rows.setdefault(
-                (baseline.board_id, baseline.sprint_id), baseline
-            )
-
-    register_sprint_activation_baseline_store(_Store())
-    yield
-    reset_sprint_activation_baseline_store_for_tests()
 
 
 @pytest.fixture(autouse=True)

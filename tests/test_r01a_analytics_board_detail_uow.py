@@ -4,7 +4,7 @@ The four inline-SQL endpoints (board_quality / board_validations /
 board_spec_analytics / board_sprint_analytics) now route through transport-free
 use cases + ``get_unit_of_work``; the inline ``select()`` queries moved to
 ``analytics_service`` readers (compute_quality / compute_validations /
-compute_spec_analytics / compute_sprint_analytics) reusing the pure helpers
+compute_spec_analytics) reusing the pure helpers
 relocated in FU2b. Oracles: payload + board-ownership 404 + spec/sprint 404 +
 golden parity (use case == reader) + AST.
 """
@@ -27,7 +27,7 @@ from okto_pulse.core.infra.database import get_db, get_session_factory
 USER = "r01a-fu2c-user"
 OTHER = "r01a-fu2c-other"
 PREFIX = "/api/v1"
-_ENDPOINTS = ("board_quality", "board_validations", "board_spec_analytics", "board_sprint_analytics")
+_ENDPOINTS = ("board_quality", "board_validations", "board_spec_analytics")
 
 
 def _client(user: str = USER) -> TestClient:
@@ -129,16 +129,6 @@ async def test_spec_analytics_200_board_404_spec_404() -> None:
     assert miss_board.status_code == 404 and miss_board.json()["detail"] == "Board not found"
 
 
-@pytest.mark.asyncio
-async def test_sprint_analytics_200_and_sprint_404() -> None:
-    board_id = await _seed_board()
-    spec_id = await _seed_spec(board_id)
-    sprint_id = await _seed_sprint(board_id, spec_id)
-    assert _client().get(f"{PREFIX}/boards/{board_id}/analytics/sprint/{sprint_id}").status_code == 200
-    miss = _client().get(
-        f"{PREFIX}/boards/{board_id}/analytics/sprint/missing-{uuid.uuid4().hex[:6]}"
-    )
-    assert miss.status_code == 404 and miss.json()["detail"] == "Sprint not found"
 
 
 # --- golden parity: use case == reader --------------------------------------

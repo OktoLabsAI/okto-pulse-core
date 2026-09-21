@@ -2,7 +2,7 @@
 
 ``board_entity_detail`` (dispatch-by-entity_type) and ``board_entity_detail_export``
 now route through ``BoardEntityDetailUseCase`` + ``get_unit_of_work``. The five
-detail readers (_spec/_ideation/_card/_refinement/_sprint_detail) moved to
+detail readers (_spec/_ideation/_card/_refinement) moved to
 ``analytics_service`` with their ``HTTPException(404)`` rewritten to ``return None``
 — the use case maps a ``None`` to ``EntityNotFoundError(entity_type)`` and the
 adapter renders "<Type> not found". This card finishes the strangle:
@@ -96,7 +96,6 @@ async def test_detail_404_per_type() -> None:
         "ideation": "Ideation not found",
         "card": "Card not found",
         "refinement": "Refinement not found",
-        "sprint": "Sprint not found",
     }
     for etype, detail in expected.items():
         resp = client.get(_detail(bid, etype, f"missing-{uuid.uuid4().hex[:6]}"))
@@ -105,9 +104,11 @@ async def test_detail_404_per_type() -> None:
 
 
 @pytest.mark.asyncio
-async def test_detail_invalid_type_400() -> None:
+@pytest.mark.parametrize("entity_type", ["bogus", "sprint"])
+@pytest.mark.parametrize("suffix", ["", "/export"])
+async def test_detail_invalid_type_400(entity_type, suffix) -> None:
     bid = await _seed_board()
-    resp = _client().get(_detail(bid, "bogus", "x"))
+    resp = _client().get(_detail(bid, entity_type, "x") + suffix)
     assert resp.status_code == 400
     assert "entity_type must be one of" in resp.json()["detail"]
 

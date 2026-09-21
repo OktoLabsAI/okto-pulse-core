@@ -533,11 +533,7 @@ class AnalyticsOperations(Protocol):
 
     async def spec(self, board_id: str, spec_id: str) -> object | None: ...
 
-    async def sprint(self, board_id: str, sprint_id: str) -> object | None: ...
 
-    async def sprints(
-        self, board_id: str, *, dt_from: datetime | None, dt_to: datetime | None
-    ) -> object: ...
 
     async def agents(
         self, board_id: str, *, dt_from: datetime | None, dt_to: datetime | None
