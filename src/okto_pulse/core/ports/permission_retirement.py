@@ -23,6 +23,24 @@ from okto_pulse.core.ports.permission_policy import (
 SOURCE_VERSION = "permission-authority/v0.3.4"
 SOURCE_BLOB = "74101618064a1e50a1e9e11c012f7ff6f1f8f7a9"
 _FLAGS = tuple(sorted(historical.ALL_FLAGS))
+_RETIRED_FEATURE_FLAGS = tuple(sorted((
+    "kg.operations.rebuild.preflight", "kg.operations.rebuild.confirm", "kg.operations.rebuild.run",
+    "kg.operations.global_recovery.preflight", "kg.operations.global_recovery.confirm", "kg.operations.global_recovery.read",
+    "kg.operations.global_recovery.cancel", "kg.operations.global_recovery.resume", "kg.operations.global_recovery.run",
+    "kg.operations.quarantine.restore", "kg.operations.global_outbox.read", "kg.operations.global_outbox.reprocess",
+    "kg.operations.global_outbox.verify", "kg.operations.tick.run",
+    *(path for path in _FLAGS if path.startswith("sprint.")),
+)))
+
+
+def retired_feature_permission_flags() -> tuple[str, ...]:
+    """Closed Sprint/maintenance retirement, never inferred from registry drift.
+
+    The edition may apply this policy only after preserving authority evidence.
+    Any other missing or added live flag fails the complete registry parity gate.
+    """
+    validate_permission_retirement_registry(_RETIRED_FEATURE_FLAGS)
+    return _RETIRED_FEATURE_FLAGS
 
 
 @dataclass(frozen=True, slots=True)

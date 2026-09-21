@@ -10377,3 +10377,83 @@ startup como atalho. O contrato terminal deve provar schema/graph/permissions
 antes de alterar esse gate. Inspeção somente leitura neste turno.
 Community commitba41bdaea0e5d682692a88c447956be6f84b4db2; commit Core e pushes
 pareados a seguir, verificando os HEADs remotos e árvores limpas.
+
+### F2D — checkpoint coordenado de retirada de permissões (em validação, 2026-09-21)
+
+Retomada dos HEADs Core2c0e84a2/Communityba41bdae. A prova anterior ao trabalho,
+provenance-f2-permissions-baseline.json, confirmou o par instalado original.
+Integração em andamento: a sequência offline passa de materialization_retired a
+permissions_retired, sob as mesmas exclusões de schema/startup/publicação de
+bindings. A política fechada de 47 flags vive na porta pública do Core; drift do
+registro atual não define permissões novas a retirar. Community executa a limpeza,
+preserva revisões pendentes e paridade e grava o checkpoint ordinal6 na mesma
+transação SQL. Revalida grafo/outbox e evidência após o checkpoint antes do commit.
+Journal antigo com teto3 ou5 expande preservando células e triggers imutáveis.
+Replay de etapas anteriores aceita o novo prefixo completo sem recaptura.
+
+Provas em preparação: retomada por nova conexão, perda de resposta após commit,
+falha ao gravar checkpoint, alteração tardia de policy/outbox por trigger e
+checkpoint desaparecido. Fixtures descartáveis; frontend não alterado. Ainda sem
+resultado comportamental do código novo; construir/instalar ambos e provar bytes
+antes de executar testes. O startup permanece bloqueado: permissions_retired NÃO
+é runtime_ready e não prova corte físico de schema/ORM ou instalação limpa.
+Nenhum dado ou processo real alterado. Próxima etapa após validação: matriz de
+schema e dependências para corte físico atômico; backlog completo permanece.
+
+Validação intermediária F2D:
+- Par novo wheels-f2-permissions: ambos reconstruídos/instalados e comparação
+  source/wheel/site-packages repetida após término confirmado do pip. Prova
+  provenance-f2-permissions.json: Core804/867 e Community336/420 Python/payload.
+  Não houve alteração de produto/reinstall durante as suites.
+- Core751 testes aprovados em25.50s: política fechada/recusa de registry drift,
+  baseline de autoridade, retirada Sprint e catálogo MCP gerado sem drift.
+- UI93 testes em5.68s: usePermissions.stateful, permissionLayers e
+  PermissionFlagsEditor. Frontend não alterado; não houve novo build UI.
+- Community primeira suite:49 passed,1 failed em533.14s. A falha foi a fixture
+  de checkpoint perdido, que deixava removido também o trigger de imutabilidade;
+  ensure_retirement_data_journal legitimamente o reinstalava e o dump diferia.
+  Fixture corrigida para restaurar o trigger antes do snapshot, isolando a perda
+  da prova. Acrescentado caso simétrico de audit cleanup ausente. Reexecução em
+  f2-permissions-missing-evidence.log; resultado ainda pendente neste registro.
+- Closure inicial sem findings e8 budgets0/0; apenas README F16 drift porque a
+  chamada à nova porta pública eleva imports Community->Core1167 para1168.
+  Ambos os fragmentos foram gerados pelo renderer oficial. Wheels finais e
+  closure final pendentes após encerramento das suites.
+
+Investigação próxima (somente leitura): relational_schema_migrator ainda agenda
+_migrate_add_card_sprint_id, _migrate_add_sprint_scope_fields e
+_migrate_add_sprint_lane_fields. relational_schema_steps ainda inclui sprints em
+validação/cancelamento/índices e seen-items. SQLAlchemy mantém quatro mappings
+Sprint/SprintHistory/SprintActivationBaseline/SprintQAItem e Card.sprint_id.
+O corte deve tratar essas dependências com pre_create_all/create_all/post e
+instalação limpa; não liberar runtime_admission antes do contrato terminal.
+
+Fechamento deste incremento F2D (2026-09-21), sem concluir a iniciativa:
+943 testes distintos aprovados:751 Core +99 Community +93 UI. Os99 Community
+são49 da primeira suite,2 casos finais de evidência ausente (101.20s) e48 do
+coordenador/guards/admissão (714.99s). O caso defeituoso da fixture foi substituído
+pela versão corrigida; não somar a tentativa falha como teste aprovado.
+Perda de resposta após commit, reabertura por nova conexão, falhas tardias de
+checkpoint/policy/outbox e recusa de evidência ausente aprovados. Runtime continua
+recusando admissão mesmo após permissions_retired. Upgrade dos tetos3/5 do journal
+preserva bytes/triggers; falha após DROP restaura schema original por rollback.
+
+closure-f2-permissions-final.json:exit0,ok=true,findings/documentation vazios,
+8 budgets0/0. Ruff e diff --check aprovados. Wheels finais só incorporam a matriz
+README atualizada; payloads são idênticos aos usados nos testes. Pip final rodou
+após todos os processos de teste terminarem. provenance-f2-permissions-final.json
+compara source/wheel/site-packages:Core804 Python/867 payloads;Community336/420.
+Core agregado7e348caf0c392a03f158f3677b88db47831c236976e7742915158527efffaaa2;
+Community agregadofd66e8e138c3cf0074ceb6eb2c61a091701ccca928239fbff57fe451b4ffb082.
+Core wheeld81b11de70cfc088fbec883572ff862adb0b498be4f0cfa14891cec0a4e3347a;
+Community wheel970cd8483c88e76c82d0e561a9dd125b048c86bc4acaa33c23ce2594a265aa8d.
+Todos os handles de testes/build/install/auditoria encerrados. Nenhuma operação
+sobre runtime ou dados reais. Sem release/tag/merge/deploy.
+
+Retomada: checkpoint permissions ordinal6 fecha esta etapa, mas não certifica
+schema nem runtime_ready. Cortar mappings/colunas/FKs/steps/seeds de Sprint de
+forma coordenada e provar convergência de upgrade/instalação limpa e rollback.
+Continuam as demais pendências já listadas: histórico/policy replay e transportes,
+matrizes DEI/ARQ/VER/ADV, rollout/E2E pareado, footprint MCP e benchmark. Não
+apagar journal, inventar recibo terminal ou dispensar gates para liberar startup.
+Community commit003dfecaeee12eef3f7b3c110c34b86556c67335. Commit Core e pushes pareados a seguir; conferir HEAD remoto e árvores limpas.

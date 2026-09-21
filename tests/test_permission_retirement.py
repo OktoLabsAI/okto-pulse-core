@@ -14,6 +14,27 @@ from okto_pulse.core.ports.permission_retirement import (
 from test_historical_archive_authority_v034 import GOLDEN, RETIRED
 
 
+def test_closed_retirement_policy_matches_frozen_authority():
+    from okto_pulse.core.ports.permission_retirement import retired_feature_permission_flags
+    flags = retired_feature_permission_flags()
+    assert flags == tuple(sorted(RETIRED))
+    assert len(flags) == 47
+    assert sum(flag.startswith("sprint.") for flag in flags) == 33
+
+
+@pytest.mark.parametrize("drift", ["missing", "added"])
+def test_closed_retirement_policy_does_not_authorize_registry_drift(monkeypatch, drift):
+    from okto_pulse.core.ports import permission_retirement as policy
+    registry = deepcopy(registered_permission_flags())
+    if drift == "missing":
+        del registry["board"]["read"]
+    else:
+        registry["unapproved"] = {"read": True}
+    monkeypatch.setattr(policy, "registered_permission_flags", lambda: registry)
+    with pytest.raises(ValueError):
+        policy.retired_feature_permission_flags()
+
+
 def capture(flags=None, *, legacy=None, preset=None, presets=(), overrides=None):
     return capture_permission_retirement_authority(agent_flags=flags, legacy_permissions=legacy,
         preset_id=preset, presets=presets, board_overrides=overrides)
