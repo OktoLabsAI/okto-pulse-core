@@ -36,6 +36,7 @@ from okto_pulse.core.domain.card_transition import (
     CardTransitionFacts,
     PendingScenario,
     bug_regression_gate_applies,
+    completed_spec_execution_block,
     evaluate_card_transition,
 )
 from okto_pulse.core.domain.enums import (
@@ -1404,6 +1405,13 @@ class ListAllowedTransitionsUseCase:
             if getattr(card, "spec_id", None)
             else None
         )
+        completed_spec_block = completed_spec_execution_block(CardTransitionFacts(
+            card_id=card.id, old_status=old_status, new_status=target,
+            card_type=card_type, spec_id=getattr(card, "spec_id", None),
+            spec_status=getattr(spec, "status", None),
+        ))
+        if completed_spec_block is not None:
+            return f"{completed_spec_block.code}: {completed_spec_block.detail}"
         dependency_blockers: tuple[object, ...] = ()
         dependency_blocking_count = 0
         dependency_archived_blocking_count = 0

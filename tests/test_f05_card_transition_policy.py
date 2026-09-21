@@ -79,6 +79,36 @@ def test_f05_test_card_can_start_on_validated_spec() -> None:
     assert decision.allowed is True
 
 
+@pytest.mark.parametrize("old,target", [
+    (CardStatus.NOT_STARTED, CardStatus.STARTED),
+    (CardStatus.STARTED, CardStatus.IN_PROGRESS),
+    (CardStatus.ON_HOLD, CardStatus.STARTED),
+    (CardStatus.ON_HOLD, CardStatus.IN_PROGRESS),
+    (CardStatus.REJECTED, CardStatus.IN_PROGRESS),
+    (CardStatus.DONE, CardStatus.IN_PROGRESS),
+])
+@pytest.mark.parametrize("card_type", list(CardType))
+def test_done_spec_normal_execution_gate_preserves_bug_and_test_controls(old, target, card_type):
+    decision = evaluate_card_transition(_facts(
+        old_status=old, new_status=target, card_type=card_type,
+        spec_status=SpecStatus.DONE, has_regression_test_evidence=True,
+    ))
+    assert decision.allowed is (card_type != CardType.NORMAL)
+    if card_type == CardType.NORMAL:
+        assert decision.block.code == "normal_card_spec_done"
+
+
+@pytest.mark.parametrize("old,target", [
+    (CardStatus.DONE, CardStatus.DONE),
+    (CardStatus.IN_PROGRESS, CardStatus.ON_HOLD),
+    (CardStatus.NOT_STARTED, CardStatus.CANCELLED),
+])
+def test_done_spec_gate_does_not_block_ordering_pause_or_cancellation(old, target):
+    assert evaluate_card_transition(_facts(
+        old_status=old, new_status=target, spec_status=SpecStatus.DONE,
+    )).allowed
+
+
 def test_f05_bug_gate_respects_board_severity_threshold() -> None:
     decision = evaluate_card_transition(
         _facts(

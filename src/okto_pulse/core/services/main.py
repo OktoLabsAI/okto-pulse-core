@@ -31,6 +31,7 @@ from okto_pulse.core.domain.card_transition import (
     archived_card_block,
     bug_regression_evidence_block,
     bug_regression_gate_applies,
+    completed_spec_execution_block,
     spec_maturity_block,
     sprint_assignment_block,
     test_completion_block,
@@ -225,6 +226,7 @@ from okto_pulse.core.services.bug_workflow_remediation import (
 from okto_pulse.core.services.card_errors import CardOperationError
 from okto_pulse.core.services.card_operational_freeze import (
     require_card_operational_mutation_allowed,
+    require_normal_card_spec_content_allowed,
 )
 from okto_pulse.core.services.cancellation import apply_cancellation_policy
 from okto_pulse.core.services.card_traceability import (
@@ -3674,6 +3676,11 @@ class CardService:
                 getattr(data, "knowledge_propagation", None),
             )
 
+        await require_normal_card_spec_content_allowed(
+            self.db, board_id=board_id, card_type=card_type_val,
+            spec_ids=(data.spec_id,), operation="create_card",
+        )
+
         # Direct creation in STARTED is the same execution-start edge as
         # NOT_STARTED -> STARTED in move_card.  Acquire the dependency-graph
         # fence, lock/revalidate the source Spec lifecycle identity, check the
@@ -4064,6 +4071,11 @@ class CardService:
                         "dependent_sprint_count": len(broken_dependents),
                     },
                 )
+
+        await require_normal_card_spec_content_allowed(
+            self.db, board_id=card.board_id, card_type=card.card_type,
+            spec_ids=(card.spec_id, next_spec_id), operation="update_card", card=card,
+        )
 
         await _authorize_critical_context_or_raise(
             self.db,
@@ -6401,7 +6413,7 @@ class CardService:
 
         # Block forward moves based on card_type and spec status.
         # Uses level comparison: spec must have reached the minimum required status.
-        # Once a spec reaches IN_PROGRESS or DONE, cards can advance freely.
+        # Normal execution on Done is separately blocked, including reopens.
         old_level = self._STATUS_ORDER.get(old_status, 0)
         new_level = self._STATUS_ORDER.get(data.status, 0)
         precedence_expected_edition: int | None = None
@@ -6410,6 +6422,17 @@ class CardService:
         if transition_starts_card_execution(old_status, data.status) and card.spec_id:
             spec_for_precedence = await _application_get(self.db, "spec", card.spec_id)
             if spec_for_precedence is not None:
+                completed_spec_block = completed_spec_execution_block(CardTransitionFacts(
+                    card_id=card.id, old_status=old_status, new_status=data.status,
+                    card_type=card_type_value, spec_id=card.spec_id,
+                    spec_status=spec_for_precedence.status,
+                ))
+                if completed_spec_block is not None:
+                    raise CardOperationError(
+                        completed_spec_block.code, completed_spec_block.detail,
+                        remediation=completed_spec_block.remediation,
+                        facts=completed_spec_block.facts,
+                    )
                 # Capture the optimistic lifecycle identity without taking the
                 # graph fence. Expensive sprint, regression, traceability,
                 # policy and cognitive gates run before the lock; readiness is
@@ -12421,6 +12444,10 @@ class SpecService:
         if not card or card.board_id != spec.board_id:
             return False
         require_card_operational_mutation_allowed(card, operation="link_card_to_spec")
+        await require_normal_card_spec_content_allowed(
+            self.db, board_id=card.board_id, card_type=card.card_type,
+            spec_ids=(card.spec_id, spec_id), operation="link_card_to_spec", card=card,
+        )
         old_spec_id = card.spec_id
         actor_id = user_id or card.created_by
         knowledge_v2_relinked = await _reset_v2_knowledge_for_relink(
@@ -12474,6 +12501,10 @@ class SpecService:
         require_card_operational_mutation_allowed(
             card,
             operation="unlink_card_from_spec",
+        )
+        await require_normal_card_spec_content_allowed(
+            self.db, board_id=card.board_id, card_type=card.card_type,
+            spec_ids=(card.spec_id,), operation="unlink_card_from_spec", card=card,
         )
         old_spec_id = card.spec_id
         await _reset_v2_knowledge_for_relink(

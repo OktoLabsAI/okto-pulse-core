@@ -8207,3 +8207,98 @@ todos os writers/previews, preservando colaboração e os controles bug/test.
 Permanecem o restante do corte operacional Sprint e a integração offline/schema,
 F4/F5, matriz integral, rollout e footprint MCP. Objetivo integral ativo;
 nenhuma migração de dados reais ou conclusão da iniciativa é alegada.
+
+### 2026-09-20 — F3 autorizado: admissão principal e vínculo de tarefa normal
+
+Partida publicada: Core ed59d325c3173f86f4fa0e11b4c1e2200c53638a / Community
+bca12e1ea0b9ca53442b6faec094c2d86488b15a. A decisão F3 acima foi aplicada,
+sem nova solicitação de aprovação. Este checkpoint cobre criação, update_card,
+link/unlink de Spec e início/retomada/reabertura pelo move_card e seu preview;
+não é ainda a declaração de fechamento de todos os escritores de conteúdo.
+
+Política pura completed_spec_normal_work_block/completed_spec_execution_block:
+normal_card_spec_done com remediation revise_spec_before_normal_work. Somente
+tipo Normal em Spec Done é atingido; Bug/Test conservam os controles próprios.
+As arestas exatas de início/retomada já definidas em spec_dependency são usadas,
+incluindo Done/Rejected/On Hold -> In Progress. Cancelamento, pausa e ordenação
+não são convertidos em início. A execução mantém a revalidação transacional de
+edition/status/archived existente; o novo bloqueio não elimina outros gates.
+
+require_normal_card_spec_content_allowed usa exclusivamente portas públicas.
+Verifica os pais atual/proposto antes de reparenting e recusa Done antes de
+qualquer escrita. Para admissão positiva, usa a trava de Board já compartilhada
+com lifecycle/dependências, snapshots de Spec sob trava e CAS do vínculo/tipo do
+Card, na mesma transação do chamador. Não há commit no guard, SQL no Core,
+novo adaptador, exceção de import ou alteração de grants. O mecanismo permanece
+no Community. Pais referenciados ausentes/fora do Board não são tratados como
+abertos. Legado sem vínculo mantém o contrato existente; nova criação continua
+exigindo Spec. CardUpdate já proíbe mudar card_type/origin_task_id.
+
+Frontend: CardModal bloqueia edição de campos e atribuição da tarefa Normal ao
+carregar a Spec Done, informa o motivo e respeita o blocker de execução vindo do
+Core. Leituras/abas de colaboração permanecem acessíveis. CreateCardModal permite
+selecionar Done para regressão (Test) e Bug, e limpa seleção Done ao trocar para
+Normal, impedindo conservar um pai oculto. A escrita continua revalidada no Core.
+
+Evidências em PULSE_REFACTOR/.validation-v040:
+- f3-done-core.log: 101 passed; f3-done-regressions.log: 241 passed;
+  f3-done-catalog.log: 4 passed. Incluem CRUD/autorização, previews, lifecycle,
+  dependências, vínculo de cenários e regressão/Path B. A antiga caracterização
+  pré-decisão foi substituída pelo contrato autorizado em test_f3_done_spec_admission;
+  a reprodução histórica permanece no ledger e no Git.
+- test_f3_done_spec_admission mede zero DML para recusas de criação/edição/
+  vínculo de entrada/saída, com e sem Sprint histórica; compara preview/mutação
+  em quatro arestas; preserva edição Bug/Test e a Spec Done original.
+- f3-done-community.log: 14 passed nos contratos REST de rejeição/permissão;
+  os três testes novos falharam inicialmente no setup porque faltava a sessão
+  semântica composta. Corrigida a fixture para CommunitySemanticSession, sem
+  contornar o guard. f3-done-community-fence-r2.log: 3 passed. Portas reais e
+  transação independente no intervalo leitura/trava demonstram recusa quando
+  a Spec fecha ou o vínculo do Card muda; o caso positivo conserva admissão.
+- f3-done-ui.log: 72 passed em CardModal/CreateCardModal, incluindo os três
+  tipos na Spec Done e a troca Test -> Normal -> Bug sem envio indevido.
+  Total: 346 Core + 17 Community + 72 frontend = 435 testes distintos aprovados.
+- f3-done-build-ui.log: tsc/Vite e sincronização passaram; 78 arquivos,
+  árvore 2cffc946610da1623cb76d6a884ea5a57fdf5c2d00438d4be82eda6af2d4cedd.
+  verify:frontend-dist, Ruff e diff --check passaram. Não há alegação de E2E
+  do runtime nem de nova execução Playwright neste checkpoint.
+- provenance-f3-done.json e provenance-f3-done-final.json: 811/336 .py e
+  874/420 payloads source/wheel/install byte a byte; agregados finais iguais
+  aos testados. Core 7df31198c7a31569585921347fab43d3226af9af3089527e1fd5bbbe31d1a733;
+  Community 25b3d461864ae2519b3b97a542864bcac65d895049436f54341b69d52953a055.
+- Closure inicial: findings=[], oito budgets 0/0, somente drift README;
+  renderer oficial atualizou imports Core 7.492 -> 7.496, Community 1.175,
+  dependências 25. Ambos wheels finais reconstruídos/reinstalados após término
+  das suites; somente README mudou no produto distribuído após a primeira prova.
+  Wheels: Core 6d4a760d156f54896faceb35674049d3edb59a4dcbeca4e8b292b11278e5d691;
+  Community a78ae41ff275b9c25568644bed433eb5b801578537ecac66d0cfc4d0c2cd6ab3.
+
+Retomada F3 — ainda não declarar o bloqueio exaustivo:
+- services/main: add/remove_dependency, attachments, delete_card, backlinks de
+  traceability, delete_spec_unlink_card e demais writers diretos precisam da
+  mesma admissão quando alterarem conteúdo normal. Archive/restore devem ser
+  classificados pelo efeito, sem bloquear leitura/histórico/colaboração por
+  analogia automática com o congelamento de Rejected. Writers exclusivamente
+  Sprint serão retirados no corte, não convertidos em nova operação.
+- usecases: card_traceability, architecture_crud.copy_architecture_to_card,
+  knowledge_propagation._load_card_for_v2_write, mcp_resource_stories,
+  operational_rest (resource waivers), spec_crud (backlinks IR/OR) e
+  code_traceability (evidence/overlap/waiver) ainda têm guard somente Rejected.
+  MCP server ~12530 também tem o guard local de link_card_traceability.
+- Porta existente ApplicationServiceCatalog.cards retorna o serviço Core
+  CardService; uma fachada pública de admissão nele pode reutilizar o guard
+  transacional para use cases sem extrair contexto de edição nem importar
+  privados. Confirmar escritores nos serviços de propagação e recursos além
+  dos callers do guard Rejected, e adicionar testes negativos antes do primeiro
+  efeito e positivos de colaboração/bug/test nos adaptadores reais.
+- Manter o preview/UI consistente ao ampliar cobertura. Sprint assignment,
+  Path C, completion de Spec, analytics/generic APIs/registry/schema e todo o
+  coordenador offline terminal seguem pendentes. A autorização F3 está resolvida;
+  não voltar a perguntar a mesma decisão. Objetivo integral permanece ativo.
+
+Fechamento deste checkpoint: closure-f3-done-final.json ok=true, findings=[] e
+documentation_findings=[], oito budgets 0/0. Todas as suites, builds, instalação,
+provas e closure terminaram. Commit Community
+ba050beed80f0efa4be9344411ecb91284b914f6; preparar par Core/Community para push
+normal em feature/v0.4.0 e conferir HEAD remoto e árvores limpas. Nenhum runtime
+do usuário foi parado/reiniciado, nem dados reais migrados.

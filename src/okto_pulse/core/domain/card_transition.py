@@ -145,6 +145,39 @@ def spec_dependency_block(facts: CardTransitionFacts) -> CardTransitionBlock | N
     ).block
 
 
+def completed_spec_execution_block(
+    facts: CardTransitionFacts,
+) -> CardTransitionBlock | None:
+    """Normal work cannot start or resume in a delivered Spec.
+
+    F3 authority decision (2026-09-20): post-delivery Bug/Test work retains its
+    own gates. Ordering, collaboration and non-execution edges are unaffected;
+    an authorized Spec revision is required before normal execution can resume.
+    """
+    if not transition_starts_card_execution(facts.old_status, facts.new_status):
+        return None
+    return completed_spec_normal_work_block(
+        card_type=facts.card_type, spec_status=facts.spec_status,
+        card_id=facts.card_id, spec_id=facts.spec_id,
+    )
+
+
+def completed_spec_normal_work_block(
+    *, card_type: CardType | str, spec_status: SpecStatus | str | None,
+    card_id: str | None, spec_id: str | None,
+) -> CardTransitionBlock | None:
+    """Shared F3 policy for normal content writes and execution admission."""
+    if card_type != CardType.NORMAL or spec_status != SpecStatus.DONE:
+        return None
+    return _blocked(
+        "normal_card_spec_done",
+        "Normal tasks cannot be created, edited, started or reopened while their Spec is Done. "
+        "Use the authorized Spec revision workflow before resuming normal work.",
+        remediation="revise_spec_before_normal_work",
+        facts={"card_id": card_id, "spec_id": spec_id},
+    ).block
+
+
 def spec_maturity_block(facts: CardTransitionFacts) -> CardTransitionBlock | None:
     if facts.new_status is CardStatus.CANCELLED:
         return None
@@ -300,6 +333,7 @@ def bug_regression_gate_applies(facts: CardTransitionFacts) -> bool:
 def evaluate_card_transition(facts: CardTransitionFacts) -> CardTransitionDecision:
     for evaluator in (
         archived_card_block,
+        completed_spec_execution_block,
         spec_dependency_block,
         spec_maturity_block,
         sprint_assignment_block,
@@ -324,6 +358,8 @@ __all__ = [
     "archived_card_block",
     "bug_regression_evidence_block",
     "bug_regression_gate_applies",
+    "completed_spec_execution_block",
+    "completed_spec_normal_work_block",
     "evaluate_card_transition",
     "spec_dependency_block",
     "spec_maturity_block",
