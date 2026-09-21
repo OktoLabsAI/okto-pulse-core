@@ -7885,3 +7885,49 @@ Fechamento: closure-sprint-context-final.json ok=true, findings=[] e
 documentation_findings=[], oito budgets 0/0. Todos os processos desta etapa
 encerrados; Community 071b0ebda57ba4f5379cdb90cf1d4a25d0e6ca6f. Commit e push normal
 em feature/v0.4.0, com verificação HEAD/ls-remote. Sem dados/runtime reais tocados.
+
+### 2026-09-20 — F2B/F3: corrigir policy migrada na leitura compacta de gate
+
+Checkpoint anterior publicado e verificado com árvores limpas: Core
+3620a24754575e4bc23aef43b295527495410ad2 / Community
+071b0ebda57ba4f5379cdb90cf1d4a25d0e6ca6f. A investigação do resolver encontrou
+uma integração faltante: _TASK_GATE_CARD_SELECT_FIELDS não selecionava
+migrated_validation_policy. Não altera a decisão F3 pendente; é preservação da
+compatibilidade por Card já autorizada na F2B.
+
+Reprodução com o par comprovadamente instalado em provenance-sprint-context-final:
+6 casos MCP; summary/all e full/all mantinham 90/60, full/gate devolvia 70 nos
+dois casos (migrated-context-before.log: 4 passed / 2 failed, assert 70==90/60).
+Foi acrescentado somente o campo de policy à projeção limitada de Card, com
+comentário de deprecation/migration-only. O resolver, a precedência e a autoridade
+de escrita não mudam. A representação não deve ser removida enquanto existirem
+overrides necessários, salvo revisão humana autorizada (ver decisão F2B).
+
+Testes de regressão cobrem três perfis/escopos, valores 90/60, False/zero,
+proveniência por campo e recusa de policy com Board divergente; a leitura não
+muta o registro. Teste Community exercita projeção SQL pelo adapter real,
+sem carregar os demais campos de Card, e entrega o resultado ao resolver Core.
+Sem alteração de UI/REST; testes frontend não se aplicam a essa correção MCP.
+
+Prova antes dos testes: ambos os wheels reconstruídos/reinstalados;
+provenance-migrated-context.json confirma 812/337 .py e 875/421 payloads idênticos
+source/wheel/install. Wheels-migrated-context:
+Core a361ab520d3c6f40379e18891bb0ea239abbee3d916c1dcea5fecf3116dcc961;
+Community 6820dcd6b9c73af5394488579494d58367fc7f43e94eb6d5ab42009a63485f7e.
+Seleção Core: migrated-context-core.log, 77 passed. Community inicial:
+12 passed e 2 falhas do novo harness sem CommunitySemanticSession; ajustado
+somente o teste para a composição obrigatória usada pelo adapter, sem relaxar
+esse guard nem alterar produto. Reexecução e closure registradas abaixo.
+
+Fechamento: migrated-context-community-r2.log 2 passed; união da seleção
+Community: 14 testes distintos aprovados. Total da correção: 91 testes distintos
+aprovados. Ruff/diff --check aprovados. closure-migrated-context.json ok=true,
+findings=[] e documentation_findings=[], oito budgets 0/0. Nenhuma mudança de
+produto após a prova de identidade. Todos os handles encerrados.
+A falha conhecida de footprint MCP 54.330 > 50.800 permanece da seleção anterior;
+não foi reclassificada como verde nem seu limite alterado por esta correção.
+Retomada: rastreabilidade viva Sprint e demais pendências coordenadas F2–F5,
+matriz integral e rollout; decisão F3 sobre normal em Spec Done ainda pendente.
+Objetivo integral ativo e incompleto; nenhum runtime ou dado real alterado.
+
+Commit Community 26283b6acece2ab7a13ddd89d89e22dc14a27efe; push normal do par em feature/v0.4.0 com verificação HEAD/ls-remote.

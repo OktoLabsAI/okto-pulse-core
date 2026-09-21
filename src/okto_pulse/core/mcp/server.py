@@ -1674,6 +1674,9 @@ _TASK_GATE_CARD_SELECT_FIELDS = (
     "linked_test_task_ids",
     "spec_id",
     "sprint_id",
+    # Deprecated migration-only policy is required to preserve the effective
+    # validation gate in this bounded read; it grants no executor write access.
+    "migrated_validation_policy",
     "current_rejection_kind",
     "current_rejection_id",
     "current_rejection_code",
