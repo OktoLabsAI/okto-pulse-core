@@ -10971,3 +10971,104 @@ migração de dados vivos que podem mudar legitimamente após a ativação. Aind
 pendentes fonte sem origens, rollback operacional com par predecessor, E2E do
 par publicado e todas as demais frentes do pacote. Nenhum runtime real alterado.
 Objetivo completo continua ativo e NÃO alcançado.
+
+### F2D — checkpoint de bootstrap e retomada (em implementação)
+
+Turno anterior:progresso; HEADs b36fe307/c79a3ae4 confirmados limpos antes do início.
+A inspeção mostrou que o hash estrito de schema também contém o CHECK do journal.
+Expansão max7->8 precisa ocorrer só depois de verificar o recibo antigo; replay de
+retire_schema não pode expandir antes da verificação. Implementado bootstrap como
+9o estágio, ligado ao hash do recibo schema e ao plano declarativo do lifecycle,
+com hashes pós-bootstrap de schema/dados e contagem de Cards. Modelo/expansão
+aceitam max8 e preservam journal histórico max3/5/6/7; ainda validar regressões.
+
+Novo caminho offline mantém schema/startup/publication fences e verifica arquivos
+privados/contexto/Card/work, graph/outbox, review/cleanup e paridade remanescente
+antes/depois, usando savepoints do escopo reservado. Retomada lê bootstrap antes
+de reaplicar etapas anteriores:hash de schema pré-bootstrap não foi afrouxado.
+Acrescentada verificação das policies vivas dos Cards afetados pela porta pública,
+além de preservar todas as células de Card exceto position (normalização já
+reproduzida). Recibo e efeitos devem confirmar juntos; nenhuma admissão runtime
+foi habilitada. Testes de resposta perdida, falha no checkpoint/conteúdo/policy,
+perda de recibo e expansão histórica em preparação; produto ainda sem validação.
+
+Validação inicial do checkpoint:provenance-f2-bootstrap-checkpoint.json confirmou
+804/340 Python e867/424 payloads byte a byte em fontes/wheels/instalação antes dos
+processos novos. closure-f2-bootstrap-checkpoint.json terminou exit0/oktrue,
+findings/documentation_findings vazios e8budgets0/0 (sem regeneração README).
+f2-bootstrap-graphs-tests.log:2passes145.91s, grafos nativos Okto Grafx populados,
+com/sem global, LSNs preservados no bootstrap/replay e admissão ainda bloqueada.
+Suíte principal handle31988 em andamento, sem alterações de produto/instalação.
+Inspeção adicional:materialization e permission_cleanup ainda expandem journal
+incondicionalmente; o caso max7 deve comprovar se invalidam o hash retido antes
+mesmo de retire_schema. Não contornar esse hash. Dois negativos adicionais de
+drift pós-recibo (dados/plano) foram acrescentados depois da coleta e devem rodar
+separadamente. Sem frontend/DTO/API/assets alterados neste incremento.
+
+Primeira suíte terminou32passes/2falhas433.54s. Perda de recibo foi recusada
+corretamente por retirement_schema_completion_mismatch:ajustado o erro esperado
+no teste. Max7 reproduziu defeito real:materialization/cleanup expandiam DDL antes
+da verificação do recibo. Agora ambos leem/validam o prefixo e só expandem antes
+do estágio schema; retire_schema também preserva DDL no replay. Materialization
+recusa prefixo9 antes de efeito, encaminhado exclusivamente pelo novo coordenador.
+Não houve alteração da comparação/hash do recibo nem regeneração da fixture.
+
+Wheels corrigidos:wheels-f2-bootstrap-checkpoint-fixed. Pip terminou antes da
+prova provenance-f2-bootstrap-checkpoint-fixed.json (804/340Python,867/424payloads).
+Core agregado c2b76566ffdab7abb66d6039160b4799573a5e7f91e4f5d035b366b4ba0fb069;
+Community e4a9d9fa2f64ded20d221154fcfc36c1ee71e7879f02107357ede86ea61919d3.
+Wheel Core289d29bedd5e0e9179a159f7b2fd3042f53b8f7fef8fea91177c2163749d5229;
+Community8cc8c60e3d246164307c96748c8cb42713eccd7210f346e0ed133c023b9705a5.
+Suítes novas:77411 bootstrap/grafos/schema (f2-bootstrap-fixed-tests),96771
+journal/Card/cleanup/permissions (f2-bootstrap-fixed-regressions); closure1684
+(closure-f2-bootstrap-fixed.json). Ainda aguardar terminalidade antes de editar
+produto/reinstalar. RuffF/E9 e diff--check passaram. Nenhum runtime real tocado.
+
+Suíte principal corrigida terminou exit0:13passes523.53s, cobrindo bootstrap
+sobre origem v034 real congelada, resposta perdida com engine nova, falha depois
+do write do checkpoint, alterações indevidas de conteúdo/policy, recibo perdido,
+drift de dados/plano e max7 preservado até expansão autorizada. Integração com
+Grafx populado com/sem global manteve LSN/outbox e replay sem escritores. Inclui
+os3 casos de corte físico existentes. Não somar novamente as execuções iniciais.
+Closure corrigido terminou exit0/oktrue,findings/documentation_findings vazios,
+8budgets0/0. Suíte96771 de regressões ainda em andamento. Produto está staged,
+sem commit até o resultado; nenhuma edição de fonte depois do build corrigido.
+
+### F2D — fechamento do checkpoint de bootstrap (2026-09-21)
+
+Community04aca50c4b02823989ba27b2e0980d9abfd88cb5.82testes distintos aprovados:
+13 em f2-bootstrap-fixed-tests.log (523.53s) e69 em
+f2-bootstrap-fixed-regressions.log (841.07s), ambos exit0/processos encerrados.
+As69 regressões cobrem journal e expansões max3/5/6/7, retomada dos3 passos de
+dados, policies por Card, cleanup de permissões e coordenação offline, incluindo
+negações, corrupção, resposta perdida, rollback e concorrência. Não somar as
+execuções iniciais dos mesmos casos. RuffF/E9 e diff--check passaram.
+
+Checkpoint bootstrap é o9o estágio interno, ligado ao recibo estrito do corte,
+ao plano do lifecycle e aos hashes pós-bootstrap. Efeitos e recibo confirmam na
+mesma transação reservada; replay lê a cadeia antes de repetir qualquer writer.
+Verifica antes/depois arquivos privados, contexto, Card/work, graph/outbox,
+review/cleanup e autoridade remanescente; policies vivas dos Cards afetados são
+comparadas pela porta pública. Conteúdo bruto dos Cards é preservado, exceto
+position normalizado pelo lifecycle já caracterizado. Journals antigos só são
+expandidos após validar o hash original. Os recibos históricos não são reescritos.
+
+Toda a mecânica ficou em Community/adapters; Core recebeu apenas este ledger.
+Closure-f2-bootstrap-fixed.json:oktrue,findings/documentation_findings vazios,
+8budgets0/0. Fontes/wheels/install iguais no relatório corrigido acima; a prova
+provenance-f2-bootstrap-checkpoint-committed.json será repetida após os commits
+para associar os mesmos payloads aos HEADs finais. Nenhuma fixture congelada,
+DTO, API, tool, catálogo, frontend ou asset alterado. Sem teste/build adicional
+de frontend neste incremento interno. Não há release/tag/deploy/merge nem mudança
+em serviço, instalação ou dados reais do usuário.
+
+Retomada:iniciativa ativa e incompleta. Bootstrap_complete ainda NÃO admite
+runtime. Próximas dependências:fonte/projeção final pós-bootstrap (schema v9,
+época/LSN/outbox/debt e consultas), cadeia terminal e admissão que preserve a prova
+histórica sem comparar indefinidamente dados vivos ao hash congelado. Preservar
+os fences e backup original; não liberar apenas por ausência de Sprint. Também
+faltam fonte sem Boards/origens (não basta retirar not references; Card/contexto
+sem eventos exigem prova de conclusão/replay própria), rollback com inicialização
+do par predecessor, E2E com par publicado e auditoria completa de BASE/KG/DEI/
+ARQVER/ADV e demais frentes já registradas. Não contar este checkpoint como
+conclusão de F2D inteira ou da iniciativa. Autorizações F2A/F2B/F3 permanecem.
