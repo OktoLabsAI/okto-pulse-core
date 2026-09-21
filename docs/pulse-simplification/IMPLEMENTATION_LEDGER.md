@@ -12008,3 +12008,84 @@ Objetivo integral e backlog consolidado permanecem ativos; nenhum release/tag/
 deploy/merge, runtime real ou dado real alterado.
 
 Commit Community: 89a52caf84f55063691d60fdd48b4fb23c8e5b27. Core segue com worker/planner/port/testes, matriz regenerada e este ledger; após o commit, provar novamente os bytes e publicar o par.
+
+### KG8.3 — revalidação integral de planos retidos (em validação)
+
+Retomada limpa do par58e37bd0abd55ac3a73600dfdc75f14b57ab032a /
+89a52caf84f55063691d60fdd48b4fb23c8e5b27, ambos publicados. Objetivo integral
+permanece ativo. Revisitados entrada, CONTRIBUTING, KG8.3, exact worker/claim/
+reservation, recovery capability, composição Community e seed/restauração.
+Não iniciada execução no candidato: o adapter de rebuild existente purga rota,
+incompatível com preservação nativa. Reserva exact exige operação/source e token
+vivos; autoridade não pode ser inventada a partir de recibos da geração antiga.
+
+Pré-condição concretizada neste incremento: o leitor anterior só autenticava
+hashes/forma e cleanup terminal. Um plano normal canônico com título adulterado,
+SHA interno/externo recalculado e seed coerente ainda passava esses checks. Eles
+explicitamente não eram certificado de semântica. Antes de qualquer consumo para
+escrita, faltava confrontar todo o plano com a fonte, não ampliar o check parcial.
+
+Core expõe planner.revalidate_board pelo Protocol público. Reexecuta o mesmo
+preparador com census/cognição lidos independentemente e compara todos os bytes:
+nodes, edges, intents, fontes, census, closure e campos extras. Retém captured_at
+original; não expira/reclassifica silenciosamente a entrada durante inspeção.
+Atualidade no cutover continua obrigação separada. Não corrige nem reseala plano.
+Não é autoridade de escrita, reconciliação ou admissão de runtime.
+
+Community refaz inventário completo de Boards/realms/metadados via reader SQL e
+invoca o port sob BEGIN IMMEDIATE e query_only=ON, restaurado na saída. Seed e
+restauração chamam esse check depois de comparar o SQL integral ao bootstrap e
+antes de publicar seed/candidato. Nenhuma exclusão de tabela operacional, novo
+budget, reach-in privado Core, gate de workflow ou formato de artefato alterado.
+Um v2 completo e correspondente continua válido; divergente recusa, sem repair.
+
+Testes acrescentados: plano normal omitido/adulterado/campos extras, census,
+fonte/cognição/closure falsos, Board divergente, leitura de fonte alterada; hashes
+válidos em seed/restore não dispensam correspondência; reserva nega concorrente
+e query_only nega escrita do próprio leitor; rollback não deixa conexão readonly.
+Closure histórica CodeEvidence também revalidada com o corte original. Regressão
+nativa de candidato/replay continua na seleção. Nenhuma UI alterada: frontend
+não se aplica neste incremento. RuffF/E9 e diff--check verdes; build/install e
+testes em andamento. Prova prévia provenance-kg-plan-revalidation-before.json
+806/344Python869/428payloads foi executada antes das mudanças comportamentais.
+
+Retomada: concluir testes/proveniência/closure e publicar este par; depois compor
+execução exact sem purge, com reserva ligada ao manifesto/backup/builds/geração,
+cleanup fora do denominator, ACK confirmado e checkpoints de escrita. Continuam
+pendentes reconciliação, delta esperado, cutover/admissão e backlog integral.
+
+### KG8.3 — revalidação integral validada
+
+Todos os handles encerrados, sem falhas nesta rodada. Install86346 exit0;
+provenance-kg-plan-revalidation.json prova806/344Python869/428payloads idênticos
+entre fonte/wheel/install antes dos testes. Core3638 exit0:89passed5.97s, log
+kg-plan-revalidation-core.log. Community75672 exit0:13passed483.10s, log
+kg-plan-revalidation-community.log. Total102 testes distintos. Closure8582 exit0:
+oktrue, findings/documentação vazios,8budgets0 em closure-kg-plan-revalidation.json.
+Não houve drift das matrizes README nem necessidade de regeneração documental.
+
+Na fixture SQL real, a adulteração de título com hashes válidos passa pelo leitor
+limitado anterior, mas é recusada em ambos prepare_seed e restore antes da saída
+de destino; fonte, plano e seed permanecem intactos. Reserva bloqueia concorrente,
+query_only bloqueia escritor interno e volta a0 tanto no sucesso quanto na falha.
+Novo título na fonte é detectado pelo inventário independente/repreparação. Closure
+de CodeEvidence retém corte temporal original. Restauração nativa/histórico,
+perda de resposta/replay, drift e dois Boards+Global passaram sem purga de rota.
+
+Wheels-kg-plan-revalidation aggregates:
+Core7a662de91e27f223cd46cf6ae22aaa7215c0b0fce0f66a35cb009024d8a89df1;
+Community1bf39ea7c646eba2f7f3ca6f7899fc1f3419889b31de196cbfbaa10ec01fab1f.
+RuffF/E9 e diff--check verdes. Após os commits, repetir prova de bytes para vincular
+este payload ao par publicado. Sem UI/API/MCP alterados, teste frontend não se
+aplica. Não é benchmark: apenas duração de suite. Nenhum runtime/dado real,
+release/tag/deploy/merge alterado. Objetivo integral permanece ativo.
+
+Limite explícito: revalidação é leitura, não execução exact nem certificado de
+convergência/cutover. API interna recebe a transação do coordenador, cujo BEGIN
+IMMEDIATE é provado pelos testes; in_transaction sozinho não é capability de
+escrita. Toda comparação SQL do bootstrap permanece integral. O próximo passo
+ainda é compor aplicação governada no candidato preservado, sem purga, e medir
+efeitos reais de fila/ACK/auditoria antes de definir revalidação pós-escrita.
+
+Commit Community: ebd9cdddbb53ea6d27d931f62ba7b4144d374e5f. Core segue com
+Protocol/planner/testes e este ledger; publicação pareada após prova pós-commits.

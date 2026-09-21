@@ -125,6 +125,27 @@ class CoreDeterministicProjectionPlanner:
         self.persistence = persistence
         self.dependencies = dependencies
 
+    async def revalidate_board(self, context, document, *, board_id, source_rows, cognitive_rows):
+        require_terminal_cleanup(document)
+        retained = json.loads(document)
+        if retained['board_id'] != board_id:
+            raise ValueError('deterministic_projection_source_scope_mismatch')
+        if (type(retained['captured_at']) is not str
+                or type(source_rows) is not tuple or type(cognitive_rows) is not tuple
+                or len(source_rows) > 100_000 or len(cognitive_rows) > 100_000):
+            raise ValueError('deterministic_projection_census_invalid')
+        captured_at = datetime.fromisoformat(retained['captured_at'])
+        if captured_at.tzinfo is None:
+            raise ValueError('deterministic_projection_census_invalid')
+        # Keep the original temporal cut: a later inspection must not silently
+        # expire sources or generate a new plan. Currentness at cutover remains
+        # a separate governed decision. Inputs come from the caller's fresh
+        # census, never from the retained document being checked.
+        expected = await self.prepare_board(context, board_id=board_id,
+            source_rows=source_rows, cognitive_rows=cognitive_rows, captured_at=captured_at)
+        if expected != document:
+            raise ValueError('deterministic_projection_retained_plan_mismatch')
+
     def _dependency_sources(self, census, board_id, captured_at):
         cut = captured_at.isoformat()
         base = tuple({**row.to_dict(), '_rebuild_manifest_created_at': cut}

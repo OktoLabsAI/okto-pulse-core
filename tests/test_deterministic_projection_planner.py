@@ -78,6 +78,50 @@ async def test_cancelled_source_remains_explicitly_skipped():
     assert json.loads(plan.document)['disposition'] == 'skipped_cancelled'
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize('damage', ['none', 'missing_plan', 'node', 'extra_field', 'census',
+    'source', 'cognitive', 'dependency', 'source_read', 'scope'])
+async def test_revalidation_rederives_complete_plan_instead_of_trusting_its_hash(damage):
+    artifact = spec()
+    port = persistence(artifact)
+    planner = make_deterministic_projection_planner(port)
+    rows = ({'artifact_type': 'spec', 'id': 'spec-one', 'status': 'done',
+        'source_ref': 'spec:spec-one', 'source_version': 'v1', 'content_hash': 'a' * 64,
+        'created_at': '2026-09-21T00:00:00Z'},)
+    encoded = await planner.prepare_board(None, board_id='board', source_rows=rows, cognitive_rows=(),
+        captured_at=datetime(2026, 9, 21, tzinfo=timezone.utc))
+    retained = json.loads(encoded)
+    board_id = 'board'
+    if damage == 'missing_plan':
+        retained['plans'] = []
+    elif damage == 'node':
+        retained['plans'][0]['projection']['nodes'][0]['title'] = 'Invented node'
+    elif damage == 'extra_field':
+        retained['plans'][0]['projection']['client_authorized'] = True
+    elif damage == 'census':
+        retained['census']['eligible_count'] = 0
+    elif damage == 'source':
+        retained['source_rows'][0]['content_hash'] = 'b' * 64
+    elif damage == 'cognitive':
+        retained['cognitive_rows'] = [{'board_id': 'board', 'invented': True}]
+    elif damage == 'dependency':
+        retained['dependency_closure'] = [dict(rows[0])]
+    elif damage == 'source_read':
+        artifact.title = 'Changed live source, even if the caller supplied an old census'
+    elif damage == 'scope':
+        board_id = 'foreign'
+    encoded = json.dumps(retained, ensure_ascii=False, sort_keys=True, separators=(',', ':')).encode()
+    # The existing cleanup-only check intentionally cannot certify ordinary
+    # plans. A canonical document and SHA alone are not semantic correspondence.
+    require_board_projection_cleanup(encoded)
+    if damage == 'none':
+        await planner.revalidate_board(None, encoded, board_id=board_id, source_rows=rows, cognitive_rows=())
+    else:
+        with pytest.raises(ValueError, match='retained_plan_mismatch|source_scope_mismatch'):
+            await planner.revalidate_board(None, encoded, board_id=board_id, source_rows=rows, cognitive_rows=())
+    assert json.loads(encoded) == retained  # Never reseal or repair a retained plan.
+
+
 def terminal_row(status='cancelled'):
     return {'artifact_type': 'refinement', 'id': 'refinement-one', 'status': status,
         'source_ref': 'refinement:refinement-one', 'source_version': 'v1', 'content_hash': 'a' * 64,

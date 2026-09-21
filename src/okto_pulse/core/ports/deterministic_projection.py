@@ -55,6 +55,16 @@ class DeterministicProjectionPlanner(Protocol):
         """Canonical bounded census and expected emissions, never graph completion."""
         ...
 
+    async def revalidate_board(self, context: object, document: bytes, *, board_id: str,
+            source_rows: tuple[dict, ...], cognitive_rows: tuple[dict, ...]) -> None:
+        """Recompute the entire retained plan from independently read, fenced sources.
+
+        The caller owns the source transaction and supplies the actual Board
+        inventory. Success is read-only correspondence, never write authority,
+        graph completion or permission to replace the retained document.
+        """
+        ...
+
 
 class DeterministicProjectionDependencies(Protocol):
     def resolve(self, *, board_id: str, sources: tuple[dict, ...]) -> tuple[dict, ...]:
