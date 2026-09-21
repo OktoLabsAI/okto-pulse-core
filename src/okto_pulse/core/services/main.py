@@ -775,7 +775,6 @@ RefinementSnapshot = ApplicationRecord
 Spec = ApplicationRecord
 Sprint = ApplicationRecord
 SprintHistory = ApplicationRecord
-SprintQAItem = ApplicationRecord
 
 
 def _apf(
@@ -1665,8 +1664,6 @@ def _critical_spec_move_action(target_status: SpecStatus) -> CriticalAction:
     if target_status == SpecStatus.CANCELLED:
         return CriticalAction.SPEC_CANCEL
     return CriticalAction.SPEC_MOVE_STATUS
-
-
 
 
 def _critical_ideation_move_action(target_status: IdeationStatus) -> CriticalAction:
@@ -19455,105 +19452,6 @@ class ArchiveService:
                 session=self.db,
             )
         return counts
-
-
-# ============================================================================
-# SPRINT SERVICE
-# ============================================================================
-
-
-
-
-
-
-class SprintQAService:
-    """Service for sprint Q&A operations."""
-
-    def __init__(self, db: Any):
-        self.db = db
-
-    async def get_question(self, qa_id: str) -> SprintQAItem | None:
-        """Load a Sprint Q&A item so callers can authorize its parent first."""
-        return await _application_get(self.db, "sprint_qa_item", qa_id)
-
-    async def create_question(
-        self,
-        sprint_id: str,
-        user_id: str,
-        question: str,
-        question_type: str = "text",
-        choices: list | None = None,
-        allow_free_text: bool = False,
-    ) -> SprintQAItem | None:
-        sprint = await _application_get(self.db, "sprint", sprint_id)
-        if not sprint:
-            return None
-        qa = _new_application_record(
-            "sprint_qa_item",
-            sprint_id=sprint_id,
-            question=question,
-            question_type=question_type or "text",
-            choices=choices,
-            allow_free_text=allow_free_text,
-            asked_by=user_id,
-        )
-        await _application_add(self.db, qa)
-        return qa
-
-    async def answer_question(
-        self,
-        qa_id: str,
-        user_id: str,
-        answer: str | None = None,
-        selected: list[str] | None = None,
-        *,
-        actor_type: str = "user",
-        surface: str = "service",
-    ) -> SprintQAItem | None:
-        qa = await _application_get(self.db, "sprint_qa_item", qa_id)
-        if not qa:
-            return None
-
-        sprint = await _application_get(self.db, "sprint", qa.sprint_id)
-        board = (
-            await _application_get(self.db, "board", sprint.board_id)
-            if sprint
-            else None
-        )
-        await _authorize_qa_answer_or_raise(
-            self.db,
-            board=board,
-            qa=qa,
-            user_id=user_id,
-            entity_type="sprint",
-            question_id=qa_id,
-            actor_type=actor_type,
-            surface=surface,
-        )
-
-        qa.answer = answer
-        qa.selected = selected
-        qa.answered_by = user_id
-        qa.answered_at = datetime.now(timezone.utc)
-        if selected is not None:
-            qa.mark_dirty("selected")
-        return qa
-
-    async def list_qa(self, sprint_id: str) -> list[SprintQAItem]:
-        return await _application_list(
-            self.db,
-            "sprint_qa_item",
-            filters=(_apf("sprint_id", "eq", sprint_id),),
-            order_by=(("created_at", False),),
-        )
-
-    async def delete_question(self, qa_id: str) -> bool:
-        """Delete a Q&A item."""
-        qa = await _application_get(self.db, "sprint_qa_item", qa_id)
-        if not qa:
-            return False
-        await _application_delete(self.db, qa)
-        return True
 
 
 async def mcp_list_my_mentions(

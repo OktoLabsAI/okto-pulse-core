@@ -121,7 +121,6 @@ async def test_mcp_comment_orders_lookup_guard_writer_commit(
         ("ideation", "evaluating"),
         ("refinement", "review"),
         ("spec", "approved"),
-        ("sprint", "active"),
     ),
 )
 async def test_qa_ask_uses_scoped_parent_state_before_guard(
@@ -144,11 +143,9 @@ async def test_qa_ask_uses_scoped_parent_state_before_guard(
         ideations=SimpleNamespace(get_ideation=lookup),
         refinements=SimpleNamespace(get_refinement=lookup),
         specs=SimpleNamespace(get_spec=lookup),
-        sprints=SimpleNamespace(get_sprint=lookup),
         ideation_qa=SimpleNamespace(create_question=writer),
         refinement_qa=SimpleNamespace(create_question=writer),
         spec_qa=SimpleNamespace(create_question=writer),
-        sprint_qa=SimpleNamespace(create_question=writer),
         boards=SimpleNamespace(_log_activity=AsyncMock()),
     )
     uow = SimpleNamespace(services=services, commit=AsyncMock())
@@ -178,6 +175,26 @@ async def test_qa_ask_uses_scoped_parent_state_before_guard(
     )
 
     assert events == ["lookup", "guard", "writer"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("permissions", [[], ["qa:create"], ["*"]])
+async def test_retired_sprint_qa_is_rejected_before_lookup_or_mutation(permissions):
+    class ForbiddenServices:
+        def __getattr__(self, name):
+            raise AssertionError(f"Retired Sprint Q&A must not resolve service {name}")
+
+    uow = SimpleNamespace(services=ForbiddenServices(), commit=AsyncMock())
+    result = await McpAskQuestionUseCase().execute(
+        McpAskQuestionCommand(BOARD_ID, "sprint", "historical-origin", "Why?"),
+        actor=ActorContext("agent-1", "mcp", board_id=BOARD_ID, permissions=permissions),
+        uow=uow,
+    )
+    assert result.payload == {
+        "error": "unsupported_target_type",
+        "allowed": ["card", "ideation", "refinement", "spec"],
+    }
+    uow.commit.assert_not_awaited()
 
 
 @pytest.mark.asyncio

@@ -4983,22 +4983,6 @@ class SprintEvaluationCreate(BaseModel):
     recommendation: str = Field(..., pattern=r"^(approve|request_changes|reject)$")
 
 
-class SprintQACreate(BaseModel):
-    """Schema for asking a question on a sprint."""
-
-    question: str = Field(..., min_length=1)
-    question_type: str = "text"
-    choices: list[dict] | None = None
-    allow_free_text: bool = False
-
-
-class SprintQAAnswer(BaseModel):
-    """Schema for answering a sprint question."""
-
-    answer: str | None = None
-    selected: list[str] | None = None
-
-
 class SprintQAResponse(BaseSchema):
     """Schema for sprint Q&A item response."""
 

@@ -8614,3 +8614,84 @@ na retomada da observação. Community commit
 67c1d58ed902954550b36d94b07933bed6f6cbfc. Preparar commit Core e publicar o par
 por push normal; verificar HEAD remoto e árvore limpa nos dois repositórios.
 Nenhuma alteração de produto após a prova de identidade final.
+
+### 2026-09-21 — F3: retirar writers de Q&A de Sprint
+
+Par anterior publicado por push normal e verificado com ls-remote igual a HEAD,
+árvores limpas: Core c2ee6cbac015111b596add912e714a0e6aa76d37 / Community
+67c1d58ed902954550b36d94b07933bed6f6cbfc. Iniciativa integral segue ativa.
+
+Rastreamento de consumidores confirmou que McpAskQuestionUseCase já recusa
+Sprint antes de resolver serviços, mas SprintQAService ainda existia no catálogo
+e no Protocol. Retirados o serviço, a propriedade sprint_qa, alias de record
+exclusivo e DTOs de escrita SprintQACreate/SprintQAAnswer (incluindo exports).
+Não há novo caminho de escrita ou concessão de autoridade. DTO de resposta
+Sprint e modelos históricos ainda aguardam a retirada coordenada dos demais
+consumidores; captura offline e reader por seção não dependem desse serviço.
+
+Reprodução instalada antes de editar: provenance-f3-qa-before.json confirma
+811/336 arquivos Python e 874/420 payloads idênticos ao par publicado.
+f3-qa-baseline.log: 3 passed / 1 failed / 5 deselected. O único caso falho
+exigia lookup/guard/writer para Sprint no teste de colaboração, embora o
+use case já retornasse unsupported_target_type sem tocar serviços. Corrigida
+essa expectativa aposentada: os três tipos ativos preservam os checks de
+escopo/estado/permissão; Sprint agora prova recusa sem lookup, writer ou commit,
+com nenhum grant, grant qa:create e wildcard. Não restaurar o caminho retirado
+para satisfazer o teste antigo. O status real é o resumo pytest, não a linha
+de teardown do logger que equivocadamente imprimiu PASSED no caso falho.
+
+Testes de self-answering continuam cobrindo os quatro serviços ativos e wrappers
+REST/MCP. Retirados somente fixture/caso exclusivos do serviço Sprint; a prova
+conjunta ainda verifica cada handler restante. Provas de arquivo histórico vão
+exercitar conteúdo/QA/avaliações/history, ausência das tabelas vivas, isolamento
+de Board/origem/seção e revogação. Nenhuma alteração de frontend neste incremento:
+entrada e UI de Sprint já haviam sido retiradas, não há contrato de tela novo.
+
+Ruff passou; par wheels-f3-qa construído e instalado. Antes de testes, nova
+reconstrução/reinstalação apenas para remover linhas vazias de declaração, sem
+processo de comportamento vivo; provenance-f3-qa.json será a prova efetiva.
+Próximo: executar regressões de colaboração/arquivo, drift do catálogo e closure,
+atualizar matrizes pelo renderer oficial se necessário, publicar o incremento.
+Pendências integrais F2/F3/F4/F5 e complementos permanecem as registradas acima.
+
+Fechamento deste segundo incremento:
+- f3-qa-core.log: 597 passed; f3-qa-community.log: 42 passed. Total deste lote:
+  639, sem somar aos 423 anteriores como se fossem todos testes distintos.
+  Catálogo MCP sem drift. Coleta Core completa: 13.223 testes, sem erro de import;
+  coleta não é execução integral. Não houve novo Playwright/E2E integral.
+- closure-f3-qa.json: findings=[] e oito budgets 0/0; apenas duas matrizes README
+  desatualizadas. Renderer oficial aplicado: Core imports 7.482 -> 7.481,
+  Community 1.175 e dependências 25 mantidos.
+- Todos os processos de teste/coleta encerrados antes de reconstruir e instalar
+  wheels-f3-qa-final. provenance-f3-qa-final.json confirma 811/336 Python e
+  874/420 payloads integralmente idênticos entre source/wheel/install. Agregados
+  efetivamente comparados com o par testado e iguais:
+  Core b67bd71ab63fa152220c6912e9c8cbfd1c7d295c78a002c5e664306dd4cb1f8d;
+  Community a21882b434e19d16bb71e9d833db67f236cace860ba46006789fe36de0f9c71b.
+  Wheels SHA256 Core 567ca4398857a1c79b2badd197fcddf65b974628bb39cd5ed9a23cf261932fa7;
+  Community c0039a63ac76a800c674eb3f3844f2881be2cacee996ce964f5db97d77a1cdae.
+  A primeira impressão de comparação tentou a chave inexistente source_tree_sha256
+  e mostrou null; não é prova de equivalência. A comparação válida foi repetida
+  com StrictMode, aggregate_sha256 existente e exigência de valor não vazio.
+- Auditoria final closure-f3-qa-final.json em execução; aguardar resultado antes
+  da publicação. Nenhuma mudança de produto após a prova final de identidade.
+
+Próxima dependência crítica de F3: permissões/registry devem sair juntas. Além
+das folhas vivas Sprint, revisar manifestações históricas, reconhecimento de
+snapshot Full Control, grants de presets, aliases de cancelamento e reconciliação.
+A porta permission_retirement já captura o vetor original de 599 decisões e
+owner_review_required/review_reason; o gate compara todas as decisões sobreviventes.
+Não reduzir o vetor nem usar remoção de folhas como prova de equivalência. Usar
+as fixtures originais, negações explícitas, documentos parciais/malformados,
+ancestralidade de preset e overrides de Board. A captura/classificação histórica
+é independente da policy viva; a prova de paridade deve continuar até o adapter.
+Depois do corte, ainda restam analytics/compromisso, modelos/DTOs, persistência,
+offline/schema/certificado terminal e demais critérios integrais do pacote.
+
+Auditoria final concluída: closure-f3-qa-final.json ok=true, findings=[],
+documentation_findings=[], oito budgets 0/0. Ruff e diff --check aprovados.
+Community commit f67e77e5c7e652bad57f0f5c37eb040137933ac2 atualiza somente a
+matriz de distribuição; produto Community permanece igual ao par anterior.
+Preparar commit Core e push normal nos dois repos, verificando igualdade remota.
+Este turno produziu dois incrementos com código, provas e publicação; não é
+turno bloqueado. Nenhum dado real migrado nem runtime do usuário reiniciado.

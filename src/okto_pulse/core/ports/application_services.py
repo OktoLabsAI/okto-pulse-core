@@ -76,7 +76,6 @@ if TYPE_CHECKING:
         SpecKnowledgeService,
         SpecQAService,
         SpecService,
-        SprintQAService,
         StoryService,
     )
     from okto_pulse.core.services.resource_gate import ResourceGateService
@@ -215,10 +214,6 @@ class ApplicationServiceCatalog(Protocol):
 
     @property
     def specs(self) -> "SpecService": ...
-
-    @property
-    def sprint_qa(self) -> "SprintQAService": ...
-
 
     @property
     def stories(self) -> "StoryService": ...

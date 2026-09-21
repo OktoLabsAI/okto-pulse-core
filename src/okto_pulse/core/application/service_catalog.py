@@ -881,13 +881,6 @@ class CoreApplicationServiceCatalog:
         return SpecService(self.__relational_context)
 
     @cached_property
-    def sprint_qa(self):  # noqa: ANN201
-        from okto_pulse.core.services.main import SprintQAService
-
-        return SprintQAService(self.__relational_context)
-
-
-    @cached_property
     def stories(self):  # noqa: ANN201
         from okto_pulse.core.services.main import StoryService
 

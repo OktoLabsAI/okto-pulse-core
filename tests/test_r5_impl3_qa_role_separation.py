@@ -4,8 +4,8 @@ Covers:
 - BG-01: default allow_agent_self_answering=false rejects asked_by == answered_by.
 - BG-01: allow_agent_self_answering=true accepts asked_by == answered_by.
 - Legacy qa_require_role_separation remains readable but does not grant self-answering.
-- Reject works in all 5 handlers (QAService, SpecQAService, IdeationQAService,
-  RefinementQAService, SprintQAService), plus REST/MCP card answer wrappers.
+- Reject works in all 4 active handlers (QAService, SpecQAService, IdeationQAService,
+  RefinementQAService), plus REST/MCP card answer wrappers.
 
 Historical R5 role-separation tests live here because BG-01 supersedes their
 same-principal semantics while preserving the legacy field compatibility.
@@ -124,23 +124,6 @@ async def _create_refinement(db, board_id: str, ideation_id: str):
     return ref
 
 
-async def _create_sprint(db, board_id: str, spec_id: str):
-    """Create a minimal Sprint."""
-    from sqlalchemy_test_models import Sprint, SprintStatus
-
-    sprint_id = str(uuid.uuid4())
-    sprint = Sprint(
-        id=sprint_id,
-        board_id=board_id,
-        spec_id=spec_id,
-        title="Role Sep Test Sprint",
-        status=SprintStatus.DRAFT,
-        spec_version=1,
-        created_by=USER_ASKER,
-    )
-    db.add(sprint)
-    await db.flush()
-    return sprint
 
 
 async def _create_card(db, board_id: str):
@@ -420,34 +403,6 @@ async def test_ac9_refinement_qa_service_flag_on_same_principal_rejected(db_fact
         assert "allow_agent_self_answering" in err_msg
 
 
-async def test_ac9_sprint_qa_service_flag_on_same_principal_rejected(db_factory):
-    """AC9 — SprintQAService: flag ON, answered_by == asked_by → ValueError."""
-    from sqlalchemy_test_models import SprintQAItem
-    from okto_pulse.core.services.main import SprintQAService
-
-    board_id = f"board-ac9-sprint-{uuid.uuid4().hex[:8]}"
-    async with db_factory() as db:
-        await _create_board(db, board_id, qa_require_role_separation=True)
-        spec = await _create_spec(db, board_id)
-        sprint = await _create_sprint(db, board_id, spec.id)
-        qa = SprintQAItem(
-            id=str(uuid.uuid4()),
-            sprint_id=sprint.id,
-            question="Is this sprint scoped correctly?",
-            question_type="text",
-            asked_by=USER_ASKER,
-        )
-        db.add(qa)
-        await db.commit()
-        qa_id = qa.id
-
-    async with db_factory() as db:
-        svc = SprintQAService(db)
-        with pytest.raises(ValueError) as exc_info:
-            await svc.answer_question(qa_id, USER_ASKER, answer="should be rejected")
-        err_msg = str(exc_info.value)
-        assert "self_answering_not_allowed" in err_msg
-        assert "allow_agent_self_answering" in err_msg
 
 
 # ---------------------------------------------------------------------------
@@ -512,30 +467,30 @@ async def test_ac10_spec_qa_service_flag_on_different_principal_accepted(db_fact
 
 
 # ---------------------------------------------------------------------------
-# AC11 — reject works in all 5 handlers (each tested in AC9 above; this test
+# AC11 — reject works in all 4 active handlers (each tested in AC9 above; this test
 # adds a combined coverage assertion confirming shared enforcement)
 # ---------------------------------------------------------------------------
 
 
-async def test_ac11_all_5_handlers_reject_same_principal(db_factory):
-    """AC11 — All 5 service handlers enforce the role-separation gate when enabled.
+async def test_ac11_all_active_handlers_reject_same_principal(db_factory):
+    """AC11 — All active service handlers enforce role separation when enabled.
 
-    This test creates fixtures for all 5 entity types on a SINGLE board with
+    This test creates fixtures for all 4 entity types on a SINGLE board with
     allow_agent_self_answering=False and confirms each handler raises ValueError
     with the canonical message when asked_by == answered_by.
 
-    The 5 handlers: QAService, SpecQAService, IdeationQAService,
-    RefinementQAService, SprintQAService.
+    The 4 handlers: QAService, SpecQAService, IdeationQAService,
+    RefinementQAService. Retired Sprint Q&A is read through the historical archive.
     """
     from sqlalchemy_test_models import (
-        QAItem, SpecQAItem, IdeationQAItem, RefinementQAItem, SprintQAItem,
+        QAItem, SpecQAItem, IdeationQAItem, RefinementQAItem,
     )
     from okto_pulse.core.models.schemas import QAAnswer, SpecQAAnswer, IdeationQAAnswer, RefinementQAAnswer
     from okto_pulse.core.services.main import (
-        QAService, SpecQAService, IdeationQAService, RefinementQAService, SprintQAService,
+        QAService, SpecQAService, IdeationQAService, RefinementQAService,
     )
 
-    board_id = f"board-ac11-all5-{uuid.uuid4().hex[:8]}"
+    board_id = f"board-ac11-active-{uuid.uuid4().hex[:8]}"
 
     async with db_factory() as db:
         await _create_board(db, board_id, qa_require_role_separation=True)
@@ -543,15 +498,13 @@ async def test_ac11_all_5_handlers_reject_same_principal(db_factory):
         spec = await _create_spec(db, board_id)
         ideation = await _create_ideation(db, board_id)
         ref = await _create_refinement(db, board_id, ideation.id)
-        sprint = await _create_sprint(db, board_id, spec.id)
 
         qa_card = QAItem(id=str(uuid.uuid4()), card_id=card.id, question="Q?", asked_by=USER_ASKER)
         qa_spec = SpecQAItem(id=str(uuid.uuid4()), spec_id=spec.id, question="Q?", question_type="text", asked_by=USER_ASKER)
         qa_idea = IdeationQAItem(id=str(uuid.uuid4()), ideation_id=ideation.id, question="Q?", question_type="text", asked_by=USER_ASKER)
         qa_ref = RefinementQAItem(id=str(uuid.uuid4()), refinement_id=ref.id, question="Q?", question_type="text", asked_by=USER_ASKER)
-        qa_sprint = SprintQAItem(id=str(uuid.uuid4()), sprint_id=sprint.id, question="Q?", question_type="text", asked_by=USER_ASKER)
 
-        for obj in [qa_card, qa_spec, qa_idea, qa_ref, qa_sprint]:
+        for obj in [qa_card, qa_spec, qa_idea, qa_ref]:
             db.add(obj)
         await db.commit()
 
@@ -559,7 +512,6 @@ async def test_ac11_all_5_handlers_reject_same_principal(db_factory):
         qa_spec_id = qa_spec.id
         qa_idea_id = qa_idea.id
         qa_ref_id = qa_ref.id
-        qa_sprint_id = qa_sprint.id
 
     # Each handler must raise ValueError with self_answering_not_allowed
     async with db_factory() as db:
@@ -581,12 +533,6 @@ async def test_ac11_all_5_handlers_reject_same_principal(db_factory):
         svc = RefinementQAService(db)
         with pytest.raises(ValueError, match="self_answering_not_allowed"):
             await svc.answer_question(qa_ref_id, USER_ASKER, RefinementQAAnswer(answer="x"))
-
-    async with db_factory() as db:
-        svc = SprintQAService(db)
-        with pytest.raises(ValueError, match="self_answering_not_allowed"):
-            await svc.answer_question(qa_sprint_id, USER_ASKER, answer="x")
-
 
 # ---------------------------------------------------------------------------
 # FR8 — Error message structure

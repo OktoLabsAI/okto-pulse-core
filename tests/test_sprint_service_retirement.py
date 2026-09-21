@@ -10,6 +10,8 @@ from okto_pulse.core.application.use_cases.base import CommandValidationError
 from okto_pulse.core.domain.sdlc_registry import SDLC_REGISTRY
 from okto_pulse.core.domain.task_validation_policy import FIELDS, plan_migrated_validation_policy
 from okto_pulse.core.infra.database import get_session_factory
+from okto_pulse.core import models
+from okto_pulse.core.models import schemas
 from okto_pulse.core.ports.application_services import ApplicationServiceCatalog
 from okto_pulse.core.services import main
 from sqlalchemy_test_models import Board, Card, Spec, SpecStatus, Sprint, SprintStatus
@@ -17,10 +19,16 @@ from sqlalchemy_test_models import Board, Card, Spec, SpecStatus, Sprint, Sprint
 
 def test_service_and_catalog_expose_no_sprint_operations():
     assert not hasattr(main, "SprintService")
+    assert not hasattr(main, "SprintQAService")
     assert not hasattr(main, "SprintOperationError")
     assert not hasattr(errors, "SprintOperationError")
     assert not hasattr(CoreApplicationServiceCatalog, "sprints")
     assert not hasattr(ApplicationServiceCatalog, "sprints")
+    assert not hasattr(CoreApplicationServiceCatalog, "sprint_qa")
+    assert not hasattr(ApplicationServiceCatalog, "sprint_qa")
+    for namespace in (models, schemas):
+        assert not hasattr(namespace, "SprintQACreate")
+        assert not hasattr(namespace, "SprintQAAnswer")
     for kind, definition in SDLC_REGISTRY.items():
         if kind == "sprint":
             continue  # Historical permission fingerprint, no executable service.
