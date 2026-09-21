@@ -14,7 +14,6 @@ from sqlalchemy_test_models import (
     Ideation,
     Refinement,
     Spec,
-    Sprint,
     Story,
     StoryIdeationLink,
 )
@@ -199,7 +198,6 @@ def _card_summary(card: Card, *, include_artifacts: bool, spec: Spec | None = No
         "title": card.title,
         "status": _enum_value(card.status),
         "card_type": _enum_value(card.card_type),
-        "sprint_id": card.sprint_id,
         "test_scenario_ids": card.test_scenario_ids or [],
         "origin_task_id": card.origin_task_id,
         "conclusions_count": len(card.conclusions or []),
@@ -223,15 +221,6 @@ def _card_summary(card: Card, *, include_artifacts: bool, spec: Spec | None = No
     return payload
 
 
-def _sprint_summary(sprint: Sprint) -> dict[str, Any]:
-    return {
-        "id": sprint.id,
-        "title": sprint.title,
-        "status": _enum_value(sprint.status),
-        "lane_type": _enum_value(getattr(sprint, "lane_type", None)) or "normal",
-        "origin_sprint_id": getattr(sprint, "origin_sprint_id", None),
-        "origin_bug_id": getattr(sprint, "origin_bug_id", None),
-    }
 
 
 def _story_summary(story: Story) -> dict[str, Any]:
@@ -253,7 +242,6 @@ def _spec_summary(spec: Spec, *, include_artifacts: bool) -> dict[str, Any]:
         "ideation_id": spec.ideation_id,
         "refinement_id": spec.refinement_id,
         "coverage_summary": _spec_coverage(spec),
-        "sprints": [_sprint_summary(sprint) for sprint in spec.sprints],
         "cards": [
             _card_summary(card, include_artifacts=include_artifacts, spec=spec)
             for card in cards
@@ -271,7 +259,7 @@ def _spec_summary(spec: Spec, *, include_artifacts: bool) -> dict[str, Any]:
         ],
         # FR5/FR7 dedup: bug cards already appear as FULL bodies under ``cards``
         # (artifacts, resolved_artifacts, counts). Here we keep only a focused
-        # bug index — identity + lineage keys (sprint_id/origin_task_id, still
+        # bug index — identity + lineage key (origin_task_id, still
         # consumed by build_lineage_graph) + the bug-specific block — so the
         # heavy artifact bodies are not serialized a second time.
         "bugs": [
@@ -279,7 +267,6 @@ def _spec_summary(spec: Spec, *, include_artifacts: bool) -> dict[str, Any]:
                 "id": card.id,
                 "title": card.title,
                 "status": _enum_value(card.status),
-                "sprint_id": card.sprint_id,
                 "origin_task_id": card.origin_task_id,
                 "bug": _bug_block(card),
             }
@@ -368,7 +355,6 @@ async def build_traceability_report(
         .options(selectinload(Spec.knowledge_bases))
         .options(selectinload(Spec.architecture_designs))
         .options(selectinload(Spec.cards).selectinload(Card.architecture_designs))
-        .options(selectinload(Spec.sprints))
         .where(Spec.board_id == board_id)
     )
     if spec_filter_ids:
@@ -584,15 +570,6 @@ async def resolve_lineage_root(
             path.append({"type": "ideation", "id": root_id})
         return root_type, root_id, path
 
-    if entity_type == "sprint":
-        sprint = await db.get(Sprint, entity_id)
-        if not sprint or sprint.board_id != board_id:
-            raise TraceabilityReadError("entity_not_found", "Selected sprint was not found", status_code=404)
-        path.append({"type": "sprint", "id": sprint.id})
-        root_type, root_id = await _resolve_spec(await db.get(Spec, sprint.spec_id))
-        if root_type == "ideation":
-            path.append({"type": "ideation", "id": root_id})
-        return root_type, root_id, path
 
     if entity_type in {"task", "test", "bug", "card"}:
         card = await db.get(Card, entity_id)
@@ -624,7 +601,7 @@ async def build_lineage_graph(
 
     Artifacts remain available in the MCP traceability report, but the visual
     graph is intentionally limited to SDLC workflow entities:
-    ideation -> refinement -> spec -> sprint -> tasks/tests -> bugs.
+    ideation -> refinement -> spec -> tasks/tests -> bugs.
     """
     root_type, root_id, resolution_path = await resolve_lineage_root(
         db,
@@ -669,21 +646,6 @@ async def build_lineage_graph(
         if parent_node_id and relationship:
             add_edge(parent_node_id, spec_node_id, relationship)
 
-        for sprint in spec.get("sprints") or []:
-            sprint_node_id = f"sprint:{sprint['id']}"
-            add_node({
-                "id": sprint_node_id,
-                "entity_type": "sprint",
-                "entity_id": sprint["id"],
-                "title": sprint["title"],
-                "label": sprint["title"],
-                "status": sprint.get("status"),
-                "lane_type": sprint.get("lane_type") or "normal",
-                "origin_sprint_id": sprint.get("origin_sprint_id"),
-                "origin_bug_id": sprint.get("origin_bug_id"),
-                "stage": 3,
-            })
-            add_edge(spec_node_id, sprint_node_id, "has_sprint")
 
         card_node_ids_by_card_id: dict[str, str] = {}
         for card in spec.get("cards") or []:
@@ -700,13 +662,10 @@ async def build_lineage_graph(
                 "title": card["title"],
                 "label": card["title"],
                 "status": card.get("status"),
-                "stage": 4,
+                "stage": 3,
                 "card_type": card_type,
             })
-            if card.get("sprint_id"):
-                add_edge(f"sprint:{card['sprint_id']}", card_node_id, "contains_card")
-            else:
-                add_edge(spec_node_id, card_node_id, "has_card")
+            add_edge(spec_node_id, card_node_id, "has_card")
 
         for bug in spec.get("bugs") or []:
             bug_node_id = f"bug:{bug['id']}"
@@ -717,7 +676,7 @@ async def build_lineage_graph(
                 "title": bug["title"],
                 "label": bug["title"],
                 "status": bug.get("status"),
-                "stage": 5,
+                "stage": 4,
                 "card_type": "bug",
             })
             origin_task_id = bug.get("origin_task_id")
@@ -727,8 +686,6 @@ async def build_lineage_graph(
                     bug_node_id,
                     "originates_bug",
                 )
-            elif bug.get("sprint_id"):
-                add_edge(f"sprint:{bug['sprint_id']}", bug_node_id, "contains_card")
             else:
                 add_edge(spec_node_id, bug_node_id, "has_card")
 

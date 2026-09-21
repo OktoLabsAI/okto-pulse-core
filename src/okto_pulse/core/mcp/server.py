@@ -18061,7 +18061,7 @@ async def okto_pulse_get_traceability_report(
 ) -> str:
     """
     okto_pulse_get_traceability_report — return a consolidated SDLC traceability report:
-    ideation → refinement → spec → sprint → card/test/bug → artifacts.
+    ideation → refinement → spec → card/test/bug → artifacts.
 
     Use this at the end of an E2E flow to verify whether the agent can answer
     what was implemented in each flow and whether KBs, mockups, architecture,

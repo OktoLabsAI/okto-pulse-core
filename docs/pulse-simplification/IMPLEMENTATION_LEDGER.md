@@ -7931,3 +7931,66 @@ matriz integral e rollout; decisão F3 sobre normal em Spec Done ainda pendente.
 Objetivo integral ativo e incompleto; nenhum runtime ou dado real alterado.
 
 Commit Community 26283b6acece2ab7a13ddd89d89e22dc14a27efe; push normal do par em feature/v0.4.0 com verificação HEAD/ls-remote.
+
+### 2026-09-20 — F3/F5: rastreabilidade e grafo frontend sem Sprint
+
+Retomada do par publicado 3eb30a47/26283b6, árvores limpas; turno anterior
+classificado como progresso verificado. Investigada a cadeia MCP report → porta
+Traceability → adapter SQL Community → grafo REST → LineageGraphModal. A retirada
+é da projeção operacional, sem executar migração ou alterar os registros legados.
+
+No adapter Community, removidos preload/summary de Sprint, resolução de raiz
+Sprint e sprint_id dos reports e overlays de dependência. Tarefas/testes ligam-se
+diretamente à Spec por has_card; bugs preservam originates_bug e regression_test.
+Sem origem, o bug continua vinculado à Spec. Seleção de raiz Sprint falha
+unsupported_entity_type antes de lookup. Escopo por Board, demais raízes, limites,
+dependências e conteúdo de artefatos preservados. O fixture adapter Core foi
+atualizado ao mesmo contrato; a comprovação principal usa o adapter real Community.
+
+Frontend: removidos etapa/estilo/ícone/rota de detalhes Sprint do modal de lineage,
+o tipo Sprint do contrato LineageEntityType e o botão de lineage de SprintModal.
+Tarefas/testes são etapa 3, bugs etapa 4; estágios relativos de dependências
+continuam independentes. Reescrita a fixture de ramos para ligar a Spec aos Cards
+sem eliminar a cobertura de layout e dependências. SprintModal/REST/analytics
+operacionais ainda existem fora desta superfície; sua retirada integral continua
+pendente, sem declaração de F3/F5 concluídas.
+
+Evidências em PULSE_REFACTOR/.validation-v040:
+- lineage-frontend-build.log: tsc + Vite aprovados; sincronizados 78 arquivos em
+  frontend_dist, árvore SHA256 b0ba4e4c9ebaf77c4bcf73e3b4d1610b6f920997069c58dfb952e9319e9ba3a8.
+- Ambos os wheels reconstruídos e instalados. provenance-sprint-lineage.json:
+  812/337 .py e 875/421 payloads source/wheel/install idênticos antes dos testes.
+  Wheels-sprint-lineage: Core
+  3d621e2a4101aacb49cee4eb094d0854cc4d71a9d9b439459e45967a8fbcf642;
+  Community 0394f7e818bbadb1856db03ce410aaa64823941b448f24b8a3fd2682970613bc.
+- sprint-lineage-core.log: 18 passed. sprint-lineage-community.log: 21 passed.
+  Fixture real com Sprint fechada e três Cards confirma ausência de consulta à
+  tabela Sprint e de exposição no report/lineage/overlays, vínculos Card/bug/teste
+  preservados e negações cross-Board; registros originais permanecem intactos.
+- sprint-lineage-resources.log: 149 passed e uma falha já conhecida de footprint:
+  54.328 > 50.800 tokens. Limite mantido; catálogo/manifest regenerados oficialmente.
+- sprint-lineage-frontend.log: 46 passed e a legenda antiga esperando Sprint;
+  ajustada somente essa expectativa exclusiva da entidade removida.
+  sprint-lineage-frontend-r2.log: 24 passed. União: 47 Vitest aprovados.
+- sprint-lineage-browser-r4.log: 1 Chromium aprovado na SPA empacotada, servida por
+  processo temporário em 127.0.0.1:5189, iniciado depois do build/prova de identidade.
+  Todas as APIs interceptadas, nenhuma escrita nem erro de browser: Spec → grafo
+  com aresta has_card → tarefa → abertura de detalhes. Não é E2E do runtime real.
+  Falhas iniciais do harness: seletor pegava botão atrás do modal; depois fixture
+  inventava root_ideation=null apesar do adapter preservar objeto compatível para
+  Spec. Corrigidos escopo do seletor e fixture conforme contrato real; nenhuma
+  flexibilização de assert de navegação ou mudança de produto para mascarar erro.
+- Total: 188 backend + 47 Vitest + 1 Chromium = 236 testes distintos aprovados,
+  uma falha conhecida de footprint. Closure-sprint-lineage.json ok=true,
+  findings=[] e documentation_findings=[], oito budgets 0/0 (7.501/1.183 imports).
+- Nenhuma mudança de produto após a prova de identidade; ajustes posteriores
+  foram exclusivamente em testes. Testes/build/install/closure terminaram; servidor
+  estático temporário encerrado pelo seu handle. Nenhum runtime/dado real tocado.
+
+Retomada: remover demais superfícies Sprint de UI/REST/analytics em conjunto com
+contratos e rejeição explícita de inputs legados; completar schema/registry e
+cleanup de permissões com o coordenador offline. A decisão F3 sobre normal em
+Spec Done continua pendente; gates de execução não foram alterados. F2A/F2C/F2D,
+F4, matriz integral e rollout ainda exigem conclusão. Objetivo integral ativo.
+
+Ruff/diff --check e verify:frontend-dist aprovados. Commit Community 5f31e85c008aad6192bfe8dd3361ae0eb9ffc4b4; par para push normal em feature/v0.4.0, com HEAD/ls-remote conferidos ao encerrar.

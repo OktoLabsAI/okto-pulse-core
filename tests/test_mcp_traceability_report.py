@@ -399,7 +399,7 @@ async def test_traceability_report_lists_sdlc_chain_without_duplicate_direct_spe
     assert f"bug:{bug_card_id}" in node_ids
     assert all(node["entity_type"] != "artifact" for node in graph["nodes"])
     assert graph["summary"]["artifacts"] == 0
-    assert node_by_id[f"bug:{bug_card_id}"]["stage"] == 5
+    assert node_by_id[f"bug:{bug_card_id}"]["stage"] == 4
     assert (f"ideation:{ideation_id}", f"spec:{direct_spec_id}") in edge_pairs
     assert (f"refinement:{refinement_id}", f"spec:{spec_id}") in edge_pairs
     assert (f"task:{task_id}", f"bug:{bug_card_id}") in edge_pairs
@@ -533,13 +533,13 @@ async def test_lineage_graph_allows_standalone_spec_root():
         "lineage exists."
     ]
     assert f"spec:{spec_id}" in node_ids
-    assert f"sprint:{sprint_id}" in node_ids
+    assert f"sprint:{sprint_id}" not in node_ids
     assert f"task:{task_id}" in node_ids
     assert f"test:{test_card_id}" in node_ids
     assert f"bug:{bug_card_id}" in node_ids
-    assert (f"spec:{spec_id}", f"sprint:{sprint_id}", "has_sprint") in edge_relationships
-    assert (f"sprint:{sprint_id}", f"task:{task_id}", "contains_card") in edge_relationships
-    assert (f"sprint:{sprint_id}", f"test:{test_card_id}", "contains_card") in edge_relationships
+    assert all("sprint:" not in str(edge) for edge in edge_relationships)
+    assert (f"spec:{spec_id}", f"task:{task_id}", "has_card") in edge_relationships
+    assert (f"spec:{spec_id}", f"test:{test_card_id}", "has_card") in edge_relationships
     assert (f"task:{task_id}", f"bug:{bug_card_id}", "originates_bug") in edge_relationships
     assert (f"test:{test_card_id}", f"bug:{bug_card_id}", "regression_test") in edge_relationships
     assert bug_graph["root_entity"]["type"] == "spec"
