@@ -11072,3 +11072,133 @@ sem eventos exigem prova de conclusão/replay própria), rollback com inicializa
 do par predecessor, E2E com par publicado e auditoria completa de BASE/KG/DEI/
 ARQVER/ADV e demais frentes já registradas. Não contar este checkpoint como
 conclusão de F2D inteira ou da iniciativa. Autorizações F2A/F2B/F3 permanecem.
+
+### F2D/KG — fonte final e autoridade filesystem do rebuild (em implementação)
+
+Turno anterior:progresso, par faf19889/04aca50c limpo e publicado. Prova repetida
+provenance-f2-projection-source-initial.json confirma804/340Python867/424payloads.
+Novo teste real pós-bootstrap passou1caso42.11s:manifesto do fence relacionalv9
+válido, censo realm/per-Board idêntico, Spec+2Cards preservados e nenhuma fonte
+Sprint. v9 NÃO é versão física Grafx; formato físico atual continua0.5.0.
+
+Investigação da projeção:ConsolidationProcessor já executa só extração estrutural;
+a cognição residual é separada. KGRebuildService exige capability offline opaca,
+confirmação/manifesto e drenagem exata; não substituir enqueued por ready. O censo
+Global usa também CognitivePendingOverlaySnapshotService e artefatos persistidos
+em kg/rebuild. Backup conjuntov4 apenas inventaria other_storage_paths; não copia
+esses bytes. Reprodução test_joint_recovery_kg_artifacts falhou como esperado em
+f2-kg-artifact-gap.log(30.98s):ledger cognitivo existe na origem e está ausente no
+restore completo, embora o backup seja aceito. Não houve mutação de fonte real.
+
+Próxima correção mecânica:versão autenticada do conjunto inclui arquivos de
+rebuild/contingency/stress sob o lock real do ArtifactStore, limites e proteção
+contra aliases/drift. Copiar bytes opacos, não reclassificar histórico; restore
+somente em diretório novo e sob os guards de erasure já existentes. Caminhos não
+classificados/gerações inativas requerem cobertura própria antes de ready; não
+prometer cobertura só porque aparecem no inventário. A fonte/projeção terminal
+ainda depende disso; nenhum gate de runtime será liberado neste passo.
+
+Implementação inicial:v5 adiciona kg_artifacts ao manifesto conjunto, com digest
+próprio, inventário de diretórios/arquivos e cópia byte a byte. Captura mantém o
+mesmo mutex do CommunityFileSystemRebuildAuditArtifactStore durante SQL/grafos/
+uploads/publicação; não copia o rendezvous lock. Restore vai para kg-artifacts em
+conjunto novo, mantendo erasure guard do restore completo e sem publicar binding.
+Namespaces classificados:rebuild,contingency,stress. Other paths e gerações
+inativas recusam v5 até existir cobertura própria; isso é limite de recuperação,
+não exclusão/aprovação de seus dados. v1-v4 continuam verificáveis/restauráveis;
+retomada offline aceita v4 apenas se inventário original não omitia nenhum path.
+Não reconstruir esse backup a partir de dados já migrados.
+
+Testes novos preparados:roundtrip real com ledger cognitivo, mutex cross-process,
+bytes não normalizados/diretórios vazios, corrupção/perda/extras/manifesto,
+writer sem fence e caminhos não classificados. Atualizadas expectativas de v5
+nos testes de conjunto/janelas; produto ainda sem validação. Wheels-f2-kg-artifacts
+construídos; pip handle30894 em andamento. Aguardar seu exit antes da prova do par
+e de testes comportamentais. RuffF/E9 e diff--check passaram.
+
+Prova provenance-f2-kg-artifacts.json:804/341Python867/425payloads idênticos após
+pip encerrado. Suítes iniciadas em processos novos:36196(45casos recovery,log
+f2-kg-artifacts-recovery-tests),85753(23casos offline,logf2-kg-artifacts-offline-tests).
+Closure57556 terminouexit0/oktrue:findings/documentation vazios,8budgets0/0.
+Os12 casos novos iniciais já passaram, incluindo reprodução do ledger omitido e
+mutex cross-process; aguardar suites inteiras antes de editar produto/reinstalar.
+
+Negativo adicional test_kg_artifact_recovery_contract reproduziu DID NOT RAISE
+em12.65s(logf2-kg-artifact-contract-initial,handle86436 encerradoexit1):manifesto
+sinteticamente autenticado com size=true compara igual a1 emPython. Corrigir
+validação tipada do manifesto depois da terminalidade das duas suítes vivas;
+não basta igualdade do digest/dict. Dois testes de formato legado v4 foram
+acrescentados após coleta e devem rodar no build final:reader/restore continuam
+compatíveis, mas o gate não declara cobertura de artefatos omitidos. São fixtures
+sintéticas do wireformat, sem reescrever SQL/grafos/uploads históricos.
+
+Ambas suítes encerradas antes das correções:offline23passes418.55s; recovery
+44passes/1falha559.06s. A falha era fixturev3 sintética ainda contendo o campo
+kg_artifacts dev5 (verificador corretamente recusou campo extra). Removido esse
+campo apenas no fixture. Produto agora exige size int exato (não bool/float),
+chaves fechadas, digest hexadecimal e paths válidos antes de ler/copiar o payload.
+Negativo ampliado paratrue e1.0. Build final wheels-f2-kg-artifacts-final pronto;
+pip76603 iniciado. Revalidar byte parity depois de terminalidade e executar
+helper/contrato/v4/v3/erasure/source/bootstrap afetados; não repetir suites amplas
+sem nova razão. Nenhuma fonte produtiva foi editada enquanto suítes estavam vivas.
+
+Pip76603 encerrado exit0; provenance-f2-kg-artifacts-final.json confirmou
+804/341 arquivos Python e867/425 payloads iguais entre fontes/wheels/install.
+Community aggregate34cf53c1d06a228f075302a9e24d28e84b8358720105181153fda6588639aaf6,
+wheel90c816d532ee673174e4739c6d3a9d2333773bded476b046b8ed0fc00d521b3e.
+Suíte final6224:19casos coletados, aguardando terminalidade. Closure7246 encerrou
+exit0/oktrue:findings/documentation_findings vazios e8budgets0/0
+(closure-f2-kg-artifacts-final.json). Testes v4 com/sem arquivos omitidos passaram.
+Após coleta, acrescentados2negativos integrados de cobertura:geração inativa e
+quarantine recusam publicação e não alteram arquivo original. Rodar separadamente.
+Revisão encontrou docstring da captura ainda dizendo creates v4; corrigir para
+v5 após fim da suíte, reconstruir/provar payload e rodar os2negativos. Mudança
+somente documental não exige repetir os19casos nem as regressões amplas.
+
+Suíte6224 encerrou exit0:19passes163.11s, incluindo os dois contratos size,
+as duas compatibilidadesv4, fixturev3 corrigida, fonte pós-bootstrap e max7.
+Docstring corrigida depois de sua terminalidade. Novo build/install encerrado
+(pip27170 exit0), prova provenance-f2-kg-artifacts-reviewed.json confirma de novo
+804/341Python867/425payloads. Core aggregate c2b76566ffdab7abb66d6039160b4799573a5e7f91e4f5d035b366b4ba0fb069,
+wheel289d29bedd5e0e9179a159f7b2fd3042f53b8f7fef8fea91177c2163749d5229;
+Community aggregate9cb65313a750dbc2589ccfdd10c3842c39916e0587f0a76267c67e7b4768a512,
+wheel69887449a4fbd2a953a3d87a245ab169bc5d05c049d7ee951f7d7e037d0d2b38.
+Negativos76516 e closure24769 em andamento nesse payload final. RuffF/E9 e
+diff--check passaram; não houve mudança comportamental após os19passes.
+
+### F2D/KG — fechamento da preservação dos artefatos de autoridade (2026-09-21)
+
+Community d576d76e64beb1858c0995d9559b8c430f6c8fe6. Os2negativos finais passaram
+em38.85s (f2-kg-artifacts-coverage-tests.log,76516exit0):geração inativa e path
+quarantine recusam publicação sem alterar a origem e sem conjunto parcial.
+Closure24769 encerrou exit0/oktrue,findings/documentation_findings vazios,
+8budgets0/0 (closure-f2-kg-artifacts-reviewed.json). Total74testes distintos
+aprovados:45recovery (inclui a fixture corrigida),23offline,2contratos estritos,
+2compatibilidadesv4 e2recusas integradas. Não somar novamente os19retestes.
+As falhas iniciais e respectivas reproduções/correções permanecem registradas
+acima; nenhuma falha conhecida dessa seleção ficou sem resolução.
+
+O conjunto v5 preserva bytes/diretórios dos namespaces rebuild,contingency,stress
+com manifesto autenticado e mutex real do ArtifactStore durante a captura.
+Restore mantém o guard de erasure e escreve em destino novo, sem publicar binding.
+v4 continua legível/restaurável, mas não prova cobertura de arquivos que omitiu.
+Mecânica inteiramente em Community/adapters; Core recebeu apenas o ledger.
+Fontes/wheels/install iguais no relatório reviewed; a prova committed associa
+esses mesmos payloads aos HEADs após commits, sem reconstrução desnecessária.
+Não houve mudança de API/DTO/tool/catálogo/frontend/assets nem de fixtures
+congeladas. Este incremento não exige teste/build de frontend; a obrigação vale
+nas próximas features com impacto visual. Nenhum runtime/dado real foi tocado.
+
+Retomada:iniciativa ativa, ainda incompleta. Próxima dependência concreta é
+completar o inventário de recuperação para caminhos auxiliares e gerações
+inativas (hoje recusa explícita), sem inferir autoridade ou excluir histórico.
+Depois compor projeção final real pós-bootstrap e cadeia terminal/admissão,
+incluindo LSN/época/outbox/debt/claims e consultas; bootstrap_complete NÃO é
+runtime_ready. O source trigger manifest v9 não é schema físico Grafx.
+Rollback operacional ainda precisa recompor bindings e inicializar o par
+predecessor; cópia isolada dos artefatos não prova isso. Também permanecem as
+origens vazias, compatibilidade semântica histórica, F4/F5 e auditoria integral
+BASE/KG/DEI/ARQVER/ADV, E2E pareado e benchmarks/rollout já registrados.
+Não liberar startup pelo simples desaparecimento de Sprint, nem comparar para
+sempre os dados vivos ao hash de migração depois de escritas legítimas.
+Autorizações F2A/F2B/F3 preservadas. Sem release/tag/deploy/merge neste incremento.
