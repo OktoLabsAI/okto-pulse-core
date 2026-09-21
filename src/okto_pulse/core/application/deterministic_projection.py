@@ -45,8 +45,48 @@ class _BoardProjectionReader:
 
 
 class CoreDeterministicProjectionPlanner:
-    def __init__(self, persistence):
+    def __init__(self, persistence, *, dependencies=None):
         self.persistence = persistence
+        self.dependencies = dependencies
+
+    def _dependency_sources(self, census, board_id, captured_at):
+        cut = captured_at.isoformat()
+        base = tuple({**row.to_dict(), '_rebuild_manifest_created_at': cut}
+            for row in census.materializable_sources)
+        candidates = tuple({**row.to_dict(), '_rebuild_manifest_created_at': cut,
+            '_rebuild_dependency_closure_candidate': 'code_evidence_supersedence'}
+            for row in census.skipped_expired_working
+            if row.artifact_type == 'code_evidence' and row.source_artifact_status == 'superseded')
+        if not any(row['artifact_type'] == 'code_evidence' for row in base):
+            return base, ()
+        if self.dependencies is None:
+            raise ValueError('deterministic_projection_dependency_resolver_required')
+        # The adapter may only select captured historical candidates. Keep an
+        # independent copy so mutation of the resolver request cannot authorize
+        # changed or omitted denominator sources.
+        request = tuple(json.loads(json.dumps(base + candidates, allow_nan=False)))
+        resolved = self.dependencies.resolve(board_id=board_id, sources=request)
+        if type(resolved) is not tuple or len(resolved) > len(base) + len(candidates):
+            raise ValueError('deterministic_projection_dependency_selection_invalid')
+        expected = {(row['artifact_type'], row['id']): row for row in base}
+        allowed = {}
+        for candidate in candidates:
+            row = dict(candidate)
+            row['_rebuild_dependency_closure'] = row.pop('_rebuild_dependency_closure_candidate')
+            allowed[(row['artifact_type'], row['id'])] = row
+        seen, closure = set(), []
+        for row in resolved:
+            if type(row) is not dict:
+                raise ValueError('deterministic_projection_dependency_selection_invalid')
+            identity = (row.get('artifact_type'), row.get('id'))
+            if identity in seen or row != (expected.get(identity) or allowed.get(identity)):
+                raise ValueError('deterministic_projection_dependency_selection_invalid')
+            seen.add(identity)
+            if identity in allowed:
+                closure.append(row)
+        if not set(expected) <= seen:
+            raise ValueError('deterministic_projection_dependency_selection_invalid')
+        return resolved, tuple(closure)
 
     async def prepare_board(self, context, *, board_id, source_rows, cognitive_rows, captured_at):
         from okto_pulse.core.kg.rebuild_sources import RebuildSourceEnumerator, cognitive_durable_digest_from_rows
@@ -75,22 +115,24 @@ class CoreDeterministicProjectionPlanner:
         census = replace(census, generated_at=captured_at.isoformat())
         if census.has_non_deterministic_inputs:
             raise ValueError('deterministic_projection_source_requires_review')
+        sources, closure = self._dependency_sources(census, board_id, captured_at)
         plans = []
         accumulated_bytes = len(raw)
-        for row in sorted(census.materializable_sources, key=lambda item: rebuild_source_order_key(item.to_dict())):
-            if row.artifact_type not in DETERMINISTIC_SOURCE_ARTIFACT_TYPES:
-                if row.artifact_type == 'decision':
+        for row in sorted(sources, key=rebuild_source_order_key):
+            if row['artifact_type'] not in DETERMINISTIC_SOURCE_ARTIFACT_TYPES:
+                if row['artifact_type'] == 'decision':
                     continue  # Derived decisions remain in the census; their Spec owns projection.
                 raise ValueError('deterministic_projection_source_type_unsupported')
-            source = DeterministicProjectionSource(board_id, queue_artifact_type(row.artifact_type), row.id)
+            source = DeterministicProjectionSource(board_id, queue_artifact_type(row['artifact_type']), row['id'])
             planned = await self.prepare(context, source)
             accumulated_bytes += len(planned.document)
             if accumulated_bytes > _BOARD_PLAN_LIMIT:
                 raise ValueError('deterministic_projection_census_limit')
             plans.append(json.loads(planned.document))
-        result = json.dumps({'format': 'deterministic-board-projection-plan/v1',
+        result = json.dumps({'format': 'deterministic-board-projection-plan/v2',
             'board_id': board_id, 'captured_at': captured_at.isoformat(), 'source_rows': captured['sources'],
-            'cognitive_rows': captured['cognitive'], 'census': census.to_dict(), 'plans': plans},
+            'cognitive_rows': captured['cognitive'], 'census': census.to_dict(),
+            'dependency_closure': closure, 'plans': plans},
             ensure_ascii=False, sort_keys=True, separators=(',', ':'), allow_nan=False).encode()
         if len(result) > _BOARD_PLAN_LIMIT:
             raise ValueError('deterministic_projection_census_limit')

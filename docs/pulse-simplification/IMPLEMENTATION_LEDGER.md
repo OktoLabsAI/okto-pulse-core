@@ -11658,3 +11658,55 @@ privada sob fences e os quatro testes novos. Core commit deste registro consolid
 a porta/preparador compartilhado e as regressões corrigidas. Prova pós-commits
 provenance-kg-projection-committed.json deve vincular os mesmos payloads ao par
 final; pushes somente feature/v0.4.0, conferindo local=remote e working trees limpas.
+
+### KG8.3 — dependências históricas na projeção final (em implementação)
+
+Turno anterior classificado como progresso: par6b448db6/10ecf502 publicado e
+working trees limpas conferidos. Nenhuma suíte viva. A preparação anterior não
+incluía predecessores CodeEvidence expirados requeridos por supersedence.
+Integração atual reutiliza _resolve_evidence_dependency_closure existente pelo
+Protocol público DeterministicProjectionDependencies. Core fornece as identidades
+do censo e rejeita remoção/alteração/duplicação de fontes ou adição de dependência
+não capturada. Adapter SQL revalida cadeia/identidade/Board; nenhuma regra é copiada.
+Board plan/v2 distingue dependency_closure da contagem canônica original e prepara
+os predecessores selecionados pelo mesmo worker (working_superseded). Sem resolver
+explícito, CodeEvidence materializável falha fechado. Plan/v1 retido não constitui
+prova desta cobertura; futuro consumidor deve exigir v2. Nada admite runtime ainda.
+Testes negativos e fixture SQL da cadeia y→z→atual adicionados; build/prova precederão
+sua execução. Sem alteração de frontend, sem grafo/runtime real tocado.
+
+Validação da integração de dependências: wheels-kg-dependency instalados após
+build dos dois repos; provenance-kg-dependency.json confirma806/343Python e
+869/427payloads iguais a fonte/wheel/install. Core12897 exit0:17passed3.11s.
+Community13176 exit0:11passed108.12s, incluindo censo+planos reais de cadeia
+superseded em SQL, quatro negativos do resolver existente (ausência, drift,
+ciclo, outra Board), bootstrap sem escrita e rebuild real zero-órfão existente.
+Closure42595 exit0: closure-kg-dependency.json oktrue, findings e documentação
+vazios, todos os oito budgets0. RuffF/E9 e diff--check passaram. Todos os handles
+encerrados; nenhuma edição de produto/reinstall ocorreu durante essas suítes.
+
+A prova nova confirma que plans inclui evidence-y/evidence-z/evidence-1,
+exclui evidence-unrelated e mantém os dois predecessores working_superseded.
+As identidades do denominador não podem ser omitidas, alteradas ou duplicadas
+pelo provider; seleção extra sem candidato no censo também é rejeitada.
+A prova de rebuild real existente continua separada: ela não certifica ainda
+execução desses documentos no candidato final de retirement.
+
+Investigação para a fase seguinte: Grafx restore_backup preserva UUID e exige
+confirm_original_offline=True (forks graváveis com mesmo UUID não são suportados).
+O coordenador terá de registrar a fase e encerrar os handles originais antes de
+abrir o candidato; não afirmar offline apenas por ter um arquivo de lock.
+CommunityGraphBackendBindingStore já oferece prepare_board_binding_candidate e
+CAS por binding_sha256, generation e physical_path. Esses seams permitem calcular
+binding futuro sem publicação, mas o candidato precisa de materialização e prova
+antes do CAS. RebuildEffects atual faz purge/rematerialize da rota ativa; usá-lo
+sem adaptação poderia perder continuidade temporal. A geração nova deve manter
+história por restauração nativa e mutações posteriores verificadas, nunca por
+reescrita opaca de arquivos/UUID. Ainda não há código promovendo candidato ou
+abrindo writers. Esta investigação não autoriza tocar runtime/dados reais.
+
+Community f56811de58917857aa0e1d900e366668a1e7e13d registra a integração do
+resolver existente e a fixture real da cadeia. Core deste registro publica o
+Protocol e a validação de seleção no plan/v2. Prova pós-commits em
+provenance-kg-dependency-committed.json; publicar o par em feature/v0.4.0 e
+verificar local=remote/árvores limpas. O objetivo integral permanece ativo.

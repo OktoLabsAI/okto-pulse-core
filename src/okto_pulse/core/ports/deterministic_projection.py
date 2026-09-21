@@ -56,6 +56,13 @@ class DeterministicProjectionPlanner(Protocol):
         ...
 
 
-def make_deterministic_projection_planner(persistence: ConsolidationPersistencePort) -> DeterministicProjectionPlanner:
+class DeterministicProjectionDependencies(Protocol):
+    def resolve(self, *, board_id: str, sources: tuple[dict, ...]) -> tuple[dict, ...]:
+        """Revalidate manifest identities and select required historical endpoints."""
+        ...
+
+
+def make_deterministic_projection_planner(persistence: ConsolidationPersistencePort, *,
+        dependencies: DeterministicProjectionDependencies | None = None) -> DeterministicProjectionPlanner:
     from okto_pulse.core.application.deterministic_projection import CoreDeterministicProjectionPlanner
-    return CoreDeterministicProjectionPlanner(persistence)
+    return CoreDeterministicProjectionPlanner(persistence, dependencies=dependencies)

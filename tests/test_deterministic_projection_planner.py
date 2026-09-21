@@ -110,3 +110,32 @@ async def test_aggregate_projection_limit_stops_before_reading_further_sources(m
         await planner.prepare_board(None, board_id='board', source_rows=rows, cognitive_rows=(),
             captured_at=datetime(2026, 9, 21, tzinfo=timezone.utc))
     assert planner.prepare.await_count == 2
+
+
+@pytest.mark.parametrize('mutation', ['omit', 'change', 'duplicate', 'invent'])
+def test_dependency_provider_cannot_rewrite_the_captured_source_set(mutation):
+    row = {'artifact_type': 'code_evidence', 'id': 'current', 'content_hash': 'a' * 64}
+    census = SimpleNamespace(materializable_sources=(SimpleNamespace(to_dict=lambda: dict(row)),),
+        skipped_expired_working=())
+    def resolve(*, board_id, sources):
+        if mutation == 'omit':
+            return ()
+        if mutation == 'change':
+            sources[0]['content_hash'] = 'b' * 64
+            return sources
+        if mutation == 'duplicate':
+            return sources + sources
+        return sources + ({'artifact_type': 'code_evidence', 'id': 'invented'},)
+    planner = make_deterministic_projection_planner(persistence(None),
+        dependencies=SimpleNamespace(resolve=resolve))
+    with pytest.raises(ValueError, match='dependency_selection_invalid'):
+        planner._dependency_sources(census, 'board', datetime(2026, 9, 21, tzinfo=timezone.utc))
+
+
+def test_evidence_projection_requires_an_explicit_dependency_reader():
+    row = {'artifact_type': 'code_evidence', 'id': 'current'}
+    census = SimpleNamespace(materializable_sources=(SimpleNamespace(to_dict=lambda: row),),
+        skipped_expired_working=())
+    with pytest.raises(ValueError, match='dependency_resolver_required'):
+        make_deterministic_projection_planner(persistence(None))._dependency_sources(
+            census, 'board', datetime(2026, 9, 21, tzinfo=timezone.utc))
