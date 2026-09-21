@@ -86,7 +86,6 @@ def test_card_to_dict_serializes_linked_test_task_ids():
         card_type="bug",
         status="not_started",
         spec_id="spec-adapter",
-        sprint_id=None,
         origin_task_id="task-origin",
         linked_test_task_ids=["test-card-1"],
         priority=None,
@@ -99,6 +98,7 @@ def test_card_to_dict_serializes_linked_test_task_ids():
     assert payload["origin_task_id"] == "task-origin"
     assert payload["linked_test_task_ids"] == ["test-card-1"]
     assert payload["severity"] == "major"
+    assert "sprint_id" not in payload
 
 
 @pytest.mark.asyncio

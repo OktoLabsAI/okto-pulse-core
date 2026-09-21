@@ -75,9 +75,6 @@ from okto_pulse.core.events.types import (
     SpecMoved,
     SpecSemanticChanged,
     SpecVersionBumped,
-    SprintClosed,
-    SprintCreated,
-    SprintMoved,
 )
 from okto_pulse.core.events.code_traceability import (
     code_traceability_event_digest,
@@ -146,9 +143,6 @@ __all__ = [
     "SpecMoved",
     "SpecSemanticChanged",
     "SpecVersionBumped",
-    "SprintClosed",
-    "SprintCreated",
-    "SprintMoved",
     # Functions
     "publish",
     "register_handler",

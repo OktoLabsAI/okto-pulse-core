@@ -1,7 +1,7 @@
 """Layer 1 Deterministic Worker — KG Pipeline v2 (spec c48a5c33).
 
 Reads structured fields from the pulse.db artifact
-(Story/Ideation/Refinement/Spec/Sprint/Card) and
+(Story/Ideation/Refinement/Spec/Card) and
 emits node + edge candidates with provenance metadata `{layer, rule_id,
 confidence, created_by}`. NO LLM calls. Any relationship that would require
 semantic judgement is emitted as a `missing_link_candidate` for the
@@ -2197,128 +2197,6 @@ class DeterministicWorker:
         return result
 
     # ------------------------------------------------------------------
-    # Sprint entry point — lighter artifact, only Entity + outcome Criterion
-    # ------------------------------------------------------------------
-
-    def process_sprint(self, sprint: dict[str, Any]) -> WorkerResult:
-        sid = sprint["id"]
-        board_id = sprint.get("board_id")
-        prefix = f"sprint_{sid[:8]}"
-        artifact_ref = f"sprint:{sid}"
-        result = WorkerResult()
-        lane_type = sprint.get("lane_type") or "normal"
-        origin_sprint_id = sprint.get("origin_sprint_id")
-        origin_bug_id = sprint.get("origin_bug_id")
-        normal_sprint_created = sprint.get("normal_sprint_created")
-        if normal_sprint_created is None:
-            normal_sprint_created = lane_type == "normal"
-        lane_context = (
-            f"lane_type={lane_type}\n"
-            f"origin_sprint_id={origin_sprint_id or ''}\n"
-            f"origin_bug_id={origin_bug_id or ''}\n"
-            f"normal_sprint_created={str(bool(normal_sprint_created)).lower()}"
-        )
-        raw_parts = [
-            sprint.get("title") or "",
-            sprint.get("description") or "",
-            sprint.get("objective") or "",
-            lane_context,
-        ]
-
-        sprint_cid = f"{prefix}_entity"
-        result.nodes.append(
-            EmittedNode(
-                candidate_id=sprint_cid,
-                node_type="Entity",
-                title=sprint.get("title") or f"Sprint {sid}",
-                content=sprint.get("description") or "",
-                context="\n".join(
-                    p for p in [sprint.get("objective") or "", lane_context] if p
-                ),
-                source_artifact_ref=artifact_ref,
-                source_confidence=1.0,
-            )
-        )
-
-        if sprint.get("expected_outcome"):
-            raw_parts.append(sprint["expected_outcome"])
-            oc_cid = f"{prefix}_outcome"
-            result.nodes.append(
-                EmittedNode(
-                    candidate_id=oc_cid,
-                    node_type="Criterion",
-                    title=f"Expected Outcome: {sprint.get('title', '')}",
-                    content=sprint["expected_outcome"],
-                    source_artifact_ref=artifact_ref,
-                    source_confidence=1.0,
-                )
-            )
-            # Outcome criterion belongs to the sprint entity itself.
-            result.edges.append(
-                EmittedEdge(
-                    candidate_id=f"{prefix}_belongs_outcome",
-                    edge_type="belongs_to",
-                    from_candidate_id=oc_cid,
-                    to_candidate_id=sprint_cid,
-                    confidence=1.0,
-                    rule_id=f"belongs_to/sprint_outcome@{WORKER_VERSION}",
-                )
-            )
-
-        # Hierarchy edge: Sprint Entity → Spec Entity. The Spec entity is
-        # written by `process_spec` with the deterministic id
-        # `spec_<short>_entity`; we reference it via the cross-session
-        # `kg:` prefix so the orchestrator resolves it as an existing node
-        # without requiring it in this session.
-        parent_spec_id = sprint.get("spec_id")
-        if parent_spec_id:
-            spec_entity_cand = f"spec_{parent_spec_id[:8]}_entity"
-            result.edges.append(
-                EmittedEdge(
-                    candidate_id=f"{prefix}_belongs_to_spec",
-                    edge_type="belongs_to",
-                    from_candidate_id=sprint_cid,
-                    to_candidate_id=spec_entity_cand,
-                    confidence=1.0,
-                    rule_id=f"belongs_to/sprint_to_spec@{WORKER_VERSION}",
-                )
-            )
-        _attach_to_board_root(
-            result,
-            board_id=board_id,
-            child_candidate_id=sprint_cid,
-            rule_slot="sprint",
-        )
-
-        raw = "\n---\n".join(p for p in raw_parts if p)
-        result.raw_content = raw
-        result.content_hash = _sha256(raw)
-        graph_layer, maturity_status = _layer_attrs_for_artifact(
-            "sprint",
-            sprint.get("status"),
-        )
-        _apply_layer_to_result(
-            result,
-            graph_layer=graph_layer,
-            maturity_status=maturity_status,
-        )
-        logger.info(
-            "deterministic_worker.sprint_processed sprint=%s nodes=%d edges=%d",
-            sid,
-            len(result.nodes),
-            len(result.edges),
-            extra={
-                "event": "deterministic_worker.sprint_processed",
-                "sprint_id": sid,
-                "content_hash": result.content_hash,
-                "worker_version": WORKER_VERSION,
-            },
-        )
-        return result
-
-    # ------------------------------------------------------------------
-    # Card entry point — normal/test/bug polymorphism
-    # ------------------------------------------------------------------
 
     def process_card(self, card: dict[str, Any]) -> WorkerResult:
         """Extract a card into the KG. Bugs emit a Bug node + `violates`
@@ -2349,7 +2227,7 @@ class DeterministicWorker:
 
         # v0.3.1: resolve priority_boost from card.priority — only the root
         # node of the card carries the boost. Hierarchy/belongs_to nodes
-        # (sprint/spec parents) stay at 0.0 per BR "Boost não herda".
+        # (Spec parents) stay at 0.0 per BR "Boost não herda".
         # v0.3.3 (Ideação #4, dec_27de54df): for Bug nodes, severity is the
         # second additive input. MAX preserves the strongest signal without
         # arbitrating which axis dominates.
@@ -2439,24 +2317,9 @@ class DeterministicWorker:
                     )
                 )
 
-        # Hierarchy: Card → Sprint (preferred) or Card → Spec entity.
-        # Parents come from FKs in pulse.db; we reference them by their
-        # deterministic candidate ids (`spec_<short>_entity` /
-        # `sprint_<short>_entity`) which the orchestrator resolves via
-        # the prior session's writes.
-        sprint_id = card.get("sprint_id")
+        # Cards belong directly to their authoritative Spec. Historical Sprint
+        # metadata must never recreate a retired graph endpoint.
         spec_id = card.get("spec_id")
-        if sprint_id:
-            result.edges.append(
-                EmittedEdge(
-                    candidate_id=f"{prefix}_belongs_to_sprint",
-                    edge_type="belongs_to",
-                    from_candidate_id=card_cid,
-                    to_candidate_id=f"sprint_{sprint_id[:8]}_entity",
-                    confidence=1.0,
-                    rule_id=f"belongs_to/card_to_sprint@{WORKER_VERSION}",
-                )
-            )
         if spec_id:
             result.edges.append(
                 EmittedEdge(
@@ -3313,8 +3176,6 @@ class DeterministicWorker:
             return self.process_refinement(artifact)
         if artifact_type == "spec":
             return self.process_spec(artifact)
-        if artifact_type == "sprint":
-            return self.process_sprint(artifact)
         if artifact_type == "card":
             return self.process_card(artifact)
         if artifact_type == "amendment_hotfix_revision":

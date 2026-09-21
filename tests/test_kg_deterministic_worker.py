@@ -295,15 +295,6 @@ def test_process_first_line_artifacts_attach_to_board_root_when_board_id_exists(
             "spec_11111111_entity",
         ),
         (
-            "sprint",
-            worker.process_sprint({
-                "id": "sprint-abcdef-123",
-                "board_id": board_id,
-                "title": "Sprint",
-            }),
-            "sprint_sprint-a_entity",
-        ),
-        (
             "card",
             worker.process_card({
                 "id": "card-abcdef-123",
@@ -580,63 +571,6 @@ def test_content_hash_changes_when_spec_mutated():
     assert r1.content_hash != r2.content_hash
 
 
-def test_process_sprint_emits_entity_and_outcome_criterion():
-    sprint = {
-        "id": "sprint-1234-5678",
-        "title": "Sprint 1",
-        "description": "First sprint",
-        "objective": "Ship the worker",
-        "expected_outcome": "Worker processes 3 specs successfully",
-    }
-    result = DeterministicWorker().process_sprint(sprint)
-    types = [n.node_type for n in result.nodes]
-    assert "Entity" in types
-    assert "Criterion" in types
-
-
-def test_process_sprint_emits_hierarchy_edge_via_belongs_to():
-    """When the sprint has a spec_id FK, the worker emits a `belongs_to`
-    edge from the sprint Entity to the parent Spec Entity (resolved cross-
-    session at commit time)."""
-    sprint = {
-        "id": "sprint-1234-5678",
-        "title": "Sprint 1",
-        "spec_id": "spec-abcdef-1234-uuid",
-    }
-    result = DeterministicWorker().process_sprint(sprint)
-    hierarchy = [e for e in result.edges if e.edge_type == "belongs_to"
-                 and e.rule_id.startswith("belongs_to/sprint_to_spec")]
-    assert len(hierarchy) == 1
-    # Worker truncates the spec_id to the first 8 chars when building the
-    # cross-session candidate id pointer.
-    assert hierarchy[0].to_candidate_id == "spec_spec-abc_entity"
-
-
-def test_process_sprint_serializes_lane_metadata_into_context_and_hash():
-    base = {
-        "id": "sprint-lane-1234",
-        "title": "Post-closure lane",
-        "description": "Fix a closed delivery bug",
-        "objective": "Close regression",
-        "spec_id": "spec-abcdef-1234-uuid",
-    }
-    normal = DeterministicWorker().process_sprint({**base, "lane_type": "normal"})
-    hotfix = DeterministicWorker().process_sprint({
-        **base,
-        "lane_type": "hotfix",
-        "origin_sprint_id": "closed-sprint-1",
-        "origin_bug_id": "bug-1",
-        "normal_sprint_created": False,
-    })
-
-    assert normal.content_hash != hotfix.content_hash
-    hotfix_entity = next(n for n in hotfix.nodes if n.node_type == "Entity")
-    assert "lane_type=hotfix" in hotfix_entity.context
-    assert "origin_sprint_id=closed-sprint-1" in hotfix.raw_content
-    assert "origin_bug_id=bug-1" in hotfix.raw_content
-    assert "normal_sprint_created=false" in hotfix.raw_content
-
-
 def test_process_card_bug_emits_violates_missing_link():
     bug = {
         "id": "bug-1234-5678",
@@ -707,7 +641,6 @@ def test_process_artifact_dispatches_by_type():
         "ideation_id": "idea-1",
     }).nodes
     assert worker.process_artifact("spec", _spec_fixture()).nodes
-    assert worker.process_artifact("sprint", {"id": "s-1", "title": "s"}).nodes
     assert worker.process_artifact("card", {"id": "c-1", "title": "c"}).nodes
 
 
@@ -754,8 +687,8 @@ def test_ts6_process_card_boost_only_on_root_not_hierarchy():
 
     process_card emits the root Entity/Bug node plus belongs_to edges. No
     *node* other than the root is created by process_card, so the only
-    node carrying a non-zero boost is the root. (Sprint/Spec anchor nodes
-    are created by process_sprint / process_spec, which we test below.)
+    node carrying a non-zero boost is the root. (Spec anchor nodes
+    are created by process_spec, which we test below.)
     """
     card = {
         "id": "card-ts6-hier",
@@ -814,25 +747,7 @@ def test_ts7_process_spec_emits_zero_boost_everywhere():
     )
 
 
-def test_ts7_process_sprint_emits_zero_boost():
-    """Sprints also have no priority source → all derived nodes boost=0.0."""
-    sprint = {
-        "id": "sprint-ts7",
-        "title": "Sprint 99",
-        "description": "d",
-        "objective": "o",
-        "expected_outcome": "e",
-    }
-    result = DeterministicWorker().process_sprint(sprint)
-    assert all(n.priority_boost == 0.0 for n in result.nodes)
-
-
-# ---------------------------------------------------------------------------
-# IMPL-3: fr_id-aware edge resolution (spec R3b cc8e9252)
-# AC4 behavioral tests — validator reproduces each case.
-# ---------------------------------------------------------------------------
-
-
+# IMPL-3: fr_id-aware edge resolution (spec R3b cc8e9252), AC4.
 def _spec_with_fr_ids() -> dict:
     """Spec where functional_requirements carry canonical fr_id fields
     (as persisted by IMPL-1).  linked_requirements on the api_contract and

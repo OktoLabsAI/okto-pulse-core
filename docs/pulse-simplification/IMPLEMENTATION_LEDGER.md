@@ -9394,3 +9394,77 @@ Fechamento: closure-f5-discovery-cards-final.json terminou com exit0, ok=true,
 findings=[], documentation_findings=[] e oito budgets 0/0. Handles encerrados.
 Community commit38a258f; commit Core e pushes pareados a seguir, com verificação
 HEAD=remoto e árvores limpas. Objetivo integral continua ativo, não concluído.
+
+### F3 — retirar materialização viva de Sprint em eventos e consolidação
+
+Em execução sobre Core 852bfdbc / Community 38a258f, par publicado/limpo.
+Retirados process_sprint, despacho/serialização Sprint e aresta Card→Sprint;
+Card→Spec, boost, regressão Bug/Test e demais projeções permanecem. O adapter
+Community não carrega Sprint para consolidação. Retirados DTOs SprintCreated/
+Moved/Closed e seus registros de handlers. O handler genérico de arquivo recusa
+replay Sprint antes de tocar no grafo; enqueuer não gera alvo Sprint. Fila antiga
+consolidate/stale_reconcile/stale_sweep falha antes de qualquer projeção/ACK.
+A política existente de retry/DLQ não é relaxada; a aposentadoria definitiva dos
+trabalhos históricos continua exclusiva do cutover offline cercado, com arquivo
+e proveniência. Não há liberação de runtime intermediário ou limpeza de journal.
+Fixtures de migração usam payloads brutos v0.3.4 explícitos, preservando eventos
+mistos de Card e todos os fatos anteriores sem DTO operacional Sprint. Testes
+negativos novos cobrem registro, despacho, arestas, fila e restore sem acesso ao
+grafo/SQL. Adapter de teste Core alinhado à porta real, sem implementação no src.
+Ruff aprovado; validação instalada pareada, suites e closure ainda pendentes.
+Autorização F3 do usuário permanece: tarefas normais em Spec Done têm criação,
+conteúdo, início/reabertura bloqueados; leitura, colaboração, histórico e fluxos
+Bug/Test mantêm seus controles próprios. Este incremento não altera esses gates.
+Retomada: concluir este incremento, depois archive/restore/UoW e policy F2B até
+corte schema/terminal offline. Backlog integral e objetivo ativo permanecem.
+
+Investigação de retomada durante as suites (somente leitura): main.delete_spec
+continua enumerando Sprint e criando descendant_deletions/stale_reconcile para
+ela; isso é incompatível com o destino F3 sem projeções Sprint e deve sair junto
+com archive/restore. test_spec_takedown_ts1_ts8.py contém a expectativa antiga
+específica do cascade de Sprint; preservar todos os controles/convergência de
+Spec/Refinement/Ideation ao substituir esse caso por ausência de trabalho Sprint.
+ArchiveService._resolve_tree ainda consulta Sprint, archive_tree/restore_tree
+alteram seu estado e emitem ArtifactArchiveChanged. Literal Sprint desse envelope
+e _EXACT_REBUILD_SOURCE_ARTIFACT_TYPES ainda exigem análise de consumidores e
+captura histórica antes da retirada. Não afirmar conclusão F3 nem distribuir este
+estado intermediário: integração final depende de F2/schema e runtime_ready.
+
+Validação do incremento (2026-09-21):
+- Core: f3-sprint-projection-core.log, 213 passed / uma falha de contagem de
+  registry (64 esperado, 61 após retirar os três eventos Sprint). Corrigida a
+  expectativa para 61 com ausência explícita dos três nomes e preservação das
+  verificações de handlers de todos os eventos restantes. Reteste isolado:
+  f3-sprint-projection-core-fixed.log, um passed.
+- Revisão do diff preservou integralmente test_sprint_projection_retirement.py
+  anterior (11 casos de DTO/listagem/envelope). Novas provas do pipeline estão
+  separadas em test_sprint_kg_pipeline_retirement.py. Ambos executados:
+  f3-sprint-projection-contracts.log, 22 passed; 11 são repetidos da primeira
+  seleção. Total Core distinto225, sem falhas pendentes neste incremento.
+- Community: f3-sprint-projection-community.log, 103 passed em 513,85s. Cobertura
+  inclui arquivos/eventos mistos, supersession, journal/retomada, recusa de runtime
+  intermediário, remoção dirigida OktoGrafx com falha/replay e Q&A transacional.
+- Frontend: f3-sprint-projection-ui.log, 35 passed em NodeSourceLink, diagnósticos
+  KG e seleção GraphCanvas. Total distinto363. Não equivale às suites integrais,
+  ao E2E final instalado de upgrade/rollback nem à conclusão de F3.
+- Fonte/wheel/site-packages provados antes dos testes em
+  provenance-f3-sprint-projection.json: 804/335 arquivos Python e 867/419 payloads
+  idênticos byte a byte. Nenhum produto/install mudou durante as suites.
+  Core agregado18668e43f1bc948cd169092a2359548a06bef015ff3430ba2dfd96a7b633b12f;
+  Community c1648878c331befa92033594756aad8c5712e6aa208fd9f25261a7ed23987284.
+  Wheel Core db588665432d08b06b481bf30c4dd24bca3c8df429dd6ee06268b244b996934e;
+  Community edd29f995a34e2683408f83c7073c8b937a0980d6446709e2f60a371cac5e834.
+- closure-f3-sprint-projection.json: exit0, ok=true, findings=[] e
+  documentation_findings=[], oito budgets0/0. Sem matriz README a regenerar.
+  Gate de catálogo MCP, Ruff e diff --check passaram. Nenhuma tool foi alterada.
+- SPA produtiva idêntica: verify:frontend-dist, 78 arquivos,
+  sha25695640fb1eb409412e98a7acdeea6d587b2455b4d9c186bbeba2cc50d83ee0954.
+- Todos os handles encerrados. Community commit d81c477; Core/pushes pareados a
+  seguir, com confirmação de HEAD=remoto e árvores limpas. Sem migração real,
+  release, tag, merge, deploy ou reinício de processo do usuário.
+
+Objetivo integral permanece ativo. Próxima frente descrita acima (archive/restore,
+Spec cascade, UoW, policy readers e integração F2). Preservar gates autorizados de
+Spec Done e controles Bug/Test; não relaxar teste para acomodar histórico. Também
+restam schema/terminal runtime_ready, matrizes DEI/ARQ/VER/ADV, E2E instalado,
+footprint MCP, benchmark e rollout conforme pendências integrais anteriores.

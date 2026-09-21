@@ -18,7 +18,6 @@ from sqlalchemy_test_models import (
     Ideation,
     Refinement,
     Spec,
-    Sprint,
     Story,
 )
 from okto_pulse.core.ports.consolidation import (
@@ -41,7 +40,6 @@ _MODELS = {
     "ideation": Ideation,
     "refinement": Refinement,
     "spec": Spec,
-    "sprint": Sprint,
     "card": Card,
     "amendment_hotfix_revision": AmendmentHotfixRevision,
 }
@@ -101,8 +99,6 @@ class TestSqlAlchemyConsolidationPersistence:
             statement = statement.options(selectinload(Ideation.story_links))
         elif artifact_type == "spec":
             statement = statement.options(selectinload(Spec.architecture_designs))
-        elif artifact_type == "sprint":
-            statement = statement.options(selectinload(Sprint.spec))
         elif artifact_type == "card":
             statement = statement.options(selectinload(Card.architecture_designs))
         return (await context.execute(statement)).scalars().first()
@@ -596,7 +592,7 @@ __all__ = ["TestSqlAlchemyConsolidationPersistence"]
 def _validate_deletion_identity(
     *, artifact_type: str, artifact_id: str, delete_event_id: str
 ) -> None:
-    if artifact_type not in {"card", "spec", "ideation", "refinement", "sprint"}:
+    if artifact_type not in {"card", "spec", "ideation", "refinement"}:
         raise ValueError("invalid_governed_deletion_artifact_type")
     if not artifact_id or not delete_event_id or len(delete_event_id) > 255:
         raise ValueError("invalid_governed_deletion_identity")

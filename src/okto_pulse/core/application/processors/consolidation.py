@@ -495,7 +495,7 @@ CONSOLIDATION_COMMIT_OPERATION = "consolidation_worker_commit"
 _DEPENDENCY_ENDPOINT_RETRY_DELAY_SECONDS = 1
 _CLAIMABLE_WORK_KINDS = frozenset({"consolidate", "stale_reconcile", "stale_sweep"})
 _GOVERNED_DELETION_ARTIFACT_TYPES = frozenset(
-    {"card", "ideation", "refinement", "spec", "sprint"}
+    {"card", "ideation", "refinement", "spec"}
 )
 _GraphWriteEnter = Callable[[str], GuardedWriteLease]
 
@@ -1779,29 +1779,6 @@ def _refinement_to_dict(refinement: Any) -> dict:
     }
 
 
-def _sprint_to_dict(sprint: Any) -> dict:
-    return {
-        "id": sprint.id,
-        "board_id": sprint.board_id,
-        "title": sprint.title,
-        "description": sprint.description,
-        "objective": sprint.objective,
-        "expected_outcome": sprint.expected_outcome,
-        "status": getattr(
-            getattr(sprint, "status", None), "value", getattr(sprint, "status", None)
-        ),
-        "spec_id": sprint.spec_id,
-        "lane_type": getattr(
-            getattr(sprint, "lane_type", None),
-            "value",
-            getattr(sprint, "lane_type", None),
-        )
-        or "normal",
-        "origin_sprint_id": getattr(sprint, "origin_sprint_id", None),
-        "origin_bug_id": getattr(sprint, "origin_bug_id", None),
-    }
-
-
 def _card_to_dict(card) -> dict:
     priority = getattr(card, "priority", None)
     severity = getattr(card, "severity", None)
@@ -1817,7 +1794,6 @@ def _card_to_dict(card) -> dict:
         if getattr(card, "card_type", None)
         else "normal",
         "spec_id": card.spec_id,
-        "sprint_id": card.sprint_id,
         "origin_task_id": getattr(card, "origin_task_id", None),
         "linked_test_task_ids": getattr(card, "linked_test_task_ids", None) or [],
         "priority": getattr(priority, "value", priority)
@@ -1983,8 +1959,6 @@ def _run_deterministic_worker(
         payload["quality_assessments"] = quality_assessments
         payload["spec_dependencies"] = spec_dependencies
         return worker.process_spec(payload)
-    if entry.artifact_type == "sprint":
-        return worker.process_sprint(_sprint_to_dict(artifact))
     if entry.artifact_type == "card":
         return worker.process_card(_card_to_dict(artifact))
     if entry.artifact_type == "amendment_hotfix_revision":
@@ -3057,6 +3031,11 @@ async def _process_queue_entry(
     """Process one queue entry through the primitives pipeline.
     Returns True on success, False on failure."""
 
+    if entry.artifact_type == "sprint":
+        # Only the fenced offline migration may supersede historical work.
+        # Never run a stale sweep/reconcile or create a new graph projection.
+        raise ValueError("retired_sprint_work_requires_offline_cutover")
+
     if _work_kind(entry) == "stale_sweep":
         return await _process_stale_sweep_entry(
             db,
@@ -3084,7 +3063,6 @@ async def _process_queue_entry(
         "ideation",
         "refinement",
         "spec",
-        "sprint",
         "card",
         "amendment_hotfix_revision",
         "code_investigation_receipt",
@@ -3348,7 +3326,6 @@ async def _classify_queue_entry_source_for_debt(
         "ideation",
         "refinement",
         "spec",
-        "sprint",
         "code_investigation_receipt",
         "code_evidence",
         "implementation_target",

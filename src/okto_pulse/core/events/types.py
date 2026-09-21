@@ -1,6 +1,6 @@
 """Domain event types for the internal event bus.
 
-Every state change in the domain (card created, spec moved, sprint closed,
+Every state change in the domain (card created, spec moved,
 etc.) is modelled as a typed event. Publishers in services/main.py publish
 these via EventBus.publish(); handlers react asynchronously via the
 EventDispatcher worker.
@@ -754,28 +754,7 @@ class CardUnlinkedFromSpec(DomainEvent):
     spec_id: str
 
 
-# --- Sprint lifecycle ---
-
-
-class SprintCreated(DomainEvent):
-    event_type: ClassVar[str] = "sprint.created"
-    sprint_id: str
-    spec_id: str
-
-
-class SprintMoved(DomainEvent):
-    event_type: ClassVar[str] = "sprint.moved"
-    sprint_id: str
-    from_status: str
-    to_status: str
-
-
-class SprintClosed(DomainEvent):
-    event_type: ClassVar[str] = "sprint.closed"
-    sprint_id: str
-
-
-# --- Derivation events ---
+# --- Ideation lifecycle and derivation ---
 
 
 class IdeationMoved(DomainEvent):
@@ -1316,9 +1295,6 @@ EVENT_TYPES: list[str] = [
     ResearchDecisionAppended.event_type,
     ResearchDecisionSuperseded.event_type,
     ChecklistBindingChanged.event_type,
-    SprintCreated.event_type,
-    SprintMoved.event_type,
-    SprintClosed.event_type,
     IdeationMoved.event_type,
     IdeationDerivedToSpec.event_type,
     RefinementDerivedToSpec.event_type,
@@ -1384,9 +1360,6 @@ _EVENT_CLASS_BY_TYPE: dict[str, type[DomainEvent]] = {
     ResearchDecisionAppended.event_type: ResearchDecisionAppended,
     ResearchDecisionSuperseded.event_type: ResearchDecisionSuperseded,
     ChecklistBindingChanged.event_type: ChecklistBindingChanged,
-    SprintCreated.event_type: SprintCreated,
-    SprintMoved.event_type: SprintMoved,
-    SprintClosed.event_type: SprintClosed,
     IdeationMoved.event_type: IdeationMoved,
     IdeationDerivedToSpec.event_type: IdeationDerivedToSpec,
     RefinementDerivedToSpec.event_type: RefinementDerivedToSpec,

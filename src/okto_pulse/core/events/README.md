@@ -80,8 +80,12 @@ Historical Sprint events and old Card payloads containing `sprint_id` are
 classified from their original stored payload by the offline retirement flow.
 Their raw audit evidence remains unchanged. A mixed Card event keeps its Card
 work; the current `CardCreated` contract emits no operational Sprint link.
-Sprint publishers have been removed. Historical fixtures must supply the old
-payload explicitly instead of constructing it from the current Card event DTO.
+Sprint publishers, operational event DTOs and lifecycle registrations have been
+removed. The deterministic worker and relational projection reader no longer
+materialize Sprint. Historical queue work and archive lifecycle replay fail
+closed until the fenced offline retirement resolves them; they are not reported
+as delivered. Historical fixtures must supply the old payload explicitly instead
+of constructing it from current event DTOs.
 
 ### Rolling deployment for forced rebuild ticks
 

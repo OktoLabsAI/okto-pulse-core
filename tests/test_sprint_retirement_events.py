@@ -9,18 +9,18 @@ from okto_pulse.core.domain.sprint_retirement_events import (
     classify_historical_sprint_execution,
     classify_historical_sprint_queue,
 )
-from okto_pulse.core.events.types import ArtifactArchiveChanged, CardCreated, SprintClosed, SprintCreated, SprintMoved
+from okto_pulse.core.events.types import CardCreated
 
 
-@pytest.mark.parametrize("event", [
-    SprintCreated(board_id="b", sprint_id="s", spec_id="spec"),
-    SprintMoved(board_id="b", sprint_id="s", from_status="active", to_status="closed"),
-    SprintClosed(board_id="b", sprint_id="s"),
-    ArtifactArchiveChanged(board_id="b", artifact_type="sprint", artifact_id="s", archived=True),
-    ArtifactArchiveChanged(board_id="b", artifact_type="sprint", artifact_id="s", archived=False),
+@pytest.mark.parametrize("event_type,payload", [
+    ("sprint.created", {"sprint_id": "s", "spec_id": "spec"}),
+    ("sprint.moved", {"sprint_id": "s", "from_status": "active", "to_status": "closed"}),
+    ("sprint.closed", {"sprint_id": "s"}),
+    ("artifact.archive_changed", {"artifact_type": "sprint", "artifact_id": "s", "archived": True}),
+    ("artifact.archive_changed", {"artifact_type": "sprint", "artifact_id": "s", "archived": False}),
 ])
-def test_real_stored_exclusive_contracts_are_eligible_only_for_archived_supersession(event):
-    result = classify_historical_sprint_event(event.event_type, event.payload_for_storage())
+def test_stored_v034_exclusive_contracts_are_eligible_only_for_archived_supersession(event_type, payload):
+    result = classify_historical_sprint_event(event_type, payload)
     assert result.action == "supersede" and result.sprint_ids == ("s",)
 
 

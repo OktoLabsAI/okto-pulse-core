@@ -31,7 +31,6 @@ from okto_pulse.core.events.types import (
     IdeationMoved,
     RefinementMoved,
     SpecMoved,
-    SprintMoved,
 )
 from okto_pulse.core.kg.interfaces import get_kg_registry
 from okto_pulse.core.kg.canonical_demotion_global_sync import (
@@ -326,7 +325,6 @@ async def _enqueue_global_lifecycle_reconciliation(
     | IdeationMoved
     | RefinementMoved
     | SpecMoved
-    | SprintMoved
     | ArtifactArchiveChanged,
 ) -> None:
     """Durably prune or republish Global Discovery from current board truth."""
@@ -396,7 +394,6 @@ _LIFECYCLE_SOURCE_FIELDS: dict[str, tuple[str, str]] = {
     "ideation.moved": ("ideation", "ideation_id"),
     "refinement.moved": ("refinement", "refinement_id"),
     "spec.moved": ("spec", "spec_id"),
-    "sprint.moved": ("sprint", "sprint_id"),
 }
 
 
@@ -404,14 +401,13 @@ _LIFECYCLE_SOURCE_FIELDS: dict[str, tuple[str, str]] = {
     "ideation.moved",
     "refinement.moved",
     "spec.moved",
-    "sprint.moved",
 )
 class SourceCancellationLifecycleHandler:
     """Tombstone and restore every reversible cancellable KG source."""
 
     async def handle(
         self,
-        event: IdeationMoved | RefinementMoved | SpecMoved | SprintMoved,
+        event: IdeationMoved | RefinementMoved | SpecMoved,
         session: object,
     ) -> None:
         source_type, id_field = _LIFECYCLE_SOURCE_FIELDS[event.event_type]
@@ -456,6 +452,10 @@ class SourceArchiveLifecycleHandler:
         event: ArtifactArchiveChanged,
         session: object,
     ) -> None:
+        if event.artifact_type == "sprint":
+            # Historical executions require archived, fenced offline retirement.
+            # A replay must never restore Sprint projections or claim delivery.
+            raise ValueError("retired_sprint_work_requires_offline_cutover")
         source_ref = f"{event.artifact_type}:{event.artifact_id}"
         affected, action, authority = await _converge_source_lifecycle(
             session,

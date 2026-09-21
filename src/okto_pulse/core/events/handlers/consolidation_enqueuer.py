@@ -33,7 +33,6 @@ logger = logging.getLogger("okto_pulse.core.events.consolidation_enqueuer")
 _CARD_EVENT_PREFIX = "card."
 _SPEC_EVENT_PREFIX = "spec."
 _STRUCTURED_ENTITY_EVENT_PREFIX = "structured_entity."
-_SPRINT_EVENT_PREFIX = "sprint."
 _REFINEMENT_EVENT_PREFIX = "refinement."
 _STORY_EVENT_PREFIX = "story."
 _IDEATION_EVENT_PREFIX = "ideation."
@@ -118,9 +117,6 @@ _HIGH_PRIORITY_EVENTS = {"card.cancelled", "spec.version_bumped"}
     "quality.clarification_changed.v1",
     "research_decision.appended",
     "research_decision.superseded",
-    "sprint.created",
-    "sprint.moved",
-    "sprint.closed",
     "ideation.moved",
     "ideation.derived_to_spec",
     "refinement.derived_to_spec",
@@ -385,7 +381,7 @@ class ConsolidationEnqueuer:
                 return targets
             artifact_type = str(getattr(event, "artifact_type", ""))
             artifact_id = getattr(event, "artifact_id", None)
-            if artifact_type and artifact_id:
+            if artifact_type and artifact_type != "sprint" and artifact_id:
                 targets.append((artifact_type, artifact_id))
             return targets
 
@@ -510,10 +506,5 @@ class ConsolidationEnqueuer:
             story_id = getattr(event, "story_id", None)
             if story_id:
                 targets.append(("story", story_id))
-            return targets
-        if et.startswith(_SPRINT_EVENT_PREFIX):
-            spid = getattr(event, "sprint_id", None)
-            if spid:
-                targets.append(("sprint", spid))
             return targets
         return targets
