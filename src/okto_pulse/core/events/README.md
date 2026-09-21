@@ -58,7 +58,7 @@ plug in exactly the same way — one decorator, one `handle()` method.
 
 | Event | Publisher | Key payload fields |
 |-------|-----------|--------------------|
-| `card.created` | `CardService.create_card` | `card_id`, `spec_id`, `sprint_id`, `card_type`, `priority` |
+| `card.created` | `CardService.create_card` | `card_id`, `spec_id`, `card_type`, `priority` |
 | `card.moved` | `CardService.move_card` | `card_id`, `from_status`, `to_status` |
 | `card.cancelled` | `CardService.move_card` (→ cancelled) | `card_id`, `previous_status` |
 | `card.restored` | `CardService.move_card` (from cancelled) | `card_id`, `to_status` |
@@ -66,9 +66,6 @@ plug in exactly the same way — one decorator, one `handle()` method.
 | `spec.moved` | `SpecService.move_spec` | `spec_id`, `from_status`, `to_status` |
 | `spec.version_bumped` | `SpecService.update_spec` | `spec_id`, `old_version`, `new_version`, `changed_fields` |
 | `checklist.binding_changed.v1` | `CreateBoardUseCase` / `UpdateChecklistBindingUseCase` | mode, template, immutable binding version/digest, previous version, source |
-| `sprint.created` | `SprintService.create_sprint` | `sprint_id`, `spec_id` |
-| `sprint.moved` | `SprintService.move_sprint` | `sprint_id`, `from_status`, `to_status` |
-| `sprint.closed` | `SprintService.move_sprint` (→ closed) | `sprint_id` |
 | `ideation.derived_to_spec` | `IdeationService.derive_spec` | `ideation_id`, `spec_id` |
 | `refinement.derived_to_spec` | `RefinementService.derive_spec` | `refinement_id`, `spec_id` |
 | `kg.tick.daily` | scheduled/manual tick publisher | `tick_id`, `scheduled_at`; old payloads default `force_full_rebuild=false` |
@@ -78,6 +75,13 @@ Every event also carries the common base fields: `event_id` (UUID),
 `board_id`, `actor_id`, `actor_type`, `occurred_at` (UTC). These live in
 dedicated columns on `domain_events` and are NOT duplicated inside
 `payload_json`.
+
+Historical Sprint events and old Card payloads containing `sprint_id` are
+classified from their original stored payload by the offline retirement flow.
+Their raw audit evidence remains unchanged. A mixed Card event keeps its Card
+work; the current `CardCreated` contract emits no operational Sprint link.
+Sprint publishers have been removed. Historical fixtures must supply the old
+payload explicitly instead of constructing it from the current Card event DTO.
 
 ### Rolling deployment for forced rebuild ticks
 

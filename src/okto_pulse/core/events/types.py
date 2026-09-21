@@ -478,7 +478,6 @@ class CardCreated(DomainEvent):
     event_type: ClassVar[str] = "card.created"
     card_id: str
     spec_id: str
-    sprint_id: Optional[str] = None
     card_type: str = "normal"
     priority: str = "none"
 

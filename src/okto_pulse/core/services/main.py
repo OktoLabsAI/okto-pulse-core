@@ -3828,7 +3828,6 @@ class CardService:
                 actor_id=user_id,
                 card_id=card.id,
                 spec_id=card.spec_id,
-                sprint_id=card.sprint_id,
                 card_type=card_type_val,
                 priority=data.priority.value,
             ),
@@ -3994,64 +3993,15 @@ class CardService:
                 port=self._knowledge_propagation_port,
             )
 
-        # Validate relationship changes before authorization auditing, entity
-        # mutation, or an implicit/explicit flush.  Besides turning raw FK
-        # failures into governed errors, this keeps the card's resulting
-        # ``spec_id``/``sprint_id`` pair coherent when only one side changes.
-        relation_update = "spec_id" in update_data or "sprint_id" in update_data
-        next_spec_id = (
-            update_data["spec_id"] if "spec_id" in update_data else card.spec_id
-        )
-        next_sprint_id = (
-            update_data["sprint_id"] if "sprint_id" in update_data else card.sprint_id
-        )
+        # Validate the resulting Spec before audit, mutation, or flush. Sprint
+        # lineage is historical provenance captured by the offline cutover.
+        relation_update = "spec_id" in update_data
+        next_spec_id = update_data.get("spec_id", card.spec_id)
         next_spec = None
         if relation_update and next_spec_id is not None:
             next_spec = await _application_get(self.db, "spec", next_spec_id)
             if not next_spec or next_spec.board_id != card.board_id:
                 raise ValueError("Spec not found on this board")
-
-        if relation_update and next_sprint_id is not None:
-            next_sprint = await _application_get(self.db, "sprint", next_sprint_id)
-            if not next_sprint or next_sprint.board_id != card.board_id:
-                raise ValueError("Sprint not found on this board")
-            if next_spec_id is None or next_sprint.spec_id != next_spec_id:
-                raise ValueError("Sprint must belong to the card's resulting spec")
-
-        # A bug referenced by Sprint.origin_bug_id is part of that lane's
-        # same-board/same-spec lineage.  Reparenting is allowed only when the
-        # resulting spec still matches every dependent lane (which also permits
-        # repairing a legacy row without direct SQL).  Run before authorization,
-        # audit, propagation, flush, or mutation.
-        if "spec_id" in update_data and next_spec_id != card.spec_id:
-            origin_bug_dependents = await _application_list(
-                self.db,
-                "sprint",
-                filters=(_apf("origin_bug_id", "eq", card.id),),
-            )
-            broken_dependents = [
-                sprint
-                for sprint in origin_bug_dependents
-                if next_spec_id is None
-                or sprint.board_id != card.board_id
-                or sprint.spec_id != next_spec_id
-            ]
-            if broken_dependents:
-                raise CardOperationError(
-                    "hotfix_origin_bug_reparent_conflict",
-                    "Cannot reparent the bug because it is the origin of one or "
-                    "more hotfix lanes in a different resulting spec.",
-                    remediation="relineage_hotfix_lanes_before_reparenting_origin_bug",
-                    facts={
-                        "card_id": card.id,
-                        "current_spec_id": card.spec_id,
-                        "target_spec_id": next_spec_id,
-                        "dependent_sprint_ids": sorted(
-                            sprint.id for sprint in broken_dependents
-                        )[:20],
-                        "dependent_sprint_count": len(broken_dependents),
-                    },
-                )
 
         await require_normal_card_spec_content_allowed(
             self.db, board_id=card.board_id, card_type=card.card_type,
@@ -7478,36 +7428,6 @@ class CardService:
         await self.require_content_mutation_allowed(card, operation="delete_card")
 
         board_id = card.board_id
-
-        # A hotfix lane requires origin_bug_id for its entire persisted lifetime.
-        # Guard in the application writer rather than relying on schema FKs: fresh
-        # databases use ON DELETE SET NULL, while upgraded legacy schemas may have
-        # no FK at all. Both would otherwise destroy/dangle mandatory lineage.
-        origin_references = await _application_list(
-            self.db,
-            "sprint",
-            filters=(_apf("origin_bug_id", "eq", card_id),),
-        )
-        if origin_references:
-            same_board_sprint_ids = [
-                sprint.id for sprint in origin_references if sprint.board_id == board_id
-            ]
-            raise CardOperationError(
-                "hotfix_origin_bug_delete_conflict",
-                "Cannot delete this bug while a hotfix sprint references it as "
-                "origin_bug_id.",
-                remediation=(
-                    "Complete/close the hotfix workflow, then remove the sprint or "
-                    "relineage it to a valid same-spec bug before deleting this card."
-                ),
-                facts={
-                    "card_id": card_id,
-                    "board_id": board_id,
-                    "referencing_sprint_count": len(origin_references),
-                    "referencing_sprint_ids": same_board_sprint_ids,
-                    "next_action": "remove_or_relineage_hotfix_before_bug_delete",
-                },
-            )
 
         # This delete may also rewrite Bug regression links. Resolve and guard
         # every affected Bug before staging any parent-Spec or Card mutation.

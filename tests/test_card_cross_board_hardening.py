@@ -10,7 +10,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from sqlalchemy import select, text
+from sqlalchemy import select
 
 from mcp_runtime_testing import register_mcp_test_runtime
 from okto_pulse.community.api.auth_deps import require_user
@@ -60,8 +60,6 @@ from okto_pulse.core.application.use_cases.mcp_collaboration import (
 from okto_pulse.core.domain.enums import (
     BugSeverity,
     CardType,
-    SprintLaneType,
-    SprintStatus,
 )
 from okto_pulse.core.ports.knowledge_propagation import (
     KnowledgePropagationScope,
@@ -80,7 +78,6 @@ from sqlalchemy_test_models import (
     Spec,
     SpecKnowledgeBase,
     SpecStatus,
-    Sprint,
 )
 from sqlalchemy_test_unit_of_work import SQLAlchemyUnitOfWorkFactory
 
@@ -1380,136 +1377,39 @@ async def test_card_activity_and_seen_scope_parent_before_aggregate_readers():
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(
-    "foreign_keys_enabled",
-    [True, False],
-    ids=["fresh-fk", "legacy-no-fk-enforcement"],
-)
-async def test_delete_bug_referenced_by_hotfix_is_governed_zero_write(
-    db_factory, _graph, foreign_keys_enabled
-):
+@pytest.mark.parametrize("transport", ["mcp", "rest"])
+async def test_delete_bug_has_no_retired_lane_lookup(db_factory, _graph, transport):
+    from okto_pulse.core.services import main as services
+
     ids = _graph
     bug_id = f"card-scope-bug-{uuid.uuid4().hex[:8]}"
-    sprint_id = f"card-scope-hotfix-{uuid.uuid4().hex[:8]}"
-    if not foreign_keys_enabled:
-        async with db_factory() as db:
-            await db.execute(text("PRAGMA foreign_keys=OFF"))
-            assert await db.scalar(text("PRAGMA foreign_keys")) == 0
-            await db.commit()
-
-    try:
-        await _assert_hotfix_origin_blocks_delete(
-            db_factory,
-            ids,
-            bug_id=bug_id,
-            sprint_id=sprint_id,
-        )
-    finally:
-        if not foreign_keys_enabled:
-            async with db_factory() as db:
-                await db.execute(text("PRAGMA foreign_keys=ON"))
-                assert await db.scalar(text("PRAGMA foreign_keys")) == 1
-                await db.commit()
-
-
-async def _assert_hotfix_origin_blocks_delete(
-    db_factory,
-    ids: dict[str, str],
-    *,
-    bug_id: str,
-    sprint_id: str,
-) -> None:
-    await _seed_hotfix_origin(
-        db_factory,
-        ids,
-        bug_id=bug_id,
-        sprint_id=sprint_id,
-    )
-
-    before_activity = await _activity_ids(db_factory, bug_id)
-    result = await _call(
-        db_factory,
-        "okto_pulse_delete_card",
-        board_id=ids["board_a"],
-        card_id=bug_id,
-    )
-
-    assert result["error"] == "hotfix_origin_bug_delete_conflict"
-    assert result["code"] == "hotfix_origin_bug_delete_conflict"
-    assert result["referencing_sprint_ids"] == [sprint_id]
-    assert result["next_action"] == "remove_or_relineage_hotfix_before_bug_delete"
-    assert "relineage" in result["remediation"]
     async with db_factory() as db:
-        assert await db.get(Card, bug_id) is not None
-        sprint = await db.get(Sprint, sprint_id)
-        assert sprint.origin_bug_id == bug_id
-    assert await _activity_ids(db_factory, bug_id) == before_activity
-
-
-async def _seed_hotfix_origin(
-    db_factory,
-    ids: dict[str, str],
-    *,
-    bug_id: str,
-    sprint_id: str,
-) -> None:
-    async with db_factory() as db:
-        db.add(
-            Card(
-                id=bug_id,
-                board_id=ids["board_a"],
-                spec_id=ids["spec_a"],
-                title="Bug that anchors a hotfix",
-                created_by=USER_ID,
-                card_type=CardType.BUG,
-                origin_task_id=ids["target_a"],
-                severity=BugSeverity.MAJOR,
-                expected_behavior="Expected",
-                observed_behavior="Observed",
-            )
-        )
-        await db.flush()
-        db.add(
-            Sprint(
-                id=sprint_id,
-                board_id=ids["board_a"],
-                spec_id=ids["spec_a"],
-                title="Hotfix anchored to bug",
-                spec_version=1,
-                status=SprintStatus.DRAFT,
-                lane_type=SprintLaneType.HOTFIX,
-                origin_bug_id=bug_id,
-                created_by=USER_ID,
-            )
-        )
+        db.add(Card(id=bug_id, board_id=ids["board_a"], spec_id=ids["spec_a"],
+                    title="Bug without execution lane", created_by=USER_ID,
+                    card_type=CardType.BUG, origin_task_id=ids["target_a"],
+                    severity=BugSeverity.MAJOR, expected_behavior="Expected",
+                    observed_behavior="Observed"))
         await db.commit()
+    original_list = services._application_list
 
+    async def no_lane_lookup(db, entity, *args, **kwargs):
+        assert entity != "sprint", "Card deletion must not query a retired lane"
+        return await original_list(db, entity, *args, **kwargs)
 
-@pytest.mark.asyncio
-async def test_rest_delete_bug_hotfix_conflict_maps_to_409(db_factory, _graph):
-    ids = _graph
-    bug_id = f"card-scope-rest-bug-{uuid.uuid4().hex[:8]}"
-    sprint_id = f"card-scope-rest-hotfix-{uuid.uuid4().hex[:8]}"
-    await _seed_hotfix_origin(
-        db_factory,
-        ids,
-        bug_id=bug_id,
-        sprint_id=sprint_id,
-    )
-    before_activity = await _activity_ids(db_factory, bug_id)
-
-    app = FastAPI()
-    app.include_router(cards_router, prefix="/api/v1/cards")
-    app.dependency_overrides[require_user] = lambda: USER_ID
-    register_mcp_test_runtime(db_factory)
-    response = TestClient(app).delete(f"/api/v1/cards/{bug_id}")
-
-    assert response.status_code == 409
-    detail = response.json()["detail"]
-    assert detail["code"] == "hotfix_origin_bug_delete_conflict"
-    assert detail["facts"]["referencing_sprint_ids"] == [sprint_id]
+    with patch.object(services, "_application_list", side_effect=no_lane_lookup):
+        if transport == "mcp":
+            result = await _call(db_factory, "okto_pulse_delete_card",
+                                 board_id=ids["board_a"], card_id=bug_id)
+            assert result.get("success") is True, result
+        else:
+            app = FastAPI()
+            app.include_router(cards_router, prefix="/api/v1/cards")
+            app.dependency_overrides[require_user] = lambda: USER_ID
+            register_mcp_test_runtime(db_factory)
+            response = TestClient(app).delete(f"/api/v1/cards/{bug_id}")
+            assert response.status_code == 204, response.text
     async with db_factory() as db:
-        assert await db.get(Card, bug_id) is not None
-        sprint = await db.get(Sprint, sprint_id)
-        assert sprint.origin_bug_id == bug_id
-    assert await _activity_ids(db_factory, bug_id) == before_activity
+        assert await db.get(Card, bug_id) is None
+        actions = list((await db.scalars(select(ActivityLog.action).where(
+            ActivityLog.card_id == bug_id))).all())
+        assert "card_deleted" in actions

@@ -25,10 +25,10 @@ def test_real_stored_exclusive_contracts_are_eligible_only_for_archived_superses
 
 
 def test_real_card_event_preserves_all_facts_and_input_bytes():
-    event = CardCreated(board_id="b", card_id="card", spec_id="spec", sprint_id="s", card_type="bug", priority="high")
-    payload = event.payload_for_storage()
+    # Raw v0.3.4 payload: the current event must not manufacture this field.
+    payload = {"card_id": "card", "spec_id": "spec", "sprint_id": "s", "card_type": "bug", "priority": "high"}
     original = deepcopy(payload)
-    result = classify_historical_sprint_event(event.event_type, payload)
+    result = classify_historical_sprint_event("card.created", payload)
     assert result.action == "preserve" and result.reason == "mixed_card_event"
     assert result.sprint_ids == ("s",)
     assert payload == original
@@ -112,3 +112,12 @@ def test_falsey_invalid_queue_payload_does_not_become_empty(payload):
     with pytest.raises(ValueError, match="queue_payload_invalid"):
         classify_historical_sprint_queue(artifact_type="sprint", artifact_id="s", work_kind="consolidate",
             status="pending", payload=payload)
+
+
+def test_new_card_event_does_not_emit_sprint_but_legacy_replay_keeps_card_facts():
+    historical = {"card_id": "card", "spec_id": "spec", "sprint_id": "s", "card_type": "bug", "priority": "high"}
+    before = deepcopy(historical)
+    event = CardCreated.model_validate({"board_id": "b", **historical})
+    assert event.payload_for_storage() == {k: v for k, v in historical.items() if k != "sprint_id"}
+    assert "sprint_id" not in CardCreated.model_fields
+    assert historical == before

@@ -9263,3 +9263,66 @@ reatribuição pela API para facilitar o upgrade. As demais pendências integrai
 (schema/terminal runtime_ready, E2E instalado/upgrade/rollback, footprint,
 benchmark, rollout e matriz DEI/ARQ/VER/ADV) continuam no objetivo ativo.
 Não houve migração real, release, tag, merge nem reinício de runtime do usuário.
+
+### F3 — retirar vínculos/origens Sprint das mutações de Card
+
+Em execução sobre Core 64eb1c80 / Community 00d44db, par limpo/publicado.
+Turno anterior foi progresso: DTOs públicos Card, 257 testes, closure zero.
+Retirados preflight de par Spec/Sprint e dependentes Sprint.origin_bug_id em
+update_card e delete_card. Mantidos Spec no mesmo Board, autorização crítica,
+freeze, conteúdo de Spec Done e guards/reescrita dos vínculos de regressão Bug.
+Não há escrita de desvinculação em endpoint; captura F2B continua tarefa offline.
+CardCreated novo não emite sprint_id. Fixtures de migração agora introduzem
+explicitamente o campo do payload histórico v0.3.4, sem depender da classe atual
+para inventar eventos antigos. Classificador bruto e histórico/outbox continuam
+preservando os fatos do Card e os bytes originais; novo teste separa os contratos.
+Testes exclusivos do veto da lane substituídos por exclusão MCP/REST real com
+sentinela contra consulta Sprint; demais negações cross-Board permanecem.
+Reparentar Bug não fabrica história de Spec/Sprint nem reescreve a linha antiga.
+Prova de arquivo Community cobre origem de Bug preservada byte a byte mesmo
+quando DELETE relacional aciona FK SET NULL na antiga tabela de Sprint.
+Schema/ORM e terminal offline ainda pendentes: nenhuma liberação de runtime
+intermediário, migração real ou restart autorizado por esta alteração.
+Validação pareada, regressão/arquivo/eventos e closure pendentes.
+
+Validação do incremento (2026-09-21):
+- f3-card-lineage-core.log: 244 passed, cobrindo relações reais, negações entre
+  Boards, REST/MCP delete sem consulta Sprint, reparent de Bug, Spec Done,
+  regressão A/B/locked, autorização central, eventos/dispatcher e catálogo MCP.
+- f3-card-lineage-community.log: 94 passed (358 s). Arquivo físico imutável com
+  origem preservada após FK SET NULL, context/work retirement, eventos mistos,
+  sequência de captura e bloqueio de runtime com journal intermediário.
+- f3-card-lineage-ui.log: 62 passed em CardModal. Total: 400 testes distintos.
+  Nenhuma falha neste incremento. Não equivale às suites integrais nem ao E2E
+  instalado de upgrade/rollback. Nenhum teste não Sprint relaxado.
+- Proveniência antes dos testes: source/wheel/install idênticos, 804/335 Python e
+  867/419 payloads (provenance-f3-card-lineage.json). Nenhum arquivo produtivo ou
+  install foi alterado enquanto os testes estavam em execução.
+- closure-f3-card-lineage.json aprovado: ok=true, findings=[], sem drift de docs,
+  oito budgets 0/0. Ruff/diff --check e gate do catálogo MCP passaram.
+- Depois do encerramento de todos os testes, events/README.md foi corrigido para
+  deixar de anunciar Sprint publishers removidos e sprint_id no evento novo.
+  A documentação distingue payload bruto histórico e contrato atual.
+- Wheels finais reconstruídos/instalados juntos. Comparação integral em
+  f3-card-lineage-final-payload-parity.json: somente events/README.md mudou;
+  todo Python, recursos de runtime e SPA são idênticos ao par testado. Community
+  inteira inalterada no payload; teste comportamental não repetido sem motivo.
+- provenance-f3-card-lineage-final.json confirma fonte/wheel/install exatos.
+  Core agregado 80bb326c13bcc1b12976e59437a83492820dd7fd42c0a61385a1b8a323fb0cdb;
+  Community 9ff159672ab1d86174e13762d461c7f0df3a14bdb300c3cec09c428770dcee85.
+  Wheel Core 468e72c3aed063e5b246dfff12c8e32a8397c9820d88f3363ba0b19413d51998;
+  Community 16778b7a8354536043147e86a28e5f1a105095ea829a0330e3c6c4227da4257e.
+- Closure final está em execução sobre esse par antes do push.
+
+Próxima frente: discovery ainda depende de Sprints ativas em _exec_blockers e
+list_cards_for_sprints; consolidação contém _sprint_to_dict/process_sprint e
+_card_to_dict emite sprint_id. Retirar esses caminhos e seus adapters/payloads,
+preservando blockers reais e raw audit histórico. Leituras de policy F2B, archive/
+restore, ORM/UoW e corte schema/terminal offline ainda exigem coordenação.
+Nenhum dado real, processo Pulse ativo, release ou tag foi alterado. Todas as
+pendências integrais anteriores continuam ativas; objetivo não concluído.
+
+Fechamento: closure-f3-card-lineage-final.json terminou (exit 0) com ok=true,
+findings=[], documentation_findings=[] e oito budgets 0/0. Todos os handles
+encerrados. Community commit 010f7eb; commit Core e pushes pareados a seguir.
+Conferir árvores limpas e HEAD=remoto; objetivo integral permanece ativo.

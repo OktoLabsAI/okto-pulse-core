@@ -6,7 +6,7 @@ import pytest
 from sqlalchemy import func, select
 
 from okto_pulse.core.models.schemas import CardUpdate, SpecMove
-from okto_pulse.core.services.main import CardOperationError, CardService, SpecService
+from okto_pulse.core.services.main import CardService, SpecService
 from sqlalchemy_test_models import (
     ActivityLog,
     Board,
@@ -162,18 +162,18 @@ async def test_reopening_done_spec_preserves_retired_lane_history(db_factory):
 
 
 @pytest.mark.asyncio
-async def test_reparenting_origin_bug_across_specs_is_zero_write_conflict(db_factory):
+async def test_reparenting_bug_preserves_retired_lane_history(db_factory):
     ids = await _seed_lineage(db_factory, spec_status=SpecStatus.DONE)
     before = await _audit_counts(db_factory, ids)
-
     async with db_factory() as db:
-        with pytest.raises(CardOperationError) as exc:
-            await CardService(db).update_card(
-                ids["bug"], ACTOR, CardUpdate(spec_id=ids["other_spec"])
-            )
-
-    assert exc.value.code == "hotfix_origin_bug_reparent_conflict"
-    async with db_factory() as db:
-        bug = await db.get(Card, ids["bug"])
-        assert bug is not None and bug.spec_id == ids["spec"]
-    assert await _audit_counts(db_factory, ids) == before
+        bug = await CardService(db).update_card(
+            ids["bug"], ACTOR, CardUpdate(spec_id=ids["other_spec"])
+        )
+        assert bug.spec_id == ids["other_spec"]
+        lane = await db.get(Sprint, ids["hotfix"])
+        assert lane.spec_id == ids["spec"]
+        assert lane.origin_bug_id == ids["bug"]
+        await db.commit()
+    after = await _audit_counts(db_factory, ids)
+    assert after[0] > before[0]  # Actual Card mutation remains audited.
+    assert after[1:] == before[1:]  # No Sprint/Spec history is manufactured.

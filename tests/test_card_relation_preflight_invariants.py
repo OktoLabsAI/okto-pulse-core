@@ -348,12 +348,6 @@ async def test_service_update_rejects_relation_before_in_memory_mutation(
             ),
             "card_sprint_link_retired",
         ),
-        (
-            lambda graph: CardUpdate(
-                title="must not persist", spec_id=graph["spec_a2"]
-            ),
-            "Sprint must belong to the card's resulting spec",
-        ),
     ],
     ids=[
         "missing-spec",
@@ -361,7 +355,6 @@ async def test_service_update_rejects_relation_before_in_memory_mutation(
         "missing-sprint",
         "cross-board-sprint",
         "sprint-mismatches-current-spec",
-        "spec-mismatches-current-sprint",
     ],
 )
 async def test_update_relation_preflight_rejects_without_partial_card_change(
