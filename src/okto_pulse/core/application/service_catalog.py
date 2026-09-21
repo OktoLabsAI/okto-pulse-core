@@ -115,22 +115,6 @@ class CoreAnalyticsOperations:
             exclusions=exclusions,
         )
 
-    async def delivery_forecast(self, *, query):  # noqa: ANN001, ANN201
-        from okto_pulse.core.ports.relational_application import (
-            require_relational_application_adapter,
-        )
-        from okto_pulse.core.services.delivery_forecast import (
-            DeliveryForecastService,
-        )
-
-        evidence = require_relational_application_adapter().delivery_forecast_read(
-            self.__relational_context
-        )
-        return await DeliveryForecastService.project(
-            self.__relational_context,
-            query=query,
-            evidence_port=evidence,
-        )
 
     async def delivery_intelligence(
         self,

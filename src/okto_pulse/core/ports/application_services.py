@@ -460,7 +460,6 @@ class AnalyticsOperations(Protocol):
         exclusions: object,
     ) -> object: ...
 
-    async def delivery_forecast(self, *, query: object) -> object: ...
 
     async def delivery_intelligence(
         self,

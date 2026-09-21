@@ -8893,3 +8893,82 @@ Nenhuma migração real, release, tag, restart ou liberação de runtime interme
 Distribuição pareada: Community commit 213eeed565732f1f26cbf9fed84725b2cc887723.
 Commit Core e pushes normais a seguir; confirmar árvores limpas e HEAD remoto
 antes de encerrar o checkpoint. O objetivo integral permanece ativo.
+
+
+### F3/F5 — retirada do forecast exclusivo de Sprint (em execução)
+
+Retomada do par limpo/publicado Core 7ff0722c / Community 213eeed. Turno anterior
+classificado como progresso: agregados migrados, 312 testes, closure zero, pushes
+confirmados. Objetivo integral permanece ativo.
+Investigação: ForecastReadinessQuery tem horizonte next_sprint; o adapter lê
+Sprint Closed + activation baseline + Card.sprint_id. Não há previsão autônoma
+de Board/Spec/Card que deva ser preservada sob o mesmo contrato. Plano-base F3.6,
+F5.6 autorizam eliminar esse forecast, não renomeá-lo ou devolver zeros.
+Remoção coordenada da porta/serviço/use case/catálogo, DTOs/rotas JSON e CSV,
+seam e implementação Community, clientes/UI de previsão. Adapter de KG e
+contribuições de agentes são independentes e mantidos. O painel de resumo de
+Sprint que existia apenas junto do forecast sai do Board; navegação às métricas
+de entrega remanescentes continua disponível. Leitores/tabelas de compromisso
+e Delivery Intelligence Sprint ainda exigem retirada subsequente; arquivo
+histórico e captura de activation baseline não são alterados neste passo.
+Proveniência anterior: provenance-f5-forecast-before.json, par instalado idêntico.
+
+Validação do incremento (2026-09-21):
+- Core: removidos três módulos operacionais de forecast, exports e os métodos
+  dos contratos AnalyticsOperations/RelationalApplicationAdapter e do catálogo.
+  Fake SaaS segue conforme às portas remanescentes. Não foi criado estimador,
+  horizonte ou entidade substituta. Os dois arquivos de testes exclusivos do
+  forecast retirado foram substituídos por provas negativas de ausência.
+- Community: removidos routes JSON/CSV, DTO union, adapter de evidência e seam;
+  o arquivo compartilhado mantém a implementação de Board KG. Retirados client,
+  componente de previsão, fetch/state/exports e tipos forecast (incluindo o tipo
+  SprintForecastProjection residual). Board mantém a navegação Delivery
+  Intelligence sem buscar Sprints/forecast para um painel removido.
+- Testes mistos A5/A6 preservam todos os casos KG/Delivery Intelligence restantes.
+  Novos negativos provam 404 sem UoW para previsão e export, independentemente
+  do Board, ausência no OpenAPI/DTO/adapters e ausência de módulos/portas Core.
+  UI prova que previsão não é buscada/renderizada, mantendo contribuições,
+  filtros, navegação e export de métricas ainda existentes.
+- f5-forecast-core.log: 306 passed; f5-forecast-community.log: 63 passed;
+  f5-forecast-ui.log: 97 passed em 17 arquivos. Total: 466 testes distintos.
+  Coletas completas: 13.553 Core / 5.795 Community, sem erros de import. Coleta
+  não é execução integral das suites; não houve novo Playwright/E2E de upgrade.
+- Primeiro tsc falhou apenas em import fireEvent ocioso no teste misto após
+  remoção dos casos de previsão; corrigido. Builds r2/final e verify:frontend-dist
+  aprovados. 78 arquivos SPA, agregado
+  0211bcd3b9ca655ea1296c0cf9fe7644a321643c2e5e58d5f78635640cb716f9.
+- Antes dos testes: provenance-f5-forecast.json provou os 808/336 Python e
+  871/420 payloads source/wheel/install. Todos os processos iniciados após
+  reinstalação; o runtime real do usuário não foi alterado.
+- closure-f5-forecast.json: findings=[], oito budgets 0/0; somente duas
+  divergências de matriz README. Regenerador oficial usado a partir do relatório:
+  Core imports 7.481→7.450, Community imports 1.175→1.169, dependências 25.
+  Não houve nova exceção ou relaxamento de gate.
+- Após READMEs: wheels-f5-forecast-final reconstruídos e reinstalados.
+  provenance-f5-forecast-final.json: source/wheel/install idênticos. A prova
+  f5-forecast-final-payload-parity.json compara TODOS os 871/420 payloads finais
+  com os testados (inclusive SPA), sem diferença. Só metadados externos aos
+  payloads mudaram pelos READMEs; testes comportamentais não foram repetidos.
+  Agregados Core c6e3ab4d4ff741ed8cd4f717646099ca58642c8d39a568f4ccb1df4d32b75db7;
+  Community 91b5597b4eeb503735bef9013c21b62d2f0fff4ec2877e6e7fbef960de27f0a0.
+  Wheels SHA256 Core 6523262531cd41c5816a0ca9d6a083f4f77036c0cfb168c243133c4ea70b51a6;
+  Community 4e15a27c23df77f611fd771019c98f0f8a8962cf370e287058c3be4c1234027e.
+- Ruff/diff --check aprovados; MCP catálogo sem drift, sem edição manual.
+  closure-f5-forecast-final.json está em execução antes de commits/pushes.
+
+Próximo passo: separar os cálculos de contribuição (autoria, revisão, amostra
+mínima, visibilidade própria/operador/agregado) da população Sprint em
+compute_delivery_intelligence; retirar métricas de compromisso/lane e filtros,
+fingerprints/paginação/export/UI correspondentes. Só então eliminar o reader
+compute_sprints_analytics, SprintScopeResolver, DeliveryCommitmentService e
+baseline port/adapter (captura histórica usa tabelas brutas, não esses readers).
+As demais pendências integrais continuam ativas, inclusive rotas/detalhes Sprint,
+DTOs/persistência/schema/certificado offline, manutenção e complementos,
+E2E/upgrade/rollback, custo, rollout e footprint. Não declarar F3/F5 completas.
+
+Fechamento: closure-f5-forecast-final.json concluiu com ok=true, findings=[],
+documentation_findings=[] e oito budgets 0/0. Todos os handles de testes,
+coletas, builds, instalações e closure encerrados. Community commit
+bef42ee98204800adca9c8a132b6f824181402e0. Commit Core e pushes normais pareados
+a seguir; conferir igualdade HEAD/remoto e árvores limpas. O objetivo integral
+permanece ativo, com o próximo trabalho indicado acima.

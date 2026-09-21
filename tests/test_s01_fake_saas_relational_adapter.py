@@ -65,8 +65,7 @@ def test_s01_saas_adapter_exposes_quality_assessment_seam_fail_closed() -> None:
         adapter.guideline_policy(object())
     with pytest.raises(NotImplementedError, match="Spec-dependency persistence"):
         adapter.spec_dependencies(object())
-    with pytest.raises(NotImplementedError, match="Delivery Forecast evidence"):
-        adapter.delivery_forecast_read(object())
+    assert not hasattr(adapter, "delivery_forecast_read")
     with pytest.raises(NotImplementedError, match="Board KG Analytics evidence"):
         adapter.board_kg_analytics_read(object())
 

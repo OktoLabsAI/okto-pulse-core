@@ -24,7 +24,6 @@ if TYPE_CHECKING:
     from .code_investigation import CodeInvestigationStore
     from .code_traceability import CodeTraceabilityReadPort, CodeTraceabilityStore
     from .board_kg_analytics import BoardKgAnalyticsEvidencePort
-    from .delivery_forecast import DeliveryForecastEvidencePort
     from .guideline_policy import (
         GuidelinePolicyPersistencePort,
         SemanticGuidelineAssessmentPersistencePort,
@@ -198,10 +197,6 @@ class RelationalApplicationAdapter(Protocol):
         """Return transaction-scoped delivery proof persistence and projection."""
         ...
 
-    def delivery_forecast_read(self, session: Any) -> "DeliveryForecastEvidencePort":
-        """Return authorized Phase 1 evidence for governed forecasting."""
-
-        ...
 
     def board_kg_analytics_read(self, session: Any) -> "BoardKgAnalyticsEvidencePort":
         """Return board-only KG/effectiveness evidence with no mutation surface."""
