@@ -11202,3 +11202,135 @@ BASE/KG/DEI/ARQVER/ADV, E2E pareado e benchmarks/rollout já registrados.
 Não liberar startup pelo simples desaparecimento de Sprint, nem comparar para
 sempre os dados vivos ao hash de migração depois de escritas legítimas.
 Autorizações F2A/F2B/F3 preservadas. Sem release/tag/deploy/merge neste incremento.
+
+### F2D/KG — gerações inativas e quarentena (investigação)
+
+Turno anterior classificado como progresso:par c89bc6d5/d576d76e publicado,
+limpo e conferido nesta retomada. Fonte instalada novamente provada em
+provenance-f2-retained-initial.json. O inventário já lista gerações inativas;
+o backupv5 as recusa. Quarantine é namespace real usado pelos adapters de
+recuperação/erasure, não armazenamento hipotético. Grafx backup.create_backup
+exige handle gravável e executa checkpoint; não serve para copiar autoridade
+histórica sem mudar a origem. Não abrir inativas para reparar/checkpoint.
+Teste integrado preparado com geração Grafx real fechada e quarentena opaca.
+Rodando reprodução antes de editar produto (f2-retained-initial-tests.log).
+
+Caminho mecânico:manifesto versionado de custódia byte a byte para namespaces
+classificados e paths de gerações inativas reconciliados pelo inventário; copiar
+sob os fences atuais, verificar estabilidade, restaurar apenas em conjunto
+isolado. Nenhuma interpretação de lease, reparo, promoção/binding ou claim de
+saúde da geração. A prova operacional de rollback continua separadamente
+obrigatória; cópia opaca de uma geração corrompida preserva evidência, não a cura.
+Preservar v1/v5 já emitidos e limitar a cobertura adicional em versão explícita.
+
+Reprodução32112 encerrou exit1 em29.41s exatamente em
+joint_snapshot_inactive_generations_require_coverage; origem permanece intacta.
+Implementação preparada:jointv6/nestedcustodyv2 inclui quarantine e paths
+boards/<id>/grafx/<generation> ou global/grafx/<generation> explicitamente
+inativos no inventário. Verificador reconcilia cobertura, recusa geração ativa,
+scope desconhecido, aliases, paths inválidos e conteúdo irmão inserido fora da
+seleção (mesmo se manifesto for sinteticamente reautenticado). Diretórios pais
+são apenas estrutura, não autorização para copiar bindings/grafos ativos.
+v5/nestedv1 continuam legíveis com seus limites originais. Gate offline aceita
+v6 depois da verificação completa. Não há abertura da geração copiada, alteração
+de lease, troca de UUID, promoção ou reparo. Unknown paths continuam recusados.
+Wheels-f2-retained construídos; pip em andamento. Aguardar terminalidade, provar
+paridade e rodar testes novos, regressões de backup/privacidade/inventário/offline.
+
+Pip17296 exit0; provenance-f2-retained.json confirma804/341Python867/425payloads
+idênticos. Iniciadas83955(37casos novos/artefatos, f2-retained-new-tests.log),
+24806(63regressões, f2-retained-regressions-tests.log),72714(closure).
+Closure encerrou exit0/oktrue,findings/documentation vazios e8budgets0/0.
+Gerações reais inativas Board+Global e compatibilidadev5 passaram; aguardar
+ambas suítes completas antes de editar produto ou reinstalar.
+
+Revisão dos writers encontrou candidate_decisions, namespace do ArtifactStore
+fora de rebuild. Teste test_kg_artifact_namespace_coverage escreve os16namespaces
+declarados na porta pública usando o adapter real:38527exit1 em9.24s,
+kg_artifact_recovery_unclassified_storage. Incluir candidate_decisions no
+contrato v2 antes do commit; está coberto pelo mutex existente de rebuild.
+Mais2testes de drift durante export dos grafos (inativa/quarantine) acrescentados
+depois da coleta; executar no build final. Sem mudança de fonte nas suítes vivas.
+Também localizado journal .grafx_directory_restore_operations sob o pai da
+geração, preservado pela cópia opaca de entradas inativas. Arquivos históricos
+graph.lbug/discovery.lbug e sidecars aparecem como other_storage_paths e ainda
+exigem cobertura específica de arquivo, sem reintroduzir driver legado.
+
+Suíte83955 encerrou exit0:37passes193.63s. Reprodução de payloads físicos
+históricos76951 encerrou exit1 em18.09s, também unclassified_storage; bytes
+originais intactos. Preparar inclusão apenas dos paths históricos já usados
+pelos adapters de inventário/erasure (graph.lbug/discovery.lbug e sidecars),
+como arquivos/diretórios opacos. Não interpretar conteúdo nem carregar driver.
+As63regressões24806 seguem vivas; aguardar antes de aplicar essas duas ampliações.
+
+Releitura do complemento KG§8.3:cutover final exige geração nova inequívoca,
+snapshot autoritativo sem Sprint e candidato com schema final. Não basta remover
+Sprint da geração anterior. Reusar os serviços públicos de rebuild/projeção e
+respeitar as capabilities, manifestos e confirmações existentes. A restauração
+lógica atual dos grafos ativos ainda deve ser ensaiada com identidade/histórico,
+artefatos e bindings do predecessor antes de declarar rollback operacional.
+
+24806 encerrou exit0:63passes665.67s, inclusive fonte real pós-bootstrap.
+Todas as suítes encerradas antes de editar produto. Inclusões finais aplicadas:
+candidate_decisions e payloads históricos graph.lbug/discovery.lbug com sidecars,
+permitindo arquivo regular ou diretório opaco; bindings vizinhos não entram.
+Inventário recusa também payload histórico atribuído a Board desconhecido.
+Não houve import nem execução de runtime removido. Acrescentados testes de
+diretório/sidecar e ownership; compatibilidadev5 ampliada para arquivo não vazio.
+Preparar wheels-f2-retained-final, instalar/provar e executar as seleções afetadas
+com os casos acrescentados depois da coleta. Regressores amplos não precisam
+ser repetidos sem falha ou mudança adicional; closure deve conferir o novo wheel.
+
+Pip74892 encerrou exit0; provenance-f2-retained-final.json confirma novamente
+804/341Python867/425payloads iguais. Testes finais13039 (44casos coletados,
+f2-retained-final-tests.log) e closure5092 iniciados em processos novos. Os16
+namespaces reais e os novos negativos de ownership já passaram. Aguardar seus
+resultados finais antes dos commits. RuffF/E9 e diff--check passaram. Sem edição
+produtiva/reinstalação durante essas execuções.
+
+Closure5092 encerrou exit0/oktrue: findings/documentation_findings vazios e os
+8 budgets em zero (closure-f2-retained-final.json). Payload final Community:
+aggregate1919dbd125691171634946b9bb4997580d2fe128703b26a3afc9562d4b5e4aa0,
+wheel ea9988af36a1fc22d97ea20659a8d7e7514f20a2c8e996529fb0ff0ef7f161be.
+Core permanece aggregate c2b76566ffdab7abb66d6039160b4799573a5e7f91e4f5d035b366b4ba0fb069,
+wheel289d29bedd5e0e9179a159f7b2fd3042f53b8f7fef8fea91177c2163749d5229.
+Compatibilidade v5 com histórico, drift de inativa/quarantine durante export
+e roundtrip de payloads físicos históricos já passaram; suíte13039 ainda viva.
+
+### F2D/KG — fechamento da cobertura de armazenamento retido (2026-09-21)
+
+Community `b7bb3799f0280cf67f26ed84cd1c432eee640038`. A suíte final 13039
+encerrou com exit 0: 44 testes aprovados em 220.77s. Somados aos 63 casos
+de regressão aprovados em 665.67s, são 107 testes distintos; não somar novamente
+os 37 casos da execução intermediária. As três reproduções negativas iniciais
+foram resolvidas. Ruff F/E9 e diff --check passaram.
+
+O conjunto v6, com custódia v2, agora inclui gerações inativas de Board/Global,
+quarentena, os 16 namespaces do ArtifactStore e payloads físicos históricos com
+sidecars. A cópia preserva bytes e diretórios; não abre/repara banco, não libera
+lease nem publica binding. Seleção e manifesto são reconciliados com o inventário;
+gerações ativas, Boards desconhecidos, aliases, conteúdo fora da seleção e drift
+durante captura são recusados. Paths ainda não classificados continuam recusados.
+Os formatos anteriores mantêm suas garantias originais; v4/v5 foram restaurados
+em fixtures, inclusive v5 com arquivo histórico não vazio. Privacidade e fences
+de retomada passaram nas regressões. Mecânica só em Community/adapters; nenhuma
+implementação concreta ou exceção foi adicionada ao Core.
+
+Closure final: ok, sem findings/documentation_findings, oito budgets em zero.
+Prova de fontes/wheels/install: provenance-f2-retained-final.json, hashes acima.
+A prova provenance-f2-retained-committed.json associa os mesmos payloads aos
+HEADs após os commits. Nenhuma fixture congelada, API, DTO, tool, catálogo,
+frontend ou asset foi alterado. Testes de frontend permanecem obrigatórios para
+as features que o impactarem. Nenhum dado/processo/instalação real foi alterado;
+apenas fixtures e venv de validação. Sem release, tag, deploy ou merge.
+
+Retomada: iniciativa ativa, sem conclusão global. A próxima prova de recuperação
+é compor restauração, bindings e inicialização do par predecessor em fixture,
+investigando identidade/histórico dos grafos ativos e referências de filesystem
+antes de afirmar rollback operacional. Conjunto isolado não equivale a runtime
+restaurado. Depois concluir candidato/projeção final pós-bootstrap, reconciliação
+e cutover com geração nova inequívoca conforme KG §8.3, seguido da admissão
+terminal e consultas; não afrouxar capabilities, comparações de hash ou gates.
+Bootstrap_complete continua diferente de runtime_ready. Permanecem também fontes
+vazias, compatibilidade semântica histórica, F4/F5, auditoria integral BASE/KG/
+DEI/ARQVER/ADV, E2E do par e benchmarks/rollout. Autorizações F2A/F2B/F3 preservadas.
