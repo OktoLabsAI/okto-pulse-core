@@ -17,10 +17,8 @@ from okto_pulse.core.ports.analytics_foundation import (
 from okto_pulse.core.repositories.interfaces.unit_of_work import PulseUnitOfWork
 
 
-_CURSOR = re.compile(r"^offset:(0|[1-9][0-9]*)$")
+_CURSOR = re.compile(r"^contributions-v2:offset:(0|[1-9][0-9]*)$")
 _FILTER_OPERATORS = {
-    "sprint_id": frozenset({"eq", "ne", "in", "not_in"}),
-    "lane": frozenset({"eq", "ne", "in", "not_in"}),
     "role": frozenset({"eq", "ne", "in", "not_in"}),
     # contribution_view configures one projection shape rather than filtering
     # a population; negative/multi-value forms would be ambiguous.
@@ -78,7 +76,7 @@ class DeliveryIntelligenceCommand:
 
     @property
     def cursor_offset(self) -> int:
-        return int(self.cursor.split(":", 1)[1]) if self.cursor else 0
+        return int(self.cursor.rsplit(":", 1)[1]) if self.cursor else 0
 
 
 @dataclass(frozen=True, slots=True)

@@ -8972,3 +8972,71 @@ coletas, builds, instalações e closure encerrados. Community commit
 bef42ee98204800adca9c8a132b6f824181402e0. Commit Core e pushes normais pareados
 a seguir; conferir igualdade HEAD/remoto e árvores limpas. O objetivo integral
 permanece ativo, com o próximo trabalho indicado acima.
+
+### F3/F5 — Delivery Intelligence sem unidade Sprint (em execução)
+
+Retomada do par Core 3ca28415 / Community bef42eeed. Investigação ponta a ponta:
+use case mantém load_accessible_board e visibilidade de operador somente ao dono;
+serviço calcula autoria/revisão por Card, mas selecionava população por Sprint.
+Plano F5.6 autoriza retirar essa unidade e atualizar denominadores/filtros/export.
+A população remanescente reutiliza exatamente o recorte de compute_agents:
+Cards não arquivados do Board, created_at >= from e < to. Não é replay histórico;
+validações e estado são observados atualmente. Proveniência e UI explicitam isso.
+Nenhuma mudança nas fórmulas, papéis, anonimização ou mínimos por métrica.
+Antes da alteração, provenance-f5-delivery-before.json provou ambos os pacotes
+idênticos ao source/wheel/install. Captura congelada de 48 cenários de contribuição
+em tests/fixtures/delivery_contribution_baseline.json, fonte Core 3ca28415;
+mesmos Cards/atores/visibilidade/filtros antes/depois, sem regenerar o baseline.
+Contrato DI v2 elimina summary/sprints, pagina contributions; prefixo de cursor
+contributions-v2 impede reinterpretar cursores Sprint antigos. Paginação continua
+sendo leitura corrente, sem alegar snapshot entre requisições. CSV drena páginas
+com o mesmo instante de observação interno; as_of histórico externo segue negado.
+Filtros Sprint/lane rejeitados explicitamente no REST antes da projeção; estado
+salvo UI ignora esses campos e preserva papel/visibilidade/período. Nenhuma nova
+porta de mecanismo, exceção arquitetural ou mudança de autoridade.
+Rotas/readers de analytics Sprint independentes ainda pendentes. Não declarar F5
+ou objetivo integral concluídos. Validações do incremento e hashes serão anexados.
+
+Validação e fechamento do incremento (2026-09-21):
+- 186 testes Core (inclui comparação integral dos 48 cenários congelados,
+  rejeição de oito formas de filtro retirado, cursor legado, paginação e gates
+  MCP/analytics compartilhados); 42 Community distintos; 37 frontend em seis
+  arquivos. Total: 265 testes distintos. Reexecuções seletivas não somadas.
+- Fonte/wheel/install comprovados antes das execuções: 808/336 arquivos Python,
+  871/420 payloads completos. Última prova: provenance-f5-delivery-final.json,
+  wheels-f5-delivery-final. Core agregado
+  d095530905d2333b88f01d151bc45b5e05131c489806cfe66eacad7741a03463;
+  Community agregado
+  4629925151c71ebf170f52089abe821c84c1f42da3aa6b26d64a79121556805a.
+  Wheels SHA256 Core f0fd621176f0f6e32303186ea6cbd10336b790dd9521cafbe622b94969e3af25;
+  Community c410f5f162a403fdbbd65fdd4b4da65aee08aaf1a564880cd4b3c53802658a04.
+- tsc/Vite/sync e verify:frontend-dist passaram. SPA final 78 arquivos,
+  b9603a25ce08bb5d4dde1718d205a28ef0c637c7a6cc37fa5eabbd3f28f37437.
+  Revisão encontrou papéis que poderiam desaparecer do seletor ao paginar;
+  opções canônicas agora permanecem disponíveis, com teste de frontend.
+- Integração SQLite real pela UoW comprova Cards sem Sprint, inclusão no limite
+  inferior e exclusão no limite superior, fora do período, arquivados e outro
+  Board. Primeira execução falhou na fixture por sessão sem composição semântica;
+  corrigida para CommunitySemanticSession, sem relaxar o guard de produto.
+- Primeira tentativa Community apontou nome inexistente de teste; não executou
+  testes e não foi contada. Seleção corrigida e suites executadas. Logs:
+  f5-delivery-{core,community,ui}.log; f5-delivery-{core,community,ui}-final.log;
+  f5-delivery-cohort.log. O último contém o novo caso SQLite aprovado.
+- closure-f5-delivery-final.json: ok=true, findings=[], documentation_findings=[],
+  oito budgets 0/0. Não precisou regenerar matriz README. Catálogo MCP sem drift.
+  Ruff e git diff --check aprovados. Todos os processos de teste/build/install/
+  closure encerrados; nenhum teste contra processo em memória anterior.
+- Não houve E2E de upgrade/rollback, benchmark final, migração real, release,
+  tag, restart do runtime do usuário ou alteração de dados reais neste incremento.
+
+Próxima frente: retirar analytics Sprint independente (rotas JSON/CSV/entity
+view e clientes), compute_sprint_analytics/compute_sprints_analytics/_sprint_detail,
+serviço de compromisso e resolver, respeitando usos compartilhados de currentness.
+Depois completar DTOs/persistência e fechamento offline atômico já descritos.
+Todas as pendências F2/F3/F4/F5, complementos DEI/ARQ/VER/ADV, footprint, E2E,
+upgrade/rollback, benchmark e rollout continuam ativas. Este incremento não
+conclui F5 nem o objetivo integral.
+
+Distribuição pareada: Community commit 559d583652e0a273178e635f94f448c9bbe50864.
+Commit Core e pushes normais a seguir; verificar HEAD remoto e árvores limpas.
+Objetivo integral permanece ativo; a próxima frente está definida acima.

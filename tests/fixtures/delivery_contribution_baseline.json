@@ -1,0 +1,3290 @@
+{
+  "source_commit": "3ca28415ec0590ce038bb5f6047bb841550e212f",
+  "cases": {
+    "owner/False/self/all": {
+      "contributions": [
+        {
+          "subject_id": "owner",
+          "subject_label": "You",
+          "visibility": "self",
+          "role": "Implementation + validation",
+          "done_count": 7,
+          "first_pass": {
+            "state": "available",
+            "value": 57.1,
+            "numerator": 4,
+            "denominator": 7,
+            "sample_size": 7,
+            "reason": null,
+            "unit": "percent"
+          },
+          "validation_success": {
+            "state": "available",
+            "value": 100.0,
+            "numerator": 4,
+            "denominator": 4,
+            "sample_size": 4,
+            "reason": null,
+            "unit": "percent"
+          },
+          "rework_introduced": 3,
+          "rework_resolved": 3,
+          "median_cycle_hours": {
+            "state": "available",
+            "value": 5.0,
+            "numerator": null,
+            "denominator": null,
+            "sample_size": 7,
+            "reason": null,
+            "unit": "hours"
+          },
+          "sample_size": 7,
+          "period": {
+            "from": "2026-07-22T12:00:00.000000Z",
+            "to": "2026-08-21T12:00:00.000000Z"
+          }
+        }
+      ],
+      "exclusions": {
+        "restricted_count": 0,
+        "excluded_count": 0,
+        "reasons": []
+      }
+    },
+    "owner/False/self/validation_agent": {
+      "contributions": [],
+      "exclusions": {
+        "restricted_count": 0,
+        "excluded_count": 0,
+        "reasons": []
+      }
+    },
+    "owner/False/self/implementation_+_validation": {
+      "contributions": [
+        {
+          "subject_id": "owner",
+          "subject_label": "You",
+          "visibility": "self",
+          "role": "Implementation + validation",
+          "done_count": 7,
+          "first_pass": {
+            "state": "available",
+            "value": 57.1,
+            "numerator": 4,
+            "denominator": 7,
+            "sample_size": 7,
+            "reason": null,
+            "unit": "percent"
+          },
+          "validation_success": {
+            "state": "available",
+            "value": 100.0,
+            "numerator": 4,
+            "denominator": 4,
+            "sample_size": 4,
+            "reason": null,
+            "unit": "percent"
+          },
+          "rework_introduced": 3,
+          "rework_resolved": 3,
+          "median_cycle_hours": {
+            "state": "available",
+            "value": 5.0,
+            "numerator": null,
+            "denominator": null,
+            "sample_size": 7,
+            "reason": null,
+            "unit": "hours"
+          },
+          "sample_size": 7,
+          "period": {
+            "from": "2026-07-22T12:00:00.000000Z",
+            "to": "2026-08-21T12:00:00.000000Z"
+          }
+        }
+      ],
+      "exclusions": {
+        "restricted_count": 0,
+        "excluded_count": 0,
+        "reasons": []
+      }
+    },
+    "owner/False/aggregates/all": {
+      "contributions": [
+        {
+          "subject_id": null,
+          "subject_label": "Other Implementation + validations",
+          "visibility": "aggregate",
+          "role": "Implementation + validation",
+          "done_count": 7,
+          "first_pass": {
+            "state": "available",
+            "value": 57.1,
+            "numerator": 4,
+            "denominator": 7,
+            "sample_size": 7,
+            "reason": null,
+            "unit": "percent"
+          },
+          "validation_success": {
+            "state": "restricted",
+            "value": null,
+            "numerator": null,
+            "denominator": null,
+            "sample_size": 0,
+            "reason": "minimum_sample_not_met",
+            "unit": "percent"
+          },
+          "rework_introduced": 3,
+          "rework_resolved": 3,
+          "median_cycle_hours": {
+            "state": "available",
+            "value": 4.0,
+            "numerator": null,
+            "denominator": null,
+            "sample_size": 7,
+            "reason": null,
+            "unit": "hours"
+          },
+          "sample_size": 7,
+          "period": {
+            "from": "2026-07-22T12:00:00.000000Z",
+            "to": "2026-08-21T12:00:00.000000Z"
+          }
+        },
+        {
+          "subject_id": null,
+          "subject_label": "Other Validation agents",
+          "visibility": "aggregate",
+          "role": "Validation agent",
+          "done_count": null,
+          "first_pass": {
+            "state": "restricted",
+            "value": null,
+            "numerator": null,
+            "denominator": null,
+            "sample_size": 0,
+            "reason": "minimum_sample_not_met",
+            "unit": "percent"
+          },
+          "validation_success": {
+            "state": "available",
+            "value": 50.0,
+            "numerator": 6,
+            "denominator": 12,
+            "sample_size": 12,
+            "reason": null,
+            "unit": "percent"
+          },
+          "rework_introduced": null,
+          "rework_resolved": null,
+          "median_cycle_hours": {
+            "state": "restricted",
+            "value": null,
+            "numerator": null,
+            "denominator": null,
+            "sample_size": 0,
+            "reason": "minimum_sample_not_met",
+            "unit": "hours"
+          },
+          "sample_size": 12,
+          "period": {
+            "from": "2026-07-22T12:00:00.000000Z",
+            "to": "2026-08-21T12:00:00.000000Z"
+          }
+        }
+      ],
+      "exclusions": {
+        "restricted_count": 2,
+        "excluded_count": 2,
+        "reasons": [
+          {
+            "reason": "minimum_sample_not_met",
+            "count": 2
+          }
+        ]
+      }
+    },
+    "owner/False/aggregates/validation_agent": {
+      "contributions": [
+        {
+          "subject_id": null,
+          "subject_label": "Other Validation agents",
+          "visibility": "aggregate",
+          "role": "Validation agent",
+          "done_count": null,
+          "first_pass": {
+            "state": "restricted",
+            "value": null,
+            "numerator": null,
+            "denominator": null,
+            "sample_size": 0,
+            "reason": "minimum_sample_not_met",
+            "unit": "percent"
+          },
+          "validation_success": {
+            "state": "available",
+            "value": 50.0,
+            "numerator": 6,
+            "denominator": 12,
+            "sample_size": 12,
+            "reason": null,
+            "unit": "percent"
+          },
+          "rework_introduced": null,
+          "rework_resolved": null,
+          "median_cycle_hours": {
+            "state": "restricted",
+            "value": null,
+            "numerator": null,
+            "denominator": null,
+            "sample_size": 0,
+            "reason": "minimum_sample_not_met",
+            "unit": "hours"
+          },
+          "sample_size": 12,
+          "period": {
+            "from": "2026-07-22T12:00:00.000000Z",
+            "to": "2026-08-21T12:00:00.000000Z"
+          }
+        }
+      ],
+      "exclusions": {
+        "restricted_count": 1,
+        "excluded_count": 1,
+        "reasons": [
+          {
+            "reason": "minimum_sample_not_met",
+            "count": 1
+          }
+        ]
+      }
+    },
+    "owner/False/aggregates/implementation_+_validation": {
+      "contributions": [
+        {
+          "subject_id": null,
+          "subject_label": "Other Implementation + validations",
+          "visibility": "aggregate",
+          "role": "Implementation + validation",
+          "done_count": 7,
+          "first_pass": {
+            "state": "available",
+            "value": 57.1,
+            "numerator": 4,
+            "denominator": 7,
+            "sample_size": 7,
+            "reason": null,
+            "unit": "percent"
+          },
+          "validation_success": {
+            "state": "restricted",
+            "value": null,
+            "numerator": null,
+            "denominator": null,
+            "sample_size": 0,
+            "reason": "minimum_sample_not_met",
+            "unit": "percent"
+          },
+          "rework_introduced": 3,
+          "rework_resolved": 3,
+          "median_cycle_hours": {
+            "state": "available",
+            "value": 4.0,
+            "numerator": null,
+            "denominator": null,
+            "sample_size": 7,
+            "reason": null,
+            "unit": "hours"
+          },
+          "sample_size": 7,
+          "period": {
+            "from": "2026-07-22T12:00:00.000000Z",
+            "to": "2026-08-21T12:00:00.000000Z"
+          }
+        }
+      ],
+      "exclusions": {
+        "restricted_count": 1,
+        "excluded_count": 1,
+        "reasons": [
+          {
+            "reason": "minimum_sample_not_met",
+            "count": 1
+          }
+        ]
+      }
+    },
+    "owner/False/self_and_aggregates/all": {
+      "contributions": [
+        {
+          "subject_id": "owner",
+          "subject_label": "You",
+          "visibility": "self",
+          "role": "Implementation + validation",
+          "done_count": 7,
+          "first_pass": {
+            "state": "available",
+            "value": 57.1,
+            "numerator": 4,
+            "denominator": 7,
+            "sample_size": 7,
+            "reason": null,
+            "unit": "percent"
+          },
+          "validation_success": {
+            "state": "available",
+            "value": 100.0,
+            "numerator": 4,
+            "denominator": 4,
+            "sample_size": 4,
+            "reason": null,
+            "unit": "percent"
+          },
+          "rework_introduced": 3,
+          "rework_resolved": 3,
+          "median_cycle_hours": {
+            "state": "available",
+            "value": 5.0,
+            "numerator": null,
+            "denominator": null,
+            "sample_size": 7,
+            "reason": null,
+            "unit": "hours"
+          },
+          "sample_size": 7,
+          "period": {
+            "from": "2026-07-22T12:00:00.000000Z",
+            "to": "2026-08-21T12:00:00.000000Z"
+          }
+        },
+        {
+          "subject_id": null,
+          "subject_label": "Other Implementation + validations",
+          "visibility": "aggregate",
+          "role": "Implementation + validation",
+          "done_count": 7,
+          "first_pass": {
+            "state": "available",
+            "value": 57.1,
+            "numerator": 4,
+            "denominator": 7,
+            "sample_size": 7,
+            "reason": null,
+            "unit": "percent"
+          },
+          "validation_success": {
+            "state": "restricted",
+            "value": null,
+            "numerator": null,
+            "denominator": null,
+            "sample_size": 0,
+            "reason": "minimum_sample_not_met",
+            "unit": "percent"
+          },
+          "rework_introduced": 3,
+          "rework_resolved": 3,
+          "median_cycle_hours": {
+            "state": "available",
+            "value": 4.0,
+            "numerator": null,
+            "denominator": null,
+            "sample_size": 7,
+            "reason": null,
+            "unit": "hours"
+          },
+          "sample_size": 7,
+          "period": {
+            "from": "2026-07-22T12:00:00.000000Z",
+            "to": "2026-08-21T12:00:00.000000Z"
+          }
+        },
+        {
+          "subject_id": null,
+          "subject_label": "Other Validation agents",
+          "visibility": "aggregate",
+          "role": "Validation agent",
+          "done_count": null,
+          "first_pass": {
+            "state": "restricted",
+            "value": null,
+            "numerator": null,
+            "denominator": null,
+            "sample_size": 0,
+            "reason": "minimum_sample_not_met",
+            "unit": "percent"
+          },
+          "validation_success": {
+            "state": "available",
+            "value": 50.0,
+            "numerator": 6,
+            "denominator": 12,
+            "sample_size": 12,
+            "reason": null,
+            "unit": "percent"
+          },
+          "rework_introduced": null,
+          "rework_resolved": null,
+          "median_cycle_hours": {
+            "state": "restricted",
+            "value": null,
+            "numerator": null,
+            "denominator": null,
+            "sample_size": 0,
+            "reason": "minimum_sample_not_met",
+            "unit": "hours"
+          },
+          "sample_size": 12,
+          "period": {
+            "from": "2026-07-22T12:00:00.000000Z",
+            "to": "2026-08-21T12:00:00.000000Z"
+          }
+        }
+      ],
+      "exclusions": {
+        "restricted_count": 2,
+        "excluded_count": 2,
+        "reasons": [
+          {
+            "reason": "minimum_sample_not_met",
+            "count": 2
+          }
+        ]
+      }
+    },
+    "owner/False/self_and_aggregates/validation_agent": {
+      "contributions": [
+        {
+          "subject_id": null,
+          "subject_label": "Other Validation agents",
+          "visibility": "aggregate",
+          "role": "Validation agent",
+          "done_count": null,
+          "first_pass": {
+            "state": "restricted",
+            "value": null,
+            "numerator": null,
+            "denominator": null,
+            "sample_size": 0,
+            "reason": "minimum_sample_not_met",
+            "unit": "percent"
+          },
+          "validation_success": {
+            "state": "available",
+            "value": 50.0,
+            "numerator": 6,
+            "denominator": 12,
+            "sample_size": 12,
+            "reason": null,
+            "unit": "percent"
+          },
+          "rework_introduced": null,
+          "rework_resolved": null,
+          "median_cycle_hours": {
+            "state": "restricted",
+            "value": null,
+            "numerator": null,
+            "denominator": null,
+            "sample_size": 0,
+            "reason": "minimum_sample_not_met",
+            "unit": "hours"
+          },
+          "sample_size": 12,
+          "period": {
+            "from": "2026-07-22T12:00:00.000000Z",
+            "to": "2026-08-21T12:00:00.000000Z"
+          }
+        }
+      ],
+      "exclusions": {
+        "restricted_count": 1,
+        "excluded_count": 1,
+        "reasons": [
+          {
+            "reason": "minimum_sample_not_met",
+            "count": 1
+          }
+        ]
+      }
+    },
+    "owner/False/self_and_aggregates/implementation_+_validation": {
+      "contributions": [
+        {
+          "subject_id": "owner",
+          "subject_label": "You",
+          "visibility": "self",
+          "role": "Implementation + validation",
+          "done_count": 7,
+          "first_pass": {
+            "state": "available",
+            "value": 57.1,
+            "numerator": 4,
+            "denominator": 7,
+            "sample_size": 7,
+            "reason": null,
+            "unit": "percent"
+          },
+          "validation_success": {
+            "state": "available",
+            "value": 100.0,
+            "numerator": 4,
+            "denominator": 4,
+            "sample_size": 4,
+            "reason": null,
+            "unit": "percent"
+          },
+          "rework_introduced": 3,
+          "rework_resolved": 3,
+          "median_cycle_hours": {
+            "state": "available",
+            "value": 5.0,
+            "numerator": null,
+            "denominator": null,
+            "sample_size": 7,
+            "reason": null,
+            "unit": "hours"
+          },
+          "sample_size": 7,
+          "period": {
+            "from": "2026-07-22T12:00:00.000000Z",
+            "to": "2026-08-21T12:00:00.000000Z"
+          }
+        },
+        {
+          "subject_id": null,
+          "subject_label": "Other Implementation + validations",
+          "visibility": "aggregate",
+          "role": "Implementation + validation",
+          "done_count": 7,
+          "first_pass": {
+            "state": "available",
+            "value": 57.1,
+            "numerator": 4,
+            "denominator": 7,
+            "sample_size": 7,
+            "reason": null,
+            "unit": "percent"
+          },
+          "validation_success": {
+            "state": "restricted",
+            "value": null,
+            "numerator": null,
+            "denominator": null,
+            "sample_size": 0,
+            "reason": "minimum_sample_not_met",
+            "unit": "percent"
+          },
+          "rework_introduced": 3,
+          "rework_resolved": 3,
+          "median_cycle_hours": {
+            "state": "available",
+            "value": 4.0,
+            "numerator": null,
+            "denominator": null,
+            "sample_size": 7,
+            "reason": null,
+            "unit": "hours"
+          },
+          "sample_size": 7,
+          "period": {
+            "from": "2026-07-22T12:00:00.000000Z",
+            "to": "2026-08-21T12:00:00.000000Z"
+          }
+        }
+      ],
+      "exclusions": {
+        "restricted_count": 1,
+        "excluded_count": 1,
+        "reasons": [
+          {
+            "reason": "minimum_sample_not_met",
+            "count": 1
+          }
+        ]
+      }
+    },
+    "owner/False/operator/all": {
+      "contributions": [
+        {
+          "subject_id": "owner",
+          "subject_label": "You",
+          "visibility": "self",
+          "role": "Implementation + validation",
+          "done_count": 7,
+          "first_pass": {
+            "state": "available",
+            "value": 57.1,
+            "numerator": 4,
+            "denominator": 7,
+            "sample_size": 7,
+            "reason": null,
+            "unit": "percent"
+          },
+          "validation_success": {
+            "state": "available",
+            "value": 100.0,
+            "numerator": 4,
+            "denominator": 4,
+            "sample_size": 4,
+            "reason": null,
+            "unit": "percent"
+          },
+          "rework_introduced": 3,
+          "rework_resolved": 3,
+          "median_cycle_hours": {
+            "state": "available",
+            "value": 5.0,
+            "numerator": null,
+            "denominator": null,
+            "sample_size": 7,
+            "reason": null,
+            "unit": "hours"
+          },
+          "sample_size": 7,
+          "period": {
+            "from": "2026-07-22T12:00:00.000000Z",
+            "to": "2026-08-21T12:00:00.000000Z"
+          }
+        },
+        {
+          "subject_id": null,
+          "subject_label": "Other Implementation + validations",
+          "visibility": "aggregate",
+          "role": "Implementation + validation",
+          "done_count": 7,
+          "first_pass": {
+            "state": "available",
+            "value": 57.1,
+            "numerator": 4,
+            "denominator": 7,
+            "sample_size": 7,
+            "reason": null,
+            "unit": "percent"
+          },
+          "validation_success": {
+            "state": "restricted",
+            "value": null,
+            "numerator": null,
+            "denominator": null,
+            "sample_size": 0,
+            "reason": "minimum_sample_not_met",
+            "unit": "percent"
+          },
+          "rework_introduced": 3,
+          "rework_resolved": 3,
+          "median_cycle_hours": {
+            "state": "available",
+            "value": 4.0,
+            "numerator": null,
+            "denominator": null,
+            "sample_size": 7,
+            "reason": null,
+            "unit": "hours"
+          },
+          "sample_size": 7,
+          "period": {
+            "from": "2026-07-22T12:00:00.000000Z",
+            "to": "2026-08-21T12:00:00.000000Z"
+          }
+        },
+        {
+          "subject_id": null,
+          "subject_label": "Other Validation agents",
+          "visibility": "aggregate",
+          "role": "Validation agent",
+          "done_count": null,
+          "first_pass": {
+            "state": "restricted",
+            "value": null,
+            "numerator": null,
+            "denominator": null,
+            "sample_size": 0,
+            "reason": "minimum_sample_not_met",
+            "unit": "percent"
+          },
+          "validation_success": {
+            "state": "available",
+            "value": 50.0,
+            "numerator": 6,
+            "denominator": 12,
+            "sample_size": 12,
+            "reason": null,
+            "unit": "percent"
+          },
+          "rework_introduced": null,
+          "rework_resolved": null,
+          "median_cycle_hours": {
+            "state": "restricted",
+            "value": null,
+            "numerator": null,
+            "denominator": null,
+            "sample_size": 0,
+            "reason": "minimum_sample_not_met",
+            "unit": "hours"
+          },
+          "sample_size": 12,
+          "period": {
+            "from": "2026-07-22T12:00:00.000000Z",
+            "to": "2026-08-21T12:00:00.000000Z"
+          }
+        }
+      ],
+      "exclusions": {
+        "restricted_count": 2,
+        "excluded_count": 2,
+        "reasons": [
+          {
+            "reason": "minimum_sample_not_met",
+            "count": 2
+          }
+        ]
+      }
+    },
+    "owner/False/operator/validation_agent": {
+      "contributions": [
+        {
+          "subject_id": null,
+          "subject_label": "Other Validation agents",
+          "visibility": "aggregate",
+          "role": "Validation agent",
+          "done_count": null,
+          "first_pass": {
+            "state": "restricted",
+            "value": null,
+            "numerator": null,
+            "denominator": null,
+            "sample_size": 0,
+            "reason": "minimum_sample_not_met",
+            "unit": "percent"
+          },
+          "validation_success": {
+            "state": "available",
+            "value": 50.0,
+            "numerator": 6,
+            "denominator": 12,
+            "sample_size": 12,
+            "reason": null,
+            "unit": "percent"
+          },
+          "rework_introduced": null,
+          "rework_resolved": null,
+          "median_cycle_hours": {
+            "state": "restricted",
+            "value": null,
+            "numerator": null,
+            "denominator": null,
+            "sample_size": 0,
+            "reason": "minimum_sample_not_met",
+            "unit": "hours"
+          },
+          "sample_size": 12,
+          "period": {
+            "from": "2026-07-22T12:00:00.000000Z",
+            "to": "2026-08-21T12:00:00.000000Z"
+          }
+        }
+      ],
+      "exclusions": {
+        "restricted_count": 1,
+        "excluded_count": 1,
+        "reasons": [
+          {
+            "reason": "minimum_sample_not_met",
+            "count": 1
+          }
+        ]
+      }
+    },
+    "owner/False/operator/implementation_+_validation": {
+      "contributions": [
+        {
+          "subject_id": "owner",
+          "subject_label": "You",
+          "visibility": "self",
+          "role": "Implementation + validation",
+          "done_count": 7,
+          "first_pass": {
+            "state": "available",
+            "value": 57.1,
+            "numerator": 4,
+            "denominator": 7,
+            "sample_size": 7,
+            "reason": null,
+            "unit": "percent"
+          },
+          "validation_success": {
+            "state": "available",
+            "value": 100.0,
+            "numerator": 4,
+            "denominator": 4,
+            "sample_size": 4,
+            "reason": null,
+            "unit": "percent"
+          },
+          "rework_introduced": 3,
+          "rework_resolved": 3,
+          "median_cycle_hours": {
+            "state": "available",
+            "value": 5.0,
+            "numerator": null,
+            "denominator": null,
+            "sample_size": 7,
+            "reason": null,
+            "unit": "hours"
+          },
+          "sample_size": 7,
+          "period": {
+            "from": "2026-07-22T12:00:00.000000Z",
+            "to": "2026-08-21T12:00:00.000000Z"
+          }
+        },
+        {
+          "subject_id": null,
+          "subject_label": "Other Implementation + validations",
+          "visibility": "aggregate",
+          "role": "Implementation + validation",
+          "done_count": 7,
+          "first_pass": {
+            "state": "available",
+            "value": 57.1,
+            "numerator": 4,
+            "denominator": 7,
+            "sample_size": 7,
+            "reason": null,
+            "unit": "percent"
+          },
+          "validation_success": {
+            "state": "restricted",
+            "value": null,
+            "numerator": null,
+            "denominator": null,
+            "sample_size": 0,
+            "reason": "minimum_sample_not_met",
+            "unit": "percent"
+          },
+          "rework_introduced": 3,
+          "rework_resolved": 3,
+          "median_cycle_hours": {
+            "state": "available",
+            "value": 4.0,
+            "numerator": null,
+            "denominator": null,
+            "sample_size": 7,
+            "reason": null,
+            "unit": "hours"
+          },
+          "sample_size": 7,
+          "period": {
+            "from": "2026-07-22T12:00:00.000000Z",
+            "to": "2026-08-21T12:00:00.000000Z"
+          }
+        }
+      ],
+      "exclusions": {
+        "restricted_count": 1,
+        "excluded_count": 1,
+        "reasons": [
+          {
+            "reason": "minimum_sample_not_met",
+            "count": 1
+          }
+        ]
+      }
+    },
+    "owner/True/self/all": {
+      "contributions": [
+        {
+          "subject_id": "owner",
+          "subject_label": "You",
+          "visibility": "self",
+          "role": "Implementation + validation",
+          "done_count": 7,
+          "first_pass": {
+            "state": "available",
+            "value": 57.1,
+            "numerator": 4,
+            "denominator": 7,
+            "sample_size": 7,
+            "reason": null,
+            "unit": "percent"
+          },
+          "validation_success": {
+            "state": "available",
+            "value": 100.0,
+            "numerator": 4,
+            "denominator": 4,
+            "sample_size": 4,
+            "reason": null,
+            "unit": "percent"
+          },
+          "rework_introduced": 3,
+          "rework_resolved": 3,
+          "median_cycle_hours": {
+            "state": "available",
+            "value": 5.0,
+            "numerator": null,
+            "denominator": null,
+            "sample_size": 7,
+            "reason": null,
+            "unit": "hours"
+          },
+          "sample_size": 7,
+          "period": {
+            "from": "2026-07-22T12:00:00.000000Z",
+            "to": "2026-08-21T12:00:00.000000Z"
+          }
+        }
+      ],
+      "exclusions": {
+        "restricted_count": 0,
+        "excluded_count": 0,
+        "reasons": []
+      }
+    },
+    "owner/True/self/validation_agent": {
+      "contributions": [],
+      "exclusions": {
+        "restricted_count": 0,
+        "excluded_count": 0,
+        "reasons": []
+      }
+    },
+    "owner/True/self/implementation_+_validation": {
+      "contributions": [
+        {
+          "subject_id": "owner",
+          "subject_label": "You",
+          "visibility": "self",
+          "role": "Implementation + validation",
+          "done_count": 7,
+          "first_pass": {
+            "state": "available",
+            "value": 57.1,
+            "numerator": 4,
+            "denominator": 7,
+            "sample_size": 7,
+            "reason": null,
+            "unit": "percent"
+          },
+          "validation_success": {
+            "state": "available",
+            "value": 100.0,
+            "numerator": 4,
+            "denominator": 4,
+            "sample_size": 4,
+            "reason": null,
+            "unit": "percent"
+          },
+          "rework_introduced": 3,
+          "rework_resolved": 3,
+          "median_cycle_hours": {
+            "state": "available",
+            "value": 5.0,
+            "numerator": null,
+            "denominator": null,
+            "sample_size": 7,
+            "reason": null,
+            "unit": "hours"
+          },
+          "sample_size": 7,
+          "period": {
+            "from": "2026-07-22T12:00:00.000000Z",
+            "to": "2026-08-21T12:00:00.000000Z"
+          }
+        }
+      ],
+      "exclusions": {
+        "restricted_count": 0,
+        "excluded_count": 0,
+        "reasons": []
+      }
+    },
+    "owner/True/aggregates/all": {
+      "contributions": [
+        {
+          "subject_id": null,
+          "subject_label": "Other Implementation + validations",
+          "visibility": "aggregate",
+          "role": "Implementation + validation",
+          "done_count": 7,
+          "first_pass": {
+            "state": "available",
+            "value": 57.1,
+            "numerator": 4,
+            "denominator": 7,
+            "sample_size": 7,
+            "reason": null,
+            "unit": "percent"
+          },
+          "validation_success": {
+            "state": "restricted",
+            "value": null,
+            "numerator": null,
+            "denominator": null,
+            "sample_size": 0,
+            "reason": "minimum_sample_not_met",
+            "unit": "percent"
+          },
+          "rework_introduced": 3,
+          "rework_resolved": 3,
+          "median_cycle_hours": {
+            "state": "available",
+            "value": 4.0,
+            "numerator": null,
+            "denominator": null,
+            "sample_size": 7,
+            "reason": null,
+            "unit": "hours"
+          },
+          "sample_size": 7,
+          "period": {
+            "from": "2026-07-22T12:00:00.000000Z",
+            "to": "2026-08-21T12:00:00.000000Z"
+          }
+        },
+        {
+          "subject_id": null,
+          "subject_label": "Other Validation agents",
+          "visibility": "aggregate",
+          "role": "Validation agent",
+          "done_count": null,
+          "first_pass": {
+            "state": "restricted",
+            "value": null,
+            "numerator": null,
+            "denominator": null,
+            "sample_size": 0,
+            "reason": "minimum_sample_not_met",
+            "unit": "percent"
+          },
+          "validation_success": {
+            "state": "available",
+            "value": 50.0,
+            "numerator": 6,
+            "denominator": 12,
+            "sample_size": 12,
+            "reason": null,
+            "unit": "percent"
+          },
+          "rework_introduced": null,
+          "rework_resolved": null,
+          "median_cycle_hours": {
+            "state": "restricted",
+            "value": null,
+            "numerator": null,
+            "denominator": null,
+            "sample_size": 0,
+            "reason": "minimum_sample_not_met",
+            "unit": "hours"
+          },
+          "sample_size": 12,
+          "period": {
+            "from": "2026-07-22T12:00:00.000000Z",
+            "to": "2026-08-21T12:00:00.000000Z"
+          }
+        }
+      ],
+      "exclusions": {
+        "restricted_count": 2,
+        "excluded_count": 2,
+        "reasons": [
+          {
+            "reason": "minimum_sample_not_met",
+            "count": 2
+          }
+        ]
+      }
+    },
+    "owner/True/aggregates/validation_agent": {
+      "contributions": [
+        {
+          "subject_id": null,
+          "subject_label": "Other Validation agents",
+          "visibility": "aggregate",
+          "role": "Validation agent",
+          "done_count": null,
+          "first_pass": {
+            "state": "restricted",
+            "value": null,
+            "numerator": null,
+            "denominator": null,
+            "sample_size": 0,
+            "reason": "minimum_sample_not_met",
+            "unit": "percent"
+          },
+          "validation_success": {
+            "state": "available",
+            "value": 50.0,
+            "numerator": 6,
+            "denominator": 12,
+            "sample_size": 12,
+            "reason": null,
+            "unit": "percent"
+          },
+          "rework_introduced": null,
+          "rework_resolved": null,
+          "median_cycle_hours": {
+            "state": "restricted",
+            "value": null,
+            "numerator": null,
+            "denominator": null,
+            "sample_size": 0,
+            "reason": "minimum_sample_not_met",
+            "unit": "hours"
+          },
+          "sample_size": 12,
+          "period": {
+            "from": "2026-07-22T12:00:00.000000Z",
+            "to": "2026-08-21T12:00:00.000000Z"
+          }
+        }
+      ],
+      "exclusions": {
+        "restricted_count": 1,
+        "excluded_count": 1,
+        "reasons": [
+          {
+            "reason": "minimum_sample_not_met",
+            "count": 1
+          }
+        ]
+      }
+    },
+    "owner/True/aggregates/implementation_+_validation": {
+      "contributions": [
+        {
+          "subject_id": null,
+          "subject_label": "Other Implementation + validations",
+          "visibility": "aggregate",
+          "role": "Implementation + validation",
+          "done_count": 7,
+          "first_pass": {
+            "state": "available",
+            "value": 57.1,
+            "numerator": 4,
+            "denominator": 7,
+            "sample_size": 7,
+            "reason": null,
+            "unit": "percent"
+          },
+          "validation_success": {
+            "state": "restricted",
+            "value": null,
+            "numerator": null,
+            "denominator": null,
+            "sample_size": 0,
+            "reason": "minimum_sample_not_met",
+            "unit": "percent"
+          },
+          "rework_introduced": 3,
+          "rework_resolved": 3,
+          "median_cycle_hours": {
+            "state": "available",
+            "value": 4.0,
+            "numerator": null,
+            "denominator": null,
+            "sample_size": 7,
+            "reason": null,
+            "unit": "hours"
+          },
+          "sample_size": 7,
+          "period": {
+            "from": "2026-07-22T12:00:00.000000Z",
+            "to": "2026-08-21T12:00:00.000000Z"
+          }
+        }
+      ],
+      "exclusions": {
+        "restricted_count": 1,
+        "excluded_count": 1,
+        "reasons": [
+          {
+            "reason": "minimum_sample_not_met",
+            "count": 1
+          }
+        ]
+      }
+    },
+    "owner/True/self_and_aggregates/all": {
+      "contributions": [
+        {
+          "subject_id": "owner",
+          "subject_label": "You",
+          "visibility": "self",
+          "role": "Implementation + validation",
+          "done_count": 7,
+          "first_pass": {
+            "state": "available",
+            "value": 57.1,
+            "numerator": 4,
+            "denominator": 7,
+            "sample_size": 7,
+            "reason": null,
+            "unit": "percent"
+          },
+          "validation_success": {
+            "state": "available",
+            "value": 100.0,
+            "numerator": 4,
+            "denominator": 4,
+            "sample_size": 4,
+            "reason": null,
+            "unit": "percent"
+          },
+          "rework_introduced": 3,
+          "rework_resolved": 3,
+          "median_cycle_hours": {
+            "state": "available",
+            "value": 5.0,
+            "numerator": null,
+            "denominator": null,
+            "sample_size": 7,
+            "reason": null,
+            "unit": "hours"
+          },
+          "sample_size": 7,
+          "period": {
+            "from": "2026-07-22T12:00:00.000000Z",
+            "to": "2026-08-21T12:00:00.000000Z"
+          }
+        },
+        {
+          "subject_id": null,
+          "subject_label": "Other Implementation + validations",
+          "visibility": "aggregate",
+          "role": "Implementation + validation",
+          "done_count": 7,
+          "first_pass": {
+            "state": "available",
+            "value": 57.1,
+            "numerator": 4,
+            "denominator": 7,
+            "sample_size": 7,
+            "reason": null,
+            "unit": "percent"
+          },
+          "validation_success": {
+            "state": "restricted",
+            "value": null,
+            "numerator": null,
+            "denominator": null,
+            "sample_size": 0,
+            "reason": "minimum_sample_not_met",
+            "unit": "percent"
+          },
+          "rework_introduced": 3,
+          "rework_resolved": 3,
+          "median_cycle_hours": {
+            "state": "available",
+            "value": 4.0,
+            "numerator": null,
+            "denominator": null,
+            "sample_size": 7,
+            "reason": null,
+            "unit": "hours"
+          },
+          "sample_size": 7,
+          "period": {
+            "from": "2026-07-22T12:00:00.000000Z",
+            "to": "2026-08-21T12:00:00.000000Z"
+          }
+        },
+        {
+          "subject_id": null,
+          "subject_label": "Other Validation agents",
+          "visibility": "aggregate",
+          "role": "Validation agent",
+          "done_count": null,
+          "first_pass": {
+            "state": "restricted",
+            "value": null,
+            "numerator": null,
+            "denominator": null,
+            "sample_size": 0,
+            "reason": "minimum_sample_not_met",
+            "unit": "percent"
+          },
+          "validation_success": {
+            "state": "available",
+            "value": 50.0,
+            "numerator": 6,
+            "denominator": 12,
+            "sample_size": 12,
+            "reason": null,
+            "unit": "percent"
+          },
+          "rework_introduced": null,
+          "rework_resolved": null,
+          "median_cycle_hours": {
+            "state": "restricted",
+            "value": null,
+            "numerator": null,
+            "denominator": null,
+            "sample_size": 0,
+            "reason": "minimum_sample_not_met",
+            "unit": "hours"
+          },
+          "sample_size": 12,
+          "period": {
+            "from": "2026-07-22T12:00:00.000000Z",
+            "to": "2026-08-21T12:00:00.000000Z"
+          }
+        }
+      ],
+      "exclusions": {
+        "restricted_count": 2,
+        "excluded_count": 2,
+        "reasons": [
+          {
+            "reason": "minimum_sample_not_met",
+            "count": 2
+          }
+        ]
+      }
+    },
+    "owner/True/self_and_aggregates/validation_agent": {
+      "contributions": [
+        {
+          "subject_id": null,
+          "subject_label": "Other Validation agents",
+          "visibility": "aggregate",
+          "role": "Validation agent",
+          "done_count": null,
+          "first_pass": {
+            "state": "restricted",
+            "value": null,
+            "numerator": null,
+            "denominator": null,
+            "sample_size": 0,
+            "reason": "minimum_sample_not_met",
+            "unit": "percent"
+          },
+          "validation_success": {
+            "state": "available",
+            "value": 50.0,
+            "numerator": 6,
+            "denominator": 12,
+            "sample_size": 12,
+            "reason": null,
+            "unit": "percent"
+          },
+          "rework_introduced": null,
+          "rework_resolved": null,
+          "median_cycle_hours": {
+            "state": "restricted",
+            "value": null,
+            "numerator": null,
+            "denominator": null,
+            "sample_size": 0,
+            "reason": "minimum_sample_not_met",
+            "unit": "hours"
+          },
+          "sample_size": 12,
+          "period": {
+            "from": "2026-07-22T12:00:00.000000Z",
+            "to": "2026-08-21T12:00:00.000000Z"
+          }
+        }
+      ],
+      "exclusions": {
+        "restricted_count": 1,
+        "excluded_count": 1,
+        "reasons": [
+          {
+            "reason": "minimum_sample_not_met",
+            "count": 1
+          }
+        ]
+      }
+    },
+    "owner/True/self_and_aggregates/implementation_+_validation": {
+      "contributions": [
+        {
+          "subject_id": "owner",
+          "subject_label": "You",
+          "visibility": "self",
+          "role": "Implementation + validation",
+          "done_count": 7,
+          "first_pass": {
+            "state": "available",
+            "value": 57.1,
+            "numerator": 4,
+            "denominator": 7,
+            "sample_size": 7,
+            "reason": null,
+            "unit": "percent"
+          },
+          "validation_success": {
+            "state": "available",
+            "value": 100.0,
+            "numerator": 4,
+            "denominator": 4,
+            "sample_size": 4,
+            "reason": null,
+            "unit": "percent"
+          },
+          "rework_introduced": 3,
+          "rework_resolved": 3,
+          "median_cycle_hours": {
+            "state": "available",
+            "value": 5.0,
+            "numerator": null,
+            "denominator": null,
+            "sample_size": 7,
+            "reason": null,
+            "unit": "hours"
+          },
+          "sample_size": 7,
+          "period": {
+            "from": "2026-07-22T12:00:00.000000Z",
+            "to": "2026-08-21T12:00:00.000000Z"
+          }
+        },
+        {
+          "subject_id": null,
+          "subject_label": "Other Implementation + validations",
+          "visibility": "aggregate",
+          "role": "Implementation + validation",
+          "done_count": 7,
+          "first_pass": {
+            "state": "available",
+            "value": 57.1,
+            "numerator": 4,
+            "denominator": 7,
+            "sample_size": 7,
+            "reason": null,
+            "unit": "percent"
+          },
+          "validation_success": {
+            "state": "restricted",
+            "value": null,
+            "numerator": null,
+            "denominator": null,
+            "sample_size": 0,
+            "reason": "minimum_sample_not_met",
+            "unit": "percent"
+          },
+          "rework_introduced": 3,
+          "rework_resolved": 3,
+          "median_cycle_hours": {
+            "state": "available",
+            "value": 4.0,
+            "numerator": null,
+            "denominator": null,
+            "sample_size": 7,
+            "reason": null,
+            "unit": "hours"
+          },
+          "sample_size": 7,
+          "period": {
+            "from": "2026-07-22T12:00:00.000000Z",
+            "to": "2026-08-21T12:00:00.000000Z"
+          }
+        }
+      ],
+      "exclusions": {
+        "restricted_count": 1,
+        "excluded_count": 1,
+        "reasons": [
+          {
+            "reason": "minimum_sample_not_met",
+            "count": 1
+          }
+        ]
+      }
+    },
+    "owner/True/operator/all": {
+      "contributions": [
+        {
+          "subject_id": "owner",
+          "subject_label": "You",
+          "visibility": "self",
+          "role": "Implementation + validation",
+          "done_count": 7,
+          "first_pass": {
+            "state": "available",
+            "value": 57.1,
+            "numerator": 4,
+            "denominator": 7,
+            "sample_size": 7,
+            "reason": null,
+            "unit": "percent"
+          },
+          "validation_success": {
+            "state": "available",
+            "value": 100.0,
+            "numerator": 4,
+            "denominator": 4,
+            "sample_size": 4,
+            "reason": null,
+            "unit": "percent"
+          },
+          "rework_introduced": 3,
+          "rework_resolved": 3,
+          "median_cycle_hours": {
+            "state": "available",
+            "value": 5.0,
+            "numerator": null,
+            "denominator": null,
+            "sample_size": 7,
+            "reason": null,
+            "unit": "hours"
+          },
+          "sample_size": 7,
+          "period": {
+            "from": "2026-07-22T12:00:00.000000Z",
+            "to": "2026-08-21T12:00:00.000000Z"
+          }
+        },
+        {
+          "subject_id": "large",
+          "subject_label": "large",
+          "visibility": "operator",
+          "role": "Implementation + validation",
+          "done_count": 6,
+          "first_pass": {
+            "state": "available",
+            "value": 50.0,
+            "numerator": 3,
+            "denominator": 6,
+            "sample_size": 6,
+            "reason": null,
+            "unit": "percent"
+          },
+          "validation_success": {
+            "state": "restricted",
+            "value": null,
+            "numerator": null,
+            "denominator": null,
+            "sample_size": 0,
+            "reason": "minimum_sample_not_met",
+            "unit": "percent"
+          },
+          "rework_introduced": 3,
+          "rework_resolved": 3,
+          "median_cycle_hours": {
+            "state": "available",
+            "value": 4.5,
+            "numerator": null,
+            "denominator": null,
+            "sample_size": 6,
+            "reason": null,
+            "unit": "hours"
+          },
+          "sample_size": 6,
+          "period": {
+            "from": "2026-07-22T12:00:00.000000Z",
+            "to": "2026-08-21T12:00:00.000000Z"
+          }
+        },
+        {
+          "subject_id": "reviewer",
+          "subject_label": "reviewer",
+          "visibility": "operator",
+          "role": "Validation agent",
+          "done_count": null,
+          "first_pass": {
+            "state": "restricted",
+            "value": null,
+            "numerator": null,
+            "denominator": null,
+            "sample_size": 0,
+            "reason": "minimum_sample_not_met",
+            "unit": "percent"
+          },
+          "validation_success": {
+            "state": "available",
+            "value": 50.0,
+            "numerator": 6,
+            "denominator": 12,
+            "sample_size": 12,
+            "reason": null,
+            "unit": "percent"
+          },
+          "rework_introduced": null,
+          "rework_resolved": null,
+          "median_cycle_hours": {
+            "state": "restricted",
+            "value": null,
+            "numerator": null,
+            "denominator": null,
+            "sample_size": 0,
+            "reason": "minimum_sample_not_met",
+            "unit": "hours"
+          },
+          "sample_size": 12,
+          "period": {
+            "from": "2026-07-22T12:00:00.000000Z",
+            "to": "2026-08-21T12:00:00.000000Z"
+          }
+        },
+        {
+          "subject_id": "small",
+          "subject_label": "small",
+          "visibility": "restricted",
+          "role": "Implementation + validation",
+          "done_count": null,
+          "first_pass": {
+            "state": "restricted",
+            "value": null,
+            "numerator": null,
+            "denominator": null,
+            "sample_size": 0,
+            "reason": "minimum_sample_not_met",
+            "unit": "percent"
+          },
+          "validation_success": {
+            "state": "restricted",
+            "value": null,
+            "numerator": null,
+            "denominator": null,
+            "sample_size": 0,
+            "reason": "minimum_sample_not_met",
+            "unit": "percent"
+          },
+          "rework_introduced": null,
+          "rework_resolved": null,
+          "median_cycle_hours": {
+            "state": "restricted",
+            "value": null,
+            "numerator": null,
+            "denominator": null,
+            "sample_size": 0,
+            "reason": "minimum_sample_not_met",
+            "unit": "hours"
+          },
+          "sample_size": 0,
+          "period": {
+            "from": "2026-07-22T12:00:00.000000Z",
+            "to": "2026-08-21T12:00:00.000000Z"
+          }
+        }
+      ],
+      "exclusions": {
+        "restricted_count": 3,
+        "excluded_count": 3,
+        "reasons": [
+          {
+            "reason": "minimum_sample_not_met",
+            "count": 3
+          }
+        ]
+      }
+    },
+    "owner/True/operator/validation_agent": {
+      "contributions": [
+        {
+          "subject_id": "reviewer",
+          "subject_label": "reviewer",
+          "visibility": "operator",
+          "role": "Validation agent",
+          "done_count": null,
+          "first_pass": {
+            "state": "restricted",
+            "value": null,
+            "numerator": null,
+            "denominator": null,
+            "sample_size": 0,
+            "reason": "minimum_sample_not_met",
+            "unit": "percent"
+          },
+          "validation_success": {
+            "state": "available",
+            "value": 50.0,
+            "numerator": 6,
+            "denominator": 12,
+            "sample_size": 12,
+            "reason": null,
+            "unit": "percent"
+          },
+          "rework_introduced": null,
+          "rework_resolved": null,
+          "median_cycle_hours": {
+            "state": "restricted",
+            "value": null,
+            "numerator": null,
+            "denominator": null,
+            "sample_size": 0,
+            "reason": "minimum_sample_not_met",
+            "unit": "hours"
+          },
+          "sample_size": 12,
+          "period": {
+            "from": "2026-07-22T12:00:00.000000Z",
+            "to": "2026-08-21T12:00:00.000000Z"
+          }
+        }
+      ],
+      "exclusions": {
+        "restricted_count": 1,
+        "excluded_count": 1,
+        "reasons": [
+          {
+            "reason": "minimum_sample_not_met",
+            "count": 1
+          }
+        ]
+      }
+    },
+    "owner/True/operator/implementation_+_validation": {
+      "contributions": [
+        {
+          "subject_id": "owner",
+          "subject_label": "You",
+          "visibility": "self",
+          "role": "Implementation + validation",
+          "done_count": 7,
+          "first_pass": {
+            "state": "available",
+            "value": 57.1,
+            "numerator": 4,
+            "denominator": 7,
+            "sample_size": 7,
+            "reason": null,
+            "unit": "percent"
+          },
+          "validation_success": {
+            "state": "available",
+            "value": 100.0,
+            "numerator": 4,
+            "denominator": 4,
+            "sample_size": 4,
+            "reason": null,
+            "unit": "percent"
+          },
+          "rework_introduced": 3,
+          "rework_resolved": 3,
+          "median_cycle_hours": {
+            "state": "available",
+            "value": 5.0,
+            "numerator": null,
+            "denominator": null,
+            "sample_size": 7,
+            "reason": null,
+            "unit": "hours"
+          },
+          "sample_size": 7,
+          "period": {
+            "from": "2026-07-22T12:00:00.000000Z",
+            "to": "2026-08-21T12:00:00.000000Z"
+          }
+        },
+        {
+          "subject_id": "large",
+          "subject_label": "large",
+          "visibility": "operator",
+          "role": "Implementation + validation",
+          "done_count": 6,
+          "first_pass": {
+            "state": "available",
+            "value": 50.0,
+            "numerator": 3,
+            "denominator": 6,
+            "sample_size": 6,
+            "reason": null,
+            "unit": "percent"
+          },
+          "validation_success": {
+            "state": "restricted",
+            "value": null,
+            "numerator": null,
+            "denominator": null,
+            "sample_size": 0,
+            "reason": "minimum_sample_not_met",
+            "unit": "percent"
+          },
+          "rework_introduced": 3,
+          "rework_resolved": 3,
+          "median_cycle_hours": {
+            "state": "available",
+            "value": 4.5,
+            "numerator": null,
+            "denominator": null,
+            "sample_size": 6,
+            "reason": null,
+            "unit": "hours"
+          },
+          "sample_size": 6,
+          "period": {
+            "from": "2026-07-22T12:00:00.000000Z",
+            "to": "2026-08-21T12:00:00.000000Z"
+          }
+        },
+        {
+          "subject_id": "small",
+          "subject_label": "small",
+          "visibility": "restricted",
+          "role": "Implementation + validation",
+          "done_count": null,
+          "first_pass": {
+            "state": "restricted",
+            "value": null,
+            "numerator": null,
+            "denominator": null,
+            "sample_size": 0,
+            "reason": "minimum_sample_not_met",
+            "unit": "percent"
+          },
+          "validation_success": {
+            "state": "restricted",
+            "value": null,
+            "numerator": null,
+            "denominator": null,
+            "sample_size": 0,
+            "reason": "minimum_sample_not_met",
+            "unit": "percent"
+          },
+          "rework_introduced": null,
+          "rework_resolved": null,
+          "median_cycle_hours": {
+            "state": "restricted",
+            "value": null,
+            "numerator": null,
+            "denominator": null,
+            "sample_size": 0,
+            "reason": "minimum_sample_not_met",
+            "unit": "hours"
+          },
+          "sample_size": 0,
+          "period": {
+            "from": "2026-07-22T12:00:00.000000Z",
+            "to": "2026-08-21T12:00:00.000000Z"
+          }
+        }
+      ],
+      "exclusions": {
+        "restricted_count": 2,
+        "excluded_count": 2,
+        "reasons": [
+          {
+            "reason": "minimum_sample_not_met",
+            "count": 2
+          }
+        ]
+      }
+    },
+    "absent/False/self/all": {
+      "contributions": [],
+      "exclusions": {
+        "restricted_count": 0,
+        "excluded_count": 0,
+        "reasons": []
+      }
+    },
+    "absent/False/self/validation_agent": {
+      "contributions": [],
+      "exclusions": {
+        "restricted_count": 0,
+        "excluded_count": 0,
+        "reasons": []
+      }
+    },
+    "absent/False/self/implementation_+_validation": {
+      "contributions": [],
+      "exclusions": {
+        "restricted_count": 0,
+        "excluded_count": 0,
+        "reasons": []
+      }
+    },
+    "absent/False/aggregates/all": {
+      "contributions": [
+        {
+          "subject_id": null,
+          "subject_label": "Other Implementation + validations",
+          "visibility": "aggregate",
+          "role": "Implementation + validation",
+          "done_count": 14,
+          "first_pass": {
+            "state": "available",
+            "value": 57.1,
+            "numerator": 8,
+            "denominator": 14,
+            "sample_size": 14,
+            "reason": null,
+            "unit": "percent"
+          },
+          "validation_success": {
+            "state": "available",
+            "value": 100.0,
+            "numerator": 8,
+            "denominator": 8,
+            "sample_size": 8,
+            "reason": null,
+            "unit": "percent"
+          },
+          "rework_introduced": 6,
+          "rework_resolved": 6,
+          "median_cycle_hours": {
+            "state": "available",
+            "value": 4.5,
+            "numerator": null,
+            "denominator": null,
+            "sample_size": 14,
+            "reason": null,
+            "unit": "hours"
+          },
+          "sample_size": 14,
+          "period": {
+            "from": "2026-07-22T12:00:00.000000Z",
+            "to": "2026-08-21T12:00:00.000000Z"
+          }
+        },
+        {
+          "subject_id": null,
+          "subject_label": "Other Validation agents",
+          "visibility": "aggregate",
+          "role": "Validation agent",
+          "done_count": null,
+          "first_pass": {
+            "state": "restricted",
+            "value": null,
+            "numerator": null,
+            "denominator": null,
+            "sample_size": 0,
+            "reason": "minimum_sample_not_met",
+            "unit": "percent"
+          },
+          "validation_success": {
+            "state": "available",
+            "value": 50.0,
+            "numerator": 6,
+            "denominator": 12,
+            "sample_size": 12,
+            "reason": null,
+            "unit": "percent"
+          },
+          "rework_introduced": null,
+          "rework_resolved": null,
+          "median_cycle_hours": {
+            "state": "restricted",
+            "value": null,
+            "numerator": null,
+            "denominator": null,
+            "sample_size": 0,
+            "reason": "minimum_sample_not_met",
+            "unit": "hours"
+          },
+          "sample_size": 12,
+          "period": {
+            "from": "2026-07-22T12:00:00.000000Z",
+            "to": "2026-08-21T12:00:00.000000Z"
+          }
+        }
+      ],
+      "exclusions": {
+        "restricted_count": 1,
+        "excluded_count": 1,
+        "reasons": [
+          {
+            "reason": "minimum_sample_not_met",
+            "count": 1
+          }
+        ]
+      }
+    },
+    "absent/False/aggregates/validation_agent": {
+      "contributions": [
+        {
+          "subject_id": null,
+          "subject_label": "Other Validation agents",
+          "visibility": "aggregate",
+          "role": "Validation agent",
+          "done_count": null,
+          "first_pass": {
+            "state": "restricted",
+            "value": null,
+            "numerator": null,
+            "denominator": null,
+            "sample_size": 0,
+            "reason": "minimum_sample_not_met",
+            "unit": "percent"
+          },
+          "validation_success": {
+            "state": "available",
+            "value": 50.0,
+            "numerator": 6,
+            "denominator": 12,
+            "sample_size": 12,
+            "reason": null,
+            "unit": "percent"
+          },
+          "rework_introduced": null,
+          "rework_resolved": null,
+          "median_cycle_hours": {
+            "state": "restricted",
+            "value": null,
+            "numerator": null,
+            "denominator": null,
+            "sample_size": 0,
+            "reason": "minimum_sample_not_met",
+            "unit": "hours"
+          },
+          "sample_size": 12,
+          "period": {
+            "from": "2026-07-22T12:00:00.000000Z",
+            "to": "2026-08-21T12:00:00.000000Z"
+          }
+        }
+      ],
+      "exclusions": {
+        "restricted_count": 1,
+        "excluded_count": 1,
+        "reasons": [
+          {
+            "reason": "minimum_sample_not_met",
+            "count": 1
+          }
+        ]
+      }
+    },
+    "absent/False/aggregates/implementation_+_validation": {
+      "contributions": [
+        {
+          "subject_id": null,
+          "subject_label": "Other Implementation + validations",
+          "visibility": "aggregate",
+          "role": "Implementation + validation",
+          "done_count": 14,
+          "first_pass": {
+            "state": "available",
+            "value": 57.1,
+            "numerator": 8,
+            "denominator": 14,
+            "sample_size": 14,
+            "reason": null,
+            "unit": "percent"
+          },
+          "validation_success": {
+            "state": "available",
+            "value": 100.0,
+            "numerator": 8,
+            "denominator": 8,
+            "sample_size": 8,
+            "reason": null,
+            "unit": "percent"
+          },
+          "rework_introduced": 6,
+          "rework_resolved": 6,
+          "median_cycle_hours": {
+            "state": "available",
+            "value": 4.5,
+            "numerator": null,
+            "denominator": null,
+            "sample_size": 14,
+            "reason": null,
+            "unit": "hours"
+          },
+          "sample_size": 14,
+          "period": {
+            "from": "2026-07-22T12:00:00.000000Z",
+            "to": "2026-08-21T12:00:00.000000Z"
+          }
+        }
+      ],
+      "exclusions": {
+        "restricted_count": 0,
+        "excluded_count": 0,
+        "reasons": []
+      }
+    },
+    "absent/False/self_and_aggregates/all": {
+      "contributions": [
+        {
+          "subject_id": null,
+          "subject_label": "Other Implementation + validations",
+          "visibility": "aggregate",
+          "role": "Implementation + validation",
+          "done_count": 14,
+          "first_pass": {
+            "state": "available",
+            "value": 57.1,
+            "numerator": 8,
+            "denominator": 14,
+            "sample_size": 14,
+            "reason": null,
+            "unit": "percent"
+          },
+          "validation_success": {
+            "state": "available",
+            "value": 100.0,
+            "numerator": 8,
+            "denominator": 8,
+            "sample_size": 8,
+            "reason": null,
+            "unit": "percent"
+          },
+          "rework_introduced": 6,
+          "rework_resolved": 6,
+          "median_cycle_hours": {
+            "state": "available",
+            "value": 4.5,
+            "numerator": null,
+            "denominator": null,
+            "sample_size": 14,
+            "reason": null,
+            "unit": "hours"
+          },
+          "sample_size": 14,
+          "period": {
+            "from": "2026-07-22T12:00:00.000000Z",
+            "to": "2026-08-21T12:00:00.000000Z"
+          }
+        },
+        {
+          "subject_id": null,
+          "subject_label": "Other Validation agents",
+          "visibility": "aggregate",
+          "role": "Validation agent",
+          "done_count": null,
+          "first_pass": {
+            "state": "restricted",
+            "value": null,
+            "numerator": null,
+            "denominator": null,
+            "sample_size": 0,
+            "reason": "minimum_sample_not_met",
+            "unit": "percent"
+          },
+          "validation_success": {
+            "state": "available",
+            "value": 50.0,
+            "numerator": 6,
+            "denominator": 12,
+            "sample_size": 12,
+            "reason": null,
+            "unit": "percent"
+          },
+          "rework_introduced": null,
+          "rework_resolved": null,
+          "median_cycle_hours": {
+            "state": "restricted",
+            "value": null,
+            "numerator": null,
+            "denominator": null,
+            "sample_size": 0,
+            "reason": "minimum_sample_not_met",
+            "unit": "hours"
+          },
+          "sample_size": 12,
+          "period": {
+            "from": "2026-07-22T12:00:00.000000Z",
+            "to": "2026-08-21T12:00:00.000000Z"
+          }
+        }
+      ],
+      "exclusions": {
+        "restricted_count": 1,
+        "excluded_count": 1,
+        "reasons": [
+          {
+            "reason": "minimum_sample_not_met",
+            "count": 1
+          }
+        ]
+      }
+    },
+    "absent/False/self_and_aggregates/validation_agent": {
+      "contributions": [
+        {
+          "subject_id": null,
+          "subject_label": "Other Validation agents",
+          "visibility": "aggregate",
+          "role": "Validation agent",
+          "done_count": null,
+          "first_pass": {
+            "state": "restricted",
+            "value": null,
+            "numerator": null,
+            "denominator": null,
+            "sample_size": 0,
+            "reason": "minimum_sample_not_met",
+            "unit": "percent"
+          },
+          "validation_success": {
+            "state": "available",
+            "value": 50.0,
+            "numerator": 6,
+            "denominator": 12,
+            "sample_size": 12,
+            "reason": null,
+            "unit": "percent"
+          },
+          "rework_introduced": null,
+          "rework_resolved": null,
+          "median_cycle_hours": {
+            "state": "restricted",
+            "value": null,
+            "numerator": null,
+            "denominator": null,
+            "sample_size": 0,
+            "reason": "minimum_sample_not_met",
+            "unit": "hours"
+          },
+          "sample_size": 12,
+          "period": {
+            "from": "2026-07-22T12:00:00.000000Z",
+            "to": "2026-08-21T12:00:00.000000Z"
+          }
+        }
+      ],
+      "exclusions": {
+        "restricted_count": 1,
+        "excluded_count": 1,
+        "reasons": [
+          {
+            "reason": "minimum_sample_not_met",
+            "count": 1
+          }
+        ]
+      }
+    },
+    "absent/False/self_and_aggregates/implementation_+_validation": {
+      "contributions": [
+        {
+          "subject_id": null,
+          "subject_label": "Other Implementation + validations",
+          "visibility": "aggregate",
+          "role": "Implementation + validation",
+          "done_count": 14,
+          "first_pass": {
+            "state": "available",
+            "value": 57.1,
+            "numerator": 8,
+            "denominator": 14,
+            "sample_size": 14,
+            "reason": null,
+            "unit": "percent"
+          },
+          "validation_success": {
+            "state": "available",
+            "value": 100.0,
+            "numerator": 8,
+            "denominator": 8,
+            "sample_size": 8,
+            "reason": null,
+            "unit": "percent"
+          },
+          "rework_introduced": 6,
+          "rework_resolved": 6,
+          "median_cycle_hours": {
+            "state": "available",
+            "value": 4.5,
+            "numerator": null,
+            "denominator": null,
+            "sample_size": 14,
+            "reason": null,
+            "unit": "hours"
+          },
+          "sample_size": 14,
+          "period": {
+            "from": "2026-07-22T12:00:00.000000Z",
+            "to": "2026-08-21T12:00:00.000000Z"
+          }
+        }
+      ],
+      "exclusions": {
+        "restricted_count": 0,
+        "excluded_count": 0,
+        "reasons": []
+      }
+    },
+    "absent/False/operator/all": {
+      "contributions": [
+        {
+          "subject_id": null,
+          "subject_label": "Other Implementation + validations",
+          "visibility": "aggregate",
+          "role": "Implementation + validation",
+          "done_count": 14,
+          "first_pass": {
+            "state": "available",
+            "value": 57.1,
+            "numerator": 8,
+            "denominator": 14,
+            "sample_size": 14,
+            "reason": null,
+            "unit": "percent"
+          },
+          "validation_success": {
+            "state": "available",
+            "value": 100.0,
+            "numerator": 8,
+            "denominator": 8,
+            "sample_size": 8,
+            "reason": null,
+            "unit": "percent"
+          },
+          "rework_introduced": 6,
+          "rework_resolved": 6,
+          "median_cycle_hours": {
+            "state": "available",
+            "value": 4.5,
+            "numerator": null,
+            "denominator": null,
+            "sample_size": 14,
+            "reason": null,
+            "unit": "hours"
+          },
+          "sample_size": 14,
+          "period": {
+            "from": "2026-07-22T12:00:00.000000Z",
+            "to": "2026-08-21T12:00:00.000000Z"
+          }
+        },
+        {
+          "subject_id": null,
+          "subject_label": "Other Validation agents",
+          "visibility": "aggregate",
+          "role": "Validation agent",
+          "done_count": null,
+          "first_pass": {
+            "state": "restricted",
+            "value": null,
+            "numerator": null,
+            "denominator": null,
+            "sample_size": 0,
+            "reason": "minimum_sample_not_met",
+            "unit": "percent"
+          },
+          "validation_success": {
+            "state": "available",
+            "value": 50.0,
+            "numerator": 6,
+            "denominator": 12,
+            "sample_size": 12,
+            "reason": null,
+            "unit": "percent"
+          },
+          "rework_introduced": null,
+          "rework_resolved": null,
+          "median_cycle_hours": {
+            "state": "restricted",
+            "value": null,
+            "numerator": null,
+            "denominator": null,
+            "sample_size": 0,
+            "reason": "minimum_sample_not_met",
+            "unit": "hours"
+          },
+          "sample_size": 12,
+          "period": {
+            "from": "2026-07-22T12:00:00.000000Z",
+            "to": "2026-08-21T12:00:00.000000Z"
+          }
+        }
+      ],
+      "exclusions": {
+        "restricted_count": 1,
+        "excluded_count": 1,
+        "reasons": [
+          {
+            "reason": "minimum_sample_not_met",
+            "count": 1
+          }
+        ]
+      }
+    },
+    "absent/False/operator/validation_agent": {
+      "contributions": [
+        {
+          "subject_id": null,
+          "subject_label": "Other Validation agents",
+          "visibility": "aggregate",
+          "role": "Validation agent",
+          "done_count": null,
+          "first_pass": {
+            "state": "restricted",
+            "value": null,
+            "numerator": null,
+            "denominator": null,
+            "sample_size": 0,
+            "reason": "minimum_sample_not_met",
+            "unit": "percent"
+          },
+          "validation_success": {
+            "state": "available",
+            "value": 50.0,
+            "numerator": 6,
+            "denominator": 12,
+            "sample_size": 12,
+            "reason": null,
+            "unit": "percent"
+          },
+          "rework_introduced": null,
+          "rework_resolved": null,
+          "median_cycle_hours": {
+            "state": "restricted",
+            "value": null,
+            "numerator": null,
+            "denominator": null,
+            "sample_size": 0,
+            "reason": "minimum_sample_not_met",
+            "unit": "hours"
+          },
+          "sample_size": 12,
+          "period": {
+            "from": "2026-07-22T12:00:00.000000Z",
+            "to": "2026-08-21T12:00:00.000000Z"
+          }
+        }
+      ],
+      "exclusions": {
+        "restricted_count": 1,
+        "excluded_count": 1,
+        "reasons": [
+          {
+            "reason": "minimum_sample_not_met",
+            "count": 1
+          }
+        ]
+      }
+    },
+    "absent/False/operator/implementation_+_validation": {
+      "contributions": [
+        {
+          "subject_id": null,
+          "subject_label": "Other Implementation + validations",
+          "visibility": "aggregate",
+          "role": "Implementation + validation",
+          "done_count": 14,
+          "first_pass": {
+            "state": "available",
+            "value": 57.1,
+            "numerator": 8,
+            "denominator": 14,
+            "sample_size": 14,
+            "reason": null,
+            "unit": "percent"
+          },
+          "validation_success": {
+            "state": "available",
+            "value": 100.0,
+            "numerator": 8,
+            "denominator": 8,
+            "sample_size": 8,
+            "reason": null,
+            "unit": "percent"
+          },
+          "rework_introduced": 6,
+          "rework_resolved": 6,
+          "median_cycle_hours": {
+            "state": "available",
+            "value": 4.5,
+            "numerator": null,
+            "denominator": null,
+            "sample_size": 14,
+            "reason": null,
+            "unit": "hours"
+          },
+          "sample_size": 14,
+          "period": {
+            "from": "2026-07-22T12:00:00.000000Z",
+            "to": "2026-08-21T12:00:00.000000Z"
+          }
+        }
+      ],
+      "exclusions": {
+        "restricted_count": 0,
+        "excluded_count": 0,
+        "reasons": []
+      }
+    },
+    "absent/True/self/all": {
+      "contributions": [],
+      "exclusions": {
+        "restricted_count": 0,
+        "excluded_count": 0,
+        "reasons": []
+      }
+    },
+    "absent/True/self/validation_agent": {
+      "contributions": [],
+      "exclusions": {
+        "restricted_count": 0,
+        "excluded_count": 0,
+        "reasons": []
+      }
+    },
+    "absent/True/self/implementation_+_validation": {
+      "contributions": [],
+      "exclusions": {
+        "restricted_count": 0,
+        "excluded_count": 0,
+        "reasons": []
+      }
+    },
+    "absent/True/aggregates/all": {
+      "contributions": [
+        {
+          "subject_id": null,
+          "subject_label": "Other Implementation + validations",
+          "visibility": "aggregate",
+          "role": "Implementation + validation",
+          "done_count": 14,
+          "first_pass": {
+            "state": "available",
+            "value": 57.1,
+            "numerator": 8,
+            "denominator": 14,
+            "sample_size": 14,
+            "reason": null,
+            "unit": "percent"
+          },
+          "validation_success": {
+            "state": "available",
+            "value": 100.0,
+            "numerator": 8,
+            "denominator": 8,
+            "sample_size": 8,
+            "reason": null,
+            "unit": "percent"
+          },
+          "rework_introduced": 6,
+          "rework_resolved": 6,
+          "median_cycle_hours": {
+            "state": "available",
+            "value": 4.5,
+            "numerator": null,
+            "denominator": null,
+            "sample_size": 14,
+            "reason": null,
+            "unit": "hours"
+          },
+          "sample_size": 14,
+          "period": {
+            "from": "2026-07-22T12:00:00.000000Z",
+            "to": "2026-08-21T12:00:00.000000Z"
+          }
+        },
+        {
+          "subject_id": null,
+          "subject_label": "Other Validation agents",
+          "visibility": "aggregate",
+          "role": "Validation agent",
+          "done_count": null,
+          "first_pass": {
+            "state": "restricted",
+            "value": null,
+            "numerator": null,
+            "denominator": null,
+            "sample_size": 0,
+            "reason": "minimum_sample_not_met",
+            "unit": "percent"
+          },
+          "validation_success": {
+            "state": "available",
+            "value": 50.0,
+            "numerator": 6,
+            "denominator": 12,
+            "sample_size": 12,
+            "reason": null,
+            "unit": "percent"
+          },
+          "rework_introduced": null,
+          "rework_resolved": null,
+          "median_cycle_hours": {
+            "state": "restricted",
+            "value": null,
+            "numerator": null,
+            "denominator": null,
+            "sample_size": 0,
+            "reason": "minimum_sample_not_met",
+            "unit": "hours"
+          },
+          "sample_size": 12,
+          "period": {
+            "from": "2026-07-22T12:00:00.000000Z",
+            "to": "2026-08-21T12:00:00.000000Z"
+          }
+        }
+      ],
+      "exclusions": {
+        "restricted_count": 1,
+        "excluded_count": 1,
+        "reasons": [
+          {
+            "reason": "minimum_sample_not_met",
+            "count": 1
+          }
+        ]
+      }
+    },
+    "absent/True/aggregates/validation_agent": {
+      "contributions": [
+        {
+          "subject_id": null,
+          "subject_label": "Other Validation agents",
+          "visibility": "aggregate",
+          "role": "Validation agent",
+          "done_count": null,
+          "first_pass": {
+            "state": "restricted",
+            "value": null,
+            "numerator": null,
+            "denominator": null,
+            "sample_size": 0,
+            "reason": "minimum_sample_not_met",
+            "unit": "percent"
+          },
+          "validation_success": {
+            "state": "available",
+            "value": 50.0,
+            "numerator": 6,
+            "denominator": 12,
+            "sample_size": 12,
+            "reason": null,
+            "unit": "percent"
+          },
+          "rework_introduced": null,
+          "rework_resolved": null,
+          "median_cycle_hours": {
+            "state": "restricted",
+            "value": null,
+            "numerator": null,
+            "denominator": null,
+            "sample_size": 0,
+            "reason": "minimum_sample_not_met",
+            "unit": "hours"
+          },
+          "sample_size": 12,
+          "period": {
+            "from": "2026-07-22T12:00:00.000000Z",
+            "to": "2026-08-21T12:00:00.000000Z"
+          }
+        }
+      ],
+      "exclusions": {
+        "restricted_count": 1,
+        "excluded_count": 1,
+        "reasons": [
+          {
+            "reason": "minimum_sample_not_met",
+            "count": 1
+          }
+        ]
+      }
+    },
+    "absent/True/aggregates/implementation_+_validation": {
+      "contributions": [
+        {
+          "subject_id": null,
+          "subject_label": "Other Implementation + validations",
+          "visibility": "aggregate",
+          "role": "Implementation + validation",
+          "done_count": 14,
+          "first_pass": {
+            "state": "available",
+            "value": 57.1,
+            "numerator": 8,
+            "denominator": 14,
+            "sample_size": 14,
+            "reason": null,
+            "unit": "percent"
+          },
+          "validation_success": {
+            "state": "available",
+            "value": 100.0,
+            "numerator": 8,
+            "denominator": 8,
+            "sample_size": 8,
+            "reason": null,
+            "unit": "percent"
+          },
+          "rework_introduced": 6,
+          "rework_resolved": 6,
+          "median_cycle_hours": {
+            "state": "available",
+            "value": 4.5,
+            "numerator": null,
+            "denominator": null,
+            "sample_size": 14,
+            "reason": null,
+            "unit": "hours"
+          },
+          "sample_size": 14,
+          "period": {
+            "from": "2026-07-22T12:00:00.000000Z",
+            "to": "2026-08-21T12:00:00.000000Z"
+          }
+        }
+      ],
+      "exclusions": {
+        "restricted_count": 0,
+        "excluded_count": 0,
+        "reasons": []
+      }
+    },
+    "absent/True/self_and_aggregates/all": {
+      "contributions": [
+        {
+          "subject_id": null,
+          "subject_label": "Other Implementation + validations",
+          "visibility": "aggregate",
+          "role": "Implementation + validation",
+          "done_count": 14,
+          "first_pass": {
+            "state": "available",
+            "value": 57.1,
+            "numerator": 8,
+            "denominator": 14,
+            "sample_size": 14,
+            "reason": null,
+            "unit": "percent"
+          },
+          "validation_success": {
+            "state": "available",
+            "value": 100.0,
+            "numerator": 8,
+            "denominator": 8,
+            "sample_size": 8,
+            "reason": null,
+            "unit": "percent"
+          },
+          "rework_introduced": 6,
+          "rework_resolved": 6,
+          "median_cycle_hours": {
+            "state": "available",
+            "value": 4.5,
+            "numerator": null,
+            "denominator": null,
+            "sample_size": 14,
+            "reason": null,
+            "unit": "hours"
+          },
+          "sample_size": 14,
+          "period": {
+            "from": "2026-07-22T12:00:00.000000Z",
+            "to": "2026-08-21T12:00:00.000000Z"
+          }
+        },
+        {
+          "subject_id": null,
+          "subject_label": "Other Validation agents",
+          "visibility": "aggregate",
+          "role": "Validation agent",
+          "done_count": null,
+          "first_pass": {
+            "state": "restricted",
+            "value": null,
+            "numerator": null,
+            "denominator": null,
+            "sample_size": 0,
+            "reason": "minimum_sample_not_met",
+            "unit": "percent"
+          },
+          "validation_success": {
+            "state": "available",
+            "value": 50.0,
+            "numerator": 6,
+            "denominator": 12,
+            "sample_size": 12,
+            "reason": null,
+            "unit": "percent"
+          },
+          "rework_introduced": null,
+          "rework_resolved": null,
+          "median_cycle_hours": {
+            "state": "restricted",
+            "value": null,
+            "numerator": null,
+            "denominator": null,
+            "sample_size": 0,
+            "reason": "minimum_sample_not_met",
+            "unit": "hours"
+          },
+          "sample_size": 12,
+          "period": {
+            "from": "2026-07-22T12:00:00.000000Z",
+            "to": "2026-08-21T12:00:00.000000Z"
+          }
+        }
+      ],
+      "exclusions": {
+        "restricted_count": 1,
+        "excluded_count": 1,
+        "reasons": [
+          {
+            "reason": "minimum_sample_not_met",
+            "count": 1
+          }
+        ]
+      }
+    },
+    "absent/True/self_and_aggregates/validation_agent": {
+      "contributions": [
+        {
+          "subject_id": null,
+          "subject_label": "Other Validation agents",
+          "visibility": "aggregate",
+          "role": "Validation agent",
+          "done_count": null,
+          "first_pass": {
+            "state": "restricted",
+            "value": null,
+            "numerator": null,
+            "denominator": null,
+            "sample_size": 0,
+            "reason": "minimum_sample_not_met",
+            "unit": "percent"
+          },
+          "validation_success": {
+            "state": "available",
+            "value": 50.0,
+            "numerator": 6,
+            "denominator": 12,
+            "sample_size": 12,
+            "reason": null,
+            "unit": "percent"
+          },
+          "rework_introduced": null,
+          "rework_resolved": null,
+          "median_cycle_hours": {
+            "state": "restricted",
+            "value": null,
+            "numerator": null,
+            "denominator": null,
+            "sample_size": 0,
+            "reason": "minimum_sample_not_met",
+            "unit": "hours"
+          },
+          "sample_size": 12,
+          "period": {
+            "from": "2026-07-22T12:00:00.000000Z",
+            "to": "2026-08-21T12:00:00.000000Z"
+          }
+        }
+      ],
+      "exclusions": {
+        "restricted_count": 1,
+        "excluded_count": 1,
+        "reasons": [
+          {
+            "reason": "minimum_sample_not_met",
+            "count": 1
+          }
+        ]
+      }
+    },
+    "absent/True/self_and_aggregates/implementation_+_validation": {
+      "contributions": [
+        {
+          "subject_id": null,
+          "subject_label": "Other Implementation + validations",
+          "visibility": "aggregate",
+          "role": "Implementation + validation",
+          "done_count": 14,
+          "first_pass": {
+            "state": "available",
+            "value": 57.1,
+            "numerator": 8,
+            "denominator": 14,
+            "sample_size": 14,
+            "reason": null,
+            "unit": "percent"
+          },
+          "validation_success": {
+            "state": "available",
+            "value": 100.0,
+            "numerator": 8,
+            "denominator": 8,
+            "sample_size": 8,
+            "reason": null,
+            "unit": "percent"
+          },
+          "rework_introduced": 6,
+          "rework_resolved": 6,
+          "median_cycle_hours": {
+            "state": "available",
+            "value": 4.5,
+            "numerator": null,
+            "denominator": null,
+            "sample_size": 14,
+            "reason": null,
+            "unit": "hours"
+          },
+          "sample_size": 14,
+          "period": {
+            "from": "2026-07-22T12:00:00.000000Z",
+            "to": "2026-08-21T12:00:00.000000Z"
+          }
+        }
+      ],
+      "exclusions": {
+        "restricted_count": 0,
+        "excluded_count": 0,
+        "reasons": []
+      }
+    },
+    "absent/True/operator/all": {
+      "contributions": [
+        {
+          "subject_id": "large",
+          "subject_label": "large",
+          "visibility": "operator",
+          "role": "Implementation + validation",
+          "done_count": 6,
+          "first_pass": {
+            "state": "available",
+            "value": 50.0,
+            "numerator": 3,
+            "denominator": 6,
+            "sample_size": 6,
+            "reason": null,
+            "unit": "percent"
+          },
+          "validation_success": {
+            "state": "restricted",
+            "value": null,
+            "numerator": null,
+            "denominator": null,
+            "sample_size": 0,
+            "reason": "minimum_sample_not_met",
+            "unit": "percent"
+          },
+          "rework_introduced": 3,
+          "rework_resolved": 3,
+          "median_cycle_hours": {
+            "state": "available",
+            "value": 4.5,
+            "numerator": null,
+            "denominator": null,
+            "sample_size": 6,
+            "reason": null,
+            "unit": "hours"
+          },
+          "sample_size": 6,
+          "period": {
+            "from": "2026-07-22T12:00:00.000000Z",
+            "to": "2026-08-21T12:00:00.000000Z"
+          }
+        },
+        {
+          "subject_id": "owner",
+          "subject_label": "owner",
+          "visibility": "operator",
+          "role": "Implementation + validation",
+          "done_count": 7,
+          "first_pass": {
+            "state": "available",
+            "value": 57.1,
+            "numerator": 4,
+            "denominator": 7,
+            "sample_size": 7,
+            "reason": null,
+            "unit": "percent"
+          },
+          "validation_success": {
+            "state": "restricted",
+            "value": null,
+            "numerator": null,
+            "denominator": null,
+            "sample_size": 0,
+            "reason": "minimum_sample_not_met",
+            "unit": "percent"
+          },
+          "rework_introduced": 3,
+          "rework_resolved": 3,
+          "median_cycle_hours": {
+            "state": "available",
+            "value": 5.0,
+            "numerator": null,
+            "denominator": null,
+            "sample_size": 7,
+            "reason": null,
+            "unit": "hours"
+          },
+          "sample_size": 7,
+          "period": {
+            "from": "2026-07-22T12:00:00.000000Z",
+            "to": "2026-08-21T12:00:00.000000Z"
+          }
+        },
+        {
+          "subject_id": "reviewer",
+          "subject_label": "reviewer",
+          "visibility": "operator",
+          "role": "Validation agent",
+          "done_count": null,
+          "first_pass": {
+            "state": "restricted",
+            "value": null,
+            "numerator": null,
+            "denominator": null,
+            "sample_size": 0,
+            "reason": "minimum_sample_not_met",
+            "unit": "percent"
+          },
+          "validation_success": {
+            "state": "available",
+            "value": 50.0,
+            "numerator": 6,
+            "denominator": 12,
+            "sample_size": 12,
+            "reason": null,
+            "unit": "percent"
+          },
+          "rework_introduced": null,
+          "rework_resolved": null,
+          "median_cycle_hours": {
+            "state": "restricted",
+            "value": null,
+            "numerator": null,
+            "denominator": null,
+            "sample_size": 0,
+            "reason": "minimum_sample_not_met",
+            "unit": "hours"
+          },
+          "sample_size": 12,
+          "period": {
+            "from": "2026-07-22T12:00:00.000000Z",
+            "to": "2026-08-21T12:00:00.000000Z"
+          }
+        },
+        {
+          "subject_id": "small",
+          "subject_label": "small",
+          "visibility": "restricted",
+          "role": "Implementation + validation",
+          "done_count": null,
+          "first_pass": {
+            "state": "restricted",
+            "value": null,
+            "numerator": null,
+            "denominator": null,
+            "sample_size": 0,
+            "reason": "minimum_sample_not_met",
+            "unit": "percent"
+          },
+          "validation_success": {
+            "state": "restricted",
+            "value": null,
+            "numerator": null,
+            "denominator": null,
+            "sample_size": 0,
+            "reason": "minimum_sample_not_met",
+            "unit": "percent"
+          },
+          "rework_introduced": null,
+          "rework_resolved": null,
+          "median_cycle_hours": {
+            "state": "restricted",
+            "value": null,
+            "numerator": null,
+            "denominator": null,
+            "sample_size": 0,
+            "reason": "minimum_sample_not_met",
+            "unit": "hours"
+          },
+          "sample_size": 0,
+          "period": {
+            "from": "2026-07-22T12:00:00.000000Z",
+            "to": "2026-08-21T12:00:00.000000Z"
+          }
+        }
+      ],
+      "exclusions": {
+        "restricted_count": 4,
+        "excluded_count": 4,
+        "reasons": [
+          {
+            "reason": "minimum_sample_not_met",
+            "count": 4
+          }
+        ]
+      }
+    },
+    "absent/True/operator/validation_agent": {
+      "contributions": [
+        {
+          "subject_id": "reviewer",
+          "subject_label": "reviewer",
+          "visibility": "operator",
+          "role": "Validation agent",
+          "done_count": null,
+          "first_pass": {
+            "state": "restricted",
+            "value": null,
+            "numerator": null,
+            "denominator": null,
+            "sample_size": 0,
+            "reason": "minimum_sample_not_met",
+            "unit": "percent"
+          },
+          "validation_success": {
+            "state": "available",
+            "value": 50.0,
+            "numerator": 6,
+            "denominator": 12,
+            "sample_size": 12,
+            "reason": null,
+            "unit": "percent"
+          },
+          "rework_introduced": null,
+          "rework_resolved": null,
+          "median_cycle_hours": {
+            "state": "restricted",
+            "value": null,
+            "numerator": null,
+            "denominator": null,
+            "sample_size": 0,
+            "reason": "minimum_sample_not_met",
+            "unit": "hours"
+          },
+          "sample_size": 12,
+          "period": {
+            "from": "2026-07-22T12:00:00.000000Z",
+            "to": "2026-08-21T12:00:00.000000Z"
+          }
+        }
+      ],
+      "exclusions": {
+        "restricted_count": 1,
+        "excluded_count": 1,
+        "reasons": [
+          {
+            "reason": "minimum_sample_not_met",
+            "count": 1
+          }
+        ]
+      }
+    },
+    "absent/True/operator/implementation_+_validation": {
+      "contributions": [
+        {
+          "subject_id": "large",
+          "subject_label": "large",
+          "visibility": "operator",
+          "role": "Implementation + validation",
+          "done_count": 6,
+          "first_pass": {
+            "state": "available",
+            "value": 50.0,
+            "numerator": 3,
+            "denominator": 6,
+            "sample_size": 6,
+            "reason": null,
+            "unit": "percent"
+          },
+          "validation_success": {
+            "state": "restricted",
+            "value": null,
+            "numerator": null,
+            "denominator": null,
+            "sample_size": 0,
+            "reason": "minimum_sample_not_met",
+            "unit": "percent"
+          },
+          "rework_introduced": 3,
+          "rework_resolved": 3,
+          "median_cycle_hours": {
+            "state": "available",
+            "value": 4.5,
+            "numerator": null,
+            "denominator": null,
+            "sample_size": 6,
+            "reason": null,
+            "unit": "hours"
+          },
+          "sample_size": 6,
+          "period": {
+            "from": "2026-07-22T12:00:00.000000Z",
+            "to": "2026-08-21T12:00:00.000000Z"
+          }
+        },
+        {
+          "subject_id": "owner",
+          "subject_label": "owner",
+          "visibility": "operator",
+          "role": "Implementation + validation",
+          "done_count": 7,
+          "first_pass": {
+            "state": "available",
+            "value": 57.1,
+            "numerator": 4,
+            "denominator": 7,
+            "sample_size": 7,
+            "reason": null,
+            "unit": "percent"
+          },
+          "validation_success": {
+            "state": "restricted",
+            "value": null,
+            "numerator": null,
+            "denominator": null,
+            "sample_size": 0,
+            "reason": "minimum_sample_not_met",
+            "unit": "percent"
+          },
+          "rework_introduced": 3,
+          "rework_resolved": 3,
+          "median_cycle_hours": {
+            "state": "available",
+            "value": 5.0,
+            "numerator": null,
+            "denominator": null,
+            "sample_size": 7,
+            "reason": null,
+            "unit": "hours"
+          },
+          "sample_size": 7,
+          "period": {
+            "from": "2026-07-22T12:00:00.000000Z",
+            "to": "2026-08-21T12:00:00.000000Z"
+          }
+        },
+        {
+          "subject_id": "small",
+          "subject_label": "small",
+          "visibility": "restricted",
+          "role": "Implementation + validation",
+          "done_count": null,
+          "first_pass": {
+            "state": "restricted",
+            "value": null,
+            "numerator": null,
+            "denominator": null,
+            "sample_size": 0,
+            "reason": "minimum_sample_not_met",
+            "unit": "percent"
+          },
+          "validation_success": {
+            "state": "restricted",
+            "value": null,
+            "numerator": null,
+            "denominator": null,
+            "sample_size": 0,
+            "reason": "minimum_sample_not_met",
+            "unit": "percent"
+          },
+          "rework_introduced": null,
+          "rework_resolved": null,
+          "median_cycle_hours": {
+            "state": "restricted",
+            "value": null,
+            "numerator": null,
+            "denominator": null,
+            "sample_size": 0,
+            "reason": "minimum_sample_not_met",
+            "unit": "hours"
+          },
+          "sample_size": 0,
+          "period": {
+            "from": "2026-07-22T12:00:00.000000Z",
+            "to": "2026-08-21T12:00:00.000000Z"
+          }
+        }
+      ],
+      "exclusions": {
+        "restricted_count": 3,
+        "excluded_count": 3,
+        "reasons": [
+          {
+            "reason": "minimum_sample_not_met",
+            "count": 3
+          }
+        ]
+      }
+    }
+  }
+}

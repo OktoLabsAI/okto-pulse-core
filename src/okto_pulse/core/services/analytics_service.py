@@ -3240,10 +3240,9 @@ async def compute_delivery_intelligence(
 ) -> dict[str, Any]:
     """Build the canonical read-only Delivery Intelligence projection.
 
-    The projection deliberately reuses the immutable Sprint activation authority
-    and the shared Analytics temporal contract.  Missing evidence is represented
-    as an explicit state; it is never coerced to zero or reconstructed from the
-    mutable current Sprint membership.
+    Contribution arithmetic and visibility are preserved over the existing Board
+    agent-analytics cohort: non-archived Cards created in the UTC window.
+    Current Card state is observed now; this is not a historical state replay.
     """
 
     from okto_pulse.core.ports.analytics_foundation import (
@@ -3284,27 +3283,11 @@ async def compute_delivery_intelligence(
         return tuple(clause for clause in query.filters if clause.field == field)
 
     def _matches_filter(field: str, actual: object) -> bool:
-        candidate = str(actual)
-        if field != "sprint_id":
-            candidate = candidate.strip().casefold()
+        candidate = str(actual).strip().casefold()
         for clause in _field_clauses(field):
-            raw_values = (
-                clause.value if isinstance(clause.value, tuple) else (clause.value,)
-            )
-            values = tuple(
-                str(value)
-                if field == "sprint_id"
-                else str(value).strip().casefold()
-                for value in raw_values
-            )
-            # ``all`` remains the wildcard for positive lane/role filters:
-            # ``lane=all`` / ``role=all`` never narrow the projection. Negative
-            # operators keep their literal semantics.
-            if (
-                field != "sprint_id"
-                and clause.operator in ("eq", "in")
-                and "all" in values
-            ):
+            raw_values = clause.value if isinstance(clause.value, tuple) else (clause.value,)
+            values = tuple(str(value).strip().casefold() for value in raw_values)
+            if clause.operator in ("eq", "in") and "all" in values:
                 continue
             if clause.operator == "eq" and candidate != values[0]:
                 return False
@@ -3318,120 +3301,11 @@ async def compute_delivery_intelligence(
 
     dt_from = query.window.from_inclusive
     dt_to = query.window.to_exclusive
-    sprint_payload = await compute_sprints_analytics(
-        db,
-        query.board_id,
-        dt_from=dt_from,
-        dt_to=dt_to,
+    scoped_cards = await _analytics_list(
+        db, "card", filters=_artifact_filters(
+            query.board_id, include_archived=False, dt_from=dt_from, dt_to=dt_to,
+        ),
     )
-    raw_sprints = list(sprint_payload["sprints"])
-    raw_sprints = [
-        item
-        for item in raw_sprints
-        if _matches_filter("sprint_id", item["sprint_id"])
-        and _matches_filter("lane", item["lane_type"])
-    ]
-    raw_sprints.sort(
-        key=lambda item: (str(item["title"]).casefold(), item["sprint_id"])
-    )
-
-    available_commitments = [
-        item for item in raw_sprints if item["commitment"]["state"] == "available"
-    ]
-    committed = sum(
-        int(item["commitment"].get("original_member_count") or 0)
-        for item in available_commitments
-    )
-    completed_committed = sum(
-        int(item.get("completed_committed_count") or 0)
-        for item in available_commitments
-    )
-    added = sum(
-        int(item["commitment"].get("added_count") or 0)
-        for item in available_commitments
-    )
-    removed = sum(
-        int(item["commitment"].get("removed_count") or 0)
-        for item in available_commitments
-    )
-    throughput = sum(int(item["done_cards"]) for item in raw_sprints)
-    hotfix_throughput = sum(
-        int(item["done_cards"])
-        for item in raw_sprints
-        if item["lane_type"] == SprintLaneType.HOTFIX.value
-    )
-    normal_throughput = throughput - hotfix_throughput
-    unavailable_commitments = len(raw_sprints) - len(available_commitments)
-
-    if committed:
-        reliability = _metric(
-            state="available" if unavailable_commitments == 0 else "partial",
-            value=round(completed_committed / committed * 100, 1),
-            numerator=completed_committed,
-            denominator=committed,
-            sample_size=len(available_commitments),
-            reason=(
-                None
-                if unavailable_commitments == 0
-                else "legacy_activation_baseline_unavailable"
-            ),
-            unit="percent",
-        )
-    else:
-        reliability = _metric(
-            state="unavailable" if raw_sprints else "empty",
-            value=None,
-            sample_size=0,
-            reason=(
-                "activation_baseline_not_available"
-                if raw_sprints
-                else "no_sprints_in_effective_window"
-            ),
-            unit="percent",
-        )
-
-    hotfix_share = (
-        _metric(
-            state="available",
-            value=round(hotfix_throughput / throughput * 100, 1),
-            numerator=hotfix_throughput,
-            denominator=throughput,
-            sample_size=throughput,
-            unit="percent",
-        )
-        if throughput
-        else _metric(
-            state="empty",
-            value=None,
-            sample_size=0,
-            reason="no_completed_cards_in_effective_window",
-            unit="percent",
-        )
-    )
-
-    selected_sprint_ids = {item["sprint_id"] for item in raw_sprints}
-    all_cards = (
-        await _analytics_list(
-            db,
-            "card",
-            filters=_artifact_filters(
-                query.board_id,
-                include_archived=False,
-                dt_from=None,
-                dt_to=None,
-                extra=(
-                    _af("sprint_id", "in", tuple(sorted(selected_sprint_ids))),
-                ),
-            ),
-        )
-        if selected_sprint_ids
-        else []
-    )
-    scoped_cards = [
-        card
-        for card in all_cards
-        if getattr(card, "sprint_id", None) in selected_sprint_ids
-    ]
 
     actor_facts: dict[str, dict[str, Any]] = {}
     for card in scoped_cards:
@@ -3734,21 +3608,21 @@ async def compute_delivery_intelligence(
 
     restricted_count = sum(1 for row in contributions if _has_restricted_metric(row))
 
-    page = raw_sprints[cursor_offset : cursor_offset + limit]
+    page = contributions[cursor_offset : cursor_offset + limit]
     next_offset = cursor_offset + len(page)
-    next_cursor = f"offset:{next_offset}" if next_offset < len(raw_sprints) else None
+    next_cursor = f"contributions-v2:offset:{next_offset}" if next_offset < len(contributions) else None
     observed_at = query.as_of or datetime.now(timezone.utc)
     result_state = (
         "empty"
-        if not raw_sprints and not contributions
+        if not contributions
         else (
             "partial"
-            if unavailable_commitments or restricted_count
+            if restricted_count
             else "available"
         )
     )
     return {
-        "contract_version": "1",
+        "contract_version": "2",
         "foundation_version": ANALYTICS_FOUNDATION_CONTRACT_VERSION,
         "query_fingerprint": query.fingerprint,
         "filters": [item.canonical_dict() for item in query.filters],
@@ -3758,16 +3632,12 @@ async def compute_delivery_intelligence(
         "provenance": {
             "observed_at": _utc_text(observed_at),
             "currentness": "current",
-            "reason": (
-                "legacy_activation_baseline_unavailable"
-                if unavailable_commitments
-                else None
-            ),
+            "reason": None,
             "sources": [
                 {
-                    "authority": "sprint_activation_baselines",
-                    "reference": f"board:{query.board_id}:delivery-intelligence:v1",
-                    "timestamp_field": "sprints.updated_at",
+                    "authority": "board_cards_created_in_window",
+                    "reference": f"board:{query.board_id}:delivery-intelligence:v2",
+                    "timestamp_field": "cards.created_at",
                 },
                 {
                     "authority": "task_validation_ledger",
@@ -3778,7 +3648,7 @@ async def compute_delivery_intelligence(
         },
         "population_scope": {
             "scope_ref": query.actor_scope_ref,
-            "accessible_count": len(raw_sprints),
+            "accessible_count": len(scoped_cards),
             "excluded_count": 0,
         },
         "exclusions": {
@@ -3796,39 +3666,7 @@ async def compute_delivery_intelligence(
             ),
         },
         "minimum_sample_size": minimum_sample_size,
-        "summary": {
-            "commitment_reliability": reliability,
-            "throughput": {
-                "state": "available" if raw_sprints else "empty",
-                "total": throughput,
-                "normal": normal_throughput,
-                "hotfix": hotfix_throughput,
-                "sample_size": len(raw_sprints),
-                "reason": None if raw_sprints else "no_sprints_in_effective_window",
-            },
-            "carryover": _metric(
-                state="unavailable" if raw_sprints else "empty",
-                value=None,
-                sample_size=0,
-                reason=(
-                    "carryover_lineage_not_persisted"
-                    if raw_sprints
-                    else "no_sprints_in_effective_window"
-                ),
-            ),
-            "hotfix_share": hotfix_share,
-            "scope": {
-                "state": reliability["state"],
-                "committed_at_activation": committed if committed else None,
-                "completed_from_commitment": completed_committed if committed else None,
-                "added_after_activation": added if available_commitments else None,
-                "removed_after_activation": removed if available_commitments else None,
-                "sample_size": len(available_commitments),
-                "reason": reliability["reason"],
-            },
-        },
-        "sprints": page,
-        "contributions": contributions,
+        "contributions": page,
         "next_cursor": next_cursor,
     }
 
