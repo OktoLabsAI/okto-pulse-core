@@ -11334,3 +11334,172 @@ terminal e consultas; não afrouxar capabilities, comparações de hash ou gates
 Bootstrap_complete continua diferente de runtime_ready. Permanecem também fontes
 vazias, compatibilidade semântica histórica, F4/F5, auditoria integral BASE/KG/
 DEI/ARQVER/ADV, E2E do par e benchmarks/rollout. Autorizações F2A/F2B/F3 preservadas.
+
+### F2D — ensaio do rollback operacional (investigação)
+
+Turno anterior: progresso, par afce6112/b7bb3799 publicado e limpo. Revalidado
+o install atual em provenance-f2-rollback-initial.json (804/341 Python). Também
+revalidado baseline-venv contra os worktrees locais 20707250/b6dda64 e wheels
+originais: verify_baseline.py encerrou exit 0, 769/311 Python, payloads iguais.
+O fixture f2_v034_source continua congelado, sem regeneração.
+
+restore_joint_recovery_snapshot documenta recuperação lógica: UUID/LSN nativos
+são regenerados. Isso precisa ser reconciliado com CommunityGrafxHistory, que
+expõe commit_history/system_as_of e cursores CommitId com UUID. Esses recursos
+já existiam no predecessor, portanto o ensaio deve cobrir seu histórico, não
+apenas o conteúdo atual dos nós. Reprodução preparada em
+test_joint_recovery_native_history.py: ativa histórico em fixture, registra
+alteração, captura o conjunto, fecha originais e tenta ler os commits restaurados.
+Em execução antes de escolher a correção; nenhum dado ou processo real tocado.
+
+Primeira execução21150 falhou por fixture passando listas onde a porta exige
+tuplas; corrigido somente o teste. Reprodução65446 encerrou exit1 em25.36s:
+após restauração lógica, CommunityGrafxHistory.commits retorna capability
+unavailable/unsupported_operation, embora origem tivesse commits e system_as_of.
+O teste também guarda um cursor e uma versão anterior ao título atual. Há perda
+observável de histórico, não apenas diferença técnica de UUID.
+
+Implementação em validação: v7 inclui backup físico nativo adicional para cada
+grafo ativo; a fonte continua protegida pelos fences conjuntos e checagem de
+UUID/LSN estável. Grafx é dono do checkpoint, verificação física e liberação de
+lease no destino. Restore exige a confirmação offline prevista pela API nativa,
+destino novo, erasure guard e recertificação lógica em leitura fria. Essa
+confirmação não detecta processos externos; o instalador deve estabelecer a
+parada, e nenhuma rota/tool/CLI de produto foi exposta.
+
+prepare_offline_retirement_run passa a pedir v7. Sets antigos com grafos não
+provam preservação desse histórico e são recusados como backup operacional;
+continuam disponíveis para leitura/restauração lógica. Sets sem grafos mantêm
+as regras de cobertura antigas. Não recapturar backup a partir de dados já
+transformados. A mudança corrige a obrigação de preservar histórico/rollback
+do plano, sem mudar policies ou autoridade de domínio. Wheels em construção;
+validar o teste direcionado antes de ampliar as regressões.
+
+### F2D — v7 em validação e ensaio do predecessor (2026-09-21)
+
+O teste focal12292 encerrou exit0, 1passed/83.95s: restauração nativa preservou
+commits e consulta as_of usando o cursor original. Em seguida, fechado o teste,
+endurecido o verificador physical-1: chaves únicas, nomes canônicos, inventário
+fechado, arquivos essenciais, limites de arquivos/bytes e hashes por objeto.
+Essa mecânica está exclusivamente em Community/adapters; o motor nativo mantém
+ownership de checkpoint, validação física e liberação de lease no destino.
+
+Build/install finais concluídos (pip6991 exit0). A prova
+provenance-f2-native-final.json confirma 804/342 Python e 867/426 payloads iguais
+entre fontes/wheels/site-packages. Suítes iniciadas depois dessa prova, sem
+edição de produto/reinstall durante execução: 58111 (15 novos casos), 7443
+(29 regressões de offline/materialização/bootstrap/artifacts), 58870 (5 casos
+selecionados de restauração lógica legada e privacidade), closure54623.
+Aguardar todos os resultados; nenhum verde parcial equivale ao gate completo.
+
+Novo teste opt-in test_retirement_predecessor_rollback.py e helper subprocesso
+retirement_predecessor_probe.py: provam o par antigo por HEAD/wheel/source/install,
+inicializam somente fixture pelo init_db real, observam confiança90/60 e histórico
+Grafx com cursor nativo, migram pelo bootstrap atual, restauram e reinicializam
+pelo predecessor. Layout e binding são recompostos apenas na fixture: isso não
+implementa promoção/rollback de instalação em produção. A origem é o ZIP
+congelado f2_v034_source, nunca regenerado. Nenhum serviço/worker é iniciado.
+
+Primeira execução24789 encerrou exit1/35.13s antes da migração: fixture fechou
+um grafo com WAL e tentou abri-lo readonly sem checkpoint. Ajuste somente no
+seed do teste: checkpoint explícito antes das observações frias. Segunda execução
+73502 em andamento. Não mascarar falhas do produto com mudança das expectativas.
+A confirmação offline é passada só após fechar handles/engine originais.
+
+Ensaio73502 encerrou exit0: 1passed/165.88s, sem skip, no log
+f2-native-predecessor-second.log. O predecessor foi inicializado antes e depois
+pelo init_db real; identidade do par, Cards/policies90/60, ArtifactStore, lista
+completa de commits, versão temporal pelo cursor original e título atual foram
+iguais. Migração chegou a bootstrap_complete e removeu a tabela sprints; admissão
+normal continuou corretamente bloqueada. Antes do restore, handles e engine
+foram fechados. Não é teste de servidor HTTP ou de promoção de instalação.
+
+Closure54623 exit1 apenas por readme_closure_matrix_mismatch nos dois READMEs;
+findings de código vazio, oito budgets0. Gerador oficial render_saas_closure_readme
+atualizou apenas o total de Community-to-Core import rows1169→1170, em ambos.
+Rebuild/reinstall/prova e closure final serão executados depois do término das
+suítes vivas. Ruff F/E9 passou, corrigido F401 do import intencional no helper
+com noqa pontual; sem remoção da inicialização real das portas.
+
+Suítes encerradas: 58111 exit0/15passed320.84s, incluindo privacidade durante
+restore nativo; 58870 exit0/5passed172.66s, restauração lógica legada e cleanup
+após falha parcial. A regressão7443 segue viva, já passou as14 provas sem grafo.
+Builds wheels-f2-native-documented atualizam apenas metadados derivados do README;
+nenhuma reinstalação ocorrerá até o fim da última suíte. Payload de produto
+permanece igual ao validado em provenance-f2-native-final.json.
+
+A primeira regressão com Board+Global populados passou, inclusive exclusão de
+publicação de binding, inicialização de schema e startup em processos concorrentes.
+A execução7443 não está parada: fixture de três grafos e fences tem custo maior
+com checkpoints nativos. Não interromper/recomeçar apenas por duração.
+O E2E foi marcado e2e conforme pyproject (lógica já executada sem skip); ambientes
+sem o predecessor isolado o pulam explicitamente. A evidência registrada neste
+turno é a execução real com as variáveis e o par congelado, não o skip padrão.
+
+Prova adicional somente de leitura: provenance-f2-native-documented.json confirma
+que os payloads dos wheels com README atualizado continuam idênticos ao install
+que está executando7443. Nenhum reinstall foi feito. Assim, closure do par de
+wheels documentado pode rodar independentemente sem trocar código em memória;
+instalar os metadados finais e repetir a prova só depois de7443 terminar.
+
+Próxima investigação KG8.3 já localizada, sem edição: KGRebuildService/
+RebuildProcessor e CommunityBoardRebuildIngestionAdapter.build_step_adapter
+possuem recibos, confirmação, reserva e drain exato; CommunityRebuildEffects
+mantém checkpoint por efeito e compensação. Não usar apenas enqueue como prova
+de geração pronta. Public surface core.kg.interfaces.rebuild_ingestion reexporta
+as portas de aplicação. Global tem core.ports.global_discovery_recovery_control.
+Antes de compor o runner final, verificar quais contratos públicos faltam e
+criá-los em Core; não alcançar implementação privada pelo Community nem copiar
+política. Blueprint segue os nove passos KG8.3, com nova geração inequívoca e
+fontes cognitivas/temporais preservadas; este incremento trata o passo2/rollback.
+
+Closure91938 encerrou exit0/oktrue em closure-f2-native-documented.json:
+findings e documentation_findings vazios; budgets permanecem0. A única correção
+documental foi gerada a partir do relatório, sem relaxar qualquer baseline.
+Payloads finais: Core aggregate c2b76566ffdab7abb66d6039160b4799573a5e7f91e4f5d035b366b4ba0fb069,
+wheel244a306c1bedfa6b372663cb75bddefb6d82f9eef8d029267c300131803ea6dc;
+Community aggregate22f838f38d4d7fb78d6165753200bd5055dbca8b415cd2226ba78d8209ff8e10,
+wheel167ee61e49d307f081111a27b6161ec85ff02cb46d2fc20b35dcabf46caea414.
+Prova fonte/wheel/install documentada confirma igualdade para804/342Python,
+867/426payloads. Nenhum arquivo de frontend ou recurso MCP mudou neste incremento.
+
+### F2D/KG — fechamento do backup nativo e rollback do predecessor
+
+Community41e1402d: backup conjunto v7 acrescenta checkpoint nativo autenticado,
+UUID/LSN/histórico preservados e recertificação lógica no destino. O modo usado
+pela migração passa a exigir essa cobertura. Restauração exige original offline,
+destino novo e os guards de erasure até a publicação final. API pública do
+Grafx executa checkpoint/restauração/lease; mecânica só em Community/adapters.
+Leitura/restauração lógica dos formatos anteriores continua disponível, com
+suas limitações explícitas; sets antigos com grafos não certificam rollback
+operacional completo e não são recapturados a partir da origem transformada.
+
+7443 encerrou exit0: 29passed1486.64s (f2-native-regressions-tests.log), incluindo
+Board/Global, ausência, fences em processos, commits sem ACK, perda de intenção,
+proteção de autoridade/outbox, bootstrap e replay, artefatos e formatos legados.
+Somados aos15 novos casos320.84s,5 legados172.66s e1 E2E165.88s, são50 testes
+distintos aprovados. O caso focal inicial é repetido e não entra novamente nessa
+contagem. A falha inicial do helper (readonly sem checkpoint) foi corrigida
+somente na preparação da fixture; a reprodução de perda de histórico foi
+corrigida no produto. RuffF/E9 e diff--check passaram.
+
+Closure-f2-native-documented.json: oktrue, findings/documentation_findings vazios,
+oito budgets0. Matriz README regenerada pelo renderer oficial. Payloads/hashes
+finais constam acima; reinstall dos wheels documentados iniciado somente após
+todos os testes encerrados. Prova pós-commits provenance-f2-native-committed.json
+vinculará os payloads aos HEADs finais. Sem alteração de frontend/API/DTO/tools/
+catálogo MCP ou de fixtures congeladas. Nenhum processo/dado real foi tocado.
+O predecessor executado é o par local20707250/b6dda64, com verificação de seus
+wheels/fontes/install dentro do próprio subprocesso antes de init_db.
+
+Limite demonstrado: rollback após bootstrap em fixture, com recomposição do
+layout/binding feita pelo teste. Promoção de instalação/rollback de runtime real
+continua pendente. O candidato ainda não está autorizado para writers normais;
+bootstrap_complete permanece distinto de runtime_ready. Não há conclusão global.
+Próxima frente: KG8.3 passos5–9, fonte final sem Sprint, preservação cognitiva,
+projeção determinística/reconciliação, diferença esperada de hash vinculada ao
+manifesto/backup/par, geração nova e cutover retomável, consultas e admissão
+terminal. Preservar os recibos sem congelar futuras mutações normais. Restam
+fontes vazias, compatibilidade semântica histórica, F4/F5, auditoria integral
+BASE/KG/DEI/ARQVER/ADV, E2E de instalação e benchmarks/rollout. Sem release/tag/
+deploy/merge; autorização e deprecation de F2B, grants F2A e gate F3 mantidos.
