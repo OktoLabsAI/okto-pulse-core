@@ -491,18 +491,16 @@ class TestCardStatusTransitionMatrix:
 
         async with db_factory() as db:
             config = CardService(db)._resolve_validation_config(
-                SimpleNamespace(),
+                SimpleNamespace(id="card", board_id="board", migrated_validation_policy={
+                    "contract_version": "card-validation-compatibility/v1",
+                    "card_id": "card", "board_id": "board", "source_sprint_id": "historical",
+                    "migration_id": "offline", "overrides": {"min_confidence": 90, "min_completeness": 88},
+                }),
                 SimpleNamespace(
                     require_task_validation=False,
                     validation_min_confidence=75,
                     validation_min_completeness=None,
                     validation_max_drift=30,
-                ),
-                SimpleNamespace(
-                    require_task_validation=None,
-                    validation_min_confidence=90,
-                    validation_min_completeness=88,
-                    validation_max_drift=None,
                 ),
                 {
                     "require_task_validation": True,
@@ -520,8 +518,8 @@ class TestCardStatusTransitionMatrix:
             "resolved_from": "spec",
             "resolved_sources": {
                 "required": "spec",
-                "min_confidence": "sprint",
-                "min_completeness": "sprint",
+                "min_confidence": "card_compatibility",
+                "min_completeness": "card_compatibility",
                 "max_drift": "spec",
             },
         }

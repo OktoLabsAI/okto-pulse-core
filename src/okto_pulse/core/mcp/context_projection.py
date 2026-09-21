@@ -203,7 +203,6 @@ _GATE_CARD_KEYS = (
     "labels",
     "card_type",
     "spec_id",
-    "sprint_id",
     "position",
     "test_scenario_ids",
     "linked_test_task_ids",

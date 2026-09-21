@@ -42,15 +42,15 @@ async def test_card_read_resolves_current_policy_without_committing(monkeypatch,
         monkeypatch.setattr(uow, "commit", commits)
         result = await GetCardUseCase().execute(GetCardCommand(card_id), actor=actor, uow=uow)
         config = result.card.validation_config
-        if mode == "foreign":
+        if mode in {"live", "foreign"}:
             assert config is None
         else:
             assert config is not None
-            assert config.min_confidence == (95 if mode == "live" else int(mode.split('-')[1]) if policy else 70)
+            assert config.min_confidence == (int(mode.split('-')[1]) if policy else 70)
             assert config.min_completeness == 92
             assert config.max_drift == (0 if policy else 12)
             assert config.required is (False if policy else True)
-            assert config.resolved_sources.min_confidence == ("card_compatibility" if policy else "sprint" if mode == "live" else "board")
+            assert config.resolved_sources.min_confidence == ("card_compatibility" if policy else "board")
             assert config.resolved_sources.min_completeness == "spec"
         commits.assert_not_awaited()
     denied = ActorContext("other", "rest", board_id=board_id)

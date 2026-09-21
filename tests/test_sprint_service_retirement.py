@@ -8,7 +8,7 @@ from okto_pulse.core.application.service_catalog import CoreApplicationServiceCa
 from okto_pulse.core.application.use_cases.allowed_transitions import allowed_transitions_for_status
 from okto_pulse.core.application.use_cases.base import CommandValidationError
 from okto_pulse.core.domain.sdlc_registry import SDLC_REGISTRY
-from okto_pulse.core.domain.task_validation_policy import FIELDS, plan_migrated_validation_policy
+from okto_pulse.core.domain.task_validation_policy import FIELDS, TaskValidationMigrationRequired, resolve_historical_task_validation_config, plan_migrated_validation_policy
 from okto_pulse.core.infra.database import get_session_factory
 from okto_pulse.core import models
 from okto_pulse.core.models import schemas
@@ -57,10 +57,12 @@ async def test_card_policy_read_preserves_values_before_and_after_migration(conf
         service = main.CardService(db)
         card = await service.get_card(card_id)
         spec = await main.SpecService(db).get_spec(spec_id)
-        before = await service.validation_config_for_card(card, spec=spec, board_settings={})
+        with pytest.raises(TaskValidationMigrationRequired, match="migration_required"):
+            await service.validation_config_for_card(card, spec=spec, board_settings={})
+        legacy = await db.get(Sprint, sprint_id)
+        before = resolve_historical_task_validation_config(card, spec, legacy, {})
         assert before["min_confidence"] == confidence
         assert before["resolved_sources"]["min_confidence"] == "sprint"
-        legacy = await db.get(Sprint, sprint_id)
         preserved = plan_migrated_validation_policy(card=card, spec=spec, sprint=legacy,
             board_settings={}, migration_id="test-offline-capture")
         # Fixture simulates the authorized offline writer, not an executor API.

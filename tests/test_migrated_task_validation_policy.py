@@ -7,7 +7,7 @@ import pytest
 from pydantic import ValidationError
 
 from okto_pulse.core.domain.task_validation_policy import (
-    FIELDS, MigratedTaskValidationPolicy, plan_migrated_validation_policy, resolve_task_validation_config,
+    FIELDS, TaskValidationMigrationRequired, resolve_historical_task_validation_config, MigratedTaskValidationPolicy, plan_migrated_validation_policy, resolve_task_validation_config,
 )
 from okto_pulse.core.models.schemas import CardCreate, CardUpdate
 from okto_pulse.core.services import CardService
@@ -32,11 +32,11 @@ def detached(card, policy):
 @pytest.mark.parametrize("confidence", [0, 60, 90, 100])
 def test_card_preservation_keeps_distinct_sprint_values_in_same_spec(confidence):
     card, spec, sprint = population(validation_min_confidence=confidence)
-    before = CardService._resolve_validation_config(None, card, spec, sprint, {})
+    before = resolve_historical_task_validation_config(card, spec, sprint, {})
     policy = plan(card, spec, sprint)
     assert policy.overrides.model_dump(exclude_none=True) == {"min_confidence": confidence}
     assert policy.source_sprint_id == "sprint" and policy.source_spec_id == "spec"
-    after = CardService._resolve_validation_config(None, detached(card, policy), spec, None, {})
+    after = CardService._resolve_validation_config(None, detached(card, policy), spec, {})
     assert {field: before[field] for field in FIELDS} == {field: after[field] for field in FIELDS}
     assert after["resolved_sources"] == dict(required="board", min_confidence="card_compatibility",
         min_completeness="spec", max_drift="board")
@@ -49,7 +49,7 @@ def test_false_zero_and_null_remain_independent_with_live_inheritance():
     assert policy.overrides.model_dump(exclude_none=True) == dict(required=False, min_confidence=0, max_drift=0)
     migrated = detached(card, policy)
     spec.validation_min_completeness = 95
-    result = resolve_task_validation_config(migrated, spec, None, {"min_confidence": 99})
+    result = resolve_task_validation_config(migrated, spec, {"min_confidence": 99})
     assert result["required"] is False and result["min_confidence"] == result["max_drift"] == 0
     assert result["min_completeness"] == 95 and result["resolved_from"] == "card_compatibility"
 
@@ -58,8 +58,17 @@ def test_equal_sprint_override_does_not_freeze_board_or_new_cards():
     card, spec, sprint = population(validation_min_confidence=70)
     assert plan(card, spec, sprint) is None
     migrated = detached(card, None)
-    assert resolve_task_validation_config(migrated, spec, None, {"min_confidence": 91})["min_confidence"] == 91
-    assert resolve_task_validation_config(SimpleNamespace(id="new"), spec, None, {})["min_confidence"] == 70
+    assert resolve_task_validation_config(migrated, spec, {"min_confidence": 91})["min_confidence"] == 91
+    assert resolve_task_validation_config(SimpleNamespace(id="new"), spec, {})["min_confidence"] == 70
+
+
+@pytest.mark.parametrize("link", ["legacy", "missing", ""])
+@pytest.mark.parametrize("mapping", [False, True])
+def test_live_policy_refuses_every_unmigrated_link_without_falling_back(link, mapping):
+    card = {"id": "card", "sprint_id": link}
+    with pytest.raises(TaskValidationMigrationRequired, match="migration_required"):
+        resolve_task_validation_config(card if mapping else SimpleNamespace(**card), None,
+                                       {"require_task_validation": False, "min_confidence": 0})
 
 
 @pytest.mark.parametrize("score", [True, -1, 101, "70"])
@@ -73,14 +82,14 @@ def test_valid_effective_score_is_preserved_when_it_masks_an_invalid_lower_layer
     card, spec, sprint = population(validation_min_confidence=1)
     policy = plan(card, spec, sprint, {"min_confidence": True})
     assert policy.overrides.min_confidence == 1
-    after = resolve_task_validation_config(detached(card, policy), spec, None, {"min_confidence": True})
+    after = resolve_task_validation_config(detached(card, policy), spec, {"min_confidence": True})
     assert type(after["min_confidence"]) is int and after["min_confidence"] == 1
 
 
 @pytest.mark.parametrize("board,expected", [({}, True), ({"require_task_validation": None}, False),
     ({"require_task_validation": False}, False)])
 def test_historical_board_required_default_and_explicit_null_are_preserved(board, expected):
-    assert resolve_task_validation_config(None, None, None, board)["required"] is expected
+    assert resolve_task_validation_config(None, None, board)["required"] is expected
 
 
 @pytest.mark.parametrize("mutation", ["board", "card", "active_sprint", "unknown_version", "unknown_field", "bool_score", "empty"])
@@ -101,7 +110,7 @@ def test_corrupt_or_misplaced_compatibility_never_falls_back_silently(mutation):
     else:
         raw["overrides"] = {}
     with pytest.raises(ValueError):
-        resolve_task_validation_config(migrated, spec, None, {})
+        resolve_task_validation_config(migrated, spec, {})
 
 
 @pytest.mark.parametrize("mutation", ["orphan", "cross_board", "wrong_spec", "already_migrated"])

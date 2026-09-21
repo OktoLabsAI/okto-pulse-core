@@ -1,19 +1,18 @@
 """BASE F2B: characterize policy information lost by removing the Sprint input.
 
-This exercises the current pure resolver, not a proposed migration or a claim
-that a lifecycle transition is authorized. Replace the loss assertions with
-migration equivalence once a faithful per-card representation is authorized.
+Frozen characterization of the v0.3.4 policy calculation, retained for offline
+migration parity. It does not authorize a live lifecycle transition.
 """
 
 from types import SimpleNamespace
 
-from okto_pulse.core.services import CardService
+from okto_pulse.core.domain.task_validation_policy import resolve_historical_task_validation_config
 
 
 def _resolve(*, card, spec, sprint, board):
-    # The current resolver is pure; self owns no part of the calculation.
-    return CardService._resolve_validation_config(
-        None, card, spec, sprint, board
+    # Historical calculation is pure and never performs a runtime lookup.
+    return resolve_historical_task_validation_config(
+        card, spec, sprint, board
     )
 
 

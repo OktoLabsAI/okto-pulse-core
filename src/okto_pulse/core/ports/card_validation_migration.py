@@ -10,7 +10,7 @@ from collections.abc import Mapping
 
 from okto_pulse.core.domain.task_validation_policy import (
     FIELDS, Identity, MigratedTaskValidationPolicy, plan_migrated_validation_policy,
-    resolve_task_validation_config,
+    resolve_task_validation_config, resolve_historical_task_validation_config,
 )
 from pydantic import TypeAdapter
 
@@ -30,10 +30,10 @@ def plan_card_validation_migration(*, card: Mapping, spec: Mapping | None, sprin
         identity.validate_python(value)
     policy = plan_migrated_validation_policy(card=card, spec=spec, sprint=sprint,
         board_settings=board_settings, migration_id=migration_id)
-    before = resolve_task_validation_config(card, spec, sprint, board_settings)
+    before = resolve_historical_task_validation_config(card, spec, sprint, board_settings)
     detached = {**card, "sprint_id": None,
         "migrated_validation_policy": policy.model_dump(mode="json", exclude_none=True) if policy else None}
-    after = resolve_task_validation_config(detached, spec, None, board_settings)
+    after = resolve_task_validation_config(detached, spec, board_settings)
     for field in FIELDS:
         if before[field] != after[field] or type(before[field]) is not type(after[field]):
             raise ValueError("card_validation_migration_parity_changed")
@@ -45,6 +45,6 @@ def verify_card_validation_migration(*, card: Mapping, spec: Mapping | None,
     """Verify persisted detached facts through the same resolver as live gates."""
     if card.get("sprint_id") is not None:
         raise ValueError("card_validation_migration_link_retained")
-    actual = resolve_task_validation_config(card, spec, None, board_settings)
+    actual = resolve_task_validation_config(card, spec, board_settings)
     if actual != expected or any(type(actual[field]) is not type(expected[field]) for field in FIELDS):
         raise ValueError("card_validation_migration_parity_changed")

@@ -4351,7 +4351,6 @@ class CardService:
         self,
         card: ApplicationRecord,
         spec: "ApplicationRecord | None",
-        sprint: "ApplicationRecord | None",
         board_settings: dict,
     ) -> dict:
         """Resolve per-field policy, preserving deprecated migrated Card overrides.
@@ -4361,7 +4360,7 @@ class CardService:
         """
         from okto_pulse.core.domain.task_validation_policy import resolve_task_validation_config
 
-        return resolve_task_validation_config(card, spec, sprint, board_settings)
+        return resolve_task_validation_config(card, spec, board_settings)
 
     async def validation_config_for_card(
         self,
@@ -4370,16 +4369,8 @@ class CardService:
         spec: ApplicationRecord | None,
         board_settings: dict,
     ) -> dict:
-        """Resolve existing policy without exposing retired Sprint operations.
-
-        Deprecated legacy read: retain until the offline F2B cutover captures
-        these overrides on Cards. This grants no policy mutation authority.
-        """
-        legacy_policy = (
-            await _application_get(self.db, "sprint", card.sprint_id)
-            if getattr(card, "sprint_id", None) else None
-        )
-        return self._resolve_validation_config(card, spec, legacy_policy, board_settings)
+        """Resolve the live policy without loading historical Sprint records."""
+        return self._resolve_validation_config(card, spec, board_settings)
 
     @staticmethod
     def _card_subject_version(card: ApplicationRecord) -> int:
@@ -4925,12 +4916,7 @@ class CardService:
             if card.spec_id
             else None
         )
-        sprint = (
-            await _application_get(self.db, "sprint", card.sprint_id)
-            if card.sprint_id
-            else None
-        )
-        config = self._resolve_validation_config(card, spec, sprint, board_settings)
+        config = self._resolve_validation_config(card, spec, board_settings)
 
         # Reviewer independence is board policy, shared with sprint evaluation.
         # The decision happens before authorization, closeout checks, activity
@@ -6406,13 +6392,8 @@ class CardService:
                 if card.spec_id
                 else None
             )
-            sprint_for_gate = (
-                await _application_get(self.db, "sprint", card.sprint_id)
-                if card.sprint_id
-                else None
-            )
             gate_config = self._resolve_validation_config(
-                card, spec_for_gate, sprint_for_gate, board_settings
+                card, spec_for_gate, board_settings
             )
             validation_block = validation_gate_block(
                 CardTransitionFacts(

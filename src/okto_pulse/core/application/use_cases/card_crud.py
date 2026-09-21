@@ -190,25 +190,24 @@ class GetCardUseCase:
 
 
 async def _read_card_validation_config(card: Any, *, uow: PulseUnitOfWork) -> ResolvedTaskValidationConfig | None:
-    """Read the same policy sources formerly fetched by the UI, after Card access.
+    """Read the live policy after Card access, without historical Sprint queries.
 
     Missing or cross-Board source records must not turn into default thresholds.
     The Card remains readable, but validation input stays unavailable in the UI.
     """
 
+    if getattr(card, "sprint_id", None) is not None:
+        return None
     board = await uow.services.get_application_record(entity="board", record_id=card.board_id, includes=())
     if board is None:
         return None
-    sources = {}
-    for kind in ("spec", "sprint"):
-        source_id = getattr(card, f"{kind}_id", None)
-        source = (await uow.services.get_application_record(entity=kind, record_id=source_id, includes=())
-                  if source_id else None)
-        if source_id and (source is None or source.board_id != card.board_id):
-            return None
-        sources[kind] = source
+    spec_id = getattr(card, "spec_id", None)
+    spec = (await uow.services.get_application_record(entity="spec", record_id=spec_id, includes=())
+            if spec_id else None)
+    if spec_id and (spec is None or spec.board_id != card.board_id):
+        return None
     return ResolvedTaskValidationConfig.model_validate(resolve_task_validation_config(
-        card, sources["spec"], sources["sprint"], board.settings or {},
+        card, spec, board.settings or {},
     ))
 
 

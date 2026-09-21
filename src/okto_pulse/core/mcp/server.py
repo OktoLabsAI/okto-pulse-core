@@ -1673,6 +1673,7 @@ _TASK_GATE_CARD_SELECT_FIELDS = (
     "origin_task_id",
     "linked_test_task_ids",
     "spec_id",
+    # Internal cutover guard only; never projected as a live Sprint relation.
     "sprint_id",
     # Deprecated migration-only policy is required to preserve the effective
     # validation gate in this bounded read; it grants no executor write access.
@@ -1703,13 +1704,6 @@ _TASK_GATE_SPEC_SELECT_FIELDS = (
     "validation_max_drift",
 )
 _TASK_GATE_BOARD_SELECT_FIELDS = ("id", "settings")
-_TASK_GATE_SPRINT_SELECT_FIELDS = (
-    "id",
-    "require_task_validation",
-    "validation_min_confidence",
-    "validation_min_completeness",
-    "validation_max_drift",
-)
 
 
 def _flag_enabled(value: BoolInput) -> bool:
@@ -4390,7 +4384,7 @@ async def okto_pulse_get_task_context(
             else:
                 result["validations"] = list(_task_validations)
 
-        # Validation gate config (resolved from sprint -> spec -> board hierarchy)
+        # Live policy uses migration-only Card preservation, then Spec/Board.
         board_obj = await _gate_select_application_record(
             uow.services,
             entity="board",
@@ -4408,19 +4402,15 @@ async def okto_pulse_get_task_context(
             spec_for_gate = await uow.services.get_application_record(
                 entity="spec", record_id=card.spec_id, includes=()
             )
-        sprint_for_gate = (
-            await _gate_select_application_record(
-                uow.services,
-                entity="sprint",
-                record_id=card.sprint_id,
-                select_fields=_TASK_GATE_SPRINT_SELECT_FIELDS,
+        from okto_pulse.core.domain.task_validation_policy import TaskValidationMigrationRequired
+
+        try:
+            result["validation_config"] = card_service._resolve_validation_config(
+                card, spec_for_gate, board_settings
             )
-            if card.sprint_id
-            else None
-        )
-        result["validation_config"] = card_service._resolve_validation_config(
-            card, spec_for_gate, sprint_for_gate, board_settings
-        )
+        except TaskValidationMigrationRequired:
+            # Historical reads remain available; no usable gate is fabricated.
+            result["validation_config"] = None
         from okto_pulse.core.services.reviewer_separation import (
             evaluate_task_reviewer_separation,
         )

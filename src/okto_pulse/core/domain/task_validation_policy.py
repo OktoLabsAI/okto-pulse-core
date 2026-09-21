@@ -13,7 +13,11 @@ ATTRIBUTES = ("require_task_validation", "validation_min_confidence", "validatio
 BOARD_ATTRIBUTES = ("require_task_validation", "min_confidence", "min_completeness", "max_drift")
 DEFAULTS = (True, 70, 80, 50)
 
-ValidationPolicySource = Literal["card_compatibility", "sprint", "spec", "board", "default"]
+ValidationPolicySource = Literal["card_compatibility", "spec", "board", "default"]
+
+
+class TaskValidationMigrationRequired(ValueError):
+    """A legacy Card must pass offline policy preservation before live use."""
 
 
 class ResolvedTaskValidationSources(BaseModel):
@@ -87,13 +91,28 @@ def read_migrated_validation_policy(card, sprint=None) -> MigratedTaskValidation
     return policy
 
 
-def resolve_task_validation_config(card, spec, sprint, board_settings: Mapping) -> dict:
-    """Preserve existing per-field Sprint/Spec/Board/null/default semantics."""
-    compatibility = read_migrated_validation_policy(card, sprint)
+def resolve_task_validation_config(card, spec, board_settings: Mapping) -> dict:
+    """Resolve live Card/Spec/Board policy; never default past an unmigrated link."""
+    compatibility = read_migrated_validation_policy(card)
+    if _value(card, "sprint_id") is not None:
+        raise TaskValidationMigrationRequired("card_validation_migration_required")
+    return _resolve_validation_fields(compatibility, spec, board_settings)
+
+
+def resolve_historical_task_validation_config(card, spec, sprint, board_settings: Mapping) -> dict:
+    """Offline F2B calculation of the original policy, including historical sources.
+
+    This is not a live policy hierarchy. Keep the exact null/default and source
+    semantics so migration receipts and existing validation history stay valid.
+    """
+    return _resolve_validation_fields(read_migrated_validation_policy(card, sprint), spec, board_settings, sprint)
+
+
+def _resolve_validation_fields(compatibility, spec, board_settings, historical_sprint=None):
     result, sources = {}, {}
     for field, attribute, board_attribute, default in zip(FIELDS, ATTRIBUTES, BOARD_ATTRIBUTES, DEFAULTS, strict=True):
         migrated = getattr(compatibility.overrides, field) if compatibility else None
-        layers = ((migrated, "card_compatibility"), (_value(sprint, attribute), "sprint"),
+        layers = ((migrated, "card_compatibility"), (_value(historical_sprint, attribute), "sprint"),
             (_value(spec, attribute), "spec"), (board_settings.get(board_attribute, default), "board"))
         # Historical explicit board null differs from an absent required flag.
         value, source = next(((value, source) for value, source in layers if value is not None),
@@ -119,8 +138,8 @@ def plan_migrated_validation_policy(*, card, spec, sprint, board_settings: Mappi
         or _value(card, "spec_id") != _value(spec, "id")
         or (spec is not None and _value(card, "board_id") != _value(spec, "board_id"))):
         raise ValueError("card_validation_migration_scope_invalid")
-    before = resolve_task_validation_config(card, spec, sprint, board_settings)
-    after = resolve_task_validation_config(card, spec, None, board_settings)
+    before = resolve_historical_task_validation_config(card, spec, sprint, board_settings)
+    after = resolve_historical_task_validation_config(card, spec, None, board_settings)
     # Validate the effective contract before the no-difference shortcut. Do not
     # normalize corrupt scores or reject unused lower layers masked by a valid
     # Sprint override. A typed difference (e.g. 1 versus True) still needs saving.

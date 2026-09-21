@@ -9616,3 +9616,66 @@ remover suas referências. ACKs históricos de rebuild requerem tratamento próp
 para não invalidar silenciosamente journals antigos. Corte schema/terminal
 offline runtime_ready, matriz DEI/ARQ/VER/ADV, E2E pareado/rollback, footprint MCP,
 benchmark e rollout continuam pendentes. Objetivo integral ativo, não concluído.
+
+### F3/F2B — separar policy ativa do cálculo histórico
+
+Em execução sobre Core 5abefd03 / Community 36e12dd, par limpo publicado.
+Resolver vivo passa a Card/Spec/Board e recusa todo sprint_id não nulo, mesmo
+sem override migrado. Resolver histórico puro fica restrito ao plano offline
+F2B e à caracterização v0.3.4, preservando valores/tipos, nulls e fontes dos
+recibos. Nenhuma autoridade nova de escrita; deprecation do override mantida.
+main/card_crud/MCP deixam de buscar Sprint. Leituras de Card/contexto seguem
+acessíveis com validation_config=null enquanto a policy não foi migrada;
+gates não recebem fallback. Campo legado ainda selecionado internamente no
+contexto bounded apenas para detectar migração pendente; não é projetado.
+Tipo ativo frontend exclui Sprint; histórico de avaliações continua aceitando
+a fonte original, sem reescrever thresholds capturados. Testes em preparação.
+Bloqueio Done Spec já autorizado pelo usuário permanece sem relaxamento.
+Sem migração real, liberação runtime intermediário ou alteração de baselines.
+
+Validação final do incremento (2026-09-21):
+- Core236 casos distintos aprovados: rodada inicial234 passed/2 failed em
+  f3-live-policy-core.log; as duas falhas eram expectativa de chave nula no
+  perfil summary (que a omite por contrato). Teste ajustado sem mudar a projeção;
+  18 casos MCP passaram em f3-live-policy-core-final.log, não somados de novo.
+  Cobertura inclui policy, paridade offline, overrides/false/zero/null/tipos,
+  recusa de link legado inclusive vazio, lifecycle, gates Done Spec, separação
+  de reviewer, contexto MCP e catálogo gerado. Nenhum baseline regenerado.
+- Community41 passed em f3-live-policy-community.log (104s): persistência real,
+  ausência de SELECT/JOIN Sprint na leitura Card, leitura autorizada sem commit,
+  migração/paridade/replay e sequência archive→grants→policy→permission cleanup.
+- Frontend62 passed em f3-live-policy-ui-final.log. A rodada inicial61/1 falhou
+  apenas por esperar o identificador card_compatibility em vez do texto existente
+  preserved Card policy. Histórico antigo segue exibindo Threshold source: sprint.
+  A ausência de config mantém indisponível a entrada de validação. Total distinto
+  Core+Community+UI339, sem contar repetições. Não equivale à matriz integral.
+- tsc/Vite/sync e tsc final/verify:frontend-dist aprovados. SPA sem alteração
+  binária:78 arquivos/hash8f8306963c86c094d08d0f156d46bd77c4f3079715ab13d810ce34ccc13c04d0.
+- Preflights inicial/final fonte/wheel/site-packages byte a byte:804/335 Python,
+  867/419 payloads. provenance-f3-live-policy-final.json e wheels-f3-live-policy-final.
+  Agregados inicial e final idênticos: Core166e1441cf2c7c7a2f096395579ba458ec37014bbd3e3b176ec32dce4c4fbcc1;
+  Communityb2a3bc0ae4dba6625d02eabdd219066eccf1f9a8eaa72caf192519c90aaed7f2.
+  Wheel Core8c48e739ebba578ebe0c84077a3bc58596256565558861d23057721fcb337f5a;
+  Communityd4a833c5e30425115370e2a98cdb2878b41ee7006c3735d163c1a517687019c7.
+  Rebuild final necessário após READMEs; nenhuma edição produtiva ou reinstalação
+  durante suites ativas. Correções finais atingiram somente expectativas de teste.
+- Closure inicial: findings=[], budgets0, apenas README matrix7419→7420 imports.
+  READMEs renderizados pelo gerador oficial; closure-f3-live-policy-final.json:
+  exit0,ok=true,findings=[],documentation_findings=[],oito budgets0/0.
+  Ruff/diff --check e gate do catálogo MCP aprovados; nenhuma tool alterada.
+- Handles encerrados. Communityfa67572; commit Core/pushes pareados a seguir.
+  Nenhum dado real migrado, runtime reiniciado, deploy/release/tag/merge.
+
+Retomada: policy ativa não consulta mais Sprint. Remover contratos/consumers
+operacionais restantes antes de cortar ORM/UoW/enums. Próxima frente concreta:
+EntityExportType.SPRINT ainda em domain/entity_export, use_cases/entity_export
+(root sprint.entity.read), community/api/entity_exports._SUPPORTED_TYPES e
+adapters/sqlalchemy_entity_export (mapa ORM/sections/assembler). Foi localizado
+com leitura parcial; não está revisado integralmente nem é decisão sobre export
+histórico. Seguir a trilha de autorização e preservar o arquivo histórico F2A.
+SemanticPolicySubjectSnapshot v1 ainda tem manifest Sprint: contrato versionado
+que não deve ser removido sem caracterizar recibos/hash histórico. Mesma cautela
+para _EXACT_REBUILD_SOURCE_ARTIFACT_TYPES usado em ACK/journal.
+Corte schema/terminal offline runtime_ready, matriz integral DEI/ARQ/VER/ADV,
+E2E pareado/rollback, footprint MCP, benchmark e rollout permanecem pendentes.
+Objetivo integral ativo; este incremento não libera runtime intermediário.
