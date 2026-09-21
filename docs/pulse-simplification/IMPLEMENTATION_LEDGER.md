@@ -10656,3 +10656,108 @@ runtime_admission quando essa composição estiver comprovada. A iniciativa inte
 (DEI/ARQ/VER/ADV/E2E/benchmark/rollout e demais pendências acima) permanece ativa.
 Nenhum dado real ou runtime do usuário alterado; sem release/tag/merge/deploy.
 Community commitd703438acb5e3d020163c12a11801a7a73cbad4d. Commit Core e pushes pareados a seguir; conferir HEAD remoto e árvores limpas.
+
+### F2D — convergência pós-corte e contrato terminal (em implementação,2026-09-21)
+
+Turno anterior classificado como progresso:HEADs Coreadd44a8722e85c577ba0fb5079b43bbbe460241f
+/Communityd703438acb5e3d020163c12a11801a7a73cbad4d conferidos, árvores limpas.
+provenance-f2-terminal-baseline.json comprova o mesmo produto instalado antes das
+novas reproduções. Nenhum produto modificado ainda.
+
+Dependência investigada:recibo schema contém hash de TODOS os dados sobreviventes;
+bootstrap é escritor de presets/permissions/source-fence/discovery/importações.
+Não substituir esse hash por um bool runtime_ready nem apagar o journal para
+permitir init_db. Precisamos provar convergência/atualidade e distinguir operações
+legítimas do bootstrap de drift e efeitos parciais antes de definir seu recibo.
+
+Primeira reprodução f2-terminal-convergence-initial falhou corretamente no guard
+delivery_progress_trigger_drift:fixture de tables via to_metadata não copia DDL
+listeners. Não é evidência de defeito no corte nem licença para reinstalar guards
+sobre fonte danificada. Nova fixture de convergência cria superfícies vivas com
+Base real (guards reais) e acrescenta apenas4 tabelas/FK históricos explicitamente.
+É fixture sintética, não captura de um runtime v034 instalado. As fixtures anteriores
+continuam úteis para inventário/cópia SQL, mas não provam lifecycle completo.
+Reprodução guarded em execução; investigar deltas reais de schema/dados, replay,
+bootstrap e fonte vazia. Runtime admission permanece fechado.
+
+Investigação concluída da fixture guarded:após converter TextClause de índices
+parciais em SQL (não comparar identidade Python), a única diferença de schema
+estava nas2 tabelas de eventos. O init_db real cria-as por _migrate_add_event_tables
+antes de Base.create_all:PK física nullable, TIMESTAMP e DEFAULT0 em attempts.
+A origem v034 instalada confirmou esse mesmo contrato; NÃO alterar os modelos,
+constraints ou default para ajustar uma fixture que pulou o pre_create_all real.
+Fixture final de convergência usa esse passo real antes do metadata e compara
+colunas/tipos/defaults/FKs/índices/unique/checks de todos os174 tables após lifecycle.
+
+Bootstrap da fixture modifica10 tabelas; nos dados existentes de cards/boards,
+apenas position (resequência normal) e realm_id (NULL legado -> local). O replay
+não muda nenhum dado dessas superfícies:apenas acrescenta33 auditorias normais de
+reconciliação, mutation_count0 e sem owner review. Registros anteriores ficam
+idênticos. Isso NÃO é idempotência física de uma retomada de cutover:coordenador
+terminal deve guardar recibo e não executar novamente escritores por resposta
+perdida. O teste agora distingue explicitamente essas duas responsabilidades.
+
+verify_baseline.py repetido com baseline-venv:769Core/311Community Python idênticos
+às árvores locais v034 Core207072509a282e8adec1481d05aee2d54c382bde/
+Communityb6dda64f512920fa4aaaf9d50c331b1796b87e27 e wheels-baseline-reproduction.
+capture_terminal_v034.py inicializou174 tabelas pelo startup real, sem servidor/
+worker, e criou2 Sprints da mesma Spec com confiança90/60 e2 Cards em fixture.
+Fonte preservada em .validation-v040/terminal-v034-source; source-shape.json guarda
+DDL/counts. Probes usam cópias novas por SQLite backup, não alteram essa fonte.
+
+Probe inicial falhou por diretórios do ensaio ausentes (fixture corrigida).
+Probe2 revelou defeito real:captura de ACL fazia select de mappers completos,
+exigindo permission_migration_review inexistente no v034. Corrigido para projetar
+somente fatos históricos usados pela porta pública congelada; inclui Board,
+presets, bindings e agentes, sem carregar credenciais. Novo negativo remove as
+3 colunas de review e prova deny/allow e replay sem SQL de credentials/review.
+Build access:74 Community e59 UI aprovados; closure8 budgets0,sem findings/docs.
+
+Probe3 passou pela captura e revelou ausência de historical_archive_grants.
+Instalação agora cria apenas esse destino aditivo, dentro da mesma transação,
+após verificar arquivo/autoridade atual. Recusa schema desconhecido/view e recusa
+recriação quando resta qualquer evento de instalação OU revogação, inclusive de
+outra origem. Não reconstruir revogações perdidas. Testes novos exercitam rollback
+DDL+grants+audit, replay, perda de tabela com recibo próprio/outra origem, revogação
+retida sem instalação e drift. Nenhum requisito de permissão/gate foi relaxado.
+
+Produto final desta rodada:wheels-f2-terminal-storage-final, pip encerrado antes
+de provenance-f2-terminal-storage-final.json (804/338 Python e867/422 payloads
+idênticos). Suites Community/Core/closure e probe4 em execução. Probes do destino
+usam wheels da working tree com dirty=true declarado no log; não são entrega de
+par publicado nem prova terminal E2E. A origem capturada v034 é do par instalado
+verificado e serve como reprodução real do contrato predecessor.
+
+Fechamento deste incremento F2D (2026-09-21): Community 82fd6e80.
+620 testes distintos aprovados:81 Community de arquivo/acesso/grants/convergência,
+1 regressão da origem real v034,479 Core de autoridade/permissão e59 frontend
+(HistoricalArchivesPanel, historical-archives-api,usePermissions.stateful).
+Logs f2-terminal-storage-tests/core, f2-terminal-v034-regression e
+f2-terminal-access-ui em .validation-v040. Ruff F/E9 e diff --check aprovados.
+closure-f2-terminal-storage-final.json:ok=true,findings/docs vazios,8 budgets0/0.
+Proveniência final:Core agregado7e348caf0c392a03f158f3677b88db47831c236976e7742915158527efffaaa2;
+Community agregadoe8f42e5bc5305ec766e954e18ba229ed590351fd5c194cbaced0f47bfbfbb008.
+Wheel Core d81b11de70cfc088fbec883572ff862adb0b498be4f0cfa14891cec0a4e3347a;
+Community5ac8e9fc2fee444f56df46c7db807d836050ed0dfdd5f73d9b92b8484f27d5aa.
+Todos os .py e payloads das duas fontes/wheels/instalações idênticos antes dos
+ensaios. A única alteração posterior ao build foi teste/fixture/documentação.
+
+Nova fixture congelada tests/fixtures/f2_v034_source.sqlite3.zip + manifesto JSON:
+ZIP SHA256 ece38af238a07dac2b7af1fac3b35b3c5857a400b71e714a0435809e4424da9a;
+DB SHA256 31423b7b553fd4d50310074c6f5168adf9900e2435555d636769604b71bdac3d.
+174 tabelas criadas pelo par original instalado v034 verificado;2 Sprints/2 Cards,
+sem agentes/credenciais/dados do usuário. Não regenerar com metadata atual.
+Regressão preserva todas as células originais, salvo2 eventos novos, e mostra que
+captura/install/replay não adicionam colunas de policy/review nem fazem bootstrap.
+
+Probe4 (terminal-v034-candidate-4; f2-terminal-v034-probe4.log) já prepara arquivo,
+grants e journal e conclui contexto. Falha concreta seguinte:KeyError
+migrated_validation_policy no transformador de Cards, pois a origem real não
+possui a coluna aditiva. Não é E2E de upgrade aprovado. Cópia e recibos retidos;
+startup permanece bloqueado. Próximo passo:preparação aditiva transacional na
+migração, preservando hashes de contexto/arquivo e tratando também Cards sem
+Sprint afetados apenas pela coluna NULL; replay não pode reconstruir schema
+perdido. Depois investigar as3 colunas permission_migration_review ausentes.
+Não rodar bootstrap geral antes de capturar a autoridade original. O contrato
+terminal runtime_ready, a retomada sem repetir escritores de bootstrap e o
+rollback com o par predecessor continuam pendentes; iniciativa NÃO concluída.
