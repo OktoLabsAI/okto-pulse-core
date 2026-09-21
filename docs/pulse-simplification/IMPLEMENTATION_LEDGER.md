@@ -12354,3 +12354,84 @@ os25 incrementos da revisão global. Próximo passo é elevar a caracterização
 um verificador de delta bounded por registro/recibo e registrar explicitamente
 as transições de trigger que continuam sem prova, sem transformar seis/sete
 nomes de tabela em whitelist genérica.
+
+### 2026-09-21 — verificador por registro dos efeitos SQL: implementação em ensaio
+
+Base Core8236da62b9888befd6ffdb41e8577d3dcd7afd19 / Community
+f327515d7506c2e79fcea67d44a0d02be0337091. Verificador read-only novo
+compara todos os bags de linhas do snapshot relacional autenticado e candidato,
+limitados por tabela, e recusa qualquer tabela não classificada. Nas linhas
+esperadas confere identidade e valores de audit, event, outbox, journal, refs
+(hash canônico existente) e head materialization por ACK. A revisão global da
+fila exige manifestação frozen existente e identidade estável, mas devolve
+needs_revision_reconciliation: o incremento não é atribuído causalmente aos
+três ACKs até uma trilha específica dos triggers. Estado terminal segue
+projected_not_reconciled. Integrado na construção antes de selar e na leitura
+de replay, sem API/CLI novos. Teste negativo usa cópia descartável do SQL do
+candidato com mutação unowned em boards; deve falhar fechado. Código ainda não
+foi construído/instalado/testado; nenhuma conclusão de paridade é reivindicada.
+
+Primeira rodada SQL-delta, após build/instalação/prova Core808/871 e
+Community347/431 byte-identical: Community29117 3 passed/1 failed em81.56s.
+Falha na criação do candidato ao chamar read_legacy_source_revision_state:
+o oráculo é congelado para gdsr-trigger-manifest-v8, enquanto a fixture
+integrada já contém v9. Não relaxar o oráculo v8 nem atribuir v9 à mesma
+semântica. Investigação identificou a porta de recovery atual em
+CommunityRelationalRecoverySnapshotFingerprint.read_fence_from_connection,
+que verifica trigger SQL exato e singleton v9. Adaptado o verificador novo
+para essa porta concreta atual; reconstrução/prova e novo ensaio pendentes.
+
+Segunda rodada v9: wheel/install/prova Core808/871, Community347/431; script
+read-only na fixture publicada anterior classificou7 tabelas/3ACKs/4refs e
+retornou needs_revision_reconciliation com25 incrementos. Community29090
+3 passed/1 failed em94.43s: construção com verificador passou, mas replay
+acusou checkpoint_content_changed. Instrumentação somente na fixture mostrou
+a diferença exata: stage selou database.sqlite3-shm (32768 bytes) e
+-wal vazio, que desapareceram antes da leitura do candidato publicado.
+Não excluir sidecars mutáveis do inventário. O novo verificador usava SQLite
+mode=ro, que pode fabricar WAL/SHM durante o diagnóstico. Mudou para leitura
+immutable de snapshots quiescentes e exige ausência de sidecars antes e depois,
+como o contrato de recovery já faz. Teste negativo cria WAL em cópia SQL
+descartável e exige recusa. Instrumentação temporária do teste foi removida.
+Rebuild/prova/testes/closure após a correção ainda pendentes.
+
+### 2026-09-21 — fecho do milestone de classificação SQL por recibo
+
+O verificador `retirement_candidate_sql_delta.py` entrou na construção privada
+antes do selo de projeção e no replay do checkpoint publicado. Lê os dois SQL
+quiescentes em modo SQLite immutable, recusa WAL/SHM, compara os bags completos
+de registros das 174 tabelas com limites de tempo/tamanho, falha fechado para
+tabela não classificada e vincula linhas novas de audit, events, ACK journal,
+outbox, refs e head de geração aos três recibos tipados. A revisão global é
+validada com o manifesto v9 atual e identidade de origem estável, mas o
+incremento de 25 por triggers da fila permanece sem atribuição causal. O
+resultado explícito é `needs_revision_reconciliation`, nunca prova terminal;
+o candidato continua `projected_not_reconciled` e a admissão é recusada.
+
+A fixture integrada descartável, sem runtime de grafo, passou quatro testes em
+110.50s, incluindo replay, mutação SQL não pertencente em `boards` e sidecar
+WAL. A fixture nativa antiga `pytest-611` já tinha sido removida pela limpeza
+temporária do pytest, portanto não há alegação de validação nativa nova deste
+verificador. A rodada anterior de fixture integrada confirmou 7 tabelas,
+3 ACKs, 4 refs e delta de revisão 25 por script somente leitura. Ruff F/E9
+nos quatro arquivos Python alterados e `git diff --check` nos dois repos
+passaram. Nenhum frontend/API/MCP alterado; teste de frontend não se aplica.
+
+Wheels finais construídas após projeção oficial das matrizes README. Prova
+byte-a-byte entre source, wheel e instalação: Core 808 Python/871 payload,
+aggregate d3ade7b969a9a2787a68c5cdbd84bd3ccd01d43fd908037c347e35f96d254746;
+Community 347 Python/431 payload, aggregate
+c604c6f10f382bc755da86f0838fd4c55000011ba8e094143a9f9cb4139594ca.
+Relatório: `.validation-v040/provenance-kg-sql-delta-final.json`. Relatório
+F16 final: 8659 linhas de propriedade, zero achados, zero drift de README,
+oito budgets transitórios zero; `.validation-v040/closure-kg-sql-delta-final.json`.
+Community commit `179496ccf9466d872d35c9c6e87d80b52fdb1255`.
+
+Handoff: o próximo milestone deve registrar e vincular causalmente cada
+transição da `consolidation_queue` aos incrementos de
+`global_discovery_source_revision`, sem relaxar o manifesto/fence v9 e sem
+transformar a whitelist de tabelas em autorização ampla. Depois reconciliar
+fonte/grafo/active sets/orphans segundo §8.3 do plano KG, criar contrato
+terminal apenas após prova, e só então considerar cutover/admission. Testar
+também o caminho nativo com instalação comprovadamente atual. Não houve
+dados reais, release, tag, deploy ou merge neste milestone.
