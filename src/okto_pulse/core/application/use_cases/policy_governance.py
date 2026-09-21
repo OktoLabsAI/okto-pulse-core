@@ -82,6 +82,7 @@ from okto_pulse.core.ports.guideline_policy import (
     GuidelinePolicyPersistencePort,
     GuidelinePolicySubjectConflict,
     require_writable_policy_subject_type,
+    require_writable_guideline_revision,
     GuidelinePolicyVersionConflict,
     GuidelineRetirementReplay,
     GuidelineRevisionNoopReplay,
@@ -1157,6 +1158,8 @@ class CreateGuidelineRevisionUseCase:
             )
         if not isinstance(result, GuidelinePatchApplied):
             raise RuntimeError("guideline_patch_result_invalid")
+
+        require_writable_guideline_revision(result.revision)
 
         async def mutate() -> tuple[GuidelineRevision, GuidelineHead]:
             return await port.append_revision_cas(

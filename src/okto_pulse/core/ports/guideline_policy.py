@@ -65,7 +65,9 @@ from okto_pulse.core.domain.guideline_impact import (
 from okto_pulse.core.domain.guideline_import_export import (
     GuidelineExportSnapshot,
     GuidelineImportPlan,
+    require_writable_guideline_import_entry,
 )
+from okto_pulse.core.domain.guideline_lifecycle import require_writable_guideline_revision
 from okto_pulse.core.domain.guideline_policy_transition import (
     PolicyTransitionSnapshot,
 )
@@ -1874,6 +1876,8 @@ class GuidelinePolicyPersistencePort(
 
 
 __all__ = [
+    "require_writable_guideline_revision",
+    "require_writable_guideline_import_entry",
     "require_writable_policy_subject_type",
     "GuidelineAdoptionReplay",
     "GuidelineDefaultMaterializationProof",

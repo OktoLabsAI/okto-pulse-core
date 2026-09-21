@@ -10196,3 +10196,103 @@ E2E pareado/rollback, footprint MCP, benchmark e rollout seguem pendentes.
 Objetivo integral ativo. Sem dados reais, deploy/release/tag/merge/restart do usuário.
 
 Community commitc79f6ab; commit Core/pushes pareados a seguir, verificando HEADs remotos e árvores limpas.
+
+### F3 — autoria normativa de métricas sem alvos retirados
+
+Em execução sobre Core585835bc / Communityc79f6ab, ambos pushes confirmados no
+início, árvores limpas. Turno anterior foi verificação conclusiva dos pushes do
+incremento211 testes; objetivo integral não foi encerrado.
+Proveniência pré-reprodução: provenance-f3-authoring-baseline.json comprova o par
+wheels-f3-exception fonte/wheel/install byte-idêntico (804/335 Python).
+Reprodução f3-authoring-baseline2.log:4 falhas esperadas e5 passes. Duas novas
+revisões (alvo Sprint explícito e herdado) eram admitidas; import real/dry-run de
+head ativo com alvo Sprint também era admitido. Primeira rodada teve erro de
+fixture (codec recebe mapping, não bytes); corrigido com json.loads, sem mudança
+produtiva, antes de repetir. Não se interpretou esse erro como bug de produto.
+
+Core require_writable_guideline_revision separa admissão nova da reconstrução
+histórica. Exposto pela porta pública e usado por CreateGuidelineRevisionUseCase
+após replay/noop e pelo adapter Community após replay inicial/append, antes da
+nova autoridade. Sem alteração de construtores puros, digest, SemVer, capacidades,
+CAS ou bindings antigos. A revisão sucessora exige remoção explícita de Sprint;
+remoção de targets mantém classificação major e autorização METRICS_AUTHOR.
+Import planner retorna conflito guideline_metric_target_type_retired por entrada
+com novo head ativo; preserva revisões antigas não-head, identidades retiradas e
+SKIP_IDENTICAL. Adapter aplica o mesmo helper público antes de persistir o plano.
+Import da aplicação por ID já existente continua criando nova revisão, conforme
+contrato anterior; isso NÃO é replay e a nova revisão também passa pelo guard.
+
+Frontend remove Sprint das opções de autoria. Um alvo histórico continua visível
+na revisão carregada, bloqueia publicação até edição explícita, e oferece remoção
+somente com a autoridade existente de métricas. Não filtra payload silenciosamente.
+REST/MCP conservam enum de entrada neste incremento: _replay_guideline_revision
+reconstrói o patch original para comparar request_digest; restringir o schema
+antes desse branch quebraria replay histórico. A autoria nova é recusada no Core;
+o contrato final de transporte/histórico ainda requer fechamento coordenado.
+
+Build tsc/Vite/sync e verify:frontend-dist aprovados (78 arquivos, hash
+7b1e34918fe40ed7d7f2a61ba8f2d49c49f55531ff07cf9745591556938adb19).
+Par wheels-f3-authoring reinstalado e provenance-f3-authoring.json aprovado antes
+das suites:804/335 Python,867/419 payloads byte-idênticos. Core/Community/frontend
+em validação, sem alterações produtivas ou reinstall enquanto suites estiverem
+ativas. Fixtures históricas congeladas anteriores apenas lidas, sem regeneração.
+
+Validação final (2026-09-21):420 testes distintos aprovados:Core195,
+Community177,frontend48. Não somar retestes:
+- f3-authoring-core.log:190 passed; core-final:13 passed (4 novos casos de
+  import da aplicação por ID novo/existente, real/dry-run, lote com entrada válida
+  e inválida, sem apply/commit); replay-final:2 passed (1 novo caso com métricas
+  Sprint explícitas no patch histórico, além da herança histórica). Os outros
+ 181 casos cobrem lifecycle, codec, import, casos de uso, MCP e catálogo gerado.
+- f3-authoring-community.log:111 passed/4 failed nos novos testes por preparação
+  incompleta. Baseline semântica não contém guideline_head nem idempotency key de
+  criação; os testes de autoria agora adicionam SOMENTE head sintético antes do
+  snapshot, sem modificar o zip congelado. O teste de plano adulterado constrói
+  envelope sintético com cronologia válida; não se afirma captura histórica de
+  export completo. Uma tentativa intermediária ainda falhou por timestamp da
+  identidade posterior à revisão na fixture. Guards produtivos não relaxados.
+  community-final2:4 passed em7.43s, provando recusa create/append com/sem tabela
+  Sprint, nenhuma alteração em tabelas guideline/semantic/event/Board, commit
+  após recusa também sem mudança; sucessora explícita major e replay exato; plano
+  que omite o conflito de alvo retirado recusado antes de gravar.
+- f3-authoring-history.log:58 passed/4 failed em86.87s. As quatro falhas eram o
+  writer novo recusando a preparação de histórico no teste de inventário F3.
+  Seu contexto de preparação agora restaura a admissão antiga somente junto do
+  inventário antigo já restaurado. Ambos patches terminam ANTES das verificações
+  do runtime. Recibo/request_digest/adoption completos continuam comparados com
+  baseline congelada; novo assert prova replay de create com chave histórica
+  sob o guard real. history-final:5 passed em9.59s. JSON baseline permanece SHA
+  de57afbbd4baa75dfe8bd5a2bcf4d76dfa9b3e13607fd33cbae61b780ea5c09c;
+  zip semântico permanece6585f63c892f1b6e72276514f8a950c9d70021e330c198f6e6fa12236aba52eb.
+- f3-authoring-ui.log:48 passed. Nova autoria não oferece Sprint; revisão
+  histórica exige remoção explícita, não altera objeto carregado, envia somente
+  alvos escolhidos e não concede permissão de métricas a autor de revisão.
+  Build/sync/verificação frontend aprovados; warning preexistente chunks>500kB.
+- closure-f3-authoring.json detectou apenas drift da matriz README (7420→7421
+  imports Core); budgets todos0. Dois READMEs regenerados com renderer oficial,
+  wheels pareados refeitos/reinstalados antes dos retestes. closure-f3-authoring-final.json
+  exit0,ok=true,findings/docs vazios e8 budgets0/0. Sem edição manual de catálogo.
+- provenance-f3-authoring-final.json antes dos retestes:804/335 Python,
+ 867/419 payloads idênticos entre fonte/wheel/install. Core agregado
+  f700bf73b3f491b464fec03fac09493f99dec0064485f76cdf90fe281582238f;
+  Communityc01c4eebe5c9dbca4331efcecd13e564e70b4d344971a2f234c5281a4f4607fc.
+  Wheel Core4fff405eb4c0939bce10758538ae1eaa9974f01fae1d831e72bf878b26d71bd9;
+  Community708f6d57dc4c40ec97ceb31d30e8bc0639fba9807d7f3794f2a92aef70018024.
+  Produto não mudou após o primeiro build; a segunda distribuição atualizou
+  metadados README. Ajustes subsequentes só em testes/ledger. Handles encerrados.
+
+Retomada: fechar contratos públicos vivos versus leitura/replay histórico (enum
+Sprint ainda necessário ao patch exato); import plan contém diagnóstico por
+entrada, mas result público continua o contrato anterior com error_code=conflict
+sem esses detalhes. A adoção de revisão antiga permanece sujeita aos gates
+existentes e não cria artefatos Sprint. Não aplicar o guard de autoria à leitura
+nem à adoção indiscriminadamente. Investigar também replay público de skip cuja
+ordem antiga carrega autoridade viva antes de buscar a chave. Demais pendências
+integrais: enums/schema/ORM e permissões históricas, ACKs/outbox/KG, terminal
+runtime_ready, matrizes DEI/ARQ/VER/ADV, E2E pareado/rollback, footprint MCP,
+benchmark e rollout. services/cancellation.py tem só comentários Sprint antigos;
+cancellation_decay.py já recusa evento Sprint para corte offline, não reativar.
+CONTRIBUTING ainda descreve mecanismos obsoletos. Nenhum deploy/release/tag/merge,
+migração real ou restart do runtime do usuário. Objetivo integral permanece ativo.
+
+Community commitc13813a5633f10e3e5dc6931f001c0424818f89f; commit Core e pushes pareados a seguir, com verificação dos HEADs remotos e árvores limpas.
