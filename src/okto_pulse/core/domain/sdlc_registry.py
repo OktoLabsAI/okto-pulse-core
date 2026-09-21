@@ -18,7 +18,6 @@ from okto_pulse.core.domain.enums import (
     IdeationStatus,
     RefinementStatus,
     SpecStatus,
-    SprintStatus,
     StoryStatus,
     TestScenarioStatus,
 )
@@ -585,87 +584,6 @@ SDLC_REGISTRY: Mapping[str, LifecycleDefinition] = MappingProxyType(
                         effects=(
                             "status_changed",
                             "cancellation_cleared",
-                            "activity_logged",
-                        ),
-                    )
-                ],
-            },
-        ),
-        "sprint": _entity(
-            "sprint",
-            SprintStatus,
-            {
-                "draft": [
-                    _edge(
-                        "active",
-                        gate="sprint_activation",
-                        preconditions=("at_least_one_card", "scope_valid"),
-                        capabilities=("start",),
-                        reason_codes=(
-                            "sprint_empty",
-                            "scope_invalid",
-                            "transition_not_allowed",
-                        ),
-                    ),
-                    _edge("cancelled", **_CANCEL),
-                ],
-                "active": [
-                    _edge("draft", gate="reopen", capabilities=("reopen",)),
-                    _edge(
-                        "review",
-                        gate="sprint_review",
-                        preconditions=("scoped_tests_ready",),
-                        capabilities=("request_review",),
-                        reason_codes=(
-                            "scoped_tests_incomplete",
-                            "transition_not_allowed",
-                        ),
-                    ),
-                    _edge("cancelled", **_CANCEL),
-                ],
-                "review": [
-                    _edge("active", gate="rework", capabilities=("reopen",)),
-                    _edge(
-                        "closed",
-                        gate="sprint_completion",
-                        preconditions=(
-                            "all_cards_terminal",
-                            "evidence_matrix_ready",
-                            "evaluation_approved",
-                            "reviewer_separation_ready",
-                        ),
-                        capabilities=("complete",),
-                        reason_codes=(
-                            "sprint_has_incomplete_cards",
-                            "sprint_scope_gate_blocked",
-                            "sprint_evidence_incomplete",
-                            "sprint_evaluation_required",
-                            "sprint_evaluation_rejected",
-                            "sprint_evaluation_below_threshold",
-                            "reviewer_separation_required",
-                            "transition_not_allowed",
-                        ),
-                        policy_compliance=True,
-                    ),
-                    _edge("cancelled", **_CANCEL),
-                ],
-                "closed": [
-                    _edge(
-                        "draft",
-                        gate="reopen",
-                        capabilities=("reopen",),
-                        effects=("status_changed", "version_bumped", "activity_logged"),
-                    )
-                ],
-                "cancelled": [
-                    _edge(
-                        "draft",
-                        gate="reopen",
-                        capabilities=("reopen",),
-                        effects=(
-                            "status_changed",
-                            "cancellation_cleared",
-                            "version_bumped",
                             "activity_logged",
                         ),
                     )

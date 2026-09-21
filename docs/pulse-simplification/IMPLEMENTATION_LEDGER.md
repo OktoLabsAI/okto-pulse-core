@@ -8695,3 +8695,131 @@ matriz de distribuição; produto Community permanece igual ao par anterior.
 Preparar commit Core e push normal nos dois repos, verificando igualdade remota.
 Este turno produziu dois incrementos com código, provas e publicação; não é
 turno bloqueado. Nenhum dado real migrado nem runtime do usuário reiniciado.
+
+### 2026-09-21 — F3: corte coordenado do registry e permissões Sprint (em revisão)
+
+Partida limpa confirmada: Core ea8b62a83be565b8a66b5fdd40c5f86021b9587b /
+Community f67e77e5c7e652bad57f0f5c37eb040137933ac2. Turno anterior foi progresso,
+com dois incrementos publicados e provas; objetivo integral permanece ativo.
+
+Antes de alterar produto, provenance-f3-permission-before.json comprovou o par
+instalado wheels-f3-qa-final byte a byte. Captura pela porta pública em
+tests/fixtures/sprint_permission_retirement_baseline.json guarda registry/presets
+anteriores e 336 contextos, cada um com 552 decisões sobreviventes + revisão/motivo.
+População determinística: identidade confiável, snapshot atual e original v0.3.4,
+sete presets anteriores, cada uma das 33 folhas Sprint ausente/False/integer nas
+camadas agente/preset/Board, estruturas malformadas/extensões e presets derivados
+com negações. O fixture registra o commit de origem; não regenerar contra o código
+novo para fazer a comparação passar.
+
+Implementação ainda não publicada: Sprint removido de SDLC_REGISTRY e do registry
+de permissões vivo (585 -> 552 folhas); nenhuma nova instalação recebe Sprint
+Manager. Presets remanescentes e mapa legacy deixam de conceder operações Sprint.
+PermissionSet e wrappers recusam a namespace mesmo com None confiável/documento
+antigo permissivo. Operações dos demais tipos mantêm suas regras.
+
+Normalização separa classificação histórica de autoridade viva: shape Sprint
+congelado e gerações originais são usados somente quando o documento ainda traz
+Sprint. Manifests públicos projetam folhas sobreviventes. Valores False, gerações
+parciais e extensões não se tornam o sentinel Full Control por apagar dados.
+Shapes inválidos continuam exigindo revisão. O avaliador original v0.3.4 e seus
+599 fatos não foram alterados; captura/paridade offline continuam pela porta.
+Comentários de depreciação delimitam a retenção até o corte offline fiel.
+
+Frontend: hook nega Sprint inclusive com cache/resposta antiga; editor não oferece
+controles Sprint; labels retirados. f3-permissions-ui.log: 145 passed em 11 arquivos
+(hooks, editor, camadas, presets, labels e diff). Build tsc/Vite/sync em andamento.
+
+Evidências intermediárias:
+- Primeiro lote de paridade: 336 passed / 1 error. Erro no logger Windows por
+  nome de caso com dois-pontos, antes da execução daquele caso. IDs substituídos
+  por policy-NNN, mantendo as mesmas entradas; não é falha de autoridade.
+- f3-permissions-regressions.log: 435 passed / 46 failed. Os 336 contextos de
+  paridade e a ausência operacional passaram. Falhas foram inventário aposentado
+  ainda limitado às 14 operações KG, expectativas de operações/preset Sprint e
+  uma fixture pre-registry fabricada a partir do registry já reduzido. A fixture
+  histórica agora parte do evaluator congelado; lista de retirement inclui as
+  33 folhas Sprint originais, sem afrouxar validate_permission_retirement_registry.
+- Testes exclusivos de grants Sprint aposentados; provas de presets ativos e
+  compartilhadas preservadas. Nova comparação confronta todos os grants dos seis
+  builtins restantes com os snapshots capturados. Paridade não é inferida da
+  simples ausência de erro/import ou da redução de contagem.
+- Scripts de edição tiveram duas falhas antes de escrever permissions.py: caminho
+  de fixture errado e seletor AST ambíguo. Registry já retirado no segundo caso;
+  retomada explícita, sem reaplicar a remoção. Leitura sem encoding num script
+  produziu mojibake em comentários/textos; reparada antes da próxima instalação,
+  com UTF-8 explícito e inspeção do diff. Não reaproveitar esses scripts one-shot.
+
+Retomada imediata: finalizar frontend, reconstruir/reinstalar par e provar bytes;
+rodar paridade/regressões corrigidas, testes Community de checkpoint/review/cleanup,
+histórico, manifests/contratos e coleta; resolver qualquer divergência efetiva
+antes de publicar. Closure e matrizes README, catálogo gerado, validação da SPA e
+push pareado seguem obrigatórios. Ainda não há prova de corte offline/schema
+terminal nem conclusão F3/F2 ou dos complementos integrais.
+
+Verificações concluídas sobre o código de backend r2:
+- provenance-f3-permissions-r2.json confirma source/wheel/install (811/336 Python,
+  874/420 payloads). Reinstalação após encerrar os processos anteriores. Refinos
+  de comentários/formatação ocorreram antes desta geração efetivamente testada.
+- f3-permissions-core-r2.log: 806 passed. f3-permissions-manifests.log: 57 passed
+  em cinco arquivos adicionais (SK-A, SK-B, namespaces, registry e serviço).
+  Os 336 contextos de paridade e os seis builtins restantes passaram; todos os
+  552 bits sobreviventes, owner_review_required e review_reason são comparados.
+- Community: f3-permissions-community-r2.log teve 60 passed e uma contagem de
+  removed_entries ainda em 18; agora são 51 (incluem 33 Sprint). Correção pontual,
+  reexecução f3-permissions-cleanup-recheck.log: 1 passed. As demais asserts desse
+  caso provaram bytes before/after, autoridade, motivos de revisão e replay.
+- Lote adicional de adapters: inicialmente 4 failed/18 passed por fixtures que
+  ainda removiam Sprint do registry já sem Sprint, esperavam sete seeds e
+  sprint.tasks.assign na projeção REST. Após corrigir essas expectativas, 21 passed
+  e uma segunda contagem de auditoria [0,7] falhou; [0,6] reexecutado em
+  f3-permissions-reconcile-recheck.log: 1 passed. Total Community distinto: 83.
+  O arquivo histórico continua usando a policy congelada com registry vivo
+  removido e gateway vivo explicitamente proibido na captura/primeira instalação.
+- UI revisada também nos contadores e diff de permissões: folhas Sprint antigas
+  não geram concessão, contador ou controle; toggle em lote não reescreve a origem
+  antiga. f3-permissions-ui-final.log: 145 passed/1 failed apenas no seletor do
+  novo teste: havia três contadores iguais (resumo/base/efetivo). Seletor corrigido
+  após inspeção do DOM; f3-permissions-diff-recheck-final.log: 3 passed. Total UI
+  distinto: 146. Soma do incremento: 863 Core + 83 Community + 146 UI = 1.092.
+- Coletas completas sem falha de import: 13.540 Core / 5.801 Community. Isto não
+  é execução integral das suites. Catálogo MCP sem drift; não editado à mão.
+- closure-f3-permissions.json: ok=true, findings=[], documentation_findings=[],
+  oito budgets 0/0. Matriz permaneceu 7.481 imports Core / 1.175 Community / 25 deps;
+  não houve necessidade de reescrever os READMEs.
+
+Build final da SPA em execução após encerrar os testes. Reconstruir o par final,
+verificar source/wheel/install e igualdade dos payloads Python com r2; a SPA
+mudou pelos contadores/diff já testados. Concluir closure final antes de publicar.
+Não houve Playwright/E2E integral novo, migração real, release, tag ou restart.
+O avanço remove registry/autoridade operacional; analytics/compromisso, DTOs,
+persistência, corte offline/schema/certificado e complementos continuam pendentes.
+
+Distribuição final preparada:
+- tsc/Vite/sync e verify:frontend-dist aprovados para 78 arquivos; SPA final
+  b3c2691fdf2bd7d33b4b457d4e2214785793e09eddd5c0b07c14fbecc6fcb9a2.
+- provenance-f3-permissions-final.json: ambos source/wheel/install idênticos.
+  f3-permissions-final-python-parity.json compara todos os 811/336 payloads Python
+  dos wheels finais com os wheels r2 testados, sem divergência. Somente a SPA foi
+  regenerada após os testes Python, a partir da UI já verificada.
+- Agregados: Core ded76bab84e11f6dadbe7c4dd30573ced21b66d6f9f1983118de56e53dd15797;
+  Community 133ed53dcc2c4b43351e7d8c70d468761601f9880e31c3f3eec547e98e8fd3f6.
+  Wheels SHA256 Core 536a2f16d3be6085d11f7e9385a63dcd312c9e80f308f33d2b7d80fc4c14db2c;
+  Community 32739b9b4501007fd7bfc83e945c7275f8e8dd62cb348b69f7c648b5b585687f.
+- Ruff e diff --check passaram. A auditoria closure-f3-permissions-final.json é
+  a única verificação ainda em execução antes dos commits/pushes deste incremento.
+
+Fechamento: closure-f3-permissions-final.json concluiu com ok=true, findings=[],
+documentation_findings=[] e todos os budgets 0/0. Community commit
+49a79840fefcd0822b179bc4037a160cff5114a4. Commit Core e push normal pareado a seguir;
+verificar HEAD local/remoto e árvores limpas antes de encerrar o checkpoint.
+
+Retomada prioritária: remover consumidores Sprint remanescentes de analytics e
+compromisso (inclusive filtros), DTOs/enums/modelos e persistência; integrar a
+limpeza de permissões já provada ao coordenador offline junto do schema e do
+certificado terminal. Não eliminar o journal nem admitir runtime intermediário.
+Documentos/presets antigos ainda são entrada histórica classificada, nunca
+autoridade operacional Sprint. Leituras de policy por Card mantêm a compatibilidade
+autorizada até materialização F2B. Lista integral anterior de F2/F3/F4/F5,
+DEI/ARQ/VER/ADV, footprint, E2E/upgrade/rollback, benchmark e rollout segue ativa.
+Este turno produziu código, baseline executável, provas e commits; não é bloqueio.

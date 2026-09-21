@@ -87,7 +87,6 @@ def test_builtin_preset_matrix_is_exact() -> None:
         "Validator": READS | {"spec.quality.assess"},
         "QA": READS,
         "Reporter": READS,
-        "Sprint Manager": READS,
         "Executor": {"spec.quality.read", "spec.checklist.read"},
     }
     assert set(presets) == set(expected)

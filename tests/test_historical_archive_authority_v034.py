@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 
 from okto_pulse.core.ports.historical_archive_authority import HistoricalArchivePresetFacts, capture_authenticated_human_sections_v034, resolve_historical_archive_sections_v034
-from okto_pulse.core.ports.permission_policy import normalize_agent_permission_layer, registered_permission_flags
+from okto_pulse.core.ports.permission_policy import flatten_permission_flags, normalize_agent_permission_layer, registered_permission_flags
 
 GOLDEN = json.loads((Path(__file__).parent / "fixtures/historical_archive_authority_v034.json").read_text(encoding="utf-8"))
 READS = ("sprint.entity.read", "sprint.qa.read", "sprint.evaluations.read", "sprint.history_read")
@@ -19,7 +19,7 @@ RETIRED = frozenset(path for path in (
     "kg.operations.global_recovery.cancel", "kg.operations.global_recovery.resume", "kg.operations.global_recovery.run",
     "kg.operations.quarantine.restore", "kg.operations.global_outbox.read", "kg.operations.global_outbox.reprocess",
     "kg.operations.global_outbox.verify", "kg.operations.tick.run",
-))
+)) | frozenset(flatten_permission_flags({'sprint': GOLDEN['layers']['full']['sprint']}))
 
 
 def put(document, path, value):

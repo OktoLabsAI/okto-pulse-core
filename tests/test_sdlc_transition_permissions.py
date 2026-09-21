@@ -14,7 +14,6 @@ from okto_pulse.core.domain.permissions import (
     ALL_FLAGS,
     DefaultPermissionPolicy,
     PERMISSION_INTRODUCTION_MANIFESTS,
-    PERMISSION_REGISTRY,
     PermissionContext,
     SDLC_TRANSITION_PERMISSION_INTRODUCTION_V1,
     TASK_REJECTED_PERMISSION_INTRODUCTION_V1,
@@ -63,14 +62,14 @@ def test_registry_move_flags_are_exact_sdlc_projection() -> None:
     expected = set(transition_permission_flags())
     actual = {flag for flag in ALL_FLAGS if ".move." in flag}
 
-    assert len(expected) == 93
+    assert len(expected) == 83
     assert actual == expected
     introduced_moves = {
         leaf
         for leaf in SDLC_TRANSITION_PERMISSION_INTRODUCTION_V1.leaves
         if ".move." in leaf
     }
-    assert len(introduced_moves) == 66
+    assert len(introduced_moves) == 59
     assert introduced_moves < expected
     assert set(SDLC_TRANSITION_PERMISSION_INTRODUCTION_V1.leaves) - introduced_moves == {
         "ideation.interact_in.review",
@@ -223,8 +222,11 @@ def test_spec_preset_preserves_historical_test_scenario_status_authority() -> No
 
 
 def test_pre_registry_full_control_snapshot_normalizes_without_transition_denials() -> None:
-    snapshot = copy.deepcopy(PERMISSION_REGISTRY)
-    for manifest in PERMISSION_INTRODUCTION_MANIFESTS:
+    # Historical input must not be fabricated from a registry that has already
+    # retired Sprint. This is the frozen v0.3.4 policy, never live authority.
+    from okto_pulse.core.domain import historical_permission_policy_v034 as historical
+    snapshot = copy.deepcopy(historical.PERMISSION_REGISTRY)
+    for manifest in historical.PERMISSION_INTRODUCTION_MANIFESTS:
         for leaf in manifest.leaves:
             _delete(snapshot, leaf)
     for retired in (

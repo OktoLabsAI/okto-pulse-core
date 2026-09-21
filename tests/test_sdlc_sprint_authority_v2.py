@@ -39,7 +39,6 @@ def test_registry_covers_every_sdlc_entity_and_exposes_transition_contracts() ->
         "refinement",
         "spec",
         "card",
-        "sprint",  # Historical permission fingerprints until the F2/F3 cutover.
         "test_scenario",
     }
     for definition in SDLC_REGISTRY.values():

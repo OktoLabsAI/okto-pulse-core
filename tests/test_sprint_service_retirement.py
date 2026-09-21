@@ -29,9 +29,8 @@ def test_service_and_catalog_expose_no_sprint_operations():
     for namespace in (models, schemas):
         assert not hasattr(namespace, "SprintQACreate")
         assert not hasattr(namespace, "SprintQAAnswer")
-    for kind, definition in SDLC_REGISTRY.items():
-        if kind == "sprint":
-            continue  # Historical permission fingerprint, no executable service.
+    assert "sprint" not in SDLC_REGISTRY
+    for definition in SDLC_REGISTRY.values():
         for edges in definition.transitions.values():
             for edge in edges:
                 assert all("sprint" not in value for value in (*edge.preconditions, *edge.reason_codes))

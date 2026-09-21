@@ -97,14 +97,6 @@ PRESET_GRANTS = {
         GUIDELINE_ASSESSMENTS_READ,
         "guidelines.waiver.read",
     },
-    "Sprint Manager": {
-        GUIDELINE_REVISIONS_READ,
-        GUIDELINE_IMPACT_PREVIEW,
-        GUIDELINE_ASSESSMENTS_READ,
-        GUIDELINE_ASSESSMENTS_RECORD,
-        "guidelines.waiver.read",
-        "guidelines.waiver.request",
-    },
     "Executor": {
         GUIDELINE_REVISIONS_READ,
         GUIDELINE_ASSESSMENTS_READ,
