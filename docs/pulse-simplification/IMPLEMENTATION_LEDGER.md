@@ -9941,3 +9941,78 @@ continuam pendentes. Objetivo integral ativo;124 testes não são aceite final.
 Nenhuma migração real, deploy, release, tag, merge ou restart do usuário.
 
 Community commit7b86fba; commit Core/pushes pareados a seguir, com verificação dos HEADs remotos e árvores limpas.
+
+### F3 — inventário operacional de policy sem Sprint e baseline de recibos
+
+Em execução sobre Core9364dc58 / Community7b86fba. Turno anterior classificado
+como progresso: retirada de parentes vivos KG publicada e124 testes aprovados.
+Antes de alterar o produtor, novo preflight provenance-f3-policy-baseline.json
+confirmou o mesmo par instalado byte-idêntico a fonte/wheels-f3-parent. Captura
+real de preview+adoção com Spec/Card/Sprint passou (1 teste,6.67s), log
+f3-policy-baseline.log. Fixture congelada Community
+ tests/fixtures/f3_policy_inventory_baseline.json
+SHA256 de57afbbd4baa75dfe8bd5a2bcf4d76dfa9b3e13607fd33cbae61b780ea5c09c;
+contém par fonte, inventário, recibo completo, digest request, mutation e resultado
+da adoção. Código de captura foi substituído por regressão de leitura; a fixture
+não deve ser regenerada para acomodar alteração futura.
+
+list_policy_subjects agora inventaria somente entidades operacionais. Import e
+model entry Sprint removidos do adapter Community; nenhuma alteração no Core,
+na canonicalização, em enums compartilhados de histórico ou nos recibos.
+Regressão reconstitui armazenamento antigo usando só o inventário capturado na
+preparação, exige igualdade exata com a baseline e depois restaura adapter real.
+Casos previstos: replay preview/adoção, paginação detail, ausência de consulta/
+escrita Sprint, recusa CAS por artifact_snapshot_changed de preview ainda não
+adotado, novo preview/adoption sem artefato Sprint, tabela presente/ausente,
+versão/edição dos demais sujeitos e escopo Board. Build/proveniência/suites finais
+em andamento; resultados ainda não anunciados como aprovados.
+
+Validação final do incremento (2026-09-21):
+- Core22 passed, Community37 casos distintos aprovados e frontend16 passed:
+  total75, além da captura prévia1. Logs f3-policy-inventory-{core,community,ui}.log.
+  Primeira suite Community:35 passed/2 failed. Expectativa de zero escrita na
+  tentativa CAS não considerava os mutexes SQLite: _lock_guideline_identity e
+  _lock_board fazem identity UPDATE id/updated_at, sem alterar valores. Teste
+  corrigido exige zero escrita na leitura/replay; na adoção recusada permite
+  exatamente os dois UPDATEs de mutex, compara linhas completas antes/depois,
+  exige zero adoções criadas e motivo artifact_snapshot_changed. Reteste teve
+  primeiro um erro de import de alias só no teste (Guideline as LegacyGuidelineRow),
+  corrigido; rodada final5 passed em9.31s, log
+  f3-policy-inventory-retirement-final2.log. Produto não mudou após o build.
+- Os quatro cenários combinam já adotado/pendente e tabela Sprint presente/ausente.
+  Paginação detail em páginas de1 recupera todos os itens antigos; receipt/mutation/
+  resultado de adoção iguais à captura. Replay não consulta Sprint nem escreve.
+  Preview pendente é rejeitado antes de efeito de adoção; novo preview é aceito
+  sem artefato Sprint e o recibo antigo continua idêntico. Quinto teste preserva
+  Ideation/Refinement/Spec/Card/TestScenario, versões/edições, ordem e escopo Board.
+  Itens TARGET da definição normativa histórica continuam intactos; não são
+  artefatos operacionais. Autoria de targets Sprint/enums compartilhados ainda
+  depende da retirada coordenada dos produtores semânticos e não está concluída.
+- provenance-f3-policy-inventory.json:804/335 Python e867/419 payloads byte-idênticos
+  fonte/wheel/site-packages antes das suites. Core permanece agregado
+  f9fd8f468c66db1d46f262ccf38247d780707395716edeec01e80d6e0741df67;
+  Community2b1368be55a76c15b1d026f69e11a20421a988def1157031c4f8a83b7ff5d616.
+  Wheel Core4e80da0188dacaf7548bb49e89d9334d5852c4fbc58a41d61b93bbbfaa144707;
+  Community7a763f2562f50f04db2ff32c46041af34accb6d1795bb312d929a35243b54d6b.
+  Core somente ledger neste incremento; nenhum rebuild necessário após ajuste
+  exclusivo de teste. Handles encerrados; sem edição produtiva/reinstall em suites.
+- closure-f3-policy-inventory.json:exit0,ok=true,findings/docs vazios,oito budgets0.
+  Ruff/diff --check e catálogo MCP aprovados. Frontend GuidelineImpactDialog/model
+  aprovados; produto UI inalterado e verify:frontend-dist confirmou78 arquivos/hash
+  0f84989255db06e8990dd00a48bd3aad148089debd4eb1656399514ba10cdfdf.
+
+Retomada: investigar/retirar loaders vivos em sqlalchemy_semantic_guideline_assessment
+(_raw_subject, _q_and_a, _resolve_policy_subject_status) e listeners em
+sqlalchemy_policy_subject_versioning. Leitura list_semantic_assessment_receipts
+filtra somente linhas seladas e hidrata via _result_from_row; revisar essa função
+completa e replay de save antes de bloquear snapshots novos. Currentness chama
+resolve_policy_subject_snapshot e retornaNone quando não existe, mas o caminho
+lock=True adquire mutex antes disso. Provar comportamento de escrita negada e
+recibo antigo legível, sem invalidar hashes v1 ou modificar definição normativa
+arquivada. Testes writer_bridge ainda assumem mutação operacional Sprint e devem
+ser caracterizados, não apenas apagados. Manifests v1/quality permanecem históricos.
+Schema/ORM, ACKs exatos, terminal offline runtime_ready, matriz DEI/ARQ/VER/ADV,
+E2E pareado/rollback, footprint MCP, benchmark e rollout seguem pendentes.
+Objetivo integral ativo; sem migração real/deploy/release/tag/merge/restart.
+
+Community commit1c647b9; commit Core/pushes pareados a seguir, verificando HEADs remotos e árvores limpas.
