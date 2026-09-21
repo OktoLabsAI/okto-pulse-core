@@ -488,10 +488,8 @@ async def test_restore_tree_to_draft_does_not_advance_spec_edition(
     assert restored_state == (SpecStatus.DRAFT, 7)
 
 
-async def test_archive_restore_tree_cascades_to_sprint(db_factory) -> None:
-    """spec -> sprint -> card: archive_tree / restore_tree cascade to the Sprint
-    (a first-class descendant of Spec) — counts include it and the reversal
-    restores the pre-archive status."""
+async def test_archive_restore_tree_preserves_card_but_does_not_operate_sprint(db_factory, monkeypatch) -> None:
+    """Same legacy population: Spec/Card remain live; Sprint is historical only."""
     import uuid
 
     from okto_pulse.core.services.main import ArchiveService
@@ -557,26 +555,38 @@ async def test_archive_restore_tree_cascades_to_sprint(db_factory) -> None:
         )
         await db.commit()
 
-    # Archive from the spec: the sprint (and card) cascade with it.
+    from okto_pulse.core.services import main
+    from sqlalchemy_test_models import DomainEventRow
+    from sqlalchemy import select
+
+    original_list = main._application_list
+
+    async def no_sprint_reads(db, artifact_type, **kwargs):
+        assert artifact_type != "sprint", "archive/restore consulted retired Sprint"
+        return await original_list(db, artifact_type, **kwargs)
+
+    monkeypatch.setattr(main, "_application_list", no_sprint_reads)
+    # Archive Spec and Card, leaving the retired source untouched.
     async with db_factory() as db:
         counts = await ArchiveService(db).archive_tree("spec", spec_id)
         await db.commit()
     assert counts["specs"] == 1
-    assert counts["sprints"] == 1
+    assert "sprints" not in counts
     assert counts["cards"] == 1
 
     async with db_factory() as db:
         sprint = await db.get(Sprint, sprint_id)
-        assert sprint.archived is True
-        assert sprint.pre_archive_status == SprintStatus.ACTIVE.value
+        assert sprint.archived is False
+        assert sprint.pre_archive_status is None
+        assert sprint.status == SprintStatus.ACTIVE
         assert (await db.get(Spec, spec_id)).archived is True
         assert (await db.get(Card, card_id)).archived is True
 
-    # Restore from the spec: the sprint reverses cleanly (flag + status + marker).
+    # Restore the surviving tree without operating on the historical source.
     async with db_factory() as db:
         counts = await ArchiveService(db).restore_tree("spec", spec_id)
         await db.commit()
-    assert counts["sprints"] == 1
+    assert "sprints" not in counts
 
     async with db_factory() as db:
         sprint = await db.get(Sprint, sprint_id)
@@ -585,3 +595,11 @@ async def test_archive_restore_tree_cascades_to_sprint(db_factory) -> None:
         assert sprint.status == SprintStatus.ACTIVE
         assert (await db.get(Spec, spec_id)).archived is False
         assert (await db.get(Card, card_id)).archived is False
+
+        events = (await db.execute(select(DomainEventRow).where(
+            DomainEventRow.board_id == board_id,
+            DomainEventRow.event_type == "artifact.archive_changed",
+        ))).scalars().all()
+        assert {(e.payload_json["artifact_type"], e.payload_json["archived"]) for e in events} == {
+            ("spec", True), ("card", True), ("spec", False), ("card", False),
+        }

@@ -1017,8 +1017,8 @@ async def _seed_done_tree(db_factory, board_id: str):
 
 
 @pytest.mark.asyncio
-async def test_spec_delete_mints_takedown_for_cascaded_sprint(
-    db_factory,
+async def test_spec_delete_mints_only_spec_takedown_without_sprint_lookup(
+    db_factory, monkeypatch,
 ) -> None:
     board_id = await new_board(db_factory, "spec-sprint-cascade-takedown")
     spec_id, _source_ref = await seed_done_spec_canonical(db_factory, board_id)
@@ -1032,8 +1032,15 @@ async def test_spec_delete_mints_takedown_for_cascaded_sprint(
         session.add(sprint)
         await session.commit()
         await session.refresh(sprint)
-        sprint_id = sprint.id
 
+    from okto_pulse.core.services import main
+    original_list = main._application_list
+
+    async def no_sprint_reads(db, artifact_type, **kwargs):
+        assert artifact_type != "sprint", "Spec deletion consulted retired Sprint"
+        return await original_list(db, artifact_type, **kwargs)
+
+    monkeypatch.setattr(main, "_application_list", no_sprint_reads)
     with _registered_targeted_adapters():
         async with db_factory() as session:
             receipt = await SpecService(session).delete_spec(
@@ -1047,10 +1054,8 @@ async def test_spec_delete_mints_takedown_for_cascaded_sprint(
     receipt_payload = receipt.to_dict()
     assert receipt_payload["artifact_type"] == "spec"
     assert receipt_payload["artifact_id"] == spec_id
-    assert [
-        (item["artifact_type"], item["artifact_id"])
-        for item in receipt_payload["descendant_deletions"]
-    ] == [("sprint", sprint_id)]
+    assert receipt.descendant_deletions == ()
+    assert "descendant_deletions" not in receipt_payload
 
     async with db_factory() as session:
         intents = (
@@ -1069,12 +1074,8 @@ async def test_spec_delete_mints_takedown_for_cascaded_sprint(
 
     assert {(intent.artifact_type, intent.artifact_id) for intent in intents} == {
         ("spec", spec_id),
-        ("sprint", sprint_id),
     }
-    sprint_intent = next(
-        intent for intent in intents if intent.artifact_type == "sprint"
-    )
-    assert sprint_intent.payload["source_refs"] == [f"sprint:{sprint_id}"]
+    assert intents[0].payload["source_refs"] == [f"spec:{spec_id}"]
 
 
 @pytest.mark.asyncio

@@ -466,7 +466,7 @@ class ArtifactArchiveChanged(DomainEvent):
     """Reversible archive/restore signal for KG-backed SDLC artifacts."""
 
     event_type: ClassVar[str] = "artifact.archive_changed"
-    artifact_type: Literal["story", "ideation", "refinement", "spec", "card", "sprint"]
+    artifact_type: Literal["story", "ideation", "refinement", "spec", "card"]
     artifact_id: str
     archived: bool
 

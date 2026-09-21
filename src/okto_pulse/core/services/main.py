@@ -53,7 +53,6 @@ from okto_pulse.core.domain.enums import (
     IdeationStatus,
     RefinementStatus,
     SpecStatus,
-    SprintStatus,
     StoryStatus,
 )
 from okto_pulse.core.domain.code_traceability import (
@@ -773,8 +772,6 @@ RefinementKnowledgeBase = ApplicationRecord
 RefinementQAItem = ApplicationRecord
 RefinementSnapshot = ApplicationRecord
 Spec = ApplicationRecord
-Sprint = ApplicationRecord
-SprintHistory = ApplicationRecord
 
 
 def _apf(
@@ -12076,32 +12073,13 @@ class SpecService:
 
         board_id = spec.board_id
         actor_name = await resolve_actor_name(self.db, user_id, board_id)
-        # SQL cascade physically removes every sprint owned by this spec.
-        # Mint each child takedown before deleting the parent so canonical
-        # ``sprint:{id}`` nodes cannot survive until a later catch-up sweep.
-        linked_sprints = await _application_list(
+        # Retired Sprint sources are handled by the fenced offline cutover.
+        # Live deletion only schedules the surviving Spec projection.
+        takedown_receipt = await _prepare_governed_artifact_deletion(
             self.db,
-            "sprint",
-            filters=(_apf("spec_id", "eq", spec_id),),
-        )
-        descendant_deletions: list[GovernedArtifactDeletionReceipt] = []
-        for linked_sprint in linked_sprints:
-            descendant_deletions.append(
-                await _prepare_governed_artifact_deletion(
-                    self.db,
-                    board_id=board_id,
-                    artifact_type="sprint",
-                    artifact_id=linked_sprint.id,
-                )
-            )
-        takedown_receipt = replace(
-            await _prepare_governed_artifact_deletion(
-                self.db,
-                board_id=board_id,
-                artifact_type="spec",
-                artifact_id=spec_id,
-            ),
-            descendant_deletions=tuple(descendant_deletions),
+            board_id=board_id,
+            artifact_type="spec",
+            artifact_id=spec_id,
         )
         await _purge_quality_assessment_subject(
             self.db,
@@ -18839,14 +18817,13 @@ class ArchiveService:
 
     async def _resolve_tree(self, entity_type: str, entity_id: str) -> dict[str, list]:
         """Resolve the full descendant tree from a given entity.
-        Returns {ideations: [...], refinements: [...], specs: [...], sprints: [...],
+        Returns {ideations: [...], refinements: [...], specs: [...],
         cards: [...]}.
         """
         tree: dict[str, list] = {
             "ideations": [],
             "refinements": [],
             "specs": [],
-            "sprints": [],
             "cards": [],
         }
 
@@ -18923,17 +18900,6 @@ class ArchiveService:
                 )
                 tree["cards"].extend(bugs)
 
-        # Sprints are first-class descendants of Spec (each sprint belongs to one
-        # spec). The sprint's cards are already captured above via spec_id, so only
-        # the sprint rows themselves are added here.
-        if spec_ids:
-            sprints = await _application_list(
-                self.db,
-                "sprint",
-                filters=(_apf("spec_id", "in", spec_ids),),
-            )
-            tree["sprints"].extend(sprints)
-
         return tree
 
     async def archive_tree(self, entity_type: str, entity_id: str) -> dict[str, int]:
@@ -18975,7 +18941,6 @@ class ArchiveService:
             "ideations": 0,
             "refinements": 0,
             "specs": 0,
-            "sprints": 0,
             "cards": 0,
         }
         changed_artifacts: list[tuple[str, Any]] = []
@@ -19046,17 +19011,6 @@ class ArchiveService:
                         False,
                     )
                 )
-
-        for sprint in tree["sprints"]:
-            if not sprint.archived:
-                sprint.pre_archive_status = (
-                    sprint.status.value
-                    if hasattr(sprint.status, "value")
-                    else str(sprint.status)
-                )
-                sprint.archived = True
-                counts["sprints"] += 1
-                changed_artifacts.append(("sprint", sprint))
 
         # Cards are archived as resequence OPS (matriz v13, item 5): each op
         # flips archived and relocates the card to the archived range n..m
@@ -19189,7 +19143,6 @@ class ArchiveService:
             "ideations": 0,
             "refinements": 0,
             "specs": 0,
-            "sprints": 0,
             "cards": 0,
         }
         changed_artifacts: list[tuple[str, Any]] = []
@@ -19277,18 +19230,6 @@ class ArchiveService:
                         True,
                     )
                 )
-
-        for sprint in tree["sprints"]:
-            if sprint.archived:
-                if sprint.pre_archive_status:
-                    try:
-                        sprint.status = SprintStatus(sprint.pre_archive_status)
-                    except (ValueError, KeyError):
-                        pass
-                sprint.archived = False
-                sprint.pre_archive_status = None
-                counts["sprints"] += 1
-                changed_artifacts.append(("sprint", sprint))
 
         # Cards are restored as resequence OPS with placement="end" (matriz
         # v13, item 5): the landing at the END of the active range is EXPLICIT

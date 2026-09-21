@@ -4,6 +4,7 @@ from copy import deepcopy
 from types import SimpleNamespace
 
 import pytest
+from pydantic import ValidationError
 
 from okto_pulse.core.application.processors.consolidation import _process_queue_entry
 from okto_pulse.core.application.processors.deterministic_kg import DeterministicWorker
@@ -59,9 +60,12 @@ async def test_legacy_queue_work_cannot_access_graph_or_acknowledge_success(work
 @pytest.mark.asyncio
 @pytest.mark.parametrize("archived", [True, False])
 async def test_historical_archive_event_cannot_restore_or_mutate_sprint_graph(archived):
-    event = types.ArtifactArchiveChanged(
-        board_id="b", artifact_type="sprint", artifact_id="s", archived=archived,
-    )
+    payload = dict(board_id="b", artifact_type="sprint", artifact_id="s", archived=archived)
+    with pytest.raises(ValidationError):
+        types.ArtifactArchiveChanged(**payload)
+    # Raw historical envelopes cannot become new live events. Defense in depth
+    # still refuses an internal caller bypassing typed deserialization.
+    event = SimpleNamespace(event_type="artifact.archive_changed", **payload)
     assert ConsolidationEnqueuer()._map_targets(event) == []
     with pytest.raises(ValueError, match="retired_sprint_work_requires_offline_cutover"):
         await SourceArchiveLifecycleHandler().handle(event, object())

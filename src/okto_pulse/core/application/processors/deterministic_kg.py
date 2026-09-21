@@ -2197,6 +2197,8 @@ class DeterministicWorker:
         return result
 
     # ------------------------------------------------------------------
+    # Card entry point — normal/test/bug polymorphism
+    # ------------------------------------------------------------------
 
     def process_card(self, card: dict[str, Any]) -> WorkerResult:
         """Extract a card into the KG. Bugs emit a Bug node + `violates`

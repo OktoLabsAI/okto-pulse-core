@@ -1,7 +1,7 @@
 """Consolidation queue application processor (spec c48a5c33).
 
 For each pending queue entry the worker:
-    1. Loads the artifact (Spec/Sprint/Card) from the DB.
+    1. Loads the surviving artifact (such as Spec/Card) through the persistence port.
     2. Runs the pure `DeterministicWorker` (Layer 1) to extract every
        node + edge candidate that can be derived from structured fields,
        with full v0.2.0 provenance metadata (layer/rule_id/created_by).

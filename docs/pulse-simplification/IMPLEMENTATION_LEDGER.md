@@ -9468,3 +9468,70 @@ Spec cascade, UoW, policy readers e integração F2). Preservar gates autorizado
 Spec Done e controles Bug/Test; não relaxar teste para acomodar histórico. Também
 restam schema/terminal runtime_ready, matrizes DEI/ARQ/VER/ADV, E2E instalado,
 footprint MCP, benchmark e rollout conforme pendências integrais anteriores.
+
+### F3 — archive/restore e exclusão de Spec sem descendente operacional Sprint
+
+Em execução sobre Core cf2edde5 / Community d81c477, árvores limpas/publicadas.
+Turno anterior classificado como progresso: retirada de materialização viva,
+363 testes e oito budgets zero. Nesta frente, ArchiveService resolve apenas
+Ideation/Refinement/Spec/Card e não consulta/altera Sprint, não a conta no retorno
+e não emite seu lifecycle. Preservados preflights de Card/Spec Done, dependências
+entre Specs, fence de restore, resequenciamento e sinais de qualidade.
+SpecService.delete_spec mantém exclusão governada da Spec, mas deixa de enumerar
+Sprint e de criar descendant_deletions/stale_reconcile para entidade retirada.
+ArtifactArchiveChanged novo rejeita Sprint; payloads históricos continuam brutos
+no classificador offline. Defense-in-depth do handler permanece para bypass
+interno de desserialização; não é contrato vivo nem ACK de histórico removido.
+Testes preservam a mesma população Card/Spec com linhas legadas de Sprint e
+impõem sentinela contra consulta operacional. Arquivo Community ganha prova de
+proveniência imutável após cascade SQL da Spec. Frontend ganha seis casos de
+archive/restore nos três painéis, com resposta sem contagem Sprint e recarga.
+Não há migração real nem liberação de runtime intermediário. Integração atômica
+continua dependente do arquivo F2, policy F2B, schema e certificado runtime_ready.
+Ruff aprovado; build/proveniência, suites e closure ainda pendentes.
+
+Retomada investigada enquanto as suites executavam: start_historical_consolidation
+(kg/governance.py) ainda inclui Sprint em by_type/enqueue/log; leitor concreto
+Community sqlalchemy_kg_governance.list_historical_artifacts consulta Sprint
+closed. source_maturity.REBUILD_ARTIFACT_TYPES/classificação, porta consolidation
+_EXACT_REBUILD_SOURCE_ARTIFACT_TYPES, board_source_reader, kg_operational,
+kg_routes e tipos PendingTreeLevels/fixtures frontend precisam de retirada
+coordenada para não gerar fila nova recusada pelo worker já migrado. Não reabrir
+handlers Sprint para acomodar esses produtores. Os testes existentes de governança,
+pending tree e maturidade precisam preservar populações/controles remanescentes.
+Leitores de policy (main/card_crud) ainda usam resolução Sprint; preservar a
+função histórica para o plano F2B, definir leitor vivo Card/Spec/Board separado
+com recusa de dados não migrados, e provar paridade antes de cortar ORM/UoW.
+
+Validação do incremento (2026-09-21):
+- f3-archive-tree-core.log: 275 passed em 218,53s. Resequenciamento/archive/
+  restore, mesma população com Sprint legada intacta, eventos só Spec/Card,
+  sentinela contra consulta Sprint, Spec delete com apenas intent governado Spec,
+  gates F3 Done/restore, negações REST/MCP, dependências e catálogo MCP.
+- f3-archive-tree-community.log: 57 passed em 148,06s. Arquivo imutável preserva
+  source_spec_id e identidade Sprint após cascade relacional real, supersession
+  de trabalho histórico e recusa do runtime com journal intermediário.
+- f3-archive-tree-ui.log: 19 passed, incluindo seis casos novos nos painéis
+  Ideation/Refinement/Spec para archive/restore sem contagem Sprint e com recarga.
+  Total distinto351; nenhuma falha neste incremento. Não são suites integrais
+  nem prova final de upgrade/rollback instalado, rollout ou conclusão do plano.
+- provenance-f3-archive-tree.json antes de testes: 804/335 Python e 867/419
+  payloads fonte/wheel/site-packages idênticos byte a byte. Nenhuma edição de
+  produto nem reinstalação durante as suites. Community payload inalterado.
+  Core agregado7715f6dbffd35eb204c695d063a5f2a164b00730c1dbea7ea58b89770d1b3f01;
+  Community c1648878c331befa92033594756aad8c5712e6aa208fd9f25261a7ed23987284.
+  Wheel Core33e910fce927d6adb749ecf0e1a40dbcbb1589e5edec2a82a7717b50ed925637;
+  Community edd29f995a34e2683408f83c7073c8b937a0980d6446709e2f60a371cac5e834.
+- closure-f3-archive-tree.json: exit0, ok=true, findings=[] e
+  documentation_findings=[], oito budgets0/0. Sem drift de README. Ruff,
+  diff --check e gate do catálogo MCP aprovados. Nenhuma tool alterada.
+- SPA produtiva não alterada; verify:frontend-dist, 78 arquivos, hash
+  95640fb1eb409412e98a7acdeea6d587b2455b4d9c186bbeba2cc50d83ee0954.
+- Todos os handles encerrados. Community commit0ed4f59; commit Core/pushes a
+  seguir com verificação das árvores/HEAD remoto. Nenhuma migração de dados
+  reais, deploy, release, tag, merge nem reinício de runtime do usuário.
+
+Objetivo integral ativo. Próxima frente concreta: produtores/inventário de fila
+histórica e pending tree/maturidade (acima), depois leitores F2B/schema/UoW e
+terminal offline; demais pendências integrais de matriz, footprint, E2E pareado,
+benchmark e rollout permanecem. Não liberar este estado intermediário.
