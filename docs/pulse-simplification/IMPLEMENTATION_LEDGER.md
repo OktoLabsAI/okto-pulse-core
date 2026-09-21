@@ -10016,3 +10016,92 @@ E2E pareado/rollback, footprint MCP, benchmark e rollout seguem pendentes.
 Objetivo integral ativo; sem migração real/deploy/release/tag/merge/restart.
 
 Community commit1c647b9; commit Core/pushes pareados a seguir, verificando HEADs remotos e árvores limpas.
+
+### F3 — snapshots e produtores semânticos de Sprint retirados
+
+Em execução sobre Corec853b92f / Community1c647b9. Turno anterior foi progresso:
+inventário operacional retirado, baseline impact congelada,75 testes e pushes.
+Caracterização de _result_from_row/save_semantic_assessment_result confirmou
+hidratação por receipt+metrics+findings e replay antes da resolução de sujeito.
+record_semantic_subject_mutation também retorna evento antigo antes de _raw_subject.
+get_current_semantic_assessment_receipt resolve current snapshot e retornaNone se
+sujeito não existe; a leitura histórica explícita é independente dessa atualidade.
+
+Preflight provenance-f3-semantic-baseline.json comprovou fontes/wheels instalados
+byte-idênticos antes da captura. Banco SQLite descartável com triggers semânticos,
+Sprint, autoria registrada e avaliação blocking PASSED real: captura1 passed em
+8.76s (f3-semantic-baseline.log). Fixtures congeladas Community:
+- tests/fixtures/f3_semantic_sprint_baseline.json, SHA256
+  dd4f0729cd51dcb376ef8b6b18ec2bdf5e375c0e251613d11532df5cc385dd37;
+- tests/fixtures/f3_semantic_sprint_baseline.sqlite3.zip, SHA256
+  6585f63c892f1b6e72276514f8a950c9d70021e330c198f6e6fa12236aba52eb.
+Captura inclui par fonte, IDs determinísticos, snapshot e resultado completo.
+ZIP contém somente history.sqlite3 gerado por fixture, sem dado real. Código de
+captura substituído por regressão somente de leitura; não regenerar baseline.
+
+Adapter semântico não consulta Sprint/QA como sujeito vivo; snapshot/status
+retornam ausência e a transição é recusada explicitamente como tipo retirado
+(não é zero pendências nem dispensa de gate). Replay histórico ocorre antes desse guard.
+Listeners não bumpam/filam Sprint por mudança de Card nem por mutação direta/QA;
+queue explícita Sprint é recusada. Card.sprint_id continua nas regras próprias de
+versão Card, sem relaxar a semântica da migração. Guards de composição ORM das
+linhas históricas Sprint/QA continuam até retirada física, sem produtor operacional.
+Manifests v1 do Core não foram alterados. Testes writer_bridge deixam de tentar
+entidade de aplicação Sprint já retirada; os demais cinco tipos mantêm prova de
+atribuição/avaliação, e lane/origin continuam vinculados ao hash v1 histórico.
+Build/proveniência, regressões históricas com/sem tabela e suites em preparação.
+
+Primeira rodada: Core106 passed/1 failed por teste antigo que ainda exigia a aresta
+Sprint review→closed entre14 gates. O registro SDLC já retirou Sprint em incremento
+anterior; atualizado teste para conjunto exato das13 arestas restantes e ausência
+Sprint, sem alterar registry ou regra. Reteste16 passed (f3-semantic-core-gate-final.log).
+Community84 passed/2 failed: nome de método incorreto no teste novo (o adapter expõe
+resolve_transition_snapshot). Após correção, segunda rodada7 passed/2 failed mostrou
+que PolicyTransitionSnapshot valida o tipo contra SDLC_REGISTRY e não admite Sprint,
+mesmo com subject_available=False. Ajustado produto para recusa port-typed explícita
+semantic_assessment_subject_type_retired antes de lock/SQL, preservando o contrato
+retirado. Não se relaxou gate nem se devolveu decisão permitida. Todos os handles
+encerrados antes dessa edição e do rebuild pareado wheels-f3-semantic-final.
+
+Preflight final provenance-f3-semantic-final.json aprovado nos dois pacotes antes
+do reteste. Avaliação nova do teste agora é construída por
+record_semantic_guideline_assessment com contexto histórico e autoridades válidas,
+e sua gravação é recusada pelo adapter por ausência do sujeito operacional.
+Rodada final f3-semantic-retirement-final2.log:10 passed em7.07s (inclui queue com/sem
+actor vinculado). Total distinto261: Core107, Community87 e frontend67; captura1
+separada e retestes não somados. Sem falhas abertas nos módulos exercitados.
+Mantêm-se Q&A/autoria dos cinco tipos vivos, savepoints/rollback, persistência
+real/receipts/findings, v1 manifests, gates/currentness e catálogo MCP. Histórico
+comparado integralmente ao banco capturado; nenhum dado real usado/migrado.
+
+Retomada adicional descoberta neste turno: save_semantic_metric_waiver_mutation
+faz replay antes de REQUEST/transition; REQUEST consulta current_subject mas usa
+a ausência apenas no teste de edição, sem exigir sujeito vivo. É possível que
+exceções novas ainda sejam graváveis sobre finding histórico Sprint; reproduzir
+antes de concluir. save_semantic_policy_skip_mutation (confirmar nome exato) valida
+sujeito em CREATE, mas o ramo de revogação usa predecessor persistido. Inspecionar
+caminhos completos e preservar replay exato antes de recusar mutações novas de
+exceções Sprint. Autoria de target/entity types públicos também permanece: o enum
+PolicyEntityType.SPRINT ainda é necessário para ler recibos e definições históricas,
+mas não deve manter novos produtores operacionais por transporte/Core. Não declarar
+retirada semântica integral até cobrir essas frentes. Guards ORM históricos,
+schema, ACKs exatos e terminal offline runtime_ready continuam pendentes, assim
+como matriz integral, E2E pareado/rollback, footprint MCP, benchmark e rollout.
+
+Fechamento técnico do incremento: closure-f3-semantic-final.json exit0,ok=true,
+findings/documentation_findings vazios e oito budgets0/0. Ruff/diff --check aprovados.
+Proveniência final804/335 arquivos Python e867/419 payloads fonte/wheel/site-packages
+byte-idênticos antes do reteste; Core agregado
+f9fd8f468c66db1d46f262ccf38247d780707395716edeec01e80d6e0741df67 e Community
+4001223179c7bc31221d9b09c8b030d76d4ee66f670c515d73acb99bef7fdf74.
+Wheels finais Core4e80da0188dacaf7548bb49e89d9334d5852c4fbc58a41d61b93bbbfaa144707;
+Communitycd4f6071faa578789e74cbb9ab4b9431dcfcd2cedfb5357872c718517b9c3738.
+Frontend67 passed, produto UI inalterado; verify:frontend-dist confirmou78 arquivos
+/hash0f84989255db06e8990dd00a48bd3aad148089debd4eb1656399514ba10cdfdf.
+Nenhuma tool alterada, catálogo gerado íntegro. Todos os handles encerrados.
+Nome de writer de skip confirmado: save_semantic_policy_skip_mutation.
+Objetivo integral ativo. Sem alteração de dados reais, deploy/release/tag/merge
+ou restart de runtime do usuário. As pendências de exceções/autoria Sprint acima
+não foram modificadas nem anunciadas como concluídas.
+
+Community commit096aeff; commit Core/pushes pareados a seguir, verificando HEADs remotos e árvores limpas.

@@ -273,7 +273,7 @@ def _human_skip(binding: SemanticBindingComplianceSnapshot):
     ).skip
 
 
-def test_registry_keeps_exactly_the_frozen_fourteen_native_gate_edges() -> None:
+def test_registry_preserves_thirteen_live_gate_edges_after_sprint_retirement() -> None:
     edges = {
         (entity_type, from_status, edge.to_status)
         for entity_type, lifecycle in SDLC_REGISTRY.items()
@@ -282,14 +282,14 @@ def test_registry_keeps_exactly_the_frozen_fourteen_native_gate_edges() -> None:
         if edge.policy_compliance
     }
 
-    assert len(edges) == 14
+    assert "sprint" not in SDLC_REGISTRY
+    assert len(edges) == 13
     assert edges == {
         ("ideation", "evaluating", "done"),
         ("refinement", "approved", "done"),
         ("spec", "approved", "validated"),
         ("card", "in_progress", "done"),
         ("card", "validation", "done"),
-        ("sprint", "review", "closed"),
         ("test_scenario", "draft", "automated"),
         ("test_scenario", "draft", "passed"),
         ("test_scenario", "draft", "failed"),
