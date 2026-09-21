@@ -536,7 +536,7 @@ async def test_validation_analytics_are_leaf_aware_and_strip_ledger_plumbing() -
 
 @pytest.mark.asyncio
 async def test_discovery_outputs_only_generic_rework_and_activity_signals() -> None:
-    from okto_pulse.core.domain.enums import CardStatus, SprintStatus
+    from okto_pulse.core.domain.enums import CardStatus
     from okto_pulse.core.services import discovery_executor
 
     secret = "private validation rejection cause"
@@ -545,7 +545,6 @@ async def test_discovery_outputs_only_generic_rework_and_activity_signals() -> N
         id="card-1",
         title="Rejected card",
         status=CardStatus.REJECTED,
-        sprint_id="sprint-1",
         updated_at=now,
         current_rejection_kind="task_validation",
         current_rejection_code="task_validation_failed",
@@ -562,16 +561,7 @@ async def test_discovery_outputs_only_generic_rework_and_activity_signals() -> N
         created_at=now,
     )
     reader = SimpleNamespace(
-        list_sprints=AsyncMock(
-            return_value=[
-                SimpleNamespace(
-                    id="sprint-1",
-                    title="Sprint",
-                    status=SprintStatus.ACTIVE,
-                )
-            ]
-        ),
-        list_cards_for_sprints=AsyncMock(return_value=[rejected_card]),
+        list_board_cards=AsyncMock(return_value=[rejected_card]),
         list_dependencies_for_cards=AsyncMock(return_value=[]),
         list_recent_activity=AsyncMock(return_value=[validation_activity]),
         resolve_entity_titles=AsyncMock(
@@ -587,7 +577,7 @@ async def test_discovery_outputs_only_generic_rework_and_activity_signals() -> N
         activity = await discovery_executor._exec_activity_log(None, "board-1")
 
     rejected = next(row for row in blockers["rows"] if row["type"] == "rejected_card")
-    assert rejected["summary"] == "Sprint 'Sprint' · rework required"
+    assert rejected["summary"] == "Rework required"
     assert "cause_kind" not in rejected["meta"]
     assert secret not in json.dumps(blockers)
     assert activity["rows"][0]["meta"]["details"] == {"redacted": True}

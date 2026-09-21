@@ -9326,3 +9326,71 @@ Fechamento: closure-f3-card-lineage-final.json terminou (exit 0) com ok=true,
 findings=[], documentation_findings=[] e oito budgets 0/0. Todos os handles
 encerrados. Community commit 010f7eb; commit Core e pushes pareados a seguir.
 Conferir árvores limpas e HEAD=remoto; objetivo integral permanece ativo.
+
+### F3/F5 — discovery de bloqueios por Card, sem Sprint
+
+Em execução sobre Core e350d9be / Community 010f7eb, par limpo/publicado.
+Turno anterior foi progresso: gates/eventos de Card, 400 testes, closure zero.
+Investigação mostrou um intent vivo blockers_current_sprint com leitor exclusivo
+por Sprint ativa. Substituído por blocked_cards sobre Cards não arquivados do
+Board, usando list_board_cards já existente; preservados estados, dependências,
+on_hold, rejected, limiar stale de 72h, redação de causa e min_permission original.
+O intent antigo não vira alias: catálogo de leitura o oculta mesmo em registro
+antigo active=true; dispatcher o rejeita explicitamente. Bootstrap desativa a
+identidade antiga sem apagá-la e cria o novo seed. Buscas salvas/histórico mantêm
+os IDs originais, sem reexecutar silenciosamente uma população diferente.
+Retirados DiscoverySprintFact, campo Sprint do DiscoveryCardFact, Protocol/leitores
+SQL exclusivos e resolução operacional de títulos Sprint. Atividade histórica
+conserva detalhes/origem, sem navegação viva para Sprint. Adapters continuam só
+na Community; porta compartilhada continua no Core. Testes semânticos mantêm a
+mesma população de Cards e asserções de bloqueios; novo SQL prova escopo Board e
+exclusão de arquivados/estrangeiros, seed idempotente e preservação das referências.
+Novo teste frontend cobre executar o intent sem parâmetro Sprint e abrir o Card.
+Validação pareada, suites, bootstrap e closure pendentes. Consolidação, leitores
+F2B, schema/ORM e terminal offline continuam pendentes; sem deploy intermediário.
+
+Validação do incremento (2026-09-21):
+- Core: seleção inicial 104 passed / quatro falhas, todas em fixtures/expectativas:
+  adapter de teste ainda construía DiscoveryCardFact com sprint_id (dois casos),
+  teste estático exigia SprintStatus.ACTIVE, novo teste de histórico esperava zero
+  chamadas onde o helper envia refs=[]. Corrigido o adapter; mantidas as asserções
+  de cobertura, links canônicos e separação de uncovered_scenario; nenhum gate
+  afrouxado. f5-discovery-cards-core-fixed.log: 40 passed. Total Core distinto108.
+- Community: seleção inicial 33 passed / uma falha: o teste de replay ainda
+  esperava sete presets, embora Sprint Manager já tivesse sido retirado em etapa
+  anterior. Ajustado para seis, mantendo igualdade antes/depois e replay do mesmo
+  e de outro bootstrapper. f5-discovery-cards-community-fixed.log: 31 passed.
+  Total Community distinto34, incluindo seed antigo inativo, identidade/histórico
+  preservados, novo seed único após dois replays e escopo SQL real.
+- Frontend: f5-discovery-cards-ui.log, 16 passed; abrir resultado Card, executar
+  intent sem Sprint e demais parâmetros/navegação/avisos. Total distinto158.
+- Revisão final retirou também SelectorCardFact.sprint_id e refs Sprint, nos dois
+  adapters e na projeção Core. Após todos os testes anteriores terminarem, wheels
+  finais reconstruídos/instalados; contratos de seletores retestados no install:
+  f5-discovery-cards-selectors-final.log: 52 passed; adapters-final: três passed,
+  incluindo Community real para opções de Card sem campo Sprint. Repetições não
+  somadas ao total distinto. Nenhuma edição/reinstall com teste ativo.
+- Proveniência antes das execuções: provenance-f5-discovery-cards.json e
+  provenance-f5-discovery-cards-final.json, 804/335 Python e 867/419 payloads
+  idênticos byte a byte entre fonte/wheel/site-packages.
+  Final Core agregado 148a4660d5e8f772f0cf534e2f9ee033b137c8ac46fd825c8d86f23786e78ddb;
+  Community 0547000f949e2eb0611b419190285a0ceca73f91e88afc23d7c875904481f49c.
+  Wheel Core 7bda5c66a155de7ef516d1e5582ebc95438e0a7844ad56ed4d1d0def8ec5c43d;
+  Community 7514e1b4e36a22f8e916c0ef13906996dde8a22cacd406b25aa255750350340f.
+- Primeiro closure: findings=[], oito budgets 0/0; só matriz README divergente.
+  Gerador oficial executado para ambos READMEs. Closure final em execução.
+- Ruff/diff --check e gate do catálogo MCP passaram. SPA produtiva não alterada;
+  verify:frontend-dist confirma 78 arquivos e
+  95640fb1eb409412e98a7acdeea6d587b2455b4d9c186bbeba2cc50d83ee0954.
+
+Retomada: consolidação ainda materializa Sprint e card.sprint_id; remover seus
+handlers/workers/DTOs de projeção viva com os testes de outbox histórico e não
+ressurreição. Em seguida continuar archive/restore/UoW e leituras F2B até schema/
+terminal offline atômico. Demais pendências integrais de matriz, footprint,
+E2E instalado/upgrade/rollback, benchmark e rollout continuam. Este incremento
+não migrou dados reais, não executou release/tag/merge e não reiniciou o Pulse.
+
+Fechamento: closure-f5-discovery-cards-final.json terminou com exit0, ok=true,
+findings=[], documentation_findings=[] e oito budgets 0/0. Handles encerrados.
+Community commit38a258f; commit Core e pushes pareados a seguir, com verificação
+HEAD=remoto e árvores limpas. Objetivo integral continua ativo, não concluído.

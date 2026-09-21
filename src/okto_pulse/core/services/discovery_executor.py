@@ -27,6 +27,8 @@ results with an honest banner.
 
 from __future__ import annotations
 
+from okto_pulse.core.discovery_intent_catalog import RETIRED_DISCOVERY_INTENT_NAMES
+
 from dataclasses import dataclass
 import logging
 import re
@@ -118,6 +120,8 @@ async def execute_intent(
     Raises:
         ValueError: if tool_binding is unknown or a required param is missing.
     """
+    if getattr(intent, "name", None) in RETIRED_DISCOVERY_INTENT_NAMES:
+        raise ValueError("discovery_intent_retired")
     binding = intent.tool_binding
 
     normalized_params_schema = normalize_discovery_params_schema(intent.params_schema)
@@ -612,7 +616,7 @@ def _entity_ref(action: str, details: dict | None, card_id: str | None) -> tuple
     Ideação 33cb4fa3: rows in Global Discovery need a stable pointer to
     the entity they affect so the frontend can offer an "Open entity"
     action. ActivityLog persists the target id inside ``details`` (keyed
-    by ``{spec,ideation,refinement,sprint}_id``) or directly on the
+    by ``{spec,ideation,refinement}_id``) or directly on the
     row's ``card_id`` column. The order below matters: a ``spec_moved``
     row can also carry a ``card_id`` set to null, so we prefer the
     details-level key and only fall back to ``card_id`` when no richer
@@ -620,7 +624,6 @@ def _entity_ref(action: str, details: dict | None, card_id: str | None) -> tuple
     """
     d = details or {}
     for key, etype in (
-        ("sprint_id", "sprint"),
         ("spec_id", "spec"),
         ("ideation_id", "ideation"),
         ("refinement_id", "refinement"),
@@ -693,7 +696,7 @@ async def _exec_activity_log(db: Any, board_id: str) -> dict:
     Previously rows carried just the verb (``card_moved``) and a
     truncated card id, forcing the user to open the card grid to learn
     which card. Each row now resolves the affected entity (card, spec,
-    sprint, ideation, refinement) and surfaces:
+    ideation, refinement) and surfaces:
 
     - ``title`` — the entity's own title (or the verb if unknown)
     - ``summary`` — ``"{actor} {verb} {entity_title} · {when}"``
@@ -777,58 +780,16 @@ async def _exec_activity_log(db: Any, board_id: str) -> dict:
 
 
 async def _exec_blockers(db: Any, board_id: str) -> dict:
-    """Discovery intent `blockers_current_sprint` — honest implementation.
-
-    Ideação bf6a3766: the v1 dispatch called ``compute_blockers`` (a
-    board-wide triage) and returned every uncovered scenario on the board,
-    misrepresenting them as "blockers on the current sprint". Three fixes:
-
-    1. **Scope to active sprint(s)** — no active sprint ⇒ zero rows, not
-       a silent fallback to board-wide triage.
-    2. **Only real blockers** — cards whose forward progress is gated by
-       unresolved card dependencies, explicit ``on_hold``, or ``stale``
-       state. Test-coverage gaps are reported by a separate intent
-       (``scenarios_without_tasks``); surfacing them here duplicated
-       results and hid the real dependency chain.
-    3. **Emit sprint_id on every row** — the frontend can then group by
-       sprint if multiple are active concurrently.
-    """
+    """Report existing blocker criteria for non-archived Cards in the Board."""
     from datetime import datetime as _dt, timezone as _tz, timedelta as _td
 
-    from okto_pulse.core.domain.enums import CardStatus, SprintStatus
+    from okto_pulse.core.domain.enums import CardStatus
 
     reader = get_discovery_execution_read_port()
-    sprints = await reader.list_sprints(
-        db,
-        board_id=board_id,
-    )
-    active_sprints = list(
-        sprint
-        for sprint in sprints
-        if sprint.status == SprintStatus.ACTIVE
-    )
-
-    if not active_sprints:
-        return _ok(
-            rows=[],
-            columns=["Type", "Title", "Reason"],
-            tool_binding="okto_pulse_list_blockers",
-            extra={
-                "summary": {},
-                "message": "No active sprint on this board — no blockers to report.",
-            },
-        )
-
-    active_sprint_ids = [s.id for s in active_sprints]
-    sprint_title_by_id = {s.id: s.title for s in active_sprints}
-
-    cards = list(
-        await reader.list_cards_for_sprints(
-            db,
-            board_id=board_id,
-            sprint_ids=active_sprint_ids,
-        )
-    )
+    cards = list(await reader.list_board_cards(db, board_id=board_id))
+    if not cards:
+        return _ok([], columns=["Type", "Title", "Reason"],
+                   tool_binding="okto_pulse_list_blockers", extra={"summary": {}})
     card_by_id = {c.id: c for c in cards}
 
     deps_rows = list(
@@ -841,8 +802,7 @@ async def _exec_blockers(db: Any, board_id: str) -> dict:
     for d in deps_rows:
         deps_by_card.setdefault(d.card_id, []).append(d.depends_on_id)
 
-    # Resolve dependency targets outside the sprint too (a sprint card may
-    # depend on a card that lives elsewhere on the board).
+    # Resolve targets outside the active population (e.g. archived Cards).
     external_dep_ids = {
         dep_id
         for dep_list in deps_by_card.values()
@@ -878,8 +838,6 @@ async def _exec_blockers(db: Any, board_id: str) -> dict:
 
     rows: list[dict] = []
     for c in cards:
-        sprint_title = sprint_title_by_id.get(c.sprint_id, "")
-
         if c.status in active_states:
             unresolved: list[dict] = []
             for dep_id in deps_by_card.get(c.id, []):
@@ -902,7 +860,7 @@ async def _exec_blockers(db: Any, board_id: str) -> dict:
                         "type": "blocked_card",
                         "title": c.title,
                         "summary": (
-                            f"Sprint '{sprint_title}' · blocked by "
+                            "Blocked by "
                             f"{len(unresolved)} unresolved dep(s)"
                         ),
                         "meta": {
@@ -911,8 +869,6 @@ async def _exec_blockers(db: Any, board_id: str) -> dict:
                             "entity_title": c.title,
                             "card_id": c.id,
                             "card_status": c.status.value,
-                            "sprint_id": c.sprint_id,
-                            "sprint_title": sprint_title,
                             "blocking_cards": unresolved,
                         },
                     }
@@ -924,15 +880,13 @@ async def _exec_blockers(db: Any, board_id: str) -> dict:
                     "id": c.id,
                     "type": "on_hold_card",
                     "title": c.title,
-                    "summary": f"Sprint '{sprint_title}' · explicitly paused",
+                    "summary": "Explicitly paused",
                     "meta": {
                         "entity_type": "card",
                         "entity_id": c.id,
                         "entity_title": c.title,
                         "card_id": c.id,
                         "card_status": c.status.value,
-                        "sprint_id": c.sprint_id,
-                        "sprint_title": sprint_title,
                         "updated_at": (
                             c.updated_at.isoformat() if c.updated_at else None
                         ),
@@ -946,15 +900,13 @@ async def _exec_blockers(db: Any, board_id: str) -> dict:
                     "id": c.id,
                     "type": "rejected_card",
                     "title": c.title,
-                    "summary": f"Sprint '{sprint_title}' · rework required",
+                    "summary": "Rework required",
                     "meta": {
                         "entity_type": "card",
                         "entity_id": c.id,
                         "entity_title": c.title,
                         "card_id": c.id,
                         "card_status": c.status.value,
-                        "sprint_id": c.sprint_id,
-                        "sprint_title": sprint_title,
                     },
                 }
             )
@@ -971,7 +923,7 @@ async def _exec_blockers(db: Any, board_id: str) -> dict:
                         "type": "stale_card",
                         "title": c.title,
                         "summary": (
-                            f"Sprint '{sprint_title}' · stuck for {age_h}h "
+                            f"Stuck for {age_h}h "
                             f"in {c.status.value}"
                         ),
                         "meta": {
@@ -980,8 +932,6 @@ async def _exec_blockers(db: Any, board_id: str) -> dict:
                             "entity_title": c.title,
                             "card_id": c.id,
                             "card_status": c.status.value,
-                            "sprint_id": c.sprint_id,
-                            "sprint_title": sprint_title,
                             "last_updated": upd.isoformat(),
                             "age_hours": age_h,
                             "stale_hours_threshold": STALE_HOURS,
@@ -999,7 +949,6 @@ async def _exec_blockers(db: Any, board_id: str) -> dict:
         tool_binding="okto_pulse_list_blockers",
         extra={
             "summary": summary,
-            "active_sprint_ids": active_sprint_ids,
         },
     )
 

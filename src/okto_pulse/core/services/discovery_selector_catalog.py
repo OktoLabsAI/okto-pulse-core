@@ -731,7 +731,6 @@ def _project_card_option(card: SelectorCardFact) -> SelectorOption:
         for key, value in {
             "card_id": str(card.id),
             "spec_id": getattr(card, "spec_id", None),
-            "sprint_id": getattr(card, "sprint_id", None),
             "card_type": str(card_type) if card_type is not None else None,
         }.items()
         if value not in (None, "", [], {})

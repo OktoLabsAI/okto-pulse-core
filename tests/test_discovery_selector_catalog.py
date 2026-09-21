@@ -292,6 +292,7 @@ async def test_lists_card_selector_options_with_metadata_only():
     assert option["label"] == "Implement selector-backed card dependencies"
     assert option["status"] == "in_progress"
     assert option["refs"]["card_id"] == "card-1"
+    assert "sprint_id" not in option["refs"]
     assert "description" not in option
     assert "details" not in option
 
