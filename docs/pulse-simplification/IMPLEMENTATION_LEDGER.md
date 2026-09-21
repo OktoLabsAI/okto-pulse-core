@@ -9881,3 +9881,63 @@ rollout continuam pendentes. Objetivo integral ativo. Sem migração real, deplo
 release, tag, merge ou restart do usuário.
 
 Community commitf584a3c; commit Core/pushes pareados a seguir com verificação dos HEADs remotos e árvores limpas.
+
+### F3 — parentes vivos do KG sem Sprint, proveniência bruta preservada
+
+Em execução sobre Core9c8a0a5d / Communityf584a3c. Resolução de parent_artifact
+aceitava Sprint como pai operacional, apesar da retirada dos seus produtores.
+Parser/resolver agora admitem apenas Spec/Card; referência histórica continua
+intacta na linha original, com parent_artifact=None no consumer natural query.
+Adapter Community rejeita tipo retirado/desconhecido antes de SQL. O Core usa
+somente a porta pública; nenhum mecanismo novo foi introduzido. Reader de teste
+acompanha o contrato. Testes novos incluem banco descartável com/sem tabelas
+Sprint, batching/deduplicação, órfãos, zero escrita e referência bruta preservada.
+Build pareado/proveniência, suites e closure ainda pendentes.
+
+Investigação vinculada, ainda sem alteração de policy: list_policy_subjects inclui
+Sprint e alimenta novos previews/adoptions; save_impact_preview retorna replay
+selado antes do inventário vivo, assim como adopt_revision_cas retorna o replay
+persistido antes de recomputar o plano. Leitura exata desses caminhos deve ser
+completada com testes históricos antes de retirar produtores. Readers semânticos
+_raw_subject/_resolve_policy_subject_status e listeners de policy_subject_versioning
+continuam operacionais para Sprint. PolicyEntityType e manifests v1 também são
+usados por recibos armazenados; apagar enum/campos cegamente quebraria leitura ou
+hash histórico. Nenhuma mudança nesses contratos neste incremento.
+
+Validação final do incremento (2026-09-21):
+- Core64 passed (73.71s), Community31 passed (13.82s), frontend29 passed (3.98s),
+  total124 distintos. Logs f3-parent-{core,community,ui}.log. Sem falhas/retestes.
+  Core inclui parser/resolver, tier_power, escopo de camadas da natural query e
+  catálogo MCP. Community inclui sete casos novos com recusa pré-SQL e banco
+  real descartável, autorização KG REST e source route. Frontend cobre links,
+  preview e detail/traceability, incluindo proveniência histórica opaca.
+- Antes das suites, provenance-f3-parent.json:804/335 arquivos Python e867/419
+  payloads fonte/wheel/site-packages byte-idênticos. Wheels em wheels-f3-parent.
+  Core agregadof9fd8f468c66db1d46f262ccf38247d780707395716edeec01e80d6e0741df67;
+  Community95d2792e58994005f6e18dbd760dbf0a7b429ebb2820f9406cf28ddbff5ac2ac.
+  Wheel Core4e80da0188dacaf7548bb49e89d9334d5852c4fbc58a41d61b93bbbfaa144707;
+  Community484f554c9b492b1d2dd401c89b022598ebbdeab62081913faf8d926ad6f7a084.
+- closure-f3-parent.json:exit0,ok=true,findings/docs vazios, oito budgets0/0.
+  Ruff/diff --check aprovados. Nenhuma tool alterada; catálogo gerado íntegro.
+  Frontend produtivo inalterado; verify:frontend-dist confirmou78 arquivos/hash
+  0f84989255db06e8990dd00a48bd3aad148089debd4eb1656399514ba10cdfdf.
+  Todos os handles encerrados; sem edição produtiva/reinstalação durante suites.
+
+Retomada: concluir retirada dos produtores policy/semantic de Sprint, preservando
+recibos, enum de leitura e manifests v1 até prova de compatibilidade histórica.
+Foi completada a leitura de _replay_adoption_mutation: valida receipt, binding,
+evento e ActivityLog exatos e retorna antes do inventário vivo; list_impact_items
+consulta somente recibo selado/itens, sem entidade Sprint. save_impact_preview faz
+replay antes e depois do lock e só recomputa inventário para novo preview.
+Testar explicitamente replay de preview/adoption com item Sprint, leitura paginada
+e CAS de preview antigo ainda não adotado antes de alterar list_policy_subjects.
+Helpers _fresh_database/_seed_active_binding/_plan_followup_adoption no módulo
+Community test_skb_b08_guideline_impact_persistence podem compor banco isolado;
+a fixture histórica precisa ser caracterizada contra o produtor anterior ou
+identificada claramente como sintética, jamais anunciada como baseline capturada.
+Listeners semânticos, schema/ORM, ACKs exatos, terminal offline runtime_ready,
+matriz DEI/ARQ/VER/ADV, E2E pareado/rollback, footprint MCP, benchmark e rollout
+continuam pendentes. Objetivo integral ativo;124 testes não são aceite final.
+Nenhuma migração real, deploy, release, tag, merge ou restart do usuário.
+
+Community commit7b86fba; commit Core/pushes pareados a seguir, com verificação dos HEADs remotos e árvores limpas.

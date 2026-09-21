@@ -1,13 +1,14 @@
 """Parent artifact resolution for KG retrieval (ideação fe55ff7c).
 
 Each KG node carries a ``source_artifact_ref`` string in the format
-``"type:uuid"`` (type ∈ {spec, sprint, card}) set by the
+``"type:uuid"`` (live parent type ∈ {spec, card}) set by the
 DeterministicWorker when the node was consolidated. Granular nodes
 (Decision, Criterion, TestScenario, BusinessRule, ...) lose their
 parent context in retrieval — the agent receives fragments without
 knowing which spec/card they came from. This module resolves the
 parent artifact from the ref and injects title + status so the agent
-can orient itself.
+can orient itself. Historical Sprint refs remain opaque provenance on the row;
+they never trigger an operational parent lookup.
 
 Public API:
 - ``parse_artifact_ref(ref)`` — validate and decompose the ref.

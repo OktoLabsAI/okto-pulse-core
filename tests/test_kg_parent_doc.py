@@ -33,8 +33,8 @@ def test_parse_valid_card_ref():
     assert parse_artifact_ref("card:xyz") == ("card", "xyz")
 
 
-def test_parse_valid_sprint_ref():
-    assert parse_artifact_ref("sprint:p1") == ("sprint", "p1")
+def test_parse_historical_sprint_ref_has_no_live_parent():
+    assert parse_artifact_ref("sprint:p1") is None
 
 
 def test_parse_no_colon_returns_none():
@@ -119,13 +119,14 @@ async def test_resolve_mix_of_refs():
     refs = ["spec:s1", "card:c1", "sprint:sp1", "bad", "spec:missing"]
     out = await resolve_parent_artifacts(db, refs)
 
-    assert set(out.keys()) == {"spec:s1", "card:c1", "sprint:sp1"}
+    assert set(out.keys()) == {"spec:s1", "card:c1"}
+    assert "sprint:sp1" in refs
     assert out["spec:s1"]["type"] == "spec"
     assert out["spec:s1"]["id"] == "s1"
     assert out["spec:s1"]["title"] == "My Spec"
     assert out["spec:s1"]["status"] == "done"
-    # Exactly 3 queries (one per type with at least one ref).
-    assert db.exec_calls == 3
+    # One lookup per live type; the historical reference is left untouched.
+    assert db.exec_calls == 2
 
 
 @pytest.mark.asyncio
@@ -148,7 +149,7 @@ async def test_resolve_empty_refs_emits_no_queries():
 async def test_resolve_all_malformed_emits_no_queries():
     db = _FakeDB()
     out = await resolve_parent_artifacts(
-        db, ["tech_entities.yml", "foo", "", "bar:"]
+        db, ["tech_entities.yml", "foo", "", "bar:", "sprint:historical"]
     )
     assert out == {}
     assert db.exec_calls == 0

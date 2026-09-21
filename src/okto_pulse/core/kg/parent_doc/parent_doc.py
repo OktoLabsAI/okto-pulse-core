@@ -15,7 +15,7 @@ logger = logging.getLogger("okto_pulse.kg.parent_doc")
 #: Accepted artifact types. Tech entities (``tech_entities.yml``) and
 #: other non-UUID refs that happen to exist in the corpus are NOT
 #: parented — they return ``None`` from the parser.
-_ACCEPTED_TYPES: tuple[str, ...] = ("spec", "sprint", "card")
+_ACCEPTED_TYPES: tuple[str, ...] = ("spec", "card")
 
 
 def parse_artifact_ref(ref: str | None) -> tuple[str, str] | None:
@@ -38,17 +38,17 @@ async def resolve_parent_artifacts(
 ) -> dict[str, dict[str, Any]]:
     """Batch-resolve a list of source_artifact_refs.
 
-    Groups by artifact type and emits at most one SQL query per type.
+    Groups by artifact type and makes at most one port call per type.
     Returns a mapping ``{ref: parent_payload}`` where each payload has:
     ``{type, id, title, status}``. Refs that don't parse OR point to
     a UUID that doesn't exist in the DB are silently omitted — the
     caller interprets absence as "no parent" and keeps the row with
     ``parent_artifact=None``.
 
-    The DB param is an async SQLAlchemy session. The function is
-    async because the project's DB layer is async.
+    The db parameter is the persistence context owned by the configured
+    adapter; the resolver depends only on the parent artifact read port.
     """
-    by_type: dict[str, set[str]] = {"spec": set(), "sprint": set(), "card": set()}
+    by_type: dict[str, set[str]] = {kind: set() for kind in _ACCEPTED_TYPES}
     ref_to_key: dict[str, tuple[str, str]] = {}
     for ref in refs:
         parsed = parse_artifact_ref(ref)
