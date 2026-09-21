@@ -10546,3 +10546,113 @@ legado vazio requer investigação e runtime_ready ainda não existe. Gate de
 startup permanece fechado. Prosseguir pela lista de dependências acima, mantendo
 a iniciativa completa e os critérios DEI/ARQ/VER/ADV/E2E/rollout ainda pendentes.
 Community commit89f495cac475077ea448ce2e22837314a3d770b2. Commit Core e pushes pareados a seguir; conferir HEAD remoto e árvores limpas.
+
+### F2/F3 — metadata operacional sem Sprint (em implementação, 2026-09-21)
+
+Turno anterior: progresso, commits Core3e5b6622/Community89f495ca confirmados no
+remoto, árvores limpas. provenance-f2-models-baseline.json confirmou bytes antes
+da investigação. Removidos4 mappings e relacionamentos Board/Spec/Card, coluna
+ORM Card.sprint_id e codecs correspondentes do metadata operacional. A fixture
+legacy_sprint_schema.py congela somente essas declarações históricas do blob
+e5c38207a7a66c08bab6d0e2b58816972a6b8487, em metadata isolado, sem registrar
+modelos antigos no Base vivo. Leitor de policy migrada usa projeção SQL histórica
+isolada com tipos Boolean/Integer, sem mapping operacional de Sprint.
+
+Censo de materialização e lista de modelos protegidos deixam de referenciar a
+classe retirada. Source revision INPUT_TABLES (nome correto da constante) exclui
+sprints, com manifesto v9 para invalidar preparações da forma anterior. Plano de
+migrations não agenda mais os3 writers de Sprint/Card.sprint_id, nem task gate,
+cancelamento ou índices operacionais para Sprint. Backfill histórico de seen
+items só consulta Sprint QA quando as2 tabelas existem; não as cria. Essa alteração
+ainda requer testes; não declarar paridade de casos legados não reproduzidos.
+
+Admissão runtime recusa schema legado inclusive sem journal, para não ignorar
+silenciosamente a FK após retirada do mapping. Preflight exclusivo do instalador
+permite a estrutura fonte mas continua recusando journal/efeitos existentes.
+Startup com checkpoint continua bloqueado até contrato terminal. Fixtures antigas
+estão sendo separadas dos testes do runtime; algumas adaptações ainda pendentes.
+Próximo: construir/instalar/provar ambos, executar metadata/instalação e migração,
+corrigir fixtures sem relaxar expectativas de negócio, e ampliar a validação.
+Nenhum teste comportamental do código novo executado ainda; nenhum dado real ou
+processo do usuário alterado. Iniciativa completa permanece aberta.
+
+Andamento após o primeiro build wheels-f2-models: igualdade source/wheel/install
+804/338 Python e867/422 payloads.29 testes metadata/inventário/codecs,12 lifecycle,
+14 health/source fence e89 Core passaram; closure sem findings/docs e8 budgets0.
+A suíte das24 fixtures alteradas teve85 falhas,184 passes e2 erros; NÃO é gate verde.
+A coleta5942 casos só comprova importação, não execução comportamental.
+
+Investigação das falhas encontrou dependência real do preflight no Base operacional
+para reconhecer colunas de3 tabelas históricas. Substituída por lista fechada dos
+campos do blob fonte citado acima; campo desconhecido continua recusado. A porta
+application persistence agora converte atributo inexistente em erro de domínio
+unsupported_application_attribute antes de SQL; projeção continua com erro próprio.
+Fixtures de seeds históricos usam LegacyCard isolado, leituras atuais usam Card
+operacional. Casos live/missing/foreign de policy não simulam leitura operacional
+sobre origem ainda não migrada: comprovam recusa readonly no startup. Os casos
+inherited e migrated90/60 exercitam metadata limpo, ACL e ausência de commits.
+Expectativas antigas de bump/propagação de Sprint foram ajustadas à retirada F3:
+Card e cenário mantêm seus bumps; versões/eventos históricos Sprint ficam intactos.
+Teste de stale write mantém os3 sujeitos ORM vivos; Sprint histórico não é writer.
+
+Build wheels-f2-models-fixed e instalação concluídos. Uma tentativa de provenance
+antes do término do pip falhou por arquivos ainda ausentes; nenhum teste foi
+iniciado nessa condição. Após pip exit0, provenance-f2-models-fixed.json confirmou
+novamente todos os bytes. Suites histórica, corte/upgrade e frontend em execução;
+closure também pendente. Nenhum produto editado enquanto esses processos rodam.
+Próximo: ler resultados terminais, corrigir falhas restantes sem afrouxar asserts,
+validar fonte histórica vazia/seen markers antes do futuro contrato runtime_ready.
+
+Fechamento do incremento metadata (2026-09-21):517 testes distintos aprovados
+no produto final, sem somar retestes:360 Community,89 Core,68 frontend. A rodada
+histórica f2-models-fixtures-fixed terminou265 pass/9 fail em522.88s; as9 falhas
+foram corrigidas apenas nos testes e os4 arquivos completos passaram80 casos
+em38.86s (f2-models-fixtures-final). União histórica:274 casos. Dois casos novos
+f2-models-seen passaram13.34s, preservando Board resolvido, NULL sem origem e
+replay depois de remover os pais históricos; não provam upgrade de fonte com QA
+já retirada e board_id ainda NULL. Não alegar paridade dessa fonte não capturada.
+
+As9 falhas restantes eram:assert de FK usando Card vivo no export; código de erro
+próprio group_field;5 seeds históricos inseridos antes dos pais em outro registry
+ORM (corrigida ordem com flush, FKs continuam ativas);2 expectativas anteriores à
+retirada de permissões. Estas agora distinguem a porta pública de captura v034,
+que preserva a decisão histórica inclusive negação explícita, do PermissionSet e
+gateway vivos, que não concedem mais Sprint. Asserts de seções capturadas, ACL,
+owner review, hash e histórico foram preservados. Nenhuma fixture baseline foi
+regenerada. F401 de import de teste removido; Ruff F/E9 de todos os .py alterados
+e novos passou. git diff --check limpo.
+
+f2-models-upgrade-fixed terminou83 pass/1 fail em504.15s. O teste antigo abria a
+restauração fonte com o build novo; isso conflita com a retirada do schema vivo.
+Agora prova restauração conjunta exata, preflight readonly do instalador admitido
+e processo novo do runtime recusado, mantendo os dados originais intactos. A
+suite inteira de admissão passou22 casos em68.15s (f2-models-admission-final).
+União desse grupo:84 casos (storage, corte, journal, offline, admissão, lifecycle,
+health e source fence). Essa fixture usa identificadores de builds sintéticos:
+NÃO comprova boot E2E da versão fonte instalada após rollback. Essa prova pareada
+real continua pendente junto ao contrato terminal/rollout.
+
+f2-models-core-fixed:89 passes122.18s, incluindo gates Done Spec autorizados,
+admissão sem Sprint, ownership/ORM/startup e catálogo MCP. f2-models-ui:68 passes,
+BoardStageContent e CardModal. Nenhum frontend de produto modificado neste
+incremento. closure-f2-models-fixed:exit0,ok=true,findings/docs vazios,8 budgets0/0.
+Todos os processos de teste desta rodada encerrados; processo externo antigo
+observado não foi tocado. Não houve reinstalação/edição de produto durante suites.
+
+Proveniência final:provenance-f2-models-fixed.json,source/wheel/site-packages
+804/338 Python e867/422 payloads idênticos. Core agregado
+7e348caf0c392a03f158f3677b88db47831c236976e7742915158527efffaaa2;
+Community agregado1f5d5f591e3da20c216a0a5647c3342704cdbd86678988d262f940105d458725.
+Core wheeld81b11de70cfc088fbec883572ff862adb0b498be4f0cfa14891cec0a4e3347a;
+Community wheel64d741088f840c6671010938100d27fb9aee7a1628a9729c781fb7ce939e036e.
+
+Resultado:metadata/instalação limpa não recriam as4 tabelas, relações ou FK
+Sprint. O preflight histórico deixa de depender do metadata vivo; schema fonte
+só passa pela preparação offline. Não há novo budget ou import privado do Core.
+Próxima dependência:contrato terminal que componha schema final, bootstrap,
+source fence v9, grafo/outbox, permissões e journal sem fabricar recibos; testar
+fonte antiga vazia, migração e rollback com par realmente instalado. Só abrir
+runtime_admission quando essa composição estiver comprovada. A iniciativa inteira
+(DEI/ARQ/VER/ADV/E2E/benchmark/rollout e demais pendências acima) permanece ativa.
+Nenhum dado real ou runtime do usuário alterado; sem release/tag/merge/deploy.
+Community commitd703438acb5e3d020163c12a11801a7a73cbad4d. Commit Core e pushes pareados a seguir; conferir HEAD remoto e árvores limpas.
