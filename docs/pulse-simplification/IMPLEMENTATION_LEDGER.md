@@ -13159,3 +13159,60 @@ Wheels em dist-coordinated-schema-final. Ruff F/E9 e diff-check aprovados.
 Community 2bb5f5fd0218cf513415487d867bc3713bbef336. Sem frontend afetado.
 Próxima dependência é classificação/paridade de fontes históricas descrita acima;
 este milestone não conclui a migração nem os demais critérios I/P/K da iniciativa.
+
+### 2026-09-22 — paridade cognitiva durável (em validação)
+
+Integração anterior publicada e pushes confirmados: Core bc8db2dc / Community
+2bb5f5fd. Investigação confirmou replay_durable_cognitive usando _node_present
+para pular um ID já existente, sem comparar seu conteúdo; essa rotina não foi
+alterada nem chamada pelo candidato. Nova porta pública cognitive_projection
+compara leitura lógica com o registro cognitivo durável já capturado. Reusa a
+verificação de fingerprint/revisão existente; não cria autoridade nem ledger.
+Relata matched/different/missing_node e diferenças por campo; estatísticas de
+uso seguem o conjunto volátil do contrato existente e ficam observadas à parte.
+O writer atual usa UTC sem offset via strftime para created_at; a comparação
+reconhece esse formato comprovado e offsets explícitos, recusando truncamento
+submicrosegundo. Embedding exige representação float64 exata do contrato atual;
+nenhuma tolerância ou conversão silenciosa. Preserva comparação de zero com sinal.
+
+Reconciliador privado/v6 inclui observações por fonte/revisão; fonte durável
+sem nó deixa o estado pendente, inclusive quando o histórico do grafo é vazio.
+Matched não aprova proveniência, conectividade, maturidade ou permissão: toda
+classificação histórica anterior continua pendente. Sem replay/escrita, alteração
+de gate público, frontend ou catálogo MCP. Testes puros e nativos preparados;
+build pareado e prova de instalação em andamento, ainda não concluir o incremento.
+
+Paridade: 40 testes Core passaram em 4.10s; primeira rodada teve 39 passing e
+um erro de setup porque o logger legado usa nodeid como nome de arquivo e o
+parâmetro timestamp continha dois-pontos inválidos no Windows. Corrigidos apenas
+os IDs legíveis desse teste; nenhuma mudança de produção para esconder falha.
+Nove testes Community (paridade nativa e guardas históricos) passaram em 47.87s.
+F16 preliminar 8714 entradas, zero achados e budgets zero. Prova final pareada
+816/879 Core e 353/437 Community byte-identical. Ensaio integrado ampliado inclui
+fonte cognitiva durável sem projeção; teste adicional verifica estado pendente
+mesmo sem nenhum nó histórico. Ambos em execução neste checkpoint.
+
+O ensaio integrado expôs uma representação não coberta inicialmente: o
+BoardSourceReader verifica payload/evidence_refs decodificados, mas preserva as
+células SQL JSON como texto no snapshot autenticado. A comparação esperava dict
+/list e recusou cognitive_projection_source_invalid antes da publicação. Resultado
+304.96s: .6 falhou, .5 passou. Correção restrita à leitura local das duas formas
+já aceitas pelo contrato cognitivo; snapshot e digest não são regravados. Adicionado
+teste de equivalência e imutabilidade. Nova instalação/prova antes de repetir o
+caso afetado e a auditoria final; o F16 anterior ainda não prova essa correção.
+Teste nativo adicional sem histórico confirmou pendência com fonte ausente:
+1 passed, 2 deselected em 20.55s.
+
+Paridade cognitiva validada: após correção das células JSON, 41 testes Core
+passaram em 4.11s; ensaio completo .6 com fonte ausente/replay passou em 143.55s
+(1 passed, 1 deselected). Caso .5 já aprovado no ensaio anterior desta mesma
+integração, sem fontes cognitivas e sem código afetado pela decodificação.
+F16 final closure-cognitive-parity-fixed-final.json: 8714 entradas, zero achados,
+oito budgets zero. Prova provenance-cognitive-parity-fixed.json contra wheels em
+dist-cognitive-parity-fixed: Core 816/879 e Community 353/437 byte-identical;
+aggregates Core 581a97ba59e0c0551acf6833c0c8ae5c690d1b16fc9b10aab998ab2b55b922b9;
+Community 798a4bf7697490e14c02b7451d00786d0cad48be7c925f3b3ba82fa50c22f739.
+Community 04dadedd061e006a9b62e3549ad0fdb9fdd20af1. Diff-check e Ruff F/E9
+aprovados. Sem frontend afetado. Próxima frente: inventário/classificação de
+integridade histórica com regras existentes de orphan_integrity/connectivity;
+paridade matched isoladamente NÃO fecha essa obrigação nem autoriza cutover.
