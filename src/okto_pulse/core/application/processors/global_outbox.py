@@ -257,7 +257,9 @@ class GlobalOutboxProcessor:
 
         from okto_pulse.core.kg.embedding import get_embedding_provider
         from okto_pulse.core.ports.global_discovery_recovery_control import GlobalDiscoveryRecoveryBoardSeedInput
-        from okto_pulse.core.ports.global_projection import GlobalProjectionSource, build_global_projection_seed
+        from okto_pulse.core.ports.global_projection import (
+            GlobalProjectionSource, build_global_projection_seed, global_projection_summary_text,
+        )
 
         source_types = await self._run_graph_io(
             lambda: self._read_board_digestable_node_types(board_id)
@@ -329,7 +331,7 @@ class GlobalOutboxProcessor:
             lambda: tuple(
                 float(value)
                 for value in get_embedding_provider().encode(
-                    f"Board {board_name or board_id}"
+                    global_projection_summary_text(board_id=board_id, board_name=board_name)
                 )
             )
         )

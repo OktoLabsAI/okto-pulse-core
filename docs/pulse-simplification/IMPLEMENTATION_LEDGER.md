@@ -13756,3 +13756,60 @@ adaptar o inventário Board portátil para esses fatos e comparar/materializar
 Global sob as cercas do candidato, preservando a origem histórica não qualificada.
 A entrega total não está certificada; objetivo integral e critérios restantes
 permanecem ativos, sem redefinição de escopo.
+
+### 2026-09-22 — comparação fria Global com fontes completas (em validação)
+
+Core expõe `global_projection_sources_from_inventory`, `compare_global_projection`
+e o texto compartilhado do embedding de Board pela porta pública. Inventário
+portátil completo conserva seleção por embedding/revogação/supersessão, camada
+ausente, multiplicidade validates e agrupamento relates_to da policy existente.
+Não adiciona filtro novo aos Bugs usados como evidência de Learning. Inventários
+e seeds têm limites agregados; identidades ambíguas, endpoints ausentes e omissão
+de fontes falham fechado. Comparação exige campos, vetores e multiplicidade das
+relações exatos; source_revoked NULL não equivale a false. Topic/Entity auxiliares
+não recebem qualificação por estarem presentes. Timestamps técnicos de cache são
+excluídos apenas da igualdade com a fonte; a prova histórica literal os preserva.
+
+Community lê Board/Global nativos em modo read-only, deriva os seeds com inputs
+relacionais/overlay já autenticados e usa a mesma policy Core. Não cria Global,
+não altera o original e não promove histórico divergente. Global ausente retorna
+mismatch quando existem fontes; overlay sem revisão estável retorna unavailable.
+O relatório aninhado passa a v13; receipt externo continua v4. Criação e replay
+recalculam a comparação sob as cercas e hashes do candidato. Resultado matched
+qualifica apenas a projeção Global correspondente; não abre runtime/cutover.
+
+Validação já observada: 112 testes Core passaram em 7.62s; quatro casos nativos
+Global em 67.44s (match, camada incorreta, link duplicado e auxiliar inesperado).
+F16 preliminar: 8778 entradas, zero achados e oito budgets zero. Wheels finais
+`dist-global-comparison-final`, prova `provenance-global-comparison-final.json`:
+Core 825 arquivos Python/888 payloads; Community 355/439, byte-identical entre
+source, wheel e install. A integração completa de execução/reuso .5/.6 e F16
+final ainda estão em execução; esta entrada não afirma seus resultados.
+Sem impacto frontend ou catálogo MCP. Censo histórico real não executado.
+Próximos passos: concluir essas provas, publicar o par; continuar materialização
+Global privada, qualificação cognitiva/histórica e cutover, além da auditoria
+integral dos critérios e demais obrigações abertas. Não houve redução de escopo.
+
+Fechamento da validação deste incremento: sete testes de execução/candidato/reuso
+passaram em 473.75s, incluindo .5/.6, replay, preservação e recusa de admissão.
+Um quinto teste nativo usa os writers reais de Board summary e digest batch e
+passou em 23.81s. A primeira tentativa desse caso falhou porque a fixture não
+executava checkpoint nativo antes do cold open; adicionou-se o mesmo checkpoint
+do coordenador, sem relaxar a restrição Grafx. Nenhum código de produção mudou
+durante essas suites. Os quatro casos anteriores continuam válidos.
+F16 final `closure-global-comparison-final.json`: 8778 entradas, zero achados,
+oito budgets zero. Hash agregado Core
+8a7b70de75c447e73e3c6afdfc8d214e7c3873b9cb1df65f30f5e9d69089690c;
+Community 3dd083041e8af787600051c9d5264c0f4957e80fcb9b3df6e9298ba873d39d5f.
+Ruff F/E9 e diff-check passaram. Community
+8d295efd5bd2b39a8f9aa4fa344e9f322601c228 contém o mecanismo e testes.
+
+Investigação para o próximo incremento: o materializador privado Global existente
+usa `upsert_board_summary` e `create_recovery_digest_batch`, checkpoint antes de
+leitura fria e apenas camadas canonical/working. O writer live também aceita
+legacy_unknown; o comparador preserva a camada literal da policy. Não normalizar
+camada histórica para conseguir materializar. O teste do writer real demonstrou
+igualdade completa para canonical. Qualquer geração nova precisa ainda de autoria
+de efeitos no censo histórico e inclusão explícita das rotas no checkpoint;
+simplesmente chamar o writer e aceitar seu hash não basta. Cutover permanece
+pendente, e a continuidade até a entrega integral permanece autorizada e ativa.
