@@ -24,3 +24,15 @@ def compare_cognitive_projection(*, schema, board_id, record, node):
     """
     from okto_pulse.core.application.cognitive_projection import compare
     return compare(schema=schema, board_id=board_id, record=record, node=node)
+
+
+def validate_cognitive_projection_sources(*, schema, board_id, records):
+    """Validate every captured revision before selecting the latest sources.
+
+    Returns the original records, including SQL JSON text, without rewriting
+    authenticated snapshot bytes. Older revisions, scope and aggregate limits
+    are checked even when a later revision would otherwise hide them.
+    This proves source shape/integrity only, never evidence or access authority.
+    """
+    from okto_pulse.core.application.cognitive_projection import validate_sources
+    return validate_sources(schema=schema, board_id=board_id, records=records)

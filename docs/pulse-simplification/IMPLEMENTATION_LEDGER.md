@@ -13553,3 +13553,47 @@ pendência apagando-o. A fixture .6 contém fonte cognitiva sem nó/sem prova
 completa: não fabricar relações ou maturidade para obter um resultado verde.
 Os demais critérios integrados BASE/KG/DEI/ARQVER/ADV, UI pertinente, pacote,
 rollout/rollback e benchmark seguem no objetivo ativo e no inventário único.
+
+### 2026-09-22 — inventário cognitivo completo antes da seleção de revisões
+
+Continuidade autorizada até a entrega integral, sem parada nos milestones.
+A investigação do Global confirmou uma dependência de autoridade: a publicação
+reutiliza `resolve_expected_digest_layer`, com exclusões por dívida canônica e
+hold cognitivo, além da conectividade da Learning. `build_recovery_board_seed`
+revalida o inventário e deriva os digests da fonte Board; `_actual_projection`
+do adapter normaliza alguns NULLs para valores vazios. Nenhum desses resultados
+isolados equivale à paridade literal/certificação da migração. Não reutilizar o
+Global apenas a partir dos títulos/nós visíveis nem perder as exclusões.
+
+Foi identificada uma lacuna concreta antes dessa qualificação: o caminho privado
+selecionava as revisões mais recentes antes da validação tipada. O seletor antigo
+verifica fingerprints mas normaliza geração/revisão com int(); uma revisão antiga
+com bool ou payload inválido podia ser ocultada pela posterior. A nova porta
+`validate_cognitive_projection_sources` valida TODAS as revisões capturadas,
+Board, tipos, evidências literais, propriedades declaradas, identidade/geração,
+timestamps e dimensão vetorial antes da seleção. Mantém os registros originais,
+inclusive células JSON textuais, sem reescrever o snapshot autenticado. Aplica
+limite agregado de 64 MiB em bytes UTF-8 e 100 mil registros. Continua usando a
+verificação existente de fingerprints/conflitos de revisões; não muda o seletor
+compartilhado nem cria autoridade cognitiva ou de acesso. O comparator agora
+valida o payload também quando o nó está ausente. Não fabrica dados para fazê-lo
+passar. Community consome apenas a porta pública dentro da leitura fria.
+
+26 testes Core passaram em 3.11s e três testes nativos Community em 56.34s,
+incluindo revisões antigas inválidas, conflito em revisão não selecionada,
+limite agregado e preservação das células SQL. Replay completo .6 em execução.
+F16 preliminar: 8753 entradas, zero achados, oito budgets zero. Prova pareada
+`provenance-cognitive-inventory-final.json`, wheels `dist-cognitive-inventory-final`:
+Core 822/885 e Community 353/437 byte-identical. A validação F16 final está em
+execução; nenhum frontend afetado, nenhuma migração real ou cutover executado.
+
+Validação concluída deste ajuste: replay nativo .6 passou (1 passed,
+1 deselected, 155.11s); .5 não foi repetido neste ajuste. F16 final
+`closure-cognitive-inventory-final.json`: 8753 entradas, zero achados, oito budgets
+zero. Ruff F/E9 e diff-check aprovados. Hashes agregados do par instalado:
+Core d679b2650f13e3b4116ed0a9df9cf8e6f28c32621bcb227af9a5aff0a4c602f0;
+Community 2849c7152147ccef3ec006451cf9fb455b978127dea5fab6fc654808f9ba93f9.
+Community commit 48ba4615f57be3fd045118bd5d5d325b69a0bd50. O formato privado
+v12 permanece: os campos do relatório não mudaram, apenas a validação de entrada
+agora ocorre antes de descartar revisões antigas. Próxima frente continua Global
+com overlay autoritativo e qualificação cognitiva, antes de terminal/admission.

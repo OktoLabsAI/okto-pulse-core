@@ -6,13 +6,30 @@ import math
 import re
 
 from okto_pulse.core.kg.logical_transfer import (
-    LOGICAL_NULL, LogicalSchemaIndex, LogicalTimestamp, LogicalVector, encode_value,
+    LOGICAL_NULL, LogicalNode, LogicalSchemaIndex, LogicalTimestamp, LogicalVector, encode_value,
 )
 from okto_pulse.core.ports.cognitive_projection import CognitiveProjectionParity
 from okto_pulse.core.ports.kg_cognitive_source import (
     COGNITIVE_SOURCE_VOLATILE_USAGE_FIELDS, canonical_cognitive_source_fingerprint,
     latest_cognitive_source_records,
 )
+
+_MAX_SOURCE_BYTES = 64 * 1024 * 1024
+_MAX_SOURCE_RECORDS = 100_000
+
+
+def validate_sources(*, schema, board_id, records):
+    if type(records) is not tuple or len(records) > _MAX_SOURCE_RECORDS:
+        raise ValueError('cognitive_projection_source_limit')
+    budget = 0
+    for record in records:
+        if type(record) is not dict:
+            raise ValueError('cognitive_projection_source_invalid')
+        budget += len(json.dumps(record, ensure_ascii=False, allow_nan=False).encode('utf-8'))
+        if budget > _MAX_SOURCE_BYTES:
+            raise ValueError('cognitive_projection_source_limit')
+        compare(schema=schema, board_id=board_id, record=record, node=None)
+    return latest_cognitive_source_records(records)
 
 
 def _value(value, definition, schema):
@@ -42,7 +59,7 @@ def _value(value, definition, schema):
 
 
 def compare(*, schema, board_id, record, node):
-    if type(record) is not dict or len(json.dumps(record, allow_nan=False)) > 64 * 1024 * 1024:
+    if type(record) is not dict or len(json.dumps(record, ensure_ascii=False, allow_nan=False).encode('utf-8')) > _MAX_SOURCE_BYTES:
         raise ValueError('cognitive_projection_source_invalid')
     # BoardSourceReader deliberately keeps SQL JSON cells as text in the
     # authenticated snapshot. The durable-source policy accepts both forms.
@@ -68,26 +85,34 @@ def compare(*, schema, board_id, record, node):
         return CognitiveProjectionParity(record['node_type'], record['node_id'], record['generation'],
             record.get('source_revision', 0), fingerprint, state, tuple(sorted(differences)), tuple(sorted(usage)))
 
+    definition = schema.node_type(record['node_type'])
+    expected = dict(record['payload'])
+    if 'id' in expected and expected['id'] != record['node_id']:
+        raise ValueError('cognitive_projection_payload_identity_invalid')
+    expected['id'] = record['node_id']
+    # The pre-existing durable replay uses this exact fallback for old payloads.
+    expected.setdefault('source_session_id', record.get('source_session_id') or '')
+    if set(expected) - set(definition.property_names()):
+        raise ValueError('cognitive_projection_property_unsupported')
+    expected = {name: _value(value, definition.property_def(name), schema) for name, value in expected.items()}
+    # A missing graph node does not make a corrupt source revision admissible.
+    # Validate portable dimensions/nullability and payload identity first.
+    LogicalSchemaIndex.build(schema).validate_node(
+        LogicalNode(record['node_type'], record['node_id'], {
+            name: expected.get(name, LOGICAL_NULL) for name in definition.property_names()}))
+    if 'generation' in expected and expected['generation'] != record['generation']:
+        raise ValueError('cognitive_projection_payload_generation_invalid')
     if node is None:
         return result('missing_node')
     if (node.type_name, node.key) != (record['node_type'], record['node_id']):
         raise ValueError('cognitive_projection_node_identity_invalid')
     LogicalSchemaIndex.build(schema).validate_node(node)
-    definition = schema.node_type(node.type_name)
-    expected = dict(record['payload'])
-    if 'id' in expected and expected['id'] != node.key:
-        raise ValueError('cognitive_projection_payload_identity_invalid')
-    expected['id'] = node.key
-    # The pre-existing durable replay uses this exact fallback for old payloads.
-    expected.setdefault('source_session_id', record.get('source_session_id') or '')
-    if set(expected) - set(definition.property_names()):
-        raise ValueError('cognitive_projection_property_unsupported')
     differences, usage = set(), set()
     if node.properties.get('generation') != record['generation']:
         differences.add('generation')
     for name in set(expected) | set(node.properties):
         actual = node.properties.get(name, LOGICAL_NULL)
-        wanted = _value(expected[name], definition.property_def(name), schema) if name in expected else LOGICAL_NULL
+        wanted = expected.get(name, LOGICAL_NULL)
         if encode_value(actual) != encode_value(wanted):
             (usage if name in COGNITIVE_SOURCE_VOLATILE_USAGE_FIELDS else differences).add(name)
     return result('different' if differences else 'matched', differences, usage)
