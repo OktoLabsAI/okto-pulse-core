@@ -13321,3 +13321,25 @@ aprovados; nenhum frontend afetado. Próxima dependência: juntar as observaçõ
 com authorities de fonte/maturidade/edge policy e disposições históricas sem
 confundir esses predicados. A função não aprova migração de conteúdo sem fonte,
 não elimina história, não concede leitura e não autoriza startup/cutover.
+
+### Próximo ponto de continuação — fechamento e admissão
+
+Conectividade publicada: Core b0fde97b / Community 5a5220c5; pushes confirmados.
+Revisados retirement_data_journal, retirement_candidate_checkpoint,
+retirement_graph_candidate e retirement_runtime_admission: o journal existente
+termina em bootstrap (nove estágios incluindo prepared), sem contrato terminal
+de cutover. O verificador do candidato rederiva SQL/ACKs, história, evolução,
+reconciliação e digest de arquivos sob as cercas offline, mas retorna
+projected_not_reconciled. Runtime recusa QUALQUER journal povoado e efeitos
+retidos sem journal; não apagar esses sinais para liberar startup.
+
+Para continuar, ligar proofs de fonte/maturidade/edge policy e disposições
+históricas à conclusão, antes de introduzir um recibo terminal. Preservar o
+journal existente; evitar hash circular entre recibo terminal em SQL e digest
+do próprio SQL. A admissão futura também deve tolerar writes normais posteriores
+sem interpretar mudança legítima dos dados atuais como corrupção do checkpoint
+histórico. Não trocar active binding nem publicar candidato pendente. O caminho
+sem histórico pode ser uma vertical inicial, mas não equivale ao upgrade geral.
+Nenhuma alteração de admissão/terminal/promoção foi feita neste checkpoint.
+As pendências amplas I/P/K, frontend pertinente, matriz completa e benchmarks
+continuam conforme o estado inicial do ledger; não declarar entrega final.
