@@ -12435,3 +12435,34 @@ fonte/grafo/active sets/orphans segundo §8.3 do plano KG, criar contrato
 terminal apenas após prova, e só então considerar cutover/admission. Testar
 também o caminho nativo com instalação comprovadamente atual. Não houve
 dados reais, release, tag, deploy ou merge neste milestone.
+
+### 2026-09-22 — reconciliação causal da revisão global em ensaio
+
+Retomada sobre Core `5e7b74e8d0fcbe51c26cfd26c532c5781d4ce4a8` e
+Community `179496ccf9466d872d35c9c6e87d80b52fdb1255`, ambos limpos e iguais ao
+remoto. Uma instrumentação descartável via evento SQLAlchemy na fixture
+integrada observou, para cada um dos três ACKs, exatamente três mutações da
+fila executadas pelo processor: claim, CAS de claim não cercado e ACK/delete.
+A adoção anterior pela ingestão acrescenta uma mutação por fonte. O manifesto
+v9 também incrementa a revisão para cada audit, outbox, head de geração e ref
+de nó. Logo o delta causal esperado pelo protocolo exato é `7 * ACKs + refs`:
+`7 * 3 + 4 = 25` na fixture já caracterizada. Os dois UPDATEs de bootstrap
+vistos no trace afetaram zero linhas e não incrementaram a revisão.
+
+O verificador read-only foi alterado em working tree para exigir essa igualdade
+exata após validar manifesto/fence, identidades completas dos recibos e bags de
+todas as tabelas. Um incremento adicional com nonce válido numa cópia
+descartável deve falhar como `revision_delta_unowned`. Essa prova classifica
+apenas efeitos relacionais da projeção; não muda `projected_not_reconciled`,
+runtime admission, cutover ou a reconciliação de grafo/fontes do §8.3.
+Build/instalação e prova byte-a-byte passaram: Core 808 Python/871 payload,
+aggregate d3ade7b969a9a2787a68c5cdbd84bd3ccd01d43fd908037c347e35f96d254746;
+Community 347 Python/431 payload, aggregate
+2511d523f44adaab448242f40aeff83b43142a26dc554dc540fba0ade7858826.
+O cenário integrado passou em 81.48s, inclusive igualdade causal 25/25 e
+recusa do incremento 26 com nonce válido. Ruff F/E9 e diff-check passaram.
+F16 final: 8659 linhas, zero achados, zero drift documental e oito budgets
+zero (`closure-kg-revision-causal.json`). Nenhum frontend/API/MCP foi alterado;
+teste frontend não se aplica. O próximo passo continua sendo reconciliação
+grafo/fonte/active sets/orphans, não cutover. Community commit
+`cb0f1ae76d566997cc499018953ef73bc98dcb5e`.
