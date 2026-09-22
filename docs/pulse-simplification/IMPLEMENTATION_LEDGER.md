@@ -12736,3 +12736,34 @@ ACKs e encaminhar a classificação semântica ao Core por porta pública. Não
 tratar uma referência igual como prova de que um nó histórico é a raiz atual,
 nem classificar todo grau zero como raiz legítima. A falha de projeção com
 histórico anterior continua aberta, e nenhuma admissão/cutover foi liberada.
+
+### 2026-09-22 — observações exatas entre censos históricos em validação
+
+Em implementação sobre d7ddefd1/472f56cf: porta pública tipada projection_history
+e comparador puro Core para nós (tipo+ID+hash) e arestas (endpoints tipados+hash+
+multiplicidade). Distingue preservação, introdução, remoção e mudança de nó;
+não inventa pareamento de atualização entre arestas sem ID portátil. Recusa
+identidades/grupos duplicados e limites excedidos. Nenhum delta ganha aprovação,
+classificação semântica ou autorização de apagamento por esse comparador.
+
+O leitor Community agora pode comparar dois snapshots autenticados, ancorando
+ambos os digests do censo e dos snapshots em observed_not_classified. Tests
+adicionados para alteração de conteúdo fora dos metadados, paralelo 2->3,
+identidade por tipo e entradas ambíguas. Build/install/prova/testes ainda em
+andamento neste checkpoint; não publicar como validado antes dos resultados.
+Ainda falta ligar essas observações à classificação/efeitos autorizados do
+candidato. Preservação de história povoada e admissão continuam pendentes.
+
+Validação concluída para este recorte: Core 4 testes em 2.28s e Community
+1 teste com snapshots nativos completos em 24.62s. Ruff F/E9 e diff-check
+passaram. F16 final: 8677 linhas, zero achados, zero drift e oito budgets zero
+(closure-history-delta-final.json); READMEs renderizados pela rotina oficial.
+Prova source/wheel/install final: provenance-history-delta-final.json,
+Core 811 .py/874 payload, Community 349 .py/433 payload, byte-identical.
+Aggregates: Core 2be76c9b109be29cef1d4f0f88a56092e907cfc3b6a9a6a2597ff707eb9ac646;
+Community 601402a5c927b20011a6f8fd9ce26af429d7840bd2e97aa3216c9e19c203f2ec.
+Sem superfície frontend alterada neste recorte interno. Próximo passo: comparar
+o censo autenticado com o candidato frio e distinguir gerações históricas das
+raízes atuais, sem usar ACK de criação como censo completo de histórico/reuso.
+A falha de histórico povoado permanece aberta; nenhuma admissão foi liberada.
+Community commit: 1981c4d69d82daf49a4fae162f61a850a0d34309.
