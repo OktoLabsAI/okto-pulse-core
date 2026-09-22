@@ -549,6 +549,16 @@ async def begin_consolidation(
             )
         deterministic_candidates[candidate.candidate_id] = candidate
 
+    if agent_id != "system:historical_consolidation" and any(
+        candidate._source_projection_metadata is not None
+        for candidate in deterministic_candidates.values()
+    ):
+        raise KGPrimitiveError(
+            "source_projection_metadata_forbidden",
+            "Only the deterministic worker may attest source metadata.",
+            session_id=session_id,
+        )
+
     _require_code_traceability_candidate_ownership(
         deterministic_candidates,
         agent_id=agent_id,
@@ -3818,6 +3828,18 @@ def _do_graph_commit(
                 attrs=node_attrs,
             )
 
+        # Source chronology is authoritative metadata, including on NOOP and
+        # curated-content reuse. It participates in the same compensated
+        # transaction and never overwrites the projection's created_at.
+        for cand_id, cand in node_candidates.items():
+            metadata = getattr(cand, "_source_projection_metadata", None)
+            graph_id = candidate_to_graph_id.get(cand_id)
+            if metadata is not None and graph_id is not None:
+                _apply_graph_node_update_partial(
+                    orch, candidate_to_node_type[cand_id], graph_id,
+                    metadata.graph_attributes(),
+                )
+
         if clear_source_candidate_id is not None:
             source_graph_id = candidate_to_graph_id.get(clear_source_candidate_id)
             if source_graph_id is None:
@@ -5993,7 +6015,12 @@ _NODE_UPDATEABLE_ATTRS: frozenset[str] = frozenset(
         "source_content_hash",
         # Spec MKG-E-S1 (FR4): the declared subtype is content-derived too.
         "kind_of",
-        # Code Traceability is a deterministic relational projection.  Its
+        # Server-owned source chronology is refreshed independently of content.
+        "source_created_at",
+        "source_updated_at",
+        "source_status",
+        "severity",
+        # Code Traceability is a deterministic relational projection. Its
         # optional metadata follows the immutable source row on a refresh;
         # no external repository is consulted at this boundary.
         "investigation_receipt_id",

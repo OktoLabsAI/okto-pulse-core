@@ -3210,6 +3210,16 @@ async def _process_queue_entry(
         return preparation
     worker_result, artifact = preparation
     node_candidates = [_worker_node_to_candidate(n) for n in worker_result.nodes]
+    from okto_pulse.core.kg.source_projection_metadata import SourceProjectionMetadata
+
+    # Only the exact root owns this row's timestamps. Children and reference
+    # nodes must not inherit a parent's dates as if they were their own.
+    root_ref = f"{entry.artifact_type}:{entry.artifact_id}"
+    for node in node_candidates:
+        if node.source_artifact_ref == root_ref:
+            node._source_projection_metadata = SourceProjectionMetadata.from_source(
+                artifact, is_bug=node.node_type == "Bug"
+            )
     edge_candidates = [_worker_edge_to_candidate(e) for e in worker_result.edges]
     raw_content = worker_result.raw_content
 

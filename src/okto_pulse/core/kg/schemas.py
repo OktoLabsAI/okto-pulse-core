@@ -12,9 +12,10 @@ from datetime import datetime
 from enum import Enum
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
 
 from okto_pulse.core.kg.query_contract import KGEdgeType, KGNodeType
+from okto_pulse.core.kg.source_projection_metadata import SourceProjectionMetadata
 
 
 # ---------------------------------------------------------------------------
@@ -50,6 +51,9 @@ class NodeCandidate(BaseModel):
     # instead of ``source_confidence``) while the tool still reported the
     # candidate as accepted.
     model_config = ConfigDict(use_enum_values=True, extra="forbid")
+
+    # Internal worker provenance is neither a wire field nor agent testimony.
+    _source_projection_metadata: SourceProjectionMetadata | None = PrivateAttr(None)
 
     candidate_id: str = Field(..., description="Agent-supplied id, unique within session")
     node_type: KGNodeType

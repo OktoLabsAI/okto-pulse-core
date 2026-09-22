@@ -12549,3 +12549,43 @@ não autoriza admissão. O próximo trabalho deve provar fidelidade temporal dos
 emitters, census histórico real e contrato terminal do candidato. Só depois
 deve implementar e testar cutover/admission fail-closed; boards 0.5.0 não devem
 ser atualizados in-place nem ganhar rota pública de migração.
+
+### 2026-09-22 — retomada autorizada e metadados temporais da fonte
+
+Usuário autorizou continuidade sem pausa entre milestones até a entrega final.
+Par de retomada limpo: Core 38379a9931583cd8af98c0a613acee6683d28577 /
+Community 45c0486ff947f0bf27873256c051ec12cffaab21. Investigação KG-13/15:
+as datas estavam disponíveis nos registros carregados pela porta de
+consolidação, mas os serializers/NodeCandidate não as transportavam até o
+grafo. Não ampliar o contrato de escrita pública para aceitar testemunho do
+cliente sobre datas/status da fonte.
+
+Implementado carrier interno tipado e imutável SourceProjectionMetadata,
+anexado como PrivateAttr ao candidato somente quando source_artifact_ref é a
+raiz exata do registro processado. Não herdar datas em filhos/Board/referências.
+A fronteira begin recusa esse carrier fora da identidade exata do worker.
+Metadados são aplicados na transação compensável após resolução de identidade,
+inclusive NOOP/reuso de conteúdo curado, preservando created_at da projeção.
+Ausência permanece NULL; UTC histórico ingênuo mantém a convenção relacional.
+Inclui source_created_at/source_updated_at/source_status e severity de Bug.
+resolved_at ainda não está implementado: investigar transições autoritativas,
+incluindo card_moved (from_status/to_status) e os caminhos de validação; não usar
+updated_at ou hora do rebuild como substituto do último done.
+
+Build/install/prova pré-teste: Core809/872, Community348/432 byte-identical
+(provenance-source-metadata.json). Oito testes de normalização, ausência,
+isolamento do schema público e recusa de identidade passaram. Ensaio nativo
+de candidato/retry/replay passou em130.20s com comparação direta das três
+raízes com SQLite e Board sem datas herdadas. Os14 testes de before-images e
+compensação passaram em2.49s. Closure final:8667 linhas, zero achados, zero
+drift documental e oito budgets zero (closure-source-metadata-final.json).
+Wheels finais comprovadas (provenance-source-metadata-final.json): Core809/872,
+aggregate63434fe379710288ba55069df59175872bd1c43d7bf484435e3c31dba85da8a5;
+Community348/432, aggregate
+d7b6c6704e1bfbed353afa2f62e9096accb305fb844f781d6cd2f1ca6b7df08e.
+Ruff F/E9 e diff-check passaram. Sem alteração de frontend neste incremento.
+Nenhum cutover/admission liberado. Próximo passo: resolved_at derivado do
+evento card.moved que é emitido tanto por move_card quanto submit_validation e
+gravado com occurred_at na mesma transação. Empates, ausência e divergência com
+o status atual devem permanecer desconhecidos; testar reabertura e novo done.
+Community commit0368f504174d13c2438ea1c20cdfa2acdbd9d261.
