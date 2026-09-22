@@ -3,8 +3,11 @@
 ## Estado para retomada
 
 Iniciativa **em andamento**, com continuidade até a entrega final autorizada em
-2026-09-22. Frente atual: fidelidade temporal e reconciliação do candidato privado
-KG 0.6.0; cutover/admission continuam fechados. Os detalhes e provas mais recentes
+2026-09-22. Frente atual: evolução autenticada do KG 0.5.0 para candidato privado
+0.6.0 e sua integração à reconciliação/retomada; cutover/admission continuam fechados.
+Recuperação 0.5.0, metadados temporais e composição exata dos efeitos de reuso
+estão implementados e testados; elegibilidade histórica permanece pendente.
+Os detalhes e provas mais recentes
 estão nas seções finais. O resumo de 2026-09-20 abaixo é histórico: candidatos e
 classificação arquitetural, autoria em lote, perfis/vínculos/herança, Test Cards,
 contribuições por Card e contrato conjunto com adoção explícita estão publicados.
@@ -14,7 +17,7 @@ O gate de conclusão direta do Card foi corrigido para exigir as implementaçõe
 selecionadas e preservar falha fechada estrutural. Incrementos e provas abaixo
 não equivalem à conclusão integral de I0–I6/P0–P5 ou do plano-base.
 
-Frente atual: F2A/F2C, com preflight relacional, eventos/jobs, censo de referências
+Resumo histórico de F2A/F2C (superado pelos checkpoints finais): preflight relacional, eventos/jobs, censo de referências
 polimórficas e snapshot de recuperação SQLite restaurável implementados. Captura
 interna do histórico relacional próprio, referências polimórficas, referências
 embutidas em JSON/source_ref e work items relacionados em storage/audit de Board implementada;
@@ -13030,3 +13033,50 @@ Community 6998525cb82126d8a7ede98eebe1926d900a89cdde8866d04ee90f5f9eceb5bc.
 Community b43086c28347b45f21a180670860ac014faed042. Ruff F/E9 e diff-check
 aprovados. Nenhuma superfície frontend alterada. Evolução para schema final,
 integração/reconciliação histórica e cutover continuam pendentes.
+
+### 2026-09-22 — evolução aditiva 0.5.0→0.6.0 (em validação)
+
+Recuperação publicada: Core 82d45412 / Community b43086c2; pushes confirmados.
+Novo retirement_schema_evolution constrói geração privada via Protocols
+LogicalSnapshot/LogicalCandidateSink existentes, partindo de joint snapshot
+com backup nativo obrigatório e par de builds igual ao manifesto. Verifica
+fingerprints congelados, igualdade de propriedades/layouts antigos/espaços e
+apenas o delta de cinco propriedades/onze layouts. As novas propriedades
+começam NULL (sem inventar cronologia); apenas BoardMeta.schema_version muda
+para 0.6.0 no novo candidato, com BoardMeta único, board_id e versão anterior
+comprovados. Replica todas as ocorrências de relação, soma censo de propriedades
+e reconfirma digest/EOF/fingerprint do artefato fonte antes da certificação fria.
+Recibo interno ancora backup nativo/UUID anterior e declara evolved_not_reconciled,
+retained_predecessor_native_backup e admissão não autorizada. Sem bindings,
+rotas públicas ou alteração do original. Integração à construção/replay do
+candidato coordenado ainda não implementada; testes e F16 pendentes.
+
+Validação da evolução: 2 ensaios nativos passaram em 108.82s. Preservação exata
+dos valores antigos (codec tipado), vetores, duas arestas paralelas, censo e
+histórico nativo ancorado; UUID novo distinto; cinco novas propriedades NULL.
+Recusados destino existente/sobreposto e BoardMeta com versão inconsistente;
+no último caso o sink abandonou a geração parcial sem alterar a origem.
+F16 preliminar aprovado: 8702 linhas, zero achados/budgets. Build/prova final
+concluídos (Core 814/877; Community 352/436); F16 final em execução.
+
+Integração seguinte investigada: builder deve selecionar somente grafos cujo
+digest corresponda ao predecessor congelado; manter a cópia nativa restaurada
+0.5.0 sem binding e construir a geração 0.6.0 separada antes do worker. O recibo
+existente de projeção precisa carregar evolução/baseline autenticada; checkpoint
+rederiva essa baseline pela transformação fechada, sem executar writes novamente.
+Comparar o grafo final diretamente ao hash .5 marcaria todos os registros como
+alterados por diferença de schema; não contornar isso com force/whitelist. A
+baseline transformada deve ser explicitamente distinta do census original,
+ancorando ambos e aceitando somente o delta exato autorizado. Históricos
+nativos retidos devem entrar no digest de conteúdo do candidato e permanecer
+inacessíveis como fontes atuais sem classificação/autoridade adequada.
+
+Evolução aditiva isolada fechada: F16 final 8702 linhas, zero achados/drift,
+oito budgets zero (closure-schema-evolution-final.json). Prova final
+provenance-schema-evolution-final.json: Core 814/877 e Community 352/436,
+byte-identical; aggregates Core
+862e18c71d8286424447e12beff338466af593db94c5f4b49a789710933d050c;
+Community 0ddef742ed5680183378addcb86497389c8e941aa581c645093662d9f0d008ea.
+Community a86116dca08ac476257759c337a1be4edc5b9c6e. Ruff F/E9 e diff-check
+aprovados. Sem frontend afetado. Próxima frente é a integração descrita acima;
+a função isolada testada não equivale a migração coordenada nem entrega final.
