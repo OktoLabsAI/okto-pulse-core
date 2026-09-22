@@ -3,8 +3,11 @@
 ## Estado para retomada
 
 Iniciativa **em andamento**, com continuidade até a entrega final autorizada em
-2026-09-22. Frente atual: classificação semântica do histórico preservado;
-cutover/admission continuam fechados. Evolução autenticada 0.5.0→0.6.0 integrada,
+2026-09-22. Frente atual: qualificação cognitiva/Global e fechamento do candidato;
+cutover/admission continuam fechados. Histórico coberto pela projeção de fontes
+atuais tem qualificação explícita no Core; partes sem prova permanecem pending.
+Partições, relações e autoria por ACK são comparadas, além da preservação literal.
+Evolução autenticada 0.5.0→0.6.0 integrada,
 paridade cognitiva durável, metadados temporais, composição exata dos efeitos de
 reuso e política existente de raízes técnicas estão implementados e testados.
 Preservação/paridade isoladamente não provam elegibilidade histórica.
@@ -13493,3 +13496,60 @@ NULL e essa limitação. O expected_sha256 é do conjunto de relações, não do
 recibo. Testes e prova de wheels/F16 permanecem válidos; não promover a leitura
 adicional a um snapshot autenticado preservado. Par publicado: Core 91c4957c /
 Community c1422a0f, pushes confirmados.
+
+### 2026-09-22 — qualificação do histórico coberto por fontes atuais (em validação)
+
+Relações publicadas: Core 91c4957c (ledger 3e30e404) / Community c1422a0f.
+Nova porta projection_qualification compõe observações tipadas de identidade,
+sete campos de fonte/partição e a comparação de relações. A decisão fica no
+Core; Community apenas lê/converte os valores sob o snapshot autenticado.
+Identidades históricas efetivamente selecionadas e correspondentes à fonte
+atual podem receber current_source_reconciled; outro ID/geração, campo temporal
+ou maturidade divergentes continuam pending. Arestas antigas não planejadas e
+TODAS as ocorrências de um grupo duplicado impedem qualificação de relações;
+não escolher uma ocorrência arbitrária nem apagar o excedente. Sem remoções,
+sem promoção cognitiva/Global implícita, sem grants ou admissão de runtime.
+
+Relatório privado v12 registra contagens de nós/relações cobertos e não
+classificados e razões fechadas. A raiz Spec reutilizada da fixture agora tem
+fonte comprovada; o candidato completo continua pendente por fonte cognitiva
+ausente (.6) ou histórico Global (.5), mantendo a recusa de startup. O caminho
+sem expectativas autenticadas conserva pending/not_applicable, nunca aprovação.
+Os testes nativos exigem agora explicitamente 5/5 relações e zero divergências
+nos replays completos, além da nova qualificação da raiz preservada.
+
+55 testes Core passaram em 5.07s: origem/identidade distinta, sete campos,
+relações ausentes/ambíguas/não planejadas/duplicadas, limites de diagnóstico,
+timestamps bool recusados, metadado físico e remoções fechadas. Testes nativos
+com grafo realmente persistido (.6/.5 e cinco casos de histórico coberto ou
+incompleto) estão em execução. Prova provenance-history-qualification.json,
+dist-history-qualification: Core 822/885, Community 353/437 byte-identical.
+F16 preliminar em execução. Nenhum frontend afetado.
+
+Qualificação validada: 11 testes Community passaram em 398.92s, incluindo seis
+casos nativos de inventário, paridade cognitiva e os dois replays completos.
+Ambos os replays verificam agora asserções persistentes de 5/5 relações, raiz
+histórica atual qualificada e pendência global/cognitiva preservada; startup
+continua recusado. Junto aos 55 testes Core, esta é a validação focal deste
+incremento, não a matriz integral dos 246 critérios.
+F16 final closure-history-qualification-final.json: 8753 entradas, zero achados,
+oito budgets zero. Prova provenance-history-qualification-final.json e wheels
+dist-history-qualification-final: Core 822/885, Community 353/437 byte-identical;
+hashes Core 959179e65e42f081be6e989fc4d601ab6fa7ed68870d1241e27abf61cf9bbc60;
+Community c2bf11e07ca099186b99add95cfd4a020ae235620fbe404dd87b3f19aab8aac0.
+Community 90fb71b42fd5000f41ec58b1da862ea11dff2960. Ruff F/E9 e diff-check
+aprovados. Nenhuma UI/API pública/MCP nova, nem dados reais alterados.
+
+Continuação integrada: provar maturidade/edge policy/proveniência das fontes
+cognitivas e reconciliar Global com sua fonte, mantendo não qualificadas as
+partes sem prova; então fechar contrato terminal/retomada/admission no journal
+existente. Global possui contratos públicos em ports/global_discovery_recovery_control.py
+(inclusive prepared inputs e board seeds); mecanismos estão em
+community/adapters/grafx_global_discovery_recovery.py, com _expected_projection
+/_actual_projection. Foram apenas localizados/revisados os exports/nomes, não
+se declara que esse fluxo inteiro foi auditado ou é diretamente reutilizável.
+A fixture .5 contém um Global sintético de origem não demonstrada; não zerar a
+pendência apagando-o. A fixture .6 contém fonte cognitiva sem nó/sem prova
+completa: não fabricar relações ou maturidade para obter um resultado verde.
+Os demais critérios integrados BASE/KG/DEI/ARQVER/ADV, UI pertinente, pacote,
+rollout/rollback e benchmark seguem no objetivo ativo e no inventário único.

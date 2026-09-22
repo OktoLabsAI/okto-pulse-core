@@ -1,7 +1,7 @@
 """Portable, bounded relation comparison against the actual worker proposals."""
 
 from bisect import bisect_left, insort
-from collections import defaultdict
+from collections import Counter, defaultdict
 import hashlib
 import json
 
@@ -139,7 +139,7 @@ def compare(*, document, schema, nodes, relations, new_sessions):
             signature = attributes(edge.layer, edge.rule_id, edge.created_by, edge.confidence, edge.fallback_reason or '')
             expected.add((edge.edge_type, *source, *target, signature.hex()))
 
-    observed, new = set(), []
+    observed, new, existing = Counter(), [], []
     for relation in relations:
         index.validate_relation(relation)
         identity = (relation.layout_name, relation.source_type, relation.source_key,
@@ -150,14 +150,21 @@ def compare(*, document, schema, nodes, relations, new_sessions):
         signature = attributes(*(value(relation, name) for name in
             ('layer', 'rule_id', 'created_by', 'confidence', 'fallback_reason')))
         key = (*identity, signature.hex())
-        observed.add(key)
+        observed[key] += 1
         if value(relation, 'created_by_session_id') in sessions:
             new.append(key)
-    missing = expected - observed
+        else:
+            existing.append(key)
+    missing = expected - observed.keys()
     unexpected = [key for key in new if key not in expected]
+    unplanned_existing = sum(key not in expected for key in existing)
+    # All occurrences of an ambiguous duplicate group stay unclassified: there
+    # is no source-owned basis for picking one historical occurrence as current.
+    duplicate_expected = sum(observed[key] for key in expected if observed[key] > 1)
     for key in missing:
         add_issue('relation_missing:' + ':'.join(key[:5]))
     for key in unexpected:
         add_issue('new_relation_unplanned:' + ':'.join(key[:5]))
     return ProjectionRelationComparison(len(expected), len(expected) - len(missing), len(missing), unresolved,
-        len(unexpected), hashlib.sha256(canonical_bytes(sorted(expected))).hexdigest(), tuple(issues), clipped or issue_count > 100)
+        len(unexpected), unplanned_existing, duplicate_expected,
+        hashlib.sha256(canonical_bytes(sorted(expected))).hexdigest(), tuple(issues), clipped or issue_count > 100)

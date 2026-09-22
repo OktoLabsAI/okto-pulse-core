@@ -78,6 +78,14 @@ def test_old_unknown_provenance_is_not_invented_or_assigned_to_a_new_session():
     relation = replace(RELATION, properties={name: LOGICAL_NULL for name in RELATION.properties})
     result = compare(relations=(relation,))
     assert result.missing_count == 1 and result.unexpected_new_count == 0
+    assert result.unplanned_existing_count == 1
+
+
+def test_duplicate_expected_occurrences_are_all_left_unclassified():
+    old = replace(RELATION, properties={**RELATION.properties, 'created_by_session_id': 'old'})
+    result = compare(relations=(old, old))
+    assert result.matched_count == 1 and result.missing_count == 0
+    assert result.duplicate_expected_count == 2 and result.unplanned_existing_count == 0
 
 
 def test_current_local_identity_does_not_select_a_superseded_generation():
