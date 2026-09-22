@@ -13277,3 +13277,47 @@ Community 85882b881365ea59a2217f5ed5fa03d5ebc3540555d8a71f7711ef456f11d67f.
 Community permanece 9d889c8e2d872fa3d81da26ca1f178668c0b28f7. Sem frontend afetado.
 Esta alteração apenas remove custo repetido do guard existente. Inventário
 semântico histórico, suas authorities e cutover continuam por implementar.
+
+### 2026-09-22 — observação de conectividade histórica (em validação)
+
+Indexação do guard publicada: Core fefa5dd9; Community permanece 9d889c8e.
+Nova porta projection_connectivity recebe inventário lógico autenticado e seleção
+explícita de identidades históricas. Core valida tipos/endpoints/duplicações e
+limites agregados (100k nós, 500k relações, 64 MiB incluindo identidades), então
+reusa o KGNodeConnectivityGuard por writer observado. Identidades internas
+incluem tipo+chave, evitando confundir IDs iguais de tabelas diferentes. O probe
+canônico de Bug continua vendo todos os endpoints, inclusive Bugs não incidentes,
+e o UUID original; nenhuma aresta/identidade é criada no grafo. Não inferir
+exceção de ownership RDL apenas pela aparência da referência histórica.
+
+Relatório privado/v8 inclui historical_connectivity com outcome/reasons/advisories
+ordenados, separado da paridade cognitiva e da preservação por hash. Não equivale
+a classificação final: fonte autoritativa, edge policy, maturidade, acesso e
+histórico arquivado continuam requisitos independentes. history_classification
+permanece pending; sem mudança de runtime/admission. Testes preparados cobrem
+IDs iguais entre tipos, self-loop, camada canonical/working, probe global de Bug,
+raiz técnica e endpoints ausentes; caso nativo prova que paridade matched não
+corrige falta de conectividade. Build/prova/testes/F16 ainda pendentes.
+
+Observação histórica: 14 testes Core passaram em 3.09s; incluem mistura
+canonical/working com arestas paralelas, sem deduplicar o inventário. F16
+preliminar 8727 entradas, zero achados/budgets. Prova final
+provenance-history-connectivity-final.json: Core 818/881 e Community 353/437,
+byte-identical. Community passou verificações nativas locais e caso completo
+.6; caso completo .5 e F16 final ainda em execução. Sem declaração antecipada
+de sucesso nem admissão de histórico com base apenas no novo relatório.
+
+Observação de conectividade concluída neste recorte: 12 testes Community
+passaram em 327.29s, incluindo as duas versões (.6/.5+Global), replay completo,
+paridade com conectividade rejeitada e detecção de adulteração da cópia nativa
+retida. F16 final closure-history-connectivity-final.json: 8727 entradas, zero
+achados e oito budgets zero. Prova provenance-history-connectivity-final.json,
+wheels dist-history-connectivity-final: Core 818/881 e Community 353/437,
+byte-identical; aggregates Core
+092c2036be7af1b66e6db34efb265f3363be7e6e36f87accfb706d4b84b6078f;
+Community 57672a76ea6a8192b95500f9ce5041e2a77952cbd9b565e5c16e9d678f6b006e.
+Community 5a5220c500fc64b0b15350835ea0dcc08ba3f675. Ruff F/E9 e diff-check
+aprovados; nenhum frontend afetado. Próxima dependência: juntar as observações
+com authorities de fonte/maturidade/edge policy e disposições históricas sem
+confundir esses predicados. A função não aprova migração de conteúdo sem fonte,
+não elimina história, não concede leitura e não autoriza startup/cutover.
