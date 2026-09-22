@@ -13426,3 +13426,59 @@ automated_test. Os demais métodos permanecem bloqueados, não recebem fallback
 passing. Isso é fato de código lido, não prova integral de AC-VER. O inventário
 novo ainda exige revisão semântica e execução por critério, não somente busca
 de tags. Não declarar que os 246 critérios foram implementados/testados.
+
+### 2026-09-22 — relações esperadas versus inventário lógico (em validação)
+
+Proveniência publicada: Core 95895bb9 / Community bd99a776, pushes confirmados.
+Nova porta Core projection_relations compara os planos rederivados com o censo
+lógico completo: tipos/endpoints, layer/rule_id/created_by, confiança literal e
+fallback_reason. Propostas idênticas seguem semântica de conjunto do writer;
+arestas novas fora do conjunto esperado são contadas por ocorrência. Endpoints
+kg:, kgref e prefixos legados usam a gramática existente. A gramática pura dos
+prefixos foi extraída de primitives sem mudar consulta, ordem ou parâmetros do
+writer; a observação offline não escolhe um vencedor arbitrário em ambiguidades.
+Limites: 100k nós/candidatos/sessões, 500k relações/propostas, 64 MiB agregado,
+100 diagnósticos com truncamento explícito. Community coleta o inventário e
+consome a porta pública; não importa o privado do Core. Relatório v11 distingue
+source_projection_mismatch de histórico pendente. Nenhum estado libera runtime.
+
+Primeira validação: 35 testes Core passaram em 30.26s. Três casos cognitivos
+nativos e o caso de candidato novo/retry passaram na suíte Community em curso;
+essa execução foi interrompida antes de completar histórico para corrigir uma
+regressão reproduzida à parte. Teste Core de nó histórico alheio ao plano falhou
+em 3.22s: restrições do DTO de identidade atual eram aplicadas a toda referência
+histórica. Corrigido para selecionar DTOs somente para identidades do plano;
+metadados restantes permanecem literais. 37 testes Core passaram em 32.05s,
+incluindo diagnóstico truncado e regressões das primitivas.
+
+A prova nativa adicional encontrou a mesma restrição preexistente no adapter,
+antes da porta Core (1 falha em 27.69s). A criação de ProjectionSourceRoot no
+adapter agora ocorre apenas para registros novos ou referências selecionadas.
+O histórico alheio ao plano continua sujeito a fingerprint/preservação e à
+classificação pendente, nunca à promoção implícita. Teste nativo específico e
+replays .6/.5 em execução. Prova atual provenance-source-relations-history.json,
+wheels dist-source-relations-history: Core 820/883, Community 353/437
+byte-identical. F16 preliminar reiniciado após a correção; não usar o processo
+anterior interrompido como resultado. Sem frontend afetado.
+
+Relações validadas: 3 testes Community finais passaram em 339.78s (histórico
+nativo irregular preservado, replays .6/.5 com evolução/Global e adulteração
+retida). Os 37 testes Core já aprovados usam o mesmo payload Core comprovado
+na prova final. Leitura adicional dos dois recibos produzidos confirmou, em
+cada um, 5 relações esperadas/5 encontradas, zero ausentes/não resolvidas/novas
+não planejadas, sem diagnósticos. Registro com SHA dos recibos em
+source-relations-native-observations.json. O histórico permanece pending;
+correspondência de relações não concede autoridade cognitiva/arquivada.
+F16 final closure-source-relations-final.json: 8741 entradas, zero achados e
+oito budgets zero. Wheels dist-source-relations-final, prova
+provenance-source-relations-final.json: Core 820/883, Community 353/437,
+byte-identical; hashes Core
+1659bb16b4f09a5c71332316dba6497500e36ec8ab72a21f55c564e72ffcff61;
+Community d12d96e1db19305a8111741838439f348d587918e756a2ce0bb3a4a6b03bc40a.
+Community c1422a0fb16bc26acedb73f0aeb1755b3ab58799. Ruff F/E9 e diff-check
+aprovados. Próxima composição: separar histórico efetivamente reutilizado por
+fontes atuais comprovadas do histórico ainda sem classificação; relações antigas
+não planejadas e duplicadas não podem receber aprovação por contagem. O fluxo
+worker usa force_reprocess=True em begin/commit (consolidation.py), portanto o
+ACK privado não reutiliza silenciosamente a sessão histórica por hash igual.
+Objetivo integral permanece ativo; nenhum runtime/dado real foi promovido.

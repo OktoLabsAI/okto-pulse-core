@@ -5912,6 +5912,20 @@ def _is_cross_session_entity_ref(endpoint: str) -> bool:
     )
 
 
+def _cross_session_entity_source_prefix(endpoint: str) -> str | None:
+    """Pure grammar shared by the live lookup and offline relation comparison."""
+    if endpoint.endswith("_entity"):
+        body = endpoint[: -len("_entity")]
+        for prefix, ref_prefix in (
+            ("story_", "story:"), ("ideation_", "ideation:"),
+            ("refinement_", "refinement:"), ("spec_", "spec:"),
+            ("sprint_", "sprint:"), ("card_", "card:"),
+        ):
+            if body.startswith(prefix):
+                return ref_prefix + body[len(prefix):]
+    return None
+
+
 def _resolve_endpoint(
     endpoint: str,
     candidate_to_graph_id: dict[str, str],
@@ -5963,33 +5977,21 @@ def _resolve_endpoint(
     # Cross-session deterministic-id fallback. We only handle the worker's
     # own naming convention here (`<artifact>_<id8>_entity`) to avoid
     # surprises; new patterns must be opt-in.
-    if endpoint.endswith("_entity"):
-        body = endpoint[: -len("_entity")]
-        for prefix, ref_prefix in (
-            ("story_", "story:"),
-            ("ideation_", "ideation:"),
-            ("refinement_", "refinement:"),
-            ("spec_", "spec:"),
-            ("sprint_", "sprint:"),
-            ("card_", "card:"),
-        ):
-            if body.startswith(prefix):
-                short = body[len(prefix) :]
-                # Source_artifact_ref uses the full UUID. We probe with a
-                # prefix match because the worker only carries the first 8
-                # chars in the candidate id.
-                cypher = (
-                    "MATCH (n:Entity) "
-                    "WHERE n.source_artifact_ref STARTS WITH $ref "
-                    "RETURN n.id LIMIT 1"
-                )
-                try:
-                    res = graph_scope.execute(cypher, {"ref": f"{ref_prefix}{short}"})
-                    if res.rows:
-                        return res.rows[0][0], "Entity"
-                except Exception:
-                    pass
-                break
+    source_prefix = _cross_session_entity_source_prefix(endpoint)
+    if source_prefix is not None:
+        # Preserve the existing live prefix lookup; the offline observer can
+        # report ambiguity, but does not choose a new winner for this writer.
+        cypher = (
+            "MATCH (n:Entity) "
+            "WHERE n.source_artifact_ref STARTS WITH $ref "
+            "RETURN n.id LIMIT 1"
+        )
+        try:
+            res = graph_scope.execute(cypher, {"ref": source_prefix})
+            if res.rows:
+                return res.rows[0][0], "Entity"
+        except Exception:
+            pass
     return None, None
 
 
