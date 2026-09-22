@@ -12767,3 +12767,40 @@ o censo autenticado com o candidato frio e distinguir gerações históricas das
 raízes atuais, sem usar ACK de criação como censo completo de histórico/reuso.
 A falha de histórico povoado permanece aberta; nenhuma admissão foi liberada.
 Community commit: 1981c4d69d82daf49a4fae162f61a850a0d34309.
+
+### 2026-09-22 — comparação do candidato frio com histórico ancorado
+
+Sobre 9e8e49b6/1981c4d6, em validação: leitor comum bounded de registros lógicos
+usado pelo snapshot autenticado e pelo candidato offline. O censo percorre todas
+as rotas persistidas (incluindo Global Discovery), inclui hashes de conteúdo e
+multiplicidade, e delega o delta à porta Core. O recibo de projeção v2 ancora
+historical_observations; checkpoint rederiva o resultado antes de aceitar replay.
+Estado observed_not_classified, sem relaxar os guards de reconciliação existentes
+nem a admissão. O teste anterior de histórico povoado continua aberto: este passo
+produz a evidência necessária para classificar diferenças, não aprova o histórico.
+Testes adicionados de leitura nativa fria com origem retirada preservada, conteúdo
+alterado, escopo global e arestas paralelas. Build/prova e testes em andamento.
+
+Validação: leitor nativo frio passou em 45.49s, após corrigir o fixture para
+checkpoint explícito antes de read-only (o leitor não recupera/escreve WAL).
+Integração de construção/retry/replay/adulteração + censo autenticado passaram
+2 testes em 142.48s. A expectativa física inclui BoardMeta mais quatro Entity;
+não omitir metadados de schema do censo integral. Normalização de tuples para
+arrays JSON mantém igualdade do relatório antes/depois da selagem. Ruff F/E9 e
+diff-check passaram. F16 final: 8677 linhas, zero achados/drift, oito budgets
+zero (closure-candidate-history-final.json). Prova pré-testes/final instalada:
+provenance-candidate-history-final.json; Core 811/874, Community 350/434;
+source/wheel/install byte-identical. Aggregate Core
+2be76c9b109be29cef1d4f0f88a56092e907cfc3b6a9a6a2597ff707eb9ac646;
+Community d0b0722052b46864c1ecd296a3b0c6a792c101a4cc91768632e9864e275afd3e.
+
+Investigação adicional: one_node_corpus('board', key='baseline') é corpus de
+roundtrip físico; retorna Decision com graph_layer='value-13', maturity_status=
+'value-14', human_curated=True, generation=29 e superseded_by='value-25' sem
+sucessor. O teste de histórico nativo só troca source_ref/ator, portanto não
+representa histórico elegível semanticamente. Preservação literal é necessária,
+mas não autoriza promoção. Ainda faltam suporte/reconciliação de identidades
+anteriores legítimas e upgrade 0.5->0.6. Não alterar o fixture para ocultar perda,
+nem afrouxar zero-órfão ou aceitar sucessor inexistente. O candidato permanece
+projected_not_reconciled; leitura observacional não significa aprovação histórica.
+Community publicado: 0915c1bad14a5aa9edcec40971774f85e923ca82.
