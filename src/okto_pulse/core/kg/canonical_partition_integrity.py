@@ -35,6 +35,7 @@ and the connectivity guard is never bypassed (no new edge, no mutation).
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 
@@ -355,6 +356,46 @@ async def canonical_debt_exclusions(
     except Exception:  # pragma: no cover - compatibility read remains best-effort
         pass
     return out
+
+
+async def capture_canonical_debt_exclusions(db: object, *, board_id: str) -> dict[str, str]:
+    """Complete recovery capture inside the caller's stable relational UoW.
+
+    The compatibility read above is best-effort. A recovery certificate cannot
+    interpret pagination, unavailable storage or a malformed page as absence
+    of debt. Preserve the existing reason/state policy and page ordering.
+    """
+    if type(board_id) is not str or not board_id:
+        raise ValueError('canonical_debt_capture_scope_invalid')
+    out, seen, total, offset, budget = {}, set(), None, 0, 0
+    while True:
+        page = await list_canonical_debt(db, board_id=board_id, limit=200, offset=offset)
+        if (type(page.total) is not int or not 0 <= page.total <= 100_000
+                or type(page.items) is not list
+                or len(page.items) != min(200, max(0, page.total - offset))
+                or (total is not None and page.total != total)):
+            raise ValueError('canonical_debt_capture_inventory_invalid')
+        total = page.total
+        for row in page.items:
+            if (type(row) is not dict or type(row.get('id')) is not str or not row['id']
+                    or row['id'] in seen or row.get('board_id') != board_id):
+                raise ValueError('canonical_debt_capture_identity_invalid')
+            seen.add(row['id'])
+            budget += len(json.dumps(row, ensure_ascii=False, allow_nan=False).encode('utf-8'))
+            if budget > 64 * 1024 * 1024:
+                raise ValueError('canonical_debt_capture_inventory_limit')
+            if (row.get('failure_reason') in CANONICAL_LEARNING_DEBT_REASONS
+                    and row.get('canonical_state') in OPEN_STATES):
+                source = row.get('source_ref')
+                if type(source) is not str or not source:
+                    raise ValueError('canonical_debt_capture_source_invalid')
+                artifact = normalize_cognitive_artifact_id(source)
+                if not artifact:
+                    raise ValueError('canonical_debt_capture_source_invalid')
+                out[artifact] = row['failure_reason']
+        offset += len(page.items)
+        if offset == total:
+            return out
 
 
 async def pending_or_debt_exclusions(

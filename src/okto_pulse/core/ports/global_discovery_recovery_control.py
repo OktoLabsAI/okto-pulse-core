@@ -142,7 +142,7 @@ class GlobalDiscoveryRecoveryBoardSeedInputService:
         """Capture every relational overlay required by the graph-only phase."""
 
         from okto_pulse.core.kg.canonical_partition_integrity import (
-            canonical_debt_exclusions,
+            capture_canonical_debt_exclusions,
         )
         from okto_pulse.core.kg.connectivity_guard import (
             CANONICAL_LEARNING_WORKING_ONLY_REASON,
@@ -161,7 +161,7 @@ class GlobalDiscoveryRecoveryBoardSeedInputService:
 
         # Debt outranks a captured cognitive hold for the same artifact.  This
         # is the final relational read; no session/context escapes in the DTO.
-        overlay.update(await canonical_debt_exclusions(db, board_id=board_id))
+        overlay.update(await capture_canonical_debt_exclusions(db, board_id=board_id))
         return GlobalDiscoveryRecoveryBoardSeedInput(
             board_id=str(board_id),
             board_name=str(board_name),

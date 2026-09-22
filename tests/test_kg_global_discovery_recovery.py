@@ -399,7 +399,7 @@ async def test_recovery_seed_uses_captured_overlay_without_live_ledger_read(
             assert text == "Board Board One"
             return [0.3, 0.4]
 
-    monkeypatch.setattr(partition, "canonical_debt_exclusions", captured_debt)
+    monkeypatch.setattr(partition, "capture_canonical_debt_exclusions", captured_debt)
     monkeypatch.setattr(
         partition,
         "pending_or_debt_exclusions",

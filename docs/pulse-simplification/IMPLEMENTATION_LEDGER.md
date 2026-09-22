@@ -13597,3 +13597,46 @@ Community commit 48ba4615f57be3fd045118bd5d5d325b69a0bd50. O formato privado
 v12 permanece: os campos do relatório não mudaram, apenas a validação de entrada
 agora ocorre antes de descartar revisões antigas. Próxima frente continua Global
 com overlay autoritativo e qualificação cognitiva, antes de terminal/admission.
+
+### 2026-09-22 — captura completa de dívida canônica para recuperação Global
+
+Investigação/reprodução antes da mudança: a fachada pública de preparação Global
+usava `canonical_debt_exclusions`, leitor de compatibilidade best-effort limitado
+à primeira página de 200 registros. Dois testes novos contra o par instalado
+anterior falharam em 2.33s: 201 exclusões resultaram em 200, e erro do storage não
+foi propagado. Isso impede utilizar essa captura como prova completa na migração.
+Correção local dentro da exigência documentada de falha fechada: a captura de
+recovery usa `capture_canonical_debt_exclusions`, leitura paginada completa,
+limitada a 100 mil registros/64 MiB, com total estável, páginas completas, IDs
+únicos e escopo Board exato. Falha do storage continua falha. Estado/motivo,
+normalização da origem e precedência dívida sobre hold permanecem os existentes.
+O leitor best-effort usado pelos consumidores de compatibilidade não foi trocado;
+nenhum gate de acesso/execução ou semântica cognitiva foi relaxado.
+
+A captura exige UoW estável e o coordenador mantém suas cercas antes/depois da
+publicação. Conferido: `canonical_debt` pertence ao inventário de triggers da
+revisão Global (manifest v9); mutações alteram a cerca relacional. A porta pública
+já existente entrega o mesmo DTO imutável para a etapa gráfica, após fechar a UoW.
+Nenhum adaptador/mapeamento/import privado novo no Core ou Community.
+
+91 testes Core passaram em 5.07s (recovery existente e novas falhas de inventário).
+Primeira rodada Community: 2 passed/1 failed em 14.83s porque o teste de liberação
+de checkout ainda substituía o símbolo antigo; a captura estrita não foi atingida
+por aquele double. Ajustado só o alvo do monkeypatch, preservando as asserções de
+pool/conexão concorrente. Nova rodada: 10 passed em 28.23s. Inclui SQLite real com
+201 dívidas, exclusão de outro Board e igualdade de todas as linhas antes/depois;
+mais testes existentes da operação de preparação. Nenhum frontend afetado.
+F16 preliminar: 8754 entradas, zero achados, oito budgets zero; final em preparo.
+
+F16 final `closure-global-debt-final.json`: 8754 entradas, zero achados e todos os
+oito budgets zero. Prova `provenance-global-debt-final.json`, wheels pareadas
+`dist-global-debt-final`: Core 822/885 e Community 353/437 byte-identical;
+hashes agregados Core 18408228cdc12c453ec6b545d3dd80039542e989a47de270e24aab31d78c39f5,
+Community 2849c7152147ccef3ec006451cf9fb455b978127dea5fab6fc654808f9ba93f9.
+Community d52ced17a5654a5d9ddb6df181b640cfbe35f691. Ruff F/E9 e diff-check
+aprovados. Próximo: integrar captura de overlays e seeds à reconciliação privada,
+sem tratar `current_fingerprint` do overlay como leitura pura (ele pode reparar a
+revisão via artifact store); preservar a cerca e não escrever nos originais.
+Ainda não há certificação Global, qualificação cognitiva integral ou terminal de
+cutover. Census histórico não executado. A implementação segue até os critérios
+integrados restantes, com ledger/commits contínuos, sem encerrar em milestones.
