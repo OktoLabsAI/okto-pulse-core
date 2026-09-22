@@ -12983,3 +12983,50 @@ conclusão sobre schema foi tirada dessa primeira falha. Caminho planejado:
 leitor exclusivo de recuperação com descriptor predecessor congelado e
 validação física integral, sem relaxar factory/runtime atual; depois evolução
 out-of-place explícita conforme KG §8.3, preservando backup nativo/histórico.
+
+### 2026-09-22 — recuperação delimitada do schema predecessor (em validação)
+
+Composição exata publicada: Core 17ddadeb / Community d6023baa; pushes confirmados.
+O novo adapter grafx_recovery_contracts deriva exclusivamente o contrato 0.5.0
+do manifesto congelado do migrador existente, verifica fingerprint literal
+4a7b425bf4b8c4864be633c1a87f034e5f7f641019dc029015b7d3ca786deb81 e censo
+12 nós/69 relações/11 espaços/489 propriedades de nós/483 de relações.
+Seleção de leitura usa catálogo físico fechado, não confiança no rótulo
+BoardMeta; o leitor lógico mantém validação integral de colunas/espaços/endpoints.
+Restore lógico seleciona contrato apenas pelo digest autenticado do schema.
+Joint recovery passa por essas factories exclusivas; as factories de runtime
+continuam 0.6.0 e recusam o predecessor. Não é evolução automática nem admissão
+0.5.0; labels e registros antigos são preservados literalmente como evidência.
+Ensaios planejados: backup/restore lógico 0.5.0 povoado, restore nativo com
+UUID/commits/as_of, recusa de contrato desconhecido e regressão 0.6.0/Global.
+Build pareado e prova byte a byte em execução antes dos testes.
+
+Ensaios passaram: 4 testes em 202.53s. Grafo 0.5.0 povoado foi recuperado por
+backup/restore lógico com schema/fingerprint/censo preservados; restauração
+nativa conservou UUID, commits e as_of. O leitor normal continuou recusando
+0.5.0. Regressões Board 0.6.0 + Global e histórico nativo atual passaram.
+Contrato/fingerprint desconhecido recusado antes da criação do destino.
+F16 preliminar: 8701 linhas, zero achados e oito budgets zero. Matriz README
+regenerada; wheels finais construídas. Instalação/prova/F16 final em andamento.
+
+Investigação da próxima etapa (ainda não implementada): evolução 0.5.0→0.6.0
+precisa ser out-of-place e partir do snapshot já autenticado, reutilizando os
+Protocols de transferência existentes. Delta autorizado: cinco propriedades
+novas inicialmente NULL nos nós de domínio, onze layouts vazios, BoardMeta
+0.5.0→0.6.0 apenas no candidato. IDs, propriedades antigas, vetores e todas as
+ocorrências de relações precisam permanecer exatos. Fontes .5 sem BoardMeta
+único/compatível não devem ser adivinhadas. UUID do novo candidato é distinto;
+backup nativo .5 conserva histórico/cursors com sua identidade original, sem
+alegar que export/import transfere system history. O manifesto de migração
+precisa ancorar ambas as evidências antes de qualquer integração ao candidato
+e reconciliação; nenhum gate de admissão foi alterado neste incremento.
+
+Recuperação do predecessor fechada: F16 final 8701 linhas, zero achados/drift,
+oito budgets zero (closure-predecessor-recovery-final.json). Prova final
+provenance-predecessor-recovery-final.json: Core 814 .py/877 payloads,
+Community 351/435, byte-identical entre fontes/wheels/install. Aggregates
+Core 862e18c71d8286424447e12beff338466af593db94c5f4b49a789710933d050c;
+Community 6998525cb82126d8a7ede98eebe1926d900a89cdde8866d04ee90f5f9eceb5bc.
+Community b43086c28347b45f21a180670860ac014faed042. Ruff F/E9 e diff-check
+aprovados. Nenhuma superfície frontend alterada. Evolução para schema final,
+integração/reconciliação histórica e cutover continuam pendentes.
