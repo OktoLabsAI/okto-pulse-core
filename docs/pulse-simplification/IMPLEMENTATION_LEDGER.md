@@ -12698,3 +12698,41 @@ não prova upgrade de graph 0.5.0 nem o census histórico dos boards reais.
 A entrega integral segue em andamento, sem pausa solicitada e sem cutover.
 
 Community commit fc0053a8c6b93fb080065a6b721ce2b3bb0be146.
+
+### 2026-09-22 — censo histórico autenticado, sem classificação implícita
+
+Base publicada Core 32c78321 / Community fc0053a8. Novo leitor interno Community
+retirement_historical_graph_census consome o artefato lógico já preservado pelo
+snapshot conjunto; não copia fontes nem abre banco vivo. Usa codec/fingerprint
+públicos do Core e valida o snapshot, certificado, EOF, hash do arquivo e limites.
+Cada nó mantém hash de todas as propriedades e campos de proveniência/tempo com
+codec tipado; ausência não é preenchida com NULL. As arestas mantêm endpoint
+tipado, hash completo e multiplicidade. Referências retiradas e estados estranhos
+continuam literais, com state=captured_not_classified, sem descarte ou aprovação.
+
+A seed privada passa a v2 e ancora historical_census_sha256; todo read da seed
+rederiva a evidência do snapshot e recusa um digest falso mesmo com hash externo
+recalculado. O candidato e a admissão não mudaram de estado; a falha de histórico
+povoado registrada acima ainda não foi resolvida por este recorte de captura.
+Prova pré-teste provenance-history-census.json: Core 809/872, Community 349/433,
+byte-identical. Em execução: censo real de ambos os escopos, arestas paralelas,
+datas literais, limite, adulteração e seed re-selada; F16 preliminar também em
+execução. Ainda não considerar este incremento validado/publicado.
+
+Censo validado: dois testes passaram em 56.52s (snapshot real nos dois escopos,
+multiplicidade, data própria, limite, adulteração e seed re-selada). Replay após
+resposta perdida e rechecagem de apagamento passou em 46.62s. F16 final:
+8671 linhas, zero achados, zero drift e oito budgets zero
+(closure-history-census-final.json). READMEs regenerados pelo renderer oficial.
+Prova final source/wheel/install (provenance-history-census-final.json):
+Core 809/872, aggregate 5773a0e3b272184f62dc12a1499af16754798d33159fec8e42ca507a2cbb4f03;
+Community 349/433, aggregate 23695507db00d161d29183cc9fafe95eeb6cb754dd3646bb64ae8f2ccc13e754.
+Ruff F/E9 e diff-check passaram. Community commit
+472f56cf1912eb2033f08ad9e915da71e84f8942.
+
+Próximo trabalho: usar o censo ancorado para comparar literalmente os registros
+anteriores com o candidato, distinguir identidade reutilizada de criação pelos
+ACKs e encaminhar a classificação semântica ao Core por porta pública. Não
+tratar uma referência igual como prova de que um nó histórico é a raiz atual,
+nem classificar todo grau zero como raiz legítima. A falha de projeção com
+histórico anterior continua aberta, e nenhuma admissão/cutover foi liberada.
