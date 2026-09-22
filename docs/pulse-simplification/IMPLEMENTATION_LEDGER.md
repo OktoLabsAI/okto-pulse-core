@@ -13245,3 +13245,35 @@ Community 9d889c8e2d872fa3d81da26ca1f178668c0b28f7. Ruff F/E9 e diff-check
 aprovados. Sem frontend afetado. Próxima dependência: distinguir integridade
 semântica/conectividade de paridade literal; nenhuma raiz técnica reconhecida
 por este incremento recebe autoridade de fonte ou de cutover.
+
+### 2026-09-22 — custo do guard antes do inventário semântico (em validação)
+
+Raízes técnicas publicadas: Core 1bfc8c02 / Community 9d889c8e; pushes confirmados.
+Antes de aplicar o guard existente ao inventário inteiro, reprodução sintética
+somente leitura mostrou crescimento quadrático: 500/1000/2000 nós e arestas
+levaram 0.0445/0.1662/0.8218s, todos passing. Script e resultado em
+.validation-v040/benchmark_connectivity_inventory.py e connectivity-inventory-before.json.
+Não é benchmark do produto inteiro nem census real. Causa revisada: por nó/grupo,
+_resolve_group reconstruía índices de todos os nós/refs e percorria todas as
+arestas. Alteração prepara índices uma vez por lote e distribui arestas incidentes
+mantendo ordem, direção, multiplicidade e um único registro de self-loop. Probe
+canônico de Bug continua global ao lote, sem transformar card comum em Bug.
+Nenhuma regra, reason, authority ou saída é relaxada; regressões e medida após
+rebuild pareado ainda pendentes. Esta preparação não classifica o histórico.
+
+Indexação validada: 48 testes existentes de connectivity_guard, self-loop,
+cognitive_policy e primitivas passaram em 28.70s. Comparação diferencial contra
+Core 1bfc8c02, seed 402206, 1500 lotes sintéticos com writers/camadas/endpoints
+ambíguos e estados degradados: 1500 respostas completas exatamente iguais
+(connectivity-inventory-equivalence.json; script compare_connectivity_inventory.py).
+Medida após alteração, mesmo script/ambiente: 500/1000/2000 nós e arestas em
+0.0140/0.0124/0.0221s (connectivity-inventory-after.json). Medida pontual sintética,
+sem alegação de latência do produto ou benchmark integral do pacote.
+F16 final closure-connectivity-index-final.json: 8717 entradas, zero achados,
+oito budgets zero. Prova provenance-connectivity-index.json contra wheels em
+dist-connectivity-index: Core 816/879 e Community 353/437 byte-identical;
+aggregates Core 264a5a003e9caa76739cdc4991498727a1e2fcc86ea2eee727aada151c69c768;
+Community 85882b881365ea59a2217f5ed5fa03d5ebc3540555d8a71f7711ef456f11d67f.
+Community permanece 9d889c8e2d872fa3d81da26ca1f178668c0b28f7. Sem frontend afetado.
+Esta alteração apenas remove custo repetido do guard existente. Inventário
+semântico histórico, suas authorities e cutover continuam por implementar.
