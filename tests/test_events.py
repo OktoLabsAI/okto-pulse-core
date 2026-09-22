@@ -1778,6 +1778,7 @@ def test_human_curated_column_declared_in_schema():
         "0.3.12",
         "0.4.0",
         "0.5.0",
+        "0.6.0",
     }
 
 

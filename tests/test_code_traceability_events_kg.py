@@ -239,7 +239,7 @@ def test_event_payload_is_bounded_frozen_and_rejects_unknown_fields():
 
 
 def test_kg_schema_is_additive_semantic_subtyping_only():
-    assert SCHEMA_VERSION == "0.5.0"
+    assert SCHEMA_VERSION == "0.6.0"
     assert len(NODE_TYPES) == 11
     assert not set(CODE_TRACEABILITY_ENTITY_SUBTYPES).intersection(NODE_TYPES)
     assert CODE_TRACEABILITY_ENTITY_SUBTYPES == (
@@ -265,6 +265,14 @@ def test_kg_schema_is_additive_semantic_subtyping_only():
     )
     assert all(column_type == "STRING" for _, column_type in CODE_TRACEABILITY_COLUMNS)
     assert expected_columns.issubset(STABLE_NODE_PROPERTIES)
+    assert len(STABLE_NODE_PROPERTIES) == 48
+    assert {
+        "severity",
+        "source_status",
+        "source_created_at",
+        "source_updated_at",
+        "resolved_at",
+    }.issubset(STABLE_NODE_PROPERTIES)
 
 
 def test_kg_relationship_catalog_has_only_closed_physical_endpoint_pairs():
@@ -276,8 +284,25 @@ def test_kg_relationship_catalog_has_only_closed_physical_endpoint_pairs():
         ("Entity", "Decision"),
         ("Entity", "TestScenario"),
         ("Entity", "Entity"),
+        ("Bug", "Requirement"),
+        ("Bug", "Constraint"),
+        ("Bug", "Criterion"),
+        ("Bug", "TestScenario"),
+        ("Bug", "APIContract"),
+        ("Bug", "Decision"),
     }
-    assert ("Entity", "Entity") in relationship_endpoint_pairs("derives_from")
+    assert set(relationship_endpoint_pairs("derives_from")) == {
+        ("Entity", "Entity"),
+        ("Constraint", "Requirement"),
+        ("Requirement", "Requirement"),
+        ("Decision", "Constraint"),
+        ("Decision", "Requirement"),
+    }
+    assert set(relationship_endpoint_pairs("violates")) == {
+        ("Bug", "Requirement"),
+        ("Bug", "Criterion"),
+        ("Bug", "Constraint"),
+    }
     assert ("Entity", "Entity") in relationship_endpoint_pairs("overlaps")
     assert ("Entity", "Entity") in relationship_endpoint_pairs("belongs_to")
     assert ("Entity", "Bug") in relationship_endpoint_pairs("belongs_to")

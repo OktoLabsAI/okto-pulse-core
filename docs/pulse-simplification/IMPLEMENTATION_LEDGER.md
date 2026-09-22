@@ -12495,3 +12495,57 @@ identidade/census/zero-órfão do candidato sintético, mas
 não prova ainda fidelidade temporal, census histórico real, contrato terminal
 ou cutover/admission. Community commit
 `09602f5106e848a3004aca5f833d3aba9c79e666`.
+
+### 2026-09-22 — contrato coordenado KG 0.6.0 fechado
+
+Base Core `c8ca49cb1cb65a06faa615920982782a0e351488` / Community
+`09602f5106e848a3004aca5f833d3aba9c79e666`. O delta confirmado pelos
+complementos do pacote foi aplicado como uma mudança coordenada: cinco
+propriedades de nó (`severity`, `source_status`, `source_created_at`,
+`source_updated_at`, `resolved_at`) e onze pares relacionais de Bug,
+`derives_from` e `violates`. A autoridade lógica passa a `0.6.0`, com 48
+propriedades estáveis, 49 colunas físicas incluindo embedding, 80 tabelas de
+relação e 92 tabelas Grafx totais incluindo nós e BoardMeta. O frontend mostra
+`0.6.0`; há teste de componente e `frontend_dist` foi reconstruído.
+
+O rebuild histórico `0.3.12 -> 0.5.0` permanece congelado em 44 colunas/69
+relações e fingerprint
+`4a7b425bf4b8c4864be633c1a87f034e5f7f641019dc029015b7d3ca786deb81`.
+O manifesto atual tem fingerprint
+`3ab6faf0fd8a7fe3694ed7ddd336faa97a6b4af4a1626aafe20c75b0922b2bbe`.
+O builder interno de manifesto passou a receber o contrato explicitamente;
+isso evita que uma importação do contrato corrente reescreva retroativamente a
+prova histórica. O candidato privado de aposentadoria cria e reconcilia o
+esquema 0.6.0 em rebuild out-of-place. Nenhum endpoint, tool MCP, CLI, adaptador
+concreto no Core, cutover ou autorização de runtime foi acrescentado.
+
+Validação instalada: prova byte-a-byte pré-teste Core 808 Python/871 payload e
+Community 348/432; 48 testes de bootstrap/layout Grafx passaram em 142.55s,
+9 testes de contrato/fingerprint da evolução congelada passaram, e o cenário
+integrado de retry/replay do candidato passou em 100.19s já sobre 0.6.0. O teste
+frontend novo passou; build TypeScript/Vite e `verify:frontend-dist` passaram,
+com 78 arquivos e tree SHA-256
+`88df8911ed083b929e93b123926920b9fb1c04b6ba8f0b3e588fb0560d899368`.
+Ruff F/E9 passou. Wheels finais: Core aggregate
+`18027032acd915c57bc90a125e7b86aa64c55b8172dff8f4cbbb3c4858166f65` e
+Community aggregate
+`d7b6c6704e1bfbed353afa2f62e9096accb305fb844f781d6cd2f1ca6b7df08e`;
+source, wheel e site-packages são byte-identical. A auditoria F16 final produziu
+8662 linhas, zero achados, zero drift documental e os oito budgets em zero
+(`closure-schema060-final.json`). As matrizes README foram regeneradas pelo
+renderer oficial.
+
+Uma rodada ampla de 203 testes Core teve 199 passes e quatro falhas. Uma era um
+assert novo incompleto dos pares preexistentes e foi corrigida. As outras três
+são asserts anteriores de contagem global de eventos que esperam 64, enquanto
+o registry desta base contém 61; não têm relação causal com o contrato KG e não
+foram alteradas para esconder a divergência. Os testes focados de esquema e das
+três migrações de colunas passaram.
+
+Community commit `45c0486ff947f0bf27873256c051ec12cffaab21`.
+
+Handoff: este milestone fecha a autoridade e o bootstrap/candidato 0.6.0, mas
+não autoriza admissão. O próximo trabalho deve provar fidelidade temporal dos
+emitters, census histórico real e contrato terminal do candidato. Só depois
+deve implementar e testar cutover/admission fail-closed; boards 0.5.0 não devem
+ser atualizados in-place nem ganhar rota pública de migração.
