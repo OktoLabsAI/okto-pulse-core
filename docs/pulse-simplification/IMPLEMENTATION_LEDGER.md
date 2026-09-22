@@ -13343,3 +13343,41 @@ sem histórico pode ser uma vertical inicial, mas não equivale ao upgrade geral
 Nenhuma alteração de admissão/terminal/promoção foi feita neste checkpoint.
 As pendências amplas I/P/K, frontend pertinente, matriz completa e benchmarks
 continuam conforme o estado inicial do ledger; não declarar entrega final.
+
+### 2026-09-22 — partição exata da projeção corrente (em validação)
+
+Continuidade integral reafirmada pelo usuário, sem pausa entre milestones.
+Revisão identificou que igualdade de contagens, metadados temporais e
+conectividade não verificava graph_layer/maturity_status contra o plano
+rederivado do Core. A reconciliação privada agora compara ambos por identidade
+(type, source_artifact_ref), incluindo filhos, usando a seleção pública existente
+(generation/id ativo). Não reclassifica a fonte por status do grafo e não atribui
+maturidade atual ao histórico não selecionado. Propostas conflitantes para a
+mesma identidade falham fechado. Relatório v9 vincula digest e quantidade das
+partições verificadas; chamada interna sem expectativas declara not_checked,
+nunca passed. O caminho coordenado sempre fornece o plano autenticado.
+
+Testes de divergência canonical/working/stale/NULL passaram na execução em
+curso; testes nativos .6/.5 e retry/replay ainda em andamento. Prova do par
+provenance-source-partition.json: Core 818/881, Community 353/437 byte-identical,
+wheels dist-source-partition. A primeira tentativa de prova ocorreu antes do
+fim do pip e falhou; pytest iniciado naquela janela foi interrompido e não
+conta como validação. Pip terminou com sucesso, a prova foi repetida/aprovada,
+e a suíte foi reiniciada em processo novo. F16 em execução. Nenhuma UI afetada.
+Histórico/edge policy/terminal/admission continuam dependências abertas;
+este incremento não declara entrega total nem promoção do candidato.
+
+Partições validadas: 23 testes Community passaram em 545.12s, incluindo
+migração privada com retry após ACK, Bug/datas, schema .6 e .5+Global,
+replay autenticado e detecção de adulteração do predecessor nativo. F16 final
+closure-source-partition-final.json: 8727 entradas, zero achados, oito budgets
+zero. Prova provenance-source-partition-final.json, dist-source-partition-final:
+Core 818/881, Community 353/437; hashes agregados Core
+092c2036be7af1b66e6db34efb265f3363be7e6e36f87accfb706d4b84b6078f;
+Community 2b9bf1a49c4fadb4538d5228883c3ee7d082633e3b414655eac4be42b77ff97d.
+Community 9bb304ef6671f6ebd2948d16aa5d032448302886. Ruff F/E9 e diff-check
+aprovados. Continuação imediata: autoria de arestas por ACK; testes preparados
+em test_retirement_edge_provenance.py ainda não implementados/executados.
+A igualdade agregada de contagens não prova distribuição por sessão. Verificar
+created_by_session_id contra o censo de auditoria exato, preservando arestas
+históricas e sem inventar autoria para seus metadados ausentes.
