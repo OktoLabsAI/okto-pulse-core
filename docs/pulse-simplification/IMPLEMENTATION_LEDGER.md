@@ -12466,3 +12466,32 @@ zero (`closure-kg-revision-causal.json`). Nenhum frontend/API/MCP foi alterado;
 teste frontend não se aplica. O próximo passo continua sendo reconciliação
 grafo/fonte/active sets/orphans, não cutover. Community commit
 `cb0f1ae76d566997cc499018953ef73bc98dcb5e`.
+
+### 2026-09-22 — reconciliação fonte/grafo do candidato em ensaio
+
+Base Core `927ca2b5e7cde192dc3dced1b43c45e00f495c05` / Community
+`cb0f1ae76d566997cc499018953ef73bc98dcb5e`. Um verificador Community novo,
+interno e read-only abre apenas o Grafx privado já fechado e vincula o census
+completo de nós aos `kuzu_node_refs`/sessões dos ACKs exatos. Ele valida a
+binding/generation, unicidade global de identidade, proveniência de sessão,
+manifesto físico de cada relação, endpoints tipados, metadata determinística,
+census de arestas igual à soma de `consolidation_audit.edges_added`, digests de
+nós/arestas e grau não zero de todos os nós. `sprint:` é recusado. O resumo
+determinístico entra no projection receipt e é recalculado no replay do
+checkpoint; nenhuma interface pública ou writer foi criado.
+
+Na fixture observada o conjunto exato é 4 nós/5 arestas, todos ligados, para
+3 fontes/ACKs. O teste integrado foi estendido para exigir esse relatório e
+para adulterar um `kuzu_node_ref` numa cópia do candidato, que deve falhar no
+census fonte/grafo. Build/instalação/prova final passaram: Core 808/871,
+aggregate d3ade7b969a9a2787a68c5cdbd84bd3ccd01d43fd908037c347e35f96d254746;
+Community 348/432, aggregate
+c99554eca66aae349dde23bf8c7fc1e2e131506989539bbe9822ed33a07aed4b. O teste
+integrado passou em 97.58s, incluindo criação, replay e adulteração recusada.
+Ruff F/E9 e diff-check passaram. O renderer oficial atualizou as matrizes e o
+F16 final passou com 8661 linhas, zero achados, zero drift e oito budgets zero
+(`closure-kg-graph-reconcile-final.json`). Isso encerra
+identidade/census/zero-órfão do candidato sintético, mas
+não prova ainda fidelidade temporal, census histórico real, contrato terminal
+ou cutover/admission. Community commit
+`09602f5106e848a3004aca5f833d3aba9c79e666`.
