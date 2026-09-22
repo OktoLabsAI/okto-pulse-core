@@ -13813,3 +13813,76 @@ igualdade completa para canonical. Qualquer geração nova precisa ainda de auto
 de efeitos no censo histórico e inclusão explícita das rotas no checkpoint;
 simplesmente chamar o writer e aceitar seu hash não basta. Cutover permanece
 pendente, e a continuidade até a entrega integral permanece autorizada e ativa.
+
+### 2026-09-22 — materialização Global privada integrada (validação em execução)
+
+Continuação a partir do par publicado c3416c5b/8d295efd, árvores limpas e origins
+iguais. Turno anterior classificado como progresso: comparação implementada,
+124 testes e auditoria final observados, commits e pushes concluídos.
+
+Community deriva os seeds pela mesma porta Core e cria Global somente quando
+ausente no candidato privado. Não substitui Global histórico, não normaliza
+legacy_unknown, não converte indisponibilidade do overlay em conjunto vazio.
+As camadas canonical/working continuam sendo o domínio admitido pelo writer de
+recuperação existente. Uma fonte de outra camada deixa a materialização pendente.
+Reutiliza writers nativos de summary/digest batch, timestamp técnico fixo e
+checkpoint nativo antes da leitura fria; cada fase revalida a janela de execução.
+
+Receipt de projeção v5 inclui global_materialization; relatório gráfico v14
+aceita efeitos Global novos somente com ausência de registros anteriores,
+comparação completa matched e hash esperado correspondente. A nova rota entra
+na lista autenticada e no inventário completo do checkpoint. Replay recalcula
+fontes, comparação, estado esperado da criação, geração e timestamps técnicos.
+O recibo não cria permissão e nenhuma dessas provas admite o runtime.
+
+Par instalado `dist-global-materialization` provado byte-a-byte em
+`provenance-global-materialization.json`: Core 825/888, Community 356/440.
+Ruff F/E9 e diff-check passaram. Suites nativas/guards/paridade e integração
+completa de execução/reuso/candidato, mais F16 preliminar, estão em execução.
+Nenhum resultado dessas suites é pressuposto nesta entrada. Frontend e MCP sem
+alteração; dados reais não tocados. Próximo: concluir provas, corrigir qualquer
+divergência demonstrada e seguir qualificação histórica/cognitiva e cutover.
+
+Validação parcial observada: 18 testes nativos/guards/paridade passaram em
+176.02s; cinco testes adicionais passaram em 21.21s. Estes últimos cobrem perda
+da janela após a primeira gravação, ausência de binding após essa falha e recusa
+de autoria Global sem receipt, com hash/count errado ou com histórico prévio.
+A primeira execução do teste de perda tardia falhou na expectativa de classe de
+erro: o runtime encapsula a causa ValueError em GraphError. A asserção agora
+verifica o GraphError e a causa literal execution_fence_lost, sem mudar produção.
+A suite completa de candidato/reuso ainda está rodando neste ponto.
+
+F16 final `closure-global-materialization-final.json`: 8781 entradas, zero
+achados, oito budgets zero. `dist-global-materialization-final` e
+`provenance-global-materialization-final.json` confirmam Core 825/888 e Community
+356/440 byte-identical; agregado Community
+6f695f545a61e1c80be09d477d0bdb307052c5902a544eb9705bbce3ab56ed47.
+Core mantém agregado 8a7b70de75c447e73e3c6afdfc8d214e7c3873b9cb1df65f30f5e9d69089690c.
+Os formatos privados v5/v14 são estritos; não se aceita receipt v4 como prova da
+nova etapa. Par de builds, backup e receipt externo continuam obrigatórios.
+
+Investigação da frente seguinte: `rebuild_effects.restore` da Community chama
+o replay literal existente em `canonical_cognitive_preservation`; o replay cria
+somente nós ausentes e não sobrescreve conteúdo human_curated. Esse mecanismo
+não está integrado ao candidato de retirada de Sprint e não demonstra sozinho
+conectividade, active sets ou proveniência histórica. A paridade pública já
+valida todas as revisões antes de selecionar a atual. A integração futura deve
+reutilizar essa semântica, expor a porta que faltar e autenticar efeitos sem
+introduzir consultas de runtime no Core ou relações inventadas para zerar órfãos.
+
+Integração ampliada concluída: 11 testes passaram em 1016.85s nos arquivos
+`test_retirement_candidate_execution.py`, `test_retirement_reused_history.py` e
+`test_retirement_graph_candidate.py`. Cobrem criação Global nova no caso .6,
+preservação Global prévio no .5, revalidação sem escrita, fonte original intacta,
+recusa de runtime, perda de resposta, adulteração, hardlinks e múltiplos grafos.
+Total deste incremento: 34 testes aprovados (18 + 5 + 11), sem repetir a suite
+Core de policy cujo código não mudou. Ruff e diff-check aprovados. Community
+ef80bb0b3e8b42cc9d3300ee98e5ee1c19359e8c contém o incremento.
+
+Continuidade: criação de Global ausente está implementada e integrada, mas um
+Global prévio divergente/auxiliar permanece preservado e pendente; não apagá-lo
+para obter match. A fonte cognitiva ausente continua bloqueando a qualificação
+completa da fixture .6, como esperado. O próximo trabalho é integrar restauração
+cognitiva literal com autoria/proveniência/conectividade e qualificar histórico,
+depois fechar cutover/admission e demais critérios do pacote. Não há declaração
+de entrega integral, alteração de autoridade nem nova superfície de manutenção.
