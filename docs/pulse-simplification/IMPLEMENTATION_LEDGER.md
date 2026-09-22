@@ -13482,3 +13482,14 @@ não planejadas e duplicadas não podem receber aprovação por contagem. O flux
 worker usa force_reprocess=True em begin/commit (consolidation.py), portanto o
 ACK privado não reutiliza silenciosamente a sessão histórica por hash igual.
 Objetivo integral permanece ativo; nenhum runtime/dado real foi promovido.
+
+Correção de retenção da observação acima: os dois relatórios foram lidos e
+exibidos com os valores descritos, mas o pytest limpou os diretórios descartáveis
+antes da tentativa subsequente de guardar os SHAs dos recibos. A gravação
+original falhou por arquivo ausente; não há SHA de recibo nativo retido nesse
+artefato. source-relations-native-observations.json registra somente os valores
+efetivamente observados na saída e status observed_output_only, hash do recibo
+NULL e essa limitação. O expected_sha256 é do conjunto de relações, não do
+recibo. Testes e prova de wheels/F16 permanecem válidos; não promover a leitura
+adicional a um snapshot autenticado preservado. Par publicado: Core 91c4957c /
+Community c1422a0f, pushes confirmados.
