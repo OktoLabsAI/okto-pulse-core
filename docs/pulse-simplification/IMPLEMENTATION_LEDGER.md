@@ -12928,3 +12928,58 @@ Ruff F/E9 e diff-check aprovados. Commit Community:
 incremento. Próximo passo: provar composição exata dos efeitos autenticados
 contra histórico e candidato; elegibilidade histórica e admissão permanecem
 pendentes, sem relaxar retirement_cutover_incomplete.
+
+### 2026-09-22 — composição exata de efeitos históricos (em validação)
+
+Pushes do incremento anterior confirmados: Core f0b6bc00, Community 02e9f321.
+Nova porta pura reconcile_projection_node_effects confere a sequência por
+Board/sessão, first-before/final-after e o registro lógico final completo.
+Não transforma essa prova em elegibilidade histórica. Refusa replay, escopo,
+ordem incompatível, alteração não declarada, coerção de tipos e ausência versus
+NULL ambígua; mantém o codec lógico existente, inclusive recusa de NaN/Infinity.
+Os primeiros testes identificaram duas premissas erradas no fixture (confidence
+não é propriedade estável, e o codec não aceita NaN); corrigidos para
+relevance_score/signed zero e recusa explícita de observação com perda. Core:
+17 testes passaram em 2.66s. Sem alteração da semântica do codec.
+
+Community exporta os efeitos somente depois da auditoria integral do delta SQL,
+ACK e refs, conferindo também a cadeia das gerações na ordem selada. O censo lê
+os nós anteriores/finais no stream autenticado, aplica a porta pública e gera
+property_composition. Reconciliação aceita mudanças anteriores somente quando
+essa composição exata foi rederivada; remoções de nós/arestas, efeito Global sem
+dono, mudança não declarada e órfão corrente permanecem recusados. Histórico
+continua pending e runtime retirement_cutover_incomplete. Formatos internos:
+history-observations/v3 e graph-reconciliation/v5. Testes nativos de leitura,
+replay, ACK e um novo caso com Entity anterior reutilizada estão em execução.
+Não declarar este incremento fechado até terminar os ensaios e F16 pareado.
+
+Ensaio de reuso histórico passou: 1 teste nativo em 169.05s. Entity antiga
+old-spec-root mantém ID, recebe efeitos do worker real, fica fora de todos os
+NodeRefs de criação e tem sua composição rederivada no replay. O candidato
+continua projected_not_reconciled, history_classification=pending e runtime
+recusado. Mais 25 testes de histórico/execução/ACK passaram em 204.97s e seis
+testes de gates em 9.14s (incluindo recusa de remoções/Global/sem prova).
+F16 preliminar aprovado: 8700 linhas, zero achados e oito budgets zero.
+Documentação de matriz regenerada oficialmente; pacote final e regressão do
+histórico nativo anterior em validação.
+
+Fechamento deste incremento: regressão nativa de histórico/UUID/as_of e recusa
+de adulteração passou (1 teste, 297.38s). F16 final aprovado em
+closure-effect-composition-final.json: 8700 linhas, zero achados/drift, oito
+budgets zero. Prova provenance-effect-composition-final.json: Core 814 .py/877
+payloads, Community 350/434, fontes/wheels/install byte-identical. Aggregates:
+Core 862e18c71d8286424447e12beff338466af593db94c5f4b49a789710933d050c;
+Community 459d5c82963048acca3ea7afe1de5527db6488d7e487f4c61fd44bab339f63a8.
+Ruff F/E9 e diff-check aprovados. Community d6023baac431f1d671311c2eac951789ad2cbd5b.
+Nenhuma superfície frontend alterada. Este fechamento é da composição exata;
+a iniciativa, classificação histórica e cutover continuam incompletos.
+
+Próxima frente investigada: o leitor atual de backup usa exclusivamente o
+contrato 0.6.0. Reprodução em .validation-v040/v050-reader-t1r6_973/reproduction.json:
+grafo 0.5.0 criado pelo migrador congelado 0.3.12→0.5.0 é recusado por ausência
+dos onze pares novos. Primeira tentativa de abrir a fixture usou page_size 8192,
+mas a fixture possui 4096; corrigido o argumento sem alterar o banco. Nenhuma
+conclusão sobre schema foi tirada dessa primeira falha. Caminho planejado:
+leitor exclusivo de recuperação com descriptor predecessor congelado e
+validação física integral, sem relaxar factory/runtime atual; depois evolução
+out-of-place explícita conforme KG §8.3, preservando backup nativo/histórico.

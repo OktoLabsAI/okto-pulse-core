@@ -106,3 +106,13 @@ def validated_projection_effect_extension(payload, *, board_id, session_id):
     if (effects.board_id, effects.session_id) != (board_id, session_id):
         raise ValueError('projection_effect_scope_mismatch')
     return {'projection_property_effects': effects.to_payload()}
+
+
+def reconcile_projection_node_effects(*, schema, board_id, before, after, effects):
+    """Prove exact property composition after the caller authenticates order/ACKs.
+
+    Returns the observed fingerprints only. It does not approve history, edges,
+    admission, or the provenance of the supplied records and effect envelopes.
+    """
+    from okto_pulse.core.application.projection_effect_reconciliation import reconcile_node_effects
+    return reconcile_node_effects(schema=schema, board_id=board_id, before=before, after=after, effects=effects)
