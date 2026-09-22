@@ -12804,3 +12804,26 @@ anteriores legítimas e upgrade 0.5->0.6. Não alterar o fixture para ocultar pe
 nem afrouxar zero-órfão ou aceitar sucessor inexistente. O candidato permanece
 projected_not_reconciled; leitura observacional não significa aprovação histórica.
 Community publicado: 0915c1bad14a5aa9edcec40971774f85e923ca82.
+
+### 2026-09-22 — seleção da raiz temporal atual por identidade tipada
+
+Em implementação sobre ba435f61/0915c1ba: a porta pública projection_history
+resolve somente (node_type, source_artifact_ref) esperado pelo plano retido,
+exclui superseded_by não nulo e usa generation DESC (NULL=0), ID DESC. Essa é
+a ordem já executada por kg.primitives._lookup_existing_node; não introduz
+supersedência, dedup por score ou escolha semântica nova. O adapter usa as
+identidades selecionadas para conferir metadados da fonte, com manifesto v3
+ancorando tipo+ref; uma Decision com ref de Spec não é a Entity raiz dessa Spec.
+Censo/ACK, ausência de órfãos e histórico permanecem exigidos. Metadados em nós
+não selecionados ainda não são aprovados como história sem prova específica.
+Tests de tipo, geração, desempate, predecessor supersedido, duplicata e fonte
+ativa ausente adicionados; build/prova/testes em andamento.
+
+Seleção validada: Core 54 testes em 4.64s (histórico, metadados e planner);
+Community 5 testes integrados em 189.10s, incluindo fonte Bug, execução privada,
+retry/replay e adulteração temporal. Ruff F/E9/diff-check passaram. F16 final:
+8679 linhas, zero achados/drift e oito budgets zero (closure-root-selection-final.json).
+Prova final source/wheel/install byte-identical em provenance-root-selection-final.json:
+Core 811/874, aggregate 64f95f8bb42f9f41ac5d56ee7ffb12b8cf8f79eca2ec1f147866393994a2ab77;
+Community 350/434, aggregate 1b14e0a1829466ccb897eca1874b4d836d043a8a1211976b74541fc9ab73c618.
+Community publicado: 26d767c7ba7fbed164429da0bb643e6a24c61e4e.

@@ -6,6 +6,7 @@ import pytest
 
 from okto_pulse.core.ports.projection_history import (
     ProjectionNodeFingerprint as Node, ProjectionEdgeFingerprint as Edge, compare_projection_history,
+    ProjectionSourceRoot as Root, ProjectionSourceIdentity as Identity, select_projection_source_roots,
 )
 
 
@@ -39,3 +40,29 @@ def test_ambiguous_or_unbounded_input_is_refused(damage):
         (edge, replace(edge, fingerprint='c' * 64, count=1)) if damage == 'edge_overflow' else ())
     with pytest.raises(ValueError, match='duplicate|limit'):
         compare_projection_history(before_nodes=nodes, after_nodes=(), before_edges=edges, after_edges=())
+
+
+def test_source_root_selection_matches_type_active_generation_and_existing_tie_break():
+    root = Root('Entity', 'spec:s')
+    current = Identity('Entity', 'z', 'spec:s', 2, None)
+    historical = Identity('Entity', 'old', 'spec:s', 99, 'z')
+    wrong_type = Identity('Decision', 'd', 'spec:s', 100, None)
+    same_generation = replace(current, node_id='a')
+    older = replace(current, node_id='older', generation=1)
+    result = select_projection_source_roots(roots=(root,),
+        nodes=(historical, wrong_type, older, current, same_generation))
+    assert result == (current,)
+    assert historical.superseded_by == 'z'  # Selection never rewrites old identities.
+
+
+def test_legacy_null_generation_is_zero_and_missing_active_root_is_not_zero_work():
+    root = Root('Entity', 'spec:s')
+    legacy = Identity('Entity', 'z', 'spec:s', None, None)
+    assert select_projection_source_roots(roots=(root,),
+        nodes=(legacy, replace(legacy, node_id='a', generation=0))) == (legacy,)
+    with pytest.raises(ValueError, match='current_root_missing'):
+        select_projection_source_roots(roots=(root,), nodes=(replace(legacy, superseded_by='missing'),))
+    with pytest.raises(ValueError, match='duplicate_root'):
+        select_projection_source_roots(roots=(root, root), nodes=(legacy,))
+    with pytest.raises(ValueError, match='duplicate_node'):
+        select_projection_source_roots(roots=(root,), nodes=(legacy, legacy))

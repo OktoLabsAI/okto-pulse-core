@@ -65,6 +65,43 @@ class ProjectionHistoryDelta:
     removed_edges: tuple[ProjectionEdgeFingerprint, ...]
 
 
+@dataclass(frozen=True, slots=True, order=True)
+class ProjectionSourceRoot:
+    node_type: str
+    source_artifact_ref: str
+
+    def __post_init__(self):
+        _identity((self.node_type, self.source_artifact_ref))
+
+
+@dataclass(frozen=True, slots=True)
+class ProjectionSourceIdentity:
+    node_type: str
+    node_id: str
+    source_artifact_ref: str
+    generation: int | None
+    superseded_by: str | None
+
+    def __post_init__(self):
+        _identity((self.node_type, self.node_id, self.source_artifact_ref))
+        if self.generation is not None and (type(self.generation) is not int or self.generation < 0):
+            raise ValueError('projection_history_generation_invalid')
+        if self.superseded_by is not None:
+            _identity((self.superseded_by,))
+
+
+def select_projection_source_roots(
+    *, roots: tuple[ProjectionSourceRoot, ...], nodes: tuple[ProjectionSourceIdentity, ...],
+) -> tuple[ProjectionSourceIdentity, ...]:
+    """Resolve current identities with the consolidator's existing ordering.
+
+    Selection does not establish source authority, classify other generations,
+    or approve any historical change. Callers still prove the complete census.
+    """
+    from okto_pulse.core.application.projection_history import select_source_roots
+    return select_source_roots(roots, nodes)
+
+
 def compare_projection_history(*, before_nodes, after_nodes, before_edges, after_edges) -> ProjectionHistoryDelta:
     """Observe exact identities/hashes/multiplicity without approving any delta."""
     from okto_pulse.core.application.projection_history import compare
