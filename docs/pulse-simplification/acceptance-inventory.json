@@ -1,0 +1,2651 @@
+{
+  "format": "pulse-v1.3-acceptance-inventory/v1",
+  "purpose": "Review checklist across the consolidated package. Text references are discovery only, not coverage or passing evidence. The implementation ledger remains authoritative for executed validation.",
+  "documents": [
+    {
+      "document": "PLANO_PULSE_CODEX.md",
+      "sha256": "d38d61432a542d22c6967bb7e7b819718a216dff4e281114a2e4dff815f508f5"
+    },
+    {
+      "document": "COMPLEMENTO_KG_RASTREABILIDADE.md",
+      "sha256": "4fd491171d1d6a9709d054dbd211de7b375d99ec1aaadea757bc9239618f4956"
+    },
+    {
+      "document": "COMPLEMENTO_ENTREGA_INCREMENTAL.md",
+      "sha256": "30df459738436a457d77b2584ab5d9264f5ed4d1739b92d3fcac174bf0902065"
+    },
+    {
+      "document": "ESPECIFICACAO_ARQUITETURA_VERIFICABILIDADE.md",
+      "sha256": "8e984c6da0d4c98e578f93b65c0e16ab1073aa6b6dda36b0215314cc5a9b4fd4"
+    }
+  ],
+  "criteria": [
+    {
+      "key": "BASE:T01",
+      "document": "PLANO_PULSE_CODEX.md",
+      "line": 580,
+      "id": "T01",
+      "normative_text": "| T01 | Um agente com permissões necessárias e separação não exigida | Fluxo completo, avaliações e evidências preservadas. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "BASE:T02",
+      "document": "PLANO_PULSE_CODEX.md",
+      "line": 581,
+      "id": "T02",
+      "normative_text": "| T02 | Um agente e policy exigindo revisão independente | Bloqueio correto, sem skip automático nem identidade fictícia. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "BASE:T03",
+      "document": "PLANO_PULSE_CODEX.md",
+      "line": 582,
+      "id": "T03",
+      "normative_text": "| T03 | Planejador sem permissão de avaliar | Não aprova via submit, move, update, batch, alias ou REST. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "BASE:T04",
+      "document": "PLANO_PULSE_CODEX.md",
+      "line": 583,
+      "id": "T04",
+      "normative_text": "| T04 | Executor e revisor com grants distintos | Cada um acessa apenas suas ações; handoff de estado e evidência íntegro. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "BASE:T05",
+      "document": "PLANO_PULSE_CODEX.md",
+      "line": 584,
+      "id": "T05",
+      "normative_text": "| T05 | Novo agente/sessão sem histórico de chat | Consegue obter contexto suficiente e identificar pendências reais. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "BASE:T06",
+      "document": "PLANO_PULSE_CODEX.md",
+      "line": 585,
+      "id": "T06",
+      "normative_text": "| T06 | Avaliação de Spec aprovada, decomposição inadequada | Início bloqueado pelo controle de plano, sem reaproveitar aprovação indevida. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "BASE:T07",
+      "document": "PLANO_PULSE_CODEX.md",
+      "line": 586,
+      "id": "T07",
+      "normative_text": "| T07 | Tasks aprovadas isoladamente, verificação integrada ausente | Spec não vira done indevidamente. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "BASE:T08",
+      "document": "PLANO_PULSE_CODEX.md",
+      "line": 587,
+      "id": "T08",
+      "normative_text": "| T08 | Diretamente mover normal/bug a done sem validação exigida | Recusa preservada. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "BASE:T09",
+      "document": "PLANO_PULSE_CODEX.md",
+      "line": 588,
+      "id": "T09",
+      "normative_text": "| T09 | Test Card e suas regras próprias | Não assume lifecycle de normal/bug ou revisão falsa. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "BASE:T10",
+      "document": "PLANO_PULSE_CODEX.md",
+      "line": 589,
+      "id": "T10",
+      "normative_text": "| T10 | Rejeição → retrabalho → nova revisão | Histórico preservado, Current correto e escrita autorizada no estado correto. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "BASE:T11",
+      "document": "PLANO_PULSE_CODEX.md",
+      "line": 590,
+      "id": "T11",
+      "normative_text": "| T11 | Outra sessão muda versão entre leitura e submissão | Conflito/atualidade tratada, sem aprovação do objeto errado. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "BASE:T12",
+      "document": "PLANO_PULSE_CODEX.md",
+      "line": 591,
+      "id": "T12",
+      "normative_text": "| T12 | Replay idêntico e replay com payload alterado | Um efeito no primeiro; conflito no segundo. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "BASE:T13",
+      "document": "PLANO_PULSE_CODEX.md",
+      "line": 592,
+      "id": "T13",
+      "normative_text": "| T13 | Credencial revogada com catálogo em cache | Chamada recusada; nenhuma autorização persistente na sessão. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "BASE:T14",
+      "document": "PLANO_PULSE_CODEX.md",
+      "line": 593,
+      "id": "T14",
+      "normative_text": "| T14 | Dois agentes em requests concorrentes | Contexto, catálogo e dados não vazam entre identidades/boards. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "BASE:T15",
+      "document": "PLANO_PULSE_CODEX.md",
+      "line": 594,
+      "id": "T15",
+      "normative_text": "| T15 | Uma tool agrupada com variantes de grants distintos | Variante não permitida falha antes de persistir. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "BASE:T16",
+      "document": "PLANO_PULSE_CODEX.md",
+      "line": 595,
+      "id": "T16",
+      "normative_text": "| T16 | Spec nova executando sem Sprint | Sem erro de assignment/active lane; demais gates vigentes. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "BASE:T17",
+      "document": "PLANO_PULSE_CODEX.md",
+      "line": 596,
+      "id": "T17",
+      "normative_text": "| T17 | Refinamento com várias Specs | Derivações preservadas, sem Sprint ou substituto obrigatório. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "BASE:T18",
+      "document": "PLANO_PULSE_CODEX.md",
+      "line": 597,
+      "id": "T18",
+      "normative_text": "| T18 | Dependência explícita de Spec não concluída/ciclo | Gate/ciclo mantidos; ausência de Sprint não libera execução. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "BASE:T19",
+      "document": "PLANO_PULSE_CODEX.md",
+      "line": 598,
+      "id": "T19",
+      "normative_text": "| T19 | Criar Test Card com cenários válidos | Card e vínculos surgem atomicamente, sem chamada de link redundante. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "BASE:T20",
+      "document": "PLANO_PULSE_CODEX.md",
+      "line": 599,
+      "id": "T20",
+      "normative_text": "| T20 | Cenário de outro board/Spec não autorizado em create/batch | Nenhuma criação parcial; recusa adequada. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "BASE:T21",
+      "document": "PLANO_PULSE_CODEX.md",
+      "line": 600,
+      "id": "T21",
+      "normative_text": "| T21 | Bug Path A após Spec done | Executável por regras próprias, sem hotfix lane e com regressão requerida. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "BASE:T22",
+      "document": "PLANO_PULSE_CODEX.md",
+      "line": 601,
+      "id": "T22",
+      "normative_text": "| T22 | Bug Path B com amendment confirmado legítimo | Vínculos cross-spec aceitos só na extensão autorizada. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "BASE:T23",
+      "document": "PLANO_PULSE_CODEX.md",
+      "line": 602,
+      "id": "T23",
+      "normative_text": "| T23 | Amendment incompleto/unrelated/stale/sem validador | Continua bloqueado; lane removida não amplia elegibilidade. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "BASE:T24",
+      "document": "PLANO_PULSE_CODEX.md",
+      "line": 603,
+      "id": "T24",
+      "normative_text": "| T24 | Atualizar conteúdo normativo de Spec concluída sob pretexto de hotfix | Recusa; evidência operacional legítima continua permitida. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "BASE:T25",
+      "document": "PLANO_PULSE_CODEX.md",
+      "line": 604,
+      "id": "T25",
+      "normative_text": "| T25 | Instalação limpa | Nenhuma tabela/campo/modelo/preset operacional de Sprint. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "BASE:T26",
+      "document": "PLANO_PULSE_CODEX.md",
+      "line": 605,
+      "id": "T26",
+      "normative_text": "| T26 | Upgrade com Sprints ativas, fechadas, canceladas e sem cartões | Estados de artefatos preservados; história reconciliada. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "BASE:T27",
+      "document": "PLANO_PULSE_CODEX.md",
+      "line": 606,
+      "id": "T27",
+      "normative_text": "| T27 | Policies heterogêneas e `resolved_sources` misto | Paridade por campo; nenhum afrouxamento ou endurecimento oculto. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "BASE:T28",
+      "document": "PLANO_PULSE_CODEX.md",
+      "line": 607,
+      "id": "T28",
+      "normative_text": "| T28 | Agente apenas com grants removidos | Sem autoridade remanescente inventada; identidade preservada. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "BASE:T29",
+      "document": "PLANO_PULSE_CODEX.md",
+      "line": 608,
+      "id": "T29",
+      "normative_text": "| T29 | Migração executada duas vezes | Resultado idempotente, sem duplicação de arquivo/overrides/events. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "BASE:T30",
+      "document": "PLANO_PULSE_CODEX.md",
+      "line": 609,
+      "id": "T30",
+      "normative_text": "| T30 | Falha depois do snapshot, antes/durante corte | Estado detectável, retomada/rollback ensaiado; não startup parcial saudável. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "BASE:T31",
+      "document": "PLANO_PULSE_CODEX.md",
+      "line": 610,
+      "id": "T31",
+      "normative_text": "| T31 | FK órfã, corrupção ou cardinalidade não representável | Falha explícita e preservação do original, sem descarte silencioso. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "BASE:T32",
+      "document": "PLANO_PULSE_CODEX.md",
+      "line": 611,
+      "id": "T32",
+      "normative_text": "| T32 | Eventos mistos e projeções compartilhadas do KG | Sem loops Sprint, sem remover fatos Card/Spec ou nós compartilhados. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "BASE:T33",
+      "document": "PLANO_PULSE_CODEX.md",
+      "line": 612,
+      "id": "T33",
+      "normative_text": "| T33 | tools/list, resources/list, OpenAPI e CLI empacotados | Zero capacidade operacional Sprint/manutenção além de health. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "BASE:T34",
+      "document": "PLANO_PULSE_CODEX.md",
+      "line": 613,
+      "id": "T34",
+      "normative_text": "| T34 | Chamada direta a nome/rota removida e campo `sprint_id` legado | Erro de inexistência/incompatibilidade antes de efeito; nunca ignorado silenciosamente. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "BASE:T35",
+      "document": "PLANO_PULSE_CODEX.md",
+      "line": 614,
+      "id": "T35",
+      "normative_text": "| T35 | Health repetido em estado normal, degradado, sem provider e timeout | Estados verdadeiros, observação limitada e ausência de efeitos semânticos. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "BASE:T36",
+      "document": "PLANO_PULSE_CODEX.md",
+      "line": 615,
+      "id": "T36",
+      "normative_text": "| T36 | Provider de health com lazy-open/reconcile/tick | Teste garante que esses efeitos não são acionados pela leitura. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "BASE:T37",
+      "document": "PLANO_PULSE_CODEX.md",
+      "line": 616,
+      "id": "T37",
+      "normative_text": "| T37 | UI com localStorage/deep link antigo de Sprint | Fallback válido, sem requests de Sprint nem crash. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "BASE:T38",
+      "document": "PLANO_PULSE_CODEX.md",
+      "line": 617,
+      "id": "T38",
+      "normative_text": "| T38 | Health UI/cliente | Sem controles de repair/rebuild/tick/historical; polling limitado e cancelável. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "BASE:T39",
+      "document": "PLANO_PULSE_CODEX.md",
+      "line": 618,
+      "id": "T39",
+      "normative_text": "| T39 | Evidência/decisão contraditória substantiva | Continua bloqueando quando policy determina, mesmo com gate operacional do KG retirado. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "BASE:T40",
+      "document": "PLANO_PULSE_CODEX.md",
+      "line": 619,
+      "id": "T40",
+      "normative_text": "| T40 | Só projeção do KG pendente e prova de produto válida no store autoritativo | Entrega não depende de operação de manutenção; saúde informa atraso. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "BASE:T41",
+      "document": "PLANO_PULSE_CODEX.md",
+      "line": 620,
+      "id": "T41",
+      "normative_text": "| T41 | Knowledge/resource snapshot aprovado com origem atualizada | Não troca silenciosamente conteúdo; proveniência e refresh governados. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "BASE:T42",
+      "document": "PLANO_PULSE_CODEX.md",
+      "line": 621,
+      "id": "T42",
+      "normative_text": "| T42 | Status de cenário muda sem `Spec.version` | Readiness observa valor atual; nenhum cache stale libera indevidamente. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "BASE:T43",
+      "document": "PLANO_PULSE_CODEX.md",
+      "line": 622,
+      "id": "T43",
+      "normative_text": "| T43 | Token benchmark com permissão ampla e sessões múltiplas | Ganho real capturado, gates equivalentes e payloads medidos integralmente. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "BASE:T44",
+      "document": "PLANO_PULSE_CODEX.md",
+      "line": 623,
+      "id": "T44",
+      "normative_text": "| T44 | Wheel/frontend/Core par compatível e incompatível | Compatível funciona; incompatível falha cedo com diagnóstico, sem migrar parcialmente. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "BASE:T45",
+      "document": "PLANO_PULSE_CODEX.md",
+      "line": 624,
+      "id": "T45",
+      "normative_text": "| T45 | Import/export de histórico anterior | Preserva evidência sem reintroduzir entidade e permissões Sprint. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "BASE:T46",
+      "document": "PLANO_PULSE_CODEX.md",
+      "line": 625,
+      "id": "T46",
+      "normative_text": "| T46 | Recursos oficiais/erros após remoção | Nenhuma URI, drilldown ou remediation aponta para função removida. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "KG:KG-01",
+      "document": "COMPLEMENTO_KG_RASTREABILIDADE.md",
+      "line": 612,
+      "id": "KG-01",
+      "normative_text": "| KG-01 | Cenário com `linked_criteria=[ac_id]` | Aresta `tests` correta sem matching textual e sem chamada extra do agente. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": [
+        {
+          "path": "okto_labs_pulse_core/tests/sqlalchemy_test_runtime_settings_service.py",
+          "line": 571
+        },
+        {
+          "path": "okto_labs_pulse_core/tests/stress/test_kg_ci_destructive_release.py",
+          "line": 1
+        },
+        {
+          "path": "okto_labs_pulse_core/tests/stress/test_kg_ci_destructive_release.py",
+          "line": 54
+        },
+        {
+          "path": "okto_labs_pulse_core/tests/test_consolidation_queue_resilience_s2.py",
+          "line": 278
+        },
+        {
+          "path": "okto_labs_pulse_core/tests/test_kg02_scenarios.py",
+          "line": 699
+        },
+        {
+          "path": "okto_labs_pulse_core/tests/test_kg_backpressure.py",
+          "line": 1
+        },
+        {
+          "path": "okto_labs_pulse_core/tests/test_kg_config_guard.py",
+          "line": 1
+        },
+        {
+          "path": "okto_labs_pulse_core/tests/test_kg_config_guard_endpoint.py",
+          "line": 1
+        },
+        {
+          "path": "okto_labs_pulse_core/tests/test_kg_health.py",
+          "line": 172
+        },
+        {
+          "path": "okto_labs_pulse_core/tests/test_kg_health.py",
+          "line": 186
+        },
+        {
+          "path": "okto_labs_pulse_core/tests/test_kg_health.py",
+          "line": 245
+        },
+        {
+          "path": "okto_labs_pulse_core/tests/test_kg_health.py",
+          "line": 249
+        },
+        {
+          "path": "okto_labs_pulse_core/tests/test_kg_health.py",
+          "line": 417
+        },
+        {
+          "path": "okto_labs_pulse_core/tests/test_kg_health.py",
+          "line": 424
+        },
+        {
+          "path": "okto_labs_pulse_core/tests/test_kg_health_state.py",
+          "line": 1
+        },
+        {
+          "path": "okto_labs_pulse_core/tests/test_kg_health_tick_fields.py",
+          "line": 122
+        },
+        {
+          "path": "okto_labs_pulse_core/tests/test_kg_health_tick_fields.py",
+          "line": 165
+        },
+        {
+          "path": "okto_labs_pulse_core/tests/test_kg_quarantine.py",
+          "line": 1
+        },
+        {
+          "path": "okto_labs_pulse_core/tests/test_kg_rebuild_service.py",
+          "line": 2281
+        },
+        {
+          "path": "okto_labs_pulse_core/tests/test_kg_relevance_dynamic.py",
+          "line": 469
+        },
+        {
+          "path": "okto_labs_pulse_core/tests/test_kg_relevance_dynamic.py",
+          "line": 470
+        },
+        {
+          "path": "okto_labs_pulse_core/tests/test_kg_relevance_dynamic.py",
+          "line": 507
+        },
+        {
+          "path": "okto_labs_pulse_core/tests/test_kg_relevance_dynamic.py",
+          "line": 1676
+        },
+        {
+          "path": "okto_labs_pulse_core/tests/test_kg_rest_cognitive_pending.py",
+          "line": 23
+        },
+        {
+          "path": "okto_labs_pulse_core/tests/test_kg_rest_cognitive_pending.py",
+          "line": 175
+        },
+        {
+          "path": "okto_labs_pulse_core/tests/test_kg_single_writer_lock.py",
+          "line": 1
+        },
+        {
+          "path": "okto_labs_pulse_core/tests/test_kg_stress_and_contingency.py",
+          "line": 1
+        },
+        {
+          "path": "okto_labs_pulse_core/tests/test_kg_stress_and_contingency.py",
+          "line": 537
+        },
+        {
+          "path": "okto_labs_pulse_core/tests/test_kg_write_barrier_wiring.py",
+          "line": 1
+        },
+        {
+          "path": "okto_labs_pulse_core/tests/test_kg_write_barrier_wiring.py",
+          "line": 3
+        },
+        {
+          "path": "okto_labs_pulse_core/tests/test_kg_write_barrier_wiring.py",
+          "line": 101
+        },
+        {
+          "path": "okto_labs_pulse_community/tests/test_kgd01_wal_only_recovery.py",
+          "line": 118
+        }
+      ]
+    },
+    {
+      "key": "KG:KG-02",
+      "document": "COMPLEMENTO_KG_RASTREABILIDADE.md",
+      "line": 613,
+      "id": "KG-02",
+      "normative_text": "| KG-02 | Texto legado tem dois ACs iguais | Ambiguidade delimitada; nenhum alvo escolhido arbitrariamente. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": [
+        {
+          "path": "okto_labs_pulse_core/tests/test_kg02_scenarios.py",
+          "line": 1
+        },
+        {
+          "path": "okto_labs_pulse_core/tests/test_kg02_scenarios.py",
+          "line": 3
+        },
+        {
+          "path": "okto_labs_pulse_core/tests/test_kg02_scenarios.py",
+          "line": 332
+        },
+        {
+          "path": "okto_labs_pulse_core/tests/test_kg02_scenarios.py",
+          "line": 333
+        },
+        {
+          "path": "okto_labs_pulse_core/tests/test_kg02_scenarios.py",
+          "line": 334
+        },
+        {
+          "path": "okto_labs_pulse_core/tests/test_kg02_scenarios.py",
+          "line": 491
+        },
+        {
+          "path": "okto_labs_pulse_core/tests/test_kg02_scenarios.py",
+          "line": 702
+        },
+        {
+          "path": "okto_labs_pulse_core/tests/test_kg02_scenarios.py",
+          "line": 738
+        },
+        {
+          "path": "okto_labs_pulse_core/tests/test_kg_cognitive_badge_resolver.py",
+          "line": 639
+        },
+        {
+          "path": "okto_labs_pulse_core/tests/test_kg_cognitive_badge_resolver.py",
+          "line": 643
+        },
+        {
+          "path": "okto_labs_pulse_core/tests/test_kg_cognitive_items.py",
+          "line": 8
+        },
+        {
+          "path": "okto_labs_pulse_core/tests/test_kg_cognitive_items.py",
+          "line": 149
+        },
+        {
+          "path": "okto_labs_pulse_core/tests/test_kg_cognitive_items.py",
+          "line": 166
+        },
+        {
+          "path": "okto_labs_pulse_core/tests/test_kg_cognitive_items.py",
+          "line": 217
+        },
+        {
+          "path": "okto_labs_pulse_core/tests/test_kg_cognitive_items.py",
+          "line": 233
+        },
+        {
+          "path": "okto_labs_pulse_core/tests/test_kg_cognitive_items.py",
+          "line": 684
+        },
+        {
+          "path": "okto_labs_pulse_core/tests/test_kg_cognitive_items.py",
+          "line": 690
+        },
+        {
+          "path": "okto_labs_pulse_core/tests/test_kg_cognitive_items.py",
+          "line": 706
+        },
+        {
+          "path": "okto_labs_pulse_core/tests/test_kg_global_discovery_reindex.py",
+          "line": 1
+        },
+        {
+          "path": "okto_labs_pulse_core/tests/test_kg_rebuild_audit.py",
+          "line": 1
+        },
+        {
+          "path": "okto_labs_pulse_core/tests/test_kg_rebuild_deterministic.py",
+          "line": 1
+        },
+        {
+          "path": "okto_labs_pulse_core/tests/test_kg_rebuild_generation.py",
+          "line": 1
+        },
+        {
+          "path": "okto_labs_pulse_core/tests/test_kg_rebuild_preflight.py",
+          "line": 1
+        },
+        {
+          "path": "okto_labs_pulse_core/tests/test_kg_rebuild_report.py",
+          "line": 1
+        },
+        {
+          "path": "okto_labs_pulse_core/tests/test_kg_rebuild_service.py",
+          "line": 1
+        },
+        {
+          "path": "okto_labs_pulse_core/tests/test_kg_rebuild_service.py",
+          "line": 3145
+        },
+        {
+          "path": "okto_labs_pulse_core/tests/test_kg_rebuild_service.py",
+          "line": 3147
+        },
+        {
+          "path": "okto_labs_pulse_core/tests/test_kg_rebuild_service.py",
+          "line": 4590
+        },
+        {
+          "path": "okto_labs_pulse_core/tests/test_kg_rebuild_service.py",
+          "line": 5052
+        },
+        {
+          "path": "okto_labs_pulse_core/tests/test_kg_rebuild_sources.py",
+          "line": 1
+        },
+        {
+          "path": "okto_labs_pulse_core/tests/test_kg_rest_cognitive_pending.py",
+          "line": 23
+        },
+        {
+          "path": "okto_labs_pulse_core/tests/test_kg_rest_cognitive_pending.py",
+          "line": 170
+        },
+        {
+          "path": "okto_labs_pulse_core/tests/test_kg_rest_cognitive_pending.py",
+          "line": 175
+        }
+      ]
+    },
+    {
+      "key": "KG:KG-03",
+      "document": "COMPLEMENTO_KG_RASTREABILIDADE.md",
+      "line": 614,
+      "id": "KG-03",
+      "normative_text": "| KG-03 | Reordenar AC/FR/cenário sem mudar ID | Mesma identidade e relação; nenhuma associação por índice passa a outro item. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": [
+        {
+          "path": "okto_labs_pulse_core/tests/test_kg_03a_2_badge_decision_eligibility.py",
+          "line": 14
+        },
+        {
+          "path": "okto_labs_pulse_core/tests/test_kg_03a_2_badge_decision_eligibility.py",
+          "line": 105
+        },
+        {
+          "path": "okto_labs_pulse_core/tests/test_kg_03a_2_badge_decision_eligibility.py",
+          "line": 298
+        },
+        {
+          "path": "okto_labs_pulse_core/tests/test_kg_03a_2_badge_decision_eligibility.py",
+          "line": 305
+        },
+        {
+          "path": "okto_labs_pulse_core/tests/test_kg_03a_3_outcome_validator.py",
+          "line": 411
+        },
+        {
+          "path": "okto_labs_pulse_core/tests/test_kg_cognitive_badge_resolver.py",
+          "line": 1
+        },
+        {
+          "path": "okto_labs_pulse_core/tests/test_kg_cognitive_badge_resolver.py",
+          "line": 643
+        },
+        {
+          "path": "okto_labs_pulse_core/tests/test_kg_cognitive_items.py",
+          "line": 1
+        },
+        {
+          "path": "okto_labs_pulse_core/tests/test_kg_cognitive_items.py",
+          "line": 170
+        },
+        {
+          "path": "okto_labs_pulse_core/tests/test_kg_cognitive_items.py",
+          "line": 470
+        },
+        {
+          "path": "okto_labs_pulse_core/tests/test_kg_cognitive_items.py",
+          "line": 692
+        },
+        {
+          "path": "okto_labs_pulse_core/tests/test_kg_cognitive_items.py",
+          "line": 714
+        },
+        {
+          "path": "okto_labs_pulse_core/tests/test_kg_cognitive_items.py",
+          "line": 722
+        },
+        {
+          "path": "okto_labs_pulse_core/tests/test_kg_cognitive_items.py",
+          "line": 741
+        },
+        {
+          "path": "okto_labs_pulse_core/tests/test_kg_mcp_list_cognitive_pending_items.py",
+          "line": 1
+        },
+        {
+          "path": "okto_labs_pulse_core/tests/test_kg_mcp_update_cognitive_pending_item.py",
+          "line": 1
+        },
+        {
+          "path": "okto_labs_pulse_core/tests/test_kg_mcp_update_cognitive_pending_item.py",
+          "line": 639
+        },
+        {
+          "path": "okto_labs_pulse_core/tests/test_kg_refinement_cognitive_guard.py",
+          "line": 1
+        },
+        {
+          "path": "okto_labs_pulse_core/tests/test_kg_refinement_cognitive_guard.py",
+          "line": 475
+        },
+        {
+          "path": "okto_labs_pulse_core/tests/test_kg_rest_cognitive_pending.py",
+          "line": 1
+        },
+        {
+          "path": "okto_labs_pulse_community/frontend/src/components/help/__tests__/HelpPanel.maintenanceCli.test.tsx",
+          "line": 22
+        },
+        {
+          "path": "okto_labs_pulse_community/frontend/src/components/knowledge/__tests__/CognitivePendingBadge.test.tsx",
+          "line": 2
+        },
+        {
+          "path": "okto_labs_pulse_community/frontend/src/components/knowledge/__tests__/KGHealthCognitivePendingPanel.test.tsx",
+          "line": 2
+        }
+      ]
+    },
+    {
+      "key": "KG:KG-04",
+      "document": "COMPLEMENTO_KG_RASTREABILIDADE.md",
+      "line": 615,
+      "id": "KG-04",
+      "normative_text": "| KG-04 | Task, Test e Bug vinculados a filhos | Tipos corretos e todas as relações previstas, sem Bug falso como Entity. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "KG:KG-05",
+      "document": "COMPLEMENTO_KG_RASTREABILIDADE.md",
+      "line": 616,
+      "id": "KG-05",
+      "normative_text": "| KG-05 | Duas fontes declaram o mesmo card→cenário | Uma relação lógica, múltipla proveniência quando necessária, sem dupla contagem. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "KG:KG-06",
+      "document": "COMPLEMENTO_KG_RASTREABILIDADE.md",
+      "line": 617,
+      "id": "KG-06",
+      "normative_text": "| KG-06 | Fontes relacionais divergem | Divergência explícita e mesma autoridade do gate; união não fabrica cobertura aprovada. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "KG:KG-07",
+      "document": "COMPLEMENTO_KG_RASTREABILIDADE.md",
+      "line": 618,
+      "id": "KG-07",
+      "normative_text": "| KG-07 | Dependência entre cards, inclusive tipos admitidos pelo domínio | Direção correta, par de schema válido e ref de origem preservada. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "KG:KG-08",
+      "document": "COMPLEMENTO_KG_RASTREABILIDADE.md",
+      "line": 619,
+      "id": "KG-08",
+      "normative_text": "| KG-08 | Dependência cíclica ou cross-board não autorizada | Recusa pelo domínio; grafo não contorna validação. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "KG:KG-09",
+      "document": "COMPLEMENTO_KG_RASTREABILIDADE.md",
+      "line": 620,
+      "id": "KG-09",
+      "normative_text": "| KG-09 | Bug ligado a origem que toca só parte da Spec | `violates` restrito ao proxy definido, 0.8 e identificação de inferência. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "KG:KG-10",
+      "document": "COMPLEMENTO_KG_RASTREABILIDADE.md",
+      "line": 621,
+      "id": "KG-10",
+      "normative_text": "| KG-10 | Decision sem vínculos e com arestas antigas de coocorrência | Não emitir fan-out; retirar apenas coocorrência possuída; preservar história/proveniência. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "KG:KG-11",
+      "document": "COMPLEMENTO_KG_RASTREABILIDADE.md",
+      "line": 622,
+      "id": "KG-11",
+      "normative_text": "| KG-11 | Superseder/reabrir/revisar Decision | Cadeia explícita, predecessor distinguível de atual e replay idempotente. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "KG:KG-12",
+      "document": "COMPLEMENTO_KG_RASTREABILIDADE.md",
+      "line": 623,
+      "id": "KG-12",
+      "normative_text": "| KG-12 | BR→FR, OR→IR, IR→FR e API→BR | Cada fonte projetada na direção/par corretos; remoção refletida. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "KG:KG-13",
+      "document": "COMPLEMENTO_KG_RASTREABILIDADE.md",
+      "line": 624,
+      "id": "KG-13",
+      "normative_text": "| KG-13 | Rebuild/replay após passagem de dias | `source_created_at` não vira hora da projeção; status/severidade não viram subtype. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": [
+        {
+          "path": "okto_labs_pulse_core/tests/test_kg_source_projection_metadata.py",
+          "line": 1
+        }
+      ]
+    },
+    {
+      "key": "KG:KG-14",
+      "document": "COMPLEMENTO_KG_RASTREABILIDADE.md",
+      "line": 625,
+      "id": "KG-14",
+      "normative_text": "| KG-14 | Bug done→reaberto→done | `resolved_at` limpo ao reabrir, último done correto; história anterior preservada. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": [
+        {
+          "path": "okto_labs_pulse_community/tests/test_card_resolution_history.py",
+          "line": 1
+        }
+      ]
+    },
+    {
+      "key": "KG:KG-15",
+      "document": "COMPLEMENTO_KG_RASTREABILIDADE.md",
+      "line": 626,
+      "id": "KG-15",
+      "normative_text": "| KG-15 | Filho sem data própria verificável | NULL/limitação ou proveniência parental explícita; nenhuma data inventada como do filho. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "KG:KG-16",
+      "document": "COMPLEMENTO_KG_RASTREABILIDADE.md",
+      "line": 627,
+      "id": "KG-16",
+      "normative_text": "| KG-16 | Remover cada família de relação | Aresta obsoleta ausente; anti-join depois da convergência é correto. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "KG:KG-17",
+      "document": "COMPLEMENTO_KG_RASTREABILIDADE.md",
+      "line": 628,
+      "id": "KG-17",
+      "normative_text": "| KG-17 | Fonte incompleta ou provider indisponível durante diff | Não fazer prune como se o conjunto fosse vazio; checkpoint não avança falsamente. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "KG:KG-18",
+      "document": "COMPLEMENTO_KG_RASTREABILIDADE.md",
+      "line": 629,
+      "id": "KG-18",
+      "normative_text": "| KG-18 | Dois donos com arestas próximas/Code Evidence | Limpeza de um não apaga o fato de outro. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "KG:KG-19",
+      "document": "COMPLEMENTO_KG_RASTREABILIDADE.md",
+      "line": 630,
+      "id": "KG-19",
+      "normative_text": "| KG-19 | Crash depois de graph commit e antes de ACK | Replay converge sem duplicação e sem apagar relações novas. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "KG:KG-20",
+      "document": "COMPLEMENTO_KG_RASTREABILIDADE.md",
+      "line": 631,
+      "id": "KG-20",
+      "normative_text": "| KG-20 | Evento antigo chega após revisão nova | Estado anterior não sobrescreve projeção mais recente. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "KG:KG-21",
+      "document": "COMPLEMENTO_KG_RASTREABILIDADE.md",
+      "line": 632,
+      "id": "KG-21",
+      "normative_text": "| KG-21 | Remover último link/trocar Spec | Donos antigos e novos atualizados; sem resíduo na origem antiga. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "KG:KG-22",
+      "document": "COMPLEMENTO_KG_RASTREABILIDADE.md",
+      "line": 633,
+      "id": "KG-22",
+      "normative_text": "| KG-22 | Alterar vínculos do card de origem de um bug | Proxies de todos os bugs afetados são recalculados sem sweep do board inteiro. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "KG:KG-23",
+      "document": "COMPLEMENTO_KG_RASTREABILIDADE.md",
+      "line": 634,
+      "id": "KG-23",
+      "normative_text": "| KG-23 | Mudança de identidade/generation do endpoint | Consumidores convergem por identidade verificada, sem endpoint órfão ou placeholder. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "KG:KG-24",
+      "document": "COMPLEMENTO_KG_RASTREABILIDADE.md",
+      "line": 635,
+      "id": "KG-24",
+      "normative_text": "| KG-24 | Incremental e reconstrução do mesmo snapshot | Mesmos conjuntos de relações/proveniência/maturidade, não só mesma contagem. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "KG:KG-25",
+      "document": "COMPLEMENTO_KG_RASTREABILIDADE.md",
+      "line": 636,
+      "id": "KG-25",
+      "normative_text": "| KG-25 | Census zero-órfão | Guard válido e conteúdo preservado; apagar nós ou inventar belongs_to não satisfaz. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "KG:KG-26",
+      "document": "COMPLEMENTO_KG_RASTREABILIDADE.md",
+      "line": 637,
+      "id": "KG-26",
+      "normative_text": "| KG-26 | Endpoint válido aguarda projeção | Retry interno, sem pergunta ao usuário, task de manutenção ou gate de backlog. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "KG:KG-27",
+      "document": "COMPLEMENTO_KG_RASTREABILIDADE.md",
+      "line": 638,
+      "id": "KG-27",
+      "normative_text": "| KG-27 | Dois destinos inválidos no mesmo campo/dono | Duas pendências distinguíveis, reavaliação idempotente e sem crescimento por replay. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "KG:KG-28",
+      "document": "COMPLEMENTO_KG_RASTREABILIDADE.md",
+      "line": 639,
+      "id": "KG-28",
+      "normative_text": "| KG-28 | Missing-link semanticamente exigido, advisory versus blocking | Aviso ou bloqueio conforme policy atual; nenhum efeito de modo default indevido. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "KG:KG-29",
+      "document": "COMPLEMENTO_KG_RASTREABILIDADE.md",
+      "line": 640,
+      "id": "KG-29",
+      "normative_text": "| KG-29 | Associação opcional ausente ou removida intencionalmente | Não criar pendência infinita; não reabrir item sem obrigação remanescente. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "KG:KG-30",
+      "document": "COMPLEMENTO_KG_RASTREABILIDADE.md",
+      "line": 641,
+      "id": "KG-30",
+      "normative_text": "| KG-30 | Fallback interpretativo sem vínculo normativo | Navegação rotulada possível quando suportada; não satisfaz cobertura/entrega/gate. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "KG:KG-31",
+      "document": "COMPLEMENTO_KG_RASTREABILIDADE.md",
+      "line": 642,
+      "id": "KG-31",
+      "normative_text": "| KG-31 | Tentativa de editar aresta/forjar `system:` por cliente | Recusa; sem rota genérica para repair ou escrita determinística privilegiada. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "KG:KG-32",
+      "document": "COMPLEMENTO_KG_RASTREABILIDADE.md",
+      "line": 643,
+      "id": "KG-32",
+      "normative_text": "| KG-32 | Learning blocking com Bug ainda não canônico | Captura durável pode anteceder done; fechamento permitido só com provas/gates reais; materialização posterior sem ciclo. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "KG:KG-33",
+      "document": "COMPLEMENTO_KG_RASTREABILIDADE.md",
+      "line": 644,
+      "id": "KG-33",
+      "normative_text": "| KG-33 | Learning advisory ausente | Bug pode concluir se outros gates passam; aviso não vira obrigação mecânica. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "KG:KG-34",
+      "document": "COMPLEMENTO_KG_RASTREABILIDADE.md",
+      "line": 645,
+      "id": "KG-34",
+      "normative_text": "| KG-34 | Executor sem permissão cognitiva ou de avaliar | Operação composta não concede permissão nem ignora parte silenciosamente; fronteiras preservadas. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "KG:KG-35",
+      "document": "COMPLEMENTO_KG_RASTREABILIDADE.md",
+      "line": 646,
+      "id": "KG-35",
+      "normative_text": "| KG-35 | Reuso de Learning sugerido por similaridade alta | Sem anexo automático por score; intenção autorizada e evidência antes de novo vínculo. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "KG:KG-36",
+      "document": "COMPLEMENTO_KG_RASTREABILIDADE.md",
+      "line": 647,
+      "id": "KG-36",
+      "normative_text": "| KG-36 | Supersedência com aplicabilidade mais estreita | Não herdar todas as validações antigas; manter história e associações válidas. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "KG:KG-37",
+      "document": "COMPLEMENTO_KG_RASTREABILIDADE.md",
+      "line": 648,
+      "id": "KG-37",
+      "normative_text": "| KG-37 | Holds R7 técnicos e substantivos coexistem | Apenas causa técnica demonstrada é liberada automaticamente. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "KG:KG-38",
+      "document": "COMPLEMENTO_KG_RASTREABILIDADE.md",
+      "line": 649,
+      "id": "KG-38",
+      "normative_text": "| KG-38 | Dívida histórica com/sem fonte original | Reconciliar a comprovada; sem fonte, registrar limitação sem inventar Learning retrospectiva. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "KG:KG-39",
+      "document": "COMPLEMENTO_KG_RASTREABILIDADE.md",
+      "line": 650,
+      "id": "KG-39",
+      "normative_text": "| KG-39 | Sem configuração de LLM no servidor | Fluxo de produto funciona; nenhum provider LLM é chamado/ativado ou health marca ausência como falha. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "KG:KG-40",
+      "document": "COMPLEMENTO_KG_RASTREABILIDADE.md",
+      "line": 651,
+      "id": "KG-40",
+      "normative_text": "| KG-40 | Fila vazia, mas evento de projeção perdido | Resposta não prova completude por queue_depth=0; checkpoint detecta ou informa desconhecido. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "KG:KG-41",
+      "document": "COMPLEMENTO_KG_RASTREABILIDADE.md",
+      "line": 652,
+      "id": "KG-41",
+      "normative_text": "| KG-41 | Anti-join sobre elemento nem sequer projetado | Inventário do escopo detecta incompletude; não afirmar sem cobertura como fato definitivo. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "KG:KG-42",
+      "document": "COMPLEMENTO_KG_RASTREABILIDADE.md",
+      "line": 653,
+      "id": "KG-42",
+      "normative_text": "| KG-42 | Nova geração entre páginas | Cursor inválido ou snapshot preservado; sem mistura silenciosa de resultados. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "KG:KG-43",
+      "document": "COMPLEMENTO_KG_RASTREABILIDADE.md",
+      "line": 654,
+      "id": "KG-43",
+      "normative_text": "| KG-43 | Uma linha contém agregação enorme | Limite de arrays/payload aplicado; truncamento/continuação explícitos. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "KG:KG-44",
+      "document": "COMPLEMENTO_KG_RASTREABILIDADE.md",
+      "line": 655,
+      "id": "KG-44",
+      "normative_text": "| KG-44 | Consulta nativa ultrapassa prazo | Deadline/cancelamento ou isolamento comprovado; sem trabalho órfão acumulando recursos após timeout. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "KG:KG-45",
+      "document": "COMPLEMENTO_KG_RASTREABILIDADE.md",
+      "line": 656,
+      "id": "KG-45",
+      "normative_text": "| KG-45 | Mais que antigo limite de consultas, runtime saudável | Sem quota por contagem; backpressure concorrente e timeouts continuam operando. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "KG:KG-46",
+      "document": "COMPLEMENTO_KG_RASTREABILIDADE.md",
+      "line": 657,
+      "id": "KG-46",
+      "normative_text": "| KG-46 | Credencial sem Code Traceability faz consulta agregada | Não vaza código, IDs, counts ou existência proibidos. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "KG:KG-47",
+      "document": "COMPLEMENTO_KG_RASTREABILIDADE.md",
+      "line": 658,
+      "id": "KG-47",
+      "normative_text": "| KG-47 | `graph_layer=all` e acesso restrito | Todas as camadas autorizadas, não todos os boards ou fatos ocultos. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "KG:KG-48",
+      "document": "COMPLEMENTO_KG_RASTREABILIDADE.md",
+      "line": 659,
+      "id": "KG-48",
+      "normative_text": "| KG-48 | Um agente com permissões suficientes | Pode usar todas as capacidades governadas sem segundo agente imposto. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "KG:KG-49",
+      "document": "COMPLEMENTO_KG_RASTREABILIDADE.md",
+      "line": 660,
+      "id": "KG-49",
+      "normative_text": "| KG-49 | Vários agentes/sessões diferentes | Contexto suficiente, avaliação independente quando configurada, soma dos custos medida. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "KG:KG-50",
+      "document": "COMPLEMENTO_KG_RASTREABILIDADE.md",
+      "line": 661,
+      "id": "KG-50",
+      "normative_text": "| KG-50 | Health repetido/refresh/UI aberta | Nenhum job, reparo, alteração semântica, score, schema, geração ou fila causado pela leitura. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "KG:KG-51",
+      "document": "COMPLEMENTO_KG_RASTREABILIDADE.md",
+      "line": 662,
+      "id": "KG-51",
+      "normative_text": "| KG-51 | Chamadas antigas de manutenção via MCP/REST/UI/CLI | Ausentes ou tombstone sem execução; nenhum caminho alternativo. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "KG:KG-52",
+      "document": "COMPLEMENTO_KG_RASTREABILIDADE.md",
+      "line": 663,
+      "id": "KG-52",
+      "normative_text": "| KG-52 | Fontes/queries/estado salvo com Sprint | Migração histórica preserva evidência; nenhum Sprint operacional reaparece; Q15 ajustado. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "KG:KG-53",
+      "document": "COMPLEMENTO_KG_RASTREABILIDADE.md",
+      "line": 664,
+      "id": "KG-53",
+      "normative_text": "| KG-53 | Upgrade combinado falha em diferentes etapas | Retomada/rollback preservam dados e par de binários compatível; sem downgrade isolado falso. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "KG:KG-54",
+      "document": "COMPLEMENTO_KG_RASTREABILIDADE.md",
+      "line": 665,
+      "id": "KG-54",
+      "normative_text": "| KG-54 | Schema alvo difere de outro 0.6.0 já existente | Conflito identificado; não sobrescrever fingerprint/versão em uso. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "KG:KG-55",
+      "document": "COMPLEMENTO_KG_RASTREABILIDADE.md",
+      "line": 666,
+      "id": "KG-55",
+      "normative_text": "| KG-55 | UI vazio/atrasado/erro/sem permissão/troca de board | Estados corretos, sem stale response cruzada ou ação de manutenção. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "KG:KG-56",
+      "document": "COMPLEMENTO_KG_RASTREABILIDADE.md",
+      "line": 667,
+      "id": "KG-56",
+      "normative_text": "| KG-56 | Fonte congelada com sugestão de vínculo | Não adotar normativamente via fallback; revisão/permissão de domínio mantidas. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "KG:KG-57",
+      "document": "COMPLEMENTO_KG_RASTREABILIDADE.md",
+      "line": 668,
+      "id": "KG-57",
+      "normative_text": "| KG-57 | Impacto alcança cenário não relacionado via mesmo card | Rotular potencial ou excluir da lista confirmada; mostrar caminho real. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "KG:KG-58",
+      "document": "COMPLEMENTO_KG_RASTREABILIDADE.md",
+      "line": 669,
+      "id": "KG-58",
+      "normative_text": "| KG-58 | Test Card vinculado, mas sem execução passing | Cobertura estrutural não é mostrada como teste aprovado; prova lida na fonte delimitada. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "KG:KG-59",
+      "document": "COMPLEMENTO_KG_RASTREABILIDADE.md",
+      "line": 670,
+      "id": "KG-59",
+      "normative_text": "| KG-59 | Bugs têm mesmo proxy e causas diferentes | Cluster por associação, sem alegação automática de causa comum. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "KG:KG-60",
+      "document": "COMPLEMENTO_KG_RASTREABILIDADE.md",
+      "line": 671,
+      "id": "KG-60",
+      "normative_text": "| KG-60 | Q12 com múltiplas atualizações/rebuild | Distinguir criação, última atualização e histórico; não inventar diff/as_of. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "KG:KG-61",
+      "document": "COMPLEMENTO_KG_RASTREABILIDADE.md",
+      "line": 672,
+      "id": "KG-61",
+      "normative_text": "| KG-61 | Amendment altera apenas parte da Spec | Não superseder a Spec inteira sem declaração normativa. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "KG:KG-62",
+      "document": "COMPLEMENTO_KG_RASTREABILIDADE.md",
+      "line": 673,
+      "id": "KG-62",
+      "normative_text": "| KG-62 | Linhagem/dependência excede três hops | Continuação ou parcial explícito; não declarar completa só por atingir depth=3. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "KG:KG-63",
+      "document": "COMPLEMENTO_KG_RASTREABILIDADE.md",
+      "line": 674,
+      "id": "KG-63",
+      "normative_text": "| KG-63 | Bug reaberto e ausência de histórico de incidentes | Duração nomeada corretamente; sem MTTR operacional fictício. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "KG:KG-64",
+      "document": "COMPLEMENTO_KG_RASTREABILIDADE.md",
+      "line": 675,
+      "id": "KG-64",
+      "normative_text": "| KG-64 | Benchmark antes/depois com mesmos fatos/atores | Economia real sem reduzir dados, cobertura, prova ou permissões do cenário. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "KG:KG-65",
+      "document": "COMPLEMENTO_KG_RASTREABILIDADE.md",
+      "line": 676,
+      "id": "KG-65",
+      "normative_text": "| KG-65 | Recursos, manifests e erros após pacote | Nenhuma URI/tool/remediação de manutenção ou Sprint removida é recomendada. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "KG:KG-66",
+      "document": "COMPLEMENTO_KG_RASTREABILIDADE.md",
+      "line": 677,
+      "id": "KG-66",
+      "normative_text": "| KG-66 | Instalação de wheels/build frontend do par exato | Mesmo contrato e comportamento comprovados fora do dev server. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "DEI:DEI-T01",
+      "document": "COMPLEMENTO_ENTREGA_INCREMENTAL.md",
+      "line": 608,
+      "id": "DEI-T01",
+      "normative_text": "| DEI-T01 | Um agente com todas as permissões e policy permitindo autoavaliação | Executa, registra progresso/provas e conclui via os gates normais; não exige segundo agente fictício. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "DEI:DEI-T02",
+      "document": "COMPLEMENTO_ENTREGA_INCREMENTAL.md",
+      "line": 609,
+      "id": "DEI-T02",
+      "normative_text": "| DEI-T02 | Um agente e policy exigindo independência | Pode registrar seu trabalho; não aprova a própria entrega nem recebe bypass por estar sozinho. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "DEI:DEI-T03",
+      "document": "COMPLEMENTO_ENTREGA_INCREMENTAL.md",
+      "line": 610,
+      "id": "DEI-T03",
+      "normative_text": "| DEI-T03 | Planejador sem permissão de execução | Não cria execution receipt ou binding por batch/alias/REST/move composto. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "DEI:DEI-T04",
+      "document": "COMPLEMENTO_ENTREGA_INCREMENTAL.md",
+      "line": 611,
+      "id": "DEI-T04",
+      "normative_text": "| DEI-T04 | Executor sem permissão de criar Target | Relata fatos permitidos; não cria/altera Target implicitamente. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "DEI:DEI-T05",
+      "document": "COMPLEMENTO_ENTREGA_INCREMENTAL.md",
+      "line": 612,
+      "id": "DEI-T05",
+      "normative_text": "| DEI-T05 | Testador sem permissão de implementation write | Registra teste no Test Card e associa provas autorizadas sem ganhar escrita no card de implementação. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "DEI:DEI-T06",
+      "document": "COMPLEMENTO_ENTREGA_INCREMENTAL.md",
+      "line": 613,
+      "id": "DEI-T06",
+      "normative_text": "| DEI-T06 | Payload forja ator/verified/current/gate_passed | Rejeitado antes de persistência; nenhuma flag confiável do cliente vira fato. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "DEI:DEI-T07",
+      "document": "COMPLEMENTO_ENTREGA_INCREMENTAL.md",
+      "line": 614,
+      "id": "DEI-T07",
+      "normative_text": "| DEI-T07 | Card/obrigação/receipt de outro board | Recusa sem vazamento em erro, resposta parcial, cache ou cursor. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "DEI:DEI-T08",
+      "document": "COMPLEMENTO_ENTREGA_INCREMENTAL.md",
+      "line": 615,
+      "id": "DEI-T08",
+      "normative_text": "| DEI-T08 | Card muda de Spec ou edição durante append | Conflito detectado; nenhum registro associado à origem errada. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "DEI:DEI-T09",
+      "document": "COMPLEMENTO_ENTREGA_INCREMENTAL.md",
+      "line": 616,
+      "id": "DEI-T09",
+      "normative_text": "| DEI-T09 | Checkpoint em in_progress com worktree dirty | Salvo como progresso sem exigir commit; não recebe crédito de implementação. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "DEI:DEI-T10",
+      "document": "COMPLEMENTO_ENTREGA_INCREMENTAL.md",
+      "line": 617,
+      "id": "DEI-T10",
+      "normative_text": "| DEI-T10 | Progresso sem revision/fingerprint conhecido | Informação desconhecida aparece explicitamente; nenhum hash ou locator fabricado. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "DEI:DEI-T11",
+      "document": "COMPLEMENTO_ENTREGA_INCREMENTAL.md",
+      "line": 618,
+      "id": "DEI-T11",
+      "normative_text": "| DEI-T11 | Implementação limpa admitida antes de Done | Registro aceito; pronto para gate quando os demais requisitos passam; rollup final ainda respeita estado. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "DEI:DEI-T12",
+      "document": "COMPLEMENTO_ENTREGA_INCREMENTAL.md",
+      "line": 619,
+      "id": "DEI-T12",
+      "normative_text": "| DEI-T12 | Proof implementation com receipt inválido/revogado | Lote falha; não degrada silenciosamente para progresso. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "DEI:DEI-T13",
+      "document": "COMPLEMENTO_ENTREGA_INCREMENTAL.md",
+      "line": 620,
+      "id": "DEI-T13",
+      "normative_text": "| DEI-T13 | Uma implementação referencia múltiplas obrigações | Relações exatas registradas uma vez; não exige cópia de prova por obrigação. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "DEI:DEI-T14",
+      "document": "COMPLEMENTO_ENTREGA_INCREMENTAL.md",
+      "line": 621,
+      "id": "DEI-T14",
+      "normative_text": "| DEI-T14 | FR parcialmente e TR completamente atendida | Bindings mantêm contribuições diferentes; FR não é marcada completa por associação ao mesmo receipt. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "DEI:DEI-T15",
+      "document": "COMPLEMENTO_ENTREGA_INCREMENTAL.md",
+      "line": 622,
+      "id": "DEI-T15",
+      "normative_text": "| DEI-T15 | Duas entradas partial na mesma FR | Não soma a 100%; exige declaração consolidada/prova suficiente para a contribuição. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "DEI:DEI-T16",
+      "document": "COMPLEMENTO_ENTREGA_INCREMENTAL.md",
+      "line": 623,
+      "id": "DEI-T16",
+      "normative_text": "| DEI-T16 | Vários Targets e obrigações no lote | Somente relações declaradas/deriváveis legitimamente; não há produto cartesiano. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "DEI:DEI-T17",
+      "document": "COMPLEMENTO_ENTREGA_INCREMENTAL.md",
+      "line": 624,
+      "id": "DEI-T17",
+      "normative_text": "| DEI-T17 | Receipt pré-Target ou selector scope antigo | Não resolve nem executa Target criado depois; erro acionável. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "DEI:DEI-T18",
+      "document": "COMPLEMENTO_ENTREGA_INCREMENTAL.md",
+      "line": 625,
+      "id": "DEI-T18",
+      "normative_text": "| DEI-T18 | Vários Targets do mesmo snapshot aceito | Reusa a observação válida; um challenge não é consumido repetidamente por item. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "DEI:DEI-T19",
+      "document": "COMPLEMENTO_ENTREGA_INCREMENTAL.md",
+      "line": 626,
+      "id": "DEI-T19",
+      "normative_text": "| DEI-T19 | Mudança real de source ou Target revision | Provas afetadas tornam-se desatualizadas; não há reuso só porque o ID do card é o mesmo. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "DEI:DEI-T20",
+      "document": "COMPLEMENTO_ENTREGA_INCREMENTAL.md",
+      "line": 627,
+      "id": "DEI-T20",
+      "normative_text": "| DEI-T20 | Nota sem mudança de código ou escopo | Não invalida Spec/Target/prova inteira por timestamp. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "DEI:DEI-T21",
+      "document": "COMPLEMENTO_ENTREGA_INCREMENTAL.md",
+      "line": 628,
+      "id": "DEI-T21",
+      "normative_text": "| DEI-T21 | Checkpoint dirty após prova E1 do mesmo Target | E1 permanece histórico, mas não comprova o estado atual alterado sem nova base admissível. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "DEI:DEI-T22",
+      "document": "COMPLEMENTO_ENTREGA_INCREMENTAL.md",
+      "line": 629,
+      "id": "DEI-T22",
+      "normative_text": "| DEI-T22 | E2 substitui E1 do mesmo Target | Obrigações/testes não são transferidos cegamente; seleção atual não conta E1 como nova entrega. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "DEI:DEI-T23",
+      "document": "COMPLEMENTO_ENTREGA_INCREMENTAL.md",
+      "line": 630,
+      "id": "DEI-T23",
+      "normative_text": "| DEI-T23 | Prova de outro Target que não mudou | Não exige novo registro/reteste apenas pela atividade independente, respeitando integração e base. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "DEI:DEI-T24",
+      "document": "COMPLEMENTO_ENTREGA_INCREMENTAL.md",
+      "line": 631,
+      "id": "DEI-T24",
+      "normative_text": "| DEI-T24 | Branches/commits divergentes ou revert | Não usa ordenação lexical ou antiguidade do hash como prova de ancestralidade. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "DEI:DEI-T25",
+      "document": "COMPLEMENTO_ENTREGA_INCREMENTAL.md",
+      "line": 632,
+      "id": "DEI-T25",
+      "normative_text": "| DEI-T25 | Teste passed autenticado enquanto Test Card executa | Pode ser preservado antecipadamente; crédito final fica condicionado à elegibilidade, sem novo preenchimento obrigatório. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": [
+        {
+          "path": "okto_labs_pulse_community/tests/test_delivery_incremental_tests.py",
+          "line": 1
+        }
+      ]
+    },
+    {
+      "key": "DEI:DEI-T26",
+      "document": "COMPLEMENTO_ENTREGA_INCREMENTAL.md",
+      "line": 633,
+      "id": "DEI-T26",
+      "normative_text": "| DEI-T26 | Teste failed durante execução | Falha é registrada e permanece visível; não vira prova passing nem é omitida pela agregação. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "DEI:DEI-T27",
+      "document": "COMPLEMENTO_ENTREGA_INCREMENTAL.md",
+      "line": 634,
+      "id": "DEI-T27",
+      "normative_text": "| DEI-T27 | Nova falha após teste passing relevante | O teste antigo não mantém cobertura atual indevida. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "DEI:DEI-T28",
+      "document": "COMPLEMENTO_ENTREGA_INCREMENTAL.md",
+      "line": 635,
+      "id": "DEI-T28",
+      "normative_text": "| DEI-T28 | Mesmo cenário mas implementação nova | Teste que referencia E1 não cobre E2 automaticamente. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "DEI:DEI-T29",
+      "document": "COMPLEMENTO_ENTREGA_INCREMENTAL.md",
+      "line": 636,
+      "id": "DEI-T29",
+      "normative_text": "| DEI-T29 | Registro de execução de teste sem assinatura válida | Pode haver relato de tentativa em progress; não recebe crédito de verificação. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "DEI:DEI-T30",
+      "document": "COMPLEMENTO_ENTREGA_INCREMENTAL.md",
+      "line": 637,
+      "id": "DEI-T30",
+      "normative_text": "| DEI-T30 | Normal card afirma ter testado | Claim não substitui Test Card e evidência autenticada. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "DEI:DEI-T31",
+      "document": "COMPLEMENTO_ENTREGA_INCREMENTAL.md",
+      "line": 638,
+      "id": "DEI-T31",
+      "normative_text": "| DEI-T31 | Cobertura conjunta por vários Test Cards | Pode cobrir o conjunto atual de implementações, sem exigir duplicação nem aceitar lacunas. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "DEI:DEI-T32",
+      "document": "COMPLEMENTO_ENTREGA_INCREMENTAL.md",
+      "line": 639,
+      "id": "DEI-T32",
+      "normative_text": "| DEI-T32 | not_touched/superseded em Target | Disposição é preservada conforme contrato; não inventa código entregue para Delivery Evidence. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "DEI:DEI-T33",
+      "document": "COMPLEMENTO_ENTREGA_INCREMENTAL.md",
+      "line": 640,
+      "id": "DEI-T33",
+      "normative_text": "| DEI-T33 | Um registro e um lote de tamanho 1 | Mesma semântica, validação e resultado; não são dois caminhos de produto. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "DEI:DEI-T34",
+      "document": "COMPLEMENTO_ENTREGA_INCREMENTAL.md",
+      "line": 641,
+      "id": "DEI-T34",
+      "normative_text": "| DEI-T34 | Um item inválido em lote com itens válidos | Rollback integral de ledger, receipts e eventos; nenhum sucesso parcial mascarado. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "DEI:DEI-T35",
+      "document": "COMPLEMENTO_ENTREGA_INCREMENTAL.md",
+      "line": 642,
+      "id": "DEI-T35",
+      "normative_text": "| DEI-T35 | Lote excede limite de bytes/itens/refs | Recusa antes de efeitos; teto é agregado, não multiplicado por item. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "DEI:DEI-T36",
+      "document": "COMPLEMENTO_ENTREGA_INCREMENTAL.md",
+      "line": 643,
+      "id": "DEI-T36",
+      "normative_text": "| DEI-T36 | IDs locais repetidos/refs inexistentes | Schema/associação recusados com erro delimitado, sem ambiguidade de resolução. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "DEI:DEI-T37",
+      "document": "COMPLEMENTO_ENTREGA_INCREMENTAL.md",
+      "line": 644,
+      "id": "DEI-T37",
+      "normative_text": "| DEI-T37 | Retry idêntico após timeout com commit | Mesmos IDs e resultado de operação; não duplica evento, receipt ou declaração. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "DEI:DEI-T38",
+      "document": "COMPLEMENTO_ENTREGA_INCREMENTAL.md",
+      "line": 645,
+      "id": "DEI-T38",
+      "normative_text": "| DEI-T38 | Mesma chave com payload diferente | Conflito explícito; não sobrescreve nem funde dados. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "DEI:DEI-T39",
+      "document": "COMPLEMENTO_ENTREGA_INCREMENTAL.md",
+      "line": 646,
+      "id": "DEI-T39",
+      "normative_text": "| DEI-T39 | Duas sessões appending na mesma revisão | Uma ordenação/fence confiável; a outra recebe conflito útil ou revalidação prevista, sem lost update. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "DEI:DEI-T40",
+      "document": "COMPLEMENTO_ENTREGA_INCREMENTAL.md",
+      "line": 647,
+      "id": "DEI-T40",
+      "normative_text": "| DEI-T40 | Nova evidência enquanto o relatório é submetido | Snapshot submetido é íntegro; conflito ou revalidação, nunca mistura silenciosa. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "DEI:DEI-T41",
+      "document": "COMPLEMENTO_ENTREGA_INCREMENTAL.md",
+      "line": 648,
+      "id": "DEI-T41",
+      "normative_text": "| DEI-T41 | Estado validation/rejected e tentativa de bypass pelo append | Guard vigente preservado; registrar progresso não abre retrabalho. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "DEI:DEI-T42",
+      "document": "COMPLEMENTO_ENTREGA_INCREMENTAL.md",
+      "line": 649,
+      "id": "DEI-T42",
+      "normative_text": "| DEI-T42 | Reabertura legítima para retrabalho | Histórico permanece; novas provas/versões são distintas e reavaliadas. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "DEI:DEI-T43",
+      "document": "COMPLEMENTO_ENTREGA_INCREMENTAL.md",
+      "line": 650,
+      "id": "DEI-T43",
+      "normative_text": "| DEI-T43 | Novo agente B retoma registro de A | Autoria é preservada; B observa seu ambiente e não se apropria do receipt de A. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "DEI:DEI-T44",
+      "document": "COMPLEMENTO_ENTREGA_INCREMENTAL.md",
+      "line": 651,
+      "id": "DEI-T44",
+      "normative_text": "| DEI-T44 | Checkout compartilhado e compatível | Resume snapshot fornece contexto suficiente até o último marco durável, sem reread integral obrigatório do histórico. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "DEI:DEI-T45",
+      "document": "COMPLEMENTO_ENTREGA_INCREMENTAL.md",
+      "line": 652,
+      "id": "DEI-T45",
+      "normative_text": "| DEI-T45 | Worktree inacessível/patch não disponível | Retomada informa limite; não promete reconstrução do código nem marca progresso como recuperado. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "DEI:DEI-T46",
+      "document": "COMPLEMENTO_ENTREGA_INCREMENTAL.md",
+      "line": 653,
+      "id": "DEI-T46",
+      "normative_text": "| DEI-T46 | Último checkpoint curto depende de anteriores | Visão acumulada mantém todos os fatos atuais relevantes, não só a última linha. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "DEI:DEI-T47",
+      "document": "COMPLEMENTO_ENTREGA_INCREMENTAL.md",
+      "line": 654,
+      "id": "DEI-T47",
+      "normative_text": "| DEI-T47 | Queda antes do append ser confirmado | Limite de recuperação é explicitado; retry trata outcome desconhecido sem duplicação. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "DEI:DEI-T48",
+      "document": "COMPLEMENTO_ENTREGA_INCREMENTAL.md",
+      "line": 655,
+      "id": "DEI-T48",
+      "normative_text": "| DEI-T48 | create→delete, rename encadeado, mesmo path em dois repos | Impacto histórico e líquido são distintos; agregação não inventa alteração final. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "DEI:DEI-T49",
+      "document": "COMPLEMENTO_ENTREGA_INCREMENTAL.md",
+      "line": 656,
+      "id": "DEI-T49",
+      "normative_text": "| DEI-T49 | Impact delta conflita com receipt | Erro/achado ou reconciliação explícita; não prevalece silenciosamente um dos valores. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "DEI:DEI-T50",
+      "document": "COMPLEMENTO_ENTREGA_INCREMENTAL.md",
+      "line": 657,
+      "id": "DEI-T50",
+      "normative_text": "| DEI-T50 | Impacto fora do plano | Fato pode ser registrado dentro da autoridade; desvio permanece visível e não é aprovado implicitamente. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "DEI:DEI-T51",
+      "document": "COMPLEMENTO_ENTREGA_INCREMENTAL.md",
+      "line": 658,
+      "id": "DEI-T51",
+      "normative_text": "| DEI-T51 | impact_evidence_mode require sem bloco reenviado no final | Agregado válido e selado atende à exigência; vazio/ambíguo/stale ainda não atende. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "DEI:DEI-T52",
+      "document": "COMPLEMENTO_ENTREGA_INCREMENTAL.md",
+      "line": 659,
+      "id": "DEI-T52",
+      "normative_text": "| DEI-T52 | Campo guideline_impact_evidence confundido com impacto de task | Famílias e critérios permanecem distintos; uma não satisfaz a outra. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "DEI:DEI-T53",
+      "document": "COMPLEMENTO_ENTREGA_INCREMENTAL.md",
+      "line": 660,
+      "id": "DEI-T53",
+      "normative_text": "| DEI-T53 | REST antigo recebe implementation/test | Encaminha corretamente ou recusa contrato removido; nunca aceita prova invisível ao rollup. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": [
+        {
+          "path": "okto_labs_pulse_core/tests/test_delivery_evidence_contract.py",
+          "line": 82
+        },
+        {
+          "path": "okto_labs_pulse_community/tests/test_delivery_evidence_integration.py",
+          "line": 554
+        },
+        {
+          "path": "okto_labs_pulse_community/tests/test_delivery_evidence_integration.py",
+          "line": 634
+        }
+      ]
+    },
+    {
+      "key": "DEI:DEI-T54",
+      "document": "COMPLEMENTO_ENTREGA_INCREMENTAL.md",
+      "line": 661,
+      "id": "DEI-T54",
+      "normative_text": "| DEI-T54 | Migração com registros nos dois ledgers e Test IDs vinculados | Mantém IDs/proveniência e vínculos corretos; nenhuma evidência duplica crédito. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "DEI:DEI-T55",
+      "document": "COMPLEMENTO_ENTREGA_INCREMENTAL.md",
+      "line": 662,
+      "id": "DEI-T55",
+      "normative_text": "| DEI-T55 | Impacto histórico sem receipt técnico | Permanece claim legacy, não vira prova autenticada retroativa. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "DEI:DEI-T56",
+      "document": "COMPLEMENTO_ENTREGA_INCREMENTAL.md",
+      "line": 663,
+      "id": "DEI-T56",
+      "normative_text": "| DEI-T56 | Registro antigo sem partial/complete | Mantém veredito de compatibilidade testado e transparência de origem; não forja declaração do autor. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "DEI:DEI-T57",
+      "document": "COMPLEMENTO_ENTREGA_INCREMENTAL.md",
+      "line": 664,
+      "id": "DEI-T57",
+      "normative_text": "| DEI-T57 | Descrição/details muda em card fallback | Proteção semântica é caracterizada; alteração material não usa prova de outro escopo por coincidência do título. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "DEI:DEI-T58",
+      "document": "COMPLEMENTO_ENTREGA_INCREMENTAL.md",
+      "line": 665,
+      "id": "DEI-T58",
+      "normative_text": "| DEI-T58 | Waiver/revoke e skip/advisory/blocking | Mesma autoridade e postura; resultado factual não é falsificado para aparentar cobertura. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "DEI:DEI-T59",
+      "document": "COMPLEMENTO_ENTREGA_INCREMENTAL.md",
+      "line": 666,
+      "id": "DEI-T59",
+      "normative_text": "| DEI-T59 | Schema novo em instalação limpa e upgrade repetido | Converge de forma idempotente, com rollback ensaiado em cópia descartável. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "DEI:DEI-T60",
+      "document": "COMPLEMENTO_ENTREGA_INCREMENTAL.md",
+      "line": 667,
+      "id": "DEI-T60",
+      "normative_text": "| DEI-T60 | Progresso com KG indisponível | Persistência/retomada relacional funcionam; nenhuma chamada pública de reparo é necessária. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "DEI:DEI-T61",
+      "document": "COMPLEMENTO_ENTREGA_INCREMENTAL.md",
+      "line": 668,
+      "id": "DEI-T61",
+      "normative_text": "| DEI-T61 | Projeção de ImpactEvidenceTest.scenario_id migra de fonte | Relações card→cenário existentes não somem nem duplicam; active sets convergem. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "DEI:DEI-T62",
+      "document": "COMPLEMENTO_ENTREGA_INCREMENTAL.md",
+      "line": 669,
+      "id": "DEI-T62",
+      "normative_text": "| DEI-T62 | Checkpoints em métricas/grafo | Não contam como entrega, teste passed, throughput ou conhecimento canônico entregue. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "DEI:DEI-T63",
+      "document": "COMPLEMENTO_ENTREGA_INCREMENTAL.md",
+      "line": 670,
+      "id": "DEI-T63",
+      "normative_text": "| DEI-T63 | Leitura resumida/paginada de grande histórico | Caps, totais, redactions, cursor e status desconhecido corretos; não despeja todos os receipts no contexto. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "DEI:DEI-T64",
+      "document": "COMPLEMENTO_ENTREGA_INCREMENTAL.md",
+      "line": 671,
+      "id": "DEI-T64",
+      "normative_text": "| DEI-T64 | End-to-end MCP/REST/UI e pacote instalado | Mesmo comportamento e instruções coerentes; schemas/resources/front-end empacotado correspondem ao par de SHAs testado. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "ARQVER:AC-ARQ-01",
+      "document": "ESPECIFICACAO_ARQUITETURA_VERIFICABILIDADE.md",
+      "line": 268,
+      "id": "AC-ARQ-01",
+      "normative_text": "**AC-ARQ-01 — verifica RF-ARQ-01.** **Dado** Um refinamento com dois Designs e uma Spec que adota apenas um deles. **Quando** A Spec é criada e seu contexto arquitetural é consultado. **Então** As interfaces com contrato do Design adotado aparecem como candidatas pendentes; as do outro Design não entram no denominador; nenhum IR ou card é criado.",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "ARQVER:AC-ARQ-02",
+      "document": "ESPECIFICACAO_ARQUITETURA_VERIFICABILIDADE.md",
+      "line": 274,
+      "id": "AC-ARQ-02",
+      "normative_text": "**AC-ARQ-02 — verifica RF-ARQ-02.** **Dado** Um Architecture Design válido em refinamento sem Spec derivada. **Quando** O autor conclui o trabalho de refinamento pelos mecanismos existentes. **Então** Não existe bloqueio novo de candidato/IR nem uma lista global de itens para aprovar; os demais controles continuam aplicados.",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "ARQVER:AC-ARQ-03",
+      "document": "ESPECIFICACAO_ARQUITETURA_VERIFICABILIDADE.md",
+      "line": 280,
+      "id": "AC-ARQ-03",
+      "normative_text": "**AC-ARQ-03 — verifica RF-ARQ-03.** **Dado** Interfaces contendo somente nome/protocolo, uma com schema_ref e outra com request_schema={}. **Quando** O contexto calcula os candidatos. **Então** Nome/protocolo isolados não geram candidato; referência e schema declarado geram candidatos com as limitações apropriadas; nenhum conteúdo é inventado.",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "ARQVER:AC-ARQ-04",
+      "document": "ESPECIFICACAO_ARQUITETURA_VERIFICABILIDADE.md",
+      "line": 286,
+      "id": "AC-ARQ-04",
+      "normative_text": "**AC-ARQ-04 — verifica RF-ARQ-04.** **Dado** Duas cópias equivalentes da mesma origem e duas interfaces homônimas de origens distintas. **Quando** As cópias são incorporadas e o layout é modificado. **Então** A origem equivalente aparece uma vez; origens distintas permanecem distintas; classificações existentes não se perdem; ler não grava IDs.",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "ARQVER:AC-ARQ-05",
+      "document": "ESPECIFICACAO_ARQUITETURA_VERIFICABILIDADE.md",
+      "line": 292,
+      "id": "AC-ARQ-05",
+      "normative_text": "**AC-ARQ-05 — verifica RF-ARQ-05.** **Dado** Uma Spec com uma lista que exige mais de uma página. **Quando** O agente solicita a primeira página e o resumo de cobertura. **Então** A resposta é limitada, contém contadores globais corretos e continuidade; não contém o payload gráfico inteiro nem afirma completude com base apenas na página.",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": [
+        {
+          "path": "okto_labs_pulse_core/tests/test_architecture_classification_review.py",
+          "line": 1
+        }
+      ]
+    },
+    {
+      "key": "ARQVER:AC-ARQ-06",
+      "document": "ESPECIFICACAO_ARQUITETURA_VERIFICABILIDADE.md",
+      "line": 298,
+      "id": "AC-ARQ-06",
+      "normative_text": "**AC-ARQ-06 — verifica RF-ARQ-06.** **Dado** Três candidatos pendentes. **Quando** O autor seleciona uma das três decisões para cada candidato. **Então** Cada decisão é persistida com autoria/versão; os efeitos são os definidos em 2.2; pendente sem escolha continua pendente; não há nova transição de workflow.",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "ARQVER:AC-ARQ-07",
+      "document": "ESPECIFICACAO_ARQUITETURA_VERIFICABILIDADE.md",
+      "line": 304,
+      "id": "AC-ARQ-07",
+      "normative_text": "**AC-ARQ-07 — verifica RF-ARQ-07.** **Dado** Um candidato com contrato de evento e um autor com as permissões necessárias. **Quando** O autor promove com os campos de IR informados e aceita a sugestão consistente. **Então** O IR conserva tipo e contrato de evento sem HTTP inventado; origem e decisão são gravadas junto; uma falha de validação não deixa IR órfão ou candidato falsamente resolvido.",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": [
+        {
+          "path": "okto_labs_pulse_core/tests/test_architecture_promotion_suggestion.py",
+          "line": 1
+        }
+      ]
+    },
+    {
+      "key": "ARQVER:AC-ARQ-08",
+      "document": "ESPECIFICACAO_ARQUITETURA_VERIFICABILIDADE.md",
+      "line": 310,
+      "id": "AC-ARQ-08",
+      "normative_text": "**AC-ARQ-08 — verifica RF-ARQ-08.** **Dado** Um contrato com schema de mensagem, erro e referência externa versionada. **Quando** O contrato é promovido ou reutilizado. **Então** Todos os elementos adotados são recuperáveis pela proveniência; campos não representados localmente têm referência explícita; nenhuma cláusula some sem decisão de escopo.",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "ARQVER:AC-ARQ-09",
+      "document": "ESPECIFICACAO_ARQUITETURA_VERIFICABILIDADE.md",
+      "line": 316,
+      "id": "AC-ARQ-09",
+      "normative_text": "**AC-ARQ-09 — verifica RF-ARQ-09.** **Dado** Um IR local ainda não implementado e um IR semelhante em outra Spec. **Quando** O autor associa o candidato ao IR local. **Então** A duplicação é evitada, mas o IR continua pendente de entrega; tentar usar o outro IR como cumprimento local sem contrato de dependência suportado é recusado.",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "ARQVER:AC-ARQ-10",
+      "document": "ESPECIFICACAO_ARQUITETURA_VERIFICABILIDADE.md",
+      "line": 322,
+      "id": "AC-ARQ-10",
+      "normative_text": "**AC-ARQ-10 — verifica RF-ARQ-10.** **Dado** Um candidato ligado a um IR que já integra o escopo aprovado. **Quando** Alguém tenta classificá-lo como somente contexto para encerrar a Spec. **Então** O IR e suas obrigações não desaparecem. O write que produziria dispensa tácita é recusado ou exige a revisão de escopo autorizada, sem alterar o resultado histórico.",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "ARQVER:AC-ARQ-11",
+      "document": "ESPECIFICACAO_ARQUITETURA_VERIFICABILIDADE.md",
+      "line": 328,
+      "id": "AC-ARQ-11",
+      "normative_text": "**AC-ARQ-11 — verifica RF-ARQ-11.** **Dado** Uma interface declara publicação e consumo, mas a Spec só implementa publicação. **Quando** O autor promove a parte de publicação e delimita o restante como contexto. **Então** A Spec não assume entrega do consumidor; a origem do IR e a exclusão de escopo são visíveis; o contrato fonte permanece íntegro.",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "ARQVER:AC-ARQ-12",
+      "document": "ESPECIFICACAO_ARQUITETURA_VERIFICABILIDADE.md",
+      "line": 334,
+      "id": "AC-ARQ-12",
+      "normative_text": "**AC-ARQ-12 — verifica RF-ARQ-12.** **Dado** Um lote com promoção e contexto, uma chave de idempotência e permissões parciais. **Quando** O lote é submetido, repetido ou alterado. **Então** O lote não autorizado faz zero writes; o autorizado é atômico; replay exato não duplica IRs; reuso divergente da chave é conflito; futuros candidatos não são automaticamente classificados pelo lote antigo.",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "ARQVER:AC-ARQ-13",
+      "document": "ESPECIFICACAO_ARQUITETURA_VERIFICABILIDADE.md",
+      "line": 340,
+      "id": "AC-ARQ-13",
+      "normative_text": "**AC-ARQ-13 — verifica RF-ARQ-13.** **Dado** Dois candidatos classificados e um Design cuja mudança afeta apenas o contrato de um deles. **Quando** A nova revisão é adotada pela Spec. **Então** Apenas o candidato afetado exige revisão; o outro permanece resolvido; nenhum IR é silenciosamente reescrito, duplicado ou excluído.",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "ARQVER:AC-ARQ-14",
+      "document": "ESPECIFICACAO_ARQUITETURA_VERIFICABILIDADE.md",
+      "line": 346,
+      "id": "AC-ARQ-14",
+      "normative_text": "**AC-ARQ-14 — verifica RF-ARQ-14.** **Dado** Uma fonte adotada é removida após a promoção de um IR. **Quando** O contexto/gate é reavaliado. **Então** A retirada e sua versão ficam auditadas, o IR permanece no escopo até revisão autorizada e a cobertura não se torna 100% por esconder a fonte indisponível.",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "ARQVER:AC-ARQ-15",
+      "document": "ESPECIFICACAO_ARQUITETURA_VERIFICABILIDADE.md",
+      "line": 352,
+      "id": "AC-ARQ-15",
+      "normative_text": "**AC-ARQ-15 — verifica RF-ARQ-15.** **Dado** Uma Spec validated com avaliação aprovável e um candidato pendente. **Quando** O usuário tenta iniciar; depois classifica o candidato e tenta novamente. **Então** A primeira transição é bloqueada com IDs e remediação; a segunda reavalia todos os demais gates, sem início automático ou aprovação de IR/testes.",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "ARQVER:AC-ARQ-16",
+      "document": "ESPECIFICACAO_ARQUITETURA_VERIFICABILIDADE.md",
+      "line": 358,
+      "id": "AC-ARQ-16",
+      "normative_text": "**AC-ARQ-16 — verifica RF-ARQ-16.** **Dado** Um schema_ref aponta a uma URL arbitrária e a lista é aberta repetidamente. **Quando** O usuário consulta candidatos e detalhes disponíveis. **Então** Não há request externo, novo IR, job de reparo ou alteração de classificação provocado pela leitura; a referência não resolvida é indicada honestamente.",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "ARQVER:AC-VER-01",
+      "document": "ESPECIFICACAO_ARQUITETURA_VERIFICABILIDADE.md",
+      "line": 366,
+      "id": "AC-VER-01",
+      "normative_text": "**AC-VER-01 — verifica RF-VER-01.** **Dado** Um FR novo, um TR novo e um OR em draft com perfil ausente. **Quando** O autor consulta defaults e tenta iniciar a Spec sem concluir a qualificação. **Então** Os defaults propostos são visíveis sem fabricar critérios; o OR sem configuração resolvida impede início; salvar draft permanece possível.",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "ARQVER:AC-VER-02",
+      "document": "ESPECIFICACAO_ARQUITETURA_VERIFICABILIDADE.md",
+      "line": 372,
+      "id": "AC-VER-02",
+      "normative_text": "**AC-VER-02 — verifica RF-VER-02.** **Dado** Um TR com perfil technical e texto “responder rapidamente”, sem limite ou observação definida. **Quando** O plano é avaliado para execução. **Então** A configuração sozinha não satisfaz o plano; ausência estrutural é apontada pelo gate e inadequação da condição é rejeitada pela avaliação semântica competente.",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "ARQVER:AC-VER-03",
+      "document": "ESPECIFICACAO_ARQUITETURA_VERIFICABILIDADE.md",
+      "line": 378,
+      "id": "AC-VER-03",
+      "normative_text": "**AC-VER-03 — verifica RF-VER-03.** **Dado** Um AC existente de comportamento e um novo critério de latência. **Quando** A Spec é atualizada com o critério técnico. **Então** Os dois compartilham o mesmo mecanismo de identidade, vínculo, consulta e histórico; os perfis são distinguíveis; nenhum teste funcional fictício é criado para o critério técnico.",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "ARQVER:AC-VER-04",
+      "document": "ESPECIFICACAO_ARQUITETURA_VERIFICABILIDADE.md",
+      "line": 384,
+      "id": "AC-VER-04",
+      "normative_text": "**AC-VER-04 — verifica RF-VER-04.** **Dado** FR e TR com IDs distintos e um critério com referência inválida. **Quando** O autor grava os vínculos do critério. **Então** Os vínculos válidos são navegáveis nas duas direções sem double-write; referência inexistente ou fora do escopo é recusada no write, inclusive em draft. Ausência de vínculo pode permanecer pendente em draft, mas não é associação válida nem matching por similaridade.",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "ARQVER:AC-VER-05",
+      "document": "ESPECIFICACAO_ARQUITETURA_VERIFICABILIDADE.md",
+      "line": 390,
+      "id": "AC-VER-05",
+      "normative_text": "**AC-VER-05 — verifica RF-VER-05.** **Dado** Um critério sobre relatórios numa Spec cujos únicos requisitos tratam autenticação. **Quando** O autor o deixa sem vínculo e tenta iniciar. **Então** O gate identifica critério órfão; se o autor liga indevidamente a autenticação, a estrutura pode ficar completa mas a avaliação deve rejeitar a incompatibilidade de conteúdo, sem alegar detecção semântica automática.",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "ARQVER:AC-VER-06",
+      "document": "ESPECIFICACAO_ARQUITETURA_VERIFICABILIDADE.md",
+      "line": 396,
+      "id": "AC-VER-06",
+      "normative_text": "**AC-VER-06 — verifica RF-VER-06.** **Dado** Um run verifica autenticação e latência em assertions separadas. **Quando** As evidências são associadas aos critérios funcional e técnico. **Então** O run é armazenado/referenciado uma vez; o êxito funcional não esconde a falha técnica; nenhum crédito é dado a requisito que a assertion não observa.",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "ARQVER:AC-VER-07",
+      "document": "ESPECIFICACAO_ARQUITETURA_VERIFICABILIDADE.md",
+      "line": 402,
+      "id": "AC-VER-07",
+      "normative_text": "**AC-VER-07 — verifica RF-VER-07.** **Dado** Uma Spec com FR, IR, TR e OR qualificados, mas sem Test Card para o cenário operacional. **Quando** O início é solicitado antes e depois de atribuir esse trabalho. **Então** A ausência de planejamento operacional bloqueia; com o plano completo e outros gates satisfeitos, a execução começa mesmo sem evidência ainda produzida.",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": [
+        {
+          "path": "okto_labs_pulse_core/tests/test_verification_plan.py",
+          "line": 1
+        }
+      ]
+    },
+    {
+      "key": "ARQVER:AC-VER-08",
+      "document": "ESPECIFICACAO_ARQUITETURA_VERIFICABILIDADE.md",
+      "line": 408,
+      "id": "AC-VER-08",
+      "normative_text": "**AC-VER-08 — verifica RF-VER-08.** **Dado** Um cenário integration verifica contrato e outro manual faz inspeção técnica. **Quando** Os planos e resultados são gravados. **Então** Os perfis e métodos são preservados sem trocar os tipos existentes; enum desconhecido/sem suporte é erro explícito ou pendência bloqueante, nunca fallback silencioso.",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "ARQVER:AC-VER-09",
+      "document": "ESPECIFICACAO_ARQUITETURA_VERIFICABILIDADE.md",
+      "line": 414,
+      "id": "AC-VER-09",
+      "normative_text": "**AC-VER-09 — verifica RF-VER-09.** **Dado** Um IR exige schema compatível e tratamento de timeout; apenas o schema passa. **Quando** A entrega é avaliada. **Então** O IR permanece incompleto quanto a timeout; o percentual pode informar avanço, mas não libera a obrigação.",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "ARQVER:AC-VER-10",
+      "document": "ESPECIFICACAO_ARQUITETURA_VERIFICABILIDADE.md",
+      "line": 420,
+      "id": "AC-VER-10",
+      "normative_text": "**AC-VER-10 — verifica RF-VER-10.** **Dado** R1 herda R2, R2 herda R1, ou R2 não tem critério terminal. **Quando** O autor tenta considerar o plano pronto. **Então** O ciclo ou a falta de terminal é apontado com caminho seguro e o início é bloqueado; não há sucesso por revisitar um nó já visto.",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "ARQVER:AC-VER-11",
+      "document": "ESPECIFICACAO_ARQUITETURA_VERIFICABILIDADE.md",
+      "line": 426,
+      "id": "AC-VER-11",
+      "normative_text": "**AC-VER-11 — verifica RF-VER-11.** **Dado** BR determina bloqueio após cinco erros; FR é autenticação e seu único teste observa login válido. **Quando** O autor declara herança desse teste para a BR. **Então** A avaliação rejeita a suficiência; ao selecionar/adicionar condição que realmente verifica os cinco erros e o bloqueio, a prova pode ser reutilizada sem outro Test Card artificial.",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "ARQVER:AC-VER-12",
+      "document": "ESPECIFICACAO_ARQUITETURA_VERIFICABILIDADE.md",
+      "line": 432,
+      "id": "AC-VER-12",
+      "normative_text": "**AC-VER-12 — verifica RF-VER-12.** **Dado** TR exige latência; OR exige alerta; ambos tentam herdar apenas o teste funcional HTTP 200. **Quando** O plano é revisto para execução. **Então** Perfis/condições sem verificação adequada continuam pendentes; não se concedem provas técnica e operacional por transitividade genérica.",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "ARQVER:AC-VER-13",
+      "document": "ESPECIFICACAO_ARQUITETURA_VERIFICABILIDADE.md",
+      "line": 438,
+      "id": "AC-VER-13",
+      "normative_text": "**AC-VER-13 — verifica RF-VER-13.** **Dado** Uma evidência passing corresponde ao commit A e o requisito agora exige comportamento alterado no commit B. **Quando** A evidência é usada no fechamento. **Então** O crédito à base B depende de validação de aplicabilidade; timestamp recente ou edição igual não bastam; o registro histórico de A permanece.",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "ARQVER:AC-VER-14",
+      "document": "ESPECIFICACAO_ARQUITETURA_VERIFICABILIDADE.md",
+      "line": 444,
+      "id": "AC-VER-14",
+      "normative_text": "**AC-VER-14 — verifica RF-VER-14.** **Dado** Um TR de dependências arquiteturais usa análise estática e outro usa inspeção. **Quando** Os resultados são registrados por agentes com e sem a autoridade necessária. **Então** Relatório sem base/regra/configuração ou inspeção sem autor permitido não recebe crédito; resultados válidos são admitidos pelo mesmo ciclo de Test Card/evidência, sem LLM interna.",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "ARQVER:AC-VER-15",
+      "document": "ESPECIFICACAO_ARQUITETURA_VERIFICABILIDADE.md",
+      "line": 450,
+      "id": "AC-VER-15",
+      "normative_text": "**AC-VER-15 — verifica RF-VER-15.** **Dado** Um alerta não dispara e a consulta retorna parcialmente por erro. **Quando** O resultado é registrado e a Spec tenta concluir. **Então** O OR não é verificado; a limitação e a falha aparecem; skip autorizado pode alterar transição, mas não o veredito factual.",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "ARQVER:AC-VER-16",
+      "document": "ESPECIFICACAO_ARQUITETURA_VERIFICABILIDADE.md",
+      "line": 456,
+      "id": "AC-VER-16",
+      "normative_text": "**AC-VER-16 — verifica RF-VER-16.** **Dado** Um limite muda de 200 ms para 100 ms e outro critério só recebe correção ortográfica. **Quando** O plano/evidência é reavaliado. **Então** O resultado de latência é rechecado contra a nova condição; a prova do critério editorial permanece aplicável quando seu conteúdo normativo é igual; avaliações históricas não são apagadas.",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "ARQVER:AC-VER-17",
+      "document": "ESPECIFICACAO_ARQUITETURA_VERIFICABILIDADE.md",
+      "line": 462,
+      "id": "AC-VER-17",
+      "normative_text": "**AC-VER-17 — verifica RF-VER-17.** **Dado** Um executor tenta reclassificar OR ativo como não verificável para fechar seu trabalho. **Quando** A mutação é submetida. **Então** O sistema rejeita o bypass ou exige revisão/autoridade explícitas; o diagnóstico continua verdadeiro e nenhuma obrigação desaparece por falta de metadado.",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "ARQVER:AC-VER-18",
+      "document": "ESPECIFICACAO_ARQUITETURA_VERIFICABILIDADE.md",
+      "line": 468,
+      "id": "AC-VER-18",
+      "normative_text": "**AC-VER-18 — verifica RF-VER-18.** **Dado** Uma BR herdada, um IR promovido e evidências parciais já registradas. **Quando** Um novo agente e a UI abrem o contexto. **Então** Ambos veem pendências e proveniência equivalentes, sem confundir herança com conclusão ou precisar reconsultar a Spec inteira para cada requisito.",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "ARQVER:AC-INT-01",
+      "document": "ESPECIFICACAO_ARQUITETURA_VERIFICABILIDADE.md",
+      "line": 476,
+      "id": "AC-INT-01",
+      "normative_text": "**AC-INT-01 — verifica RF-INT-01.** **Dado** BR sem link direto ao Card, associada a FR com contribuição aprovada naquele Card. **Quando** Planejamento e entrega são consultados. **Então** A BR aparece na responsabilidade efetiva com proveniência e crédito real; não some do ledger nem é duplicada por caminhos diferentes.",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": [
+        {
+          "path": "okto_labs_pulse_community/tests/test_multicard_delivery_integration.py",
+          "line": 1
+        }
+      ]
+    },
+    {
+      "key": "ARQVER:AC-INT-02",
+      "document": "ESPECIFICACAO_ARQUITETURA_VERIFICABILIDADE.md",
+      "line": 482,
+      "id": "AC-INT-02",
+      "normative_text": "**AC-INT-02 — verifica RF-INT-02.** **Dado** FR de pagamento envolve Card A de UI e Card B de autorização com BR específica. **Quando** O resolver calcula a responsabilidade e o rollup. **Então** A alocação segue o escopo declarado; a falta de alocação suficiente é pendência; concluir a UI não verifica automaticamente autorização.",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "ARQVER:AC-INT-03",
+      "document": "ESPECIFICACAO_ARQUITETURA_VERIFICABILIDADE.md",
+      "line": 488,
+      "id": "AC-INT-03",
+      "normative_text": "**AC-INT-03 — verifica RF-INT-03.** **Dado** Candidatos classificados e estrutura completa, mas Spec Evaluation rejeitada. **Quando** O início é solicitado. **Então** Permanece bloqueado pela avaliação; nenhum endpoint de classificação ou metadado promove diretamente a Spec ou um Card.",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "ARQVER:AC-INT-04",
+      "document": "ESPECIFICACAO_ARQUITETURA_VERIFICABILIDADE.md",
+      "line": 494,
+      "id": "AC-INT-04",
+      "normative_text": "**AC-INT-04 — verifica RF-INT-04.** **Dado** Uma identidade ampla e duas identidades com autoria/avaliação separadas. **Quando** A mesma iniciativa é operada nas duas configurações. **Então** O primeiro fluxo funciona quando a policy permite; o segundo respeita boundaries; uma identidade não aprova como outra nem contorna enforce por usar lote.",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "ARQVER:AC-INT-05",
+      "document": "ESPECIFICACAO_ARQUITETURA_VERIFICABILIDADE.md",
+      "line": 500,
+      "id": "AC-INT-05",
+      "normative_text": "**AC-INT-05 — verifica RF-INT-05.** **Dado** Um agente abre candidatos e outro muda o contrato/IR antes do write. **Quando** O primeiro tenta promover ou iniciar. **Então** Há conflito ou resultado recalculado com decisão explícita, sem perda de atualização; a classificação anterior não cobre silenciosamente o novo contrato.",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "ARQVER:AC-INT-06",
+      "document": "ESPECIFICACAO_ARQUITETURA_VERIFICABILIDADE.md",
+      "line": 506,
+      "id": "AC-INT-06",
+      "normative_text": "**AC-INT-06 — verifica RF-INT-06.** **Dado** Um ator health-only ou leitor restrito tenta obter contratos de outro escopo. **Quando** Ele consulta lista, busca reversa, erro, cache ou cursor antigo. **Então** O acesso não é ampliado e o conteúdo/contagem protegidos não vazam; nenhuma instrução contida no contrato é executada.",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "ARQVER:AC-INT-07",
+      "document": "ESPECIFICACAO_ARQUITETURA_VERIFICABILIDADE.md",
+      "line": 512,
+      "id": "AC-INT-07",
+      "normative_text": "**AC-INT-07 — verifica RF-INT-07.** **Dado** Uma Spec com vários candidatos de contexto e requisitos com defaults adequados. **Quando** O autor resolve os itens conhecidos em lote e edita só as exceções. **Então** Não há aprovações duplicadas; o resumo mostra exatamente o que ficou pendente; o fluxo cabe nas superfícies existentes e funciona via MCP com a mesma autoridade.",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "ARQVER:AC-INT-08",
+      "document": "ESPECIFICACAO_ARQUITETURA_VERIFICABILIDADE.md",
+      "line": 518,
+      "id": "AC-INT-08",
+      "normative_text": "**AC-INT-08 — verifica RF-INT-08.** **Dado** Um candidato muda de associação de IR e o KG está atrasado. **Quando** O contexto de planejamento/entrega é consultado. **Então** O relacional fornece a resposta atual; a projeção remove aresta obsoleta ao convergir; nenhuma tool de reparo ou polling é exigida para continuar.",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "ARQVER:AC-INT-09",
+      "document": "ESPECIFICACAO_ARQUITETURA_VERIFICABILIDADE.md",
+      "line": 524,
+      "id": "AC-INT-09",
+      "normative_text": "**AC-INT-09 — verifica RF-INT-09.** **Dado** Uma base legada contém ACs em texto, BRs ligadas diretamente e Specs Done. **Quando** O upgrade é ensaiado em cópia. **Então** Histórico continua legível; relações inequívocas são migradas; ambíguas ficam explicitadas para revisão autorizada; não se apagam links legítimos nem convertem assinaturas antigas em aprovação das novas condições.",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "ARQVER:AC-INT-10",
+      "document": "ESPECIFICACAO_ARQUITETURA_VERIFICABILIDADE.md",
+      "line": 530,
+      "id": "AC-INT-10",
+      "normative_text": "**AC-INT-10 — verifica RF-INT-10.** **Dado** Um cliente antigo envia campo ignorável e um cliente novo envia método desconhecido. **Quando** A aplicação instalada processa os pedidos. **Então** Compatibilidade não inventa a feature nova nem aceita método ignorado; os erros são explícitos; testes no pacote instalado confirmam o mesmo comportamento do checkout.",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "ARQVER:AC-INT-11",
+      "document": "ESPECIFICACAO_ARQUITETURA_VERIFICABILIDADE.md",
+      "line": 536,
+      "id": "AC-INT-11",
+      "normative_text": "**AC-INT-11 — verifica RF-INT-11.** **Dado** Uma OR exige observar saúde de um serviço e uma operação fica pendente. **Quando** O agente consulta os caminhos de remediação. **Então** O Pulse aponta a ação de domínio/autorização apropriada; não oferece repair/rebuild nem inicia agente; health continua read-only.",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "ARQVER:AC-INT-12",
+      "document": "ESPECIFICACAO_ARQUITETURA_VERIFICABILIDADE.md",
+      "line": 542,
+      "id": "AC-INT-12",
+      "normative_text": "**AC-INT-12 — verifica RF-INT-12.** **Dado** Uma iniciativa com uma Spec simples, outra com muitos candidatos e dois agentes em sessões distintas. **Quando** Os fluxos equivalentes são executados e medidos. **Então** O relatório separa tokens/calls novos e evitados, filtros por permissão e resultados corretos; não usa menos links ou ocultação de ferramentas como única prova de simplificação.",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "ARQVER:ADV-01",
+      "document": "ESPECIFICACAO_ARQUITETURA_VERIFICABILIDADE.md",
+      "line": 725,
+      "id": "ADV-01",
+      "normative_text": "| ADV-01 | Mesma origem propagada para duas Specs com decisões diferentes. | Classificação é local; uma não contamina a outra. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "ARQVER:ADV-02",
+      "document": "ESPECIFICACAO_ARQUITETURA_VERIFICABILIDADE.md",
+      "line": 726,
+      "id": "ADV-02",
+      "normative_text": "| ADV-02 | Duas revisões diferentes da mesma interface na mesma Spec. | Há conflito ou seleção explícita de versões, não dedup por nome. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "ARQVER:ADV-03",
+      "document": "ESPECIFICACAO_ARQUITETURA_VERIFICABILIDADE.md",
+      "line": 727,
+      "id": "ADV-03",
+      "normative_text": "| ADV-03 | Pending escondido na segunda página. | O gate continua bloqueado. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": [
+        {
+          "path": "okto_labs_pulse_core/tests/test_verification_plan.py",
+          "line": 1
+        }
+      ]
+    },
+    {
+      "key": "ARQVER:ADV-04",
+      "document": "ESPECIFICACAO_ARQUITETURA_VERIFICABILIDADE.md",
+      "line": 728,
+      "id": "ADV-04",
+      "normative_text": "| ADV-04 | Lista vazia porque a fonte está inacessível. | Estado é desconhecido/indisponível, não zero candidatos confirmado. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "ARQVER:ADV-05",
+      "document": "ESPECIFICACAO_ARQUITETURA_VERIFICABILIDADE.md",
+      "line": 729,
+      "id": "ADV-05",
+      "normative_text": "| ADV-05 | Contrato em campo de erro como string. | É preservado como contrato declarado; não tratado como instrução nem convertido arbitrariamente para JSON. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "ARQVER:ADV-06",
+      "document": "ESPECIFICACAO_ARQUITETURA_VERIFICABILIDADE.md",
+      "line": 730,
+      "id": "ADV-06",
+      "normative_text": "| ADV-06 | Schema_ref aponta para endereço interno/sensível. | Nenhum acesso remoto automático pelo backend. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "ARQVER:ADV-07",
+      "document": "ESPECIFICACAO_ARQUITETURA_VERIFICABILIDADE.md",
+      "line": 731,
+      "id": "ADV-07",
+      "normative_text": "| ADV-07 | Candidate context_only em snapshot antigo e contrato novo adotado. | A decisão antiga não cobre a nova semântica sem revisão. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "ARQVER:ADV-08",
+      "document": "ESPECIFICACAO_ARQUITETURA_VERIFICABILIDADE.md",
+      "line": 732,
+      "id": "ADV-08",
+      "normative_text": "| ADV-08 | Classificação escrita depois de content lock. | Nenhuma criação/mutação de requisito escapa do processo de revisão. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "ARQVER:ADV-09",
+      "document": "ESPECIFICACAO_ARQUITETURA_VERIFICABILIDADE.md",
+      "line": 733,
+      "id": "ADV-09",
+      "normative_text": "| ADV-09 | IR ativo está not_applicable/dispensado por alteração não autorizada. | A camada de autorização impede o bypass; histórico e causa permanecem. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "ARQVER:ADV-10",
+      "document": "ESPECIFICACAO_ARQUITETURA_VERIFICABILIDADE.md",
+      "line": 734,
+      "id": "ADV-10",
+      "normative_text": "| ADV-10 | Corrente de herança com diamante e dois caminhos ao mesmo critério. | Não há duplicação de obrigação/prova; ciclo continua detectado. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "ARQVER:ADV-11",
+      "document": "ESPECIFICACAO_ARQUITETURA_VERIFICABILIDADE.md",
+      "line": 735,
+      "id": "ADV-11",
+      "normative_text": "| ADV-11 | Um requisito tem três critérios e somente dois passam. | Não fica satisfeito por média ou presença de links. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": [
+        {
+          "path": "okto_labs_pulse_community/tests/test_multicard_delivery_integration.py",
+          "line": 1
+        }
+      ]
+    },
+    {
+      "key": "ARQVER:ADV-12",
+      "document": "ESPECIFICACAO_ARQUITETURA_VERIFICABILIDADE.md",
+      "line": 736,
+      "id": "ADV-12",
+      "normative_text": "| ADV-12 | Um run passa no teste funcional e falha no critério técnico. | Cada requisito recebe o veredito correspondente, sem verde global indevido. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "ARQVER:ADV-13",
+      "document": "ESPECIFICACAO_ARQUITETURA_VERIFICABILIDADE.md",
+      "line": 737,
+      "id": "ADV-13",
+      "normative_text": "| ADV-13 | Adicionar vínculo requisito→critério após o run. | Exige validar a aplicabilidade; não torna o run retroativamente suficiente só pelo novo link. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "ARQVER:ADV-14",
+      "document": "ESPECIFICACAO_ARQUITETURA_VERIFICABILIDADE.md",
+      "line": 738,
+      "id": "ADV-14",
+      "normative_text": "| ADV-14 | Remover o único Test Card do critério depois de aprovar o plano. | A prontidão perde validade e a alteração segue os locks/revisões aplicáveis. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "ARQVER:ADV-15",
+      "document": "ESPECIFICACAO_ARQUITETURA_VERIFICABILIDADE.md",
+      "line": 739,
+      "id": "ADV-15",
+      "normative_text": "| ADV-15 | Cancelar o único card implementador de um IR. | O IR permanece obrigação pendente até realocação/revisão autorizada. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "ARQVER:ADV-16",
+      "document": "ESPECIFICACAO_ARQUITETURA_VERIFICABILIDADE.md",
+      "line": 740,
+      "id": "ADV-16",
+      "normative_text": "| ADV-16 | Teste de contrato aprova shape, mas a condição exige também timeout. | A dimensão sem observação mantém o requisito incompleto. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "ARQVER:ADV-17",
+      "document": "ESPECIFICACAO_ARQUITETURA_VERIFICABILIDADE.md",
+      "line": 741,
+      "id": "ADV-17",
+      "normative_text": "| ADV-17 | Mudança de política humana enquanto um request está em curso. | A mutação aplica a autoridade atual/fence e não herda permissão do contexto antigo. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "ARQVER:ADV-18",
+      "document": "ESPECIFICACAO_ARQUITETURA_VERIFICABILIDADE.md",
+      "line": 742,
+      "id": "ADV-18",
+      "normative_text": "| ADV-18 | Mesmo agente autor/executor tenta revisão independente em enforce. | Recusa preservada; classificação/captura não simulam outro avaliador. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "ARQVER:ADV-19",
+      "document": "ESPECIFICACAO_ARQUITETURA_VERIFICABILIDADE.md",
+      "line": 743,
+      "id": "ADV-19",
+      "normative_text": "| ADV-19 | Falha entre criação de IR, classificação e outbox. | Rollback/replay convergem sem IR órfão, dupla promoção ou evento perdido. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "ARQVER:ADV-20",
+      "document": "ESPECIFICACAO_ARQUITETURA_VERIFICABILIDADE.md",
+      "line": 744,
+      "id": "ADV-20",
+      "normative_text": "| ADV-20 | Upgrade parcial seguido de rollback em cópia. | Schema/versões pareados recuperáveis; não se instala binário antigo cegamente sobre dados incompatíveis. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "ARQVER:ADV-21",
+      "document": "ESPECIFICACAO_ARQUITETURA_VERIFICABILIDADE.md",
+      "line": 745,
+      "id": "ADV-21",
+      "normative_text": "| ADV-21 | Grafo retorna sem relação antiga removida, mas relacional novo já está íntegro. | Gate usa fonte autoritativa; projeção corrige active set sem operação do agente. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "ARQVER:ADV-22",
+      "document": "ESPECIFICACAO_ARQUITETURA_VERIFICABILIDADE.md",
+      "line": 746,
+      "id": "ADV-22",
+      "normative_text": "| ADV-22 | Metadado verification ausente em documento histórico Done. | Leitura diz legado/não avaliado pelo novo contrato, sem reabrir nem inventar perfil aprovado. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "ARQVER:ADV-23",
+      "document": "ESPECIFICACAO_ARQUITETURA_VERIFICABILIDADE.md",
+      "line": 747,
+      "id": "ADV-23",
+      "normative_text": "| ADV-23 | Nova tool é menor em quantidade, mas seu schema ficou maior. | Benchmark considera bytes/tokens reais e chamadas, não só contagem. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    },
+    {
+      "key": "ARQVER:ADV-24",
+      "document": "ESPECIFICACAO_ARQUITETURA_VERIFICABILIDADE.md",
+      "line": 748,
+      "id": "ADV-24",
+      "normative_text": "| ADV-24 | Contrato arbitrário contém instrução para desativar gates. | Conteúdo é dado; nenhuma mutação de configuração é realizada. |",
+      "review_status": "not_audited_in_this_inventory",
+      "test_text_references": []
+    }
+  ]
+}

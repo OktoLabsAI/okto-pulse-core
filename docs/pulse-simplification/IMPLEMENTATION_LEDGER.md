@@ -13381,3 +13381,48 @@ em test_retirement_edge_provenance.py ainda não implementados/executados.
 A igualdade agregada de contagens não prova distribuição por sessão. Verificar
 created_by_session_id contra o censo de auditoria exato, preservando arestas
 históricas e sem inventar autoria para seus metadados ausentes.
+
+### 2026-09-22 — proveniência das arestas novas por sessão (em validação)
+
+Partições publicadas: Core 8d8f7e37 / Community 9bb304ef, pushes confirmados.
+A reconciliação v10 exige uma auditoria por ACK, recusa ausência/duplicação,
+e compara created_by_session_id e contagem de cada sessão nas arestas novas.
+Arestas preservadas continuam ligadas ao censo histórico, sem receber autoria
+nova. O total agregado não permite deslocar uma aresta para outro ACK de zero
+arestas. Recibo registra digest/quantidade e passed/not_checked explicitamente.
+Filhos atuais selecionados pelo plano também não podem usar a exceção privada
+de órfão histórico não classificado. Testes adversariais iniciais passaram;
+suite nativa/retomada em execução. Prova provenance-edge-session.json:
+Core 818/881, Community 353/437 byte-identical. F16 closure-edge-session-final.json
+aprovado: 8727 entradas, zero achados e oito budgets zero. Ruff F/E9/diff-check
+aprovados. Sem alterações de frontend, autoridade pública ou admissão de runtime.
+
+Inventário integrado de aceitação criado em acceptance-inventory.json: 246
+critérios (BASE 46, KG 66, DEI 64, ARQ/VER/INT 46 + ADV 24), com documento/linha,
+texto normativo e hash do documento. Referências textuais em testes são apenas
+localização não auditada, inclusive sujeitas a colisão com IDs históricos;
+não equivalem a cobertura nem execução. O ledger continua único registro de
+implementação/provas. Gerador usado: .validation-v040/build_acceptance_inventory.py.
+A coleta inicial tinha assert KG=64 incorreto; o próprio complemento possui
+KG-01…KG-66. Corrigido para 66, sem omitir os critérios de resources/pacote.
+O inventário evita usar os resumos históricos de pendências como auditoria final.
+
+Proveniência por sessão validada: 27 testes passaram em 555.97s, incluindo os
+dois schemas nativos, retry/replay, Bug/datas e paridade cognitiva. Testes de
+arquivo histórico permanecem fechados; nenhum órfão atual foi promovido.
+Community bd99a7767709d4e63a3f9ef0724a259d1e099b51. F16 final 8727/zero/zero;
+prova provenance-edge-session.json, wheels dist-edge-session, hashes Core
+092c2036be7af1b66e6db34efb265f3363be7e6e36f87accfb706d4b84b6078f e Community
+ecd2fae43048ee3f9fd2293eb4e26eec97b7b04c191d06b1edad8153c46f5644.
+Continuação: a autoria exata não compara ainda o conjunto semântico esperado
+de relações ao plano. Reusar gramática/resolução Core; não inferir igualdade
+por contagem nem criar exceção por regra desconhecida. Recibo terminal deve
+preservar provas prévias e tolerar writes legítimos posteriores; não implementar
+admission reduzindo o gate atual a um booleano ou apagando o journal.
+
+Revisão independente ARQ/VER §3.6: supported_test_verification_methods intersecta
+ADMITTED_VERIFICATION_METHODS; CommunityTestEvidenceWriteVerifier anuncia apenas
+automated_test. Os demais métodos permanecem bloqueados, não recebem fallback
+passing. Isso é fato de código lido, não prova integral de AC-VER. O inventário
+novo ainda exige revisão semântica e execução por critério, não somente busca
+de tags. Não declarar que os 246 critérios foram implementados/testados.
