@@ -12827,3 +12827,58 @@ Prova final source/wheel/install byte-identical em provenance-root-selection-fin
 Core 811/874, aggregate 64f95f8bb42f9f41ac5d56ee7ffb12b8cf8f79eca2ec1f147866393994a2ab77;
 Community 350/434, aggregate 1b14e0a1829466ccb897eca1874b4d836d043a8a1211976b74541fc9ab73c618.
 Community publicado: 26d767c7ba7fbed164429da0bb643e6a24c61e4e.
+
+### 2026-09-22 — candidato privado com história intacta ainda não classificada
+
+Em implementação sobre 7f8c8165/26d767c7. Aplicação de KG §8.2/§8.3: o candidato
+privado é anterior à reconciliação terminal. Uma cópia comprovadamente literal
+pode ser retida nele com classificação pendente, sem promover o runtime ou
+inventar proveniência. A falha antiga misturava ACKs de criação com o inventário
+histórico inteiro, aplicando datas atuais a gerações anteriores. A porta Core
+agora distingue ausência de anterior, preservação não classificada e mudanças
+anteriores não classificadas; nenhuma classe concede admissão.
+
+O adapter passa a ler registros tipados pelo snapshot lógico nativo (incluindo
+endpoints tipados e multiplicidade), compara hashes completos com o backup e
+confere separadamente efeitos novos contra ACKs/plano. Mudança/remoção anterior
+sem contrato de transformação continua recusada, assim como efeito novo Global
+Discovery, nó novo órfão e raiz atual órfã. História intacta fora da projeção atual
+recebe preserved_unclassified; órfão anterior fica explicitamente pendente, nunca
+zero_orphan_validation=passed. O estado agregado é source_projection_reconciled_
+history_pending e a saída continua projected_not_reconciled. Startup admission
+mantém retirement_cutover_incomplete. Isso prepara um artefato privado analisável,
+não é waiver nem liberação do ambiente. O teste sintético não é normalizado:
+seus valores/sucessor inválidos permanecem literais e não elegíveis. Adicionadas
+asserções de pendência, recusa de admissão e alteração de conteúdo histórico.
+Build/prova/testes ainda pendentes; reuso com mudanças em nós prévios e upgrade
+0.5->0.6 continuam sem autorização implícita neste recorte.
+
+Resultados deste recorte: Core 6 testes em 2.44s; Community 7 testes integrados
+(execução/retry/replay, Bug, censos nativos) em 262.14s; o teste anteriormente
+falho de histórico nativo povoado passou em 304.93s sem alterar seus dados
+sintéticos, provando as_of anterior, UUID, replay, pendência e bloqueio de admissão.
+Adulteração de título anterior é recusada por prior_changes_unclassified.
+Dois testes focados do guard (6.79s, reader lógico em memória) comprovam que uma
+raiz atual órfã é recusada mesmo com registro anterior preservado. O teste nativo
+não é declarado prova de elegibilidade semântica: history_classification=pending
+é parte das asserções. Ruff F/E9 e diff-check passaram. Prova final instalada:
+provenance-preserved-history-final.json (Core 811/874, Community 350/434,
+byte-identical), aggregates Core
+3fc4c0071f81788e5f93ea4db87c8d9d26e9ffa30e6284e5367cbc1a1798d34b;
+Community e9a6e31c827cc9841ddc45b2d7dae099707a8c22b5c8f2533b5a7165c3f213fc.
+F16 preliminar 8681 linhas e budgets zero; final em execução neste checkpoint.
+
+Investigação para o próximo passo: KuzuNodeRef/NodeRefData representa criações e
+é usado por compensação/delete; Exact ACK exige operation=add e contagem igual
+a nodes_added+nodes_superseded. Acrescentar IDs reutilizados ali seria incorreto
+e arriscaria apagar história no rollback. GraphTransactionScope já expõe
+snapshot_node_properties e os GraphWriteRecord retêm before-images exatos de
+propriedades/active sets. Investigar uma prova tipada de efeitos/resolução ligada
+à auditoria/outbox/recibo existente, sem redefinir NodeRef, abrir porta privada,
+criar ledger paralelo ou aprovar mudanças antigas apenas por source_ref igual.
+
+F16 final aprovado: closure-preserved-history-final.json, 8681 linhas, zero
+achados/drift, oito budgets zero. Community publicado:
+41f04db8c6a316fb6cdfe37a195d39f30a3811f5. A antiga falha de construção privada
+com histórico povoado foi resolvida com retenção literal e estado incompleto
+explícito; classificação/elegibilidade históricas e cutover continuam pendentes.

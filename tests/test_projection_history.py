@@ -7,6 +7,7 @@ import pytest
 from okto_pulse.core.ports.projection_history import (
     ProjectionNodeFingerprint as Node, ProjectionEdgeFingerprint as Edge, compare_projection_history,
     ProjectionSourceRoot as Root, ProjectionSourceIdentity as Identity, select_projection_source_roots,
+    classify_projection_history, ProjectionHistoryState,
 )
 
 
@@ -29,6 +30,12 @@ def test_node_identity_and_relation_multiplicity_are_compared_independently():
     assert delta.removed_edges == (replace(edge, count=1),)
     assert delta.introduced_edges == (new_edges[1],)
     assert not hasattr(delta, 'approved') and not hasattr(delta, 'reconciled')
+    assert classify_projection_history(delta) == ProjectionHistoryState.PRIOR_CHANGES_UNCLASSIFIED
+    same = compare_projection_history(before_nodes=(retained,), after_nodes=(retained,),
+        before_edges=old_edges, after_edges=old_edges)
+    assert classify_projection_history(same) == ProjectionHistoryState.PRESERVED_UNCLASSIFIED
+    empty = compare_projection_history(before_nodes=(), after_nodes=(retained,), before_edges=(), after_edges=())
+    assert classify_projection_history(empty) == ProjectionHistoryState.NO_PRIOR_RECORDS
 
 
 @pytest.mark.parametrize('damage', ['node_duplicate', 'edge_duplicate', 'edge_overflow'])

@@ -7,6 +7,7 @@ to the intended snapshots before using these observations for reconciliation.
 """
 
 from dataclasses import dataclass
+from enum import Enum
 import re
 
 
@@ -63,6 +64,23 @@ class ProjectionHistoryDelta:
     retained_edges: tuple[ProjectionEdgeFingerprint, ...]
     introduced_edges: tuple[ProjectionEdgeFingerprint, ...]
     removed_edges: tuple[ProjectionEdgeFingerprint, ...]
+
+
+class ProjectionHistoryState(str, Enum):
+    NO_PRIOR_RECORDS = 'no_prior_records'
+    PRESERVED_UNCLASSIFIED = 'preserved_unclassified'
+    PRIOR_CHANGES_UNCLASSIFIED = 'prior_changes_unclassified'
+
+
+def classify_projection_history(delta: ProjectionHistoryDelta) -> ProjectionHistoryState:
+    """Classify literal preservation only; no state authorizes runtime admission."""
+    if type(delta) is not ProjectionHistoryDelta:
+        raise TypeError('projection_history_delta_required')
+    if delta.removed_nodes or delta.changed_nodes or delta.removed_edges:
+        return ProjectionHistoryState.PRIOR_CHANGES_UNCLASSIFIED
+    if delta.unchanged_nodes or delta.retained_edges:
+        return ProjectionHistoryState.PRESERVED_UNCLASSIFIED
+    return ProjectionHistoryState.NO_PRIOR_RECORDS
 
 
 @dataclass(frozen=True, slots=True, order=True)
