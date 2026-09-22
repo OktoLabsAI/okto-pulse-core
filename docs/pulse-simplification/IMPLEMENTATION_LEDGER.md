@@ -3,10 +3,11 @@
 ## Estado para retomada
 
 Iniciativa **em andamento**, com continuidade até a entrega final autorizada em
-2026-09-22. Frente atual: evolução autenticada do KG 0.5.0 para candidato privado
-0.6.0 e sua integração à reconciliação/retomada; cutover/admission continuam fechados.
-Recuperação 0.5.0, metadados temporais e composição exata dos efeitos de reuso
-estão implementados e testados; elegibilidade histórica permanece pendente.
+2026-09-22. Frente atual: classificação semântica do histórico preservado;
+cutover/admission continuam fechados. Evolução autenticada 0.5.0→0.6.0 integrada,
+paridade cognitiva durável, metadados temporais, composição exata dos efeitos de
+reuso e política existente de raízes técnicas estão implementados e testados.
+Preservação/paridade isoladamente não provam elegibilidade histórica.
 Os detalhes e provas mais recentes
 estão nas seções finais. O resumo de 2026-09-20 abaixo é histórico: candidatos e
 classificação arquitetural, autoria em lote, perfis/vínculos/herança, Test Cards,
@@ -13216,3 +13217,31 @@ Community 04dadedd061e006a9b62e3549ad0fdb9fdd20af1. Diff-check e Ruff F/E9
 aprovados. Sem frontend afetado. Próxima frente: inventário/classificação de
 integridade histórica com regras existentes de orphan_integrity/connectivity;
 paridade matched isoladamente NÃO fecha essa obrigação nem autoriza cutover.
+
+### 2026-09-22 — raiz técnica legítima no censo privado (em validação)
+
+Paridade publicada: Core 89aec87c / Community 04dadedd, pushes confirmados.
+Reprodução da divergência zero-órfão: KGConnectivityRuleRegistry aceita a raiz
+Entity/board:b com writer determinístico; o reconciliador privado recusava a
+mesma observação com retirement_candidate_graph_orphan_detected (1 failed,
+6 deselected, 7.81s). KG §8.4 manda reconhecer raízes legítimas, sem inventar
+arestas. Nova porta projection_history.is_projection_technical_root delega à
+mesma classificação de writer e ao mesmo registry do scanner existente, sem
+ampliar sua lista. Adapter não alcança privados do Core. Relatório/v7 distingue
+allowlisted_technical_root_count; fontes comuns sem conexão continuam recusadas,
+históricos preservados continuam pendentes. Não muda autoridade/admission nem
+aprova fonte pela aparência do prefixo. Provas/testes após build pareado pendentes.
+
+Raízes técnicas validadas: 16 testes Core (incluindo scanner nativo existente)
+passaram em 34.72s; oito testes Community (guardas e replay completo .6 com fonte
+cognitiva ausente) passaram em 149.67s, um caso .5 não selecionado porque o delta
+é a política pura de conectividade, sem novo contrato de evolução. F16 final
+closure-technical-roots-final.json: 8717 entradas, zero achados/drift, oito budgets
+zero. Prova provenance-technical-roots-final.json e wheels dist-technical-roots-final:
+Core 816/879, Community 353/437 byte-identical; aggregates Core
+362677d8ecee3a05e15bedddf7496eb2bb5245a36693a2db0b9a6754e055cef8;
+Community 85882b881365ea59a2217f5ed5fa03d5ebc3540555d8a71f7711ef456f11d67f.
+Community 9d889c8e2d872fa3d81da26ca1f178668c0b28f7. Ruff F/E9 e diff-check
+aprovados. Sem frontend afetado. Próxima dependência: distinguir integridade
+semântica/conectividade de paridade literal; nenhuma raiz técnica reconhecida
+por este incremento recebe autoridade de fonte ou de cutover.

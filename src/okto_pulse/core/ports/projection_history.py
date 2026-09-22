@@ -124,3 +124,13 @@ def compare_projection_history(*, before_nodes, after_nodes, before_edges, after
     """Observe exact identities/hashes/multiplicity without approving any delta."""
     from okto_pulse.core.application.projection_history import compare
     return compare(before_nodes, after_nodes, before_edges, after_edges)
+
+
+def is_projection_technical_root(*, node_type, source_artifact_ref, created_by_agent, source_session_id):
+    """Apply the existing orphan scanner's root policy to pinned observations.
+
+    This is a connectivity classification only. It cannot establish source
+    authority, approve historical changes, or authorize runtime admission.
+    """
+    from okto_pulse.core.application.projection_history import is_technical_root
+    return is_technical_root(node_type, source_artifact_ref, created_by_agent, source_session_id)

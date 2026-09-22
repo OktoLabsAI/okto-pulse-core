@@ -90,3 +90,14 @@ def select_source_roots(roots, nodes):
     if set(selected) != wanted:
         raise ValueError('projection_history_current_root_missing')
     return tuple(selected[root] for root in roots)
+
+
+def is_technical_root(node_type, source_artifact_ref, created_by_agent, source_session_id):
+    from okto_pulse.core.kg.connectivity_guard import KGConnectivityRuleRegistry
+    from okto_pulse.core.kg.orphan_integrity import _safe_writer_path
+
+    if (type(node_type) is not str or any(value is not None and type(value) is not str
+            for value in (source_artifact_ref, created_by_agent, source_session_id))):
+        return False  # Malformed historical provenance never earns an exception.
+    return KGConnectivityRuleRegistry().is_technical_root_allowlisted(node_type=node_type,
+        writer_path=_safe_writer_path(created_by_agent, source_session_id), source_artifact_ref=source_artifact_ref)

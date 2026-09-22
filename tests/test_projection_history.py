@@ -73,3 +73,19 @@ def test_legacy_null_generation_is_zero_and_missing_active_root_is_not_zero_work
         select_projection_source_roots(roots=(root, root), nodes=(legacy,))
     with pytest.raises(ValueError, match='duplicate_node'):
         select_projection_source_roots(roots=(root,), nodes=(legacy, legacy))
+
+
+@pytest.mark.parametrize('kind,ref,actor,session,expected', [
+    ('Entity', 'board:b', 'system:historical_consolidation', 's', True),
+    ('Entity', 'tech_entities.yml', 'system:bootstrap', 's', True),
+    ('Entity', 'spec:s', 'system:historical_consolidation', 's', False),
+    ('Entity', 'board:b', 'unclassified', 'unknown', False),
+    ('Decision', 'board:b', 'system:bootstrap', 's', False),
+    ('Learning', 'final_report:r', 'agent-a', 'kgses_a', True),
+    ('Learning', 'spec:s', 'agent-a', 'kgses_a', False),
+    ('Learning', 'final_report:r', True, 'kgses_a', False),
+], ids=['board', 'technology', 'spec', 'unknown_writer', 'wrong_type', 'final_report', 'learning_spec', 'invalid_actor'])
+def test_existing_technical_root_policy_does_not_expand_to_ordinary_sources(kind, ref, actor, session, expected):
+    from okto_pulse.core.ports.projection_history import is_projection_technical_root
+    assert is_projection_technical_root(node_type=kind, source_artifact_ref=ref,
+        created_by_agent=actor, source_session_id=session) is expected
