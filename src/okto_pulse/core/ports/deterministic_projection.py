@@ -38,7 +38,7 @@ class DeterministicProjectionPlan:
         if type(self.document) is not bytes or not 0 < len(self.document) <= 16 * 1024 * 1024:
             raise ValueError('deterministic_projection_plan_limit')
         value = json.loads(self.document)
-        if (type(value) is not dict or value.get('format') != 'deterministic-projection-plan/v1'
+        if (type(value) is not dict or value.get('format') != 'deterministic-projection-plan/v2'
                 or json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(',', ':'), allow_nan=False).encode() != self.document):
             raise ValueError('deterministic_projection_plan_invalid')
 

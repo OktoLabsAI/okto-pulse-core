@@ -1,6 +1,6 @@
 """Source-owned metadata carried internally, never accepted from a KG client."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from typing import Mapping
 
@@ -76,3 +76,26 @@ def latest_resolution_time(
         if stamp is None or previous is None or previous >= stamp:
             return None
     return stamp
+
+
+async def prepare_root_metadata(context, source, artifact, nodes, persistence):
+    """Shared read-only policy for worker attestation and expected projection.
+
+    Children and reference nodes cannot borrow the processed root's chronology.
+    Both callers own the source transaction and the Board scope of its reads.
+    """
+    result = {}
+    root_ref = f"{source.artifact_type}:{source.artifact_id}"
+    for node in nodes:
+        if node.source_artifact_ref != root_ref:
+            continue
+        metadata = SourceProjectionMetadata.from_source(artifact, is_bug=node.node_type == "Bug")
+        if node.node_type == "Bug":
+            transitions = ()
+            if metadata.source_status == "done":
+                transitions = await persistence.latest_card_transitions(
+                    context, board_id=source.board_id, card_id=source.artifact_id,
+                )
+            metadata = replace(metadata, resolved_at=latest_resolution_time(metadata.source_status, transitions))
+        result[node.candidate_id] = metadata
+    return result

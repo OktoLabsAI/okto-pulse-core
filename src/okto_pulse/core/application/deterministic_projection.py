@@ -16,7 +16,7 @@ def _encode(value):
     return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(',', ':'), allow_nan=False).encode('utf-8')
 
 
-def _projection_plan(source, result):
+def _projection_plan(source, result, metadata=None):
     from okto_pulse.core.application.processors.consolidation import (
         _worker_node_to_candidate, _worker_edge_to_candidate,
     )
@@ -29,8 +29,9 @@ def _projection_plan(source, result):
         'relational_projection_active_set_intent': (asdict(result.relational_projection_active_set_intent)
             if result.relational_projection_active_set_intent is not None else None),
         'content_hash': result.content_hash, 'raw_content': result.raw_content,
+        'source_metadata': metadata or {},
     }
-    return DeterministicProjectionPlan(_encode({'format': 'deterministic-projection-plan/v1',
+    return DeterministicProjectionPlan(_encode({'format': 'deterministic-projection-plan/v2',
         'source': asdict(source), 'disposition': 'skipped_cancelled' if result is True else 'prepared',
         'projection': projection}))
 
@@ -64,7 +65,7 @@ def require_terminal_cleanup(document):
     value = json.loads(document)
     if (type(value) is not dict or set(value) != {'format', 'board_id', 'captured_at', 'source_rows',
             'cognitive_rows', 'census', 'dependency_closure', 'plans'}
-            or value['format'] != 'deterministic-board-projection-plan/v2' or _encode(value) != document
+            or value['format'] != 'deterministic-board-projection-plan/v3' or _encode(value) != document
             or type(value['board_id']) is not str or not value['board_id'].strip() or len(value['board_id']) > 256
             or type(value['source_rows']) is not list or len(value['source_rows']) > 100_000
             or type(value['plans']) is not list or len(value['plans']) > 100_000):
@@ -89,7 +90,7 @@ def require_terminal_cleanup(document):
 
 
 class _BoardProjectionReader:
-    """Only the three source reads used by projection preparation are exposed."""
+    """Only scoped source reads used by projection preparation are exposed."""
 
     def __init__(self, delegate, board_id):
         self.delegate, self.board_id = delegate, board_id
@@ -118,6 +119,11 @@ class _BoardProjectionReader:
         if kwargs.get('board_id') != self.board_id:
             raise ValueError('deterministic_projection_source_scope_mismatch')
         return await self.delegate.load_projection_inputs(context, **kwargs)
+
+    async def latest_card_transitions(self, context, **kwargs):
+        if kwargs.get('board_id') != self.board_id:
+            raise ValueError('deterministic_projection_source_scope_mismatch')
+        return await self.delegate.latest_card_transitions(context, **kwargs)
 
 
 class CoreDeterministicProjectionPlanner:
@@ -267,7 +273,7 @@ class CoreDeterministicProjectionPlanner:
             if accumulated_bytes > _BOARD_PLAN_LIMIT:
                 raise ValueError('deterministic_projection_census_limit')
             plans.append(json.loads(planned.document))
-        result = json.dumps({'format': 'deterministic-board-projection-plan/v2',
+        result = json.dumps({'format': 'deterministic-board-projection-plan/v3',
             'board_id': board_id, 'captured_at': captured_at.isoformat(), 'source_rows': captured['sources'],
             'cognitive_rows': captured['cognitive'], 'census': census.to_dict(),
             'dependency_closure': closure, 'plans': plans},
@@ -281,8 +287,15 @@ class CoreDeterministicProjectionPlanner:
         if type(source) is not DeterministicProjectionSource:
             raise TypeError('deterministic_projection_source_required')
         from okto_pulse.core.application.processors.consolidation import _prepare_deterministic_projection
-        preparation = await _prepare_deterministic_projection(context, source,
-            persistence=_BoardProjectionReader(self.persistence, source.board_id))
+        reader = _BoardProjectionReader(self.persistence, source.board_id)
+        preparation = await _prepare_deterministic_projection(context, source, persistence=reader)
         if preparation is False:
             raise ValueError('deterministic_projection_source_unavailable')
-        return _projection_plan(source, True if preparation is True else preparation[0])
+        if preparation is True:
+            return _projection_plan(source, True)
+        from okto_pulse.core.kg.source_projection_metadata import prepare_root_metadata
+        result, artifact = preparation
+        metadata = await prepare_root_metadata(context, source, artifact, result.nodes, reader)
+        expected = {node.source_artifact_ref: metadata[node.candidate_id].graph_attributes()
+            for node in result.nodes if node.candidate_id in metadata}
+        return _projection_plan(source, result, expected)

@@ -3210,29 +3210,15 @@ async def _process_queue_entry(
         return preparation
     worker_result, artifact = preparation
     node_candidates = [_worker_node_to_candidate(n) for n in worker_result.nodes]
-    from dataclasses import replace
-    from okto_pulse.core.kg.source_projection_metadata import (
-        SourceProjectionMetadata, latest_resolution_time,
-    )
+    from okto_pulse.core.kg.source_projection_metadata import prepare_root_metadata
 
     # Only the exact root owns this row's timestamps. Children and reference
     # nodes must not inherit a parent's dates as if they were their own.
-    root_ref = f"{entry.artifact_type}:{entry.artifact_id}"
+    metadata_by_candidate = await prepare_root_metadata(
+        db, entry, artifact, node_candidates, get_consolidation_persistence_port(),
+    )
     for node in node_candidates:
-        if node.source_artifact_ref == root_ref:
-            node._source_projection_metadata = SourceProjectionMetadata.from_source(
-                artifact, is_bug=node.node_type == "Bug"
-            )
-            if node.node_type == "Bug":
-                metadata = node._source_projection_metadata
-                transitions = ()
-                if metadata.source_status == "done":
-                    transitions = await get_consolidation_persistence_port().latest_card_transitions(
-                        db, board_id=entry.board_id, card_id=entry.artifact_id,
-                    )
-                node._source_projection_metadata = replace(
-                    metadata, resolved_at=latest_resolution_time(metadata.source_status, transitions),
-                )
+        node._source_projection_metadata = metadata_by_candidate.get(node.candidate_id)
     edge_candidates = [_worker_edge_to_candidate(e) for e in worker_result.edges]
     raw_content = worker_result.raw_content
 

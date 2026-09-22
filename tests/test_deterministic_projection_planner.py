@@ -30,13 +30,18 @@ def persistence(artifact):
 
 @pytest.mark.asyncio
 async def test_preparation_matches_live_proposals_without_starting_a_graph_session(monkeypatch):
-    port = persistence(spec())
+    port = persistence(spec(created_at=datetime(2001, 1, 2), updated_at=datetime(2002, 1, 3)))
     source = DeterministicProjectionSource('board', 'spec', 'spec-one')
     planner = make_deterministic_projection_planner(port)
     monkeypatch.setattr(live, 'get_consolidation_persistence_port', lambda: pytest.fail('planner used ambient provider'))
     plan = await planner.prepare(None, source)
     assert (await planner.prepare(None, source)).document == plan.document
     expected = json.loads(plan.document)['projection']
+    assert expected['source_metadata'] == {'spec:spec-one': {
+        'source_created_at': '2001-01-02T00:00:00+00:00',
+        'source_updated_at': '2002-01-03T00:00:00+00:00',
+        'source_status': 'done', 'severity': None, 'resolved_at': None,
+    }}
     assert {'spec:spec-one', 'spec:spec-one:fr:fr-one'} <= {
         node['source_artifact_ref'] for node in expected['nodes']}
     class Captured(Exception):
@@ -44,6 +49,9 @@ async def test_preparation_matches_live_proposals_without_starting_a_graph_sessi
     async def begin(request, **kwargs):
         assert [node.model_dump(mode='json') for node in request.deterministic_candidates] == expected['nodes']
         assert request.raw_content == expected['raw_content']
+        assert {node.source_artifact_ref: node._source_projection_metadata.graph_attributes()
+            for node in request.deterministic_candidates if node._source_projection_metadata is not None
+        } == expected['source_metadata']
         raise Captured
     monkeypatch.setattr(live, 'get_consolidation_persistence_port', lambda: port)
     monkeypatch.setattr(live, 'begin_consolidation', begin)
@@ -80,7 +88,7 @@ async def test_cancelled_source_remains_explicitly_skipped():
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize('damage', ['none', 'missing_plan', 'node', 'extra_field', 'census',
-    'source', 'cognitive', 'dependency', 'source_read', 'scope'])
+    'source', 'cognitive', 'dependency', 'source_read', 'scope', 'source_metadata', 'source_date'])
 async def test_revalidation_rederives_complete_plan_instead_of_trusting_its_hash(damage):
     artifact = spec()
     port = persistence(artifact)
@@ -110,6 +118,10 @@ async def test_revalidation_rederives_complete_plan_instead_of_trusting_its_hash
         artifact.title = 'Changed live source, even if the caller supplied an old census'
     elif damage == 'scope':
         board_id = 'foreign'
+    elif damage == 'source_metadata':
+        retained['plans'][0]['projection']['source_metadata']['spec:spec-one']['source_created_at'] = '2001-01-01T00:00:00+00:00'
+    elif damage == 'source_date':
+        artifact.created_at = datetime(2001, 1, 1)
     encoded = json.dumps(retained, ensure_ascii=False, sort_keys=True, separators=(',', ':')).encode()
     # The existing cleanup-only check intentionally cannot certify ordinary
     # plans. A canonical document and SHA alone are not semantic correspondence.

@@ -12630,3 +12630,71 @@ F16 final aprovado: 8670 linhas, zero achados, zero drift documental e oito
 budgets zero (closure-card-resolution-final.json), após a última alteração de
 validação de payload. READMEs pelo renderer oficial. Community commit
 9dd9552acb8cbe71184daed29256d4ccb974aa2f.
+
+### 2026-09-22 — reconciliação temporal do candidato em validação
+
+Par publicado de partida: Core aee1cfd7 / Community 9dd9552a. A preparação e o
+worker agora compartilham a política de metadados da raiz. Plano individual v2,
+plano agregado v3 e reconciliação v2 recusam planos anteriores sem expectativa
+temporal. O adaptador consome o documento da porta pública, sem importar a
+implementação Core. Compara todos os cinco campos nos nós, exige todas as raízes
+esperadas e NULL nos nós sem fonte própria atestada. Relatório inclui digest e
+contagem das raízes temporais. O candidato continua projected_not_reconciled.
+
+Prova instalada antes dos testes: provenance-temporal-reconcile.json,
+Core 809/872 e Community 348/432 byte-identical. Core: 46 testes passaram em
+4.50s, mais dois casos novos de data adulterada e fonte temporal modificada
+passaram em 2.32s. Closure preliminar: 8670 linhas, zero achados e budgets zero.
+A suite Community está em execução e mostrou falhas: NÃO considerar este
+incremento validado/publicável antes do diagnóstico e da correção. A alteração
+ainda está apenas nas working trees; o incremento anterior permanece publicado.
+
+Diagnóstico do incremento: a primeira rodada Community teve 3 falhas/11 passes
+(186.85s), todas por uma referência residual ao formato agregado v2 no validador
+da seed. Corrigida para v3, preservando a recusa de documentos anteriores. A
+rodada seguinte chegou à adulteração e falhou porque a fixture escreveu no Grafx
+sem checkpoint antes da abertura read-only. Acrescentado checkpoint apenas na
+cópia descartável do teste; o verificador continua estritamente read-only. Os
+três casos afetados passaram juntos em 195.64s, incluindo Bug real e replay.
+
+O ensaio de histórico nativo revelou consumidores incompletos da evolução 0.6.0:
+logical_transfer_schema e logical_transfer_factories ainda congelavam 69 tabelas
+em vez dos 80 pares já aprovados. Atualizados os censos literais de contrato
+corrente (12 tipos, 80 relações, 11 espaços, 544 definições de propriedades de
+nó e 560 de relação), preservando os testes negativos de tabela ausente/extra/
+trocada. O corpus completo correspondente passa a 24 nós/81 arestas/1655
+propriedades/11 vetores, incluindo a aresta paralela intencional. O contrato
+histórico grafx_schema_evolution 0.3.12->0.5.0 permanece intacto. Vinte testes de
+schema passaram; factories, round-trip e histórico são a próxima validação.
+
+Fecho do recorte temporal, sem declarar reconciliação histórica completa:
+44 testes de schema/factories/round-trip físico passaram em 49.89s; F16 final
+aprovado (closure-temporal-reconcile-final.json): 8670 linhas, zero findings,
+zero drift e oito budgets zero. Ruff F/E9 e diff-check passaram. Prova final
+provenance-temporal-reconcile-final.json: Core 809/872, aggregate
+5773a0e3b272184f62dc12a1499af16754798d33159fec8e42ca507a2cbb4f03;
+Community 348/432, aggregate
+77aabce4490564e6ed29ec9361fa3fcd0c8eb9f327c2f8602933f20204f140d4.
+Nenhuma mudança de frontend ou catálogo MCP.
+
+Falha ainda aberta: test_native_candidate_is_private_and_preserves_history_after_failed_composition
+passa restore/replay da cópia física, mas falha ao projetar/reconciliar um grafo
+já povoado (source_metadata_changed:source_created_at, 211.65s). Seu Decision
+baseline tem source_ref da Spec e propriedades históricas de corpus. Uma
+investigação temporária trocando-o para Entity também falhou (198.77s): o corpus
+possui superseded_by não nulo e metadados históricos que não podem ser comparados
+indiscriminadamente à raiz atual. A troca foi revertida; nenhum skip/xfail foi
+adicionado. O teste original e seu gate continuam expondo a lacuna.
+
+Além disso, transaction.update_node registra before-images como kind=property;
+_commit_audit_records produz NodeRefs somente para kind=node (criação). Logo,
+o census atual baseado exclusivamente nos ACKs não prova identidade preservada
+de nós anteriores. Não inventar refs nem ampliar a autoridade do worker.
+Próxima implementação: capturar/ancorar census anterior no snapshot verificado,
+distinguir raiz atual, nó histórico preservado e trabalho ainda não classificado,
+e reconciliar efeitos autorizados/active sets antes de qualquer admissão. O
+recorte publicado comprova candidatos sem população anterior e recusa drift,
+não prova upgrade de graph 0.5.0 nem o census histórico dos boards reais.
+A entrega integral segue em andamento, sem pausa solicitada e sem cutover.
+
+Community commit fc0053a8c6b93fb080065a6b721ce2b3bb0be146.
