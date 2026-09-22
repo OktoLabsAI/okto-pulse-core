@@ -58,7 +58,7 @@ def _value(value, definition, schema):
     raise ValueError('cognitive_projection_property_type_invalid')
 
 
-def compare(*, schema, board_id, record, node):
+def _source_projection(*, schema, board_id, record):
     if type(record) is not dict or len(json.dumps(record, ensure_ascii=False, allow_nan=False).encode('utf-8')) > _MAX_SOURCE_BYTES:
         raise ValueError('cognitive_projection_source_invalid')
     # BoardSourceReader deliberately keeps SQL JSON cells as text in the
@@ -81,10 +81,6 @@ def compare(*, schema, board_id, record, node):
         node_type=record['node_type'], node_id=record['node_id'], generation=record['generation'],
         payload=record['payload'], evidence_refs=record['evidence_refs'])
 
-    def result(state, differences=(), usage=()):
-        return CognitiveProjectionParity(record['node_type'], record['node_id'], record['generation'],
-            record.get('source_revision', 0), fingerprint, state, tuple(sorted(differences)), tuple(sorted(usage)))
-
     definition = schema.node_type(record['node_type'])
     expected = dict(record['payload'])
     if 'id' in expected and expected['id'] != record['node_id']:
@@ -97,11 +93,26 @@ def compare(*, schema, board_id, record, node):
     expected = {name: _value(value, definition.property_def(name), schema) for name, value in expected.items()}
     # A missing graph node does not make a corrupt source revision admissible.
     # Validate portable dimensions/nullability and payload identity first.
-    LogicalSchemaIndex.build(schema).validate_node(
-        LogicalNode(record['node_type'], record['node_id'], {
-            name: expected.get(name, LOGICAL_NULL) for name in definition.property_names()}))
+    projected = LogicalNode(record['node_type'], record['node_id'], {
+        name: expected.get(name, LOGICAL_NULL) for name in definition.property_names()})
+    LogicalSchemaIndex.build(schema).validate_node(projected)
     if 'generation' in expected and expected['generation'] != record['generation']:
         raise ValueError('cognitive_projection_payload_generation_invalid')
+    return record, fingerprint, projected
+
+
+def source_node(*, schema, board_id, record):
+    return _source_projection(schema=schema, board_id=board_id, record=record)[2]
+
+
+def compare(*, schema, board_id, record, node):
+    record, fingerprint, projected = _source_projection(schema=schema, board_id=board_id, record=record)
+    expected = projected.properties
+
+    def result(state, differences=(), usage=()):
+        return CognitiveProjectionParity(record['node_type'], record['node_id'], record['generation'],
+            record.get('source_revision', 0), fingerprint, state, tuple(sorted(differences)), tuple(sorted(usage)))
+
     if node is None:
         return result('missing_node')
     if (node.type_name, node.key) != (record['node_type'], record['node_id']):

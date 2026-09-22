@@ -10,7 +10,9 @@ from okto_pulse.core.kg.logical_transfer import (
     LogicalTimestamp, LogicalVector, LogicalVectorSpace,
 )
 from okto_pulse.core.kg.logical_transfer.errors import LogicalTransferError
-from okto_pulse.core.ports.cognitive_projection import compare_cognitive_projection, validate_cognitive_projection_sources
+from okto_pulse.core.ports.cognitive_projection import (
+    compare_cognitive_projection, validate_cognitive_projection_sources, cognitive_projection_source_node,
+)
 from okto_pulse.core.ports.kg_cognitive_source import canonical_cognitive_source_fingerprint
 
 
@@ -158,3 +160,33 @@ def test_conflicting_unselected_revisions_still_fail_fingerprint_verification():
     duplicate['payload']['title'] = 'conflict'
     with pytest.raises(Exception, match='revision_conflict'):
         validate_cognitive_projection_sources(schema=SCHEMA, board_id='board', records=(old, current, duplicate))
+
+
+def test_literal_node_uses_exactly_the_comparator_projection_without_changing_source():
+    source = record()
+    source['payload'] = json.dumps(source['payload'])
+    source['evidence_refs'] = json.dumps(source['evidence_refs'])
+    before = deepcopy(source)
+    projected = cognitive_projection_source_node(schema=SCHEMA, board_id='board', record=source)
+    assert projected == node() and source == before
+    assert compare(source, projected).state == 'matched'
+
+
+def test_literal_node_does_not_invent_generation_or_replace_explicit_null_provenance():
+    source = record()
+    del source['payload']['generation']
+    source['payload']['source_session_id'] = None
+    projected = cognitive_projection_source_node(schema=SCHEMA, board_id='board', record=source)
+    assert projected.properties['generation'] is LOGICAL_NULL
+    assert projected.properties['source_session_id'] is LOGICAL_NULL
+    assert compare(source, projected).differing_fields == ('generation',)
+
+
+def test_generations_remain_distinct_and_literal_decoding_does_not_pick_a_winner():
+    first, second = record(), record()
+    second['generation'] = second['payload']['generation'] = 1
+    selected = validate_cognitive_projection_sources(schema=SCHEMA, board_id='board', records=(second, first))
+    assert len(selected) == 2
+    nodes = tuple(cognitive_projection_source_node(schema=SCHEMA, board_id='board', record=value) for value in selected)
+    assert {(value.type_name, value.key) for value in nodes} == {('Learning', 'old')}
+    assert {value.properties['generation'] for value in nodes} == {0, 1}

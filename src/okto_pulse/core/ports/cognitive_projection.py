@@ -1,4 +1,4 @@
-"""Read-only comparison with durable cognitive sources, never admission authority."""
+"""Literal cognitive projection rules, never write or admission authority."""
 
 from dataclasses import dataclass
 
@@ -36,3 +36,16 @@ def validate_cognitive_projection_sources(*, schema, board_id, records):
     """
     from okto_pulse.core.application.cognitive_projection import validate_sources
     return validate_sources(schema=schema, board_id=board_id, records=records)
+
+
+def cognitive_projection_source_node(*, schema, board_id, record):
+    """Decode one validated durable payload into portable graph properties.
+
+    Missing nullable fields stay NULL, including generation if absent from the
+    payload. The sole provenance fallback is the established source_session_id
+    replay rule. This does not select a generation, authorize writes, infer
+    relations, or prove maturity, evidence, connectivity or accessibility.
+    Validate the complete source inventory before using individual records.
+    """
+    from okto_pulse.core.application.cognitive_projection import source_node
+    return source_node(schema=schema, board_id=board_id, record=record)

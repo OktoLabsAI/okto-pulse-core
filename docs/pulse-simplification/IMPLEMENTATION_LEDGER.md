@@ -2,8 +2,11 @@
 
 ## Estado para retomada
 
-Iniciativa **em andamento**, com continuidade até a entrega final autorizada em
-2026-09-22. Frente atual: qualificação cognitiva/Global e fechamento do candidato;
+Iniciativa **incompleta; pausa solicitada pelo usuário no milestone atual** em
+2026-09-22 por limite de franquia. A instrução anterior de continuar sem pausas
+fica suspensa até nova retomada. Fechamento atual: decodificação cognitiva literal
+pela porta pública, com testes e prova do par instalado. Detalhes finais e ponto
+de handoff estão no fim deste ledger. Frente seguinte: qualificação cognitiva/Global e fechamento do candidato;
 cutover/admission continuam fechados. Histórico coberto pela projeção de fontes
 atuais tem qualificação explícita no Core; partes sem prova permanecem pending.
 Partições, relações e autoria por ACK são comparadas, além da preservação literal.
@@ -13886,3 +13889,79 @@ completa da fixture .6, como esperado. O próximo trabalho é integrar restaura�
 cognitiva literal com autoria/proveniência/conectividade e qualificar histórico,
 depois fechar cutover/admission e demais critérios do pacote. Não há declaração
 de entrega integral, alteração de autoridade nem nova superfície de manutenção.
+
+### 2026-09-22 — decodificação cognitiva literal pela porta pública
+
+Partida confirmada limpa no par publicado c173d631/ef80bb0b. O turno anterior
+foi progresso: criação Global privada integrada, 34 testes aprovados e pushes
+confirmados. Continua pendente a restauração cognitiva no candidato integrado.
+
+Extraída a decodificação já usada pelo comparador para a porta pública
+`cognitive_projection_source_node`. O Core valida escopo, fingerprints, tipos,
+vetores, timestamps e identidade antes de retornar LogicalNode completo. Campos
+nullable ausentes permanecem NULL; source_session_id segue somente o fallback
+preexistente, nunca substitui NULL explícito. Não se preenche generation ausente
+com o metadado externo. Comparação e decodificação usam uma função compartilhada,
+sem consultas de runtime ou mudanças no mecanismo concreto do Core.
+
+Inspeção da seleção/replay mostrou que o ledger seleciona a última revisão por
+(Board, tipo, ID, geração), mantendo gerações diferentes. O replay legado cria
+se ausente e preserva nós existentes. Teste da porta comprova que duas gerações
+de um ID permanecem duas fontes; nenhuma prioridade nova foi escolhida. Também
+comprova que generation ausente continua NULL e não satisfaz a comparação com
+metadado externo generation=0. Isso não autoriza reparar história silenciosamente.
+
+Par `dist-cognitive-literal` instalado e provado em
+`provenance-cognitive-literal.json`: Core 825/888 e Community 356/440 idênticos
+entre source, wheel e install. 29 testes Core passaram em 3.10s e três casos
+nativos de paridade em 48.17s; uma nova asserção da porta contra o schema nativo
+completo está em execução, assim como F16. Esses resultados ainda não são
+pressupostos. A porta fornece valores literais; não cria nó, aresta, autoridade,
+maturidade ou aprovação. Sem impacto frontend/MCP e sem alteração em dados reais.
+
+Para a integração seguinte, `_board_graph` exige autoria de todo nó novo por
+ACK e rejeita órfãos novos. Não afrouxar isso só para aceitar replay: a fonte
+cognitiva precisa ter autoria própria de efeitos, preservação de IDs/valores,
+proveniência/conectividade verificadas e nenhum impacto artificial em active sets.
+A auto-proveniência existente do commit deriva belongs_to de fonte resolvida;
+o replay literal legado só restaura nós. Investigar essa diferença antes de
+invocar restauração como se também restaurasse as relações ou admitisse runtime.
+
+### Pausa solicitada — fechamento e handoff de 2026-09-22
+
+O usuário pediu parar no milestone por esgotamento próximo da franquia. Nenhuma
+frente nova foi iniciada após esse pedido. Fechamento validado: 29 testes Core
+em 3.10s; três testes nativos finais em 46.39s, agora exercitando a porta pública
+contra o schema completo. O ensaio nativo anterior de 48.17s não é contado como
+três testes adicionais. Total do milestone: 32 testes distintos aprovados.
+
+F16 final `closure-cognitive-literal-final.json`: 8782 entradas, zero achados,
+oito budgets em zero. Wheels em `.validation-v040/dist-cognitive-literal-final`;
+prova `.validation-v040/provenance-cognitive-literal-final.json`, ambos sob
+PULSE_REFACTOR. Core 825 arquivos .py/888 payloads, Community 356/440 idênticos
+entre source/wheel/install. Hashes agregados:
+Core ff78a66294b128d3e5d85b7c312cbf612e6b7782080581a8427781fca3cd075f;
+Community 6f695f545a61e1c80be09d477d0bdb307052c5902a544eb9705bbce3ab56ed47.
+Ruff F/E9 e diff-check passaram. Community
+9e7c9f3ad38ec8158e3c5222c40b16beeddc76f8 contém teste nativo e matriz pareada;
+o mecanismo Community permanece o de ef80bb0b. O commit Core desta seção contém
+a porta, refatoração compartilhada, testes e ledger. Branch dos dois: feature/v0.4.0.
+
+Retomada concreta:
+1. Confirmar HEAD/origin e árvores, ler esta seção e manter todas as decisões
+   autorizadas anteriores. Não procurar ideação original nem migrar dados reais.
+2. A porta `cognitive_projection_source_node` retorna valores literais, mas ainda
+   NÃO há restauração cognitiva integrada ao candidato. Reutilizar validação de
+   todas as revisões; resolver explicitamente conflitos de geração e proveniência.
+3. Integrar escrita privada com prova de autoria dos efeitos, sem colocar nós
+   cognitivos em ACKs determinísticos nem relaxar census/órfãos/active sets.
+   Distinguir replay de nó e derivação de relação: ler os pontos indicados acima.
+4. Concluir qualificação histórica/Global prévio e cutover/admission, depois
+   executar a auditoria completa do plano e complementos, rollout/rollback,
+   testes frontend das features que o impactam e benchmarks ainda pendentes.
+   A lista de 246 critérios em acceptance-inventory.json é descoberta, não prova
+   de conclusão. O cabeçalho e checkpoints anteriores preservam o escopo restante.
+
+Não há testes ou builds deste milestone intencionalmente deixados em execução.
+Não houve tag, merge, release, deploy, migração real ou parada do Pulse ativo.
+Milestone fechado para pausa; iniciativa integral continua incompleta.
