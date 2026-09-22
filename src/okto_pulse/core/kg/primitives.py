@@ -4155,6 +4155,14 @@ def _do_graph_commit(
                 exc,
             )
 
+        if agent_id == 'system:historical_consolidation' and any(
+            getattr(candidate, '_source_projection_metadata', None) is not None
+            for candidate in node_candidates.values()
+        ):
+            from okto_pulse.core.application.projection_effects import capture_projection_property_effects
+
+            orch.counters.projection_property_effects = capture_projection_property_effects(
+                graph_scope, orch.records, board_id=board_id, session_id=session_id)
         committed_at = datetime.now(timezone.utc)
         run_async_blocking(graph_scope.commit())
         return (
@@ -6199,6 +6207,12 @@ async def _commit_audit_records(
             "edges_added": counters.edges_added,
         },
     )
+
+    effects = getattr(counters, 'projection_property_effects', None)
+    if effects is not None:
+        if (effects.board_id, effects.session_id) != (session.board_id, req.session_id):
+            raise ValueError('projection_effect_scope_mismatch')
+        outbox_data.payload['projection_property_effects'] = effects.to_payload()
 
     if registry.audit_repo is not None:
         await registry.audit_repo.stage_consolidation_records(

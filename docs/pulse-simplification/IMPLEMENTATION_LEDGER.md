@@ -12882,3 +12882,49 @@ achados/drift, oito budgets zero. Community publicado:
 41f04db8c6a316fb6cdfe37a195d39f30a3811f5. A antiga falha de construção privada
 com histórico povoado foi resolvida com retenção literal e estado incompleto
 explícito; classificação/elegibilidade históricas e cutover continuam pendentes.
+
+### 2026-09-22 — captura tipada de efeitos em nós reutilizados (em validação)
+
+Sobre 5f7e34a5/41f04db8: ProjectionPropertyEffects registra por Board/sessão os
+valores anteriores iniciais e os finais das propriedades efetivamente protegidas
+pelo orquestrador, sem classificar o conteúdo nem autorizar a mutação. Repetições
+na mesma propriedade são condensadas; proteções sem mudança e nós criados nessa
+sessão não viram mutações anteriores. Snapshot final ausente/incompleto recusa
+o commit e conserva a compensação existente. Captura apenas no worker interno
+system:historical_consolidation com metadados de fonte atestados, antes do commit
+gráfico. Resultado vai na auditoria/outbox existente, não em nova tabela/ledger.
+O envelope é fechado, limitado, tipado e hashado; ACK, compensação relacional e
+auditoria SQL validam escopo e integridade dessa extensão opcional, preservando
+recibos antigos sem extensão. NodeRefs e suas contagens/delete permanecem só de
+criação. Ainda não usar essa observação como autorização de mudança histórica;
+reconciliação de mudanças anteriores continua recusando até validar a composição
+exata contra backup e fonte. Tests de first-before/final-after, exclusão de
+criações, no-op, desaparecimento, adulteração e escopo adicionados. Build/prova,
+regressões e ensaio instalado pendentes neste checkpoint.
+
+Primeira validação: 29 testes Core passaram; um fixture novo não implementava o
+keyword source_session_id do Protocol create_node. Corrigido o fixture, os seis
+testes de efeitos passaram em 1.88s. Community: 22 testes (ACK/compensação e fluxo
+nativo) passaram em 154.50s, incluindo observação real de reuso e ausência desses
+IDs nos refs de criação da sessão. F16 preliminar 8691 linhas, budgets zero.
+
+Antes de publicar, a extensão foi também ancorada no digest audit/ref já contido
+no Exact ACK: payload de hash v2 adiciona projection_property_effects_sha256;
+sem extensão, v1 permanece byte a byte igual. Não altera schema SQL, contagem,
+operação ou IDs dos NodeRefs. Compensação e delta SQL rederivam esse digest.
+Teste adicional remove a extensão ou a re-sela com conteúdo diferente após ACK:
+a validação deve recusar contra o recibo original. Rebuild/prova e repetição dos
+testes afetados em andamento; ainda não anunciar este incremento como publicado.
+Validação final concluída: 22 testes Community passaram em 189.58s, incluindo
+recusa de extensão removida ou re-selada após ACK. F16 final aprovado em
+closure-property-effects-final.json: 8691 linhas, zero achados/drift e oito
+budgets zero. Proveniência final provenance-property-effects-final.json:
+Core 813 .py/876 payloads e Community 350/434, byte-identical entre fontes,
+wheels e instalação. Aggregates Core
+f94fdaf17ff5e49c24969f59482e20367aef6bd91e2f2253b50f5e5070f1a544;
+Community 9b73158dbb1a5e3aab5ace617a8f8c1320523f9a5c941d34c2cfe15570c8be91.
+Ruff F/E9 e diff-check aprovados. Commit Community:
+02e9f321a78e776d4298ce95850f00622c22de9e. Sem alteração de frontend neste
+incremento. Próximo passo: provar composição exata dos efeitos autenticados
+contra histórico e candidato; elegibilidade histórica e admissão permanecem
+pendentes, sem relaxar retirement_cutover_incomplete.

@@ -32,6 +32,7 @@ from okto_pulse.core.kg.interfaces.graph_transaction import (
     is_spec_lineage_rule_id,
 )
 from okto_pulse.core.kg.schema_contract import resolve_relationship_endpoint_pair
+from okto_pulse.core.ports.projection_effects import ProjectionPropertyEffects
 
 _SPEC_DEPENDENCY_RULE_PREFIX = "precedes/spec_dependency/"
 
@@ -360,6 +361,7 @@ class CommitCounters:
     nodes_merged: int = 0
     nodes_noop: int = 0
     merge_audit_items: list[dict[str, Any]] = field(default_factory=list)
+    projection_property_effects: ProjectionPropertyEffects | None = None
 
 
 class CompensationError(Exception):
