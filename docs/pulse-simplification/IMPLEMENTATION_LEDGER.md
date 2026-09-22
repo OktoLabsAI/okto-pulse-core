@@ -13640,3 +13640,60 @@ revisão via artifact store); preservar a cerca e não escrever nos originais.
 Ainda não há certificação Global, qualificação cognitiva integral ou terminal de
 cutover. Census histórico não executado. A implementação segue até os critérios
 integrados restantes, com ledger/commits contínuos, sem encerrar em milestones.
+
+### 2026-09-22 — captura Global sem escrita integrada ao candidato e replay
+
+Turno anterior classificado como progresso (699e1cef/48ba4615 e
+918450a6/d52ced17 publicados). Estado inicial confirmado limpo em 918450a6/d52ced17.
+A API existente `current_fingerprint` pode inicializar/reparar a revisão do
+overlay; o adapter normal também cria lock e limpa temporários ao ler. Nenhum
+desses efeitos pode ocorrer na conferência fria do candidato autenticado.
+
+Core acrescenta `current_fingerprint_read_only`/`capture_read_only` ao serviço
+público de snapshot já existente. Ambos exigem revisão estável existente e
+compartilham a mesma seleção/policy/bounds da captura normal; verificam a cerca
+antes/depois sem repará-la. Revisão ausente/mutating/unfenced/inválida é
+indisponibilidade, não ausência de holds nem autorização para promoção.
+Community implementa o leitor restrito às duas namespaces necessárias, sem
+capacidade de escrita, lock ou cleanup. Recusa links/reparse, escopo inválido,
+documentos não-objeto e limites de leitura; usa prazo e teto agregado de 64 MiB.
+
+`capture_candidate_global_source_inputs` lê o overlay e a dívida canônica via
+porta pública/UoW SQLite query_only, dentro das cercas externas existentes.
+Metadata vem do plano já rederivado. Retém inputs tipados por Board e fingerprint
+do overlay, com teto agregado de 64 MiB. Não toca nos originais. Integração na
+criação e na revalidação do checkpoint: recibo privado de projeção passa a v4,
+com `global_source_inputs`; replay recalcula o campo, não confia no recibo.
+`captured_not_reconciled` não certifica Global nem abre runtime; ausência de
+revisão retorna explicitamente `overlay_unavailable`. Não há novos endpoints.
+
+12 testes Core passaram em 13.23s (captura, rejeição sem reparo, drift, guard AF27).
+Dois testes Community passaram em 11.17s antes do ajuste final de limite agregado
+na saída: SQLite com 201 exclusões, replay idêntico e comparação byte-a-byte de
+todos os arquivos, inclusive orphan tmp que deve permanecer. Versão final
+reconstruída/reinstalada e provada em `provenance-global-source-inputs.json`,
+wheels `dist-global-source-inputs`: Core 822/885, Community 354/438. Suite com os
+casos nativos completos .6/.5 em execução; .6 agora inclui overlay estável real na
+origem antes do backup, .5 prova indisponibilidade explícita. F16 em execução.
+
+Suite final Community: 4 passed em 346.41s (.6 com revisão estável preservada e
+recapturada, .5 sem revisão explicitamente indisponível, SQLite 201 dívidas e
+captura sem qualquer criação/mutação de arquivo). Ambos os replays completos
+continuam equivalentes e runtime recusado, mantendo a pendência semântica real.
+F16 final `closure-global-source-inputs-final.json`: 8757 entradas, zero achados,
+oito budgets zero. Prova `provenance-global-source-inputs-final.json`, wheels
+`dist-global-source-inputs-final`: Core 822/885, Community 354/438 byte-identical.
+Hashes agregados Core 57bb5d14be91e4986449a83f4ea7252dac453a8378f223a5d07280f563839bd0,
+Community b9cf6bea46e280ca59d0d4577ef7d491053e6fc84435bb5583764081db4c231e.
+Community b533ce7cbb54c8d304ab26fae22e40e0b205111a. Ruff F/E9 e diff-check
+aprovados. Nenhum frontend afetado; census histórico não executado.
+
+Próxima dependência concreta: derivar/comparar os digests Global com a fonte Board
+usando os inputs capturados e a política existente. `build_recovery_board_seed`
+em application/processors/global_outbox.py já concentra derivação de título,
+summary, embedding, seleção de fonte e `resolve_expected_digest_layer`; preferir
+extrair/reutilizar sua parte pura a duplicar policy no adapter. A tabela Global
+inclui também Topic/Entity e relações auxiliares: o seed de recovery cobre
+Board/DecisionDigest/CONTAINS_DECISION, não atribuir prova às demais por omissão.
+Não acrescentar Cypher/HNSW ao Core. A captura atual não certifica maturidade,
+proveniência ou comparação gráfica; terminal/admission continuam fechados.

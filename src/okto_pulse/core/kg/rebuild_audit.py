@@ -750,6 +750,16 @@ class CognitivePendingOverlaySnapshotService:
 
     artifact_store: RebuildAuditArtifactStore
 
+    def current_fingerprint_read_only(self) -> str:
+        """Inspect an existing stable fence without initializing or repairing it."""
+        current = self.artifact_store.read_json(_cognitive_overlay_revision_key())
+        if not _valid_stable_cognitive_overlay_revision(current):
+            raise CognitivePendingOverlaySnapshotError(
+                "cognitive_overlay_stable_revision_required",
+                "read-only capture requires an existing stable overlay revision",
+            )
+        return _cognitive_overlay_revision_fingerprint(current)
+
     def current_fingerprint(self) -> str:
         key = _cognitive_overlay_revision_key()
         current = self.artifact_store.read_json(key)
@@ -783,6 +793,18 @@ class CognitivePendingOverlaySnapshotService:
         board_ids: Sequence[str],
         deadline_seconds: float,
     ) -> CognitivePendingOverlaySnapshot:
+        return self._capture(board_ids=board_ids, deadline_seconds=deadline_seconds,
+            fingerprint_reader=self.current_fingerprint)
+
+    def capture_read_only(
+        self, *, board_ids: Sequence[str], deadline_seconds: float,
+    ) -> CognitivePendingOverlaySnapshot:
+        """Capture the same bounded policy without writes to the source fence."""
+        return self._capture(board_ids=board_ids, deadline_seconds=deadline_seconds,
+            fingerprint_reader=self.current_fingerprint_read_only)
+
+    def _capture(self, *, board_ids: Sequence[str], deadline_seconds: float,
+            fingerprint_reader: Callable[[], str]) -> CognitivePendingOverlaySnapshot:
         normalized = tuple(sorted({str(board_id).strip() for board_id in board_ids}))
         if not normalized or any(not board_id for board_id in normalized):
             raise ValueError("board_ids must contain non-empty identifiers")
@@ -799,7 +821,7 @@ class CognitivePendingOverlaySnapshotService:
                 "deadline_seconds must be positive and no greater than 300"
             )
         deadline = time.monotonic() + budget
-        before = self.current_fingerprint()
+        before = fingerprint_reader()
         captured: list[tuple[str, tuple[tuple[str, str], ...]]] = []
         from okto_pulse.core.kg.connectivity_guard import (
             CANONICAL_LEARNING_WORKING_ONLY_REASON,
@@ -879,7 +901,7 @@ class CognitivePendingOverlaySnapshotService:
                                 )
             captured.append((board_id, tuple(sorted(exclusions.items()))))
 
-        after = self.current_fingerprint()
+        after = fingerprint_reader()
         if before != after:
             raise CognitivePendingOverlaySnapshotError(
                 "cognitive_overlay_snapshot_drift",

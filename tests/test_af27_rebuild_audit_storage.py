@@ -135,6 +135,27 @@ def test_cognitive_overlay_revision_binds_bounded_active_hold_snapshot() -> None
     assert snapshot.exclusions_for_board(board_id) == {
         "bug:ticket-1": CANONICAL_LEARNING_WORKING_ONLY_REASON
     }
+    assert overlay.capture_read_only(board_ids=[board_id], deadline_seconds=5) == snapshot
+    assert overlay.current_fingerprint_read_only() == after
+
+
+@pytest.mark.parametrize('state', [None, 'mutating', 'unfenced', 'invalid'])
+def test_read_only_overlay_never_repairs_or_initializes_revision(state):
+    class ReadOnlyStore(InMemoryRebuildAuditArtifactStore):
+        def replace_json(self, *_args, **_kwargs):
+            raise AssertionError('read-only capture attempted a revision write')
+
+    store = ReadOnlyStore()
+    key = RebuildAuditKey('global_discovery_recovery', '_global', artifact_id='cognitive_pending_overlay_revision')
+    if state is not None:
+        store.write_json_atomic(key, {'version': 1, 'state': state, 'revision': 7,
+            'nonce': 'immutable-source-nonce'})
+    before = store.read_json(key)
+    overlay = CognitivePendingOverlaySnapshotService(store)
+    with pytest.raises(CognitivePendingOverlaySnapshotError) as error:
+        overlay.capture_read_only(board_ids=['board'], deadline_seconds=5)
+    assert error.value.code == 'cognitive_overlay_stable_revision_required'
+    assert store.read_json(key) == before
 
 
 def test_cognitive_overlay_pending_revision_is_repaired_without_aba() -> None:
@@ -166,7 +187,8 @@ def test_cognitive_overlay_pending_revision_is_repaired_without_aba() -> None:
     assert repaired["nonce"] != "pending-nonce-is-long-enough"
 
 
-def test_cognitive_overlay_capture_rejects_mid_scan_revision_change() -> None:
+@pytest.mark.parametrize('read_only', [False, True])
+def test_cognitive_overlay_capture_rejects_mid_scan_revision_change(read_only) -> None:
     revision_key = RebuildAuditKey(
         namespace="global_discovery_recovery",
         board_id="_global",
@@ -193,7 +215,8 @@ def test_cognitive_overlay_capture_rejects_mid_scan_revision_change() -> None:
     overlay.current_fingerprint()
 
     with pytest.raises(CognitivePendingOverlaySnapshotError) as exc_info:
-        overlay.capture(board_ids=["board-drift"], deadline_seconds=5)
+        capture = overlay.capture_read_only if read_only else overlay.capture
+        capture(board_ids=["board-drift"], deadline_seconds=5)
 
     assert exc_info.value.code == "cognitive_overlay_snapshot_drift"
 
