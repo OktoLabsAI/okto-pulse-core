@@ -13080,3 +13080,82 @@ Community 0ddef742ed5680183378addcb86497389c8e941aa581c645093662d9f0d008ea.
 Community a86116dca08ac476257759c337a1be4edc5b9c6e. Ruff F/E9 e diff-check
 aprovados. Sem frontend afetado. Próxima frente é a integração descrita acima;
 a função isolada testada não equivale a migração coordenada nem entrega final.
+
+### 2026-09-22 — integração coordenada da evolução (em validação)
+
+Evolução isolada publicada: Core 49bfad14 / Community a86116dc; pushes confirmados.
+Builder privado passa a evoluir somente o fingerprint predecessor exato antes
+da projeção. Mantém graph-NNNN nativo antigo sem binding; o checkpoint inclui
+seus bytes integralmente, sem exceções de mutex de geração ativa. A geração
+nova usa o sink atual; o caminho sem projeção continua restauração literal.
+retirement_schema_baseline rederiva o delta fechado a partir do snapshot,
+confere recibo completo e fornece baseline transformada separada do census
+original. Observations/v4 expõe before_census_sha256 original e
+projection_baseline_sha256; efeitos do worker são compostos contra esta
+baseline explícita, sem whitelist de diferenças arbitrárias. Recibos internos
+schema-evolution/v2 retiram estatísticas de batching da prova semântica;
+projection/v3 inclui schema_evolutions e checkpoint rederiva sem repetir writes.
+As versões anteriores de recibos privados incompletos não são promovidas
+implicitamente por esse formato; manter seed/backup para reconstrução privada.
+
+Investigação adicional na mesma cadeia: o checkpoint comparava scope=='global',
+mas RecoveryGraph/manifest/rotas usam global_discovery. Corrigida seleção de
+binding para o identificador efetivo, sem aceitar novos escopos. Novo ensaio
+integra grafo .5 de Board com Global preservado, replay e detecção de alteração
+na cópia nativa não ligada. Caso .6 existente também será reexecutado. Build e
+prova pareados em andamento; não publicar conclusão antes dos testes/F16.
+
+Primeira integração: nove testes de evolução isolada/censo/gates passaram em
+135.53s e F16 preliminar 8703 linhas/budgets zero. Ensaio completo .5 falhou em
+54.09s antes da evolução: prepare_sprint_graph_retirement ainda abria o leitor
+normal .6. Investigação da cadeia encontrou o mesmo contrato fixo no snapshot
+de transação de remoção, fontes Board do cleanup Global e conferência de estados
+do materialization plan. Esses adapters são exclusivos da migração offline;
+agora selecionam o catálogo predecessor exato, mantendo validação completa de
+colunas/endpoints e o MESMO plano/fingerprint/seleção de remoção. Sem relaxar
+writers normais nem autorizar nova população. Rebuild/prova e regressões antes
+de repetir o ensaio coordenado. Este checkpoint continua não publicado.
+
+O segundo ensaio .5 avançou por projeção e reconciliação, mas falhou no rename
+final do estágio privado (PermissionError Windows) em 181.67s. Investigação do
+lifecycle mostrou que execute_candidate_projection fechava pool compartilhado
+e readers de Board, mas não os pools próprios de leitura Global. O shutdown
+normal já chama global_graph.close_all_on_shutdown; o encerramento privado
+passa a usar essa mesma operação, após drain de probes. Sem retry de rename,
+force-close de lease ativa ou relaxamento do lock. O erro de publicação não foi
+tratado como sucesso. Regressões de seleção/remoção ainda em execução; nova
+prova de pacote será feita antes de repetir o fluxo integrado.
+
+Validação após o fechamento explícito dos pools Global: os 31 testes de
+seleção/remoção Sprint, limpeza Global e guardas de materialização passaram
+em 732.29s. Instalação reconstruída em dist-coordinated-schema-fixed e prova
+provenance-coordinated-schema-fixed.json: Core 814/877, Community 353/437,
+byte-identical. Testes da evolução isolada ampliados com rederivação da baseline,
+recibo adulterado e duplicação de escopo: 2 passed em 123.59s. F16 preliminar
+8703 entradas, zero achados e oito budgets zero. Caso integrado .6 passou;
+caso .5/Global e F16 final ainda em execução, sem conclusão antecipada.
+
+Investigação da próxima dependência: retirement_projection_inputs já captura
+cognitive_rows na mesma transação relacional; deterministic_projection.prepare_board
+ancora seu digest usando cognitive_durable_digest_from_rows, mas o reconciliador
+atual ainda não confronta os nós históricos com esses registros. A existência
+do digest não prova paridade de conteúdo/proveniência de cada nó. O reader atual
+verifica o fingerprint da revisão cognitiva mais recente. Reusar essa autoridade
+existente e os campos de nascimento selados antes de desenhar classificação;
+sem promover histórico por mera preservação e sem executar o mecanismo legado
+de purge/restore. KG §8.2/8.3 exige preservar fontes e bloquear a parte sem
+proveniência representável; não inventar vínculos de Board/Spec nem apagar dívida.
+
+Integração coordenada concluída e validada neste recorte: casos completos .6 e
+.5/Global passaram (2 passed, 358.36s), incluindo publicação Windows, replay,
+identidade histórica, novo UUID/schema, recusa de adulteração dos bytes nativos
+retidos e admission ainda bloqueada. F16 final closure-coordinated-schema-final.json:
+8703 entradas, zero achados/drift, oito budgets zero. Prova final
+provenance-coordinated-schema-final.json: Core 814/877 e Community 353/437,
+byte-identical source/wheel/install; aggregates Core
+862e18c71d8286424447e12beff338466af593db94c5f4b49a789710933d050c;
+Community 6e9634eb5f1b5e6e4dc49dcf634f00d0162e1d77943dc5ee07293ba69c77f45d.
+Wheels em dist-coordinated-schema-final. Ruff F/E9 e diff-check aprovados.
+Community 2bb5f5fd0218cf513415487d867bc3713bbef336. Sem frontend afetado.
+Próxima dependência é classificação/paridade de fontes históricas descrita acima;
+este milestone não conclui a migração nem os demais critérios I/P/K da iniciativa.
