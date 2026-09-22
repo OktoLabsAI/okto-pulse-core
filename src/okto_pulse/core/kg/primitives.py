@@ -6020,6 +6020,7 @@ _NODE_UPDATEABLE_ATTRS: frozenset[str] = frozenset(
         "source_updated_at",
         "source_status",
         "severity",
+        "resolved_at",
         # Code Traceability is a deterministic relational projection. Its
         # optional metadata follows the immutable source row on a refresh;
         # no external repository is consulted at this boundary.

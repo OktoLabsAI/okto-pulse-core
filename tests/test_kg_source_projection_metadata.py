@@ -21,15 +21,17 @@ def test_source_chronology_preserves_instant_and_raw_status():
         "source_created_at": "2001-01-02T00:00:00+00:00",
         "source_updated_at": "2002-03-04T08:06:07+00:00",
         "source_status": "rejected", "severity": "critical",
+        "resolved_at": None,
     }
     assert SourceProjectionMetadata.from_source({}, is_bug=False).graph_attributes() == {
         "source_created_at": None, "source_updated_at": None,
         "source_status": None, "severity": None,
+        "resolved_at": None,
     }
 
 
 @pytest.mark.parametrize("field", [
-    "source_created_at", "source_updated_at", "source_status", "severity",
+    "source_created_at", "source_updated_at", "source_status", "severity", "resolved_at",
     "_source_projection_metadata",
 ])
 def test_client_cannot_supply_source_metadata(field):
@@ -65,3 +67,24 @@ async def test_non_worker_cannot_submit_internal_attestation():
                 deterministic_candidates=[node],
             ), agent_id="external-agent",
         )
+
+
+def test_resolution_uses_last_done_and_clears_on_reopen():
+    from okto_pulse.core.kg.source_projection_metadata import latest_resolution_time
+    from okto_pulse.core.ports.consolidation import CardLifecycleTransition
+
+    def transition(day, old, new):
+        return CardLifecycleTransition(str(day), datetime(2001, 1, day), old, new)
+
+    first = transition(2, "in_progress", "done")
+    reopened = transition(3, "done", "in_progress")
+    last = transition(4, "in_progress", "done")
+    assert latest_resolution_time("done", (first,)) == "2001-01-02T00:00:00+00:00"
+    assert latest_resolution_time("in_progress", (first,)) is None
+    assert latest_resolution_time("in_progress", (reopened, first)) is None
+    assert latest_resolution_time("done", (last, reopened)) == "2001-01-04T00:00:00+00:00"
+    assert latest_resolution_time("done", ()) is None
+    assert latest_resolution_time("done", (reopened, first)) is None
+    assert latest_resolution_time("done", (last, transition(4, "done", "in_progress"))) is None
+    assert latest_resolution_time("done", (transition(4, None, "done"),)) is None
+    assert latest_resolution_time("done", (transition(4, ["in_progress"], "done"),)) is None

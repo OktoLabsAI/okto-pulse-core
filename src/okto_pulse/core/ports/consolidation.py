@@ -1251,7 +1251,21 @@ class ConsolidationProjectionInputs:
     spec_dependencies: tuple[CurrentSpecDependencyProjection, ...] = ()
 
 
+@dataclass(frozen=True, slots=True)
+class CardLifecycleTransition:
+    event_id: str
+    occurred_at: datetime
+    from_status: str | None
+    to_status: str | None
+
+
 class ConsolidationPersistencePort(Protocol):
+    async def latest_card_transitions(
+        self, context: Any, *, board_id: str, card_id: str,
+    ) -> tuple[CardLifecycleTransition, ...]:
+        """Read at most two latest card.moved events, newest first."""
+        ...
+
     async def load_artifact(
         self,
         context: Any,

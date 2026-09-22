@@ -2,7 +2,10 @@
 
 ## Estado para retomada
 
-Iniciativa **em andamento**. Estado consolidado em 2026-09-20: candidatos e
+Iniciativa **em andamento**, com continuidade até a entrega final autorizada em
+2026-09-22. Frente atual: fidelidade temporal e reconciliação do candidato privado
+KG 0.6.0; cutover/admission continuam fechados. Os detalhes e provas mais recentes
+estão nas seções finais. O resumo de 2026-09-20 abaixo é histórico: candidatos e
 classificação arquitetural, autoria em lote, perfis/vínculos/herança, Test Cards,
 contribuições por Card e contrato conjunto com adoção explícita estão publicados.
 Entrega incremental registra progress, partial/complete, execução inline/lotes,
@@ -12589,3 +12592,41 @@ evento card.moved que é emitido tanto por move_card quanto submit_validation e
 gravado com occurred_at na mesma transação. Empates, ausência e divergência com
 o status atual devem permanecer desconhecidos; testar reabertura e novo done.
 Community commit0368f504174d13c2438ea1c20cdfa2acdbd9d261.
+
+### 2026-09-22 — KG-14, resolução de Bug pela última transição autoritativa
+
+Investigação confirmou que move_card e submit_validation emitem card.moved,
+persistido com occurred_at pelo publisher na mesma transação relacional. A
+porta pública ConsolidationPersistencePort agora oferece leitura delimitada às
+duas transições mais recentes do Board/Card exato. O adaptador SQLAlchemy fica
+no Community; a política temporal e a decisão de desconhecido ficam no Core.
+Não usar activity_logs incompletos, updated_at, ID aleatório ou hora do rebuild.
+
+O worker interno deriva resolved_at apenas para Bug atualmente done com última
+transição válida para done e ordem temporal inequívoca. Reabertura limpa o campo;
+novo done usa sua própria data. Ausência, status divergente, empate ou payload
+inválido produzem NULL. O carrier continua privado e a atualização preserva
+created_at do grafo. Nenhuma nova permissão ou escrita pública foi aberta.
+
+Validação instalada: 10 testes Core passaram em 2.22s; dois testes Community
+(SQLite real e escrita/limpeza nativa Grafx) passaram em 9.58s. Ensaio integrado
+do candidato com fonte v0.3.4 descartável modificada antes do snapshot passou em
+68.12s: done/reabertura/novo done, status/severidade exatos, created_at distinto
+e fonte original intacta. O cenário usa o worker e adapters reais até o grafo.
+Sem impacto de frontend neste incremento. Ruff F/E9 e diff-check passaram.
+
+Prova final source/wheel/install: Core 809 Python/872 payload, aggregate
+ eb93cd8949da46a91e33f32466a935ffc7cde7f18594583ea0d266db513c902b;
+Community 348/432, aggregate
+6af6871428b4d52740f03f125ef0b1021edbdee328f0dff0e9358709eebdeb08.
+Arquivo local: provenance-card-resolution-final.json. Auditoria final e SHAs
+serão registrados antes da publicação deste incremento.
+
+Próximo incremento: incluir expectativas temporais no plano de projeção interno
+revalidado e compará-las na reconciliação do candidato, inclusive adulteração.
+Ainda não há contrato terminal completo, admissão ou census dos boards reais.
+
+F16 final aprovado: 8670 linhas, zero achados, zero drift documental e oito
+budgets zero (closure-card-resolution-final.json), após a última alteração de
+validação de payload. READMEs pelo renderer oficial. Community commit
+9dd9552acb8cbe71184daed29256d4ccb974aa2f.

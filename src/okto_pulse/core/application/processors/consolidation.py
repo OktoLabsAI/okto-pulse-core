@@ -3210,7 +3210,10 @@ async def _process_queue_entry(
         return preparation
     worker_result, artifact = preparation
     node_candidates = [_worker_node_to_candidate(n) for n in worker_result.nodes]
-    from okto_pulse.core.kg.source_projection_metadata import SourceProjectionMetadata
+    from dataclasses import replace
+    from okto_pulse.core.kg.source_projection_metadata import (
+        SourceProjectionMetadata, latest_resolution_time,
+    )
 
     # Only the exact root owns this row's timestamps. Children and reference
     # nodes must not inherit a parent's dates as if they were their own.
@@ -3220,6 +3223,16 @@ async def _process_queue_entry(
             node._source_projection_metadata = SourceProjectionMetadata.from_source(
                 artifact, is_bug=node.node_type == "Bug"
             )
+            if node.node_type == "Bug":
+                metadata = node._source_projection_metadata
+                transitions = ()
+                if metadata.source_status == "done":
+                    transitions = await get_consolidation_persistence_port().latest_card_transitions(
+                        db, board_id=entry.board_id, card_id=entry.artifact_id,
+                    )
+                node._source_projection_metadata = replace(
+                    metadata, resolved_at=latest_resolution_time(metadata.source_status, transitions),
+                )
     edge_candidates = [_worker_edge_to_candidate(e) for e in worker_result.edges]
     raw_content = worker_result.raw_content
 

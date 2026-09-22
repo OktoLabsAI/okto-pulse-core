@@ -4,6 +4,9 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Mapping
 
+from okto_pulse.core.ports.consolidation import CardLifecycleTransition
+from okto_pulse.core.domain.enums import CardStatus
+
 
 def _timestamp(value: object) -> str | None:
     if value is None:
@@ -21,6 +24,7 @@ class SourceProjectionMetadata:
     source_updated_at: str | None
     source_status: str | None
     severity: str | None
+    resolved_at: str | None = None
 
     @classmethod
     def from_source(cls, source: object, *, is_bug: bool) -> "SourceProjectionMetadata":
@@ -44,4 +48,31 @@ class SourceProjectionMetadata:
             "source_updated_at": self.source_updated_at,
             "source_status": self.source_status,
             "severity": self.severity,
+            "resolved_at": self.resolved_at,
         }
+
+
+def latest_resolution_time(
+    current_status: str | None, transitions: tuple[CardLifecycleTransition, ...],
+) -> str | None:
+    """Last observed done transition, never a reconstruction-clock fallback."""
+    if current_status != "done" or not transitions:
+        return None
+    if len(transitions) > 2:
+        raise ValueError("card_resolution_history_unbounded")
+    latest = transitions[0]
+    if (
+        latest.to_status != "done"
+        or not isinstance(latest.from_status, str)
+        or latest.from_status not in {state.value for state in CardStatus}
+        or latest.from_status == "done"
+    ):
+        return None
+    stamp = _timestamp(latest.occurred_at)
+    if len(transitions) == 2:
+        previous = _timestamp(transitions[1].occurred_at)
+        # Timestamps with equal instants cannot establish lifecycle ordering.
+        # Do not use a random event UUID as a chronology tiebreaker.
+        if stamp is None or previous is None or previous >= stamp:
+            return None
+    return stamp
