@@ -13697,3 +13697,62 @@ inclui também Topic/Entity e relações auxiliares: o seed de recovery cobre
 Board/DecisionDigest/CONTAINS_DECISION, não atribuir prova às demais por omissão.
 Não acrescentar Cypher/HNSW ao Core. A captura atual não certifica maturidade,
 proveniência ou comparação gráfica; terminal/admission continuam fechados.
+
+### 2026-09-22 — derivação compartilhada dos digests Global a partir de fatos tipados
+
+Extraída a parte pura de `GlobalOutboxProcessor.build_recovery_board_seed` para
+application/global_projection.py, exposta por ports/global_projection.py com
+`GlobalProjectionSource` e `build_global_projection_seed`. O caminho real de
+recovery já chama essa implementação. Mantém `resolve_expected_digest_layer`,
+exclusões capturadas, normalização de source_ref, título/summary de 280 caracteres,
+ordem e algoritmo de fingerprint existentes. Não realiza I/O, cognição, consulta
+Cypher, geração de embedding ou publicação; recebe o vetor do provider admitido.
+Contrato tipado limita 100 mil fontes/64 MiB, identidade única e tipos vetoriais
+finitos sem coerção. Seed não concede acesso nem admissão/cutover.
+
+A investigação encontrou leitura parcial não detectada no método antigo: a
+segunda enumeração conferia a estabilidade de IDs mas não que todos os nós
+solicitados tinham sido lidos. Reprodução isolada (`python -I`) contra o módulo
+instalado, comparado byte-a-byte com `dist-global-source-inputs-final` antes da
+reinstalação atual: inventário esperava 2 fontes e retornava seed com apenas 1
+digest. Script de reprodução em .validation-v040/reproduce_global_missing_source.py;
+saída observada com expected_source_count=2, actual_digest_count=1. É reprodução
+intencional do predecessor instalado, não validação da working tree nova.
+Agora a função compartilhada exige igualdade exata de identidades/tipos entre
+inventário esperado e fatos observados; recusa também metadata com tipo divergente.
+Não reduz obrigação nem adiciona fallback. O teste de regressão cobre o caminho
+real da recuperação, além dos casos puros de omissão/duplicidade/ambiguidade.
+
+96 testes Core passaram em 4.70s e 9 testes Community em 26.44s, incluindo captura
+que libera a conexão antes da fase gráfica. Vetores preservam signed zero;
+dívida/ausência de evidência canônica altera somente a camada publicada conforme
+policy existente; fonte permanece literal. Fingerprint de conjunto vazio mantém
+7aac42da6b62b1e98e7ab7bae9b96876628169d31d3efbc693f4d3dcf4a8d145.
+F16 preliminar: 8766 entradas, zero achados, oito budgets zero. Par instalado
+provado em `provenance-global-projection-final.json`, wheels
+`dist-global-projection-final`: Core 824/887, Community 354/438 byte-identical.
+Auditoria F16 final em execução. Este incremento prepara o uso dos mesmos fatos
+na comparação fria do candidato; essa comparação ainda não foi implementada.
+Nenhuma alteração de frontend, tools MCP, dados reais, tag, merge ou release.
+
+Nota de integração fria levantada por leitura de `_read_board_layer_meta` e
+`_read_learning_completeness_evidence`: o seed atual só carrega source_ref para
+Learning; os outros tipos usam string vazia (não criar uma coluna de proveniência
+no DecisionDigest). Tipos digestáveis são VECTOR_INDEX_TYPES. Seleção normal
+exige embedding presente, revocation_reason NULL e superseded_by NULL; ID ativo
+em mais de um tipo é ambíguo. A contagem validates→Bug usa multiplicidade e camada
+canonical do destino; relates_to agrupa tipo/camada e inclui endpoints antes da
+policy existente avaliar a taxonomia. Camada ausente/vazia vira legacy_unknown.
+A futura adaptação de inventário portátil deve preservar esses predicados, sem
+adicionar Cypher ou silenciosamente trocar elegibilidade de endpoint histórico.
+
+F16 final `closure-global-projection-final.json`: 8766 entradas, zero achados,
+oito budgets zero. Hashes agregados Core
+2676334d1c99632e4a56db0fffc2f1e231ad1de3b95be6c2dec1ba3cf4c56185;
+Community b9cf6bea46e280ca59d0d4577ef7d491053e6fc84435bb5583764081db4c231e.
+Community 4e679fec3e6d78d40373664f662f80806b730c3d (matriz pareada; mecanismo
+continua b533ce7c). Ruff F/E9 e diff-check aprovados. O próximo passo continua
+adaptar o inventário Board portátil para esses fatos e comparar/materializar
+Global sob as cercas do candidato, preservando a origem histórica não qualificada.
+A entrega total não está certificada; objetivo integral e critérios restantes
+permanecem ativos, sem redefinição de escopo.

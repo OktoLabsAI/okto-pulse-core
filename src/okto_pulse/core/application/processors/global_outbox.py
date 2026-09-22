@@ -7,8 +7,6 @@ lifecycle are owned by an edition runner.
 from __future__ import annotations
 
 import asyncio
-import hashlib
-import json
 import logging
 from collections.abc import Callable, Mapping
 from datetime import datetime, timezone
@@ -258,14 +256,8 @@ class GlobalOutboxProcessor:
         """
 
         from okto_pulse.core.kg.embedding import get_embedding_provider
-        from okto_pulse.core.kg.global_discovery.layer_parity import (
-            resolve_expected_digest_layer,
-        )
-        from okto_pulse.core.kg.interfaces.global_discovery_recovery import (
-            GlobalDiscoveryBoardSeed,
-            GlobalDiscoveryDigestSeed,
-        )
-        from okto_pulse.core.kg.rebuild_audit import normalize_cognitive_artifact_id
+        from okto_pulse.core.ports.global_discovery_recovery_control import GlobalDiscoveryRecoveryBoardSeedInput
+        from okto_pulse.core.ports.global_projection import GlobalProjectionSource, build_global_projection_seed
 
         source_types = await self._run_graph_io(
             lambda: self._read_board_digestable_node_types(board_id)
@@ -301,7 +293,7 @@ class GlobalOutboxProcessor:
         }
 
         seen: set[str] = set()
-        digests: list[GlobalDiscoveryDigestSeed] = []
+        sources: list[GlobalProjectionSource] = []
         for node in sorted(nodes, key=lambda row: str(row.get("id") or "")):
             node_id = str(node.get("id") or "")
             if not node_id or node_id in seen or node_id not in source_types:
@@ -310,27 +302,19 @@ class GlobalOutboxProcessor:
                 )
             seen.add(node_id)
             meta = layer_meta[node_id]
-            artifact_id = normalize_cognitive_artifact_id(
-                str(meta.get("source_artifact_ref") or "")
-            )
-            graph_layer, _exclusion = resolve_expected_digest_layer(
-                node_type=str(meta["node_type"]),
-                raw_graph_layer=str(meta["graph_layer"]),
-                source_artifact_ref=str(meta.get("source_artifact_ref") or ""),
-                canonical_bug_count=int(meta.get("canonical_bug_count") or 0),
-                relates_to_endpoints=tuple(meta.get("relates_to_endpoints") or ()),
-                overlay_exclusion_reason=overlay.get(artifact_id),
-            )
+            if str(meta['node_type']) != source_types[node_id]:
+                raise RuntimeError('outbox.source_identity_ambiguous: recovery source metadata type differs')
             title = str(node.get("title") or "")
-            digests.append(
-                GlobalDiscoveryDigestSeed(
-                    original_node_id=node_id,
+            sources.append(
+                GlobalProjectionSource(
+                    node_id=node_id,
                     title=title,
-                    summary=title[:280],
                     node_type=source_types[node_id],
-                    graph_layer=graph_layer,
+                    graph_layer=str(meta['graph_layer']),
                     source_artifact_ref=str(meta.get("source_artifact_ref") or ""),
                     embedding=tuple(float(value) for value in node["embedding"]),
+                    canonical_bug_count=int(meta.get('canonical_bug_count') or 0),
+                    relates_to_endpoints=tuple(meta.get('relates_to_endpoints') or ()),
                 )
             )
 
@@ -341,18 +325,6 @@ class GlobalOutboxProcessor:
             raise RuntimeError(
                 "outbox.source_inventory_changed: board changed during recovery read"
             )
-        fingerprint_payload = {
-            "source_types": sorted(source_types.items()),
-            "digests": [row.to_dict() for row in digests],
-        }
-        source_inventory_hash = hashlib.sha256(
-            json.dumps(
-                fingerprint_payload,
-                sort_keys=True,
-                separators=(",", ":"),
-                ensure_ascii=False,
-            ).encode("utf-8")
-        ).hexdigest()
         summary_embedding = await self._run_graph_io(
             lambda: tuple(
                 float(value)
@@ -361,13 +333,11 @@ class GlobalOutboxProcessor:
                 )
             )
         )
-        return GlobalDiscoveryBoardSeed(
-            board_id=board_id,
-            board_name=board_name,
-            summary=board_summary,
+        return build_global_projection_seed(
+            source_input=GlobalDiscoveryRecoveryBoardSeedInput(board_id, board_name, board_summary,
+                tuple(sorted(overlay.items()))),
+            expected_sources=tuple(sorted(source_types.items())), sources=tuple(sources),
             summary_embedding=summary_embedding,
-            digests=tuple(digests),
-            source_inventory_hash=source_inventory_hash,
         )
 
     async def process_once(self) -> int:
