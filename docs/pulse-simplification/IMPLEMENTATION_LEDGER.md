@@ -15360,3 +15360,42 @@ e documentação e oito budgets zero**. Os 32 testes de transporte Community e 6
 de âncoras foram executados antes da compactação de docstrings; esta só alterou
 descrições/resources e foi validada no novo par byte-identical com catálogo,
 manifests, orçamento e F16. Sem sessões de teste/instalação pendentes.
+
+### F4 — auditoria originates_from retirada, pacote em preparação
+
+Recorte anterior enviado: Core d1ad261e / Community 8dde0cee. Removidos agora
+kg_originates_from_contract_audit, sua policy, leitor kg/originates_from_audit.py,
+facade e Command/Result/UseCase (inclusive exports). Não havia consumidor
+produtivo interno do relatório além da tool. Contrato de endpoints no schema e
+validação do writer preservados; testes cobrem aceitação Bug→Entity e rejeição
+Bug→Bug. Permissão audit.read permanece compartilhada pelos readers legítimos.
+Resources de ambas edições e catálogo/manifests regenerados. Paginação negativa
+dos readers remanescentes preservada; pin de catálogo atualizado para 307.
+
+Wheels dist-origin-audit-retirement construídos. Instalação iniciada; aguardar
+pip terminal, executar prova byte-identical e campanha antes de concluir/commit.
+Ruff F/E9 e diff check passaram. Próxima lacuna: stale canonical parity e demais
+diagnósticos/reconcile já identificados; a remoção não encerra F4.
+
+Instalação e prova terminais: provenance-origin-audit-retirement.json, Core
+828/891 e Community 362/446 byte-identical. Testes: **77 passed Core em 8.61s**,
+**6 passed paginação em 2.48s** (2 não selecionados), **32 passed transporte
+Community em 135.81s**. F16 inicial 8800 linhas, sem finding arquitetural e oito
+budgets zero; README atualizado pelo renderer. Somente F16 final ainda pendente
+em closure-origin-audit-retirement-final.json.
+
+Mapa próximo recorte parity: remover rota api/kg_stale_canonical_parity.py e
+registro router, handler MCP, use case/export, facade/método exclusivos de
+ApplicationKnowledgeGraphOperations e Protocol KnowledgeGraphOperations.
+Preservar kg/stale_canonical_parity.py: application/kg_operations.py usa seu
+reader diretamente em takedown e Health consome o census. Retirar encaminhamento
+drill_down_tool do Health sem mascarar sinais ou mudar precedência. Frontend não
+possui client de stale parity encontrado; possui inspector de canonical partition
+ainda ativo em KGHealthView (outro recorte). Tests afetados incluem
+test_kg_r2_test4, test_r01a_mcp_kg_inspector_cluster, test_r01a_rest_batch_uow,
+test_kg_r2_imp4/test3, test_kg_operations_core_authorization, offset boundaries e
+Community operational_rest_access_hardening. Não apagar testes de invalidação
+de cache em agents nem provas do reconciler/eventos internos.
+
+F16 final terminado: **8800 linhas, ok=true, zero findings arquiteturais e
+documentais, oito budgets zero**. Nenhuma sessão de teste ou instalação pendente.

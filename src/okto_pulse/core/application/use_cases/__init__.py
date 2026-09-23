@@ -714,9 +714,6 @@ from okto_pulse.core.application.use_cases.mcp_card_crud import (
     McpRemoveCardDependencyUseCase,
 )
 from okto_pulse.core.application.use_cases.mcp_kg_crud import (
-    AuditOriginatesFromContractCommand,
-    AuditOriginatesFromContractResult,
-    AuditOriginatesFromContractUseCase,
     ListCanonicalDebtCommand,
     ListCanonicalDebtResult,
     ListCanonicalDebtUseCase,
@@ -1572,9 +1569,6 @@ __all__ = [
     "ReconcileDigestLayerCommand",
     "ReconcileDigestLayerResult",
     "ReconcileDigestLayerUseCase",
-    "AuditOriginatesFromContractCommand",
-    "AuditOriginatesFromContractResult",
-    "AuditOriginatesFromContractUseCase",
     "CopyArchitectureFromSpecToCardCommand",
     "CopyArchitectureFromSpecToCardResult",
     "CopyArchitectureFromSpecToCardUseCase",

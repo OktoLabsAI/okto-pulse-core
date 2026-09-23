@@ -60,7 +60,6 @@ Semantic guideline protocol:
 - `okto_pulse_kg_digest_layer_reconcile` — docs: `okto-pulse://reference/tool-docs/kg`
 - `okto_pulse_kg_health` — docs: `okto-pulse://reference/tool-docs/kg`
 - `okto_pulse_kg_health_readiness` — docs: `okto-pulse://reference/tool-docs/kg`
-- `okto_pulse_kg_originates_from_contract_audit` — docs: `okto-pulse://reference/tool-docs/kg`
 - `okto_pulse_kg_stale_canonical_parity_list` — docs: `okto-pulse://reference/tool-docs/kg`
 - `okto_pulse_kg_takedown_status` — docs: `okto-pulse://reference/tool-docs/kg`
 

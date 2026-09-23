@@ -20643,54 +20643,6 @@ async def okto_pulse_kg_digest_layer_reconcile(
     return McpToolOutcome.success(result.data)
 
 
-@mcp.tool()
-async def okto_pulse_kg_originates_from_contract_audit(
-    board_id: str,
-    limit: int = 50,
-    offset: int = 0,
-    include_ok: bool = False,
-) -> str:
-    """
-    Read-only advisory audit for persisted KG `originates_from` edges whose
-    endpoint labels violate the Bug->Entity contract. Unknown/missing endpoint
-    labels are returned as low-confidence advisory warnings. This tool never
-    mutates, rebuilds, reprocesses, skips, or remediates graph data.
-    """
-    ctx = await _get_agent_ctx(board_id)
-    if ctx is None:
-        return _auth_error()
-
-    perm_err = kg_permission_error(ctx, "board.read")
-    if perm_err:
-        return _kg_direct_permission_denied("board.read", perm_err)
-
-    bounded_limit, bounded_offset, pagination_error = _kg_pagination_window(
-        limit, offset
-    )
-    if pagination_error is not None:
-        return pagination_error
-
-    from okto_pulse.core.application.use_cases import (
-        AuditOriginatesFromContractCommand,
-        AuditOriginatesFromContractUseCase,
-    )
-    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
-
-    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
-    async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
-        result = (
-            await AuditOriginatesFromContractUseCase().execute(
-                AuditOriginatesFromContractCommand(
-                    board_id,
-                    limit=bounded_limit,
-                    offset=bounded_offset,
-                    include_ok=bool(include_ok),
-                ),
-                actor=actor,
-                uow=uow,
-            )
-        ).data
-    return json.dumps(result, default=str)
 
 
 @mcp.tool()

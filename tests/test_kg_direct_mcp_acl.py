@@ -51,7 +51,6 @@ READ_CASES = (
     ("okto_pulse_kg_canonical_partition_integrity_list", {}),
     ("okto_pulse_kg_digest_layer_mismatch_list", {}),
     ("okto_pulse_kg_stale_canonical_parity_list", {}),
-    ("okto_pulse_kg_originates_from_contract_audit", {}),
     ("okto_pulse_kg_takedown_status", {}),
     (
         "okto_pulse_kg_evaluate_bug_cognitive_closure",
@@ -101,11 +100,6 @@ async def test_direct_kg_reads_deny_effective_board_override_before_io(
 
 
 CANONICALIZED_EXISTING_READ_CASES = (
-    (
-        "okto_pulse_kg_originates_from_contract_audit",
-        {},
-        "kg.operations.audit.read",
-    ),
     (
         "okto_pulse_kg_takedown_status",
         {"delete_event_id": "delete-event-authorized"},

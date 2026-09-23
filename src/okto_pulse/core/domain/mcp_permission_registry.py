@@ -88,7 +88,6 @@ MCP_READER_TOOL_NAMES = frozenset(
         "okto_pulse_kg_list_cognitive_dlq",
         "okto_pulse_kg_list_cognitive_pending_items",
         "okto_pulse_kg_list_cognitive_readiness_items",
-        "okto_pulse_kg_originates_from_contract_audit",
         "okto_pulse_kg_stale_canonical_parity_list",
         "okto_pulse_kg_takedown_status",
         "okto_pulse_kg_verify_grounding",
@@ -556,10 +555,6 @@ MCP_TOOL_PERMISSION_POLICIES: tuple[McpToolPermissionPolicy, ...] = (
     _policy(
         "okto_pulse_kg_list_cognitive_readiness_items",
         "kg.operations.cognitive.read",
-    ),
-    _policy(
-        "okto_pulse_kg_originates_from_contract_audit",
-        "kg.operations.audit.read",
     ),
     _policy("okto_pulse_kg_propose_reconciliation", "kg.session.propose"),
     _policy("okto_pulse_kg_query_cypher", "kg.power.cypher"),

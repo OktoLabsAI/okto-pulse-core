@@ -598,14 +598,6 @@ _READ_CASES: tuple[
         False,
     ),
     (
-        mcp_kg_crud,
-        mcp_kg_crud.AuditOriginatesFromContractUseCase(),
-        lambda: mcp_kg_crud.AuditOriginatesFromContractCommand(BOARD_ID),
-        "kg.operations.audit.read",
-        "kg.admin.settings_read",
-        False,
-    ),
-    (
         list_cognitive_dlq,
         list_cognitive_dlq.ListCognitiveDlqUseCase(),
         lambda: list_cognitive_dlq.ListCognitiveDlqCommand(
@@ -652,7 +644,6 @@ _READ_CASES: tuple[
         "canonical-debt",
         "partition-integrity",
         "digest-mismatch",
-        "origin-audit",
         "cognitive-dlq",
         "stale-parity",
     ),
