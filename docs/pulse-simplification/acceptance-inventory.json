@@ -1417,8 +1417,12 @@
       "line": 610,
       "id": "DEI-T03",
       "normative_text": "| DEI-T03 | Planejador sem permissão de execução | Não cria execution receipt ou binding por batch/alias/REST/move composto. |",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "partial",
+      "test_text_references": [],
+      "reviewed_execution": {
+        "artifact": "acceptance-dei-execution.json",
+        "criterion_key": "DEI:DEI-T03"
+      }
     },
     {
       "key": "DEI:DEI-T04",
@@ -1444,8 +1448,12 @@
       "line": 613,
       "id": "DEI-T06",
       "normative_text": "| DEI-T06 | Payload forja ator/verified/current/gate_passed | Rejeitado antes de persistência; nenhuma flag confiável do cliente vira fato. |",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "verified_by_reviewed_execution",
+      "test_text_references": [],
+      "reviewed_execution": {
+        "artifact": "acceptance-dei-execution.json",
+        "criterion_key": "DEI:DEI-T06"
+      }
     },
     {
       "key": "DEI:DEI-T07",
@@ -1453,8 +1461,12 @@
       "line": 614,
       "id": "DEI-T07",
       "normative_text": "| DEI-T07 | Card/obrigação/receipt de outro board | Recusa sem vazamento em erro, resposta parcial, cache ou cursor. |",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "partial",
+      "test_text_references": [],
+      "reviewed_execution": {
+        "artifact": "acceptance-dei-execution.json",
+        "criterion_key": "DEI:DEI-T07"
+      }
     },
     {
       "key": "DEI:DEI-T08",
@@ -1471,8 +1483,12 @@
       "line": 616,
       "id": "DEI-T09",
       "normative_text": "| DEI-T09 | Checkpoint em in_progress com worktree dirty | Salvo como progresso sem exigir commit; não recebe crédito de implementação. |",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "verified_by_reviewed_execution",
+      "test_text_references": [],
+      "reviewed_execution": {
+        "artifact": "acceptance-dei-execution.json",
+        "criterion_key": "DEI:DEI-T09"
+      }
     },
     {
       "key": "DEI:DEI-T10",
@@ -1480,8 +1496,12 @@
       "line": 617,
       "id": "DEI-T10",
       "normative_text": "| DEI-T10 | Progresso sem revision/fingerprint conhecido | Informação desconhecida aparece explicitamente; nenhum hash ou locator fabricado. |",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "verified_by_reviewed_execution",
+      "test_text_references": [],
+      "reviewed_execution": {
+        "artifact": "acceptance-dei-execution.json",
+        "criterion_key": "DEI:DEI-T10"
+      }
     },
     {
       "key": "DEI:DEI-T11",
@@ -1489,8 +1509,12 @@
       "line": 618,
       "id": "DEI-T11",
       "normative_text": "| DEI-T11 | Implementação limpa admitida antes de Done | Registro aceito; pronto para gate quando os demais requisitos passam; rollup final ainda respeita estado. |",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "verified_by_reviewed_execution",
+      "test_text_references": [],
+      "reviewed_execution": {
+        "artifact": "acceptance-dei-execution.json",
+        "criterion_key": "DEI:DEI-T11"
+      }
     },
     {
       "key": "DEI:DEI-T12",
@@ -1498,8 +1522,12 @@
       "line": 619,
       "id": "DEI-T12",
       "normative_text": "| DEI-T12 | Proof implementation com receipt inválido/revogado | Lote falha; não degrada silenciosamente para progresso. |",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "partial",
+      "test_text_references": [],
+      "reviewed_execution": {
+        "artifact": "acceptance-dei-execution.json",
+        "criterion_key": "DEI:DEI-T12"
+      }
     },
     {
       "key": "DEI:DEI-T13",
@@ -1507,8 +1535,12 @@
       "line": 620,
       "id": "DEI-T13",
       "normative_text": "| DEI-T13 | Uma implementação referencia múltiplas obrigações | Relações exatas registradas uma vez; não exige cópia de prova por obrigação. |",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "verified_by_reviewed_execution",
+      "test_text_references": [],
+      "reviewed_execution": {
+        "artifact": "acceptance-dei-execution.json",
+        "criterion_key": "DEI:DEI-T13"
+      }
     },
     {
       "key": "DEI:DEI-T14",
@@ -1516,8 +1548,12 @@
       "line": 621,
       "id": "DEI-T14",
       "normative_text": "| DEI-T14 | FR parcialmente e TR completamente atendida | Bindings mantêm contribuições diferentes; FR não é marcada completa por associação ao mesmo receipt. |",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "verified_by_reviewed_execution",
+      "test_text_references": [],
+      "reviewed_execution": {
+        "artifact": "acceptance-dei-execution.json",
+        "criterion_key": "DEI:DEI-T14"
+      }
     },
     {
       "key": "DEI:DEI-T15",
@@ -1525,8 +1561,12 @@
       "line": 622,
       "id": "DEI-T15",
       "normative_text": "| DEI-T15 | Duas entradas partial na mesma FR | Não soma a 100%; exige declaração consolidada/prova suficiente para a contribuição. |",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "verified_by_reviewed_execution",
+      "test_text_references": [],
+      "reviewed_execution": {
+        "artifact": "acceptance-dei-execution.json",
+        "criterion_key": "DEI:DEI-T15"
+      }
     },
     {
       "key": "DEI:DEI-T16",
@@ -1534,8 +1574,12 @@
       "line": 623,
       "id": "DEI-T16",
       "normative_text": "| DEI-T16 | Vários Targets e obrigações no lote | Somente relações declaradas/deriváveis legitimamente; não há produto cartesiano. |",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "verified_by_reviewed_execution",
+      "test_text_references": [],
+      "reviewed_execution": {
+        "artifact": "acceptance-dei-execution.json",
+        "criterion_key": "DEI:DEI-T16"
+      }
     },
     {
       "key": "DEI:DEI-T17",
@@ -1552,8 +1596,12 @@
       "line": 625,
       "id": "DEI-T18",
       "normative_text": "| DEI-T18 | Vários Targets do mesmo snapshot aceito | Reusa a observação válida; um challenge não é consumido repetidamente por item. |",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "partial",
+      "test_text_references": [],
+      "reviewed_execution": {
+        "artifact": "acceptance-dei-execution.json",
+        "criterion_key": "DEI:DEI-T18"
+      }
     },
     {
       "key": "DEI:DEI-T19",
@@ -1561,8 +1609,12 @@
       "line": 626,
       "id": "DEI-T19",
       "normative_text": "| DEI-T19 | Mudança real de source ou Target revision | Provas afetadas tornam-se desatualizadas; não há reuso só porque o ID do card é o mesmo. |",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "verified_by_reviewed_execution",
+      "test_text_references": [],
+      "reviewed_execution": {
+        "artifact": "acceptance-dei-execution.json",
+        "criterion_key": "DEI:DEI-T19"
+      }
     },
     {
       "key": "DEI:DEI-T20",
@@ -1570,8 +1622,12 @@
       "line": 627,
       "id": "DEI-T20",
       "normative_text": "| DEI-T20 | Nota sem mudança de código ou escopo | Não invalida Spec/Target/prova inteira por timestamp. |",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "verified_by_reviewed_execution",
+      "test_text_references": [],
+      "reviewed_execution": {
+        "artifact": "acceptance-dei-execution.json",
+        "criterion_key": "DEI:DEI-T20"
+      }
     },
     {
       "key": "DEI:DEI-T21",
@@ -1579,8 +1635,12 @@
       "line": 628,
       "id": "DEI-T21",
       "normative_text": "| DEI-T21 | Checkpoint dirty após prova E1 do mesmo Target | E1 permanece histórico, mas não comprova o estado atual alterado sem nova base admissível. |",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "verified_by_reviewed_execution",
+      "test_text_references": [],
+      "reviewed_execution": {
+        "artifact": "acceptance-dei-execution.json",
+        "criterion_key": "DEI:DEI-T21"
+      }
     },
     {
       "key": "DEI:DEI-T22",
@@ -1588,8 +1648,12 @@
       "line": 629,
       "id": "DEI-T22",
       "normative_text": "| DEI-T22 | E2 substitui E1 do mesmo Target | Obrigações/testes não são transferidos cegamente; seleção atual não conta E1 como nova entrega. |",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "partial",
+      "test_text_references": [],
+      "reviewed_execution": {
+        "artifact": "acceptance-dei-execution.json",
+        "criterion_key": "DEI:DEI-T22"
+      }
     },
     {
       "key": "DEI:DEI-T23",
@@ -1597,8 +1661,12 @@
       "line": 630,
       "id": "DEI-T23",
       "normative_text": "| DEI-T23 | Prova de outro Target que não mudou | Não exige novo registro/reteste apenas pela atividade independente, respeitando integração e base. |",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "verified_by_reviewed_execution",
+      "test_text_references": [],
+      "reviewed_execution": {
+        "artifact": "acceptance-dei-execution.json",
+        "criterion_key": "DEI:DEI-T23"
+      }
     },
     {
       "key": "DEI:DEI-T24",
@@ -1606,8 +1674,12 @@
       "line": 631,
       "id": "DEI-T24",
       "normative_text": "| DEI-T24 | Branches/commits divergentes ou revert | Não usa ordenação lexical ou antiguidade do hash como prova de ancestralidade. |",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "partial",
+      "test_text_references": [],
+      "reviewed_execution": {
+        "artifact": "acceptance-dei-execution.json",
+        "criterion_key": "DEI:DEI-T24"
+      }
     },
     {
       "key": "DEI:DEI-T25",
@@ -1615,13 +1687,17 @@
       "line": 632,
       "id": "DEI-T25",
       "normative_text": "| DEI-T25 | Teste passed autenticado enquanto Test Card executa | Pode ser preservado antecipadamente; crédito final fica condicionado à elegibilidade, sem novo preenchimento obrigatório. |",
-      "review_status": "not_audited_in_this_inventory",
+      "review_status": "verified_by_reviewed_execution",
       "test_text_references": [
         {
           "path": "okto_labs_pulse_community/tests/test_delivery_incremental_tests.py",
           "line": 1
         }
-      ]
+      ],
+      "reviewed_execution": {
+        "artifact": "acceptance-dei-execution.json",
+        "criterion_key": "DEI:DEI-T25"
+      }
     },
     {
       "key": "DEI:DEI-T26",
@@ -1629,8 +1705,12 @@
       "line": 633,
       "id": "DEI-T26",
       "normative_text": "| DEI-T26 | Teste failed durante execução | Falha é registrada e permanece visível; não vira prova passing nem é omitida pela agregação. |",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "verified_by_reviewed_execution",
+      "test_text_references": [],
+      "reviewed_execution": {
+        "artifact": "acceptance-dei-execution.json",
+        "criterion_key": "DEI:DEI-T26"
+      }
     },
     {
       "key": "DEI:DEI-T27",
@@ -1638,8 +1718,12 @@
       "line": 634,
       "id": "DEI-T27",
       "normative_text": "| DEI-T27 | Nova falha após teste passing relevante | O teste antigo não mantém cobertura atual indevida. |",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "verified_by_reviewed_execution",
+      "test_text_references": [],
+      "reviewed_execution": {
+        "artifact": "acceptance-dei-execution.json",
+        "criterion_key": "DEI:DEI-T27"
+      }
     },
     {
       "key": "DEI:DEI-T28",
@@ -1647,8 +1731,12 @@
       "line": 635,
       "id": "DEI-T28",
       "normative_text": "| DEI-T28 | Mesmo cenário mas implementação nova | Teste que referencia E1 não cobre E2 automaticamente. |",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "partial",
+      "test_text_references": [],
+      "reviewed_execution": {
+        "artifact": "acceptance-dei-execution.json",
+        "criterion_key": "DEI:DEI-T28"
+      }
     },
     {
       "key": "DEI:DEI-T29",
@@ -1656,8 +1744,12 @@
       "line": 636,
       "id": "DEI-T29",
       "normative_text": "| DEI-T29 | Registro de execução de teste sem assinatura válida | Pode haver relato de tentativa em progress; não recebe crédito de verificação. |",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "partial",
+      "test_text_references": [],
+      "reviewed_execution": {
+        "artifact": "acceptance-dei-execution.json",
+        "criterion_key": "DEI:DEI-T29"
+      }
     },
     {
       "key": "DEI:DEI-T30",
@@ -1665,8 +1757,12 @@
       "line": 637,
       "id": "DEI-T30",
       "normative_text": "| DEI-T30 | Normal card afirma ter testado | Claim não substitui Test Card e evidência autenticada. |",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "partial",
+      "test_text_references": [],
+      "reviewed_execution": {
+        "artifact": "acceptance-dei-execution.json",
+        "criterion_key": "DEI:DEI-T30"
+      }
     },
     {
       "key": "DEI:DEI-T31",
@@ -1692,8 +1788,12 @@
       "line": 640,
       "id": "DEI-T33",
       "normative_text": "| DEI-T33 | Um registro e um lote de tamanho 1 | Mesma semântica, validação e resultado; não são dois caminhos de produto. |",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "verified_by_reviewed_execution",
+      "test_text_references": [],
+      "reviewed_execution": {
+        "artifact": "acceptance-dei-execution.json",
+        "criterion_key": "DEI:DEI-T33"
+      }
     },
     {
       "key": "DEI:DEI-T34",
@@ -1701,8 +1801,12 @@
       "line": 641,
       "id": "DEI-T34",
       "normative_text": "| DEI-T34 | Um item inválido em lote com itens válidos | Rollback integral de ledger, receipts e eventos; nenhum sucesso parcial mascarado. |",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "verified_by_reviewed_execution",
+      "test_text_references": [],
+      "reviewed_execution": {
+        "artifact": "acceptance-dei-execution.json",
+        "criterion_key": "DEI:DEI-T34"
+      }
     },
     {
       "key": "DEI:DEI-T35",
@@ -1710,8 +1814,12 @@
       "line": 642,
       "id": "DEI-T35",
       "normative_text": "| DEI-T35 | Lote excede limite de bytes/itens/refs | Recusa antes de efeitos; teto é agregado, não multiplicado por item. |",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "verified_by_reviewed_execution",
+      "test_text_references": [],
+      "reviewed_execution": {
+        "artifact": "acceptance-dei-execution.json",
+        "criterion_key": "DEI:DEI-T35"
+      }
     },
     {
       "key": "DEI:DEI-T36",
@@ -1719,8 +1827,12 @@
       "line": 643,
       "id": "DEI-T36",
       "normative_text": "| DEI-T36 | IDs locais repetidos/refs inexistentes | Schema/associação recusados com erro delimitado, sem ambiguidade de resolução. |",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "verified_by_reviewed_execution",
+      "test_text_references": [],
+      "reviewed_execution": {
+        "artifact": "acceptance-dei-execution.json",
+        "criterion_key": "DEI:DEI-T36"
+      }
     },
     {
       "key": "DEI:DEI-T37",
@@ -1728,8 +1840,12 @@
       "line": 644,
       "id": "DEI-T37",
       "normative_text": "| DEI-T37 | Retry idêntico após timeout com commit | Mesmos IDs e resultado de operação; não duplica evento, receipt ou declaração. |",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "verified_by_reviewed_execution",
+      "test_text_references": [],
+      "reviewed_execution": {
+        "artifact": "acceptance-dei-execution.json",
+        "criterion_key": "DEI:DEI-T37"
+      }
     },
     {
       "key": "DEI:DEI-T38",
@@ -1737,8 +1853,12 @@
       "line": 645,
       "id": "DEI-T38",
       "normative_text": "| DEI-T38 | Mesma chave com payload diferente | Conflito explícito; não sobrescreve nem funde dados. |",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "verified_by_reviewed_execution",
+      "test_text_references": [],
+      "reviewed_execution": {
+        "artifact": "acceptance-dei-execution.json",
+        "criterion_key": "DEI:DEI-T38"
+      }
     },
     {
       "key": "DEI:DEI-T39",
@@ -1746,8 +1866,12 @@
       "line": 646,
       "id": "DEI-T39",
       "normative_text": "| DEI-T39 | Duas sessões appending na mesma revisão | Uma ordenação/fence confiável; a outra recebe conflito útil ou revalidação prevista, sem lost update. |",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "verified_by_reviewed_execution",
+      "test_text_references": [],
+      "reviewed_execution": {
+        "artifact": "acceptance-dei-execution.json",
+        "criterion_key": "DEI:DEI-T39"
+      }
     },
     {
       "key": "DEI:DEI-T40",
@@ -1755,8 +1879,12 @@
       "line": 647,
       "id": "DEI-T40",
       "normative_text": "| DEI-T40 | Nova evidência enquanto o relatório é submetido | Snapshot submetido é íntegro; conflito ou revalidação, nunca mistura silenciosa. |",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "partial",
+      "test_text_references": [],
+      "reviewed_execution": {
+        "artifact": "acceptance-dei-execution.json",
+        "criterion_key": "DEI:DEI-T40"
+      }
     },
     {
       "key": "DEI:DEI-T41",
@@ -1764,8 +1892,12 @@
       "line": 648,
       "id": "DEI-T41",
       "normative_text": "| DEI-T41 | Estado validation/rejected e tentativa de bypass pelo append | Guard vigente preservado; registrar progresso não abre retrabalho. |",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "verified_by_reviewed_execution",
+      "test_text_references": [],
+      "reviewed_execution": {
+        "artifact": "acceptance-dei-execution.json",
+        "criterion_key": "DEI:DEI-T41"
+      }
     },
     {
       "key": "DEI:DEI-T42",
@@ -1773,8 +1905,12 @@
       "line": 649,
       "id": "DEI-T42",
       "normative_text": "| DEI-T42 | Reabertura legítima para retrabalho | Histórico permanece; novas provas/versões são distintas e reavaliadas. |",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "partial",
+      "test_text_references": [],
+      "reviewed_execution": {
+        "artifact": "acceptance-dei-execution.json",
+        "criterion_key": "DEI:DEI-T42"
+      }
     },
     {
       "key": "DEI:DEI-T43",
@@ -1782,8 +1918,12 @@
       "line": 650,
       "id": "DEI-T43",
       "normative_text": "| DEI-T43 | Novo agente B retoma registro de A | Autoria é preservada; B observa seu ambiente e não se apropria do receipt de A. |",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "partial",
+      "test_text_references": [],
+      "reviewed_execution": {
+        "artifact": "acceptance-dei-execution.json",
+        "criterion_key": "DEI:DEI-T43"
+      }
     },
     {
       "key": "DEI:DEI-T44",
@@ -1800,8 +1940,12 @@
       "line": 652,
       "id": "DEI-T45",
       "normative_text": "| DEI-T45 | Worktree inacessível/patch não disponível | Retomada informa limite; não promete reconstrução do código nem marca progresso como recuperado. |",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "partial",
+      "test_text_references": [],
+      "reviewed_execution": {
+        "artifact": "acceptance-dei-execution.json",
+        "criterion_key": "DEI:DEI-T45"
+      }
     },
     {
       "key": "DEI:DEI-T46",
@@ -1809,8 +1953,12 @@
       "line": 653,
       "id": "DEI-T46",
       "normative_text": "| DEI-T46 | Último checkpoint curto depende de anteriores | Visão acumulada mantém todos os fatos atuais relevantes, não só a última linha. |",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "partial",
+      "test_text_references": [],
+      "reviewed_execution": {
+        "artifact": "acceptance-dei-execution.json",
+        "criterion_key": "DEI:DEI-T46"
+      }
     },
     {
       "key": "DEI:DEI-T47",
@@ -1818,8 +1966,12 @@
       "line": 654,
       "id": "DEI-T47",
       "normative_text": "| DEI-T47 | Queda antes do append ser confirmado | Limite de recuperação é explicitado; retry trata outcome desconhecido sem duplicação. |",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "partial",
+      "test_text_references": [],
+      "reviewed_execution": {
+        "artifact": "acceptance-dei-execution.json",
+        "criterion_key": "DEI:DEI-T47"
+      }
     },
     {
       "key": "DEI:DEI-T48",
@@ -1827,8 +1979,12 @@
       "line": 655,
       "id": "DEI-T48",
       "normative_text": "| DEI-T48 | create→delete, rename encadeado, mesmo path em dois repos | Impacto histórico e líquido são distintos; agregação não inventa alteração final. |",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "partial",
+      "test_text_references": [],
+      "reviewed_execution": {
+        "artifact": "acceptance-dei-execution.json",
+        "criterion_key": "DEI:DEI-T48"
+      }
     },
     {
       "key": "DEI:DEI-T49",
@@ -1854,8 +2010,12 @@
       "line": 658,
       "id": "DEI-T51",
       "normative_text": "| DEI-T51 | impact_evidence_mode require sem bloco reenviado no final | Agregado válido e selado atende à exigência; vazio/ambíguo/stale ainda não atende. |",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "verified_by_reviewed_execution",
+      "test_text_references": [],
+      "reviewed_execution": {
+        "artifact": "acceptance-dei-execution.json",
+        "criterion_key": "DEI:DEI-T51"
+      }
     },
     {
       "key": "DEI:DEI-T52",
@@ -1939,8 +2099,12 @@
       "line": 666,
       "id": "DEI-T59",
       "normative_text": "| DEI-T59 | Schema novo em instalação limpa e upgrade repetido | Converge de forma idempotente, com rollback ensaiado em cópia descartável. |",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "verified_by_reviewed_execution",
+      "test_text_references": [],
+      "reviewed_execution": {
+        "artifact": "acceptance-dei-execution.json",
+        "criterion_key": "DEI:DEI-T59"
+      }
     },
     {
       "key": "DEI:DEI-T60",
@@ -1948,8 +2112,12 @@
       "line": 667,
       "id": "DEI-T60",
       "normative_text": "| DEI-T60 | Progresso com KG indisponível | Persistência/retomada relacional funcionam; nenhuma chamada pública de reparo é necessária. |",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "partial",
+      "test_text_references": [],
+      "reviewed_execution": {
+        "artifact": "acceptance-dei-execution.json",
+        "criterion_key": "DEI:DEI-T60"
+      }
     },
     {
       "key": "DEI:DEI-T61",
@@ -1966,8 +2134,12 @@
       "line": 669,
       "id": "DEI-T62",
       "normative_text": "| DEI-T62 | Checkpoints em métricas/grafo | Não contam como entrega, teste passed, throughput ou conhecimento canônico entregue. |",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "partial",
+      "test_text_references": [],
+      "reviewed_execution": {
+        "artifact": "acceptance-dei-execution.json",
+        "criterion_key": "DEI:DEI-T62"
+      }
     },
     {
       "key": "DEI:DEI-T63",
@@ -1975,8 +2147,12 @@
       "line": 670,
       "id": "DEI-T63",
       "normative_text": "| DEI-T63 | Leitura resumida/paginada de grande histórico | Caps, totais, redactions, cursor e status desconhecido corretos; não despeja todos os receipts no contexto. |",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "partial",
+      "test_text_references": [],
+      "reviewed_execution": {
+        "artifact": "acceptance-dei-execution.json",
+        "criterion_key": "DEI:DEI-T63"
+      }
     },
     {
       "key": "DEI:DEI-T64",
@@ -1984,8 +2160,12 @@
       "line": 671,
       "id": "DEI-T64",
       "normative_text": "| DEI-T64 | End-to-end MCP/REST/UI e pacote instalado | Mesmo comportamento e instruções coerentes; schemas/resources/front-end empacotado correspondem ao par de SHAs testado. |",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "partial",
+      "test_text_references": [],
+      "reviewed_execution": {
+        "artifact": "acceptance-dei-execution.json",
+        "criterion_key": "DEI:DEI-T64"
+      }
     },
     {
       "key": "ARQVER:AC-ARQ-01",

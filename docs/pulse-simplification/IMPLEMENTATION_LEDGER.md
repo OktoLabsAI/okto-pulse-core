@@ -14736,3 +14736,27 @@ supersession da avaliação anterior na mesma Spec; esse caminho merece auditori
 de atualidade/histórico antes de qualquer mudança. Payload e F16 permanecem os
 do par mixed-report-final, nenhuma mudança de mecanismo/autoridade neste passo.
 Nenhum processo pendente. Prosseguir pela auditoria integrada e medição do fluxo.
+
+### Auditoria executada de entrega incremental — 2026-09-23
+
+Publicados os testemunhos anteriores em Core 8409989b / Community 6390d91c.
+Par instalado continua dist-mixed-report-final, com a prova byte-a-byte já
+registrada; nenhum payload mudou. Campanha DEI: Core **218 passed em 15.08s**
+e Community **115 passed em 187.93s**, acceptance-dei-{core,community}.xml.
+Não houve skips, falhas ou processos pendentes. Os ensaios cobrem schemas,
+origem, lotes/rollback/replay, contribuições, checkpoints, atualidade,
+testes antecipados, seleção e impacto líquido/reutilizado.
+
+acceptance-dei-execution.json vincula 45 critérios aos oráculos revisados,
+hashes dos testes/JUnit e identidade instalada. Resultado conjunto do
+inventário: **61 comprovados / 33 parciais / 152 ainda não auditados**.
+Vinte critérios DEI permanecem parciais, com lacuna concreta descrita:
+autoridades/cross-board em transportes reais, recuperação após interrupção,
+handoff de workspace, interleavings, histórico longo/cursors, falha de KG e
+browser com runtime instalado. Mocks de autorização em ensaios de transporte
+não comprovam autoridade. Estados de lifecycle e observações de origem
+fornecidos por fixture não comprovam execução externa ou ativação real.
+
+Este registro não encerra o plano nem substitui benchmark. Continuar pelos
+oráculos ainda ausentes e pela auditoria de base/KG; preservar separação
+entre fato comprovado, cobertura parcial e critério ainda não revisado.

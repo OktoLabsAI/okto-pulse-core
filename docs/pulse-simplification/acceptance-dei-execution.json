@@ -1,0 +1,2104 @@
+{
+  "format": "pulse-v1.3-reviewed-execution/v1",
+  "scope": "First reviewed DEI execution set; no whole-plan completion claim",
+  "provenance": {
+    "file": "provenance-mixed-report-final.json",
+    "sha256": "833dc7d171fedc4535e0ce5f44b988861f9b374b4b2dd8ad62b3423be2b53eb0",
+    "identity": {
+      "checked_at": "2026-09-23T17:36:42.332739+00:00",
+      "python": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Scripts\\python.exe",
+      "packages": {
+        "core": {
+          "python_files": 829,
+          "origin": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages\\okto_pulse\\core\\__init__.py",
+          "repository_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_core",
+          "commit": "c06157bb14aa5ae6aaf2d9bd7a757f899c609c24",
+          "dirty": true,
+          "dirty_entry_count": 8,
+          "distribution": "okto-pulse-core",
+          "version": "0.3.4",
+          "wheel": {
+            "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\dist-mixed-report-final\\okto_pulse_core-0.3.4-py3-none-any.whl",
+            "sha256": "cfd61da8aa0dde2737af3d6f9c2f20ae4bb12fa72582e11895417feca99b4956",
+            "size": 3731036
+          },
+          "source_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_core\\src",
+          "site_packages_root": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages",
+          "package_prefix": "okto_pulse/core/",
+          "byte_identical_member_count": 892,
+          "byte_identical": true,
+          "aggregate_sha256": "a43565063ccf05f0424fb9874fe27ffed9707a3a80df970bb94094551bc21657",
+          "chain_hashes": {
+            "source": "a43565063ccf05f0424fb9874fe27ffed9707a3a80df970bb94094551bc21657",
+            "wheel": "a43565063ccf05f0424fb9874fe27ffed9707a3a80df970bb94094551bc21657",
+            "site_packages": "a43565063ccf05f0424fb9874fe27ffed9707a3a80df970bb94094551bc21657"
+          },
+          "critical_resource_sha256": {
+            "okto_pulse/core/mcp/resources/ska_resource_manifest.json": "e162d8460ad0140b40a6916c06d59a07caa7354def5fa3b9c510f984e6705df9",
+            "okto_pulse/core/mcp/resources/ska_tool_manifest.json": "0c3fa3da1549baec20872eca3f4a289288627e6b9f6b80be10472ac962fa72b9"
+          },
+          "mismatches": []
+        },
+        "community": {
+          "python_files": 360,
+          "origin": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages\\okto_pulse\\community\\__init__.py",
+          "repository_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_community",
+          "commit": "f8761bb711cc765265c2e118396bda8fca5ce80c",
+          "dirty": true,
+          "dirty_entry_count": 65,
+          "distribution": "okto-pulse",
+          "version": "0.3.4",
+          "wheel": {
+            "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\dist-mixed-report-final\\okto_pulse-0.3.4-py3-none-any.whl",
+            "sha256": "d9ffd80284d67e037430e945ce8962db878b7a5b65636655cd7535134a29e426",
+            "size": 4499802
+          },
+          "source_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_community\\src",
+          "site_packages_root": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages",
+          "package_prefix": "okto_pulse/community/",
+          "byte_identical_member_count": 444,
+          "byte_identical": true,
+          "aggregate_sha256": "94c9bb01023c5258b9f1a560c415ba7bf41deb4a9d3dff0d801d8361ca1a5cb7",
+          "chain_hashes": {
+            "source": "94c9bb01023c5258b9f1a560c415ba7bf41deb4a9d3dff0d801d8361ca1a5cb7",
+            "wheel": "94c9bb01023c5258b9f1a560c415ba7bf41deb4a9d3dff0d801d8361ca1a5cb7",
+            "site_packages": "94c9bb01023c5258b9f1a560c415ba7bf41deb4a9d3dff0d801d8361ca1a5cb7"
+          },
+          "critical_resource_sha256": {},
+          "mismatches": []
+        }
+      }
+    }
+  },
+  "limits": [
+    "Disposable fixtures only.",
+    "Transport tests that mock authorization prove mapping, not authority.",
+    "Some origin observations and lifecycle states are fixture inputs; do not infer repository execution or real activation.",
+    "No benchmark claim."
+  ],
+  "runs": {
+    "core": {
+      "file": "acceptance-dei-core.xml",
+      "sha256": "eef68c28ba23e1e5a5bab8b2ccf40fb86657bb5b646a75ef0e70548e6f40f961",
+      "suite": {
+        "name": "pytest",
+        "errors": "0",
+        "failures": "0",
+        "skipped": "0",
+        "tests": "218",
+        "time": "15.041",
+        "timestamp": "2026-09-23T14:53:21.336397-03:00",
+        "hostname": "Alienware_m15"
+      }
+    },
+    "community": {
+      "file": "acceptance-dei-community.xml",
+      "sha256": "4d028e54342a771e4a0c4b68e058d180669cff2308e40118af80ec6016575915",
+      "suite": {
+        "name": "pytest",
+        "errors": "0",
+        "failures": "0",
+        "skipped": "0",
+        "tests": "115",
+        "time": "187.896",
+        "timestamp": "2026-09-23T14:53:15.774548-03:00",
+        "hostname": "Alienware_m15"
+      }
+    }
+  },
+  "criteria": {
+    "DEI:DEI-T03": {
+      "status": "partial",
+      "covered": "Autoridade de conclusão não empresta execution_submit: lote e alias recusados sem qualquer receipt, binding ou evento.",
+      "remaining": "Falta compor perfil planejador no REST real e move com todas as authorities reais, sem mocks de transporte.",
+      "evidence": [
+        {
+          "repository": "core",
+          "file": "tests/test_delivery_batch.py",
+          "test_function": "test_all_subactions_are_authorized_before_any_store_call",
+          "source_sha256": "73bc91c0e6f36b1e6a06173a0686dfb1ee4bcde2a1c24904535148c7b9206a7c",
+          "executions": [
+            {
+              "classname": "tests.test_delivery_batch",
+              "name": "test_all_subactions_are_authorized_before_any_store_call",
+              "time": "0.016"
+            }
+          ]
+        },
+        {
+          "repository": "community",
+          "file": "tests/test_delivery_local_references.py",
+          "test_function": "test_alias_chain_resolves_one_execution_and_requires_execution_permission",
+          "source_sha256": "22f9d3773db5b2338f51ea9784f995bbca3881eaf09f92b0716249da518f8ac2",
+          "executions": [
+            {
+              "classname": "tests.test_delivery_local_references",
+              "name": "test_alias_chain_resolves_one_execution_and_requires_execution_permission",
+              "time": "1.258"
+            }
+          ]
+        },
+        {
+          "repository": "community",
+          "file": "tests/test_delivery_contributions.py",
+          "test_function": "test_partial_requires_origin_authority_and_later_error_rolls_back",
+          "source_sha256": "e4c108adb95ce9049f1d3fdbf7f4f31fdd7791c331f8fc7bc1c4bf799a4aadb2",
+          "executions": [
+            {
+              "classname": "tests.test_delivery_contributions",
+              "name": "test_partial_requires_origin_authority_and_later_error_rolls_back",
+              "time": "1.367"
+            }
+          ]
+        }
+      ]
+    },
+    "DEI:DEI-T06": {
+      "status": "verified_by_reviewed_execution",
+      "covered": "Schemas fechados recusam actor_id/verified e mistura de escopo; entrada REST adulterada é recusada antes do store. A autorização do transporte é isolada por mock e não é inferida deste caso.",
+      "remaining": null,
+      "evidence": [
+        {
+          "repository": "core",
+          "file": "tests/test_delivery_batch.py",
+          "test_function": "test_batch_is_closed_and_single_scope",
+          "source_sha256": "73bc91c0e6f36b1e6a06173a0686dfb1ee4bcde2a1c24904535148c7b9206a7c",
+          "executions": [
+            {
+              "classname": "tests.test_delivery_batch",
+              "name": "test_batch_is_closed_and_single_scope[changes0]",
+              "time": "1.005"
+            },
+            {
+              "classname": "tests.test_delivery_batch",
+              "name": "test_batch_is_closed_and_single_scope[changes1]",
+              "time": "0.013"
+            },
+            {
+              "classname": "tests.test_delivery_batch",
+              "name": "test_batch_is_closed_and_single_scope[changes2]",
+              "time": "0.012"
+            },
+            {
+              "classname": "tests.test_delivery_batch",
+              "name": "test_batch_is_closed_and_single_scope[changes3]",
+              "time": "0.012"
+            },
+            {
+              "classname": "tests.test_delivery_batch",
+              "name": "test_batch_is_closed_and_single_scope[changes4]",
+              "time": "0.014"
+            },
+            {
+              "classname": "tests.test_delivery_batch",
+              "name": "test_batch_is_closed_and_single_scope[changes5]",
+              "time": "0.015"
+            },
+            {
+              "classname": "tests.test_delivery_batch",
+              "name": "test_batch_is_closed_and_single_scope[changes6]",
+              "time": "0.014"
+            },
+            {
+              "classname": "tests.test_delivery_batch",
+              "name": "test_batch_is_closed_and_single_scope[changes7]",
+              "time": "0.013"
+            },
+            {
+              "classname": "tests.test_delivery_batch",
+              "name": "test_batch_is_closed_and_single_scope[changes8]",
+              "time": "0.013"
+            },
+            {
+              "classname": "tests.test_delivery_batch",
+              "name": "test_batch_is_closed_and_single_scope[changes9]",
+              "time": "0.015"
+            },
+            {
+              "classname": "tests.test_delivery_batch",
+              "name": "test_batch_is_closed_and_single_scope[changes10]",
+              "time": "0.013"
+            }
+          ]
+        },
+        {
+          "repository": "core",
+          "file": "tests/test_delivery_progress.py",
+          "test_function": "test_progress_contract_rejects_authority_or_ambiguous_proof",
+          "source_sha256": "6ac09ea2cb6fd86ef7539393c7be44548ce9e479aefbb45367193bbd18949fd8",
+          "executions": [
+            {
+              "classname": "tests.test_delivery_progress",
+              "name": "test_progress_contract_rejects_authority_or_ambiguous_proof[changes0]",
+              "time": "0.015"
+            },
+            {
+              "classname": "tests.test_delivery_progress",
+              "name": "test_progress_contract_rejects_authority_or_ambiguous_proof[changes1]",
+              "time": "0.015"
+            },
+            {
+              "classname": "tests.test_delivery_progress",
+              "name": "test_progress_contract_rejects_authority_or_ambiguous_proof[changes2]",
+              "time": "0.015"
+            },
+            {
+              "classname": "tests.test_delivery_progress",
+              "name": "test_progress_contract_rejects_authority_or_ambiguous_proof[changes3]",
+              "time": "0.015"
+            },
+            {
+              "classname": "tests.test_delivery_progress",
+              "name": "test_progress_contract_rejects_authority_or_ambiguous_proof[changes4]",
+              "time": "0.016"
+            },
+            {
+              "classname": "tests.test_delivery_progress",
+              "name": "test_progress_contract_rejects_authority_or_ambiguous_proof[changes5]",
+              "time": "0.016"
+            },
+            {
+              "classname": "tests.test_delivery_progress",
+              "name": "test_progress_contract_rejects_authority_or_ambiguous_proof[changes6]",
+              "time": "0.017"
+            },
+            {
+              "classname": "tests.test_delivery_progress",
+              "name": "test_progress_contract_rejects_authority_or_ambiguous_proof[changes7]",
+              "time": "0.016"
+            },
+            {
+              "classname": "tests.test_delivery_progress",
+              "name": "test_progress_contract_rejects_authority_or_ambiguous_proof[changes8]",
+              "time": "0.017"
+            }
+          ]
+        },
+        {
+          "repository": "community",
+          "file": "tests/test_delivery_batch.py",
+          "test_function": "test_native_rest_mcp_batch_replay_and_entry_errors",
+          "source_sha256": "aefad8394284c6722893e4178b9a57bdc08354ff4901e0469df6e351f4dcb210",
+          "executions": [
+            {
+              "classname": "tests.test_delivery_batch",
+              "name": "test_native_rest_mcp_batch_replay_and_entry_errors",
+              "time": "1.300"
+            }
+          ]
+        }
+      ]
+    },
+    "DEI:DEI-T07": {
+      "status": "partial",
+      "covered": "Referências estrangeiras recusadas e erro delimitado sem persistência parcial.",
+      "remaining": "Falta matriz cross-board com ator restrito, erros equivalentes, caches/cursors e ausência de conteúdo protegido.",
+      "evidence": [
+        {
+          "repository": "community",
+          "file": "tests/test_delivery_progress.py",
+          "test_function": "test_scope_version_targets_and_sources_are_not_trusted",
+          "source_sha256": "dc63cf221fbac76463d15a4e7077aac7dad64c2ac9623862cc012072a01916f6",
+          "executions": [
+            {
+              "classname": "tests.test_delivery_progress",
+              "name": "test_scope_version_targets_and_sources_are_not_trusted",
+              "time": "1.350"
+            }
+          ]
+        },
+        {
+          "repository": "community",
+          "file": "tests/test_delivery_local_references.py",
+          "test_function": "test_existing_progress_on_another_card_is_not_a_valid_reference",
+          "source_sha256": "22f9d3773db5b2338f51ea9784f995bbca3881eaf09f92b0716249da518f8ac2",
+          "executions": [
+            {
+              "classname": "tests.test_delivery_local_references",
+              "name": "test_existing_progress_on_another_card_is_not_a_valid_reference",
+              "time": "1.275"
+            }
+          ]
+        },
+        {
+          "repository": "community",
+          "file": "tests/test_delivery_inline_execution.py",
+          "test_function": "test_invalid_origin_is_not_degraded_to_progress",
+          "source_sha256": "6e9d99c3e457bfa1ddb7cd04632385f03e2cc17c4d9a10d14b07bf0152a43b5c",
+          "executions": [
+            {
+              "classname": "tests.test_delivery_inline_execution",
+              "name": "test_invalid_origin_is_not_degraded_to_progress",
+              "time": "1.456"
+            }
+          ]
+        }
+      ]
+    },
+    "DEI:DEI-T09": {
+      "status": "verified_by_reviewed_execution",
+      "covered": "Checkpoint dirty persiste/reabre sessão sem commit de código nem receipt; identidade/autoria preservadas e nenhum crédito de implementação.",
+      "remaining": null,
+      "evidence": [
+        {
+          "repository": "community",
+          "file": "tests/test_delivery_progress.py",
+          "test_function": "test_dirty_progress_durable_replay_no_credit_or_version_change",
+          "source_sha256": "dc63cf221fbac76463d15a4e7077aac7dad64c2ac9623862cc012072a01916f6",
+          "executions": [
+            {
+              "classname": "tests.test_delivery_progress",
+              "name": "test_dirty_progress_durable_replay_no_credit_or_version_change",
+              "time": "1.239"
+            }
+          ]
+        },
+        {
+          "repository": "core",
+          "file": "tests/test_delivery_progress.py",
+          "test_function": "test_dirty_progress_does_not_require_execution_commit_or_obligation",
+          "source_sha256": "6ac09ea2cb6fd86ef7539393c7be44548ce9e479aefbb45367193bbd18949fd8",
+          "executions": [
+            {
+              "classname": "tests.test_delivery_progress",
+              "name": "test_dirty_progress_does_not_require_execution_commit_or_obligation",
+              "time": "0.021"
+            }
+          ]
+        }
+      ]
+    },
+    "DEI:DEI-T10": {
+      "status": "verified_by_reviewed_execution",
+      "covered": "Revision ausente continua None; recuperação não verificada e base desconhecida aparecem explicitamente, sem hash/locator inventado.",
+      "remaining": null,
+      "evidence": [
+        {
+          "repository": "core",
+          "file": "tests/test_delivery_progress.py",
+          "test_function": "test_dirty_progress_does_not_require_execution_commit_or_obligation",
+          "source_sha256": "6ac09ea2cb6fd86ef7539393c7be44548ce9e479aefbb45367193bbd18949fd8",
+          "executions": [
+            {
+              "classname": "tests.test_delivery_progress",
+              "name": "test_dirty_progress_does_not_require_execution_commit_or_obligation",
+              "time": "0.021"
+            }
+          ]
+        },
+        {
+          "repository": "community",
+          "file": "tests/test_delivery_progress.py",
+          "test_function": "test_dirty_progress_durable_replay_no_credit_or_version_change",
+          "source_sha256": "dc63cf221fbac76463d15a4e7077aac7dad64c2ac9623862cc012072a01916f6",
+          "executions": [
+            {
+              "classname": "tests.test_delivery_progress",
+              "name": "test_dirty_progress_durable_replay_no_credit_or_version_change",
+              "time": "1.239"
+            }
+          ]
+        },
+        {
+          "repository": "community",
+          "file": "tests/test_delivery_net_impact.py",
+          "test_function": "test_legacy_delta_missing_base_is_visible_as_reconciliation",
+          "source_sha256": "c131af4a3b15efba017f27d927ed83f8fab03247d1deed40290a7e3a2b8bee04",
+          "executions": [
+            {
+              "classname": "tests.test_delivery_net_impact",
+              "name": "test_legacy_delta_missing_base_is_visible_as_reconciliation",
+              "time": "1.382"
+            }
+          ]
+        }
+      ]
+    },
+    "DEI:DEI-T11": {
+      "status": "verified_by_reviewed_execution",
+      "covered": "Prova é admitida em execução e reutilizada sem novo preenchimento; rollup espera estados elegíveis dos Cards.",
+      "remaining": null,
+      "evidence": [
+        {
+          "repository": "community",
+          "file": "tests/test_delivery_batch.py",
+          "test_function": "test_progress_and_real_accepted_implementation_share_transaction",
+          "source_sha256": "aefad8394284c6722893e4178b9a57bdc08354ff4901e0469df6e351f4dcb210",
+          "executions": [
+            {
+              "classname": "tests.test_delivery_batch",
+              "name": "test_progress_and_real_accepted_implementation_share_transaction",
+              "time": "1.336"
+            }
+          ]
+        },
+        {
+          "repository": "community",
+          "file": "tests/test_delivery_incremental_tests.py",
+          "test_function": "test_signed_passing_result_is_admitted_before_done_and_promotes_by_read",
+          "source_sha256": "ef6dc28e860eeabc12c4fd1342fe0d76778afcba55506f40eae952ee84b98f19",
+          "executions": [
+            {
+              "classname": "tests.test_delivery_incremental_tests",
+              "name": "test_signed_passing_result_is_admitted_before_done_and_promotes_by_read",
+              "time": "1.533"
+            }
+          ]
+        }
+      ]
+    },
+    "DEI:DEI-T12": {
+      "status": "partial",
+      "covered": "Origem inválida e membro não admitido revertem lote inteiro sem degradar em progress.",
+      "remaining": "Falta neste conjunto o receipt explicitamente revogado exercitado dentro de lote misto; não inferir revogação de ausência.",
+      "evidence": [
+        {
+          "repository": "community",
+          "file": "tests/test_delivery_batch.py",
+          "test_function": "test_invalid_execution_does_not_degrade_to_progress",
+          "source_sha256": "aefad8394284c6722893e4178b9a57bdc08354ff4901e0469df6e351f4dcb210",
+          "executions": [
+            {
+              "classname": "tests.test_delivery_batch",
+              "name": "test_invalid_execution_does_not_degrade_to_progress",
+              "time": "1.503"
+            }
+          ]
+        },
+        {
+          "repository": "community",
+          "file": "tests/test_delivery_inline_execution.py",
+          "test_function": "test_invalid_origin_is_not_degraded_to_progress",
+          "source_sha256": "6e9d99c3e457bfa1ddb7cd04632385f03e2cc17c4d9a10d14b07bf0152a43b5c",
+          "executions": [
+            {
+              "classname": "tests.test_delivery_inline_execution",
+              "name": "test_invalid_origin_is_not_degraded_to_progress",
+              "time": "1.456"
+            }
+          ]
+        },
+        {
+          "repository": "community",
+          "file": "tests/test_delivery_execution_sets.py",
+          "test_function": "test_unadmitted_or_duplicate_resolved_member_rolls_back_whole_batch",
+          "source_sha256": "c5371843b4cebc21fdf05e5b97a6148c997dc8bed7a1fd663a8b9c23ea9b285d",
+          "executions": [
+            {
+              "classname": "tests.test_delivery_execution_sets",
+              "name": "test_unadmitted_or_duplicate_resolved_member_rolls_back_whole_batch[foreign-composed0]",
+              "time": "1.323"
+            },
+            {
+              "classname": "tests.test_delivery_execution_sets",
+              "name": "test_unadmitted_or_duplicate_resolved_member_rolls_back_whole_batch[duplicate_alias-composed0]",
+              "time": "1.388"
+            }
+          ]
+        }
+      ]
+    },
+    "DEI:DEI-T13": {
+      "status": "verified_by_reviewed_execution",
+      "covered": "Uma prova registra múltiplas obrigações com relações persistidas exatas e sem copiar execução por obrigação.",
+      "remaining": null,
+      "evidence": [
+        {
+          "repository": "community",
+          "file": "tests/test_delivery_contributions.py",
+          "test_function": "test_mixed_declarations_persist_and_gate_matches_rollup",
+          "source_sha256": "e4c108adb95ce9049f1d3fdbf7f4f31fdd7791c331f8fc7bc1c4bf799a4aadb2",
+          "executions": [
+            {
+              "classname": "tests.test_delivery_contributions",
+              "name": "test_mixed_declarations_persist_and_gate_matches_rollup",
+              "time": "1.170"
+            }
+          ]
+        },
+        {
+          "repository": "community",
+          "file": "tests/test_delivery_execution_sets.py",
+          "test_function": "test_inline_set_is_atomic_replayable_and_staleness_is_per_binding",
+          "source_sha256": "c5371843b4cebc21fdf05e5b97a6148c997dc8bed7a1fd663a8b9c23ea9b285d",
+          "executions": [
+            {
+              "classname": "tests.test_delivery_execution_sets",
+              "name": "test_inline_set_is_atomic_replayable_and_staleness_is_per_binding[composed0]",
+              "time": "1.567"
+            }
+          ]
+        }
+      ]
+    },
+    "DEI:DEI-T14": {
+      "status": "verified_by_reviewed_execution",
+      "covered": "Mesmo receipt: FR partial e TR complete persistem distintos; gate e rollup recusam completar FR por associação.",
+      "remaining": null,
+      "evidence": [
+        {
+          "repository": "community",
+          "file": "tests/test_delivery_contributions.py",
+          "test_function": "test_mixed_declarations_persist_and_gate_matches_rollup",
+          "source_sha256": "e4c108adb95ce9049f1d3fdbf7f4f31fdd7791c331f8fc7bc1c4bf799a4aadb2",
+          "executions": [
+            {
+              "classname": "tests.test_delivery_contributions",
+              "name": "test_mixed_declarations_persist_and_gate_matches_rollup",
+              "time": "1.170"
+            }
+          ]
+        }
+      ]
+    },
+    "DEI:DEI-T15": {
+      "status": "verified_by_reviewed_execution",
+      "covered": "Duas entradas partial não somam conclusão; replay mantém declaração e complete exige novo registro explícito, preservando os dois anteriores.",
+      "remaining": null,
+      "evidence": [
+        {
+          "repository": "community",
+          "file": "tests/test_delivery_contributions.py",
+          "test_function": "test_partial_replay_does_not_upgrade_and_explicit_complete_is_new_history",
+          "source_sha256": "e4c108adb95ce9049f1d3fdbf7f4f31fdd7791c331f8fc7bc1c4bf799a4aadb2",
+          "executions": [
+            {
+              "classname": "tests.test_delivery_contributions",
+              "name": "test_partial_replay_does_not_upgrade_and_explicit_complete_is_new_history",
+              "time": "1.396"
+            }
+          ]
+        }
+      ]
+    },
+    "DEI:DEI-T16": {
+      "status": "verified_by_reviewed_execution",
+      "covered": "Dois Targets: FR usa ambos e TR só o primeiro. Persistência preserva exatamente esse conjunto; revisão do segundo não invalida TR.",
+      "remaining": null,
+      "evidence": [
+        {
+          "repository": "community",
+          "file": "tests/test_delivery_execution_sets.py",
+          "test_function": "test_inline_set_is_atomic_replayable_and_staleness_is_per_binding",
+          "source_sha256": "c5371843b4cebc21fdf05e5b97a6148c997dc8bed7a1fd663a8b9c23ea9b285d",
+          "executions": [
+            {
+              "classname": "tests.test_delivery_execution_sets",
+              "name": "test_inline_set_is_atomic_replayable_and_staleness_is_per_binding[composed0]",
+              "time": "1.567"
+            }
+          ]
+        }
+      ]
+    },
+    "DEI:DEI-T18": {
+      "status": "partial",
+      "covered": "Alias reutiliza execução admitida e conjuntos de vários Targets persistem sem duplicar por obrigação.",
+      "remaining": "Falta provar um único challenge/observação reutilizado por Targets distintos sem consumo repetido.",
+      "evidence": [
+        {
+          "repository": "community",
+          "file": "tests/test_delivery_local_references.py",
+          "test_function": "test_local_execution_reuses_origin_and_progress_links_persist_as_ids",
+          "source_sha256": "22f9d3773db5b2338f51ea9784f995bbca3881eaf09f92b0716249da518f8ac2",
+          "executions": [
+            {
+              "classname": "tests.test_delivery_local_references",
+              "name": "test_local_execution_reuses_origin_and_progress_links_persist_as_ids",
+              "time": "1.520"
+            }
+          ]
+        },
+        {
+          "repository": "community",
+          "file": "tests/test_delivery_execution_sets.py",
+          "test_function": "test_inline_set_is_atomic_replayable_and_staleness_is_per_binding",
+          "source_sha256": "c5371843b4cebc21fdf05e5b97a6148c997dc8bed7a1fd663a8b9c23ea9b285d",
+          "executions": [
+            {
+              "classname": "tests.test_delivery_execution_sets",
+              "name": "test_inline_set_is_atomic_replayable_and_staleness_is_per_binding[composed0]",
+              "time": "1.567"
+            }
+          ]
+        }
+      ]
+    },
+    "DEI:DEI-T19": {
+      "status": "verified_by_reviewed_execution",
+      "covered": "Revisão de Target e identidade/revisão/revogação de base são rechecadas; ID do Card não preserva crédito indevido.",
+      "remaining": null,
+      "evidence": [
+        {
+          "repository": "community",
+          "file": "tests/test_delivery_execution_sets.py",
+          "test_function": "test_inline_set_is_atomic_replayable_and_staleness_is_per_binding",
+          "source_sha256": "c5371843b4cebc21fdf05e5b97a6148c997dc8bed7a1fd663a8b9c23ea9b285d",
+          "executions": [
+            {
+              "classname": "tests.test_delivery_execution_sets",
+              "name": "test_inline_set_is_atomic_replayable_and_staleness_is_per_binding[composed0]",
+              "time": "1.567"
+            }
+          ]
+        },
+        {
+          "repository": "community",
+          "file": "tests/test_delivery_reused_impact.py",
+          "test_function": "test_current_impact_changes_without_rewriting_report_or_delivery_verdict",
+          "source_sha256": "0cc906b6008e419b781a9bd0631f9a164b8d32522f6ebc3806fb03fedc90e2e0",
+          "executions": [
+            {
+              "classname": "tests.test_delivery_reused_impact",
+              "name": "test_current_impact_changes_without_rewriting_report_or_delivery_verdict[revision]",
+              "time": "1.415"
+            },
+            {
+              "classname": "tests.test_delivery_reused_impact",
+              "name": "test_current_impact_changes_without_rewriting_report_or_delivery_verdict[identity]",
+              "time": "1.355"
+            },
+            {
+              "classname": "tests.test_delivery_reused_impact",
+              "name": "test_current_impact_changes_without_rewriting_report_or_delivery_verdict[revocation]",
+              "time": "1.352"
+            },
+            {
+              "classname": "tests.test_delivery_reused_impact",
+              "name": "test_current_impact_changes_without_rewriting_report_or_delivery_verdict[conflict]",
+              "time": "1.347"
+            }
+          ]
+        }
+      ]
+    },
+    "DEI:DEI-T20": {
+      "status": "verified_by_reviewed_execution",
+      "covered": "Nota material_change=none mantém provas; nova observação da mesma base conhecida não invalida relatório por timestamp.",
+      "remaining": null,
+      "evidence": [
+        {
+          "repository": "community",
+          "file": "tests/test_delivery_progress_currentness.py",
+          "test_function": "test_progress_recomputes_exact_sets_candidates_and_pre_done_gate",
+          "source_sha256": "5777bea4e20a69d4f8afcf0a0a7be4525d5b4ccad4368388271f8fb89a9a2de5",
+          "executions": [
+            {
+              "classname": "tests.test_delivery_progress_currentness",
+              "name": "test_progress_recomputes_exact_sets_candidates_and_pre_done_gate[targets-composed0]",
+              "time": "1.513"
+            },
+            {
+              "classname": "tests.test_delivery_progress_currentness",
+              "name": "test_progress_recomputes_exact_sets_candidates_and_pre_done_gate[none-composed0]",
+              "time": "1.560"
+            },
+            {
+              "classname": "tests.test_delivery_progress_currentness",
+              "name": "test_progress_recomputes_exact_sets_candidates_and_pre_done_gate[unknown-composed0]",
+              "time": "1.437"
+            },
+            {
+              "classname": "tests.test_delivery_progress_currentness",
+              "name": "test_progress_recomputes_exact_sets_candidates_and_pre_done_gate[legacy_dirty-composed0]",
+              "time": "1.423"
+            }
+          ]
+        },
+        {
+          "repository": "community",
+          "file": "tests/test_delivery_reused_impact.py",
+          "test_function": "test_same_known_base_observed_again_does_not_invalidate_report",
+          "source_sha256": "0cc906b6008e419b781a9bd0631f9a164b8d32522f6ebc3806fb03fedc90e2e0",
+          "executions": [
+            {
+              "classname": "tests.test_delivery_reused_impact",
+              "name": "test_same_known_base_observed_again_does_not_invalidate_report",
+              "time": "1.632"
+            }
+          ]
+        }
+      ]
+    },
+    "DEI:DEI-T21": {
+      "status": "verified_by_reviewed_execution",
+      "covered": "Dirty posterior invalida somente fatos afetados, inclusive fora da página. Nota clean e novo binding do receipt velho não restauram crédito; histórico permanece.",
+      "remaining": null,
+      "evidence": [
+        {
+          "repository": "community",
+          "file": "tests/test_delivery_progress_currentness.py",
+          "test_function": "test_progress_recomputes_exact_sets_candidates_and_pre_done_gate",
+          "source_sha256": "5777bea4e20a69d4f8afcf0a0a7be4525d5b4ccad4368388271f8fb89a9a2de5",
+          "executions": [
+            {
+              "classname": "tests.test_delivery_progress_currentness",
+              "name": "test_progress_recomputes_exact_sets_candidates_and_pre_done_gate[targets-composed0]",
+              "time": "1.513"
+            },
+            {
+              "classname": "tests.test_delivery_progress_currentness",
+              "name": "test_progress_recomputes_exact_sets_candidates_and_pre_done_gate[none-composed0]",
+              "time": "1.560"
+            },
+            {
+              "classname": "tests.test_delivery_progress_currentness",
+              "name": "test_progress_recomputes_exact_sets_candidates_and_pre_done_gate[unknown-composed0]",
+              "time": "1.437"
+            },
+            {
+              "classname": "tests.test_delivery_progress_currentness",
+              "name": "test_progress_recomputes_exact_sets_candidates_and_pre_done_gate[legacy_dirty-composed0]",
+              "time": "1.423"
+            }
+          ]
+        },
+        {
+          "repository": "community",
+          "file": "tests/test_delivery_progress_currentness.py",
+          "test_function": "test_rebinding_old_observation_or_clean_note_cannot_restore_proof",
+          "source_sha256": "5777bea4e20a69d4f8afcf0a0a7be4525d5b4ccad4368388271f8fb89a9a2de5",
+          "executions": [
+            {
+              "classname": "tests.test_delivery_progress_currentness",
+              "name": "test_rebinding_old_observation_or_clean_note_cannot_restore_proof[composed0]",
+              "time": "1.412"
+            }
+          ]
+        },
+        {
+          "repository": "community",
+          "file": "tests/test_delivery_progress_currentness.py",
+          "test_function": "test_dirty_checkpoint_hidden_by_summary_cap_still_blocks_and_revoke_is_authorized",
+          "source_sha256": "5777bea4e20a69d4f8afcf0a0a7be4525d5b4ccad4368388271f8fb89a9a2de5",
+          "executions": [
+            {
+              "classname": "tests.test_delivery_progress_currentness",
+              "name": "test_dirty_checkpoint_hidden_by_summary_cap_still_blocks_and_revoke_is_authorized[composed0]",
+              "time": "2.322"
+            }
+          ]
+        }
+      ]
+    },
+    "DEI:DEI-T22": {
+      "status": "partial",
+      "covered": "Observação posterior pode apoiar execução sucessora sem promover o registro anterior.",
+      "remaining": "Falta neste ensaio acompanhar seleção e associação de Test Evidence E1→E2 na mesma história.",
+      "evidence": [
+        {
+          "repository": "community",
+          "file": "tests/test_delivery_progress_currentness.py",
+          "test_function": "test_rebinding_old_observation_or_clean_note_cannot_restore_proof",
+          "source_sha256": "5777bea4e20a69d4f8afcf0a0a7be4525d5b4ccad4368388271f8fb89a9a2de5",
+          "executions": [
+            {
+              "classname": "tests.test_delivery_progress_currentness",
+              "name": "test_rebinding_old_observation_or_clean_note_cannot_restore_proof[composed0]",
+              "time": "1.412"
+            }
+          ]
+        }
+      ]
+    },
+    "DEI:DEI-T23": {
+      "status": "verified_by_reviewed_execution",
+      "covered": "Target independente mantém crédito e elegibilidade enquanto o Target alterado perde prova; não há invalidação global por atividade no Card.",
+      "remaining": null,
+      "evidence": [
+        {
+          "repository": "community",
+          "file": "tests/test_delivery_execution_sets.py",
+          "test_function": "test_inline_set_is_atomic_replayable_and_staleness_is_per_binding",
+          "source_sha256": "c5371843b4cebc21fdf05e5b97a6148c997dc8bed7a1fd663a8b9c23ea9b285d",
+          "executions": [
+            {
+              "classname": "tests.test_delivery_execution_sets",
+              "name": "test_inline_set_is_atomic_replayable_and_staleness_is_per_binding[composed0]",
+              "time": "1.567"
+            }
+          ]
+        },
+        {
+          "repository": "community",
+          "file": "tests/test_delivery_progress_currentness.py",
+          "test_function": "test_progress_recomputes_exact_sets_candidates_and_pre_done_gate",
+          "source_sha256": "5777bea4e20a69d4f8afcf0a0a7be4525d5b4ccad4368388271f8fb89a9a2de5",
+          "executions": [
+            {
+              "classname": "tests.test_delivery_progress_currentness",
+              "name": "test_progress_recomputes_exact_sets_candidates_and_pre_done_gate[targets-composed0]",
+              "time": "1.513"
+            },
+            {
+              "classname": "tests.test_delivery_progress_currentness",
+              "name": "test_progress_recomputes_exact_sets_candidates_and_pre_done_gate[none-composed0]",
+              "time": "1.560"
+            },
+            {
+              "classname": "tests.test_delivery_progress_currentness",
+              "name": "test_progress_recomputes_exact_sets_candidates_and_pre_done_gate[unknown-composed0]",
+              "time": "1.437"
+            },
+            {
+              "classname": "tests.test_delivery_progress_currentness",
+              "name": "test_progress_recomputes_exact_sets_candidates_and_pre_done_gate[legacy_dirty-composed0]",
+              "time": "1.423"
+            }
+          ]
+        }
+      ]
+    },
+    "DEI:DEI-T24": {
+      "status": "partial",
+      "covered": "Conjunto com revisões distintas é recusado como execution_base_conflict; hashes não são tratados como ordenação de ancestralidade.",
+      "remaining": "Falta caso explícito de revert e branches divergentes em seleção/revisão de entrega, além da recusa de bases distintas.",
+      "evidence": [
+        {
+          "repository": "community",
+          "file": "tests/test_delivery_execution_sets.py",
+          "test_function": "test_same_base_is_required_without_git_ancestry_inference",
+          "source_sha256": "c5371843b4cebc21fdf05e5b97a6148c997dc8bed7a1fd663a8b9c23ea9b285d",
+          "executions": [
+            {
+              "classname": "tests.test_delivery_execution_sets",
+              "name": "test_same_base_is_required_without_git_ancestry_inference",
+              "time": "1.282"
+            }
+          ]
+        }
+      ]
+    },
+    "DEI:DEI-T25": {
+      "status": "verified_by_reviewed_execution",
+      "covered": "Resultado assinado persiste durante execução; os mesmos IDs ganham crédito somente após elegibilidade de ambos os Cards, sem segundo preenchimento.",
+      "remaining": null,
+      "evidence": [
+        {
+          "repository": "community",
+          "file": "tests/test_delivery_incremental_tests.py",
+          "test_function": "test_signed_passing_result_is_admitted_before_done_and_promotes_by_read",
+          "source_sha256": "ef6dc28e860eeabc12c4fd1342fe0d76778afcba55506f40eae952ee84b98f19",
+          "executions": [
+            {
+              "classname": "tests.test_delivery_incremental_tests",
+              "name": "test_signed_passing_result_is_admitted_before_done_and_promotes_by_read",
+              "time": "1.533"
+            }
+          ]
+        }
+      ]
+    },
+    "DEI:DEI-T26": {
+      "status": "verified_by_reviewed_execution",
+      "covered": "Failed assinado persiste em execução/lote e fica visível após sucessor; nunca vira passing nem muda bytes históricos.",
+      "remaining": null,
+      "evidence": [
+        {
+          "repository": "community",
+          "file": "tests/test_delivery_incremental_tests.py",
+          "test_function": "test_failed_signed_result_survives_successor_without_ever_receiving_credit",
+          "source_sha256": "ef6dc28e860eeabc12c4fd1342fe0d76778afcba55506f40eae952ee84b98f19",
+          "executions": [
+            {
+              "classname": "tests.test_delivery_incremental_tests",
+              "name": "test_failed_signed_result_survives_successor_without_ever_receiving_credit",
+              "time": "1.862"
+            }
+          ]
+        },
+        {
+          "repository": "community",
+          "file": "tests/test_delivery_incremental_tests.py",
+          "test_function": "test_failed_result_uses_atomic_batch_and_same_replay_contract",
+          "source_sha256": "ef6dc28e860eeabc12c4fd1342fe0d76778afcba55506f40eae952ee84b98f19",
+          "executions": [
+            {
+              "classname": "tests.test_delivery_incremental_tests",
+              "name": "test_failed_result_uses_atomic_batch_and_same_replay_contract",
+              "time": "1.741"
+            }
+          ]
+        }
+      ]
+    },
+    "DEI:DEI-T27": {
+      "status": "verified_by_reviewed_execution",
+      "covered": "Falha posterior aplicável retira cobertura antes de novo binding, mantendo registro histórico passing sem atualidade.",
+      "remaining": null,
+      "evidence": [
+        {
+          "repository": "community",
+          "file": "tests/test_delivery_incremental_tests.py",
+          "test_function": "test_later_failed_run_removes_passing_credit_before_new_binding",
+          "source_sha256": "ef6dc28e860eeabc12c4fd1342fe0d76778afcba55506f40eae952ee84b98f19",
+          "executions": [
+            {
+              "classname": "tests.test_delivery_incremental_tests",
+              "name": "test_later_failed_run_removes_passing_credit_before_new_binding",
+              "time": "1.630"
+            }
+          ]
+        }
+      ]
+    },
+    "DEI:DEI-T28": {
+      "status": "partial",
+      "covered": "Cada implementação referenciada precisa de base atual; teste anterior à observação de qualquer membro não qualifica o conjunto.",
+      "remaining": "Falta ensaio completo de E1→E2 e seleção de teste anterior contra nova implementação, em vez de apenas confronto temporal/conjunto.",
+      "evidence": [
+        {
+          "repository": "community",
+          "file": "tests/test_delivery_execution_sets.py",
+          "test_function": "test_signed_test_checks_every_member_of_the_named_receipt_set",
+          "source_sha256": "c5371843b4cebc21fdf05e5b97a6148c997dc8bed7a1fd663a8b9c23ea9b285d",
+          "executions": [
+            {
+              "classname": "tests.test_delivery_execution_sets",
+              "name": "test_signed_test_checks_every_member_of_the_named_receipt_set[False]",
+              "time": "1.449"
+            },
+            {
+              "classname": "tests.test_delivery_execution_sets",
+              "name": "test_signed_test_checks_every_member_of_the_named_receipt_set[True]",
+              "time": "1.496"
+            }
+          ]
+        },
+        {
+          "repository": "core",
+          "file": "tests/test_delivery_test_admission.py",
+          "test_function": "test_admission_requires_all_named_implementations_current",
+          "source_sha256": "ec1d4c4730bbe275ebb706c23809dc0d108ea70e219efe3cdc52c661c8e8a995",
+          "executions": [
+            {
+              "classname": "tests.test_delivery_test_admission",
+              "name": "test_admission_requires_all_named_implementations_current[change0]",
+              "time": "0.013"
+            },
+            {
+              "classname": "tests.test_delivery_test_admission",
+              "name": "test_admission_requires_all_named_implementations_current[change1]",
+              "time": "0.013"
+            },
+            {
+              "classname": "tests.test_delivery_test_admission",
+              "name": "test_admission_requires_all_named_implementations_current[change2]",
+              "time": "0.014"
+            },
+            {
+              "classname": "tests.test_delivery_test_admission",
+              "name": "test_admission_requires_all_named_implementations_current[change3]",
+              "time": "0.014"
+            }
+          ]
+        }
+      ]
+    },
+    "DEI:DEI-T29": {
+      "status": "partial",
+      "covered": "Receipt forjado não entra como Test Evidence; progress não aceita campos de autoridade/prova.",
+      "remaining": "Falta mesma tentativa sem assinatura relatada como progress e consumida na retomada, sem crédito.",
+      "evidence": [
+        {
+          "repository": "community",
+          "file": "tests/test_delivery_incremental_tests.py",
+          "test_function": "test_incremental_admission_remains_fail_closed",
+          "source_sha256": "ef6dc28e860eeabc12c4fd1342fe0d76778afcba55506f40eae952ee84b98f19",
+          "executions": [
+            {
+              "classname": "tests.test_delivery_incremental_tests",
+              "name": "test_incremental_admission_remains_fail_closed[signature]",
+              "time": "1.200"
+            },
+            {
+              "classname": "tests.test_delivery_incremental_tests",
+              "name": "test_incremental_admission_remains_fail_closed[wrong_status]",
+              "time": "1.558"
+            },
+            {
+              "classname": "tests.test_delivery_incremental_tests",
+              "name": "test_incremental_admission_remains_fail_closed[unknown_implementation]",
+              "time": "1.441"
+            },
+            {
+              "classname": "tests.test_delivery_incremental_tests",
+              "name": "test_incremental_admission_remains_fail_closed[frozen]",
+              "time": "1.584"
+            }
+          ]
+        },
+        {
+          "repository": "core",
+          "file": "tests/test_delivery_progress.py",
+          "test_function": "test_progress_contract_rejects_authority_or_ambiguous_proof",
+          "source_sha256": "6ac09ea2cb6fd86ef7539393c7be44548ce9e479aefbb45367193bbd18949fd8",
+          "executions": [
+            {
+              "classname": "tests.test_delivery_progress",
+              "name": "test_progress_contract_rejects_authority_or_ambiguous_proof[changes0]",
+              "time": "0.015"
+            },
+            {
+              "classname": "tests.test_delivery_progress",
+              "name": "test_progress_contract_rejects_authority_or_ambiguous_proof[changes1]",
+              "time": "0.015"
+            },
+            {
+              "classname": "tests.test_delivery_progress",
+              "name": "test_progress_contract_rejects_authority_or_ambiguous_proof[changes2]",
+              "time": "0.015"
+            },
+            {
+              "classname": "tests.test_delivery_progress",
+              "name": "test_progress_contract_rejects_authority_or_ambiguous_proof[changes3]",
+              "time": "0.015"
+            },
+            {
+              "classname": "tests.test_delivery_progress",
+              "name": "test_progress_contract_rejects_authority_or_ambiguous_proof[changes4]",
+              "time": "0.016"
+            },
+            {
+              "classname": "tests.test_delivery_progress",
+              "name": "test_progress_contract_rejects_authority_or_ambiguous_proof[changes5]",
+              "time": "0.016"
+            },
+            {
+              "classname": "tests.test_delivery_progress",
+              "name": "test_progress_contract_rejects_authority_or_ambiguous_proof[changes6]",
+              "time": "0.017"
+            },
+            {
+              "classname": "tests.test_delivery_progress",
+              "name": "test_progress_contract_rejects_authority_or_ambiguous_proof[changes7]",
+              "time": "0.016"
+            },
+            {
+              "classname": "tests.test_delivery_progress",
+              "name": "test_progress_contract_rejects_authority_or_ambiguous_proof[changes8]",
+              "time": "0.017"
+            }
+          ]
+        }
+      ]
+    },
+    "DEI:DEI-T30": {
+      "status": "partial",
+      "covered": "Regra pura recusa normal/bug com entrada test e Test Card com implementação.",
+      "remaining": "Falta a tentativa completa através de transporte/adapter real com Card normal.",
+      "evidence": [
+        {
+          "repository": "core",
+          "file": "tests/test_delivery_batch.py",
+          "test_function": "test_grouping_cannot_borrow_another_card_types_authority",
+          "source_sha256": "73bc91c0e6f36b1e6a06173a0686dfb1ee4bcde2a1c24904535148c7b9206a7c",
+          "executions": [
+            {
+              "classname": "tests.test_delivery_batch",
+              "name": "test_grouping_cannot_borrow_another_card_types_authority[normal-test]",
+              "time": "0.013"
+            },
+            {
+              "classname": "tests.test_delivery_batch",
+              "name": "test_grouping_cannot_borrow_another_card_types_authority[bug-test]",
+              "time": "0.016"
+            },
+            {
+              "classname": "tests.test_delivery_batch",
+              "name": "test_grouping_cannot_borrow_another_card_types_authority[test-implementation]",
+              "time": "0.014"
+            },
+            {
+              "classname": "tests.test_delivery_batch",
+              "name": "test_grouping_cannot_borrow_another_card_types_authority[unknown-progress]",
+              "time": "0.014"
+            }
+          ]
+        }
+      ]
+    },
+    "DEI:DEI-T33": {
+      "status": "verified_by_reviewed_execution",
+      "covered": "Builder canônico e persistência real exercitam registro único e lote de um: mesmos checks de origem, um commit, mesma associação e replay.",
+      "remaining": null,
+      "evidence": [
+        {
+          "repository": "core",
+          "file": "tests/test_delivery_batch.py",
+          "test_function": "test_one_and_many_use_same_builder_without_changing_legacy_shape",
+          "source_sha256": "73bc91c0e6f36b1e6a06173a0686dfb1ee4bcde2a1c24904535148c7b9206a7c",
+          "executions": [
+            {
+              "classname": "tests.test_delivery_batch",
+              "name": "test_one_and_many_use_same_builder_without_changing_legacy_shape",
+              "time": "0.015"
+            }
+          ]
+        },
+        {
+          "repository": "community",
+          "file": "tests/test_delivery_inline_execution.py",
+          "test_function": "test_inline_real_origin_commits_once_and_replay_has_same_ids",
+          "source_sha256": "6e9d99c3e457bfa1ddb7cd04632385f03e2cc17c4d9a10d14b07bf0152a43b5c",
+          "executions": [
+            {
+              "classname": "tests.test_delivery_inline_execution",
+              "name": "test_inline_real_origin_commits_once_and_replay_has_same_ids[False]",
+              "time": "1.425"
+            },
+            {
+              "classname": "tests.test_delivery_inline_execution",
+              "name": "test_inline_real_origin_commits_once_and_replay_has_same_ids[True]",
+              "time": "1.571"
+            }
+          ]
+        }
+      ]
+    },
+    "DEI:DEI-T34": {
+      "status": "verified_by_reviewed_execution",
+      "covered": "Falha posterior reverte ledger, execução, evento e handler, mesmo com commit do caller após capturar erro; relatório também participa da atomicidade.",
+      "remaining": null,
+      "evidence": [
+        {
+          "repository": "community",
+          "file": "tests/test_delivery_batch.py",
+          "test_function": "test_failure_after_first_insert_rolls_back_even_if_caller_commits",
+          "source_sha256": "aefad8394284c6722893e4178b9a57bdc08354ff4901e0469df6e351f4dcb210",
+          "executions": [
+            {
+              "classname": "tests.test_delivery_batch",
+              "name": "test_failure_after_first_insert_rolls_back_even_if_caller_commits",
+              "time": "1.282"
+            }
+          ]
+        },
+        {
+          "repository": "community",
+          "file": "tests/test_delivery_inline_execution.py",
+          "test_function": "test_later_failure_rolls_back_receipt_binding_event_and_handler",
+          "source_sha256": "6e9d99c3e457bfa1ddb7cd04632385f03e2cc17c4d9a10d14b07bf0152a43b5c",
+          "executions": [
+            {
+              "classname": "tests.test_delivery_inline_execution",
+              "name": "test_later_failure_rolls_back_receipt_binding_event_and_handler",
+              "time": "1.632"
+            }
+          ]
+        },
+        {
+          "repository": "community",
+          "file": "tests/test_delivery_report.py",
+          "test_function": "test_inline_execution_and_its_events_rollback_when_report_is_rejected",
+          "source_sha256": "4f721005cba6feb6bbfe8cdeab0f0cb1156a51ac09fb5e52ee30f34eb83fb81f",
+          "executions": [
+            {
+              "classname": "tests.test_delivery_report",
+              "name": "test_inline_execution_and_its_events_rollback_when_report_is_rejected",
+              "time": "2.175"
+            }
+          ]
+        }
+      ]
+    },
+    "DEI:DEI-T35": {
+      "status": "verified_by_reviewed_execution",
+      "covered": "Limites de itens, referências e bytes UTF-8 são agregados e recusados pelo schema antes de efeitos.",
+      "remaining": null,
+      "evidence": [
+        {
+          "repository": "core",
+          "file": "tests/test_delivery_batch.py",
+          "test_function": "test_aggregate_link_and_byte_limits_apply_to_entire_batch",
+          "source_sha256": "73bc91c0e6f36b1e6a06173a0686dfb1ee4bcde2a1c24904535148c7b9206a7c",
+          "executions": [
+            {
+              "classname": "tests.test_delivery_batch",
+              "name": "test_aggregate_link_and_byte_limits_apply_to_entire_batch",
+              "time": "0.015"
+            }
+          ]
+        },
+        {
+          "repository": "core",
+          "file": "tests/test_delivery_batch.py",
+          "test_function": "test_batch_is_closed_and_single_scope",
+          "source_sha256": "73bc91c0e6f36b1e6a06173a0686dfb1ee4bcde2a1c24904535148c7b9206a7c",
+          "executions": [
+            {
+              "classname": "tests.test_delivery_batch",
+              "name": "test_batch_is_closed_and_single_scope[changes0]",
+              "time": "1.005"
+            },
+            {
+              "classname": "tests.test_delivery_batch",
+              "name": "test_batch_is_closed_and_single_scope[changes1]",
+              "time": "0.013"
+            },
+            {
+              "classname": "tests.test_delivery_batch",
+              "name": "test_batch_is_closed_and_single_scope[changes2]",
+              "time": "0.012"
+            },
+            {
+              "classname": "tests.test_delivery_batch",
+              "name": "test_batch_is_closed_and_single_scope[changes3]",
+              "time": "0.012"
+            },
+            {
+              "classname": "tests.test_delivery_batch",
+              "name": "test_batch_is_closed_and_single_scope[changes4]",
+              "time": "0.014"
+            },
+            {
+              "classname": "tests.test_delivery_batch",
+              "name": "test_batch_is_closed_and_single_scope[changes5]",
+              "time": "0.015"
+            },
+            {
+              "classname": "tests.test_delivery_batch",
+              "name": "test_batch_is_closed_and_single_scope[changes6]",
+              "time": "0.014"
+            },
+            {
+              "classname": "tests.test_delivery_batch",
+              "name": "test_batch_is_closed_and_single_scope[changes7]",
+              "time": "0.013"
+            },
+            {
+              "classname": "tests.test_delivery_batch",
+              "name": "test_batch_is_closed_and_single_scope[changes8]",
+              "time": "0.013"
+            },
+            {
+              "classname": "tests.test_delivery_batch",
+              "name": "test_batch_is_closed_and_single_scope[changes9]",
+              "time": "0.015"
+            },
+            {
+              "classname": "tests.test_delivery_batch",
+              "name": "test_batch_is_closed_and_single_scope[changes10]",
+              "time": "0.013"
+            }
+          ]
+        }
+      ]
+    },
+    "DEI:DEI-T36": {
+      "status": "verified_by_reviewed_execution",
+      "covered": "ID local repetido, membro duplicado e referência ausente recusados com índice/código delimitados e rollback integral.",
+      "remaining": null,
+      "evidence": [
+        {
+          "repository": "core",
+          "file": "tests/test_delivery_batch.py",
+          "test_function": "test_batch_is_closed_and_single_scope",
+          "source_sha256": "73bc91c0e6f36b1e6a06173a0686dfb1ee4bcde2a1c24904535148c7b9206a7c",
+          "executions": [
+            {
+              "classname": "tests.test_delivery_batch",
+              "name": "test_batch_is_closed_and_single_scope[changes0]",
+              "time": "1.005"
+            },
+            {
+              "classname": "tests.test_delivery_batch",
+              "name": "test_batch_is_closed_and_single_scope[changes1]",
+              "time": "0.013"
+            },
+            {
+              "classname": "tests.test_delivery_batch",
+              "name": "test_batch_is_closed_and_single_scope[changes2]",
+              "time": "0.012"
+            },
+            {
+              "classname": "tests.test_delivery_batch",
+              "name": "test_batch_is_closed_and_single_scope[changes3]",
+              "time": "0.012"
+            },
+            {
+              "classname": "tests.test_delivery_batch",
+              "name": "test_batch_is_closed_and_single_scope[changes4]",
+              "time": "0.014"
+            },
+            {
+              "classname": "tests.test_delivery_batch",
+              "name": "test_batch_is_closed_and_single_scope[changes5]",
+              "time": "0.015"
+            },
+            {
+              "classname": "tests.test_delivery_batch",
+              "name": "test_batch_is_closed_and_single_scope[changes6]",
+              "time": "0.014"
+            },
+            {
+              "classname": "tests.test_delivery_batch",
+              "name": "test_batch_is_closed_and_single_scope[changes7]",
+              "time": "0.013"
+            },
+            {
+              "classname": "tests.test_delivery_batch",
+              "name": "test_batch_is_closed_and_single_scope[changes8]",
+              "time": "0.013"
+            },
+            {
+              "classname": "tests.test_delivery_batch",
+              "name": "test_batch_is_closed_and_single_scope[changes9]",
+              "time": "0.015"
+            },
+            {
+              "classname": "tests.test_delivery_batch",
+              "name": "test_batch_is_closed_and_single_scope[changes10]",
+              "time": "0.013"
+            }
+          ]
+        },
+        {
+          "repository": "community",
+          "file": "tests/test_delivery_execution_sets.py",
+          "test_function": "test_unadmitted_or_duplicate_resolved_member_rolls_back_whole_batch",
+          "source_sha256": "c5371843b4cebc21fdf05e5b97a6148c997dc8bed7a1fd663a8b9c23ea9b285d",
+          "executions": [
+            {
+              "classname": "tests.test_delivery_execution_sets",
+              "name": "test_unadmitted_or_duplicate_resolved_member_rolls_back_whole_batch[foreign-composed0]",
+              "time": "1.323"
+            },
+            {
+              "classname": "tests.test_delivery_execution_sets",
+              "name": "test_unadmitted_or_duplicate_resolved_member_rolls_back_whole_batch[duplicate_alias-composed0]",
+              "time": "1.388"
+            }
+          ]
+        },
+        {
+          "repository": "community",
+          "file": "tests/test_delivery_local_references.py",
+          "test_function": "test_invalid_persisted_progress_reference_rolls_back_entire_alias_batch",
+          "source_sha256": "22f9d3773db5b2338f51ea9784f995bbca3881eaf09f92b0716249da518f8ac2",
+          "executions": [
+            {
+              "classname": "tests.test_delivery_local_references",
+              "name": "test_invalid_persisted_progress_reference_rolls_back_entire_alias_batch",
+              "time": "1.486"
+            }
+          ]
+        }
+      ]
+    },
+    "DEI:DEI-T37": {
+      "status": "verified_by_reviewed_execution",
+      "covered": "Retry após commit e fechamento de sessão recupera mesmos IDs e manifesto, sem duplicar execução/evento/declaração. Simula resposta perdida pela reabertura; não injeta falha de rede.",
+      "remaining": null,
+      "evidence": [
+        {
+          "repository": "community",
+          "file": "tests/test_delivery_batch.py",
+          "test_function": "test_atomic_batch_replay_manifest_and_revision",
+          "source_sha256": "aefad8394284c6722893e4178b9a57bdc08354ff4901e0469df6e351f4dcb210",
+          "executions": [
+            {
+              "classname": "tests.test_delivery_batch",
+              "name": "test_atomic_batch_replay_manifest_and_revision",
+              "time": "1.570"
+            }
+          ]
+        },
+        {
+          "repository": "community",
+          "file": "tests/test_delivery_local_references.py",
+          "test_function": "test_local_execution_reuses_origin_and_progress_links_persist_as_ids",
+          "source_sha256": "22f9d3773db5b2338f51ea9784f995bbca3881eaf09f92b0716249da518f8ac2",
+          "executions": [
+            {
+              "classname": "tests.test_delivery_local_references",
+              "name": "test_local_execution_reuses_origin_and_progress_links_persist_as_ids",
+              "time": "1.520"
+            }
+          ]
+        },
+        {
+          "repository": "community",
+          "file": "tests/test_delivery_inline_execution.py",
+          "test_function": "test_inline_real_origin_commits_once_and_replay_has_same_ids",
+          "source_sha256": "6e9d99c3e457bfa1ddb7cd04632385f03e2cc17c4d9a10d14b07bf0152a43b5c",
+          "executions": [
+            {
+              "classname": "tests.test_delivery_inline_execution",
+              "name": "test_inline_real_origin_commits_once_and_replay_has_same_ids[False]",
+              "time": "1.425"
+            },
+            {
+              "classname": "tests.test_delivery_inline_execution",
+              "name": "test_inline_real_origin_commits_once_and_replay_has_same_ids[True]",
+              "time": "1.571"
+            }
+          ]
+        }
+      ]
+    },
+    "DEI:DEI-T38": {
+      "status": "verified_by_reviewed_execution",
+      "covered": "Mesma chave com conteúdo/bindings/conclusão diferentes gera conflito explícito, sem sobrescrita/fusão.",
+      "remaining": null,
+      "evidence": [
+        {
+          "repository": "community",
+          "file": "tests/test_delivery_batch.py",
+          "test_function": "test_atomic_batch_replay_manifest_and_revision",
+          "source_sha256": "aefad8394284c6722893e4178b9a57bdc08354ff4901e0469df6e351f4dcb210",
+          "executions": [
+            {
+              "classname": "tests.test_delivery_batch",
+              "name": "test_atomic_batch_replay_manifest_and_revision",
+              "time": "1.570"
+            }
+          ]
+        },
+        {
+          "repository": "community",
+          "file": "tests/test_delivery_contributions.py",
+          "test_function": "test_partial_replay_does_not_upgrade_and_explicit_complete_is_new_history",
+          "source_sha256": "e4c108adb95ce9049f1d3fdbf7f4f31fdd7791c331f8fc7bc1c4bf799a4aadb2",
+          "executions": [
+            {
+              "classname": "tests.test_delivery_contributions",
+              "name": "test_partial_replay_does_not_upgrade_and_explicit_complete_is_new_history",
+              "time": "1.396"
+            }
+          ]
+        },
+        {
+          "repository": "community",
+          "file": "tests/test_delivery_report.py",
+          "test_function": "test_atomic_report_manifest_replay_and_later_rework_do_not_resubmit",
+          "source_sha256": "4f721005cba6feb6bbfe8cdeab0f0cb1156a51ac09fb5e52ee30f34eb83fb81f",
+          "executions": [
+            {
+              "classname": "tests.test_delivery_report",
+              "name": "test_atomic_report_manifest_replay_and_later_rework_do_not_resubmit",
+              "time": "1.312"
+            }
+          ]
+        }
+      ]
+    },
+    "DEI:DEI-T39": {
+      "status": "verified_by_reviewed_execution",
+      "covered": "Duas sessões SQLite na mesma revisão: chaves diferentes têm um vencedor e conflito; replay idêntico compartilha único batch/relatório.",
+      "remaining": null,
+      "evidence": [
+        {
+          "repository": "community",
+          "file": "tests/test_delivery_batch.py",
+          "test_function": "test_two_concurrent_batches_cannot_claim_same_delivery_revision",
+          "source_sha256": "aefad8394284c6722893e4178b9a57bdc08354ff4901e0469df6e351f4dcb210",
+          "executions": [
+            {
+              "classname": "tests.test_delivery_batch",
+              "name": "test_two_concurrent_batches_cannot_claim_same_delivery_revision",
+              "time": "1.286"
+            }
+          ]
+        },
+        {
+          "repository": "community",
+          "file": "tests/test_delivery_report.py",
+          "test_function": "test_concurrent_identical_submissions_share_one_batch_and_report",
+          "source_sha256": "4f721005cba6feb6bbfe8cdeab0f0cb1156a51ac09fb5e52ee30f34eb83fb81f",
+          "executions": [
+            {
+              "classname": "tests.test_delivery_report",
+              "name": "test_concurrent_identical_submissions_share_one_batch_and_report",
+              "time": "1.347"
+            }
+          ]
+        }
+      ]
+    },
+    "DEI:DEI-T40": {
+      "status": "partial",
+      "covered": "Submissões idênticas concorrentes convergem; falha tardia não deixa estado misturado.",
+      "remaining": "Falta append diferente concorrente com selagem/submissão para provar fence de revisão nos dois interleavings.",
+      "evidence": [
+        {
+          "repository": "community",
+          "file": "tests/test_delivery_report.py",
+          "test_function": "test_concurrent_identical_submissions_share_one_batch_and_report",
+          "source_sha256": "4f721005cba6feb6bbfe8cdeab0f0cb1156a51ac09fb5e52ee30f34eb83fb81f",
+          "executions": [
+            {
+              "classname": "tests.test_delivery_report",
+              "name": "test_concurrent_identical_submissions_share_one_batch_and_report",
+              "time": "1.347"
+            }
+          ]
+        },
+        {
+          "repository": "community",
+          "file": "tests/test_delivery_report.py",
+          "test_function": "test_report_rejection_cannot_leave_batch_or_outbox_after_outer_commit",
+          "source_sha256": "4f721005cba6feb6bbfe8cdeab0f0cb1156a51ac09fb5e52ee30f34eb83fb81f",
+          "executions": [
+            {
+              "classname": "tests.test_delivery_report",
+              "name": "test_report_rejection_cannot_leave_batch_or_outbox_after_outer_commit[impact]",
+              "time": "1.498"
+            },
+            {
+              "classname": "tests.test_delivery_report",
+              "name": "test_report_rejection_cannot_leave_batch_or_outbox_after_outer_commit[selection]",
+              "time": "1.494"
+            },
+            {
+              "classname": "tests.test_delivery_report",
+              "name": "test_report_rejection_cannot_leave_batch_or_outbox_after_outer_commit[permission]",
+              "time": "1.270"
+            },
+            {
+              "classname": "tests.test_delivery_report",
+              "name": "test_report_rejection_cannot_leave_batch_or_outbox_after_outer_commit[state]",
+              "time": "1.429"
+            },
+            {
+              "classname": "tests.test_delivery_report",
+              "name": "test_report_rejection_cannot_leave_batch_or_outbox_after_outer_commit[late]",
+              "time": "1.334"
+            }
+          ]
+        }
+      ]
+    },
+    "DEI:DEI-T41": {
+      "status": "verified_by_reviewed_execution",
+      "covered": "Validation/rejected e demais estados congelados recusam progress, batch e teste sem escrita; append não reabre trabalho.",
+      "remaining": null,
+      "evidence": [
+        {
+          "repository": "community",
+          "file": "tests/test_delivery_progress.py",
+          "test_function": "test_frozen_progress_has_no_persisted_record",
+          "source_sha256": "dc63cf221fbac76463d15a4e7077aac7dad64c2ac9623862cc012072a01916f6",
+          "executions": [
+            {
+              "classname": "tests.test_delivery_progress",
+              "name": "test_frozen_progress_has_no_persisted_record[validation]",
+              "time": "1.316"
+            },
+            {
+              "classname": "tests.test_delivery_progress",
+              "name": "test_frozen_progress_has_no_persisted_record[rejected]",
+              "time": "1.174"
+            },
+            {
+              "classname": "tests.test_delivery_progress",
+              "name": "test_frozen_progress_has_no_persisted_record[done]",
+              "time": "1.303"
+            },
+            {
+              "classname": "tests.test_delivery_progress",
+              "name": "test_frozen_progress_has_no_persisted_record[cancelled]",
+              "time": "1.584"
+            },
+            {
+              "classname": "tests.test_delivery_progress",
+              "name": "test_frozen_progress_has_no_persisted_record[not_started]",
+              "time": "1.394"
+            },
+            {
+              "classname": "tests.test_delivery_progress",
+              "name": "test_frozen_progress_has_no_persisted_record[on_hold]",
+              "time": "1.244"
+            }
+          ]
+        },
+        {
+          "repository": "community",
+          "file": "tests/test_delivery_batch.py",
+          "test_function": "test_batch_cannot_bypass_frozen_card",
+          "source_sha256": "aefad8394284c6722893e4178b9a57bdc08354ff4901e0469df6e351f4dcb210",
+          "executions": [
+            {
+              "classname": "tests.test_delivery_batch",
+              "name": "test_batch_cannot_bypass_frozen_card[validation]",
+              "time": "1.562"
+            },
+            {
+              "classname": "tests.test_delivery_batch",
+              "name": "test_batch_cannot_bypass_frozen_card[rejected]",
+              "time": "1.404"
+            },
+            {
+              "classname": "tests.test_delivery_batch",
+              "name": "test_batch_cannot_bypass_frozen_card[cancelled]",
+              "time": "1.318"
+            },
+            {
+              "classname": "tests.test_delivery_batch",
+              "name": "test_batch_cannot_bypass_frozen_card[on_hold]",
+              "time": "1.337"
+            },
+            {
+              "classname": "tests.test_delivery_batch",
+              "name": "test_batch_cannot_bypass_frozen_card[not_started]",
+              "time": "1.338"
+            }
+          ]
+        },
+        {
+          "repository": "community",
+          "file": "tests/test_delivery_incremental_tests.py",
+          "test_function": "test_incremental_admission_remains_fail_closed",
+          "source_sha256": "ef6dc28e860eeabc12c4fd1342fe0d76778afcba55506f40eae952ee84b98f19",
+          "executions": [
+            {
+              "classname": "tests.test_delivery_incremental_tests",
+              "name": "test_incremental_admission_remains_fail_closed[signature]",
+              "time": "1.200"
+            },
+            {
+              "classname": "tests.test_delivery_incremental_tests",
+              "name": "test_incremental_admission_remains_fail_closed[wrong_status]",
+              "time": "1.558"
+            },
+            {
+              "classname": "tests.test_delivery_incremental_tests",
+              "name": "test_incremental_admission_remains_fail_closed[unknown_implementation]",
+              "time": "1.441"
+            },
+            {
+              "classname": "tests.test_delivery_incremental_tests",
+              "name": "test_incremental_admission_remains_fail_closed[frozen]",
+              "time": "1.584"
+            }
+          ]
+        }
+      ]
+    },
+    "DEI:DEI-T42": {
+      "status": "partial",
+      "covered": "Após reabertura simulada como entrada, replay do relatório antigo preserva história e não move Card novamente.",
+      "remaining": "Falta reabertura legítima pelo lifecycle com novas provas/revisões; estado/policy_version são alterados pela fixture neste teste.",
+      "evidence": [
+        {
+          "repository": "community",
+          "file": "tests/test_delivery_report.py",
+          "test_function": "test_atomic_report_manifest_replay_and_later_rework_do_not_resubmit",
+          "source_sha256": "4f721005cba6feb6bbfe8cdeab0f0cb1156a51ac09fb5e52ee30f34eb83fb81f",
+          "executions": [
+            {
+              "classname": "tests.test_delivery_report",
+              "name": "test_atomic_report_manifest_replay_and_later_rework_do_not_resubmit",
+              "time": "1.312"
+            }
+          ]
+        }
+      ]
+    },
+    "DEI:DEI-T43": {
+      "status": "partial",
+      "covered": "Autoria durável permanece após nova sessão; identidade humana não toma attestation do agente.",
+      "remaining": "Falta handoff real A→B com B observando seu ambiente e seus próprios receipts.",
+      "evidence": [
+        {
+          "repository": "community",
+          "file": "tests/test_delivery_progress.py",
+          "test_function": "test_dirty_progress_durable_replay_no_credit_or_version_change",
+          "source_sha256": "dc63cf221fbac76463d15a4e7077aac7dad64c2ac9623862cc012072a01916f6",
+          "executions": [
+            {
+              "classname": "tests.test_delivery_progress",
+              "name": "test_dirty_progress_durable_replay_no_credit_or_version_change",
+              "time": "1.239"
+            }
+          ]
+        },
+        {
+          "repository": "community",
+          "file": "tests/test_delivery_inline_execution.py",
+          "test_function": "test_inline_cannot_lend_agent_attestation_to_human",
+          "source_sha256": "6e9d99c3e457bfa1ddb7cd04632385f03e2cc17c4d9a10d14b07bf0152a43b5c",
+          "executions": [
+            {
+              "classname": "tests.test_delivery_inline_execution",
+              "name": "test_inline_cannot_lend_agent_attestation_to_human[human]",
+              "time": "1.471"
+            },
+            {
+              "classname": "tests.test_delivery_inline_execution",
+              "name": "test_inline_cannot_lend_agent_attestation_to_human[user]",
+              "time": "1.284"
+            }
+          ]
+        }
+      ]
+    },
+    "DEI:DEI-T45": {
+      "status": "partial",
+      "covered": "Progresso de workspace externo nunca aparece como recovery_verified.",
+      "remaining": "Falta comparar leitura por novo ator com e sem acesso ao worktree/patch; não há prova de recuperação de código.",
+      "evidence": [
+        {
+          "repository": "community",
+          "file": "tests/test_delivery_progress.py",
+          "test_function": "test_dirty_progress_durable_replay_no_credit_or_version_change",
+          "source_sha256": "dc63cf221fbac76463d15a4e7077aac7dad64c2ac9623862cc012072a01916f6",
+          "executions": [
+            {
+              "classname": "tests.test_delivery_progress",
+              "name": "test_dirty_progress_durable_replay_no_credit_or_version_change",
+              "time": "1.239"
+            }
+          ]
+        }
+      ]
+    },
+    "DEI:DEI-T46": {
+      "status": "partial",
+      "covered": "Checkpoint material anterior ao cap ainda afeta prova e agregação líquida preserva fatos precedentes.",
+      "remaining": "Falta contexto acumulado de retomada com dependências entre notas curtas e todos os fatos relevantes além de impacto/bloqueadores.",
+      "evidence": [
+        {
+          "repository": "community",
+          "file": "tests/test_delivery_progress_currentness.py",
+          "test_function": "test_dirty_checkpoint_hidden_by_summary_cap_still_blocks_and_revoke_is_authorized",
+          "source_sha256": "5777bea4e20a69d4f8afcf0a0a7be4525d5b4ccad4368388271f8fb89a9a2de5",
+          "executions": [
+            {
+              "classname": "tests.test_delivery_progress_currentness",
+              "name": "test_dirty_checkpoint_hidden_by_summary_cap_still_blocks_and_revoke_is_authorized[composed0]",
+              "time": "2.322"
+            }
+          ]
+        },
+        {
+          "repository": "community",
+          "file": "tests/test_delivery_net_impact.py",
+          "test_function": "test_persisted_net_claims_preserve_history_without_delivery_credit",
+          "source_sha256": "c131af4a3b15efba017f27d927ed83f8fab03247d1deed40290a7e3a2b8bee04",
+          "executions": [
+            {
+              "classname": "tests.test_delivery_net_impact",
+              "name": "test_persisted_net_claims_preserve_history_without_delivery_credit",
+              "time": "1.438"
+            }
+          ]
+        }
+      ]
+    },
+    "DEI:DEI-T47": {
+      "status": "partial",
+      "covered": "Antes do commit há rollback; após commit retry cold-read converge sem duplicação.",
+      "remaining": "Falta interrupção de processo/rede com outcome desconhecido e diagnóstico de recuperação no cliente.",
+      "evidence": [
+        {
+          "repository": "community",
+          "file": "tests/test_delivery_inline_execution.py",
+          "test_function": "test_outer_rollback_also_reverts_single_inline",
+          "source_sha256": "6e9d99c3e457bfa1ddb7cd04632385f03e2cc17c4d9a10d14b07bf0152a43b5c",
+          "executions": [
+            {
+              "classname": "tests.test_delivery_inline_execution",
+              "name": "test_outer_rollback_also_reverts_single_inline",
+              "time": "1.586"
+            }
+          ]
+        },
+        {
+          "repository": "community",
+          "file": "tests/test_delivery_local_references.py",
+          "test_function": "test_local_execution_reuses_origin_and_progress_links_persist_as_ids",
+          "source_sha256": "22f9d3773db5b2338f51ea9784f995bbca3881eaf09f92b0716249da518f8ac2",
+          "executions": [
+            {
+              "classname": "tests.test_delivery_local_references",
+              "name": "test_local_execution_reuses_origin_and_progress_links_persist_as_ids",
+              "time": "1.520"
+            }
+          ]
+        }
+      ]
+    },
+    "DEI:DEI-T48": {
+      "status": "partial",
+      "covered": "Create→delete tem impacto líquido vazio e dois registros históricos preservados, sem crédito Delivery.",
+      "remaining": "Falta nesta evidência compor rename encadeado e mesmo path em dois repositórios.",
+      "evidence": [
+        {
+          "repository": "community",
+          "file": "tests/test_delivery_net_impact.py",
+          "test_function": "test_persisted_net_claims_preserve_history_without_delivery_credit",
+          "source_sha256": "c131af4a3b15efba017f27d927ed83f8fab03247d1deed40290a7e3a2b8bee04",
+          "executions": [
+            {
+              "classname": "tests.test_delivery_net_impact",
+              "name": "test_persisted_net_claims_preserve_history_without_delivery_credit",
+              "time": "1.438"
+            }
+          ]
+        }
+      ]
+    },
+    "DEI:DEI-T51": {
+      "status": "verified_by_reviewed_execution",
+      "covered": "CardService real atende require usando impacto selecionado/selado sem bloco manual; ambiguidade, base velha, conflito e revogação não atendem e preservam relatório anterior.",
+      "remaining": null,
+      "evidence": [
+        {
+          "repository": "community",
+          "file": "tests/test_delivery_reused_impact.py",
+          "test_function": "test_real_report_satisfies_require_from_selected_claims_without_manual_block",
+          "source_sha256": "0cc906b6008e419b781a9bd0631f9a164b8d32522f6ebc3806fb03fedc90e2e0",
+          "executions": [
+            {
+              "classname": "tests.test_delivery_reused_impact",
+              "name": "test_real_report_satisfies_require_from_selected_claims_without_manual_block",
+              "time": "1.424"
+            }
+          ]
+        },
+        {
+          "repository": "community",
+          "file": "tests/test_delivery_reused_impact.py",
+          "test_function": "test_reuse_refuses_ambiguous_or_stale_input_without_staging_report",
+          "source_sha256": "0cc906b6008e419b781a9bd0631f9a164b8d32522f6ebc3806fb03fedc90e2e0",
+          "executions": [
+            {
+              "classname": "tests.test_delivery_reused_impact",
+              "name": "test_reuse_refuses_ambiguous_or_stale_input_without_staging_report[old_observation]",
+              "time": "1.621"
+            },
+            {
+              "classname": "tests.test_delivery_reused_impact",
+              "name": "test_reuse_refuses_ambiguous_or_stale_input_without_staging_report[missing_identity]",
+              "time": "1.862"
+            },
+            {
+              "classname": "tests.test_delivery_reused_impact",
+              "name": "test_reuse_refuses_ambiguous_or_stale_input_without_staging_report[manual]",
+              "time": "2.392"
+            },
+            {
+              "classname": "tests.test_delivery_reused_impact",
+              "name": "test_reuse_refuses_ambiguous_or_stale_input_without_staging_report[unselected_material]",
+              "time": "1.497"
+            }
+          ]
+        },
+        {
+          "repository": "community",
+          "file": "tests/test_delivery_reused_impact.py",
+          "test_function": "test_current_impact_changes_without_rewriting_report_or_delivery_verdict",
+          "source_sha256": "0cc906b6008e419b781a9bd0631f9a164b8d32522f6ebc3806fb03fedc90e2e0",
+          "executions": [
+            {
+              "classname": "tests.test_delivery_reused_impact",
+              "name": "test_current_impact_changes_without_rewriting_report_or_delivery_verdict[revision]",
+              "time": "1.415"
+            },
+            {
+              "classname": "tests.test_delivery_reused_impact",
+              "name": "test_current_impact_changes_without_rewriting_report_or_delivery_verdict[identity]",
+              "time": "1.355"
+            },
+            {
+              "classname": "tests.test_delivery_reused_impact",
+              "name": "test_current_impact_changes_without_rewriting_report_or_delivery_verdict[revocation]",
+              "time": "1.352"
+            },
+            {
+              "classname": "tests.test_delivery_reused_impact",
+              "name": "test_current_impact_changes_without_rewriting_report_or_delivery_verdict[conflict]",
+              "time": "1.347"
+            }
+          ]
+        }
+      ]
+    },
+    "DEI:DEI-T59": {
+      "status": "verified_by_reviewed_execution",
+      "covered": "Schema limpo de fixture e predecessor exato convergem; upgrade repetido é no-op, interrupção após DROP reverte linhas/triggers em cópia e drift é recusado.",
+      "remaining": null,
+      "evidence": [
+        {
+          "repository": "community",
+          "file": "tests/test_delivery_progress.py",
+          "test_function": "test_migration_exact_predecessor_preserves_every_row_and_guards",
+          "source_sha256": "dc63cf221fbac76463d15a4e7077aac7dad64c2ac9623862cc012072a01916f6",
+          "executions": [
+            {
+              "classname": "tests.test_delivery_progress",
+              "name": "test_migration_exact_predecessor_preserves_every_row_and_guards[False]",
+              "time": "1.489"
+            },
+            {
+              "classname": "tests.test_delivery_progress",
+              "name": "test_migration_exact_predecessor_preserves_every_row_and_guards[True]",
+              "time": "1.680"
+            }
+          ]
+        },
+        {
+          "repository": "community",
+          "file": "tests/test_delivery_progress.py",
+          "test_function": "test_migration_rejects_trigger_drift_without_changing_history",
+          "source_sha256": "dc63cf221fbac76463d15a4e7077aac7dad64c2ac9623862cc012072a01916f6",
+          "executions": [
+            {
+              "classname": "tests.test_delivery_progress",
+              "name": "test_migration_rejects_trigger_drift_without_changing_history",
+              "time": "1.436"
+            }
+          ]
+        }
+      ]
+    },
+    "DEI:DEI-T60": {
+      "status": "partial",
+      "covered": "Persistência e retomada funcionam com adapter SQL sem runtime KG configurado.",
+      "remaining": "Falta falha de KG instrumentada no fluxo público completo, incluindo publicação/outbox.",
+      "evidence": [
+        {
+          "repository": "community",
+          "file": "tests/test_delivery_progress.py",
+          "test_function": "test_dirty_progress_durable_replay_no_credit_or_version_change",
+          "source_sha256": "dc63cf221fbac76463d15a4e7077aac7dad64c2ac9623862cc012072a01916f6",
+          "executions": [
+            {
+              "classname": "tests.test_delivery_progress",
+              "name": "test_dirty_progress_durable_replay_no_credit_or_version_change",
+              "time": "1.239"
+            }
+          ]
+        }
+      ]
+    },
+    "DEI:DEI-T62": {
+      "status": "partial",
+      "covered": "Checkpoint não cria implementação/teste nem entrega no rollup.",
+      "remaining": "Falta verificar também analytics/throughput e projeção KG para garantir que não contam checkpoints como entrega/conhecimento.",
+      "evidence": [
+        {
+          "repository": "community",
+          "file": "tests/test_delivery_progress.py",
+          "test_function": "test_dirty_progress_durable_replay_no_credit_or_version_change",
+          "source_sha256": "dc63cf221fbac76463d15a4e7077aac7dad64c2ac9623862cc012072a01916f6",
+          "executions": [
+            {
+              "classname": "tests.test_delivery_progress",
+              "name": "test_dirty_progress_durable_replay_no_credit_or_version_change",
+              "time": "1.239"
+            }
+          ]
+        },
+        {
+          "repository": "community",
+          "file": "tests/test_delivery_net_impact.py",
+          "test_function": "test_persisted_net_claims_preserve_history_without_delivery_credit",
+          "source_sha256": "c131af4a3b15efba017f27d927ed83f8fab03247d1deed40290a7e3a2b8bee04",
+          "executions": [
+            {
+              "classname": "tests.test_delivery_net_impact",
+              "name": "test_persisted_net_claims_preserve_history_without_delivery_credit",
+              "time": "1.438"
+            }
+          ]
+        }
+      ]
+    },
+    "DEI:DEI-T63": {
+      "status": "partial",
+      "covered": "Resumo capped em 20 com total/truncated e revogação; pendência fora do resumo continua no gate.",
+      "remaining": "Falta cursor/detalhe/redaction por autoridade e volume total de resposta em histórico grande.",
+      "evidence": [
+        {
+          "repository": "community",
+          "file": "tests/test_delivery_progress.py",
+          "test_function": "test_progress_history_is_bounded_and_revocation_is_visible",
+          "source_sha256": "dc63cf221fbac76463d15a4e7077aac7dad64c2ac9623862cc012072a01916f6",
+          "executions": [
+            {
+              "classname": "tests.test_delivery_progress",
+              "name": "test_progress_history_is_bounded_and_revocation_is_visible",
+              "time": "2.145"
+            }
+          ]
+        },
+        {
+          "repository": "community",
+          "file": "tests/test_delivery_progress_currentness.py",
+          "test_function": "test_dirty_checkpoint_hidden_by_summary_cap_still_blocks_and_revoke_is_authorized",
+          "source_sha256": "5777bea4e20a69d4f8afcf0a0a7be4525d5b4ccad4368388271f8fb89a9a2de5",
+          "executions": [
+            {
+              "classname": "tests.test_delivery_progress_currentness",
+              "name": "test_dirty_checkpoint_hidden_by_summary_cap_still_blocks_and_revoke_is_authorized[composed0]",
+              "time": "2.322"
+            }
+          ]
+        }
+      ]
+    },
+    "DEI:DEI-T64": {
+      "status": "partial",
+      "covered": "REST/MCP usam writer/replay/gates comuns no par instalado byte-idêntico; autorização de mapeamento de transporte é mockada explicitamente.",
+      "remaining": "Falta browser com runtime instalado e gates/autoridades reais no fluxo completo; testes de componente anteriores não substituem esse E2E.",
+      "evidence": [
+        {
+          "repository": "community",
+          "file": "tests/test_delivery_batch.py",
+          "test_function": "test_native_rest_mcp_batch_replay_and_entry_errors",
+          "source_sha256": "aefad8394284c6722893e4178b9a57bdc08354ff4901e0469df6e351f4dcb210",
+          "executions": [
+            {
+              "classname": "tests.test_delivery_batch",
+              "name": "test_native_rest_mcp_batch_replay_and_entry_errors",
+              "time": "1.300"
+            }
+          ]
+        },
+        {
+          "repository": "community",
+          "file": "tests/test_delivery_progress.py",
+          "test_function": "test_rest_and_mcp_share_progress_writer_and_replay",
+          "source_sha256": "dc63cf221fbac76463d15a4e7077aac7dad64c2ac9623862cc012072a01916f6",
+          "executions": [
+            {
+              "classname": "tests.test_delivery_progress",
+              "name": "test_rest_and_mcp_share_progress_writer_and_replay",
+              "time": "1.692"
+            }
+          ]
+        },
+        {
+          "repository": "community",
+          "file": "tests/test_delivery_report.py",
+          "test_function": "test_canonical_transports_compose_and_preserve_report_gate",
+          "source_sha256": "4f721005cba6feb6bbfe8cdeab0f0cb1156a51ac09fb5e52ee30f34eb83fb81f",
+          "executions": [
+            {
+              "classname": "tests.test_delivery_report",
+              "name": "test_canonical_transports_compose_and_preserve_report_gate[False-rest]",
+              "time": "1.447"
+            },
+            {
+              "classname": "tests.test_delivery_report",
+              "name": "test_canonical_transports_compose_and_preserve_report_gate[False-mcp]",
+              "time": "1.298"
+            },
+            {
+              "classname": "tests.test_delivery_report",
+              "name": "test_canonical_transports_compose_and_preserve_report_gate[True-rest]",
+              "time": "1.240"
+            },
+            {
+              "classname": "tests.test_delivery_report",
+              "name": "test_canonical_transports_compose_and_preserve_report_gate[True-mcp]",
+              "time": "1.396"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}
