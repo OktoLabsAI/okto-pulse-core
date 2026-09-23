@@ -14291,3 +14291,30 @@ Nenhum teste/build/pip/auditoria pendente. Incremento apto a commit/push.
 Community deste incremento: 44ef68666f306ffe9ea6febad2b5b811193778c5.
 O commit Core correspondente inclui esta seção; próximo passo mantém a execução
 contínua, investigando qualificações históricas pendentes sem inferir autoridade.
+
+### Upgrade instalado desde schema predecessor — 2026-09-23
+
+Publicados relatórios: Core a0e32433 / Community 44ef6866, pushes confirmados.
+Ensaio adicional cobre fonte relacional v0.3.4 + grafo Board 0.5.0 com raiz
+histórica reutilizada e overlay completo autenticado, sem Global predecessor
+incompatível. Evolução nativa 0.5.0→0.6.0 preserva identidade semântica e cópia
+não vinculada do predecessor; materialização do Global é reconciliada por fonte.
+Passou toda a cadeia de candidato, rederivação, falha de publicação/retry,
+ativação separada, retomada e db.init_db em processo novo de wheels instaladas.
+O mesmo ensaio verifica preservação do original, escrita pós-ativação e negação
+da alteração de bytes da cópia predecessor. Não se torna saudável o caso anterior
+com Global/overlay indisponível: ele permanece um caso negativo separado.
+
+Comando: pytest -q --tb=short tests/test_retirement_reused_history.py
+-k predecessor-complete. Resultado 1 passed, 3 deselected em 193.66s.
+Prova prévia provenance-predecessor-activation.json, byte-a-byte idêntica ao par
+dist-verification-reports-final (828/360 Python); apenas teste/ledger alterados.
+Não reexecutar toda F16/build para alteração só de teste, sem nova dependência.
+
+Investigação cognitiva em andamento: ports.kg_cognitive_source declara fonte
+append-only autoritativa para nós cognitivos e replay literal; o replay existente
+em canonical_cognitive_preservation restaura payload sem inventar arestas.
+Entretanto, is_projection_technical_root e o resolver final_report são provas
+de conectividade, não autorização. A qualificação do cutover ainda precisa
+compor integridade da fonte/revisões, base/evidências, maturidade e relações
+atuais. Preservação literal isolada continua pending, conforme pacote §8.2/8.3.
