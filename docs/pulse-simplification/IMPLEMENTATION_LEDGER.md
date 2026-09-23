@@ -14554,3 +14554,33 @@ incremento segue ativo. Próximo trabalho é o ensaio integrado da transição
 de início e a auditoria dos critérios ainda não comprovados; este incremento
 fecha somente a lacuna de diagnóstico, sem declarar AC-ARQ-15 integralmente
 comprovado nem encerrar o plano.
+
+### Transição real de início — AC-ARQ-15 / ADV-03, 2026-09-23
+
+Par produtivo publicado Core 2f0832b6 / Community b83cbc6e. Novo ensaio
+Community test_architecture_start_transition.py usa REST, UoW e SQL reais
+descartáveis. Fixtures fornecem avaliação como entrada; não comprovam a
+submissão dessa avaliação. Nenhum gate substituído por mock ou desabilitado.
+Registros prévios de classificação são escritos pela rota pública em Draft.
+
+Com 3 e 31 candidatos, somente o último fica pendente, fora da página atual
+que mostra candidato current. Início real retorna 409 com ID/remediação e
+preserva validated. Reabre pela rota para Draft, classifica, permanece Draft.
+Nova entrada de avaliação rejeitada ainda impede iniciar; avaliação aprovável
+permite a transição explícita. Cenário permanece ready sem evidence, nenhum
+IR criado, Card normal e Test Card permanecem not_started.
+
+Preparação investigou falhas de fixture: serialização dataclass incorreta,
+enum Card inválido, providers de contexto/fatos ausentes, escopo verificável
+incompleto, backlinks do cenário/BR e campos obrigatórios da BR. Corrigidos
+usando adapters reais e conteúdo completo, sem relaxar predicados. XMLs
+architecture-start-transition[-r2..-r11].xml preservam a investigação local;
+r9 provou bloqueio e r11 o ciclo completo inicial. Versão final paramétrica:
+**2 passed em 13.90s**, architecture-start-transition-final.xml. Ruff F/E9 passou.
+
+acceptance-start-execution.json fixa hash de teste/JUnit e a prova do par
+provenance-architecture-gate-final.json. Inventário atualizado por revisão
+manual dos oráculos: **20 comprovados / 5 parciais / 221 ainda não auditados**.
+Não somar artefatos históricos como critérios adicionais. A mudança atual é
+somente testes/evidência; payload produtivo permanece o já verificado por F16.
+Próximos: continuar auditoria de verificabilidade/integração e benchmark.

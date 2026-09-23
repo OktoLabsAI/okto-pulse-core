@@ -2181,8 +2181,12 @@
       "line": 352,
       "id": "AC-ARQ-15",
       "normative_text": "**AC-ARQ-15 — verifica RF-ARQ-15.** **Dado** Uma Spec validated com avaliação aprovável e um candidato pendente. **Quando** O usuário tenta iniciar; depois classifica o candidato e tenta novamente. **Então** A primeira transição é bloqueada com IDs e remediação; a segunda reavalia todos os demais gates, sem início automático ou aprovação de IR/testes.",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "verified_by_reviewed_execution",
+      "test_text_references": [],
+      "reviewed_execution": {
+        "artifact": "acceptance-start-execution.json",
+        "criterion_key": "ARQVER:AC-ARQ-15"
+      }
     },
     {
       "key": "ARQVER:AC-ARQ-16",
@@ -2509,7 +2513,7 @@
       "line": 727,
       "id": "ADV-03",
       "normative_text": "| ADV-03 | Pending escondido na segunda página. | O gate continua bloqueado. |",
-      "review_status": "partial",
+      "review_status": "verified_by_reviewed_execution",
       "test_text_references": [
         {
           "path": "okto_labs_pulse_core/tests/test_verification_plan.py",
@@ -2517,7 +2521,7 @@
         }
       ],
       "reviewed_execution": {
-        "artifact": "acceptance-architecture-execution.json",
+        "artifact": "acceptance-start-execution.json",
         "criterion_key": "ARQVER:ADV-03"
       }
     },

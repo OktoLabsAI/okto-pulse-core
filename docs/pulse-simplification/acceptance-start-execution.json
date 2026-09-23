@@ -1,0 +1,143 @@
+{
+  "format": "pulse-v1.3-reviewed-execution/v1",
+  "scope": "Actual REST Spec start admission; no whole-plan completion claim",
+  "provenance": {
+    "file": "provenance-architecture-gate-final.json",
+    "sha256": "8dab4697b427eda10f595b7ae1d193313a49ace4299be0f096a59529be1b7879",
+    "identity": {
+      "checked_at": "2026-09-23T16:45:24.119587+00:00",
+      "python": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Scripts\\python.exe",
+      "packages": {
+        "core": {
+          "python_files": 829,
+          "origin": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages\\okto_pulse\\core\\__init__.py",
+          "repository_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_core",
+          "commit": "e7b7116b3e349d679fbabeee1a1ee65c970e2e82",
+          "dirty": true,
+          "dirty_entry_count": 5,
+          "distribution": "okto-pulse-core",
+          "version": "0.3.4",
+          "wheel": {
+            "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\dist-architecture-gate-final\\okto_pulse_core-0.3.4-py3-none-any.whl",
+            "sha256": "6f19b326774b4650b9755e05338e05c1bd72b86ad61cfb3043b81abed2ef91e5",
+            "size": 3729257
+          },
+          "source_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_core\\src",
+          "site_packages_root": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages",
+          "package_prefix": "okto_pulse/core/",
+          "byte_identical_member_count": 892,
+          "byte_identical": true,
+          "aggregate_sha256": "6438062f38a5d530f1eddb99ace0ec4502f070b1732252e05964e4d59617b001",
+          "chain_hashes": {
+            "source": "6438062f38a5d530f1eddb99ace0ec4502f070b1732252e05964e4d59617b001",
+            "wheel": "6438062f38a5d530f1eddb99ace0ec4502f070b1732252e05964e4d59617b001",
+            "site_packages": "6438062f38a5d530f1eddb99ace0ec4502f070b1732252e05964e4d59617b001"
+          },
+          "critical_resource_sha256": {
+            "okto_pulse/core/mcp/resources/ska_resource_manifest.json": "9c93025839c1869caf98e87dca7c4c101a5b98fc9dc20883bab859fb38cb7a18",
+            "okto_pulse/core/mcp/resources/ska_tool_manifest.json": "0c3fa3da1549baec20872eca3f4a289288627e6b9f6b80be10472ac962fa72b9"
+          },
+          "mismatches": []
+        },
+        "community": {
+          "python_files": 360,
+          "origin": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages\\okto_pulse\\community\\__init__.py",
+          "repository_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_community",
+          "commit": "8a6a4a101766b05dcb42fe443ec2ff743e14f02f",
+          "dirty": true,
+          "dirty_entry_count": 63,
+          "distribution": "okto-pulse",
+          "version": "0.3.4",
+          "wheel": {
+            "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\dist-architecture-gate-final\\okto_pulse-0.3.4-py3-none-any.whl",
+            "sha256": "7dd517e9f76220592e0f071f6005cd36e4d934226644fab0e300ad381acc187e",
+            "size": 4499452
+          },
+          "source_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_community\\src",
+          "site_packages_root": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages",
+          "package_prefix": "okto_pulse/community/",
+          "byte_identical_member_count": 444,
+          "byte_identical": true,
+          "aggregate_sha256": "e1860c3df9e4f75712b0c2444c15acd1d4998eff5644196ee5e94253737e16f0",
+          "chain_hashes": {
+            "source": "e1860c3df9e4f75712b0c2444c15acd1d4998eff5644196ee5e94253737e16f0",
+            "wheel": "e1860c3df9e4f75712b0c2444c15acd1d4998eff5644196ee5e94253737e16f0",
+            "site_packages": "e1860c3df9e4f75712b0c2444c15acd1d4998eff5644196ee5e94253737e16f0"
+          },
+          "critical_resource_sha256": {},
+          "mismatches": []
+        }
+      }
+    }
+  },
+  "runs": {
+    "start_transition": {
+      "file": "architecture-start-transition-final.xml",
+      "sha256": "0602d2dc01ec527115331cce150da493945ae2a4fd3f64132ee5da7aa0061b2e",
+      "suite": {
+        "name": "pytest",
+        "errors": "0",
+        "failures": "0",
+        "skipped": "0",
+        "tests": "2",
+        "time": "13.898",
+        "timestamp": "2026-09-23T14:00:05.328015-03:00",
+        "hostname": "Alienware_m15"
+      }
+    }
+  },
+  "limits": [
+    "Assessment outcomes are seeded inputs. This run does not validate assessment submission.",
+    "All persistence is disposable; no real user state or runtime activation."
+  ],
+  "criteria": {
+    "ARQVER:AC-ARQ-15": {
+      "status": "verified_by_reviewed_execution",
+      "covered": "Real REST/UoW/SQL start blocks with global ID and remediation. Authorized Draft reopening and classification do not advance workflow or create IR. Retry still rejects a negative assessment; accepted assessment permits explicit start while scenarios remain ready without evidence and both Cards remain not_started.",
+      "remaining": null,
+      "evidence": [
+        {
+          "repository": "community",
+          "file": "tests/test_architecture_start_transition.py",
+          "source_sha256": "5bdc010dd3afb52e0a364807564e1637c8ff2ea3152f3ebea2d4a5b17ca67b05",
+          "executions": [
+            {
+              "classname": "tests.test_architecture_start_transition",
+              "name": "test_pending_architecture_blocks_actual_start_without_workflow_mutation[3]",
+              "time": "2.675"
+            },
+            {
+              "classname": "tests.test_architecture_start_transition",
+              "name": "test_pending_architecture_blocks_actual_start_without_workflow_mutation[31]",
+              "time": "2.675"
+            }
+          ]
+        }
+      ]
+    },
+    "ARQVER:ADV-03": {
+      "status": "verified_by_reviewed_execution",
+      "covered": "31 adopted candidates, first 30 classified, final pending candidate outside first page. A current-only visible page still reports global pending; actual start refuses with the hidden candidate ID.",
+      "remaining": null,
+      "evidence": [
+        {
+          "repository": "community",
+          "file": "tests/test_architecture_start_transition.py",
+          "source_sha256": "5bdc010dd3afb52e0a364807564e1637c8ff2ea3152f3ebea2d4a5b17ca67b05",
+          "executions": [
+            {
+              "classname": "tests.test_architecture_start_transition",
+              "name": "test_pending_architecture_blocks_actual_start_without_workflow_mutation[3]",
+              "time": "2.675"
+            },
+            {
+              "classname": "tests.test_architecture_start_transition",
+              "name": "test_pending_architecture_blocks_actual_start_without_workflow_mutation[31]",
+              "time": "2.675"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}
