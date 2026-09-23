@@ -1,6 +1,7 @@
 """Literal cognitive projection rules, never write or admission authority."""
 
 from dataclasses import dataclass
+from typing import Literal
 
 
 @dataclass(frozen=True, slots=True)
@@ -49,3 +50,25 @@ def cognitive_projection_source_node(*, schema, board_id, record):
     """
     from okto_pulse.core.application.cognitive_projection import source_node
     return source_node(schema=schema, board_id=board_id, record=record)
+
+
+@dataclass(frozen=True, slots=True)
+class CognitiveRestorationObservation:
+    node_type: str
+    node_id: str
+    state: Literal['ambiguous_generation', 'relational_source', 'projection_mismatch',
+        'connectivity_rejected', 'literal_candidate']
+    generations: tuple[int, ...]
+    reasons: tuple[str, ...]
+    literal_fingerprint: str | None = None
+
+
+def observe_cognitive_restoration(*, schema, board_id, records, nodes, relations):
+    """Diagnose absent durable nodes against the complete authenticated graph.
+
+    Existing nodes are never proposed for replacement. This adds no edges and
+    chooses no generation. A literal candidate has only passed payload parity
+    and the existing connectivity guard, not evidence/access/maturity admission.
+    """
+    from okto_pulse.core.application.cognitive_restoration import observe
+    return observe(schema=schema, board_id=board_id, records=records, nodes=nodes, relations=relations)

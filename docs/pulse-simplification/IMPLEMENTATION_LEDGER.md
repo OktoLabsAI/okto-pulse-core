@@ -2,9 +2,9 @@
 
 ## Estado para retomada
 
-Iniciativa **incompleta; pausa solicitada pelo usuário no milestone atual** em
-2026-09-22 por limite de franquia. A instrução anterior de continuar sem pausas
-fica suspensa até nova retomada. Fechamento atual: decodificação cognitiva literal
+Iniciativa **incompleta; retomada em 2026-09-23**, com objetivo novamente ativo.
+A pausa solicitada em 2026-09-22 está registrada no handoff ao final. Último
+milestone publicado: decodificação cognitiva literal
 pela porta pública, com testes e prova do par instalado. Detalhes finais e ponto
 de handoff estão no fim deste ledger. Frente seguinte: qualificação cognitiva/Global e fechamento do candidato;
 cutover/admission continuam fechados. Histórico coberto pela projeção de fontes
@@ -13965,3 +13965,53 @@ Retomada concreta:
 Não há testes ou builds deste milestone intencionalmente deixados em execução.
 Não houve tag, merge, release, deploy, migração real ou parada do Pulse ativo.
 Milestone fechado para pausa; iniciativa integral continua incompleta.
+
+### 2026-09-23 — retomada e diagnóstico executável da restauração cognitiva
+
+Confirmados objetivo ativo, árvores limpas e origins iguais no par
+77f63c3f/9e7c9f3a. O turno anterior foi progresso e fechamento de milestone antes
+da pausa solicitada. Retomada preserva o escopo completo e as decisões anteriores.
+Nova instrução AGENTS recebida aponta C:/Users/jpamb/.codex/RTK.md: arquivo lido,
+rtk 0.48.0 confirmado, comandos de shell posteriores prefixados com rtk.
+
+Core agora observa fontes cognitivas ausentes contra o inventário portátil
+completo. Mantém validação de todas as revisões, separa gerações ambíguas,
+propriedade relacional e impossibilidade de reconstrução literal; aplica o guard
+de conectividade existente sem fabricar arestas a partir de evidence_refs.
+Nós já presentes não recebem proposta de substituição. Exceção técnica existente
+de final_report pode produzir literal_candidate, o que não é aprovação de
+evidência, maturidade, acesso ou escrita. A função permanece sem efeitos.
+
+Community inclui cognitive_restoration no relatório gráfico v15 do candidato,
+recalculado no replay, mantendo paridade e estado pending anteriores. O caso
+missing-decision passa a explicar a rejeição pelo guard, em vez de apenas
+informar ausência. Nenhuma regra de órfãos, ACK ou autoridade foi relaxada.
+Isto é diagnóstico integrado necessário à restauração; a escrita/restauração
+cognitiva e o cutover ainda não estão implementados, e não são declarados prontos.
+
+Par instalado em dist-cognitive-restoration-observation; prova de igualdade em
+provenance-cognitive-restoration-observation.json, Core 826/889 e Community
+356/440. A prova concluiu a escrita às 13:30:11.5989337Z; o processo Community
+iniciou às 13:30:20Z. A primeira execução Core começou enquanto a ferramenta de
+prova ainda retornava sessão; seus 44 passes não serão a evidência final: suite
+Core repetida após confirmação da prova concluída. Community e F16 em execução.
+
+Fechamento observado: repetição Core com 44 passes em 3.94s; Community com
+16 passes em 271.68s, incluindo paridade nativa, gates históricos e reuso .5/.6
+com replay. F16 final `closure-cognitive-restoration-observation-final.json`:
+8789 entradas, zero achados e oito budgets zero. Par final em
+`dist-cognitive-restoration-observation-final`, prova em
+`provenance-cognitive-restoration-observation-final.json`; Core 826/889 e
+Community 356/440 byte-identical. Hashes agregados:
+Core 1f07fbc13ea988183fd584545b2c20d0f8bbb6dac8a9c26338d26e3aafb2d3e7;
+Community 869974eb6cbe7cbbd16d3e90c4eda7526c444b0568075521abfe0d9525e4e616.
+Ruff F/E9 e diff-check passaram. Community
+832d78d92075c3f25998f51fdac51b8de6133187 contém a integração do diagnóstico.
+
+O caso de final_report preserva a exceção técnica existente, sem transformá-la
+em aprovação; os demais nós ausentes da fixture são rejeitados pelo guard por
+conectividade insuficiente. A fonte durável continua intacta. Resta implementar
+a escrita/restauração com autoria própria de efeitos e prova das relações,
+qualificação de histórico/Global prévio, cutover e auditoria integral. Não
+reclassificar o diagnóstico como restauração concluída. Nenhuma nova pausa foi
+solicitada nesta retomada; objetivo segue ativo. Sem impacto frontend ou MCP.
