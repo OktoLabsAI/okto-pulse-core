@@ -87,11 +87,11 @@ class TestDeleteKG:
 
 
 class TestHistoricalEndpoints:
-    def test_start_cancel_progress_exist(self):
+    def test_start_cancel_progress_are_absent(self):
         paths = [r.path for r in router.routes if hasattr(r, "path")]
-        assert "/kg/boards/{board_id}/historical-consolidation/start" in paths
-        assert "/kg/boards/{board_id}/historical-consolidation/cancel" in paths
-        assert "/kg/boards/{board_id}/historical-consolidation/progress" in paths
+        assert "/kg/boards/{board_id}/historical-consolidation/start" not in paths
+        assert "/kg/boards/{board_id}/historical-consolidation/cancel" not in paths
+        assert "/kg/boards/{board_id}/historical-consolidation/progress" not in paths
 
 
 class TestNewEndpoints:

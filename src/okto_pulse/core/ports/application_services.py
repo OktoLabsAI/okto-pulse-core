@@ -655,7 +655,6 @@ class KnowledgeGraphOperations(Protocol):
 
 
 
-    async def get_historical_progress(self, board_id: str) -> object: ...
 
     def board_erasure_scope(
         self,

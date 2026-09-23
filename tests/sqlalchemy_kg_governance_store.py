@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, select
 from sqlalchemy.orm.attributes import flag_modified
 
 from sqlalchemy_test_models import (
@@ -20,7 +20,6 @@ from okto_pulse.core.ports.kg_governance import (
     BoardErasureJobFact,
     BoostAuditRecord,
     GovernanceUndoFact,
-    HistoricalBoardRecord,
 )
 
 
@@ -30,27 +29,8 @@ class TestSqlAlchemyKGGovernanceStore:
     def __init__(self) -> None:
         self._board_erasure_jobs: dict[str, BoardErasureJobFact] = {}
 
-    async def get_board(
-        self, context: Any, *, board_id: str
-    ) -> HistoricalBoardRecord | None:
-        row = await context.get(Board, board_id)
-        if row is None:
-            return None
-        return HistoricalBoardRecord(id=str(row.id), settings=dict(row.settings or {}))
 
 
-    async def queue_counts(self, context: Any, *, board_id: str) -> dict[str, int]:
-        rows = (
-            await context.execute(
-                select(ConsolidationQueue.status, func.count())
-                .where(
-                    ConsolidationQueue.board_id == board_id,
-                    ConsolidationQueue.source == "historical_backfill",
-                )
-                .group_by(ConsolidationQueue.status)
-            )
-        ).all()
-        return {str(status): int(count) for status, count in rows}
 
 
 

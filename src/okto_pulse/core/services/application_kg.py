@@ -222,10 +222,6 @@ def signal_consolidation_worker() -> None:
 
 
 
-async def get_historical_progress(*args: Any, **kwargs: Any) -> Any:
-    from okto_pulse.core.kg.governance import get_historical_progress as _progress
-
-    return await _progress(*args, **kwargs)
 
 
 async def right_to_erasure(*args: Any, **kwargs: Any) -> Any:

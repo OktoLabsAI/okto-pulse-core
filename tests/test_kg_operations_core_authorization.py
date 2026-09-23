@@ -41,13 +41,7 @@ _NAMESPACE_REQUIREMENTS = (
     ("kg.operations.queue.read", "kg.admin.settings_read"),
     ("kg.operations.queue.reprocess", "kg.admin.settings_write"),
     ("kg.operations.audit.read", "kg.admin.settings_read"),
-    (
-        "kg.operations.historical.read",
-        "kg.admin.historical_consolidation",
-    ),
     ("kg.operations.node.boost", "kg.admin.settings_write"),
-    ("kg.operations.settings.read", "kg.admin.settings_read"),
-    ("kg.operations.settings.write", "kg.admin.settings_write"),
     ("kg.operations.board.erase", "kg.admin.wipe_board"),
 )
 
@@ -453,14 +447,6 @@ _READ_CASES: tuple[
     ),
     (
         kg_routes_crud,
-        kg_routes_crud.GetHistoricalProgressUseCase(),
-        lambda: kg_routes_crud.GetHistoricalProgressCommand(BOARD_ID),
-        "kg.operations.historical.read",
-        "kg.admin.historical_consolidation",
-        True,
-    ),
-    (
-        kg_routes_crud,
         kg_routes_crud.ListPendingUseCase(),
         lambda: kg_routes_crud.ListPendingCommand(BOARD_ID),
         "kg.operations.queue.read",
@@ -496,7 +482,6 @@ _READ_CASES: tuple[
         "cognitive-list",
         "cognitive-evaluate",
         "audit-list",
-        "historical-progress",
         "pending-list",
         "pending-tree",
     ),

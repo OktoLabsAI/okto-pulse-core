@@ -18,7 +18,7 @@ def test_closed_retirement_policy_matches_frozen_authority():
     from okto_pulse.core.ports.permission_retirement import retired_feature_permission_flags
     flags = retired_feature_permission_flags()
     assert flags == tuple(sorted(RETIRED))
-    assert len(flags) == 53
+    assert len(flags) == 56
     assert sum(flag.startswith("sprint.") for flag in flags) == 33
 
 
@@ -81,7 +81,7 @@ def test_original_full_control_retains_all_surviving_decisions_and_exact_review_
 
 
 @pytest.mark.parametrize("value", [False, None, 1])
-@pytest.mark.parametrize("branch,leaf", [("schema", "migrate"), ("integrity", "backfill"), ("integrity", "reconcile"), ("integrity", "read"), ("historical", "start"), ("historical", "cancel")])
+@pytest.mark.parametrize("branch,leaf", [("schema", "migrate"), ("integrity", "backfill"), ("integrity", "reconcile"), ("integrity", "read"), ("historical", "start"), ("historical", "cancel"), ("historical", "read"), ("settings", "read"), ("settings", "write")])
 def test_retired_schema_authority_cannot_promote_partial_original_full_control(value, branch, leaf):
     from okto_pulse.core.ports.permission_policy import resolve_agent_permission_facts
 
@@ -113,11 +113,12 @@ def test_smaller_full_control_lookalike_cannot_become_trusted_by_deleting_flags(
 
 
 @pytest.mark.parametrize("value", [False, 1, "invalid"])
-def test_retired_integrity_parent_does_not_resolve_historical_owner_review(value):
+@pytest.mark.parametrize("branch", ["integrity", "historical", "settings"])
+def test_retired_parent_does_not_resolve_historical_owner_review(value, branch):
     from okto_pulse.core.ports.permission_policy import resolve_agent_permission_facts
 
     document = deepcopy(GOLDEN["layers"]["full"])
-    document["kg"]["operations"]["integrity"] = value
+    document["kg"]["operations"][branch] = value
     source = capture(document)
     candidate = resolve_agent_permission_facts(
         agent_flags=document, legacy_permissions=None, preset_id=None,

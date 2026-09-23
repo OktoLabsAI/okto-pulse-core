@@ -287,23 +287,10 @@ def test_ts_b161c1d3_metadata_preserves_provider_description():
     }
 
 
-def test_ts_b161c1d3_common_surface_has_no_concrete_isinstance():
-    """A superfície comum (api/kg_routes) descreve provider por metadata: não
-    importa as classes concretas nem usa isinstance no CORPO EXECUTÁVEL da função
-    de descrição (a docstring pode mencioná-las ao explicar a mudança)."""
-    import textwrap
 
+
+def test_technical_provider_settings_surface_is_retired():
     from okto_pulse.community.api import kg_routes
 
-    src = textwrap.dedent(inspect.getsource(kg_routes._describe_embedding_provider))
-    fn = ast.parse(src).body[0]
-    body = fn.body
-    # Remove a docstring (primeiro stmt se for uma constante string).
-    if body and isinstance(body[0], ast.Expr) and isinstance(body[0].value, ast.Constant):
-        body = body[1:]
-    code_text = "\n".join(ast.unparse(node) for node in body)
-
-    assert "isinstance" not in code_text
-    assert "SentenceTransformerProvider" not in code_text
-    assert "StubEmbeddingProvider" not in code_text
-    assert "describe_embedding_provider" in code_text
+    for name in ("_describe_embedding_provider", "get_global_kg_settings", "get_settings", "update_settings", "historical_progress_endpoint"):
+        assert not hasattr(kg_routes, name)

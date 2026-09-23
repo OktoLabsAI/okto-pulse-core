@@ -410,10 +410,6 @@ class CoreKnowledgeGraphOperations:
 
 
 
-    async def get_historical_progress(self, board_id: str):  # noqa: ANN201
-        from okto_pulse.core.services.application_kg import get_historical_progress
-
-        return await get_historical_progress(self.__relational_context, board_id)
 
     def board_erasure_scope(self, board_id: str, *, actor_id: str):  # noqa: ANN201
         from okto_pulse.core.kg.governance import board_erasure_scope

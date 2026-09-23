@@ -242,44 +242,10 @@ class GlobalSearchUseCase:
 # both read the same governance progress dict.
 
 
-class GetHistoricalProgressCommand:
-    __slots__ = ("board_id",)
-
-    def __init__(self, board_id: str) -> None:
-        self.board_id = board_id
 
 
-class GetHistoricalProgressResult:
-    __slots__ = ("progress",)
-
-    def __init__(self, progress: dict[str, Any]) -> None:
-        self.progress = progress
 
 
-class GetHistoricalProgressUseCase:
-    """Return historical-consolidation progress for a board (read, no commit).
-    Delegates to ``governance.get_historical_progress`` verbatim."""
-
-    async def execute(
-        self,
-        command: GetHistoricalProgressCommand,
-        *,
-        actor: ActorContext,
-        uow: PulseUnitOfWork,
-    ) -> GetHistoricalProgressResult:
-
-        await _require_board_access(uow.services, actor, command.board_id)
-        await require_authorization(
-            actor,
-            PermissionRequirement(
-                "kg.operations.historical.read",
-                legacy_operation="kg.admin.historical_consolidation",
-            ),
-            uow=uow,
-            board_id=command.board_id,
-        )
-        progress = await uow.services.kg.get_historical_progress(command.board_id)
-        return GetHistoricalProgressResult(progress)
 
 
 # --- right to erasure (write) -----------------------------------------------

@@ -19,10 +19,8 @@ from threading import Lock
 from typing import Any, AsyncIterator
 
 from okto_pulse.core.runtime_context import runtime_state
-from okto_pulse.core.ports.kg_events import HISTORICAL_PROGRESS_SETTINGS_KEY
 from okto_pulse.core.ports.kg_governance import (
     BoostAuditRecord,
-    HistoricalBoardRecord,
     get_kg_governance_store,
 )
 from okto_pulse.core.kg.source_maturity import (
@@ -342,52 +340,12 @@ async def board_erasure_scope(
                 )
 
 
-def _historical_progress_state(
-    board: HistoricalBoardRecord | None,
-) -> dict[str, Any]:
-    if board is None or not isinstance(board.settings, dict):
-        return {}
-    value = board.settings.get(HISTORICAL_PROGRESS_SETTINGS_KEY)
-    return value if isinstance(value, dict) else {}
 
 
 
 
-async def _historical_queue_counts(
-    db: Any,
-    board_id: str,
-) -> dict[str, int]:
-    counts = {"pending": 0, "claimed": 0, "done": 0, "failed": 0, "paused": 0}
-    counts.update(await get_kg_governance_store().queue_counts(db, board_id=board_id))
-    return counts
 
 
-async def _has_materialized_kg_nodes(board_id: str) -> bool:
-    """Best-effort check that the per-board KG still contains user nodes.
-
-    Historical progress is persisted in board settings, while the graph file
-    can be wiped/recreated independently. If the persisted state says a prior
-    backfill completed but the graph has no materialized nodes, callers must be
-    allowed to run historical consolidation again.
-    """
-    try:
-        from okto_pulse.core.kg.kg_service import get_kg_service
-
-        rows = await asyncio.to_thread(
-            get_kg_service().get_all_nodes,
-            board_id,
-            min_confidence=0.0,
-            min_relevance=0.0,
-            max_rows=1,
-        )
-        return bool(rows)
-    except Exception as exc:  # pragma: no cover - defensive runtime guard
-        logger.debug(
-            "governance.historical_progress_graph_probe_failed board=%s err=%s",
-            board_id,
-            exc,
-        )
-        return True
 
 
 
@@ -463,52 +421,6 @@ async def retry_pending_entry(
     return dict(result)
 
 
-async def get_historical_progress(db: Any, board_id: str) -> dict:
-    """Return progress of historical consolidation."""
-    board = await get_kg_governance_store().get_board(db, board_id=board_id)
-    state = _historical_progress_state(board)
-    counts = await _historical_queue_counts(db, board_id)
-    live_total = sum(counts.values())
-    total = max(int(state.get("total") or 0), live_total)
-    remaining = counts["pending"] + counts["claimed"] + counts["paused"]
-    processed = max(0, min(total, total - remaining))
-    if state.get("status") == "cancelled" and remaining == 0:
-        status = "cancelled"
-    elif counts["pending"] or counts["claimed"]:
-        status = "in_progress"
-    elif counts["paused"]:
-        status = "paused"
-    elif total > 0 and counts["failed"] > 0:
-        status = "completed_with_errors"
-    elif total > 0 and processed >= total:
-        status = "completed"
-    else:
-        status = "inactive"
-
-    stale = False
-    if (
-        status in {"completed", "completed_with_errors"}
-        and total > 0
-        and remaining == 0
-    ):
-        has_nodes = await _has_materialized_kg_nodes(board_id)
-        if not has_nodes:
-            stale = True
-            total = 0
-            processed = 0
-            status = "inactive"
-
-    return {
-        "enabled": total > 0,
-        "status": status,
-        "total": total,
-        "progress": processed,
-        "pending": counts["pending"],
-        "claimed": counts["claimed"],
-        "paused": counts["paused"],
-        "failed": counts["failed"],
-        "stale": stale,
-    }
 
 
 # ---------------------------------------------------------------------------

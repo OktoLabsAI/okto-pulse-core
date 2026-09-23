@@ -13,10 +13,6 @@ from datetime import datetime
 from typing import Any, Protocol
 
 
-@dataclass(slots=True)
-class HistoricalBoardRecord:
-    id: str
-    settings: dict[str, Any]
 
 
 
@@ -55,12 +51,8 @@ class BoardErasureJobFact:
 
 
 class KGGovernanceStore(Protocol):
-    async def get_board(
-        self, context: Any, *, board_id: str
-    ) -> HistoricalBoardRecord | None: ...
 
 
-    async def queue_counts(self, context: Any, *, board_id: str) -> dict[str, int]: ...
 
 
 
@@ -146,7 +138,6 @@ __all__ = [
     "BoardErasureJobFact",
     "BoostAuditRecord",
     "GovernanceUndoFact",
-    "HistoricalBoardRecord",
     "KGGovernanceStore",
     "get_kg_governance_store",
     "register_kg_governance_store",

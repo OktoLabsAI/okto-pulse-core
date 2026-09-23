@@ -43,9 +43,7 @@ ACTOR = "local-user"
 _MIGRATED_ENDPOINTS = (
     "list_audit",
     "global_search",
-    "historical_progress_endpoint",
     "delete_board_kg",
-    "get_settings",
 )
 
 
@@ -218,26 +216,6 @@ async def test_global_search_invalid_layer_400(client) -> None:
 
 
 
-@pytest.mark.asyncio
-async def test_historical_progress_200(client) -> None:
-    from sqlalchemy import select
-    from sqlalchemy_test_models import ConsolidationQueue, Spec
-
-    board_id = await _seed_board_with_done_spec()
-    # Existing work survives retirement; fixture setup must not invoke the
-    # removed public writer to manufacture that state.
-    async with get_session_factory()() as db:
-        spec_id = await db.scalar(select(Spec.id).where(Spec.board_id == board_id))
-        db.add(ConsolidationQueue(board_id=board_id, artifact_type="spec", artifact_id=spec_id,
-            source="historical_backfill", status="pending", priority="low"))
-        await db.commit()
-    resp = client.get(
-        f"{PREFIX}/kg/boards/{board_id}/historical-consolidation/progress"
-    )
-    assert resp.status_code == 200, resp.text
-    body = resp.json()
-    assert body["total"] >= 1
-    assert body["enabled"] is True
 
 
 # --- delete_board_kg (right-to-erasure) -------------------------------------
@@ -253,16 +231,6 @@ async def test_delete_board_kg_204(client) -> None:
 # --- get_settings -----------------------------------------------------------
 
 
-@pytest.mark.asyncio
-async def test_get_settings_200(client) -> None:
-    board_id = await _seed_board()
-    resp = client.get(f"{PREFIX}/kg/boards/{board_id}/settings")
-    assert resp.status_code == 200, resp.text
-    body = resp.json()
-    assert body["consolidation_enabled"] is True
-    assert body["kg_initialized"] is False  # no graph bootstrapped for this board
-    assert "embedding_provider" in body
-    assert "graph_store" in body
 
 
 # --- service reader + use case (transport-free) -----------------------------
