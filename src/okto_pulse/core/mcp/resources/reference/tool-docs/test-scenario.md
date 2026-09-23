@@ -43,7 +43,8 @@ All existing lifecycle, policy, current-base and independent-review gates apply.
 
 The report requires `schema_version="verification-report/v1"`, `method`,
 `report_id`, timezone-aware `observed_at`, nonempty `sources`, `observations`,
-`conclusion` and `result` (`passed` or `failed`). Each source is
+`conclusion` and `result` (`passed`, `failed`, `inconclusive`, `aborted` or
+`unavailable`). Each source is
 `{reference, revision, sha256}` (64 lowercase hex characters). Each observation
 contains `observation_id`, `criterion_id`, `observation_ref`, `expected`,
 `observed` and `outcome`. Cover exactly the scenario's current linked criterion
@@ -51,6 +52,13 @@ IDs; a failed observation requires a failed report. The observation reference
 must identify the recoverable observation in the versioned source. Authors
 remain responsible for the truth and recoverability of submitted observations;
 the receipt authenticates their submission, not an independent verification.
+Only all-passed observations may yield `passed`. Incomplete observations retain
+their distinct outcome in the signed report; submit their returned evidence
+with scenario status `ready`, awaiting another attempt. This uses the existing
+transition/execute permissions and never grants delivery credit. It cannot hide
+a failed observation inside a passing or inconclusive summary. Receipt admission
+alone does not replace the current scenario evidence; the scoped status write
+must succeed before the new attempt becomes current.
 
 - `inspection`: versioned `inspection_procedure`.
 - `static_analysis`: `tool_name`, `tool_version`, versioned `rules` and

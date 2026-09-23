@@ -138,6 +138,30 @@
           ]
         }
       ]
+    },
+    "ARQVER:AC-INT-03": {
+      "status": "verified_by_reviewed_execution",
+      "covered": "Complete structure and current classifications do not override a rejected Spec Evaluation. Actual REST start rejects it; classification leaves the Spec in Draft and does not promote either Card.",
+      "remaining": null,
+      "evidence": [
+        {
+          "repository": "community",
+          "file": "tests/test_architecture_start_transition.py",
+          "source_sha256": "5bdc010dd3afb52e0a364807564e1637c8ff2ea3152f3ebea2d4a5b17ca67b05",
+          "executions": [
+            {
+              "classname": "tests.test_architecture_start_transition",
+              "name": "test_pending_architecture_blocks_actual_start_without_workflow_mutation[3]",
+              "time": "2.675"
+            },
+            {
+              "classname": "tests.test_architecture_start_transition",
+              "name": "test_pending_architecture_blocks_actual_start_without_workflow_mutation[31]",
+              "time": "2.675"
+            }
+          ]
+        }
+      ]
     }
   }
 }

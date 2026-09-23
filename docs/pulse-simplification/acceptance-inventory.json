@@ -2397,8 +2397,12 @@
       "line": 488,
       "id": "AC-INT-03",
       "normative_text": "**AC-INT-03 — verifica RF-INT-03.** **Dado** Candidatos classificados e estrutura completa, mas Spec Evaluation rejeitada. **Quando** O início é solicitado. **Então** Permanece bloqueado pela avaliação; nenhum endpoint de classificação ou metadado promove diretamente a Spec ou um Card.",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "verified_by_reviewed_execution",
+      "test_text_references": [],
+      "reviewed_execution": {
+        "artifact": "acceptance-start-execution.json",
+        "criterion_key": "ARQVER:AC-INT-03"
+      }
     },
     {
       "key": "ARQVER:AC-INT-04",

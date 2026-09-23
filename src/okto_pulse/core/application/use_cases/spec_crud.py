@@ -1317,7 +1317,7 @@ class AdmitTestVerificationReportUseCase:
 
     async def execute(self, command: AdmitTestVerificationReportCommand, *, actor: ActorContext,
                       uow: PulseUnitOfWork) -> ExecuteTestScenarioEvidenceResult:
-        from okto_pulse.core.domain.verification_report import parse_verification_report, require_verification_report_context
+        from okto_pulse.core.domain.verification_report import parse_verification_report, require_verification_report_context, verification_report_scenario_status
         from okto_pulse.core.ports.test_evidence import (
             TestVerificationReportRequest, resolve_test_verification_report_issuer,
             resolve_test_evidence_write_verifier, require_supported_test_verification_method,
@@ -1337,8 +1337,9 @@ class AdmitTestVerificationReportUseCase:
         current_ids = {item.get("id") for item in criteria if isinstance(item, dict)}
         if not isinstance(linked, (list, tuple)) or any(key not in current_ids for key in linked):
             raise ValueError("verification_report_criterion_scope_mismatch")
+        report_status = verification_report_scenario_status(report)
         require_verification_report_context(report, method=scenario.get("verification_method"),
-                                            status=report.result, criterion_ids=tuple(linked))
+                                            status=report_status, criterion_ids=tuple(linked))
         require_supported_test_verification_method(scenario.get("verification_method"))
         issuer = resolve_test_verification_report_issuer()
         verifier = resolve_test_evidence_write_verifier()
@@ -1351,7 +1352,7 @@ class AdmitTestVerificationReportUseCase:
             scenario_sha256=digest, actor_id=actor.actor_id, report=report.model_dump(mode="json")))
         evidence = dict(issued.evidence)
         verification = verifier.verify(board_id=spec.board_id, spec_id=command.spec_id,
-            scenario_id=command.scenario_id, scenario_sha256=digest, status=report.result,
+            scenario_id=command.scenario_id, scenario_sha256=digest, status=report_status,
             actor_id=actor.actor_id, evidence=evidence)
         if not verification.verified:
             raise ValueError("evidence_unverified: " + ", ".join(verification.reason_codes))

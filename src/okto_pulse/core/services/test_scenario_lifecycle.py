@@ -874,7 +874,9 @@ def validate_test_scenario_evidence(
     An invalid ``evidence_class`` value always fails closed (never normalized).
     Each rule group is AND; a multi-key group is one-of (OR).
     """
-    if status not in GATED_STATUSES:
+    report_claim = isinstance(evidence, dict) and (evidence.get("evidence_class") == "verification_report"
+        or evidence.get("verification_report") is not None)
+    if status not in GATED_STATUSES and not report_claim:
         return True, []
 
     explicit_class: str | None = None
@@ -888,10 +890,10 @@ def validate_test_scenario_evidence(
             explicit_class = str(raw_class)
 
     if explicit_class == "verification_report":
-        from okto_pulse.core.domain.verification_report import VerificationReportEvidence
+        from okto_pulse.core.domain.verification_report import VerificationReportEvidence, verification_report_scenario_status
         try:
             parsed = VerificationReportEvidence.model_validate(evidence)
-            if parsed.verification_report.result != status:
+            if verification_report_scenario_status(parsed.verification_report) != status:
                 return False, ["verification_report_result_mismatch"]
         except (TypeError, ValueError):
             return False, ["verification_report_invalid"]

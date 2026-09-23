@@ -14,6 +14,7 @@ from pydantic import BaseModel, ConfigDict, Field, StringConstraints, TypeAdapte
 Reference = Annotated[str, StringConstraints(strict=True, min_length=1, max_length=2048, pattern=r'\S')]
 Text = Annotated[str, StringConstraints(strict=True, min_length=1, max_length=8192, pattern=r'\S')]
 Digest = Annotated[str, StringConstraints(strict=True, pattern=r'^[0-9a-f]{64}$')]
+VerificationOutcome = Literal['passed', 'failed', 'inconclusive', 'aborted', 'unavailable']
 
 
 class VersionedVerificationObject(BaseModel):
@@ -30,7 +31,7 @@ class VerificationObservation(BaseModel):
     observation_ref: Reference
     expected: Text
     observed: Text
-    outcome: Literal['passed', 'failed']
+    outcome: VerificationOutcome
 
 
 class _Report(BaseModel):
@@ -41,7 +42,7 @@ class _Report(BaseModel):
     sources: tuple[VersionedVerificationObject, ...] = Field(min_length=1, max_length=20)
     observations: tuple[VerificationObservation, ...] = Field(min_length=1, max_length=100)
     conclusion: Text
-    result: Literal['passed', 'failed']
+    result: VerificationOutcome
 
     @field_validator('observed_at', mode='before')
     @classmethod
@@ -64,7 +65,10 @@ class _Report(BaseModel):
         if len({item.reference for item in self.sources}) != len(self.sources):
             raise ValueError('verification_report_duplicate_source')
         failed = any(item.outcome == 'failed' for item in self.observations)
-        if (self.result == 'failed') != failed:
+        outcomes = {item.outcome for item in self.observations}
+        if ((self.result == 'failed') != failed
+                or (self.result == 'passed' and outcomes != {'passed'})
+                or (self.result not in {'passed', 'failed'} and self.result not in outcomes)):
             raise ValueError('verification_report_result_mismatch')
         if len(json.dumps(self.model_dump(mode='json'), ensure_ascii=False, allow_nan=False).encode('utf-8')) > 64 * 1024:
             raise ValueError('verification_report_aggregate_limit')
@@ -118,6 +122,17 @@ def parse_verification_report(value) -> StaticAnalysisReport | InspectionReport 
     return _ADAPTER.validate_python(value)
 
 
+def verification_report_scenario_status(report) -> Literal['ready', 'passed', 'failed']:
+    """Keep factual outcomes in the report; incomplete attempts await a retry.
+
+    This maps into the existing lifecycle and grants no transition authority.
+    In particular an incomplete attempt is neither a failed assertion nor proof.
+    """
+    if not isinstance(report, (StaticAnalysisReport, InspectionReport, DemonstrationReport)):
+        raise TypeError('verification_report_required')
+    return report.result if report.result in {'passed', 'failed'} else 'ready'
+
+
 def require_verification_report_context(report, *, method, status, criterion_ids):
     """Bind the external observation to the entire current scenario's criteria.
 
@@ -127,7 +142,7 @@ def require_verification_report_context(report, *, method, status, criterion_ids
     """
     if not isinstance(report, (StaticAnalysisReport, InspectionReport, DemonstrationReport)):
         raise TypeError('verification_report_required')
-    if report.method != method or report.result != status or status not in {'passed', 'failed'}:
+    if report.method != method or verification_report_scenario_status(report) != status:
         raise ValueError('verification_report_method_or_result_mismatch')
     if (type(criterion_ids) is not tuple or not criterion_ids
             or any(type(key) is not str or not key for key in criterion_ids)

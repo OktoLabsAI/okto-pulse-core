@@ -14584,3 +14584,60 @@ manual dos oráculos: **20 comprovados / 5 parciais / 221 ainda não auditados**
 Não somar artefatos históricos como critérios adicionais. A mudança atual é
 somente testes/evidência; payload produtivo permanece o já verificado por F16.
 Próximos: continuar auditoria de verificabilidade/integração e benchmark.
+
+### AC-VER-15 — observações não conclusivas, 2026-09-23
+
+Par de testes/evidência publicado: Core 6b0d2232 / Community 2c8d6135.
+Revisão posterior do mesmo ensaio também comprova AC-INT-03; artefato de início
+e inventário atualizados para 21 comprovados / 5 parciais / 220 não auditados.
+Campanha de verificabilidade sobre o par anterior: Core 141 passed em 8.75s,
+Community 21 passed em 36.57s, acceptance-verification-{core,community}.xml.
+Mapeamento manual desses oráculos ainda em elaboração; não extrapolar contagens.
+
+Investigação encontrou resultados especializados limitados a passed/failed.
+Reprodução nonconclusive-report-repro.xml: 3 failed em 2.03s para inconclusive,
+aborted e unavailable. Correção em curso mantém a distinção factual no relatório
+assinado. Mapeia tentativas não conclusivas para o estado operacional existente
+ready (aguarda tentativa), sem expandir enum de ciclo, ScenarioType, permissões
+ou transições. Publicação de evidência continua a exigir a autoridade corrente
+e receipt autenticado; admissão sozinha não muda o cenário atual. Qualquer
+observação failed exige resumo failed; passed exige todas passed. Estados
+incompletos jamais recebem crédito Delivery, nem ocultam falha conhecida.
+
+Defesa de writers cobre status scoped e payloads novos/alterados no bulk;
+criação do cenário não pode embutir relatório autenticado de outra identidade.
+Bytes e significado dos relatórios antigos permanecem. Novos receipts ready
+usam o formato assinado existente; antigos readers podem recusá-los, portanto
+rollback deve seguir restauração pareada e não reinterpretar os resultados.
+
+UI mostra resultado factual e submete ready somente quando a ação existente
+está disponível (ou é registro no próprio ready com execução autorizada).
+19 testes frontend passaram; build TypeScript/SPA sincronizou 78 arquivos,
+SHA256 18f3beb7e33ed415a9aeea1f0677b8d600e24d5cc7922bd0ff3d69fe6d76ff48.
+Documentação servida atualizada e catálogo/manifests regenerados pelas ferramentas.
+Build/install dist-nonconclusive-report terminou e provenance-nonconclusive-report.json
+comprovou identidade de todos os .py/payloads: Core 829/892, Community 360/444.
+Core 53 passed (nonconclusive-report-core.xml), regressão 49 passed
+(nonconclusive-report-regression.xml). Community r2: 45 passed e uma falha de
+fixture nova sem RealmScope; r3/r4 corrigiram expectativa de código de erro e
+delivery_context obrigatório da fixture, sem alterar gates. Run final r5:
+11 passed em 39.95s, nonconclusive-report-community-r5.xml. R2 também executou
+com sucesso os métodos e o adapter Evidence V2. Nenhum teste backend ativo.
+
+A primeira execução Community teve três falhas por expectativa incorreta do
+teste: scenario_has_authenticated_required_evidence autentica a evidência,
+não decide aprovação. O status ready continua exigido separadamente pelos
+consumidores. O teste foi corrigido preservando essa semântica; a prova de
+Delivery recusa novos bindings e invalida crédito anterior para os três
+resultados não conclusivos, em cada um dos três métodos especializados.
+Escritas bulk ready sem assinatura/adulteradas são recusadas; criação de
+Spec não aceita transplantar relatório de identidade anterior. Receipt cold-read
+preserva resultado e autenticidade. Não inferir passing de autenticidade.
+
+F16.2 closure-nonconclusive-report.json: aprovado, 8830 linhas, zero findings
+arquiteturais/documentais, oito budgets zero. Ruff F/E9 passou. Payload de
+produção não mudou após build/prova. Frontend: 19 passed e build já descritos.
+Este incremento cobre o caminho de resultados incompletos, mas não declara
+AC-VER-15 inteiro comprovado: falta o ensaio específico OR/fechamento/skip.
+Próxima frente: auditoria de verificabilidade, reuso de uma observação por
+critérios com resultados distintos, gates compostos e benchmark integral.

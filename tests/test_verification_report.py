@@ -76,6 +76,23 @@ def test_failed_observation_cannot_be_hidden_by_a_passing_summary():
     assert parse_verification_report(value).result == 'failed'
 
 
+@pytest.mark.parametrize('outcome', ['inconclusive', 'aborted', 'unavailable'])
+def test_nonconclusive_observation_remains_distinct_and_cannot_be_passing(outcome):
+    value = payload()
+    value['result'] = outcome
+    value['observations'][0]['outcome'] = outcome
+    report = parse_verification_report(value)
+    assert report.result == outcome and report.observations[0].outcome == outcome
+    from okto_pulse.core.domain.verification_report import verification_report_scenario_status
+    assert verification_report_scenario_status(report) == 'ready'
+    require_verification_report_context(report, method='inspection', status='ready', criterion_ids=('ac-1',))
+    with pytest.raises(ValueError):
+        require_verification_report_context(report, method='inspection', status='passed', criterion_ids=('ac-1',))
+    value['result'] = 'passed'
+    with pytest.raises(ValueError):
+        parse_verification_report(value)
+
+
 def test_current_method_result_and_entire_criterion_scope_are_required():
     report = parse_verification_report(payload())
     for method, status, criteria in [('static_analysis', 'passed', ('ac-1',)), ('inspection', 'automated', ('ac-1',)),

@@ -727,12 +727,16 @@ def _require_trusted_test_evidence_v2_write(
 ) -> None:
     """Authenticate an edition receipt before a scenario write can persist."""
 
-    if verification_method is not None and status in GATED_STATUSES:
+    report_claim = isinstance(evidence, dict) and (evidence.get("evidence_class") == "verification_report"
+        or evidence.get("verification_report") is not None)
+    if report_claim and not _claims_test_evidence_v2(evidence):
+        raise ValueError("verification_evidence_authenticated_result_required")
+    if verification_method is not None and (status in GATED_STATUSES or report_claim):
         from okto_pulse.core.ports.test_evidence import require_supported_test_verification_method
         require_supported_test_verification_method(verification_method)
         if status in {"passed", "failed"} and not _claims_test_evidence_v2(evidence):
             raise ValueError("verification_evidence_authenticated_result_required")
-    if status in GATED_STATUSES:
+    if status in GATED_STATUSES or report_claim:
         from okto_pulse.core.domain.verification_report import require_evidence_method_binding
         require_evidence_method_binding(verification_method, evidence)
     if not _claims_test_evidence_v2(evidence):
@@ -9336,7 +9340,10 @@ class SpecService:
             )
             for scenario in initial_scenarios:
                 initial_status = str(scenario.get("status") or "draft")
-                if initial_status in GATED_STATUSES:
+                if initial_status in GATED_STATUSES or isinstance(scenario.get("evidence"), dict) and (
+                    scenario["evidence"].get("evidence_class") == "verification_report"
+                    or scenario["evidence"].get("verification_report") is not None
+                ):
                     raise ValueError(
                         "test_scenario_status_requires_scoped_update: "
                         f"new scenario {scenario.get('id') or '(new)'} cannot "
@@ -10227,7 +10234,10 @@ class SpecService:
             if not isinstance(s, dict):
                 continue
             status = s.get("status")
-            if status not in GATED_STATUSES:
+            evidence = s.get("evidence") or s.get("latest_evidence")
+            report_claim = isinstance(evidence, dict) and (evidence.get("evidence_class") == "verification_report"
+                or evidence.get("verification_report") is not None)
+            if status not in GATED_STATUSES and not report_claim:
                 continue
             sid = s.get("id")
             old = old_by_id.get(sid)
@@ -10285,7 +10295,10 @@ class SpecService:
                     evidence=evidence,
                     verification_method=s.get("verification_method"),
                 )
-            if scenario_has_required_evidence(s, for_write=True):
+            if scenario_has_required_evidence(s, for_write=True) or (
+                report_claim and status == "ready"
+                and validate_test_scenario_evidence(status, evidence, for_write=True, scenario_id=sid)[0]
+            ):
                 continue
             old_had_evidence = scenario_has_required_evidence(old) if old else False
             # Enforce on: new scenario already gated, status transition into a
