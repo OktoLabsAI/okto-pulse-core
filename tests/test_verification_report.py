@@ -102,6 +102,21 @@ def test_current_method_result_and_entire_criterion_scope_are_required():
             require_verification_report_context(report, method=method, status=status, criterion_ids=criteria)
 
 
+@pytest.mark.parametrize('outcome', ['failed', 'inconclusive', 'aborted', 'unavailable'])
+def test_criterion_projection_requires_every_observation_to_pass(outcome):
+    from okto_pulse.core.domain.verification_report import verification_report_passing_criteria
+    value = payload()
+    first = value['observations'][0]
+    value['observations'] += [
+        {**first, 'observation_id': 'other-criterion', 'criterion_id': 'ac-2'},
+        {**first, 'observation_id': 'second-dimension', 'outcome': outcome},
+    ]
+    value['result'] = outcome
+    report = parse_verification_report(value)
+    assert verification_report_passing_criteria(report) == ('ac-2',)
+    assert report.result == outcome
+
+
 def test_aggregate_limit_applies_even_when_individual_observations_fit():
     value = payload()
     item = deepcopy(value['observations'][0])

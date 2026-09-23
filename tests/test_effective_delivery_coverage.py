@@ -137,6 +137,69 @@ def test_multiple_runs_can_cover_all_selected_conditions_without_repeating_proof
     assert evaluate(inventory, implementations, (both,)).allowed
 
 
+def mixed_report_case():
+    inventory, implementations, tests = case()
+    mixed = replace(tests[0], verification_method='inspection', criterion_ids=('functional', 'technical'),
+        passing_criterion_ids=('functional',), fact=replace(tests[0].fact, result='failed',
+            verified_implementation_ids=('ui', 'authorization')))
+    return inventory, implementations, mixed
+
+
+def test_one_report_credits_only_observed_passing_criteria_and_keeps_factual_failure():
+    inventory, implementations, mixed = mixed_report_case()
+    result = evaluate(inventory, implementations, (mixed,), methods=frozenset({'inspection'}))
+    assert result.rows[0].missing_criteria == (('authorization', 'technical'),)
+    assert result.rows[0].test_ids == (mixed.fact.id,)
+    assert mixed.fact.id not in result.rejected_record_ids
+    assert not result.allowed and mixed.fact.result == 'failed'
+    legacy = replace(SNAPSHOT, implementations=tuple(i.fact for i in implementations), tests=(mixed.fact,))
+    assert not evaluate_delivery_coverage(legacy).allowed
+
+
+def test_whole_scope_criterion_allocation_still_requires_its_own_observation():
+    inventory, implementations, tests = case()
+    ac_binding = replace(BINDING, obligation_ref='ac:technical')
+    contribution = replace(inventory.rows[0].contributions[0], criterion_ids=(), scope='whole_requirement')
+    inventory = replace(inventory, rows=(replace(inventory.rows[0], binding=ac_binding, family='ac', contributions=(contribution,)),))
+    implementation = replace(implementations[0], fact=replace(implementations[0].fact, bindings=(ac_binding,),
+        contributions=(DeliveryContribution(ac_binding, 'complete'),)),
+        scopes=(DeliveryScopeAttestation(ac_binding, contribution.scope_sha256),))
+    run = replace(tests[0], fact=replace(tests[0].fact, bindings=(ac_binding,)))
+    snapshot = replace(SNAPSHOT, obligations=(replace(SNAPSHOT.obligations[0], binding=ac_binding),),
+        implementations=(implementation.fact,), tests=(run.fact,))
+    result = evaluate(inventory, (implementation,), (run,), snapshot=snapshot)
+    assert not result.allowed and result.rows[0].missing_criteria == (('ui', 'technical'),)
+    run = replace(run, criterion_ids=('technical',))
+    assert evaluate(inventory, (implementation,), (run,), snapshot=snapshot).allowed
+
+
+@pytest.mark.parametrize('damage', ['unsigned', 'not_done', 'stale_implementation', 'foreign_scope',
+    'unsupported_method', 'automated_method', 'incomplete_run', 'empty', 'foreign_criterion', 'duplicate', 'invalid'])
+def test_criterion_projection_cannot_bypass_existing_proof_checks(damage):
+    inventory, implementations, mixed = mixed_report_case()
+    if damage == 'unsigned':
+        mixed = replace(mixed, fact=replace(mixed.fact, current_verified_run=False))
+    elif damage == 'not_done':
+        mixed = replace(mixed, fact=replace(mixed.fact, card_status='in_progress'))
+    elif damage == 'stale_implementation':
+        mixed = replace(mixed, fact=replace(mixed.fact, verified_implementation_ids=('old',)))
+    elif damage == 'foreign_scope':
+        mixed = replace(mixed, fact=replace(mixed.fact, scope=replace(mixed.fact.scope, board_id='foreign')))
+    elif damage == 'unsupported_method':
+        mixed = replace(mixed, verification_method='unknown')
+    elif damage == 'automated_method':
+        mixed = replace(mixed, verification_method='automated_test')
+    elif damage == 'incomplete_run':
+        mixed = replace(mixed, fact=replace(mixed.fact, result='ready'))
+    else:
+        mixed = replace(mixed, passing_criterion_ids={
+            'empty': (), 'foreign_criterion': ('foreign',), 'duplicate': ('functional', 'functional'), 'invalid': True,
+        }[damage])
+    result = evaluate(inventory, implementations, (mixed,), methods=frozenset({'inspection', 'automated_test'}))
+    assert not result.allowed
+    assert all(not row.test_ids for row in result.rows)
+
+
 def test_partial_declarations_never_add_up_to_the_approved_card_scope():
     inventory, implementations, tests = case()
     partial = replace(

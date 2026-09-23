@@ -133,6 +133,19 @@ def verification_report_scenario_status(report) -> Literal['ready', 'passed', 'f
     return report.result if report.result in {'passed', 'failed'} else 'ready'
 
 
+def verification_report_passing_criteria(report) -> tuple[str, ...]:
+    """Project observed criteria, not trust: callers must authenticate the report.
+
+    Every observation of a criterion must pass. A failed or incomplete sibling
+    observation cannot disappear through selection or duplicate criterion IDs.
+    """
+    verification_report_scenario_status(report)  # Require the closed report model.
+    outcomes = {}
+    for item in report.observations:
+        outcomes.setdefault(item.criterion_id, set()).add(item.outcome)
+    return tuple(sorted(key for key, values in outcomes.items() if values == {'passed'}))
+
+
 def require_verification_report_context(report, *, method, status, criterion_ids):
     """Bind the external observation to the entire current scenario's criteria.
 

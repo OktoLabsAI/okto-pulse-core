@@ -2207,8 +2207,12 @@
       "line": 366,
       "id": "AC-VER-01",
       "normative_text": "**AC-VER-01 — verifica RF-VER-01.** **Dado** Um FR novo, um TR novo e um OR em draft com perfil ausente. **Quando** O autor consulta defaults e tenta iniciar a Spec sem concluir a qualificação. **Então** Os defaults propostos são visíveis sem fabricar critérios; o OR sem configuração resolvida impede início; salvar draft permanece possível.",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "partial",
+      "test_text_references": [],
+      "reviewed_execution": {
+        "artifact": "acceptance-verification-execution.json",
+        "criterion_key": "ARQVER:AC-VER-01"
+      }
     },
     {
       "key": "ARQVER:AC-VER-02",
@@ -2216,8 +2220,12 @@
       "line": 372,
       "id": "AC-VER-02",
       "normative_text": "**AC-VER-02 — verifica RF-VER-02.** **Dado** Um TR com perfil technical e texto “responder rapidamente”, sem limite ou observação definida. **Quando** O plano é avaliado para execução. **Então** A configuração sozinha não satisfaz o plano; ausência estrutural é apontada pelo gate e inadequação da condição é rejeitada pela avaliação semântica competente.",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "partial",
+      "test_text_references": [],
+      "reviewed_execution": {
+        "artifact": "acceptance-verification-execution.json",
+        "criterion_key": "ARQVER:AC-VER-02"
+      }
     },
     {
       "key": "ARQVER:AC-VER-03",
@@ -2225,8 +2233,12 @@
       "line": 378,
       "id": "AC-VER-03",
       "normative_text": "**AC-VER-03 — verifica RF-VER-03.** **Dado** Um AC existente de comportamento e um novo critério de latência. **Quando** A Spec é atualizada com o critério técnico. **Então** Os dois compartilham o mesmo mecanismo de identidade, vínculo, consulta e histórico; os perfis são distinguíveis; nenhum teste funcional fictício é criado para o critério técnico.",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "partial",
+      "test_text_references": [],
+      "reviewed_execution": {
+        "artifact": "acceptance-verification-execution.json",
+        "criterion_key": "ARQVER:AC-VER-03"
+      }
     },
     {
       "key": "ARQVER:AC-VER-04",
@@ -2234,8 +2246,12 @@
       "line": 384,
       "id": "AC-VER-04",
       "normative_text": "**AC-VER-04 — verifica RF-VER-04.** **Dado** FR e TR com IDs distintos e um critério com referência inválida. **Quando** O autor grava os vínculos do critério. **Então** Os vínculos válidos são navegáveis nas duas direções sem double-write; referência inexistente ou fora do escopo é recusada no write, inclusive em draft. Ausência de vínculo pode permanecer pendente em draft, mas não é associação válida nem matching por similaridade.",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "verified_by_reviewed_execution",
+      "test_text_references": [],
+      "reviewed_execution": {
+        "artifact": "acceptance-verification-execution.json",
+        "criterion_key": "ARQVER:AC-VER-04"
+      }
     },
     {
       "key": "ARQVER:AC-VER-05",
@@ -2243,8 +2259,12 @@
       "line": 390,
       "id": "AC-VER-05",
       "normative_text": "**AC-VER-05 — verifica RF-VER-05.** **Dado** Um critério sobre relatórios numa Spec cujos únicos requisitos tratam autenticação. **Quando** O autor o deixa sem vínculo e tenta iniciar. **Então** O gate identifica critério órfão; se o autor liga indevidamente a autenticação, a estrutura pode ficar completa mas a avaliação deve rejeitar a incompatibilidade de conteúdo, sem alegar detecção semântica automática.",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "partial",
+      "test_text_references": [],
+      "reviewed_execution": {
+        "artifact": "acceptance-verification-execution.json",
+        "criterion_key": "ARQVER:AC-VER-05"
+      }
     },
     {
       "key": "ARQVER:AC-VER-06",
@@ -2252,8 +2272,12 @@
       "line": 396,
       "id": "AC-VER-06",
       "normative_text": "**AC-VER-06 — verifica RF-VER-06.** **Dado** Um run verifica autenticação e latência em assertions separadas. **Quando** As evidências são associadas aos critérios funcional e técnico. **Então** O run é armazenado/referenciado uma vez; o êxito funcional não esconde a falha técnica; nenhum crédito é dado a requisito que a assertion não observa.",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "verified_by_reviewed_execution",
+      "test_text_references": [],
+      "reviewed_execution": {
+        "artifact": "acceptance-verification-execution.json",
+        "criterion_key": "ARQVER:AC-VER-06"
+      }
     },
     {
       "key": "ARQVER:AC-VER-07",
@@ -2261,13 +2285,17 @@
       "line": 402,
       "id": "AC-VER-07",
       "normative_text": "**AC-VER-07 — verifica RF-VER-07.** **Dado** Uma Spec com FR, IR, TR e OR qualificados, mas sem Test Card para o cenário operacional. **Quando** O início é solicitado antes e depois de atribuir esse trabalho. **Então** A ausência de planejamento operacional bloqueia; com o plano completo e outros gates satisfeitos, a execução começa mesmo sem evidência ainda produzida.",
-      "review_status": "not_audited_in_this_inventory",
+      "review_status": "partial",
       "test_text_references": [
         {
           "path": "okto_labs_pulse_core/tests/test_verification_plan.py",
           "line": 1
         }
-      ]
+      ],
+      "reviewed_execution": {
+        "artifact": "acceptance-verification-execution.json",
+        "criterion_key": "ARQVER:AC-VER-07"
+      }
     },
     {
       "key": "ARQVER:AC-VER-08",
@@ -2275,8 +2303,12 @@
       "line": 408,
       "id": "AC-VER-08",
       "normative_text": "**AC-VER-08 — verifica RF-VER-08.** **Dado** Um cenário integration verifica contrato e outro manual faz inspeção técnica. **Quando** Os planos e resultados são gravados. **Então** Os perfis e métodos são preservados sem trocar os tipos existentes; enum desconhecido/sem suporte é erro explícito ou pendência bloqueante, nunca fallback silencioso.",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "verified_by_reviewed_execution",
+      "test_text_references": [],
+      "reviewed_execution": {
+        "artifact": "acceptance-verification-execution.json",
+        "criterion_key": "ARQVER:AC-VER-08"
+      }
     },
     {
       "key": "ARQVER:AC-VER-09",
@@ -2284,8 +2316,12 @@
       "line": 414,
       "id": "AC-VER-09",
       "normative_text": "**AC-VER-09 — verifica RF-VER-09.** **Dado** Um IR exige schema compatível e tratamento de timeout; apenas o schema passa. **Quando** A entrega é avaliada. **Então** O IR permanece incompleto quanto a timeout; o percentual pode informar avanço, mas não libera a obrigação.",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "verified_by_reviewed_execution",
+      "test_text_references": [],
+      "reviewed_execution": {
+        "artifact": "acceptance-verification-execution.json",
+        "criterion_key": "ARQVER:AC-VER-09"
+      }
     },
     {
       "key": "ARQVER:AC-VER-10",
@@ -2293,8 +2329,12 @@
       "line": 420,
       "id": "AC-VER-10",
       "normative_text": "**AC-VER-10 — verifica RF-VER-10.** **Dado** R1 herda R2, R2 herda R1, ou R2 não tem critério terminal. **Quando** O autor tenta considerar o plano pronto. **Então** O ciclo ou a falta de terminal é apontado com caminho seguro e o início é bloqueado; não há sucesso por revisitar um nó já visto.",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "partial",
+      "test_text_references": [],
+      "reviewed_execution": {
+        "artifact": "acceptance-verification-execution.json",
+        "criterion_key": "ARQVER:AC-VER-10"
+      }
     },
     {
       "key": "ARQVER:AC-VER-11",
@@ -2302,8 +2342,12 @@
       "line": 426,
       "id": "AC-VER-11",
       "normative_text": "**AC-VER-11 — verifica RF-VER-11.** **Dado** BR determina bloqueio após cinco erros; FR é autenticação e seu único teste observa login válido. **Quando** O autor declara herança desse teste para a BR. **Então** A avaliação rejeita a suficiência; ao selecionar/adicionar condição que realmente verifica os cinco erros e o bloqueio, a prova pode ser reutilizada sem outro Test Card artificial.",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "partial",
+      "test_text_references": [],
+      "reviewed_execution": {
+        "artifact": "acceptance-verification-execution.json",
+        "criterion_key": "ARQVER:AC-VER-11"
+      }
     },
     {
       "key": "ARQVER:AC-VER-12",
@@ -2311,8 +2355,12 @@
       "line": 432,
       "id": "AC-VER-12",
       "normative_text": "**AC-VER-12 — verifica RF-VER-12.** **Dado** TR exige latência; OR exige alerta; ambos tentam herdar apenas o teste funcional HTTP 200. **Quando** O plano é revisto para execução. **Então** Perfis/condições sem verificação adequada continuam pendentes; não se concedem provas técnica e operacional por transitividade genérica.",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "partial",
+      "test_text_references": [],
+      "reviewed_execution": {
+        "artifact": "acceptance-verification-execution.json",
+        "criterion_key": "ARQVER:AC-VER-12"
+      }
     },
     {
       "key": "ARQVER:AC-VER-13",
@@ -2320,8 +2368,12 @@
       "line": 438,
       "id": "AC-VER-13",
       "normative_text": "**AC-VER-13 — verifica RF-VER-13.** **Dado** Uma evidência passing corresponde ao commit A e o requisito agora exige comportamento alterado no commit B. **Quando** A evidência é usada no fechamento. **Então** O crédito à base B depende de validação de aplicabilidade; timestamp recente ou edição igual não bastam; o registro histórico de A permanece.",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "partial",
+      "test_text_references": [],
+      "reviewed_execution": {
+        "artifact": "acceptance-verification-execution.json",
+        "criterion_key": "ARQVER:AC-VER-13"
+      }
     },
     {
       "key": "ARQVER:AC-VER-14",
@@ -2329,8 +2381,12 @@
       "line": 444,
       "id": "AC-VER-14",
       "normative_text": "**AC-VER-14 — verifica RF-VER-14.** **Dado** Um TR de dependências arquiteturais usa análise estática e outro usa inspeção. **Quando** Os resultados são registrados por agentes com e sem a autoridade necessária. **Então** Relatório sem base/regra/configuração ou inspeção sem autor permitido não recebe crédito; resultados válidos são admitidos pelo mesmo ciclo de Test Card/evidência, sem LLM interna.",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "verified_by_reviewed_execution",
+      "test_text_references": [],
+      "reviewed_execution": {
+        "artifact": "acceptance-verification-execution.json",
+        "criterion_key": "ARQVER:AC-VER-14"
+      }
     },
     {
       "key": "ARQVER:AC-VER-15",
@@ -2338,8 +2394,12 @@
       "line": 450,
       "id": "AC-VER-15",
       "normative_text": "**AC-VER-15 — verifica RF-VER-15.** **Dado** Um alerta não dispara e a consulta retorna parcialmente por erro. **Quando** O resultado é registrado e a Spec tenta concluir. **Então** O OR não é verificado; a limitação e a falha aparecem; skip autorizado pode alterar transição, mas não o veredito factual.",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "partial",
+      "test_text_references": [],
+      "reviewed_execution": {
+        "artifact": "acceptance-verification-execution.json",
+        "criterion_key": "ARQVER:AC-VER-15"
+      }
     },
     {
       "key": "ARQVER:AC-VER-16",
@@ -2347,8 +2407,12 @@
       "line": 456,
       "id": "AC-VER-16",
       "normative_text": "**AC-VER-16 — verifica RF-VER-16.** **Dado** Um limite muda de 200 ms para 100 ms e outro critério só recebe correção ortográfica. **Quando** O plano/evidência é reavaliado. **Então** O resultado de latência é rechecado contra a nova condição; a prova do critério editorial permanece aplicável quando seu conteúdo normativo é igual; avaliações históricas não são apagadas.",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "partial",
+      "test_text_references": [],
+      "reviewed_execution": {
+        "artifact": "acceptance-verification-execution.json",
+        "criterion_key": "ARQVER:AC-VER-16"
+      }
     },
     {
       "key": "ARQVER:AC-VER-17",
@@ -2356,8 +2420,12 @@
       "line": 462,
       "id": "AC-VER-17",
       "normative_text": "**AC-VER-17 — verifica RF-VER-17.** **Dado** Um executor tenta reclassificar OR ativo como não verificável para fechar seu trabalho. **Quando** A mutação é submetida. **Então** O sistema rejeita o bypass ou exige revisão/autoridade explícitas; o diagnóstico continua verdadeiro e nenhuma obrigação desaparece por falta de metadado.",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "partial",
+      "test_text_references": [],
+      "reviewed_execution": {
+        "artifact": "acceptance-verification-execution.json",
+        "criterion_key": "ARQVER:AC-VER-17"
+      }
     },
     {
       "key": "ARQVER:AC-VER-18",
@@ -2365,8 +2433,12 @@
       "line": 468,
       "id": "AC-VER-18",
       "normative_text": "**AC-VER-18 — verifica RF-VER-18.** **Dado** Uma BR herdada, um IR promovido e evidências parciais já registradas. **Quando** Um novo agente e a UI abrem o contexto. **Então** Ambos veem pendências e proveniência equivalentes, sem confundir herança com conclusão ou precisar reconsultar a Spec inteira para cada requisito.",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "partial",
+      "test_text_references": [],
+      "reviewed_execution": {
+        "artifact": "acceptance-verification-execution.json",
+        "criterion_key": "ARQVER:AC-VER-18"
+      }
     },
     {
       "key": "ARQVER:AC-INT-01",
@@ -2374,13 +2446,17 @@
       "line": 476,
       "id": "AC-INT-01",
       "normative_text": "**AC-INT-01 — verifica RF-INT-01.** **Dado** BR sem link direto ao Card, associada a FR com contribuição aprovada naquele Card. **Quando** Planejamento e entrega são consultados. **Então** A BR aparece na responsabilidade efetiva com proveniência e crédito real; não some do ledger nem é duplicada por caminhos diferentes.",
-      "review_status": "not_audited_in_this_inventory",
+      "review_status": "verified_by_reviewed_execution",
       "test_text_references": [
         {
           "path": "okto_labs_pulse_community/tests/test_multicard_delivery_integration.py",
           "line": 1
         }
-      ]
+      ],
+      "reviewed_execution": {
+        "artifact": "acceptance-verification-execution.json",
+        "criterion_key": "ARQVER:AC-INT-01"
+      }
     },
     {
       "key": "ARQVER:AC-INT-02",
@@ -2388,8 +2464,12 @@
       "line": 482,
       "id": "AC-INT-02",
       "normative_text": "**AC-INT-02 — verifica RF-INT-02.** **Dado** FR de pagamento envolve Card A de UI e Card B de autorização com BR específica. **Quando** O resolver calcula a responsabilidade e o rollup. **Então** A alocação segue o escopo declarado; a falta de alocação suficiente é pendência; concluir a UI não verifica automaticamente autorização.",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "verified_by_reviewed_execution",
+      "test_text_references": [],
+      "reviewed_execution": {
+        "artifact": "acceptance-verification-execution.json",
+        "criterion_key": "ARQVER:AC-INT-02"
+      }
     },
     {
       "key": "ARQVER:AC-INT-03",
@@ -2609,8 +2689,12 @@
       "line": 734,
       "id": "ADV-10",
       "normative_text": "| ADV-10 | Corrente de herança com diamante e dois caminhos ao mesmo critério. | Não há duplicação de obrigação/prova; ciclo continua detectado. |",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "partial",
+      "test_text_references": [],
+      "reviewed_execution": {
+        "artifact": "acceptance-verification-execution.json",
+        "criterion_key": "ARQVER:ADV-10"
+      }
     },
     {
       "key": "ARQVER:ADV-11",
@@ -2632,8 +2716,12 @@
       "line": 736,
       "id": "ADV-12",
       "normative_text": "| ADV-12 | Um run passa no teste funcional e falha no critério técnico. | Cada requisito recebe o veredito correspondente, sem verde global indevido. |",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "verified_by_reviewed_execution",
+      "test_text_references": [],
+      "reviewed_execution": {
+        "artifact": "acceptance-verification-execution.json",
+        "criterion_key": "ARQVER:ADV-12"
+      }
     },
     {
       "key": "ARQVER:ADV-13",
@@ -2641,8 +2729,12 @@
       "line": 737,
       "id": "ADV-13",
       "normative_text": "| ADV-13 | Adicionar vínculo requisito→critério após o run. | Exige validar a aplicabilidade; não torna o run retroativamente suficiente só pelo novo link. |",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "partial",
+      "test_text_references": [],
+      "reviewed_execution": {
+        "artifact": "acceptance-verification-execution.json",
+        "criterion_key": "ARQVER:ADV-13"
+      }
     },
     {
       "key": "ARQVER:ADV-14",

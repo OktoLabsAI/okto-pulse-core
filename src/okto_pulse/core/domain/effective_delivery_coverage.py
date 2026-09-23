@@ -21,7 +21,7 @@ from okto_pulse.core.domain.delivery_evidence import (
 from okto_pulse.core.domain.effective_delivery_inventory import (
     EffectiveDeliveryInventory,
 )
-from okto_pulse.core.domain.enums import CardStatus, CardType
+from okto_pulse.core.domain.enums import CardStatus, CardType, TestScenarioStatus
 
 
 @dataclass(frozen=True, slots=True)
@@ -87,6 +87,10 @@ class ScopedTestFact:
     # are not free client fields or assertions inferred from the result string.
     criterion_ids: tuple[str, ...]
     verification_method: str
+    # Edition-derived from the same authenticated specialized report. None
+    # retains aggregate-run semantics; () explicitly means no passing criterion.
+    # This is an internal fact, never a client-supplied authority field.
+    passing_criterion_ids: tuple[str, ...] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -171,7 +175,19 @@ def test_observes_contribution(snapshot, test, implementation, binding):
         return False
     planned = next(row for row in context.inventory.rows if row.binding == binding)
     contribution = next(item for item in planned.contributions if item.card_id == implementation.card_id)
-    return not contribution.criterion_ids or bool(set(contribution.criterion_ids).intersection(observation.criterion_ids))
+    criteria = contribution_verification_criteria(planned, contribution)
+    return not criteria or bool(set(criteria).intersection(observation.criterion_ids))
+
+
+def contribution_verification_criteria(obligation, contribution):
+    """An acceptance criterion observes itself even for a whole-scope Card.
+
+    Supplemental AC inventory rows preserve their existing allocation/digest;
+    their empty selected-criteria list is not permission to use an unrelated run.
+    """
+    if obligation.family == 'ac':
+        return (obligation.binding.obligation_ref.removeprefix('ac:'),)
+    return contribution.criterion_ids
 
 
 def evaluate_adopted_snapshot(snapshot):
@@ -206,6 +222,8 @@ def evaluate_effective_delivery_coverage(
     """
     snapshot = replace(snapshot, effective_context=None)
     blockers = set()
+    if any(row.passing_criterion_ids is not None and type(row.passing_criterion_ids) is not tuple for row in tests):
+        return EffectiveDeliveryCoverage((), ('delivery_scoped_population_mismatch',), ())
     # Count expanded associations before evaluating them. A bounded failure is
     # unknown coverage, not a truncated population that could appear complete.
     if (
@@ -220,6 +238,7 @@ def evaluate_effective_delivery_coverage(
         + sum(len(row.scopes) for row in implementations)
         + sum(
             len(row.criterion_ids)
+            + len(row.passing_criterion_ids or ())
             + len(row.fact.bindings)
             + len(row.fact.verified_implementation_ids)
             for row in tests
@@ -361,6 +380,21 @@ def evaluate_effective_delivery_coverage(
                 )
             ):
                 continue
+            passing = test.passing_criterion_ids
+            if passing is not None:
+                if (test.verification_method not in {'inspection', 'static_analysis', 'demonstration'}
+                    or type(passing) is not tuple or not passing
+                    or any(type(key) is not str or not key for key in passing)
+                    or len(set(passing)) != len(passing)
+                    or not set(passing) <= set(test.criterion_ids)
+                    or fact.result not in {TestScenarioStatus.PASSED, TestScenarioStatus.FAILED}):
+                    continue
+                # Only this derived criterion check uses passing. The stored
+                # run verdict stays factual; all authentication, freshness,
+                # Card completion and implementation checks still run below.
+                checked_fact = replace(fact, result=TestScenarioStatus.PASSED)
+            else:
+                checked_fact = fact
             check = evaluate_delivery_coverage(
                 DeliveryEvidenceSnapshot(
                     snapshot.scope,
@@ -368,7 +402,7 @@ def evaluate_effective_delivery_coverage(
                     tuple(
                         actual_implementations[identity] for identity in sorted(named)
                     ),
-                    (fact,),
+                    (checked_fact,),
                     complete=snapshot.complete,
                 )
             )
@@ -377,8 +411,12 @@ def evaluate_effective_delivery_coverage(
             relevant = False
             for identity in named:
                 planned = required[actual_implementations[identity].card_id]
-                criteria = set(planned.criterion_ids)
-                covered = criteria.intersection(test.criterion_ids)
+                criteria = set(contribution_verification_criteria(obligation, planned))
+                covered = criteria.intersection(passing if passing is not None else test.criterion_ids)
+                if passing is not None and not criteria and fact.result != TestScenarioStatus.PASSED:
+                    # No criterion-specific proof may satisfy an unqualified
+                    # supplemental obligation using the aggregate fallback.
+                    continue
                 if criteria and not covered:
                     continue
                 observed[identity].update(covered)
@@ -390,9 +428,9 @@ def evaluate_effective_delivery_coverage(
         missing_criteria = {
             (identity, criterion)
             for identity in ids
-            for criterion in required[
+            for criterion in contribution_verification_criteria(obligation, required[
                 actual_implementations[identity].card_id
-            ].criterion_ids
+            ])
             if criterion not in observed[identity]
         }
         implementation_waivers = base.implementation_waiver_ids if base else ()
@@ -426,6 +464,7 @@ def evaluate_effective_delivery_coverage(
         blockers.add("delivery_implementation_missing")
     if any(not row.test_satisfied for row in result):
         blockers.add("delivery_test_result_missing")
+    rejected.difference_update(relevant_tests)
     rejected.update(set(actual_tests) - relevant_tests)
     return EffectiveDeliveryCoverage(
         tuple(result), tuple(sorted(blockers)), tuple(sorted(rejected))

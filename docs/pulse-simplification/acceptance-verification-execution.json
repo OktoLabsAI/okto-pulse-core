@@ -1,0 +1,1441 @@
+{
+  "format": "pulse-v1.3-reviewed-execution/v1",
+  "scope": "Verification and contribution audit; no whole-plan completion claim",
+  "provenance": {
+    "file": "provenance-mixed-report-final.json",
+    "sha256": "833dc7d171fedc4535e0ce5f44b988861f9b374b4b2dd8ad62b3423be2b53eb0",
+    "identity": {
+      "checked_at": "2026-09-23T17:36:42.332739+00:00",
+      "python": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Scripts\\python.exe",
+      "packages": {
+        "core": {
+          "python_files": 829,
+          "origin": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages\\okto_pulse\\core\\__init__.py",
+          "repository_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_core",
+          "commit": "c06157bb14aa5ae6aaf2d9bd7a757f899c609c24",
+          "dirty": true,
+          "dirty_entry_count": 8,
+          "distribution": "okto-pulse-core",
+          "version": "0.3.4",
+          "wheel": {
+            "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\dist-mixed-report-final\\okto_pulse_core-0.3.4-py3-none-any.whl",
+            "sha256": "cfd61da8aa0dde2737af3d6f9c2f20ae4bb12fa72582e11895417feca99b4956",
+            "size": 3731036
+          },
+          "source_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_core\\src",
+          "site_packages_root": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages",
+          "package_prefix": "okto_pulse/core/",
+          "byte_identical_member_count": 892,
+          "byte_identical": true,
+          "aggregate_sha256": "a43565063ccf05f0424fb9874fe27ffed9707a3a80df970bb94094551bc21657",
+          "chain_hashes": {
+            "source": "a43565063ccf05f0424fb9874fe27ffed9707a3a80df970bb94094551bc21657",
+            "wheel": "a43565063ccf05f0424fb9874fe27ffed9707a3a80df970bb94094551bc21657",
+            "site_packages": "a43565063ccf05f0424fb9874fe27ffed9707a3a80df970bb94094551bc21657"
+          },
+          "critical_resource_sha256": {
+            "okto_pulse/core/mcp/resources/ska_resource_manifest.json": "e162d8460ad0140b40a6916c06d59a07caa7354def5fa3b9c510f984e6705df9",
+            "okto_pulse/core/mcp/resources/ska_tool_manifest.json": "0c3fa3da1549baec20872eca3f4a289288627e6b9f6b80be10472ac962fa72b9"
+          },
+          "mismatches": []
+        },
+        "community": {
+          "python_files": 360,
+          "origin": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages\\okto_pulse\\community\\__init__.py",
+          "repository_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_community",
+          "commit": "f8761bb711cc765265c2e118396bda8fca5ce80c",
+          "dirty": true,
+          "dirty_entry_count": 65,
+          "distribution": "okto-pulse",
+          "version": "0.3.4",
+          "wheel": {
+            "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\dist-mixed-report-final\\okto_pulse-0.3.4-py3-none-any.whl",
+            "sha256": "d9ffd80284d67e037430e945ce8962db878b7a5b65636655cd7535134a29e426",
+            "size": 4499802
+          },
+          "source_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_community\\src",
+          "site_packages_root": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages",
+          "package_prefix": "okto_pulse/community/",
+          "byte_identical_member_count": 444,
+          "byte_identical": true,
+          "aggregate_sha256": "94c9bb01023c5258b9f1a560c415ba7bf41deb4a9d3dff0d801d8361ca1a5cb7",
+          "chain_hashes": {
+            "source": "94c9bb01023c5258b9f1a560c415ba7bf41deb4a9d3dff0d801d8361ca1a5cb7",
+            "wheel": "94c9bb01023c5258b9f1a560c415ba7bf41deb4a9d3dff0d801d8361ca1a5cb7",
+            "site_packages": "94c9bb01023c5258b9f1a560c415ba7bf41deb4a9d3dff0d801d8361ca1a5cb7"
+          },
+          "critical_resource_sha256": {},
+          "mismatches": []
+        }
+      }
+    }
+  },
+  "runs": {
+    "core": {
+      "file": "mixed-report-core-final.xml",
+      "sha256": "28c24f3501f469fad3f7a77f1b1946f90dbbd585a306f0ca76819856bb04d1a9",
+      "suite": {
+        "name": "pytest",
+        "errors": "0",
+        "failures": "0",
+        "skipped": "0",
+        "tests": "253",
+        "time": "16.474",
+        "timestamp": "2026-09-23T14:37:27.206103-03:00",
+        "hostname": "Alienware_m15"
+      }
+    },
+    "community": {
+      "file": "mixed-report-community-final.xml",
+      "sha256": "47cf8806fae70554d6d83ac5f7d98d50428c80e570a4f2b94444bbef3a4768f0",
+      "suite": {
+        "name": "pytest",
+        "errors": "0",
+        "failures": "0",
+        "skipped": "0",
+        "tests": "39",
+        "time": "81.874",
+        "timestamp": "2026-09-23T14:37:20.258516-03:00",
+        "hostname": "Alienware_m15"
+      }
+    }
+  },
+  "criteria": {
+    "ARQVER:AC-VER-01": {
+      "status": "partial",
+      "covered": "Defaults versionados são propostas; autoria draft dos tipos persiste, perfil ausente aparece como pendência global sem escrita na leitura.",
+      "remaining": "Falta compor tentativa real de início com OR sem perfil, seguida de correção autorizada.",
+      "evidence": [
+        {
+          "repository": "core",
+          "file": "tests/test_requirement_verification.py",
+          "test_function": "test_draft_defaults_are_versioned_proposals_not_silent_writes",
+          "source_sha256": "94a9d865b55ac5dc4ff126ede2eaefcdf1df7fe00fb6831109ac0a00b2decfb7",
+          "executions": [
+            {
+              "classname": "tests.test_requirement_verification",
+              "name": "test_draft_defaults_are_versioned_proposals_not_silent_writes",
+              "time": "0.019"
+            }
+          ]
+        },
+        {
+          "repository": "core",
+          "file": "tests/test_requirement_verification.py",
+          "test_function": "test_real_writer_preserves_all_requirement_kinds_and_refusals_preserve_history",
+          "source_sha256": "94a9d865b55ac5dc4ff126ede2eaefcdf1df7fe00fb6831109ac0a00b2decfb7",
+          "executions": [
+            {
+              "classname": "tests.test_requirement_verification",
+              "name": "test_real_writer_preserves_all_requirement_kinds_and_refusals_preserve_history",
+              "time": "0.351"
+            }
+          ]
+        },
+        {
+          "repository": "community",
+          "file": "tests/test_requirement_verification_read.py",
+          "test_function": "test_native_transport_parity_global_pending_and_no_read_writes",
+          "source_sha256": "5b11fc13b74be787ac68d7ad8965c047fa11f43e77faf84c13fbc5623e736fb7",
+          "executions": [
+            {
+              "classname": "tests.test_requirement_verification_read",
+              "name": "test_native_transport_parity_global_pending_and_no_read_writes[False]",
+              "time": "1.446"
+            },
+            {
+              "classname": "tests.test_requirement_verification_read",
+              "name": "test_native_transport_parity_global_pending_and_no_read_writes[True]",
+              "time": "1.659"
+            }
+          ]
+        }
+      ]
+    },
+    "ARQVER:AC-VER-02": {
+      "status": "partial",
+      "covered": "Condição ausente e campos estruturais incompletos impedem prontidão, sem fallback por perfil.",
+      "remaining": "Falta ensaio de avaliação semântica rejeitando condição vaga estruturalmente preenchida.",
+      "evidence": [
+        {
+          "repository": "core",
+          "file": "tests/test_requirement_verification.py",
+          "test_function": "test_all_active_criteria_remain_normative_planning_inputs",
+          "source_sha256": "94a9d865b55ac5dc4ff126ede2eaefcdf1df7fe00fb6831109ac0a00b2decfb7",
+          "executions": [
+            {
+              "classname": "tests.test_requirement_verification",
+              "name": "test_all_active_criteria_remain_normative_planning_inputs[orphan-criterion_requirement_link_missing]",
+              "time": "0.016"
+            },
+            {
+              "classname": "tests.test_requirement_verification",
+              "name": "test_all_active_criteria_remain_normative_planning_inputs[condition-criterion_condition_required]",
+              "time": "0.018"
+            },
+            {
+              "classname": "tests.test_requirement_verification",
+              "name": "test_all_active_criteria_remain_normative_planning_inputs[profile-criterion_profile_required]",
+              "time": "0.016"
+            },
+            {
+              "classname": "tests.test_requirement_verification",
+              "name": "test_all_active_criteria_remain_normative_planning_inputs[duplicate-verification_criterion_ambiguous]",
+              "time": "0.017"
+            }
+          ]
+        },
+        {
+          "repository": "core",
+          "file": "tests/test_verification_plan.py",
+          "test_function": "test_no_condition_type_state_or_identity_fallback",
+          "source_sha256": "8a50dab94e89bb75555b2278c5eec79a7ab45a2e5491340f7f82de4c12053fbb",
+          "executions": [
+            {
+              "classname": "tests.test_verification_plan",
+              "name": "test_no_condition_type_state_or_identity_fallback[changes0]",
+              "time": "0.026"
+            },
+            {
+              "classname": "tests.test_verification_plan",
+              "name": "test_no_condition_type_state_or_identity_fallback[changes1]",
+              "time": "0.025"
+            },
+            {
+              "classname": "tests.test_verification_plan",
+              "name": "test_no_condition_type_state_or_identity_fallback[changes2]",
+              "time": "0.024"
+            },
+            {
+              "classname": "tests.test_verification_plan",
+              "name": "test_no_condition_type_state_or_identity_fallback[changes3]",
+              "time": "0.022"
+            },
+            {
+              "classname": "tests.test_verification_plan",
+              "name": "test_no_condition_type_state_or_identity_fallback[changes4]",
+              "time": "0.022"
+            },
+            {
+              "classname": "tests.test_verification_plan",
+              "name": "test_no_condition_type_state_or_identity_fallback[changes5]",
+              "time": "0.021"
+            }
+          ]
+        }
+      ]
+    },
+    "ARQVER:AC-VER-03": {
+      "status": "partial",
+      "covered": "AC atual preserva ID, campos e histórico pelos writers bulk/scoped/MCP, sem cadastro paralelo.",
+      "remaining": "Falta testemunho conjunto do AC funcional existente e novo técnico no mesmo histórico persistido.",
+      "evidence": [
+        {
+          "repository": "core",
+          "file": "tests/test_criterion_verification.py",
+          "test_function": "test_bulk_create_update_preserve_owned_metadata_and_reject_dangling_refs",
+          "source_sha256": "71081a3fc4ab3bad32f4f55931a55f9447f2af976f4d324a82f00689e9712490",
+          "executions": [
+            {
+              "classname": "tests.test_criterion_verification",
+              "name": "test_bulk_create_update_preserve_owned_metadata_and_reject_dangling_refs",
+              "time": "0.077"
+            }
+          ]
+        },
+        {
+          "repository": "core",
+          "file": "tests/test_criterion_verification.py",
+          "test_function": "test_structured_write_keeps_version_history_and_content_when_rejected",
+          "source_sha256": "71081a3fc4ab3bad32f4f55931a55f9447f2af976f4d324a82f00689e9712490",
+          "executions": [
+            {
+              "classname": "tests.test_criterion_verification",
+              "name": "test_structured_write_keeps_version_history_and_content_when_rejected",
+              "time": "0.081"
+            }
+          ]
+        },
+        {
+          "repository": "core",
+          "file": "tests/test_criterion_verification.py",
+          "test_function": "test_mcp_criterion_metadata_reaches_the_same_store",
+          "source_sha256": "71081a3fc4ab3bad32f4f55931a55f9447f2af976f4d324a82f00689e9712490",
+          "executions": [
+            {
+              "classname": "tests.test_criterion_verification",
+              "name": "test_mcp_criterion_metadata_reaches_the_same_store",
+              "time": "0.067"
+            }
+          ]
+        }
+      ]
+    },
+    "ARQVER:AC-VER-04": {
+      "status": "verified_by_reviewed_execution",
+      "covered": "Vínculo pertence ao AC; IDs/tipos exatos, referências inválidas e remoção do alvo recusados no write. Resolver deriva caminhos reversos dos mesmos vínculos, sem segundo array autoral.",
+      "remaining": null,
+      "evidence": [
+        {
+          "repository": "core",
+          "file": "tests/test_criterion_verification.py",
+          "test_function": "test_each_supported_type_requires_its_exact_unambiguous_identity",
+          "source_sha256": "71081a3fc4ab3bad32f4f55931a55f9447f2af976f4d324a82f00689e9712490",
+          "executions": [
+            {
+              "classname": "tests.test_criterion_verification",
+              "name": "test_each_supported_type_requires_its_exact_unambiguous_identity[functional_requirement-functional_requirements]",
+              "time": "0.026"
+            },
+            {
+              "classname": "tests.test_criterion_verification",
+              "name": "test_each_supported_type_requires_its_exact_unambiguous_identity[technical_requirement-technical_requirements]",
+              "time": "0.026"
+            },
+            {
+              "classname": "tests.test_criterion_verification",
+              "name": "test_each_supported_type_requires_its_exact_unambiguous_identity[integration_requirement-integration_requirements]",
+              "time": "0.028"
+            },
+            {
+              "classname": "tests.test_criterion_verification",
+              "name": "test_each_supported_type_requires_its_exact_unambiguous_identity[observability_requirement-observability_requirements]",
+              "time": "0.027"
+            },
+            {
+              "classname": "tests.test_criterion_verification",
+              "name": "test_each_supported_type_requires_its_exact_unambiguous_identity[business_rule-business_rules]",
+              "time": "0.023"
+            }
+          ]
+        },
+        {
+          "repository": "core",
+          "file": "tests/test_criterion_verification.py",
+          "test_function": "test_create_rejects_text_position_and_foreign_ids_before_any_spec_write",
+          "source_sha256": "71081a3fc4ab3bad32f4f55931a55f9447f2af976f4d324a82f00689e9712490",
+          "executions": [
+            {
+              "classname": "tests.test_criterion_verification",
+              "name": "test_create_rejects_text_position_and_foreign_ids_before_any_spec_write[0]",
+              "time": "0.024"
+            },
+            {
+              "classname": "tests.test_criterion_verification",
+              "name": "test_create_rejects_text_position_and_foreign_ids_before_any_spec_write[Lock after five failures]",
+              "time": "0.027"
+            },
+            {
+              "classname": "tests.test_criterion_verification",
+              "name": "test_create_rejects_text_position_and_foreign_ids_before_any_spec_write[foreign-fr]",
+              "time": "0.029"
+            }
+          ]
+        },
+        {
+          "repository": "core",
+          "file": "tests/test_criterion_verification.py",
+          "test_function": "test_bulk_create_update_preserve_owned_metadata_and_reject_dangling_refs",
+          "source_sha256": "71081a3fc4ab3bad32f4f55931a55f9447f2af976f4d324a82f00689e9712490",
+          "executions": [
+            {
+              "classname": "tests.test_criterion_verification",
+              "name": "test_bulk_create_update_preserve_owned_metadata_and_reject_dangling_refs",
+              "time": "0.077"
+            }
+          ]
+        },
+        {
+          "repository": "core",
+          "file": "tests/test_requirement_verification.py",
+          "test_function": "test_selected_terminal_criteria_preserve_multihop_path_and_aspects",
+          "source_sha256": "94a9d865b55ac5dc4ff126ede2eaefcdf1df7fe00fb6831109ac0a00b2decfb7",
+          "executions": [
+            {
+              "classname": "tests.test_requirement_verification",
+              "name": "test_selected_terminal_criteria_preserve_multihop_path_and_aspects",
+              "time": "0.017"
+            }
+          ]
+        }
+      ]
+    },
+    "ARQVER:AC-VER-05": {
+      "status": "partial",
+      "covered": "Órfão impede prontidão; vínculo preenchido não declara avaliação semântica realizada.",
+      "remaining": "Falta avaliação persistida recusando vínculo estruturalmente válido mas semanticamente inadequado.",
+      "evidence": [
+        {
+          "repository": "core",
+          "file": "tests/test_requirement_verification.py",
+          "test_function": "test_all_active_criteria_remain_normative_planning_inputs",
+          "source_sha256": "94a9d865b55ac5dc4ff126ede2eaefcdf1df7fe00fb6831109ac0a00b2decfb7",
+          "executions": [
+            {
+              "classname": "tests.test_requirement_verification",
+              "name": "test_all_active_criteria_remain_normative_planning_inputs[orphan-criterion_requirement_link_missing]",
+              "time": "0.016"
+            },
+            {
+              "classname": "tests.test_requirement_verification",
+              "name": "test_all_active_criteria_remain_normative_planning_inputs[condition-criterion_condition_required]",
+              "time": "0.018"
+            },
+            {
+              "classname": "tests.test_requirement_verification",
+              "name": "test_all_active_criteria_remain_normative_planning_inputs[profile-criterion_profile_required]",
+              "time": "0.016"
+            },
+            {
+              "classname": "tests.test_requirement_verification",
+              "name": "test_all_active_criteria_remain_normative_planning_inputs[duplicate-verification_criterion_ambiguous]",
+              "time": "0.017"
+            }
+          ]
+        },
+        {
+          "repository": "core",
+          "file": "tests/test_requirement_verification.py",
+          "test_function": "test_structural_success_is_not_semantic_approval_of_wrong_selected_condition",
+          "source_sha256": "94a9d865b55ac5dc4ff126ede2eaefcdf1df7fe00fb6831109ac0a00b2decfb7",
+          "executions": [
+            {
+              "classname": "tests.test_requirement_verification",
+              "name": "test_structural_success_is_not_semantic_approval_of_wrong_selected_condition",
+              "time": "0.016"
+            }
+          ]
+        }
+      ]
+    },
+    "ARQVER:AC-VER-06": {
+      "status": "verified_by_reviewed_execution",
+      "covered": "Um receipt/registro assinado tem observações por critério; crédito funcional e falha técnica distintos. Adulteração, critério não observado e seleção de binding antigo não ganham crédito. Não há cópia do relatório.",
+      "remaining": null,
+      "evidence": [
+        {
+          "repository": "community",
+          "file": "tests/test_multicard_delivery_integration.py",
+          "test_function": "test_one_signed_report_preserves_distinct_criterion_verdicts",
+          "source_sha256": "4407cda5cf8f6892c70a1757c48aafbf2fe5e0e57b68288b724a3e0832a5019b",
+          "executions": [
+            {
+              "classname": "tests.test_multicard_delivery_integration",
+              "name": "test_one_signed_report_preserves_distinct_criterion_verdicts",
+              "time": "2.093"
+            }
+          ]
+        },
+        {
+          "repository": "core",
+          "file": "tests/test_verification_report.py",
+          "test_function": "test_criterion_projection_requires_every_observation_to_pass",
+          "source_sha256": "d6cb7c50994139d330dc5fb11c4f74cfc1b6bd4e7a0e30e2d9a9c8617b48b753",
+          "executions": [
+            {
+              "classname": "tests.test_verification_report",
+              "name": "test_criterion_projection_requires_every_observation_to_pass[failed]",
+              "time": "0.021"
+            },
+            {
+              "classname": "tests.test_verification_report",
+              "name": "test_criterion_projection_requires_every_observation_to_pass[inconclusive]",
+              "time": "0.022"
+            },
+            {
+              "classname": "tests.test_verification_report",
+              "name": "test_criterion_projection_requires_every_observation_to_pass[aborted]",
+              "time": "0.021"
+            },
+            {
+              "classname": "tests.test_verification_report",
+              "name": "test_criterion_projection_requires_every_observation_to_pass[unavailable]",
+              "time": "0.026"
+            }
+          ]
+        },
+        {
+          "repository": "community",
+          "file": "tests/test_multicard_delivery_integration.py",
+          "test_function": "test_ui_result_cannot_name_authorization_proof_to_gain_its_criterion",
+          "source_sha256": "4407cda5cf8f6892c70a1757c48aafbf2fe5e0e57b68288b724a3e0832a5019b",
+          "executions": [
+            {
+              "classname": "tests.test_multicard_delivery_integration",
+              "name": "test_ui_result_cannot_name_authorization_proof_to_gain_its_criterion[requirement]",
+              "time": "2.181"
+            },
+            {
+              "classname": "tests.test_multicard_delivery_integration",
+              "name": "test_ui_result_cannot_name_authorization_proof_to_gain_its_criterion[criterion]",
+              "time": "2.019"
+            }
+          ]
+        }
+      ]
+    },
+    "ARQVER:AC-VER-07": {
+      "status": "partial",
+      "covered": "Plano exige Card de teste vivo no mesmo escopo; serviço real bloqueia plano incompleto e não exige passing antecipado.",
+      "remaining": "Falta transição REST composta com os quatro perfis e ausência específica do Test Card operacional.",
+      "evidence": [
+        {
+          "repository": "core",
+          "file": "tests/test_verification_plan.py",
+          "test_function": "test_only_live_same_scope_test_card_can_own_verification",
+          "source_sha256": "8a50dab94e89bb75555b2278c5eec79a7ab45a2e5491340f7f82de4c12053fbb",
+          "executions": [
+            {
+              "classname": "tests.test_verification_plan",
+              "name": "test_only_live_same_scope_test_card_can_own_verification[change0]",
+              "time": "0.017"
+            },
+            {
+              "classname": "tests.test_verification_plan",
+              "name": "test_only_live_same_scope_test_card_can_own_verification[change1]",
+              "time": "0.018"
+            },
+            {
+              "classname": "tests.test_verification_plan",
+              "name": "test_only_live_same_scope_test_card_can_own_verification[change2]",
+              "time": "0.018"
+            },
+            {
+              "classname": "tests.test_verification_plan",
+              "name": "test_only_live_same_scope_test_card_can_own_verification[change3]",
+              "time": "0.019"
+            },
+            {
+              "classname": "tests.test_verification_plan",
+              "name": "test_only_live_same_scope_test_card_can_own_verification[change4]",
+              "time": "0.021"
+            },
+            {
+              "classname": "tests.test_verification_plan",
+              "name": "test_only_live_same_scope_test_card_can_own_verification[change5]",
+              "time": "0.025"
+            }
+          ]
+        },
+        {
+          "repository": "core",
+          "file": "tests/test_verification_plan.py",
+          "test_function": "test_complete_plan_needs_no_execution_and_preserves_canonical_inputs",
+          "source_sha256": "8a50dab94e89bb75555b2278c5eec79a7ab45a2e5491340f7f82de4c12053fbb",
+          "executions": [
+            {
+              "classname": "tests.test_verification_plan",
+              "name": "test_complete_plan_needs_no_execution_and_preserves_canonical_inputs",
+              "time": "0.031"
+            }
+          ]
+        },
+        {
+          "repository": "community",
+          "file": "tests/test_execution_contract_integration.py",
+          "test_function": "test_first_start_checks_real_shared_plan_without_requiring_execution",
+          "source_sha256": "c4dade15443fb7818872f14c5e9724042d05f9766832ca841356a1ba1cd7079e",
+          "executions": [
+            {
+              "classname": "tests.test_execution_contract_integration",
+              "name": "test_first_start_checks_real_shared_plan_without_requiring_execution",
+              "time": "2.118"
+            }
+          ]
+        }
+      ]
+    },
+    "ARQVER:AC-VER-08": {
+      "status": "verified_by_reviewed_execution",
+      "covered": "Método e ScenarioType são dimensões fechadas independentes; edição real preserva tipo, invalida prova semântica anterior e recusa enum desconhecido, com paridade REST/MCP.",
+      "remaining": null,
+      "evidence": [
+        {
+          "repository": "core",
+          "file": "tests/test_scenario_verification_method.py",
+          "test_function": "test_method_and_scenario_type_are_independent_closed_dimensions",
+          "source_sha256": "6de5f19b850665737607e6b61a4e227960e629dff09828a0d6ea03762acf309f",
+          "executions": [
+            {
+              "classname": "tests.test_scenario_verification_method",
+              "name": "test_method_and_scenario_type_are_independent_closed_dimensions[automated_test]",
+              "time": "0.023"
+            },
+            {
+              "classname": "tests.test_scenario_verification_method",
+              "name": "test_method_and_scenario_type_are_independent_closed_dimensions[static_analysis]",
+              "time": "0.017"
+            },
+            {
+              "classname": "tests.test_scenario_verification_method",
+              "name": "test_method_and_scenario_type_are_independent_closed_dimensions[inspection]",
+              "time": "0.017"
+            },
+            {
+              "classname": "tests.test_scenario_verification_method",
+              "name": "test_method_and_scenario_type_are_independent_closed_dimensions[demonstration]",
+              "time": "0.018"
+            }
+          ]
+        },
+        {
+          "repository": "core",
+          "file": "tests/test_scenario_verification_method.py",
+          "test_function": "test_unsupported_values_are_not_ignored_by_model_or_direct_writer",
+          "source_sha256": "6de5f19b850665737607e6b61a4e227960e629dff09828a0d6ea03762acf309f",
+          "executions": [
+            {
+              "classname": "tests.test_scenario_verification_method",
+              "name": "test_unsupported_values_are_not_ignored_by_model_or_direct_writer[passing]",
+              "time": "0.020"
+            },
+            {
+              "classname": "tests.test_scenario_verification_method",
+              "name": "test_unsupported_values_are_not_ignored_by_model_or_direct_writer[performance]",
+              "time": "0.017"
+            },
+            {
+              "classname": "tests.test_scenario_verification_method",
+              "name": "test_unsupported_values_are_not_ignored_by_model_or_direct_writer[none]",
+              "time": "0.020"
+            },
+            {
+              "classname": "tests.test_scenario_verification_method",
+              "name": "test_unsupported_values_are_not_ignored_by_model_or_direct_writer[True]",
+              "time": "0.020"
+            },
+            {
+              "classname": "tests.test_scenario_verification_method",
+              "name": "test_unsupported_values_are_not_ignored_by_model_or_direct_writer[method4]",
+              "time": "0.027"
+            }
+          ]
+        },
+        {
+          "repository": "core",
+          "file": "tests/test_scenario_verification_method.py",
+          "test_function": "test_body_edit_preserves_type_resets_proof_and_rejects_stale_version",
+          "source_sha256": "6de5f19b850665737607e6b61a4e227960e629dff09828a0d6ea03762acf309f",
+          "executions": [
+            {
+              "classname": "tests.test_scenario_verification_method",
+              "name": "test_body_edit_preserves_type_resets_proof_and_rejects_stale_version",
+              "time": "0.108"
+            }
+          ]
+        },
+        {
+          "repository": "community",
+          "file": "tests/test_scenario_verification_method.py",
+          "test_function": "test_rest_mcp_same_body_writer_version_conflict_and_closed_method",
+          "source_sha256": "30da91c9d3cf587740edf7e4bc6d604207fd7b87bbd9464ad902cd650564abed",
+          "executions": [
+            {
+              "classname": "tests.test_scenario_verification_method",
+              "name": "test_rest_mcp_same_body_writer_version_conflict_and_closed_method",
+              "time": "1.545"
+            }
+          ]
+        }
+      ]
+    },
+    "ARQVER:AC-VER-09": {
+      "status": "verified_by_reviewed_execution",
+      "covered": "Todos os perfis/condições contam; entrega real com duas condições mantém obrigação incompleta quando somente uma passa.",
+      "remaining": null,
+      "evidence": [
+        {
+          "repository": "core",
+          "file": "tests/test_requirement_verification.py",
+          "test_function": "test_every_required_profile_and_policy_minimum_counts",
+          "source_sha256": "94a9d865b55ac5dc4ff126ede2eaefcdf1df7fe00fb6831109ac0a00b2decfb7",
+          "executions": [
+            {
+              "classname": "tests.test_requirement_verification",
+              "name": "test_every_required_profile_and_policy_minimum_counts",
+              "time": "0.017"
+            }
+          ]
+        },
+        {
+          "repository": "core",
+          "file": "tests/test_effective_delivery_coverage.py",
+          "test_function": "test_functional_passing_does_not_conceal_missing_technical_condition",
+          "source_sha256": "f1736d98b430259b60b92e15c25c43d5db62d5061e76e815e5e9c47b6f2bee0a",
+          "executions": [
+            {
+              "classname": "tests.test_effective_delivery_coverage",
+              "name": "test_functional_passing_does_not_conceal_missing_technical_condition",
+              "time": "0.016"
+            }
+          ]
+        },
+        {
+          "repository": "community",
+          "file": "tests/test_multicard_delivery_integration.py",
+          "test_function": "test_one_signed_report_preserves_distinct_criterion_verdicts",
+          "source_sha256": "4407cda5cf8f6892c70a1757c48aafbf2fe5e0e57b68288b724a3e0832a5019b",
+          "executions": [
+            {
+              "classname": "tests.test_multicard_delivery_integration",
+              "name": "test_one_signed_report_preserves_distinct_criterion_verdicts",
+              "time": "2.093"
+            }
+          ]
+        }
+      ]
+    },
+    "ARQVER:AC-VER-10": {
+      "status": "partial",
+      "covered": "Resolver detecta ciclo, terminal ausente, fonte inativa/revisada e incompatibilidade.",
+      "remaining": "Falta início real bloqueado por herança cíclica e terminal ausente com diagnóstico de caminho.",
+      "evidence": [
+        {
+          "repository": "core",
+          "file": "tests/test_requirement_verification.py",
+          "test_function": "test_cycle_is_detected_even_when_its_digests_are_stale_and_direct_criteria_exist",
+          "source_sha256": "94a9d865b55ac5dc4ff126ede2eaefcdf1df7fe00fb6831109ac0a00b2decfb7",
+          "executions": [
+            {
+              "classname": "tests.test_requirement_verification",
+              "name": "test_cycle_is_detected_even_when_its_digests_are_stale_and_direct_criteria_exist",
+              "time": "0.017"
+            }
+          ]
+        },
+        {
+          "repository": "core",
+          "file": "tests/test_requirement_verification.py",
+          "test_function": "test_inheritance_does_not_hide_changes_or_incompatible_profiles",
+          "source_sha256": "94a9d865b55ac5dc4ff126ede2eaefcdf1df7fe00fb6831109ac0a00b2decfb7",
+          "executions": [
+            {
+              "classname": "tests.test_requirement_verification",
+              "name": "test_inheritance_does_not_hide_changes_or_incompatible_profiles[material_change-spec_scope_revision_conflict]",
+              "time": "0.017"
+            },
+            {
+              "classname": "tests.test_requirement_verification",
+              "name": "test_inheritance_does_not_hide_changes_or_incompatible_profiles[inactive_source-verification_inheritance_source_invalid]",
+              "time": "0.018"
+            },
+            {
+              "classname": "tests.test_requirement_verification",
+              "name": "test_inheritance_does_not_hide_changes_or_incompatible_profiles[missing_terminal-verification_inheritance_terminal_missing]",
+              "time": "0.017"
+            },
+            {
+              "classname": "tests.test_requirement_verification",
+              "name": "test_inheritance_does_not_hide_changes_or_incompatible_profiles[wrong_profile-verification_path_missing]",
+              "time": "0.017"
+            }
+          ]
+        }
+      ]
+    },
+    "ARQVER:AC-VER-11": {
+      "status": "partial",
+      "covered": "Seleção explícita mantém aspecto e não importa critérios não escolhidos nem afirma suficiência semântica.",
+      "remaining": "Falta avaliação real recusando login válido para regra de cinco erros e aceitando a condição corrigida.",
+      "evidence": [
+        {
+          "repository": "core",
+          "file": "tests/test_requirement_verification.py",
+          "test_function": "test_structural_success_is_not_semantic_approval_of_wrong_selected_condition",
+          "source_sha256": "94a9d865b55ac5dc4ff126ede2eaefcdf1df7fe00fb6831109ac0a00b2decfb7",
+          "executions": [
+            {
+              "classname": "tests.test_requirement_verification",
+              "name": "test_structural_success_is_not_semantic_approval_of_wrong_selected_condition",
+              "time": "0.016"
+            }
+          ]
+        },
+        {
+          "repository": "core",
+          "file": "tests/test_verification_plan.py",
+          "test_function": "test_selected_inheritance_reuses_work_without_importing_unselected_criteria",
+          "source_sha256": "8a50dab94e89bb75555b2278c5eec79a7ab45a2e5491340f7f82de4c12053fbb",
+          "executions": [
+            {
+              "classname": "tests.test_verification_plan",
+              "name": "test_selected_inheritance_reuses_work_without_importing_unselected_criteria",
+              "time": "0.022"
+            }
+          ]
+        }
+      ]
+    },
+    "ARQVER:AC-VER-12": {
+      "status": "partial",
+      "covered": "Perfil incompatível não é herdado; mínimos de policy e dimensões independentes permanecem exigidos.",
+      "remaining": "Falta ensaio composto TR latência/OR alerta tentando herdar HTTP 200 com avaliação de conteúdo.",
+      "evidence": [
+        {
+          "repository": "core",
+          "file": "tests/test_requirement_verification.py",
+          "test_function": "test_inheritance_does_not_hide_changes_or_incompatible_profiles",
+          "source_sha256": "94a9d865b55ac5dc4ff126ede2eaefcdf1df7fe00fb6831109ac0a00b2decfb7",
+          "executions": [
+            {
+              "classname": "tests.test_requirement_verification",
+              "name": "test_inheritance_does_not_hide_changes_or_incompatible_profiles[material_change-spec_scope_revision_conflict]",
+              "time": "0.017"
+            },
+            {
+              "classname": "tests.test_requirement_verification",
+              "name": "test_inheritance_does_not_hide_changes_or_incompatible_profiles[inactive_source-verification_inheritance_source_invalid]",
+              "time": "0.018"
+            },
+            {
+              "classname": "tests.test_requirement_verification",
+              "name": "test_inheritance_does_not_hide_changes_or_incompatible_profiles[missing_terminal-verification_inheritance_terminal_missing]",
+              "time": "0.017"
+            },
+            {
+              "classname": "tests.test_requirement_verification",
+              "name": "test_inheritance_does_not_hide_changes_or_incompatible_profiles[wrong_profile-verification_path_missing]",
+              "time": "0.017"
+            }
+          ]
+        },
+        {
+          "repository": "core",
+          "file": "tests/test_requirement_verification.py",
+          "test_function": "test_every_required_profile_and_policy_minimum_counts",
+          "source_sha256": "94a9d865b55ac5dc4ff126ede2eaefcdf1df7fe00fb6831109ac0a00b2decfb7",
+          "executions": [
+            {
+              "classname": "tests.test_requirement_verification",
+              "name": "test_every_required_profile_and_policy_minimum_counts",
+              "time": "0.017"
+            }
+          ]
+        }
+      ]
+    },
+    "ARQVER:AC-VER-13": {
+      "status": "partial",
+      "covered": "Observação anterior à implementação, revisão de Target e contribuição alterada perdem crédito; histórico e UI independente permanecem.",
+      "remaining": "Falta ensaio explícito commit A/B com análise de aplicabilidade e fechamento da Spec.",
+      "evidence": [
+        {
+          "repository": "community",
+          "file": "tests/test_verification_report_admission.py",
+          "test_function": "test_report_reuses_test_card_delivery_chain_and_revokes_stale_credit",
+          "source_sha256": "d3c1122080ac609f56057c02f42181721ef78e8b81e92e6f5271bd6031785e65",
+          "executions": [
+            {
+              "classname": "tests.test_verification_report_admission",
+              "name": "test_report_reuses_test_card_delivery_chain_and_revokes_stale_credit[inspection]",
+              "time": "2.145"
+            },
+            {
+              "classname": "tests.test_verification_report_admission",
+              "name": "test_report_reuses_test_card_delivery_chain_and_revokes_stale_credit[static_analysis]",
+              "time": "2.212"
+            },
+            {
+              "classname": "tests.test_verification_report_admission",
+              "name": "test_report_reuses_test_card_delivery_chain_and_revokes_stale_credit[demonstration]",
+              "time": "2.143"
+            }
+          ]
+        },
+        {
+          "repository": "community",
+          "file": "tests/test_multicard_delivery_integration.py",
+          "test_function": "test_changed_authorization_never_rewrites_or_invalidates_independent_ui",
+          "source_sha256": "4407cda5cf8f6892c70a1757c48aafbf2fe5e0e57b68288b724a3e0832a5019b",
+          "executions": [
+            {
+              "classname": "tests.test_multicard_delivery_integration",
+              "name": "test_changed_authorization_never_rewrites_or_invalidates_independent_ui[target_revision]",
+              "time": "2.769"
+            },
+            {
+              "classname": "tests.test_multicard_delivery_integration",
+              "name": "test_changed_authorization_never_rewrites_or_invalidates_independent_ui[contribution_scope]",
+              "time": "2.332"
+            },
+            {
+              "classname": "tests.test_multicard_delivery_integration",
+              "name": "test_changed_authorization_never_rewrites_or_invalidates_independent_ui[later_failed_run]",
+              "time": "2.144"
+            }
+          ]
+        }
+      ]
+    },
+    "ARQVER:AC-VER-14": {
+      "status": "verified_by_reviewed_execution",
+      "covered": "Métodos especializados têm campos fechados, assinatura/autoria e autoridade real; negação antecede receipt. Os três métodos usam cenário/Test Card/Delivery existentes, incluindo cold-read, adulteração e atualidade.",
+      "remaining": null,
+      "evidence": [
+        {
+          "repository": "core",
+          "file": "tests/test_verification_report.py",
+          "test_function": "test_static_analysis_requires_versioned_rules_configuration_scope_and_findings",
+          "source_sha256": "d6cb7c50994139d330dc5fb11c4f74cfc1b6bd4e7a0e30e2d9a9c8617b48b753",
+          "executions": [
+            {
+              "classname": "tests.test_verification_report",
+              "name": "test_static_analysis_requires_versioned_rules_configuration_scope_and_findings[tool_name]",
+              "time": "0.017"
+            },
+            {
+              "classname": "tests.test_verification_report",
+              "name": "test_static_analysis_requires_versioned_rules_configuration_scope_and_findings[tool_version]",
+              "time": "0.016"
+            },
+            {
+              "classname": "tests.test_verification_report",
+              "name": "test_static_analysis_requires_versioned_rules_configuration_scope_and_findings[rules]",
+              "time": "0.018"
+            },
+            {
+              "classname": "tests.test_verification_report",
+              "name": "test_static_analysis_requires_versioned_rules_configuration_scope_and_findings[configuration]",
+              "time": "0.017"
+            },
+            {
+              "classname": "tests.test_verification_report",
+              "name": "test_static_analysis_requires_versioned_rules_configuration_scope_and_findings[analyzed_scope]",
+              "time": "0.019"
+            },
+            {
+              "classname": "tests.test_verification_report",
+              "name": "test_static_analysis_requires_versioned_rules_configuration_scope_and_findings[findings]",
+              "time": "0.019"
+            }
+          ]
+        },
+        {
+          "repository": "core",
+          "file": "tests/test_verification_report.py",
+          "test_function": "test_client_cannot_supply_authority_fields",
+          "source_sha256": "d6cb7c50994139d330dc5fb11c4f74cfc1b6bd4e7a0e30e2d9a9c8617b48b753",
+          "executions": [
+            {
+              "classname": "tests.test_verification_report",
+              "name": "test_client_cannot_supply_authority_fields[author_id]",
+              "time": "0.019"
+            },
+            {
+              "classname": "tests.test_verification_report",
+              "name": "test_client_cannot_supply_authority_fields[approved]",
+              "time": "0.022"
+            },
+            {
+              "classname": "tests.test_verification_report",
+              "name": "test_client_cannot_supply_authority_fields[skip_independence]",
+              "time": "0.018"
+            },
+            {
+              "classname": "tests.test_verification_report",
+              "name": "test_client_cannot_supply_authority_fields[execution_receipt]",
+              "time": "0.018"
+            }
+          ]
+        },
+        {
+          "repository": "community",
+          "file": "tests/test_verification_report_admission.py",
+          "test_function": "test_report_denials_happen_before_receipt_and_preserve_scope",
+          "source_sha256": "d3c1122080ac609f56057c02f42181721ef78e8b81e92e6f5271bd6031785e65",
+          "executions": [
+            {
+              "classname": "tests.test_verification_report_admission",
+              "name": "test_report_denials_happen_before_receipt_and_preserve_scope",
+              "time": "1.544"
+            }
+          ]
+        },
+        {
+          "repository": "community",
+          "file": "tests/test_verification_report_admission.py",
+          "test_function": "test_rest_mcp_admission_and_real_status_write_with_freshness",
+          "source_sha256": "d3c1122080ac609f56057c02f42181721ef78e8b81e92e6f5271bd6031785e65",
+          "executions": [
+            {
+              "classname": "tests.test_verification_report_admission",
+              "name": "test_rest_mcp_admission_and_real_status_write_with_freshness[inspection]",
+              "time": "1.947"
+            },
+            {
+              "classname": "tests.test_verification_report_admission",
+              "name": "test_rest_mcp_admission_and_real_status_write_with_freshness[static_analysis]",
+              "time": "1.761"
+            },
+            {
+              "classname": "tests.test_verification_report_admission",
+              "name": "test_rest_mcp_admission_and_real_status_write_with_freshness[demonstration]",
+              "time": "1.743"
+            }
+          ]
+        },
+        {
+          "repository": "community",
+          "file": "tests/test_verification_report_admission.py",
+          "test_function": "test_report_reuses_test_card_delivery_chain_and_revokes_stale_credit",
+          "source_sha256": "d3c1122080ac609f56057c02f42181721ef78e8b81e92e6f5271bd6031785e65",
+          "executions": [
+            {
+              "classname": "tests.test_verification_report_admission",
+              "name": "test_report_reuses_test_card_delivery_chain_and_revokes_stale_credit[inspection]",
+              "time": "2.145"
+            },
+            {
+              "classname": "tests.test_verification_report_admission",
+              "name": "test_report_reuses_test_card_delivery_chain_and_revokes_stale_credit[static_analysis]",
+              "time": "2.212"
+            },
+            {
+              "classname": "tests.test_verification_report_admission",
+              "name": "test_report_reuses_test_card_delivery_chain_and_revokes_stale_credit[demonstration]",
+              "time": "2.143"
+            }
+          ]
+        }
+      ]
+    },
+    "ARQVER:AC-VER-15": {
+      "status": "partial",
+      "covered": "Cinco resultados distintos; incomplete ready sem crédito, failed não escondido, tentativa posterior invalida crédito anterior.",
+      "remaining": "Falta OR/alerta com retorno parcial em tentativa real de Spec Done e skip sem alteração do veredito.",
+      "evidence": [
+        {
+          "repository": "community",
+          "file": "tests/test_verification_report_admission.py",
+          "test_function": "test_nonconclusive_report_is_authenticated_pending_work_not_test_credit",
+          "source_sha256": "d3c1122080ac609f56057c02f42181721ef78e8b81e92e6f5271bd6031785e65",
+          "executions": [
+            {
+              "classname": "tests.test_verification_report_admission",
+              "name": "test_nonconclusive_report_is_authenticated_pending_work_not_test_credit[inconclusive]",
+              "time": "1.613"
+            },
+            {
+              "classname": "tests.test_verification_report_admission",
+              "name": "test_nonconclusive_report_is_authenticated_pending_work_not_test_credit[aborted]",
+              "time": "1.647"
+            },
+            {
+              "classname": "tests.test_verification_report_admission",
+              "name": "test_nonconclusive_report_is_authenticated_pending_work_not_test_credit[unavailable]",
+              "time": "1.698"
+            }
+          ]
+        },
+        {
+          "repository": "community",
+          "file": "tests/test_verification_report_admission.py",
+          "test_function": "test_report_reuses_test_card_delivery_chain_and_revokes_stale_credit",
+          "source_sha256": "d3c1122080ac609f56057c02f42181721ef78e8b81e92e6f5271bd6031785e65",
+          "executions": [
+            {
+              "classname": "tests.test_verification_report_admission",
+              "name": "test_report_reuses_test_card_delivery_chain_and_revokes_stale_credit[inspection]",
+              "time": "2.145"
+            },
+            {
+              "classname": "tests.test_verification_report_admission",
+              "name": "test_report_reuses_test_card_delivery_chain_and_revokes_stale_credit[static_analysis]",
+              "time": "2.212"
+            },
+            {
+              "classname": "tests.test_verification_report_admission",
+              "name": "test_report_reuses_test_card_delivery_chain_and_revokes_stale_credit[demonstration]",
+              "time": "2.143"
+            }
+          ]
+        },
+        {
+          "repository": "community",
+          "file": "tests/test_multicard_delivery_integration.py",
+          "test_function": "test_one_signed_report_preserves_distinct_criterion_verdicts",
+          "source_sha256": "4407cda5cf8f6892c70a1757c48aafbf2fe5e0e57b68288b724a3e0832a5019b",
+          "executions": [
+            {
+              "classname": "tests.test_multicard_delivery_integration",
+              "name": "test_one_signed_report_preserves_distinct_criterion_verdicts",
+              "time": "2.093"
+            }
+          ]
+        }
+      ]
+    },
+    "ARQVER:AC-VER-16": {
+      "status": "partial",
+      "covered": "Digest distingue semântica de nota editorial e binding; receipts invalidam com critério/método/condição alterados.",
+      "remaining": "Falta ensaio simultâneo de limite 200→100 e correção editorial normativa equivalente, com histórico e provas independentes.",
+      "evidence": [
+        {
+          "repository": "core",
+          "file": "tests/test_scenario_verification_method.py",
+          "test_function": "test_method_changes_receipt_binding_but_absence_and_editorial_changes_do_not",
+          "source_sha256": "6de5f19b850665737607e6b61a4e227960e629dff09828a0d6ea03762acf309f",
+          "executions": [
+            {
+              "classname": "tests.test_scenario_verification_method",
+              "name": "test_method_changes_receipt_binding_but_absence_and_editorial_changes_do_not",
+              "time": "0.019"
+            }
+          ]
+        },
+        {
+          "repository": "core",
+          "file": "tests/test_scenario_verification_method.py",
+          "test_function": "test_authored_method_binds_criterion_qualification_without_rewriting_legacy_hash",
+          "source_sha256": "6de5f19b850665737607e6b61a4e227960e629dff09828a0d6ea03762acf309f",
+          "executions": [
+            {
+              "classname": "tests.test_scenario_verification_method",
+              "name": "test_authored_method_binds_criterion_qualification_without_rewriting_legacy_hash",
+              "time": "0.019"
+            }
+          ]
+        },
+        {
+          "repository": "community",
+          "file": "tests/test_verification_report_admission.py",
+          "test_function": "test_rest_mcp_admission_and_real_status_write_with_freshness",
+          "source_sha256": "d3c1122080ac609f56057c02f42181721ef78e8b81e92e6f5271bd6031785e65",
+          "executions": [
+            {
+              "classname": "tests.test_verification_report_admission",
+              "name": "test_rest_mcp_admission_and_real_status_write_with_freshness[inspection]",
+              "time": "1.947"
+            },
+            {
+              "classname": "tests.test_verification_report_admission",
+              "name": "test_rest_mcp_admission_and_real_status_write_with_freshness[static_analysis]",
+              "time": "1.761"
+            },
+            {
+              "classname": "tests.test_verification_report_admission",
+              "name": "test_rest_mcp_admission_and_real_status_write_with_freshness[demonstration]",
+              "time": "1.743"
+            }
+          ]
+        }
+      ]
+    },
+    "ARQVER:AC-VER-17": {
+      "status": "partial",
+      "covered": "mode=none e flags de dispensa recusados; skip não transforma evidência legada em prova de método explícito. Escritas rejeitadas preservam histórico.",
+      "remaining": "Falta tentativa do executor contra OR ativo através das autoridades/revisões de produção.",
+      "evidence": [
+        {
+          "repository": "core",
+          "file": "tests/test_requirement_verification.py",
+          "test_function": "test_closed_configuration_never_accepts_dispensing_or_evidence_flags",
+          "source_sha256": "94a9d865b55ac5dc4ff126ede2eaefcdf1df7fe00fb6831109ac0a00b2decfb7",
+          "executions": [
+            {
+              "classname": "tests.test_requirement_verification",
+              "name": "test_closed_configuration_never_accepts_dispensing_or_evidence_flags[value0]",
+              "time": "0.026"
+            },
+            {
+              "classname": "tests.test_requirement_verification",
+              "name": "test_closed_configuration_never_accepts_dispensing_or_evidence_flags[value1]",
+              "time": "0.017"
+            },
+            {
+              "classname": "tests.test_requirement_verification",
+              "name": "test_closed_configuration_never_accepts_dispensing_or_evidence_flags[value2]",
+              "time": "0.015"
+            },
+            {
+              "classname": "tests.test_requirement_verification",
+              "name": "test_closed_configuration_never_accepts_dispensing_or_evidence_flags[value3]",
+              "time": "0.018"
+            },
+            {
+              "classname": "tests.test_requirement_verification",
+              "name": "test_closed_configuration_never_accepts_dispensing_or_evidence_flags[value4]",
+              "time": "0.028"
+            },
+            {
+              "classname": "tests.test_requirement_verification",
+              "name": "test_closed_configuration_never_accepts_dispensing_or_evidence_flags[value5]",
+              "time": "0.021"
+            },
+            {
+              "classname": "tests.test_requirement_verification",
+              "name": "test_closed_configuration_never_accepts_dispensing_or_evidence_flags[value6]",
+              "time": "0.015"
+            }
+          ]
+        },
+        {
+          "repository": "core",
+          "file": "tests/test_scenario_verification_method.py",
+          "test_function": "test_explicit_method_cannot_receive_legacy_credit_even_with_board_skip",
+          "source_sha256": "6de5f19b850665737607e6b61a4e227960e629dff09828a0d6ea03762acf309f",
+          "executions": [
+            {
+              "classname": "tests.test_scenario_verification_method",
+              "name": "test_explicit_method_cannot_receive_legacy_credit_even_with_board_skip[False-automated_test]",
+              "time": "0.035"
+            },
+            {
+              "classname": "tests.test_scenario_verification_method",
+              "name": "test_explicit_method_cannot_receive_legacy_credit_even_with_board_skip[False-static_analysis]",
+              "time": "0.030"
+            },
+            {
+              "classname": "tests.test_scenario_verification_method",
+              "name": "test_explicit_method_cannot_receive_legacy_credit_even_with_board_skip[False-inspection]",
+              "time": "0.035"
+            },
+            {
+              "classname": "tests.test_scenario_verification_method",
+              "name": "test_explicit_method_cannot_receive_legacy_credit_even_with_board_skip[False-demonstration]",
+              "time": "0.047"
+            },
+            {
+              "classname": "tests.test_scenario_verification_method",
+              "name": "test_explicit_method_cannot_receive_legacy_credit_even_with_board_skip[True-automated_test]",
+              "time": "0.041"
+            },
+            {
+              "classname": "tests.test_scenario_verification_method",
+              "name": "test_explicit_method_cannot_receive_legacy_credit_even_with_board_skip[True-static_analysis]",
+              "time": "0.032"
+            },
+            {
+              "classname": "tests.test_scenario_verification_method",
+              "name": "test_explicit_method_cannot_receive_legacy_credit_even_with_board_skip[True-inspection]",
+              "time": "0.028"
+            },
+            {
+              "classname": "tests.test_scenario_verification_method",
+              "name": "test_explicit_method_cannot_receive_legacy_credit_even_with_board_skip[True-demonstration]",
+              "time": "0.026"
+            }
+          ]
+        },
+        {
+          "repository": "core",
+          "file": "tests/test_requirement_verification.py",
+          "test_function": "test_real_writer_preserves_all_requirement_kinds_and_refusals_preserve_history",
+          "source_sha256": "94a9d865b55ac5dc4ff126ede2eaefcdf1df7fe00fb6831109ac0a00b2decfb7",
+          "executions": [
+            {
+              "classname": "tests.test_requirement_verification",
+              "name": "test_real_writer_preserves_all_requirement_kinds_and_refusals_preserve_history",
+              "time": "0.351"
+            }
+          ]
+        }
+      ]
+    },
+    "ARQVER:AC-VER-18": {
+      "status": "partial",
+      "covered": "REST/MCP compartilham leitura delimitada, pendências globais, métodos, Cards e proveniência sem read-write.",
+      "remaining": "Falta comparação composta novo agente/UI com BR herdada, IR promovido e evidência parcial na mesma Spec.",
+      "evidence": [
+        {
+          "repository": "community",
+          "file": "tests/test_requirement_verification_read.py",
+          "test_function": "test_native_transport_parity_global_pending_and_no_read_writes",
+          "source_sha256": "5b11fc13b74be787ac68d7ad8965c047fa11f43e77faf84c13fbc5623e736fb7",
+          "executions": [
+            {
+              "classname": "tests.test_requirement_verification_read",
+              "name": "test_native_transport_parity_global_pending_and_no_read_writes[False]",
+              "time": "1.446"
+            },
+            {
+              "classname": "tests.test_requirement_verification_read",
+              "name": "test_native_transport_parity_global_pending_and_no_read_writes[True]",
+              "time": "1.659"
+            }
+          ]
+        },
+        {
+          "repository": "core",
+          "file": "tests/test_requirement_verification.py",
+          "test_function": "test_selected_terminal_criteria_preserve_multihop_path_and_aspects",
+          "source_sha256": "94a9d865b55ac5dc4ff126ede2eaefcdf1df7fe00fb6831109ac0a00b2decfb7",
+          "executions": [
+            {
+              "classname": "tests.test_requirement_verification",
+              "name": "test_selected_terminal_criteria_preserve_multihop_path_and_aspects",
+              "time": "0.017"
+            }
+          ]
+        }
+      ]
+    },
+    "ARQVER:AC-INT-01": {
+      "status": "verified_by_reviewed_execution",
+      "covered": "BR herdada sem link direto aparece na responsabilidade do Card correto e somente recebe crédito com implementação e prova autenticadas; contrato compartilhado governa inventário e entrega.",
+      "remaining": null,
+      "evidence": [
+        {
+          "repository": "community",
+          "file": "tests/test_multicard_delivery_integration.py",
+          "test_function": "test_ui_completion_cannot_deliver_authorization_or_its_inherited_rule",
+          "source_sha256": "4407cda5cf8f6892c70a1757c48aafbf2fe5e0e57b68288b724a3e0832a5019b",
+          "executions": [
+            {
+              "classname": "tests.test_multicard_delivery_integration",
+              "name": "test_ui_completion_cannot_deliver_authorization_or_its_inherited_rule",
+              "time": "3.135"
+            }
+          ]
+        },
+        {
+          "repository": "community",
+          "file": "tests/test_execution_contract_integration.py",
+          "test_function": "test_scopes_persist_and_signed_test_completes_shared_rollup",
+          "source_sha256": "c4dade15443fb7818872f14c5e9724042d05f9766832ca841356a1ba1cd7079e",
+          "executions": [
+            {
+              "classname": "tests.test_execution_contract_integration",
+              "name": "test_scopes_persist_and_signed_test_completes_shared_rollup",
+              "time": "1.738"
+            }
+          ]
+        }
+      ]
+    },
+    "ARQVER:AC-INT-02": {
+      "status": "verified_by_reviewed_execution",
+      "covered": "UI e autorização mantêm contribuições distintas; UI pronta e soma de declarações parciais não satisfazem BR/autorização.",
+      "remaining": null,
+      "evidence": [
+        {
+          "repository": "community",
+          "file": "tests/test_multicard_delivery_integration.py",
+          "test_function": "test_ui_completion_cannot_deliver_authorization_or_its_inherited_rule",
+          "source_sha256": "4407cda5cf8f6892c70a1757c48aafbf2fe5e0e57b68288b724a3e0832a5019b",
+          "executions": [
+            {
+              "classname": "tests.test_multicard_delivery_integration",
+              "name": "test_ui_completion_cannot_deliver_authorization_or_its_inherited_rule",
+              "time": "3.135"
+            }
+          ]
+        },
+        {
+          "repository": "community",
+          "file": "tests/test_multicard_delivery_integration.py",
+          "test_function": "test_two_partial_authorization_records_never_sum_to_the_inherited_obligation",
+          "source_sha256": "4407cda5cf8f6892c70a1757c48aafbf2fe5e0e57b68288b724a3e0832a5019b",
+          "executions": [
+            {
+              "classname": "tests.test_multicard_delivery_integration",
+              "name": "test_two_partial_authorization_records_never_sum_to_the_inherited_obligation",
+              "time": "2.093"
+            }
+          ]
+        }
+      ]
+    },
+    "ARQVER:ADV-10": {
+      "status": "partial",
+      "covered": "Diamante mantém duas proveniências e uma obrigação/critério terminal; ciclo continua bloqueante.",
+      "remaining": "Falta admissão e rollup persistidos do diamante para demonstrar não duplicação de prova.",
+      "evidence": [
+        {
+          "repository": "core",
+          "file": "tests/test_requirement_verification.py",
+          "test_function": "test_diamond_keeps_distinct_origins_without_duplicating_requirements",
+          "source_sha256": "94a9d865b55ac5dc4ff126ede2eaefcdf1df7fe00fb6831109ac0a00b2decfb7",
+          "executions": [
+            {
+              "classname": "tests.test_requirement_verification",
+              "name": "test_diamond_keeps_distinct_origins_without_duplicating_requirements",
+              "time": "0.019"
+            }
+          ]
+        },
+        {
+          "repository": "core",
+          "file": "tests/test_requirement_verification.py",
+          "test_function": "test_cycle_is_detected_even_when_its_digests_are_stale_and_direct_criteria_exist",
+          "source_sha256": "94a9d865b55ac5dc4ff126ede2eaefcdf1df7fe00fb6831109ac0a00b2decfb7",
+          "executions": [
+            {
+              "classname": "tests.test_requirement_verification",
+              "name": "test_cycle_is_detected_even_when_its_digests_are_stale_and_direct_criteria_exist",
+              "time": "0.017"
+            }
+          ]
+        }
+      ]
+    },
+    "ARQVER:ADV-12": {
+      "status": "verified_by_reviewed_execution",
+      "covered": "Mesmo relatório/run contém sucesso funcional e falha técnica; cada critério conserva seu veredito sem verde global.",
+      "remaining": null,
+      "evidence": [
+        {
+          "repository": "community",
+          "file": "tests/test_multicard_delivery_integration.py",
+          "test_function": "test_one_signed_report_preserves_distinct_criterion_verdicts",
+          "source_sha256": "4407cda5cf8f6892c70a1757c48aafbf2fe5e0e57b68288b724a3e0832a5019b",
+          "executions": [
+            {
+              "classname": "tests.test_multicard_delivery_integration",
+              "name": "test_one_signed_report_preserves_distinct_criterion_verdicts",
+              "time": "2.093"
+            }
+          ]
+        }
+      ]
+    },
+    "ARQVER:ADV-13": {
+      "status": "partial",
+      "covered": "Vínculo de critério altera digest de método explícito; ampliar linked_criteria não reutiliza recibo antigo.",
+      "remaining": "Falta escrita autorizada do vínculo requisito→critério depois do run e tentativa real de fechamento.",
+      "evidence": [
+        {
+          "repository": "core",
+          "file": "tests/test_scenario_verification_method.py",
+          "test_function": "test_authored_method_binds_criterion_qualification_without_rewriting_legacy_hash",
+          "source_sha256": "6de5f19b850665737607e6b61a4e227960e629dff09828a0d6ea03762acf309f",
+          "executions": [
+            {
+              "classname": "tests.test_scenario_verification_method",
+              "name": "test_authored_method_binds_criterion_qualification_without_rewriting_legacy_hash",
+              "time": "0.019"
+            }
+          ]
+        },
+        {
+          "repository": "community",
+          "file": "tests/test_verification_report_admission.py",
+          "test_function": "test_rest_mcp_admission_and_real_status_write_with_freshness",
+          "source_sha256": "d3c1122080ac609f56057c02f42181721ef78e8b81e92e6f5271bd6031785e65",
+          "executions": [
+            {
+              "classname": "tests.test_verification_report_admission",
+              "name": "test_rest_mcp_admission_and_real_status_write_with_freshness[inspection]",
+              "time": "1.947"
+            },
+            {
+              "classname": "tests.test_verification_report_admission",
+              "name": "test_rest_mcp_admission_and_real_status_write_with_freshness[static_analysis]",
+              "time": "1.761"
+            },
+            {
+              "classname": "tests.test_verification_report_admission",
+              "name": "test_rest_mcp_admission_and_real_status_write_with_freshness[demonstration]",
+              "time": "1.743"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "limits": [
+    "Disposable SQL/HTTP fixtures only.",
+    "Structural readiness does not prove semantic sufficiency.",
+    "No benchmark or real activation claim."
+  ]
+}

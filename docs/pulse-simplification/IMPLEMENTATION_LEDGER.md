@@ -14641,3 +14641,58 @@ Este incremento cobre o caminho de resultados incompletos, mas não declara
 AC-VER-15 inteiro comprovado: falta o ensaio específico OR/fechamento/skip.
 Próxima frente: auditoria de verificabilidade, reuso de uma observação por
 critérios com resultados distintos, gates compostos e benchmark integral.
+
+### AC-VER-06 / ADV-12 — um relatório, vereditos distintos, 2026-09-23
+
+Incremento anterior publicado Core c06157bb / Community f8761bb7. Reprodução
+mixed-report-repro-r2.xml confirmou que um relatório único com observação UI
+passing e técnica failed perdia também o crédito funcional. A primeira reprodução
+foi recusada corretamente por observed_at anterior à implementação; fixture
+corrigida com instante atual antes de caracterizar a lacuna no evaluator.
+
+Correção em curso para contrato de execução adotado: Core projeta critérios
+com todas as observações passed; Community fornece essa projeção somente a partir
+do mesmo relatório com autenticidade/atualidade validadas. ScopedTestFact é fato
+interno, não campo de request. Avaliação por critério reutiliza checks de
+autenticidade, escopo, implementação e Card Done. Run agregado permanece failed,
+não se duplica relatório/receipt e critério failed não ganha crédito. Contrato
+legado mantém interpretação agregada; resultados ready continuam sem crédito.
+Campos/transições/permissões/formatos persistidos permanecem os existentes.
+
+39 testes frontend passaram (mixed-report-frontend.xml); texto da UI distingue
+crédito por critério de resultado agregado. TypeScript/build aprovados, 78 arquivos,
+tree SHA256 78a46c3857122cdb8600ec1b375b226a1d923858ea856a4a6ba929c44a7d540f.
+Recursos e manifests gerados. Wheels dist-mixed-report construídas; instalação,
+proveniência e validação backend são os próximos passos, ainda não declarados verdes.
+
+Primeiro par mixed-report foi instalado/provado (829/892 + 360/444). Core 118
+passed, Community 44 passed/1 failed. Investigação da falha integrada mostrou
+que AC suplementar com contribuição whole_requirement tem criterion_ids vazio:
+não é dispensa de observar o próprio AC. Corrigida resolução da condição na
+admissão e no rollup para exigir a identidade canônica do AC, preservando
+alocação/digest persistidos. Essa lacuna também permitia tentar associar run
+de outro critério a um AC via payload direto; novo ensaio cobre a recusa.
+Debugs mixed-report-integration-debug[-r2].xml preservam diagnóstico. Não houve
+relaxamento de assinatura, atualidade ou estado para tornar o teste verde.
+F16 inicial só apontou matrizes README desatualizadas; regeneradas. Novo par
+dist-mixed-report-final construído, aguarda instalação/prova e regressão.
+
+Validação final concluída: instalação terminal e provenance-mixed-report-final.json
+com identidade byte-a-byte Core 829/892 e Community 360/444. Core **253 passed
+em 16.53s**, Community **39 passed em 81.88s**, mixed-report-{core,community}-final.xml.
+Inclui qualificação, critérios, plano, métodos, reports, evaluator legado/adotado,
+transportes, contribuição entre Cards e assinaturas reais. Ensaio integrado
+comprova um único receipt/registro, crédito UI sem crédito técnico/BR, adulteração
+recusada no consumo e falha posterior sem reaproveitamento do binding antigo.
+Histórico agregado failed permanece byte a byte. AC canônico incorreto é
+recusado na admissão. Não há processos pendentes deste incremento.
+
+F16.2 final: closure-mixed-report-final.json, **8831 linhas, zero findings
+arquiteturais/documentais e oito budgets zero**. Ruff F/E9 e diff check limpos.
+39 testes frontend/build já registrados acima. Auditoria manual dos oráculos
+materializada em acceptance-verification-execution.json, com hashes de fontes,
+JUnit e proveniência do par. Inventário atual: **29 comprovados / 20 parciais /
+197 ainda não auditados**. Os parciais identificam os ensaios compostos ainda
+ausentes; não declarar suficiência semântica a partir do gate estrutural.
+Próximos: fechar testemunhos compostos de avaliação/início/fechamento, auditoria
+DEI/base/KG e benchmark medido. Iniciativa permanece em execução até entrega.

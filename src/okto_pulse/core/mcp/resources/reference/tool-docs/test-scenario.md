@@ -60,6 +60,14 @@ a failed observation inside a passing or inconclusive summary. Receipt admission
 alone does not replace the current scenario evidence; the scoped status write
 must succeed before the new attempt becomes current.
 
+For the adopted execution contract, one authenticated passed/failed report may
+cover several criteria. Delivery credits a criterion only when all its
+observations pass; failures of another criterion remain visible and block that
+obligation. The aggregate scenario result is preserved. Reference the same
+receipt through the existing Test Card ledger, without copying the report.
+Current-base checks, completed Cards and every required criterion still apply.
+Legacy execution contracts retain their aggregate-result interpretation.
+
 - `inspection`: versioned `inspection_procedure`.
 - `static_analysis`: `tool_name`, `tool_version`, versioned `rules` and
   `configuration`, `analyzed_scope` and `findings` (empty is explicit).
