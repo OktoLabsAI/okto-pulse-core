@@ -35,17 +35,13 @@ from okto_pulse.core.application.use_cases.operational_rest import (
     GetCognitiveReadinessMetricsUseCase,
     GetLineageGraphCommand,
     GetLineageGraphUseCase,
-    GetOrphanIntegrityReportUseCase,
     ListCanonicalDebtUseCase,
     ListCanonicalPartitionIntegrityUseCase,
     ListDigestLayerMismatchUseCase,
-    OrphanBackfillCommand,
-    OrphanIntegrityReportCommand,
     PutRuntimeSettingsCommand,
     PutRuntimeSettingsUseCase,
     RecordCognitiveSkipUseCase,
     RetryCanonicalDebtUseCase,
-    RunOrphanBackfillUseCase,
 )
 from okto_pulse.core.ports.traceability import TraceabilityReadError
 
@@ -494,31 +490,6 @@ def _operational_case_builders():
             lambda _events: (
                 ListDigestLayerMismatchUseCase(),
                 DigestLayerMismatchListCommand("board-b", 20, 0),
-            ),
-        ),
-        (
-            "orphan-integrity-report",
-            lambda events: (
-                GetOrphanIntegrityReportUseCase(
-                    scanner_factory=lambda: events.append("scanner-factory")
-                ),
-                OrphanIntegrityReportCommand("board-b", None, 20),
-            ),
-        ),
-        (
-            "orphan-backfill",
-            lambda events: (
-                RunOrphanBackfillUseCase(
-                    health_reader=lambda *args, **kwargs: events.append(
-                        "health-reader"
-                    ),
-                    reconciler_factory=lambda: events.append(
-                        "reconciler-factory"
-                    ),
-                ),
-                OrphanBackfillCommand(
-                    "board-b", None, True, None, 20, None
-                ),
             ),
         ),
     ]

@@ -101,20 +101,6 @@ _INLINE_OPERATION_CASES = (
         "kg.admin.settings_read",
         BOARD_ID,
     ),
-    (
-        "okto_pulse_kg_orphan_report",
-        {"board_id": BOARD_ID},
-        "kg.operations.integrity.read",
-        "kg.admin.settings_read",
-        BOARD_ID,
-    ),
-    (
-        "okto_pulse_kg_orphan_backfill",
-        {"board_id": BOARD_ID, "dry_run": False},
-        "kg.operations.integrity.backfill",
-        "kg.admin.settings_write",
-        BOARD_ID,
-    ),
 )
 
 

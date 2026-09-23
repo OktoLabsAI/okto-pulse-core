@@ -15284,3 +15284,44 @@ ok=true, zero findings arquiteturais/documentais, oito budgets zero**.
 Frontend build/verify, Ruff F/E9 e diff check aprovados. Não há processos de
 teste/instalação pendentes deste recorte. As três falhas iniciais de testes
 estão resolvidas pela reexecução, sem relaxar qualquer verificação de autoridade.
+
+### F4 — retirada de órfãos em validação
+
+Schema/manual-help enviados: Core 37c69552 / Community 30e36794, ambos no remoto.
+Removidos agora MCP orphan_report/backfill, helpers de transporte, router REST,
+request model, quatro use cases/commands, fábrica e limite exclusivos. Removido
+também OrphanBackfillReconciler, seus dois modelos e helpers de escrita/resolução
+exclusivos: busca de consumidores confirmou somente antigas entradas públicas e
+tests. Scanner, resolução de fonte e projeção Health preservados. Mensagens Health
+e rebuild interno apontam para observação Health, não para relatório/backfill
+retirado. O valor legado pending_backfill no estado de integridade foi preservado;
+não é comando ou autoridade de reparo.
+
+integrity.backfill retirada da autoridade ativa e adicionada à lista fechada de
+retirement. Como integrity ainda contém folhas vivas, presença do pai não conta
+como fingerprint de backfill: só a folha retirada conta. Snapshots parciais,
+False e malformados continuam comparados com o evaluator congelado. Tests de
+backfill removido substituídos por ausência REST/MCP/OpenAPI antes de efeitos;
+tests nativos do scanner e classificação de Health preservados.
+
+Par dist-orphan-retirement instalado, pip terminal e prova terminal
+provenance-orphan-retirement.json: Core 830/893, Community 362/446, byte-identical.
+Ruff F/E9 e diff check verdes. JUnits orphan-retirement-{core,community,scanner}.xml
+e closure-orphan-retirement.json em execução; não declarar concluído antes dos
+resultados. UI não foi alterada novamente; assets são os do commit anterior.
+
+Investigação seguinte: ainda existem originates_from_contract_audit,
+stale_canonical_parity_list e provenance_drift, e mais superfícies fora do censo
+inicial (digest_layer_reconcile, canonical debt/partition/mismatch). Health ainda
+anuncia drill_down_tool de parity. Remover entradas/consumers exclusivos conforme
+F4 preservando leitores usados por Health e integridade interna; não retirar
+consolidação semântica nem takedown governado só por compartilhar permission.
+
+Resultados terminais órfãos: **520 passed Core em 97.47s**, **150 passed Community
+em 180.99s**, **20 passed scanner/Health/rebuild em 93.24s** (133 casos não
+selecionados no último grupo). F16 final **8820 linhas, ok=true, zero findings
+arquiteturais/documentais e oito budgets zero** após regenerar as matrizes README.
+Sem processos de teste/instalação pendentes. Nenhuma redução de gates vivos:
+tests excluídos exercitavam a feature pública/reconciler removidos; regressões
+de scanner, fonte relacional, sigilo, Board ACL, Health e autoridade histórica
+continuam executadas. O recorte não encerra F4 nem promove inventário de aceitação.

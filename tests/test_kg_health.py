@@ -410,7 +410,7 @@ async def test_orphan_integrity_warning_is_at_risk_not_recovery_needed(
         for issue in result["health_issues"]
         if issue["code"] == "orphan_integrity_warning"
     )
-    assert orphan_issue["operator_action"] == "inspect_orphan_integrity_report"
+    assert orphan_issue["operator_action"] == "inspect_kg_health"
     assert orphan_issue["reason"] == "orphan_count_gt_zero"
 
 

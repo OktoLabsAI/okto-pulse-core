@@ -26,7 +26,6 @@ from okto_pulse.core.application.use_cases.base import (
 from okto_pulse.core.application.knowledge_workspace import (
     KnowledgeWorkspaceProjector,
 )
-from okto_pulse.core.ports.application_services import KnowledgeGraphOperations
 from okto_pulse.core.ports.traceability import (
     LineageGraphDependencyScope,
     LineageGraphView,
@@ -62,10 +61,6 @@ _KG_COGNITIVE_CLEAR = PermissionRequirement(
 _KG_INTEGRITY_READ = PermissionRequirement(
     "kg.operations.integrity.read",
     legacy_operation="kg.admin.settings_read",
-)
-_KG_INTEGRITY_BACKFILL = PermissionRequirement(
-    "kg.operations.integrity.backfill",
-    legacy_operation="kg.admin.settings_write",
 )
 _KG_QUEUE_REPROCESS = PermissionRequirement(
     "kg.operations.queue.reprocess",
@@ -996,135 +991,4 @@ class ListDigestLayerMismatchUseCase:
                 limit=command.limit,
                 offset=command.offset,
             )
-        )
-
-
-@dataclass(frozen=True)
-class OrphanIntegrityReportCommand:
-    board_id: str
-    generation_id: str | None
-    limit: int
-
-
-class GetOrphanIntegrityReportUseCase:
-    def __init__(self, *, scanner_factory=None) -> None:
-        self._scanner_factory = scanner_factory
-
-    def _scanner(self):
-        if self._scanner_factory is not None:
-            return self._scanner_factory()
-        from okto_pulse.core.kg.orphan_integrity import OrphanNodeScanner
-
-        return OrphanNodeScanner()
-
-    async def execute(
-        self,
-        command: OrphanIntegrityReportCommand,
-        *,
-        actor: ActorContext,
-        uow: PulseUnitOfWork,
-    ) -> DataResult:
-        await _require_board_access(uow, command.board_id, actor)
-        await require_authorization(
-            actor,
-            _KG_INTEGRITY_READ,
-            uow=uow,
-            board_id=command.board_id,
-        )
-        return DataResult(
-            self._scanner().scan(
-                board_id=command.board_id,
-                generation_id=command.generation_id,
-                limit=command.limit,
-            )
-        )
-
-
-@dataclass(frozen=True)
-class OrphanBackfillCommand:
-    board_id: str
-    generation_id: str | None
-    dry_run: bool
-    node_ids: list[str] | None
-    limit: int
-    scheduler_control: SchedulerControl | None
-
-
-class RunOrphanBackfillUseCase:
-    def __init__(self, *, health_reader=None, reconciler_factory=None) -> None:
-        self._health_reader = health_reader
-        self._reconciler_factory = reconciler_factory
-
-    async def _get_health(
-        self,
-        command: OrphanBackfillCommand,
-        kg: KnowledgeGraphOperations,
-    ) -> dict:
-        if self._health_reader is not None:
-            return await kg.invoke_health_reader(
-                self._health_reader,
-                command.board_id,
-                scheduler_control=command.scheduler_control,
-            )
-        return await kg.health(
-            command.board_id,
-            scheduler_control=command.scheduler_control,
-        )
-
-    def _reconciler(self):
-        if self._reconciler_factory is not None:
-            return self._reconciler_factory()
-        from okto_pulse.core.services.application_kg import (
-            create_orphan_backfill_reconciler,
-        )
-
-        return create_orphan_backfill_reconciler()
-
-    async def execute(
-        self, command: OrphanBackfillCommand, *, actor: ActorContext, uow: PulseUnitOfWork
-    ) -> DataResult:
-        from okto_pulse.core.services.application_kg import max_orphan_sample_limit
-
-        await _require_board_access(
-            uow,
-            command.board_id,
-            actor,
-            allowed_share_permissions={"editor", "admin"},
-        )
-        await require_authorization(
-            actor,
-            _KG_INTEGRITY_BACKFILL,
-            uow=uow,
-            board_id=command.board_id,
-        )
-        health = await self._get_health(command, uow.services.kg)
-        state = str(health.get("overall_state") or health.get("graph_state") or "")
-        if state in {"recovery_needed", "quarantined"}:
-            return DataResult(
-                {
-                    "refused_by_health": {
-                        "error": "kg_orphan_backfill_refused_by_health",
-                        "board_id": command.board_id,
-                        "overall_state": health.get("overall_state"),
-                        "graph_state": health.get("graph_state"),
-                        "operator_action": "inspect_kg_health_recovery_flow",
-                    }
-                }
-            )
-        limit = max(0, min(int(command.limit), max_orphan_sample_limit()))
-        result = self._reconciler().run(
-            board_id=command.board_id,
-            generation_id=command.generation_id,
-            dry_run=command.dry_run,
-            node_ids=command.node_ids,
-            limit=limit,
-        )
-        return DataResult(
-            {
-                "board_id": command.board_id,
-                "generation_id": command.generation_id,
-                "dry_run": command.dry_run,
-                "backfill_summary": result.to_safe_dict(),
-                "correlation_id": result.correlation_id,
-            }
         )

@@ -40,7 +40,6 @@ _NAMESPACE_REQUIREMENTS = (
     ("kg.operations.health.read", "kg.admin.settings_read"),
     ("kg.operations.integrity.read", "kg.admin.settings_read"),
     ("kg.operations.integrity.reconcile", "kg.admin.settings_write"),
-    ("kg.operations.integrity.backfill", "kg.admin.settings_write"),
     ("kg.operations.cognitive.read", "kg.admin.settings_read"),
     ("kg.operations.cognitive.skip", "kg.admin.settings_write"),
     ("kg.operations.cognitive.clear", "kg.admin.settings_write"),
@@ -435,25 +434,6 @@ _REST_OPERATION_CASES: tuple[
         "kg.operations.integrity.read",
         "kg.admin.settings_read",
     ),
-    (
-        operational_rest.GetOrphanIntegrityReportUseCase(),
-        lambda: operational_rest.OrphanIntegrityReportCommand(BOARD_ID, None, 25),
-        "kg.operations.integrity.read",
-        "kg.admin.settings_read",
-    ),
-    (
-        operational_rest.RunOrphanBackfillUseCase(),
-        lambda: operational_rest.OrphanBackfillCommand(
-            BOARD_ID,
-            None,
-            True,
-            None,
-            25,
-            None,
-        ),
-        "kg.operations.integrity.backfill",
-        "kg.admin.settings_write",
-    ),
 )
 
 
@@ -471,8 +451,6 @@ _REST_OPERATION_CASES: tuple[
         "partition-list",
         "partition-detail",
         "digest-list",
-        "orphan-report",
-        "orphan-backfill",
     ),
 )
 async def test_operational_rest_authorizes_before_any_kg_service_call(

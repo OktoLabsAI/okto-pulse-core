@@ -300,7 +300,6 @@ _AF35_S5_MCP_DIRECT_GET_DB_LEDGER: dict[str, frozenset[str]] = {
     ),
     "kg_residuals": frozenset(
         {
-            "_kg_orphan_backfill_health_refusal",
         }
     ),
 }

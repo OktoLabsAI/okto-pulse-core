@@ -42,7 +42,7 @@
     ],
     "source": "okto_pulse/core/mcp/agent_instructions.md"
   },
-  "manifest_sha256": "646e8cfcbd4d81d8a9dc5f58eb9b788c27836b285c3a0a89245864370b8ca7e8",
+  "manifest_sha256": "ebb62ab54faed95341ae7819004e37736f09ced79cca29b1f8144ecd24319937",
   "manifest_version": "agent-resources/v2",
   "resource_count": 22,
   "resources": [
@@ -338,7 +338,7 @@
       "uri": "okto-pulse://reference/tool-docs/test-scenario"
     },
     {
-      "content_sha256": "01fefe32d9a0848bf8ceb0ae72cddb133173a34f8f312c11c39c26b93631437a",
+      "content_sha256": "314de140b5744b30a31a05a4967c0d558a63a33212eded3e6903b36367df3302",
       "cross_links": [
         "okto-pulse://reference/list_tools",
         "okto-pulse://reference/policy-compliance",

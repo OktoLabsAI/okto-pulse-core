@@ -4124,7 +4124,7 @@ class KGRebuildService:
             if candidate_terminal == RebuildOutcome.FAILED_ORPHAN_VALIDATION.value:
                 final_outcome = RebuildOutcome.FAILED_ORPHAN_VALIDATION
                 final_reason = RebuildBlockReason.ORPHAN_VALIDATION_FAILED
-                operator_action = operator_action or "run_orphan_backfill"
+                operator_action = operator_action or "inspect_kg_health"
             else:
                 final_outcome = outcome
                 final_reason = reason

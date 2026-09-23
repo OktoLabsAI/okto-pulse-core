@@ -74,7 +74,6 @@ AF35_S4_DIRECT_GET_DB_LEDGER: dict[str, frozenset[str]] = {
     ),
     "kg_residuals": frozenset(
         {
-            "_kg_orphan_backfill_health_refusal",
                 }
     ),
 }

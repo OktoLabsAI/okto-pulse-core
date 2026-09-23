@@ -316,18 +316,6 @@ async def list_digest_layer_mismatches(*args: Any, **kwargs: Any) -> Any:
     return await _list(*args, **kwargs)
 
 
-def max_orphan_sample_limit() -> int:
-    from okto_pulse.core.kg.orphan_integrity import MAX_ORPHAN_SAMPLE_LIMIT
-
-    return MAX_ORPHAN_SAMPLE_LIMIT
-
-
-def create_orphan_backfill_reconciler() -> Any:
-    from okto_pulse.core.kg.orphan_integrity import OrphanBackfillReconciler
-
-    return OrphanBackfillReconciler()
-
-
 def audit_originates_from_contract(*args: Any, **kwargs: Any) -> Any:
     from okto_pulse.core.kg.originates_from_audit import (
         audit_originates_from_contract as _audit,

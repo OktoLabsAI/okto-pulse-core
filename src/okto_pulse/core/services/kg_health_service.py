@@ -3589,12 +3589,12 @@ async def get_kg_health(
                     "non-allowlisted orphan KG node(s) remain. This is graph "
                     "integrity debt, not by itself a graph recovery signal."
                 ),
-                "operator_action": "inspect_orphan_integrity_report",
+                "operator_action": "inspect_kg_health",
             }
         )
         if health_diagnostics["primary_health_cause"] == "none":
             health_diagnostics["primary_health_cause"] = "orphan_integrity_warning"
-            health_diagnostics["operator_action"] = "inspect_orphan_integrity_report"
+            health_diagnostics["operator_action"] = "inspect_kg_health"
 
     # R6-IMP2 (FR2/AC2): the ACTIVE operational-queue backlog is its OWN signal
     # with its own drill-down tool — distinct from dead-letter / canonical debt /
