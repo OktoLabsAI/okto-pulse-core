@@ -2,7 +2,8 @@
 
 ## Estado para retomada
 
-Iniciativa **incompleta; pausa solicitada em 2026-09-23 no milestone atual**.
+Iniciativa **incompleta; retomada explicitamente autorizada em 2026-09-23**.
+O usuário revogou a pausa e pediu execução até o final, sem parar em milestones.
 Milestone de fechamento: restauração cognitiva literal no candidato privado,
 com autoria própria, preservação das fontes e verificação no replay.
 Validações e estado dos commits estão no handoff ao final. Detalhes finais e ponto
@@ -14083,3 +14084,51 @@ Retomada concreta após este milestone:
 
 Census histórico real não executado. Sem tag, merge, release, deploy, migração
 real ou parada do Pulse ativo. Este fechamento não declara entrega total do plano.
+
+### 2026-09-23 — retomada explícita e precondição de fechamento da projeção
+
+Usuário revogou a pausa: seguir até o final sem parar nos milestones. Confirmados
+ambos os checkouts limpos em feature/v0.4.0 e sincronizados com origin no par
+abf3eedb/7b4a4149. A execução anterior foi progresso publicado, não conclusão.
+RTK.md e CONTRIBUTING dos dois repositórios relidos; decisões anteriores mantidas.
+
+Investigação do cutover: retirement_runtime_admission rejeita qualquer journal
+não vazio; o journal atual termina em bootstrap, ordinal 8. O replay do candidato
+verifica todo o conteúdo congelado, inclusive SQL. Reutilizar esse hash como gate
+de cada startup impediria escritas normais após ativação e não serve como contrato
+terminal. Nenhum gate foi aberto nesta etapa.
+
+Adicionada porta pública Core projection_completion: exige escopo exato de Boards,
+qualificação histórica completa, todas as relações reconciliadas, ausência de
+órfãos/rejeições de conectividade, paridade cognitiva, ausência de restauração
+ainda não qualificada e Global completo. Os contadores detalhados prevalecem sobre
+um rótulo matched/reconciled. Não concede permissão ou autoridade de runtime.
+Community adapta somente observações recalculadas depois de autenticar checkpoint,
+ACKs, census, fontes e bytes. verify_reconciled_retirement_graph_candidate aplica
+a condição dentro da mesma janela offline do replay; não publica rota/ativação.
+
+Par instalado/provado antes dos testes: dist-projection-completion e
+provenance-projection-completion.json; Core 827/890, Community 358/442.
+37 testes Core passaram em 3.74s; 22 de startup/admissão em 72.30s. A integração
+nativa agora inclui cenário .6 sem pendências e rejeição dos cenários cognitivo
+e .5 com Global histórico não qualificado. Resultados finais serão acrescentados.
+
+Próxima integração de cutover: preservar o candidato congelado; construir uma
+instalação separada sob os mesmos fences, comparar a cópia antes de modificá-la,
+reter prova terminal vinculada ao prefixo do journal/manifesto/par de builds e
+geração. Startup deve validar a prova histórica sem exigir igualdade eterna de
+SQL mutável. Ainda faltam implementação, testes de interrupção/replay, composição
+dos roots de runtime, rollback e a auditoria integral já listada. Não expor API,
+CLI ou botão de manutenção nem executar migração real. Não considerar este gate
+isolado como cutover concluído.
+
+Validação concluída: integração nativa com 3 passes em 410.40s, incluindo sucesso
+da precondição no caso .6 completo e rejeição dos dois casos pending. Junto com
+37 Core e 22 admission, 62 testes passaram. F16 final em
+closure-projection-completion-final.json: 8800 entradas, zero achados e oito
+budgets zero. READMEs gerados e validados. Ruff F/E9 e diff-check passaram.
+Prova final provenance-projection-completion-final.json, dist-projection-completion-final;
+Core agregado 0ce220ebffd19584d89a564e65bbf9844661dba3fa33ae1033fb13ad7e1a7b52;
+Community agregado e53f8ad0166f1ef5a83c98540074fd64db1eb3b4900e2fd0124c5b24da5efe96.
+Nenhum impacto frontend/MCP. Todos os processos de teste deste incremento terminaram.
+Sem pausa entre incrementos: prosseguir para instalação terminal/ativação.
