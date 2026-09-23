@@ -4,11 +4,12 @@
 
 Iniciativa **incompleta; retomada explicitamente autorizada em 2026-09-23**.
 O usuário revogou a pausa e pediu execução até o final, sem parar em milestones.
-Milestone de fechamento: restauração cognitiva literal no candidato privado,
-com autoria própria, preservação das fontes e verificação no replay.
-Validações e estado dos commits estão no handoff ao final. Detalhes finais e ponto
-de handoff estão no fim deste ledger. Frente seguinte: qualificação cognitiva/Global e fechamento do candidato;
-cutover/admission continuam fechados. Histórico coberto pela projeção de fontes
+Frente atual: instalação terminal separada, com prova do candidato e journal,
+admissão vinculada e retomada sem congelar dados de uso. Resultados e commits
+mais recentes estão no fim deste ledger. Candidatos com histórico/cognição/Global
+pendentes continuam inelegíveis; a instalação só é admitida com prova completa.
+Restam qualificação histórica, métodos de prova e auditoria integral do pacote.
+Histórico coberto pela projeção de fontes
 atuais tem qualificação explícita no Core; partes sem prova permanecem pending.
 Partições, relações e autoria por ACK são comparadas, além da preservação literal.
 Evolução autenticada 0.5.0→0.6.0 integrada,
@@ -14132,3 +14133,82 @@ Core agregado 0ce220ebffd19584d89a564e65bbf9844661dba3fa33ae1033fb13ad7e1a7b52;
 Community agregado e53f8ad0166f1ef5a83c98540074fd64db1eb3b4900e2fd0124c5b24da5efe96.
 Nenhum impacto frontend/MCP. Todos os processos de teste deste incremento terminaram.
 Sem pausa entre incrementos: prosseguir para instalação terminal/ativação.
+
+Par publicado da precondição: Core 5e006c52, Community
+cc977f021a12f597ec0073d4824e52cb6506861c, pushes concluídos.
+
+### 2026-09-23 — instalação terminal em implementação e ensaio
+
+Community agora tem escrita de instalação separada a partir de candidato
+reverificado sob fences. A cópia deve coincidir com o inventário completo antes
+de receber prova adicional; storage mantém o guard de erasure/restauração.
+O candidato congelado e os originais não são alterados. Publicação por rename
+acontece depois de commit/validação da cópia privada; erro remove somente stage.
+
+Journal estendido de ordinal máximo 8 para 9, com etapa activation e recibo
+tipado; expansão dos limites anteriores preserva bytes e triggers. O manifesto
+terminal é ancorado pelo recibo SQL e vinculado ao prefixo anterior, recibos do
+candidato, plano capturado, backup, par de builds, geração e identidade nova de
+instalação. Não incorpora hash circular do SQL que o contém. Startup verifica
+esse encadeamento e a condição de fechamento, sem exigir igualdade futura dos
+dados de uso; ausência/corrupção/retirada do journal mantém falha fechada.
+Composição gráfica exige roots SQL/KG/uploads/data_dir coordenados na instalação.
+
+Código ainda não publicado nesta etapa. Primeira prova de par em dist-activation /
+provenance-activation.json: Core 827/890, Community 360/444 byte-identical antes
+dos testes. Em execução: integração de ativação .6, journal/admissão/bootstrap,
+composição e F16. Não declarar sucesso antes dos resultados. Restam também
+ensaio de interrupção/replay de instalação, auditoria de roots/caminhos e demais
+pendências integrais. Não foi executada migração real nem alterado processo ativo.
+
+Primeiro ensaio: bases .6 completa/.5 pending passaram (2 passes, 342.31s).
+Journal/admissão tinham 37 passes antes de uma falha em bootstrap na mesma
+execução. A reprodução isolada passou 8 casos (216.25s); causa identificada no
+teste de admissão: monkeypatch de db.get_engine era capturado por import tardio
+de data_bootstrap_steps, conservando engine de fixture anterior. Removida apenas
+a substituição redundante de get_engine; o provider resolvido continua mockado.
+Repetição conjunta de admission/bootstrap passou 30 casos em 215.81s.
+
+Acrescentados resume_retirement_activation (read-only, digest externo do candidato,
+confirmação offline e fences), rejeição de artefato terminal sem journal e teste
+de falha imediatamente antes do rename de publicação. Rebuild/reinstall e prova
+provenance-activation-replay.json precederam nova validação: 61 testes combinados
+de journal/admissão/bootstrap/composição passaram em 267.33s. O ensaio integrado
+passou interrupção, limpeza de stage, retry e retomada, mas o subprocesso -I
+falhou antes de carregar o produto por dependência filelock indisponível.
+
+O venv de validação herda dependências de user-site; -I as exclui. Harness mantém
+-I e acrescenta explicitamente esse caminho de dependências, exigindo por asserção
+que Core e Community venham de sysconfig.purelib do venv, não de checkout/user-site.
+Não se declara ambiente hermético. Probe em processo novo na fixture retida
+concluiu db.init_db com "activated runtime ready"; repetição integral ainda em curso.
+
+Par final dist-activation-final / provenance-activation-final.json:
+Core 827/890, agregado 0ce220ebffd19584d89a564e65bbf9844661dba3fa33ae1033fb13ad7e1a7b52;
+Community 360/444, agregado 86f63844d891a9816fde8675d06e7081ed25abd7b5cab18a2dd156a8ab368275.
+F16 final closure-activation-final.json: 8800 entradas, zero achados, oito budgets
+zero, READMEs verificados. Provas de origem/bytes concluídas antes dos processos
+de teste; não houve alteração de Python de produção durante esses processos.
+
+Repetição integral do caso de ativação concluída: 1 passed, 2 deselected em
+147.15s. Incluiu interrupção antes de publicar e limpeza, retry, resposta perdida
+retomada sem mutação, negações offline/digest errado, db.init_db em processo novo
+contra wheels instaladas, escrita posterior de Card sem invalidar admissão,
+negação de roots incompatíveis e prova adulterada, e preservação do candidato.
+Junto com os 61 testes combinados finais: 62 passes. Ruff F/E9 e diff-check verdes.
+Community publicado neste incremento: a67986df1f51eaab6924b4385003accd7f42710d.
+O commit Core desta seção registra a evidência e atualiza o cabeçalho.
+Nenhum processo de teste permanece ativo. Sem alteração frontend/MCP, sem tag,
+merge, release, deploy ou migração real. Instalação exercitada apenas em fixtures.
+
+Limites preservados: não há ativação para candidato com histórico/cognição/Global
+pending; não se declara que uma cópia histórica cognitiva já possui autoridade.
+O caminho novo é privado do instalador, não uma superfície pública de manutenção.
+A instalação terminal não conclui os 246 critérios do pacote. Próximos trabalhos:
+qualificação histórica/cognitiva representável e casos Global prévios; suporte
+efetivo a métodos especializados e auditoria de aceitação, testes de frontend
+correspondentes e benchmarks. Código atual confirma que ADMITTED_VERIFICATION_METHODS
+e CommunityTestEvidenceWriteVerifier ainda admitem somente automated_test;
+RF/AC-VER-14 exige resultados válidos de análise/inspeção no ciclo comum, portanto
+essa obrigação continua incompleta apesar da rejeição segura de métodos sem suporte.
+Sem pausa: continuar a implementação integral, sem reaplicar incrementos já publicados.
