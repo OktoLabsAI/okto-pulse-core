@@ -2,10 +2,10 @@
 
 ## Estado para retomada
 
-Iniciativa **incompleta; retomada em 2026-09-23**, com objetivo novamente ativo.
-A pausa solicitada em 2026-09-22 está registrada no handoff ao final. Último
-milestone publicado: decodificação cognitiva literal
-pela porta pública, com testes e prova do par instalado. Detalhes finais e ponto
+Iniciativa **incompleta; pausa solicitada em 2026-09-23 no milestone atual**.
+Milestone de fechamento: restauração cognitiva literal no candidato privado,
+com autoria própria, preservação das fontes e verificação no replay.
+Validações e estado dos commits estão no handoff ao final. Detalhes finais e ponto
 de handoff estão no fim deste ledger. Frente seguinte: qualificação cognitiva/Global e fechamento do candidato;
 cutover/admission continuam fechados. Histórico coberto pela projeção de fontes
 atuais tem qualificação explícita no Core; partes sem prova permanecem pending.
@@ -14015,3 +14015,71 @@ a escrita/restauração com autoria própria de efeitos e prova das relações,
 qualificação de histórico/Global prévio, cutover e auditoria integral. Não
 reclassificar o diagnóstico como restauração concluída. Nenhuma nova pausa foi
 solicitada nesta retomada; objetivo segue ativo. Sem impacto frontend ou MCP.
+
+### 2026-09-23 — fechamento para pausa: escrita cognitiva literal privada
+
+O usuário solicitou parar no milestone por limite de uso. Esta seção substitui
+o estado ativo da seção anterior; não iniciar outro milestone após o fechamento.
+O escopo integral continua incompleto e as decisões autorizadas permanecem válidas.
+
+Community agora escreve no estágio privado apenas nós ausentes classificados
+como literal_candidate pela porta pública do Core. Copia os valores literais,
+confere fingerprints depois de checkpoint e leitura fria, preserva todos os
+nós anteriores e exige igualdade das relações. Não infere arestas de evidence_refs.
+Fontes ambíguas, relacionais ou sem conectividade suficiente permanecem pendentes.
+Nenhuma mecânica entrou no Core; nenhuma permissão ou gate foi relaxado.
+
+O recibo próprio retirement-cognitive-restoration/v1 registra revisão, geração,
+fingerprint da fonte e fingerprint literal. No replay, a autoria é recalculada
+contra a fonte capturada e os nós introduzidos do census histórico autenticado;
+não pode reivindicar identidade prévia nem aresta incidente sem autoria.
+Nós cognitivos restaurados ficam fora dos ACKs determinísticos. Recibo privado
+de projeção v6 e relatório gráfico v16; formatos antigos não são admitidos por
+fallback. Restauração literal continua pending, sem qualificar evidência,
+maturidade ou acesso e sem liberar o runtime.
+
+Fixture nativa verifica timestamp com microssegundos, fonte intacta, fence
+perdido, recibo adulterado, rejeição de identidade prévia e ausência de overwrite.
+A fixture integrada .6 inclui final_report pela exceção técnica já existente,
+além de missing-decision que continua rejeitado por conectividade. A base .5
+mantém a evolução autenticada e a cópia original não vinculada. Não houve
+alteração de frontend/MCP neste milestone; testes frontend não são aplicáveis.
+
+Antes dos testes, build e instalação do par concluídos e prova de igualdade
+confirmada em provenance-cognitive-write.json. Após atualização dos READMEs,
+par final dist-cognitive-write-final e provenance-cognitive-write-final.json:
+Core 826 arquivos Python/889 payload; Community 357/441, byte-identical entre
+source, wheel e site-packages. Hashes agregados:
+Core 1f07fbc13ea988183fd584545b2c20d0f8bbb6dac8a9c26338d26e3aafb2d3e7;
+Community 7de15de42412a169dd7d74b4e5d220c77143365d7d2a6e1226297ae1a3c9177b.
+Provas locais em PULSE_REFACTOR/.validation-v040. F16 final
+closure-cognitive-write-final.json: 8791 entradas, zero achados, oito budgets
+zero, com verificação dos READMEs. Ruff F/E9 e diff-check passaram.
+
+Core: 44 testes passaram em 4.74s. O teste nativo novo inicialmente falhou
+porque o double de binding omitia backend; corrigido somente o teste, passou
+em 25.04s. A falha inicial não é apresentada como execução verde.
+Na execução integrada, os outros 16 testes passaram em 291.04s (a execução
+completa reportou também aquela falha do double, corrigida e repetida acima).
+Total de casos aprovados após a correção: 61, sem falha remanescente conhecida
+neste conjunto. Inclui paridade nativa, gates históricos e bases .5/.6 com replay.
+Community: 7b4a4149e2a9a2233e4231218b8dc5373b26328e. O commit Core desta seção
+contém apenas ledger e README gerado. Ambos serão enviados a feature/v0.4.0
+antes de finalizar; confirmação de origin/HEAD na resposta de fechamento.
+Nenhum teste ou build deste milestone permanece em execução.
+
+Retomada concreta após este milestone:
+1. Conferir branches feature/v0.4.0, HEAD/origin e árvores; ler este handoff e
+   as decisões anteriores. Não procurar ideação original nem migrar dados reais.
+2. Continuar prova/restauração de relações e qualificação cognitiva. Fonte
+   durável de nó não contém journal completo das arestas; não fabricar relações
+   a partir de referências ou vincular todo órfão ao Board. O caso final_report
+   não demonstra restauração geral. Preservar backups e pendências explícitas.
+3. Qualificar histórico/Global prévio e concluir cutover/admission com prova
+   terminal sem circularidade de hash SQL e sem congelar SQL mutável do runtime.
+4. Executar auditoria integral dos 246 critérios do inventário (ainda descoberta,
+   não aceitação), métodos especializados de verificação, rollout/rollback,
+   testes frontend das features afetadas e benchmarks pendentes.
+
+Census histórico real não executado. Sem tag, merge, release, deploy, migração
+real ou parada do Pulse ativo. Este fechamento não declara entrega total do plano.
