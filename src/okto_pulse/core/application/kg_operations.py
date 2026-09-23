@@ -744,23 +744,6 @@ class CoreKnowledgeGraphOperations:
             offset=offset,
         )
 
-    async def enqueue_digest_layer_reconciliation(
-        self, *, board_id: str, reason: str
-    ) -> dict[str, object]:
-        """Request board/digest layer convergence through the durable outbox.
-
-        The relational context stays private to this transaction-scoped service;
-        the application use case depends only on this Core-owned capability.
-        """
-        from okto_pulse.core.kg.canonical_demotion_global_sync import (
-            enqueue_digest_layer_reconciliation,
-        )
-
-        return await enqueue_digest_layer_reconciliation(
-            self.__relational_context,
-            board_id=board_id,
-            reason=reason,
-        )
 
     async def capture_global_discovery_recovery_seed_inputs(
         self,

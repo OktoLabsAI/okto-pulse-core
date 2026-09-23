@@ -215,6 +215,7 @@ MCP_TOOL_PERMISSION_POLICIES: tuple[McpToolPermissionPolicy, ...] = (
     ),
     _policy("okto_pulse_add_spec_knowledge", "spec.knowledge.create"),
     _policy("okto_pulse_add_test_scenario", "spec.tests.create"),
+    _policy("okto_pulse_admit_test_verification_report", "spec.tests.execute"),
     _policy("okto_pulse_adopt_guideline_revision", "guidelines.adoption.manage"),
     _policy(
         "okto_pulse_annotate_mockup",
@@ -292,7 +293,6 @@ MCP_TOOL_PERMISSION_POLICIES: tuple[McpToolPermissionPolicy, ...] = (
         "ideation.entity.edit_fields",
         "refinement.entity.edit_fields",
         "spec.entity.edit_coverage_flags",
-        "sprint.entity.edit_coverage_flags",
         "card.entity.edit_fields",
     ),
     _policy("okto_pulse_confirm_amendment_coverage", "amendment.coverage.confirm"),
@@ -466,7 +466,6 @@ MCP_TOOL_PERMISSION_POLICIES: tuple[McpToolPermissionPolicy, ...] = (
         "ideation.entity.read",
         "refinement.entity.read",
         "spec.entity.read",
-        "sprint.entity.read",
         "card.entity.read",
     ),
     _policy(
@@ -522,10 +521,6 @@ MCP_TOOL_PERMISSION_POLICIES: tuple[McpToolPermissionPolicy, ...] = (
     ),
     _policy("okto_pulse_kg_commit_consolidation", "kg.session.commit"),
     _policy("okto_pulse_kg_digest_layer_mismatch_list", "kg.operations.integrity.read"),
-    _policy(
-        "okto_pulse_kg_digest_layer_reconcile",
-        "kg.operations.integrity.reconcile",
-    ),
     _policy(
         "okto_pulse_kg_evaluate_bug_cognitive_closure",
         "kg.operations.cognitive.read",
@@ -654,7 +649,6 @@ MCP_TOOL_PERMISSION_POLICIES: tuple[McpToolPermissionPolicy, ...] = (
         "ideation.qa.read",
         "refinement.qa.read",
         "spec.qa.read",
-        "sprint.qa.read",
         "card.qa.read",
     ),
     _policy(
@@ -721,7 +715,6 @@ MCP_TOOL_PERMISSION_POLICIES: tuple[McpToolPermissionPolicy, ...] = (
         "ideation.entity.edit_fields",
         "refinement.entity.edit_fields",
         "spec.entity.edit_coverage_flags",
-        "sprint.entity.edit_coverage_flags",
         "card.entity.edit_fields",
     ),
     _policy("okto_pulse_merge_topics", "topic.entity.merge"),

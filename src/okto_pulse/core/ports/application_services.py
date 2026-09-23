@@ -777,9 +777,6 @@ class KnowledgeGraphOperations(Protocol):
         self, *, board_id: str, limit: int, offset: int
     ) -> object: ...
 
-    async def enqueue_digest_layer_reconciliation(
-        self, *, board_id: str, reason: str
-    ) -> dict[str, object]: ...
 
     async def capture_global_discovery_recovery_seed_inputs(
         self,

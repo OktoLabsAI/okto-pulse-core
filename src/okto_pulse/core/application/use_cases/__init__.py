@@ -718,9 +718,6 @@ from okto_pulse.core.application.use_cases.mcp_kg_crud import (
     ListDigestLayerMismatchCommand,
     ListDigestLayerMismatchResult,
     ListDigestLayerMismatchUseCase,
-    ReconcileDigestLayerCommand,
-    ReconcileDigestLayerResult,
-    ReconcileDigestLayerUseCase,
 )
 from okto_pulse.core.application.use_cases.mcp_ideation_crud import (
     McpCreateIdeationCommand,
@@ -1557,9 +1554,6 @@ __all__ = [
     "ListDigestLayerMismatchCommand",
     "ListDigestLayerMismatchResult",
     "ListDigestLayerMismatchUseCase",
-    "ReconcileDigestLayerCommand",
-    "ReconcileDigestLayerResult",
-    "ReconcileDigestLayerUseCase",
     "CopyArchitectureFromSpecToCardCommand",
     "CopyArchitectureFromSpecToCardResult",
     "CopyArchitectureFromSpecToCardUseCase",

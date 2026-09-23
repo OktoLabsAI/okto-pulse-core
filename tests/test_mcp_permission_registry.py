@@ -113,18 +113,6 @@ EXPECTED_TRANSITION_SUFFIXES = {
         "done_to_draft",
         "cancelled_to_draft",
     ),
-    "sprint": (
-        "draft_to_active",
-        "draft_to_cancelled",
-        "active_to_draft",
-        "active_to_review",
-        "active_to_cancelled",
-        "review_to_active",
-        "review_to_closed",
-        "review_to_cancelled",
-        "closed_to_draft",
-        "cancelled_to_draft",
-    ),
     "test_scenario": (
         "draft_to_ready",
         "draft_to_automated",
@@ -150,6 +138,7 @@ def _reviewed_transition_flags(entity: str) -> tuple[str, ...]:
 
 
 EXPECTED_CONDITIONAL_PERMISSION_POLICIES = {
+    "okto_pulse_admit_test_verification_report": ("spec.tests.execute",),
     "okto_pulse_archive_tree": (
         "ideation.entity.archive",
         "refinement.entity.archive",
@@ -247,8 +236,8 @@ def test_live_catalog_has_one_exact_policy_or_audited_human_only_exemption() -> 
     report = registry_vs_tools_report(list(LIVE_TOOL_NAMES))
 
     assert report.is_valid
-    assert len(report.live_tools) == 311
-    assert len(MCP_TOOL_PERMISSION_POLICIES) == 308
+    assert len(report.live_tools) == 305
+    assert len(MCP_TOOL_PERMISSION_POLICIES) == 302
     assert len(HUMAN_ONLY_MCP_TOOL_EXEMPTIONS) == 3
     assert tuple(policy.tool_name for policy in MCP_TOOL_PERMISSION_POLICIES) == tuple(
         sorted(policy.tool_name for policy in MCP_TOOL_PERMISSION_POLICIES)

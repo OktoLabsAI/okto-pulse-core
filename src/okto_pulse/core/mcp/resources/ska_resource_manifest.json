@@ -42,7 +42,7 @@
     ],
     "source": "okto_pulse/core/mcp/agent_instructions.md"
   },
-  "manifest_sha256": "a8c4f9325e6458d67fdcc776975a8aacd2219cb7f7a3968ff9d6e1b202be841f",
+  "manifest_sha256": "a3c14746fa3af440e38d67c5f8c8b70615e7168bbc3ae27be0bd55b2f0a358dc",
   "manifest_version": "agent-resources/v2",
   "resource_count": 22,
   "resources": [
@@ -338,7 +338,7 @@
       "uri": "okto-pulse://reference/tool-docs/test-scenario"
     },
     {
-      "content_sha256": "28717045131c28dc0a780e01b585b2b588e637605c592c7992f14f577436b3b4",
+      "content_sha256": "33bf42023888fd1b21a67f68eaf3c5bdf57248c5e0e29cd356275e915b2bffbf",
       "cross_links": [
         "okto-pulse://reference/list_tools",
         "okto-pulse://reference/policy-compliance",
@@ -441,7 +441,7 @@
       "uri": "okto-pulse://workflows/ideations"
     },
     {
-      "content_sha256": "df79b946ff7d85f42ea93e14715022b55cdb32695abc9b9bf22b611bd0b9bbd5",
+      "content_sha256": "393956711d61b9862361b23690b4b10c7b36aadd5883cd8aa07eb17c8ebd064e",
       "cross_links": [
         "okto-pulse://reference/policy-compliance",
         "okto-pulse://reference/quality-assessments",

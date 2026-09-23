@@ -38,7 +38,6 @@ BOARD_ID = "board-kg-operations"
 _NAMESPACE_REQUIREMENTS = (
     ("kg.operations.health.read", "kg.admin.settings_read"),
     ("kg.operations.integrity.read", "kg.admin.settings_read"),
-    ("kg.operations.integrity.reconcile", "kg.admin.settings_write"),
     ("kg.operations.cognitive.read", "kg.admin.settings_read"),
     ("kg.operations.cognitive.skip", "kg.admin.settings_write"),
     ("kg.operations.cognitive.clear", "kg.admin.settings_write"),
@@ -271,16 +270,6 @@ _WRITE_CASES: tuple[
         "kg.admin.settings_write",
         True,
     ),
-    (
-        mcp_kg_crud.ReconcileDigestLayerUseCase(),
-        lambda: mcp_kg_crud.ReconcileDigestLayerCommand(
-            BOARD_ID,
-            reason="incident_42_digest_drift",
-        ),
-        "kg.operations.integrity.reconcile",
-        "kg.admin.settings_write",
-        True,
-    ),
 )
 
 
@@ -294,7 +283,6 @@ _WRITE_CASES: tuple[
         "board-erase",
         "pending-retry",
         "node-boost",
-        "integrity-reconcile",
     ),
 )
 async def test_each_dedicated_kg_writer_authorizes_after_lookup_and_before_write(

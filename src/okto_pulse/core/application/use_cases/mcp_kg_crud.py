@@ -11,10 +11,7 @@ instead of ``get_db_for_mcp()``; ``CognitiveReadinessError`` from the
 partition-integrity reader is intentionally NOT caught here so the tool keeps its
 legacy ``exc.to_dict()`` envelope.
 
-The board-scoped digest-layer reconcile command is the narrow write exception in
-this module. It only enqueues the established zero-reference Global Discovery
-parity event and commits that durable outbox write; it does not mutate a read-only
-diagnostic tool.
+Public manual reconciliation is retired; automatic parity events remain internal.
 """
 
 from __future__ import annotations
@@ -25,15 +22,11 @@ from typing import Any
 
 from okto_pulse.core.application.use_cases.base import (
     ActorContext,
-    CommandValidationError,
-    EntityNotFoundError,
-    commit,
 )
 from okto_pulse.core.application.use_cases.authorization import (
     PermissionRequirement,
     require_authorization,
 )
-from okto_pulse.core.application.use_cases.board_access import load_accessible_board
 
 
 class ListCanonicalDebtCommand:
@@ -231,59 +224,3 @@ class ListDigestLayerMismatchUseCase:
             offset=command.offset,
         )
         return ListDigestLayerMismatchResult(data)
-
-
-class ReconcileDigestLayerCommand:
-    """Board-scoped request for DecisionDigest layer convergence."""
-
-    __slots__ = ("board_id", "reason")
-
-    def __init__(self, board_id: str, *, reason: str) -> None:
-        self.board_id = board_id
-        self.reason = reason
-
-
-class ReconcileDigestLayerResult:
-    """Durable outbox identity for an accepted reconciliation request."""
-
-    __slots__ = ("data",)
-
-    def __init__(self, data: dict[str, object]) -> None:
-        self.data = data
-
-
-class ReconcileDigestLayerUseCase:
-    """Enqueue the existing board/digest parity reconciler and commit the event."""
-
-    async def execute(
-        self,
-        command: ReconcileDigestLayerCommand,
-        *,
-        actor: ActorContext,
-        uow: PulseUnitOfWork,
-    ) -> ReconcileDigestLayerResult:
-        # Board binding is checked again inside the transport-neutral use case so
-        # another inbound adapter cannot turn this administrative command into a
-        # cross-board write. Missing and denied intentionally share one outcome.
-        board = await load_accessible_board(uow, command.board_id, actor)
-        if board is None:
-            raise EntityNotFoundError("Board", command.board_id)
-        await require_authorization(
-            actor,
-            PermissionRequirement(
-                "kg.operations.integrity.reconcile",
-                legacy_operation="kg.admin.settings_write",
-            ),
-            uow=uow,
-            board_id=command.board_id,
-        )
-
-        try:
-            data = await uow.services.kg.enqueue_digest_layer_reconciliation(
-                board_id=command.board_id,
-                reason=command.reason,
-            )
-        except ValueError as exc:
-            raise CommandValidationError(str(exc)) from exc
-        await commit(uow)
-        return ReconcileDigestLayerResult(data)
