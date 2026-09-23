@@ -1,0 +1,254 @@
+{
+  "format": "pulse-v1.3-reviewed-execution/v1",
+  "scope": "Composed requirement verification and actual REST start; no whole-plan completion claim",
+  "provenance": {
+    "file": "provenance-mixed-report-final.json",
+    "sha256": "833dc7d171fedc4535e0ce5f44b988861f9b374b4b2dd8ad62b3423be2b53eb0",
+    "identity": {
+      "checked_at": "2026-09-23T17:36:42.332739+00:00",
+      "python": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Scripts\\python.exe",
+      "packages": {
+        "core": {
+          "python_files": 829,
+          "origin": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages\\okto_pulse\\core\\__init__.py",
+          "repository_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_core",
+          "commit": "c06157bb14aa5ae6aaf2d9bd7a757f899c609c24",
+          "dirty": true,
+          "dirty_entry_count": 8,
+          "distribution": "okto-pulse-core",
+          "version": "0.3.4",
+          "wheel": {
+            "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\dist-mixed-report-final\\okto_pulse_core-0.3.4-py3-none-any.whl",
+            "sha256": "cfd61da8aa0dde2737af3d6f9c2f20ae4bb12fa72582e11895417feca99b4956",
+            "size": 3731036
+          },
+          "source_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_core\\src",
+          "site_packages_root": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages",
+          "package_prefix": "okto_pulse/core/",
+          "byte_identical_member_count": 892,
+          "byte_identical": true,
+          "aggregate_sha256": "a43565063ccf05f0424fb9874fe27ffed9707a3a80df970bb94094551bc21657",
+          "chain_hashes": {
+            "source": "a43565063ccf05f0424fb9874fe27ffed9707a3a80df970bb94094551bc21657",
+            "wheel": "a43565063ccf05f0424fb9874fe27ffed9707a3a80df970bb94094551bc21657",
+            "site_packages": "a43565063ccf05f0424fb9874fe27ffed9707a3a80df970bb94094551bc21657"
+          },
+          "critical_resource_sha256": {
+            "okto_pulse/core/mcp/resources/ska_resource_manifest.json": "e162d8460ad0140b40a6916c06d59a07caa7354def5fa3b9c510f984e6705df9",
+            "okto_pulse/core/mcp/resources/ska_tool_manifest.json": "0c3fa3da1549baec20872eca3f4a289288627e6b9f6b80be10472ac962fa72b9"
+          },
+          "mismatches": []
+        },
+        "community": {
+          "python_files": 360,
+          "origin": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages\\okto_pulse\\community\\__init__.py",
+          "repository_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_community",
+          "commit": "f8761bb711cc765265c2e118396bda8fca5ce80c",
+          "dirty": true,
+          "dirty_entry_count": 65,
+          "distribution": "okto-pulse",
+          "version": "0.3.4",
+          "wheel": {
+            "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\dist-mixed-report-final\\okto_pulse-0.3.4-py3-none-any.whl",
+            "sha256": "d9ffd80284d67e037430e945ce8962db878b7a5b65636655cd7535134a29e426",
+            "size": 4499802
+          },
+          "source_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_community\\src",
+          "site_packages_root": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages",
+          "package_prefix": "okto_pulse/community/",
+          "byte_identical_member_count": 444,
+          "byte_identical": true,
+          "aggregate_sha256": "94c9bb01023c5258b9f1a560c415ba7bf41deb4a9d3dff0d801d8361ca1a5cb7",
+          "chain_hashes": {
+            "source": "94c9bb01023c5258b9f1a560c415ba7bf41deb4a9d3dff0d801d8361ca1a5cb7",
+            "wheel": "94c9bb01023c5258b9f1a560c415ba7bf41deb4a9d3dff0d801d8361ca1a5cb7",
+            "site_packages": "94c9bb01023c5258b9f1a560c415ba7bf41deb4a9d3dff0d801d8361ca1a5cb7"
+          },
+          "critical_resource_sha256": {},
+          "mismatches": []
+        }
+      }
+    }
+  },
+  "runs": {
+    "start": {
+      "file": "verification-start-final-r2.xml",
+      "sha256": "f03f31bb1ebbe69063a86be947ab5a551bcd77e856a865e29cad4d8bceb7f0a4",
+      "suite": {
+        "name": "pytest",
+        "errors": "0",
+        "failures": "0",
+        "skipped": "0",
+        "tests": "14",
+        "time": "36.147",
+        "timestamp": "2026-09-23T14:50:17.343756-03:00",
+        "hostname": "Alienware_m15"
+      }
+    }
+  },
+  "limits": [
+    "Validated status and Card assignment are declared fixture inputs; this run does not test the Spec Validation admission or Card assignment authority.",
+    "Semantic assessment is supplied by an external reviewer through the real API; Pulse does not infer semantic sufficiency.",
+    "Reject and corrected approval examples use separate disposable fixtures; this run does not prove supersession of an earlier rejection in the same Spec."
+  ],
+  "criteria": {
+    "ARQVER:AC-VER-01": {
+      "status": "verified_by_reviewed_execution",
+      "covered": "Draft OR incompleto é editável; default operacional é proposta visível. Início real recusa, correção scoped após reabertura permite início.",
+      "remaining": null,
+      "evidence": [
+        {
+          "repository": "community",
+          "file": "tests/test_verification_start_transition.py",
+          "source_sha256": "1082eb8765cb9598fac74ed403490f4c20fdea1e256240c78af6a065e54ac40f",
+          "executions": [
+            {
+              "classname": "tests.test_verification_start_transition",
+              "name": "test_real_start_requires_four_profile_plan_and_valid_inheritance[missing_profile]",
+              "time": "2.591"
+            }
+          ]
+        }
+      ]
+    },
+    "ARQVER:AC-VER-02": {
+      "status": "verified_by_reviewed_execution",
+      "covered": "Perfil technical e condição vaga não substituem julgamento: estrutura completa, avaliação externa reject persistida bloqueia; limite corrigido e avaliação favorável permitem início.",
+      "remaining": null,
+      "evidence": [
+        {
+          "repository": "community",
+          "file": "tests/test_verification_start_transition.py",
+          "source_sha256": "1082eb8765cb9598fac74ed403490f4c20fdea1e256240c78af6a065e54ac40f",
+          "executions": [
+            {
+              "classname": "tests.test_verification_start_transition",
+              "name": "test_semantic_review_is_distinct_from_structural_readiness[review_rejects-vague_condition]",
+              "time": "1.388"
+            },
+            {
+              "classname": "tests.test_verification_start_transition",
+              "name": "test_semantic_review_is_distinct_from_structural_readiness[condition_corrected-vague_condition]",
+              "time": "1.528"
+            }
+          ]
+        }
+      ]
+    },
+    "ARQVER:AC-VER-03": {
+      "status": "verified_by_reviewed_execution",
+      "covered": "Writer REST scoped cria AC técnico ao lado do funcional com IDs, vínculos reversos e histórico comum; conteúdo anterior preservado com normalização existente active, sem cenário fictício.",
+      "remaining": null,
+      "evidence": [
+        {
+          "repository": "community",
+          "file": "tests/test_verification_start_transition.py",
+          "source_sha256": "1082eb8765cb9598fac74ed403490f4c20fdea1e256240c78af6a065e54ac40f",
+          "executions": [
+            {
+              "classname": "tests.test_verification_start_transition",
+              "name": "test_existing_functional_and_new_technical_criteria_share_authoring_and_history",
+              "time": "1.480"
+            }
+          ]
+        }
+      ]
+    },
+    "ARQVER:AC-VER-05": {
+      "status": "verified_by_reviewed_execution",
+      "covered": "Órfão bloqueia transição real; vínculo preenchido para conteúdo inadequado não contorna avaliação reject. Correção mantém a árvore canônica e não cria requisitos artificiais.",
+      "remaining": null,
+      "evidence": [
+        {
+          "repository": "community",
+          "file": "tests/test_verification_start_transition.py",
+          "source_sha256": "1082eb8765cb9598fac74ed403490f4c20fdea1e256240c78af6a065e54ac40f",
+          "executions": [
+            {
+              "classname": "tests.test_verification_start_transition",
+              "name": "test_real_start_requires_four_profile_plan_and_valid_inheritance[orphan_criterion]",
+              "time": "1.617"
+            },
+            {
+              "classname": "tests.test_verification_start_transition",
+              "name": "test_semantic_review_is_distinct_from_structural_readiness[review_rejects-unrelated_criterion]",
+              "time": "1.515"
+            },
+            {
+              "classname": "tests.test_verification_start_transition",
+              "name": "test_semantic_review_is_distinct_from_structural_readiness[condition_corrected-unrelated_criterion]",
+              "time": "1.731"
+            }
+          ]
+        }
+      ]
+    },
+    "ARQVER:AC-VER-07": {
+      "status": "verified_by_reviewed_execution",
+      "covered": "FR/TR/IR/OR na mesma Spec: ausência do Test Card operacional impede início; plano restaurado inicia sem evidence e com todos os Cards not_started.",
+      "remaining": null,
+      "evidence": [
+        {
+          "repository": "community",
+          "file": "tests/test_verification_start_transition.py",
+          "source_sha256": "1082eb8765cb9598fac74ed403490f4c20fdea1e256240c78af6a065e54ac40f",
+          "executions": [
+            {
+              "classname": "tests.test_verification_start_transition",
+              "name": "test_real_start_requires_four_profile_plan_and_valid_inheritance[missing_operational_work]",
+              "time": "2.492"
+            }
+          ]
+        }
+      ]
+    },
+    "ARQVER:AC-VER-10": {
+      "status": "verified_by_reviewed_execution",
+      "covered": "Ciclo e terminal ausente aparecem no diagnóstico e bloqueiam início real. Reabertura/correção pelos writers existentes restauram prontidão sem bypass de gates.",
+      "remaining": null,
+      "evidence": [
+        {
+          "repository": "community",
+          "file": "tests/test_verification_start_transition.py",
+          "source_sha256": "1082eb8765cb9598fac74ed403490f4c20fdea1e256240c78af6a065e54ac40f",
+          "executions": [
+            {
+              "classname": "tests.test_verification_start_transition",
+              "name": "test_real_start_requires_four_profile_plan_and_valid_inheritance[cycle]",
+              "time": "2.129"
+            },
+            {
+              "classname": "tests.test_verification_start_transition",
+              "name": "test_real_start_requires_four_profile_plan_and_valid_inheritance[missing_terminal]",
+              "time": "1.496"
+            }
+          ]
+        }
+      ]
+    },
+    "ARQVER:AC-VER-11": {
+      "status": "verified_by_reviewed_execution",
+      "covered": "BR de cinco erros herda critério de login válido: estrutura completa não impede avaliação externa reject de bloquear. Condição corrigida recebe avaliação favorável e reutiliza o mesmo Test Card existente.",
+      "remaining": null,
+      "evidence": [
+        {
+          "repository": "community",
+          "file": "tests/test_verification_start_transition.py",
+          "source_sha256": "1082eb8765cb9598fac74ed403490f4c20fdea1e256240c78af6a065e54ac40f",
+          "executions": [
+            {
+              "classname": "tests.test_verification_start_transition",
+              "name": "test_semantic_review_is_distinct_from_structural_readiness[review_rejects-insufficient_inheritance]",
+              "time": "1.353"
+            },
+            {
+              "classname": "tests.test_verification_start_transition",
+              "name": "test_semantic_review_is_distinct_from_structural_readiness[condition_corrected-insufficient_inheritance]",
+              "time": "1.483"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

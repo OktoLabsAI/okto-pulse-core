@@ -2207,10 +2207,10 @@
       "line": 366,
       "id": "AC-VER-01",
       "normative_text": "**AC-VER-01 — verifica RF-VER-01.** **Dado** Um FR novo, um TR novo e um OR em draft com perfil ausente. **Quando** O autor consulta defaults e tenta iniciar a Spec sem concluir a qualificação. **Então** Os defaults propostos são visíveis sem fabricar critérios; o OR sem configuração resolvida impede início; salvar draft permanece possível.",
-      "review_status": "partial",
+      "review_status": "verified_by_reviewed_execution",
       "test_text_references": [],
       "reviewed_execution": {
-        "artifact": "acceptance-verification-execution.json",
+        "artifact": "acceptance-verification-start-execution.json",
         "criterion_key": "ARQVER:AC-VER-01"
       }
     },
@@ -2220,10 +2220,10 @@
       "line": 372,
       "id": "AC-VER-02",
       "normative_text": "**AC-VER-02 — verifica RF-VER-02.** **Dado** Um TR com perfil technical e texto “responder rapidamente”, sem limite ou observação definida. **Quando** O plano é avaliado para execução. **Então** A configuração sozinha não satisfaz o plano; ausência estrutural é apontada pelo gate e inadequação da condição é rejeitada pela avaliação semântica competente.",
-      "review_status": "partial",
+      "review_status": "verified_by_reviewed_execution",
       "test_text_references": [],
       "reviewed_execution": {
-        "artifact": "acceptance-verification-execution.json",
+        "artifact": "acceptance-verification-start-execution.json",
         "criterion_key": "ARQVER:AC-VER-02"
       }
     },
@@ -2233,10 +2233,10 @@
       "line": 378,
       "id": "AC-VER-03",
       "normative_text": "**AC-VER-03 — verifica RF-VER-03.** **Dado** Um AC existente de comportamento e um novo critério de latência. **Quando** A Spec é atualizada com o critério técnico. **Então** Os dois compartilham o mesmo mecanismo de identidade, vínculo, consulta e histórico; os perfis são distinguíveis; nenhum teste funcional fictício é criado para o critério técnico.",
-      "review_status": "partial",
+      "review_status": "verified_by_reviewed_execution",
       "test_text_references": [],
       "reviewed_execution": {
-        "artifact": "acceptance-verification-execution.json",
+        "artifact": "acceptance-verification-start-execution.json",
         "criterion_key": "ARQVER:AC-VER-03"
       }
     },
@@ -2259,10 +2259,10 @@
       "line": 390,
       "id": "AC-VER-05",
       "normative_text": "**AC-VER-05 — verifica RF-VER-05.** **Dado** Um critério sobre relatórios numa Spec cujos únicos requisitos tratam autenticação. **Quando** O autor o deixa sem vínculo e tenta iniciar. **Então** O gate identifica critério órfão; se o autor liga indevidamente a autenticação, a estrutura pode ficar completa mas a avaliação deve rejeitar a incompatibilidade de conteúdo, sem alegar detecção semântica automática.",
-      "review_status": "partial",
+      "review_status": "verified_by_reviewed_execution",
       "test_text_references": [],
       "reviewed_execution": {
-        "artifact": "acceptance-verification-execution.json",
+        "artifact": "acceptance-verification-start-execution.json",
         "criterion_key": "ARQVER:AC-VER-05"
       }
     },
@@ -2285,7 +2285,7 @@
       "line": 402,
       "id": "AC-VER-07",
       "normative_text": "**AC-VER-07 — verifica RF-VER-07.** **Dado** Uma Spec com FR, IR, TR e OR qualificados, mas sem Test Card para o cenário operacional. **Quando** O início é solicitado antes e depois de atribuir esse trabalho. **Então** A ausência de planejamento operacional bloqueia; com o plano completo e outros gates satisfeitos, a execução começa mesmo sem evidência ainda produzida.",
-      "review_status": "partial",
+      "review_status": "verified_by_reviewed_execution",
       "test_text_references": [
         {
           "path": "okto_labs_pulse_core/tests/test_verification_plan.py",
@@ -2293,7 +2293,7 @@
         }
       ],
       "reviewed_execution": {
-        "artifact": "acceptance-verification-execution.json",
+        "artifact": "acceptance-verification-start-execution.json",
         "criterion_key": "ARQVER:AC-VER-07"
       }
     },
@@ -2329,10 +2329,10 @@
       "line": 420,
       "id": "AC-VER-10",
       "normative_text": "**AC-VER-10 — verifica RF-VER-10.** **Dado** R1 herda R2, R2 herda R1, ou R2 não tem critério terminal. **Quando** O autor tenta considerar o plano pronto. **Então** O ciclo ou a falta de terminal é apontado com caminho seguro e o início é bloqueado; não há sucesso por revisitar um nó já visto.",
-      "review_status": "partial",
+      "review_status": "verified_by_reviewed_execution",
       "test_text_references": [],
       "reviewed_execution": {
-        "artifact": "acceptance-verification-execution.json",
+        "artifact": "acceptance-verification-start-execution.json",
         "criterion_key": "ARQVER:AC-VER-10"
       }
     },
@@ -2342,10 +2342,10 @@
       "line": 426,
       "id": "AC-VER-11",
       "normative_text": "**AC-VER-11 — verifica RF-VER-11.** **Dado** BR determina bloqueio após cinco erros; FR é autenticação e seu único teste observa login válido. **Quando** O autor declara herança desse teste para a BR. **Então** A avaliação rejeita a suficiência; ao selecionar/adicionar condição que realmente verifica os cinco erros e o bloqueio, a prova pode ser reutilizada sem outro Test Card artificial.",
-      "review_status": "partial",
+      "review_status": "verified_by_reviewed_execution",
       "test_text_references": [],
       "reviewed_execution": {
-        "artifact": "acceptance-verification-execution.json",
+        "artifact": "acceptance-verification-start-execution.json",
         "criterion_key": "ARQVER:AC-VER-11"
       }
     },

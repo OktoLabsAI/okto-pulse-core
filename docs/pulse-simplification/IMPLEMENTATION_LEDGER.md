@@ -14696,3 +14696,43 @@ JUnit e proveniência do par. Inventário atual: **29 comprovados / 20 parciais 
 ausentes; não declarar suficiência semântica a partir do gate estrutural.
 Próximos: fechar testemunhos compostos de avaliação/início/fechamento, auditoria
 DEI/base/KG e benchmark medido. Iniciativa permanece em execução até entrega.
+
+### Testemunhos compostos de verificabilidade/início — 2026-09-23
+
+Par anterior publicado Core 03b471f9 / Community 2a0e0388, sem alteração de
+payload neste incremento. Extraído helper de fixture do ensaio arquitetural
+para reutilizar gates reais, sem substituir autorização/serviços. Novo módulo
+Community test_verification_start_transition.py cobre os quatro perfis na
+mesma Spec e Test Card operacional separado, sem execução prévia.
+
+Primeiro ciclo: perfil OR ausente permite salvar Draft e exibe default proposto;
+perfil ausente, Test Card operacional não alocado, ciclo, terminal ausente e
+critério órfão impedem o início real. Reabertura e correção de conteúdo usam
+writers REST existentes; atribuição do Card e validação anterior são entradas
+de fixture declaradas. Com planejamento corrigido, início funciona mantendo
+todos os cenários ready sem evidence e Cards not_started. r1 teve erro no método
+HTTP da fixture de reparo (PUT em vez de PATCH); r2 teve 6 passed em 18.27s.
+
+Segundo ciclo: condição vaga, vínculo a conteúdo não relacionado e herança BR
+sem observar cinco erros passam pela estrutura, mas uma avaliação externa
+reject, submetida pelo REST real, bloqueia início mesmo com score 95. Casos
+com condição corrigida recebem avaliação externa favorável e iniciam sem outro
+Test Card. Não atribuir esse julgamento a detecção semântica automática:
+Pulse preserva a decisão fornecida pelo avaliador. verification-semantic-r1.xml:
+6 passed em 18.06s. Validação de entrada em validated continua fixture separada.
+
+Novo ensaio de AC funcional existente + técnico criado pela superfície scoped
+confirma vínculo reverso e histórico comum. Run combinado inicial: 13 passed,
+uma expectativa de fixture corrigida para a normalização existente status=active
+no AC anterior, sem alteração de produção. Aguarda run final de 14 testes antes
+de atualizar os critérios comprovados e publicar.
+
+Run final verification-start-final-r2.xml: **14 passed em 36.16s**. Ruff passou.
+acceptance-verification-start-execution.json fixa fontes/JUnit/par instalado e
+limites do ensaio. Sete lacunas compostas fechadas: AC-VER-01/02/03/05/07/10/11.
+Inventário: **36 comprovados / 13 parciais / 197 ainda não auditados**. Não
+confundir os casos reject e corrigido em fixtures distintas com uma prova de
+supersession da avaliação anterior na mesma Spec; esse caminho merece auditoria
+de atualidade/histórico antes de qualquer mudança. Payload e F16 permanecem os
+do par mixed-report-final, nenhuma mudança de mecanismo/autoridade neste passo.
+Nenhum processo pendente. Prosseguir pela auditoria integrada e medição do fluxo.
