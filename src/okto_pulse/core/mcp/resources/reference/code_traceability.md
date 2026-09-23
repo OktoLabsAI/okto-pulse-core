@@ -909,5 +909,17 @@ receipt, restores proof or changes state. The successor must inspect their own
 accessible workspace. This history read complements current obligations and
 proof in the delivery projection; it does not replace that projection.
 
+Use `view="resume"` with `card_id` for an accumulated Card read: current
+identity/edition/state, latest progress, paginated notes, composed impact,
+canonical obligation/proof manifests, Targets and recovery limits. Progress
+eligibility combines execution state and the caller's current permission;
+final lifecycle transitions are explicitly not evaluated by this read.
+The UTF-8 projection has a 128 KiB limit, with counts and truncation indicators.
+An implementation declaration remains partial/complete as originally recorded;
+an admitted receipt is not completion credit, and stale proof retains authorship.
+Tests shown here belong to this Card; read the Spec rollup for other Test Cards.
+Follow-up reads remain subject to their own permissions and gates. The response
+does not inspect a workspace or claim that all narrative pending work is resolved.
+
 These are separate closed schemas. Do not collapse them into a heterogeneous
 `target_type + payload` command.

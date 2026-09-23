@@ -3,6 +3,8 @@
 from okto_pulse.core.application.use_cases.authorization import (
     PermissionRequirement,
     require_authorization,
+    decide_authorization,
+    resolve_actor_permissions,
 )
 from okto_pulse.core.application.use_cases.base import PermissionDeniedError, commit
 from okto_pulse.core.repositories.interfaces.unit_of_work import PulseUnitOfWork
@@ -28,6 +30,17 @@ class GetDeliveryEvidenceUseCase:
             board_id=command.board_id,
         )
         if isinstance(command, DeliveryEvidenceReadQuery) and command.card_id is not None:
+            if command.view == "resume":
+                result = await uow.services.delivery_evidence.card_resume(command, actor_id=actor.actor_id)
+                permissions = await resolve_actor_permissions(actor, uow, command.board_id)
+                result["actions"] = {
+                    "read_progress_history": True,
+                    "record_progress": result.pop("progress_state_eligible", False) and decide_authorization(
+                        actor, PermissionRequirement("card.conclusion.write"), permissions=permissions).allowed,
+                    "final_transitions": "not_evaluated",
+                    "mutation_reauthorization_required": True,
+                }
+                return result
             return await uow.services.delivery_evidence.progress_history(command, actor_id=actor.actor_id)
         return await uow.services.delivery_evidence.projection(
             command.board_id, command.spec_id

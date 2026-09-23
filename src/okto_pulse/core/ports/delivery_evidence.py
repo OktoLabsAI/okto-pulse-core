@@ -69,6 +69,16 @@ class DeliveryEvidenceReadPort(Protocol):
 
 
 class DeliveryEvidenceStore(DeliveryEvidenceReadPort, Protocol):
+    async def card_resume(self, query: DeliveryEvidenceReadQuery, *, actor_id: str) -> dict:
+        """Read accumulated Card facts through the canonical proof evaluators.
+
+        Return bounded manifests with totals/unknown/truncation and follow-ups.
+        Keep declarations, admitted proof and completion distinct. Never infer
+        resolution from note order or verify the successor's workspace. This
+        read requires no graph runtime, origin execution or mutation.
+        """
+        ...
+
     async def progress_history(self, query: DeliveryEvidenceReadQuery, *, actor_id: str) -> dict:
         """Bounded Card progress page or detail, never proof or recovery credit.
 

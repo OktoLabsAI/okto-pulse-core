@@ -69,16 +69,19 @@ class DeliveryEvidenceReadQuery(DeliveryEvidenceQuery):
     """Read controls are separate from inherited write contracts."""
 
     card_id: Identity | None = None
+    view: Literal["progress", "resume"] = "progress"
     cursor: str | None = Field(default=None, min_length=1, max_length=8192)
     record_id: Identity | None = None
     limit: int = Field(default=20, ge=1, le=20)
 
     @model_validator(mode="after")
     def scoped_history(self):
-        if self.card_id is None and (self.cursor or self.record_id or self.limit != 20):
+        if self.card_id is None and (self.cursor or self.record_id or self.limit != 20 or self.view != "progress"):
             raise ValueError("delivery_history_card_required")
         if self.cursor and self.record_id:
             raise ValueError("delivery_history_page_or_detail_required")
+        if self.view == "resume" and (self.cursor or self.record_id):
+            raise ValueError("delivery_resume_use_history_for_detail")
         return self
 
 

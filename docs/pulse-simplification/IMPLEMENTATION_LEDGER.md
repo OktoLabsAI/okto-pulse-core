@@ -14919,3 +14919,49 @@ zero findings arquiteturais/documentais e oito budgets zero**, arquivo
 closure-progress-history-final.json. Nenhum processo de validação pendente.
 Próxima frente: visão consolidada por Card e ações por autoridade/estado,
 reutilizando os avaliadores atuais, seguida de aceite composto e benchmark.
+
+### Leitura acumulada por Card — em implementação, após 5ac37f4b/2010c516
+
+Histórico paginado anterior commitado e enviado nos dois repositórios. Novo
+view=resume em desenvolvimento no mesmo GET/tool, com porta pública card_resume,
+snapshots/avaliadores existentes e mecanismo relacional apenas no Community.
+Reúne checkpoint recente, histórico paginado, impacto líquido de todas as notas,
+manifestos de contribuições/provas atuais, obrigações e Targets. Nunca infere
+resolução pelo último texto, transfere autor ou confirma acesso ao workspace.
+Estado/edição/geração rechecados antes da resposta. Core combina elegibilidade
+de progresso com permissão atual; transições finais explicitamente não avaliadas.
+
+UI sob demanda e testes: **23 passed**, card-resume-frontend.xml. Build/sync
+concluídos: 78 arquivos, SHA256
+9586837f60c33ec1d6e27797d56d4305286577e1a46124941feb7e74e073d0fb.
+Par dist-card-resume construído; instalação em curso. NÃO houve validação
+backend ainda. Não declarar incremento concluído nem promover critérios.
+
+Limites a completar: testes relevantes de outros Cards ainda exigem rollup;
+manifestos de provas/Targets têm caps e follow-up, não paginação dedicada;
+histórico completo anterior à edição atual permanece fora deste recorte.
+Snapshots canônicos podem ler muitos registros internamente; custo/N+1 ainda
+precisa medição. Teto da projeção 128 KiB; cursor de progresso nunca é truncado
+depois da construção. O leitor falha se não conseguir limitar resposta sem
+pular histórico. Próximo: instalar/provar, executar regressões e casos com
+origem real, qualificar limites e só então commit/push. Inventário 67/31/148.
+
+Validação inicial terminal: provenance-card-resume.json comprova par instalado,
+Core 830 .py/893 payloads, Community 362 .py/446 payloads. Core **37 passed em
+4.18s** (card-resume-core.xml); Community **16 passed em 35.51s**
+(card-resume-community.xml); cap multibyte/cursor **1 passed em 6.54s**
+(card-resume-limits.xml). Origem real mostra declaração partial preservada,
+autoria de A retida na leitura por B e prova perdendo atualidade após dirty
+posterior; nota curta sem mudança conserva impacto composto de duas anteriores.
+
+F16 inicial: zero findings arquiteturais e budgets zero; duas matrizes README
+regeneradas. Acrescentados total de Targets e reserva de bytes para actions;
+documentado o recorte e regenerado manifesto. Par final dist-card-resume-final
+reinstalado/provado byte a byte (provenance-card-resume-final.json). Reteste
+**18 passed em 38.09s**, card-resume-final.xml, inclui paridade REST/MCP para
+ambas as views. Ruff F/E9 e diff check limpos. F16 final ainda em execução.
+Não promover os critérios completos de retomada: permanecem os limites acima.
+
+F16.2 final terminal: **8839 linhas, ok=true, zero findings arquiteturais e
+documentais, oito budgets zero**, closure-card-resume-final.json. Frontend
+verify confirmou o hash registrado acima. Nenhum processo de validação pendente.

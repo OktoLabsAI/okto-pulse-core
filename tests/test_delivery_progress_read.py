@@ -32,3 +32,18 @@ async def test_each_page_reauthorizes_and_does_not_borrow_write_authority():
         with pytest.raises(PermissionDeniedError):
             await GetDeliveryEvidenceUseCase().execute(query.model_copy(update={"cursor": "old"}), actor=denied, uow=uow)
     assert store.progress_history.await_count == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("write,state,expected", [(True, True, True), (False, True, False), (True, False, False)])
+async def test_resume_actions_combine_current_authority_and_execution_state(write, state, expected):
+    store = SimpleNamespace(card_resume=AsyncMock(side_effect=lambda *args, **kwargs: {"progress_state_eligible": state}))
+    uow = SimpleNamespace(services=SimpleNamespace(delivery_evidence=store))
+    permissions = ["code_traceability.evidence.read"] + (["card.conclusion.write"] if write else [])
+    actor = ActorContext(actor_id="reader", source="mcp", actor_kind="agent", board_id="b", permissions=permissions)
+    result = await GetDeliveryEvidenceUseCase().execute(DeliveryEvidenceReadQuery(
+        board_id="b", spec_id="s", card_id="c", view="resume"), actor=actor, uow=uow)
+    assert result["actions"]["record_progress"] is expected
+    assert result["actions"]["final_transitions"] == "not_evaluated"
+    assert result["actions"]["mutation_reauthorization_required"]
+    assert "progress_state_eligible" not in result
