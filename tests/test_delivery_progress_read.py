@@ -11,7 +11,9 @@ from okto_pulse.core.models.delivery_evidence import DeliveryEvidenceReadQuery
 
 @pytest.mark.parametrize("patch", [{"cursor": "abc"}, {"record_id": "id"}, {"limit": 1},
     {"card_id": "c", "limit": 21}, {"card_id": "c", "cursor": "x", "record_id": "r"},
-    {"card_id": "c", "limit": True}, {"card_id": "c", "verified": True}])
+    {"card_id": "c", "limit": True}, {"card_id": "c", "verified": True},
+    {"edition": 1}, {"card_id": "c", "edition": True},
+    {"card_id": "c", "view": "resume", "edition": 1}])
 def test_read_rejects_unbounded_or_ambiguous_scope(patch):
     with pytest.raises(ValidationError):
         DeliveryEvidenceReadQuery(board_id="b", spec_id="s", **patch)

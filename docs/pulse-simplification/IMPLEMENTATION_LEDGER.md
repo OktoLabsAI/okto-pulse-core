@@ -14965,3 +14965,32 @@ Não promover os critérios completos de retomada: permanecem os limites acima.
 F16.2 final terminal: **8839 linhas, ok=true, zero findings arquiteturais e
 documentais, oito budgets zero**, closure-card-resume-final.json. Frontend
 verify confirmou o hash registrado acima. Nenhum processo de validação pendente.
+
+### Manifesto/detalhe do ledger e edições anteriores — implementação em curso
+
+Após a7bf3324/c3f649d9, adicionada view=ledger à mesma leitura autorizada:
+pagina kinds mistos, detalhe original com autoria/revogação, currentness sempre
+not_evaluated. Não revalida receipt nem concede crédito histórico. Metadados
+internos de replay são omitidos e identificados. Progresso/ledger aceitam edition
+anterior explícita do mesmo Card/Spec/Board; estado é rotulado current_card para
+não inventar status histórico. Cursores vinculam view e edição; resume continua
+somente na edição corrente. Respostas: 128 KiB resumo, 512 KiB detalhe explícito.
+Nenhuma escrita/migração/backfill ou nova permissão.
+
+UI pagina registros e permite escolher edição, cancelando requests e limpando
+dados ao trocar o escopo. Frontend passou (card-ledger-frontend.xml); build/sync
+78 arquivos, hash 57d0cbb17ca444f58221005e59a8b797b4bf37e354c2cc140693d5687b163118.
+Par dist-card-ledger construído, instalação em curso. Backend ainda não validado.
+Continuar prova terminal, regressões de kinds mistos/edição/cursor/transporte,
+F16 e commit/push. Testes relevantes de outros Cards e detalhes de Targets
+ainda pendentes de integração; não declarar retomada completa. Inventário 67/31/148.
+
+Validação terminal: frontend **26 passed**, TS/Vite/sync/verify confirmados.
+Par instalado e byte-identical em provenance-card-ledger.json: Core 830 .py/
+893 payloads, Community 362 .py/446 payloads. Core **40 passed em 5.29s**,
+card-ledger-core.xml; Community **22 passed em 65.94s**, card-ledger-community.xml.
+Ruff F/E9 e diff check limpos (avisos CRLF apenas). A fixture de edição altera
+metadados descartáveis para testar leitura; não é novo ensaio da transição
+autorizada de reabertura, já validada em incremento anterior.
+F16.2 terminal **8839 linhas, ok=true, zero findings arquiteturais/documentais,
+oito budgets zero**, closure-card-ledger.json. Nenhum processo pendente.

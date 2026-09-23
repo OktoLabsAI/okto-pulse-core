@@ -80,12 +80,14 @@ class DeliveryEvidenceStore(DeliveryEvidenceReadPort, Protocol):
         ...
 
     async def progress_history(self, query: DeliveryEvidenceReadQuery, *, actor_id: str) -> dict:
-        """Bounded Card progress page or detail, never proof or recovery credit.
+        """Bounded Card progress/ledger page or detail, never proof/recovery credit.
 
         Bind cursors to actor, Board/Card/Spec/edition, page size and ledger
         generation; refuse stale scopes. Reauthorize every read in the use case.
         Preserve authors and revocations. No KG, workspace inspection, lifecycle
         mutation or implicit note supersession. Never commit the transaction.
+        Explicit prior editions are read-only history under the same scope and
+        permission, never reinterpreted as facts from the current edition.
         """
         ...
 

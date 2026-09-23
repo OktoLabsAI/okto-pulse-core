@@ -921,5 +921,16 @@ Tests shown here belong to this Card; read the Spec rollup for other Test Cards.
 Follow-up reads remain subject to their own permissions and gates. The response
 does not inspect a workspace or claim that all narrative pending work is resolved.
 
+Use `view="ledger"` with `card_id` to page all kinds of immutable Card records,
+or add `record_id` for original declaration/binding detail. Summaries are capped
+at 128 KiB; explicit single-record detail at 512 KiB. Internal replay metadata
+is omitted and named in `omitted_internal_fields`. This history view labels
+currentness `not_evaluated`; a receipt reference is not a fresh observation.
+Both `progress` and `ledger` accept an explicit prior `edition`. The response
+identifies historical versus current edition and labels status as the current
+Card status, never an invented historical status. Cursor scope includes view
+and edition, and authorization is checked again on every page/detail. Use the
+current `resume` view and canonical gates to determine applicable proof.
+
 These are separate closed schemas. Do not collapse them into a heterogeneous
 `target_type + payload` command.
