@@ -15202,3 +15202,39 @@ O censo é subconjunto confirmado, não lista exaustiva. Inventário permanece
 70/33/143; BASE T33 não pode ser promovido. Nenhuma fonte produtiva alterada
 nesta investigação. Próximo passo é implementação e regeneração coordenada,
 com frontend tests/build para HelpPanel, par byte-identical e F16 zero.
+
+### F4 — retirada de administração REST da exploração em implementação
+
+Removidos de api/kg_exploration.py os handlers prepare_search, activate_history,
+history_prune, seus três schemas e invoke_admin. authorize perdeu a variante
+write exclusiva, preservando exatamente leitura, autorização CT e audit.read.
+Documentação GRAFX_ADVANCED_ADOPTION atualizada. Nenhum client frontend chama
+estas três rotas segundo busca de consumers; nenhuma alteração de UI aqui.
+
+Tests test_kg_exploration_maintenance_retirement.py exige 404 antes de resolver
+authoridade/UoW/registry, em boards missing/foreign/owned e payloads vazios/
+legados, além de ausência OpenAPI/modelos/handlers. test_kg_exploration_api.py
+preserva testes de leitura real nativa, falhas e denials; preparação de índices
+e histórico para essas fixtures ocorre diretamente no adapter descartável,
+não por endpoint retirado. Isso não prova instalação automática de capabilities.
+
+Par dist-exploration-retirement instalado (pip terminal) e prova repetida após
+terminal em provenance-exploration-retirement.json: 830/893 Core, 363/447
+Community byte-identical. Ruff F/E9 limpo. Testes exploration-retirement.xml e
+F16 closure-exploration-retirement.json ainda em execução. Não concluir antes
+de resultados terminais. Registry MCP não foi alterado neste recorte.
+
+Pendências F4 preservadas: seis tools do censo, migrate-schema/orphan REST,
+permissões compartilhadas, HelpPanel/resources e limpeza de mecanismos internos
+exclusivos. Métodos adapter prepare/activate/prune ainda existem e carecem de
+classificação de consumidores internos após retirada pública; não afirmar F4
+encerrada nem confundir fixture de teste com consumidor legítimo do produto.
+
+Validação terminal da retirada exploration: **33 passed em 141.76s**,
+exploration-retirement.xml; leitura nativa sem criação de índice **1 passed em
+23.26s**, exploration-read-no-index.xml. Casos nativos preservam resultados de
+busca text/hybrid, commits/as-of e denials de CT/audit. F16.2 terminal **8840
+linhas, ok=true, zero findings arquiteturais/documentais e oito budgets zero**,
+closure-exploration-retirement.json. Diff check e Ruff limpos. Sem testes ou
+instalações pendentes. Documentação interna de capabilities foi distinguida das
+rotas públicas retiradas; cleanup interno restante segue declarado acima.
