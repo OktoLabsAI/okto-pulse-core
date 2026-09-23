@@ -42,7 +42,7 @@
     ],
     "source": "okto_pulse/core/mcp/agent_instructions.md"
   },
-  "manifest_sha256": "ffc81d122b4b943c7ff87241f914cbf6b9c37fc4e92e5073cdeba1eb54d08d52",
+  "manifest_sha256": "0a27f236a6e685ecff30aa1c224c57abf074d58a1b062c237fd53c70971a64c0",
   "manifest_version": "agent-resources/v2",
   "resource_count": 22,
   "resources": [
@@ -91,7 +91,7 @@
       "uri": "okto-pulse://reference/destructive_ops"
     },
     {
-      "content_sha256": "73a1d3c9ee8013469b1429d17c4f59b005dfd35df0bc0582dd8d5c46435163c1",
+      "content_sha256": "0ea3e2e0d59509537d5a49ad748aeec193abbb2cf43d23acc9fc098b88a45bda",
       "cross_links": [
         "okto-pulse://reference/code-traceability",
         "okto-pulse://reference/kg-health",
@@ -317,7 +317,7 @@
       "uri": "okto-pulse://reference/tool-docs/spec"
     },
     {
-      "content_sha256": "b1ec16b56c30e49ae8c929dd97c1f2b6259e8d596def81506560ebedc8c5d54b",
+      "content_sha256": "532fa5df42bc9ee53ee4e7fb4f37e10564c4ffa556d37dd27265b12fa4ab6711",
       "cross_links": [
         "okto-pulse://reference/card_types",
         "okto-pulse://reference/code-traceability",
@@ -338,7 +338,7 @@
       "uri": "okto-pulse://reference/tool-docs/test-scenario"
     },
     {
-      "content_sha256": "719161cd86bd21b9b1adbf458752546a234df807c4e4124a0d8faccd528082cd",
+      "content_sha256": "d84db5079b72b351a045dff4a9e1b8bafa37992c0880a45de1fc425a98fffb6e",
       "cross_links": [
         "okto-pulse://reference/list_tools",
         "okto-pulse://reference/policy-compliance",
@@ -385,7 +385,7 @@
       "uri": "okto-pulse://reference/tools_catalog"
     },
     {
-      "content_sha256": "a733c48632d3cba96fd1ad252cfecfebe711c09c73b9f6cfe8c55f0ed4852b9b",
+      "content_sha256": "726564ec93642dc2f6bb9a1ef2139267cc08ce33de9c70ecd9e53eba13f20466",
       "cross_links": [
         "okto-pulse://reference/card_types",
         "okto-pulse://reference/code-traceability",
@@ -404,7 +404,7 @@
       "uri": "okto-pulse://reference/transitions"
     },
     {
-      "content_sha256": "bb706a5fdad8f5b6bd7a43cf01538fba16b8fb9a8439d7aedc13bf6e6ed03444",
+      "content_sha256": "d06f88ba602e284a671f867d0f16bc367775d7ff75592e6620b6f78bcf133bdf",
       "cross_links": [
         "okto-pulse://reference/card_types",
         "okto-pulse://reference/code-traceability",

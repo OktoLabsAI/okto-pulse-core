@@ -68,7 +68,6 @@ def _board_scope_guard_violations(
         "create_spec",
         "create_ideation",
         "create_refinement",
-        "create_sprint",
         "convert_stories",
         "derive_spec",
     )
@@ -330,6 +329,7 @@ def test_board_seed_inventory_uses_query_scope_helpers() -> None:
     }
 
     assert _board_scope_guard_violations(service_source, use_case_sources) == []
+    assert _find_async_function(service_source, "create_sprint") is None
 
 
 def test_board_seed_scope_guard_bites_raw_board_query() -> None:

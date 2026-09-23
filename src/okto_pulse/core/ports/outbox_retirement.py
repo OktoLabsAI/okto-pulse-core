@@ -60,7 +60,7 @@ def classify_outbox_retirement(*, event: Mapping, audit: Mapping | None,
     if (not references or len(references) > 100_000
             or any(ref.get("operation") != "add" for ref in references)):
         return result("review", "outbox_node_references_incomplete")
-    keys = tuple((ref.get("kuzu_node_type"), ref.get("kuzu_node_id")) for ref in references)
+    keys = tuple((ref.get("node_type"), ref.get("node_id")) for ref in references)
     if (any(type(kind) is not str or type(key) is not str for kind, key in keys)
             or len(set(keys)) != len(keys) or len(keys) != payload["nodes_added"]):
         return result("review", "outbox_node_reference_census_mismatch")

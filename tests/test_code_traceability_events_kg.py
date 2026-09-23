@@ -180,7 +180,7 @@ def _target() -> dict[str, object]:
 def test_event_registry_adds_exactly_the_eighteen_closed_event_names():
     actual = {event.event_type for event in _TRACEABILITY_EVENT_CLASSES}
     assert actual == _TRACEABILITY_EVENT_TYPES
-    assert len(EVENT_TYPES) == 64
+    assert len(EVENT_TYPES) == 61  # Three retired Sprint lifecycle events.
     assert _TRACEABILITY_EVENT_TYPES.issubset(EVENT_TYPES)
     for event_class in _TRACEABILITY_EVENT_CLASSES:
         assert resolve_event_class(event_class.event_type) is event_class

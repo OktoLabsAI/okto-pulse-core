@@ -116,6 +116,17 @@ class _UnsupportedHistoricalArchiveGrants:
         raise NotImplementedError("fake SaaS historical archive grants were not configured")
 
 
+class _UnsupportedHistoricalContextReader:
+    async def has_current_target_access(self, **kwargs: object) -> None:
+        raise NotImplementedError("fake SaaS historical context reader was not configured")
+
+    async def list_bindings(self, **kwargs: object) -> None:
+        raise NotImplementedError("fake SaaS historical context reader was not configured")
+
+    async def read_binding(self, **kwargs: object) -> None:
+        raise NotImplementedError("fake SaaS historical context reader was not configured")
+
+
 class FakeSaaSUnitOfWork:
     """Copy-on-write UnitOfWork with no native persistence handle."""
 
@@ -152,6 +163,7 @@ class FakeSaaSUnitOfWork:
         self.entity_exports = unsupported_semantic_port
         self.historical_archive_grants = _UnsupportedHistoricalArchiveGrants()
         self.historical_archive_reader = self.historical_archive_grants
+        self.historical_context_reader = _UnsupportedHistoricalContextReader()
         self.commit_calls = 0
         self.rollback_calls = 0
         self.close_calls = 0

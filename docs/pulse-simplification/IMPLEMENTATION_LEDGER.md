@@ -14401,3 +14401,110 @@ A auditoria arquitetural adicional terminou: Core 127 passed / Community
 99 passed em 158.41s (XML acceptance-architecture-community.xml).
 Sem testes/sessões pendentes neste checkpoint. Continuar sem pausa com
 mapeamento explícito de aceitação, gaps e benchmark; não declarar plano completo.
+
+### Auditoria de aceitação e regressão ampla — 2026-09-23
+
+Par publicado Core 65e08231 / Community d53cfd2b, pushes confirmados.
+acceptance-architecture-execution.json registra mapeamento manual de oráculos
+para 24 critérios ARQVER: 18 comprovados / 6 parciais, com testes exatos,
+parâmetros executados, hashes das fontes/JUnit/payloads. Não extrapola aos 246.
+Cinco novos ensaios Community passaram em 85.93s: classificação independente
+entre Specs, sugestão aceita com contrato completo, origem homônima posterior,
+publicação parcial com consumo contextual e reference-only HTTP sem I/O remoto.
+XML acceptance-architecture-witnesses.xml. Complementam 127 Core + 99 Community.
+Frontend completo: 254 arquivos / 2279 testes passed em 184.67s,
+acceptance-frontend.xml. Nenhum código de frontend alterado neste incremento.
+
+Regressão Core não stress/não e2e interrompeu automaticamente no maxfail=10:
+2299 passed / 10 failed / 2 deselected em 620.94s. Não equivale à suite completa.
+XML acceptance-core-regression.xml. Falhas e investigação:
+- GraphRuntimeSurfaceGate encontrou nomes físicos legados em ports/outbox_retirement.
+  Reprodução isolada: 1 failed em 8.73s, kuzu em linha 63. Não é simples drift
+  de teste: Core recebia o nome da coluna da tabela concreta. Normalização agora
+  ocorre em global_outbox_retirement Community; porta recebe node_type/node_id.
+  Bytes do snapshot, schema persistido, seleção e semântica histórica preservados.
+- F16 verificava o ledger de compatibilidade vazio mas NÃO invocava esse gate.
+  F16.2 executa o scanner e falha com diagnóstico localizado mesmo com budget
+  ZERO. Adicionado ensaio de injeção; não adicionar allowance ou excluir porta.
+- Manifesto de resources desatualizado: regenerado por módulo próprio, sem
+  edição manual; tool manifest regenerado e não sofreu delta semântico.
+- Contagens antigas: mcp-tools-f09.json 340 → 312, exatamente 34 superfícies
+  aposentadas (Sprint/manutenção pública) e 6 adicionadas. Lista completa em
+  acceptance-inventory-drift.json. Policies 308, flags 552; eventos 64→61 pela
+  remoção de sprint.created/moved/closed. Assertions exatas preservadas.
+- AF22 ainda exigia create_sprint: agora exige ausência e preserva todos os
+  guards de escopo sobreviventes. Assignment Sprint agora testa recusa inclusive
+  null; não se restaura autoridade aposentada.
+- Teste de skip cognitivo não fornecia a porta independente de Delivery.
+  Fixture explicitamente aceita só para isolar esse teste; nenhuma alteração
+  de gate de produção. O teste exige que a porta tenha sido consultada.
+
+Build/install/prova e regressões destas correções em preparação. Este trecho
+não declara as correções validadas. Todas as execuções anteriores encerraram;
+nenhum processo de testes estava em memória durante a alteração produtiva.
+
+Correções revalidadas no par provenance-acceptance-boundary.json:
+primeira execução focada 112 passed / 4 failed em 35.67s. Um teste novo omitia
+os dois argumentos de projeção Community do relatório (corrigido no fixture).
+Outros três testes antigos positivos de política cognitiva também careciam
+explicitamente da porta de Delivery: reprodução retornou completion_gate_failures
+com delivery_evidence_incomplete / card_delivery_evidence_adapter_unavailable.
+Receberam a fixture aceita apenas nos casos que isolam política cognitiva.
+Reexecução de todos os testes cognitivos + F16: 24 passed em 61.81s.
+Assim, os 116 casos únicos do conjunto focado passaram entre os dois runs.
+
+F16.2 final: closure-acceptance-boundary-final.json ok=true, 8829 linhas,
+zero findings e budgets 8/8 ZERO. READMEs gerados/conferidos; manifesto de
+resources regenerado. Prova provenance-acceptance-boundary-final.json confirma
+par instalado / wheels finais / src byte-a-byte (829/892 e 360/444):
+Core b6d5628245c6a7524395e7c58eceaa55371c3a2ff1aff6e31304d75a7f73d92f;
+Community 19f476977d12c4dcafe95ae287922e022a28e0819bd90f013a6f388098f6a31c.
+
+Sessões ainda ativas neste registro: Community outbox/materialização 89223;
+regressão Core restante 78102 (acceptance-core-continuation.xml, maxfail=15,
+sem stress/e2e). A seleção ignora 197 módulos já percorridos na primeira etapa;
+o último interrompido foi reexecutado inteiro no conjunto focado. Não afirmar
+que toda regressão passou nem alterar fontes produtivas durante esses runs.
+
+### Continuação da aceitação isolada — 2026-09-23
+
+Community outbox/materialização encerrou: 25 passed em 799.32s,
+acceptance-boundary-community.xml. Frontend permanece 2279 passed.
+O ambiente core-wheel-acceptance foi criado sem system-site-packages:
+829 arquivos Python idênticos ao wheel e 828 módulos importados, sem
+Community/SQLAlchemy/FastAPI/Starlette/aiosqlite instalados ou carregados.
+Prova inicial isolated-core-acceptance.json.
+
+As duas CIs referiam test_f05_spec_materialization_policy.py, removido no
+commit 3570289e. Substituído pelo sucessor test_retired_kg_cli_contracts.py,
+que verifica a aposentadoria da superfície. Seleção isolada executada:
+157 passed / 1 failed em 85.41s (acceptance-isolated-core.xml).
+Falha real de conformidade: FakeSaaSUnitOfWork não oferecia a porta pública
+historical_context_reader. Correção adiciona capability explicitamente não
+configurada, levantando NotImplementedError em todas as operações; não
+retorna autorização nem histórico vazio. Assertion do Protocol preservada.
+
+A sessão 78102 foi interrompida deliberadamente antes da alteração produtiva;
+os dois processos dessa execução foram confirmados encerrados. Seleção
+incluía real_kg além da suíte rápida documentada, sem término nem aprovação.
+Separar a campanha rápida (not stress and not e2e and not real_kg) dos testes
+nativos. Nova construção dist-acceptance-uow em validação; registrar provas
+e resultados terminais antes de declarar a correção aprovada.
+
+Validação terminal do novo par: provenance-acceptance-uow.json confirma
+829/892 Core e 360/444 Community idênticos byte a byte. Ambiente Core isolado:
+isolated-core-acceptance-uow.json, 829 Python / 828 módulos, zero dependências
+ou imports proibidos; wheel SHA256
+69fd0f61513e2f5322c8c7c88617721543a99520905d09775194e9286a08afa1.
+Seleção isolada das CIs: **159 passed em 95.27s**,
+acceptance-isolated-core-uow.xml. F16.2 final do mesmo par:
+closure-acceptance-uow.json, ok=true, zero findings, oito budgets em zero,
+READMEs conferidos. Ruff F/E9 do helper e teste passou.
+
+Continuação rápida em curso na sessão 8562, XML esperado
+acceptance-core-fast-continuation.xml. Ainda não é evidência terminal.
+Próxima frente após publicar estas correções: concluir regressão e ampliar
+o mapeamento executado de aceitação, incluindo a transição real de início
+com candidato pendente e reavaliação dos demais gates. A inspeção do ensaio
+test_first_start_checks_real_shared_plan_without_requiring_execution prova
+o serviço de prontidão, mas não a transição completa; não extrapolar AC-ARQ-15.

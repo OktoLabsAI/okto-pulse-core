@@ -1993,8 +1993,12 @@
       "line": 268,
       "id": "AC-ARQ-01",
       "normative_text": "**AC-ARQ-01 — verifica RF-ARQ-01.** **Dado** Um refinamento com dois Designs e uma Spec que adota apenas um deles. **Quando** A Spec é criada e seu contexto arquitetural é consultado. **Então** As interfaces com contrato do Design adotado aparecem como candidatas pendentes; as do outro Design não entram no denominador; nenhum IR ou card é criado.",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "verified_by_reviewed_execution",
+      "test_text_references": [],
+      "reviewed_execution": {
+        "artifact": "acceptance-architecture-execution.json",
+        "criterion_key": "ARQVER:AC-ARQ-01"
+      }
     },
     {
       "key": "ARQVER:AC-ARQ-02",
@@ -2011,8 +2015,12 @@
       "line": 280,
       "id": "AC-ARQ-03",
       "normative_text": "**AC-ARQ-03 — verifica RF-ARQ-03.** **Dado** Interfaces contendo somente nome/protocolo, uma com schema_ref e outra com request_schema={}. **Quando** O contexto calcula os candidatos. **Então** Nome/protocolo isolados não geram candidato; referência e schema declarado geram candidatos com as limitações apropriadas; nenhum conteúdo é inventado.",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "verified_by_reviewed_execution",
+      "test_text_references": [],
+      "reviewed_execution": {
+        "artifact": "acceptance-architecture-execution.json",
+        "criterion_key": "ARQVER:AC-ARQ-03"
+      }
     },
     {
       "key": "ARQVER:AC-ARQ-04",
@@ -2020,8 +2028,12 @@
       "line": 286,
       "id": "AC-ARQ-04",
       "normative_text": "**AC-ARQ-04 — verifica RF-ARQ-04.** **Dado** Duas cópias equivalentes da mesma origem e duas interfaces homônimas de origens distintas. **Quando** As cópias são incorporadas e o layout é modificado. **Então** A origem equivalente aparece uma vez; origens distintas permanecem distintas; classificações existentes não se perdem; ler não grava IDs.",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "verified_by_reviewed_execution",
+      "test_text_references": [],
+      "reviewed_execution": {
+        "artifact": "acceptance-architecture-execution.json",
+        "criterion_key": "ARQVER:AC-ARQ-04"
+      }
     },
     {
       "key": "ARQVER:AC-ARQ-05",
@@ -2029,13 +2041,17 @@
       "line": 292,
       "id": "AC-ARQ-05",
       "normative_text": "**AC-ARQ-05 — verifica RF-ARQ-05.** **Dado** Uma Spec com uma lista que exige mais de uma página. **Quando** O agente solicita a primeira página e o resumo de cobertura. **Então** A resposta é limitada, contém contadores globais corretos e continuidade; não contém o payload gráfico inteiro nem afirma completude com base apenas na página.",
-      "review_status": "not_audited_in_this_inventory",
+      "review_status": "verified_by_reviewed_execution",
       "test_text_references": [
         {
           "path": "okto_labs_pulse_core/tests/test_architecture_classification_review.py",
           "line": 1
         }
-      ]
+      ],
+      "reviewed_execution": {
+        "artifact": "acceptance-architecture-execution.json",
+        "criterion_key": "ARQVER:AC-ARQ-05"
+      }
     },
     {
       "key": "ARQVER:AC-ARQ-06",
@@ -2043,8 +2059,12 @@
       "line": 298,
       "id": "AC-ARQ-06",
       "normative_text": "**AC-ARQ-06 — verifica RF-ARQ-06.** **Dado** Três candidatos pendentes. **Quando** O autor seleciona uma das três decisões para cada candidato. **Então** Cada decisão é persistida com autoria/versão; os efeitos são os definidos em 2.2; pendente sem escolha continua pendente; não há nova transição de workflow.",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "verified_by_reviewed_execution",
+      "test_text_references": [],
+      "reviewed_execution": {
+        "artifact": "acceptance-architecture-execution.json",
+        "criterion_key": "ARQVER:AC-ARQ-06"
+      }
     },
     {
       "key": "ARQVER:AC-ARQ-07",
@@ -2052,13 +2072,17 @@
       "line": 304,
       "id": "AC-ARQ-07",
       "normative_text": "**AC-ARQ-07 — verifica RF-ARQ-07.** **Dado** Um candidato com contrato de evento e um autor com as permissões necessárias. **Quando** O autor promove com os campos de IR informados e aceita a sugestão consistente. **Então** O IR conserva tipo e contrato de evento sem HTTP inventado; origem e decisão são gravadas junto; uma falha de validação não deixa IR órfão ou candidato falsamente resolvido.",
-      "review_status": "not_audited_in_this_inventory",
+      "review_status": "verified_by_reviewed_execution",
       "test_text_references": [
         {
           "path": "okto_labs_pulse_core/tests/test_architecture_promotion_suggestion.py",
           "line": 1
         }
-      ]
+      ],
+      "reviewed_execution": {
+        "artifact": "acceptance-architecture-execution.json",
+        "criterion_key": "ARQVER:AC-ARQ-07"
+      }
     },
     {
       "key": "ARQVER:AC-ARQ-08",
@@ -2066,8 +2090,12 @@
       "line": 310,
       "id": "AC-ARQ-08",
       "normative_text": "**AC-ARQ-08 — verifica RF-ARQ-08.** **Dado** Um contrato com schema de mensagem, erro e referência externa versionada. **Quando** O contrato é promovido ou reutilizado. **Então** Todos os elementos adotados são recuperáveis pela proveniência; campos não representados localmente têm referência explícita; nenhuma cláusula some sem decisão de escopo.",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "verified_by_reviewed_execution",
+      "test_text_references": [],
+      "reviewed_execution": {
+        "artifact": "acceptance-architecture-execution.json",
+        "criterion_key": "ARQVER:AC-ARQ-08"
+      }
     },
     {
       "key": "ARQVER:AC-ARQ-09",
@@ -2075,8 +2103,12 @@
       "line": 316,
       "id": "AC-ARQ-09",
       "normative_text": "**AC-ARQ-09 — verifica RF-ARQ-09.** **Dado** Um IR local ainda não implementado e um IR semelhante em outra Spec. **Quando** O autor associa o candidato ao IR local. **Então** A duplicação é evitada, mas o IR continua pendente de entrega; tentar usar o outro IR como cumprimento local sem contrato de dependência suportado é recusado.",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "partial",
+      "test_text_references": [],
+      "reviewed_execution": {
+        "artifact": "acceptance-architecture-execution.json",
+        "criterion_key": "ARQVER:AC-ARQ-09"
+      }
     },
     {
       "key": "ARQVER:AC-ARQ-10",
@@ -2084,8 +2116,12 @@
       "line": 322,
       "id": "AC-ARQ-10",
       "normative_text": "**AC-ARQ-10 — verifica RF-ARQ-10.** **Dado** Um candidato ligado a um IR que já integra o escopo aprovado. **Quando** Alguém tenta classificá-lo como somente contexto para encerrar a Spec. **Então** O IR e suas obrigações não desaparecem. O write que produziria dispensa tácita é recusado ou exige a revisão de escopo autorizada, sem alterar o resultado histórico.",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "partial",
+      "test_text_references": [],
+      "reviewed_execution": {
+        "artifact": "acceptance-architecture-execution.json",
+        "criterion_key": "ARQVER:AC-ARQ-10"
+      }
     },
     {
       "key": "ARQVER:AC-ARQ-11",
@@ -2093,8 +2129,12 @@
       "line": 328,
       "id": "AC-ARQ-11",
       "normative_text": "**AC-ARQ-11 — verifica RF-ARQ-11.** **Dado** Uma interface declara publicação e consumo, mas a Spec só implementa publicação. **Quando** O autor promove a parte de publicação e delimita o restante como contexto. **Então** A Spec não assume entrega do consumidor; a origem do IR e a exclusão de escopo são visíveis; o contrato fonte permanece íntegro.",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "partial",
+      "test_text_references": [],
+      "reviewed_execution": {
+        "artifact": "acceptance-architecture-execution.json",
+        "criterion_key": "ARQVER:AC-ARQ-11"
+      }
     },
     {
       "key": "ARQVER:AC-ARQ-12",
@@ -2102,8 +2142,12 @@
       "line": 334,
       "id": "AC-ARQ-12",
       "normative_text": "**AC-ARQ-12 — verifica RF-ARQ-12.** **Dado** Um lote com promoção e contexto, uma chave de idempotência e permissões parciais. **Quando** O lote é submetido, repetido ou alterado. **Então** O lote não autorizado faz zero writes; o autorizado é atômico; replay exato não duplica IRs; reuso divergente da chave é conflito; futuros candidatos não são automaticamente classificados pelo lote antigo.",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "verified_by_reviewed_execution",
+      "test_text_references": [],
+      "reviewed_execution": {
+        "artifact": "acceptance-architecture-execution.json",
+        "criterion_key": "ARQVER:AC-ARQ-12"
+      }
     },
     {
       "key": "ARQVER:AC-ARQ-13",
@@ -2111,8 +2155,12 @@
       "line": 340,
       "id": "AC-ARQ-13",
       "normative_text": "**AC-ARQ-13 — verifica RF-ARQ-13.** **Dado** Dois candidatos classificados e um Design cuja mudança afeta apenas o contrato de um deles. **Quando** A nova revisão é adotada pela Spec. **Então** Apenas o candidato afetado exige revisão; o outro permanece resolvido; nenhum IR é silenciosamente reescrito, duplicado ou excluído.",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "verified_by_reviewed_execution",
+      "test_text_references": [],
+      "reviewed_execution": {
+        "artifact": "acceptance-architecture-execution.json",
+        "criterion_key": "ARQVER:AC-ARQ-13"
+      }
     },
     {
       "key": "ARQVER:AC-ARQ-14",
@@ -2120,8 +2168,12 @@
       "line": 346,
       "id": "AC-ARQ-14",
       "normative_text": "**AC-ARQ-14 — verifica RF-ARQ-14.** **Dado** Uma fonte adotada é removida após a promoção de um IR. **Quando** O contexto/gate é reavaliado. **Então** A retirada e sua versão ficam auditadas, o IR permanece no escopo até revisão autorizada e a cobertura não se torna 100% por esconder a fonte indisponível.",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "partial",
+      "test_text_references": [],
+      "reviewed_execution": {
+        "artifact": "acceptance-architecture-execution.json",
+        "criterion_key": "ARQVER:AC-ARQ-14"
+      }
     },
     {
       "key": "ARQVER:AC-ARQ-15",
@@ -2138,8 +2190,12 @@
       "line": 358,
       "id": "AC-ARQ-16",
       "normative_text": "**AC-ARQ-16 — verifica RF-ARQ-16.** **Dado** Um schema_ref aponta a uma URL arbitrária e a lista é aberta repetidamente. **Quando** O usuário consulta candidatos e detalhes disponíveis. **Então** Não há request externo, novo IR, job de reparo ou alteração de classificação provocado pela leitura; a referência não resolvida é indicada honestamente.",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "verified_by_reviewed_execution",
+      "test_text_references": [],
+      "reviewed_execution": {
+        "artifact": "acceptance-architecture-execution.json",
+        "criterion_key": "ARQVER:AC-ARQ-16"
+      }
     },
     {
       "key": "ARQVER:AC-VER-01",
@@ -2427,8 +2483,12 @@
       "line": 725,
       "id": "ADV-01",
       "normative_text": "| ADV-01 | Mesma origem propagada para duas Specs com decisões diferentes. | Classificação é local; uma não contamina a outra. |",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "verified_by_reviewed_execution",
+      "test_text_references": [],
+      "reviewed_execution": {
+        "artifact": "acceptance-architecture-execution.json",
+        "criterion_key": "ARQVER:ADV-01"
+      }
     },
     {
       "key": "ARQVER:ADV-02",
@@ -2436,8 +2496,12 @@
       "line": 726,
       "id": "ADV-02",
       "normative_text": "| ADV-02 | Duas revisões diferentes da mesma interface na mesma Spec. | Há conflito ou seleção explícita de versões, não dedup por nome. |",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "verified_by_reviewed_execution",
+      "test_text_references": [],
+      "reviewed_execution": {
+        "artifact": "acceptance-architecture-execution.json",
+        "criterion_key": "ARQVER:ADV-02"
+      }
     },
     {
       "key": "ARQVER:ADV-03",
@@ -2445,13 +2509,17 @@
       "line": 727,
       "id": "ADV-03",
       "normative_text": "| ADV-03 | Pending escondido na segunda página. | O gate continua bloqueado. |",
-      "review_status": "not_audited_in_this_inventory",
+      "review_status": "partial",
       "test_text_references": [
         {
           "path": "okto_labs_pulse_core/tests/test_verification_plan.py",
           "line": 1
         }
-      ]
+      ],
+      "reviewed_execution": {
+        "artifact": "acceptance-architecture-execution.json",
+        "criterion_key": "ARQVER:ADV-03"
+      }
     },
     {
       "key": "ARQVER:ADV-04",
@@ -2459,8 +2527,12 @@
       "line": 728,
       "id": "ADV-04",
       "normative_text": "| ADV-04 | Lista vazia porque a fonte está inacessível. | Estado é desconhecido/indisponível, não zero candidatos confirmado. |",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "verified_by_reviewed_execution",
+      "test_text_references": [],
+      "reviewed_execution": {
+        "artifact": "acceptance-architecture-execution.json",
+        "criterion_key": "ARQVER:ADV-04"
+      }
     },
     {
       "key": "ARQVER:ADV-05",
@@ -2468,8 +2540,12 @@
       "line": 729,
       "id": "ADV-05",
       "normative_text": "| ADV-05 | Contrato em campo de erro como string. | É preservado como contrato declarado; não tratado como instrução nem convertido arbitrariamente para JSON. |",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "verified_by_reviewed_execution",
+      "test_text_references": [],
+      "reviewed_execution": {
+        "artifact": "acceptance-architecture-execution.json",
+        "criterion_key": "ARQVER:ADV-05"
+      }
     },
     {
       "key": "ARQVER:ADV-06",
@@ -2477,8 +2553,12 @@
       "line": 730,
       "id": "ADV-06",
       "normative_text": "| ADV-06 | Schema_ref aponta para endereço interno/sensível. | Nenhum acesso remoto automático pelo backend. |",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "verified_by_reviewed_execution",
+      "test_text_references": [],
+      "reviewed_execution": {
+        "artifact": "acceptance-architecture-execution.json",
+        "criterion_key": "ARQVER:ADV-06"
+      }
     },
     {
       "key": "ARQVER:ADV-07",
@@ -2486,8 +2566,12 @@
       "line": 731,
       "id": "ADV-07",
       "normative_text": "| ADV-07 | Candidate context_only em snapshot antigo e contrato novo adotado. | A decisão antiga não cobre a nova semântica sem revisão. |",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "verified_by_reviewed_execution",
+      "test_text_references": [],
+      "reviewed_execution": {
+        "artifact": "acceptance-architecture-execution.json",
+        "criterion_key": "ARQVER:ADV-07"
+      }
     },
     {
       "key": "ARQVER:ADV-08",
@@ -2495,8 +2579,12 @@
       "line": 732,
       "id": "ADV-08",
       "normative_text": "| ADV-08 | Classificação escrita depois de content lock. | Nenhuma criação/mutação de requisito escapa do processo de revisão. |",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "verified_by_reviewed_execution",
+      "test_text_references": [],
+      "reviewed_execution": {
+        "artifact": "acceptance-architecture-execution.json",
+        "criterion_key": "ARQVER:ADV-08"
+      }
     },
     {
       "key": "ARQVER:ADV-09",
@@ -2599,8 +2687,12 @@
       "line": 743,
       "id": "ADV-19",
       "normative_text": "| ADV-19 | Falha entre criação de IR, classificação e outbox. | Rollback/replay convergem sem IR órfão, dupla promoção ou evento perdido. |",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "verified_by_reviewed_execution",
+      "test_text_references": [],
+      "reviewed_execution": {
+        "artifact": "acceptance-architecture-execution.json",
+        "criterion_key": "ARQVER:ADV-19"
+      }
     },
     {
       "key": "ARQVER:ADV-20",
@@ -2644,8 +2736,12 @@
       "line": 748,
       "id": "ADV-24",
       "normative_text": "| ADV-24 | Contrato arbitrário contém instrução para desativar gates. | Conteúdo é dado; nenhuma mutação de configuração é realizada. |",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "partial",
+      "test_text_references": [],
+      "reviewed_execution": {
+        "artifact": "acceptance-architecture-execution.json",
+        "criterion_key": "ARQVER:ADV-24"
+      }
     }
   ]
 }

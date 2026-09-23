@@ -7,6 +7,7 @@ import pytest
 
 from okto_pulse.core.domain.entities import Board
 from okto_pulse.core.domain.realm import RealmScope
+from okto_pulse.core.ports.historical_context import HistoricalContextReadPort
 from okto_pulse.core.repositories.interfaces.unit_of_work import PulseUnitOfWork
 from okto_pulse.core.testing.fake_saas_uow import FakeSaaSUnitOfWorkFactory
 
@@ -32,6 +33,17 @@ async def test_f02_fake_uow_commits_once_and_isolates_transactions() -> None:
 
     assert factory.created[0].commit_calls == 1
     assert factory.created[0].rollback_calls == 0
+
+
+@pytest.mark.asyncio
+async def test_unconfigured_historical_context_fails_closed() -> None:
+    factory = FakeSaaSUnitOfWorkFactory()
+    async with factory(realm_scope=RealmScope.tenant("realm-a")) as uow:
+        reader = uow.historical_context_reader
+        assert isinstance(reader, HistoricalContextReadPort)
+        for operation in (reader.has_current_target_access, reader.list_bindings, reader.read_binding):
+            with pytest.raises(NotImplementedError, match="historical context reader was not configured"):
+                await operation()
 
 
 @pytest.mark.asyncio

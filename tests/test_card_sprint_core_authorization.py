@@ -56,7 +56,6 @@ def test_test_card_mapping_uses_specific_create_permission():
     [
         ({"title": "New"}, {"card.entity.edit_fields"}),
         ({"assignee_id": "agent-2"}, {"card.entity.assign"}),
-        ({"sprint_id": "sprint-2"}, {"card.entity.assign"}),
         ({"labels": ["urgent"]}, {"card.entity.label"}),
         ({"spec_id": "spec-2"}, {"card.entity.link_spec"}),
         ({"test_scenario_ids": ["ts-1"]}, {"card.entity.link_tests"}),
@@ -72,6 +71,12 @@ def test_card_update_fields_map_to_canonical_permissions(payload, expected):
     requirements = card_update_permission_requirements(payload, state="not_started")
 
     assert {requirement.operation for requirement in requirements} == expected
+
+
+@pytest.mark.parametrize("value", [None, "sprint-2"])
+def test_retired_sprint_assignment_is_rejected_before_permission_resolution(value):
+    with pytest.raises(ValueError, match="^sprint_id_retired$"):
+        card_update_permission_requirements({"sprint_id": value}, state="not_started")
 
 
 

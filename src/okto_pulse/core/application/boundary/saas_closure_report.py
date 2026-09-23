@@ -24,7 +24,11 @@ from .distribution_dependency_ownership import (
     build_distribution_dependency_ledger,
 )
 from .gates import IMPORT_BOUNDARY_BASELINE_LEDGER
-from .graph_runtime_surface_gate import LEGACY_GRAPH_RUNTIME_COMPATIBILITY_LEDGER
+from .graph_runtime_surface_gate import (
+    LEGACY_GRAPH_RUNTIME_COMPATIBILITY_LEDGER,
+    GraphRuntimeSurfaceGate,
+    GraphRuntimeSurfaceGateInput,
+)
 from .layer_resolver import LayerResolver
 from .rebuild_audit_storage_gate import (
     rebuild_audit_storage_fallback_ledger,
@@ -36,7 +40,7 @@ from .singleton_gate import (
     BASELINE_SINGLETONS,
 )
 
-REPORT_VERSION = "F16.1"
+REPORT_VERSION = "F16.2"
 F16_IMPLEMENTATION_CARD = "675c43ee-7d91-4cc3-8f87-44eeb293f90c"
 README_BEGIN = "<!-- F16-SAAS-CLOSURE:BEGIN -->"
 README_END = "<!-- F16-SAAS-CLOSURE:END -->"
@@ -383,6 +387,19 @@ def build_saas_closure_report(
                     row.remediation or row.symbol_or_dependency,
                 )
             )
+
+    graph_runtime = GraphRuntimeSurfaceGate().run(
+        GraphRuntimeSurfaceGateInput(source_root=core / "src", mode="blocking")
+    )
+    if graph_runtime.status != "passed":
+        findings.append(ClosureFinding(
+            "graph_runtime_surface_not_terminal", "core_graph_runtime", "okto_pulse.core",
+            f"GraphRuntimeSurfaceGate status is {graph_runtime.status}.",
+        ))
+        findings.extend(ClosureFinding(
+            "graph_runtime_surface_violation", "core_graph_runtime",
+            f"{item['file']}:{item['line']}", str(item),
+        ) for item in graph_runtime.evidence.get("violations", ()))
 
     singleton = AntiSingletonGate().run(
         AntiSingletonGateInput(source_root=core / "src")

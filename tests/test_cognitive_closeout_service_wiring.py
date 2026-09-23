@@ -375,7 +375,13 @@ async def test_move_card_done_blocks_task_test_and_bug_before_status_mutation(
 @pytest.mark.asyncio
 async def test_board_skip_allows_done_but_keeps_pending_item_visible_and_status_done(
     isolated_closeout_kg_dir: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    # Explicit accepted Delivery fixture isolates the cognitive skip contract;
+    # this skip does not grant missing implementation proof in production.
+    from delivery_evidence_testing import install_complete_card_delivery_port
+
+    delivery = install_complete_card_delivery_port(monkeypatch)
     board_id, _, card_id = await _seed_card(
         CardType.NORMAL,
         CardStatus.VALIDATION,
@@ -412,6 +418,7 @@ async def test_board_skip_allows_done_but_keeps_pending_item_visible_and_status_
 
     card = await _card_row(card_id)
     assert card.status == CardStatus.DONE
+    delivery.load_card_snapshot.assert_awaited()
 
     store = CognitiveConsolidationItemStore(
         artifact_store=require_rebuild_audit_artifact_store()
@@ -447,6 +454,14 @@ _APPROVE_VALIDATION = {
     "recommendation": "approve",
     "general_justification": "ready",
 }
+
+
+@pytest.fixture
+def accepted_card_delivery(monkeypatch):
+    """Only cognitive-policy positive cases use this independent accepted port."""
+    from delivery_evidence_testing import install_complete_card_delivery_port
+
+    return install_complete_card_delivery_port(monkeypatch)
 
 
 def _enable_global_blocking_flag(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -587,6 +602,7 @@ async def test_done_blocks_on_technical_dlq_before_status_mutation(
 @pytest.mark.asyncio
 async def test_advisory_default_board_does_not_block_on_open_debt(
     isolated_closeout_kg_dir: Path,
+    accepted_card_delivery,
 ) -> None:
     # default board (no policy set) → advisory → readiness wiring is a NO-OP even
     # with open canonical_debt; done succeeds (rollout safety for existing boards).
@@ -605,7 +621,7 @@ async def test_advisory_default_board_does_not_block_on_open_debt(
             data=_APPROVE_VALIDATION,
         )
         await db.commit()
-        assert result["card_status"] == CardStatus.DONE.value
+        assert result["card_status"] == CardStatus.DONE.value, str(result.get("completion_gate_failures"))
 
     assert (await _card_row(card_id)).status == CardStatus.DONE
 
@@ -613,6 +629,7 @@ async def test_advisory_default_board_does_not_block_on_open_debt(
 @pytest.mark.asyncio
 async def test_blocking_policy_no_debt_passes(
     isolated_closeout_kg_dir: Path, monkeypatch: pytest.MonkeyPatch,
+    accepted_card_delivery,
 ) -> None:
     # policy blocking + flag on, but NO debt/DLQ/active item → readiness ready,
     # done succeeds.
@@ -634,7 +651,7 @@ async def test_blocking_policy_no_debt_passes(
             data=_APPROVE_VALIDATION,
         )
         await db.commit()
-        assert result["card_status"] == CardStatus.DONE.value
+        assert result["card_status"] == CardStatus.DONE.value, str(result.get("completion_gate_failures"))
 
     assert (await _card_row(card_id)).status == CardStatus.DONE
 
@@ -682,6 +699,7 @@ async def test_blocking_active_fails_closed_when_readiness_service_errors(
 @pytest.mark.asyncio
 async def test_advisory_default_does_not_instantiate_readiness_service(
     isolated_closeout_kg_dir: Path,
+    accepted_card_delivery,
 ) -> None:
     # default (advisory) board → the wiring is a NO-OP that never even touches
     # the readiness factory; done succeeds even if the factory would explode.
@@ -705,7 +723,7 @@ async def test_advisory_default_does_not_instantiate_readiness_service(
             data=_APPROVE_VALIDATION,
         )
         await db.commit()
-        assert result["card_status"] == CardStatus.DONE.value
+        assert result["card_status"] == CardStatus.DONE.value, str(result.get("completion_gate_failures"))
 
     assert (await _card_row(card_id)).status == CardStatus.DONE
 

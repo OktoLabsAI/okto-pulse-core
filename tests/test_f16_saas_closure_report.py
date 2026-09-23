@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from okto_pulse.core.application.boundary.saas_closure_report import (
     SaaSClosureReport,
     TransitionalBudget,
@@ -123,3 +125,33 @@ def test_f16_json_report_is_deterministic_and_machine_readable() -> None:
     second = report.to_json()
     assert first == second
     assert json.loads(first)["ok"] is True
+
+
+@pytest.mark.timeout(300)
+def test_f16_zero_compatibility_budget_cannot_hide_backend_surface_violation(tmp_path, monkeypatch):
+    from okto_pulse.core.application.boundary.graph_runtime_surface_gate import (
+        GraphRuntimeSurfaceGate, GraphRuntimeSurfaceGateInput,
+    )
+    from okto_pulse.core.application.boundary.saas_closure_report import build_saas_closure_report
+
+    injected = _synthetic_core(tmp_path, 'def lookup(row):\n    return row["kuzu_node_id"]\n')
+    observed = GraphRuntimeSurfaceGate().run(GraphRuntimeSurfaceGateInput(source_root=injected / "src"))
+    assert observed.status == "blocking"
+    assert observed.evidence["compatibility_ledger"] == []
+    monkeypatch.setattr(GraphRuntimeSurfaceGate, "run", lambda self, data: observed)
+    core = Path(__file__).resolve().parents[1]
+    # Also runs in Core's isolated-wheel CI, where no edition checkout exists.
+    # Other missing ownership findings are expected in this negative fixture;
+    # the assertions specifically require propagation of the graph violation.
+    community = tmp_path / "community-metadata"
+    community.mkdir()
+    (community / "pyproject.toml").write_text('[project]\nname="okto-pulse"\nversion="0.3.4"\ndependencies=[]\n', encoding="utf-8")
+    (community / "uv.lock").write_text('version=1\n[[package]]\nname="okto-pulse"\nversion="0.3.4"\n', encoding="utf-8")
+    report = build_saas_closure_report(core_repo=core, community_repo=community,
+        community_import_report={}, community_provenance_report={})
+    assert not report.ok
+    assert any(item.code == "graph_runtime_surface_not_terminal" for item in report.findings)
+    assert any(item.code == "graph_runtime_surface_violation" and "sample.py" in item.location
+        for item in report.findings)
+    budget = next(item for item in report.budgets if item.key == "graph_runtime_compatibility")
+    assert budget.current == budget.limit == 0
