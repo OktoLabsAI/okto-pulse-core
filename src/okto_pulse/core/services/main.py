@@ -732,6 +732,9 @@ def _require_trusted_test_evidence_v2_write(
         require_supported_test_verification_method(verification_method)
         if status in {"passed", "failed"} and not _claims_test_evidence_v2(evidence):
             raise ValueError("verification_evidence_authenticated_result_required")
+    if status in GATED_STATUSES:
+        from okto_pulse.core.domain.verification_report import require_evidence_method_binding
+        require_evidence_method_binding(verification_method, evidence)
     if not _claims_test_evidence_v2(evidence):
         return
     from okto_pulse.core.ports.test_evidence import (

@@ -247,6 +247,7 @@ EVIDENCE_REQUIRED_KEYS: dict[str, tuple[tuple[str, ...], ...]] = {
 #: The authoritative evidence_class taxonomy (fr_75e54f55). One allowlist; an
 #: invalid value fails closed (never normalized), mirroring scenario_type.
 EVIDENCE_CLASSES: tuple[str, ...] = (
+    "verification_report",
     "automated_test_pointer",
     "replay_command",
     "mcp_replay_manifest",
@@ -886,6 +887,16 @@ def validate_test_scenario_evidence(
                 ]
             explicit_class = str(raw_class)
 
+    if explicit_class == "verification_report":
+        from okto_pulse.core.domain.verification_report import VerificationReportEvidence
+        try:
+            parsed = VerificationReportEvidence.model_validate(evidence)
+            if parsed.verification_report.result != status:
+                return False, ["verification_report_result_mismatch"]
+        except (TypeError, ValueError):
+            return False, ["verification_report_invalid"]
+        return True, []
+
     claims_mcp_replay = bool(
         evidence
         and (
@@ -963,6 +974,11 @@ def scenario_has_authenticated_required_evidence(
     """
 
     if not scenario_has_required_evidence(scenario):
+        return False
+    from okto_pulse.core.domain.verification_report import require_evidence_method_binding
+    try:
+        require_evidence_method_binding(scenario.get("verification_method"), scenario.get("evidence") or scenario.get("latest_evidence"))
+    except (TypeError, ValueError):
         return False
     if scenario.get("verification_method") is not None and scenario.get("status") in GATED_STATUSES:
         from okto_pulse.core.ports.test_evidence import require_supported_test_verification_method

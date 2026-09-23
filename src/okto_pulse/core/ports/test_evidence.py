@@ -70,8 +70,36 @@ class TestEvidenceExecutionIssuer(Protocol):
     ) -> TestEvidenceExecutionResult: ...
 
 
+@dataclass(frozen=True, slots=True)
+class TestVerificationReportRequest:
+    """Authorized external observation; edition signs submission, never executes it."""
+    board_id: str
+    spec_id: str
+    scenario_id: str
+    scenario_sha256: str
+    actor_id: str
+    report: Mapping[str, Any]
+
+
+class TestVerificationReportIssuer(Protocol):
+    async def admit(self, request: TestVerificationReportRequest) -> TestEvidenceExecutionResult: ...
+
+
 _VERIFIER_KEY = "ports.test_evidence.write_verifier"
 _ISSUER_KEY = "ports.test_evidence.execution_issuer"
+_REPORT_ISSUER_KEY = "ports.test_evidence.report_issuer"
+
+
+def register_test_verification_report_issuer(issuer: TestVerificationReportIssuer) -> None:
+    register_runtime_value(_REPORT_ISSUER_KEY, issuer)
+
+
+def resolve_test_verification_report_issuer() -> TestVerificationReportIssuer | None:
+    return resolve_runtime_value(_REPORT_ISSUER_KEY)  # type: ignore[return-value]
+
+
+def reset_test_verification_report_issuer_for_tests() -> None:
+    reset_runtime_values(_REPORT_ISSUER_KEY)
 
 
 def register_test_evidence_write_verifier(
@@ -124,6 +152,11 @@ def reset_test_evidence_execution_issuer_for_tests() -> None:
 
 
 __all__ = [
+    "TestVerificationReportRequest",
+    "TestVerificationReportIssuer",
+    "register_test_verification_report_issuer",
+    "resolve_test_verification_report_issuer",
+    "reset_test_verification_report_issuer_for_tests",
     "TestEvidenceWriteVerification",
     "TestEvidenceWriteVerifier",
     "TestEvidenceExecutionIssuer",

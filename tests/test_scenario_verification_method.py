@@ -114,6 +114,8 @@ def test_capability_requires_both_the_core_contract_and_concrete_verifier():
     register_test_evidence_write_verifier(
         SimpleNamespace(verification_methods=frozenset(VALID_VERIFICATION_METHODS))
     )
+    assert supported_test_verification_methods() == frozenset(VALID_VERIFICATION_METHODS)
+    register_test_evidence_write_verifier(SimpleNamespace(verification_methods=frozenset({"automated_test"})))
     assert supported_test_verification_methods() == frozenset({"automated_test"})
 
 

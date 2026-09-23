@@ -4,7 +4,9 @@
 
 Iniciativa **incompleta; retomada explicitamente autorizada em 2026-09-23**.
 O usuário revogou a pausa e pediu execução até o final, sem parar em milestones.
-Frente atual: instalação terminal separada, com prova do candidato e journal,
+Frente atual: relatórios especializados admitidos no ciclo comum de cenário,
+Test Card e Delivery, com assinatura/autoria e atualidade sem aprovação implícita.
+Instalação terminal separada já publicada, com prova do candidato e journal,
 admissão vinculada e retomada sem congelar dados de uso. Resultados e commits
 mais recentes estão no fim deste ledger. Candidatos com histórico/cognição/Global
 pendentes continuam inelegíveis; a instalação só é admitida com prova completa.
@@ -14212,3 +14214,80 @@ e CommunityTestEvidenceWriteVerifier ainda admitem somente automated_test;
 RF/AC-VER-14 exige resultados válidos de análise/inspeção no ciclo comum, portanto
 essa obrigação continua incompleta apesar da rejeição segura de métodos sem suporte.
 Sem pausa: continuar a implementação integral, sem reaplicar incrementos já publicados.
+
+### Em implementação — relatórios especializados (2026-09-23)
+
+RF/AC-VER-14: entrada fechada para static_analysis/inspection/demonstration,
+observações por critério, fontes/procedimentos/regras/configuração versionados.
+Reutiliza permissão spec.tests.execute e o mesmo ledger HMAC da edição; schema
+de recibo distingue submissão externa de execução de runtime. Autoria estampada
+pelo servidor, sem autor/approval/skip no input. Não executa comandos, agentes,
+LLM nem busca observações. A veracidade e recuperabilidade das referências são
+responsabilidade do autor; o recibo autentica submissão, não aprovação independente.
+Status writer, Test Card, current-base, revisão independente e avaliação continuam
+sendo os gates existentes. Não há permissão nova nem relaxamento de autoridade.
+
+Portas/contratos/caso de uso no Core; assinatura e transportes HTTP no Community,
+tool MCP no Core com catálogo a regenerar. UI usa preview de transição autoritativo
+e permissão de execução, encaminhando o recibo intacto ao status writer.
+Capacidades passam a declarar os quatro métodos somente com verificador concreto.
+Troca entre replay e relatório bloqueada também nos consumidores, além do hash
+semântico. Evidência histórica de outras classes preservada.
+
+Ainda NÃO validado/publicado: necessário build/reinstall/prova byte-a-byte do par,
+testes negativos de autoridade/escopo/adulteração/freshness, regressão V2,
+testes frontend/build oficial, catálogo gerado, F16 zero e commits/push.
+
+Validação dos relatórios (sequência concluída, sem esconder falhas intermediárias):
+
+- Primeira suite Core: 78 passed, 7 failed, 1 error. Expectativa de capability
+  ainda limitada a automated_test; seis erros de reason-code pela ordem das
+  negações; fixture logger Windows não aceita dois-pontos no ID do timestamp.
+  Atualizada expectativa de capability concreta, preservada a precedência de
+  unsupported/authenticated-result e dados nomes seguros ao parâmetro de teste.
+- Primeira suite Community: 39 passed em 28.47s. REST/MCP reais, assinatura,
+  status writer, negações de autoridade/escopo/adulteração e freshness.
+- Ensaio adicional de Delivery: 65 passed, 3 failed em 76.66s. Os três métodos
+  eram admitidos no cenário, mas o consumidor de Delivery lia somente
+  execution_attestation.executed_at. Corrigido para ler observed_at autenticado
+  quando a classe é verification_report, mantendo comparação com a observação
+  da implementação. Nenhuma attestation de runtime fictícia criada.
+- Repetição Core: 94 passed em 11.06s (contrato/shape, lifecycle, MCP, catálogo,
+  edição do método e gates V2). Suíte adjacente: 88 passed em 8.24s (separação
+  de revisor, gate de Test Card, requisitos e plano compartilhado).
+- Repetição Community final: 68 passed em 91.40s. Inclui os três métodos no
+  ledger misto com recibos automatizados, Test Card→implementação→rollup,
+  rejeição de relatório assinado agora mas observado antes da implementação,
+  e retirada do crédito depois de observação falha. Spec permanece in_progress;
+  nenhum recibo aprova/fecha automaticamente a Spec ou substitui avaliações.
+- Frontend: 57 passed/4 arquivos (formulário, troca de escopo durante request,
+  status writer, erros de policy, badge, policy surface e SpecModal), mais
+  65 passed/2 arquivos (CardModal/TestEvidenceTab e API). Total 122 testes.
+- npm run build concluído; verify:frontend-dist comprova 78 arquivos com tree
+  d2a683373bf77a2e934bd3915238ae476fa57a881e35499b0beec309aba21c58.
+- Ruff F/E9 e git diff --check verdes; catálogo gerado pelo registry, sem edição
+  manual. Rodadas de build/pip/prova aguardadas até exit terminal antes de testes.
+
+Provas: provenance-verification-reports-r2.json precedeu 94 testes Core;
+provenance-verification-reports-r3.json precedeu 68 Community + 88 Core.
+Par final dist-verification-reports-final e provenance-verification-reports-final.json
+preservam bytes de produção testados; READMEs renderizados a partir da auditoria.
+Core: 828 Python / 891 payloads; Community: 360 Python / 444 payloads.
+F16 pré-final r3: 8819 entradas, zero achados e oito budgets zero.
+F16 final com READMEs ainda em execução; aguardar antes de publicar.
+
+RF/AC-VER-14 possui agora prova concreta de admissão dos métodos, não apenas enum.
+Isto não declara a auditoria integral dos 246 critérios concluída. Continuidade:
+qualificação histórica/cognitiva/Global do cutover, inventário de aceitação por
+documento, ensaios instalados/rollback e benchmarks ainda precisam ser fechados.
+Nenhuma migração real, release, tag, merge, deploy ou parada de runtime ativo.
+
+F16 final concluído: closure-verification-reports-final.json com ok=true,
+8819 entradas, zero achados e todos os oito budgets em zero, READMEs incluídos.
+Hashes agregados do par final comprovado:
+Core 763a57a36316355e8527438a3178ba43ce6f0e54354a899e6b65ff822181974e;
+Community d3a4121d1f696d4fdf7babf03e822bf91136bd85f72d476844e66c388d22dd0e.
+Nenhum teste/build/pip/auditoria pendente. Incremento apto a commit/push.
+Community deste incremento: 44ef68666f306ffe9ea6febad2b5b811193778c5.
+O commit Core correspondente inclui esta seção; próximo passo mantém a execução
+contínua, investigando qualificações históricas pendentes sem inferir autoridade.

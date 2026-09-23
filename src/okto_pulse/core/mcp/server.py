@@ -11951,6 +11951,40 @@ async def okto_pulse_execute_test_scenario_evidence(
 
 
 @mcp.tool()
+async def okto_pulse_admit_test_verification_report(
+    board_id: str, spec_id: str, scenario_id: str,
+    report: Annotated[dict[str, Any], Field(description="Closed verification-report/v1 external observation: static_analysis, inspection or demonstration. No author/approval fields.")],
+) -> str:
+    """Authenticate an external verification report using the current scenario.
+
+    Requires spec.tests.execute. Does not run commands, fetch observations,
+    approve work or mutate scenario state. The report must cover exactly the
+    scenario's linked criteria and supply versioned sources, observations and
+    method-specific context. Authorship comes from the authenticated caller.
+    Pass returned evidence unchanged to okto_pulse_update_test_scenario_status;
+    Test Card, independent review and evaluation gates remain applicable.
+    Docs: okto-pulse://reference/tool-docs/test-scenario.
+    """
+    ctx = await _get_agent_ctx(board_id)
+    if not ctx:
+        return _auth_error()
+    from okto_pulse.core.application.use_cases.spec_crud import AdmitTestVerificationReportCommand, AdmitTestVerificationReportUseCase
+    from okto_pulse.core.application.use_cases import EntityNotFoundError
+    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
+    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
+    try:
+        async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
+            result = await AdmitTestVerificationReportUseCase().execute(
+                AdmitTestVerificationReportCommand(spec_id, scenario_id, report), actor=actor, uow=uow)
+    except EntityNotFoundError as exc:
+        return json.dumps({"error": "not_found", "entity": exc.entity_type, "message": str(exc)})
+    except ValueError as exc:
+        return json.dumps({"error": "verification_report_rejected", "message": str(exc)})
+    return json.dumps({"success": True, "scenario_persisted": False, "evidence": result.evidence,
+                       "next_tool": "okto_pulse_update_test_scenario_status"}, default=str)
+
+
+@mcp.tool()
 async def okto_pulse_update_test_scenario_status(
     board_id: str,
     spec_id: str,
@@ -22152,6 +22186,7 @@ _TOOLS_WITH_LAZY_COMPACT_DESCRIPTION = frozenset(
         "okto_pulse_create_amendment_revision",
         "okto_pulse_get_activity_log",
         "okto_pulse_execute_test_scenario_evidence",
+        "okto_pulse_admit_test_verification_report",
         "okto_pulse_update_test_scenario_status",
         "okto_pulse_kg_add_edge_candidate",
         "okto_pulse_add_screen_mockup",

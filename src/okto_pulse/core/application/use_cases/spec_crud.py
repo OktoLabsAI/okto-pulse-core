@@ -1255,6 +1255,8 @@ class ExecuteTestScenarioEvidenceUseCase:
         )
         if scenario is None:
             raise EntityNotFoundError("scenario", command.scenario_id)
+        if scenario.get("verification_method") not in (None, "automated_test"):
+            raise ValueError("verification_report_required_for_specialized_method")
         scenario_sha256 = compute_test_scenario_semantic_sha256(
             board_id=spec.board_id,
             spec_id=command.spec_id,
@@ -1294,6 +1296,65 @@ class ExecuteTestScenarioEvidenceUseCase:
             raise ValueError(
                 "evidence_unverified: " + ", ".join(verification.reason_codes)
             )
+        return ExecuteTestScenarioEvidenceResult(evidence)
+
+
+class AdmitTestVerificationReportCommand:
+    def __init__(self, spec_id: str, scenario_id: str, report: object) -> None:
+        self.spec_id = spec_id
+        self.scenario_id = scenario_id
+        self.report = report
+
+
+class AdmitTestVerificationReportUseCase:
+    """Authenticate an authorized observation without approving or changing state.
+
+    Submission uses the existing test-execution permission, including manual
+    observations. Test Card/result publication, independent review and evaluation
+    remain separate, unchanged gates. The returned evidence must pass the normal
+    scoped status writer; a receipt alone grants no completion or delivery credit.
+    """
+
+    async def execute(self, command: AdmitTestVerificationReportCommand, *, actor: ActorContext,
+                      uow: PulseUnitOfWork) -> ExecuteTestScenarioEvidenceResult:
+        from okto_pulse.core.domain.verification_report import parse_verification_report, require_verification_report_context
+        from okto_pulse.core.ports.test_evidence import (
+            TestVerificationReportRequest, resolve_test_verification_report_issuer,
+            resolve_test_evidence_write_verifier, require_supported_test_verification_method,
+        )
+        from okto_pulse.core.services.test_scenario_lifecycle import compute_test_scenario_semantic_sha256
+
+        spec = await _require_actor_board_spec(uow, command.spec_id, actor, write=True)
+        await require_authorization(actor, PermissionRequirement("spec.tests.execute", legacy_operation="specs:update"),
+                                    uow=uow, board_id=spec.board_id)
+        scenario = next((item for item in (spec.test_scenarios or [])
+                         if isinstance(item, dict) and item.get("id") == command.scenario_id), None)
+        if scenario is None:
+            raise EntityNotFoundError("scenario", command.scenario_id)
+        report = parse_verification_report(command.report)
+        linked = scenario.get("linked_criteria")
+        criteria = list(getattr(spec, "acceptance_criteria", None) or [])
+        current_ids = {item.get("id") for item in criteria if isinstance(item, dict)}
+        if not isinstance(linked, (list, tuple)) or any(key not in current_ids for key in linked):
+            raise ValueError("verification_report_criterion_scope_mismatch")
+        require_verification_report_context(report, method=scenario.get("verification_method"),
+                                            status=report.result, criterion_ids=tuple(linked))
+        require_supported_test_verification_method(scenario.get("verification_method"))
+        issuer = resolve_test_verification_report_issuer()
+        verifier = resolve_test_evidence_write_verifier()
+        if issuer is None or verifier is None:
+            raise ValueError("verification_report_trusted_issuer_not_configured")
+        digest = compute_test_scenario_semantic_sha256(board_id=spec.board_id, spec_id=command.spec_id,
+                                                      scenario=scenario, acceptance_criteria=criteria)
+        issued = await issuer.admit(TestVerificationReportRequest(
+            board_id=spec.board_id, spec_id=command.spec_id, scenario_id=command.scenario_id,
+            scenario_sha256=digest, actor_id=actor.actor_id, report=report.model_dump(mode="json")))
+        evidence = dict(issued.evidence)
+        verification = verifier.verify(board_id=spec.board_id, spec_id=command.spec_id,
+            scenario_id=command.scenario_id, scenario_sha256=digest, status=report.result,
+            actor_id=actor.actor_id, evidence=evidence)
+        if not verification.verified:
+            raise ValueError("evidence_unverified: " + ", ".join(verification.reason_codes))
         return ExecuteTestScenarioEvidenceResult(evidence)
 
 

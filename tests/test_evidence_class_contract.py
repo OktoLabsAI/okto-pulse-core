@@ -49,6 +49,7 @@ def _ok(status, evidence, **kw):
 
 def test_evidence_class_taxonomy():
     assert EVIDENCE_CLASSES == (
+        "verification_report",
         "automated_test_pointer",
         "replay_command",
         "mcp_replay_manifest",

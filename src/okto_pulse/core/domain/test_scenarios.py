@@ -26,9 +26,9 @@ VerificationMethod: TypeAlias = Literal[
     "automated_test", "static_analysis", "inspection", "demonstration"
 ]
 VALID_VERIFICATION_METHODS: tuple[str, ...] = get_args(VerificationMethod)
-# Other authored methods remain pending until both their Core admission rules
-# and an edition verifier exist. Merely declaring an enum cannot grant credit.
-ADMITTED_VERIFICATION_METHODS = frozenset({"automated_test"})
+# Every admitted method still requires the concrete edition capability and an
+# authenticated result. Declaring an enum alone cannot grant credit.
+ADMITTED_VERIFICATION_METHODS = frozenset(VALID_VERIFICATION_METHODS)
 
 
 def validate_verification_method(value: object) -> str | None:

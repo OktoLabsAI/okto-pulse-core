@@ -7,9 +7,10 @@ version: "2.0"
 Scenario `verification_method` is independent of `scenario_type`: `automated_test`,
 `static_analysis`, `inspection`, or `demonstration`. Omission preserves legacy
 meaning; no method is inferred from the scenario type or evidence class. The
-Community verifier currently declares authenticated Evidence V2 automated tests.
-Other methods may be authored as pending plans, but cannot receive execution
-credit until their admission paths exist. The board evidence skip does not
+Community verifier admits authenticated Evidence V2 automated tests and signed
+external reports for static analysis, inspection and demonstration. A different
+edition must explicitly declare and implement each method; otherwise it remains
+pending. The board evidence skip does not
 bypass the explicit method's authenticated-result requirement.
 
 Use add/update scenario to author the method. A method change is semantic and
@@ -31,6 +32,42 @@ Executable guideline evaluation of `test_scenario` follows
 `okto-pulse://reference/policy-compliance`.
 
 Full long-form documentation (args, returns, examples, enum prose) for `okto_pulse_*` tools in this family. The `tools/list` surface carries only the compact summary; read here on demand.
+
+## `okto_pulse_admit_test_verification_report`
+
+Supply `board_id`, `spec_id`, `scenario_id` and a closed `report` object. This
+authenticates submission under `spec.tests.execute`; it does not execute the
+observation, fetch references, approve a Test Card or change scenario status.
+Use the returned evidence unchanged with `okto_pulse_update_test_scenario_status`.
+All existing lifecycle, policy, current-base and independent-review gates apply.
+
+The report requires `schema_version="verification-report/v1"`, `method`,
+`report_id`, timezone-aware `observed_at`, nonempty `sources`, `observations`,
+`conclusion` and `result` (`passed` or `failed`). Each source is
+`{reference, revision, sha256}` (64 lowercase hex characters). Each observation
+contains `observation_id`, `criterion_id`, `observation_ref`, `expected`,
+`observed` and `outcome`. Cover exactly the scenario's current linked criterion
+IDs; a failed observation requires a failed report. The observation reference
+must identify the recoverable observation in the versioned source. Authors
+remain responsible for the truth and recoverability of submitted observations;
+the receipt authenticates their submission, not an independent verification.
+
+- `inspection`: versioned `inspection_procedure`.
+- `static_analysis`: `tool_name`, `tool_version`, versioned `rules` and
+  `configuration`, `analyzed_scope` and `findings` (empty is explicit).
+  Each finding supplies `finding_id`, declared `rule_id`, `location`,
+  `description`, `severity` (`info`, `warning`, `error`). Observations explicitly
+  compare findings against the criteria; no implicit severity threshold exists.
+- `demonstration`: versioned `procedure` and `environment`.
+
+Reports are bounded to 64 KiB, 20 sources and 100 observations. Do not supply
+author, permission, approval, skip or receipt fields: authorship is stamped from
+the authenticated caller. Changing any report byte, scenario semantics, method,
+criterion definition or binding invalidates its use. Historical evidence is not
+upgraded or reinterpreted. REST provides the same use case at
+`POST /api/v1/specs/{spec_id}/scenarios/{scenario_id}/evidence/reports` with
+`{"report": ...}`; the frontend records its returned receipt through the same
+scoped status endpoint.
 
 ## `okto_pulse_add_test_scenario`
 

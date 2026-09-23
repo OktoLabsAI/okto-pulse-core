@@ -284,6 +284,7 @@ Semantic guideline protocol:
 
 ## Test Scenarios
 - `okto_pulse_add_test_scenario` — docs: `okto-pulse://reference/tool-docs/test-scenario`
+- `okto_pulse_admit_test_verification_report` — docs: `okto-pulse://reference/tool-docs/test-scenario`
 - `okto_pulse_delete_test_scenario` — docs: `okto-pulse://reference/tool-docs/test-scenario`
 - `okto_pulse_execute_test_scenario_evidence` — docs: `okto-pulse://reference/tool-docs/test-scenario`
 - `okto_pulse_list_test_scenarios` — docs: `okto-pulse://reference/tool-docs/test-scenario`

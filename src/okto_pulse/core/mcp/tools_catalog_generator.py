@@ -119,7 +119,7 @@ _RULES: tuple[tuple[str, str | None, str], ...] = (
      r"(business_rule|decision$|decisions$|api_contract|integration_requirement|"
      r"observability_requirement)"),
     ("Test Scenarios", "test-scenario",
-     r"test_scenario|resolve_bug_regression_scenarios"),
+     r"test_scenario|admit_test_verification_report|resolve_bug_regression_scenarios"),
     ("Cards & Tasks", "card",
      r"(^okto_pulse_(create_card|update_card|move_card|delete_card|get_card)|"
      r"card_dependency|card_dependencies|cards_by_status|card_knowledge|"
