@@ -4,8 +4,9 @@
 
 Iniciativa **incompleta; retomada explicitamente autorizada em 2026-09-23**.
 O usuário revogou a pausa e pediu execução até o final, sem parar em milestones.
-Frente atual: relatórios especializados admitidos no ciclo comum de cenário,
-Test Card e Delivery, com assinatura/autoria e atualidade sem aprovação implícita.
+Frente atual: qualificação restrita do replay cognitivo durável e auditoria
+dos critérios de aceitação. Relatórios especializados já publicados no ciclo
+comum de cenário, Test Card e Delivery, com assinatura/autoria e atualidade.
 Instalação terminal separada já publicada, com prova do candidato e journal,
 admissão vinculada e retomada sem congelar dados de uso. Resultados e commits
 mais recentes estão no fim deste ledger. Candidatos com histórico/cognição/Global
@@ -14318,3 +14319,85 @@ Entretanto, is_projection_technical_root e o resolver final_report são provas
 de conectividade, não autorização. A qualificação do cutover ainda precisa
 compor integridade da fonte/revisões, base/evidências, maturidade e relações
 atuais. Preservação literal isolada continua pending, conforme pacote §8.2/8.3.
+
+### Em implementação — qualificação restrita do replay cognitivo durável
+
+Cadeia inspecionada: kg_cognitive_source (fonte append-only autoritativa de nós
+canônicos) → canonical_cognitive_preservation.replay_durable_cognitive (replay
+literal, sem sobrescrever sobreviventes) → resolver/connectivity_guard e
+canonical_partition_integrity (Learning possui aplicabilidade própria).
+O caminho novo compõe os predicados existentes; não toma a allowlist como prova
+de autoria nem reclassifica fonte de Spec/Sprint como relatório técnico.
+
+qualify_cognitive_replay no Core exige fonte durável íntegra/revisões verificadas,
+uma geração, paridade completa, canonical/canonical_eligible explícitos sem
+supersedência, autor e sessão equivalentes ao commit durável, timestamp de commit,
+evidence_refs vinculando o final_report exato, e guard existente allowlisted.
+Associações existentes exigem reconciliação própria; Learning exige prova de
+aplicabilidade e continua pending. Não inventa arestas, nascimento, revisão,
+grants, approval ou conteúdo. Restaura o significado já comprometido na fonte.
+
+Community adiciona observações tipadas no relatório v17, rederivadas sob fences.
+Instalações seladas com v16 preservam sua regra anterior: qualquer restauração
+fica pending; não recebem retroativamente prova v17. O terminal v17 exige todas
+as qualificações completas e mantém os demais predicados originais do cutover.
+Fixture adicional separa relatório técnico completo de uma Decision Spec sem
+arestas: esta última permanece bloqueante. Testes/build/provas ainda pendentes;
+não declarar este incremento validado ou publicado.
+
+Achado confirmado na cadeia de captura: board_source_reader.read_realm_cognitive_source_snapshot
+usava MAX(source_revision) antes de verificar o fingerprint. Reprodução no par
+instalado/provenance-cognitive-qualification.json: 2 failed, 1 passed em 8.23s;
+uma revisão antiga com hash divergente ou payload não objeto ficava invisível
+quando a revisão seguinte era válida. Não era só hipótese de busca.
+Correção em andamento: ler pais+revisões completos na mesma transação, validar
+JSON/refs/tipos/fingerprints e conflito de identidade antes da seleção canônica
+do head, manter retorno delimitado às mesmas revisões atuais e bytes JSON,
+sem escrita. Limites de 100k registros/64 MiB falham fechado.
+Core qualificação/paridade/restauração/completion: 69 passed em 6.00s.
+Necessário novo build/install/prova após correção do leitor antes de próximos testes.
+
+### Validação da qualificação cognitiva — 2026-09-23
+
+Ensaio nativo no par r2: 2 passed, 3 deselected em 386.36s, cobrindo
+current-cognitive-pending e durable-technical-report. O primeiro preserva
+bloqueio; o segundo percorre ativação, retomada e startup instalado.
+Regressão inicial: 61 passed / 2 failed em 140.11s. Falhas investigadas:
+- Contagem booleana passava por igualdade Python (True == 1). Corrigido com
+  tipo int exato e limites 0..100000; contador de pendentes também deve ser
+  int exato e não exceder restaurações. Acrescentados negativos correspondentes.
+- Teste de schema ainda exigia gdsr-trigger-manifest-v8. O commit d703438a
+  removeu sprints do universo de triggers e publicou v9. Atualizada somente
+  a expectativa exata para v9, sem relaxar o contrato de colunas/constraints.
+
+Novo build/install terminal e prova provenance-cognitive-qualification-r3.json
+(829 Core / 360 Community .py idênticos). Reexecução dos oito arquivos:
+67 passed em 139.42s. Cobre auditoria de todas as revisões, schema, completion,
+paridade, inventário relacional, histórico, proveniência de arestas e partições.
+Não afirma validação semântica de todas as propriedades de gerações antigas:
+o leitor verifica JSON/refs/tipos/hash/identidade; a projeção valida os heads.
+
+F16 preliminar: 8829 linhas, zero findings, oito budgets ZERO. READMEs gerados.
+Par final dist-cognitive-qualification-final, prova
+provenance-cognitive-qualification-final.json: 829/892 Core e 360/444 Community,
+Python e payload byte-a-byte idênticos. README-only não exigiu reinstalação.
+F16 final e repetição nativa pós-contagem estrita ainda em execução.
+Nenhuma mudança de frontend neste incremento. Nenhum dado real acessado.
+
+Continuidade: auditoria de aceitação iniciada com revisão dos oráculos,
+sem promover referências textuais a cobertura. Primeiro conjunto Core:
+127 passed em 7.24s; XML acceptance-architecture-core.xml. Integração Community
+em execução. Inventário integral e benchmark continuam pendentes; não declarar
+conclusão da iniciativa. Candidatos antigos não instalados devem ser rederivados
+no formato v17; nenhum checkpoint v16 é reescrito para ganhar prova nova.
+
+Fechamento deste incremento: repetição nativa final 1 passed, 4 deselected em
+230.35s. F16 final closure-cognitive-qualification-final.json: ok=true,
+8829 linhas, zero findings, budgets 8/8 ZERO; READMEs conferidos.
+Ruff F/E9 e git diff --check passaram. Community commit d53cfd2.
+Payload Core ca831b2b99249f62adfb212515e5187fc9a66d8aa31168d7e3499deefe75f285;
+Community d68a670ea139ac8c16fc79ee45a4636b28c72e27f7583803cdede44c648fbac5.
+A auditoria arquitetural adicional terminou: Core 127 passed / Community
+99 passed em 158.41s (XML acceptance-architecture-community.xml).
+Sem testes/sessões pendentes neste checkpoint. Continuar sem pausa com
+mapeamento explícito de aceitação, gaps e benchmark; não declarar plano completo.

@@ -72,3 +72,39 @@ def observe_cognitive_restoration(*, schema, board_id, records, nodes, relations
     """
     from okto_pulse.core.application.cognitive_restoration import observe
     return observe(schema=schema, board_id=board_id, records=records, nodes=nodes, relations=relations)
+
+
+@dataclass(frozen=True, slots=True)
+class CognitiveReplayQualification:
+    node_type: str
+    node_id: str
+    state: Literal['durable_replay_reconciled', 'pending']
+    reasons: tuple[str, ...]
+    source_fingerprint: str | None = None
+
+    def __post_init__(self):
+        import re
+        if (self.node_type not in {'Decision', 'Learning', 'Alternative', 'Assumption'}
+                or type(self.node_id) is not str or not self.node_id or len(self.node_id) > 4096
+                or self.state not in {'durable_replay_reconciled', 'pending'}
+                or type(self.reasons) is not tuple or len(self.reasons) > 20
+                or any(type(reason) is not str or not reason or len(reason) > 512 for reason in self.reasons)
+                or (self.source_fingerprint is not None and (type(self.source_fingerprint) is not str
+                    or re.fullmatch('[0-9a-f]{64}', self.source_fingerprint) is None))
+                or (self.state == 'durable_replay_reconciled' and (self.reasons or self.source_fingerprint is None))
+                or (self.state == 'pending' and not self.reasons)):
+            raise ValueError('cognitive_replay_qualification_invalid')
+
+
+def qualify_cognitive_replay(*, schema, board_id, records, nodes, relations, restored):
+    """Reconcile literal restoration against the existing durable-source contract.
+
+    The edition authenticates/fences the complete source and graph inventories.
+    Only standalone technical roots with an explicit canonical durable payload,
+    matching evidence binding and one unambiguous generation can qualify here.
+    This grants no new authorship, review, Learning completeness or read access.
+    Other source/association policies require their own evidence and stay pending.
+    """
+    from okto_pulse.core.application.cognitive_replay_qualification import qualify
+    return qualify(schema=schema, board_id=board_id, records=records, nodes=nodes,
+                   relations=relations, restored=restored)
