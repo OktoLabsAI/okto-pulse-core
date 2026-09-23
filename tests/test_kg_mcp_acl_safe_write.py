@@ -715,9 +715,6 @@ async def test_power_and_export_tools_deny_board_before_provider_access(
             answer_text="answer",
             retrieved_rows_json="[]",
         ),
-        power.tools["okto_pulse_kg_provenance_drift"](
-            board_id="board-denied",
-        ),
         export.tools["okto_pulse_kg_export_jsonld"](
             board_id="board-denied",
         ),
@@ -733,7 +730,7 @@ async def test_power_and_export_tools_deny_board_before_provider_access(
         == "unauthorized"
         for payload in responses
     )
-    assert denied == ["board-denied"] * 6
+    assert denied == ["board-denied"] * 5
 
 
 @pytest.mark.asyncio

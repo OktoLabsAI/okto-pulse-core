@@ -3,21 +3,15 @@
 from __future__ import annotations
 
 import json
-from types import SimpleNamespace
 from typing import Any
 
 import pytest
 
-from okto_pulse.core.application.use_cases.authorize_operation import (
-    AuthorizeOperationUseCase,
-)
 from okto_pulse.core.application.use_cases.base import (
     ActorContext,
-    PermissionDeniedError,
 )
 from okto_pulse.core.domain.permissions import PermissionSet
 from okto_pulse.core.mcp import server
-from okto_pulse.core.mcp.kg_power_tools import register_kg_power_tools
 
 
 BOARD_ID = "board-inline-kg-operation"
@@ -152,57 +146,3 @@ async def test_inline_kg_operations_deny_before_adapter_owned_effects(
     tool = getattr(server, tool_name)
     assert await tool.fn(**kwargs) == _DENIAL
     assert captured == [(operation, legacy, board_id)]
-
-
-@pytest.mark.asyncio
-async def test_provenance_drift_denies_before_graph_access(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    class _Mcp:
-        def __init__(self) -> None:
-            self.tools: dict[str, Any] = {}
-
-        def tool(self):
-            def _register(function):
-                self.tools[function.__name__] = function
-                return function
-
-            return _register
-
-    principal = SimpleNamespace(
-        id="provenance-reader",
-        agent_id="provenance-reader",
-        agent_name="Provenance Reader",
-        realm_id=None,
-        permissions=["board.read"],
-    )
-
-    async def _agent():
-        return principal
-
-    async def _board_agent(_board_id: str):
-        return principal
-
-    captured = []
-
-    async def _deny(_self, command, **_kwargs):
-        captured.append(command)
-        raise PermissionDeniedError("denied")
-
-    monkeypatch.setattr(AuthorizeOperationUseCase, "execute", _deny)
-    mcp = _Mcp()
-    register_kg_power_tools(
-        mcp,
-        get_agent=_agent,
-        get_board_agent=_board_agent,
-    )
-
-    payload = json.loads(
-        await mcp.tools["okto_pulse_kg_provenance_drift"](BOARD_ID)
-    )
-
-    assert payload["error"]["code"] == "permission_denied"
-    assert payload["error"]["required_permission"] == "kg.operations.audit.read"
-    assert captured[0].operation == "kg.operations.audit.read"
-    assert captured[0].legacy_operation == "kg.admin.settings_read"
-    assert captured[0].board_id == BOARD_ID

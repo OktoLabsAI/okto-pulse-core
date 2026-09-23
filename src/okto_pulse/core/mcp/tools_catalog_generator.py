@@ -54,7 +54,7 @@ _RULES: tuple[tuple[str, str | None, str], ...] = (
      r"list_alternatives|get_learning_from_bugs|query_global)$"),
     ("KG — Query (Power)", "kg",
      r"^okto_pulse_kg_(query_cypher|query_natural|query_reflective|schema_info|"
-     r"verify_grounding|provenance_drift|export_jsonld)$"),
+     r"verify_grounding|export_jsonld)$"),
     ("KG — Cognitive readiness & closeout", "kg",
      r"^okto_pulse_kg_(evaluate_bug_cognitive_closure|evaluate_cognitive_readiness|"
      r"list_cognitive_dlq|list_cognitive_pending_items|list_cognitive_readiness_items|"

@@ -16,33 +16,41 @@ Full long-form documentation (args, returns, examples, enum prose) for `okto_pul
 
 ## `okto_pulse_get_requirement_verification`
 
-Read the current relational qualification of FR/TR/IR/OR/BR, including explicit
-criterion links, selected inheritance paths, bound source digests and versioned
-default proposals. Requires `spec.entity.read`, `spec.integration_requirements.read`
-and `spec.observability_requirements.read` before requirement bodies are loaded.
+Read explicit/inherited requirement qualification paths and pending issues.
+
+Requires Spec, IR and OR reads before loading bodies. Counts and resolution
+cover the whole population, independent of this page. Supply both requirement
+identity fields for one row and paths_offset for more paths. Responses are
+bounded; inspect truncation/unknown flags. Source digests and versioned default
+proposals are available for authoring verification through the existing
+structured entity writer. With additional spec.tests.read and card.entity.read,
+also resolves declared methods against installed admission capabilities and
+canonical scenario-to-Test-Card assignments, plus declared implementation
+contributions and unambiguous BR responsibility through canonical FR links.
+effective_inventory summarizes the complete prospective delivery population,
+including AC/API/Decision and unlinked Card scope, before pagination. Missing
+supplementary facts return unknown totals; unassigned obligations stay pending.
+Its snapshot digest and contribution scopes are planning facts, not adoption
+of a new delivery contract. Current credit remains under the adopted contract.
+Requirement implementation_plan uses implementation-plan/v1 contributions:
+card_id, scope (whole_requirement or selected_criteria), criterion_ids and
+summary (required for selected_criteria). Author through existing Draft
+structured-entity writes; every Card must already be in linked_task_ids.
+These are declared scopes, not completion claims or approvals. Without those reads, planning
+remains explicitly unavailable. Planning requires no passing result and never
+adopts ARQ/VER or assesses implemented work, dependencies, semantic adequacy or
+delivery evidence.
 
 Parameters: `board_id`, `spec_id`; optional `offset` (default 0), `limit` (1–100,
-default 25). Supply both `requirement_type` and `requirement_id` to inspect one
-obligation. `paths_offset` pages additional paths for that obligation. The type
-is one of `functional_requirement`, `technical_requirement`,
-`integration_requirement`, `observability_requirement`, `business_rule`.
+default 25). Supply both `requirement_type` and `requirement_id` for one
+obligation. `paths_offset` pages its additional paths. Types:
+`functional_requirement`, `technical_requirement`, `integration_requirement`,
+`observability_requirement`, `business_rule`.
 
-Global counts and `criteria_resolution_complete` include obligations outside the
-page. Missing populations have unknown totals. Inspect `population_complete`,
-`counts_scope`, issues, blockers and path truncation before interpreting results.
-Each inheritance selection retains its source, selected terminal criteria,
-covered aspect and source digest. Existing BR→FR links do not imply inheritance.
-
-Use the existing structured entity writer to author `verification` with
-`mode: explicit|inherited`, nonempty `required_profiles` and, for inheritance,
-`inheritance: [{source: {requirement_type, requirement_id}, source_digest,
-criterion_ids, covered_aspect}]`. The fixed evidence policy is
-`pulse-verification/v1`; no per-requirement bypass or alternative policy is
-accepted. Proposals become authored values only when deliberately saved.
-
-This reader performs no writes or backfills. Criterion resolution does **not**
-evaluate proof methods, execution assignments, semantic adequacy, evidence or
-ARQ/VER rollout. No readiness/approval/delivery credit is granted by the read.
+Inspect `population_complete`, `counts_scope`, `criteria_resolution_complete`,
+issues, blockers and truncation. The fixed evidence policy is
+`pulse-verification/v1`; proposals become authored values only when saved.
+This reader performs no writes, backfills or proof execution.
 
 ## `okto_pulse_add_spec_dependency`
 
@@ -702,6 +710,28 @@ Returns:
 
 ## `okto_pulse_update_spec_entity`
 
+Polymorphic structured spec entity mutation tool for FR, BR, TR, Decision,
+AC, IR, OR and Project structure nodes. Project structure writes require
+expected_spec_version, expected_structure_revision and idempotency_key;
+batch operations are atomic.
+
+AC payloads may include verification_profile (functional, integration,
+technical, operational) and requirement_links [{requirement_type,
+requirement_id, aspect?}]. Types: functional_requirement,
+technical_requirement, integration_requirement, observability_requirement,
+business_rule. Use exact same-Spec IDs, not indices or text. Each target
+appears once, at most 100 links. Missing metadata is allowed in Draft;
+qualification does not grant test evidence, approval or start readiness.
+
+FR/TR/IR/OR/BR payloads accept verification with mode explicit/inherited,
+required_profiles, and inheritance selections {source: {requirement_type,
+requirement_id}, source_digest, criterion_ids, covered_aspect}. Read the current
+source digests/default proposals via okto_pulse_get_requirement_verification.
+An inherited selection does not infer proof from existing BR→FR links.
+
+API Contracts intentionally use okto_pulse_update_spec_api_contract so the richer
+payload shape remains explicit while still delegating to StructuredSpecEntityService.
+
 Before a Spec leaves Draft, agents must populate applicable Project Structure
 or persist a justified `Project Structure: not applicable` declaration in the
 Spec `context` via `okto_pulse_update_spec`, preserving existing context. This
@@ -709,12 +739,6 @@ does not require a fake tree or a Decision with artificial task coverage.
 See `okto-pulse://reference/project-structure` for complete batch examples and
 the scope/edition review protocol. The declaration is an agent-auditable
 context record, not a new Resource Gate N/A resource type.
-
-Polymorphic structured spec entity mutation tool for FR, BR, TR, Decision, AC,
-IR, OR and Project structure nodes.
-
-API Contracts intentionally use okto_pulse_update_spec_api_contract so the richer
-payload shape remains explicit while still delegating to StructuredSpecEntityService.
 
 For `entity_type="project_structure_node"`, read
 `okto-pulse://reference/project-structure` first. Every write requires

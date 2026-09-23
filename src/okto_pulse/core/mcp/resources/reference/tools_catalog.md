@@ -37,7 +37,6 @@ Semantic guideline protocol:
 
 ## KG — Query (Power)
 - `okto_pulse_kg_export_jsonld` — docs: `okto-pulse://reference/tool-docs/kg`
-- `okto_pulse_kg_provenance_drift` — docs: `okto-pulse://reference/tool-docs/kg`
 - `okto_pulse_kg_query_cypher` — docs: `okto-pulse://reference/tool-docs/kg`
 - `okto_pulse_kg_query_natural` — docs: `okto-pulse://reference/tool-docs/kg`
 - `okto_pulse_kg_query_reflective` — docs: `okto-pulse://reference/tool-docs/kg`

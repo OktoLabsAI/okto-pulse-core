@@ -12933,31 +12933,15 @@ async def okto_pulse_get_requirement_verification(
     requirement_id: Annotated[str, Field(min_length=1, max_length=255)] | None = None,
     paths_offset: Annotated[int, Field(strict=True, ge=0, le=2**63 - 1)] = 0,
 ) -> str:
-    """Read explicit/inherited requirement qualification paths and pending issues.
-
-    Requires Spec, IR and OR reads before loading bodies. Counts and resolution
-    cover the whole population, independent of this page. Supply both requirement
-    identity fields for one row and paths_offset for more paths. Responses are
-    bounded; inspect truncation/unknown flags. Source digests and versioned default
-    proposals are available for authoring verification through the existing
-    structured entity writer. With additional spec.tests.read and card.entity.read,
-    also resolves declared methods against installed admission capabilities and
-    canonical scenario-to-Test-Card assignments, plus declared implementation
-    contributions and unambiguous BR responsibility through canonical FR links.
-    effective_inventory summarizes the complete prospective delivery population,
-    including AC/API/Decision and unlinked Card scope, before pagination. Missing
-    supplementary facts return unknown totals; unassigned obligations stay pending.
-    Its snapshot digest and contribution scopes are planning facts, not adoption
-    of a new delivery contract. Current credit remains under the adopted contract.
-    Requirement implementation_plan uses implementation-plan/v1 contributions:
-    card_id, scope (whole_requirement or selected_criteria), criterion_ids and
-    summary (required for selected_criteria). Author through existing Draft
-    structured-entity writes; every Card must already be in linked_task_ids.
-    These are declared scopes, not completion claims or approvals. Without those reads, planning
-    remains explicitly unavailable. Planning requires no passing result and never
-    adopts ARQ/VER or assesses implemented work, dependencies, semantic adequacy or
-    delivery evidence.
-    """
+    """Read requirement qualifications, inheritance paths and whole-population counts.
+    Requires Spec/IR/OR reads; planning also requires Test/Card reads. Missing facts
+    remain unknown; inspect truncation and page paths for a selected requirement.
+    Returns current source digests/default proposals and prospective obligations,
+    methods and Card contributions. These are planning facts, not proof, approval,
+    readiness or ARQ/VER adoption; credit follows the adopted delivery contract.
+    Author verification and implementation-plan/v1 via Draft structured entity
+    writes. BR links do not imply inheritance or verified coverage.
+    Read okto-pulse://reference/tool-docs/spec for fields, scopes and limits."""
     from okto_pulse.core.application.use_cases.requirement_verification import (
         GetRequirementVerificationCommand, GetRequirementVerificationUseCase, RequirementVerificationReadError,
     )
@@ -14636,29 +14620,16 @@ async def okto_pulse_update_spec_entity(
     idempotency_key: str = "",
     ack_token: str = "",
 ) -> str:
-    """
-    Polymorphic structured spec entity mutation tool for FR, BR, TR, Decision,
-    AC, IR, OR and Project structure nodes. Project structure writes require
-    expected_spec_version, expected_structure_revision and idempotency_key;
-    batch operations are atomic.
-
-    AC payloads may include verification_profile (functional, integration,
-    technical, operational) and requirement_links [{requirement_type,
-    requirement_id, aspect?}]. Types: functional_requirement,
-    technical_requirement, integration_requirement, observability_requirement,
-    business_rule. Use exact same-Spec IDs, not indices or text. Each target
-    appears once, at most 100 links. Missing metadata is allowed in Draft;
-    qualification does not grant test evidence, approval or start readiness.
-
-    FR/TR/IR/OR/BR payloads accept verification with mode explicit/inherited,
-    required_profiles, and inheritance selections {source: {requirement_type,
-    requirement_id}, source_digest, criterion_ids, covered_aspect}. Read the current
-    source digests/default proposals via okto_pulse_get_requirement_verification.
-    An inherited selection does not infer proof from existing BR→FR links.
-
-    API Contracts intentionally use okto_pulse_update_spec_api_contract so the richer
-    payload shape remains explicit while still delegating to StructuredSpecEntityService.
-    """
+    """Mutate FR/BR/TR/Decision/AC/IR/OR or Project structure through existing permissions
+    and content locks. Structure writes require expected_spec_version,
+    expected_structure_revision and idempotency_key; batches are atomic.
+    Verification profiles, canonical requirement links, selected inheritance and
+    implementation plans declare obligations, not proof, approval or start readiness.
+    Read current digests/default proposals with get_requirement_verification;
+    BR links do not infer proof. Use exact same-Spec IDs, not indices or text.
+    API Contracts use update_spec_api_contract.
+    Read okto-pulse://reference/tool-docs/spec and
+    okto-pulse://reference/project-structure before authoring their detailed payloads."""
     return await _mcp_apply_structured_spec_entity(
         board_id=board_id,
         spec_id=spec_id,
@@ -21954,7 +21925,6 @@ _TOOLS_WITH_LAZY_COMPACT_DESCRIPTION = frozenset(
         "okto_pulse_kg_list_cognitive_readiness_items",
         "okto_pulse_kg_clear_cognitive_skip",
         "okto_pulse_copy_architecture_to_card",
-        "okto_pulse_kg_provenance_drift",
         "okto_pulse_list_default_guideline_candidates",
         "okto_pulse_copy_knowledge_to_card",
         "okto_pulse_kg_explain_constraint",

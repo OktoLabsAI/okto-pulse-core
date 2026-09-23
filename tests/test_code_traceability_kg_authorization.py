@@ -535,52 +535,6 @@ async def test_arbitrary_mcp_query_runs_with_complete_ct_read_grant(
     assert payload["rows"] == [["legacy"]]
 
 
-@pytest.mark.asyncio
-@pytest.mark.parametrize("ct_read", (False, True))
-async def test_provenance_drift_requires_complete_ct_authority_before_provider(
-    ct_read: bool,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    from okto_pulse.core.kg import provenance_drift
-    from okto_pulse.core.mcp import kg_power_tools
-
-    async def _agent():
-        return SimpleNamespace(id="agent-ct-kg")
-
-    async def _board_agent(_board_id: str):
-        return _mcp_context(ct_read=ct_read)
-
-    called = False
-
-    async def _report(*_args, **_kwargs):
-        nonlocal called
-        called = True
-        return {
-            "checked_count": 0,
-            "drifted_count": 0,
-            "skipped_count": 0,
-            "drifted": [],
-        }
-
-    monkeypatch.setattr(provenance_drift, "provenance_drift_report", _report)
-    catalog = _Catalog()
-    kg_power_tools.register_kg_power_tools(
-        catalog,
-        get_agent=_agent,
-        get_board_agent=_board_agent,
-    )
-
-    payload = json.loads(
-        await catalog.tools["okto_pulse_kg_provenance_drift"](
-            board_id=BOARD_ID,
-        )
-    )
-
-    assert called is ct_read, payload
-    if ct_read:
-        assert payload["drifted"] == []
-    else:
-        assert payload["error"]["code"] == "permission_denied"
 
 
 @pytest.mark.asyncio

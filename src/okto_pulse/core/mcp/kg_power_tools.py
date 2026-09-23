@@ -550,67 +550,6 @@ args: okto-pulse://reference/tool-docs/kg."""
         }
         return json.dumps(result, default=str)
 
-    @mcp.tool()
-    async def okto_pulse_kg_provenance_drift(
-        board_id: str,
-        node_type: str = "",
-    ) -> str:
-        """Read-only artifact→node drift report: compares each node's persisted
-source_content_hash against the artifact's latest consolidation and current
-existence. Reasons: content_changed | artifact_missing (deleted source, terminal)
-| audit_missing (live source without a durable comparison anchor).
-Returns checked_count/drifted_count/skipped_count + drifted list. Remedy is a
-normal re-consolidation; the graph is never modified. node_type optionally
-narrows to one table."""
-        from okto_pulse.core.kg.provenance_drift import provenance_drift_report
-
-        _agent, board_agent, auth_error = await _authorized_board_agent(
-            board_id,
-            "board.read",
-        )
-        if auth_error is not None:
-            return auth_error
-
-        from okto_pulse.core.application.use_cases import (
-            AuthorizeOperationCommand,
-            AuthorizeOperationUseCase,
-        )
-        from okto_pulse.core.application.use_cases.base import PermissionDeniedError
-        from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
-
-        assert board_agent is not None
-        actor = MCPAdapterContract.actor(board_agent, board_id=board_id)
-        try:
-            await AuthorizeOperationUseCase().execute(
-                AuthorizeOperationCommand(
-                    "kg.operations.audit.read",
-                    legacy_operation="kg.admin.settings_read",
-                    board_id=board_id,
-                ),
-                actor=actor,
-            )
-        except PermissionDeniedError as exc:
-            return _err(
-                "permission_denied",
-                str(exc),
-                required_permission="kg.operations.audit.read",
-            )
-        ct_guard_error = await _guard_arbitrary_code_traceability_query(
-            board_id,
-            board_agent,
-        )
-        if ct_guard_error is not None:
-            return ct_guard_error
-        try:
-            report = await asyncio.wait_for(
-                provenance_drift_report(
-                    board_id, node_type or None
-                ),
-                timeout=60.0,
-            )
-        except ValueError as e:
-            return _err("invalid_node_type", str(e))
-        return json.dumps(report, default=str)
 
     @mcp.tool()
     async def okto_pulse_kg_query_reflective(

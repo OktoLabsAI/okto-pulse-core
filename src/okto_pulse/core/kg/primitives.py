@@ -4981,8 +4981,8 @@ def _provenance_attrs(
     ``seed_attestation=False`` is the NC-8 in-place UPDATE variant: the
     content is being rewritten by a NEW assertion, so the provenance anchor
     (span/extraction/source_content_hash) is restamped to describe the new
-    content — without the restamp, kg_provenance_drift would keep flagging
-    the node forever after the re-consolidation remedy (D5). Attestation
+    content. The anchor must identify the assertion that wrote the current
+    content, including after re-consolidation (D5). Attestation
     counters are excluded there — ``_bump_attestation`` accumulates them
     (N -> N+1, never reset to 1).
     """

@@ -42,7 +42,7 @@
     ],
     "source": "okto_pulse/core/mcp/agent_instructions.md"
   },
-  "manifest_sha256": "ebb62ab54faed95341ae7819004e37736f09ced79cca29b1f8144ecd24319937",
+  "manifest_sha256": "c6cd60d16ce23624c466135c301000091a87dbfe1452a2ce69ff282b04a2ab5c",
   "manifest_version": "agent-resources/v2",
   "resource_count": 22,
   "resources": [
@@ -293,7 +293,7 @@
       "uri": "okto-pulse://reference/tool-docs/refinement"
     },
     {
-      "content_sha256": "5d456f90eaddbf1a4987acd64640f08dca6332019c1ae4813dce66380c84a628",
+      "content_sha256": "832844e69b5e0b9a35143c16792d3665b6ebf56c5271902f69db2207010288e7",
       "cross_links": [
         "okto-pulse://reference/code-traceability",
         "okto-pulse://reference/multivalue",
@@ -338,7 +338,7 @@
       "uri": "okto-pulse://reference/tool-docs/test-scenario"
     },
     {
-      "content_sha256": "314de140b5744b30a31a05a4967c0d558a63a33212eded3e6903b36367df3302",
+      "content_sha256": "5e6904a1655967d9561d1e4fcf3809288f6a8d632d9d6ddb4d0dc12c1bd381c6",
       "cross_links": [
         "okto-pulse://reference/list_tools",
         "okto-pulse://reference/policy-compliance",

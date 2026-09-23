@@ -516,5 +516,5 @@ class TestMCPRegistration:
         import inspect
         from okto_pulse.core.mcp import kg_power_tools
         src = inspect.getsource(kg_power_tools.register_kg_power_tools)
-        # 5 originais + okto_pulse_kg_provenance_drift (spec MKG-B-S1 FR7).
-        assert src.count("@mcp.tool()") == 6
+        # Product queries remain; the F4 maintenance report is retired.
+        assert src.count("@mcp.tool()") == 5

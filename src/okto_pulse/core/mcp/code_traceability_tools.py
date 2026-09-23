@@ -977,51 +977,17 @@ def register_code_traceability_tools(
         return await _execute(board_id, command, GetDeliveryEvidenceUseCase())
 
     async def okto_pulse_record_delivery_evidence(board_id: BoundedId, card_id: BoundedId, spec_id: BoundedId, evidence: CardDeliveryRecordInput) -> McpToolOutcome:
-        """Record declared progress or bind accepted execution/test proof to the CARD ledger.
-
-        Card-scoped since 0.3.4 (spec 793c43d0 / FR-7): the task owns its
-        bindings. implementation: accepted committed execution_id. test: passed
-        scenario_id + implementation binding IDs actually tested. The command
-        carries the card CAS fence (expected_card_version) and the spec edition
-        (expected_spec_edition). Read get_delivery_evidence(spec_id) first for the
-        rollup and per_card obligations. Waivers are NOT accepted here — they
-        stay on the spec rollup and require an authorized human. Revoke is
-        human-only. Never claim a task is a test or fabricate receipt fields.
-        progress: justification plus typed progress source_state/remaining and
-        optional target_ids/impact_delta; no execution receipt or commit required.
-        Requires card.conclusion.write and an executing, unarchived card. Dirty
-        or unknown source state remains a claim and never grants delivery credit.
-        Reuse the idempotency key after a timeout. Recovery by another actor is
-        never inferred from a declared external workspace.
-        Atomic entries: contract_version=card-delivery-batch/v1, the two existing
-        scope fences plus expected_delivery_revision, idempotency_key and 1..50
-        entries with unique client_ref. Each entry uses the same progress/proof
-        fields and its own permission. At most 200 links and 128 KiB in aggregate.
-        No waiver/revoke entries. Failed admission rolls back the whole batch;
-        retry the exact envelope after timeout. Read per_card.delivery_revision.
-        Implementation may use execution_submission instead of execution_id:
-        target_id, result_investigation_receipt_id, disposition and optional actual
-        path/symbol/replacement. Origin authorization and admission are unchanged;
-        execution, binding and event share one commit. Scope/summary/key are inherited.
-        execution_client_ref may reuse an earlier implementation entry in this batch.
-        progress_refs cite same-scope history by record_id or earlier progress by
-        client_ref. Aliases resolve to canonical IDs; they grant no proof credit.
-        Implementation may replace obligation_refs with bindings containing
-        obligation_ref and contribution=partial|complete for each obligation.
-        Partial is admitted proof without completion credit; multiple partial
-        records never add up to complete. Complete remains a declaration and
-        requires the original proof, lifecycle and review checks. Historic
-        records without declarations retain their legacy verdict, not a forged
-        complete label. This does not adopt the future ARQ/VER contribution scope.
-        To compose several Targets, each binding supplies execution_refs with
-        execution_id or a client_ref to an earlier single-execution entry. Omit
-        the envelope execution fields. Every binding names its own nonempty set;
-        receipts must share an observed source/revision within that set. No Git
-        ancestry is inferred. Currentness is checked per binding, including all
-        receipts required by a Test Evidence association. Set references count
-        toward the same 200-link batch budget. A composite entry cannot serve
-        as an ambiguous single-execution alias.
-        """
+        """Record Card progress or bind accepted implementation/authenticated test proof.
+        Read get_delivery_evidence first for obligations and CAS/edition/revision fences.
+        Progress/impact are claims: no proof, completion or verified workspace recovery.
+        Use the closed evidence schema for single, atomic batch or report composition;
+        each entry retains its own permission, admission, currentness and lifecycle gates.
+        Partial proofs never sum to complete. Never fabricate receipts or claim a task
+        is a Test Card. Waiver/revoke remain authorized human operations elsewhere.
+        Batch: 1..50 entries, at most 200 links and 128 KiB; failure rolls back all.
+        After timeout retry the exact envelope with the same idempotency key.
+        Read okto-pulse://reference/tool-docs/code-traceability for inline receipts,
+        composite Targets, contribution scopes, aliases and report semantics."""
         from okto_pulse.core.application.use_cases.delivery_evidence import RecordCardDeliveryEvidenceUseCase
         from okto_pulse.core.application.use_cases.code_traceability import SubmitImplementationTargetExecutionUseCase
 

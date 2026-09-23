@@ -15325,3 +15325,38 @@ Sem processos de teste/instalação pendentes. Nenhuma redução de gates vivos:
 tests excluídos exercitavam a feature pública/reconciler removidos; regressões
 de scanner, fonte relacional, sigilo, Board ACL, Health e autoridade histórica
 continuam executadas. O recorte não encerra F4 nem promove inventário de aceitação.
+
+### F4/F6 — relatório de provenance retirado e descrições compactadas
+
+Órfãos enviados: Core 30369aaa / Community 85d87e81. Removidos agora
+kg_provenance_drift (registro, handler, classificação, policy e instruções) e
+kg/provenance_drift.py: não havia consumidor produtivo além da tool. Permissão
+audit.read é compartilhada por funcionalidades legítimas e foi preservada.
+Não alterados os writers de source_content_hash/proveniência. Os seis testes
+nativos de commit fill passaram em 119.07s, provenance-retirement-anchors.xml.
+Ausência MCP/recursos em Community: 32 passed em 173.89s.
+
+Campanha Core inicial: 76 passed/1 failed. O gate R1 encontrou três descrições
+acima do teto já existente de 900 caracteres: get_requirement_verification 1719,
+record_delivery_evidence 3053 e update_spec_entity 1284. Corrigidas para 685,
+852 e 701 caracteres. Guias detalhados preservados/movidos para tool-docs/spec
+e code-traceability; corrigido texto antigo que dizia que o reader nunca
+resolvia métodos/assignments. Descrição curta exige leitura desses resources.
+Schemas tipados, admission, fences, replay, limites e authorities não alterados.
+Redução observada de 3818 caracteres nas três descrições, não benchmark de
+workflows nem economia de tokens inferida. Teto do teste não relaxado; contagem
+de tools foi atualizada de baseline obsoleto 340 para as 308 realmente registradas.
+
+Catálogo/manifests regenerados. Par final dist-provenance-retirement-final,
+pip terminal e provenance-provenance-retirement-final.json: Core 829/892,
+Community 362/446 byte-identical. Ruff/diff check verdes. Reexecução Core
+provenance-retirement-core-final.xml e F16 closure-provenance-retirement-final.json
+ainda em execução. README renderizado do relatório de 8809 linhas sem findings
+arquiteturais e budgets zero; aguardar gate final. Nenhuma edição adicional de UI.
+
+Resultado final: **77 passed em 10.08s** na reexecução Core, inclusive R1 sem
+aumentar orçamento. F16 final **8809 linhas, ok=true, zero findings de arquitetura
+e documentação e oito budgets zero**. Os 32 testes de transporte Community e 6
+de âncoras foram executados antes da compactação de docstrings; esta só alterou
+descrições/resources e foi validada no novo par byte-identical com catálogo,
+manifests, orçamento e F16. Sem sessões de teste/instalação pendentes.
