@@ -314,8 +314,12 @@
       "line": 612,
       "id": "T33",
       "normative_text": "| T33 | tools/list, resources/list, OpenAPI e CLI empacotados | Zero capacidade operacional Sprint/manutenção além de health. |",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "partial",
+      "test_text_references": [],
+      "reviewed_execution": {
+        "artifact": "acceptance-base-surfaces-execution.json",
+        "criterion_key": "BASE:T33"
+      }
     },
     {
       "key": "BASE:T34",
@@ -323,8 +327,12 @@
       "line": 613,
       "id": "T34",
       "normative_text": "| T34 | Chamada direta a nome/rota removida e campo `sprint_id` legado | Erro de inexistência/incompatibilidade antes de efeito; nunca ignorado silenciosamente. |",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "verified_by_reviewed_execution",
+      "test_text_references": [],
+      "reviewed_execution": {
+        "artifact": "acceptance-base-surfaces-execution.json",
+        "criterion_key": "BASE:T34"
+      }
     },
     {
       "key": "BASE:T35",
@@ -350,8 +358,12 @@
       "line": 616,
       "id": "T37",
       "normative_text": "| T37 | UI com localStorage/deep link antigo de Sprint | Fallback válido, sem requests de Sprint nem crash. |",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "verified_by_reviewed_execution",
+      "test_text_references": [],
+      "reviewed_execution": {
+        "artifact": "acceptance-base-surfaces-execution.json",
+        "criterion_key": "BASE:T37"
+      }
     },
     {
       "key": "BASE:T38",
@@ -359,8 +371,12 @@
       "line": 617,
       "id": "T38",
       "normative_text": "| T38 | Health UI/cliente | Sem controles de repair/rebuild/tick/historical; polling limitado e cancelável. |",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "verified_by_reviewed_execution",
+      "test_text_references": [],
+      "reviewed_execution": {
+        "artifact": "acceptance-base-surfaces-execution.json",
+        "criterion_key": "BASE:T38"
+      }
     },
     {
       "key": "BASE:T39",
@@ -431,8 +447,12 @@
       "line": 625,
       "id": "T46",
       "normative_text": "| T46 | Recursos oficiais/erros após remoção | Nenhuma URI, drilldown ou remediation aponta para função removida. |",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "partial",
+      "test_text_references": [],
+      "reviewed_execution": {
+        "artifact": "acceptance-base-surfaces-execution.json",
+        "criterion_key": "BASE:T46"
+      }
     },
     {
       "key": "KG:KG-01",

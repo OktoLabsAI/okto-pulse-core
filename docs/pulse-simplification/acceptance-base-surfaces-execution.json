@@ -1,0 +1,2785 @@
+{
+  "format": "pulse-v1.3-reviewed-execution/v1",
+  "scope": "Reviewed BASE retirement surface scenarios",
+  "provenance": {
+    "file": "provenance-history-read-cost.json",
+    "sha256": "aa2e94f87f67ade1678298b073c216e7f1e7d7f151db7ff933152383bd10118d",
+    "identity": {
+      "checked_at": "2026-09-23T20:03:17.276746+00:00",
+      "python": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Scripts\\python.exe",
+      "packages": {
+        "core": {
+          "python_files": 830,
+          "origin": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages\\okto_pulse\\core\\__init__.py",
+          "repository_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_core",
+          "commit": "bd1f709a47752cfcf6c8283b0716f8dd6aefb829",
+          "dirty": false,
+          "dirty_entry_count": 0,
+          "distribution": "okto-pulse-core",
+          "version": "0.3.4",
+          "wheel": {
+            "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\dist-history-read-cost\\okto_pulse_core-0.3.4-py3-none-any.whl",
+            "sha256": "508e334c016b5ee158486940cf03adffc4fbfb8139f48b673e2095b2e5a45c38",
+            "size": 3735663
+          },
+          "source_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_core\\src",
+          "site_packages_root": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages",
+          "package_prefix": "okto_pulse/core/",
+          "byte_identical_member_count": 893,
+          "byte_identical": true,
+          "aggregate_sha256": "85ed087d3c852a8bce60cd21ff2bf1c8fd0921de44330b973b79c812005ecc68",
+          "chain_hashes": {
+            "source": "85ed087d3c852a8bce60cd21ff2bf1c8fd0921de44330b973b79c812005ecc68",
+            "wheel": "85ed087d3c852a8bce60cd21ff2bf1c8fd0921de44330b973b79c812005ecc68",
+            "site_packages": "85ed087d3c852a8bce60cd21ff2bf1c8fd0921de44330b973b79c812005ecc68"
+          },
+          "critical_resource_sha256": {
+            "okto_pulse/core/mcp/resources/ska_resource_manifest.json": "32102e1e4ca2e107189c028f29202b16c5e2879de8b21495de8fd6f88e9fff13",
+            "okto_pulse/core/mcp/resources/ska_tool_manifest.json": "0c3fa3da1549baec20872eca3f4a289288627e6b9f6b80be10472ac962fa72b9"
+          },
+          "mismatches": []
+        },
+        "community": {
+          "python_files": 363,
+          "origin": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages\\okto_pulse\\community\\__init__.py",
+          "repository_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_community",
+          "commit": "6a3bc18e71a58580e9847f6b149f893822cd3252",
+          "dirty": true,
+          "dirty_entry_count": 5,
+          "distribution": "okto-pulse",
+          "version": "0.3.4",
+          "wheel": {
+            "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\dist-history-read-cost\\okto_pulse-0.3.4-py3-none-any.whl",
+            "sha256": "3c31253763842f8347285bdd8efd6e041d4c6fcf089dcee385dedb03e68b7732",
+            "size": 4509401
+          },
+          "source_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_community\\src",
+          "site_packages_root": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages",
+          "package_prefix": "okto_pulse/community/",
+          "byte_identical_member_count": 447,
+          "byte_identical": true,
+          "aggregate_sha256": "e38335e49a8176867e765933f217da417e577d8e52d0f9cf245ea4e544945776",
+          "chain_hashes": {
+            "source": "e38335e49a8176867e765933f217da417e577d8e52d0f9cf245ea4e544945776",
+            "wheel": "e38335e49a8176867e765933f217da417e577d8e52d0f9cf245ea4e544945776",
+            "site_packages": "e38335e49a8176867e765933f217da417e577d8e52d0f9cf245ea4e544945776"
+          },
+          "critical_resource_sha256": {},
+          "mismatches": []
+        }
+      }
+    }
+  },
+  "runs": {
+    "core": {
+      "file": "acceptance-base-surfaces-core.xml",
+      "sha256": "6ef85f7fa96487fa137fcff9e282eda14d3a9b6c2c61b22f6670e70200e1b0f4",
+      "suites": [
+        {
+          "name": "pytest",
+          "errors": "0",
+          "failures": "0",
+          "skipped": "0",
+          "tests": "62",
+          "time": "5.057",
+          "timestamp": "2026-09-23T17:07:49.059638-03:00",
+          "hostname": "Alienware_m15"
+        }
+      ]
+    },
+    "community": {
+      "file": "acceptance-base-surfaces-community.xml",
+      "sha256": "a4f710d6293c99ccf2cba696af78888f05859ea65a4a7de7a38a67af48647269",
+      "suites": [
+        {
+          "name": "pytest",
+          "errors": "0",
+          "failures": "0",
+          "skipped": "0",
+          "tests": "167",
+          "time": "223.540",
+          "timestamp": "2026-09-23T17:07:31.204145-03:00",
+          "hostname": "Alienware_m15"
+        }
+      ]
+    },
+    "frontend": {
+      "file": "acceptance-base-surfaces-frontend.xml",
+      "sha256": "a7517b7e03faa20bfa7d09d417f003d6665986dd672291051c1a5b61ca6db778",
+      "suites": [
+        {
+          "name": "src/components/analytics/analyticsInitiativeRoutes.test.tsx",
+          "timestamp": "2026-09-23T20:08:42.578Z",
+          "hostname": "Alienware_m15",
+          "tests": "8",
+          "failures": "0",
+          "errors": "0",
+          "skipped": "0",
+          "time": "1.1568813"
+        },
+        {
+          "name": "src/components/help/__tests__/HelpPanel.maintenanceCli.test.tsx",
+          "timestamp": "2026-09-23T20:08:42.582Z",
+          "hostname": "Alienware_m15",
+          "tests": "1",
+          "failures": "0",
+          "errors": "0",
+          "skipped": "0",
+          "time": "0.6101321"
+        },
+        {
+          "name": "src/components/modals/__tests__/ModalStackRenderer.test.tsx",
+          "timestamp": "2026-09-23T20:08:42.583Z",
+          "hostname": "Alienware_m15",
+          "tests": "3",
+          "failures": "0",
+          "errors": "0",
+          "skipped": "0",
+          "time": "0.2141366"
+        },
+        {
+          "name": "src/components/knowledge/__tests__/KGHealthOverview.test.tsx",
+          "timestamp": "2026-09-23T20:08:42.585Z",
+          "hostname": "Alienware_m15",
+          "tests": "14",
+          "failures": "0",
+          "errors": "0",
+          "skipped": "0",
+          "time": "1.5308175"
+        },
+        {
+          "name": "src/components/knowledge/__tests__/KGHealthView.test.tsx",
+          "timestamp": "2026-09-23T20:08:42.591Z",
+          "hostname": "Alienware_m15",
+          "tests": "31",
+          "failures": "0",
+          "errors": "0",
+          "skipped": "0",
+          "time": "3.8228822"
+        }
+      ]
+    },
+    "browser": {
+      "file": "acceptance-base-surfaces-browser.xml",
+      "sha256": "1663d5ad48c5ffbab9dffb2aea4e11ecb32134a3861740181a178ba2bae2059f",
+      "suites": [
+        {
+          "name": "lineage-without-sprints.spec.ts",
+          "timestamp": "2026-09-23T20:11:22.953Z",
+          "hostname": "chromium",
+          "tests": "1",
+          "failures": "0",
+          "skipped": "0",
+          "time": "4.218",
+          "errors": "0"
+        }
+      ]
+    }
+  },
+  "criteria": {
+    "BASE:T34": {
+      "status": "verified_by_reviewed_execution",
+      "covered": "Chamadas REST/MCP a operações retiradas falham antes de autoridade/persistência; variantes polimórficas Sprint recusadas. sprint_id rejeitado inclusive null/vazio por schema e transporte, preservando proveniência opaca na leitura.",
+      "remaining": null,
+      "evidence": [
+        {
+          "run": "community",
+          "repository": "okto_labs_pulse_community",
+          "file": "tests/test_sprint_rest_retirement.py",
+          "source_sha256": "117fd6a86125d25689f3760b9990c32ad0f4ed99322a9932c20c2cb991b9d572",
+          "executions": [
+            {
+              "classname": "tests.test_sprint_rest_retirement",
+              "name": "test_direct_legacy_route_is_missing_before_dependencies[payload0-GET-/boards/board/sprints]",
+              "time": "1.990"
+            },
+            {
+              "classname": "tests.test_sprint_rest_retirement",
+              "name": "test_direct_legacy_route_is_missing_before_dependencies[payload0-GET-/boards/board/specs/spec/sprints]",
+              "time": "0.846"
+            },
+            {
+              "classname": "tests.test_sprint_rest_retirement",
+              "name": "test_direct_legacy_route_is_missing_before_dependencies[payload0-POST-/boards/board/specs/spec/sprints]",
+              "time": "0.880"
+            },
+            {
+              "classname": "tests.test_sprint_rest_retirement",
+              "name": "test_direct_legacy_route_is_missing_before_dependencies[payload0-GET-/boards/board/specs/spec/sprints/suggest]",
+              "time": "0.809"
+            },
+            {
+              "classname": "tests.test_sprint_rest_retirement",
+              "name": "test_direct_legacy_route_is_missing_before_dependencies[payload0-GET-/sprints/source]",
+              "time": "1.469"
+            },
+            {
+              "classname": "tests.test_sprint_rest_retirement",
+              "name": "test_direct_legacy_route_is_missing_before_dependencies[payload0-PATCH-/sprints/source]",
+              "time": "0.954"
+            },
+            {
+              "classname": "tests.test_sprint_rest_retirement",
+              "name": "test_direct_legacy_route_is_missing_before_dependencies[payload0-DELETE-/sprints/source]",
+              "time": "0.892"
+            },
+            {
+              "classname": "tests.test_sprint_rest_retirement",
+              "name": "test_direct_legacy_route_is_missing_before_dependencies[payload0-POST-/sprints/source/move]",
+              "time": "0.739"
+            },
+            {
+              "classname": "tests.test_sprint_rest_retirement",
+              "name": "test_direct_legacy_route_is_missing_before_dependencies[payload0-POST-/sprints/source/evaluations]",
+              "time": "1.254"
+            },
+            {
+              "classname": "tests.test_sprint_rest_retirement",
+              "name": "test_direct_legacy_route_is_missing_before_dependencies[payload0-POST-/sprints/source/assign-tasks]",
+              "time": "0.847"
+            },
+            {
+              "classname": "tests.test_sprint_rest_retirement",
+              "name": "test_direct_legacy_route_is_missing_before_dependencies[payload0-POST-/sprints/source/unassign-tasks]",
+              "time": "0.826"
+            },
+            {
+              "classname": "tests.test_sprint_rest_retirement",
+              "name": "test_direct_legacy_route_is_missing_before_dependencies[payload0-GET-/sprints/source/history]",
+              "time": "1.228"
+            },
+            {
+              "classname": "tests.test_sprint_rest_retirement",
+              "name": "test_direct_legacy_route_is_missing_before_dependencies[payload1-GET-/boards/board/sprints]",
+              "time": "0.904"
+            },
+            {
+              "classname": "tests.test_sprint_rest_retirement",
+              "name": "test_direct_legacy_route_is_missing_before_dependencies[payload1-GET-/boards/board/specs/spec/sprints]",
+              "time": "0.787"
+            },
+            {
+              "classname": "tests.test_sprint_rest_retirement",
+              "name": "test_direct_legacy_route_is_missing_before_dependencies[payload1-POST-/boards/board/specs/spec/sprints]",
+              "time": "0.815"
+            },
+            {
+              "classname": "tests.test_sprint_rest_retirement",
+              "name": "test_direct_legacy_route_is_missing_before_dependencies[payload1-GET-/boards/board/specs/spec/sprints/suggest]",
+              "time": "1.110"
+            },
+            {
+              "classname": "tests.test_sprint_rest_retirement",
+              "name": "test_direct_legacy_route_is_missing_before_dependencies[payload1-GET-/sprints/source]",
+              "time": "0.780"
+            },
+            {
+              "classname": "tests.test_sprint_rest_retirement",
+              "name": "test_direct_legacy_route_is_missing_before_dependencies[payload1-PATCH-/sprints/source]",
+              "time": "0.749"
+            },
+            {
+              "classname": "tests.test_sprint_rest_retirement",
+              "name": "test_direct_legacy_route_is_missing_before_dependencies[payload1-DELETE-/sprints/source]",
+              "time": "1.190"
+            },
+            {
+              "classname": "tests.test_sprint_rest_retirement",
+              "name": "test_direct_legacy_route_is_missing_before_dependencies[payload1-POST-/sprints/source/move]",
+              "time": "0.784"
+            },
+            {
+              "classname": "tests.test_sprint_rest_retirement",
+              "name": "test_direct_legacy_route_is_missing_before_dependencies[payload1-POST-/sprints/source/evaluations]",
+              "time": "0.882"
+            },
+            {
+              "classname": "tests.test_sprint_rest_retirement",
+              "name": "test_direct_legacy_route_is_missing_before_dependencies[payload1-POST-/sprints/source/assign-tasks]",
+              "time": "0.879"
+            },
+            {
+              "classname": "tests.test_sprint_rest_retirement",
+              "name": "test_direct_legacy_route_is_missing_before_dependencies[payload1-POST-/sprints/source/unassign-tasks]",
+              "time": "1.255"
+            },
+            {
+              "classname": "tests.test_sprint_rest_retirement",
+              "name": "test_direct_legacy_route_is_missing_before_dependencies[payload1-GET-/sprints/source/history]",
+              "time": "0.797"
+            },
+            {
+              "classname": "tests.test_sprint_rest_retirement",
+              "name": "test_dedicated_router_and_request_schemas_are_not_shipped",
+              "time": "4.090"
+            }
+          ]
+        },
+        {
+          "run": "community",
+          "repository": "okto_labs_pulse_community",
+          "file": "tests/test_sprint_mcp_retirement_transport.py",
+          "source_sha256": "50248b3d969c577ef2e737b5b08df16ed142604e87df3da03f7a9015b97d261e",
+          "executions": [
+            {
+              "classname": "tests.test_sprint_mcp_retirement_transport",
+              "name": "test_sprint_commands_are_unknown_on_the_materialized_transport",
+              "time": "0.770"
+            },
+            {
+              "classname": "tests.test_sprint_mcp_retirement_transport",
+              "name": "test_polymorphic_reads_cannot_expose_sprint_through_transport",
+              "time": "0.750"
+            }
+          ]
+        },
+        {
+          "run": "community",
+          "repository": "okto_labs_pulse_community",
+          "file": "tests/test_card_sprint_wire_retirement.py",
+          "source_sha256": "e9bdf160bcc45862c315495c00967b6c26d3a255426d78e8951af5392875eb05",
+          "executions": [
+            {
+              "classname": "tests.test_card_sprint_wire_retirement",
+              "name": "test_retired_card_input_is_explicit_422_before_writer[None-POST-/api/v1/boards/board/cards]",
+              "time": "0.063"
+            },
+            {
+              "classname": "tests.test_card_sprint_wire_retirement",
+              "name": "test_retired_card_input_is_explicit_422_before_writer[None-PATCH-/api/v1/cards/card]",
+              "time": "0.084"
+            },
+            {
+              "classname": "tests.test_card_sprint_wire_retirement",
+              "name": "test_retired_card_input_is_explicit_422_before_writer[-POST-/api/v1/boards/board/cards]",
+              "time": "0.049"
+            },
+            {
+              "classname": "tests.test_card_sprint_wire_retirement",
+              "name": "test_retired_card_input_is_explicit_422_before_writer[-PATCH-/api/v1/cards/card]",
+              "time": "0.085"
+            },
+            {
+              "classname": "tests.test_card_sprint_wire_retirement",
+              "name": "test_retired_card_input_is_explicit_422_before_writer[legacy-POST-/api/v1/boards/board/cards]",
+              "time": "0.049"
+            },
+            {
+              "classname": "tests.test_card_sprint_wire_retirement",
+              "name": "test_retired_card_input_is_explicit_422_before_writer[legacy-PATCH-/api/v1/cards/card]",
+              "time": "0.083"
+            },
+            {
+              "classname": "tests.test_card_sprint_wire_retirement",
+              "name": "test_openapi_card_contracts_do_not_publish_sprint_link",
+              "time": "4.248"
+            }
+          ]
+        },
+        {
+          "run": "community",
+          "repository": "okto_labs_pulse_community",
+          "file": "tests/test_retired_public_rebuild.py",
+          "source_sha256": "e9550e31b90ee658577f4e701e872429d1bbe60851cc5f78c4b3ea1d5f9e6d19",
+          "executions": [
+            {
+              "classname": "tests.test_retired_public_rebuild",
+              "name": "test_removed_modules_and_console_entrypoint_are_not_distributed",
+              "time": "0.034"
+            },
+            {
+              "classname": "tests.test_retired_public_rebuild",
+              "name": "test_registered_rest_app_returns_uniform_absence_without_authorization_or_data_access[missing-preflight]",
+              "time": "4.314"
+            },
+            {
+              "classname": "tests.test_retired_public_rebuild",
+              "name": "test_registered_rest_app_returns_uniform_absence_without_authorization_or_data_access[missing-confirm]",
+              "time": "4.574"
+            },
+            {
+              "classname": "tests.test_retired_public_rebuild",
+              "name": "test_registered_rest_app_returns_uniform_absence_without_authorization_or_data_access[missing-run]",
+              "time": "4.661"
+            },
+            {
+              "classname": "tests.test_retired_public_rebuild",
+              "name": "test_registered_rest_app_returns_uniform_absence_without_authorization_or_data_access[foreign-preflight]",
+              "time": "6.444"
+            },
+            {
+              "classname": "tests.test_retired_public_rebuild",
+              "name": "test_registered_rest_app_returns_uniform_absence_without_authorization_or_data_access[foreign-confirm]",
+              "time": "6.395"
+            },
+            {
+              "classname": "tests.test_retired_public_rebuild",
+              "name": "test_registered_rest_app_returns_uniform_absence_without_authorization_or_data_access[foreign-run]",
+              "time": "6.326"
+            },
+            {
+              "classname": "tests.test_retired_public_rebuild",
+              "name": "test_registered_rest_app_returns_uniform_absence_without_authorization_or_data_access[owned-preflight]",
+              "time": "8.252"
+            },
+            {
+              "classname": "tests.test_retired_public_rebuild",
+              "name": "test_registered_rest_app_returns_uniform_absence_without_authorization_or_data_access[owned-confirm]",
+              "time": "4.912"
+            },
+            {
+              "classname": "tests.test_retired_public_rebuild",
+              "name": "test_registered_rest_app_returns_uniform_absence_without_authorization_or_data_access[owned-run]",
+              "time": "4.774"
+            },
+            {
+              "classname": "tests.test_retired_public_rebuild",
+              "name": "test_retired_queue_rest_routes_are_absent_before_storage[missing-GET-/api/v1/kg/queue/dead-letter]",
+              "time": "4.661"
+            },
+            {
+              "classname": "tests.test_retired_public_rebuild",
+              "name": "test_retired_queue_rest_routes_are_absent_before_storage[missing-POST-/api/v1/kg/queue/dead-letter/redrive]",
+              "time": "4.513"
+            },
+            {
+              "classname": "tests.test_retired_public_rebuild",
+              "name": "test_retired_queue_rest_routes_are_absent_before_storage[missing-POST-/api/v1/kg/tick/run-now]",
+              "time": "5.162"
+            },
+            {
+              "classname": "tests.test_retired_public_rebuild",
+              "name": "test_retired_queue_rest_routes_are_absent_before_storage[missing-GET-/api/v1/kg/queue/health]",
+              "time": "4.849"
+            },
+            {
+              "classname": "tests.test_retired_public_rebuild",
+              "name": "test_retired_queue_rest_routes_are_absent_before_storage[missing-GET-/api/v1/kg/queue/drilldown]",
+              "time": "4.328"
+            },
+            {
+              "classname": "tests.test_retired_public_rebuild",
+              "name": "test_retired_queue_rest_routes_are_absent_before_storage[foreign-GET-/api/v1/kg/queue/dead-letter]",
+              "time": "4.450"
+            },
+            {
+              "classname": "tests.test_retired_public_rebuild",
+              "name": "test_retired_queue_rest_routes_are_absent_before_storage[foreign-POST-/api/v1/kg/queue/dead-letter/redrive]",
+              "time": "4.577"
+            },
+            {
+              "classname": "tests.test_retired_public_rebuild",
+              "name": "test_retired_queue_rest_routes_are_absent_before_storage[foreign-POST-/api/v1/kg/tick/run-now]",
+              "time": "4.804"
+            },
+            {
+              "classname": "tests.test_retired_public_rebuild",
+              "name": "test_retired_queue_rest_routes_are_absent_before_storage[foreign-GET-/api/v1/kg/queue/health]",
+              "time": "5.715"
+            },
+            {
+              "classname": "tests.test_retired_public_rebuild",
+              "name": "test_retired_queue_rest_routes_are_absent_before_storage[foreign-GET-/api/v1/kg/queue/drilldown]",
+              "time": "4.554"
+            },
+            {
+              "classname": "tests.test_retired_public_rebuild",
+              "name": "test_retired_queue_rest_routes_are_absent_before_storage[owned-GET-/api/v1/kg/queue/dead-letter]",
+              "time": "4.775"
+            },
+            {
+              "classname": "tests.test_retired_public_rebuild",
+              "name": "test_retired_queue_rest_routes_are_absent_before_storage[owned-POST-/api/v1/kg/queue/dead-letter/redrive]",
+              "time": "4.792"
+            },
+            {
+              "classname": "tests.test_retired_public_rebuild",
+              "name": "test_retired_queue_rest_routes_are_absent_before_storage[owned-POST-/api/v1/kg/tick/run-now]",
+              "time": "4.448"
+            },
+            {
+              "classname": "tests.test_retired_public_rebuild",
+              "name": "test_retired_queue_rest_routes_are_absent_before_storage[owned-GET-/api/v1/kg/queue/health]",
+              "time": "3.889"
+            },
+            {
+              "classname": "tests.test_retired_public_rebuild",
+              "name": "test_retired_queue_rest_routes_are_absent_before_storage[owned-GET-/api/v1/kg/queue/drilldown]",
+              "time": "5.464"
+            },
+            {
+              "classname": "tests.test_retired_public_rebuild",
+              "name": "test_materialized_mcp_transport_rejects_removed_tools_before_handlers",
+              "time": "0.974"
+            },
+            {
+              "classname": "tests.test_retired_public_rebuild",
+              "name": "test_removed_permissions_are_absent_from_registry_and_presets",
+              "time": "0.021"
+            },
+            {
+              "classname": "tests.test_retired_public_rebuild",
+              "name": "test_distributed_instructions_do_not_advertise_retired_recovery_tools",
+              "time": "0.023"
+            },
+            {
+              "classname": "tests.test_retired_public_rebuild",
+              "name": "test_installed_module_invocation_cannot_open_or_mutate_existing_history[arguments0]",
+              "time": "0.186"
+            },
+            {
+              "classname": "tests.test_retired_public_rebuild",
+              "name": "test_installed_module_invocation_cannot_open_or_mutate_existing_history[arguments1]",
+              "time": "0.163"
+            },
+            {
+              "classname": "tests.test_retired_public_rebuild",
+              "name": "test_installed_module_invocation_cannot_open_or_mutate_existing_history[arguments2]",
+              "time": "0.171"
+            },
+            {
+              "classname": "tests.test_retired_public_rebuild",
+              "name": "test_installed_module_invocation_cannot_open_or_mutate_existing_history[arguments3]",
+              "time": "0.188"
+            }
+          ]
+        },
+        {
+          "run": "community",
+          "repository": "okto_labs_pulse_community",
+          "file": "tests/test_cli_removed_maintenance.py",
+          "source_sha256": "ff2f67dee1c9edd9b8854c04b8d85dfff9cdb3845424db33d1b0cf462004ec60",
+          "executions": [
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_retired_command_rejected_before_settings_or_dispatch[arguments0]",
+              "time": "0.035"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_retired_command_rejected_before_settings_or_dispatch[arguments1]",
+              "time": "0.015"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_retired_command_rejected_before_settings_or_dispatch[arguments2]",
+              "time": "0.017"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_retired_command_rejected_before_settings_or_dispatch[arguments3]",
+              "time": "0.025"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_retired_command_rejected_before_settings_or_dispatch[arguments4]",
+              "time": "0.035"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_retired_command_rejected_before_settings_or_dispatch[arguments5]",
+              "time": "0.027"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_retired_command_rejected_before_settings_or_dispatch[arguments6]",
+              "time": "0.017"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_retired_command_rejected_before_settings_or_dispatch[arguments7]",
+              "time": "0.031"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_retired_command_rejected_before_settings_or_dispatch[arguments8]",
+              "time": "0.023"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_retired_command_rejected_before_settings_or_dispatch[arguments9]",
+              "time": "0.041"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_retired_command_rejected_before_settings_or_dispatch[arguments10]",
+              "time": "0.022"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_retired_command_rejected_before_settings_or_dispatch[arguments11]",
+              "time": "0.022"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_retired_command_rejected_before_settings_or_dispatch[arguments12]",
+              "time": "0.017"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_retired_command_rejected_before_settings_or_dispatch[arguments13]",
+              "time": "0.017"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_retired_command_rejected_before_settings_or_dispatch[arguments14]",
+              "time": "0.017"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_retired_command_rejected_before_settings_or_dispatch[arguments15]",
+              "time": "0.018"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_retired_command_rejected_before_settings_or_dispatch[arguments16]",
+              "time": "0.018"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_retired_command_rejected_before_settings_or_dispatch[arguments17]",
+              "time": "0.019"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_retired_command_rejected_before_settings_or_dispatch[arguments18]",
+              "time": "0.021"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_retired_command_rejected_before_settings_or_dispatch[arguments19]",
+              "time": "0.020"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_retired_command_rejected_before_settings_or_dispatch[arguments20]",
+              "time": "0.019"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_retired_command_rejected_before_settings_or_dispatch[arguments21]",
+              "time": "0.036"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_retired_command_rejected_before_settings_or_dispatch[arguments22]",
+              "time": "0.038"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_retired_command_rejected_before_settings_or_dispatch[arguments23]",
+              "time": "0.017"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_retired_command_rejected_before_settings_or_dispatch[arguments24]",
+              "time": "0.018"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_retired_command_rejected_before_settings_or_dispatch[arguments25]",
+              "time": "0.019"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_retired_command_rejected_before_settings_or_dispatch[arguments26]",
+              "time": "0.019"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_retired_command_rejected_before_settings_or_dispatch[arguments27]",
+              "time": "0.019"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_retired_command_rejected_before_settings_or_dispatch[arguments28]",
+              "time": "0.022"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_retired_command_rejected_before_settings_or_dispatch[arguments29]",
+              "time": "0.061"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_retired_handlers_and_exclusive_reset_module_are_absent",
+              "time": "0.031"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_help_retains_product_setup_and_observation",
+              "time": "0.016"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_installed_launcher_rejects_without_touching_data[False-arguments0]",
+              "time": "0.846"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_installed_launcher_rejects_without_touching_data[False-arguments1]",
+              "time": "0.953"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_installed_launcher_rejects_without_touching_data[False-arguments2]",
+              "time": "0.975"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_installed_launcher_rejects_without_touching_data[False-arguments3]",
+              "time": "0.785"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_installed_launcher_rejects_without_touching_data[False-arguments4]",
+              "time": "0.807"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_installed_launcher_rejects_without_touching_data[False-arguments5]",
+              "time": "0.762"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_installed_launcher_rejects_without_touching_data[False-arguments6]",
+              "time": "0.759"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_installed_launcher_rejects_without_touching_data[False-arguments7]",
+              "time": "0.715"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_installed_launcher_rejects_without_touching_data[False-arguments8]",
+              "time": "0.761"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_installed_launcher_rejects_without_touching_data[False-arguments9]",
+              "time": "0.760"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_installed_launcher_rejects_without_touching_data[False-arguments10]",
+              "time": "0.751"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_installed_launcher_rejects_without_touching_data[False-arguments11]",
+              "time": "0.754"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_installed_launcher_rejects_without_touching_data[False-arguments12]",
+              "time": "0.748"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_installed_launcher_rejects_without_touching_data[False-arguments13]",
+              "time": "0.791"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_installed_launcher_rejects_without_touching_data[False-arguments14]",
+              "time": "0.736"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_installed_launcher_rejects_without_touching_data[False-arguments15]",
+              "time": "0.735"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_installed_launcher_rejects_without_touching_data[False-arguments16]",
+              "time": "0.769"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_installed_launcher_rejects_without_touching_data[False-arguments17]",
+              "time": "0.794"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_installed_launcher_rejects_without_touching_data[False-arguments18]",
+              "time": "0.761"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_installed_launcher_rejects_without_touching_data[False-arguments19]",
+              "time": "0.798"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_installed_launcher_rejects_without_touching_data[False-arguments20]",
+              "time": "0.777"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_installed_launcher_rejects_without_touching_data[False-arguments21]",
+              "time": "0.759"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_installed_launcher_rejects_without_touching_data[False-arguments22]",
+              "time": "0.866"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_installed_launcher_rejects_without_touching_data[False-arguments23]",
+              "time": "0.962"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_installed_launcher_rejects_without_touching_data[False-arguments24]",
+              "time": "0.997"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_installed_launcher_rejects_without_touching_data[False-arguments25]",
+              "time": "0.850"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_installed_launcher_rejects_without_touching_data[False-arguments26]",
+              "time": "0.960"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_installed_launcher_rejects_without_touching_data[False-arguments27]",
+              "time": "1.085"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_installed_launcher_rejects_without_touching_data[False-arguments28]",
+              "time": "1.562"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_installed_launcher_rejects_without_touching_data[False-arguments29]",
+              "time": "1.413"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_installed_launcher_rejects_without_touching_data[True-arguments0]",
+              "time": "1.640"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_installed_launcher_rejects_without_touching_data[True-arguments1]",
+              "time": "1.394"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_installed_launcher_rejects_without_touching_data[True-arguments2]",
+              "time": "1.246"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_installed_launcher_rejects_without_touching_data[True-arguments3]",
+              "time": "1.150"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_installed_launcher_rejects_without_touching_data[True-arguments4]",
+              "time": "1.002"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_installed_launcher_rejects_without_touching_data[True-arguments5]",
+              "time": "0.894"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_installed_launcher_rejects_without_touching_data[True-arguments6]",
+              "time": "0.883"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_installed_launcher_rejects_without_touching_data[True-arguments7]",
+              "time": "0.872"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_installed_launcher_rejects_without_touching_data[True-arguments8]",
+              "time": "0.870"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_installed_launcher_rejects_without_touching_data[True-arguments9]",
+              "time": "0.885"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_installed_launcher_rejects_without_touching_data[True-arguments10]",
+              "time": "0.853"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_installed_launcher_rejects_without_touching_data[True-arguments11]",
+              "time": "0.828"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_installed_launcher_rejects_without_touching_data[True-arguments12]",
+              "time": "0.841"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_installed_launcher_rejects_without_touching_data[True-arguments13]",
+              "time": "0.870"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_installed_launcher_rejects_without_touching_data[True-arguments14]",
+              "time": "0.884"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_installed_launcher_rejects_without_touching_data[True-arguments15]",
+              "time": "0.900"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_installed_launcher_rejects_without_touching_data[True-arguments16]",
+              "time": "0.851"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_installed_launcher_rejects_without_touching_data[True-arguments17]",
+              "time": "0.824"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_installed_launcher_rejects_without_touching_data[True-arguments18]",
+              "time": "0.844"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_installed_launcher_rejects_without_touching_data[True-arguments19]",
+              "time": "0.848"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_installed_launcher_rejects_without_touching_data[True-arguments20]",
+              "time": "0.834"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_installed_launcher_rejects_without_touching_data[True-arguments21]",
+              "time": "0.847"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_installed_launcher_rejects_without_touching_data[True-arguments22]",
+              "time": "0.859"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_installed_launcher_rejects_without_touching_data[True-arguments23]",
+              "time": "0.828"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_installed_launcher_rejects_without_touching_data[True-arguments24]",
+              "time": "0.847"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_installed_launcher_rejects_without_touching_data[True-arguments25]",
+              "time": "0.934"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_installed_launcher_rejects_without_touching_data[True-arguments26]",
+              "time": "1.007"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_installed_launcher_rejects_without_touching_data[True-arguments27]",
+              "time": "0.956"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_installed_launcher_rejects_without_touching_data[True-arguments28]",
+              "time": "0.853"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_installed_launcher_rejects_without_touching_data[True-arguments29]",
+              "time": "0.846"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_current_guides_do_not_offer_retired_commands",
+              "time": "0.017"
+            }
+          ]
+        },
+        {
+          "run": "core",
+          "repository": "okto_labs_pulse_core",
+          "file": "tests/test_card_sprint_wire_retirement.py",
+          "source_sha256": "d9bb2786056b4ab209382f18eaf593cab17ca09c16666e7ba1862048f748c8dc",
+          "executions": [
+            {
+              "classname": "tests.test_card_sprint_wire_retirement",
+              "name": "test_legacy_input_fails_even_when_null_or_empty[None-CardCreate]",
+              "time": "0.023"
+            },
+            {
+              "classname": "tests.test_card_sprint_wire_retirement",
+              "name": "test_legacy_input_fails_even_when_null_or_empty[None-CardUpdate]",
+              "time": "0.015"
+            },
+            {
+              "classname": "tests.test_card_sprint_wire_retirement",
+              "name": "test_legacy_input_fails_even_when_null_or_empty[-CardCreate]",
+              "time": "0.015"
+            },
+            {
+              "classname": "tests.test_card_sprint_wire_retirement",
+              "name": "test_legacy_input_fails_even_when_null_or_empty[-CardUpdate]",
+              "time": "0.016"
+            },
+            {
+              "classname": "tests.test_card_sprint_wire_retirement",
+              "name": "test_legacy_input_fails_even_when_null_or_empty[legacy-CardCreate]",
+              "time": "0.017"
+            },
+            {
+              "classname": "tests.test_card_sprint_wire_retirement",
+              "name": "test_legacy_input_fails_even_when_null_or_empty[legacy-CardUpdate]",
+              "time": "0.018"
+            },
+            {
+              "classname": "tests.test_card_sprint_wire_retirement",
+              "name": "test_legacy_input_fails_even_when_null_or_empty[0-CardCreate]",
+              "time": "0.015"
+            },
+            {
+              "classname": "tests.test_card_sprint_wire_retirement",
+              "name": "test_legacy_input_fails_even_when_null_or_empty[0-CardUpdate]",
+              "time": "0.015"
+            },
+            {
+              "classname": "tests.test_card_sprint_wire_retirement",
+              "name": "test_legacy_input_fails_even_when_null_or_empty[value4-CardCreate]",
+              "time": "0.014"
+            },
+            {
+              "classname": "tests.test_card_sprint_wire_retirement",
+              "name": "test_legacy_input_fails_even_when_null_or_empty[value4-CardUpdate]",
+              "time": "0.015"
+            },
+            {
+              "classname": "tests.test_card_sprint_wire_retirement",
+              "name": "test_wire_contract_no_longer_advertises_sprint[CardCreate]",
+              "time": "0.020"
+            },
+            {
+              "classname": "tests.test_card_sprint_wire_retirement",
+              "name": "test_wire_contract_no_longer_advertises_sprint[CardUpdate]",
+              "time": "0.018"
+            },
+            {
+              "classname": "tests.test_card_sprint_wire_retirement",
+              "name": "test_wire_contract_no_longer_advertises_sprint[CardResponse]",
+              "time": "0.036"
+            },
+            {
+              "classname": "tests.test_card_sprint_wire_retirement",
+              "name": "test_wire_contract_no_longer_advertises_sprint[CardSummaryForSpec]",
+              "time": "0.018"
+            },
+            {
+              "classname": "tests.test_card_sprint_wire_retirement",
+              "name": "test_read_preserves_opaque_policy_provenance_without_live_link[False]",
+              "time": "0.016"
+            },
+            {
+              "classname": "tests.test_card_sprint_wire_retirement",
+              "name": "test_read_preserves_opaque_policy_provenance_without_live_link[True]",
+              "time": "0.014"
+            },
+            {
+              "classname": "tests.test_card_sprint_wire_retirement",
+              "name": "test_corrupt_double_source_is_rejected_before_sprint_field_is_dropped[False]",
+              "time": "0.015"
+            },
+            {
+              "classname": "tests.test_card_sprint_wire_retirement",
+              "name": "test_corrupt_double_source_is_rejected_before_sprint_field_is_dropped[True]",
+              "time": "0.014"
+            },
+            {
+              "classname": "tests.test_card_sprint_wire_retirement",
+              "name": "test_legacy_read_without_override_does_not_expose_operational_link",
+              "time": "0.014"
+            }
+          ]
+        },
+        {
+          "run": "core",
+          "repository": "okto_labs_pulse_core",
+          "file": "tests/test_sprint_mcp_read_retirement.py",
+          "source_sha256": "65aa21a2af534ea82697c52ccdc5a474da577f2c87279bb047a1eae8a2de630b",
+          "executions": [
+            {
+              "classname": "tests.test_sprint_mcp_read_retirement",
+              "name": "test_board_list_rejects_retired_entity_before_any_lookup[None]",
+              "time": "0.029"
+            },
+            {
+              "classname": "tests.test_sprint_mcp_read_retirement",
+              "name": "test_board_list_rejects_retired_entity_before_any_lookup[filters1]",
+              "time": "0.020"
+            },
+            {
+              "classname": "tests.test_sprint_mcp_read_retirement",
+              "name": "test_board_list_rejects_retired_entity_before_any_lookup[filters2]",
+              "time": "0.020"
+            },
+            {
+              "classname": "tests.test_sprint_mcp_read_retirement",
+              "name": "test_lifecycle_discovery_cannot_reintroduce_retired_operations[arguments0]",
+              "time": "0.022"
+            },
+            {
+              "classname": "tests.test_sprint_mcp_read_retirement",
+              "name": "test_lifecycle_discovery_cannot_reintroduce_retired_operations[arguments1]",
+              "time": "0.030"
+            },
+            {
+              "classname": "tests.test_sprint_mcp_read_retirement",
+              "name": "test_application_list_rejects_retired_and_unknown_targets[sprint]",
+              "time": "0.027"
+            },
+            {
+              "classname": "tests.test_sprint_mcp_read_retirement",
+              "name": "test_application_list_rejects_retired_and_unknown_targets[unknown]",
+              "time": "0.024"
+            },
+            {
+              "classname": "tests.test_sprint_mcp_read_retirement",
+              "name": "test_application_list_rejects_retired_and_unknown_targets[]",
+              "time": "0.018"
+            },
+            {
+              "classname": "tests.test_sprint_mcp_read_retirement",
+              "name": "test_retired_page_surface_and_filters_are_unavailable",
+              "time": "0.016"
+            }
+          ]
+        }
+      ]
+    },
+    "BASE:T37": {
+      "status": "verified_by_reviewed_execution",
+      "covered": "Chromium com assets do wheel, localStorage de paginação Sprint e URL tab=sprints mantém navegação Spec→Task sem requests Sprint, writes ou erro JS. URLs antigas de analytics caem no Board e modal obsoleto não apaga Spec atual.",
+      "remaining": null,
+      "evidence": [
+        {
+          "run": "browser",
+          "repository": "okto_labs_pulse_community",
+          "file": "frontend/tests/e2e/lineage-without-sprints.spec.ts",
+          "source_sha256": "e19c728509cc488a543ac6a6d60a373b717a160b2e9cd5b037f86c0699dfe40a",
+          "executions": [
+            {
+              "name": "packaged lineage connects Spec to task and opens its details without a Sprint stage",
+              "classname": "lineage-without-sprints.spec.ts",
+              "time": "4.218"
+            }
+          ]
+        },
+        {
+          "run": "frontend",
+          "repository": "okto_labs_pulse_community",
+          "file": "frontend/src/components/analytics/analyticsInitiativeRoutes.test.tsx",
+          "source_sha256": "9e2521c50d70a1e6f7fa2fbd8143480f0eb1cb444700baaaaf6ce81a5afb70af",
+          "executions": [
+            {
+              "classname": "src/components/analytics/analyticsInitiativeRoutes.test.tsx",
+              "name": "Analytics A3-A6 route integration > opens copied Sprint analytics URLs at their Board without mounting retired detail",
+              "time": "0.1073222"
+            },
+            {
+              "classname": "src/components/analytics/analyticsInitiativeRoutes.test.tsx",
+              "name": "Analytics A3-A6 route integration > restores a copied 'A3' deep-link with its query state",
+              "time": "0.0169307"
+            },
+            {
+              "classname": "src/components/analytics/analyticsInitiativeRoutes.test.tsx",
+              "name": "Analytics A3-A6 route integration > restores a copied 'A4' deep-link with its query state",
+              "time": "0.0206701"
+            },
+            {
+              "classname": "src/components/analytics/analyticsInitiativeRoutes.test.tsx",
+              "name": "Analytics A3-A6 route integration > restores a copied 'A5' deep-link with its query state",
+              "time": "0.0132043"
+            },
+            {
+              "classname": "src/components/analytics/analyticsInitiativeRoutes.test.tsx",
+              "name": "Analytics A3-A6 route integration > restores a copied 'A6' deep-link with its query state",
+              "time": "0.0132226"
+            },
+            {
+              "classname": "src/components/analytics/analyticsInitiativeRoutes.test.tsx",
+              "name": "Analytics A3-A6 route integration > wires every board Open full view callback to its canonical route without dropping scoped query state",
+              "time": "0.9315116"
+            },
+            {
+              "classname": "src/components/analytics/analyticsInitiativeRoutes.test.tsx",
+              "name": "Analytics A3-A6 route integration > rehydrates each initiative state when browser history emits popstate",
+              "time": "0.0286203"
+            },
+            {
+              "classname": "src/components/analytics/analyticsInitiativeRoutes.test.tsx",
+              "name": "Analytics A3-A6 route integration > falls back safely when an analytics path contains malformed encoding",
+              "time": "0.0186343"
+            }
+          ]
+        },
+        {
+          "run": "frontend",
+          "repository": "okto_labs_pulse_community",
+          "file": "frontend/src/components/modals/__tests__/ModalStackRenderer.test.tsx",
+          "source_sha256": "b38da13c5377109ac1cb7cfea9c730293ccb55cecf2ded9b64fdaa28c9bb3b07",
+          "executions": [
+            {
+              "classname": "src/components/modals/__tests__/ModalStackRenderer.test.tsx",
+              "name": "ignores a retired Sprint link without losing the current Spec or adding a modal",
+              "time": "0.0413928"
+            },
+            {
+              "classname": "src/components/modals/__tests__/ModalStackRenderer.test.tsx",
+              "name": "ModalStackRenderer Spec tab routing > keeps a Discovery board across nested modals and Back without changing the active board",
+              "time": "0.0158814"
+            },
+            {
+              "classname": "src/components/modals/__tests__/ModalStackRenderer.test.tsx",
+              "name": "ModalStackRenderer Spec tab routing > ts_e352303b — routes the real single-Spec keyboard action to its Evidence Matrix tab",
+              "time": "0.1531172"
+            }
+          ]
+        }
+      ]
+    },
+    "BASE:T38": {
+      "status": "verified_by_reviewed_execution",
+      "covered": "Health UI não expõe rebuild/recovery/tick/settings mesmo com grants amplos e estados degradados. Polling tem intervalo, pausa em hidden, catch-up, cancelamento/abort no unmount e zero leitura sem Board/permissão; estados desconhecido/stale não viram saudável.",
+      "remaining": null,
+      "evidence": [
+        {
+          "run": "frontend",
+          "repository": "okto_labs_pulse_community",
+          "file": "frontend/src/components/knowledge/__tests__/KGHealthView.test.tsx",
+          "source_sha256": "377cbacd990127d853cfe1e5877b676d44aaa0cd05a57ec0b1779f8cca22ae9d",
+          "executions": [
+            {
+              "classname": "src/components/knowledge/__tests__/KGHealthView.test.tsx",
+              "name": "TS1 — mount inicial dispara 1 fetch e renderiza cards principais > orders observation sections without a recovery workflow",
+              "time": "0.8947083"
+            },
+            {
+              "classname": "src/components/knowledge/__tests__/KGHealthView.test.tsx",
+              "name": "TS1 — mount inicial dispara 1 fetch e renderiza cards principais > does not claim a Grafx binding when storage routing is unavailable",
+              "time": "0.0809631"
+            },
+            {
+              "classname": "src/components/knowledge/__tests__/KGHealthView.test.tsx",
+              "name": "TS1 — mount inicial dispara 1 fetch e renderiza cards principais > fixa o contrato frontend em health schema 1.1",
+              "time": "0.0010718"
+            },
+            {
+              "classname": "src/components/knowledge/__tests__/KGHealthView.test.tsx",
+              "name": "TS1 — mount inicial dispara 1 fetch e renderiza cards principais > aceita health schema 1.1 sem comparar o alias legado schema_version",
+              "time": "0.0678327"
+            },
+            {
+              "classname": "src/components/knowledge/__tests__/KGHealthView.test.tsx",
+              "name": "TS1 — mount inicial dispara 1 fetch e renderiza cards principais > faz 1 fetch e mostra Scheduler/Queue/Health/Footprint/Debt",
+              "time": "0.0684466"
+            },
+            {
+              "classname": "src/components/knowledge/__tests__/KGHealthView.test.tsx",
+              "name": "TS1 — mount inicial dispara 1 fetch e renderiza cards principais > mostra 0 falhas operacionais de consolidação sem somar o histórico de outras filas",
+              "time": "0.0580276"
+            },
+            {
+              "classname": "src/components/knowledge/__tests__/KGHealthView.test.tsx",
+              "name": "TS1 — mount inicial dispara 1 fetch e renderiza cards principais > mostra 2 falhas operacionais de consolidação sem somar o histórico de outras filas",
+              "time": "0.0518048"
+            },
+            {
+              "classname": "src/components/knowledge/__tests__/KGHealthView.test.tsx",
+              "name": "TS2 — polling dispara fetches periódicos > dispara 5 fetches em 1.05s com pollIntervalMs=200",
+              "time": "0.0868916"
+            },
+            {
+              "classname": "src/components/knowledge/__tests__/KGHealthView.test.tsx",
+              "name": "TS3 — visibility hidden suspende polling, visible retoma com catch-up > zero novos fetches durante hidden + 1 catch-up imediato ao voltar visible",
+              "time": "0.0320493"
+            },
+            {
+              "classname": "src/components/knowledge/__tests__/KGHealthView.test.tsx",
+              "name": "TS4 — unmount cancela polling e aborta requests pendentes > chama clearInterval e abort no cleanup",
+              "time": "0.0216106"
+            },
+            {
+              "classname": "src/components/knowledge/__tests__/KGHealthView.test.tsx",
+              "name": "TS5 — scheduler diagnostics and legacy tick fallback > null → \"Tick has never run\"",
+              "time": "0.0606704"
+            },
+            {
+              "classname": "src/components/knowledge/__tests__/KGHealthView.test.tsx",
+              "name": "TS5 — scheduler diagnostics and legacy tick fallback > age > 24h → \"Stale tick: Xh ago\" amber",
+              "time": "0.0372783"
+            },
+            {
+              "classname": "src/components/knowledge/__tests__/KGHealthView.test.tsx",
+              "name": "TS5 — scheduler diagnostics and legacy tick fallback > age ≤ 24h → \"Last tick: Xh ago\" neutral",
+              "time": "0.030003"
+            },
+            {
+              "classname": "src/components/knowledge/__tests__/KGHealthView.test.tsx",
+              "name": "TS5 — scheduler diagnostics and legacy tick fallback > uses backend diagnostics instead of the local 24h heuristic when present",
+              "time": "0.039994"
+            },
+            {
+              "classname": "src/components/knowledge/__tests__/KGHealthView.test.tsx",
+              "name": "TS6 — schema banner > health match (1.1) → no banner",
+              "time": "0.0297746"
+            },
+            {
+              "classname": "src/components/knowledge/__tests__/KGHealthView.test.tsx",
+              "name": "TS6 — schema banner > mismatch (2.0) → red full-width banner with exact text",
+              "time": "0.0539792"
+            },
+            {
+              "classname": "src/components/knowledge/__tests__/KGHealthView.test.tsx",
+              "name": "KG-HS.3 — scheduler debt and storage-footprint clarity > renders canonical debt and graph layer counts",
+              "time": "0.0532808"
+            },
+            {
+              "classname": "src/components/knowledge/__tests__/KGHealthView.test.tsx",
+              "name": "KG-HS.3 — scheduler debt and storage-footprint clarity > explains absent capacity limits without hiding the measured file size",
+              "time": "0.0440106"
+            },
+            {
+              "classname": "src/components/knowledge/__tests__/KGHealthView.test.tsx",
+              "name": "KG-HS.3 — scheduler debt and storage-footprint clarity > renders storage footprint proxy copy without memory/buffer telemetry claims",
+              "time": "0.0442252"
+            },
+            {
+              "classname": "src/components/knowledge/__tests__/KGHealthView.test.tsx",
+              "name": "KG-HS.3 — scheduler debt and storage-footprint clarity > separates telemetry, DLQ backlog and scheduler debt from recovery-needed messaging",
+              "time": "0.336947"
+            },
+            {
+              "classname": "src/components/knowledge/__tests__/KGHealthView.test.tsx",
+              "name": "TS7 — disconnected nodes panel removed > does not render the disconnected-node panel even when payload includes rows",
+              "time": "0.0499298"
+            },
+            {
+              "classname": "src/components/knowledge/__tests__/KGHealthView.test.tsx",
+              "name": "TS9 — refresh button dispara fetch sem reset polling > count cresce em cada click do refresh, sem alterar intervalo",
+              "time": "0.2547266"
+            },
+            {
+              "classname": "src/components/knowledge/__tests__/KGHealthView.test.tsx",
+              "name": "TS10 — error shows panel + Try again re-fetch > error panel with message + Try again button, click re-fetches",
+              "time": "0.1198729"
+            },
+            {
+              "classname": "src/components/knowledge/__tests__/KGHealthView.test.tsx",
+              "name": "TS11 — skeleton em loading inicial > mostra skeleton cards enquanto fetch pendente",
+              "time": "0.0115209"
+            },
+            {
+              "classname": "src/components/knowledge/__tests__/KGHealthView.test.tsx",
+              "name": "TS11 — skeleton em loading inicial > skeleton some após primeiro resolve",
+              "time": "0.0427442"
+            },
+            {
+              "classname": "src/components/knowledge/__tests__/KGHealthView.test.tsx",
+              "name": "TS12 — empty state sem currentBoard suprime polling > texto centralizado e zero fetches",
+              "time": "0.0660598"
+            },
+            {
+              "classname": "src/components/knowledge/__tests__/KGHealthView.test.tsx",
+              "name": "F4 — health has no maintenance actions > keeps healthy observable without a recovery, tick or settings path",
+              "time": "0.3249629"
+            },
+            {
+              "classname": "src/components/knowledge/__tests__/KGHealthView.test.tsx",
+              "name": "F4 — health has no maintenance actions > keeps at_risk observable without a recovery, tick or settings path",
+              "time": "0.3164088"
+            },
+            {
+              "classname": "src/components/knowledge/__tests__/KGHealthView.test.tsx",
+              "name": "F4 — health has no maintenance actions > keeps recovery_needed observable without a recovery, tick or settings path",
+              "time": "0.2625594"
+            },
+            {
+              "classname": "src/components/knowledge/__tests__/KGHealthView.test.tsx",
+              "name": "F4 — health has no maintenance actions > keeps quarantined observable without a recovery, tick or settings path",
+              "time": "0.2652168"
+            },
+            {
+              "classname": "src/components/knowledge/__tests__/KGHealthView.test.tsx",
+              "name": "F4 — health has no maintenance actions > still refuses health reads when the board permission is absent",
+              "time": "0.007076"
+            }
+          ]
+        },
+        {
+          "run": "frontend",
+          "repository": "okto_labs_pulse_community",
+          "file": "frontend/src/components/knowledge/__tests__/KGHealthOverview.test.tsx",
+          "source_sha256": "19e8f00ec830cb55006fe8c6bc8fc837f5f23e1a7126db61f2aec64b1b0b1021",
+          "executions": [
+            {
+              "classname": "src/components/knowledge/__tests__/KGHealthOverview.test.tsx",
+              "name": "KG Health overview > does not recommend rebuilding a healthy graph without a rebuild generation",
+              "time": "0.4524233"
+            },
+            {
+              "classname": "src/components/knowledge/__tests__/KGHealthOverview.test.tsx",
+              "name": "KG Health overview > does not present unavailable metric counts as measured: unavailable",
+              "time": "0.0236311"
+            },
+            {
+              "classname": "src/components/knowledge/__tests__/KGHealthOverview.test.tsx",
+              "name": "KG Health overview > does not present unavailable metric counts as measured: undefined",
+              "time": "0.0235805"
+            },
+            {
+              "classname": "src/components/knowledge/__tests__/KGHealthOverview.test.tsx",
+              "name": "KG Health overview > preserves a measured zero",
+              "time": "0.0214535"
+            },
+            {
+              "classname": "src/components/knowledge/__tests__/KGHealthOverview.test.tsx",
+              "name": "KG Health overview > directs at_risk to diagnosis, not automatic recovery",
+              "time": "0.086811"
+            },
+            {
+              "classname": "src/components/knowledge/__tests__/KGHealthOverview.test.tsx",
+              "name": "KG Health overview > directs backpressure to diagnosis, not automatic recovery",
+              "time": "0.0665816"
+            },
+            {
+              "classname": "src/components/knowledge/__tests__/KGHealthOverview.test.tsx",
+              "name": "KG Health overview > reports the component limitation for recovery_needed without a recovery workflow",
+              "time": "0.1329138"
+            },
+            {
+              "classname": "src/components/knowledge/__tests__/KGHealthOverview.test.tsx",
+              "name": "KG Health overview > reports the component limitation for quarantined without a recovery workflow",
+              "time": "0.1445415"
+            },
+            {
+              "classname": "src/components/knowledge/__tests__/KGHealthOverview.test.tsx",
+              "name": "KG Health overview > reports the component limitation for corrupted without a recovery workflow",
+              "time": "0.1250031"
+            },
+            {
+              "classname": "src/components/knowledge/__tests__/KGHealthOverview.test.tsx",
+              "name": "KG Health overview > reports the component limitation for failed without a recovery workflow",
+              "time": "0.1356556"
+            },
+            {
+              "classname": "src/components/knowledge/__tests__/KGHealthOverview.test.tsx",
+              "name": "KG Health overview > does not infer health or discovery status from missing or new backend states",
+              "time": "0.0517772"
+            },
+            {
+              "classname": "src/components/knowledge/__tests__/KGHealthOverview.test.tsx",
+              "name": "KG Health overview > does not offer a fresh verdict from a stale healthy snapshot",
+              "time": "0.0718072"
+            },
+            {
+              "classname": "src/components/knowledge/__tests__/KGHealthOverview.test.tsx",
+              "name": "KG Health overview > does not offer a fresh verdict from a stale recovery_needed snapshot",
+              "time": "0.0689884"
+            },
+            {
+              "classname": "src/components/knowledge/__tests__/KGHealthOverview.test.tsx",
+              "name": "KG Health overview > offers keyboard help in a portal without adding it to the panel layout",
+              "time": "0.1188055"
+            }
+          ]
+        }
+      ]
+    },
+    "BASE:T33": {
+      "status": "partial",
+      "covered": "Inventários FastMCP/materialização e manifesto coincidem, catálogo gerado byte-equal, rotas dedicadas removidas ausentes de OpenAPI, launchers instalados recusam manutenção sem tocar fixtures existentes.",
+      "remaining": "Esta campanha verifica as famílias explicitamente retiradas; falta inventário exaustivo de todas as variantes genéricas que poderiam oferecer manutenção operacional.",
+      "evidence": [
+        {
+          "run": "community",
+          "repository": "okto_labs_pulse_community",
+          "file": "tests/test_sprint_rest_retirement.py",
+          "source_sha256": "117fd6a86125d25689f3760b9990c32ad0f4ed99322a9932c20c2cb991b9d572",
+          "executions": [
+            {
+              "classname": "tests.test_sprint_rest_retirement",
+              "name": "test_direct_legacy_route_is_missing_before_dependencies[payload0-GET-/boards/board/sprints]",
+              "time": "1.990"
+            },
+            {
+              "classname": "tests.test_sprint_rest_retirement",
+              "name": "test_direct_legacy_route_is_missing_before_dependencies[payload0-GET-/boards/board/specs/spec/sprints]",
+              "time": "0.846"
+            },
+            {
+              "classname": "tests.test_sprint_rest_retirement",
+              "name": "test_direct_legacy_route_is_missing_before_dependencies[payload0-POST-/boards/board/specs/spec/sprints]",
+              "time": "0.880"
+            },
+            {
+              "classname": "tests.test_sprint_rest_retirement",
+              "name": "test_direct_legacy_route_is_missing_before_dependencies[payload0-GET-/boards/board/specs/spec/sprints/suggest]",
+              "time": "0.809"
+            },
+            {
+              "classname": "tests.test_sprint_rest_retirement",
+              "name": "test_direct_legacy_route_is_missing_before_dependencies[payload0-GET-/sprints/source]",
+              "time": "1.469"
+            },
+            {
+              "classname": "tests.test_sprint_rest_retirement",
+              "name": "test_direct_legacy_route_is_missing_before_dependencies[payload0-PATCH-/sprints/source]",
+              "time": "0.954"
+            },
+            {
+              "classname": "tests.test_sprint_rest_retirement",
+              "name": "test_direct_legacy_route_is_missing_before_dependencies[payload0-DELETE-/sprints/source]",
+              "time": "0.892"
+            },
+            {
+              "classname": "tests.test_sprint_rest_retirement",
+              "name": "test_direct_legacy_route_is_missing_before_dependencies[payload0-POST-/sprints/source/move]",
+              "time": "0.739"
+            },
+            {
+              "classname": "tests.test_sprint_rest_retirement",
+              "name": "test_direct_legacy_route_is_missing_before_dependencies[payload0-POST-/sprints/source/evaluations]",
+              "time": "1.254"
+            },
+            {
+              "classname": "tests.test_sprint_rest_retirement",
+              "name": "test_direct_legacy_route_is_missing_before_dependencies[payload0-POST-/sprints/source/assign-tasks]",
+              "time": "0.847"
+            },
+            {
+              "classname": "tests.test_sprint_rest_retirement",
+              "name": "test_direct_legacy_route_is_missing_before_dependencies[payload0-POST-/sprints/source/unassign-tasks]",
+              "time": "0.826"
+            },
+            {
+              "classname": "tests.test_sprint_rest_retirement",
+              "name": "test_direct_legacy_route_is_missing_before_dependencies[payload0-GET-/sprints/source/history]",
+              "time": "1.228"
+            },
+            {
+              "classname": "tests.test_sprint_rest_retirement",
+              "name": "test_direct_legacy_route_is_missing_before_dependencies[payload1-GET-/boards/board/sprints]",
+              "time": "0.904"
+            },
+            {
+              "classname": "tests.test_sprint_rest_retirement",
+              "name": "test_direct_legacy_route_is_missing_before_dependencies[payload1-GET-/boards/board/specs/spec/sprints]",
+              "time": "0.787"
+            },
+            {
+              "classname": "tests.test_sprint_rest_retirement",
+              "name": "test_direct_legacy_route_is_missing_before_dependencies[payload1-POST-/boards/board/specs/spec/sprints]",
+              "time": "0.815"
+            },
+            {
+              "classname": "tests.test_sprint_rest_retirement",
+              "name": "test_direct_legacy_route_is_missing_before_dependencies[payload1-GET-/boards/board/specs/spec/sprints/suggest]",
+              "time": "1.110"
+            },
+            {
+              "classname": "tests.test_sprint_rest_retirement",
+              "name": "test_direct_legacy_route_is_missing_before_dependencies[payload1-GET-/sprints/source]",
+              "time": "0.780"
+            },
+            {
+              "classname": "tests.test_sprint_rest_retirement",
+              "name": "test_direct_legacy_route_is_missing_before_dependencies[payload1-PATCH-/sprints/source]",
+              "time": "0.749"
+            },
+            {
+              "classname": "tests.test_sprint_rest_retirement",
+              "name": "test_direct_legacy_route_is_missing_before_dependencies[payload1-DELETE-/sprints/source]",
+              "time": "1.190"
+            },
+            {
+              "classname": "tests.test_sprint_rest_retirement",
+              "name": "test_direct_legacy_route_is_missing_before_dependencies[payload1-POST-/sprints/source/move]",
+              "time": "0.784"
+            },
+            {
+              "classname": "tests.test_sprint_rest_retirement",
+              "name": "test_direct_legacy_route_is_missing_before_dependencies[payload1-POST-/sprints/source/evaluations]",
+              "time": "0.882"
+            },
+            {
+              "classname": "tests.test_sprint_rest_retirement",
+              "name": "test_direct_legacy_route_is_missing_before_dependencies[payload1-POST-/sprints/source/assign-tasks]",
+              "time": "0.879"
+            },
+            {
+              "classname": "tests.test_sprint_rest_retirement",
+              "name": "test_direct_legacy_route_is_missing_before_dependencies[payload1-POST-/sprints/source/unassign-tasks]",
+              "time": "1.255"
+            },
+            {
+              "classname": "tests.test_sprint_rest_retirement",
+              "name": "test_direct_legacy_route_is_missing_before_dependencies[payload1-GET-/sprints/source/history]",
+              "time": "0.797"
+            },
+            {
+              "classname": "tests.test_sprint_rest_retirement",
+              "name": "test_dedicated_router_and_request_schemas_are_not_shipped",
+              "time": "4.090"
+            }
+          ]
+        },
+        {
+          "run": "community",
+          "repository": "okto_labs_pulse_community",
+          "file": "tests/test_sprint_mcp_retirement_transport.py",
+          "source_sha256": "50248b3d969c577ef2e737b5b08df16ed142604e87df3da03f7a9015b97d261e",
+          "executions": [
+            {
+              "classname": "tests.test_sprint_mcp_retirement_transport",
+              "name": "test_sprint_commands_are_unknown_on_the_materialized_transport",
+              "time": "0.770"
+            },
+            {
+              "classname": "tests.test_sprint_mcp_retirement_transport",
+              "name": "test_polymorphic_reads_cannot_expose_sprint_through_transport",
+              "time": "0.750"
+            }
+          ]
+        },
+        {
+          "run": "community",
+          "repository": "okto_labs_pulse_community",
+          "file": "tests/test_card_sprint_wire_retirement.py",
+          "source_sha256": "e9bdf160bcc45862c315495c00967b6c26d3a255426d78e8951af5392875eb05",
+          "executions": [
+            {
+              "classname": "tests.test_card_sprint_wire_retirement",
+              "name": "test_retired_card_input_is_explicit_422_before_writer[None-POST-/api/v1/boards/board/cards]",
+              "time": "0.063"
+            },
+            {
+              "classname": "tests.test_card_sprint_wire_retirement",
+              "name": "test_retired_card_input_is_explicit_422_before_writer[None-PATCH-/api/v1/cards/card]",
+              "time": "0.084"
+            },
+            {
+              "classname": "tests.test_card_sprint_wire_retirement",
+              "name": "test_retired_card_input_is_explicit_422_before_writer[-POST-/api/v1/boards/board/cards]",
+              "time": "0.049"
+            },
+            {
+              "classname": "tests.test_card_sprint_wire_retirement",
+              "name": "test_retired_card_input_is_explicit_422_before_writer[-PATCH-/api/v1/cards/card]",
+              "time": "0.085"
+            },
+            {
+              "classname": "tests.test_card_sprint_wire_retirement",
+              "name": "test_retired_card_input_is_explicit_422_before_writer[legacy-POST-/api/v1/boards/board/cards]",
+              "time": "0.049"
+            },
+            {
+              "classname": "tests.test_card_sprint_wire_retirement",
+              "name": "test_retired_card_input_is_explicit_422_before_writer[legacy-PATCH-/api/v1/cards/card]",
+              "time": "0.083"
+            },
+            {
+              "classname": "tests.test_card_sprint_wire_retirement",
+              "name": "test_openapi_card_contracts_do_not_publish_sprint_link",
+              "time": "4.248"
+            }
+          ]
+        },
+        {
+          "run": "community",
+          "repository": "okto_labs_pulse_community",
+          "file": "tests/test_retired_public_rebuild.py",
+          "source_sha256": "e9550e31b90ee658577f4e701e872429d1bbe60851cc5f78c4b3ea1d5f9e6d19",
+          "executions": [
+            {
+              "classname": "tests.test_retired_public_rebuild",
+              "name": "test_removed_modules_and_console_entrypoint_are_not_distributed",
+              "time": "0.034"
+            },
+            {
+              "classname": "tests.test_retired_public_rebuild",
+              "name": "test_registered_rest_app_returns_uniform_absence_without_authorization_or_data_access[missing-preflight]",
+              "time": "4.314"
+            },
+            {
+              "classname": "tests.test_retired_public_rebuild",
+              "name": "test_registered_rest_app_returns_uniform_absence_without_authorization_or_data_access[missing-confirm]",
+              "time": "4.574"
+            },
+            {
+              "classname": "tests.test_retired_public_rebuild",
+              "name": "test_registered_rest_app_returns_uniform_absence_without_authorization_or_data_access[missing-run]",
+              "time": "4.661"
+            },
+            {
+              "classname": "tests.test_retired_public_rebuild",
+              "name": "test_registered_rest_app_returns_uniform_absence_without_authorization_or_data_access[foreign-preflight]",
+              "time": "6.444"
+            },
+            {
+              "classname": "tests.test_retired_public_rebuild",
+              "name": "test_registered_rest_app_returns_uniform_absence_without_authorization_or_data_access[foreign-confirm]",
+              "time": "6.395"
+            },
+            {
+              "classname": "tests.test_retired_public_rebuild",
+              "name": "test_registered_rest_app_returns_uniform_absence_without_authorization_or_data_access[foreign-run]",
+              "time": "6.326"
+            },
+            {
+              "classname": "tests.test_retired_public_rebuild",
+              "name": "test_registered_rest_app_returns_uniform_absence_without_authorization_or_data_access[owned-preflight]",
+              "time": "8.252"
+            },
+            {
+              "classname": "tests.test_retired_public_rebuild",
+              "name": "test_registered_rest_app_returns_uniform_absence_without_authorization_or_data_access[owned-confirm]",
+              "time": "4.912"
+            },
+            {
+              "classname": "tests.test_retired_public_rebuild",
+              "name": "test_registered_rest_app_returns_uniform_absence_without_authorization_or_data_access[owned-run]",
+              "time": "4.774"
+            },
+            {
+              "classname": "tests.test_retired_public_rebuild",
+              "name": "test_retired_queue_rest_routes_are_absent_before_storage[missing-GET-/api/v1/kg/queue/dead-letter]",
+              "time": "4.661"
+            },
+            {
+              "classname": "tests.test_retired_public_rebuild",
+              "name": "test_retired_queue_rest_routes_are_absent_before_storage[missing-POST-/api/v1/kg/queue/dead-letter/redrive]",
+              "time": "4.513"
+            },
+            {
+              "classname": "tests.test_retired_public_rebuild",
+              "name": "test_retired_queue_rest_routes_are_absent_before_storage[missing-POST-/api/v1/kg/tick/run-now]",
+              "time": "5.162"
+            },
+            {
+              "classname": "tests.test_retired_public_rebuild",
+              "name": "test_retired_queue_rest_routes_are_absent_before_storage[missing-GET-/api/v1/kg/queue/health]",
+              "time": "4.849"
+            },
+            {
+              "classname": "tests.test_retired_public_rebuild",
+              "name": "test_retired_queue_rest_routes_are_absent_before_storage[missing-GET-/api/v1/kg/queue/drilldown]",
+              "time": "4.328"
+            },
+            {
+              "classname": "tests.test_retired_public_rebuild",
+              "name": "test_retired_queue_rest_routes_are_absent_before_storage[foreign-GET-/api/v1/kg/queue/dead-letter]",
+              "time": "4.450"
+            },
+            {
+              "classname": "tests.test_retired_public_rebuild",
+              "name": "test_retired_queue_rest_routes_are_absent_before_storage[foreign-POST-/api/v1/kg/queue/dead-letter/redrive]",
+              "time": "4.577"
+            },
+            {
+              "classname": "tests.test_retired_public_rebuild",
+              "name": "test_retired_queue_rest_routes_are_absent_before_storage[foreign-POST-/api/v1/kg/tick/run-now]",
+              "time": "4.804"
+            },
+            {
+              "classname": "tests.test_retired_public_rebuild",
+              "name": "test_retired_queue_rest_routes_are_absent_before_storage[foreign-GET-/api/v1/kg/queue/health]",
+              "time": "5.715"
+            },
+            {
+              "classname": "tests.test_retired_public_rebuild",
+              "name": "test_retired_queue_rest_routes_are_absent_before_storage[foreign-GET-/api/v1/kg/queue/drilldown]",
+              "time": "4.554"
+            },
+            {
+              "classname": "tests.test_retired_public_rebuild",
+              "name": "test_retired_queue_rest_routes_are_absent_before_storage[owned-GET-/api/v1/kg/queue/dead-letter]",
+              "time": "4.775"
+            },
+            {
+              "classname": "tests.test_retired_public_rebuild",
+              "name": "test_retired_queue_rest_routes_are_absent_before_storage[owned-POST-/api/v1/kg/queue/dead-letter/redrive]",
+              "time": "4.792"
+            },
+            {
+              "classname": "tests.test_retired_public_rebuild",
+              "name": "test_retired_queue_rest_routes_are_absent_before_storage[owned-POST-/api/v1/kg/tick/run-now]",
+              "time": "4.448"
+            },
+            {
+              "classname": "tests.test_retired_public_rebuild",
+              "name": "test_retired_queue_rest_routes_are_absent_before_storage[owned-GET-/api/v1/kg/queue/health]",
+              "time": "3.889"
+            },
+            {
+              "classname": "tests.test_retired_public_rebuild",
+              "name": "test_retired_queue_rest_routes_are_absent_before_storage[owned-GET-/api/v1/kg/queue/drilldown]",
+              "time": "5.464"
+            },
+            {
+              "classname": "tests.test_retired_public_rebuild",
+              "name": "test_materialized_mcp_transport_rejects_removed_tools_before_handlers",
+              "time": "0.974"
+            },
+            {
+              "classname": "tests.test_retired_public_rebuild",
+              "name": "test_removed_permissions_are_absent_from_registry_and_presets",
+              "time": "0.021"
+            },
+            {
+              "classname": "tests.test_retired_public_rebuild",
+              "name": "test_distributed_instructions_do_not_advertise_retired_recovery_tools",
+              "time": "0.023"
+            },
+            {
+              "classname": "tests.test_retired_public_rebuild",
+              "name": "test_installed_module_invocation_cannot_open_or_mutate_existing_history[arguments0]",
+              "time": "0.186"
+            },
+            {
+              "classname": "tests.test_retired_public_rebuild",
+              "name": "test_installed_module_invocation_cannot_open_or_mutate_existing_history[arguments1]",
+              "time": "0.163"
+            },
+            {
+              "classname": "tests.test_retired_public_rebuild",
+              "name": "test_installed_module_invocation_cannot_open_or_mutate_existing_history[arguments2]",
+              "time": "0.171"
+            },
+            {
+              "classname": "tests.test_retired_public_rebuild",
+              "name": "test_installed_module_invocation_cannot_open_or_mutate_existing_history[arguments3]",
+              "time": "0.188"
+            }
+          ]
+        },
+        {
+          "run": "community",
+          "repository": "okto_labs_pulse_community",
+          "file": "tests/test_cli_removed_maintenance.py",
+          "source_sha256": "ff2f67dee1c9edd9b8854c04b8d85dfff9cdb3845424db33d1b0cf462004ec60",
+          "executions": [
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_retired_command_rejected_before_settings_or_dispatch[arguments0]",
+              "time": "0.035"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_retired_command_rejected_before_settings_or_dispatch[arguments1]",
+              "time": "0.015"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_retired_command_rejected_before_settings_or_dispatch[arguments2]",
+              "time": "0.017"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_retired_command_rejected_before_settings_or_dispatch[arguments3]",
+              "time": "0.025"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_retired_command_rejected_before_settings_or_dispatch[arguments4]",
+              "time": "0.035"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_retired_command_rejected_before_settings_or_dispatch[arguments5]",
+              "time": "0.027"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_retired_command_rejected_before_settings_or_dispatch[arguments6]",
+              "time": "0.017"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_retired_command_rejected_before_settings_or_dispatch[arguments7]",
+              "time": "0.031"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_retired_command_rejected_before_settings_or_dispatch[arguments8]",
+              "time": "0.023"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_retired_command_rejected_before_settings_or_dispatch[arguments9]",
+              "time": "0.041"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_retired_command_rejected_before_settings_or_dispatch[arguments10]",
+              "time": "0.022"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_retired_command_rejected_before_settings_or_dispatch[arguments11]",
+              "time": "0.022"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_retired_command_rejected_before_settings_or_dispatch[arguments12]",
+              "time": "0.017"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_retired_command_rejected_before_settings_or_dispatch[arguments13]",
+              "time": "0.017"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_retired_command_rejected_before_settings_or_dispatch[arguments14]",
+              "time": "0.017"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_retired_command_rejected_before_settings_or_dispatch[arguments15]",
+              "time": "0.018"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_retired_command_rejected_before_settings_or_dispatch[arguments16]",
+              "time": "0.018"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_retired_command_rejected_before_settings_or_dispatch[arguments17]",
+              "time": "0.019"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_retired_command_rejected_before_settings_or_dispatch[arguments18]",
+              "time": "0.021"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_retired_command_rejected_before_settings_or_dispatch[arguments19]",
+              "time": "0.020"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_retired_command_rejected_before_settings_or_dispatch[arguments20]",
+              "time": "0.019"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_retired_command_rejected_before_settings_or_dispatch[arguments21]",
+              "time": "0.036"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_retired_command_rejected_before_settings_or_dispatch[arguments22]",
+              "time": "0.038"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_retired_command_rejected_before_settings_or_dispatch[arguments23]",
+              "time": "0.017"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_retired_command_rejected_before_settings_or_dispatch[arguments24]",
+              "time": "0.018"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_retired_command_rejected_before_settings_or_dispatch[arguments25]",
+              "time": "0.019"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_retired_command_rejected_before_settings_or_dispatch[arguments26]",
+              "time": "0.019"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_retired_command_rejected_before_settings_or_dispatch[arguments27]",
+              "time": "0.019"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_retired_command_rejected_before_settings_or_dispatch[arguments28]",
+              "time": "0.022"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_retired_command_rejected_before_settings_or_dispatch[arguments29]",
+              "time": "0.061"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_retired_handlers_and_exclusive_reset_module_are_absent",
+              "time": "0.031"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_help_retains_product_setup_and_observation",
+              "time": "0.016"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_installed_launcher_rejects_without_touching_data[False-arguments0]",
+              "time": "0.846"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_installed_launcher_rejects_without_touching_data[False-arguments1]",
+              "time": "0.953"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_installed_launcher_rejects_without_touching_data[False-arguments2]",
+              "time": "0.975"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_installed_launcher_rejects_without_touching_data[False-arguments3]",
+              "time": "0.785"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_installed_launcher_rejects_without_touching_data[False-arguments4]",
+              "time": "0.807"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_installed_launcher_rejects_without_touching_data[False-arguments5]",
+              "time": "0.762"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_installed_launcher_rejects_without_touching_data[False-arguments6]",
+              "time": "0.759"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_installed_launcher_rejects_without_touching_data[False-arguments7]",
+              "time": "0.715"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_installed_launcher_rejects_without_touching_data[False-arguments8]",
+              "time": "0.761"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_installed_launcher_rejects_without_touching_data[False-arguments9]",
+              "time": "0.760"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_installed_launcher_rejects_without_touching_data[False-arguments10]",
+              "time": "0.751"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_installed_launcher_rejects_without_touching_data[False-arguments11]",
+              "time": "0.754"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_installed_launcher_rejects_without_touching_data[False-arguments12]",
+              "time": "0.748"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_installed_launcher_rejects_without_touching_data[False-arguments13]",
+              "time": "0.791"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_installed_launcher_rejects_without_touching_data[False-arguments14]",
+              "time": "0.736"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_installed_launcher_rejects_without_touching_data[False-arguments15]",
+              "time": "0.735"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_installed_launcher_rejects_without_touching_data[False-arguments16]",
+              "time": "0.769"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_installed_launcher_rejects_without_touching_data[False-arguments17]",
+              "time": "0.794"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_installed_launcher_rejects_without_touching_data[False-arguments18]",
+              "time": "0.761"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_installed_launcher_rejects_without_touching_data[False-arguments19]",
+              "time": "0.798"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_installed_launcher_rejects_without_touching_data[False-arguments20]",
+              "time": "0.777"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_installed_launcher_rejects_without_touching_data[False-arguments21]",
+              "time": "0.759"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_installed_launcher_rejects_without_touching_data[False-arguments22]",
+              "time": "0.866"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_installed_launcher_rejects_without_touching_data[False-arguments23]",
+              "time": "0.962"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_installed_launcher_rejects_without_touching_data[False-arguments24]",
+              "time": "0.997"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_installed_launcher_rejects_without_touching_data[False-arguments25]",
+              "time": "0.850"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_installed_launcher_rejects_without_touching_data[False-arguments26]",
+              "time": "0.960"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_installed_launcher_rejects_without_touching_data[False-arguments27]",
+              "time": "1.085"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_installed_launcher_rejects_without_touching_data[False-arguments28]",
+              "time": "1.562"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_installed_launcher_rejects_without_touching_data[False-arguments29]",
+              "time": "1.413"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_installed_launcher_rejects_without_touching_data[True-arguments0]",
+              "time": "1.640"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_installed_launcher_rejects_without_touching_data[True-arguments1]",
+              "time": "1.394"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_installed_launcher_rejects_without_touching_data[True-arguments2]",
+              "time": "1.246"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_installed_launcher_rejects_without_touching_data[True-arguments3]",
+              "time": "1.150"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_installed_launcher_rejects_without_touching_data[True-arguments4]",
+              "time": "1.002"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_installed_launcher_rejects_without_touching_data[True-arguments5]",
+              "time": "0.894"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_installed_launcher_rejects_without_touching_data[True-arguments6]",
+              "time": "0.883"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_installed_launcher_rejects_without_touching_data[True-arguments7]",
+              "time": "0.872"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_installed_launcher_rejects_without_touching_data[True-arguments8]",
+              "time": "0.870"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_installed_launcher_rejects_without_touching_data[True-arguments9]",
+              "time": "0.885"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_installed_launcher_rejects_without_touching_data[True-arguments10]",
+              "time": "0.853"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_installed_launcher_rejects_without_touching_data[True-arguments11]",
+              "time": "0.828"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_installed_launcher_rejects_without_touching_data[True-arguments12]",
+              "time": "0.841"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_installed_launcher_rejects_without_touching_data[True-arguments13]",
+              "time": "0.870"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_installed_launcher_rejects_without_touching_data[True-arguments14]",
+              "time": "0.884"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_installed_launcher_rejects_without_touching_data[True-arguments15]",
+              "time": "0.900"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_installed_launcher_rejects_without_touching_data[True-arguments16]",
+              "time": "0.851"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_installed_launcher_rejects_without_touching_data[True-arguments17]",
+              "time": "0.824"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_installed_launcher_rejects_without_touching_data[True-arguments18]",
+              "time": "0.844"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_installed_launcher_rejects_without_touching_data[True-arguments19]",
+              "time": "0.848"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_installed_launcher_rejects_without_touching_data[True-arguments20]",
+              "time": "0.834"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_installed_launcher_rejects_without_touching_data[True-arguments21]",
+              "time": "0.847"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_installed_launcher_rejects_without_touching_data[True-arguments22]",
+              "time": "0.859"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_installed_launcher_rejects_without_touching_data[True-arguments23]",
+              "time": "0.828"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_installed_launcher_rejects_without_touching_data[True-arguments24]",
+              "time": "0.847"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_installed_launcher_rejects_without_touching_data[True-arguments25]",
+              "time": "0.934"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_installed_launcher_rejects_without_touching_data[True-arguments26]",
+              "time": "1.007"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_installed_launcher_rejects_without_touching_data[True-arguments27]",
+              "time": "0.956"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_installed_launcher_rejects_without_touching_data[True-arguments28]",
+              "time": "0.853"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_installed_launcher_rejects_without_touching_data[True-arguments29]",
+              "time": "0.846"
+            },
+            {
+              "classname": "tests.test_cli_removed_maintenance",
+              "name": "test_current_guides_do_not_offer_retired_commands",
+              "time": "0.017"
+            }
+          ]
+        },
+        {
+          "run": "community",
+          "repository": "okto_labs_pulse_community",
+          "file": "tests/test_mcp_installed_inventory_smoke.py",
+          "source_sha256": "328ada6eabc5a453114d40f287f8973c6bf90ac3e153af69c569b93185e949a4",
+          "executions": [
+            {
+              "classname": "tests.test_mcp_installed_inventory_smoke",
+              "name": "test_live_catalog_initialize_tools_list_and_manifest_agree",
+              "time": "0.906"
+            }
+          ]
+        },
+        {
+          "run": "core",
+          "repository": "okto_labs_pulse_core",
+          "file": "tests/test_mcp_tools_catalog_drift.py",
+          "source_sha256": "02a481a3ccd58b4cd9ea5ae57c0f6db07ba1cd4b9849a1970c5d95b9e9a5d2ec",
+          "executions": [
+            {
+              "classname": "tests.test_mcp_tools_catalog_drift",
+              "name": "test_every_live_tool_is_classified",
+              "time": "0.030"
+            },
+            {
+              "classname": "tests.test_mcp_tools_catalog_drift",
+              "name": "test_catalog_file_matches_live_registry",
+              "time": "0.034"
+            },
+            {
+              "classname": "tests.test_mcp_tools_catalog_drift",
+              "name": "test_every_live_tool_has_one_exact_tool_doc_heading",
+              "time": "0.030"
+            },
+            {
+              "classname": "tests.test_mcp_tools_catalog_drift",
+              "name": "test_catalog_covers_exact_tool_set",
+              "time": "0.024"
+            }
+          ]
+        }
+      ]
+    },
+    "BASE:T46": {
+      "status": "partial",
+      "covered": "Resources KG, catálogo vivo/gerado e ajuda frontend não anunciam operações removidas; Health aponta diagnóstico sem executor offline nem controles retirados.",
+      "remaining": "Falta conferir exaustivamente remediações emitidas por todos os erros e drilldowns ativos; busca textual isolada não prova esse universo.",
+      "evidence": [
+        {
+          "run": "community",
+          "repository": "okto_labs_pulse_community",
+          "file": "tests/test_retired_public_rebuild.py",
+          "source_sha256": "e9550e31b90ee658577f4e701e872429d1bbe60851cc5f78c4b3ea1d5f9e6d19",
+          "executions": [
+            {
+              "classname": "tests.test_retired_public_rebuild",
+              "name": "test_removed_modules_and_console_entrypoint_are_not_distributed",
+              "time": "0.034"
+            },
+            {
+              "classname": "tests.test_retired_public_rebuild",
+              "name": "test_registered_rest_app_returns_uniform_absence_without_authorization_or_data_access[missing-preflight]",
+              "time": "4.314"
+            },
+            {
+              "classname": "tests.test_retired_public_rebuild",
+              "name": "test_registered_rest_app_returns_uniform_absence_without_authorization_or_data_access[missing-confirm]",
+              "time": "4.574"
+            },
+            {
+              "classname": "tests.test_retired_public_rebuild",
+              "name": "test_registered_rest_app_returns_uniform_absence_without_authorization_or_data_access[missing-run]",
+              "time": "4.661"
+            },
+            {
+              "classname": "tests.test_retired_public_rebuild",
+              "name": "test_registered_rest_app_returns_uniform_absence_without_authorization_or_data_access[foreign-preflight]",
+              "time": "6.444"
+            },
+            {
+              "classname": "tests.test_retired_public_rebuild",
+              "name": "test_registered_rest_app_returns_uniform_absence_without_authorization_or_data_access[foreign-confirm]",
+              "time": "6.395"
+            },
+            {
+              "classname": "tests.test_retired_public_rebuild",
+              "name": "test_registered_rest_app_returns_uniform_absence_without_authorization_or_data_access[foreign-run]",
+              "time": "6.326"
+            },
+            {
+              "classname": "tests.test_retired_public_rebuild",
+              "name": "test_registered_rest_app_returns_uniform_absence_without_authorization_or_data_access[owned-preflight]",
+              "time": "8.252"
+            },
+            {
+              "classname": "tests.test_retired_public_rebuild",
+              "name": "test_registered_rest_app_returns_uniform_absence_without_authorization_or_data_access[owned-confirm]",
+              "time": "4.912"
+            },
+            {
+              "classname": "tests.test_retired_public_rebuild",
+              "name": "test_registered_rest_app_returns_uniform_absence_without_authorization_or_data_access[owned-run]",
+              "time": "4.774"
+            },
+            {
+              "classname": "tests.test_retired_public_rebuild",
+              "name": "test_retired_queue_rest_routes_are_absent_before_storage[missing-GET-/api/v1/kg/queue/dead-letter]",
+              "time": "4.661"
+            },
+            {
+              "classname": "tests.test_retired_public_rebuild",
+              "name": "test_retired_queue_rest_routes_are_absent_before_storage[missing-POST-/api/v1/kg/queue/dead-letter/redrive]",
+              "time": "4.513"
+            },
+            {
+              "classname": "tests.test_retired_public_rebuild",
+              "name": "test_retired_queue_rest_routes_are_absent_before_storage[missing-POST-/api/v1/kg/tick/run-now]",
+              "time": "5.162"
+            },
+            {
+              "classname": "tests.test_retired_public_rebuild",
+              "name": "test_retired_queue_rest_routes_are_absent_before_storage[missing-GET-/api/v1/kg/queue/health]",
+              "time": "4.849"
+            },
+            {
+              "classname": "tests.test_retired_public_rebuild",
+              "name": "test_retired_queue_rest_routes_are_absent_before_storage[missing-GET-/api/v1/kg/queue/drilldown]",
+              "time": "4.328"
+            },
+            {
+              "classname": "tests.test_retired_public_rebuild",
+              "name": "test_retired_queue_rest_routes_are_absent_before_storage[foreign-GET-/api/v1/kg/queue/dead-letter]",
+              "time": "4.450"
+            },
+            {
+              "classname": "tests.test_retired_public_rebuild",
+              "name": "test_retired_queue_rest_routes_are_absent_before_storage[foreign-POST-/api/v1/kg/queue/dead-letter/redrive]",
+              "time": "4.577"
+            },
+            {
+              "classname": "tests.test_retired_public_rebuild",
+              "name": "test_retired_queue_rest_routes_are_absent_before_storage[foreign-POST-/api/v1/kg/tick/run-now]",
+              "time": "4.804"
+            },
+            {
+              "classname": "tests.test_retired_public_rebuild",
+              "name": "test_retired_queue_rest_routes_are_absent_before_storage[foreign-GET-/api/v1/kg/queue/health]",
+              "time": "5.715"
+            },
+            {
+              "classname": "tests.test_retired_public_rebuild",
+              "name": "test_retired_queue_rest_routes_are_absent_before_storage[foreign-GET-/api/v1/kg/queue/drilldown]",
+              "time": "4.554"
+            },
+            {
+              "classname": "tests.test_retired_public_rebuild",
+              "name": "test_retired_queue_rest_routes_are_absent_before_storage[owned-GET-/api/v1/kg/queue/dead-letter]",
+              "time": "4.775"
+            },
+            {
+              "classname": "tests.test_retired_public_rebuild",
+              "name": "test_retired_queue_rest_routes_are_absent_before_storage[owned-POST-/api/v1/kg/queue/dead-letter/redrive]",
+              "time": "4.792"
+            },
+            {
+              "classname": "tests.test_retired_public_rebuild",
+              "name": "test_retired_queue_rest_routes_are_absent_before_storage[owned-POST-/api/v1/kg/tick/run-now]",
+              "time": "4.448"
+            },
+            {
+              "classname": "tests.test_retired_public_rebuild",
+              "name": "test_retired_queue_rest_routes_are_absent_before_storage[owned-GET-/api/v1/kg/queue/health]",
+              "time": "3.889"
+            },
+            {
+              "classname": "tests.test_retired_public_rebuild",
+              "name": "test_retired_queue_rest_routes_are_absent_before_storage[owned-GET-/api/v1/kg/queue/drilldown]",
+              "time": "5.464"
+            },
+            {
+              "classname": "tests.test_retired_public_rebuild",
+              "name": "test_materialized_mcp_transport_rejects_removed_tools_before_handlers",
+              "time": "0.974"
+            },
+            {
+              "classname": "tests.test_retired_public_rebuild",
+              "name": "test_removed_permissions_are_absent_from_registry_and_presets",
+              "time": "0.021"
+            },
+            {
+              "classname": "tests.test_retired_public_rebuild",
+              "name": "test_distributed_instructions_do_not_advertise_retired_recovery_tools",
+              "time": "0.023"
+            },
+            {
+              "classname": "tests.test_retired_public_rebuild",
+              "name": "test_installed_module_invocation_cannot_open_or_mutate_existing_history[arguments0]",
+              "time": "0.186"
+            },
+            {
+              "classname": "tests.test_retired_public_rebuild",
+              "name": "test_installed_module_invocation_cannot_open_or_mutate_existing_history[arguments1]",
+              "time": "0.163"
+            },
+            {
+              "classname": "tests.test_retired_public_rebuild",
+              "name": "test_installed_module_invocation_cannot_open_or_mutate_existing_history[arguments2]",
+              "time": "0.171"
+            },
+            {
+              "classname": "tests.test_retired_public_rebuild",
+              "name": "test_installed_module_invocation_cannot_open_or_mutate_existing_history[arguments3]",
+              "time": "0.188"
+            }
+          ]
+        },
+        {
+          "run": "core",
+          "repository": "okto_labs_pulse_core",
+          "file": "tests/test_mcp_tools_catalog_drift.py",
+          "source_sha256": "02a481a3ccd58b4cd9ea5ae57c0f6db07ba1cd4b9849a1970c5d95b9e9a5d2ec",
+          "executions": [
+            {
+              "classname": "tests.test_mcp_tools_catalog_drift",
+              "name": "test_every_live_tool_is_classified",
+              "time": "0.030"
+            },
+            {
+              "classname": "tests.test_mcp_tools_catalog_drift",
+              "name": "test_catalog_file_matches_live_registry",
+              "time": "0.034"
+            },
+            {
+              "classname": "tests.test_mcp_tools_catalog_drift",
+              "name": "test_every_live_tool_has_one_exact_tool_doc_heading",
+              "time": "0.030"
+            },
+            {
+              "classname": "tests.test_mcp_tools_catalog_drift",
+              "name": "test_catalog_covers_exact_tool_set",
+              "time": "0.024"
+            }
+          ]
+        },
+        {
+          "run": "frontend",
+          "repository": "okto_labs_pulse_community",
+          "file": "frontend/src/components/help/__tests__/HelpPanel.maintenanceCli.test.tsx",
+          "source_sha256": "5e5b5301d1ebee9e8f0add4dfb0899b9abcf0ad0af0c6ebab79825c9e4b8fde4",
+          "executions": [
+            {
+              "classname": "src/components/help/__tests__/HelpPanel.maintenanceCli.test.tsx",
+              "name": "HelpPanel after maintenance CLI retirement > explains schema unavailability without directing the user to a removed CLI",
+              "time": "0.6062759"
+            }
+          ]
+        },
+        {
+          "run": "frontend",
+          "repository": "okto_labs_pulse_community",
+          "file": "frontend/src/components/knowledge/__tests__/KGHealthView.test.tsx",
+          "source_sha256": "377cbacd990127d853cfe1e5877b676d44aaa0cd05a57ec0b1779f8cca22ae9d",
+          "executions": [
+            {
+              "classname": "src/components/knowledge/__tests__/KGHealthView.test.tsx",
+              "name": "TS1 — mount inicial dispara 1 fetch e renderiza cards principais > orders observation sections without a recovery workflow",
+              "time": "0.8947083"
+            },
+            {
+              "classname": "src/components/knowledge/__tests__/KGHealthView.test.tsx",
+              "name": "TS1 — mount inicial dispara 1 fetch e renderiza cards principais > does not claim a Grafx binding when storage routing is unavailable",
+              "time": "0.0809631"
+            },
+            {
+              "classname": "src/components/knowledge/__tests__/KGHealthView.test.tsx",
+              "name": "TS1 — mount inicial dispara 1 fetch e renderiza cards principais > fixa o contrato frontend em health schema 1.1",
+              "time": "0.0010718"
+            },
+            {
+              "classname": "src/components/knowledge/__tests__/KGHealthView.test.tsx",
+              "name": "TS1 — mount inicial dispara 1 fetch e renderiza cards principais > aceita health schema 1.1 sem comparar o alias legado schema_version",
+              "time": "0.0678327"
+            },
+            {
+              "classname": "src/components/knowledge/__tests__/KGHealthView.test.tsx",
+              "name": "TS1 — mount inicial dispara 1 fetch e renderiza cards principais > faz 1 fetch e mostra Scheduler/Queue/Health/Footprint/Debt",
+              "time": "0.0684466"
+            },
+            {
+              "classname": "src/components/knowledge/__tests__/KGHealthView.test.tsx",
+              "name": "TS1 — mount inicial dispara 1 fetch e renderiza cards principais > mostra 0 falhas operacionais de consolidação sem somar o histórico de outras filas",
+              "time": "0.0580276"
+            },
+            {
+              "classname": "src/components/knowledge/__tests__/KGHealthView.test.tsx",
+              "name": "TS1 — mount inicial dispara 1 fetch e renderiza cards principais > mostra 2 falhas operacionais de consolidação sem somar o histórico de outras filas",
+              "time": "0.0518048"
+            },
+            {
+              "classname": "src/components/knowledge/__tests__/KGHealthView.test.tsx",
+              "name": "TS2 — polling dispara fetches periódicos > dispara 5 fetches em 1.05s com pollIntervalMs=200",
+              "time": "0.0868916"
+            },
+            {
+              "classname": "src/components/knowledge/__tests__/KGHealthView.test.tsx",
+              "name": "TS3 — visibility hidden suspende polling, visible retoma com catch-up > zero novos fetches durante hidden + 1 catch-up imediato ao voltar visible",
+              "time": "0.0320493"
+            },
+            {
+              "classname": "src/components/knowledge/__tests__/KGHealthView.test.tsx",
+              "name": "TS4 — unmount cancela polling e aborta requests pendentes > chama clearInterval e abort no cleanup",
+              "time": "0.0216106"
+            },
+            {
+              "classname": "src/components/knowledge/__tests__/KGHealthView.test.tsx",
+              "name": "TS5 — scheduler diagnostics and legacy tick fallback > null → \"Tick has never run\"",
+              "time": "0.0606704"
+            },
+            {
+              "classname": "src/components/knowledge/__tests__/KGHealthView.test.tsx",
+              "name": "TS5 — scheduler diagnostics and legacy tick fallback > age > 24h → \"Stale tick: Xh ago\" amber",
+              "time": "0.0372783"
+            },
+            {
+              "classname": "src/components/knowledge/__tests__/KGHealthView.test.tsx",
+              "name": "TS5 — scheduler diagnostics and legacy tick fallback > age ≤ 24h → \"Last tick: Xh ago\" neutral",
+              "time": "0.030003"
+            },
+            {
+              "classname": "src/components/knowledge/__tests__/KGHealthView.test.tsx",
+              "name": "TS5 — scheduler diagnostics and legacy tick fallback > uses backend diagnostics instead of the local 24h heuristic when present",
+              "time": "0.039994"
+            },
+            {
+              "classname": "src/components/knowledge/__tests__/KGHealthView.test.tsx",
+              "name": "TS6 — schema banner > health match (1.1) → no banner",
+              "time": "0.0297746"
+            },
+            {
+              "classname": "src/components/knowledge/__tests__/KGHealthView.test.tsx",
+              "name": "TS6 — schema banner > mismatch (2.0) → red full-width banner with exact text",
+              "time": "0.0539792"
+            },
+            {
+              "classname": "src/components/knowledge/__tests__/KGHealthView.test.tsx",
+              "name": "KG-HS.3 — scheduler debt and storage-footprint clarity > renders canonical debt and graph layer counts",
+              "time": "0.0532808"
+            },
+            {
+              "classname": "src/components/knowledge/__tests__/KGHealthView.test.tsx",
+              "name": "KG-HS.3 — scheduler debt and storage-footprint clarity > explains absent capacity limits without hiding the measured file size",
+              "time": "0.0440106"
+            },
+            {
+              "classname": "src/components/knowledge/__tests__/KGHealthView.test.tsx",
+              "name": "KG-HS.3 — scheduler debt and storage-footprint clarity > renders storage footprint proxy copy without memory/buffer telemetry claims",
+              "time": "0.0442252"
+            },
+            {
+              "classname": "src/components/knowledge/__tests__/KGHealthView.test.tsx",
+              "name": "KG-HS.3 — scheduler debt and storage-footprint clarity > separates telemetry, DLQ backlog and scheduler debt from recovery-needed messaging",
+              "time": "0.336947"
+            },
+            {
+              "classname": "src/components/knowledge/__tests__/KGHealthView.test.tsx",
+              "name": "TS7 — disconnected nodes panel removed > does not render the disconnected-node panel even when payload includes rows",
+              "time": "0.0499298"
+            },
+            {
+              "classname": "src/components/knowledge/__tests__/KGHealthView.test.tsx",
+              "name": "TS9 — refresh button dispara fetch sem reset polling > count cresce em cada click do refresh, sem alterar intervalo",
+              "time": "0.2547266"
+            },
+            {
+              "classname": "src/components/knowledge/__tests__/KGHealthView.test.tsx",
+              "name": "TS10 — error shows panel + Try again re-fetch > error panel with message + Try again button, click re-fetches",
+              "time": "0.1198729"
+            },
+            {
+              "classname": "src/components/knowledge/__tests__/KGHealthView.test.tsx",
+              "name": "TS11 — skeleton em loading inicial > mostra skeleton cards enquanto fetch pendente",
+              "time": "0.0115209"
+            },
+            {
+              "classname": "src/components/knowledge/__tests__/KGHealthView.test.tsx",
+              "name": "TS11 — skeleton em loading inicial > skeleton some após primeiro resolve",
+              "time": "0.0427442"
+            },
+            {
+              "classname": "src/components/knowledge/__tests__/KGHealthView.test.tsx",
+              "name": "TS12 — empty state sem currentBoard suprime polling > texto centralizado e zero fetches",
+              "time": "0.0660598"
+            },
+            {
+              "classname": "src/components/knowledge/__tests__/KGHealthView.test.tsx",
+              "name": "F4 — health has no maintenance actions > keeps healthy observable without a recovery, tick or settings path",
+              "time": "0.3249629"
+            },
+            {
+              "classname": "src/components/knowledge/__tests__/KGHealthView.test.tsx",
+              "name": "F4 — health has no maintenance actions > keeps at_risk observable without a recovery, tick or settings path",
+              "time": "0.3164088"
+            },
+            {
+              "classname": "src/components/knowledge/__tests__/KGHealthView.test.tsx",
+              "name": "F4 — health has no maintenance actions > keeps recovery_needed observable without a recovery, tick or settings path",
+              "time": "0.2625594"
+            },
+            {
+              "classname": "src/components/knowledge/__tests__/KGHealthView.test.tsx",
+              "name": "F4 — health has no maintenance actions > keeps quarantined observable without a recovery, tick or settings path",
+              "time": "0.2652168"
+            },
+            {
+              "classname": "src/components/knowledge/__tests__/KGHealthView.test.tsx",
+              "name": "F4 — health has no maintenance actions > still refuses health reads when the board permission is absent",
+              "time": "0.007076"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "limits": [
+    "Browser uses installed static assets with all API requests intercepted. Not integrated live backend E2E.",
+    "Negative transport tests intentionally use fail-on-access stubs; they prove refusal before effect, not successful authorization.",
+    "No real user data, migration, release or live process was changed."
+  ]
+}

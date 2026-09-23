@@ -15140,3 +15140,25 @@ O maior aumento de schema frio é record_delivery_evidence (contratos tipados de
 batch/progresso/impacto); não remover validações para produzir ganho aparente.
 Nenhuma promoção automática do inventário: benchmark de workflows e campanha
 de aceitação integrada continuam abertos.
+
+### Aceitação BASE — superfícies retiradas e navegação legada
+
+Estado retomado confirmado limpo em feature/v0.4.0: Core 21ece23e / Community
+1372a31e. Campanha contra o par comprovado dist-history-read-cost: Core **62
+passed em 5.08s**, Community **167 passed em 223.55s**, frontend **57 passed**,
+Chromium **1 passed em 6.2s**. Artefatos acceptance-base-surfaces-{core,
+community,frontend,browser}.xml. Browser servido exclusivamente dos assets
+instalados, porta efêmera própria e APIs interceptadas; servidor encerrado no
+finally. Não é E2E integrado com backend vivo nem comprovação de grants positivos.
+
+Corpos dos testes e oráculos revisados. acceptance-base-surfaces-execution.json
+registra fontes/hashes, casos executados, proveniência e limites. BASE T34, T37
+e T38 verificados: ausência antes de efeito, sprint_id recusado inclusive
+null/vazio, navegação com storage/URL antigo, e Health UI somente observacional
+com polling cancelável. BASE T33/T46 permanecem parciais: famílias retiradas e
+guias exercitados passam, mas falta prova exaustiva de variantes genéricas e de
+todas as remediações/drilldowns. Inventário agora **70 verified /33 partial /
+143 not_audited**. Ausência de auditoria não significa ausência de implementação;
+nenhuma alegação de conclusão integral. Nenhum código produtivo alterado nesta
+campanha. Próxima frente: fechar lacunas reais de capacidades/remediações,
+continuar demais critérios BASE/KG e benchmark completo DEI §17.2.
