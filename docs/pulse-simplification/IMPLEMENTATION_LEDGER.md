@@ -15102,3 +15102,41 @@ Arquivos locais cold-mcp-baseline.json/cold-mcp-candidate.json; cenário complet
 de DEI §17.2 (grants, sessões, workflows, queries, trabalho externo e retomadas)
 continua pendente. Este coletor permite reproduzir o componente de inventário,
 não substitui essa campanha nem promove critérios de aceitação.
+
+### Custo do histórico de retomada — caracterização e correção
+
+Commits da frente anterior enviados: Core bd1f709a / Community 6a3bc18e.
+Novo ensaio descartável mede os leitores progress/ledger/resume com 1, 25 e
+200 checkpoints persistidos pelo writer existente, limpando identity map
+antes de cada leitura. Não exercita transporte/autorização nem população de
+200 proofs; mede explicitamente histórico de progresso, sem confundir cenários.
+
+history-read-cost-before.xml: **1 passed em 13.33s**. progress/ledger fizeram
+9 queries em todas as populações; resume fez 22. Porém resume carregou o ledger
+duas vezes: 400 rows lidas para 200 checkpoints (sem contar página resumida).
+O leitor agora passa os mesmos registros para snapshot/contexto/impacto dentro
+da requisição; sem cache entre requests ou identidades. Mantém fence final de
+versão/geração e uma regressão injeta append tardio para exigir retry.
+
+Par dist-history-read-cost instalado e comprovado byte-identical:
+provenance-history-read-cost.json (830/893 Core, 363/447 Community). Campanha
+history-read-cost-after.xml e F16 closure-history-read-cost.json em execução.
+Não declarar melhora de latência a partir de uma amostra. Planejamento por
+Spec e validação de cada proof relacionado continuam sujeitos à medição maior
+exigida por §17.2; isto não encerra benchmark nem DEI-T63/T64.
+
+Campanha terminal history-read-cost-after.xml: **35 passed em 79.06s**, incluindo
+histórico/edições/cursors, provas parciais, testes relacionados e append tardio.
+Com 200 checkpoints, resume passa de 400 a 200 rows carregadas e de 22 a 21
+queries; resposta permanece 13753 bytes. progress/ledger mantêm 9 queries e
+páginas de até 20 itens. Um único scan dentro da requisição é guardado por teste;
+sem inferência de ganho estatístico de latência. F16.2 **8840 linhas, ok=true,
+zero findings arquiteturais/documentais e oito budgets zero**. Ruff/diff check
+limpos (avisos CRLF apenas), sem processos pendentes.
+
+cold-inventory-measurement.json preserva resumo, proveniência e hashes das
+medições de inventário do par anterior, para handoff/reprodução do componente.
+O maior aumento de schema frio é record_delivery_evidence (contratos tipados de
+batch/progresso/impacto); não remover validações para produzir ganho aparente.
+Nenhuma promoção automática do inventário: benchmark de workflows e campanha
+de aceitação integrada continuam abertos.
