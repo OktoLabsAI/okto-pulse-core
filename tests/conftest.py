@@ -19,7 +19,6 @@ import os
 import sys
 import tempfile
 import uuid
-from collections import defaultdict
 from datetime import datetime, timezone
 from importlib import util as importlib_util
 from pathlib import Path
@@ -170,10 +169,8 @@ from sqlalchemy_test_models import (  # noqa: E402
     ConsolidationQueue,
     ArtifactDeletionTombstone,
     GlobalUpdateOutbox,
-    Ideation,
     KGTickRun,
     KuzuNodeRef,
-    Refinement,
     PermissionPreset,
     Spec,
 )
@@ -1299,221 +1296,7 @@ class _CoreTestKGOperationalReadModel(KGOperationalReadModelPort):
         result = await context.execute(select(Board).limit(limit))
         return [b.id for b in result.scalars().all()]
 
-    async def list_pending_entries(
-        self,
-        context,
-        *,
-        board_id: str,
-        include_code_traceability: bool = True,
-    ) -> list[dict]:
-        query = select(ConsolidationQueue).where(
-            ConsolidationQueue.board_id == board_id
-        )
-        if not include_code_traceability:
-            from okto_pulse.core.domain.code_traceability_kg import (
-                CODE_TRACEABILITY_KG_SUBTYPES,
-            )
 
-            query = query.where(
-                ConsolidationQueue.artifact_type.not_in(CODE_TRACEABILITY_KG_SUBTYPES)
-            )
-        query = query.order_by(ConsolidationQueue.triggered_at.desc()).limit(100)
-        rows = (await context.execute(query)).scalars().all()
-        return [
-            {
-                "id": r.id,
-                "board_id": r.board_id,
-                "artifact_id": r.artifact_id,
-                "artifact_type": r.artifact_type,
-                "priority": r.priority,
-                "source": r.source,
-                "status": r.status,
-                "triggered_at": r.triggered_at.isoformat() if r.triggered_at else None,
-                "claimed_by_session_id": r.claimed_by_session_id,
-            }
-            for r in rows
-        ]
-
-    async def build_pending_tree(
-        self,
-        context,
-        *,
-        board_id: str,
-        depth: int = 4,
-    ) -> dict:
-        q_rows = (
-            (
-                await context.execute(
-                    select(ConsolidationQueue).where(
-                        ConsolidationQueue.board_id == board_id
-                    )
-                )
-            )
-            .scalars()
-            .all()
-        )
-        q_by_artifact: dict[tuple[str, str], ConsolidationQueue] = {
-            (r.artifact_type, r.artifact_id): r for r in q_rows
-        }
-
-        def _queue_meta(art_type: str, art_id: str) -> dict:
-            entry = q_by_artifact.get((art_type, art_id))
-            if entry is None:
-                return {
-                    "status": "not_queued",
-                    "queued_age_seconds": None,
-                    "retry_count": 0,
-                    "layer": None,
-                    "last_error": None,
-                }
-            age = None
-            if entry.triggered_at is not None:
-                triggered_at = entry.triggered_at
-                if triggered_at.tzinfo is None:
-                    triggered_at = triggered_at.replace(tzinfo=timezone.utc)
-                age = (datetime.now(timezone.utc) - triggered_at).total_seconds()
-            return {
-                "status": entry.status,
-                "queued_age_seconds": int(age) if age is not None else None,
-                "retry_count": 0,
-                "layer": entry.source or "unknown",
-                "last_error": None,
-            }
-
-        ideas = (
-            (
-                await context.execute(
-                    select(Ideation).where(Ideation.board_id == board_id)
-                )
-            )
-            .scalars()
-            .all()
-        )
-        refs = (
-            (
-                await context.execute(
-                    select(Refinement).where(Refinement.board_id == board_id)
-                )
-            )
-            .scalars()
-            .all()
-        )
-        specs = (
-            (await context.execute(select(Spec).where(Spec.board_id == board_id)))
-            .scalars()
-            .all()
-        )
-        cards = (
-            (await context.execute(select(Card).where(Card.board_id == board_id)))
-            .scalars()
-            .all()
-        )
-
-        refs_by_ideation: dict[str, list] = defaultdict(list)
-        for row in refs:
-            refs_by_ideation[row.ideation_id or ""].append(row)
-        specs_by_refinement: dict[str, list] = defaultdict(list)
-        specs_orphan: list = []
-        for row in specs:
-            if row.refinement_id:
-                specs_by_refinement[row.refinement_id].append(row)
-            else:
-                specs_orphan.append(row)
-        cards_by_spec: dict[str, list] = defaultdict(list)
-        for row in cards:
-            cards_by_spec[row.spec_id].append(row)
-
-        levels_counter = {
-            lvl: {
-                "pending": 0,
-                "in_progress": 0,
-                "done": 0,
-                "failed": 0,
-                "not_queued": 0,
-            }
-            for lvl in ("ideations", "refinements", "specs", "cards")
-        }
-
-        def _tally(level: str, art_type: str, art_id: str) -> None:
-            status = _queue_meta(art_type, art_id)["status"]
-            levels_counter[level][status] = levels_counter[level].get(status, 0) + 1
-
-        def _card_node(row) -> dict:
-            meta = _queue_meta("card", row.id)
-            _tally("cards", "card", row.id)
-            return {
-                "id": row.id,
-                "type": "card",
-                "title": row.title,
-                "card_type": (
-                    str(row.card_type) if getattr(row, "card_type", None) else "normal"
-                ),
-                **meta,
-                "children": [],
-            }
-
-        def _spec_node(row) -> dict:
-            meta = _queue_meta("spec", row.id)
-            _tally("specs", "spec", row.id)
-            direct_cards = [_card_node(c) for c in cards_by_spec.get(row.id, [])]
-            if depth < 4:
-                direct_cards = []
-            return {
-                "id": row.id,
-                "type": "spec",
-                "title": row.title,
-                **meta,
-                "children": direct_cards,
-            }
-
-        def _refinement_node(row) -> dict:
-            meta = _queue_meta("refinement", row.id)
-            _tally("refinements", "refinement", row.id)
-            spec_children = [_spec_node(s) for s in specs_by_refinement.get(row.id, [])]
-            if depth < 3:
-                spec_children = []
-            return {
-                "id": row.id,
-                "type": "refinement",
-                "title": row.title,
-                **meta,
-                "children": spec_children,
-            }
-
-        tree: list[dict] = []
-        for row in ideas:
-            meta = _queue_meta("ideation", row.id)
-            _tally("ideations", "ideation", row.id)
-            ref_children = [
-                _refinement_node(r) for r in refs_by_ideation.get(row.id, [])
-            ]
-            if depth < 2:
-                ref_children = []
-            tree.append(
-                {
-                    "id": row.id,
-                    "type": "ideation",
-                    "title": row.title,
-                    **meta,
-                    "children": ref_children,
-                }
-            )
-        for row in specs_orphan:
-            tree.append(_spec_node(row))
-        for row in cards_by_spec.get(None, []):
-            tree.append(_card_node(row))
-
-        total_pending = sum(
-            sum(v for k, v in counts.items() if k in ("pending", "in_progress"))
-            for counts in levels_counter.values()
-        )
-        return {
-            "board_id": board_id,
-            "depth": depth,
-            "total_pending": total_pending,
-            "levels": levels_counter,
-            "tree": tree,
-        }
 
     async def queue_status_counts(self, context, *, board_id: str) -> dict[str, int]:
         rows = (
@@ -1809,26 +1592,6 @@ class _CoreTestKGWorkerQueue(KGWorkerQueuePort):
             "already_queued_count": len(already_queued),
         }
 
-    async def retry_pending_entry(
-        self,
-        context,
-        *,
-        board_id: str,
-        queue_entry_id: str,
-        recursive: bool = False,
-        include_code_traceability: bool = True,
-    ):
-        from okto_pulse.community.adapters.kg_operational import (
-            CommunitySqlAlchemyKGWorkerQueue,
-        )
-
-        return await CommunitySqlAlchemyKGWorkerQueue().retry_pending_entry(
-            context,
-            board_id=board_id,
-            queue_entry_id=queue_entry_id,
-            recursive=recursive,
-            include_code_traceability=include_code_traceability,
-        )
 
 
 class _CoreTestKGWorkerAudit(KGWorkerAuditPort):

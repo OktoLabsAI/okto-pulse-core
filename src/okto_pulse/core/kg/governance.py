@@ -338,69 +338,6 @@ async def board_erasure_scope(
 
 
 # ---------------------------------------------------------------------------
-# Pending entry retry
-# ---------------------------------------------------------------------------
-
-
-async def retry_pending_entry(
-    db: Any,
-    board_id: str,
-    queue_entry_id: str,
-    *,
-    recursive: bool = False,
-    include_code_traceability: bool = True,
-) -> dict | None:
-    """Re-queue a failed/done ConsolidationQueue entry so the worker reprocesses
-    it (write, commits internally). ``recursive=True`` also re-enqueues
-    descendants below the artifact in the Ideation→Refinement→Spec→Card
-    hierarchy.
-
-    Returns ``None`` when the entry does not exist (so this module stays
-    transport-free — the use case maps that to ``EntityNotFoundError`` → HTTP
-    404). Reproduces the legacy ``retry_pending_entry`` endpoint byte-for-byte:
-    the mutation, the recursive descendant sweep, the single ``commit`` and the
-    best-effort worker signal all live here, exactly as the endpoint relied on
-    when it passed ``db`` straight through.
-
-    Idempotency: content_hash BR still owns "nothing actually changed" no-op
-    behaviour downstream, so retrying an unchanged artifact is a cheap round-trip
-    that touches the outbox once.
-    """
-    from okto_pulse.core.ports.kg_operational import get_kg_worker_queue_port
-
-    queue = get_kg_worker_queue_port()
-    result = (
-        await queue.retry_pending_entry(
-            db,
-            board_id=board_id,
-            queue_entry_id=queue_entry_id,
-            recursive=recursive,
-        )
-        if include_code_traceability
-        else await queue.retry_pending_entry(
-            db,
-            board_id=board_id,
-            queue_entry_id=queue_entry_id,
-            recursive=recursive,
-            include_code_traceability=False,
-        )
-    )
-    if result is None:
-        return None
-
-    # Fase 4 — wake the background worker so retried rows are picked up
-    # immediately instead of waiting for the heartbeat tick.
-    try:
-        from okto_pulse.core.application.runtime_workers import signal_runtime_worker
-
-        signal_runtime_worker("consolidation_worker")
-    except Exception:  # pragma: no cover — signal is best-effort
-        pass
-
-    return dict(result)
-
-
-# ---------------------------------------------------------------------------
 # Undo mechanism (FR-11 through FR-14)
 # ---------------------------------------------------------------------------
 

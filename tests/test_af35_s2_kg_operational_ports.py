@@ -41,17 +41,7 @@ class _ReadModel:
         self.calls.append(("boards", context))
         return ["b1"][:limit]
 
-    async def list_pending_entries(
-        self, context: Any, *, board_id: str
-    ) -> Sequence[Mapping[str, Any]]:
-        self.calls.append(("pending", context))
-        return [{"id": "q1", "board_id": board_id, "status": "pending"}]
 
-    async def build_pending_tree(
-        self, context: Any, *, board_id: str, depth: int = 5
-    ) -> Mapping[str, Any]:
-        self.calls.append(("tree", context))
-        return {"board_id": board_id, "depth": depth, "tree": []}
 
     async def queue_status_counts(
         self, context: Any, *, board_id: str
@@ -129,15 +119,6 @@ class _QueuePort:
         )
         return [{"id": "dlq-1", "board_id": board_id}]
 
-    async def retry_pending_entry(
-        self,
-        context: Any,
-        *,
-        board_id: str,
-        queue_entry_id: str,
-        recursive: bool = False,
-    ) -> Mapping[str, Any] | None:
-        return {"board_id": board_id, "id": queue_entry_id, "recursive": recursive}
 
 
 class _AuditPort:
@@ -192,10 +173,8 @@ async def test_missing_kg_operational_read_model_fails_closed() -> None:
 @pytest.mark.asyncio
 async def test_dashboard_readers_delegate_to_registered_read_model() -> None:
     from okto_pulse.core.kg.dashboard_readers import (
-        build_pending_tree,
         list_all_board_ids,
         list_consolidation_audit,
-        list_pending_entries,
     )
 
     context = object()
@@ -204,14 +183,10 @@ async def test_dashboard_readers_delegate_to_registered_read_model() -> None:
 
     assert await list_all_board_ids(context) == ["b1"]
     assert (await list_consolidation_audit(context, "b1", limit=7))[0]["nodes_added"] == 7
-    assert (await list_pending_entries(context, "b1"))[0]["id"] == "q1"
-    assert (await build_pending_tree(context, "b1", depth=2))["depth"] == 2
 
     assert [name for name, ctx in port.calls if ctx is context] == [
         "boards",
         "audit",
-        "pending",
-        "tree",
     ]
 
 

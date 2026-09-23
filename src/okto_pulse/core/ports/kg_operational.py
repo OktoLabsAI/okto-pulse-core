@@ -172,23 +172,7 @@ class KGOperationalReadModelPort(Protocol):
     ) -> Sequence[str]:
         ...
 
-    async def list_pending_entries(
-        self,
-        context: Any,
-        *,
-        board_id: str,
-        include_code_traceability: bool = True,
-    ) -> Sequence[Mapping[str, Any]]:
-        ...
 
-    async def build_pending_tree(
-        self,
-        context: Any,
-        *,
-        board_id: str,
-        depth: int = 4,
-    ) -> Mapping[str, Any]:
-        ...
 
     async def queue_status_counts(
         self,
@@ -278,16 +262,6 @@ class KGWorkerQueuePort(Protocol):
     ) -> Mapping[str, Any]:
         ...
 
-    async def retry_pending_entry(
-        self,
-        context: Any,
-        *,
-        board_id: str,
-        queue_entry_id: str,
-        recursive: bool = False,
-        include_code_traceability: bool = True,
-    ) -> Mapping[str, Any] | None:
-        ...
 
 
 @runtime_checkable

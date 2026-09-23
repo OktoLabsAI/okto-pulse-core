@@ -38,8 +38,6 @@ _NAMESPACE_REQUIREMENTS = (
     ("kg.operations.cognitive.read", "kg.admin.settings_read"),
     ("kg.operations.cognitive.skip", "kg.admin.settings_write"),
     ("kg.operations.cognitive.clear", "kg.admin.settings_write"),
-    ("kg.operations.queue.read", "kg.admin.settings_read"),
-    ("kg.operations.queue.reprocess", "kg.admin.settings_write"),
     ("kg.operations.audit.read", "kg.admin.settings_read"),
     ("kg.operations.node.boost", "kg.admin.settings_write"),
     ("kg.operations.board.erase", "kg.admin.wipe_board"),
@@ -226,13 +224,6 @@ _WRITE_CASES: tuple[
         True,
     ),
     (
-        kg_routes_crud.RetryPendingEntryUseCase(),
-        lambda: kg_routes_crud.RetryPendingEntryCommand(BOARD_ID, "queue-1"),
-        "kg.operations.queue.reprocess",
-        "kg.admin.settings_write",
-        True,
-    ),
-    (
         kg_routes_crud.BoostNodeUseCase(),
         lambda: kg_routes_crud.BoostNodeCommand(BOARD_ID, "node-1"),
         "kg.operations.node.boost",
@@ -248,7 +239,6 @@ _WRITE_CASES: tuple[
     _WRITE_CASES,
     ids=(
         "board-erase",
-        "pending-retry",
         "node-boost",
     ),
 )
@@ -445,22 +435,6 @@ _READ_CASES: tuple[
         "kg.admin.settings_read",
         True,
     ),
-    (
-        kg_routes_crud,
-        kg_routes_crud.ListPendingUseCase(),
-        lambda: kg_routes_crud.ListPendingCommand(BOARD_ID),
-        "kg.operations.queue.read",
-        "kg.admin.settings_read",
-        True,
-    ),
-    (
-        kg_routes_crud,
-        kg_routes_crud.ListPendingTreeUseCase(),
-        lambda: kg_routes_crud.ListPendingTreeCommand(BOARD_ID),
-        "kg.operations.queue.read",
-        "kg.admin.settings_read",
-        True,
-    ),
 )
 
 
@@ -482,8 +456,6 @@ _READ_CASES: tuple[
         "cognitive-list",
         "cognitive-evaluate",
         "audit-list",
-        "pending-list",
-        "pending-tree",
     ),
 )
 async def test_each_dedicated_kg_reader_checks_the_specific_operation(

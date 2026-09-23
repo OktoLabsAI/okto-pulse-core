@@ -25,6 +25,8 @@ SOURCE_BLOB = "74101618064a1e50a1e9e11c012f7ff6f1f8f7a9"
 _FLAGS = tuple(sorted(historical.ALL_FLAGS))
 _RETIRED_FEATURE_FLAGS = tuple(sorted((
     "kg.operations.integrity.backfill",
+    "kg.operations.queue.read",
+    "kg.operations.queue.reprocess",
     "kg.operations.historical.read",
     "kg.operations.settings.read",
     "kg.operations.settings.write",

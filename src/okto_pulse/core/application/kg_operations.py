@@ -398,15 +398,6 @@ class CoreKnowledgeGraphOperations:
             include_code_traceability=include_code_traceability,
         )
 
-    async def stage_spec_projection_repair(
-        self, *, board_id: str, spec_ids: tuple[str, ...], actor_id: str, reason: str,
-    ) -> dict[str, object]:
-        from okto_pulse.core.kg.deterministic_projection_repair import stage_spec_projection_repair
-
-        return await stage_spec_projection_repair(
-            self.__relational_context, board_id=board_id, spec_ids=spec_ids,
-            actor_id=actor_id, reason=reason,
-        )
 
 
 
@@ -481,50 +472,8 @@ class CoreKnowledgeGraphOperations:
             purge_relational=purge_relational,
         )
 
-    async def list_pending_entries(
-        self,
-        board_id: str,
-        *,
-        include_code_traceability: bool = True,
-    ):  # noqa: ANN201
-        from okto_pulse.core.services.application_kg import list_pending_entries
 
-        if include_code_traceability:
-            return await list_pending_entries(self.__relational_context, board_id)
-        return await list_pending_entries(
-            self.__relational_context,
-            board_id,
-            include_code_traceability=False,
-        )
 
-    async def build_pending_tree(self, board_id: str, *, depth: int):  # noqa: ANN201
-        from okto_pulse.core.services.application_kg import build_pending_tree
-
-        return await build_pending_tree(
-            self.__relational_context,
-            board_id,
-            depth=depth,
-        )
-
-    async def retry_pending_entry(
-        self,
-        board_id: str,
-        queue_entry_id: str,
-        *,
-        recursive: bool,
-        include_code_traceability: bool = True,
-    ):  # noqa: ANN201
-        from okto_pulse.core.services.application_kg import retry_pending_entry
-
-        kwargs = {"recursive": recursive}
-        if not include_code_traceability:
-            kwargs["include_code_traceability"] = False
-        return await retry_pending_entry(
-            self.__relational_context,
-            board_id,
-            queue_entry_id,
-            **kwargs,
-        )
 
     async def boost_node(self, board_id: str, node_id: str, *, actor_id: str):  # noqa: ANN201
         from okto_pulse.core.services.application_kg import boost_node

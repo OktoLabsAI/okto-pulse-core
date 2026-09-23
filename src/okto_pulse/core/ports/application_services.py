@@ -649,9 +649,6 @@ class KnowledgeGraphOperations(Protocol):
         include_code_traceability: bool = True,
     ) -> object: ...
 
-    async def stage_spec_projection_repair(
-        self, *, board_id: str, spec_ids: tuple[str, ...], actor_id: str, reason: str,
-    ) -> dict[str, object]: ...
 
 
 
@@ -690,23 +687,8 @@ class KnowledgeGraphOperations(Protocol):
         purge_relational: bool = True,
     ) -> object: ...
 
-    async def list_pending_entries(
-        self,
-        board_id: str,
-        *,
-        include_code_traceability: bool = True,
-    ) -> object: ...
 
-    async def build_pending_tree(self, board_id: str, *, depth: int) -> object: ...
 
-    async def retry_pending_entry(
-        self,
-        board_id: str,
-        queue_entry_id: str,
-        *,
-        recursive: bool,
-        include_code_traceability: bool = True,
-    ) -> object: ...
 
     async def boost_node(
         self, board_id: str, node_id: str, *, actor_id: str

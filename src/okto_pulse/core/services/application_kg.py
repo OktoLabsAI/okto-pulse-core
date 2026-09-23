@@ -230,22 +230,10 @@ async def right_to_erasure(*args: Any, **kwargs: Any) -> Any:
     return await _erase(*args, **kwargs)
 
 
-async def list_pending_entries(*args: Any, **kwargs: Any) -> Any:
-    from okto_pulse.core.kg.dashboard_readers import list_pending_entries as _list
-
-    return await _list(*args, **kwargs)
 
 
-async def build_pending_tree(*args: Any, **kwargs: Any) -> Any:
-    from okto_pulse.core.kg.dashboard_readers import build_pending_tree as _build
-
-    return await _build(*args, **kwargs)
 
 
-async def retry_pending_entry(*args: Any, **kwargs: Any) -> Any:
-    from okto_pulse.core.kg.governance import retry_pending_entry as _retry
-
-    return await _retry(*args, **kwargs)
 
 
 async def boost_node(*args: Any, **kwargs: Any) -> Any:

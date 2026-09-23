@@ -58,10 +58,6 @@ _KG_COGNITIVE_CLEAR = PermissionRequirement(
     "kg.operations.cognitive.clear",
     legacy_operation="kg.admin.settings_write",
 )
-_KG_QUEUE_REPROCESS = PermissionRequirement(
-    "kg.operations.queue.reprocess",
-    legacy_operation="kg.admin.settings_write",
-)
 
 
 class BoardNotFoundError(EntityNotFoundError):

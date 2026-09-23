@@ -659,8 +659,6 @@ _KG_OPERATIONS_PERMISSION_LEAVES: tuple[str, ...] = (
     "kg.operations.cognitive.read",
     "kg.operations.cognitive.skip",
     "kg.operations.cognitive.clear",
-    "kg.operations.queue.read",
-    "kg.operations.queue.reprocess",
     "kg.operations.audit.read",
     "kg.operations.node.boost",
     "kg.operations.board.erase",
@@ -676,8 +674,6 @@ KG_OPERATIONS_PERMISSION_INTRODUCTION_V1 = PermissionIntroductionManifest(
         ("kg.operations.cognitive.read", "kg.admin.settings_read"),
         ("kg.operations.cognitive.skip", "kg.admin.settings_write"),
         ("kg.operations.cognitive.clear", "kg.admin.settings_write"),
-        ("kg.operations.queue.read", "kg.admin.settings_read"),
-        ("kg.operations.queue.reprocess", "kg.admin.settings_write"),
         ("kg.operations.audit.read", "kg.admin.settings_read"),
         ("kg.operations.node.boost", "kg.admin.settings_write"),
         ("kg.operations.board.erase", "kg.admin.wipe_board"),
@@ -1954,7 +1950,6 @@ PERMISSION_REGISTRY: dict[str, dict[str, Any]] = {
                 "skip": True,
                 "clear": True,
             },
-            "queue": {"read": True, "reprocess": True},
             "audit": {"read": True},
             "node": {"boost": True},
             "board": {"erase": True},
@@ -3029,6 +3024,7 @@ def normalize_agent_permission_overrides(
 _RETIRED_KG_PERMISSION_SHAPE = {"kg": {"operations": {
     "historical": {"read": True, "start": True, "cancel": True},
     "settings": {"read": True, "write": True},
+    "queue": {"read": True, "reprocess": True},
     "integrity": {"read": True, "backfill": True, "reconcile": True},
     "schema": {"migrate": True},
     "tick": {"run": True},
@@ -3055,7 +3051,7 @@ def _remove_retired_kg_full_control_fingerprint(working: PermissionFlags) -> boo
     rebuild = recovery | {"kg.operations.rebuild.preflight", "kg.operations.rebuild.confirm", "kg.operations.rebuild.run"}
     retired_integrity = {"kg.operations.integrity.read", "kg.operations.integrity.backfill", "kg.operations.integrity.reconcile"}
     retired_configuration = {"kg.operations.historical.read", "kg.operations.historical.start", "kg.operations.historical.cancel", "kg.operations.settings.read", "kg.operations.settings.write"}
-    rebuild = rebuild | {"kg.operations.schema.migrate"} | retired_integrity | retired_configuration
+    rebuild = rebuild | {"kg.operations.schema.migrate"} | retired_integrity | retired_configuration | {"kg.operations.queue.read", "kg.operations.queue.reprocess"}
     present = frozenset(path for path in rebuild if _permission_value_presence(working, path)[0])
     has_retired_subtree = any(_permission_value_presence(working, path.rsplit(".", 1)[0])[0] for path in rebuild)
     if not has_retired_subtree:
