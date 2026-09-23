@@ -14508,3 +14508,49 @@ o mapeamento executado de aceitação, incluindo a transição real de início
 com candidato pendente e reavaliação dos demais gates. A inspeção do ensaio
 test_first_start_checks_real_shared_plan_without_requiring_execution prova
 o serviço de prontidão, mas não a transição completa; não extrapolar AC-ARQ-15.
+
+Par de correções publicado: Core e7b7116b / Community 8a6a4a10, pushes
+confirmados em feature/v0.4.0. Sessão 8562 também interrompida explicitamente:
+mesmo a seleção sem real_kg executa fixtures nativas não marcadas (observado
+test_default_board_config_materialization). Não houve resultado terminal verde;
+não declarar regressão ampla concluída. Processos desta campanha confirmados
+encerrados antes do incremento abaixo.
+
+### AC-ARQ-15 — diagnóstico global de candidatos, 2026-09-23
+
+Inspeção de require_execution_contract_ready confirmou bloqueio correto, mas
+somente ValueError textual sem IDs ou remediação estruturada. Reprodução
+architecture-gate-diagnostics-repro.xml: 2 failed em 4.55s, ausência de IDs
+globais e de GateContractError. Correção aditiva: review retorna os primeiros
+25 IDs bloqueantes, contagem observada e truncamento, antes do filtro/página;
+completude de fonte/população continua independente e obrigatória. Gate usa
+o envelope existente, orienta consulta e revisão autorizada em Draft seguida
+de revalidação. Não concede escrita em validated nem inicia automaticamente.
+
+UI mostra IDs e truncamento, sem ação automática. Testes frontend do componente:
+18 passed (architecture-gate-frontend.xml). TypeScript/build/sincronização
+passaram, 78 arquivos, tree SHA256
+f3943d3149c9b533d73a468942fe2589d5314ce6f7d60febea2f4bdf788ff3f1.
+Regressão de Core/adapters após rebuild dist-architecture-gate em preparação;
+teste com plano aceito artificialmente isola diagnóstico, não comprova a
+transição integral AC-ARQ-15. Auditoria integral e benchmark permanecem abertos.
+
+Regressão do diagnóstico concluída: Core 58 passed em 5.82s
+(architecture-gate-core.xml); Community 31 passed em 50.63s
+(architecture-gate-community.xml), incluindo review real/persistência,
+transportes e prontidão do contrato compartilhado. A primeira invocação Core
+continha nome incorreto de arquivo e não coletou testes; corrigida para
+test_r4_imp1_gate_contracts.py antes do run aprovado. Não omitir esse fato
+nem interpretar a ausência de coleta como aprovação.
+F16 inicial não teve achados de arquitetura, mas detectou matrizes README
+desatualizadas após novo import de contrato. Matrizes regeneradas; wheels
+finais e prova provenance-architecture-gate-final.json aprovados. Verificação
+F16 final em curso. Frontend-dist verificado separadamente após build.
+
+F16 final terminou aprovado: closure-architecture-gate-final.json, F16.2,
+8830 linhas, zero findings arquiteturais/documentais e oito budgets zero.
+Diff check limpo nos dois repositórios. Nenhum processo de teste/build deste
+incremento segue ativo. Próximo trabalho é o ensaio integrado da transição
+de início e a auditoria dos critérios ainda não comprovados; este incremento
+fecha somente a lacuna de diagnóstico, sem declarar AC-ARQ-15 integralmente
+comprovado nem encerrar o plano.

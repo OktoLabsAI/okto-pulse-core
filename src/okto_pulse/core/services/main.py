@@ -8818,7 +8818,23 @@ class SpecService:
             board_id=spec.board_id, spec_id=spec.id, limit=1)
         # The review computes this over the full population before presentation paging.
         if classification.get("classification_complete") is not True:
-            raise ValueError("spec_architecture_classification_incomplete: classify all current architecture candidates before first start")
+            from okto_pulse.core.services.gate_contracts import GateContractError
+
+            raise GateContractError(
+                code="spec_architecture_classification_incomplete",
+                message="spec_architecture_classification_incomplete: review the current architecture classifications; reopen to Draft when a governed content revision is required, then revalidate before first start",
+                gate_type="spec_architecture_classification",
+                entity_type="spec", entity_id=spec.id,
+                current_status="validated", blocked_transition="in_progress",
+                required_tool="okto_pulse_list_architecture_classifications",
+                follow_up_tool="okto_pulse_classify_architecture_candidates",
+                operator_action="Review pending or outdated candidates using the existing authorized Draft revision flow.",
+                extra_details={key: classification[key] for key in (
+                    "blocking_candidate_ids", "blocking_candidate_count",
+                    "blocking_candidates_truncated", "state_counts", "counts_scope",
+                    "source_complete", "enumeration_complete", "issues",
+                )},
+            )
 
     async def _validate_test_scenario_subject_identities(
         self,

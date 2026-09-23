@@ -417,6 +417,7 @@ def architecture_classification_review(
         rows.append(row)
 
     counts = Counter(row["state"] for row in rows)
+    blocking_ids = [row["candidate_id"] for row in rows if row["state"] not in {"current", "retired"}]
     enumeration_complete = population.source_complete and not global_issues
     selected = [row for row in rows if state is None or row["state"] == state]
     if candidate_id:
@@ -441,6 +442,11 @@ def architecture_classification_review(
         "source_complete": population.source_complete,
         "enumeration_complete": enumeration_complete,
         "classification_complete": complete,
+        # Global diagnostics precede presentation filters/pagination. Bounded
+        # IDs never substitute for source completeness or admission evaluation.
+        "blocking_candidate_ids": blocking_ids[:25],
+        "blocking_candidate_count": len(blocking_ids),
+        "blocking_candidates_truncated": len(blocking_ids) > 25,
         "admission_evaluated": False,
         "semantic_review_evaluated": False,
         "rollout_evaluated": False,
