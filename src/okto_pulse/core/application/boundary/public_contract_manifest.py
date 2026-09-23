@@ -104,6 +104,8 @@ PUBLIC_CORE_CONTRACT_SURFACES: tuple[str, ...] = tuple(
             "okto_pulse.core.models",
             "okto_pulse.core.ports",
             "okto_pulse.core.register_package_version_provider",
+            "okto_pulse.core.resolve_package_version",
+            "okto_pulse.core.__version__",
             "okto_pulse.core.register_relational_schema_lifecycle_orchestrator",
             "okto_pulse.core.repositories",
             "okto_pulse.core.repositories.interfaces",

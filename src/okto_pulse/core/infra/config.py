@@ -6,7 +6,6 @@ validated settings snapshot through composition and never reads process state.
 
 from okto_pulse.core import __version__ as _CORE_PACKAGE_VERSION
 from okto_pulse.core.ports.package_version import (
-    ImportlibMetadataVersionProvider,
     PackageVersionProvider,
 )
 from pydantic import BaseModel, ConfigDict, Field, SecretStr
@@ -20,7 +19,6 @@ from okto_pulse.core.runtime_context import (
 
 _VERSION_PROVIDER_KEY = "infra.config.version_provider"
 _SETTINGS_KEY = "infra.config.settings"
-_DEFAULT_VERSION_PROVIDER = ImportlibMetadataVersionProvider()
 
 
 def register_package_version_provider(provider: PackageVersionProvider) -> None:
@@ -29,22 +27,21 @@ def register_package_version_provider(provider: PackageVersionProvider) -> None:
 
 
 def reset_package_version_provider_for_tests() -> None:
-    """Restore the default metadata-backed version provider."""
+    """Remove the injected edition provider."""
     reset_runtime_values(_VERSION_PROVIDER_KEY)
 
 
-def _resolve_version(package_name: str, fallback: str = "0.0.0+local") -> str:
-    """Resolve version through provider/package metadata, never source files."""
+def resolve_package_version(package_name: str) -> str | None:
+    """Consult only the injected port; Core never probes installed metadata."""
     try:
-        provider = resolve_runtime_value(_VERSION_PROVIDER_KEY) or _DEFAULT_VERSION_PROVIDER
-        resolved = provider.version(package_name)
+        provider = resolve_runtime_value(_VERSION_PROVIDER_KEY)
+        return provider.version(package_name) if provider is not None else None
     except Exception:
-        resolved = None
-    return resolved or fallback
+        return None
 
 
 def _default_core_version() -> str:
-    return _resolve_version("okto-pulse-core", fallback=_CORE_PACKAGE_VERSION)
+    return resolve_package_version("okto-pulse-core") or _CORE_PACKAGE_VERSION
 
 
 class CoreSettings(BaseModel):
@@ -54,9 +51,8 @@ class CoreSettings(BaseModel):
         extra="allow",
     )
 
-    # Application — single source of truth via importlib.metadata
-    # so /health, FastAPI title and MCP server-info stay aligned with
-    # the installed wheel without manual sync (NC-2 fix).
+    # Editions may inject artifact identity through the public provider port.
+    # The standalone Core fallback is compiled data, with no metadata I/O.
     app_name: str = "Okto Pulse"
     app_version: str = Field(default_factory=_default_core_version)
     # Telemetry policy. Delivery endpoints and local paths are edition-owned.

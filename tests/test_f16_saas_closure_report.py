@@ -67,6 +67,23 @@ def test_f16_injected_undeclared_dependency_is_blocking(tmp_path: Path) -> None:
     assert rows[0].severity == "blocking"
 
 
+@pytest.mark.parametrize("source", [
+    "from importlib.metadata import version\n",
+    "import importlib.metadata as metadata\n",
+    "from importlib import metadata\n",
+])
+@pytest.mark.parametrize("surface", ["ports", "infra", "services", "domain", "application/use_cases"])
+def test_f16_metadata_discovery_in_runtime_policy_is_blocking(tmp_path, source, surface):
+    repo = _synthetic_core(tmp_path, "")
+    package = repo / "src/okto_pulse/core" / surface
+    package.mkdir(parents=True)
+    (package / "version.py").write_text(source, encoding="utf-8")
+    rows = audit_core_import_ownership(repo)
+    assert len(rows) == 1
+    assert rows[0].classification == "edition_metadata_discovery_in_core"
+    assert rows[0].severity == "blocking"
+
+
 def test_f16_every_ownership_row_is_fail_closed_and_located(tmp_path: Path) -> None:
     repo = _synthetic_core(tmp_path, "import json\nfrom . import sibling\n")
     rows = audit_core_import_ownership(repo, dependency_ledger=())

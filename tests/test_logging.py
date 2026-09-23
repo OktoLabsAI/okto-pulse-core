@@ -20,7 +20,9 @@ from __future__ import annotations
 
 import asyncio
 import atexit
+import hashlib
 import logging
+import re
 import sys
 import threading
 import time
@@ -65,6 +67,16 @@ class TestLogFormatter(logging.Formatter):
 # Core functions
 # ---------------------------------------------------------------------------
 
+def test_log_filename(test_id: str) -> str:
+    """Keep parametrized IDs portable, bounded and collision resistant."""
+    stem = re.sub(r"[^A-Za-z0-9_.-]", "_", test_id)[:100]
+    digest = hashlib.sha256(test_id.encode("utf-8")).hexdigest()[:16]
+    return f"test_{stem}_{digest}.log"
+
+
+test_log_filename.__test__ = False
+
+
 def setup_test_logging(
     level: int = logging.DEBUG,
     log_dir: Optional[Path] = None,
@@ -101,8 +113,7 @@ def setup_test_logging(
 
     # File handler — attached only when test_id is provided
     if test_id:
-        safe_name = test_id.replace("::", "/").replace("/", "_")
-        log_file = log_dir / f"{safe_name}.log"
+        log_file = log_dir / test_log_filename(test_id)
         file_handler = logging.FileHandler(log_file, mode="w", encoding="utf-8")
         file_handler.setLevel(level)
         file_handler.setFormatter(formatter)

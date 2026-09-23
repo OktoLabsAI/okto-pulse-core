@@ -15043,3 +15043,62 @@ oito budgets zero**, closure-card-related-tests-final.json. Ruff/diff check
 limpos; nenhum processo pendente. O defeito de identidade MCP e a lacuna do
 provedor concreto seguem frente separada explicitamente registrada, portanto
 F16 verde não é afirmação de que toda contaminação possível já foi detectada.
+
+### Identidade do pacote e descoberta de versão — validação final
+
+O smoke instalado reproduziu initialize=0.3.3 contra wheels=0.3.4. Corrigidos
+os valores compilados das duas edições, sem bump de release. A implementação
+ImportlibMetadataVersionProvider saiu de Core/ports para Community/adapters.
+Core consulta apenas PackageVersionProvider injetado, com fallback compilado;
+Community preserva descoberta instalada e precedência do provider explícito.
+resolve_package_version e __version__ são superfícies públicas declaradas no
+manifesto pareado; nenhum reach-in privado nem budget temporário foi criado.
+MappingPackageVersionProvider permanece portador puro de dados, sem I/O.
+
+F16 detecta importlib.metadata nos diretórios de contratos, domínio, modelos,
+serviços, configuração e casos de uso. Os três formatos estáticos de import são
+cobertos; isto não declara detecção universal de mecanismos dinâmicos nem muda
+a propriedade das ferramentas estáticas de auditoria/packaging existentes.
+
+Par dist-package-identity byte-identical (provenance-package-identity.json):
+Core 830 .py/893 payloads, Community 363 .py/447 payloads. Smoke real FastMCP
+confirma initialize/manifesto/metadata/__version__ e inventários completos de
+tools/resources; compara catálogos vivos, sem contagens fixas desatualizadas.
+Community **3 passed em 9.03s**, package-identity-community.xml. Primeira campanha
+Core revelou contagem 343 antiga (atual 312) e erro de filename Windows antes
+do corpo do teste parametrizado. Logger agora usa prefixo saneado/bounded e
+hash do ID completo, com regressão de escrita real e colisões. Core final
+**40 passed em 55.80s**, package-identity-core-final.xml; inclui catalog drift,
+manifesto público e 15 injeções negativas de metadata discovery. Ruff limpo.
+
+F16 inicial: 8840 linhas, zero findings arquiteturais e oito budgets zero;
+somente duas matrizes README estavam desatualizadas, agora regeneradas.
+Par dist-package-identity-final em instalação; prova/F16 final ainda pendentes.
+Nenhuma UI alterada neste incremento. Inventário de aceitação permanece
+67 verified /31 partial /148 not_audited. Benchmark integral segue pendente;
+a próxima etapa mede transporte frio antes dos workflows comparáveis.
+
+Validação final terminal: provenance-package-identity-final.json confirma o par
+instalado; F16.2 **8840 linhas, ok=true, zero findings arquiteturais/documentais
+e oito budgets zero**, closure-package-identity-final.json. Nenhum processo
+de teste pendente. Diferenças finais de payload limitadas às matrizes README.
+
+### Medição comparável de inventário frio — recorte executado
+
+Coletor scripts/measure_mcp_inventory.py da Community executado no mesmo host
+nos dois interpretadores comprovados. Usa handler FastMCP HTTP real sobre
+ASGI em processo, JSON stateless, sem listener nem instalação real; percorre
+TODAS as páginas de tools/list e resources/list e consome o mesmo preflight.
+Registra corpos HTTP exatos, bytes, tokenizer/version/encoding, instruções,
+latência, identidade instalada e hashes do runner e da prova. Não representa
+rede, cabeçalhos, TLS, billing nem fluxo autenticado com grants de usuário.
+
+Baseline: 340 tools/56 resources, entrada 442 bytes/136 tokens-proxy,
+saída 279613 bytes/66150 tokens-proxy. Candidato: 312 tools/54 resources,
+entrada 442 bytes/136 tokens-proxy, saída 295078 bytes/69344 tokens-proxy.
+A saída CRESCEU 15465 bytes e 3194 tokens-proxy neste recorte apesar da retirada
+de tools; não reivindicar economia. Uma amostra de latência não demonstra ganho.
+Arquivos locais cold-mcp-baseline.json/cold-mcp-candidate.json; cenário completo
+de DEI §17.2 (grants, sessões, workflows, queries, trabalho externo e retomadas)
+continua pendente. Este coletor permite reproduzir o componente de inventário,
+não substitui essa campanha nem promove critérios de aceitação.

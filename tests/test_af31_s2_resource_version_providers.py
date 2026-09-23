@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib
+import importlib.metadata
 import sys
 from pathlib import Path
 
@@ -53,6 +54,16 @@ def test_af31_s2_core_version_provider_supplies_runtime_version():
         assert "mcp_server_version" not in settings.__class__.model_fields
     finally:
         config_mod.reset_package_version_provider_for_tests()
+
+
+def test_core_version_fallback_never_queries_installed_metadata(monkeypatch):
+    from okto_pulse.core import CoreSettings, __version__
+
+    def forbidden(*args, **kwargs):
+        raise AssertionError("Core attempted concrete package discovery")
+
+    monkeypatch.setattr(importlib.metadata, "version", forbidden)
+    assert CoreSettings().app_version == __version__
 
 
 def test_af31_s2_core_instructions_do_not_require_app_prompt(monkeypatch):

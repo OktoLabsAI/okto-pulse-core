@@ -232,7 +232,6 @@ from .mcp_resources import (
     scan_forbidden_terms,
 )
 from .package_version import (
-    ImportlibMetadataVersionProvider,
     MappingPackageVersionProvider,
     PackageVersionProvider,
 )
@@ -296,7 +295,6 @@ __all__ = [
     "ConsolidationQueueUpsert",
     "Credential",
     "HealthReport",
-    "ImportlibMetadataVersionProvider",
     "IngestedBinaryContent",
     "IngestedTextContent",
     "LeaseHandle",

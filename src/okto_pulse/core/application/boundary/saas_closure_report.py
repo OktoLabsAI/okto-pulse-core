@@ -168,10 +168,24 @@ def audit_core_import_ownership(
                 if symbols:
                     display_target += ":" + ",".join(symbols)
                 root = target.lstrip(".").split(".", 1)[0]
+                # Distribution discovery is an edition mechanism, even though
+                # Python ships it in stdlib. Audit/packaging tools are outside
+                # these runtime policy/contract/configuration directories.
+                metadata_discovery = target == "importlib.metadata" or (
+                    target == "importlib" and "metadata" in symbols
+                )
+                policy_surface = relative.startswith(tuple(
+                    f"okto_pulse/core/{part}/" for part in
+                    ("ports", "domain", "models", "services", "infra", "application/use_cases")
+                ))
                 if target.startswith("."):
                     owner = "core"
                     classification = "core_internal"
                     severity: OwnershipSeverity = "info"
+                elif metadata_discovery and policy_surface:
+                    owner = "community"
+                    classification = "edition_metadata_discovery_in_core"
+                    severity = "blocking"
                 elif root in sys.stdlib_module_names:
                     owner = "python-stdlib"
                     classification = "stdlib"
