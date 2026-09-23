@@ -19,6 +19,7 @@ from datetime import timedelta as _td
 from datetime import timezone as _tz
 from statistics import median
 from typing import Any
+from okto_pulse.core.domain.spec_evaluation import spec_evaluation_is_current
 
 from okto_pulse.core.domain.enums import (
     CardStatus,
@@ -1208,6 +1209,7 @@ async def compute_blockers(
                 e
                 for e in evals
                 if isinstance(e, dict) and e.get("recommendation") == "approve"
+                and spec_evaluation_is_current(e, int(getattr(s, "edition", 1) or 1))
             ]
             if not approved:
                 blockers.append(

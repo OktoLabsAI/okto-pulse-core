@@ -142,7 +142,7 @@ def test_submit_and_list_spec_evaluation_via_rest(spec_eval_client):
     assert payload["evaluations"][0]["id"] == evaluation["id"]
 
 
-def test_rest_evaluation_satisfies_in_progress_gate(spec_eval_client):
+def test_rest_evaluation_satisfies_in_progress_gate(spec_eval_client, monkeypatch):
     """O cenario exato do finding: usuario so-REST consegue destravar
     validated→in_progress sem MCP."""
     client, spec_id, _draft, _board = spec_eval_client
@@ -155,9 +155,16 @@ def test_rest_evaluation_satisfies_in_progress_gate(spec_eval_client):
         f"/api/v1/specs/{spec_id}/evaluations", json=_evaluation_payload()
     ).status_code == 201
 
+    # This older fixture intentionally isolates the qualitative gate. The
+    # adopted four-profile planning/start flow has real Community integration
+    # coverage in test_verification_start_transition and the reopen regressions.
+    from unittest.mock import AsyncMock
+    planning = AsyncMock(return_value=None)
+    monkeypatch.setattr(main_service.SpecService, "require_execution_contract_ready", planning)
     moved = client.post(f"/api/v1/specs/{spec_id}/move", json={"status": "in_progress"})
     assert moved.status_code == 200, moved.text
     assert moved.json()["status"] == "in_progress"
+    planning.assert_awaited_once()
 
 
 def test_evaluation_rejected_outside_validated_status(spec_eval_client):

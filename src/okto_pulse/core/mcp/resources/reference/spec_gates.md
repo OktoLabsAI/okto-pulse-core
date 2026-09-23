@@ -18,7 +18,7 @@ read-only for repair. See `okto-pulse://reference/code-traceability` and
 
 ## Spec Status Transitions
 
-Transitions table: see `okto-pulse://reference/transitions` (single source). Note the `in_progress` → `done` gate: all linked non-bug, non-archived cards must be `done` or `cancelled`, and when the spec has sprints, all sprints must be `closed` or `cancelled` (minimum 1 closed).
+Transitions table: see `okto-pulse://reference/transitions` (single source). The `in_progress` → `done` gate requires linked non-bug, non-archived cards to be `done` or `cancelled`, together with the applicable verification and Delivery Evidence gates.
 
 ### Spec edition versus technical revision
 
@@ -35,6 +35,21 @@ Always pass `version`, never `edition`, to fields such as
 `expected_spec_version` or `spec_version`. Reopening a terminal Spec may
 advance both counters independently. Restoring an archived Spec is not a new
 edition.
+
+### Decomposition evaluations belong to an edition
+
+New Spec Evaluations record the server's `spec_edition` and technical
+`spec_version`. Reopening to Draft marks prior evaluations as Previous in the
+same transaction; their IDs, authors, scores, verdicts, explanations and dates
+remain intact. This includes legacy evaluations without edition metadata:
+their original edition stays unknown, and no backfill invents one.
+
+The new edition requires its own applicable approval before execution under
+the existing policy. An approval does not override an active rejection in the
+same edition. Correct a rejected plan through authorized reopening and review
+the corrected edition. `okto_pulse_list_spec_evaluations` exposes Current and
+Previous consistently with this gate; reading a prior approval grants no new
+authority. Existing skip policies and thresholds retain their own controls.
 
 ## Spec Validation Gate — `okto_pulse_submit_spec_validation`
 

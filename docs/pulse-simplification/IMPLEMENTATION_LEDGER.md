@@ -14817,3 +14817,65 @@ comprova DEI-T12/17/18/48/53/56 e delimita T58 parcial. Inventário: **67
 comprovados / 31 parciais / 148 não auditados**. Par/proveniência/F16 continuam
 mixed-report-final; nenhum frontend/contrato de produto mudou. Nenhum processo
 pendente; decisão sobre avaliações permanece separada e pendente.
+
+### Avaliações por edição — decisão autorizada e implementação em curso
+
+Usuário autorizou explicitamente delimitação por edição em 2026-09-23.
+Core registra spec_edition/spec_version nas avaliações novas. Reabertura
+autorizada marca somente metadados de atualidade dos pareceres anteriores,
+inclusive legado, sem inventar edição original ou alterar scores/veredictos.
+Gate e lista usam predicado único; rejeição na mesma edição continua ativa.
+Submissão usa o fence público existente e recarrega a lista sob reserva;
+início/reabertura recarregam a lista sob o mesmo fence. Nenhum mecanismo
+concreto foi acrescentado ao core. Diagnóstico orienta revisão autorizada,
+sem sugerir apagar pareceres. Analytics histórico mantém sua semântica de
+total submetido; identificação de aprovação aplicável usa atualidade.
+
+UI acrescenta leitura de Current/Previous na aba Validation da Spec, com
+spec.evaluations.read, cancelamento de requests e falha exibida como unknown.
+Testes frontend: **66 passed em 21.59s**, spec-evaluation-frontend.xml;
+warnings act preexistentes dos painéis arquiteturais, sem falhas. Build TS/Vite
+e sincronização em andamento antes da instalação do par. Não declarar
+validação backend até instalação/prova terminal e execução das regressões.
+
+Auditoria independente anterior, ainda no par mixed-report-final: Core
+**636 passed em 28.88s** (acceptance-retirement-core.xml); Community corte
+**54 passed em 180.60s** (acceptance-cutover-community.xml); campanha histórica
+Community **170 passed / 1 failed em 279.44s**. Falha é fixture em
+test_sprint_retirement_embedded: consulta sprint_history no Base operacional,
+de onde a tabela foi corretamente retirada. Corrigida para SprintHistory da
+fixture histórica isolada; aguarda reteste. Esses resultados ainda não foram
+promovidos a critérios comprovados no inventário.
+
+Validação concluída: dist-evaluation-edition instalado e provado byte a byte,
+Core 830 .py / 893 payloads, Community 360 .py / 444 payloads. Core inicial
+88 passed / 1 failed: fixture antiga de paridade REST não tinha contrato de
+execução adotado. Mantido teste do gate qualitativo com planning aceito como
+entrada explicitamente isolada; o planejamento real é coberto pelos ensaios
+Community com quatro perfis. Core final **89 passed em 10.04s**, arquivo
+spec-evaluation-core-r2.xml. Community **34 passed em 91.93s**, incluindo a
+fixture histórica corrigida, spec-evaluation-community.xml.
+
+Novo ensaio de requests concorrentes confirma que nenhum parecer aceito é
+sobrescrito: commits preservados ou conflito explícito. Reabertura com falha
+injetada no histórico reverte edição e atualidade. Campanha final das sete
+regressões: **7 passed em 22.55s**, spec-evaluation-final-fence.xml. UI final
+**68 passed em 23.32s**, spec-evaluation-frontend-final.xml; inclui abertura
+lazy com apenas evaluations.read e ausência de empréstimo de validation.read.
+Ruff F/E9 e diff check limpos (avisos de normalização CRLF, sem erro).
+
+Build frontend sincronizado/verificado: 78 arquivos, SHA256
+30b98619bbb5f17c8095438370fab81fdc7f2ee961f63adbd41bf5641a843266.
+Manifesto de resources regenerado pelo gerador. README F16 atualizado após
+drift exclusivamente documental. Par final dist-evaluation-edition-final
+reconstruído/reinstalado e prova terminal provenance-evaluation-edition-final.json;
+mesmos payloads comportamentais testados. F16.2 final: **8834 linhas, zero
+findings arquiteturais/documentais, oito budgets zero**,
+closure-evaluation-edition-final.json. Nenhum processo pendente.
+
+Compatibilidade: sem DDL/backfill, sem reabrir dados reais; legado permanece
+na semântica anterior até uma reabertura autorizada, que agora delimita a nova
+edição. Rollback do código exige o par correspondente; não apagar marcadores
+de atualidade nem ressuscitar aprovações/rejeições anteriores para simular
+rollback de histórico. Decisão resolvida; continuar auditoria de aceitação,
+retomada por Card e benchmark medido. Inventário permanece 67/31/148.

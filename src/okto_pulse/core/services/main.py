@@ -15,6 +15,9 @@ from typing import Any, Callable
 
 from okto_pulse.core.application.scope import QueryScope
 from okto_pulse.core.domain.spec_content_lock import SpecLockedError as SpecLockedError
+from okto_pulse.core.domain.spec_evaluation import (
+    spec_evaluation_is_current, previous_spec_evaluations, project_spec_evaluation,
+)
 from okto_pulse.core.application.artifact_propagation import (
     propagate_artifacts,
     validate_artifact_selections,
@@ -11488,6 +11491,57 @@ class SpecService:
         board = await _application_get(self.db, "board", spec.board_id)
         await require_spec_delivery(self.db, spec, board=board)
 
+    def _enforce_spec_evaluation_gate(self, spec, board) -> None:
+        # Qualitative validation gate
+        auto_validate = (
+            (board.settings or {}).get("auto_validate", False) if board else False
+        )
+        skip_qualitative = getattr(spec, "skip_qualitative_validation", False)
+        if not auto_validate and not skip_qualitative:
+            evaluations = [
+                e for e in (spec.evaluations or [])
+                if spec_evaluation_is_current(e, int(spec.edition))
+            ]
+            approvals = [
+                e for e in evaluations if e.get("recommendation") == "approve"
+            ]
+            rejections = [
+                e for e in evaluations if e.get("recommendation") == "reject"
+            ]
+            if rejections:
+                reject_names = ", ".join(
+                    e.get("evaluator_name", e.get("evaluator_id", "?"))
+                    for e in rejections
+                )
+                raise ValueError(
+                    f"Cannot move spec to 'in_progress': {len(rejections)} evaluation(s) "
+                    f"with 'reject' recommendation exist (by: {reject_names}). "
+                    "Reopen the Spec to Draft, correct its plan and obtain "
+                    "new evaluations for the new edition."
+                )
+            if not approvals:
+                raise ValueError(
+                    "Cannot move spec to 'in_progress': no evaluation with "
+                    "'approve' recommendation found. At least one approval is required. "
+                    "Submit an evaluation via okto_pulse_submit_spec_evaluation."
+                )
+            threshold = (
+                getattr(spec, "validation_threshold", None)
+                or (board.settings or {}).get("validation_threshold_global", 70)
+                if board
+                else 70
+            )
+            avg_score = sum(e.get("overall_score", 0) for e in approvals) / len(
+                approvals
+            )
+            if avg_score < threshold:
+                raise ValueError(
+                    f"Cannot move spec to 'in_progress': average approval score "
+                    f"({avg_score:.0f}) is below threshold ({threshold}). "
+                    f"Submit additional evaluations with higher scores or lower the threshold."
+                )
+
+
     async def move_spec(
         self, spec_id: str, user_id: str, data: SpecMove, actor_name: str | None = None
     ) -> Spec | None:
@@ -11668,52 +11722,7 @@ class SpecService:
             await card_service.check_decisions_coverage(spec, board)
             await card_service.check_code_evidence_coverage(spec, board)
 
-            # Qualitative validation gate
-            auto_validate = (
-                (board.settings or {}).get("auto_validate", False) if board else False
-            )
-            skip_qualitative = getattr(spec, "skip_qualitative_validation", False)
-            if not auto_validate and not skip_qualitative:
-                evaluations = [
-                    e for e in (spec.evaluations or []) if not e.get("stale")
-                ]
-                approvals = [
-                    e for e in evaluations if e.get("recommendation") == "approve"
-                ]
-                rejections = [
-                    e for e in evaluations if e.get("recommendation") == "reject"
-                ]
-                if rejections:
-                    reject_names = ", ".join(
-                        e.get("evaluator_name", e.get("evaluator_id", "?"))
-                        for e in rejections
-                    )
-                    raise ValueError(
-                        f"Cannot move spec to 'in_progress': {len(rejections)} evaluation(s) "
-                        f"with 'reject' recommendation exist (by: {reject_names}). "
-                        f"Remove or replace the rejecting evaluations before proceeding."
-                    )
-                if not approvals:
-                    raise ValueError(
-                        "Cannot move spec to 'in_progress': no evaluation with "
-                        "'approve' recommendation found. At least one approval is required. "
-                        "Submit an evaluation via okto_pulse_submit_spec_evaluation."
-                    )
-                threshold = (
-                    getattr(spec, "validation_threshold", None)
-                    or (board.settings or {}).get("validation_threshold_global", 70)
-                    if board
-                    else 70
-                )
-                avg_score = sum(e.get("overall_score", 0) for e in approvals) / len(
-                    approvals
-                )
-                if avg_score < threshold:
-                    raise ValueError(
-                        f"Cannot move spec to 'in_progress': average approval score "
-                        f"({avg_score:.0f}) is below threshold ({threshold}). "
-                        f"Submit additional evaluations with higher scores or lower the threshold."
-                    )
+            self._enforce_spec_evaluation_gate(spec, board)
 
         # Enforce test coverage when moving to Done
         skip_global = (
@@ -11857,6 +11866,13 @@ class SpecService:
         ):
             raise LifecycleTransitionConflictError("spec", spec.id)
 
+        # Reload under the fence: review appends do not bump the technical
+        # content version. Reopen must retain concurrent reviews as Previous,
+        # and start must see a rejection committed after its preview.
+        spec = await self.get_spec(spec_id)
+        if data.status == SpecStatus.IN_PROGRESS and spec.status == SpecStatus.VALIDATED:
+            self._enforce_spec_evaluation_gate(spec, board)
+
         # Assessment writers serialize on the same subject row.  Re-evaluate
         # only the cheap mutable heads after acquiring the lifecycle fence so
         # a concurrent PASS -> FAIL replacement cannot be promoted.
@@ -11917,6 +11933,11 @@ class SpecService:
         # empty; immutable validation attempts remain in ``validations``.
         if opened_new_edition:
             spec.current_validation_id = None
+            if spec.evaluations:
+                spec.evaluations = previous_spec_evaluations(
+                    spec.evaluations, reopened_in_edition=int(spec.edition),
+                )
+                spec.mark_dirty("evaluations")
             await _application_flush(self.db)
 
         lifecycle_action = (
@@ -13068,9 +13089,22 @@ class SpecService:
 
         import uuid as _uuid
 
+        # Share the lifecycle fence with reopen/start. A review must not be
+        # appended to another edition or overwrite another review's ledger.
+        if not await _application_fence(
+            self.db, "spec", spec.id, expected_values={
+                "status": spec.status, "edition": int(spec.edition),
+                "version": int(spec.version),
+            },
+        ):
+            raise LifecycleTransitionConflictError("spec", spec.id)
+
+        spec = await self.get_spec(spec_id)
         evaluation = {
             "id": f"eval_{_uuid.uuid4().hex[:8]}",
             "spec_id": spec_id,
+            "spec_edition": int(spec.edition),
+            "spec_version": int(spec.version),
             "evaluator_id": actor_id,
             "evaluator_name": actor_name,
             "evaluator_type": actor_type,
@@ -13114,11 +13148,14 @@ class SpecService:
         if not spec:
             raise ValueError("Spec not found")
         evaluations = list(spec.evaluations or [])
+        projected = [project_spec_evaluation(e, int(spec.edition)) for e in evaluations]
         return {
             "spec_id": spec_id,
             "spec_status": spec.status.value,
-            "evaluations": list(reversed(evaluations)),
-            "active_count": len([e for e in evaluations if not e.get("stale")]),
+            "current_edition": int(spec.edition),
+            "evaluations": list(reversed(projected)),
+            "active_count": sum(e["is_current"] for e in projected),
+            "previous_count": sum(not e["is_current"] for e in projected),
         }
 
     async def _log_activity(self, **kwargs: Any) -> None:
