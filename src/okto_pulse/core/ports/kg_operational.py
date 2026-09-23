@@ -233,8 +233,6 @@ class KGOperationalReadModelPort(Protocol):
         ...
 
 
-
-
 @runtime_checkable
 class KGWorkerQueuePort(Protocol):
     """Queue transition contract for KG workers."""
@@ -343,8 +341,6 @@ def get_kg_operational_read_model_port() -> KGOperationalReadModelPort:
     if port is None:
         raise KGOperationalProviderMissing("read_model")
     return port
-
-
 
 
 def get_kg_worker_queue_port() -> KGWorkerQueuePort:

@@ -110,9 +110,11 @@ async def test_ts3_skip_cannot_reduce_or_hide_technical_signal(db_factory):
             board_id, db, profile="summary", artifact_ref=ref)
 
     items = hr["non_maskable_items"]
-    assert any(i["artifact_ref"] == ref and i["signal"] == "technical_dlq" for i in items)
-    item = next(i for i in items if i["artifact_ref"] == ref)
-    assert item["last_error"] and item["error_text"]
+    assert any(i["artifact_ref"] == f"board:{board_id}" and i["signal"] == "technical_dlq" for i in items)
+    item = next(i for i in items if i["signal"] == "technical_dlq")
+    assert item["count"] >= 1
+    assert "last_error" not in item and "error_text" not in item
+    assert ref not in json.dumps(items)
     assert item["next_action"] == "none"
     assert item["limitation"]
     assert item["drill_down_tool"] is None

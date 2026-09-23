@@ -219,35 +219,6 @@ class GlobalSearchUseCase:
         return GlobalSearchResult(results, layer)
 
 
-# --- historical consolidation: start (write) --------------------------------
-
-
-
-
-
-
-
-
-# --- historical consolidation: cancel (write) -------------------------------
-
-
-
-
-
-
-
-
-# --- historical consolidation: progress (read) ------------------------------
-# Shared by the ``historical_progress_endpoint`` and ``get_settings`` adapters —
-# both read the same governance progress dict.
-
-
-
-
-
-
-
-
 # --- right to erasure (write) -----------------------------------------------
 
 

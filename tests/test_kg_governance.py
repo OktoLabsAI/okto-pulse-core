@@ -1,4 +1,4 @@
-"""Tests for Governance module — historical opt-in, ACL, undo, retention, erasure."""
+"""Tests for Governance module — ACL, undo, retention, erasure."""
 
 # ruff: noqa: E402
 
@@ -17,7 +17,6 @@ os.environ.setdefault("KG_BASE_DIR", tempfile.mkdtemp(prefix="okto_kg_gov_"))
 
 
 import sqlalchemy_test_models as _models  # noqa: F401
-from sqlalchemy_test_models import Board, Spec, SpecStatus
 from okto_pulse.core.infra.database import create_database, get_session_factory, init_db
 from okto_pulse.core.kg.governance import (
     clear_acl_violations_for_tests,
@@ -65,30 +64,6 @@ def _reset_acl():
 @pytest.fixture
 def db_factory():
     return get_session_factory()
-
-
-async def _seed_board_with_spec(db_factory, board_id: str) -> None:
-    """Insert a Board + done Spec so start_historical_consolidation finds artifacts."""
-    import uuid
-
-    async with db_factory() as db:
-        db.add(Board(id=board_id, name=f"Test {board_id}", owner_id="test-owner"))
-        db.add(
-            Spec(
-                id=str(uuid.uuid4()),
-                board_id=board_id,
-                title="Seed spec",
-                status=SpecStatus.DONE,
-                archived=False,
-                created_by="test-user",
-            )
-        )
-        await db.commit()
-
-
-
-
-
 
 
 class TestUndo:

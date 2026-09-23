@@ -1,20 +1,8 @@
-"""Spec R01A REST-FU5-S2 — KG dashboard "light" endpoints on the UnitOfWork.
+"""KG audit, global search and privacy endpoints use the application UnitOfWork.
 
-The seven ``api/kg_routes.py`` endpoints that still bound a raw request session —
-the two readers (``list_audit``, ``global_search``) and the five governance
-delegators (``start_historical``, ``cancel_historical_endpoint``,
-``historical_progress_endpoint``, ``delete_board_kg``, ``get_settings``) — now
-route through the ``kg_routes_crud`` use cases + ``get_unit_of_work``; the inline
-``select`` of the two readers moved to ``kg/dashboard_readers.py`` (a service
-reader), and each governance delegate calls the existing ``kg.governance``
-function (which commits the request session internally, exactly as the legacy
-endpoint relied on). Oracles exercise the migrated status codes + bodies (audit
-200 with/without rows, global-search 200 envelope + invalid-layer 400, start /
-cancel / progress 200, delete 204, settings 200), the reader/use case running
-transport-free over a ``PulseUnitOfWork``, an AST signature check proving every
-migrated endpoint takes ``uow`` (not a raw ``AsyncSession``), and the
-relational-boundary gate proving the new use case file holds no ``select`` /
-``AsyncSession`` / ORM coupling.
+Native persistence tests cover status codes and response bodies; structural
+checks enforce transport-free use cases and the relational boundary. Historical
+maintenance and technical Settings endpoints have been retired by F4.
 """
 
 from __future__ import annotations
@@ -212,12 +200,6 @@ async def test_global_search_invalid_layer_400(client) -> None:
 # --- historical consolidation: start / cancel / progress --------------------
 
 
-
-
-
-
-
-
 # --- delete_board_kg (right-to-erasure) -------------------------------------
 
 
@@ -229,8 +211,6 @@ async def test_delete_board_kg_204(client) -> None:
 
 
 # --- get_settings -----------------------------------------------------------
-
-
 
 
 # --- service reader + use case (transport-free) -----------------------------

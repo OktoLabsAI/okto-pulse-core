@@ -160,7 +160,7 @@ async def test_global_outbox_dead_letter_is_separate_non_maskable_readiness(
         if item["signal"] == "global_outbox_dead_letter"
     ]
     assert len(outbox_items) == 1
-    assert outbox_items[0]["artifact_ref"].startswith(
-        "global_update_outbox:"
-    )
+    assert outbox_items[0]["artifact_ref"] == f"board:{board_id}"
+    assert outbox_items[0]["count"] == 1
+    assert "last_error" not in outbox_items[0]
     assert outbox_items[0]["drill_down_tool"] is None

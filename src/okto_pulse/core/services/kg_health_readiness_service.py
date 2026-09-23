@@ -3,7 +3,7 @@
 The single source the health/readiness/MCP/UI/report surfaces share
 (tr_1e460a5d). The technical KG signals (technical_dlq, dead_letter_backlog,
 canonical_debt_open, persistence_error) are exposed CONSISTENTLY — scalar counters
-in ``technical_signals`` + per-item drill-down in ``non_maskable_items`` — in BOTH
+in ``technical_signals`` + bounded domain aggregates in ``non_maskable_items`` — in BOTH
 the summary and full profiles (fr_3fbb564c / OR or_36e0cd85). active_queue,
 dead_letter and canonical_debt stay SEPARATE domains; one count is never inferred
 from another (tr_22d4434d). ``readiness`` keeps ``blocking`` (a technical problem
@@ -21,10 +21,6 @@ from typing import Any
 from okto_pulse.core.kg.rebuild_audit import emit_cognitive_technical_signal_sample
 from okto_pulse.core.ports.scheduler import SchedulerControl
 
-_DLQ_TOOL = None
-_GLOBAL_OUTBOX_DLQ_TOOL = None
-_DEBT_TOOL = None
-_HEALTH_TOOL = "okto_pulse_kg_health"
 _POLICY_PROJECTION_DLQ_SIGNAL = "policy_constraint_projection_dlq"
 
 VALID_PROFILES = ("summary", "full", "legacy")
@@ -93,133 +89,42 @@ def build_technical_signal_counters(health: dict) -> dict[str, int]:
     }
 
 
-async def _non_maskable_items(
-    db: object, board_id: str, health: dict, *, artifact_ref: str | None,
-) -> list[dict[str, Any]]:
-    """Per-item drill-down for every OPEN technical signal — derived from the DLQ,
-    the open canonical debt and the persistence root-cause (never from a cognitive
-    verdict, so skip/no_action cannot drop them)."""
-    from okto_pulse.core.services.canonical_debt_service import (
-        OPEN_STATES,
-        list_canonical_debt,
-    )
-    from okto_pulse.core.services.dead_letter_inspector_service import (
-        list_dead_letter_rows,
-    )
+def _non_maskable_items(board_id: str, health: dict) -> list[dict[str, Any]]:
+    """At most one aggregate per technical domain, from the same health snapshot.
 
-    items: list[dict[str, Any]] = []
-
-    dlq = await list_dead_letter_rows(db, board_id, limit=200)
-    for row in dlq.get("rows", []):
-        ref = f"{row.get('artifact_type')}:{row.get('artifact_id')}"
-        items.append({
-            "artifact_ref": ref,
-            "source_ref": ref,
-            "signal": "technical_dlq",
-            "last_error": row.get("last_error"),
-            "error_text": row.get("error_text"),
+    Never enumerate DLQ/debt records or expose their payloads, errors or IDs.
+    Board-scoped signals cannot be hidden by an artifact filter or a cognitive
+    verdict. The counters and enforcement policy remain the source of readiness.
+    """
+    counters = build_technical_signal_counters(health)
+    domains = (
+        ("technical_dlq", "dead_letter_count", "Affected graph delivery is unavailable; technical gates remain enforced."),
+        ("global_outbox_dead_letter", "global_outbox_dead_letter_count", "Affected global discovery delivery is unavailable; technical gates remain enforced."),
+        ("canonical_debt_open", "canonical_debt_open_count", "Canonical projection is pending automatic recovery."),
+        (_POLICY_PROJECTION_DLQ_SIGNAL, "policy_constraint_projection_dlq_count", "Policy constraint projection delivery is unavailable."),
+    )
+    items = [
+        {
+            "artifact_ref": f"board:{board_id}",
+            "source_ref": f"board:{board_id}",
+            "signal": signal,
+            "count": counters[counter],
             "next_action": "none",
-            "limitation": "Affected graph delivery is unavailable; technical gates remain enforced.",
-            "drill_down_tool": _DLQ_TOOL,
-        })
-
-    global_outbox_count = int(
-        (
-            (health.get("operational_domains") or {}).get(
-                "global_outbox_dead_letter"
-            )
-            or {}
-        ).get("count")
-        or health.get("global_outbox_dead_letter_count")
-        or 0
-    )
-    if global_outbox_count > 0:
-        from okto_pulse.core.services.queue_health_service import (
-            get_global_outbox_dead_letter_drilldown,
-        )
-
-        global_outbox = await get_global_outbox_dead_letter_drilldown(
-            db,
-            board_id,
-            limit=200,
-        )
-        for row in global_outbox["items"]:
-            ref = f"global_update_outbox:{row['event_id']}"
-            items.append({
-                "artifact_ref": ref,
-                "source_ref": f"board:{row['board_id']}",
-                "signal": "global_outbox_dead_letter",
-                "last_error": row.get("last_error"),
-                "error_text": row.get("last_error"),
-                "classification": row.get("classification"),
-                "retry_count": row.get("retry_count"),
-                "next_action": "none",
-                "limitation": "Affected global discovery delivery is unavailable; technical gates remain enforced.",
-                "drill_down_tool": _GLOBAL_OUTBOX_DLQ_TOOL,
-            })
-
-    debt = await list_canonical_debt(db, board_id=board_id, limit=200)
-    for row in getattr(debt, "items", []):
-        if (row.get("canonical_state") or "") not in OPEN_STATES:
-            continue
-        ref = row.get("source_ref") or f"{row.get('artifact_type')}:{row.get('artifact_id')}"
-        items.append({
-            "artifact_ref": ref,
-            "source_ref": row.get("source_ref") or ref,
-            "signal": "canonical_debt_open",
-            "last_error": row.get("last_error") or row.get("failure_reason"),
-            "error_text": row.get("last_error") or row.get("failure_reason"),
-            "next_action": "none",
-            "remediation": "canonical projection is pending automatic recovery",
-            "drill_down_tool": _DEBT_TOOL,
-        })
-
-    present, perr = _persistence_present(health)
+            "limitation": limitation,
+            "drill_down_tool": None,
+        }
+        for signal, counter, limitation in domains if counters[counter] > 0
+    ]
+    present, _ = _persistence_present(health)
     if present:
         items.append({
             "artifact_ref": f"board:{board_id}",
             "source_ref": f"board:{board_id}",
             "signal": "persistence_error",
-            "last_error": perr,
-            "error_text": perr,
             "next_action": "none",
             "limitation": "The affected graph operations are unavailable.",
-            "drill_down_tool": _HEALTH_TOOL,
+            "drill_down_tool": None,
         })
-
-    if artifact_ref:
-        items = [
-            it for it in items
-            if artifact_ref in (it["artifact_ref"], it["source_ref"])
-        ]
-    policy_projection = (
-        (health.get("operational_domains") or {}).get(
-            "policy_constraint_projection"
-        )
-        or {}
-    )
-    policy_dlq_count = int(policy_projection.get("dlq_count") or 0)
-    if policy_dlq_count > 0:
-        # Aggregate board-scoped evidence is intentional: the health snapshot
-        # exposes no raw handler error or event payload.  Add this after the
-        # artifact filter so a board-level governance delivery failure cannot
-        # be masked by an artifact-scoped readiness request.
-        items.append(
-            {
-                "artifact_ref": f"board:{board_id}",
-                "source_ref": f"board:{board_id}",
-                "signal": _POLICY_PROJECTION_DLQ_SIGNAL,
-                "count": policy_dlq_count,
-                "oldest_at": policy_projection.get("oldest_dlq_at"),
-                "classification": policy_projection.get("classification"),
-                "next_action": "inspect_policy_constraint_projection_dlq",
-                "remediation": (
-                    "diagnose the policy-constraint event delivery failure "
-                    "before replaying the handler execution"
-                ),
-                "drill_down_tool": _HEALTH_TOOL,
-            }
-        )
     return items
 
 
@@ -248,7 +153,7 @@ async def build_health_readiness(
     """api_1feb6875: the canonical health/readiness projection.
 
     NON-MASKABLE in BOTH summary and full: ``technical_signals`` (scalar counters),
-    ``non_maskable_items`` (per-item drill-down), ``readiness`` (blocking vs
+    ``non_maskable_items`` (bounded Board aggregates), ``readiness`` (blocking vs
     would_block_done) and the top-level ``cognitive_enforcement_mode`` /
     ``enforcement_active``. The full profile only ADDS the prose ``health_issues``
     + ``root_cause``. Raises ``InvalidProfileError`` on an unknown profile."""
@@ -263,7 +168,9 @@ async def build_health_readiness(
         scheduler_control=scheduler_control,
     )
     counters = build_technical_signal_counters(health)
-    items = await _non_maskable_items(db, board_id, health, artifact_ref=artifact_ref)
+    # Deprecated compatibility input: artifact_ref no longer selects technical rows.
+    # Infrastructure status is Board-scoped; semantic artifact queries remain separate.
+    items = _non_maskable_items(board_id, health)
 
     present, _ = _persistence_present(health)
     blocking = bool(

@@ -13,14 +13,6 @@ from datetime import datetime
 from typing import Any, Protocol
 
 
-
-
-
-
-
-
-
-
 @dataclass(frozen=True, slots=True)
 class GovernanceUndoFact:
     session_id: str
@@ -51,14 +43,6 @@ class BoardErasureJobFact:
 
 
 class KGGovernanceStore(Protocol):
-
-
-
-
-
-
-
-
 
 
     async def get_undo_fact(

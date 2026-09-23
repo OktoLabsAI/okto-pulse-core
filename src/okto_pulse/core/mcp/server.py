@@ -20267,9 +20267,9 @@ async def okto_pulse_kg_health_readiness(
     / canonical_debt_open_count / active_queue_count — SEPARATE domains),
     readiness (blocking vs would_block_done + reasons + policy_reason),
     top-level cognitive_enforcement_mode / enforcement_active, and
-    non_maskable_items (per-item drill_down_tool / last_error / next_action).
+    non_maskable_items (bounded Board aggregates, without row IDs or raw errors).
     A summary never hides a technical blocker; full adds prose health_issues +
-    root_cause. Optional artifact_ref scopes items.
+    root_cause. Deprecated artifact_ref is accepted for compatibility; signals remain Board-scoped.
     Profiles: okto-pulse://reference/projection-profiles.
     Docs: okto-pulse://reference/tool-docs/kg.
     """

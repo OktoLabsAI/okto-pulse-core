@@ -1,9 +1,6 @@
-"""Governance module — historical opt-in, ACL violation log, admin audit,
-undo mechanism, audit retention, right-to-erasure.
+"""KG governance: ACL, audit, undo, retention and right to erasure.
 
-Consolidates all governance operations that the REST API and MCP tools call.
-Depends on ConsolidationQueue/ConsolidationAudit models from models/db.py
-and the global_discovery cascade from global_discovery/clustering.py.
+Persistence and concrete graph effects are supplied through edition-owned ports.
 """
 
 from __future__ import annotations
@@ -340,27 +337,9 @@ async def board_erasure_scope(
                 )
 
 
-
-
-
-
-
-
-
-
-
-
 # ---------------------------------------------------------------------------
-# Historical opt-in flow (FR-0 through FR-6)
+# Pending entry retry
 # ---------------------------------------------------------------------------
-
-
-
-
-
-
-
-
 
 
 async def retry_pending_entry(
@@ -419,8 +398,6 @@ async def retry_pending_entry(
         pass
 
     return dict(result)
-
-
 
 
 # ---------------------------------------------------------------------------
