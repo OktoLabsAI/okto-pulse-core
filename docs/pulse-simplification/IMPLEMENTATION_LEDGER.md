@@ -15162,3 +15162,43 @@ todas as remediações/drilldowns. Inventário agora **70 verified /33 partial /
 nenhuma alegação de conclusão integral. Nenhum código produtivo alterado nesta
 campanha. Próxima frente: fechar lacunas reais de capacidades/remediações,
 continuar demais critérios BASE/KG e benchmark completo DEI §17.2.
+
+### Lacuna F4 confirmada em registro instalado — prioridade de implementação
+
+A investigação de BASE T33/T46 encontrou contradição real com F4, não apenas
+falta de testes. Prova fresca do mesmo par em provenance-maintenance-discovery.json;
+a prova anterior foi preservada byte a byte e seu hash continua válido.
+maintenance-residual-census.json foi produzido consultando registry MCP vivo e
+OpenAPI montado dos wheels, sem executar qualquer operação de manutenção.
+
+Ainda registradas com policy: kg_migrate_schema, kg_orphan_backfill,
+kg_orphan_report, kg_originates_from_contract_audit, kg_provenance_drift,
+kg_stale_canonical_parity_list. OpenAPI confirma migrate-schema,
+orphan-integrity/report e backfill, exploration/search/prepare,
+exploration/history/activate e history/prune. Handlers destas últimas chamam
+prepare/activate/prune no provider concreto por invoke_admin; são controle de
+armazenamento, não consulta semântica. HelpPanel ainda anuncia migrate/orphan.
+F4 já autoriza retirar essas superfícies; não solicitar confirmação novamente.
+
+Mapa para próxima edição coordenada:
+- Core mcp/server.py handlers 21310–21590 e schema de despacho ~22206;
+  domain/mcp_permission_registry.py, domain/permissions.py, manifests gerados.
+- Core application/use_cases/operational_rest.py GetOrphanIntegrityReport/
+  RunOrphanBackfill e services/application_kg.py fábrica exclusiva do reconciler.
+- Community api/kg_orphan_integrity.py/router.py; kg_routes.py migrate-schema;
+  kg_exploration.py rotas administrativas; HelpPanel e resources das duas edições.
+- OrphanNodeScanner tem consumidor legítimo em kg_health_service.py: não apagar
+  observação agregada. Graph schema manager serve instalação/startup: preservar
+  mecanismo interno e testes de inicialização. OrphanBackfillReconciler até aqui
+  só foi localizado nos writers públicos/fábrica; confirmar todos os consumers.
+- Permissões removidas precisam entrar na normalização/retirement preservando
+  evaluator histórico v0.3.4 e sem transformar documento parcial em Full Control.
+  Não alterar historical_permission_policy_v034.py. Shape de retirement está em
+  domain/permissions.py ~3068. Retirar handler escondido também, não só decorator.
+- Tests test_kg_exploration_api.py ainda esperam endpoints de manutenção: adaptar
+  oráculos para ausência sem efeito e preservar testes de consulta restantes.
+
+O censo é subconjunto confirmado, não lista exaustiva. Inventário permanece
+70/33/143; BASE T33 não pode ser promovido. Nenhuma fonte produtiva alterada
+nesta investigação. Próximo passo é implementação e regeneração coordenada,
+com frontend tests/build para HelpPanel, par byte-identical e F16 zero.
