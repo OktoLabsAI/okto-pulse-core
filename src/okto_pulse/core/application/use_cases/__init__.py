@@ -715,9 +715,6 @@ from okto_pulse.core.application.use_cases.mcp_kg_crud import (
     ListCanonicalPartitionIntegrityCommand,
     ListCanonicalPartitionIntegrityResult,
     ListCanonicalPartitionIntegrityUseCase,
-    ListDigestLayerMismatchCommand,
-    ListDigestLayerMismatchResult,
-    ListDigestLayerMismatchUseCase,
 )
 from okto_pulse.core.application.use_cases.mcp_ideation_crud import (
     McpCreateIdeationCommand,
@@ -1551,9 +1548,6 @@ __all__ = [
     "ListCanonicalPartitionIntegrityCommand",
     "ListCanonicalPartitionIntegrityResult",
     "ListCanonicalPartitionIntegrityUseCase",
-    "ListDigestLayerMismatchCommand",
-    "ListDigestLayerMismatchResult",
-    "ListDigestLayerMismatchUseCase",
     "CopyArchitectureFromSpecToCardCommand",
     "CopyArchitectureFromSpecToCardResult",
     "CopyArchitectureFromSpecToCardUseCase",

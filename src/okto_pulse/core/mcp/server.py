@@ -20507,59 +20507,6 @@ async def okto_pulse_kg_canonical_partition_integrity_list(
     return json.dumps(result, default=str)
 
 
-@mcp.tool()
-async def okto_pulse_kg_digest_layer_mismatch_list(
-    board_id: str,
-    limit: int = 50,
-    offset: int = 0,
-) -> str:
-    """
-    List Global Discovery DecisionDigest rows whose published graph_layer diverges
-    from the expected_digest_layer recomputed from the board graph
-    (digest_vs_board_layer_mismatch, R1). READ-ONLY drill-down for the KG Health
-    issue. Mirrors REST `GET /api/v1/kg/{board_id}/digest-layer-mismatch`. Each
-    item carries board_id, digest_id, original_node_id, node_type, expected_layer,
-    actual_layer, source_artifact_ref. NEVER mutates / remediates (the R1-IMP1
-    reconciler corrects mismatches on drain).
-    """
-    ctx = await _get_agent_ctx(board_id)
-    if ctx is None:
-        return _auth_error()
-    perm_err = kg_permission_error(ctx, "board.read")
-    if perm_err:
-        return _kg_direct_permission_denied("board.read", perm_err)
-
-    bounded_limit, bounded_offset, pagination_error = _kg_pagination_window(
-        limit, offset
-    )
-    if pagination_error is not None:
-        return pagination_error
-
-    from okto_pulse.core.application.use_cases import (
-        ListDigestLayerMismatchCommand,
-        ListDigestLayerMismatchUseCase,
-    )
-    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
-
-    # MCP-FU5 strangler: UoW factory instead of get_db_for_mcp(). Read-only: no
-    # commit. The use case delegates to the same reader (single metric-emit point).
-    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
-    async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
-        result = (
-            await ListDigestLayerMismatchUseCase().execute(
-                ListDigestLayerMismatchCommand(
-                    board_id,
-                    limit=bounded_limit,
-                    offset=bounded_offset,
-                ),
-                actor=actor,
-                uow=uow,
-            )
-        ).data
-    # kg_discovery_digest_layer_mismatch_total is emitted inside
-    # list_digest_layer_mismatches (single enumeration point) so REST + MCP share
-    # the metric without double-emitting here.
-    return json.dumps(result, default=str)
 
 
 
@@ -21725,7 +21672,6 @@ _TOOLS_WITH_LAZY_COMPACT_DESCRIPTION = frozenset(
         "okto_pulse_ask_ideation_choice_question",
         "okto_pulse_validate_architecture_design_payload",
         "okto_pulse_get_architecture_design_schema",
-        "okto_pulse_kg_digest_layer_mismatch_list",
         "okto_pulse_list_blockers",
         "okto_pulse_create_default_board_config_version",
         "okto_pulse_get_spec_context",

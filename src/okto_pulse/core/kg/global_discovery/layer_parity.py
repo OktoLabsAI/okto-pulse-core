@@ -384,47 +384,6 @@ async def detect_digest_layer_mismatches(
     )
 
 
-async def list_digest_layer_mismatches(
-    db: object,
-    *,
-    board_id: str,
-    limit: int = 50,
-    offset: int = 0,
-    blocking_execution: BlockingExecutionPort | None = None,
-) -> dict[str, Any]:
-    """Drilldown read model (MCP/REST). Emits one bounded
-    ``kg_discovery_digest_layer_mismatch_total`` sample per observed mismatch
-    (over the UNFILTERED set, mirroring the R7 OR1 pattern)."""
-    from okto_pulse.core.kg.global_discovery.metrics import emit_digest_layer_mismatch
-
-    bounded_limit = max(1, min(int(limit), 200))
-    bounded_offset = max(0, int(offset))
-    evaluation = await detect_digest_layer_mismatches(
-        db,
-        board_id=board_id,
-        blocking_execution=blocking_execution,
-    )
-    mismatches = list(evaluation["items"])
-    for m in mismatches:
-        emit_digest_layer_mismatch(
-            board_id=board_id,
-            expected_layer=m["expected_layer"],
-            actual_layer=m["actual_layer"],
-        )
-    mismatches.sort(key=lambda m: (m["node_type"], m["original_node_id"]))
-    page = mismatches[bounded_offset:bounded_offset + bounded_limit]
-    return {
-        "board_id": board_id,
-        "items": page,
-        "count": len(mismatches),
-        "health_issue_code": DIGEST_LAYER_MISMATCH_CODE,
-        "total": len(mismatches),
-        "limit": bounded_limit,
-        "offset": bounded_offset,
-        "status": evaluation["status"],
-        "evaluation": evaluation["evaluation"],
-        "evaluation_reason": evaluation["reason"],
-    }
 
 
 __all__ = [
@@ -433,7 +392,6 @@ __all__ = [
     "detect_digest_layer_mismatches",
     "evaluate_digest_layer_mismatch_inputs",
     "probe_digest_layer_mismatches",
-    "list_digest_layer_mismatches",
     "LEARNING_NODE_TYPE",
     "DIGEST_LAYER_MISMATCH_CODE",
     "PARITY_STATUS_AVAILABLE",

@@ -40,16 +40,10 @@ def test_global_discovery_metric_counts_are_monotonic_after_sample_eviction() ->
             board_id="board-1",
             reason_code="active_cognitive_pending",
         )
-        gdm.emit_digest_layer_mismatch(
-            board_id="board-1",
-            expected_layer="canonical",
-            actual_layer="working",
-        )
 
     assert len(gdm.get_missing_embedding_skipped_samples()) == METRIC_SAMPLE_RETENTION_LIMIT
     assert len(gdm.get_digest_upsert_samples()) == METRIC_SAMPLE_RETENTION_LIMIT
     assert len(gdm.get_canonical_incomplete_excluded_samples()) == METRIC_SAMPLE_RETENTION_LIMIT
-    assert len(gdm.get_digest_layer_mismatch_samples()) == METRIC_SAMPLE_RETENTION_LIMIT
 
     assert gdm.get_missing_embedding_skipped_count(board_id="board-1", node_type="Bug") == total
     assert gdm.get_digest_upsert_count(
@@ -60,11 +54,6 @@ def test_global_discovery_metric_counts_are_monotonic_after_sample_eviction() ->
     assert gdm.get_canonical_incomplete_excluded_count(
         board_id="board-1",
         reason_code="active_cognitive_pending",
-    ) == total
-    assert gdm.get_digest_layer_mismatch_count(
-        board_id="board-1",
-        expected_layer="canonical",
-        actual_layer="working",
     ) == total
 
 

@@ -732,17 +732,6 @@ class CoreKnowledgeGraphOperations:
             node_id=node_id,
         )
 
-    async def list_digest_layer_mismatches(
-        self, *, board_id: str, limit: int, offset: int
-    ):  # noqa: ANN201
-        from okto_pulse.core.services.application_kg import list_digest_layer_mismatches
-
-        return await list_digest_layer_mismatches(
-            self.__relational_context,
-            board_id=board_id,
-            limit=limit,
-            offset=offset,
-        )
 
 
     async def capture_global_discovery_recovery_seed_inputs(

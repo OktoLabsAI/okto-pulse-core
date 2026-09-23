@@ -773,9 +773,6 @@ class KnowledgeGraphOperations(Protocol):
         self, *, board_id: str, node_id: str
     ) -> object: ...
 
-    async def list_digest_layer_mismatches(
-        self, *, board_id: str, limit: int, offset: int
-    ) -> object: ...
 
 
     async def capture_global_discovery_recovery_seed_inputs(

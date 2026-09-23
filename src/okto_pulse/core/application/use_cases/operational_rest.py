@@ -961,34 +961,3 @@ class GetCanonicalPartitionIntegrityDetailUseCase:
                 node_id=command.node_id,
             )
         )
-
-
-@dataclass(frozen=True)
-class DigestLayerMismatchListCommand:
-    board_id: str
-    limit: int
-    offset: int
-
-
-class ListDigestLayerMismatchUseCase:
-    async def execute(
-        self,
-        command: DigestLayerMismatchListCommand,
-        *,
-        actor: ActorContext,
-        uow: PulseUnitOfWork,
-    ) -> DataResult:
-        await _require_board_access(uow, command.board_id, actor)
-        await require_authorization(
-            actor,
-            _KG_INTEGRITY_READ,
-            uow=uow,
-            board_id=command.board_id,
-        )
-        return DataResult(
-            await uow.services.kg.list_digest_layer_mismatches(
-                board_id=command.board_id,
-                limit=command.limit,
-                offset=command.offset,
-            )
-        )

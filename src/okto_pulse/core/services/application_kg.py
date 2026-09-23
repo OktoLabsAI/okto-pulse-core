@@ -300,11 +300,3 @@ async def get_canonical_partition_integrity_detail(*args: Any, **kwargs: Any) ->
     )
 
     return await _get(*args, **kwargs)
-
-
-async def list_digest_layer_mismatches(*args: Any, **kwargs: Any) -> Any:
-    from okto_pulse.core.kg.global_discovery.layer_parity import (
-        list_digest_layer_mismatches as _list,
-    )
-
-    return await _list(*args, **kwargs)

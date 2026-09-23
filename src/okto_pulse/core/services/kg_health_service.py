@@ -3475,7 +3475,6 @@ async def get_kg_health(
     # canonical_partition_integrity (only claims primary if still "none"), ABOVE
     # orphan_integrity_warning. Distinct cause -> no double-count with those.
     if digest_layer_mismatches:
-        _ddm_sample = digest_layer_mismatches[0]
         health_diagnostics["health_issues"].append(
             {
                 "code": "digest_vs_board_layer_mismatch",
@@ -3489,15 +3488,7 @@ async def get_kg_health(
                     "these on the next drain."
                 ),
                 "count": len(digest_layer_mismatches),
-                "operator_action": "inspect_digest_layer_mismatch",
-                "drill_down_tool": "okto_pulse_kg_digest_layer_mismatch_list",
-                "sample": {
-                    "board_id": _ddm_sample["board_id"],
-                    "digest_id": _ddm_sample["digest_id"],
-                    "original_node_id": _ddm_sample["original_node_id"],
-                    "expected_layer": _ddm_sample["expected_layer"],
-                    "actual_layer": _ddm_sample["actual_layer"],
-                },
+                "operator_action": "inspect_kg_health",
                 "precedence_explanation": (
                     "Ranked BELOW canonical_debt_open, cognitive_consolidation_pending "
                     "and canonical_partition_integrity (never overrides them) and ABOVE "
@@ -3510,7 +3501,7 @@ async def get_kg_health(
             health_diagnostics["primary_health_cause"] = (
                 "digest_vs_board_layer_mismatch"
             )
-            health_diagnostics["operator_action"] = "inspect_digest_layer_mismatch"
+            health_diagnostics["operator_action"] = "inspect_kg_health"
 
     unavailable_hot_probes = sorted(
         name

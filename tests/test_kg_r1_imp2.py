@@ -38,7 +38,6 @@ from okto_pulse.core.kg.global_discovery.layer_parity import (
     collect_digest_layer_mismatch_inputs,
     detect_digest_layer_mismatches,
     evaluate_digest_layer_mismatch_inputs,
-    list_digest_layer_mismatches,
 )
 from okto_pulse.core.application.processors.global_outbox import (
     DIGESTED_NODE_TYPES,
@@ -302,15 +301,6 @@ async def test_unavailable_parity_is_preserved_as_not_evaluated(monkeypatch):
         "items": [],
     }
 
-    # The detector has one status-bearing contract: an empty item list without
-    # an evaluated state can never be interpreted as healthy.
-    drilldown = await list_digest_layer_mismatches(
-        object(), board_id="board-unavailable"
-    )
-    assert drilldown["items"] == []
-    assert drilldown["status"] == PARITY_STATUS_UNAVAILABLE
-    assert drilldown["evaluation"] == PARITY_NOT_EVALUATED
-    assert drilldown["evaluation_reason"] == "global_discovery_read_failed"
 
 
 def test_collector_uses_board_type_for_mixed_duplicate_rows_and_skips_ghosts(
@@ -483,21 +473,16 @@ async def test_detector_finds_stale_digest_then_reconcile_clears(db_factory):
 @pytest.mark.asyncio
 async def test_health_surfaces_mismatch_with_fields_then_clears(db_factory):
     board_id = await _new_board(db_factory)
-    nid = await _make_stale_canonical_digest(db_factory, board_id)
+    await _make_stale_canonical_digest(db_factory, board_id)
 
     health = await _health_with_parity_probe_ready(db_factory, board_id)
     issues = _issues_by_code(health, MISMATCH_CODE)
     assert len(issues) == 1, issues
     issue = issues[0]
     assert issue["count"] == 1
-    assert issue["drill_down_tool"] == "okto_pulse_kg_digest_layer_mismatch_list"
-    # AC3: the issue carries the diagnostic fields.
-    sample = issue["sample"]
-    assert sample["original_node_id"] == nid
-    assert sample["expected_layer"] == "working"
-    assert sample["actual_layer"] == "canonical"
-    assert sample["board_id"] == board_id
-    assert "digest_id" in sample
+    assert "drill_down_tool" not in issue
+    assert "sample" not in issue
+    assert issue["operator_action"] == "inspect_kg_health"
 
     # After reconcile/drain the mismatch disappears from Health.
     assert await _run_outbox_no_refs(db_factory, board_id) == 1
@@ -547,32 +532,6 @@ async def test_mismatch_does_not_override_canonical_debt(db_factory):
 # ===========================================================================
 
 
-@pytest.mark.asyncio
-async def test_drilldown_lists_mismatch_and_emits_metric(db_factory):
-    board_id = await _new_board(db_factory)
-    nid = await _make_stale_canonical_digest(db_factory, board_id)
-
-    gdm.reset_global_discovery_metrics()
-    async with db_factory() as db:
-        result = await list_digest_layer_mismatches(db, board_id=board_id)
-
-    assert result["count"] == 1
-    assert result["health_issue_code"] == MISMATCH_CODE
-    item = result["items"][0]
-    assert item["original_node_id"] == nid
-    assert item["expected_layer"] == "working" and item["actual_layer"] == "canonical"
-    assert "source_artifact_ref" in item and "digest_id" in item
-    # Bounded metric is queryable by board + expected/actual layer.
-    assert gdm.get_digest_layer_mismatch_count(board_id=board_id) == 1
-    assert (
-        gdm.get_digest_layer_mismatch_count(
-            board_id=board_id,
-            expected_layer="working",
-            actual_layer="canonical",
-        )
-        == 1
-    )
-    assert "board_id" in gdm.get_digest_layer_mismatch_labels()
 
 
 # ===========================================================================

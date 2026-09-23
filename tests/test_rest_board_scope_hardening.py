@@ -27,7 +27,6 @@ from okto_pulse.core.application.use_cases.operational_rest import (
     CognitiveEffectivenessInventoryCommand,
     CognitiveReadinessMetricsCommand,
     CognitiveSkipCommand,
-    DigestLayerMismatchListCommand,
     EvaluateBugCognitiveClosureByBugIdCommand,
     EvaluateBugCognitiveClosureByBugIdUseCase,
     GetCanonicalPartitionIntegrityDetailUseCase,
@@ -37,7 +36,6 @@ from okto_pulse.core.application.use_cases.operational_rest import (
     GetLineageGraphUseCase,
     ListCanonicalDebtUseCase,
     ListCanonicalPartitionIntegrityUseCase,
-    ListDigestLayerMismatchUseCase,
     PutRuntimeSettingsCommand,
     PutRuntimeSettingsUseCase,
     RecordCognitiveSkipUseCase,
@@ -483,13 +481,6 @@ def _operational_case_builders():
             lambda _events: (
                 GetCanonicalPartitionIntegrityDetailUseCase(),
                 CanonicalPartitionDetailCommand("board-b", "node-1"),
-            ),
-        ),
-        (
-            "digest-layer-mismatch",
-            lambda _events: (
-                ListDigestLayerMismatchUseCase(),
-                DigestLayerMismatchListCommand("board-b", 20, 0),
             ),
         ),
     ]
