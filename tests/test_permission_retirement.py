@@ -18,7 +18,7 @@ def test_closed_retirement_policy_matches_frozen_authority():
     from okto_pulse.core.ports.permission_retirement import retired_feature_permission_flags
     flags = retired_feature_permission_flags()
     assert flags == tuple(sorted(RETIRED))
-    assert len(flags) == 47
+    assert len(flags) == 48
     assert sum(flag.startswith("sprint.") for flag in flags) == 33
 
 
@@ -78,6 +78,26 @@ def test_original_full_control_retains_all_surviving_decisions_and_exact_review_
     assert not source.owner_review_required and source.review_reason is None
     check(source, resolve_effective_permissions(None, None, None))
     assert parse_permission_retirement_authority(source.document()) == source
+
+
+@pytest.mark.parametrize("value", [False, None, 1])
+def test_retired_schema_authority_cannot_promote_partial_original_full_control(value):
+    from okto_pulse.core.ports.permission_policy import resolve_agent_permission_facts
+
+    document = deepcopy(GOLDEN["layers"]["full"])
+    if value is None:
+        del document["kg"]["operations"]["schema"]
+    else:
+        document["kg"]["operations"]["schema"]["migrate"] = value
+    source = capture(document)
+    assert source.owner_review_required
+    candidate = resolve_agent_permission_facts(
+        agent_flags=document, legacy_permissions=None, preset_id=None,
+        presets=(), board_overrides=None,
+    )
+    assert candidate.owner_review_required
+    assert not any(candidate.has(path) for path in flatten_permission_flags(registered_permission_flags()))
+    check(source, candidate)
 
 
 def test_smaller_full_control_lookalike_cannot_become_trusted_by_deleting_flags():

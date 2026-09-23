@@ -47,7 +47,6 @@ _NAMESPACE_REQUIREMENTS = (
     ("kg.operations.queue.read", "kg.admin.settings_read"),
     ("kg.operations.queue.reprocess", "kg.admin.settings_write"),
     ("kg.operations.audit.read", "kg.admin.settings_read"),
-    ("kg.operations.schema.migrate", "kg.admin.settings_write"),
     (
         "kg.operations.historical.read",
         "kg.admin.historical_consolidation",

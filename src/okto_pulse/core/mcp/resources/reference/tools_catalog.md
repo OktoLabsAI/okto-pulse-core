@@ -61,7 +61,6 @@ Semantic guideline protocol:
 - `okto_pulse_kg_digest_layer_reconcile` — docs: `okto-pulse://reference/tool-docs/kg`
 - `okto_pulse_kg_health` — docs: `okto-pulse://reference/tool-docs/kg`
 - `okto_pulse_kg_health_readiness` — docs: `okto-pulse://reference/tool-docs/kg`
-- `okto_pulse_kg_migrate_schema` — docs: `okto-pulse://reference/tool-docs/kg`
 - `okto_pulse_kg_originates_from_contract_audit` — docs: `okto-pulse://reference/tool-docs/kg`
 - `okto_pulse_kg_orphan_backfill` — docs: `okto-pulse://reference/tool-docs/kg`
 - `okto_pulse_kg_orphan_report` — docs: `okto-pulse://reference/tool-docs/kg`

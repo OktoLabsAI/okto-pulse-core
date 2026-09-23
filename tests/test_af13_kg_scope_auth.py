@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import ast
-import json
 import inspect
 import uuid
 from contextlib import contextmanager
@@ -107,9 +106,7 @@ def test_rest_kg_board_routes_require_board_actor_dependency() -> None:
             or kg_routes.require_kg_stream_board_actor in deps
         ), path
 
-    migrate_deps = route_dependencies["post_migrate_schema"]
-    assert kg_routes.require_kg_board_writer_actor in migrate_deps
-    assert kg_routes.get_unit_of_work in migrate_deps
+    assert "post_migrate_schema" not in route_dependencies
     cypher_deps = route_dependencies["cypher_query"]
     assert kg_routes.require_kg_board_actor in cypher_deps
     assert kg_routes.require_kg_board_writer_actor not in cypher_deps
@@ -465,13 +462,9 @@ def test_mcp_kg_inventory_uses_scope_and_admin_gates() -> None:
     server_source = _source("mcp/server.py")
     query_tools_source = _source("mcp/kg_query_tools.py")
 
-    migrate_fn = _function_source(server_source, "okto_pulse_kg_migrate_schema")
     query_global_fn = _function_source(query_tools_source, "okto_pulse_kg_query_global")
 
-    assert "ActorScope.from_context" in migrate_fn
-    assert "kg.operations.schema.migrate" in migrate_fn
-    assert "kg.admin.settings_write" in migrate_fn
-    assert "allowed_board_ids=" in migrate_fn
+    assert "async def okto_pulse_kg_migrate_schema" not in server_source
     assert "svc.check_board_access(boards, board_id)" in query_global_fn
     assert _kg_tool_policy_violations(query_tools_source) == []
 
@@ -488,32 +481,6 @@ async def okto_pulse_kg_query_new(board_id: str) -> str:
     ]
 
 
-@pytest.mark.asyncio
-async def test_mcp_migrate_all_boards_denies_non_admin_before_listing(monkeypatch) -> None:
-    from okto_pulse.core.mcp import server as mcp_server
-
-    class _Ctx:
-        agent_id = "agent-af13"
-        agent_name = "AF13"
-        permissions: list[str] = []
-
-    async def _ctx():
-        return _Ctx()
-
-    def _uow_forbidden():
-        raise AssertionError("all_boards must not list boards before admin gate")
-
-    monkeypatch.setattr(mcp_server, "_get_global_agent_ctx", _ctx)
-    monkeypatch.setattr(
-        mcp_server, "get_unit_of_work_factory_for_mcp", _uow_forbidden
-    )
-
-    payload = json.loads(
-        await mcp_server.okto_pulse_kg_migrate_schema.fn(all_boards=True)
-    )
-
-    assert payload["error"] == "permission_denied"
-    assert payload["required_permission"] == "kg.operations.schema.migrate"
 
 
 def _function_source(source: str, name: str) -> str:

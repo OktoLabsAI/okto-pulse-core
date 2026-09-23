@@ -24,6 +24,7 @@ SOURCE_VERSION = "permission-authority/v0.3.4"
 SOURCE_BLOB = "74101618064a1e50a1e9e11c012f7ff6f1f8f7a9"
 _FLAGS = tuple(sorted(historical.ALL_FLAGS))
 _RETIRED_FEATURE_FLAGS = tuple(sorted((
+    "kg.operations.schema.migrate",
     "kg.operations.rebuild.preflight", "kg.operations.rebuild.confirm", "kg.operations.rebuild.run",
     "kg.operations.global_recovery.preflight", "kg.operations.global_recovery.confirm", "kg.operations.global_recovery.read",
     "kg.operations.global_recovery.cancel", "kg.operations.global_recovery.resume", "kg.operations.global_recovery.run",

@@ -665,7 +665,6 @@ _KG_OPERATIONS_PERMISSION_LEAVES: tuple[str, ...] = (
     "kg.operations.queue.read",
     "kg.operations.queue.reprocess",
     "kg.operations.audit.read",
-    "kg.operations.schema.migrate",
     "kg.operations.historical.read",
     "kg.operations.historical.start",
     "kg.operations.historical.cancel",
@@ -691,7 +690,6 @@ KG_OPERATIONS_PERMISSION_INTRODUCTION_V1 = PermissionIntroductionManifest(
         ("kg.operations.queue.read", "kg.admin.settings_read"),
         ("kg.operations.queue.reprocess", "kg.admin.settings_write"),
         ("kg.operations.audit.read", "kg.admin.settings_read"),
-        ("kg.operations.schema.migrate", "kg.admin.settings_write"),
         (
             "kg.operations.historical.read",
             "kg.admin.historical_consolidation",
@@ -1988,7 +1986,6 @@ PERMISSION_REGISTRY: dict[str, dict[str, Any]] = {
             },
             "queue": {"read": True, "reprocess": True},
             "audit": {"read": True},
-            "schema": {"migrate": True},
             "historical": {
                 "read": True,
                 "start": True,
@@ -3066,6 +3063,7 @@ def normalize_agent_permission_overrides(
 
 
 _RETIRED_KG_PERMISSION_SHAPE = {"kg": {"operations": {
+    "schema": {"migrate": True},
     "tick": {"run": True},
     "global_outbox": {"read": True, "reprocess": True, "verify": True},
     "global_recovery": {"preflight": True, "confirm": True, "read": True, "cancel": True, "resume": True, "run": True},
@@ -3088,6 +3086,7 @@ def _remove_retired_kg_full_control_fingerprint(working: PermissionFlags) -> boo
         "kg.operations.global_recovery.read", "kg.operations.global_recovery.cancel", "kg.operations.global_recovery.resume",
         "kg.operations.global_recovery.run", "kg.operations.quarantine.restore"}
     rebuild = recovery | {"kg.operations.rebuild.preflight", "kg.operations.rebuild.confirm", "kg.operations.rebuild.run"}
+    rebuild = rebuild | {"kg.operations.schema.migrate"}
     present = frozenset(path for path in rebuild if _permission_value_presence(working, path)[0])
     has_retired_subtree = any(_permission_value_presence(working, path.rsplit(".", 1)[0])[0] for path in rebuild)
     if not has_retired_subtree:

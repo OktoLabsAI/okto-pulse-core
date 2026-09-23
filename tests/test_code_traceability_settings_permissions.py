@@ -137,7 +137,7 @@ def test_code_traceability_permission_generation_is_fail_closed() -> None:
     assert manifest.version == "CODE-TRACEABILITY/v1"
     assert manifest.legacy_compatible is False
     assert len(manifest.leaves) == 22
-    assert len(ALL_FLAGS) == 552  # Live authority excludes retired Sprint leaves.
+    assert len(ALL_FLAGS) == 551  # Live authority excludes retired Sprint and maintenance leaves.
     assert set(manifest.leaves) <= set(ALL_FLAGS)
     assert set(dict(manifest.historical_authorities)) == set(manifest.leaves)
 

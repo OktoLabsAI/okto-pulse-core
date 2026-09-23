@@ -37,7 +37,7 @@ def _permission_set(*paths: str) -> PermissionSet:
 
 @pytest.mark.asyncio
 async def test_server_authorization_bridge_accepts_canonical_and_historical_authority() -> None:
-    operation = "kg.operations.schema.migrate"
+    operation = "kg.operations.cognitive.clear"
     legacy = "kg.admin.settings_write"
     canonical_actor = ActorContext(
         "canonical-operator",
@@ -80,9 +80,9 @@ async def test_server_authorization_bridge_reports_the_canonical_denial() -> Non
                 "partial-operator",
                 "mcp",
                 board_id=BOARD_ID,
-                permissions=_permission_set("kg.operations.schema.migrate"),
+                permissions=_permission_set("kg.operations.cognitive.clear"),
             ),
-            operation="kg.operations.schema.migrate",
+            operation="kg.operations.cognitive.clear",
             legacy_operation="kg.admin.settings_write",
             board_id=BOARD_ID,
         )
@@ -90,7 +90,7 @@ async def test_server_authorization_bridge_reports_the_canonical_denial() -> Non
     )
 
     assert payload["error"] == "permission_denied"
-    assert payload["required_permission"] == "kg.operations.schema.migrate"
+    assert payload["required_permission"] == "kg.operations.cognitive.clear"
 
 
 _INLINE_OPERATION_CASES = (
@@ -112,13 +112,6 @@ _INLINE_OPERATION_CASES = (
         "okto_pulse_kg_orphan_backfill",
         {"board_id": BOARD_ID, "dry_run": False},
         "kg.operations.integrity.backfill",
-        "kg.admin.settings_write",
-        BOARD_ID,
-    ),
-    (
-        "okto_pulse_kg_migrate_schema",
-        {"board_id": BOARD_ID},
-        "kg.operations.schema.migrate",
         "kg.admin.settings_write",
         BOARD_ID,
     ),

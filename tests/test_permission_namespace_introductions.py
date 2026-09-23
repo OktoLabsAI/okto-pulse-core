@@ -45,9 +45,9 @@ def test_new_namespace_manifests_are_ordered_and_registered() -> None:
     ]
 
     leaves = [leaf for manifest in NEW_MANIFESTS for leaf in manifest.leaves]
-    assert len(leaves) == len(set(leaves)) == 94
+    assert len(leaves) == len(set(leaves)) == 93
     assert set(leaves) <= set(ALL_FLAGS)
-    assert len(ALL_FLAGS) == 552
+    assert len(ALL_FLAGS) == 551
     assert "code_traceability.evidence.classify_legacy" in ALL_FLAGS
 
 

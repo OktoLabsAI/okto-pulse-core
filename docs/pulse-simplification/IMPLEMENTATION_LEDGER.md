@@ -15238,3 +15238,49 @@ linhas, ok=true, zero findings arquiteturais/documentais e oito budgets zero**,
 closure-exploration-retirement.json. Diff check e Ruff limpos. Sem testes ou
 instalações pendentes. Documentação interna de capabilities foi distinguida das
 rotas públicas retiradas; cleanup interno restante segue declarado acima.
+
+### F4 — migração manual de schema retirada; validação em andamento
+
+Removidos handler MCP kg_migrate_schema (incluindo all_boards), policy, despacho,
+handler/modelo REST migrate-schema e instruções distribuídas nas duas edições.
+Catálogo e manifests regenerados pelos geradores oficiais. Mecanismos internos
+de schema não foram retirados. A folha schema.migrate saiu do registry, presets
+e introdução ativa e entrou na lista fechada de retirement. O fingerprint só
+reconhece o snapshot histórico completo; evaluator v0.3.4 permanece intacto.
+
+HelpPanel deixou de anunciar migração/backfill/manual tick/danger zone; corrigiu
+localização de Health, Settings observacional e projeção a partir de Spec/Card.
+Removida a seção Sprint e referências a criação, thresholds e fechamento Sprint.
+Deep link antigo usa fallback existente. Frontend **20 passed**, build/verify
+confirmam 78 assets, SHA256
+8983774bbe7e34930a7b8241d83f4c27e505ff2ace7d65213af1bed1dfa45c01.
+
+Par dist-schema-retirement instalado e comprovado após pip terminal em
+provenance-schema-retirement.json: Core 830/893 e Community 363/447 arquivos
+Python/payload byte-identical. Nenhum processo Pulse real alterado.
+
+Campanha Core inicial: 463 passed /3 failed; duas falhas eram uso, no teste novo,
+do resolver de flags sem classificação de identidade, outra era contagem antiga
+da introdução. O teste agora usa resolve_agent_permission_facts, caminho de
+autenticação com classificação/review, mantendo comparação com autoridade antiga
+e zero grants. Reexecução dos dois módulos: **38 passed**, incluindo os três
+casos novos (schema False/ausente/malformado). JUnits schema-retirement-core.xml
+e schema-retirement-core-corrected.xml. Nenhuma mudança produtiva após a prova.
+
+F16 inicial sem findings arquiteturais e oito budgets zero; matrizes README
+precisavam refletir imports removidos. Regeneradas pelo renderer oficial;
+closure-schema-retirement-final.json e schema-retirement-community.xml ainda
+pendentes de resultado terminal. Não declarar recorte concluído antes disso.
+
+Próxima frente F4: orphan report/backfill REST/MCP, use cases exclusivos,
+reconciler/fábrica/helpers sem consumidor legítimo; preservar OrphanNodeScanner
+usado por Health. Depois audits provenance/originates_from e parity. Censo anterior
+é evidência histórica, não lista atual. Inventário 70/33/143 não foi promovido.
+
+Resultados terminais: Community **124 passed em 268.69s**, incluindo transporte
+MCP real materializado, REST ausente antes de efeitos, checkpoint/cleanup/review
+em banco descartável e schema manager interno. F16 final **8836 linhas,
+ok=true, zero findings arquiteturais/documentais, oito budgets zero**.
+Frontend build/verify, Ruff F/E9 e diff check aprovados. Não há processos de
+teste/instalação pendentes deste recorte. As três falhas iniciais de testes
+estão resolvidas pela reexecução, sem relaxar qualquer verificação de autoridade.

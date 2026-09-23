@@ -29,7 +29,6 @@ from okto_pulse.core.runtime_context import (
     runtime_state,
 )
 
-from okto_pulse.core.application.scope import ActorScope
 from okto_pulse.core.application.use_cases.base import PermissionDeniedError
 from okto_pulse.core.application.history_pagination import (
     HistoryReadValidationError,
@@ -21493,98 +21492,10 @@ async def okto_pulse_kg_orphan_backfill(
 
 
 # ============================================================================
-# SCHEMA MIGRATION SELF-HEAL (spec 818748f2 — FR5)
+# Public schema migration retired (F4); release/startup owns schema compatibility.
 # ============================================================================
 
 
-@mcp.tool()
-async def okto_pulse_kg_migrate_schema(
-    board_id: str = "",
-    all_boards: bool = False,
-) -> str:
-    """Force-apply schema migrations to fix legacy boards (pre v0.3.2). REST
-    twin: POST /api/v1/kg/{board_id}/migrate-schema. Use when consolidation
-    fails with `Binder exception: Cannot find property X for n` — usually an
-    ALTER ADD missed on a board bootstrapped before that version. Idempotent:
-    re-running on an already-migrated board returns migrated=true with empty
-    columns_added (no-op). NEVER delete the KG's persistent storage to "fix"
-    a board — that destroys the board's whole KG; use this tool instead.
-    """
-    if not board_id and not all_boards:
-        return json.dumps({"error": "missing_board_or_all_boards"})
-
-    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
-    from okto_pulse.core.kg.interfaces.registry import get_kg_registry
-
-    if all_boards:
-        ctx = await _get_global_agent_ctx()
-        if ctx is None:
-            return _auth_error()
-        actor = MCPAdapterContract.actor(ctx)
-        authorization_error = await _authorize_kg_operation(
-            actor,
-            operation="kg.operations.schema.migrate",
-            legacy_operation="kg.admin.settings_write",
-        )
-        if authorization_error is not None:
-            return authorization_error
-        actor_scope = ActorScope.from_context(actor)
-        schema_manager = get_kg_registry().graph_schema_manager
-
-        from okto_pulse.core.ports.application_persistence import ApplicationQuery
-
-        results: list[dict[str, Any]] = []
-        async with get_unit_of_work_factory_for_mcp()() as uow:
-            boards = await uow.services.list_application_records(
-                ApplicationQuery(entity="board", order_by=(("name", False),)),
-            )
-            board_pairs = [(board.id, board.name) for board in boards]
-        query_scope = actor_scope.query_scope(
-            allowed_board_ids=[bid for bid, _name in board_pairs],
-            require_ownership=False,
-        )
-        for bid, _bname in board_pairs:
-            if not query_scope.allows_board_id(bid):
-                continue
-            try:
-                summary = await schema_manager.migrate(bid)
-                results.append(summary)
-            except Exception as exc:
-                results.append(
-                    {
-                        "board_id": bid,
-                        "migrated": False,
-                        "columns_added": {},
-                        "errors": [f"unhandled: {exc}"],
-                        "duration_ms": 0,
-                    }
-                )
-        return json.dumps({"results": results}, default=str)
-
-    # Single board path
-    ctx = await _get_agent_ctx(board_id)
-    if ctx is None:
-        return _auth_error()
-    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
-    authorization_error = await _authorize_kg_operation(
-        actor,
-        operation="kg.operations.schema.migrate",
-        legacy_operation="kg.admin.settings_write",
-        board_id=board_id,
-    )
-    if authorization_error is not None:
-        return authorization_error
-    actor_scope = ActorScope.from_context(actor)
-    query_scope = actor_scope.query_scope(
-        target_board_id=board_id,
-        allowed_board_ids=[board_id],
-        require_ownership=False,
-    )
-    if not query_scope.allows_board_id(board_id):
-        return _perm_error("Permission denied: board outside query scope")
-    schema_manager = get_kg_registry().graph_schema_manager
-    summary = await schema_manager.migrate(board_id)
-    return json.dumps(summary, default=str)
 
 
 def _subject_edit_requires_draft_mcp_error(error: Exception) -> str:
@@ -22203,7 +22114,6 @@ _TOOLS_WITH_LAZY_COMPACT_DESCRIPTION = frozenset(
         "okto_pulse_kg_get_decision_history",
         "okto_pulse_ask_refinement_choice_question",
         "okto_pulse_kg_update_cognitive_pending_item",
-        "okto_pulse_kg_migrate_schema",
         "okto_pulse_create_refinement",
         "okto_pulse_ask_ideation_choice_question",
         "okto_pulse_validate_architecture_design_payload",

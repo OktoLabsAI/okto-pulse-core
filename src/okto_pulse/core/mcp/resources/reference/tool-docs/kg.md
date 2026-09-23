@@ -631,19 +631,6 @@ Args:
 Returns:
     JSON with cognitive DLQ rows, error reason codes, and counts.
 
-## `okto_pulse_kg_migrate_schema`
-
-Prose covered by the live tool description. Delta:
-
-Args:
-    board_id: Board UUID específico (mutuamente exclusivo com all_boards)
-    all_boards: Se True, migra todos os boards conhecidos do server.
-        Default False — exige board_id.
-
-Returns:
-    Single board: JSON `{board_id, migrated, columns_added, errors,
-    duration_ms}`. All-boards: `{results: [<single>, ...]}`.
-    Erro de input: `{error: "missing_board_or_all_boards"}`.
 
 ## `okto_pulse_kg_propose_reconciliation`
 

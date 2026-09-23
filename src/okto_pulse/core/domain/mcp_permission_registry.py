@@ -559,7 +559,6 @@ MCP_TOOL_PERMISSION_POLICIES: tuple[McpToolPermissionPolicy, ...] = (
         "okto_pulse_kg_list_cognitive_readiness_items",
         "kg.operations.cognitive.read",
     ),
-    _policy("okto_pulse_kg_migrate_schema", "kg.operations.schema.migrate"),
     _policy(
         "okto_pulse_kg_originates_from_contract_audit",
         "kg.operations.audit.read",
