@@ -65,6 +65,23 @@ class DeliveryEvidenceQuery(BaseModel):
     spec_id: Identity
 
 
+class DeliveryEvidenceReadQuery(DeliveryEvidenceQuery):
+    """Read controls are separate from inherited write contracts."""
+
+    card_id: Identity | None = None
+    cursor: str | None = Field(default=None, min_length=1, max_length=8192)
+    record_id: Identity | None = None
+    limit: int = Field(default=20, ge=1, le=20)
+
+    @model_validator(mode="after")
+    def scoped_history(self):
+        if self.card_id is None and (self.cursor or self.record_id or self.limit != 20):
+            raise ValueError("delivery_history_card_required")
+        if self.cursor and self.record_id:
+            raise ValueError("delivery_history_page_or_detail_required")
+        return self
+
+
 class DeliveryEvidenceInput(BaseModel):
     """Spec-scoped exceptions; implementation and test writes belong to cards.
 

@@ -14879,3 +14879,43 @@ edição. Rollback do código exige o par correspondente; não apagar marcadores
 de atualidade nem ressuscitar aprovações/rejeições anteriores para simular
 rollback de histórico. Decisão resolvida; continuar auditoria de aceitação,
 retomada por Card e benchmark medido. Inventário permanece 67/31/148.
+
+### Histórico paginado de progresso por Card — 2026-09-23, validação em curso
+
+Após fe8c0b33/718ebf24, implementada leitura opcional card_id na superfície
+get_delivery_evidence REST/MCP, preservando o rollup sem card_id. Contrato de
+leitura separado dos comandos de escrita; porta pública no Core e SQL/cursor
+somente no Community. Página de até 20 checkpoints, ordem newest_first,
+cursor vinculado a Board/Card/Spec/edição/leitor/tamanho/geração/versões/estado.
+Append/revoke/reabertura invalidam continuação; toda chamada reautoriza
+code_traceability.evidence.read. Detalhe por record_id devolve conteúdo original,
+autoria e revogação, sem apropriar prova nem declarar recuperação verificada.
+REST responde no-store. A consulta não carrega rollup completo nem consulta KG.
+
+UI sob demanda permite páginas anteriores, detalhe, reinício e cancela leitura
+ao desmontar/trocar escopo; negação/erro limpa o histórico carregado. Nenhuma
+mutação, nova permissão, DDL ou migração de dados. Notas anteriores não são
+implicitamente resolvidas por uma nota nova. A superfície é apenas progresso
+da edição corrente; ainda não substitui a visão consolidada de retomada com
+obrigações/provas/Targets. Não promover DEI-T43/T46/T63/T64 por esse incremento.
+
+Frontend: 20 passed, progress-history-frontend.xml. TS/Vite, sincronização e
+verify:frontend-dist passaram: 78 arquivos, hash
+ecaff97d68f2f124a01e5e5f244a64b846ad649d376ca8d93dd4d774477c16c9.
+Par dist-progress-history instalado com pip terminal; provenance-progress-history.json
+confirma Core 830 .py/893 payloads e Community 361 .py/445 payloads idênticos.
+Core: 34 passed em 3.64s, progress-history-core.xml. Community e F16 ainda
+em execução; não declarar aprovação até resultados terminais. Catálogo e
+manifesto MCP regenerados pelos geradores. Inventário permanece 67/31/148.
+
+Validação terminal: Community **30 passed em 58.30s**, progress-history-community.xml.
+F16 inicial só encontrou duas matrizes README desatualizadas; regeneradas sem
+relaxar budgets. Documentado o novo recorte e regenerado manifesto de resources.
+Par final dist-progress-history-final reconstruído/reinstalado, prova terminal
+provenance-progress-history-final.json com os mesmos totais acima. Reteste do
+leitor final **9 passed em 19.64s**, progress-history-final.xml. Ruff F/E9 e
+diff check limpos (avisos CRLF apenas). F16.2 final **8836 linhas, ok=true,
+zero findings arquiteturais/documentais e oito budgets zero**, arquivo
+closure-progress-history-final.json. Nenhum processo de validação pendente.
+Próxima frente: visão consolidada por Card e ações por autoridade/estado,
+reutilizando os avaliadores atuais, seguida de aceite composto e benchmark.

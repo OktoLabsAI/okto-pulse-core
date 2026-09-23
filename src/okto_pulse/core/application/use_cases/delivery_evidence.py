@@ -11,6 +11,7 @@ from okto_pulse.core.models.delivery_evidence import (
     CardDeliveryEvidenceWriteCommand,
     DeliveryEvidenceCommand,
     DeliveryEvidenceQuery,
+    DeliveryEvidenceReadQuery,
 )
 from okto_pulse.core.models.delivery_report import CardDeliveryReportCommand, DeliveryReportRejected
 from okto_pulse.core.application.use_cases.mutation_permissions import transition_permission_requirement
@@ -26,6 +27,8 @@ class GetDeliveryEvidenceUseCase:
             uow=uow,
             board_id=command.board_id,
         )
+        if isinstance(command, DeliveryEvidenceReadQuery) and command.card_id is not None:
+            return await uow.services.delivery_evidence.progress_history(command, actor_id=actor.actor_id)
         return await uow.services.delivery_evidence.projection(
             command.board_id, command.spec_id
         )

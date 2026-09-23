@@ -18,7 +18,7 @@ import json
 from typing import Annotated, Any, Callable, Literal, Mapping
 
 from pydantic import Field, SecretStr, ValidationError
-from okto_pulse.core.models.delivery_evidence import card_delivery_command, DeliveryBatchEntryError, DeliveryEvidenceQuery
+from okto_pulse.core.models.delivery_evidence import card_delivery_command, DeliveryBatchEntryError, DeliveryEvidenceReadQuery
 from okto_pulse.core.models.delivery_report import CardDeliveryRecordInput
 
 from okto_pulse.core.application.use_cases.base import (
@@ -950,16 +950,25 @@ def register_code_traceability_tools(
         command = _closed_input(CodeTraceabilityWaiverClearInput, locals())
         return await _execute(board_id, command, ClearCodeTraceabilityNotApplicableUseCase())
 
-    async def okto_pulse_get_delivery_evidence(board_id: BoundedId, spec_id: BoundedId) -> McpToolOutcome:
+    async def okto_pulse_get_delivery_evidence(
+        board_id: BoundedId, spec_id: BoundedId, card_id: BoundedId | None = None,
+        cursor: Annotated[str, Field(min_length=1, max_length=8192)] | None = None,
+        record_id: BoundedId | None = None, limit: Annotated[int, Field(ge=1, le=20)] = 20,
+    ) -> McpToolOutcome:
         """Read delivery obligations/current proof before completing a Spec.
 
         Planning Code Evidence is not delivery. Tasks/bugs record code; only TEST
         cards with authenticated passing scenarios verify it. Read
         okto-pulse://reference/code-traceability, section Delivery evidence.
+        With card_id, read bounded progress history, newest first. Follow
+        next_cursor or pass record_id for full detail. Each call reauthorizes;
+        stale cursors require restart. Notes never prove recovery or completion.
         """
         from okto_pulse.core.application.use_cases.delivery_evidence import GetDeliveryEvidenceUseCase
 
-        return await _execute(board_id, DeliveryEvidenceQuery(board_id=board_id, spec_id=spec_id), GetDeliveryEvidenceUseCase())
+        command = DeliveryEvidenceReadQuery(board_id=board_id, spec_id=spec_id,
+            card_id=card_id, cursor=cursor, record_id=record_id, limit=limit)
+        return await _execute(board_id, command, GetDeliveryEvidenceUseCase())
 
     async def okto_pulse_record_delivery_evidence(board_id: BoundedId, card_id: BoundedId, spec_id: BoundedId, evidence: CardDeliveryRecordInput) -> McpToolOutcome:
         """Record declared progress or bind accepted execution/test proof to the CARD ledger.

@@ -12,6 +12,7 @@ from okto_pulse.core.models.code_traceability import ImplementationTargetExecuti
 from okto_pulse.core.models.delivery_evidence import (
     CardDeliveryEvidenceWriteCommand,
     DeliveryEvidenceCommand,
+    DeliveryEvidenceReadQuery,
 )
 
 from okto_pulse.core.domain.delivery_evidence import (
@@ -68,6 +69,16 @@ class DeliveryEvidenceReadPort(Protocol):
 
 
 class DeliveryEvidenceStore(DeliveryEvidenceReadPort, Protocol):
+    async def progress_history(self, query: DeliveryEvidenceReadQuery, *, actor_id: str) -> dict:
+        """Bounded Card progress page or detail, never proof or recovery credit.
+
+        Bind cursors to actor, Board/Card/Spec/edition, page size and ledger
+        generation; refuse stale scopes. Reauthorize every read in the use case.
+        Preserve authors and revocations. No KG, workspace inspection, lifecycle
+        mutation or implicit note supersession. Never commit the transaction.
+        """
+        ...
+
     async def lock_scope(self, scope: DeliveryScope) -> None: ...
 
     async def projection(self, board_id: str, spec_id: str) -> dict: ...

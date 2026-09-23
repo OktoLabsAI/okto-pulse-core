@@ -889,5 +889,25 @@ Records an explicit scoped human waiver, separate from agent attestation.
 
 Clears one active waiver while preserving audit history.
 
+### Reading older progress checkpoints
+
+`okto_pulse_get_delivery_evidence(board_id, spec_id, card_id=...)` reads the
+current edition's progress history without loading the entire Spec rollup.
+It returns at most 20 checkpoints, newest first, with authors, revocations,
+source/recovery declarations, totals and `next_cursor`. Follow that cursor
+with the same scope and page size; use `record_id` instead for the full original
+checkpoint. REST uses the same optional query parameters on the existing
+`/boards/{board_id}/specs/{spec_id}/delivery-evidence` GET route.
+
+Every call requires `code_traceability.evidence.read`. A cursor is not a grant:
+it is bound to the reader, scope and ledger generation. Restart after a stale
+cursor, new checkpoint, revocation or edition change. Summary text and Target
+lists carry explicit truncation indicators; detail preserves the original
+payload. An older pending note is not resolved merely because a newer note
+exists. The response never verifies recovery, transfers another author's
+receipt, restores proof or changes state. The successor must inspect their own
+accessible workspace. This history read complements current obligations and
+proof in the delivery projection; it does not replace that projection.
+
 These are separate closed schemas. Do not collapse them into a heterogeneous
 `target_type + payload` command.
