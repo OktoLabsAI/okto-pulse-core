@@ -20435,76 +20435,6 @@ async def okto_pulse_kg_canonical_debt_list(
     )
 
 
-@mcp.tool()
-async def okto_pulse_kg_canonical_partition_integrity_list(
-    board_id: str,
-    reason_code: str | None = None,
-    graph_layer: str | None = None,
-    source_ref: str | None = None,
-    node_id: str | None = None,
-    status: str | None = None,
-    limit: int = 50,
-    offset: int = 0,
-) -> str:
-    """List canonical Learning partition-integrity signals for KG health
-    drill-down (R7). READ-ONLY: cognitive holds, canonical debt,
-    mixed-evidence deferred and provenance-only Learnings. Each item carries
-    an S-KG-02 classification (missing_source, unresolved_source,
-    canonical_learning_resolved, weak_provenance, invalid_orphan_learning) +
-    a classification_counts census. REST twin: GET
-    /api/v1/kg/{board_id}/canonical-partition-integrity. NEVER skips, clears
-    or resolves an R7 hold/debt — human-only. Filters: reason_code,
-    graph_layer, source_ref, node_id, status.
-    """
-    ctx = await _get_agent_ctx(board_id)
-    if ctx is None:
-        return _auth_error()
-    perm_err = kg_permission_error(ctx, "board.read")
-    if perm_err:
-        return _kg_direct_permission_denied("board.read", perm_err)
-
-    bounded_limit, bounded_offset, pagination_error = _kg_pagination_window(
-        limit, offset
-    )
-    if pagination_error is not None:
-        return pagination_error
-
-    from okto_pulse.core.application.use_cases import (
-        ListCanonicalPartitionIntegrityCommand,
-        ListCanonicalPartitionIntegrityUseCase,
-    )
-    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
-    from okto_pulse.core.kg.cognitive_readiness import CognitiveReadinessError
-
-    # MCP-FU5 strangler: UoW factory instead of get_db_for_mcp(); the use case
-    # lets CognitiveReadinessError propagate so the tool keeps its legacy
-    # exc.to_dict() envelope. Read-only: no commit.
-    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
-    try:
-        async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
-            result = (
-                await ListCanonicalPartitionIntegrityUseCase().execute(
-                    ListCanonicalPartitionIntegrityCommand(
-                        board_id,
-                        reason_code=reason_code or None,
-                        graph_layer=graph_layer or None,
-                        source_ref=source_ref or None,
-                        node_id=node_id or None,
-                        status=status or None,
-                        limit=bounded_limit,
-                        offset=bounded_offset,
-                    ),
-                    actor=actor,
-                    uow=uow,
-                )
-            ).data
-    except CognitiveReadinessError as exc:
-        return json.dumps(exc.to_dict())
-
-    # OR1 metric (kg_canonical_partition_integrity_total) is emitted inside
-    # list_canonical_partition_integrity (the single enumeration point), so REST
-    # and MCP share the same dedicated signal without double-emitting here.
-    return json.dumps(result, default=str)
 
 
 
@@ -21663,7 +21593,6 @@ _TOOLS_WITH_LAZY_COMPACT_DESCRIPTION = frozenset(
         "okto_pulse_kg_query_cypher",
         "okto_pulse_add_choice_comment",
         "okto_pulse_evaluate_ideation",
-        "okto_pulse_kg_canonical_partition_integrity_list",
         "okto_pulse_get_publish_health",
         "okto_pulse_kg_get_decision_history",
         "okto_pulse_ask_refinement_choice_question",

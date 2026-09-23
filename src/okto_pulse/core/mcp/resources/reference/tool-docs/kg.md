@@ -145,33 +145,6 @@ Returns:
     artifact identity, source_ref, target_status, canonical_state, failure
     reason, last_error, retry metadata, queue/DLQ refs, and evidence_ref.
 
-## `okto_pulse_kg_canonical_partition_integrity_list`
-
-List canonical Learning partition-integrity signals for KG health drill-down
-(R7). READ-ONLY: cognitive holds, canonical debt, mixed-evidence deferred and
-provenance-only Learnings. Each item carries an S-KG-02 `classification`
-(missing_source, unresolved_source, canonical_learning_resolved,
-weak_provenance, invalid_orphan_learning) plus a `classification_counts`
-census. Mirrors REST `GET /api/v1/kg/{board_id}/canonical-partition-integrity`
-(same `classification` on the per-node detail).
-
-This tool NEVER skips, clears or resolves an R7 hold/debt — that remains
-human-only.
-
-Args:
-    board_id: Board ID.
-    reason_code: Optional reason-code filter.
-    graph_layer: Optional graph-layer filter.
-    source_ref: Optional `<type>:<id>` source reference filter.
-    node_id: Optional node ID filter.
-    status: Optional status filter.
-    limit: Max rows to return (default 50).
-    offset: Page offset (default 0).
-
-Returns:
-    JSON with partition-integrity items, `classification_counts`, and bounded
-    counts.
-
 
 ## `okto_pulse_kg_health_readiness`
 

@@ -55,7 +55,6 @@ Semantic guideline protocol:
 
 ## KG — Operational & health
 - `okto_pulse_kg_canonical_debt_list` — docs: `okto-pulse://reference/tool-docs/kg`
-- `okto_pulse_kg_canonical_partition_integrity_list` — docs: `okto-pulse://reference/tool-docs/kg`
 - `okto_pulse_kg_health` — docs: `okto-pulse://reference/tool-docs/kg`
 - `okto_pulse_kg_health_readiness` — docs: `okto-pulse://reference/tool-docs/kg`
 - `okto_pulse_kg_takedown_status` — docs: `okto-pulse://reference/tool-docs/kg`

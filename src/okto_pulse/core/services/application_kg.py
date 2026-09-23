@@ -282,21 +282,3 @@ def stage_boost_node_audit(*args: Any, **kwargs: Any) -> Any:
     )
 
     return _stage(*args, **kwargs)
-
-
-
-
-async def list_canonical_partition_integrity(*args: Any, **kwargs: Any) -> Any:
-    from okto_pulse.core.kg.canonical_partition_integrity import (
-        list_canonical_partition_integrity as _list,
-    )
-
-    return await _list(*args, **kwargs)
-
-
-async def get_canonical_partition_integrity_detail(*args: Any, **kwargs: Any) -> Any:
-    from okto_pulse.core.kg.canonical_partition_integrity import (
-        get_canonical_partition_integrity_detail as _get,
-    )
-
-    return await _get(*args, **kwargs)

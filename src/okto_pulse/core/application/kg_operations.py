@@ -706,31 +706,7 @@ class CoreKnowledgeGraphOperations:
             kg_health_state=kg_health_state,
         )
 
-    async def list_canonical_partition_integrity(
-        self, *, board_id: str, **filters: object
-    ):  # noqa: ANN201
-        from okto_pulse.core.services.application_kg import (
-            list_canonical_partition_integrity,
-        )
 
-        return await list_canonical_partition_integrity(
-            self.__relational_context,
-            board_id=board_id,
-            **filters,
-        )
-
-    async def canonical_partition_integrity_detail(
-        self, *, board_id: str, node_id: str
-    ):  # noqa: ANN201
-        from okto_pulse.core.services.application_kg import (
-            get_canonical_partition_integrity_detail,
-        )
-
-        return await get_canonical_partition_integrity_detail(
-            self.__relational_context,
-            board_id=board_id,
-            node_id=node_id,
-        )
 
 
 

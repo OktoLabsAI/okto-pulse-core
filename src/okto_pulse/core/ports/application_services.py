@@ -765,13 +765,7 @@ class KnowledgeGraphOperations(Protocol):
         kg_health_state: str,
     ) -> dict[str, object]: ...
 
-    async def list_canonical_partition_integrity(
-        self, *, board_id: str, **filters: object
-    ) -> object: ...
 
-    async def canonical_partition_integrity_detail(
-        self, *, board_id: str, node_id: str
-    ) -> object: ...
 
 
 

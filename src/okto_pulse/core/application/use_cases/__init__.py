@@ -712,9 +712,6 @@ from okto_pulse.core.application.use_cases.mcp_kg_crud import (
     ListCanonicalDebtCommand,
     ListCanonicalDebtResult,
     ListCanonicalDebtUseCase,
-    ListCanonicalPartitionIntegrityCommand,
-    ListCanonicalPartitionIntegrityResult,
-    ListCanonicalPartitionIntegrityUseCase,
 )
 from okto_pulse.core.application.use_cases.mcp_ideation_crud import (
     McpCreateIdeationCommand,
@@ -1545,9 +1542,6 @@ __all__ = [
     "ListCanonicalDebtCommand",
     "ListCanonicalDebtResult",
     "ListCanonicalDebtUseCase",
-    "ListCanonicalPartitionIntegrityCommand",
-    "ListCanonicalPartitionIntegrityResult",
-    "ListCanonicalPartitionIntegrityUseCase",
     "CopyArchitectureFromSpecToCardCommand",
     "CopyArchitectureFromSpecToCardResult",
     "CopyArchitectureFromSpecToCardUseCase",

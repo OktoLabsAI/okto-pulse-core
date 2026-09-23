@@ -48,7 +48,6 @@ READ_CASES = (
     ("okto_pulse_kg_health", {}),
     ("okto_pulse_kg_health_readiness", {}),
     ("okto_pulse_kg_canonical_debt_list", {}),
-    ("okto_pulse_kg_canonical_partition_integrity_list", {}),
     ("okto_pulse_kg_takedown_status", {}),
     (
         "okto_pulse_kg_evaluate_bug_cognitive_closure",

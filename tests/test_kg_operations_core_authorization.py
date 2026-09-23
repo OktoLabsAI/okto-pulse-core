@@ -394,27 +394,6 @@ _REST_OPERATION_CASES: tuple[
         "kg.operations.queue.reprocess",
         "kg.admin.settings_write",
     ),
-    (
-        operational_rest.ListCanonicalPartitionIntegrityUseCase(),
-        lambda: operational_rest.CanonicalPartitionListCommand(
-            BOARD_ID,
-            None,
-            None,
-            None,
-            None,
-            None,
-            50,
-            0,
-        ),
-        "kg.operations.integrity.read",
-        "kg.admin.settings_read",
-    ),
-    (
-        operational_rest.GetCanonicalPartitionIntegrityDetailUseCase(),
-        lambda: operational_rest.CanonicalPartitionDetailCommand(BOARD_ID, "node-1"),
-        "kg.operations.integrity.read",
-        "kg.admin.settings_read",
-    ),
 )
 
 
@@ -429,8 +408,6 @@ _REST_OPERATION_CASES: tuple[
         "cognitive-inventory",
         "canonical-debt-list",
         "canonical-debt-retry",
-        "partition-list",
-        "partition-detail",
     ),
 )
 async def test_operational_rest_authorizes_before_any_kg_service_call(
@@ -562,14 +539,6 @@ _READ_CASES: tuple[
         False,
     ),
     (
-        mcp_kg_crud,
-        mcp_kg_crud.ListCanonicalPartitionIntegrityUseCase(),
-        lambda: mcp_kg_crud.ListCanonicalPartitionIntegrityCommand(BOARD_ID),
-        "kg.operations.integrity.read",
-        "kg.admin.settings_read",
-        False,
-    ),
-    (
         list_cognitive_dlq,
         list_cognitive_dlq.ListCognitiveDlqUseCase(),
         lambda: list_cognitive_dlq.ListCognitiveDlqCommand(
@@ -606,7 +575,6 @@ _READ_CASES: tuple[
         "pending-list",
         "pending-tree",
         "canonical-debt",
-        "partition-integrity",
         "cognitive-dlq",
     ),
 )

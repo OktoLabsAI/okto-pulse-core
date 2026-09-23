@@ -3294,8 +3294,7 @@ async def get_kg_health(
             health_diagnostics["operator_action"] = "inspect_cognitive_pending"
 
     # FR6 / AC5 (R7): canonical Learning partition integrity is exposed as ONE
-    # AGGREGATE health issue. Per-node detail (mixed-evidence deferred,
-    # provenance-only observed) lives ONLY in the read-only drilldown — Health
+    # AGGREGATE health issue. The public per-node inspector is retired; Health
     # uses cheap COUNTs (a SQL count + a file-backed store read off the event
     # loop), never a graph scan, so it stays light per tick. Counts are disjoint
     # (a go-forward HOLD and a historical DEBT are mutually exclusive per
@@ -3339,10 +3338,8 @@ async def get_kg_health(
                     f"{partition_blocking} canonical Learning partition-integrity "
                     "signal(s): bug-derived canonical Learning lacking canonical Bug "
                     "evidence (go-forward holds + historical remediation debt). "
-                    "Per-node detail is in the drilldown."
                 ),
-                "operator_action": "inspect_canonical_partition_integrity",
-                "drill_down_tool": "okto_pulse_kg_canonical_partition_integrity_list",
+                "operator_action": "inspect_kg_health",
                 "counts": {
                     "cognitive_pending": partition_cognitive_pending,
                     "canonical_debt": partition_debt_open,
@@ -3360,7 +3357,7 @@ async def get_kg_health(
         if health_diagnostics["primary_health_cause"] == "none":
             health_diagnostics["primary_health_cause"] = "canonical_partition_integrity"
             health_diagnostics["operator_action"] = (
-                "inspect_canonical_partition_integrity"
+                "inspect_kg_health"
             )
 
     digest_inputs = parity_snapshot["digest_inputs"]

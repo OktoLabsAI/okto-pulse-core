@@ -20,8 +20,6 @@ from okto_pulse.core.application.use_cases.operational_rest import (
     BugNotFoundError,
     CanonicalDebtListCommand,
     CanonicalDebtRetryCommand,
-    CanonicalPartitionDetailCommand,
-    CanonicalPartitionListCommand,
     ClearCognitiveSkipUseCase,
     CognitiveClearCommand,
     CognitiveEffectivenessInventoryCommand,
@@ -29,13 +27,11 @@ from okto_pulse.core.application.use_cases.operational_rest import (
     CognitiveSkipCommand,
     EvaluateBugCognitiveClosureByBugIdCommand,
     EvaluateBugCognitiveClosureByBugIdUseCase,
-    GetCanonicalPartitionIntegrityDetailUseCase,
     GetCognitiveEffectivenessInventoryUseCase,
     GetCognitiveReadinessMetricsUseCase,
     GetLineageGraphCommand,
     GetLineageGraphUseCase,
     ListCanonicalDebtUseCase,
-    ListCanonicalPartitionIntegrityUseCase,
     PutRuntimeSettingsCommand,
     PutRuntimeSettingsUseCase,
     RecordCognitiveSkipUseCase,
@@ -465,22 +461,6 @@ def _operational_case_builders():
             lambda _events: (
                 RetryCanonicalDebtUseCase(),
                 CanonicalDebtRetryCommand("board-b", "debt-1", None),
-            ),
-        ),
-        (
-            "canonical-partition-list",
-            lambda _events: (
-                ListCanonicalPartitionIntegrityUseCase(),
-                CanonicalPartitionListCommand(
-                    "board-b", None, None, None, None, None, 20, 0
-                ),
-            ),
-        ),
-        (
-            "canonical-partition-detail",
-            lambda _events: (
-                GetCanonicalPartitionIntegrityDetailUseCase(),
-                CanonicalPartitionDetailCommand("board-b", "node-1"),
             ),
         ),
     ]
