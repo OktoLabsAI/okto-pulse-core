@@ -258,7 +258,7 @@ async def test_kg_health_points_each_signal_at_its_drill_down_tool(
         for issue in health["health_issues"]
     }
     assert tools_by_code.get("dead_letter_backlog") is None
-    assert tools_by_code.get("canonical_debt_open") == "okto_pulse_kg_canonical_debt_list"
+    assert tools_by_code.get("canonical_debt_open") is None
     assert (
         tools_by_code.get("cognitive_consolidation_pending")
         == "okto_pulse_kg_list_cognitive_pending_items"

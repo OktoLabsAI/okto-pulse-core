@@ -3254,13 +3254,12 @@ async def get_kg_health(
                     "remain outside canonical consolidation and require retry or "
                     "cognitive promotion."
                 ),
-                "operator_action": "inspect_canonical_debt",
-                "drill_down_tool": "okto_pulse_kg_canonical_debt_list",
+                "operator_action": "inspect_kg_health",
             }
         )
         if health_diagnostics["primary_health_cause"] == "none":
             health_diagnostics["primary_health_cause"] = "canonical_debt_open"
-            health_diagnostics["operator_action"] = "inspect_canonical_debt"
+            health_diagnostics["operator_action"] = "inspect_kg_health"
 
     # FR7 (spec 007d1308 / dec_68fd26a2): cognitive pending is its OWN
     # operational signal with its own drill-down tool, kept separate from the
@@ -3663,7 +3662,7 @@ async def get_kg_health(
             "domain": "canonical_debt",
             "semantics": "semantic_canonicality_pending",
             "count": int(canonical_debt.get("open_count") or 0),
-            "drill_down_tool": "okto_pulse_kg_canonical_debt_list",
+            "drill_down_tool": None,
         },
         _POLICY_CONSTRAINT_PROJECTION_DOMAIN: (policy_constraint_projection),
     }

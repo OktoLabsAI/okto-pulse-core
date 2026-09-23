@@ -54,7 +54,6 @@ Semantic guideline protocol:
 - `okto_pulse_kg_update_cognitive_pending_item` — docs: `okto-pulse://reference/tool-docs/kg`
 
 ## KG — Operational & health
-- `okto_pulse_kg_canonical_debt_list` — docs: `okto-pulse://reference/tool-docs/kg`
 - `okto_pulse_kg_health` — docs: `okto-pulse://reference/tool-docs/kg`
 - `okto_pulse_kg_health_readiness` — docs: `okto-pulse://reference/tool-docs/kg`
 - `okto_pulse_kg_takedown_status` — docs: `okto-pulse://reference/tool-docs/kg`

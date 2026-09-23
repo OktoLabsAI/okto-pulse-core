@@ -664,47 +664,7 @@ class CoreKnowledgeGraphOperations:
             "e2e_health": e2e_health,
         }
 
-    async def list_canonical_debt(
-        self,
-        *,
-        board_id: str,
-        artifact_type: str | None,
-        state: str | None,
-        limit: int,
-        offset: int,
-        include_code_traceability: bool = True,
-    ):  # noqa: ANN201
-        from okto_pulse.core.services.canonical_debt_service import list_canonical_debt
 
-        return await list_canonical_debt(
-            self.__relational_context,
-            board_id=board_id,
-            artifact_type=artifact_type,
-            state=state,
-            limit=limit,
-            offset=offset,
-            include_code_traceability=include_code_traceability,
-        )
-
-    async def schedule_canonical_debt_retry(
-        self,
-        *,
-        board_id: str,
-        debt_id: str,
-        actor_id: str,
-        kg_health_state: str,
-    ) -> dict[str, object]:
-        from okto_pulse.core.services.canonical_debt_service import (
-            schedule_canonical_debt_retry,
-        )
-
-        return await schedule_canonical_debt_retry(
-            self.__relational_context,
-            board_id=board_id,
-            debt_id=debt_id,
-            actor_id=actor_id,
-            kg_health_state=kg_health_state,
-        )
 
 
 

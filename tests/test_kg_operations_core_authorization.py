@@ -14,7 +14,6 @@ from okto_pulse.core.application.use_cases import (
     kg_health,
     kg_routes_crud,
     list_cognitive_dlq,
-    mcp_kg_crud,
     operational_rest,
 )
 from okto_pulse.core.application.use_cases.authorization import (
@@ -37,7 +36,6 @@ BOARD_ID = "board-kg-operations"
 
 _NAMESPACE_REQUIREMENTS = (
     ("kg.operations.health.read", "kg.admin.settings_read"),
-    ("kg.operations.integrity.read", "kg.admin.settings_read"),
     ("kg.operations.cognitive.read", "kg.admin.settings_read"),
     ("kg.operations.cognitive.skip", "kg.admin.settings_write"),
     ("kg.operations.cognitive.clear", "kg.admin.settings_write"),
@@ -293,11 +291,7 @@ async def test_each_dedicated_kg_writer_authorizes_after_lookup_and_before_write
     expects_lookup: bool,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    module = (
-        kg_routes_crud
-        if use_case.__class__.__module__.endswith("kg_routes_crud")
-        else mcp_kg_crud
-    )
+    module = kg_routes_crud
     captured: list[tuple[PermissionRequirement, dict[str, Any]]] = []
 
     async def _deny(
@@ -372,28 +366,6 @@ _REST_OPERATION_CASES: tuple[
         "kg.operations.cognitive.read",
         "kg.admin.settings_read",
     ),
-    (
-        operational_rest.ListCanonicalDebtUseCase(),
-        lambda: operational_rest.CanonicalDebtListCommand(
-            BOARD_ID,
-            None,
-            None,
-            50,
-            0,
-        ),
-        "kg.operations.integrity.read",
-        "kg.admin.settings_read",
-    ),
-    (
-        operational_rest.RetryCanonicalDebtUseCase(),
-        lambda: operational_rest.CanonicalDebtRetryCommand(
-            BOARD_ID,
-            "debt-1",
-            None,
-        ),
-        "kg.operations.queue.reprocess",
-        "kg.admin.settings_write",
-    ),
 )
 
 
@@ -406,8 +378,6 @@ _REST_OPERATION_CASES: tuple[
         "cognitive-clear",
         "cognitive-metrics",
         "cognitive-inventory",
-        "canonical-debt-list",
-        "canonical-debt-retry",
     ),
 )
 async def test_operational_rest_authorizes_before_any_kg_service_call(
@@ -531,14 +501,6 @@ _READ_CASES: tuple[
         True,
     ),
     (
-        mcp_kg_crud,
-        mcp_kg_crud.ListCanonicalDebtUseCase(),
-        lambda: mcp_kg_crud.ListCanonicalDebtCommand(BOARD_ID),
-        "kg.operations.integrity.read",
-        "kg.admin.settings_read",
-        False,
-    ),
-    (
         list_cognitive_dlq,
         list_cognitive_dlq.ListCognitiveDlqUseCase(),
         lambda: list_cognitive_dlq.ListCognitiveDlqCommand(
@@ -574,7 +536,6 @@ _READ_CASES: tuple[
         "historical-progress",
         "pending-list",
         "pending-tree",
-        "canonical-debt",
         "cognitive-dlq",
     ),
 )

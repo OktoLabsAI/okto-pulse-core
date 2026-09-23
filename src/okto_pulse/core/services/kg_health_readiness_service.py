@@ -23,7 +23,7 @@ from okto_pulse.core.ports.scheduler import SchedulerControl
 
 _DLQ_TOOL = None
 _GLOBAL_OUTBOX_DLQ_TOOL = None
-_DEBT_TOOL = "okto_pulse_kg_canonical_debt_list"
+_DEBT_TOOL = None
 _HEALTH_TOOL = "okto_pulse_kg_health"
 _POLICY_PROJECTION_DLQ_SIGNAL = "policy_constraint_projection_dlq"
 
@@ -170,7 +170,7 @@ async def _non_maskable_items(
             "last_error": row.get("last_error") or row.get("failure_reason"),
             "error_text": row.get("last_error") or row.get("failure_reason"),
             "next_action": "none",
-            "remediation": "reconcile/retry the canonical debt for this artifact",
+            "remediation": "canonical projection is pending automatic recovery",
             "drill_down_tool": _DEBT_TOOL,
         })
 

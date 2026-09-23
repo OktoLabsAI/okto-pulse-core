@@ -14,7 +14,7 @@ BOARD_ID = "board-direct-kg-acl"
 def test_kg_permission_error_accepts_authenticated_mcp_wildcard() -> None:
     context = _context(["*"])
 
-    assert kg_permission_error(context, "kg.operations.integrity.read") is None
+    assert kg_permission_error(context, "kg.operations.health.read") is None
 
 
 def _context(permissions) -> SimpleNamespace:
@@ -47,7 +47,6 @@ def _tool(server, name: str):
 READ_CASES = (
     ("okto_pulse_kg_health", {}),
     ("okto_pulse_kg_health_readiness", {}),
-    ("okto_pulse_kg_canonical_debt_list", {}),
     ("okto_pulse_kg_takedown_status", {}),
     (
         "okto_pulse_kg_evaluate_bug_cognitive_closure",

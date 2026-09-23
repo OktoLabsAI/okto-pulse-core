@@ -186,7 +186,7 @@ async def test_ts_096b61b1_active_queue_distinct_from_dlq_and_debt(db_factory):
     assert dom["dead_letter"]["semantics"] == "terminal_failure"
     assert dom["canonical_debt"]["semantics"] == "semantic_canonicality_pending"
     tools = {dom[d]["drill_down_tool"] for d in ("active_queue", "dead_letter", "canonical_debt")}
-    assert tools == {None, "okto_pulse_kg_canonical_debt_list"}
+    assert tools == {None}
     # active_queue.count (3) reflects ONLY the active queue, not the DLQ (1) or debt.
     assert health["active_queue"]["total_active_depth"] == 3
     assert health["dead_letter_count"] == 1

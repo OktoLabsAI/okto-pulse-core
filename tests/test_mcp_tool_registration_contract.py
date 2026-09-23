@@ -11,7 +11,6 @@ async def test_operational_mcp_tools_are_registered_and_described_currently():
 
     required = {
         "okto_pulse_get_traceability_report",
-        "okto_pulse_kg_canonical_debt_list",
         "okto_pulse_kg_health_readiness",
         "okto_pulse_create_card",
         "okto_pulse_submit_task_validation",
@@ -81,10 +80,8 @@ async def test_operational_mcp_tools_are_registered_and_described_currently():
     assert properties["general_justification"]["minLength"] == 20
     assert properties["recommendation"]["enum"] == ["approve", "reject"]
 
-    # canonical-debt list: health drill-down tool must be discoverable.
-    debt_list_desc = tools["okto_pulse_kg_canonical_debt_list"].description
-    assert "canonical-debt" in debt_list_desc.lower()
-    assert "okto_pulse_kg_canonical_debt_list" in load("reference/tool-docs/kg.md")
+    assert "okto_pulse_kg_canonical_debt_list" not in tools
+    assert "okto_pulse_kg_canonical_debt_list" not in load("reference/tool-docs/kg.md")
 
     kg_docs = load("reference/tool-docs/kg.md")
 

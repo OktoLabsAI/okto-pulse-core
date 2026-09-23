@@ -280,67 +280,6 @@ async def upsert_canonical_debt(
     return await store.save(db, row)
 
 
-async def schedule_canonical_debt_retry(
-    db: object,
-    *,
-    board_id: str,
-    debt_id: str,
-    actor_id: str,
-    kg_health_state: str,
-) -> dict[str, Any]:
-    store = get_canonical_debt_store()
-    # Canonical-debt retry is a generic operational recovery path. Code
-    # Traceability projections are recovered only by the deterministic rebuild
-    # worker, so an opaque debt id can never cause this path to load or mutate a
-    # CT record.
-    row = await store.get(
-        db,
-        debt_id=debt_id,
-        include_code_traceability=False,
-    )
-    if row is None or row.board_id != board_id:
-        return {
-            "ok": False,
-            "error": "canonical_debt_not_found",
-            "attempt_consumed": False,
-        }
-    if row.canonical_state not in RETRYABLE_STATES:
-        return {
-            "ok": False,
-            "error": "canonical_debt_not_retryable",
-            "attempt_consumed": False,
-            "debt": canonical_debt_to_dict(row),
-        }
-    now = datetime.now(timezone.utc)
-    if kg_health_state in {
-        "quarantined",
-        "recovery_needed",
-        "backpressure",
-        "at_risk",
-    }:
-        row.canonical_state = "blocked"
-        row.failure_reason = f"kg_health_{kg_health_state}"
-        row.owner_agent_id = actor_id
-        row.updated_at = now
-        row = await store.save(db, row, commit=True)
-        return {
-            "ok": False,
-            "error": "kg_health_blocks_retry",
-            "kg_health_state": kg_health_state,
-            "attempt_consumed": False,
-            "debt": canonical_debt_to_dict(row),
-        }
-    row.canonical_state = "retry_scheduled"
-    row.next_retry_at = now
-    row.owner_agent_id = actor_id
-    row.updated_at = now
-    row = await store.save(db, row, commit=True)
-    return {
-        "ok": True,
-        "attempt_consumed": False,
-        "kg_health_state": kg_health_state,
-        "debt": canonical_debt_to_dict(row),
-    }
 
 
 async def reconcile_canonical_debt_with_evidence(
@@ -438,7 +377,6 @@ __all__ = [
     "list_canonical_debt",
     "mark_canonical_debt_committed_for_artifact",
     "reconcile_canonical_debt_with_evidence",
-    "schedule_canonical_debt_retry",
     "summarize_canonical_debt",
     "upsert_canonical_debt",
     "validate_canonical_debt_filters",

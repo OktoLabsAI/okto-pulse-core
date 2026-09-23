@@ -72,8 +72,6 @@ from sqlalchemy_test_models import (
 from okto_pulse.core.services.canonical_debt_service import (
     OPEN_STATES,
     list_canonical_debt,
-    schedule_canonical_debt_retry,
-    upsert_canonical_debt,
 )
 from okto_pulse.core.kg.single_writer_lock import (
     KGAdministrativeOperationReservation,
@@ -469,24 +467,3 @@ async def test_rebuild_maintenance_does_not_close_debt_with_working_evidence(
 # ---------------------------------------------------------------------------
 # Retry REST stays scheduler-only (preserved from IMP2)
 # ---------------------------------------------------------------------------
-
-
-@pytest.mark.asyncio
-async def test_retry_is_scheduler_only(board_id, agent_id, db_factory):
-    board_id = await _setup_board(db_factory)
-    async with db_factory() as db:
-        debt = await upsert_canonical_debt(
-            db, board_id=board_id, artifact_type="bug",
-            artifact_id="bug-retry", source_ref="bug:bug-retry",
-            content_hash="h-retry", target_status="canonical_learning_partition_integrity",
-            canonical_state="pending", failure_reason="x",
-        )
-        await db.commit()
-        result = await schedule_canonical_debt_retry(
-            db, board_id=board_id, debt_id=debt.id,
-            actor_id="claude-coder", kg_health_state="healthy",
-        )
-    # Schedules only; does NOT consume an attempt or reconcile directly.
-    assert result["ok"] is True
-    assert result["attempt_consumed"] is False
-    assert result["debt"]["canonical_state"] == "retry_scheduled"

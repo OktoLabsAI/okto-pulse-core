@@ -1,7 +1,6 @@
 """F4 retires the detailed audit; write-path schema validation remains."""
 import importlib.util
 import pytest
-from okto_pulse.core.application.use_cases import mcp_kg_crud
 from okto_pulse.core.kg.primitives import KGPrimitiveError, _validate_local_edge_pair
 from okto_pulse.core.mcp import server
 from okto_pulse.core.services import application_kg
@@ -11,8 +10,7 @@ def test_retired_audit_has_no_hidden_reader_or_use_case():
     assert importlib.util.find_spec("okto_pulse.core.kg.originates_from_audit") is None
     assert not hasattr(application_kg, "audit_originates_from_contract")
     assert not hasattr(server, "okto_pulse_kg_originates_from_contract_audit")
-    for name in ("AuditOriginatesFromContractCommand", "AuditOriginatesFromContractResult", "AuditOriginatesFromContractUseCase"):
-        assert not hasattr(mcp_kg_crud, name)
+    assert importlib.util.find_spec("okto_pulse.core.application.use_cases.mcp_kg_crud") is None
 
 
 def test_kgh1_existing_write_path_still_rejects_known_bug_to_bug():

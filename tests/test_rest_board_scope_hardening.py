@@ -18,8 +18,6 @@ from okto_pulse.core.application.use_cases.discovery_crud import (
 from okto_pulse.core.application.use_cases.operational_rest import (
     BoardNotFoundError,
     BugNotFoundError,
-    CanonicalDebtListCommand,
-    CanonicalDebtRetryCommand,
     ClearCognitiveSkipUseCase,
     CognitiveClearCommand,
     CognitiveEffectivenessInventoryCommand,
@@ -31,11 +29,9 @@ from okto_pulse.core.application.use_cases.operational_rest import (
     GetCognitiveReadinessMetricsUseCase,
     GetLineageGraphCommand,
     GetLineageGraphUseCase,
-    ListCanonicalDebtUseCase,
     PutRuntimeSettingsCommand,
     PutRuntimeSettingsUseCase,
     RecordCognitiveSkipUseCase,
-    RetryCanonicalDebtUseCase,
 )
 from okto_pulse.core.ports.traceability import TraceabilityReadError
 
@@ -447,20 +443,6 @@ def _operational_case_builders():
                 CognitiveEffectivenessInventoryCommand(
                     "board-b", None, False, "canonical", None
                 ),
-            ),
-        ),
-        (
-            "canonical-debt-list",
-            lambda _events: (
-                ListCanonicalDebtUseCase(),
-                CanonicalDebtListCommand("board-b", None, None, 20, 0),
-            ),
-        ),
-        (
-            "canonical-debt-retry",
-            lambda _events: (
-                RetryCanonicalDebtUseCase(),
-                CanonicalDebtRetryCommand("board-b", "debt-1", None),
             ),
         ),
     ]

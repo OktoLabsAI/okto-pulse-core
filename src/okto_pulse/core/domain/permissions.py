@@ -656,7 +656,6 @@ MCP_GAPS_PERMISSION_INTRODUCTION_V1 = PermissionIntroductionManifest(
 
 _KG_OPERATIONS_PERMISSION_LEAVES: tuple[str, ...] = (
     "kg.operations.health.read",
-    "kg.operations.integrity.read",
     "kg.operations.cognitive.read",
     "kg.operations.cognitive.skip",
     "kg.operations.cognitive.clear",
@@ -679,7 +678,6 @@ KG_OPERATIONS_PERMISSION_INTRODUCTION_V1 = PermissionIntroductionManifest(
     preset_grants=_explicit_preset_grants(_KG_OPERATIONS_PERMISSION_LEAVES, {}),
     historical_authorities=(
         ("kg.operations.health.read", "kg.admin.settings_read"),
-        ("kg.operations.integrity.read", "kg.admin.settings_read"),
         ("kg.operations.cognitive.read", "kg.admin.settings_read"),
         ("kg.operations.cognitive.skip", "kg.admin.settings_write"),
         ("kg.operations.cognitive.clear", "kg.admin.settings_write"),
@@ -1970,9 +1968,6 @@ PERMISSION_REGISTRY: dict[str, dict[str, Any]] = {
         },
         "operations": {
             "health": {"read": True},
-            "integrity": {
-                "read": True,
-            },
             "cognitive": {
                 "read": True,
                 "skip": True,
@@ -3057,7 +3052,7 @@ def normalize_agent_permission_overrides(
 
 
 _RETIRED_KG_PERMISSION_SHAPE = {"kg": {"operations": {
-    "integrity": {"backfill": True, "reconcile": True},
+    "integrity": {"read": True, "backfill": True, "reconcile": True},
     "schema": {"migrate": True},
     "tick": {"run": True},
     "global_outbox": {"read": True, "reprocess": True, "verify": True},
@@ -3081,11 +3076,10 @@ def _remove_retired_kg_full_control_fingerprint(working: PermissionFlags) -> boo
         "kg.operations.global_recovery.read", "kg.operations.global_recovery.cancel", "kg.operations.global_recovery.resume",
         "kg.operations.global_recovery.run", "kg.operations.quarantine.restore"}
     rebuild = recovery | {"kg.operations.rebuild.preflight", "kg.operations.rebuild.confirm", "kg.operations.rebuild.run"}
-    retired_integrity = {"kg.operations.integrity.backfill", "kg.operations.integrity.reconcile"}
+    retired_integrity = {"kg.operations.integrity.read", "kg.operations.integrity.backfill", "kg.operations.integrity.reconcile"}
     rebuild = rebuild | {"kg.operations.schema.migrate"} | retired_integrity
     present = frozenset(path for path in rebuild if _permission_value_presence(working, path)[0])
-    has_retired_subtree = any(_permission_value_presence(working, path.rsplit(".", 1)[0])[0] for path in rebuild if path not in retired_integrity)
-    has_retired_subtree = has_retired_subtree or any(_permission_value_presence(working, path)[0] for path in retired_integrity)
+    has_retired_subtree = any(_permission_value_presence(working, path.rsplit(".", 1)[0])[0] for path in rebuild)
     if not has_retired_subtree:
         return True
     if present != rebuild:

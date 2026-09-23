@@ -745,25 +745,7 @@ class KnowledgeGraphOperations(Protocol):
         delivery_key: str | None = None,
     ) -> dict[str, object]: ...
 
-    async def list_canonical_debt(
-        self,
-        *,
-        board_id: str,
-        artifact_type: str | None,
-        state: str | None,
-        limit: int,
-        offset: int,
-        include_code_traceability: bool = True,
-    ) -> object: ...
 
-    async def schedule_canonical_debt_retry(
-        self,
-        *,
-        board_id: str,
-        debt_id: str,
-        actor_id: str,
-        kg_health_state: str,
-    ) -> dict[str, object]: ...
 
 
 

@@ -129,13 +129,9 @@ async def test_mixed_each_domain_once_with_distinct_drilldowns(db_factory):
     # DLQ is its OWN count, never folded into the active queue: active_queue.count
     # reflects only ConsolidationQueue pending/claimed (1), not the DLQ row.
     assert dom["active_queue"]["count"] == 1 and dom["dead_letter"]["count"] == 1
-    # Distinct drill-down tools per domain.
+    # Maintenance inspectors are retired; distinct aggregate signals remain.
     tools = {dom[d]["drill_down_tool"] for d in ("active_queue", "dead_letter", "canonical_debt")}
-    assert tools == {
-        None,
-        None,
-        "okto_pulse_kg_canonical_debt_list",
-    }
+    assert tools == {None}
     # Distinct semantics per domain.
     assert dom["active_queue"]["semantics"] == "transient_operational"
     assert dom["dead_letter"]["semantics"] == "terminal_failure"

@@ -15,12 +15,14 @@ from sqlalchemy_test_models import (
     Card,
     ConsolidationDeadLetter,
     ConsolidationQueue,
+    DomainEventRow,
     Ideation,
     Refinement,
     Spec,
     Story,
 )
 from okto_pulse.core.ports.consolidation import (
+    CardLifecycleTransition,
     ConsolidationPoisonRow,
     ConsolidationProjectionInputs,
     ConsolidationQueueRecord,
@@ -87,6 +89,22 @@ def _apply(row: Any, record: ConsolidationQueueRecord) -> None:
 
 class TestSqlAlchemyConsolidationPersistence:
     __test__ = False
+
+    async def latest_card_transitions(
+        self, context: Any, *, board_id: str, card_id: str,
+    ) -> tuple[CardLifecycleTransition, ...]:
+        rows = (await context.execute(
+            select(DomainEventRow).where(
+                DomainEventRow.board_id == board_id,
+                DomainEventRow.event_type == "card.moved",
+                DomainEventRow.payload_json["card_id"].as_string() == card_id,
+            ).order_by(DomainEventRow.occurred_at.desc(), DomainEventRow.id.desc()).limit(2)
+        )).scalars().all()
+        return tuple(CardLifecycleTransition(
+            event_id=row.id, occurred_at=row.occurred_at,
+            from_status=row.payload_json.get("from_status"),
+            to_status=row.payload_json.get("to_status"),
+        ) for row in rows)
 
     async def load_artifact(
         self, context, *, artifact_type: str, artifact_id: str

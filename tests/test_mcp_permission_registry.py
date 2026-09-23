@@ -236,8 +236,8 @@ def test_live_catalog_has_one_exact_policy_or_audited_human_only_exemption() -> 
     report = registry_vs_tools_report(list(LIVE_TOOL_NAMES))
 
     assert report.is_valid
-    assert len(report.live_tools) == 303
-    assert len(MCP_TOOL_PERMISSION_POLICIES) == 300
+    assert len(report.live_tools) == 302
+    assert len(MCP_TOOL_PERMISSION_POLICIES) == 299
     assert len(HUMAN_ONLY_MCP_TOOL_EXEMPTIONS) == 3
     assert tuple(policy.tool_name for policy in MCP_TOOL_PERMISSION_POLICIES) == tuple(
         sorted(policy.tool_name for policy in MCP_TOOL_PERMISSION_POLICIES)

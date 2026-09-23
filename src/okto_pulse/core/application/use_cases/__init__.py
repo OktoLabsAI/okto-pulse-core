@@ -708,11 +708,6 @@ from okto_pulse.core.application.use_cases.mcp_card_crud import (
     McpRemoveCardDependencyResult,
     McpRemoveCardDependencyUseCase,
 )
-from okto_pulse.core.application.use_cases.mcp_kg_crud import (
-    ListCanonicalDebtCommand,
-    ListCanonicalDebtResult,
-    ListCanonicalDebtUseCase,
-)
 from okto_pulse.core.application.use_cases.mcp_ideation_crud import (
     McpCreateIdeationCommand,
     McpCreateIdeationResult,
@@ -1539,9 +1534,6 @@ __all__ = [
     "BoostNodeCommand",
     "BoostNodeResult",
     "BoostNodeUseCase",
-    "ListCanonicalDebtCommand",
-    "ListCanonicalDebtResult",
-    "ListCanonicalDebtUseCase",
     "CopyArchitectureFromSpecToCardCommand",
     "CopyArchitectureFromSpecToCardResult",
     "CopyArchitectureFromSpecToCardUseCase",

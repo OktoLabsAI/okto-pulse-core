@@ -20340,99 +20340,6 @@ async def okto_pulse_kg_health_readiness(
     return json.dumps(result.data, default=str)
 
 
-@mcp.tool()
-async def okto_pulse_kg_canonical_debt_list(
-    board_id: str,
-    artifact_type: str | None = None,
-    state: str | None = None,
-    limit: int = 50,
-    offset: int = 0,
-) -> str:
-    """
-    List canonical-debt ledger rows for KG health drill-down.
-
-    Use this when `okto_pulse_kg_health` reports `canonical_debt.open_count`
-    and you need to inspect which artifacts are pending, blocked, failed, or
-    retry-scheduled before deciding whether a rebuild or retry is appropriate.
-    """
-    ctx = await _get_agent_ctx(board_id)
-    if ctx is None:
-        return _auth_error()
-    perm_err = kg_permission_error(ctx, "board.read")
-    if perm_err:
-        return _kg_direct_permission_denied("board.read", perm_err)
-
-    from okto_pulse.core.services.canonical_debt_service import (
-        CanonicalDebtFilterError,
-        validate_canonical_debt_filters,
-    )
-
-    try:
-        validate_canonical_debt_filters(
-            artifact_type=artifact_type,
-            state=state,
-        )
-    except CanonicalDebtFilterError as exc:
-        return _structured_error(
-            exc.code,
-            list(exc.allowed),
-            None,
-            str(exc),
-            invalid_keys=[exc.field],
-        )
-
-    bounded_limit, bounded_offset, pagination_error = _kg_pagination_window(
-        limit, offset
-    )
-    if pagination_error is not None:
-        return pagination_error
-
-    from okto_pulse.core.application.use_cases import (
-        ListCanonicalDebtCommand,
-        ListCanonicalDebtUseCase,
-    )
-    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
-
-    # MCP-FU5 strangler: obtain a PulseUnitOfWork from the MCP UnitOfWorkFactory
-    # instead of opening a raw get_db_for_mcp() session — the tool no longer calls
-    # get_db_for_mcp directly. The use case delegates to the same reader so the
-    # payload (items/counts/total) stays byte-identical. Read-only: no commit.
-    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
-    async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
-        result = (
-            await ListCanonicalDebtUseCase().execute(
-                ListCanonicalDebtCommand(
-                    board_id,
-                    artifact_type=artifact_type,
-                    state=state,
-                    limit=bounded_limit,
-                    offset=bounded_offset,
-                ),
-                actor=actor,
-                uow=uow,
-            )
-        ).data
-
-    from okto_pulse.core.kg.rebuild_audit import emit_operational_inspection_sample
-
-    emit_operational_inspection_sample(
-        signal="canonical_debt",
-        surface="mcp",
-        outcome="success",
-        board_id=board_id,
-        item_count=len(result.items),
-    )
-    return json.dumps(
-        {
-            "board_id": board_id,
-            "items": result.items,
-            "counts": result.counts,
-            "total": result.total,
-            "limit": bounded_limit,
-            "offset": bounded_offset,
-        },
-        default=str,
-    )
 
 
 
@@ -20897,7 +20804,7 @@ async def okto_pulse_kg_list_cognitive_dlq(
     `readiness_effect`=blocking_technical). A technical DLQ is NEVER a selectable
     cognitive reason_code; resolve it (don't skip it). Open canonical-debt
     blockers are surfaced by `okto_pulse_kg_list_cognitive_readiness_items`
-    (signal=open_canonical_debt) and `okto_pulse_kg_canonical_debt_list`.
+    (signal=open_canonical_debt).
     """
     ctx = await _get_agent_ctx(board_id)
     if ctx is None:
@@ -20965,7 +20872,7 @@ async def okto_pulse_kg_list_cognitive_dlq(
             "note": (
                 "Technical DLQ — resolve/reprocess; never skippable as a cognitive "
                 "reason_code. Open canonical debt is in the readiness list "
-                "(signal=open_canonical_debt) and okto_pulse_kg_canonical_debt_list."
+                "(signal=open_canonical_debt)."
             ),
         },
         default=str,

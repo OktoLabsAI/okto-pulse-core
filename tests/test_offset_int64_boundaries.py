@@ -13,7 +13,6 @@ from okto_pulse.core.ports.application_persistence import PAGE_OFFSET_MAX
 
 
 _OPERATIONAL_OFFSET_TOOLS = (
-    "okto_pulse_kg_canonical_debt_list",
     "okto_pulse_kg_list_cognitive_dlq",
     "okto_pulse_list_architecture_propagation_legacy",
 )

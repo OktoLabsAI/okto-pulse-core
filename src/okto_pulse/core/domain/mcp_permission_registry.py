@@ -78,7 +78,6 @@ MCP_READER_TOOL_NAMES = frozenset(
         "okto_pulse_get_task_conclusions",
         "okto_pulse_get_task_validation",
         "okto_pulse_get_traceability_report",
-        "okto_pulse_kg_canonical_debt_list",
         "okto_pulse_kg_evaluate_bug_cognitive_closure",
         "okto_pulse_kg_evaluate_cognitive_readiness",
         "okto_pulse_kg_health",
@@ -512,7 +511,6 @@ MCP_TOOL_PERMISSION_POLICIES: tuple[McpToolPermissionPolicy, ...] = (
     _policy("okto_pulse_kg_add_edge_candidate", "kg.session.add_edge"),
     _policy("okto_pulse_kg_add_node_candidate", "kg.session.add_node"),
     _policy("okto_pulse_kg_begin_consolidation", "kg.session.begin"),
-    _policy("okto_pulse_kg_canonical_debt_list", "kg.operations.integrity.read"),
     _policy("okto_pulse_kg_commit_consolidation", "kg.session.commit"),
     _policy(
         "okto_pulse_kg_evaluate_bug_cognitive_closure",

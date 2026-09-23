@@ -58,10 +58,6 @@ _KG_COGNITIVE_CLEAR = PermissionRequirement(
     "kg.operations.cognitive.clear",
     legacy_operation="kg.admin.settings_write",
 )
-_KG_INTEGRITY_READ = PermissionRequirement(
-    "kg.operations.integrity.read",
-    legacy_operation="kg.admin.settings_read",
-)
 _KG_QUEUE_REPROCESS = PermissionRequirement(
     "kg.operations.queue.reprocess",
     legacy_operation="kg.admin.settings_write",
@@ -797,97 +793,5 @@ class GetCognitiveEffectivenessInventoryUseCase:
                 include_candidate_logs=command.include_candidate_logs,
                 graph_layer=command.graph_layer,
                 metric_status=health.get("metric_status"),
-            )
-        )
-
-
-@dataclass(frozen=True)
-class CanonicalDebtListCommand:
-    board_id: str
-    artifact_type: str | None
-    state: str | None
-    limit: int
-    offset: int
-
-
-@dataclass(frozen=True)
-class CanonicalDebtRetryCommand:
-    board_id: str
-    debt_id: str
-    scheduler_control: SchedulerControl | None
-
-
-class ListCanonicalDebtUseCase:
-    async def execute(
-        self, command: CanonicalDebtListCommand, *, actor: ActorContext, uow: PulseUnitOfWork
-    ) -> DataResult:
-        from okto_pulse.core.services.canonical_debt_service import (
-            validate_canonical_debt_filters,
-        )
-
-        validate_canonical_debt_filters(
-            artifact_type=command.artifact_type,
-            state=command.state,
-        )
-        await _require_board_access(uow, command.board_id, actor)
-        await require_authorization(
-            actor,
-            _KG_INTEGRITY_READ,
-            uow=uow,
-            board_id=command.board_id,
-        )
-        from okto_pulse.core.application.use_cases.code_traceability_kg_access import (
-            EvaluateCodeTraceabilityKGReadAccessUseCase,
-        )
-
-        ct_access = await EvaluateCodeTraceabilityKGReadAccessUseCase().execute(
-            actor=actor,
-            board_id=command.board_id,
-            uow=uow,
-        )
-        kwargs = {
-            "board_id": command.board_id,
-            "artifact_type": command.artifact_type,
-            "state": command.state,
-            "limit": command.limit,
-            "offset": command.offset,
-        }
-        if not ct_access.allowed:
-            kwargs["include_code_traceability"] = False
-        return DataResult(
-            await uow.services.kg.list_canonical_debt(
-                **kwargs,
-            )
-        )
-
-
-class RetryCanonicalDebtUseCase:
-    async def execute(
-        self, command: CanonicalDebtRetryCommand, *, actor: ActorContext, uow: PulseUnitOfWork
-    ) -> DataResult:
-        await _require_board_access(
-            uow,
-            command.board_id,
-            actor,
-            allowed_share_permissions={"editor", "admin"},
-        )
-        await require_authorization(
-            actor,
-            _KG_QUEUE_REPROCESS,
-            uow=uow,
-            board_id=command.board_id,
-        )
-        health = await uow.services.kg.health(
-            command.board_id,
-            scheduler_control=command.scheduler_control,
-        )
-        return DataResult(
-            await uow.services.kg.schedule_canonical_debt_retry(
-                board_id=command.board_id,
-                debt_id=command.debt_id,
-                actor_id=actor.actor_id,
-                kg_health_state=str(
-                    health.get("overall_state") or health.get("graph_state")
-                ),
             )
         )
