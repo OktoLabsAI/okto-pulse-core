@@ -20645,57 +20645,6 @@ async def okto_pulse_kg_digest_layer_reconcile(
 
 
 
-@mcp.tool()
-async def okto_pulse_kg_stale_canonical_parity_list(
-    board_id: str,
-    limit: int = 50,
-    offset: int = 0,
-) -> str:
-    """
-    List stale-canonical parity signals for KG health drill-down (R2). READ-ONLY:
-    canonical deterministic board-graph nodes whose SQL source regressed below
-    canonical eligibility, each annotated with whether its Global Discovery digest
-    is also stale (R1 parity). Mirrors REST
-    `GET /api/v1/kg/{board_id}/stale-canonical-parity`. Items carry board_graph_stale,
-    global_discovery_stale_digest, expected_graph_layer, expected_maturity_status,
-    current_source_status, recommended_action. NEVER demotes/reconciles/syncs — this
-    is a diagnostic only (no mutating path).
-    """
-    ctx = await _get_agent_ctx(board_id)
-    if ctx is None:
-        return _auth_error()
-    perm_err = kg_permission_error(ctx, "board.read")
-    if perm_err:
-        return _kg_direct_permission_denied("board.read", perm_err)
-
-    bounded_limit, bounded_offset, pagination_error = _kg_pagination_window(
-        limit, offset
-    )
-    if pagination_error is not None:
-        return pagination_error
-
-    from okto_pulse.core.application.use_cases import (
-        ListStaleCanonicalParityCommand,
-        ListStaleCanonicalParityUseCase,
-    )
-    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
-
-    # Spec R01A IMP5 (MCP strangler): obtain a PulseUnitOfWork from the MCP
-    # UnitOfWorkFactory instead of opening a raw get_db_for_mcp() session — this
-    # tool no longer calls get_db_for_mcp. The transport-free use case (shared with
-    # the REST endpoint migrated in R01A IMP4) reads the parity signals; the
-    # payload, the pagination bounds and the ``_get_agent_ctx`` permission-cache
-    # path are unchanged.
-    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
-    async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
-        result = await ListStaleCanonicalParityUseCase().execute(
-            ListStaleCanonicalParityCommand(
-                board_id, limit=bounded_limit, offset=bounded_offset
-            ),
-            actor=actor,
-            uow=uow,
-        )
-    return json.dumps(result.data, default=str)
 
 
 @mcp.tool()
@@ -21854,7 +21803,6 @@ _TOOLS_WITH_LAZY_COMPACT_DESCRIPTION = frozenset(
         "okto_pulse_create_refinement",
         "okto_pulse_ask_ideation_choice_question",
         "okto_pulse_validate_architecture_design_payload",
-        "okto_pulse_kg_stale_canonical_parity_list",
         "okto_pulse_get_architecture_design_schema",
         "okto_pulse_kg_digest_layer_mismatch_list",
         "okto_pulse_list_blockers",

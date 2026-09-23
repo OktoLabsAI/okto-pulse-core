@@ -736,9 +736,6 @@ class KnowledgeGraphOperations(Protocol):
     ) -> object: ...
 
 
-    async def list_stale_canonical_parity(
-        self, board_id: str, *, limit: int, offset: int
-    ) -> object: ...
 
     async def query_takedown_telemetry(
         self,

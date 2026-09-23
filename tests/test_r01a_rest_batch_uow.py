@@ -25,10 +25,8 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from okto_pulse.community.api import agents as agents_api
-from okto_pulse.community.api import kg_stale_canonical_parity as stale_api
 from okto_pulse.community.api.agents import router as agents_router
 from okto_pulse.community.api.deps import get_unit_of_work
-from okto_pulse.community.api.kg_stale_canonical_parity import router as stale_router
 from okto_pulse.community.api.auth_deps import (
     get_realm_id,
     require_principal,
@@ -49,7 +47,6 @@ from okto_pulse.core.repositories.relational_consumer_inventory import (
 USER = "r01a-imp4-user"
 
 MIGRATED_HANDLERS = {
-    "list_stale_canonical_parity_endpoint": stale_api.list_stale_canonical_parity_endpoint,
     "update_agent": agents_api.update_agent,
     "update_board_overrides": agents_api.update_board_overrides,
 }
@@ -83,49 +80,8 @@ def _client(*router_prefixes) -> TestClient:
 # --- read-only parity via the REAL endpoints -------------------------------
 
 
-@pytest.mark.asyncio
-async def test_stale_canonical_parity_endpoint_payload() -> None:
-    from sqlalchemy_test_models import Board
-
-    board_id = f"board-{uuid.uuid4().hex[:8]}"
-    async with get_session_factory()() as db:
-        db.add(Board(id=board_id, name="R01A parity", owner_id=USER))
-        await db.commit()
-
-    import asyncio
-    from kg_schema_testing import ensure_board_graph_bootstrapped
-
-    await asyncio.to_thread(ensure_board_graph_bootstrapped, board_id)
-
-    client = _client((stale_router, "/api/v1"))
-    resp = client.get(
-        f"/api/v1/kg/{board_id}/stale-canonical-parity",
-        params={"limit": 25, "offset": 0},
-    )
-    assert resp.status_code == 200, resp.text
-    assert isinstance(resp.json(), dict)
 
 
-@pytest.mark.asyncio
-@pytest.mark.parametrize("foreign", [False, True], ids=["missing", "foreign"])
-async def test_stale_canonical_parity_board_denial_is_non_enumerable(
-    foreign: bool,
-) -> None:
-    from sqlalchemy_test_models import Board
-
-    board_id = f"board-{uuid.uuid4().hex[:8]}"
-    if foreign:
-        async with get_session_factory()() as db:
-            db.add(Board(id=board_id, name="Foreign parity", owner_id="other-user"))
-            await db.commit()
-
-    response = _client((stale_router, "/api/v1")).get(
-        f"/api/v1/kg/{board_id}/stale-canonical-parity",
-        params={"limit": 25, "offset": 0},
-    )
-
-    assert response.status_code == 404
-    assert response.json() == {"detail": "Board not found"}
 
 
 

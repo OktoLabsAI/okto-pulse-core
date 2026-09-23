@@ -16,7 +16,6 @@ _OPERATIONAL_OFFSET_TOOLS = (
     "okto_pulse_kg_canonical_debt_list",
     "okto_pulse_kg_canonical_partition_integrity_list",
     "okto_pulse_kg_digest_layer_mismatch_list",
-    "okto_pulse_kg_stale_canonical_parity_list",
     "okto_pulse_kg_list_cognitive_dlq",
     "okto_pulse_list_architecture_propagation_legacy",
 )

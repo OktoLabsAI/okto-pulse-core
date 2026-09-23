@@ -284,12 +284,6 @@ def stage_boost_node_audit(*args: Any, **kwargs: Any) -> Any:
     return _stage(*args, **kwargs)
 
 
-async def list_stale_canonical_parity(*args: Any, **kwargs: Any) -> Any:
-    from okto_pulse.core.kg.stale_canonical_parity import (
-        list_stale_canonical_parity as _list,
-    )
-
-    return await _list(*args, **kwargs)
 
 
 async def list_canonical_partition_integrity(*args: Any, **kwargs: Any) -> Any:

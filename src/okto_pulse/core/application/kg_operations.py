@@ -596,17 +596,6 @@ class CoreKnowledgeGraphOperations:
         )
 
 
-    async def list_stale_canonical_parity(
-        self, board_id: str, *, limit: int, offset: int
-    ):  # noqa: ANN201
-        from okto_pulse.core.services.application_kg import list_stale_canonical_parity
-
-        return await list_stale_canonical_parity(
-            self.__relational_context,
-            board_id=board_id,
-            limit=limit,
-            offset=offset,
-        )
 
     async def query_takedown_telemetry(
         self,

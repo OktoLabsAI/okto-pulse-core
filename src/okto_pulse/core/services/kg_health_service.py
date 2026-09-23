@@ -3435,7 +3435,6 @@ async def get_kg_health(
     # (the source regression is the more specific cause; the digest mismatch is its
     # R1 consequence).
     if stale_parity.get("count"):
-        _scp_sample = stale_parity["items"][0]
         health_diagnostics["health_issues"].append(
             {
                 "code": "stale_canonical_parity",
@@ -3449,8 +3448,7 @@ async def get_kg_health(
                     "maturity/status event or sweep."
                 ),
                 "count": stale_parity["count"],
-                "operator_action": "inspect_stale_canonical_parity",
-                "drill_down_tool": "okto_pulse_kg_stale_canonical_parity_list",
+                "operator_action": "inspect_kg_health",
                 # AC5/AC13: read-only diagnostic — the literal contract flag makes the
                 # no-mutation guarantee explicit (no agent-facing mutation tool clears
                 # this; the R2 reconciler is the only internal demotion path).
@@ -3458,20 +3456,6 @@ async def get_kg_health(
                 "global_discovery_evaluation": stale_parity.get(
                     "global_discovery_evaluation"
                 ),
-                "sample": {
-                    "node_id": _scp_sample.get("node_id"),
-                    "source_artifact_ref": _scp_sample.get("source_artifact_ref"),
-                    "board_graph_stale": _scp_sample.get("board_graph_stale"),
-                    "global_discovery_stale_digest": _scp_sample.get(
-                        "global_discovery_stale_digest"
-                    ),
-                    "expected_graph_layer": _scp_sample.get("expected_graph_layer"),
-                    "expected_maturity_status": _scp_sample.get(
-                        "expected_maturity_status"
-                    ),
-                    "current_source_status": _scp_sample.get("current_source_status"),
-                    "recommended_action": _scp_sample.get("recommended_action"),
-                },
                 "precedence_explanation": (
                     "Ranked BELOW canonical_debt_open, cognitive_consolidation_pending, "
                     "canonical_partition_integrity and DLQ/operational failures (never "
@@ -3482,7 +3466,7 @@ async def get_kg_health(
         )
         if health_diagnostics["primary_health_cause"] == "none":
             health_diagnostics["primary_health_cause"] = "stale_canonical_parity"
-            health_diagnostics["operator_action"] = "inspect_stale_canonical_parity"
+            health_diagnostics["operator_action"] = "inspect_kg_health"
 
     # R1-IMP2 — digest_vs_board_layer_mismatch: a published DecisionDigest
     # graph_layer diverging from the expected_digest_layer recomputed from the

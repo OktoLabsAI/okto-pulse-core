@@ -15399,3 +15399,14 @@ de cache em agents nem provas do reconciler/eventos internos.
 
 F16 final terminado: **8800 linhas, ok=true, zero findings arquiteturais e
 documentais, oito budgets zero**. Nenhuma sessão de teste ou instalação pendente.
+
+### F4 — retirada da superfície pública de stale canonical parity
+
+Removidos handler MCP, rota REST, policy exclusiva, use case, facade e método da porta. Leitor interno preservado: Health e takedown governado dependem dele. Health mantém contagem, severidade e precedência, sem sample/drill-down público. integrity.read continua compartilhada. Catálogo/manifests regenerados. Testes de ausência substituem os exclusivos da superfície retirada; cache/ACL e leitor nativo permanecem. Frontend KGHealthView: 31 passed (parity-retirement-frontend.xml), sem edição de produção nem rebuild necessário. Wheels dist-parity-retirement construídos; validação do par e testes Python pendentes. Este recorte não encerra F4 ou a iniciativa.
+
+
+Par dist-parity-retirement instalado e comparado: Core 827 .py/890 payloads, Community 361/445, byte-identical (provenance-parity-retirement.json). Core focado: 98 passed/38.77s; Community: 112 passed/243.31s. F16 final: 8784 linhas, ok=true, zero findings e oito budgets zero (closure-parity-retirement-final.json).
+
+Campanha nativa inicial: 7 passed/1 failed por sinal ausente no primeiro Health. Caso isolado passou em 21.46s e o grupo isolado passou 8/142.13s. Health possui probes frios com budget 350 ms; a sincronização usada nos testes de digest já drena os probes reais antes de julgar semântica. Adicionado helper de teste equivalente com assert de drain zero e status disponível, sem mudar tempo/gate de produção nem mockar o resultado. Primeira execução sincronizada: 6 passed/2 NameError causados por duas chamadas antigas não substituídas dentro dos fixtures de dívida; corrigidas e reexecução desses dois casos em parity-retirement-native-corrected.xml pendente. A intermitência original permanece documentada; não é evidência de falha semântica de produção.
+
+Reexecução terminal dos dois casos corrigidos: 2 passed/40.79s. Todos os oito casos nativos sincronizados estão verdes (6 + 2). Sem testes/instalações pendentes; nenhuma alteração de produto após a prova do par. Ruff F/E9 e diff check concluídos. Próximo recorte: comando manual digest_layer_reconcile, permissão exclusiva e consumidores exclusivos, preservando os eventos internos.

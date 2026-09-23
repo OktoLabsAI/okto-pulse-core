@@ -14,7 +14,6 @@ from okto_pulse.core.application.use_cases import (
     kg_health,
     kg_routes_crud,
     list_cognitive_dlq,
-    list_stale_canonical_parity,
     mcp_kg_crud,
     operational_rest,
 )
@@ -609,14 +608,6 @@ _READ_CASES: tuple[
         "kg.admin.settings_read",
         False,
     ),
-    (
-        list_stale_canonical_parity,
-        list_stale_canonical_parity.ListStaleCanonicalParityUseCase(),
-        lambda: list_stale_canonical_parity.ListStaleCanonicalParityCommand(BOARD_ID),
-        "kg.operations.integrity.read",
-        "kg.admin.settings_read",
-        True,
-    ),
 )
 
 
@@ -645,7 +636,6 @@ _READ_CASES: tuple[
         "partition-integrity",
         "digest-mismatch",
         "cognitive-dlq",
-        "stale-parity",
     ),
 )
 async def test_each_dedicated_kg_reader_checks_the_specific_operation(

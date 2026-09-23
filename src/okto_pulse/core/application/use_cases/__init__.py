@@ -184,11 +184,6 @@ from okto_pulse.core.application.use_cases.list_cognitive_dlq import (
     ListCognitiveDlqResult,
     ListCognitiveDlqUseCase,
 )
-from okto_pulse.core.application.use_cases.list_stale_canonical_parity import (
-    ListStaleCanonicalParityCommand,
-    ListStaleCanonicalParityResult,
-    ListStaleCanonicalParityUseCase,
-)
 from okto_pulse.core.application.use_cases.move_ideation import (
     MoveIdeationCommand,
     MoveIdeationResult,
@@ -1282,10 +1277,6 @@ __all__ = [
     "ListCognitiveDlqResult",
     "ListCognitiveDlqUseCase",
     # list_dead_letter_rows
-    # list_stale_canonical_parity
-    "ListStaleCanonicalParityCommand",
-    "ListStaleCanonicalParityResult",
-    "ListStaleCanonicalParityUseCase",
     # queue_health
     # move_ideation
     "MoveIdeationCommand",
