@@ -1522,10 +1522,10 @@
       "line": 619,
       "id": "DEI-T12",
       "normative_text": "| DEI-T12 | Proof implementation com receipt inválido/revogado | Lote falha; não degrada silenciosamente para progresso. |",
-      "review_status": "partial",
+      "review_status": "verified_by_reviewed_execution",
       "test_text_references": [],
       "reviewed_execution": {
-        "artifact": "acceptance-dei-execution.json",
+        "artifact": "acceptance-dei-supplement-execution.json",
         "criterion_key": "DEI:DEI-T12"
       }
     },
@@ -1587,8 +1587,12 @@
       "line": 624,
       "id": "DEI-T17",
       "normative_text": "| DEI-T17 | Receipt pré-Target ou selector scope antigo | Não resolve nem executa Target criado depois; erro acionável. |",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "verified_by_reviewed_execution",
+      "test_text_references": [],
+      "reviewed_execution": {
+        "artifact": "acceptance-dei-supplement-execution.json",
+        "criterion_key": "DEI:DEI-T17"
+      }
     },
     {
       "key": "DEI:DEI-T18",
@@ -1596,10 +1600,10 @@
       "line": 625,
       "id": "DEI-T18",
       "normative_text": "| DEI-T18 | Vários Targets do mesmo snapshot aceito | Reusa a observação válida; um challenge não é consumido repetidamente por item. |",
-      "review_status": "partial",
+      "review_status": "verified_by_reviewed_execution",
       "test_text_references": [],
       "reviewed_execution": {
-        "artifact": "acceptance-dei-execution.json",
+        "artifact": "acceptance-dei-supplement-execution.json",
         "criterion_key": "DEI:DEI-T18"
       }
     },
@@ -1979,10 +1983,10 @@
       "line": 655,
       "id": "DEI-T48",
       "normative_text": "| DEI-T48 | create→delete, rename encadeado, mesmo path em dois repos | Impacto histórico e líquido são distintos; agregação não inventa alteração final. |",
-      "review_status": "partial",
+      "review_status": "verified_by_reviewed_execution",
       "test_text_references": [],
       "reviewed_execution": {
-        "artifact": "acceptance-dei-execution.json",
+        "artifact": "acceptance-dei-supplement-execution.json",
         "criterion_key": "DEI:DEI-T48"
       }
     },
@@ -2032,7 +2036,7 @@
       "line": 660,
       "id": "DEI-T53",
       "normative_text": "| DEI-T53 | REST antigo recebe implementation/test | Encaminha corretamente ou recusa contrato removido; nunca aceita prova invisível ao rollup. |",
-      "review_status": "not_audited_in_this_inventory",
+      "review_status": "verified_by_reviewed_execution",
       "test_text_references": [
         {
           "path": "okto_labs_pulse_core/tests/test_delivery_evidence_contract.py",
@@ -2046,7 +2050,11 @@
           "path": "okto_labs_pulse_community/tests/test_delivery_evidence_integration.py",
           "line": 634
         }
-      ]
+      ],
+      "reviewed_execution": {
+        "artifact": "acceptance-dei-supplement-execution.json",
+        "criterion_key": "DEI:DEI-T53"
+      }
     },
     {
       "key": "DEI:DEI-T54",
@@ -2072,8 +2080,12 @@
       "line": 663,
       "id": "DEI-T56",
       "normative_text": "| DEI-T56 | Registro antigo sem partial/complete | Mantém veredito de compatibilidade testado e transparência de origem; não forja declaração do autor. |",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "verified_by_reviewed_execution",
+      "test_text_references": [],
+      "reviewed_execution": {
+        "artifact": "acceptance-dei-supplement-execution.json",
+        "criterion_key": "DEI:DEI-T56"
+      }
     },
     {
       "key": "DEI:DEI-T57",
@@ -2090,8 +2102,12 @@
       "line": 665,
       "id": "DEI-T58",
       "normative_text": "| DEI-T58 | Waiver/revoke e skip/advisory/blocking | Mesma autoridade e postura; resultado factual não é falsificado para aparentar cobertura. |",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "partial",
+      "test_text_references": [],
+      "reviewed_execution": {
+        "artifact": "acceptance-dei-supplement-execution.json",
+        "criterion_key": "DEI:DEI-T58"
+      }
     },
     {
       "key": "DEI:DEI-T59",

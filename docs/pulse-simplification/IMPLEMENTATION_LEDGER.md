@@ -14760,3 +14760,60 @@ fornecidos por fixture não comprovam execução externa ou ativação real.
 Este registro não encerra o plano nem substitui benchmark. Continuar pelos
 oráculos ainda ausentes e pela auditoria de base/KG; preservar separação
 entre fato comprovado, cobertura parcial e critério ainda não revisado.
+
+### Decisão pendente — avaliação de decomposição após reabertura da Spec
+
+Reprodução real em test_spec_evaluation_reopen_characterization.py, par
+mixed-report-final: **2 passed em 10.93s**, spec-evaluation-reopen-characterization.xml.
+Writer REST de avaliação, reabertura, alteração scoped de AC (200 ms → 100 ms),
+classificação arquitetural e início são reais. Entrada em validated é fixture
+declarada, sem atribuir esta prova ao gate distinto de Spec Validation.
+Fatos: uma aprovação da edição anterior permite iniciar a condição alterada
+sem nova avaliação de decomposição; uma rejeição anterior continua impedindo
+início mesmo depois de reabertura, correção e nova aprovação. Registros não
+guardam edição/versão; permanecem stale=false e o gate filtra apenas stale.
+
+Localização: SpecService.submit_spec_evaluation, move_spec e
+list_spec_evaluations em core/services/main.py. Reabertura limpa a validação
+corrente, mas não delimita a atualidade dessas avaliações de decomposição.
+Conflito com INV-08/F5 do plano: não aprovar versão diferente da avaliada nem
+usar parecer stale como Current. Corrigir também muda o efeito de rejeições
+históricas; por isso, conforme §10.2/10.4, solicitar decisão antes de alterar.
+
+Proposta concreta: vincular avaliações novas à edição da Spec no servidor;
+na reabertura autorizada, avaliações da edição anterior passam a Previous
+(incluindo legado sem edição), preservando ID, autor, scores, recomendações,
+justificativas e datas. Exigir nova avaliação na nova edição. Não permitir que
+uma aprovação posterior neutralize rejeição na MESMA edição. Manter políticas
+de skip, separação, grants e limiares existentes. Expor atualidade de forma
+consistente no gate, REST/MCP e UI; testar reabertura, legado, rollback e UI.
+Nenhum backfill inventará a edição em que parecer legado foi produzido.
+
+Alternativas: manter comportamento atual (rejeição sem caminho de correção e
+aprovação reaproveitada) ou adicionar supersession explícita autorizada por
+parecer (nova operação/autoridade, escopo maior). Recomendo delimitar por
+reabertura/edição. Frente isolada: sem mudança de produção enquanto pendente;
+auditoria DEI/base/KG e benchmark podem continuar independentemente.
+
+### Complemento dos oráculos DEI — 2026-09-23
+
+Sem mudança de produção. Novos testes de origem executam o use case/batch,
+origem e SQLite reais: revogação persistida ou selector antigo recusam a
+implementação após checkpoint válido e revertem o lote integral, preservando
+revogação/receipt anteriores. Dois Targets reutilizam a mesma observação já
+admitida sem novo request/challenge e mantêm replay exato. A admissão inicial
+da observação continua entrada de fixture, limite explicitado na evidência.
+
+Impacto líquido persistido agora cobre rename a→b→c e mesmo caminho nos dois
+repos, mantendo duas declarações originais sem crédito de implementação.
+Duas expectativas da fixture foram corrigidas: campos opcionais são
+normalizados para null e record_ids é conjunto determinístico, não ordem de
+append. Nenhuma mudança no algoritmo ou relaxamento de semântica.
+
+acceptance-dei-supplement-r2.xml: **29 passed em 48.69s**. Após ajuste de
+imports de fixtures para Ruff, acceptance-dei-extra-final.xml: **4 passed em
+13.52s**. Ruff F/E9 limpo. Novo acceptance-dei-supplement-execution.json
+comprova DEI-T12/17/18/48/53/56 e delimita T58 parcial. Inventário: **67
+comprovados / 31 parciais / 148 não auditados**. Par/proveniência/F16 continuam
+mixed-report-final; nenhum frontend/contrato de produto mudou. Nenhum processo
+pendente; decisão sobre avaliações permanece separada e pendente.
