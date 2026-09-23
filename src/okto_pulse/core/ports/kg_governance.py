@@ -10,7 +10,7 @@ from okto_pulse.core.runtime_context import (
 
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, Protocol, Sequence
+from typing import Any, Protocol
 
 
 @dataclass(slots=True)
@@ -19,30 +19,10 @@ class HistoricalBoardRecord:
     settings: dict[str, Any]
 
 
-@dataclass(frozen=True, slots=True)
-class HistoricalArtifactFact:
-    artifact_type: str
-    artifact_id: str
 
 
-@dataclass(frozen=True, slots=True)
-class HistoricalQueueFact:
-    id: str
-    artifact_type: str
-    artifact_id: str
-    source: str
-    status: str
 
 
-@dataclass(frozen=True, slots=True)
-class HistoricalQueueInsert:
-    id: str
-    board_id: str
-    artifact_type: str
-    artifact_id: str
-    priority: str = "low"
-    source: str = "historical_backfill"
-    status: str = "pending"
 
 
 @dataclass(frozen=True, slots=True)
@@ -79,38 +59,15 @@ class KGGovernanceStore(Protocol):
         self, context: Any, *, board_id: str
     ) -> HistoricalBoardRecord | None: ...
 
-    async def save_board(self, context: Any, board: HistoricalBoardRecord) -> None: ...
 
     async def queue_counts(self, context: Any, *, board_id: str) -> dict[str, int]: ...
 
-    async def list_historical_artifacts(
-        self, context: Any, *, board_id: str
-    ) -> tuple[HistoricalArtifactFact, ...]: ...
 
-    async def list_live_queue(
-        self, context: Any, *, board_id: str
-    ) -> tuple[HistoricalQueueFact, ...]: ...
 
-    async def delete_terminal_queue(self, context: Any, *, board_id: str) -> None: ...
 
-    async def add_queue_entries(
-        self, context: Any, entries: Sequence[HistoricalQueueInsert]
-    ) -> None: ...
 
-    async def update_historical_status(
-        self,
-        context: Any,
-        *,
-        board_id: str,
-        old_status: str,
-        new_status: str,
-    ) -> None: ...
 
-    async def delete_historical_pending(
-        self, context: Any, *, board_id: str
-    ) -> int: ...
 
-    async def purge_stale_metadata(self, context: Any, *, board_id: str) -> None: ...
 
     async def get_undo_fact(
         self, context: Any, *, board_id: str, session_id: str
@@ -189,10 +146,7 @@ __all__ = [
     "BoardErasureJobFact",
     "BoostAuditRecord",
     "GovernanceUndoFact",
-    "HistoricalArtifactFact",
     "HistoricalBoardRecord",
-    "HistoricalQueueFact",
-    "HistoricalQueueInsert",
     "KGGovernanceStore",
     "get_kg_governance_store",
     "register_kg_governance_store",

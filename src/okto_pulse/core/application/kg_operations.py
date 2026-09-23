@@ -408,17 +408,7 @@ class CoreKnowledgeGraphOperations:
             actor_id=actor_id, reason=reason,
         )
 
-    async def start_historical_consolidation(self, board_id: str):  # noqa: ANN201
-        from okto_pulse.core.services.application_kg import (
-            start_historical_consolidation,
-        )
 
-        return await start_historical_consolidation(self.__relational_context, board_id)
-
-    async def cancel_historical(self, board_id: str):  # noqa: ANN201
-        from okto_pulse.core.services.application_kg import cancel_historical
-
-        return await cancel_historical(self.__relational_context, board_id)
 
     async def get_historical_progress(self, board_id: str):  # noqa: ANN201
         from okto_pulse.core.services.application_kg import get_historical_progress

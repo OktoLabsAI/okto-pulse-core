@@ -23,7 +23,6 @@ from okto_pulse.core.ports.kg_events import HISTORICAL_PROGRESS_SETTINGS_KEY
 from okto_pulse.core.ports.kg_governance import (
     BoostAuditRecord,
     HistoricalBoardRecord,
-    HistoricalQueueInsert,
     get_kg_governance_store,
 )
 from okto_pulse.core.kg.source_maturity import (
@@ -352,35 +351,6 @@ def _historical_progress_state(
     return value if isinstance(value, dict) else {}
 
 
-def _set_historical_progress_state(
-    board: HistoricalBoardRecord | None,
-    *,
-    total: int,
-    status: str,
-) -> None:
-    if board is None:
-        return
-    settings = dict(board.settings or {})
-    current = settings.get(HISTORICAL_PROGRESS_SETTINGS_KEY)
-    current_state = current if isinstance(current, dict) else {}
-    now = datetime.now(timezone.utc).isoformat()
-    previous_status = str(current_state.get("status") or "")
-    starts_fresh_run = (
-        status == "in_progress"
-        and previous_status in {"cancelled", "completed", "completed_with_errors"}
-    )
-    settings[HISTORICAL_PROGRESS_SETTINGS_KEY] = {
-        **current_state,
-        "total": max(0, int(total)),
-        "status": status,
-        "updated_at": now,
-        "started_at": (
-            now
-            if starts_fresh_run
-            else current_state.get("started_at") or now
-        ),
-    }
-    board.settings = settings
 
 
 async def _historical_queue_counts(
@@ -420,28 +390,6 @@ async def _has_materialized_kg_nodes(board_id: str) -> bool:
         return True
 
 
-async def _purge_stale_metadata_if_graph_empty(
-    db: Any,
-    board_id: str,
-) -> bool:
-    """Drop SQLite KG mirrors when the physical board graph has no user nodes."""
-    has_nodes = await _has_materialized_kg_nodes(board_id)
-    if has_nodes:
-        return False
-
-    await get_kg_governance_store().purge_stale_metadata(
-        db,
-        board_id=board_id,
-    )
-    logger.info(
-        "governance.historical_start.purged_stale_metadata board=%s",
-        board_id,
-        extra={
-            "event": "governance.historical_start.purged_stale_metadata",
-            "board_id": board_id,
-        },
-    )
-    return True
 
 
 # ---------------------------------------------------------------------------
@@ -449,189 +397,12 @@ async def _purge_stale_metadata_if_graph_empty(
 # ---------------------------------------------------------------------------
 
 
-async def start_historical_consolidation(
-    db: Any,
-    board_id: str,
-) -> dict:
-    """Populate consolidation_queue with low-priority entries for all done
-    surviving artifacts in the board. Returns counts."""
-    import uuid
-
-    store = get_kg_governance_store()
-    board = await store.get_board(db, board_id=board_id)
-
-    # Check if already in progress
-    live_queue = await store.list_live_queue(db, board_id=board_id)
-    if any(
-        row.source == "historical_backfill" and row.status in {"pending", "claimed"}
-        for row in live_queue
-    ):
-        counts = await _historical_queue_counts(db, board_id)
-        live_total = sum(counts.values())
-        current_total = int(_historical_progress_state(board).get("total") or 0)
-        if live_total > 0 and current_total < live_total:
-            _set_historical_progress_state(
-                board,
-                total=live_total,
-                status="in_progress",
-            )
-            if board is not None:
-                await store.save_board(db, board)
-            await store.commit(db)
-        return {"status": "already_in_progress", "board_id": board_id}
-
-    await _purge_stale_metadata_if_graph_empty(db, board_id)
-
-    artifacts = await store.list_historical_artifacts(db, board_id=board_id)
-    by_type = {
-        artifact_type: [row for row in artifacts if row.artifact_type == artifact_type]
-        for artifact_type in (
-            "story",
-            "ideation",
-            "refinement",
-            "spec",
-            "card",
-        )
-    }
-
-    # Remove completed/failed entries so they can be re-queued.
-    # NOTE: we purposely do NOT filter by source — terminal rows from
-    # event-driven enqueues (event:card.created, retry_from_ui, …) must
-    # also be cleared so the historical pass can reprocess every artifact.
-    # The UNIQUE constraint (board_id, artifact_type, artifact_id) means
-    # only one row per artifact can exist, so deleting all terminal rows
-    # is equivalent to clearing the slot for re-queueing.
-    await store.delete_terminal_queue(db, board_id=board_id)
-
-    # Collect live entries only — pending, claimed, or paused. Terminal
-    # rows (done/failed) have just been deleted above, so dedup against
-    # them would be incorrect. Including `paused` covers the case where
-    # a prior historical run was paused and is still reachable via
-    # resume_historical.
-    existing_rows = await store.list_live_queue(db, board_id=board_id)
-    already_queued = {(row.artifact_type, row.artifact_id) for row in existing_rows}
-    existing_historical = {
-        (row.artifact_type, row.artifact_id)
-        for row in existing_rows
-        if row.source == "historical_backfill"
-    }
-
-    entries = [
-        HistoricalQueueInsert(
-            id=str(uuid.uuid4()),
-            board_id=board_id,
-            artifact_type=artifact_type,
-            artifact_id=artifact.artifact_id,
-        )
-        for artifact_type in (
-            "story",
-            "ideation",
-            "refinement",
-            "spec",
-            "card",
-        )
-        for artifact in by_type[artifact_type]
-        if (artifact_type, artifact.artifact_id) not in already_queued
-    ]
-    total = len(entries)
-    await store.add_queue_entries(db, entries)
-
-    run_total = total + len(existing_historical)
-    _set_historical_progress_state(
-        board,
-        total=run_total,
-        status="in_progress" if run_total > 0 else "inactive",
-    )
-    if board is not None:
-        await store.save_board(db, board)
-    await store.commit(db)
-
-    logger.info(
-        "governance.historical_start board=%s stories=%d ideations=%d "
-        "refinements=%d specs=%d cards=%d total=%d",
-        board_id,
-        len(by_type["story"]),
-        len(by_type["ideation"]),
-        len(by_type["refinement"]),
-        len(by_type["spec"]),
-        len(by_type["card"]),
-        total,
-    )
-
-    if total > 0:
-        # Fase 4 — wake the background worker immediately so the freshly
-        # enqueued rows start processing without waiting for a heartbeat.
-        try:
-            from okto_pulse.core.application.runtime_workers import (
-                signal_runtime_worker,
-            )
-
-            signal_runtime_worker("consolidation_worker")
-        except Exception:  # pragma: no cover — signal is best-effort
-            pass
-
-    return {"status": "queueing", "board_id": board_id, "total_artifacts": run_total}
 
 
-async def pause_historical(db: Any, board_id: str) -> dict:
-    """Mark low-priority backfill entries as paused."""
-    store = get_kg_governance_store()
-    await store.update_historical_status(
-        db,
-        board_id=board_id,
-        old_status="pending",
-        new_status="paused",
-    )
-    await store.commit(db)
-    return {"status": "paused", "board_id": board_id}
 
 
-async def resume_historical(db: Any, board_id: str) -> dict:
-    """Resume paused backfill entries."""
-    store = get_kg_governance_store()
-    await store.update_historical_status(
-        db,
-        board_id=board_id,
-        old_status="paused",
-        new_status="pending",
-    )
-    await store.commit(db)
-    return {"status": "resumed", "board_id": board_id}
 
 
-async def cancel_historical(db: Any, board_id: str) -> dict:
-    """Fence and remove live historical work; committed graph data is preserved.
-
-    ``claimed`` rows must be removed together with ``pending``/``paused`` rows.
-    Leaving a claimed row behind made cancellation non-terminal and caused the
-    next start request to return ``already_in_progress`` forever when a legacy
-    worker had stalled.  Queue processing already treats a missing claimed row
-    as ownership loss and compensates any unacknowledged graph mutation, so the
-    delete is also the durable cancellation fence for an in-flight worker.
-    """
-    store = get_kg_governance_store()
-    board = await store.get_board(db, board_id=board_id)
-    # Keep the established port name for adapter compatibility. Its cancellation
-    # semantics include every live historical state, not only literal pending
-    # rows (see KGGovernanceStore.delete_historical_pending implementations).
-    removed = await store.delete_historical_pending(db, board_id=board_id)
-    # Cancellation is terminal operational state, not a completed run.  Keep
-    # the prior size only as audit context and clear the active total so every
-    # consumer sees ``enabled=False`` immediately after the live queue is
-    # fenced.  Retaining ``total`` made a cancelled 453-item run look enabled
-    # forever even though pending/claimed/paused were all zero.
-    current_total = int(_historical_progress_state(board).get("total") or 0)
-    _set_historical_progress_state(board, total=0, status="cancelled")
-    if board is not None:
-        settings = dict(board.settings or {})
-        state = dict(settings.get(HISTORICAL_PROGRESS_SETTINGS_KEY) or {})
-        state["cancelled_total"] = max(0, current_total)
-        settings[HISTORICAL_PROGRESS_SETTINGS_KEY] = state
-        board.settings = settings
-    if board is not None:
-        await store.save_board(db, board)
-    await store.commit(db)
-    return {"status": "cancelled", "board_id": board_id, "removed": removed}
 
 
 async def retry_pending_entry(

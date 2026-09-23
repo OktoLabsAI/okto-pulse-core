@@ -15,6 +15,8 @@ GOLDEN = json.loads((Path(__file__).parent / "fixtures/historical_archive_author
 READS = ("sprint.entity.read", "sprint.qa.read", "sprint.evaluations.read", "sprint.history_read")
 RETIRED = frozenset(path for path in (
     "kg.operations.integrity.backfill",
+    "kg.operations.historical.start",
+    "kg.operations.historical.cancel",
     "kg.operations.integrity.read",
     "kg.operations.integrity.reconcile",
     "kg.operations.schema.migrate",

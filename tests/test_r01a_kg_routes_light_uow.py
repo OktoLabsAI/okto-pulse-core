@@ -43,8 +43,6 @@ ACTOR = "local-user"
 _MIGRATED_ENDPOINTS = (
     "list_audit",
     "global_search",
-    "start_historical",
-    "cancel_historical_endpoint",
     "historical_progress_endpoint",
     "delete_board_kg",
     "get_settings",
@@ -216,36 +214,23 @@ async def test_global_search_invalid_layer_400(client) -> None:
 # --- historical consolidation: start / cancel / progress --------------------
 
 
-@pytest.mark.asyncio
-async def test_start_historical_200(client) -> None:
-    board_id = await _seed_board_with_done_spec()
-    resp = client.post(
-        f"{PREFIX}/kg/boards/{board_id}/historical-consolidation/start"
-    )
-    assert resp.status_code == 200, resp.text
-    body = resp.json()
-    assert body["status"] == "queueing"
-    assert body["board_id"] == board_id
-    assert body["total_artifacts"] >= 1
 
 
-@pytest.mark.asyncio
-async def test_cancel_historical_200(client) -> None:
-    board_id = await _seed_board_with_done_spec()
-    client.post(f"{PREFIX}/kg/boards/{board_id}/historical-consolidation/start")
-    resp = client.post(
-        f"{PREFIX}/kg/boards/{board_id}/historical-consolidation/cancel"
-    )
-    assert resp.status_code == 200, resp.text
-    body = resp.json()
-    assert body["status"] == "cancelled"
-    assert body["removed"] >= 1
 
 
 @pytest.mark.asyncio
 async def test_historical_progress_200(client) -> None:
+    from sqlalchemy import select
+    from sqlalchemy_test_models import ConsolidationQueue, Spec
+
     board_id = await _seed_board_with_done_spec()
-    client.post(f"{PREFIX}/kg/boards/{board_id}/historical-consolidation/start")
+    # Existing work survives retirement; fixture setup must not invoke the
+    # removed public writer to manufacture that state.
+    async with get_session_factory()() as db:
+        spec_id = await db.scalar(select(Spec.id).where(Spec.board_id == board_id))
+        db.add(ConsolidationQueue(board_id=board_id, artifact_type="spec", artifact_id=spec_id,
+            source="historical_backfill", status="pending", priority="low"))
+        await db.commit()
     resp = client.get(
         f"{PREFIX}/kg/boards/{board_id}/historical-consolidation/progress"
     )

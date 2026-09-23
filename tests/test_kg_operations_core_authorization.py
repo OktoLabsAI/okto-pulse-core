@@ -45,14 +45,6 @@ _NAMESPACE_REQUIREMENTS = (
         "kg.operations.historical.read",
         "kg.admin.historical_consolidation",
     ),
-    (
-        "kg.operations.historical.start",
-        "kg.admin.historical_consolidation",
-    ),
-    (
-        "kg.operations.historical.cancel",
-        "kg.admin.historical_consolidation",
-    ),
     ("kg.operations.node.boost", "kg.admin.settings_write"),
     ("kg.operations.settings.read", "kg.admin.settings_read"),
     ("kg.operations.settings.write", "kg.admin.settings_write"),
@@ -233,20 +225,6 @@ _WRITE_CASES: tuple[
     ...,
 ] = (
     (
-        kg_routes_crud.StartHistoricalUseCase(),
-        lambda: kg_routes_crud.StartHistoricalCommand(BOARD_ID),
-        "kg.operations.historical.start",
-        "kg.admin.historical_consolidation",
-        True,
-    ),
-    (
-        kg_routes_crud.CancelHistoricalUseCase(),
-        lambda: kg_routes_crud.CancelHistoricalCommand(BOARD_ID),
-        "kg.operations.historical.cancel",
-        "kg.admin.historical_consolidation",
-        True,
-    ),
-    (
         kg_routes_crud.DeleteBoardKgUseCase(),
         lambda: kg_routes_crud.DeleteBoardKgCommand(BOARD_ID),
         "kg.operations.board.erase",
@@ -275,8 +253,6 @@ _WRITE_CASES: tuple[
     ("use_case", "command_factory", "operation", "legacy", "expects_lookup"),
     _WRITE_CASES,
     ids=(
-        "historical-start",
-        "historical-cancel",
         "board-erase",
         "pending-retry",
         "node-boost",

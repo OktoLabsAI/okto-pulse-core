@@ -237,37 +237,9 @@ class KGOperationalReadModelPort(Protocol):
 class KGGovernanceEffectsPort(Protocol):
     """Write/effect contract for KG governance operations."""
 
-    async def start_historical_consolidation(
-        self,
-        context: Any,
-        *,
-        board_id: str,
-    ) -> Mapping[str, Any]:
-        ...
 
-    async def pause_historical(
-        self,
-        context: Any,
-        *,
-        board_id: str,
-    ) -> Mapping[str, Any]:
-        ...
 
-    async def resume_historical(
-        self,
-        context: Any,
-        *,
-        board_id: str,
-    ) -> Mapping[str, Any]:
-        ...
 
-    async def cancel_historical(
-        self,
-        context: Any,
-        *,
-        board_id: str,
-    ) -> Mapping[str, Any]:
-        ...
 
     async def get_historical_progress(
         self,

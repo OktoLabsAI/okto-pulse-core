@@ -3,33 +3,24 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Any, Sequence
+from typing import Any
 
-from sqlalchemy import delete, func, select, update
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm.attributes import flag_modified
 
-from okto_pulse.core.domain.enums import SpecStatus
 from sqlalchemy_test_models import (
     Board,
-    Card,
     ConsolidationAudit,
     ConsolidationQueue,
     GlobalUpdateOutbox,
-    Ideation,
     KuzuNodeRef,
-    Refinement,
-    Spec,
-    Story,
 )
 from okto_pulse.core.ports.kg_events import HISTORICAL_PROGRESS_SETTINGS_KEY
 from okto_pulse.core.ports.kg_governance import (
     BoardErasureJobFact,
     BoostAuditRecord,
     GovernanceUndoFact,
-    HistoricalArtifactFact,
     HistoricalBoardRecord,
-    HistoricalQueueFact,
-    HistoricalQueueInsert,
 )
 
 
@@ -47,12 +38,6 @@ class TestSqlAlchemyKGGovernanceStore:
             return None
         return HistoricalBoardRecord(id=str(row.id), settings=dict(row.settings or {}))
 
-    async def save_board(self, context: Any, board: HistoricalBoardRecord) -> None:
-        row = await context.get(Board, board.id)
-        if row is not None:
-            row.settings = dict(board.settings)
-            flag_modified(row, "settings")
-            await context.flush()
 
     async def queue_counts(self, context: Any, *, board_id: str) -> dict[str, int]:
         rows = (
@@ -67,135 +52,12 @@ class TestSqlAlchemyKGGovernanceStore:
         ).all()
         return {str(status): int(count) for status, count in rows}
 
-    async def list_historical_artifacts(
-        self, context: Any, *, board_id: str
-    ) -> tuple[HistoricalArtifactFact, ...]:
-        queries = (
-            (
-                "story",
-                select(Story.id).where(
-                    Story.board_id == board_id,
-                    Story.archived.is_(False),
-                ),
-            ),
-            (
-                "ideation",
-                select(Ideation.id).where(
-                    Ideation.board_id == board_id,
-                    Ideation.archived.is_(False),
-                ),
-            ),
-            (
-                "refinement",
-                select(Refinement.id).where(
-                    Refinement.board_id == board_id,
-                    Refinement.archived.is_(False),
-                ),
-            ),
-            (
-                "spec",
-                select(Spec.id).where(
-                    Spec.board_id == board_id,
-                    Spec.status.in_(
-                        (SpecStatus.DONE, SpecStatus.APPROVED, SpecStatus.VALIDATED)
-                    ),
-                    Spec.archived.is_(False),
-                ),
-            ),
-            ("card", select(Card.id).where(Card.board_id == board_id)),
-        )
-        output: list[HistoricalArtifactFact] = []
-        for artifact_type, statement in queries:
-            ids = (await context.execute(statement)).scalars().all()
-            output.extend(
-                HistoricalArtifactFact(artifact_type, str(artifact_id))
-                for artifact_id in ids
-            )
-        return tuple(output)
 
-    async def list_live_queue(
-        self, context: Any, *, board_id: str
-    ) -> tuple[HistoricalQueueFact, ...]:
-        rows = (
-            (
-                await context.execute(
-                    select(ConsolidationQueue).where(
-                        ConsolidationQueue.board_id == board_id,
-                        ConsolidationQueue.status.in_(("pending", "claimed", "paused")),
-                    )
-                )
-            )
-            .scalars()
-            .all()
-        )
-        return tuple(
-            HistoricalQueueFact(
-                str(row.id),
-                str(row.artifact_type),
-                str(row.artifact_id),
-                str(row.source),
-                str(row.status),
-            )
-            for row in rows
-        )
 
-    async def delete_terminal_queue(self, context: Any, *, board_id: str) -> None:
-        await context.execute(
-            delete(ConsolidationQueue).where(
-                ConsolidationQueue.board_id == board_id,
-                ConsolidationQueue.status.in_(("done", "failed")),
-            )
-        )
 
-    async def add_queue_entries(
-        self, context: Any, entries: Sequence[HistoricalQueueInsert]
-    ) -> None:
-        context.add_all(
-            [
-                ConsolidationQueue(
-                    id=entry.id,
-                    board_id=entry.board_id,
-                    artifact_type=entry.artifact_type,
-                    artifact_id=entry.artifact_id,
-                    priority=entry.priority,
-                    source=entry.source,
-                    status=entry.status,
-                )
-                for entry in entries
-            ]
-        )
 
-    async def update_historical_status(
-        self,
-        context: Any,
-        *,
-        board_id: str,
-        old_status: str,
-        new_status: str,
-    ) -> None:
-        await context.execute(
-            update(ConsolidationQueue)
-            .where(
-                ConsolidationQueue.board_id == board_id,
-                ConsolidationQueue.source == "historical_backfill",
-                ConsolidationQueue.status == old_status,
-            )
-            .values(status=new_status)
-        )
 
-    async def delete_historical_pending(self, context: Any, *, board_id: str) -> int:
-        result = await context.execute(
-            delete(ConsolidationQueue).where(
-                ConsolidationQueue.board_id == board_id,
-                ConsolidationQueue.source == "historical_backfill",
-                ConsolidationQueue.status.in_(("pending", "claimed", "paused")),
-            )
-        )
-        return int(result.rowcount or 0)
 
-    async def purge_stale_metadata(self, context: Any, *, board_id: str) -> None:
-        for model in (KuzuNodeRef, ConsolidationAudit, GlobalUpdateOutbox):
-            await context.execute(delete(model).where(model.board_id == board_id))
 
     async def get_undo_fact(
         self, context: Any, *, board_id: str, session_id: str

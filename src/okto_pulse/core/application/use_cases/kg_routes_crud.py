@@ -1,21 +1,7 @@
-"""KG dashboard "light" REST use cases (SaaS Refactor spec R01A REST-FU5-S2).
+"""Transport-neutral KG readers and governed privacy/semantic operations.
 
-Transport-free reimplementations of the seven ``api/kg_routes.py`` endpoints that
-still bound a raw request session: the two readers (``list_audit``,
-``global_search``) and the five governance delegators (``start_historical``,
-``cancel_historical_endpoint``, ``historical_progress_endpoint``,
-``delete_board_kg``, ``get_settings`` — the last two share the historical-progress
-read). Each use case delegates to the EXISTING relational reader
-(``kg.dashboard_readers``) or governance function (``kg.governance``); the inline
-``select`` lives in those service modules, never here, so this file stays free of
-``select`` / ``AsyncSession`` / ORM imports (the relational ratchet gate over
-``application/use_cases`` would fail otherwise).
-
-The governance writers (start / cancel / erasure) commit the request session
-internally — exactly as the legacy endpoints did when they passed ``db`` straight
-through — so the use cases do NOT issue a second ``commit``. The reads issue no
-commit. ``KGToolError`` raised by the KG service (``query_global`` /
-``normalize_graph_layer``) propagates uncaught for the adapter to map.
+F4 retires the historical backfill start/cancel use cases. Existing privacy
+erasure and cognitive product operations retain their original authorization.
 """
 
 from __future__ import annotations
@@ -236,100 +222,19 @@ class GlobalSearchUseCase:
 # --- historical consolidation: start (write) --------------------------------
 
 
-class StartHistoricalCommand:
-    __slots__ = ("board_id",)
-
-    def __init__(self, board_id: str) -> None:
-        self.board_id = board_id
 
 
-class StartHistoricalResult:
-    __slots__ = ("payload",)
-
-    def __init__(self, payload: dict[str, Any]) -> None:
-        self.payload = payload
 
 
-class StartHistoricalUseCase:
-    """Start the historical backfill for a board (write). Delegates to
-    ``governance.start_historical_consolidation`` (which commits the session
-    internally, exactly as the legacy endpoint relied on) and returns its payload
-    verbatim."""
-
-    async def execute(
-        self,
-        command: StartHistoricalCommand,
-        *,
-        actor: ActorContext,
-        uow: PulseUnitOfWork,
-    ) -> StartHistoricalResult:
-
-        await _require_board_access(uow.services, actor, command.board_id)
-        await require_authorization(
-            actor,
-            PermissionRequirement(
-                "kg.operations.historical.start",
-                legacy_operation="kg.admin.historical_consolidation",
-            ),
-            uow=uow,
-            board_id=command.board_id,
-        )
-        payload = await uow.services.kg.start_historical_consolidation(command.board_id)
-        return StartHistoricalResult(payload)
 
 
 # --- historical consolidation: cancel (write) -------------------------------
 
 
-class CancelHistoricalCommand:
-    __slots__ = ("board_id",)
-
-    def __init__(self, board_id: str) -> None:
-        self.board_id = board_id
 
 
-class CancelHistoricalResult:
-    __slots__ = ("payload",)
-
-    def __init__(self, payload: dict[str, Any]) -> None:
-        self.payload = payload
 
 
-class CancelHistoricalUseCase:
-    """Cancel the historical backfill for a board (write). Delegates to
-    ``governance.cancel_historical`` (which commits internally) and returns its
-    payload verbatim."""
-
-    async def execute(
-        self,
-        command: CancelHistoricalCommand,
-        *,
-        actor: ActorContext,
-        uow: PulseUnitOfWork,
-    ) -> CancelHistoricalResult:
-
-        await _require_board_access(uow.services, actor, command.board_id)
-        await require_authorization(
-            actor,
-            PermissionRequirement(
-                "kg.operations.historical.cancel",
-                legacy_operation="kg.admin.historical_consolidation",
-            ),
-            uow=uow,
-            board_id=command.board_id,
-        )
-        # Authorization opens a SQLite read snapshot.  Release it before the
-        # cancellation write, then quiesce the queue owner through its bounded
-        # drain protocol.  Without these two phases a legacy/in-flight claim
-        # can retain the writer lock and make the HTTP request wait forever.
-        await uow.rollback()
-        from okto_pulse.core.application.runtime_workers import (
-            temporarily_quiesce_runtime_worker,
-        )
-
-        async with temporarily_quiesce_runtime_worker("consolidation_worker"):
-            payload = await uow.services.kg.cancel_historical(command.board_id)
-        return CancelHistoricalResult(payload)
 
 
 # --- historical consolidation: progress (read) ------------------------------

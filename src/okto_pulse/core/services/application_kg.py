@@ -200,12 +200,6 @@ def query_global(
     )
 
 
-async def start_historical_consolidation(*args: Any, **kwargs: Any) -> Any:
-    from okto_pulse.core.kg.governance import (
-        start_historical_consolidation as _start,
-    )
-
-    return await _start(*args, **kwargs)
 
 
 def create_deterministic_worker(*args: Any, **kwargs: Any) -> Any:
@@ -226,10 +220,6 @@ def signal_consolidation_worker() -> None:
     signal_runtime_worker("consolidation_worker")
 
 
-async def cancel_historical(*args: Any, **kwargs: Any) -> Any:
-    from okto_pulse.core.kg.governance import cancel_historical as _cancel
-
-    return await _cancel(*args, **kwargs)
 
 
 async def get_historical_progress(*args: Any, **kwargs: Any) -> Any:

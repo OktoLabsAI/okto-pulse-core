@@ -21,16 +21,12 @@ import sqlalchemy_test_models as _models  # noqa: F401
 from sqlalchemy_test_models import Board, Spec, SpecStatus
 from okto_pulse.core.infra.database import create_database, get_session_factory, init_db
 from okto_pulse.core.kg.governance import (
-    cancel_historical,
     clear_acl_violations_for_tests,
     get_acl_violations,
     get_historical_progress,
     log_acl_violation,
-    pause_historical,
     purge_expired_audit,
-    resume_historical,
     right_to_erasure,
-    start_historical_consolidation,
     undo_session,
 )
 
@@ -92,165 +88,38 @@ async def _seed_board_with_spec(db_factory, board_id: str) -> None:
         await db.commit()
 
 
+async def _seed_historical_queue(db, board_id):
+    """Previously queued rows are fixture input, not a backfill capability."""
+    from sqlalchemy_test_models import ConsolidationQueue
+    specs = (await db.execute(select(Spec).where(Spec.board_id == board_id))).scalars().all()
+    board = await db.get(Board, board_id)
+    board.settings = {"kg_historical_consolidation": {"total": len(specs), "status": "in_progress"}}
+    for spec in specs:
+        db.add(ConsolidationQueue(board_id=board_id, artifact_type="spec", artifact_id=spec.id,
+            source="historical_backfill", priority="low", status="pending"))
+    await db.commit()
+
+
 class TestHistoricalOptIn:
-    @pytest.mark.asyncio
-    async def test_historical_start_keeps_card_work_without_enqueuing_sprint(self, db_factory):
-        from sqlalchemy_test_models import Card, ConsolidationQueue, Sprint, SprintStatus
+    def test_historical_writers_are_absent(self):
+        from okto_pulse.core.kg import governance
+        from okto_pulse.core.services import application_kg
 
-        board_id = "historical-with-retired-sprint"
-        await _seed_board_with_spec(db_factory, board_id)
-        async with db_factory() as db:
-            spec = (await db.execute(select(Spec).where(Spec.board_id == board_id))).scalar_one()
-            db.add(Sprint(id="historical-old", board_id=board_id, spec_id=spec.id,
-                title="Historical", status=SprintStatus.CLOSED, created_by="test-user"))
-            db.add(Card(id="historical-card", board_id=board_id, spec_id=spec.id,
-                sprint_id="historical-old", title="Card", created_by="test-user"))
-            await db.commit()
-            result = await start_historical_consolidation(db, board_id)
-            assert result["total_artifacts"] == 2
-            rows = (await db.execute(select(ConsolidationQueue).where(
-                ConsolidationQueue.board_id == board_id))).scalars().all()
-            assert {(row.artifact_type, row.artifact_id) for row in rows} == {
-                ("spec", spec.id), ("card", "historical-card"),
-            }
-            assert (await db.get(Sprint, "historical-old")).status == SprintStatus.CLOSED
+        for name in ("start_historical_consolidation", "pause_historical", "resume_historical", "cancel_historical"):
+            assert not hasattr(governance, name)
+            assert not hasattr(application_kg, name)
 
-    @pytest.mark.asyncio
-    async def test_start_creates_queue_entry(self, db_factory):
-        await _seed_board_with_spec(db_factory, "board-hist-1")
-        async with db_factory() as db:
-            result = await start_historical_consolidation(db, "board-hist-1")
-            assert result["status"] == "queueing"
-            assert result["total_artifacts"] >= 1
 
-    @pytest.mark.asyncio
-    async def test_start_twice_returns_in_progress(self, db_factory):
-        await _seed_board_with_spec(db_factory, "board-hist-2")
-        async with db_factory() as db:
-            await start_historical_consolidation(db, "board-hist-2")
-        async with db_factory() as db:
-            result = await start_historical_consolidation(db, "board-hist-2")
-            assert result["status"] == "already_in_progress"
 
-    @pytest.mark.asyncio
-    async def test_unrelated_stale_sweep_does_not_block_historical_start(
-        self, db_factory
-    ):
-        import uuid
 
-        from sqlalchemy_test_models import ConsolidationQueue
 
-        board_id = "board-hist-with-maintenance"
-        await _seed_board_with_spec(db_factory, board_id)
-        async with db_factory() as db:
-            db.add(
-                ConsolidationQueue(
-                    id=str(uuid.uuid4()),
-                    board_id=board_id,
-                    artifact_type="board",
-                    artifact_id=board_id,
-                    priority="low",
-                    source="kg_tick",
-                    status="pending",
-                    work_kind="stale_sweep",
-                    generation=0,
-                    payload={"cursor": "", "budget": 50, "attempt": 0},
-                )
-            )
-            await db.commit()
 
-        async with db_factory() as db:
-            result = await start_historical_consolidation(db, board_id)
-
-        assert result["status"] == "queueing"
-        assert result["total_artifacts"] >= 1
-
-    @pytest.mark.asyncio
-    async def test_pause_and_resume(self, db_factory):
-        await _seed_board_with_spec(db_factory, "board-hist-3")
-        async with db_factory() as db:
-            await start_historical_consolidation(db, "board-hist-3")
-        async with db_factory() as db:
-            p = await pause_historical(db, "board-hist-3")
-            assert p["status"] == "paused"
-        async with db_factory() as db:
-            r = await resume_historical(db, "board-hist-3")
-            assert r["status"] == "resumed"
-
-    @pytest.mark.asyncio
-    async def test_cancel_removes_pending(self, db_factory):
-        await _seed_board_with_spec(db_factory, "board-hist-4")
-        async with db_factory() as db:
-            await start_historical_consolidation(db, "board-hist-4")
-        async with db_factory() as db:
-            c = await cancel_historical(db, "board-hist-4")
-            assert c["status"] == "cancelled"
-            assert c["removed"] >= 1
-
-    @pytest.mark.asyncio
-    @pytest.mark.parametrize("claim_timeout_delta_minutes", (-5, 5))
-    async def test_cancel_fences_claimed_work_and_allows_clean_restart(
-        self, db_factory, claim_timeout_delta_minutes
-    ):
-        """Expired and active claims must not survive cancel or block restart."""
-        from datetime import datetime, timedelta, timezone
-
-        from sqlalchemy_test_models import ConsolidationQueue
-
-        board_id = f"board-hist-cancel-claimed-{claim_timeout_delta_minutes}"
-        await _seed_board_with_spec(db_factory, board_id)
-        async with db_factory() as db:
-            await start_historical_consolidation(db, board_id)
-            row = (
-                (
-                    await db.execute(
-                        select(ConsolidationQueue).where(
-                            ConsolidationQueue.board_id == board_id,
-                            ConsolidationQueue.source == "historical_backfill",
-                        )
-                    )
-                )
-                .scalars()
-                .one()
-            )
-            row.status = "claimed"
-            row.claimed_at = datetime.now(timezone.utc) - timedelta(minutes=10)
-            row.claim_timeout_at = datetime.now(timezone.utc) + timedelta(
-                minutes=claim_timeout_delta_minutes
-            )
-            row.worker_id = "legacy-worker"
-            row.claimed_by_session_id = "legacy-worker"
-            row.claim_token = "legacy-claim-token"
-            await db.commit()
-
-        async with db_factory() as db:
-            cancelled = await cancel_historical(db, board_id)
-            assert cancelled == {
-                "status": "cancelled",
-                "board_id": board_id,
-                "removed": 1,
-            }
-            progress = await get_historical_progress(db, board_id)
-            assert progress["status"] == "cancelled"
-            assert progress["enabled"] is False
-            assert progress["total"] == 0
-            assert progress["progress"] == 0
-            assert progress["claimed"] == 0
-            assert progress["pending"] == 0
-
-        async with db_factory() as db:
-            restarted = await start_historical_consolidation(db, board_id)
-            assert restarted["status"] == "queueing"
-            assert restarted["total_artifacts"] >= 1
-            progress = await get_historical_progress(db, board_id)
-            assert progress["enabled"] is True
-            assert progress["status"] == "in_progress"
 
     @pytest.mark.asyncio
     async def test_progress_tracking(self, db_factory):
         await _seed_board_with_spec(db_factory, "board-hist-5")
         async with db_factory() as db:
-            await start_historical_consolidation(db, "board-hist-5")
+            await _seed_historical_queue(db, "board-hist-5")
         async with db_factory() as db:
             prog = await get_historical_progress(db, "board-hist-5")
             assert prog["total"] >= 1
@@ -287,7 +156,7 @@ class TestHistoricalOptIn:
             await db.commit()
 
         async with db_factory() as db:
-            await start_historical_consolidation(db, board_id)
+            await _seed_historical_queue(db, board_id)
             initial = await get_historical_progress(db, board_id)
             assert initial["total"] == 3
             assert initial["progress"] == 0
@@ -366,7 +235,7 @@ class TestHistoricalOptIn:
             await db.commit()
 
         async with db_factory() as db:
-            await start_historical_consolidation(db, board_id)
+            await _seed_historical_queue(db, board_id)
             rows = (
                 (
                     await db.execute(
@@ -428,118 +297,6 @@ class TestHistoricalOptIn:
             assert prog["progress"] == 0
             assert prog["stale"] is True
 
-    @pytest.mark.asyncio
-    async def test_start_purges_stale_metadata_when_graph_is_empty(
-        self, db_factory, monkeypatch
-    ):
-        """Historical rerun must not be blocked by audit/refs for a wiped graph."""
-        import uuid
-        from datetime import datetime, timezone
-
-        import okto_pulse.core.kg.governance as governance
-        from sqlalchemy_test_models import (
-            ConsolidationAudit,
-            GlobalUpdateOutbox,
-            KuzuNodeRef,
-        )
-
-        async def _graph_is_empty(_board_id: str) -> bool:
-            return False
-
-        monkeypatch.setattr(governance, "_has_materialized_kg_nodes", _graph_is_empty)
-
-        board_id = "board-hist-purge-stale-metadata"
-        spec_id = str(uuid.uuid4())
-        session_id = f"kgses_{uuid.uuid4().hex[:16]}"
-        async with db_factory() as db:
-            db.add(Board(id=board_id, name="Purge stale", owner_id="owner"))
-            await db.flush()
-            db.add(
-                Spec(
-                    id=spec_id,
-                    board_id=board_id,
-                    title="Seed spec",
-                    status=SpecStatus.DONE,
-                    archived=False,
-                    created_by="test-user",
-                )
-            )
-            await db.flush()
-            now = datetime.now(timezone.utc)
-            db.add(
-                ConsolidationAudit(
-                    session_id=session_id,
-                    board_id=board_id,
-                    artifact_id=spec_id,
-                    artifact_type="spec",
-                    agent_id="agent",
-                    started_at=now,
-                    committed_at=now,
-                    nodes_added=1,
-                    content_hash="stale",
-                    undo_status="none",
-                )
-            )
-            await db.flush()
-            db.add(
-                KuzuNodeRef(
-                    session_id=session_id,
-                    board_id=board_id,
-                    kuzu_node_id="decision_stale",
-                    kuzu_node_type="Decision",
-                    operation="add",
-                )
-            )
-            db.add(
-                GlobalUpdateOutbox(
-                    event_id=f"evt_{uuid.uuid4().hex[:16]}",
-                    board_id=board_id,
-                    session_id=session_id,
-                    event_type="consolidation_committed",
-                    payload={"session_id": session_id},
-                )
-            )
-            await db.commit()
-
-        async with db_factory() as db:
-            result = await start_historical_consolidation(db, board_id)
-            assert result["status"] == "queueing"
-
-            audit_count = (
-                (
-                    await db.execute(
-                        select(ConsolidationAudit).where(
-                            ConsolidationAudit.board_id == board_id,
-                        )
-                    )
-                )
-                .scalars()
-                .all()
-            )
-            ref_count = (
-                (
-                    await db.execute(
-                        select(KuzuNodeRef).where(KuzuNodeRef.board_id == board_id)
-                    )
-                )
-                .scalars()
-                .all()
-            )
-            outbox_count = (
-                (
-                    await db.execute(
-                        select(GlobalUpdateOutbox).where(
-                            GlobalUpdateOutbox.board_id == board_id,
-                        )
-                    )
-                )
-                .scalars()
-                .all()
-            )
-
-            assert audit_count == []
-            assert ref_count == []
-            assert outbox_count == []
 
 
 class TestUndo:
@@ -877,327 +634,3 @@ class TestRightToErasure:
 
         assert results == [True, True]
         assert max_active == 1
-
-
-class TestHistoricalDedupFilter:
-    """Regression tests for the governance dedup fix.
-
-    Before the fix, the DELETE in start_historical_consolidation only
-    cleared terminal rows with source='historical_backfill', but the
-    dedup SELECT scanned ALL rows regardless of status. Terminal rows
-    from event-driven enqueues (event:card.created, retry_from_ui, …)
-    silently poisoned the dedup set and caused every matching artifact
-    to be skipped.
-
-    Fix:
-      • DELETE no longer filters by source (all terminal rows cleared)
-      • SELECT restricts to live statuses: pending / claimed / paused
-    """
-
-    @pytest.mark.asyncio
-    async def test_terminal_event_rows_do_not_block_historical_requeue(
-        self, db_factory
-    ):
-        """Primary regression: a terminal row from event:spec.moved must NOT
-        poison the dedup set so the historical pass can re-enqueue the spec."""
-        import uuid
-        from sqlalchemy_test_models import ConsolidationQueue
-
-        board_id = "board-dedup-event-done"
-        await _seed_board_with_spec(db_factory, board_id)
-
-        # Fetch the seeded spec id so we can register a terminal event row
-        # pointing at the SAME artifact. UNIQUE(board_id, artifact_type,
-        # artifact_id) makes this the only possible row for that artifact.
-        async with db_factory() as db:
-            result = await db.execute(select(Spec).where(Spec.board_id == board_id))
-            spec = result.scalars().first()
-            assert spec is not None
-
-            db.add(
-                ConsolidationQueue(
-                    id=str(uuid.uuid4()),
-                    board_id=board_id,
-                    artifact_type="spec",
-                    artifact_id=spec.id,
-                    priority="high",
-                    source="event:spec.moved",
-                    status="done",
-                )
-            )
-            await db.commit()
-
-        # Run the historical backfill — the terminal event row should be
-        # cleared and the spec re-queued as historical_backfill/pending.
-        async with db_factory() as db:
-            result = await start_historical_consolidation(db, board_id)
-            assert result["status"] == "queueing"
-            assert result["total_artifacts"] >= 1
-
-        async with db_factory() as db:
-            rows = (
-                (
-                    await db.execute(
-                        select(ConsolidationQueue).where(
-                            ConsolidationQueue.board_id == board_id,
-                            ConsolidationQueue.artifact_id == spec.id,
-                        )
-                    )
-                )
-                .scalars()
-                .all()
-            )
-            # UNIQUE constraint means only one row exists. It must be the
-            # newly-inserted historical_backfill row, not the poisoned one.
-            assert len(rows) == 1
-            row = rows[0]
-            assert row.status == "pending"
-            assert row.source == "historical_backfill"
-
-    @pytest.mark.asyncio
-    async def test_failed_rows_are_cleared_regardless_of_source(self, db_factory):
-        """retry_from_ui failed rows must be cleared on historical start
-        so the next attempt gets a clean slot."""
-        import uuid
-        from sqlalchemy_test_models import ConsolidationQueue
-
-        board_id = "board-dedup-failed-retry"
-        await _seed_board_with_spec(db_factory, board_id)
-
-        async with db_factory() as db:
-            spec = (
-                (await db.execute(select(Spec).where(Spec.board_id == board_id)))
-                .scalars()
-                .first()
-            )
-            assert spec is not None
-
-            db.add(
-                ConsolidationQueue(
-                    id=str(uuid.uuid4()),
-                    board_id=board_id,
-                    artifact_type="spec",
-                    artifact_id=spec.id,
-                    priority="high",
-                    source="retry_from_ui",
-                    status="failed",
-                    last_error="simulated prior failure",
-                )
-            )
-            await db.commit()
-
-        async with db_factory() as db:
-            result = await start_historical_consolidation(db, board_id)
-            assert result["status"] == "queueing"
-
-        async with db_factory() as db:
-            rows = (
-                (
-                    await db.execute(
-                        select(ConsolidationQueue).where(
-                            ConsolidationQueue.board_id == board_id,
-                            ConsolidationQueue.artifact_id == spec.id,
-                        )
-                    )
-                )
-                .scalars()
-                .all()
-            )
-            assert len(rows) == 1
-            row = rows[0]
-            assert row.status == "pending"
-            assert row.source == "historical_backfill"
-            assert row.last_error is None
-
-    @pytest.mark.asyncio
-    async def test_pending_event_row_is_preserved(self, db_factory):
-        """If a pending row already exists (e.g. event:card.created waiting
-        to be processed), the historical pass must not try to insert a
-        duplicate — the UNIQUE constraint would reject it anyway, but the
-        dedup filter must skip it cleanly."""
-        import uuid
-        from sqlalchemy_test_models import ConsolidationQueue
-
-        board_id = "board-dedup-pending-preserved"
-        await _seed_board_with_spec(db_factory, board_id)
-
-        async with db_factory() as db:
-            spec = (
-                (await db.execute(select(Spec).where(Spec.board_id == board_id)))
-                .scalars()
-                .first()
-            )
-            assert spec is not None
-
-            db.add(
-                ConsolidationQueue(
-                    id=str(uuid.uuid4()),
-                    board_id=board_id,
-                    artifact_type="spec",
-                    artifact_id=spec.id,
-                    priority="high",
-                    source="event:spec.moved",
-                    status="pending",
-                )
-            )
-            await db.commit()
-
-        async with db_factory() as db:
-            result = await start_historical_consolidation(db, board_id)
-            assert result["status"] == "queueing"
-
-        async with db_factory() as db:
-            rows = (
-                (
-                    await db.execute(
-                        select(ConsolidationQueue).where(
-                            ConsolidationQueue.board_id == board_id,
-                            ConsolidationQueue.artifact_id == spec.id,
-                        )
-                    )
-                )
-                .scalars()
-                .all()
-            )
-            # Exactly one row survives (UNIQUE constraint). It must be the
-            # pre-existing pending event row, NOT a new historical row.
-            assert len(rows) == 1
-            row = rows[0]
-            assert row.status == "pending"
-            assert row.source == "event:spec.moved"
-
-    @pytest.mark.asyncio
-    async def test_paused_rows_are_preserved(self, db_factory):
-        """A paused historical row from a prior run must survive the dedup
-        pass — start after pause should observe 'already_in_progress' via
-        the pre-check, but even if that didn't trigger, the dedup must
-        treat paused rows as live."""
-        import uuid
-        from sqlalchemy_test_models import ConsolidationQueue
-
-        board_id = "board-dedup-paused-preserved"
-        await _seed_board_with_spec(db_factory, board_id)
-
-        async with db_factory() as db:
-            spec = (
-                (await db.execute(select(Spec).where(Spec.board_id == board_id)))
-                .scalars()
-                .first()
-            )
-            assert spec is not None
-
-            db.add(
-                ConsolidationQueue(
-                    id=str(uuid.uuid4()),
-                    board_id=board_id,
-                    artifact_type="spec",
-                    artifact_id=spec.id,
-                    priority="low",
-                    source="historical_backfill",
-                    status="paused",
-                )
-            )
-            await db.commit()
-
-        # Paused status is not in {pending, claimed}, so the "already in
-        # progress" pre-check won't trigger and start_historical_consolidation
-        # will proceed to the dedup / enqueue path.
-        async with db_factory() as db:
-            result = await start_historical_consolidation(db, board_id)
-            assert result["status"] == "queueing"
-
-        async with db_factory() as db:
-            rows = (
-                (
-                    await db.execute(
-                        select(ConsolidationQueue).where(
-                            ConsolidationQueue.board_id == board_id,
-                            ConsolidationQueue.artifact_id == spec.id,
-                        )
-                    )
-                )
-                .scalars()
-                .all()
-            )
-            # Exactly one row must survive — the pre-existing paused row.
-            # The dedup set must include paused statuses so the historical
-            # pass skips this artifact instead of trying to duplicate it.
-            assert len(rows) == 1
-            row = rows[0]
-            assert row.status == "paused"
-            assert row.source == "historical_backfill"
-
-    @pytest.mark.asyncio
-    async def test_mixed_terminal_rows_all_cleared(self, db_factory):
-        """Multiple artifacts with terminal rows from DIFFERENT sources
-        must all be cleared and re-queued in a single pass."""
-        import uuid
-        from sqlalchemy_test_models import Board, ConsolidationQueue
-
-        board_id = "board-dedup-mixed"
-
-        # Seed board with THREE done specs
-        async with db_factory() as db:
-            db.add(Board(id=board_id, name="Mixed", owner_id="owner"))
-            spec_ids = []
-            for i in range(3):
-                sid = str(uuid.uuid4())
-                spec_ids.append(sid)
-                db.add(
-                    Spec(
-                        id=sid,
-                        board_id=board_id,
-                        title=f"Spec {i}",
-                        status=SpecStatus.DONE,
-                        archived=False,
-                        created_by="test",
-                    )
-                )
-            await db.commit()
-
-        # Pollute the queue with terminal rows from different sources
-        terminal_rows = [
-            (spec_ids[0], "event:spec.moved", "done"),
-            (spec_ids[1], "retry_from_ui", "failed"),
-            (spec_ids[2], "historical_backfill", "done"),
-        ]
-        async with db_factory() as db:
-            for artifact_id, source, status in terminal_rows:
-                db.add(
-                    ConsolidationQueue(
-                        id=str(uuid.uuid4()),
-                        board_id=board_id,
-                        artifact_type="spec",
-                        artifact_id=artifact_id,
-                        priority="low",
-                        source=source,
-                        status=status,
-                    )
-                )
-            await db.commit()
-
-        async with db_factory() as db:
-            result = await start_historical_consolidation(db, board_id)
-            assert result["status"] == "queueing"
-            # All three specs must be re-queued. Other fields that
-            # historical_backfill also seeds (sprints, cards) may or may
-            # not bump this count; we only assert the specs are included.
-            assert result["total_artifacts"] >= 3
-
-        async with db_factory() as db:
-            rows = (
-                (
-                    await db.execute(
-                        select(ConsolidationQueue).where(
-                            ConsolidationQueue.board_id == board_id,
-                            ConsolidationQueue.artifact_type == "spec",
-                        )
-                    )
-                )
-                .scalars()
-                .all()
-            )
-            assert len(rows) == 3
-            for row in rows:
-                assert row.status == "pending"
-                assert row.source == "historical_backfill"

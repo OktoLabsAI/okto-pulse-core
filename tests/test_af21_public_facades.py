@@ -59,7 +59,6 @@ PUBLIC_FACADE_SYMBOLS: dict[str, tuple[str, ...]] = {
         "drain_kg_health_probes",
         "get_current_provider_registry",
         "signal_consolidation_worker",
-        "start_historical_consolidation",
     ),
 }
 
