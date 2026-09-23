@@ -575,25 +575,6 @@ class CoreKnowledgeGraphOperations:
         return stage_boost_node_audit(self.__relational_context, mutation)
 
 
-    async def list_cognitive_dlq_rows(
-        self,
-        board_id: str,
-        *,
-        limit: int,
-        offset: int,
-        include_code_traceability: bool = False,
-    ):  # noqa: ANN201
-        from okto_pulse.core.services.dead_letter_inspector_service import (
-            list_cognitive_dlq_rows,
-        )
-
-        return await list_cognitive_dlq_rows(
-            self.__relational_context,
-            board_id,
-            limit=limit,
-            offset=offset,
-            include_code_traceability=include_code_traceability,
-        )
 
 
 

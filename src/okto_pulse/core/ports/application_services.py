@@ -726,14 +726,6 @@ class KnowledgeGraphOperations(Protocol):
     def stage_boost_node_audit(self, mutation: object) -> dict[str, object]: ...
 
 
-    async def list_cognitive_dlq_rows(
-        self,
-        board_id: str,
-        *,
-        limit: int,
-        offset: int,
-        include_code_traceability: bool = False,
-    ) -> object: ...
 
 
 

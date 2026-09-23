@@ -82,7 +82,6 @@ MCP_READER_TOOL_NAMES = frozenset(
         "okto_pulse_kg_evaluate_cognitive_readiness",
         "okto_pulse_kg_health",
         "okto_pulse_kg_health_readiness",
-        "okto_pulse_kg_list_cognitive_dlq",
         "okto_pulse_kg_list_cognitive_pending_items",
         "okto_pulse_kg_list_cognitive_readiness_items",
         "okto_pulse_kg_takedown_status",
@@ -532,7 +531,6 @@ MCP_TOOL_PERMISSION_POLICIES: tuple[McpToolPermissionPolicy, ...] = (
     _policy("okto_pulse_kg_health", "kg.operations.health.read"),
     _policy("okto_pulse_kg_health_readiness", "kg.operations.health.read"),
     _policy("okto_pulse_kg_list_alternatives", "kg.query.alternatives"),
-    _policy("okto_pulse_kg_list_cognitive_dlq", "kg.operations.cognitive.read"),
     _policy(
         "okto_pulse_kg_list_cognitive_pending_items",
         "kg.operations.cognitive.read",

@@ -47,7 +47,6 @@ Semantic guideline protocol:
 - `okto_pulse_kg_clear_cognitive_skip` — docs: `okto-pulse://reference/tool-docs/kg`
 - `okto_pulse_kg_evaluate_bug_cognitive_closure` — docs: `okto-pulse://reference/tool-docs/kg`
 - `okto_pulse_kg_evaluate_cognitive_readiness` — docs: `okto-pulse://reference/tool-docs/kg`
-- `okto_pulse_kg_list_cognitive_dlq` — docs: `okto-pulse://reference/tool-docs/kg`
 - `okto_pulse_kg_list_cognitive_pending_items` — docs: `okto-pulse://reference/tool-docs/kg`
 - `okto_pulse_kg_list_cognitive_readiness_items` — docs: `okto-pulse://reference/tool-docs/kg`
 - `okto_pulse_kg_record_cognitive_skip` — docs: `okto-pulse://reference/tool-docs/kg`

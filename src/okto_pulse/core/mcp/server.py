@@ -20789,94 +20789,6 @@ async def okto_pulse_kg_clear_cognitive_skip(
     )
 
 
-@mcp.tool()
-async def okto_pulse_kg_list_cognitive_dlq(
-    board_id: str,
-    limit: int = 50,
-    offset: int = 0,
-) -> str:
-    """
-    List the board's TECHNICAL dead-letter (DLQ) blockers for cognitive
-    consolidation — diagnosis + action surface, no UI dependency.
-
-    Each row carries the normalized `artifact_id`, the `errors` history, and the
-    central readiness framing (`error_cause`=technical_dlq, `signal`=dlq,
-    `readiness_effect`=blocking_technical). A technical DLQ is NEVER a selectable
-    cognitive reason_code; resolve it (don't skip it). Open canonical-debt
-    blockers are surfaced by `okto_pulse_kg_list_cognitive_readiness_items`
-    (signal=open_canonical_debt).
-    """
-    ctx = await _get_agent_ctx(board_id)
-    if ctx is None:
-        return _auth_error()
-    perm_err = kg_permission_error(ctx, "board.read")
-    if perm_err:
-        return _kg_direct_permission_denied("board.read", perm_err)
-
-    bounded_limit, bounded_offset, pagination_error = _kg_pagination_window(
-        limit, offset
-    )
-    if pagination_error is not None:
-        return pagination_error
-
-    from okto_pulse.core.application.use_cases import (
-        ListCognitiveDlqCommand,
-        ListCognitiveDlqUseCase,
-    )
-    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
-    from okto_pulse.core.kg.cognitive_readiness import TECHNICAL_DLQ_SIGNAL
-    from okto_pulse.core.kg.rebuild_audit import normalize_cognitive_artifact_id
-
-    # Spec R01A MCP-FU3B (MCP strangler): the inline DLQ query is now a dedicated
-    # reader behind the transport-free use case + MCP UnitOfWorkFactory — this tool
-    # no longer issues SQL or opens a raw get_db_for_mcp() session. The row
-    # projection below (normalized artifact id, technical_dlq framing) is unchanged.
-    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
-    async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
-        uc_result = await ListCognitiveDlqUseCase().execute(
-            ListCognitiveDlqCommand(
-                board_id, limit=bounded_limit, offset=bounded_offset
-            ),
-            actor=actor,
-            uow=uow,
-        )
-    total = uc_result.total
-    rows = uc_result.rows
-
-    items = []
-    for row in rows:
-        ref = f"{row.artifact_type}:{row.artifact_id}"
-        items.append(
-            {
-                "id": row.id,
-                "artifact_type": str(row.artifact_type or ""),
-                "artifact_id": normalize_cognitive_artifact_id(ref),
-                "source_ref_original": ref,
-                "original_queue_id": getattr(row, "original_queue_id", None),
-                "attempts": getattr(row, "attempts", None),
-                "errors": getattr(row, "errors", None),
-                "signal": "dlq",
-                "signal_source": "dlq",
-                "error_cause": TECHNICAL_DLQ_SIGNAL,
-                "readiness_effect": "blocking_technical",
-                "blocking": True,
-            }
-        )
-    return json.dumps(
-        {
-            "board_id": board_id,
-            "items": items,
-            "total": total,
-            "limit": bounded_limit,
-            "offset": bounded_offset,
-            "note": (
-                "Technical DLQ — resolve/reprocess; never skippable as a cognitive "
-                "reason_code. Open canonical debt is in the readiness list "
-                "(signal=open_canonical_debt)."
-            ),
-        },
-        default=str,
-    )
 
 
 # ============================================================================
@@ -21493,7 +21405,6 @@ _TOOLS_WITH_LAZY_COMPACT_DESCRIPTION = frozenset(
         "okto_pulse_kg_add_edge_candidate",
         "okto_pulse_add_screen_mockup",
         "okto_pulse_add_architecture_design",
-        "okto_pulse_kg_list_cognitive_dlq",
         "okto_pulse_kg_health",
         "okto_pulse_move_card",
         "okto_pulse_kg_query_natural",

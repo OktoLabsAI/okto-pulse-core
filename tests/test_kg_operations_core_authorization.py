@@ -13,7 +13,6 @@ from okto_pulse.core.application.use_cases import (
     cognitive_readiness,
     kg_health,
     kg_routes_crud,
-    list_cognitive_dlq,
     operational_rest,
 )
 from okto_pulse.core.application.use_cases.authorization import (
@@ -500,18 +499,6 @@ _READ_CASES: tuple[
         "kg.admin.settings_read",
         True,
     ),
-    (
-        list_cognitive_dlq,
-        list_cognitive_dlq.ListCognitiveDlqUseCase(),
-        lambda: list_cognitive_dlq.ListCognitiveDlqCommand(
-            BOARD_ID,
-            limit=50,
-            offset=0,
-        ),
-        "kg.operations.cognitive.read",
-        "kg.admin.settings_read",
-        False,
-    ),
 )
 
 
@@ -536,7 +523,6 @@ _READ_CASES: tuple[
         "historical-progress",
         "pending-list",
         "pending-tree",
-        "cognitive-dlq",
     ),
 )
 async def test_each_dedicated_kg_reader_checks_the_specific_operation(

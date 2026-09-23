@@ -6,7 +6,6 @@ Exercita os tools MCP via mcp.get_tool(name).fn(...) com auth/db fake:
   * okto_pulse_kg_evaluate_cognitive_readiness
   * okto_pulse_kg_record_cognitive_skip   (write-path CENTRAL)
   * okto_pulse_kg_clear_cognitive_skip     (reopen CENTRAL)
-  * okto_pulse_kg_list_cognitive_dlq
   * okto_pulse_kg_evaluate_bug_cognitive_closure (twin S2 no catálogo)
 
 Cenários: ts_9862838e (lista pending/debt/terminal/DLQ acionável), ts_e1b66ffa
@@ -561,31 +560,10 @@ async def test_ts_d5d8b99e_bug_twin_in_catalog(tmp_path, db_factory, monkeypatch
 
 
 # ---------------------------------------------------------------------------
-# DLQ list tool — diagnóstico técnico acionável
+# Readiness filter validation
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.asyncio
-async def test_list_cognitive_dlq_tool(tmp_path, db_factory, monkeypatch):
-    board = "mcp-dlqtool"
-    await _board(db_factory, board)
-    async with db_factory() as db:
-        db.add(ConsolidationDeadLetter(
-            id="dlq-tool", board_id=board, artifact_type="bug", artifact_id=UUID_A,
-            original_queue_id="q9", attempts=4,
-            errors=[{"attempt": 1, "error_type": "Boom", "message": "kaput"}],
-        ))
-        await db.commit()
-    mcp_server = _wire(monkeypatch, tmp_path, db_factory)
-    out = await _call(
-        mcp_server, "okto_pulse_kg_list_cognitive_dlq", board_id=board,
-    )
-    assert out["total"] == 1
-    row = out["items"][0]
-    assert row["artifact_id"] == f"card:{UUID_A}"  # bug normaliza p/ card
-    assert row["error_cause"] == "technical_dlq"
-    assert row["readiness_effect"] == "blocking_technical"
-    assert row["errors"]  # histórico de erros presente para ação
 
 
 @pytest.mark.asyncio

@@ -57,7 +57,6 @@ READ_CASES = (
         "okto_pulse_kg_evaluate_cognitive_readiness",
         {"source_ref": "spec:spec-direct-acl"},
     ),
-    ("okto_pulse_kg_list_cognitive_dlq", {}),
 )
 
 

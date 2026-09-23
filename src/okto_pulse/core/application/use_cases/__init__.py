@@ -179,11 +179,6 @@ from okto_pulse.core.application.use_cases.list_boards_for_agent import (
     ListBoardsForAgentResult,
     ListBoardsForAgentUseCase,
 )
-from okto_pulse.core.application.use_cases.list_cognitive_dlq import (
-    ListCognitiveDlqCommand,
-    ListCognitiveDlqResult,
-    ListCognitiveDlqUseCase,
-)
 from okto_pulse.core.application.use_cases.move_ideation import (
     MoveIdeationCommand,
     MoveIdeationResult,
@@ -1258,10 +1253,6 @@ __all__ = [
     "ListBoardsForAgentCommand",
     "ListBoardsForAgentResult",
     "ListBoardsForAgentUseCase",
-    # list_cognitive_dlq (MCP-FU3B)
-    "ListCognitiveDlqCommand",
-    "ListCognitiveDlqResult",
-    "ListCognitiveDlqUseCase",
     # list_dead_letter_rows
     # queue_health
     # move_ideation
