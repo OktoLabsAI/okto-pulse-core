@@ -14994,3 +14994,52 @@ metadados descartáveis para testar leitura; não é novo ensaio da transição
 autorizada de reabertura, já validada em incremento anterior.
 F16.2 terminal **8839 linhas, ok=true, zero findings arquiteturais/documentais,
 oito budgets zero**, closure-card-ledger.json. Nenhum processo pendente.
+
+### Testes relacionados no recorte de retomada — em implementação
+
+Histórico anterior commitado/enviado em 5e2dd2ee/e50a0d91. Core agora projeta
+scenario_plans a partir dos criterion_ids da contribuição real do Card,
+reutilizando SpecExecutionPlan; herança delimitada não distribui testes a todos
+os Cards vinculados. Community carrega snapshots canônicos dos Test Cards
+relacionados (até 20), recompõe o contexto efetivo pelo avaliador existente e
+expõe autoria, resultado, autenticação atual e referência explícita à implementação.
+Nenhum resultado/plano cria crédito fora do avaliador; cap ou falta de Test Card
+marca população incompleta, sem transformar desconhecido em zero pendências.
+
+Follow-ups agora apontam aos ledgers dos Test Cards e ao list_implementation_targets
+já paginado, cada qual com autorização própria. Legado não adotado mantém
+escopo próprio e incerteza explícita, sem inventar classificação/critério.
+UI mostra planejamento e resultado separadamente e permite histórico do Test Card.
+Frontend **27 passed**, card-related-tests-frontend.xml; build/sync 78 arquivos,
+hash fa9adcac6a094f07618aab09560b3d60c655b6bb2b3e2305b08fa0dce54502b4.
+Ruff F/E9 limpo. dist-card-related-tests construído; instalação/prova/backend/F16
+ainda pendentes. Não declarar incremento concluído nem ampliar inventário.
+
+Par instalado/provado em provenance-card-related-tests.json: Core 830 .py/893
+payloads e Community 362 .py/446 payloads. Core **99 passed em 5.94s**,
+card-related-tests-core.xml; Community **19 passed em 48.11s**,
+card-related-tests-community.xml. Fixture real confirma UI passando ao lado de
+autorização falhando, herança BR apenas no Card responsável e ausência de Test
+Card como pendência desconhecida. Nenhuma chamada ao rollup completo na leitura.
+F16 inicial só teve duas matrizes README desatualizadas; regeneradas. Par final
+e F16 final ainda pendentes. verify:frontend-dist confirmou hash acima.
+
+Investigação independente para próxima frente de pacote/benchmark: smoke MCP
+instalado reproduziu **1 failed em 7.15s** (mcp-inventory-characterization.xml):
+initialize informa 0.3.3, enquanto metadata dos dois wheels informa 0.3.4. Ambos
+__init__.__version__ ainda contêm 0.3.3. O teste também fixa contagens antigas.
+Não relaxar paridade: alinhar identidade do runtime/artefato e comparar inventário
+vivo completo com manifesto/catálogo, cobrindo ausência das tools retiradas.
+Foi localizado ainda ImportlibMetadataVersionProvider concreto no Core, usado
+por infra.config como default; investigar composição e fechar esse mecanismo
+na edição, sem introduzir lookup de filesystem adicional no Core. Nada dessa
+frente foi alterado ainda. Baseline v0.3.4 novamente comprovado byte a byte
+em verify_baseline.py (769 .py Core / 311 Community), preparação para medição.
+
+Par final dist-card-related-tests-final instalado/provado, mesmos payloads
+comportamentais da campanha acima; provenance-card-related-tests-final.json.
+F16.2 final **8840 linhas, ok=true, zero findings arquiteturais/documentais e
+oito budgets zero**, closure-card-related-tests-final.json. Ruff/diff check
+limpos; nenhum processo pendente. O defeito de identidade MCP e a lacuna do
+provedor concreto seguem frente separada explicitamente registrada, portanto
+F16 verde não é afirmação de que toda contaminação possível já foi detectada.

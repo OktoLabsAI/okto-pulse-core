@@ -917,7 +917,15 @@ final lifecycle transitions are explicitly not evaluated by this read.
 The UTF-8 projection has a 128 KiB limit, with counts and truncation indicators.
 An implementation declaration remains partial/complete as originally recorded;
 an admitted receipt is not completion credit, and stale proof retains authorship.
-Tests shown here belong to this Card; read the Spec rollup for other Test Cards.
+For the adopted execution contract, planned scenarios and related Test Cards
+derive from this Card's canonical contribution criteria, including delimited
+inheritance. Their authenticated results retain the original Test Card and
+author; `observes_this_card` identifies an explicit implementation reference,
+not automatic coverage. The canonical evaluator still decides satisfaction.
+At most 20 related Test Cards are read by default; an incomplete population
+is explicitly unknown, with scoped ledger follow-ups. Legacy scopes retain
+own-Card tests and require the Spec rollup for broader qualification. Targets
+have a follow-up to their existing paginated list, under its own permission.
 Follow-up reads remain subject to their own permissions and gates. The response
 does not inspect a workspace or claim that all narrative pending work is resolved.
 
