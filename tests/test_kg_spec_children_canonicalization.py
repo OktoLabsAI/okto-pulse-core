@@ -189,12 +189,16 @@ async def test_commit_materializes_api_contract_implements_tr_constraint(
         ],
         "decisions": [{"id": "dec_explicit", "title": "Require login audit", "status": "active",
             "linked_requirements": ["fr-login", "tr-audit-events"]}],
+        "business_rules": [{"id": "br_one", "title": "Audit rule", "rule": "Keep audit", "linked_requirements": ["fr-login"]}],
+        "integration_requirements": [{"id": "ir_one", "title": "Audit interface", "linked_requirements": ["fr-login"]}],
+        "observability_requirements": [{"id": "or_one", "title": "Observe audit", "linked_integration_requirements": ["ir_one"]}],
         "api_contracts": [
             {
                 "id": "api-login",
                 "method": "POST",
                 "path": "/login",
                 "linked_requirements": ["tr-audit-events"],
+                "linked_rules": ["br_one"],
             },
         ],
     }
@@ -256,6 +260,27 @@ async def test_commit_materializes_api_contract_implements_tr_constraint(
         tr_title="Login API emits audit events",
     ) == 1
 
+    lineage_shapes = [
+        ('Constraint', 'Requirement', 'derives_from', 'br_requirement', 'business_rule:br_one', 'fr:fr-login'),
+        ('Requirement', 'Requirement', 'derives_from', 'ir_requirement', 'integration_requirement:ir_one', 'fr:fr-login'),
+        ('Constraint', 'Requirement', 'derives_from', 'or_integration', 'observability_requirement:or_one', 'integration_requirement:ir_one'),
+        ('APIContract', 'Constraint', 'implements', 'api_business_rule', 'api_contract:api-login', 'business_rule:br_one'),
+    ]
+    def lineage_pairs(graph):
+        actual = set()
+        for source_type, target_type, edge_type, rule, _source, _target in lineage_shapes:
+            rows = graph.execute(f'MATCH (a:{source_type})-[r:{edge_type}]->(b:{target_type}) '
+                'WHERE r.rule_id=$rule RETURN a.source_artifact_ref,b.source_artifact_ref,r.rule_id,r.confidence,r.layer,r.created_by',
+                {'rule': f'{edge_type}/{rule}@v2.1'})
+            try:
+                while rows.has_next():
+                    row = tuple(rows.get_next())
+                    assert row not in actual
+                    actual.add(row)
+            finally:
+                rows.close()
+        return actual
+
     def assert_chronology():
         with open_board_connection(board_id) as (_db, graph):
             checked = {}
@@ -313,6 +338,11 @@ async def test_commit_materializes_api_contract_implements_tr_constraint(
                  'derives_from/explicit_link@v2.1', 1.0)
                 for section, identity in [('fr', 'fr-login'), ('tr', 'tr-audit-events')]
             }
+            assert lineage_pairs(graph) == {
+                (f'spec:{spec_id}:{source}', f'spec:{spec_id}:{target}', f'{edge_type}/{rule}@v2.1',
+                 1.0, 'deterministic', 'worker_layer1')
+                for _source_type, _target_type, edge_type, rule, source, target in lineage_shapes
+            }
             return checked
 
     original_ids = await run_blocking_graph_io(
@@ -332,10 +362,16 @@ async def test_commit_materializes_api_contract_implements_tr_constraint(
         scenario["linked_criteria"] = []
     decision_links = spec['decisions'][0]['linked_requirements']
     spec['decisions'][0]['linked_requirements'] = []
+    lineage_fields = [('business_rules', 'linked_requirements'), ('integration_requirements', 'linked_requirements'),
+        ('observability_requirements', 'linked_integration_requirements'), ('api_contracts', 'linked_rules')]
+    lineage_links = {(collection, field): spec[collection][0][field] for collection, field in lineage_fields}
+    for collection, field in lineage_fields:
+        spec[collection][0][field] = []
     await project_current_spec()
 
     def assert_removed():
         with open_board_connection(board_id) as (_db, graph):
+            assert lineage_pairs(graph) == set()
             links = graph.execute("MATCH (s:TestScenario)-[r:tests]->(c:Criterion) RETURN r.rule_id")
             try:
                 assert not links.has_next()
@@ -351,6 +387,8 @@ async def test_commit_materializes_api_contract_implements_tr_constraint(
     for scenario in spec["test_scenarios"]:
         scenario["linked_criteria"] = original_links[scenario["id"]]
     spec['decisions'][0]['linked_requirements'] = decision_links
+    for (collection, field), links in lineage_links.items():
+        spec[collection][0][field] = links
     node_candidates = await project_current_spec()
     assert await run_blocking_graph_io(assert_chronology, task_name="tests.spec_children.restored_links") == original_ids
 

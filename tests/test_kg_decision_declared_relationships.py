@@ -50,6 +50,31 @@ def test_reordering_preserves_declared_identity_and_legacy_fr_index_is_supported
     assert relations(source)[1] == {('spec:owner:fr:fr_two', 'derives_from/explicit_link@v2.1', 1.0)}
 
 
+@pytest.mark.parametrize('links,expected', [
+    (['First'], {'spec:owner:fr:fr_one'}),
+    (['Technical'], {'spec:owner:tr:tr_one'}),
+    (['First', 'Technical'], {'spec:owner:fr:fr_one', 'spec:owner:tr:tr_one'}),
+])
+def test_unique_legacy_requirement_text_matches_the_declared_domain_reference(links, expected):
+    source = spec()
+    source['decisions'] = [{'id': 'dec_one', 'title': 'Choice', 'linked_requirements': links}]
+    assert {row[0] for row in relations(source)[1]} == expected
+
+
+@pytest.mark.parametrize('case', ['id_before_text', 'unknown_id_as_text', 'duplicate_text', 'cross_collection_text'])
+def test_legacy_text_never_steals_canonical_identity_or_selects_ambiguous_target(case):
+    source = spec()
+    token = 'fr_one' if case == 'id_before_text' else 'fr_missing' if case == 'unknown_id_as_text' else 'Repeated'
+    source['functional_requirements'][1]['text'] = token
+    if case == 'duplicate_text':
+        source['functional_requirements'][0]['text'] = token
+    if case == 'cross_collection_text':
+        source['technical_requirements'][0]['text'] = token
+    source['decisions'] = [{'id': 'dec_one', 'title': 'Choice', 'linked_requirements': [token]}]
+    expected = {'spec:owner:fr:fr_one'} if case == 'id_before_text' else set()
+    assert {row[0] for row in relations(source)[1]} == expected
+
+
 @pytest.mark.parametrize('missing', ['context', 'decisions', 'functional_requirements', 'technical_requirements'])
 def test_partial_source_cannot_authorize_decision_prune(missing):
     source = spec()

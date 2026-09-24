@@ -1327,7 +1327,8 @@ class _InMemoryGraphTransactionScope:
     ) -> ProjectionActiveSetReceipt:
         """Reconcile one exact relational node or edge projection."""
 
-        if intent.owner_type == "spec" and intent.namespace in {"scenario_criteria", "decision_requirements"}:
+        from okto_pulse.core.ports.spec_projection import SPEC_RELATIONSHIP_NAMESPACES
+        if intent.owner_type == "spec" and intent.namespace in SPEC_RELATIONSHIP_NAMESPACES:
             return self._reconcile_spec_relationships(intent)
 
         if intent.owner_type == "spec" and intent.namespace == "dependencies":
@@ -1512,7 +1513,8 @@ class _InMemoryGraphTransactionScope:
         self,
         receipt: ProjectionActiveSetReceipt,
     ) -> None:
-        if receipt.intent.namespace in {"scenario_criteria", "decision_requirements"}:
+        from okto_pulse.core.ports.spec_projection import SPEC_RELATIONSHIP_NAMESPACES
+        if receipt.intent.owner_type == 'spec' and receipt.intent.namespace in SPEC_RELATIONSHIP_NAMESPACES:
             from okto_pulse.core.ports.spec_projection import spec_relationship_family
             family = spec_relationship_family(receipt.intent.namespace)
             for before in receipt.edge_before_images:

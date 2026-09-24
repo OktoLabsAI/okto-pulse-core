@@ -29,6 +29,9 @@ class SpecRelationshipFamily:
     def owns_writer(self, *, rule_id, layer, created_by):
         return rule_id in self.rules and layer == 'deterministic' and created_by == 'worker_layer1'
 
+    def matches_rule_family(self, rule_id: str) -> bool:
+        return any(rule_id.startswith(rule.split('@', 1)[0] + '@') for rule in self.rules)
+
 
 _FAMILIES = {
     SCENARIO_CRITERIA_NAMESPACE: SpecRelationshipFamily(SCENARIO_CRITERIA_NAMESPACE, 'tests',
@@ -37,7 +40,28 @@ _FAMILIES = {
         'Decision', ('decision', 'decision_legacy'), (('Requirement', 'fr'), ('Constraint', 'tr')),
         frozenset({'derives_from/cooccurrence@v2.0', 'derives_from/explicit_link@v2.0',
                    'derives_from/explicit_link@v2.1'})),
+    'business_rule_requirements': SpecRelationshipFamily('business_rule_requirements', 'derives_from',
+        'Constraint', ('business_rule',), (('Requirement', 'fr'),),
+        frozenset({'derives_from/br_requirement@v2.1'})),
+    'integration_requirements': SpecRelationshipFamily('integration_requirements', 'derives_from',
+        'Requirement', ('integration_requirement',), (('Requirement', 'fr'),),
+        frozenset({'derives_from/ir_requirement@v2.1'})),
+    'observability_integrations': SpecRelationshipFamily('observability_integrations', 'derives_from',
+        'Constraint', ('observability_requirement',), (('Requirement', 'integration_requirement'),),
+        frozenset({'derives_from/or_integration@v2.1'})),
+    'api_business_rules': SpecRelationshipFamily('api_business_rules', 'implements',
+        'APIContract', ('api_contract',), (('Constraint', 'business_rule'),),
+        frozenset({'implements/api_business_rule@v2.1'})),
 }
+
+SPEC_RELATIONSHIP_NAMESPACES = frozenset(_FAMILIES)
+
+
+def is_spec_relationship_writer(*, edge_type, source_type, target_type, rule_id, layer, created_by):
+    return any(family.edge_type == edge_type and family.source_type == source_type
+        and any(kind == target_type for kind, _section in family.target_sections)
+        and family.owns_writer(rule_id=rule_id, layer=layer, created_by=created_by)
+        for family in _FAMILIES.values())
 
 
 def spec_relationship_family(namespace: str) -> SpecRelationshipFamily:

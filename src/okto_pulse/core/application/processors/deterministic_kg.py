@@ -1160,6 +1160,38 @@ def _spec_link_endpoint(link: dict[str, Any]) -> tuple[str, str]:
     return node_type, f"spec:{spec_id}:{section}:{_ref_token(entity_id)}"
 
 
+def _declared_requirement_targets(references, primary_rows, primary_nodes, secondary_rows=(), secondary_nodes=()):
+    """Resolve exact IDs, then unique legacy text; numeric compatibility is FR-only."""
+    identities: dict[str, list[str]] = {}
+    texts: dict[str, list[str]] = {}
+    for rows, emitted in ((primary_rows, primary_nodes), (secondary_rows, secondary_nodes)):
+        for item, (candidate_id, _text) in zip(rows, emitted):
+            text = str(item.get('text') or item.get('title') or item.get('description') or '') if isinstance(item, dict) else str(item)
+            if text.strip():
+                texts.setdefault(text.strip(), []).append(candidate_id)
+            if isinstance(item, dict) and item.get('id') not in (None, ''):
+                identities.setdefault(str(item['id']), []).append(candidate_id)
+    targets: set[str] = set()
+    for reference in references or ():
+        if isinstance(reference, bool) or reference is None:
+            continue
+        key = str(reference).strip()
+        matches = identities.get(key)
+        if matches is None and not key.startswith(('fr_', 'tr_')):
+            matches = texts.get(key)
+        if matches is not None:
+            if len(matches) == 1:
+                targets.add(matches[0])
+            continue  # Ambiguity cannot fall through into positional lookup.
+        try:
+            index = int(key)
+            if 0 <= index < len(primary_nodes):
+                targets.add(primary_nodes[index][0])
+        except ValueError:
+            pass
+    return sorted(targets)
+
+
 class DeterministicWorker:
     """Stateless Layer 1 extractor.
 
@@ -1756,25 +1788,9 @@ class DeterministicWorker:
             _add_belongs_to(dec_cid, "fdec", i)
             # Only declared FR/TR links justify derives_from. An absent or
             # unresolved link never authorizes co-occurrence with every FR.
-            requirement_ids: dict[str, list[str]] = {}
-            for collection, emitted in (("functional_requirements", fr_ids), ("technical_requirements", tr_ids)):
-                for item, (cid, _text) in zip(spec.get(collection) or [], emitted):
-                    if isinstance(item, dict) and item.get('id') not in (None, ''):
-                        requirement_ids.setdefault(str(item['id']), []).append(cid)
-            explicit_cids: set[str] = set()
-            for ref in dec.get("linked_requirements") or []:
-                key = str(ref).strip() if ref is not None else ''
-                matches = requirement_ids.get(key, [])
-                if len(matches) == 1:
-                    explicit_cids.add(matches[0])
-                elif not matches and not isinstance(ref, bool):
-                    # Preserve the historical positional FR-only contract.
-                    try:
-                        index = int(key)
-                        if 0 <= index < len(fr_ids):
-                            explicit_cids.add(fr_ids[index][0])
-                    except ValueError:
-                        pass
+            explicit_cids = _declared_requirement_targets(dec.get('linked_requirements'),
+                spec.get('functional_requirements') or [], fr_ids,
+                spec.get('technical_requirements') or [], tr_ids)
             for target_cid in sorted(explicit_cids):
                 result.edges.append(EmittedEdge(
                     candidate_id=f"{prefix}_edge_fdec{i}_derives_{target_cid}",
@@ -1863,6 +1879,57 @@ class DeterministicWorker:
                         confidence=1.0,
                         rule_id=f"mentions/tech_whitelist@v{tech_whitelist_version}",
                     )
+                )
+
+        # These are relational declarations, not proof of implementation or
+        # of satisfying any gate. Status filtering keeps revoked sources out
+        # of the current relationship set while retaining their source nodes.
+        lineage = (
+            ('business_rules', 'br', 'linked_requirements', 'derives_from', 'br_requirement', 'fr'),
+            ('integration_requirements', 'ir', 'linked_requirements', 'derives_from', 'ir_requirement', 'fr'),
+            ('observability_requirements', 'or', 'linked_integration_requirements', 'derives_from', 'or_integration', 'ir'),
+            ('api_contracts', 'api', 'linked_rules', 'implements', 'api_business_rule', 'br'),
+        )
+        emitted_ids = {node.candidate_id for node in result.nodes}
+        for collection, source_slot, link_field, edge_type, rule_slot, target_slot in lineage:
+            target_collection = {'ir': 'integration_requirements', 'br': 'business_rules'}.get(target_slot)
+            target_ids: dict[str, list[str]] = {}
+            if target_collection is not None:
+                for index, item in enumerate(spec.get(target_collection) or []):
+                    if (isinstance(item, dict) and item.get('status', 'active') == 'active'
+                            and item.get('id') not in (None, '')):
+                        target_ids.setdefault(str(item['id']), []).append(f'{prefix}_{target_slot}_{index}')
+            for index, item in enumerate(spec.get(collection) or []):
+                if not isinstance(item, dict) or item.get('status', 'active') != 'active':
+                    continue
+                source_cid = f'{prefix}_{source_slot}_{index}'
+                if target_slot == 'fr':
+                    targets = _declared_requirement_targets(item.get(link_field),
+                        spec.get('functional_requirements') or [], fr_ids)
+                else:
+                    targets = sorted({matches[0] for reference in item.get(link_field) or []
+                        if len(matches := target_ids.get(str(reference), [])) == 1})
+                for target_cid in targets:
+                    if source_cid in emitted_ids and target_cid in emitted_ids:
+                        result.edges.append(EmittedEdge(
+                            candidate_id=f'{source_cid}_{rule_slot}_{target_cid}',
+                            edge_type=edge_type, from_candidate_id=source_cid,
+                            to_candidate_id=target_cid, confidence=1.0,
+                            rule_id=f'{edge_type}/{rule_slot}@v2.1',
+                        ))
+        for namespace, collections, rule_id in (
+            ('business_rule_requirements', ('business_rules', 'functional_requirements'), 'derives_from/br_requirement@v2.1'),
+            ('integration_requirements', ('integration_requirements', 'functional_requirements'), 'derives_from/ir_requirement@v2.1'),
+            ('observability_integrations', ('observability_requirements', 'integration_requirements'), 'derives_from/or_integration@v2.1'),
+            ('api_business_rules', ('api_contracts', 'business_rules'), 'implements/api_business_rule@v2.1'),
+        ):
+            if all(name in spec and isinstance(spec[name], (list, type(None))) for name in collections):
+                result.relational_projection_active_set_intents += (
+                    RelationalProjectionActiveSetIntent(owner_type='spec', owner_id=str(spec_id),
+                        namespace=namespace, active_refs=(), active_edges=tuple(
+                            RelationalProjectionActiveEdgeRef(candidate_id=edge.candidate_id, edge_type=edge.edge_type,
+                                from_candidate_id=edge.from_candidate_id, to_candidate_id=edge.to_candidate_id,
+                                rule_id=edge.rule_id) for edge in result.edges if edge.rule_id == rule_id)),
                 )
 
         # Complete declared and narrative sources are needed to replace both

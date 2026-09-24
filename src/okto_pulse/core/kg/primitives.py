@@ -598,6 +598,7 @@ async def begin_consolidation(
             "Projection candidates must match the complete collection of active sets.",
             session_id=session_id,
         )
+    from okto_pulse.core.ports.spec_projection import SPEC_RELATIONSHIP_NAMESPACES
     for projection_intent in projection_intents:
         owner_type = str(getattr(projection_intent, "owner_type", ""))
         owner_id = str(getattr(projection_intent, "owner_id", ""))
@@ -607,8 +608,7 @@ async def begin_consolidation(
         supported_scope = (req.artifact_type, owner_type, namespace) in {
             ("refinement", "refinement", "rdl"),
             ("spec", "spec", "dependencies"),
-            ("spec", "spec", "scenario_criteria"),
-            ("spec", "spec", "decision_requirements"),
+            *(("spec", "spec", name) for name in SPEC_RELATIONSHIP_NAMESPACES),
         }
         if (
             not agent_id.startswith("system:")
@@ -655,7 +655,7 @@ async def begin_consolidation(
                     "deterministic candidate identity.",
                     session_id=session_id,
                 )
-        if namespace in {"scenario_criteria", "decision_requirements"}:
+        if namespace in SPEC_RELATIONSHIP_NAMESPACES:
             from okto_pulse.core.ports.spec_projection import spec_relationship_family
             family = spec_relationship_family(namespace)
             if agent_id != "system:historical_consolidation" or active_refs:
@@ -4051,15 +4051,13 @@ def _do_graph_commit(
             declared_edge_candidate_ids = {
                 str(getattr(ref, "candidate_id", "")) for ref in active_edge_refs
             }
+            from okto_pulse.core.ports.spec_projection import SPEC_RELATIONSHIP_NAMESPACES, spec_relationship_family
+            namespace = getattr(projection_intent, 'namespace', '')
+            family = spec_relationship_family(namespace) if namespace in SPEC_RELATIONSHIP_NAMESPACES else None
             emitted_projection_edge_ids = {
-                candidate_id
-                for candidate_id, candidate in edge_candidates.items()
-                if str(getattr(candidate, "rule_id", "") or "").startswith(
-                    ("tests/ac_match@" if getattr(projection_intent, "namespace", "") == "scenario_criteria"
-                     else ("derives_from/explicit_link@", "derives_from/cooccurrence@")
-                     if getattr(projection_intent, "namespace", "") == "decision_requirements"
-                     else "precedes/spec_dependency/")
-                )
+                candidate_id for candidate_id, candidate in edge_candidates.items()
+                if (family.matches_rule_family(str(candidate.rule_id or '')) if family is not None
+                    else str(candidate.rule_id or '').startswith('precedes/spec_dependency/'))
             }
             if (
                 "" in declared_edge_candidate_ids

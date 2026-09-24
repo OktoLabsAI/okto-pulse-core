@@ -1,0 +1,127 @@
+{
+  "scope": "KG-12 declared BR->FR, IR->FR, OR->IR, API->BR; unique Decision requirement text compatibility",
+  "suites": {
+    "spec-lineage-core": {
+      "tests": 154,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "spec-lineage-community": {
+      "tests": 56,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "spec-lineage-frontend": {
+      "tests": 20,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    }
+  },
+  "budgets": [
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "import_boundary_baseline",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every import_boundary_baseline allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "singleton_baseline",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every singleton_baseline allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "dependency_temporary_exceptions",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every dependency_temporary_exceptions allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "graph_runtime_compatibility",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every graph_runtime_compatibility allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "rebuild_artifact_compatibility",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every rebuild_artifact_compatibility allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "community_private_reach_ins",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every community_private_reach_ins allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "community_adapter_bridges",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every community_adapter_bridges allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "af35_relational_residue",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every af35_relational_residue allowance before F16 completion."
+    }
+  ],
+  "verified": [
+    "Declared links only, exact IDs before unique legacy requirement text and FR index.",
+    "Four real graph commits create, reorder, clear and restore exact relationship sets.",
+    "Closed family ownership preserves foreign owners, sections, writers and unknown rules.",
+    "Real Grafx compensation restores deleted relationships exactly and is repeatable.",
+    "Partial source does not authorize empty active-set cleanup."
+  ],
+  "limits": [
+    "IR/OR->TR physical schema pairs remain absent; reference validation admits these links.",
+    "No whole lifecycle, event/rebuild parity, migration/rollback or release acceptance claim.",
+    "Installed15 uses an earlier frozen pair and does not qualify these changes.",
+    "Frontend JSDOM tests do not verify canvas pixels.",
+    "Retired target semantics require further investigation; current tests cover revoked sources."
+  ],
+  "sha256": {
+    "PULSE_REFACTOR/.validation-v040/spec-lineage-core.xml": "35a98e84d9d1424e35305fa8b7bc94e7449322575f1cc8e1d4313e94437ecae0",
+    "PULSE_REFACTOR/.validation-v040/spec-lineage-community.xml": "138ae1becfc15c5229bfeb32f2a503271dd8298c5510ea7541dd5cc456991042",
+    "PULSE_REFACTOR/.validation-v040/spec-lineage-frontend.xml": "11279d907a92b3ccdedb587b243372497da8ff1edb6f53c2b19436b1f9c042e3",
+    "PULSE_REFACTOR/.validation-v040/provenance-spec-lineage-final.json": "17ce746e88fa1b5b412bc4c60e7f79b6f109ebc527f71727bedafd9eba5f087d",
+    "PULSE_REFACTOR/.validation-v040/closure-spec-lineage-final.json": "d8f5fa6dc90b501256027bb330d2cbb91d83b3d5c4eb76641ee48dea1a6e0cf3",
+    "PULSE_REFACTOR/.validation-v040/spec-lineage-before.xml": "776348b9a5ade88413d0c2612804b3927d28e1426cd947c4df08f14c884199c3",
+    "PULSE_REFACTOR/.validation-v040/decision-text-before.xml": "f9df475c24e603e10e2bf26716b5ec33eacab22dbb190ffd9bd0cdff2c51be8e",
+    "PULSE_REFACTOR/.validation-v040/requirement-pair-admission.json": "99bacadb832ffd119727c6f0219f469d687d076779738f1aa15bcc5500f3eda1",
+    "PULSE_REFACTOR/.validation-v040/probe_requirement_pair_admission.py": "d9fd630c0b950fdc6dc46803b0811b7d91f815d4dfd9d9b8a8481b8b52f84c8b",
+    "okto_labs_pulse_core/tests/test_kg_spec_declared_lineage.py": "312f4cf792ca4eb1c05f12fe06391b705b88eb4c8e154a707d0c325d39549418",
+    "okto_labs_pulse_core/tests/test_kg_decision_declared_relationships.py": "380e080b7868044ee60db1cc40cdfce56b1607f2209e07c3a65d82d7b0a5c62d",
+    "okto_labs_pulse_core/tests/test_kg_spec_children_canonicalization.py": "b60373c7e629817c3d056f744b3ec38259faece7096d499425fef85d07088d26",
+    "okto_labs_pulse_core/tests/test_projection_intent_collection.py": "b1233f4e8fe069e769acbfaa4815f7ae19881c0e90a6992517df6efeff8849c1",
+    "okto_labs_pulse_community/tests/test_grafx_spec_lineage.py": "006e9c23eb6cfa858e344d338e15c83d2b230c7b3d8be45d8c5a34328d57710b"
+  }
+}
