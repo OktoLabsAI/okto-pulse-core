@@ -180,7 +180,7 @@ async def test_quality_mcp_inventory_remains_seven_tools() -> None:
     # recording and retains four bounded read surfaces (list, get, current and
     # findings).  Those reads are part of the public projection/pagination
     # contract; Code Traceability adds 20 reviewed, typed commands.
-    assert len(tools) == 312  # v1.3 retires Sprint and public KG maintenance.
+    assert len(tools) == 301  # v1.3 retires Sprint and public KG maintenance/tuning.
     assert {
         "okto_pulse_list_semantic_guideline_assessments",
         "okto_pulse_get_semantic_guideline_assessment",
