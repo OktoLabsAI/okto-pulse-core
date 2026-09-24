@@ -28,10 +28,24 @@ _COMMUNITY_CHECKOUT = resolve_repository_checkout(
 )
 assert _COMMUNITY_CHECKOUT is not None
 COMMUNITY_REPO = _COMMUNITY_CHECKOUT.repo_root
-CORE_WHEEL = CORE_REPO / "dist" / "okto_pulse_core-0.3.3-py3-none-any.whl"
-COMMUNITY_WHEEL = (
-    COMMUNITY_REPO / "dist" / "okto_pulse-0.3.3-py3-none-any.whl"
-)
+
+
+@pytest.fixture(scope="module")
+def current_wheels(tmp_path_factory):
+    """Audit wheels from this exact sibling pair, never a stale release in dist/."""
+    output = tmp_path_factory.mktemp("f14-current-wheels")
+    wheels = []
+    for name, repo in (("core", CORE_REPO), ("community", COMMUNITY_REPO)):
+        destination = output / name
+        subprocess.run(
+            [sys.executable, "-m", "build", "--wheel", "--no-isolation",
+             "--outdir", str(destination)],
+            cwd=repo, check=True, capture_output=True, text=True,
+        )
+        built = tuple(destination.glob("*.whl"))
+        assert len(built) == 1, built
+        wheels.append(built[0])
+    return tuple(wheels)
 
 
 def _write_core_wheel(path: Path, members: dict[str, str]) -> None:
@@ -115,13 +129,13 @@ def test_f14_graph_dependency_is_owned_only_by_community() -> None:
     assert all(path.startswith("src/okto_pulse/community/") for path in graph.source_paths)
 
 
-def test_f14_contract_and_all_distribution_surfaces_are_conformant() -> None:
+def test_f14_contract_and_all_distribution_surfaces_are_conformant(current_wheels) -> None:
     assert EditionPort is not None
     report = audit_distribution_dependencies(
         core_repo=CORE_REPO,
         community_repo=COMMUNITY_REPO,
-        core_wheel=CORE_WHEEL,
-        community_wheel=COMMUNITY_WHEEL,
+        core_wheel=current_wheels[0],
+        community_wheel=current_wheels[1],
     )
 
     assert report.ok, report.as_dict()
@@ -304,6 +318,7 @@ def test_f14_tampered_core_wheel_ast_rejects_imports_but_not_literals(
 )
 def test_core_wheel_imports_in_clean_environment_without_edition_runtimes(
     tmp_path: Path,
+    current_wheels,
 ) -> None:
     venv = tmp_path / "core-venv"
     subprocess.run(
@@ -313,7 +328,7 @@ def test_core_wheel_imports_in_clean_environment_without_edition_runtimes(
     )
     python = venv / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
     subprocess.run(
-        ["uv", "pip", "install", "--python", str(python), "--no-deps", str(CORE_WHEEL)],
+        ["uv", "pip", "install", "--python", str(python), "--no-deps", str(current_wheels[0])],
         check=True,
         cwd=CORE_REPO,
     )
