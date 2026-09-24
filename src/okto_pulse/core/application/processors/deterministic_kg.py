@@ -1889,6 +1889,23 @@ class DeterministicWorker:
                     )
                 )
 
+        # An absent collection may be a partial source. Only explicit, complete
+        # source collections authorize replacing the owned relationship set.
+        if ("test_scenarios" in spec and "acceptance_criteria" in spec
+                and isinstance(spec["test_scenarios"], (list, type(None)))
+                and isinstance(spec["acceptance_criteria"], (list, type(None)))):
+            result.relational_projection_active_set_intents += (
+                RelationalProjectionActiveSetIntent(
+                    owner_type="spec", owner_id=str(spec_id), namespace="scenario_criteria",
+                    active_refs=(),
+                    active_edges=tuple(RelationalProjectionActiveEdgeRef(
+                        candidate_id=edge.candidate_id, edge_type=edge.edge_type,
+                        from_candidate_id=edge.from_candidate_id, to_candidate_id=edge.to_candidate_id,
+                        rule_id=edge.rule_id,
+                    ) for edge in result.edges if edge.edge_type == "tests"),
+                ),
+            )
+
         # 9. Content hash — used by BR `Idempotent Commit via content_hash`.
         raw = "\n---\n".join(p for p in raw_parts if p)
         result.raw_content = raw

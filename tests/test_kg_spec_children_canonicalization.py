@@ -220,6 +220,7 @@ async def test_commit_materializes_api_contract_implements_tr_constraint(
                 agent_id="system:historical_consolidation",
                 db=db,
                 force_reprocess=True,
+                relational_projection_active_set_intents=worker_result.relational_projection_active_set_intents,
             )
 
         for edge in worker_result.edges:
@@ -306,6 +307,24 @@ async def test_commit_materializes_api_contract_implements_tr_constraint(
         assert_chronology, task_name="tests.spec_children.reordered_identity",
     )
     assert reordered_ids == original_ids
+
+    original_links = {scenario["id"]: list(scenario.get("linked_criteria") or []) for scenario in spec["test_scenarios"]}
+    for scenario in spec["test_scenarios"]:
+        scenario["linked_criteria"] = []
+    await project_current_spec()
+
+    def assert_removed():
+        with open_board_connection(board_id) as (_db, graph):
+            links = graph.execute("MATCH (s:TestScenario)-[r:tests]->(c:Criterion) RETURN r.rule_id")
+            try:
+                assert not links.has_next()
+            finally:
+                links.close()
+    await run_blocking_graph_io(assert_removed, task_name="tests.spec_children.removed_links")
+    for scenario in spec["test_scenarios"]:
+        scenario["linked_criteria"] = original_links[scenario["id"]]
+    node_candidates = await project_current_spec()
+    assert await run_blocking_graph_io(assert_chronology, task_name="tests.spec_children.restored_links") == original_ids
 
 
 # ---------------------------------------------------------------------------

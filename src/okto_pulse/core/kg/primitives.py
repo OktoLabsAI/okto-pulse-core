@@ -607,6 +607,7 @@ async def begin_consolidation(
         supported_scope = (req.artifact_type, owner_type, namespace) in {
             ("refinement", "refinement", "rdl"),
             ("spec", "spec", "dependencies"),
+            ("spec", "spec", "scenario_criteria"),
         }
         if (
             not agent_id.startswith("system:")
@@ -653,6 +654,27 @@ async def begin_consolidation(
                     "deterministic candidate identity.",
                     session_id=session_id,
                 )
+        if namespace == "scenario_criteria":
+            from okto_pulse.core.ports.spec_projection import is_spec_child_reference, SCENARIO_CRITERIA_RULES
+            if agent_id != "system:historical_consolidation" or active_refs:
+                raise KGPrimitiveError("relational_projection_scope_invalid",
+                    "Scenario projection belongs to the authenticated deterministic worker.", session_id=session_id)
+            roots = [candidate for candidate in deterministic_candidates.values()
+                     if _enum_value(candidate.node_type) == "Entity"
+                     and candidate.source_artifact_ref == f"spec:{owner_id}"]
+            if len(roots) != 1:
+                raise KGPrimitiveError("relational_projection_owner_unresolved",
+                    "Scenario projection requires its exact owner root.", session_id=session_id)
+            for edge_ref in active_edges:
+                source = deterministic_candidates.get(edge_ref.from_candidate_id)
+                target = deterministic_candidates.get(edge_ref.to_candidate_id)
+                if (edge_ref.edge_type != "tests" or edge_ref.rule_id not in SCENARIO_CRITERIA_RULES
+                        or source is None or target is None
+                        or _enum_value(source.node_type) != "TestScenario" or _enum_value(target.node_type) != "Criterion"
+                        or not is_spec_child_reference(source.source_artifact_ref, owner_id=owner_id, section="test_scenario")
+                        or not is_spec_child_reference(target.source_artifact_ref, owner_id=owner_id, section="ac")):
+                    raise KGPrimitiveError("relational_projection_edge_identity_mismatch",
+                        "Scenario criterion edge is outside its exact projection scope.", session_id=session_id)
         if namespace == "rdl" and active_edges:
             raise KGPrimitiveError(
                 "relational_projection_active_set_mismatch",
@@ -4031,7 +4053,8 @@ def _do_graph_commit(
                 candidate_id
                 for candidate_id, candidate in edge_candidates.items()
                 if str(getattr(candidate, "rule_id", "") or "").startswith(
-                    "precedes/spec_dependency/"
+                    ("tests/ac_match@" if getattr(projection_intent, "namespace", "") == "scenario_criteria"
+                     else "precedes/spec_dependency/")
                 )
             }
             if (
