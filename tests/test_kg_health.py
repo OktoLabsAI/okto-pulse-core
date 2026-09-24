@@ -355,7 +355,7 @@ async def test_orphan_integrity_warning_is_at_risk_not_recovery_needed(
                 {
                     "node_id": "learning_orphan_1",
                     "node_type": "Learning",
-                    "writer_path": "cognitive_consolidation",
+                    "writer_path": "D:/private/foreign-board/token=never-publish",
                     "source_artifact_ref": "bug:bug-1",
                     "source_resolution_status": "unresolved_source_ref",
                     "generation_id": "gen-test",
@@ -369,6 +369,7 @@ async def test_orphan_integrity_warning_is_at_risk_not_recovery_needed(
             "correlation_id": "corr-orphan-health",
             "zero_orphan_validation": "pending_backfill",
             "reason": "orphan_count_gt_zero",
+            "internal_probe_extension": {"raw_payload": "never-publish"},
         },
     )
     monkeypatch.setattr(
@@ -401,6 +402,13 @@ async def test_orphan_integrity_warning_is_at_risk_not_recovery_needed(
 
     assert result["orphan_integrity"]["integrity_warning"] is True
     assert result["orphan_integrity"]["orphan_count"] == 2
+    assert "samples" not in result["orphan_integrity"]
+    assert "internal_probe_extension" not in result["orphan_integrity"]
+    from okto_pulse.core.mcp.kg_query_safety import KGHealthMCPProjection
+    for profile in ("summary", "full", "legacy"):
+        projected = KGHealthMCPProjection().project(result, profile=profile)
+        assert "never-publish" not in str(projected)
+        assert "learning_orphan_1" not in str(projected)
     assert result["graph_state"] == "at_risk"
     assert result["overall_state"] == "at_risk"
     assert "graph:orphan_integrity_warning" in result["classification_reasons"]

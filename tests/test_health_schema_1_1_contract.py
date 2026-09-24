@@ -196,6 +196,7 @@ async def test_failed_debt_provider_remains_unavailable_through_health_and_mcp(d
 
     assert result["overall_state"] != "healthy"
     assert result["canonical_debt"]["status"] == "unavailable"
+    assert "canonical_debt_observation_unavailable" in result["classification_reason"]
     for name in ("open_count", "retryable_count", "blocked_count", "retry_scheduled_count", "terminal_count"):
         assert result["canonical_debt"][name] is None
     assert result["rebuild_diagnostics"]["last_outcome"] == "unavailable"

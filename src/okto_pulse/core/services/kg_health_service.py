@@ -3246,6 +3246,7 @@ async def get_kg_health(
         if overall_state == HealthState.HEALTHY:
             overall_state = HealthState.AT_RISK
         combined_reasons.append("canonical_debt_observation_unavailable")
+        classification_reason = ";".join(combined_reasons)
         health_diagnostics["health_issues"].append({
             "code": "canonical_debt_observation_unavailable",
             "component": "canonical_graph",
@@ -3817,7 +3818,17 @@ async def get_kg_health(
         "decay_scheduler_diagnostics": decay_scheduler_diagnostics,
         "storage_footprint_proxy": storage_footprint_proxy,
         "native_runtime_budget": native_runtime_budget,
-        "orphan_integrity": orphan_integrity,
+        # Public Health carries aggregate observation, never per-node scanner
+        # samples or future internal diagnostic extensions from the provider.
+        "orphan_integrity": {
+            key: orphan_integrity[key]
+            for key in (
+                "classification_delta", "integrity_warning", "orphan_count",
+                "orphan_count_by_type", "unresolved_reasons", "allowlisted_root_count",
+                "generation_id", "correlation_id", "zero_orphan_validation", "reason",
+            )
+            if key in orphan_integrity
+        },
         "kg_layer_counts": kg_layer_counts,
         "canonical_debt": canonical_debt,
         "rebuild_diagnostics": {
