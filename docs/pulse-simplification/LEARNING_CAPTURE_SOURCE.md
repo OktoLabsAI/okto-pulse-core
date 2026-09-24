@@ -167,3 +167,29 @@ history. A digest mismatch is shown as an earlier basis, not as inferred rejecti
 
 This interface supports independent creation/history, not reuse/supersedence,
 joint conclusion/capture submission, policy preview or governed Done binding.
+
+## Closeout revalidation primitive
+
+`revalidate_learning_capture_for_closeout` is an internal application operation
+for a caller that has already authorized the lifecycle action. It acquires the
+existing semantic write fence, reads the selected current source head in the
+same UOW, verifies its fingerprint and closed capture envelope, checks exact
+Board/Bug/digest/policy version, and authenticates the referenced scenarios
+again. It does not scan for a convenient historical match. A replaced head,
+changed conclusion/status/related evidence, unavailable source or rejected
+receipt fails explicitly without rewriting the capture. Only the implemented
+create intent is admitted; reuse/supersede syntax does not admit an operation.
+
+The return value is the existing capture record, not a durable closeout receipt.
+There is no commit, state transition, outbox write, graph materialization or
+policy waiver. Callers must keep the UOW and source fence through final checks
+and the actual transition; subsequent conclusion/status changes do not make an
+old digest current. This primitive is not yet called by lifecycle or preview.
+
+The characterization suite exercises actual Bug `move_card` and both cognitive
+gates with a healthy-graph observation and independent Delivery fixture. The
+existing `cognitive_readiness_policy` permits empty-queue completion even with
+the global blocking switch on. It also governs legacy debt/skip semantics;
+there is no implemented `bug_learning_closeout` setting. Preserve that finding
+when defining the typed human-authored policy and migration: do not silently
+reinterpret the existing switch, erase skips or claim the target gate exists.

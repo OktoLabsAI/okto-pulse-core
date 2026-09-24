@@ -140,3 +140,67 @@ async def stage_new_learning_capture(context, request: CreateLearningCapture, *,
         source_session_id='capture:' + request.capture_id, committed_at=captured_at.isoformat())
     await store.append_many_if_current_in_context(context, (record,), expected_fingerprints=(None,))
     return record
+
+
+async def revalidate_learning_capture_for_closeout(
+    context, *, board_id: str, bug_id: str, learning_id: str,
+    generation: int, expected_fingerprint: str,
+) -> CognitiveSourceRecord:
+    """Re-read a selected capture under the semantic source write fence.
+
+    Internal application operation, called after lifecycle authorization. This
+    is neither authorization to close nor a durable closeout receipt. The caller
+    must retain this UOW through its final source checks, mutation and outbox;
+    changing conclusion/status afterwards does not requalify the old capture.
+    No graph operation, commit, policy conversion or legacy hold waiver occurs.
+    """
+    if (any(type(value) is not str or not value.strip() or len(value) > 4096
+            for value in (board_id, bug_id, learning_id))
+            or type(generation) is not int or generation < 0
+            or type(expected_fingerprint) is not str or len(expected_fingerprint) != 64
+            or any(char not in '0123456789abcdef' for char in expected_fingerprint)):
+        raise ValueError('learning_capture_selection_invalid')
+    reader = resolve_bug_cognitive_context_assembler()
+    store = require_cognitive_source_store()
+    if (not isinstance(reader, BugSemanticWriteSnapshotReader)
+            or not isinstance(store, TransactionalCognitiveSourceReader)):
+        raise ValueError('learning_capture_transaction_capability_unavailable')
+    source = qualify_bug_semantic_context(await reader.assemble_semantic_for_write(
+        context, board_id=board_id, bug_id=bug_id))
+    if not source.verified or source.board_id != board_id or source.bug_id != bug_id:
+        raise ValueError('learning_capture_source_changed_or_unavailable')
+    record = await store.read_latest_in_context(context, board_id=board_id,
+        node_id=learning_id, generation=generation)
+    if record is None:
+        raise ValueError('learning_capture_selected_record_unavailable')
+    # The port verifies stored history; independently verify the returned head.
+    latest_cognitive_source_records((record,))
+    if (record.board_id != board_id or record.node_id != learning_id
+            or record.generation != generation or record.record_fingerprint != expected_fingerprint):
+        raise ValueError('learning_capture_selection_changed')
+    payload = dict(record.payload)
+    if not validate_learning_capture_payload(payload, board_id=board_id,
+            node_type=record.node_type, node_id=learning_id, generation=generation,
+            evidence_refs=record.evidence_refs):
+        raise ValueError('learning_capture_selected_record_unavailable')
+    if (payload['source']['bug_id'] != bug_id
+            or payload['source']['digest'] != source.source_digest
+            or payload['source']['policy_version'] != source.source_policy_version):
+        raise ValueError('learning_capture_source_changed_or_unavailable')
+    # Reuse/supersede payload syntax alone does not prove target applicability.
+    # Those operations need their own admitted target/CAS contract.
+    if payload['intent']['kind'] != 'create':
+        raise ValueError('learning_capture_intent_not_admitted')
+    scenarios = {}
+    for row in source.test_scenarios:
+        identity = row.get('id')
+        if type(identity) is not str or not identity:
+            raise ValueError('learning_capture_evidence_ambiguous')
+        ref = f'spec:{source.spec_id}:test_scenario:{identity}'
+        if ref in scenarios:
+            raise ValueError('learning_capture_evidence_ambiguous')
+        scenarios[ref] = dict(row)
+    for ref in record.evidence_refs:
+        if not _authenticated_scenario(source, scenarios.get(ref)):
+            raise ValueError('learning_capture_evidence_not_authenticated')
+    return record
