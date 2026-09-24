@@ -144,7 +144,7 @@ def test_port_conformance_passes_for_four_protocols() -> None:
     assert report.status == "passed"
     assert set(report.evidence["ports_checked"]) == {
         "SchedulerControl",
-        "RuntimeSettingsPort",
+        "RuntimeSettingsStartupPort",
         "RuntimeControl",
         "RuntimeEventBusPort",
     }

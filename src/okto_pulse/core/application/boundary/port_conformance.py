@@ -29,9 +29,9 @@ PORT_CONTRACTS: dict[str, dict[str, object]] = {
             }
         ),
     },
-    "RuntimeSettingsPort": {
-        "module": "okto_pulse.core.ports.runtime_settings",
-        "members": frozenset({"load", "persist", "apply_runtime_effects"}),
+    "RuntimeSettingsStartupPort": {
+        "module": "okto_pulse.core.ports.relational_services",
+        "members": frozenset({"apply_persisted_settings_to_core_settings"}),
     },
     "RuntimeControl": {
         "module": "okto_pulse.core.ports.runtime_control",

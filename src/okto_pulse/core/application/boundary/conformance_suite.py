@@ -132,9 +132,8 @@ def settings_split_conformance(source_root: Path | None = None) -> GateReport:
         "monolith_removed": "def _maybe_reschedule_tick" not in src,
         "no_scheduler_effect": "scheduler_control" not in src,
         "no_direct_singleton_import": ("kg." "scheduler_" "singleton") not in src,
-        # R-P2-06C/R08 — the general settings-effects contract: no implicit
-        # concrete effect provider in the core and an executable effect->port
-        # inventory (SETTINGS_RUNTIME_EFFECT_PORTS) is the canonical source.
+        # F4 preserves rejection of concrete effects and forbids the retired
+        # tuning inventory; automatic scheduling stays edition-owned.
         "no_implicit_singleton_construction": ("Singleton" "SchedulerControl(") not in src,
         "no_effect_adapter_import": ("scheduler_control" "_adapter") not in src,
         "no_tuning_effect_inventory": "SETTINGS_RUNTIME_EFFECT_PORTS" not in src,

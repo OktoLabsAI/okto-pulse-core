@@ -19,14 +19,12 @@ from okto_pulse.core.ports import (
     KG_TICK_RESCHEDULE_FAILED_SIGNAL,
     RESCHEDULE_FAILED_FORBIDDEN_FIELDS,
     RESCHEDULE_FAILED_REQUIRED_FIELDS,
-    ActorContextLike,
     JobSpec,
     RuntimeCompositionLike,
     RuntimeControl,
     RuntimeEvent,
     RuntimeEventBusPort,
-    RuntimeSettingsPort,
-    RuntimeSettingsSnapshot,
+    RuntimeSettingsStartupPort,
     SchedulerControl,
     SchedulerJobSnapshot,
     SchedulerResult,
@@ -65,14 +63,8 @@ class _EventBus:
 
 
 class _Settings:
-    async def load(self, scope: str) -> RuntimeSettingsSnapshot:
-        return RuntimeSettingsSnapshot(scope=scope, version=1)
-
-    async def persist(self, changes, *, actor) -> RuntimeSettingsSnapshot:
-        return RuntimeSettingsSnapshot(scope="global", version=2, values=dict(changes))
-
-    async def apply_runtime_effects(self, before, after) -> list:
-        return []
+    async def apply_persisted_settings_to_core_settings(self) -> dict[str, Any]:
+        return {"kg_queue_alert_threshold": 1000}
 
 
 class _Composition:
@@ -91,25 +83,16 @@ class _Control:
         return object()
 
 
-class _Actor:
-    actor_id = "actor-1"
-    source = "mcp"
 
 
 def test_four_runtime_ports_are_structurally_conformant() -> None:
     assert isinstance(_Scheduler(), SchedulerControl)
     assert isinstance(_EventBus(), RuntimeEventBusPort)
-    assert isinstance(_Settings(), RuntimeSettingsPort)
+    assert isinstance(_Settings(), RuntimeSettingsStartupPort)
     assert isinstance(_Control(), RuntimeControl)
     assert isinstance(_Composition(), RuntimeCompositionLike)
-    assert isinstance(_Actor(), ActorContextLike)
 
 
-def test_real_actor_context_satisfies_actor_context_like() -> None:
-    from okto_pulse.core.application.use_cases.base import ActorContext
-
-    actor = ActorContext("u1", "mcp")
-    assert isinstance(actor, ActorContextLike)
 
 
 def test_scheduler_job_id_is_canonical_kg_daily_tick() -> None:

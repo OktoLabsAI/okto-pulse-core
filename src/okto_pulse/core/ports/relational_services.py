@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from okto_pulse.core.runtime_context import register_runtime_value, require_runtime_value, reset_runtime_values
 
-from typing import Any, Protocol
+from typing import Any, Protocol, runtime_checkable
 
 _RESOURCE_GATE_KEY = "ports.relational_services.resource_gate"
 _RUNTIME_SETTINGS_KEY = "ports.relational_services.runtime_settings"
@@ -92,6 +92,7 @@ def resolve_resource_gate_adapter_factory() -> ResourceGateAdapterFactory:
     return require_runtime_value(_RESOURCE_GATE_KEY, "resource_gate_relational_adapter_not_configured")
 
 
+@runtime_checkable
 class RuntimeSettingsStartupPort(Protocol):
     """Hydrate validated deployment settings before edition runtime composition."""
 

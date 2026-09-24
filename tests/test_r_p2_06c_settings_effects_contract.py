@@ -47,3 +47,45 @@ def test_startup_boundary_rejects_hidden_writers_aliases_and_effects(tmp_path, e
     path.parent.mkdir(parents=True)
     path.write_text(source + "\n" + extra + "\n", encoding="utf-8")
     assert settings_split_conformance(tmp_path).status == "blocking"
+
+
+@pytest.mark.parametrize("drift", ["writer", "missing_startup", "not_runtime_checkable"])
+def test_startup_protocol_gate_rejects_contract_drift(monkeypatch, drift):
+    from typing import Protocol, runtime_checkable
+    from okto_pulse.core.application.boundary.port_conformance import PortConformanceGate
+    from okto_pulse.core.ports import relational_services
+
+    @runtime_checkable
+    class Writer(Protocol):
+        async def apply_persisted_settings_to_core_settings(self): ...
+        async def persist(self, changes): ...
+
+    @runtime_checkable
+    class MissingStartup(Protocol):
+        async def persist(self, changes): ...
+
+    class NotRuntimeCheckable(Protocol):
+        async def apply_persisted_settings_to_core_settings(self): ...
+
+    replacement = {"writer": Writer, "missing_startup": MissingStartup,
+                   "not_runtime_checkable": NotRuntimeCheckable}[drift]
+    monkeypatch.setattr(relational_services, "RuntimeSettingsStartupPort", replacement)
+    report = PortConformanceGate().run()
+    assert report.status == "blocking"
+    assert any(f["subject"] == "RuntimeSettingsStartupPort"
+               for f in report.evidence["findings"])
+
+
+def test_coordination_has_no_retired_tuning_registration_or_exports():
+    import inspect
+    from okto_pulse.core import ports
+    from okto_pulse.core.ports import coordination
+
+    assert set(inspect.signature(coordination.register_coordination_providers).parameters) == {
+        "lease_provider", "write_lock_port", "claim_repository",
+    }
+    for name in ("RuntimeSettingsProvider", "ConfigValidationPort",
+                 "get_runtime_settings_provider", "get_config_validation_port",
+                 "RuntimeSettingsPort", "RuntimeSettingsSnapshot", "RuntimeEffectResult"):
+        assert not hasattr(ports, name)
+        assert not hasattr(coordination, name)
