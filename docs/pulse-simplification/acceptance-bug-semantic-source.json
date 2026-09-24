@@ -1,0 +1,120 @@
+{
+  "scope": "F6 prerequisite: graph-independent, versioned relational Bug source read",
+  "suites": {
+    "bug-semantic-source-core": {
+      "tests": 71,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "bug-semantic-source-community": {
+      "tests": 11,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    }
+  },
+  "budgets": [
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "import_boundary_baseline",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every import_boundary_baseline allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "singleton_baseline",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every singleton_baseline allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "dependency_temporary_exceptions",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every dependency_temporary_exceptions allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "graph_runtime_compatibility",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every graph_runtime_compatibility allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "rebuild_artifact_compatibility",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every rebuild_artifact_compatibility allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "community_private_reach_ins",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every community_private_reach_ins allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "community_adapter_bridges",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every community_adapter_bridges allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "af35_relational_residue",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every af35_relational_residue allowance before F16 completion."
+    }
+  ],
+  "verified": [
+    "Semantic source read before Done does not invoke the graph reader.",
+    "Fresh relational sessions observe the persisted Card policy version.",
+    "Foreign or missing Bug contents are not returned.",
+    "Unavailable related Spec/Test source, invalid type/version or mixed projection facts cannot produce a verified semantic context.",
+    "Existing graph-backed assemble and current closeout gates retain their behavior.",
+    "Core owns qualification; Community owns SQL and graph reads."
+  ],
+  "limits": [
+    "No Learning submission/admission, policy change or new done gate is implemented by this prerequisite.",
+    "Source completeness is neither evidence authentication nor approval of narrative content.",
+    "Card policy version alone does not seal linked evidence or related source currentness.",
+    "Installed16 uses the preceding frozen pair and does not qualify this increment.",
+    "Whole-plan acceptance, integrated F6 capture/materialization, current full suites and release remain pending."
+  ],
+  "sha256": {
+    "PULSE_REFACTOR/.validation-v040/bug-semantic-source-core.xml": "94c423bb25f4205dcf1efc26f17100d6283c6ed9a9d3e784358008e5bfefae9d",
+    "PULSE_REFACTOR/.validation-v040/bug-semantic-source-core.log": "fa20784e14da9c72ef97abe8c4849be01a7c7e977d1a5c507b4bac586d1569ee",
+    "PULSE_REFACTOR/.validation-v040/bug-semantic-source-community.xml": "6f4528c48c2925ecd88f5de440dd04a88c9b6696aa4e00d414a548cbcb3f4500",
+    "PULSE_REFACTOR/.validation-v040/bug-semantic-source-community.log": "5667912d064d1dc2597ade87d062e85c51f3988d4924c91192ff0294485b7c2c",
+    "PULSE_REFACTOR/.validation-v040/provenance-bug-semantic-source-final.json": "62b937acd34421d91801c505df224d6b5a7f8105d184991bac3aeee1a64586c9",
+    "PULSE_REFACTOR/.validation-v040/closure-bug-semantic-source-final.json": "973b87160f94d09980ee46a51b6e2674b11437715057aba0e4a9f8d163c5b761",
+    "PULSE_REFACTOR/.validation-v040/bug-semantic-source-before.xml": "42b7635f51f233aa6ed97e00cea34068b6e6c11dd35cfbd235f0d918e64979ea",
+    "okto_labs_pulse_core/src/okto_pulse/core/ports/bug_cognitive_context.py": "e8b63319602b756cdb6129d625e2b1eaa45dbc95eba303a9e22f3ba4b2d54ae9",
+    "okto_labs_pulse_community/src/okto_pulse/community/adapters/bug_cognitive_context.py": "a30ac6d144be316fc14414fc1ac439a2f77a3dc0b3749fb85f42f9098c6d31a7",
+    "okto_labs_pulse_core/tests/test_bug_cognitive_context_v1.py": "09fd5969e1a096ffef7cbead2ab128ee0c0ea77446791f148e2bc360a87e22b3",
+    "okto_labs_pulse_community/tests/test_bug_cognitive_context_adapter.py": "8c0a0346d1d7e1c42aea7892292a4267a67794ad38c3c7bf95fc83dfa66623ad",
+    "okto_labs_pulse_core/docs/pulse-simplification/BUG_SEMANTIC_SOURCE.md": "6040f64873b3b6f33d3157cb512c16fdcc6f528d375ad9126904aa4ad949a15a"
+  }
+}

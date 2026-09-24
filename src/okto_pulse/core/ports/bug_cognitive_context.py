@@ -7,7 +7,7 @@ needed to assemble the contract (relational state and canonical graph state).
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Protocol
 
 from okto_pulse.core.runtime_context import (
@@ -64,6 +64,9 @@ class BugCognitiveContext:
     provenance_refs: tuple[str, ...] = ()
     load_errors: tuple[str, ...] = ()
     contract_version: str = "bug-cognitive-context/v1"
+    # Relational concurrency fence for semantic capture. This is not a graph
+    # generation or evidence admission: writers must re-read it under their UOW.
+    source_policy_version: int | None = None
 
     @property
     def eligible_for_closeout(self) -> bool:
@@ -95,6 +98,21 @@ class BugCognitiveContext:
         )
 
 
+def qualify_bug_semantic_context(source: BugCognitiveContext) -> BugCognitiveContext:
+    """Core-owned shape qualification; no claim of evidence or write authority."""
+    if source.contract_version != 'bug-semantic-context/v1':
+        raise ValueError('bug_semantic_context_contract_invalid')
+    errors = list(source.load_errors)
+    if source.card_exists:
+        if type(source.source_policy_version) is not int or source.source_policy_version < 1:
+            errors.append('bug_source_version_unavailable')
+        if source.card_type != 'bug':
+            errors.append('bug_source_type_invalid')
+    if source.canonical_bug_present is not None or any(ref.startswith('kg:') for ref in source.provenance_refs):
+        errors.append('bug_semantic_context_projection_mixed')
+    return replace(source, load_errors=tuple(dict.fromkeys(errors)))
+
+
 class BugCognitiveContextAssembler(Protocol):
     async def assemble(
         self,
@@ -103,6 +121,23 @@ class BugCognitiveContextAssembler(Protocol):
         board_id: str,
         bug_id: str,
     ) -> BugCognitiveContext: ...
+
+    async def assemble_semantic(
+        self,
+        context: object,
+        *,
+        board_id: str,
+        bug_id: str,
+    ) -> BugCognitiveContext:
+        """Read the scoped relational source before or after completion.
+
+        No graph access or canonical eligibility prerequisite. The result uses
+        ``bug-semantic-context/v1``, with a positive source policy version and
+        explicit errors for inaccessible linked sources. Projection remains
+        unknown, not absent or successful. This read authorizes no capture,
+        transition or evidence credit by itself.
+        """
+        ...
 
 
 class CanonicalBugNodeReadPort(Protocol):

@@ -33,6 +33,34 @@ ACCEPTANCE_CRITERIA = (
 )
 
 
+@pytest.mark.parametrize('changes,error', [
+    ({'source_policy_version': None}, 'bug_source_version_unavailable'),
+    ({'source_policy_version': True}, 'bug_source_version_unavailable'),
+    ({'source_policy_version': 0}, 'bug_source_version_unavailable'),
+    ({'card_type': 'normal'}, 'bug_source_type_invalid'),
+    ({'canonical_bug_present': False}, 'bug_semantic_context_projection_mixed'),
+    ({'canonical_bug_present': True}, 'bug_semantic_context_projection_mixed'),
+    ({'provenance_refs': ('kg:canonical/bug/one',)}, 'bug_semantic_context_projection_mixed'),
+])
+def test_semantic_source_qualification_fails_closed_without_changing_original(changes, error):
+    from okto_pulse.core.ports.bug_cognitive_context import qualify_bug_semantic_context
+    source = BugCognitiveContext(board_id=BOARD_ID, bug_id=BUG_ID, card_exists=True,
+        card_type='bug', status='in_progress', source_policy_version=3,
+        contract_version='bug-semantic-context/v1')
+    assert qualify_bug_semantic_context(source).verified
+    invalid = replace(source, **changes)
+    qualified = qualify_bug_semantic_context(invalid)
+    assert not qualified.verified and error in qualified.load_errors
+    assert qualify_bug_semantic_context(qualified) == qualified
+    assert invalid.load_errors == source.load_errors == ()
+
+
+def test_semantic_source_qualification_does_not_reinterpret_legacy_projection_context():
+    from okto_pulse.core.ports.bug_cognitive_context import qualify_bug_semantic_context
+    with pytest.raises(ValueError, match='bug_semantic_context_contract_invalid'):
+        qualify_bug_semantic_context(BugCognitiveContext(board_id=BOARD_ID, bug_id=BUG_ID, card_exists=True))
+
+
 class _TrustedEvidenceVerifier:
     def verify(self, **_request):  # noqa: ANN003, ANN201
         return EvidenceWriteVerification(True)
