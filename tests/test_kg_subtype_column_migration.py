@@ -36,7 +36,7 @@ def kg_tempdir(monkeypatch):
 
 
 def test_s1_fresh_bootstrap_has_kind_of_and_version(kg_tempdir):
-    assert SCHEMA_VERSION == "0.6.0"
+    assert SCHEMA_VERSION == "0.7.0"
     board_id = str(uuid.uuid4())
     bootstrap_board_graph(board_id)
     for node_type in NODE_TYPES:

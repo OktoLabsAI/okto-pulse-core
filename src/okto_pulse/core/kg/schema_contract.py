@@ -18,7 +18,7 @@ from okto_pulse.core.kg.cognitive_policy import (
     LEARNING_RELATES_TO_TARGETS,
 )
 
-SCHEMA_VERSION = "0.6.0"
+SCHEMA_VERSION = "0.7.0"
 
 
 # Provenance metadata required on every rel (KG Pipeline v2 - spec c48a5c33).
@@ -119,6 +119,8 @@ MULTI_REL_TYPES: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] = (
             ("Constraint", "Requirement"),
             ("Requirement", "Requirement"),
             ("Decision", "Constraint"),
+            ("Constraint", "Constraint"),
+            ("Requirement", "Constraint"),
         ),
     ),
     ("violates", (("Bug", "Requirement"), ("Bug", "Criterion"))),

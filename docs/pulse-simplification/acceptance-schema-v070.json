@@ -1,0 +1,187 @@
+{
+  "scope": "Exact 0.7.0 graph delta, preserved historical contracts, offline evolution and packaged UI version",
+  "schema_version": "0.7.0",
+  "schema_fingerprint": "099a8da29e07ccd0002a2000a5c5135d439e83cb15d4a84c8e2a71c001340a32",
+  "introduced_pairs": [
+    [
+      "derives_from",
+      "Constraint",
+      "Constraint"
+    ],
+    [
+      "derives_from",
+      "Requirement",
+      "Constraint"
+    ]
+  ],
+  "suites": {
+    "schema-v070-core": {
+      "tests": 203,
+      "failures": 1,
+      "errors": 0,
+      "skipped": 0
+    },
+    "schema-v070-community": {
+      "tests": 220,
+      "failures": 2,
+      "errors": 0,
+      "skipped": 0
+    },
+    "schema-v070-history": {
+      "tests": 6,
+      "failures": 1,
+      "errors": 0,
+      "skipped": 0
+    },
+    "schema-v070-catalog": {
+      "tests": 11,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "schema-v070-factories": {
+      "tests": 22,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "schema-v070-admission": {
+      "tests": 2,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "schema-v070-history-v060": {
+      "tests": 1,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "schema-v070-frontend-final": {
+      "tests": 24,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "schema-v070-mcp-catalog": {
+      "tests": 5,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    }
+  },
+  "budgets": [
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "import_boundary_baseline",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every import_boundary_baseline allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "singleton_baseline",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every singleton_baseline allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "dependency_temporary_exceptions",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every dependency_temporary_exceptions allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "graph_runtime_compatibility",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every graph_runtime_compatibility allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "rebuild_artifact_compatibility",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every rebuild_artifact_compatibility allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "community_private_reach_ins",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every community_private_reach_ins allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "community_adapter_bridges",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every community_adapter_bridges allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "af35_relational_residue",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every af35_relational_residue allowance before F16 completion."
+    }
+  ],
+  "initial_failures": "Preserved original failures were explicit old schema oracles; focused reruns cover every failed case without changing Python product code.",
+  "verified": [
+    "0.5.0 and 0.6.0 evolve to a separate 0.7.0 candidate under authenticated backup.",
+    "Historical v2 0.5.0->0.6.0 receipts remain exact; v3 declares source and target versions.",
+    "Reused-root history, replay and activation cover the 0.6.0 predecessor.",
+    "Bootstrap refuses a versioned 0.6.0 graph without changing its catalog or records.",
+    "Both new typed physical relationships can be written in a disposable 0.7.0 graph.",
+    "Help reports 0.7.0; the 79-file frontend distribution is rebuilt and verified."
+  ],
+  "limits": [
+    "Original multi-file campaigns remain recorded as failed; focused reruns are separate evidence.",
+    "IR/OR->TR and OR->FR worker emitters remain absent in this increment; before reproduction has three failures.",
+    "Installed15 qualifies only its earlier immutable pair, not 0.7.0.",
+    "No real-data migration, release, whole KG acceptance, benchmark or full v1.3 acceptance.",
+    "Frontend JSDOM does not verify rendered canvas pixels."
+  ],
+  "sha256": {
+    "PULSE_REFACTOR/.validation-v040/schema-v070-core.xml": "10cc05aec6a18add7b3a8661fa76ede431c604dade0e7828695f4a3dc1078b10",
+    "PULSE_REFACTOR/.validation-v040/schema-v070-community.xml": "d86ce77e8a153fb36027f9e09983f1e21c0befd9d8ef70d0f778f89d760ec822",
+    "PULSE_REFACTOR/.validation-v040/schema-v070-history.xml": "ccb521f22650fe29647cb4c12c9f2176fd9124d2766bce78e2f5c4cfead50fa0",
+    "PULSE_REFACTOR/.validation-v040/schema-v070-catalog.xml": "e9a73df2b96d9b94013a523ecb6a7a13db64dfe3f24ad1264ac7a4cce120b86e",
+    "PULSE_REFACTOR/.validation-v040/schema-v070-factories.xml": "1e576df6f90a2eb968db2b6ff44cb2dbbd0379d0fdb6fafb53356512151e2c12",
+    "PULSE_REFACTOR/.validation-v040/schema-v070-admission.xml": "99470112fb641e8e0e149128d1a467366895cb54248d105855c4d3f249c17691",
+    "PULSE_REFACTOR/.validation-v040/schema-v070-history-v060.xml": "17bd69061447755d7820a446c5ab906a4f23bb04221ce919ae8893e11c6cb9dd",
+    "PULSE_REFACTOR/.validation-v040/schema-v070-frontend-final.xml": "72829757c125bdca64c813dd68a3a72848d91f524869375180ec50f3e4712c6f",
+    "PULSE_REFACTOR/.validation-v040/schema-v070-mcp-catalog.xml": "cf6702eeff8bab5d3b3732a3c7fe86ec0aacb6b26773433bcba07368fc2fe492",
+    "PULSE_REFACTOR/.validation-v040/provenance-schema-v070-final.json": "fb5bdd6042c26d72c45c952e271b6bd5e66fae119b41364f6f98679589b0b7ec",
+    "PULSE_REFACTOR/.validation-v040/closure-schema-v070-final.json": "d70b443ffeba1a5da58981c461e84192440df7187baba677a2a9a51118bdcd5e",
+    "PULSE_REFACTOR/.validation-v040/schema-v070-help-before.xml": "8552ec3bd8900229737841b5e06d43e6a75b74c19777d03c6cbb7806eb99c769",
+    "PULSE_REFACTOR/.validation-v040/schema-v070-frontend-build.log": "026afc0d552f13cc70ebc2d123ca5b248a5fbb8bae1ecd0b826349131baef789",
+    "PULSE_REFACTOR/.validation-v040/proposed-v070-manifest.json": "45382b9796215a10b668dfd39e03985a6a932c753c7e7c322175557f826aac2d",
+    "PULSE_REFACTOR/.validation-v040/requirement-lineage-before.xml": "43c147919dc21799e5e64ab092bdf739a2eb15520839ef4adcbf7f4925e685d8",
+    "PULSE_REFACTOR/.validation-v040/probe_requirement_lineage.py": "e4e63f227366b1e763b7d95e9ee7e2ff3a4db214173ef60f26d36eb2ac7f63f8",
+    "okto_labs_pulse_core/tests/test_code_traceability_events_kg.py": "0b892ce790eadd34fdb836b52014dbbc5b4c9893a01d1e0ac4b0a8a308312e19",
+    "okto_labs_pulse_community/tests/test_logical_transfer_factories.py": "e9cc49132adce86f8d309defc7b8da69d2356cf0fe5092000ba91383a5d59ee1",
+    "okto_labs_pulse_community/tests/test_retirement_reused_history.py": "ccef9ff559b7b11f32d543b2c6b4e162ff2ea7245aac29302e5674602b09b6a1",
+    "okto_labs_pulse_community/tests/test_retirement_schema_evolution.py": "4cb980c964336a5e02c4acea350fbb91c4c969f5b8fddbfeaf27bbafc3bdbaa9",
+    "okto_labs_pulse_community/tests/test_grafx_v070_predecessor_admission.py": "57f483dcc1f1f59651719e19c583a0c6aaeb05dd7bbddcb972a6942d838db63a",
+    "okto_labs_pulse_community/src/okto_pulse/community/frontend_dist/pulse-frontend-contract.json": "e35800cc4c5c65dd6bb20c19a1a65c9d307257404a2ebe3dc50c9b30a429819f"
+  }
+}

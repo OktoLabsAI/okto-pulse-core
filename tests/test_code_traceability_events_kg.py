@@ -239,7 +239,7 @@ def test_event_payload_is_bounded_frozen_and_rejects_unknown_fields():
 
 
 def test_kg_schema_is_additive_semantic_subtyping_only():
-    assert SCHEMA_VERSION == "0.6.0"
+    assert SCHEMA_VERSION == "0.7.0"
     assert len(NODE_TYPES) == 11
     assert not set(CODE_TRACEABILITY_ENTITY_SUBTYPES).intersection(NODE_TYPES)
     assert CODE_TRACEABILITY_ENTITY_SUBTYPES == (
@@ -297,6 +297,8 @@ def test_kg_relationship_catalog_has_only_closed_physical_endpoint_pairs():
         ("Requirement", "Requirement"),
         ("Decision", "Constraint"),
         ("Decision", "Requirement"),
+        ("Requirement", "Constraint"),
+        ("Constraint", "Constraint"),
     }
     assert set(relationship_endpoint_pairs("violates")) == {
         ("Bug", "Requirement"),
