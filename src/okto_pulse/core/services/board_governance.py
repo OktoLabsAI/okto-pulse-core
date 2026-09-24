@@ -169,6 +169,16 @@ class BoardGovernanceService:
         # that compatibility value back through the API.
         persisted = cls.normalize_settings(current_raw, read_tolerant=True)
         normalized = cls.normalize_settings({**persisted, **patch_raw})
+        # The lifecycle already consumes this persisted switch, but the public
+        # BoardSettings authoring contract does not expose it. An unrelated
+        # settings edit must not silently turn blocking into advisory. Preserve
+        # the exact existing value; an unsupported patch gains no authority to
+        # create, replace or erase it. Typed human-only authorship is a separate
+        # F6/KG contract, not an accidental side effect of normalization.
+        if "cognitive_readiness_policy" in current_raw:
+            normalized["cognitive_readiness_policy"] = current_raw[
+                "cognitive_readiness_policy"
+            ]
         for key in preserve_absent:
             normalized.pop(key, None)
         return normalized
