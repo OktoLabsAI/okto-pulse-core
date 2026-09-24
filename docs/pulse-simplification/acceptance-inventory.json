@@ -971,8 +971,12 @@
       "line": 626,
       "id": "KG-15",
       "normative_text": "| KG-15 | Filho sem data própria verificável | NULL/limitação ou proveniência parental explícita; nenhuma data inventada como do filho. |",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "verified_by_reviewed_execution",
+      "test_text_references": [],
+      "reviewed_execution": {
+        "artifact": "acceptance-kg-child-chronology-execution.json",
+        "criterion_key": "KG:KG-15"
+      }
     },
     {
       "key": "KG:KG-16",

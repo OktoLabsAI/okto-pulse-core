@@ -1,0 +1,185 @@
+{
+  "format": "pulse-v1.3-reviewed-execution/v1",
+  "scope": "KG-15 source-owned chronology for all nine structured Spec child families",
+  "limits": [
+    "No product or frontend changes. This is a deterministic worker and real Grafx commit qualification, not a new closeout admission contract.",
+    "The full Core and Community campaigns remain independent and are not declared green."
+  ],
+  "provenance": {
+    "checked_at": "2026-09-24T13:15:12.886411+00:00",
+    "python": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Scripts\\python.exe",
+    "packages": {
+      "core": {
+        "python_files": 824,
+        "origin": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages\\okto_pulse\\core\\__init__.py",
+        "repository_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_core",
+        "commit": "c22663570fa7a67886dd548d2c1a40e6b8ab5c14",
+        "dirty": false,
+        "dirty_entry_count": 0,
+        "distribution": "okto-pulse-core",
+        "version": "0.3.4",
+        "wheel": {
+          "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\dist-default-cognitive-authority-final\\okto_pulse_core-0.3.4-py3-none-any.whl",
+          "sha256": "5b329770d1eda2c618dffc8340ed48cc55f50af7af389680219c7bb11f8f7274",
+          "size": 3689247
+        },
+        "source_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_core\\src",
+        "site_packages_root": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages",
+        "package_prefix": "okto_pulse/core/",
+        "byte_identical_member_count": 887,
+        "byte_identical": true,
+        "aggregate_sha256": "b863828969f2fd9214c6a3df3eb5ac52be22163fd79f59a1e30c17d0d7c7f3d5",
+        "chain_hashes": {
+          "source": "b863828969f2fd9214c6a3df3eb5ac52be22163fd79f59a1e30c17d0d7c7f3d5",
+          "wheel": "b863828969f2fd9214c6a3df3eb5ac52be22163fd79f59a1e30c17d0d7c7f3d5",
+          "site_packages": "b863828969f2fd9214c6a3df3eb5ac52be22163fd79f59a1e30c17d0d7c7f3d5"
+        },
+        "critical_resource_sha256": {
+          "okto_pulse/core/mcp/resources/ska_resource_manifest.json": "f79413fcabd82a5f7c42df33a621ba02b70a1198281dc5e36525bd503a0ae6dc",
+          "okto_pulse/core/mcp/resources/ska_tool_manifest.json": "0c3fa3da1549baec20872eca3f4a289288627e6b9f6b80be10472ac962fa72b9"
+        },
+        "mismatches": []
+      },
+      "community": {
+        "python_files": 361,
+        "origin": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages\\okto_pulse\\community\\__init__.py",
+        "repository_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_community",
+        "commit": "59e05cefe125f7832ed31c903afdd319a4664b18",
+        "dirty": true,
+        "dirty_entry_count": 1,
+        "distribution": "okto-pulse",
+        "version": "0.3.4",
+        "wheel": {
+          "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\dist-default-cognitive-authority-final\\okto_pulse-0.3.4-py3-none-any.whl",
+          "sha256": "357aae424b393bc5dd5708eddb89033660a6d338d0b09480b27823902e4aa21a",
+          "size": 4483591
+        },
+        "source_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_community\\src",
+        "site_packages_root": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages",
+        "package_prefix": "okto_pulse/community/",
+        "byte_identical_member_count": 446,
+        "byte_identical": true,
+        "aggregate_sha256": "c07c884d369562a71fb381f180242438767fb4057d922683743e002db0a965f6",
+        "chain_hashes": {
+          "source": "c07c884d369562a71fb381f180242438767fb4057d922683743e002db0a965f6",
+          "wheel": "c07c884d369562a71fb381f180242438767fb4057d922683743e002db0a965f6",
+          "site_packages": "c07c884d369562a71fb381f180242438767fb4057d922683743e002db0a965f6"
+        },
+        "critical_resource_sha256": {},
+        "mismatches": []
+      }
+    }
+  },
+  "junit": {
+    "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\kg-child-chronology-r3.xml",
+    "sha256": "f528c3a4a2f0ac9561e59f84a86435858ef49e3cd369a58cdc02bceb0a676b6d",
+    "cases": [
+      {
+        "classname": "tests.test_kg_source_projection_metadata",
+        "name": "test_source_chronology_preserves_instant_and_raw_status",
+        "time": "5.741"
+      },
+      {
+        "classname": "tests.test_kg_source_projection_metadata",
+        "name": "test_client_cannot_supply_source_metadata[source_created_at]",
+        "time": "0.040"
+      },
+      {
+        "classname": "tests.test_kg_source_projection_metadata",
+        "name": "test_client_cannot_supply_source_metadata[source_updated_at]",
+        "time": "0.040"
+      },
+      {
+        "classname": "tests.test_kg_source_projection_metadata",
+        "name": "test_client_cannot_supply_source_metadata[source_status]",
+        "time": "0.044"
+      },
+      {
+        "classname": "tests.test_kg_source_projection_metadata",
+        "name": "test_client_cannot_supply_source_metadata[severity]",
+        "time": "0.047"
+      },
+      {
+        "classname": "tests.test_kg_source_projection_metadata",
+        "name": "test_client_cannot_supply_source_metadata[resolved_at]",
+        "time": "0.050"
+      },
+      {
+        "classname": "tests.test_kg_source_projection_metadata",
+        "name": "test_client_cannot_supply_source_metadata[_source_projection_metadata]",
+        "time": "0.058"
+      },
+      {
+        "classname": "tests.test_kg_source_projection_metadata",
+        "name": "test_internal_metadata_survives_session_request_without_entering_wire_contract",
+        "time": "0.052"
+      },
+      {
+        "classname": "tests.test_kg_source_projection_metadata",
+        "name": "test_non_worker_cannot_submit_internal_attestation",
+        "time": "0.054"
+      },
+      {
+        "classname": "tests.test_kg_source_projection_metadata",
+        "name": "test_resolution_uses_last_done_and_clears_on_reopen",
+        "time": "0.063"
+      },
+      {
+        "classname": "tests.test_kg_source_projection_metadata",
+        "name": "test_all_spec_child_families_cannot_borrow_parent_chronology[draft]",
+        "time": "0.134"
+      },
+      {
+        "classname": "tests.test_kg_source_projection_metadata",
+        "name": "test_all_spec_child_families_cannot_borrow_parent_chronology[done]",
+        "time": "0.053"
+      },
+      {
+        "classname": "tests.test_kg_spec_children_canonicalization",
+        "name": "test_spec_done_materializes_all_children_canonical",
+        "time": "0.064"
+      },
+      {
+        "classname": "tests.test_kg_spec_children_canonicalization",
+        "name": "test_spec_predone_children_are_working_only",
+        "time": "0.039"
+      },
+      {
+        "classname": "tests.test_kg_spec_children_canonicalization",
+        "name": "test_commit_materializes_api_contract_implements_tr_constraint",
+        "time": "35.207"
+      },
+      {
+        "classname": "tests.test_kg_spec_children_canonicalization",
+        "name": "test_promotion_curated_promotes_maturity_preserves_content",
+        "time": "2.071"
+      },
+      {
+        "classname": "tests.test_kg_spec_children_canonicalization",
+        "name": "test_promotion_non_curated_promotes_and_updates_content",
+        "time": "2.106"
+      }
+    ]
+  },
+  "test_sources": [
+    {
+      "path": "tests/test_kg_source_projection_metadata.py",
+      "sha256": "347e85040108e11b71d099d64a6da793eac16a459859ac0f3dd3c28e3f0a88c4"
+    },
+    {
+      "path": "tests/test_kg_spec_children_canonicalization.py",
+      "sha256": "f46658032177b221dbb26cd1ee7a4264b2935ec41dc0a2b9032126288876a4ce"
+    }
+  ],
+  "criteria": {
+    "KG:KG-15": {
+      "status": "verified_by_reviewed_execution",
+      "assertions": [
+        "Draft and Done worker outputs for all nine child families receive no parent chronology attestation.",
+        "The real consolidation commit uses the production historical worker identity, retains the dated root and API-to-TR relationship, and reads every emitted node back from Grafx.",
+        "Every child and reference node has NULL source_created_at/source_updated_at; graph creation time is not substituted for unavailable source dates.",
+        "Client-forged metadata and non-worker attestations remain rejected."
+      ]
+    }
+  }
+}

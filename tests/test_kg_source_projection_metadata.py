@@ -88,3 +88,30 @@ def test_resolution_uses_last_done_and_clears_on_reopen():
     assert latest_resolution_time("done", (last, transition(4, "done", "in_progress"))) is None
     assert latest_resolution_time("done", (transition(4, None, "done"),)) is None
     assert latest_resolution_time("done", (transition(4, ["in_progress"], "done"),)) is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status", ["draft", "done"])
+async def test_all_spec_child_families_cannot_borrow_parent_chronology(status):
+    from test_kg_spec_children_canonicalization import _full_spec
+    from okto_pulse.core.application.processors.deterministic_kg import DeterministicWorker
+    from okto_pulse.core.kg.source_projection_metadata import prepare_root_metadata
+
+    spec = {
+        **_full_spec(status),
+        "created_at": "2001-01-02T00:00:00Z",
+        "updated_at": "2002-03-04T00:00:00Z",
+    }
+    nodes = DeterministicWorker().process_spec(spec).nodes
+    root_ref = f"spec:{spec['id']}"
+    children = [node for node in nodes if node.source_artifact_ref.startswith(root_ref + ":")]
+    assert len(children) >= 9
+    metadata = await prepare_root_metadata(
+        None, SimpleNamespace(artifact_type="spec", artifact_id=spec["id"]),
+        spec, nodes, None,
+    )
+    roots = [node for node in nodes if node.source_artifact_ref == root_ref]
+    assert len(roots) == 1
+    assert set(metadata) == {roots[0].candidate_id}
+    assert metadata[roots[0].candidate_id].source_created_at == "2001-01-02T00:00:00+00:00"
+    assert all(node.candidate_id not in metadata for node in children)
