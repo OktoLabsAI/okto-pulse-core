@@ -338,58 +338,6 @@ async def board_erasure_scope(
 
 
 # ---------------------------------------------------------------------------
-# Undo mechanism (FR-11 through FR-14)
-# ---------------------------------------------------------------------------
-
-
-async def undo_session(
-    db: Any,
-    board_id: str,
-    session_id: str,
-    *,
-    force: bool = False,
-) -> dict:
-    """Soft-delete nodes/edges from a consolidation session.
-
-    Returns 409 cascade_blocked if other sessions reference nodes from this
-    session, unless force=True (admin).
-    """
-    store = get_kg_governance_store()
-    fact = await store.get_undo_fact(
-        db,
-        board_id=board_id,
-        session_id=session_id,
-    )
-    if fact is None:
-        return {"error": "not_found", "session_id": session_id}
-    if fact.undo_status == "undone":
-        return {"error": "already_undone", "session_id": session_id}
-    if not force and fact.blocking_sessions:
-        return {
-            "error": "cascade_blocked",
-            "session_id": session_id,
-            "blocking_sessions": list(fact.blocking_sessions),
-        }
-
-    # Mark as undone
-    await store.mark_session_undone(
-        db,
-        session_id=session_id,
-        undone_at=datetime.now(timezone.utc),
-    )
-    await store.commit(db)
-
-    # graph backend soft-delete would happen here via TransactionOrchestrator.compensate
-    # pattern. For MVP: mark in SQLite only.
-    return {
-        "session_id": session_id,
-        "status": "undone",
-        "nodes_removed": len(fact.node_ids),
-        "force_used": force,
-    }
-
-
-# ---------------------------------------------------------------------------
 # Audit retention + purge (FR-15, FR-16)
 # ---------------------------------------------------------------------------
 

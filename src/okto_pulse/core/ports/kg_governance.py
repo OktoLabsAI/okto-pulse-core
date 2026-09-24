@@ -13,12 +13,6 @@ from datetime import datetime
 from typing import Any, Protocol
 
 
-@dataclass(frozen=True, slots=True)
-class GovernanceUndoFact:
-    session_id: str
-    undo_status: str
-    node_ids: tuple[str, ...]
-    blocking_sessions: tuple[str, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -45,13 +39,7 @@ class BoardErasureJobFact:
 class KGGovernanceStore(Protocol):
 
 
-    async def get_undo_fact(
-        self, context: Any, *, board_id: str, session_id: str
-    ) -> GovernanceUndoFact | None: ...
 
-    async def mark_session_undone(
-        self, context: Any, *, session_id: str, undone_at: datetime
-    ) -> None: ...
 
     async def purge_expired_audit(
         self, context: Any, *, board_id: str, cutoff: datetime
@@ -121,7 +109,6 @@ def reset_kg_governance_store_for_tests() -> None:
 __all__ = [
     "BoardErasureJobFact",
     "BoostAuditRecord",
-    "GovernanceUndoFact",
     "KGGovernanceStore",
     "get_kg_governance_store",
     "register_kg_governance_store",

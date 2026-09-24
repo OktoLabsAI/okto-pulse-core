@@ -1,4 +1,4 @@
-"""Tests for Governance module — ACL, undo, retention, erasure."""
+"""Tests for Governance module — ACL, retention, erasure."""
 
 # ruff: noqa: E402
 
@@ -24,7 +24,6 @@ from okto_pulse.core.kg.governance import (
     log_acl_violation,
     purge_expired_audit,
     right_to_erasure,
-    undo_session,
 )
 
 _initialized = False
@@ -66,12 +65,6 @@ def db_factory():
     return get_session_factory()
 
 
-class TestUndo:
-    @pytest.mark.asyncio
-    async def test_undo_not_found(self, db_factory):
-        async with db_factory() as db:
-            result = await undo_session(db, "board-x", "nonexistent")
-            assert result["error"] == "not_found"
 
 
 class TestAuditRetention:
