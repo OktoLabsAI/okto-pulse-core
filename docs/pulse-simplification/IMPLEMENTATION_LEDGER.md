@@ -4,8 +4,13 @@
 
 Iniciativa **incompleta; retomada explicitamente autorizada em 2026-09-23**.
 O usuário revogou a pausa e pediu execução até o final, sem parar em milestones.
-Frente atual: qualificação restrita do replay cognitivo durável e auditoria
-dos critérios de aceitação. Relatórios especializados já publicados no ciclo
+Frente atual: F4, retirada integrada da manutenção pública e de seus resíduos
+exclusivos, seguida da auditoria dos critérios de aceitação. Painel/API de tuning,
+fila/reparo manuais e divulgação do path físico no Health já foram retirados.
+Startup de configuração e processamento automático permanecem preservados.
+Ainda faltam a disponibilidade/redação integral de Health, inventário vivo de
+superfícies, campanhas integradas e fechamento requisito a requisito.
+Relatórios especializados já publicados no ciclo
 comum de cenário, Test Card e Delivery, com assinatura/autoria e atualidade.
 Instalação terminal separada já publicada, com prova do candidato e journal,
 admissão vinculada e retomada sem congelar dados de uso. Resultados e commits
@@ -15543,3 +15548,13 @@ REST runtime enviado: Core e9679fc0 / Community 8e42b910. GraphStorageRoute perd
 Health path: build/sync/verify 78 assets com mesmo hash d6945a180f5425819f737ecbc7c9022345e7d7a36fb1ca811d8e4e90b4e8870c (campo nao era renderizado). Par dist-health-path-retirement instalado/provado em provenance-health-path-retirement.json, Core 823/886 Community 356/440 byte-identical. Community 94 passed/20.89s, 1 skipped: test_global_legacy_binding_stays_on_anchor_across_pointer_cutovers, porque roteamento do engine legado foi removido (skip existente). F16 terminal 8671 linhas, ok=true, zero findings/documentacao e oito budgets zero. Ruff/diff check verdes, nenhuma sessao pendente. Nenhuma promocao de criterio integral Health; esse teste cobre apenas inspecao de binding/redacao de path, nao os outros providers transitivos.
 
 Poda interna de tuning mapeada: get/put facade so tem consumidores de testes apos retirada de use cases. Community apply_tick_runtime_effects/_apply_live_tick_settings so sao chamados pelo writer retirado; RuntimeSettingsPort/Snapshot/EffectResult apenas contratos/gates/testes. Startup apply_persisted_settings_to_core_settings e resolve_legacy_env_aliases ainda usados e devem permanecer. Conformance_suite.settings_split_conformance exige literalmente dois helpers antigos; evoluir para contrato de startup sem writer/efeito com teste adversarial, mantendo rejeicao de singleton e adaptador concreto. Port_conformance congela RuntimeSettingsPort junto de tres portas ainda ativas; avaliar a substituicao explicita por porta de startup. NENHUMA poda interna executada.
+
+### F4 - implementacao exclusiva de tuning podada
+
+Health path enviado: Core 861a67c3 / Community e1c8d187. Removidos get/put, write lock exclusivo, reader efetivo/desired, snapshot global de restart e efeitos de reschedule nos adapters Community e de teste. Facade Core agora somente apply_persisted_settings_to_core_settings; registro/resolve tipados por RuntimeSettingsStartupPort. Domain/runtime_settings exclusivo removido. Comparacao AST check_startup_preservation.py confirma quatro funcoes startup/validacao identicas, exceto docstrings e duas escritas no cache de restart sem consumidor. Parametros, precedencia, validadores e log do boot preservados.
+
+Gate settings_split_conformance conserva identidade, rejeicao de singleton/concreto e passa a exigir facade de startup somente, sem argumentos de tuning, aliases, lambdas ou efeitos. Adicionados testes adversariais; testes de controladores retirados substituidos por ausencia e boot, preservando suites singleton, scheduler de composicao, lease e locks. Testes reais de Grafx agora semeiam configuracao preexistente no DB descartavel e passam pela mesma hidratacao/construtores. Protocolos/DTOs puros runtime_settings e providers coordination ainda existem e precisam auditoria de consumidores; nenhum writer concreto permanece no facade/adapter. Build/prova/campanhas/F16 pendentes.
+
+Par instalado/provado: provenance-runtime-writer-pruning.json, Core 822 Python/885 payloads e Community 356/440 byte-identical. Community 83 passed/58.35s. Core inicial 82 passed/28 failed: novo teste deixou StartupOnly no registry, contaminando snapshots posteriores por __getattr__. Corrigido exclusivamente o isolamento com runtime_value_scope; campanha integral repetida: 110 passed/196.87s, runtime-writer-pruning-core-final.xml. Nenhuma alteracao produtiva apos prova. F16 final 8665 linhas, ok=true, zero findings/documentacao e oito budgets zero; READMEs regenerados. Ruff F/E9 e diff check verdes. Sem sessoes pendentes; nenhuma fonte frontend alterada neste recorte (ultimo build comprovado permanece d6945a180f5425819f737ecbc7c9022345e7d7a36fb1ca811d8e4e90b4e8870c).
+
+Auditoria seguinte: RuntimeSettingsProvider/ConfigValidationPort de coordination nao possuem consumidores produtivos apos retirada do writer; somente definicao/registro/export e fake exclusivo. Remover esses residuos preservando LeaseProvider, WriteLockPort e ClaimRepository. Contrato antigo RuntimeSettingsPort e DTOs possuem apenas gates/testes; substituicao por RuntimeSettingsStartupPort ainda precisa teste adversarial de member drift, sem retirar contratos ativos de scheduler/event bus. Health: canonical_debt em falha retorna status=unavailable com contagens zero; operational_domains descarta status e readiness declara no open technical signal. Corrigir disponibilidade conforme INV-13, sem alterar silenciosamente gates de fechamento. Inventario vivo de superficies, redacao integral e aceitacao global permanecem abertos.

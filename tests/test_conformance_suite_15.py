@@ -1,16 +1,7 @@
-"""Spec #15 card 03829e48 — conformance suite, AntiSingletonGate, port
-conformance and the runtime settings effect split.
-
-Covers ts_51bb35b4 (persist without scheduler), ts_78f653b4 (apply_runtime_effects
-via SchedulerControl) and the AC line ac_a4d41673/ac_c9b328fb/ac_b74a281f/
-ac_d5c5864f/ac_1e9c0475/ac_c43799ff.
-"""
+"""Runtime boundary gates and surviving scheduler contracts after F4 tuning retirement."""
 
 from __future__ import annotations
 
-import logging
-
-import pytest
 
 from okto_pulse.core.application.boundary.conformance_suite import (
     AXES,
@@ -30,118 +21,16 @@ from okto_pulse.core.application.boundary.singleton_gate import (
     AntiSingletonGate,
     AntiSingletonGateInput,
 )
-from okto_pulse.core.infra.config import configure_settings, get_settings
-from okto_pulse.core.ports.scheduler import (
-    KG_DAILY_TICK_JOB_ID,
-    JobSpec,
-    SchedulerJobSnapshot,
-    SchedulerResult,
-)
-from okto_pulse.core.services.settings_service import (
-    _apply_live_tick_settings,
-    apply_tick_runtime_effects,
-)
 
 
 # --------------------------------------------------------------------------- #
 # Fakes
 # --------------------------------------------------------------------------- #
-class _FakeSchedulerControl:
-    """In-memory SchedulerControl for the settings-effect tests."""
-
-    def __init__(self, *, available: bool = True, raises: Exception | None = None) -> None:
-        self._available = available
-        self._raises = raises
-        self.calls: list[tuple[str, dict]] = []
-
-    def is_available(self) -> bool:
-        return self._available
-
-    async def reschedule_job(self, job_id: str, trigger) -> SchedulerResult:
-        self.calls.append((job_id, dict(trigger)))
-        if self._raises is not None:
-            raise self._raises
-        return SchedulerResult(job_id=job_id, scheduled=True, audit_status="rescheduled")
-
-    async def register_job(self, job_spec: JobSpec, handler) -> SchedulerResult:
-        return SchedulerResult(
-            job_id=job_spec.job_id,
-            scheduled=True,
-            audit_status="rescheduled",
-        )
-
-    async def get_job_snapshot(self, job_id: str) -> SchedulerJobSnapshot:
-        return SchedulerJobSnapshot(job_id=job_id, exists=True)
-
-    async def shutdown(self, wait: bool = False) -> None:  # pragma: no cover - trivial
-        return None
 
 
 # --------------------------------------------------------------------------- #
 # Settings effect split — ts_51bb35b4 / ts_78f653b4
 # --------------------------------------------------------------------------- #
-def test_persist_live_tick_settings_no_scheduler_access() -> None:
-    # ts_51bb35b4 / ac_a4d41673: persistence runs with NO scheduler wired and
-    # only updates live CoreSettings. _apply_live_tick_settings takes no scheduler
-    # argument and never imports the singleton — structurally scheduler-free.
-    original = get_settings()
-    try:
-        _apply_live_tick_settings({"kg_decay_tick_interval_minutes": 4242})
-        assert get_settings().kg_decay_tick_interval_minutes == 4242
-    finally:
-        configure_settings(original)
-
-
-@pytest.mark.asyncio
-async def test_apply_runtime_effects_reschedules_via_port() -> None:
-    # ts_78f653b4 / ac_c9b328fb: with a SchedulerControl available, a tick change
-    # calls reschedule_job(kg_daily_tick) and the success stays auditable.
-    control = _FakeSchedulerControl(available=True)
-    results = await apply_tick_runtime_effects(
-        {"kg_decay_tick_interval_minutes": 15}, control
-    )
-    assert control.calls == [(KG_DAILY_TICK_JOB_ID, {"minutes": 15})]
-    assert len(results) == 1
-    assert results[0].status == "applied"
-    assert results[0].job_id == KG_DAILY_TICK_JOB_ID
-    assert results[0].audit_status == "rescheduled"
-
-
-@pytest.mark.asyncio
-async def test_apply_runtime_effects_skips_when_no_scheduler() -> None:
-    # ac_a4d41673 path: no scheduler wired -> skipped, never an access/raise.
-    control = _FakeSchedulerControl(available=False)
-    results = await apply_tick_runtime_effects(
-        {"kg_decay_tick_interval_minutes": 30}, control
-    )
-    assert control.calls == []
-    assert results[0].status == "skipped"
-    assert results[0].audit_status == "skipped"
-
-
-@pytest.mark.asyncio
-async def test_apply_runtime_effects_failure_emits_sanitized_signal() -> None:
-    # ac_b74a281f / fr_70c29790: a reschedule failure emits kg.tick.reschedule_failed
-    # with error_class and a sanitized message — never the secret, never a raise.
-    boom = RuntimeError("scheduler down token=SUPER-SECRET password=hunter2")
-    control = _FakeSchedulerControl(available=True, raises=boom)
-    results = await apply_tick_runtime_effects(
-        {"kg_decay_tick_interval_minutes": 10}, control, actor_id="op-9"
-    )
-    res = results[0]
-    assert res.status == "failed"
-    assert res.signal == "kg.tick.reschedule_failed"
-    assert res.error_class == "RuntimeError"
-    assert "SUPER-SECRET" not in (res.sanitized_message or "")
-    assert "hunter2" not in (res.sanitized_message or "")
-
-
-@pytest.mark.asyncio
-async def test_apply_runtime_effects_noop_without_interval() -> None:
-    control = _FakeSchedulerControl(available=True)
-    results = await apply_tick_runtime_effects({"kg_decay_tick_staleness_days": 3}, control)
-    assert results == []
-    assert control.calls == []
 
 
 # --------------------------------------------------------------------------- #
@@ -354,19 +243,6 @@ def test_conformance_scheduler_signal_is_secret_free() -> None:
 # --------------------------------------------------------------------------- #
 # Rework regressions (codex validation of 03829e48)
 # --------------------------------------------------------------------------- #
-@pytest.mark.asyncio
-async def test_apply_runtime_effects_failure_log_text_is_sanitized(caplog) -> None:
-    # blocker 1: the textual failure log must use the sanitized message, never the
-    # raw exception (which can carry a secret/token).
-    boom = RuntimeError("scheduler down token=SUPER-SECRET password=hunter2")
-    control = _FakeSchedulerControl(available=True, raises=boom)
-    with caplog.at_level(logging.WARNING, logger="okto_pulse.services.settings"):
-        await apply_tick_runtime_effects({"kg_decay_tick_interval_minutes": 10}, control)
-    blob = " ".join(r.getMessage() for r in caplog.records)
-    assert "kg.tick.reschedule_failed" in blob
-    assert "SUPER-SECRET" not in blob
-    assert "hunter2" not in blob
-    assert "[REDACTED]" in blob
 
 
 def test_conformance_suite_singleton_axis_honours_source_root(tmp_path) -> None:
@@ -379,21 +255,3 @@ def test_conformance_suite_singleton_axis_honours_source_root(tmp_path) -> None:
     report = ConformanceSuite().run(source_root=tmp_path)
     assert report["axes"]["singleton"]["status"] == "blocking"
     assert "singleton" in report["blocking_axes"]
-
-
-@pytest.mark.asyncio
-async def test_apply_runtime_effects_respects_port_skipped_result() -> None:
-    # blocker 3: a port that reports the job was NOT scheduled (skipped) must yield
-    # a skipped effect, not applied/rescheduled.
-    class _SkippingControl(_FakeSchedulerControl):
-        async def reschedule_job(self, job_id, trigger):
-            self.calls.append((job_id, dict(trigger)))
-            return SchedulerResult(job_id=job_id, scheduled=False, audit_status="skipped")
-
-    control = _SkippingControl(available=True)
-    results = await apply_tick_runtime_effects(
-        {"kg_decay_tick_interval_minutes": 12}, control
-    )
-    assert control.calls == [(KG_DAILY_TICK_JOB_ID, {"minutes": 12})]
-    assert results[0].status == "skipped"
-    assert results[0].audit_status == "skipped"

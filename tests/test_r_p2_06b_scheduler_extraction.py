@@ -1,33 +1,14 @@
-"""R-P2-06B — scheduler singleton extraction.
-
-The core common ``settings_service`` no longer constructs an implicit
-``SingletonSchedulerControl`` fallback. The runtime tick effect flows through the
-``SchedulerControl`` the composition injects (``RuntimeComposition.scheduler_control``,
-resolved by the API from ``app.state.runtime_composition``). A ``None`` port is an
-EXPLICIT skip — the core never reaches the process-global scheduler singleton.
-
-Covers spec R-P2-06B (FR fr_73989fdf, TR tr_e32c2e90, AC ac_dfa42019,
-scenario ts_93a7ed9c):
-  - import/conformance: settings_service does not import the adapter nor the
-    scheduler singleton;
-  - service: a fake SchedulerControl receives the reschedule; absence (None) is
-    an explicit skip WITHOUT instantiating the singleton; an unavailable port
-    skips too;
-  - app: create_app preserves the composition on ``app.state.runtime_composition``.
-"""
+"""Scheduler remains composition-owned; the startup settings facade has no concrete scheduler access."""
 
 from __future__ import annotations
 
-import asyncio
 from pathlib import Path
 
 from okto_pulse.core.ports.scheduler import (
-    KG_DAILY_TICK_JOB_ID,
     JobSpec,
     SchedulerJobSnapshot,
     SchedulerResult,
 )
-from okto_pulse.core.services.settings_service import apply_tick_runtime_effects
 
 _SRC_ROOT = Path(__file__).resolve().parents[1] / "src"
 _SETTINGS_SERVICE = _SRC_ROOT / "okto_pulse" / "core" / "services" / "settings_service.py"
@@ -73,42 +54,9 @@ def test_settings_service_does_not_reach_singleton_or_adapter():
 
 
 # --- service: port receives the reschedule -----------------------------------
-def test_injected_port_receives_reschedule():
-    fake = _FakeScheduler(available=True)
-    results = asyncio.run(
-        apply_tick_runtime_effects({"kg_decay_tick_interval_minutes": 45}, fake)
-    )
-    assert fake.calls == [(KG_DAILY_TICK_JOB_ID, {"minutes": 45})]
-    assert len(results) == 1
-    assert results[0].status == "applied"
 
 
 # --- service: absent port -> explicit skip, NO singleton ---------------------
-def test_none_port_skips_without_singleton():
-    results = asyncio.run(
-        apply_tick_runtime_effects({"kg_decay_tick_interval_minutes": 45}, None)
-    )
-    assert len(results) == 1
-    assert results[0].status == "skipped"
-    assert results[0].job_id == KG_DAILY_TICK_JOB_ID
-
-
-def test_unavailable_port_skips_without_calling_reschedule():
-    fake = _FakeScheduler(available=False)
-    results = asyncio.run(
-        apply_tick_runtime_effects({"kg_decay_tick_interval_minutes": 45}, fake)
-    )
-    assert results[0].status == "skipped"
-    assert fake.calls == []
-
-
-def test_no_tick_change_is_a_noop():
-    fake = _FakeScheduler(available=True)
-    results = asyncio.run(
-        apply_tick_runtime_effects({"kg_event_queue_max_size": 100}, fake)
-    )
-    assert results == []
-    assert fake.calls == []
 
 
 # --- app: composition preserved on app.state ---------------------------------

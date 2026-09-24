@@ -92,11 +92,17 @@ def resolve_resource_gate_adapter_factory() -> ResourceGateAdapterFactory:
     return require_runtime_value(_RESOURCE_GATE_KEY, "resource_gate_relational_adapter_not_configured")
 
 
-def register_runtime_settings_adapter(adapter: Any) -> None:
+class RuntimeSettingsStartupPort(Protocol):
+    """Hydrate validated deployment settings before edition runtime composition."""
+
+    async def apply_persisted_settings_to_core_settings(self) -> dict[str, Any]: ...
+
+
+def register_runtime_settings_adapter(adapter: RuntimeSettingsStartupPort) -> None:
     register_runtime_value(_RUNTIME_SETTINGS_KEY, adapter)
 
 
-def resolve_runtime_settings_adapter() -> Any:
+def resolve_runtime_settings_adapter() -> RuntimeSettingsStartupPort:
     return require_runtime_value(_RUNTIME_SETTINGS_KEY, "runtime_settings_relational_adapter_not_configured")
 
 
@@ -113,6 +119,7 @@ def reset_relational_service_adapters_for_tests() -> None:
 
 
 __all__ = [
+    "RuntimeSettingsStartupPort",
     "ResourceGateAdapterFactory",
     "ResourceGateMetadataLineageAdapter",
     "ResourceGateRelationalAdapter",

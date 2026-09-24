@@ -14,6 +14,7 @@ reports are injected.
 from __future__ import annotations
 
 from pathlib import Path
+import ast
 
 from .composition_gate import CompositionBoundaryGate, CompositionBoundaryGateInput
 from .gates import ImportBoundaryGate, ImportBoundaryGateInput
@@ -74,8 +75,11 @@ def _core_package_root(source_root: Path | None) -> Path | None:
 
 
 def settings_split_conformance(source_root: Path | None = None) -> GateReport:
-    """fr_93c9af44/fr_2ae7de62: persistence and runtime effects are split and the
-    direct scheduler-singleton access is gone from settings_service."""
+    """F4: the settings facade only hydrates startup through an edition port.
+
+    Keep the existing gate identity, now rejecting a reintroduced tuning writer
+    or runtime effect instead of requiring the retired controller's helpers.
+    """
     src = _settings_source(source_root)
     if src is None:
         # A partial source_root (e.g. a focused test tree) has no settings_service:
@@ -89,18 +93,51 @@ def settings_split_conformance(source_root: Path | None = None) -> GateReport:
             evidence={"error": "settings_service_not_found", "source_root": str(source_root)},
             promotion_criteria="Run against a source root that contains settings_service.py.",
         )
+    try:
+        tree = ast.parse(src)
+    except SyntaxError:
+        tree = ast.Module(body=[], type_ignores=[])
+    definitions = [node for node in ast.walk(tree) if isinstance(
+        node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)
+    )]
+    calls = [node.func for node in ast.walk(tree) if isinstance(node, ast.Call)]
+    expected_body = ast.parse(
+        "async def startup():\n"
+        "    return await resolve_runtime_settings_adapter().apply_persisted_settings_to_core_settings()\n"
+    ).body[0].body
     checks = {
-        "has_apply_runtime_effects": "def apply_tick_runtime_effects" in src,
-        "has_persist_split": "def _apply_live_tick_settings" in src,
+        "startup_only_facade": len(definitions) == 1 and isinstance(definitions[0], ast.AsyncFunctionDef)
+        and definitions[0].name == "apply_persisted_settings_to_core_settings",
+        "direct_startup_delegation": len(definitions) == 1 and isinstance(definitions[0], ast.AsyncFunctionDef)
+        and [ast.dump(node) for node in definitions[0].body] == [ast.dump(node) for node in expected_body],
+        "no_tuning_arguments": len(definitions) == 1 and isinstance(definitions[0], ast.AsyncFunctionDef)
+        and not (definitions[0].args.posonlyargs or definitions[0].args.args
+                 or definitions[0].args.kwonlyargs or definitions[0].args.vararg
+                 or definitions[0].args.kwarg or definitions[0].decorator_list),
+        "no_controller_aliases": all(
+            isinstance(node, (ast.ImportFrom, ast.AsyncFunctionDef))
+            or (isinstance(node, ast.Expr) and isinstance(node.value, ast.Constant) and isinstance(node.value.value, str))
+            or (isinstance(node, ast.Assign) and len(node.targets) == 1
+                and isinstance(node.targets[0], ast.Name) and node.targets[0].id == "__all__"
+                and isinstance(node.value, ast.List) and len(node.value.elts) == 1
+                and isinstance(node.value.elts[0], ast.Constant)
+                and node.value.elts[0].value == "apply_persisted_settings_to_core_settings")
+            for node in tree.body
+        ),
+        "only_startup_port_calls": len(calls) == 2 and all(
+            (isinstance(call, ast.Name) and call.id == "resolve_runtime_settings_adapter")
+            or (isinstance(call, ast.Attribute) and call.attr == "apply_persisted_settings_to_core_settings")
+            for call in calls
+        ),
         "monolith_removed": "def _maybe_reschedule_tick" not in src,
-        "accepts_scheduler_control": "scheduler_control" in src,
+        "no_scheduler_effect": "scheduler_control" not in src,
         "no_direct_singleton_import": ("kg." "scheduler_" "singleton") not in src,
         # R-P2-06C/R08 — the general settings-effects contract: no implicit
         # concrete effect provider in the core and an executable effect->port
         # inventory (SETTINGS_RUNTIME_EFFECT_PORTS) is the canonical source.
         "no_implicit_singleton_construction": ("Singleton" "SchedulerControl(") not in src,
         "no_effect_adapter_import": ("scheduler_control" "_adapter") not in src,
-        "has_effect_port_inventory": "SETTINGS_RUNTIME_EFFECT_PORTS" in src,
+        "no_tuning_effect_inventory": "SETTINGS_RUNTIME_EFFECT_PORTS" not in src,
     }
     failed = [name for name, ok in checks.items() if not ok]
     if failed:
@@ -114,11 +151,9 @@ def settings_split_conformance(source_root: Path | None = None) -> GateReport:
             observed_value=failed,
             expected_value=[],
             remediation_hint=(
-                "settings_service must split persistence (_apply_live_tick_settings) "
-                "from runtime effects (apply_tick_runtime_effects via SchedulerControl), "
-                "must not reach a legacy scheduler global directly, must NOT construct a "
-                "concrete scheduler effect provider, and must declare its "
-                "settings->effect-port inventory in SETTINGS_RUNTIME_EFFECT_PORTS."
+                "settings_service must expose only startup hydration through its "
+                "registered edition port, without tuning writers, scheduler effects "
+                "or concrete adapter construction."
             ),
         )
     return GateReport(
@@ -129,8 +164,8 @@ def settings_split_conformance(source_root: Path | None = None) -> GateReport:
         owner="okto-pulse-core/runtime",
         evidence={"checks": checks, "error": "settings_split_ok"},
         promotion_criteria=(
-            "Settings persistence/effects split via RuntimeSettingsPort + "
-            "SchedulerControl; promote when composition root owns the scheduler."
+            "Startup hydration is the only settings facade operation; "
+            "automatic scheduler ownership is checked by the composition gates."
         ),
     )
 

@@ -6,7 +6,6 @@ import pytest
 
 from coordination_fakes import (
     FakeLeaseProvider,
-    FakeRuntimeSettingsProvider,
     FakeWriteLockPort,
 )
 from okto_pulse.core.ports import advisory_lock as advisory_lock_module
@@ -60,76 +59,3 @@ def test_af15_advisory_lock_facade_has_no_concrete_lock_primitives() -> None:
     source = Path(advisory_lock_module.__file__).read_text(encoding="utf-8")
     assert "asyncio.Lock(" not in source
     assert "threading.Lock(" not in source
-
-
-@pytest.mark.asyncio
-async def test_af15_runtime_settings_read_uses_provider() -> None:
-    from okto_pulse.core.infra.config import get_settings
-    from okto_pulse.core.infra.database import get_session_factory
-    from okto_pulse.core.services.settings_service import (
-        RUNTIME_KEYS,
-        get_runtime_settings,
-    )
-
-    payload = {key: int(getattr(get_settings(), key)) for key in RUNTIME_KEYS}
-    payload["kg_decay_tick_interval_minutes"] = 123
-    provider = FakeRuntimeSettingsProvider(payload)
-    register_coordination_providers(runtime_settings_provider=provider)
-
-    factory = get_session_factory()
-    async with factory() as db:
-        snapshot = await get_runtime_settings(db)
-
-    assert provider.read_scopes == ["global"]
-    assert snapshot["kg_decay_tick_interval_minutes"] == 123
-
-
-@pytest.mark.asyncio
-async def test_af15_runtime_settings_partial_provider_merges_defaults() -> None:
-    from okto_pulse.core.infra.config import get_settings
-    from okto_pulse.core.infra.database import get_session_factory
-    from okto_pulse.core.services.settings_service import (
-        RUNTIME_KEYS,
-        get_runtime_settings,
-    )
-
-    provider = FakeRuntimeSettingsProvider({"kg_decay_tick_interval_minutes": 123})
-    register_coordination_providers(runtime_settings_provider=provider)
-
-    factory = get_session_factory()
-    async with factory() as db:
-        snapshot = await get_runtime_settings(db)
-
-    assert set(RUNTIME_KEYS).issubset(snapshot)
-    assert snapshot["kg_decay_tick_interval_minutes"] == 123
-    assert snapshot["kg_queue_min_interval_ms"] == int(
-        get_settings().kg_queue_min_interval_ms
-    )
-
-
-@pytest.mark.asyncio
-async def test_af15_runtime_settings_write_uses_ports() -> None:
-    from okto_pulse.core.infra.database import get_session_factory
-    from okto_pulse.core.services.settings_service import (
-        get_runtime_settings,
-        put_runtime_settings,
-    )
-
-    write_lock = FakeWriteLockPort()
-    validation = FakeRuntimeSettingsProvider()
-    register_coordination_providers(
-        write_lock_port=write_lock,
-        config_validation_port=validation,
-    )
-
-    factory = get_session_factory()
-    async with factory() as db:
-        current = await get_runtime_settings(db)
-        value = int(current["kg_decay_tick_interval_minutes"])
-        await put_runtime_settings(db, {"kg_decay_tick_interval_minutes": value})
-
-    assert validation.validated_values[-1] == {
-        "kg_decay_tick_interval_minutes": value
-    }
-    assert write_lock.acquired_async == [("_runtime", "settings")]
-    assert write_lock.released_async == [("_runtime", "settings")]
