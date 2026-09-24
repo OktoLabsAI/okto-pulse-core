@@ -187,6 +187,8 @@ async def test_commit_materializes_api_contract_implements_tr_constraint(
         "technical_requirements": [
             {"id": "tr-audit-events", "text": "Login API emits audit events"},
         ],
+        "decisions": [{"id": "dec_explicit", "title": "Require login audit", "status": "active",
+            "linked_requirements": ["fr-login", "tr-audit-events"]}],
         "api_contracts": [
             {
                 "id": "api-login",
@@ -294,6 +296,23 @@ async def test_commit_materializes_api_contract_implements_tr_constraint(
                 }
             finally:
                 links.close()
+            decisions = set()
+            for kind in ('Requirement', 'Constraint'):
+                links = graph.execute(
+                    f'MATCH (d:Decision)-[r:derives_from]->(t:{kind}) '
+                    'RETURN d.source_artifact_ref,t.source_artifact_ref,r.rule_id,r.confidence')
+                try:
+                    while links.has_next():
+                        row = tuple(links.get_next())
+                        assert row not in decisions
+                        decisions.add(row)
+                finally:
+                    links.close()
+            assert decisions == {
+                (f'spec:{spec_id}:decision:dec_explicit', f'spec:{spec_id}:{section}:{identity}',
+                 'derives_from/explicit_link@v2.1', 1.0)
+                for section, identity in [('fr', 'fr-login'), ('tr', 'tr-audit-events')]
+            }
             return checked
 
     original_ids = await run_blocking_graph_io(
@@ -311,6 +330,8 @@ async def test_commit_materializes_api_contract_implements_tr_constraint(
     original_links = {scenario["id"]: list(scenario.get("linked_criteria") or []) for scenario in spec["test_scenarios"]}
     for scenario in spec["test_scenarios"]:
         scenario["linked_criteria"] = []
+    decision_links = spec['decisions'][0]['linked_requirements']
+    spec['decisions'][0]['linked_requirements'] = []
     await project_current_spec()
 
     def assert_removed():
@@ -320,9 +341,16 @@ async def test_commit_materializes_api_contract_implements_tr_constraint(
                 assert not links.has_next()
             finally:
                 links.close()
+            for kind in ('Requirement', 'Constraint'):
+                links = graph.execute(f'MATCH (d:Decision)-[r:derives_from]->(t:{kind}) RETURN r.rule_id')
+                try:
+                    assert not links.has_next()
+                finally:
+                    links.close()
     await run_blocking_graph_io(assert_removed, task_name="tests.spec_children.removed_links")
     for scenario in spec["test_scenarios"]:
         scenario["linked_criteria"] = original_links[scenario["id"]]
+    spec['decisions'][0]['linked_requirements'] = decision_links
     node_candidates = await project_current_spec()
     assert await run_blocking_graph_io(assert_chronology, task_name="tests.spec_children.restored_links") == original_ids
 

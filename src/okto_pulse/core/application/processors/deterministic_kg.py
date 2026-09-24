@@ -1754,46 +1754,34 @@ class DeterministicWorker:
                 )
             )
             _add_belongs_to(dec_cid, "fdec", i)
-            # derives_from — link to linked_requirements when provided,
-            # otherwise fall back to co-occurrence (all FRs, confidence 0.6).
-            # (b) Resolve refs: try canonical fr_id first (IMPL-1 persists the
-            # id field on FR dicts), then fall back to positional int index for
-            # specs written before IMPL-1.  Unresolvable refs are silently
-            # skipped so the co-occurrence fallback still fires when the
-            # explicit_fr_cids set ends up empty.
-            explicit_fr_cids: set[str] = set()
+            # Only declared FR/TR links justify derives_from. An absent or
+            # unresolved link never authorizes co-occurrence with every FR.
+            requirement_ids: dict[str, list[str]] = {}
+            for collection, emitted in (("functional_requirements", fr_ids), ("technical_requirements", tr_ids)):
+                for item, (cid, _text) in zip(spec.get(collection) or [], emitted):
+                    if isinstance(item, dict) and item.get('id') not in (None, ''):
+                        requirement_ids.setdefault(str(item['id']), []).append(cid)
+            explicit_cids: set[str] = set()
             for ref in dec.get("linked_requirements") or []:
-                ref_str = str(ref) if ref is not None else ""
-                # Try fr_id lookup first.
-                resolved = fr_id_to_cid.get(ref_str)
-                if resolved is None:
-                    # Legacy fallback: interpret ref as a positional int index.
+                key = str(ref).strip() if ref is not None else ''
+                matches = requirement_ids.get(key, [])
+                if len(matches) == 1:
+                    explicit_cids.add(matches[0])
+                elif not matches and not isinstance(ref, bool):
+                    # Preserve the historical positional FR-only contract.
                     try:
-                        idx_int = int(ref_str)
-                        if 0 <= idx_int < len(fr_ids):
-                            resolved = fr_ids[idx_int][0]
-                    except (TypeError, ValueError):
+                        index = int(key)
+                        if 0 <= index < len(fr_ids):
+                            explicit_cids.add(fr_ids[index][0])
+                    except ValueError:
                         pass
-                if resolved is not None:
-                    explicit_fr_cids.add(resolved)
-            for j, (fr_cid, _fr_text) in enumerate(fr_ids):
-                is_explicit = fr_cid in explicit_fr_cids
-                if explicit_fr_cids and not is_explicit:
-                    continue
-                result.edges.append(
-                    EmittedEdge(
-                        candidate_id=f"{prefix}_edge_fdec{i}_derives_fr_{fr_cid}",
-                        edge_type="derives_from",
-                        from_candidate_id=dec_cid,
-                        to_candidate_id=fr_cid,
-                        confidence=1.0 if is_explicit else 0.6,
-                        rule_id=(
-                            f"derives_from/explicit_link@{WORKER_VERSION}"
-                            if is_explicit
-                            else f"derives_from/cooccurrence@{WORKER_VERSION}"
-                        ),
-                    )
-                )
+            for target_cid in sorted(explicit_cids):
+                result.edges.append(EmittedEdge(
+                    candidate_id=f"{prefix}_edge_fdec{i}_derives_{target_cid}",
+                    edge_type="derives_from", from_candidate_id=dec_cid,
+                    to_candidate_id=target_cid, confidence=1.0,
+                    rule_id="derives_from/explicit_link@v2.1",
+                ))
             # mentions via tech whitelist — same as legacy path.
             for canonical in _extract_tech_mentions(dec_text):
                 ent_cid = f"ent_{_canonical_slug(canonical)}"
@@ -1846,19 +1834,7 @@ class DeterministicWorker:
                 )
             )
             _add_belongs_to(dec_cid, "dec", i)
-            # derives_from — low-confidence co-occurrence. Cognitive layer can
-            # narrow this down to the specific FR if confidence <0.7.
-            for fr_cid, _fr_text in fr_ids:
-                result.edges.append(
-                    EmittedEdge(
-                        candidate_id=f"{prefix}_edge_dec{i}_derives_fr_{fr_cid}",
-                        edge_type="derives_from",
-                        from_candidate_id=dec_cid,
-                        to_candidate_id=fr_cid,
-                        confidence=0.6,
-                        rule_id=f"derives_from/cooccurrence@{WORKER_VERSION}",
-                    )
-                )
+            # Legacy narrative preserves its Decision node, without invented FR links.
             # mentions via tech whitelist. confidence=1.0 for exact canonical/
             # alias hit; we don't enable stemming for any entity yet so the
             # 0.85 stem path is unused (guarded for future extensions).
@@ -1888,6 +1864,21 @@ class DeterministicWorker:
                         rule_id=f"mentions/tech_whitelist@v{tech_whitelist_version}",
                     )
                 )
+
+        # Complete declared and narrative sources are needed to replace both
+        # current links and owned legacy co-occurrence without deleting history.
+        if (all(field in spec and isinstance(spec[field], (list, type(None)))
+                for field in ('decisions', 'functional_requirements', 'technical_requirements'))
+                and 'context' in spec and isinstance(spec['context'], (str, type(None)))):
+            result.relational_projection_active_set_intents += (
+                RelationalProjectionActiveSetIntent(owner_type='spec', owner_id=str(spec_id),
+                    namespace='decision_requirements', active_refs=(),
+                    active_edges=tuple(RelationalProjectionActiveEdgeRef(
+                        candidate_id=edge.candidate_id, edge_type=edge.edge_type,
+                        from_candidate_id=edge.from_candidate_id, to_candidate_id=edge.to_candidate_id,
+                        rule_id=edge.rule_id,
+                    ) for edge in result.edges if edge.rule_id == 'derives_from/explicit_link@v2.1')),
+            )
 
         # An absent collection may be a partial source. Only explicit, complete
         # source collections authorize replacing the owned relationship set.

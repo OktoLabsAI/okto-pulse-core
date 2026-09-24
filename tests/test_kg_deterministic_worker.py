@@ -410,13 +410,12 @@ def test_process_spec_missing_linked_requirements_generates_candidate():
     assert missing_impl[0].reason == "no_requirement_match"
 
 
-def test_process_spec_derives_from_cooccurrence():
+def test_process_spec_legacy_decisions_do_not_invent_requirement_links():
     worker = DeterministicWorker()
     result = worker.process_spec(_spec_fixture())
     derives = [e for e in result.edges if e.edge_type == "derives_from"]
-    # 3 decisions × 3 FRs = 9 edges, confidence 0.6 each.
-    assert len(derives) == 9
-    assert all(e.confidence == 0.6 for e in derives)
+    assert derives == []
+    assert len([node for node in result.nodes if node.node_type == 'Decision']) == 3
 
 
 def test_process_spec_mentions_tech_whitelist_entities():

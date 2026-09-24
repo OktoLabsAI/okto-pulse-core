@@ -1278,10 +1278,9 @@ class _InMemoryGraphTransactionScope:
         ]
         return receipt
 
-    def _reconcile_scenario_criteria(self, intent):
-        from okto_pulse.core.ports.spec_projection import (
-            SCENARIO_CRITERIA_RULES, is_spec_child_reference, owns_scenario_criterion_edge,
-        )
+    def _reconcile_spec_relationships(self, intent):
+        from okto_pulse.core.ports.spec_projection import spec_relationship_family
+        family = spec_relationship_family(intent.namespace)
         nodes = self.store._board_nodes(self.board_id)
         root = nodes.get(intent.owner_node_id, {})
         if intent.active_nodes or root.get("source_artifact_ref") != f"spec:{intent.owner_id}":
@@ -1289,20 +1288,24 @@ class _InMemoryGraphTransactionScope:
         desired = set()
         pairs = set()
         for edge in intent.active_edges:
-            if (edge.edge_type != "tests" or edge.from_type != "TestScenario" or edge.to_type != "Criterion"
-                    or edge.rule_id not in SCENARIO_CRITERIA_RULES or (edge.from_id, edge.to_id) in pairs
-                    or not is_spec_child_reference(nodes.get(edge.from_id, {}).get("source_artifact_ref"), owner_id=intent.owner_id, section="test_scenario")
-                    or not is_spec_child_reference(nodes.get(edge.to_id, {}).get("source_artifact_ref"), owner_id=intent.owner_id, section="ac")):
-                raise ProjectionActiveSetReconciliationError("projection_active_set_member_invalid", "Invalid scenario endpoint.")
+            if (edge.edge_type != family.edge_type or edge.rule_id not in family.rules
+                    or (edge.from_id, edge.to_id) in pairs
+                    or not family.owns_endpoints(owner_id=intent.owner_id,
+                        source_type=edge.from_type, target_type=edge.to_type,
+                        source_ref=nodes.get(edge.from_id, {}).get('source_artifact_ref'),
+                        target_ref=nodes.get(edge.to_id, {}).get('source_artifact_ref'))):
+                raise ProjectionActiveSetReconciliationError("projection_active_set_member_invalid", "Invalid Spec relationship endpoint.")
             desired.add((edge.from_id, edge.to_id, edge.rule_id))
             pairs.add((edge.from_id, edge.to_id))
         owned = {}
         for edge in self.store._board_edges(self.board_id):
-            if (edge.get("_type") != "tests" or edge.get("_from_type") != "TestScenario" or edge.get("_to_type") != "Criterion"
-                    or not owns_scenario_criterion_edge(owner_id=intent.owner_id,
-                        source_ref=nodes.get(edge.get("_from"), {}).get("source_artifact_ref"),
-                        target_ref=nodes.get(edge.get("_to"), {}).get("source_artifact_ref"),
-                        rule_id=edge.get("rule_id"), layer=edge.get("layer"), created_by=edge.get("created_by"))):
+            if (edge.get('_type') != family.edge_type
+                    or not family.owns_endpoints(owner_id=intent.owner_id,
+                        source_type=edge.get('_from_type'), target_type=edge.get('_to_type'),
+                        source_ref=nodes.get(edge.get('_from'), {}).get('source_artifact_ref'),
+                        target_ref=nodes.get(edge.get('_to'), {}).get('source_artifact_ref'))
+                    or not family.owns_writer(rule_id=edge.get('rule_id'),
+                        layer=edge.get('layer'), created_by=edge.get('created_by'))):
                 continue
             key = (edge["_from"], edge["_to"], edge["rule_id"])
             if key in owned:
@@ -1312,7 +1315,7 @@ class _InMemoryGraphTransactionScope:
             raise ProjectionActiveSetReconciliationError("projection_active_set_member_missing", "Missing owned edge.")
         stale = [edge for key, edge in owned.items() if key not in desired]
         receipt = ProjectionActiveSetReceipt(intent=intent, edge_before_images=tuple(
-            ProjectionEdgeBeforeImage("tests", "TestScenario", "Criterion", edge["_from"], edge["_to"],
+            ProjectionEdgeBeforeImage(family.edge_type, family.source_type, edge["_to_type"], edge["_from"], edge["_to"],
                 {key: value for key, value in edge.items() if not key.startswith("_")}) for edge in stale))
         removed = {id(edge) for edge in stale}
         self.store._edges[self.board_id] = [edge for edge in self.store._board_edges(self.board_id) if id(edge) not in removed]
@@ -1324,8 +1327,8 @@ class _InMemoryGraphTransactionScope:
     ) -> ProjectionActiveSetReceipt:
         """Reconcile one exact relational node or edge projection."""
 
-        if intent.owner_type == "spec" and intent.namespace == "scenario_criteria":
-            return self._reconcile_scenario_criteria(intent)
+        if intent.owner_type == "spec" and intent.namespace in {"scenario_criteria", "decision_requirements"}:
+            return self._reconcile_spec_relationships(intent)
 
         if intent.owner_type == "spec" and intent.namespace == "dependencies":
             return self._reconcile_spec_dependency_edges(intent)
@@ -1509,14 +1512,15 @@ class _InMemoryGraphTransactionScope:
         self,
         receipt: ProjectionActiveSetReceipt,
     ) -> None:
-        if receipt.intent.namespace == "scenario_criteria":
-            from okto_pulse.core.ports.spec_projection import is_scenario_criterion_writer
+        if receipt.intent.namespace in {"scenario_criteria", "decision_requirements"}:
+            from okto_pulse.core.ports.spec_projection import spec_relationship_family
+            family = spec_relationship_family(receipt.intent.namespace)
             for before in receipt.edge_before_images:
                 current = [edge for edge in self.store._board_edges(self.board_id)
                            if edge.get("_type") == before.edge_type
                            and edge.get("_from") == before.from_id and edge.get("_to") == before.to_id
                            and edge.get("rule_id") == before.attrs.get("rule_id")
-                           and is_scenario_criterion_writer(rule_id=edge.get("rule_id"),
+                           and family.owns_writer(rule_id=edge.get("rule_id"),
                                layer=edge.get("layer"), created_by=edge.get("created_by"))]
                 if current:
                     if len(current) != 1 or {key: value for key, value in current[0].items() if not key.startswith("_")} != before.attrs:

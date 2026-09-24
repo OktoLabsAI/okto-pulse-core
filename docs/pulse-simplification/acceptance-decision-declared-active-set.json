@@ -1,0 +1,139 @@
+{
+  "scope": "KG-10: declared Decision FR/TR links and exact owned co-occurrence cleanup",
+  "before": {
+    "failed": 3,
+    "passed": 1,
+    "reason": "empty, unknown and legacy sources emitted all FRs"
+  },
+  "suites": {
+    "decision-core": {
+      "tests": 131,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "decision-community-r2": {
+      "tests": 48,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "decision-frontend": {
+      "tests": 20,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "decision-retained": {
+      "tests": 2,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    }
+  },
+  "budgets": [
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "import_boundary_baseline",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every import_boundary_baseline allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "singleton_baseline",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every singleton_baseline allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "dependency_temporary_exceptions",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every dependency_temporary_exceptions allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "graph_runtime_compatibility",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every graph_runtime_compatibility allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "rebuild_artifact_compatibility",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every rebuild_artifact_compatibility allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "community_private_reach_ins",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every community_private_reach_ins allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "community_adapter_bridges",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every community_adapter_bridges allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "af35_relational_residue",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every af35_relational_residue allowance before F16 completion."
+    }
+  ],
+  "verified": [
+    "unambiguous declared FR/TR only; legacy narrative nodes retained without fan-out",
+    "create, reorder, remove and restore both target types through real graph primitives",
+    "cleanup of known formal/legacy co-occurrence and obsolete explicit rules by owner and writer",
+    "foreign owners, parallel writers and unknown rules preserved",
+    "failure after second delete restores exact facts; compensation repeatable in fresh scopes",
+    "partial source does not authorize empty cleanup",
+    "old singular plan refusal and fresh SQL preparation remain enforced"
+  ],
+  "limits": [
+    "Not all KG relation families, event/currentness/rebuild parity or global release acceptance.",
+    "Unknown historical rule versions are preserved rather than assumed to be owned.",
+    "No real migration/cutover or user runtime operation performed.",
+    "Installed14 uses the preceding frozen pair and does not qualify these Decision changes.",
+    "Frontend JSDOM is not canvas pixel verification."
+  ],
+  "sha256": {
+    "PULSE_REFACTOR/.validation-v040/decision-core.xml": "b630b32fb1697780770bb4ff76edf7f6c24dc7e47d2227da4c89ad55816d3b92",
+    "PULSE_REFACTOR/.validation-v040/decision-community-r2.xml": "6dcdc669441bb1fcde7b95e0d22db7fca89021fc689c1de916a41d32e8366ed6",
+    "PULSE_REFACTOR/.validation-v040/decision-frontend.xml": "fcb2b445a1e26cb1e84221acae96953f4669a8cad43ec4e9f3ea6c48f05efc14",
+    "PULSE_REFACTOR/.validation-v040/decision-retained.xml": "226adcbd2c4e5016b5df2620fb8bc5d67bde66fd206490ff0f7f88d27f93cf06",
+    "PULSE_REFACTOR/.validation-v040/provenance-decision-projection-final.json": "ce13bd0844326a29c9fd41a4abd3bff48a104e8bd938cc4b920e4f81f4b7cb89",
+    "PULSE_REFACTOR/.validation-v040/closure-decision-projection-final.json": "de06974afa639e31b354cde8c399da34c31b50c0e97e0a6f8682e30893d19e7e",
+    "PULSE_REFACTOR/.validation-v040/decision-cooccurrence-before.xml": "69828802eae3eb0d78efa2558e6c174a81a2f85a56fe635e7878ca7a47d16b95",
+    "PULSE_REFACTOR/.validation-v040/probe_decision_cooccurrence.py": "765149eb16c30e9efec4af2764be1a611c840bb30453b4aad99229bf6cbd05f1",
+    "okto_labs_pulse_core/tests/test_kg_decision_declared_relationships.py": "19090c5632e6bd9b52337d1b32c18265b345d988d3c0fffa540fd5387dc09792",
+    "okto_labs_pulse_core/tests/test_kg_spec_children_canonicalization.py": "b823b58d3764beac09103a20b8e0ae307e641daff5db3bf2200cac716f99a0bb",
+    "okto_labs_pulse_core/tests/test_projection_intent_collection.py": "aa66dea93e279575cd3d0c608f488e69fbde6b583a5a18c711d41eb7acc794e2",
+    "okto_labs_pulse_community/tests/test_grafx_decision_projection.py": "624fe4f14cc8c2fd155326cb851f1fefa8f4613fc18dae4b13f4b089fa2da105",
+    "okto_labs_pulse_community/tests/test_retirement_projection_inputs.py": "f772692fb6656ee8f689ef184c9015bf7b321e2df231327eb985b473454d0dec"
+  }
+}
