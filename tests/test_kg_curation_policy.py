@@ -22,7 +22,6 @@ from okto_pulse.core.kg.curation_policy import (
 _REAL_INVENTORY = {
     "kg_dlq_reprocess": CURATION_LEVEL_PROPOSE_ONLY,
     "kg_connectivity_dlq_reprocess": CURATION_LEVEL_PROPOSE_ONLY,
-    "kg_rebuild_run": CURATION_LEVEL_PROPOSE_ONLY,
     "kg_decay_tick": CURATION_LEVEL_AUTO,
     "kg_dedup_hard_delete": CURATION_LEVEL_FORBIDDEN,
 }
@@ -34,6 +33,7 @@ def test_s6_real_inventory_fully_classified():
     # The policy contains exactly the audited inventory — additions must be
     # deliberate (a new operation defaults to propose_only anyway).
     assert dict(CURATION_POLICY) == _REAL_INVENTORY
+    assert "kg_rebuild_run" not in CURATION_POLICY
 
 
 def test_s6_unknown_operation_fails_closed_to_propose_only():
