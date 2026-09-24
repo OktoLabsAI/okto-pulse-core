@@ -1769,10 +1769,9 @@ def _evaluate_cognitive_closeout_or_raise(
             "Per the Degraded-KG Fallback Rule, if the board is confirmed degraded "
             "you may enable the board setting `skip_cognitive_consolidation` to allow "
             "done transitions while the graph is unavailable. "
-            "To restore full cognitive closeout, follow the KG Health recovery flow: "
-            "call `okto_pulse_kg_health` to confirm the graph_state, then consult "
-            "the resource `okto-pulse://reference/kg-health` for the operator-driven "
-            "recovery steps."
+            "Consult `okto-pulse://reference/kg-health` for component status "
+            "and limitations. Health has no repair action. Recovery requires "
+            "an authorized external support/release procedure."
         )
     else:
         detail = "by active cognitive consolidation items"

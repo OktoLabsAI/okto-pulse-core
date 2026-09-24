@@ -196,8 +196,10 @@ waiver and skip lineage. These are semantic `Entity` projections, never
 deterministic `Constraint` nodes and never gate authority. Unlink, retirement,
 supersedence and exception closure terminate the corresponding active
 projection with a tombstone; rebuild must converge to the same relational
-state and explicitly terminate legacy rule nodes. Diagnose KG health and use
-the normal rebuild workflow; never edit the graph directly.
+state and explicitly terminate legacy rule nodes. Health reports projection
+availability; it does not offer a rebuild workflow. Internal workers reconcile
+projection debt. Corruption requiring intervention belongs to an authorized
+external support/release procedure; never edit the graph directly.
 
 Related resources: `okto-pulse://reference/transitions`,
 `okto-pulse://reference/errors`, `okto-pulse://reference/projection-profiles`
