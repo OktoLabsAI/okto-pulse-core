@@ -1,0 +1,239 @@
+{
+  "scope": "F4 bounded Board absence observation, preserving ordinary privacy/recovery scans",
+  "provenance": {
+    "checked_at": "2026-09-24T06:35:23.475811+00:00",
+    "python": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Scripts\\python.exe",
+    "packages": {
+      "core": {
+        "python_files": 824,
+        "origin": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages\\okto_pulse\\core\\__init__.py",
+        "repository_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_core",
+        "commit": "239a746426a85c69cd5005b5ed32697cb3c20ffa",
+        "dirty": false,
+        "dirty_entry_count": 0,
+        "distribution": "okto-pulse-core",
+        "version": "0.3.4",
+        "wheel": {
+          "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\dist-health-absence-final\\okto_pulse_core-0.3.4-py3-none-any.whl",
+          "sha256": "523610b1e7474bb4df62d1489ee937e7b4847b6736691558f8bfa48a299952ea",
+          "size": 3683908
+        },
+        "source_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_core\\src",
+        "site_packages_root": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages",
+        "package_prefix": "okto_pulse/core/",
+        "byte_identical_member_count": 887,
+        "byte_identical": true,
+        "aggregate_sha256": "3d4ded991a1ecd104d84fa4a06b8fd6b9c93b280683dbaa57dd8e68ad1817122",
+        "chain_hashes": {
+          "source": "3d4ded991a1ecd104d84fa4a06b8fd6b9c93b280683dbaa57dd8e68ad1817122",
+          "wheel": "3d4ded991a1ecd104d84fa4a06b8fd6b9c93b280683dbaa57dd8e68ad1817122",
+          "site_packages": "3d4ded991a1ecd104d84fa4a06b8fd6b9c93b280683dbaa57dd8e68ad1817122"
+        },
+        "critical_resource_sha256": {
+          "okto_pulse/core/mcp/resources/ska_resource_manifest.json": "55ed4cde6fc6f318c5b524ffcd7eaf65b1d9ee9bcee2e853865675f7bdd2f78a",
+          "okto_pulse/core/mcp/resources/ska_tool_manifest.json": "0c3fa3da1549baec20872eca3f4a289288627e6b9f6b80be10472ac962fa72b9"
+        },
+        "mismatches": []
+      },
+      "community": {
+        "python_files": 360,
+        "origin": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages\\okto_pulse\\community\\__init__.py",
+        "repository_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_community",
+        "commit": "2a4667834cc73d7bcff8dd7b2bb89394e084425a",
+        "dirty": true,
+        "dirty_entry_count": 4,
+        "distribution": "okto-pulse",
+        "version": "0.3.4",
+        "wheel": {
+          "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\dist-health-absence-final\\okto_pulse-0.3.4-py3-none-any.whl",
+          "sha256": "b19621f18a0f3b08238295c8d13a75beb7a58b36020e814764fe6b7e2e700ce8",
+          "size": 4480540
+        },
+        "source_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_community\\src",
+        "site_packages_root": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages",
+        "package_prefix": "okto_pulse/community/",
+        "byte_identical_member_count": 445,
+        "byte_identical": true,
+        "aggregate_sha256": "42232e4063f7670360eafae2dcb9888557f8e2475122e40e5500204d31d23d2e",
+        "chain_hashes": {
+          "source": "42232e4063f7670360eafae2dcb9888557f8e2475122e40e5500204d31d23d2e",
+          "wheel": "42232e4063f7670360eafae2dcb9888557f8e2475122e40e5500204d31d23d2e",
+          "site_packages": "42232e4063f7670360eafae2dcb9888557f8e2475122e40e5500204d31d23d2e"
+        },
+        "critical_resource_sha256": {},
+        "mismatches": []
+      }
+    }
+  },
+  "reports": [
+    {
+      "file": "health-absence-before.xml",
+      "sha256": "7d88a779d7d38031d3affb4cdd78d61e3ced8fb09a801f922964293ac3df66a5",
+      "tests": 1,
+      "failures": 1,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "file": "health-absence-community.xml",
+      "sha256": "0975f3d0aa9a1cf0617dce0695b7ca757293ac6e9ec8b68697708c32cb6bfa6a",
+      "tests": 64,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "file": "health-absence-frontend.xml",
+      "sha256": "8aea123732c94a2f979208ce7a32356570ab4e94c2d9a9a28ce9102be104588a",
+      "tests": 58,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "file": "health-absence-final-deadline-before.xml",
+      "sha256": "1b8f068dbcb766897b63a9cf1df6c11dd28b5f9e80b78b4e12587dbcb4966a04",
+      "tests": 6,
+      "failures": 1,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "file": "health-absence-final-community.xml",
+      "sha256": "f43bb03ef3cd7819bb667fb2ae078b4ef63d495109ffd163d81f8ddfa05251e8",
+      "tests": 65,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "file": "health-absence-final-core.xml",
+      "sha256": "d8a03a4c88ca7346714ef4b65ec87c7fa299f04eb7bf318e266d2d4c8ca22a37",
+      "tests": 6,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "file": "full1-lifetime-before-final.xml",
+      "sha256": "0da8d1e748e4a8f8bbc82e6b15ee0ff763ff29bfa7f3a8cee4bf9c9c07086b74",
+      "tests": 1,
+      "failures": 1,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "file": "full1-lifetime-corrected.xml",
+      "sha256": "395dbc95c197c4bdf49a089a5c109240e96819d2ecd335a3bb7c92d7f2786cf7",
+      "tests": 70,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    }
+  ],
+  "closure": {
+    "budgets": [
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "import_boundary_baseline",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every import_boundary_baseline allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "singleton_baseline",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every singleton_baseline allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "dependency_temporary_exceptions",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every dependency_temporary_exceptions allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "graph_runtime_compatibility",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every graph_runtime_compatibility allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "rebuild_artifact_compatibility",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every rebuild_artifact_compatibility allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "community_private_reach_ins",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every community_private_reach_ins allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "community_adapter_bridges",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every community_adapter_bridges allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "af35_relational_residue",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every af35_relational_residue allowance before F16 completion."
+      }
+    ],
+    "documentation_findings": [],
+    "evidence": {
+      "af35_s5_ok": true,
+      "community_to_core_import_rows": 1195,
+      "conformance_matrix_ok": true,
+      "core_import_rows": 7438,
+      "dependency_rows": 25,
+      "distribution_report_ok": true,
+      "rebuild_storage_violation_count": 0,
+      "singleton_gate_status": "passed"
+    },
+    "findings": [],
+    "ok": true,
+    "version": "F16.2",
+    "ownership_rows": 8658,
+    "source_report": {
+      "file": "closure-health-absence-final.json",
+      "sha256": "7d53851de209daee7cad6ee0c25f235740a7e2961266f2612fe7e305dc480389"
+    }
+  },
+  "limitations": [
+    "One Board absence observation shares 2000 consumed directory entries, 4 MiB document bytes, and the existing deadline.",
+    "The existing per-manifest 1 MiB safety cap, hash checks, scope checks and alias checks remain in force.",
+    "Ordinary privacy/recovery callers keep complete scans without observation budgets.",
+    "A missing selected primary does not turn an incomplete canonical absence observation into confirmed absence.",
+    "Route resolution, Global manifests and materialization stat scope propagation remain under investigation.",
+    "No OS syscall preemption or atomic filesystem snapshot is claimed. BASE:T35/T36 and F4 remain open.",
+    "Frontend58 passed before the final backend-only deadline recheck; frontend production sources/assets unchanged.",
+    "Core70 fixture-lifetime cases passed before that final backend-only recheck; final paired Core6 passed afterwards."
+  ]
+}
