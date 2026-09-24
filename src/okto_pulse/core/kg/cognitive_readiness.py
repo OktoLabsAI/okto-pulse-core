@@ -347,6 +347,29 @@ def compose_readiness(
             detail="Canonical debt is OPEN; resolve/retry before closure.",
         )
 
+    return compose_cognitive_readiness(
+        artifact_id=artifact_id,
+        cognitive_items=cognitive_items,
+        has_reusable_cognition=has_reusable_cognition,
+        now=now,
+    )
+
+
+def compose_cognitive_readiness(
+    *,
+    artifact_id: str,
+    cognitive_items: Sequence[CognitiveConsolidationItem],
+    has_reusable_cognition: bool = True,
+    now: datetime | None = None,
+) -> CognitiveReadinessVerdict:
+    """Evaluate known cognitive records independently of projection backlog.
+
+    F6E/KG: a technical tier must neither become a generic delivery obligation
+    nor hide an active item or expired revisit. This is only the cognitive
+    ledger verdict, not evidence admission, currentness or lifecycle authority.
+    Callers must obtain the records successfully before using this function.
+    """
+    now = now or _now()
     active = [i for i in cognitive_items if i.status in ACTIVE_ITEM_STATUSES]
     skips = [
         i for i in cognitive_items

@@ -1,0 +1,322 @@
+{
+  "format": "pulse-v1.3-reviewed-execution/v1",
+  "scope": "KG source chronology and resolution, independently completed cases",
+  "limits": [
+    "Full4 Community remains an unfinished campaign with other failures; these passing cases do not declare that suite green.",
+    "Native graph updates and source-event fixtures test projection semantics, not new lifecycle admission or cognitive closeout authority.",
+    "KG-15 child-specific chronology requires separate review and is not closed here."
+  ],
+  "community": {
+    "provenance": {
+      "checked_at": "2026-09-24T07:37:03.531254+00:00",
+      "python": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\full4\\venv\\Scripts\\python.exe",
+      "packages": {
+        "core": {
+          "python_files": 824,
+          "origin": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\full4\\venv\\Lib\\site-packages\\okto_pulse\\core\\__init__.py",
+          "repository_root": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\full4\\okto_labs_pulse_core",
+          "commit": "c70e178d2b3d8accef27636e48c6ba8a8102046a",
+          "dirty": false,
+          "dirty_entry_count": 0,
+          "distribution": "okto-pulse-core",
+          "version": "0.3.4",
+          "wheel": {
+            "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\dist-full4\\okto_pulse_core-0.3.4-py3-none-any.whl",
+            "sha256": "28f91c56454bca8b835c5d35c308bcbfd50fa89f9b26b5b3b106a46bc188cbb3",
+            "size": 3689922
+          },
+          "source_root": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\full4\\okto_labs_pulse_core\\src",
+          "site_packages_root": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\full4\\venv\\Lib\\site-packages",
+          "package_prefix": "okto_pulse/core/",
+          "byte_identical_member_count": 887,
+          "byte_identical": true,
+          "aggregate_sha256": "a06d838a9fdfb082570e2f76a33fa06c489eb311e86122c120abd3ac4253343b",
+          "chain_hashes": {
+            "source": "a06d838a9fdfb082570e2f76a33fa06c489eb311e86122c120abd3ac4253343b",
+            "wheel": "a06d838a9fdfb082570e2f76a33fa06c489eb311e86122c120abd3ac4253343b",
+            "site_packages": "a06d838a9fdfb082570e2f76a33fa06c489eb311e86122c120abd3ac4253343b"
+          },
+          "critical_resource_sha256": {
+            "okto_pulse/core/mcp/resources/ska_resource_manifest.json": "4ff70acaa22eae41922015eaad845754e9edf764817f39859139f8a3825a99e8",
+            "okto_pulse/core/mcp/resources/ska_tool_manifest.json": "d114d7e886f6f373308a22699a61b9b0531ab9acd7860931ac903f3753fb9896"
+          },
+          "mismatches": []
+        },
+        "community": {
+          "python_files": 360,
+          "origin": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\full4\\venv\\Lib\\site-packages\\okto_pulse\\community\\__init__.py",
+          "repository_root": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\full4\\okto_labs_pulse_community",
+          "commit": "e2f0f1be0845011f042a77c929aa6c20c6b0a1c8",
+          "dirty": false,
+          "dirty_entry_count": 0,
+          "distribution": "okto-pulse",
+          "version": "0.3.4",
+          "wheel": {
+            "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\dist-full4\\okto_pulse-0.3.4-py3-none-any.whl",
+            "sha256": "647290b5949397bd905b354e96262397e5696307d54bdeadb064a216af7418d6",
+            "size": 4481512
+          },
+          "source_root": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\full4\\okto_labs_pulse_community\\src",
+          "site_packages_root": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\full4\\venv\\Lib\\site-packages",
+          "package_prefix": "okto_pulse/community/",
+          "byte_identical_member_count": 445,
+          "byte_identical": true,
+          "aggregate_sha256": "6336d4f0f5ea61f9fb47c36bc6a3dea117aa7e4f5811afa83d4507ea5634d621",
+          "chain_hashes": {
+            "source": "6336d4f0f5ea61f9fb47c36bc6a3dea117aa7e4f5811afa83d4507ea5634d621",
+            "wheel": "6336d4f0f5ea61f9fb47c36bc6a3dea117aa7e4f5811afa83d4507ea5634d621",
+            "site_packages": "6336d4f0f5ea61f9fb47c36bc6a3dea117aa7e4f5811afa83d4507ea5634d621"
+          },
+          "critical_resource_sha256": {},
+          "mismatches": []
+        }
+      }
+    },
+    "provenance_sha256": "414cd69ea766f6a8ac7a6810543e444221058a98c98f438cfdff55dfdbd00572",
+    "completed_events": [
+      {
+        "nodeid": "tests/test_card_resolution_history.py::test_history_is_bounded_scoped_and_preserves_unknown",
+        "phase": "setup",
+        "outcome": "passed",
+        "duration": 0.01890159999311436,
+        "elapsed": 1354.3994052999915
+      },
+      {
+        "nodeid": "tests/test_card_resolution_history.py::test_history_is_bounded_scoped_and_preserves_unknown",
+        "phase": "call",
+        "outcome": "passed",
+        "duration": 0.7928777000051923,
+        "elapsed": 1355.192711399999
+      },
+      {
+        "nodeid": "tests/test_card_resolution_history.py::test_history_is_bounded_scoped_and_preserves_unknown",
+        "phase": "teardown",
+        "outcome": "passed",
+        "duration": 0.0170401000068523,
+        "elapsed": 1355.2101145999914,
+        "process_handles_after_teardown": 267
+      },
+      {
+        "nodeid": "tests/test_card_resolution_history.py::test_native_graph_resolution_is_replaced_and_cleared",
+        "phase": "setup",
+        "outcome": "passed",
+        "duration": 0.02230260000214912,
+        "elapsed": 1355.2333289999951
+      },
+      {
+        "nodeid": "tests/test_card_resolution_history.py::test_native_graph_resolution_is_replaced_and_cleared",
+        "phase": "call",
+        "outcome": "passed",
+        "duration": 0.3838857999944594,
+        "elapsed": 1355.6175899999944
+      },
+      {
+        "nodeid": "tests/test_card_resolution_history.py::test_native_graph_resolution_is_replaced_and_cleared",
+        "phase": "teardown",
+        "outcome": "passed",
+        "duration": 0.008681999999680556,
+        "elapsed": 1355.6265027999907,
+        "process_handles_after_teardown": 267
+      },
+      {
+        "nodeid": "tests/test_retirement_candidate_execution.py::test_failed_private_execution_can_retry_from_seed_and_keeps_original_providers",
+        "phase": "setup",
+        "outcome": "passed",
+        "duration": 0.026329600004828535,
+        "elapsed": 8761.754081299994
+      },
+      {
+        "nodeid": "tests/test_retirement_candidate_execution.py::test_failed_private_execution_can_retry_from_seed_and_keeps_original_providers",
+        "phase": "call",
+        "outcome": "passed",
+        "duration": 114.59421190001012,
+        "elapsed": 8876.348603499995
+      },
+      {
+        "nodeid": "tests/test_retirement_candidate_execution.py::test_failed_private_execution_can_retry_from_seed_and_keeps_original_providers",
+        "phase": "teardown",
+        "outcome": "passed",
+        "duration": 0.010600800000247546,
+        "elapsed": 8876.35936789999,
+        "process_handles_after_teardown": 1218
+      },
+      {
+        "nodeid": "tests/test_retirement_candidate_execution.py::test_bug_candidate_uses_latest_source_done_event",
+        "phase": "setup",
+        "outcome": "passed",
+        "duration": 0.012757600008626468,
+        "elapsed": 8876.373093199989
+      },
+      {
+        "nodeid": "tests/test_retirement_candidate_execution.py::test_bug_candidate_uses_latest_source_done_event",
+        "phase": "call",
+        "outcome": "passed",
+        "duration": 54.88584390000324,
+        "elapsed": 8931.259298299992
+      },
+      {
+        "nodeid": "tests/test_retirement_candidate_execution.py::test_bug_candidate_uses_latest_source_done_event",
+        "phase": "teardown",
+        "outcome": "passed",
+        "duration": 0.013790899989544414,
+        "elapsed": 8931.27329099999,
+        "process_handles_after_teardown": 1238
+      }
+    ],
+    "test_sources": [
+      {
+        "path": "okto_labs_pulse_community/tests/test_card_resolution_history.py",
+        "frozen_sha256": "3fd22717432446639d02748a8bf5ab75372046e76f3ef02eadf6b2ff288eb1f7",
+        "current_sha256": "08397c614f0ebf5f1c370c8cf5dc5f8aac45220f0c166accf46ee29ff7e6e283",
+        "normalized_text_identical": true
+      },
+      {
+        "path": "okto_labs_pulse_community/tests/test_retirement_candidate_execution.py",
+        "frozen_sha256": "6700bc52edfcf1aaf972c0b0fa2ab7f7d67bc4b18c8044dc49a1f764c264f8bb",
+        "current_sha256": "c7ad271654861e09ee9bd2a77f2955470ac9ac70f8e0a6759909edfc06ff7067",
+        "normalized_text_identical": true
+      }
+    ]
+  },
+  "core": {
+    "provenance_sha256": "03941d5f5e46b7df1a0e188d90100a801cf239270b8a35f36ad35fa43f8c904e",
+    "provenance": {
+      "checked_at": "2026-09-24T11:45:09.178352+00:00",
+      "python": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Scripts\\python.exe",
+      "packages": {
+        "core": {
+          "python_files": 824,
+          "origin": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages\\okto_pulse\\core\\__init__.py",
+          "repository_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_core",
+          "commit": "d69f08d5922a50f0ec1addd19aa681ade3243535",
+          "dirty": true,
+          "dirty_entry_count": 2,
+          "distribution": "okto-pulse-core",
+          "version": "0.3.4",
+          "wheel": {
+            "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\dist-health-guidance\\okto_pulse_core-0.3.4-py3-none-any.whl",
+            "sha256": "a4cd46bf0ce2e7a869c471176e4aa6abecb7e335ed0096b10a0a06210bb62dcd",
+            "size": 3687382
+          },
+          "source_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_core\\src",
+          "site_packages_root": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages",
+          "package_prefix": "okto_pulse/core/",
+          "byte_identical_member_count": 887,
+          "byte_identical": true,
+          "aggregate_sha256": "ed80267ce9dcfb49d62a702bfaaa6481b054f4d7df52b022a2c3201c0721cdae",
+          "chain_hashes": {
+            "source": "ed80267ce9dcfb49d62a702bfaaa6481b054f4d7df52b022a2c3201c0721cdae",
+            "wheel": "ed80267ce9dcfb49d62a702bfaaa6481b054f4d7df52b022a2c3201c0721cdae",
+            "site_packages": "ed80267ce9dcfb49d62a702bfaaa6481b054f4d7df52b022a2c3201c0721cdae"
+          },
+          "critical_resource_sha256": {
+            "okto_pulse/core/mcp/resources/ska_resource_manifest.json": "f79413fcabd82a5f7c42df33a621ba02b70a1198281dc5e36525bd503a0ae6dc",
+            "okto_pulse/core/mcp/resources/ska_tool_manifest.json": "0c3fa3da1549baec20872eca3f4a289288627e6b9f6b80be10472ac962fa72b9"
+          },
+          "mismatches": []
+        },
+        "community": {
+          "python_files": 361,
+          "origin": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages\\okto_pulse\\community\\__init__.py",
+          "repository_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_community",
+          "commit": "7e791c9cd5376e794c8bc0f914f35b27748b6278",
+          "dirty": true,
+          "dirty_entry_count": 37,
+          "distribution": "okto-pulse",
+          "version": "0.3.4",
+          "wheel": {
+            "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\dist-health-guidance\\okto_pulse-0.3.4-py3-none-any.whl",
+            "sha256": "ad2822967b49c9a89a589e7852bb75d6fd12e0bbee066bc4efc476136a1f70ea",
+            "size": 4483591
+          },
+          "source_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_community\\src",
+          "site_packages_root": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages",
+          "package_prefix": "okto_pulse/community/",
+          "byte_identical_member_count": 446,
+          "byte_identical": true,
+          "aggregate_sha256": "c07c884d369562a71fb381f180242438767fb4057d922683743e002db0a965f6",
+          "chain_hashes": {
+            "source": "c07c884d369562a71fb381f180242438767fb4057d922683743e002db0a965f6",
+            "wheel": "c07c884d369562a71fb381f180242438767fb4057d922683743e002db0a965f6",
+            "site_packages": "c07c884d369562a71fb381f180242438767fb4057d922683743e002db0a965f6"
+          },
+          "critical_resource_sha256": {},
+          "mismatches": []
+        }
+      }
+    },
+    "junit": "kg-chronology-core.xml",
+    "junit_sha256": "103f7a92945971de05b9d0f7e7e38e59860913f8064f0ef0ce98f1715a62d0e3",
+    "test_source_sha256": "9a926f799a4106f5f148392e52e49fefe45ed46fa30f90259026c4ada603e09e",
+    "passed_cases": [
+      {
+        "classname": "tests.test_kg_source_projection_metadata",
+        "name": "test_source_chronology_preserves_instant_and_raw_status",
+        "time": "9.420"
+      },
+      {
+        "classname": "tests.test_kg_source_projection_metadata",
+        "name": "test_client_cannot_supply_source_metadata[source_created_at]",
+        "time": "0.054"
+      },
+      {
+        "classname": "tests.test_kg_source_projection_metadata",
+        "name": "test_client_cannot_supply_source_metadata[source_updated_at]",
+        "time": "0.047"
+      },
+      {
+        "classname": "tests.test_kg_source_projection_metadata",
+        "name": "test_client_cannot_supply_source_metadata[source_status]",
+        "time": "0.058"
+      },
+      {
+        "classname": "tests.test_kg_source_projection_metadata",
+        "name": "test_client_cannot_supply_source_metadata[severity]",
+        "time": "0.035"
+      },
+      {
+        "classname": "tests.test_kg_source_projection_metadata",
+        "name": "test_client_cannot_supply_source_metadata[resolved_at]",
+        "time": "0.039"
+      },
+      {
+        "classname": "tests.test_kg_source_projection_metadata",
+        "name": "test_client_cannot_supply_source_metadata[_source_projection_metadata]",
+        "time": "0.037"
+      },
+      {
+        "classname": "tests.test_kg_source_projection_metadata",
+        "name": "test_internal_metadata_survives_session_request_without_entering_wire_contract",
+        "time": "0.047"
+      },
+      {
+        "classname": "tests.test_kg_source_projection_metadata",
+        "name": "test_non_worker_cannot_submit_internal_attestation",
+        "time": "0.086"
+      },
+      {
+        "classname": "tests.test_kg_source_projection_metadata",
+        "name": "test_resolution_uses_last_done_and_clears_on_reopen",
+        "time": "0.061"
+      }
+    ]
+  },
+  "criteria": {
+    "KG:KG-13": {
+      "status": "verified_by_reviewed_execution",
+      "assertions": [
+        "Source metadata preserves historical instants, raw status and severity; forged client metadata is rejected.",
+        "Real private candidate retry reads exact SQL created/updated dates and status from the source, and asserts projected Grafx values per artifact.",
+        "Real Bug candidate carries done/critical and the historical 2001 resolution event rather than the 2026 projection creation time."
+      ]
+    },
+    "KG:KG-14": {
+      "status": "verified_by_reviewed_execution",
+      "assertions": [
+        "Real SQL history excludes foreign Boards/Cards and resolves first done, reopening, later done and ambiguous/incomplete histories.",
+        "Real Grafx updates clear resolved_at on reopening and preserve projection created_at.",
+        "Real candidate worker resolves the latest source done event; the full original SQL dump remains unchanged, including history."
+      ]
+    }
+  }
+}

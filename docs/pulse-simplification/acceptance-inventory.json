@@ -935,13 +935,17 @@
       "line": 624,
       "id": "KG-13",
       "normative_text": "| KG-13 | Rebuild/replay após passagem de dias | `source_created_at` não vira hora da projeção; status/severidade não viram subtype. |",
-      "review_status": "not_audited_in_this_inventory",
+      "review_status": "verified_by_reviewed_execution",
       "test_text_references": [
         {
           "path": "okto_labs_pulse_core/tests/test_kg_source_projection_metadata.py",
           "line": 1
         }
-      ]
+      ],
+      "reviewed_execution": {
+        "artifact": "acceptance-kg-chronology-execution.json",
+        "criterion_key": "KG:KG-13"
+      }
     },
     {
       "key": "KG:KG-14",
@@ -949,13 +953,17 @@
       "line": 625,
       "id": "KG-14",
       "normative_text": "| KG-14 | Bug done→reaberto→done | `resolved_at` limpo ao reabrir, último done correto; história anterior preservada. |",
-      "review_status": "not_audited_in_this_inventory",
+      "review_status": "verified_by_reviewed_execution",
       "test_text_references": [
         {
           "path": "okto_labs_pulse_community/tests/test_card_resolution_history.py",
           "line": 1
         }
-      ]
+      ],
+      "reviewed_execution": {
+        "artifact": "acceptance-kg-chronology-execution.json",
+        "criterion_key": "KG:KG-14"
+      }
     },
     {
       "key": "KG:KG-15",
