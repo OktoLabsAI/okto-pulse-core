@@ -1368,6 +1368,16 @@ def _run_health_probe_step(
         ):
             raise RuntimeError("health_probe_invalidated")
         _HEALTH_PROBE_PHASES[(probe_name, board_id)] = step_name
+    if probe_name in {_GRAPH_HEALTH_PROBE, _PARITY_HEALTH_PROBE}:
+        from okto_pulse.core.kg.interfaces import get_kg_registry
+
+        observation = getattr(get_kg_registry(), "graph_health_observation", None)
+        if observation is None:
+            raise RuntimeError("graph_health_observation_unavailable")
+        # Enter inside the worker, where the graph read actually executes.
+        # Never fall back to an ordinary read that may recover/open a writer.
+        with observation.scope(board_id):
+            return build()
     return build()
 
 

@@ -37,6 +37,7 @@ from okto_pulse.core.kg.interfaces.graph_recovery import GraphRecovery
 from okto_pulse.core.kg.interfaces.graph_runtime_store import GraphRuntimeStore
 from okto_pulse.core.kg.interfaces.graph_schema_manager import GraphSchemaManager
 from okto_pulse.core.kg.interfaces.graph_store import SemanticGraphStore
+from okto_pulse.core.kg.interfaces.graph_health_observation import GraphHealthObservation
 from okto_pulse.core.kg.interfaces.ranked_graph_search import RankedGraphSearch
 from okto_pulse.core.kg.interfaces.graph_observations import GraphHistory, GraphAnalytics
 from okto_pulse.core.kg.interfaces.graph_transaction import GraphTransaction
@@ -84,6 +85,9 @@ class KGProviderRegistry:
     graph_history: GraphHistory | None = None
     graph_analytics: GraphAnalytics | None = None
     cypher_executor: CypherExecutor | None = None
+    # Health refuses graph probes if the edition cannot isolate observation
+    # from maintenance. Ordinary graph consumers do not require this slot.
+    graph_health_observation: GraphHealthObservation | None = None
     event_bus: EventBus | None = None
 
     # Onda 4 — KG storage ports (spec #06): close kg.schema as a port before
