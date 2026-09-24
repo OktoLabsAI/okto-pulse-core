@@ -28,7 +28,7 @@ Structural validity and a matching fingerprint do not establish authenticated
 authorship, current source facts, evidence admission, applicability, permission,
 independent review or Bug completion. A caller-supplied `admitted` flag is not
 part of the format. Metadata outside the fingerprint cannot supply that proof.
-REST creation and preview are described below; MCP, UI and the governed
+REST/MCP creation and preview are described below; UI and the governed
 transition binding are still pending.
 
 The projection inventory validates every revision, including older captures,
@@ -85,7 +85,7 @@ commit/rollback; successful staging does not mean the transaction committed.
 
 Complete other evidence-reference paths, explicit reuse/supersedence operations,
 policy and preview, Done binding/outbox, deterministic materializer, reopen
-currentness, MCP and frontend. Qualify those paths with concurrency,
+currentness and frontend. Qualify those paths with concurrency,
 upgrade/replay/rollback and installed-pair tests. Neither this format nor the
 staging use case completes F6 or changes a gate.
 
@@ -108,5 +108,16 @@ The response `captured_pending_materialization` acknowledges durable capture,
 not Bug completion or canonical graph materialization. REST returns 403 for
 permission denial, 404 for unavailable Bug access, 409 for stale/conflicting
 bases, 422 for invalid input/evidence and 503 for unavailable capabilities.
-Unexpected runtime details are not exposed. MCP/UI and completion integration
+Unexpected runtime details are not exposed. UI and completion integration
 remain separate outstanding work in the integrated F6 delivery.
+
+## MCP authorship
+
+`okto_pulse_kg_get_learning_capture_context` and
+`okto_pulse_kg_create_learning_capture` share the REST use cases and closed
+creation model. MCP resolves Board agent access before constructing the actor;
+the use case checks every required permission and Card/Board/realm access.
+Create uses the authenticated agent identity and commits its UOW; preview does
+not commit. The registry catalog and exact tool documentation describe the
+arguments, current-basis retry and pending-materialization result. Neither tool
+exposes graph maintenance or changes the existing closeout policy.

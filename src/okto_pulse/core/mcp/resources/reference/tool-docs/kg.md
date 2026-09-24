@@ -670,3 +670,37 @@ Returns:
 
 Raises:
     ValueError: if retrieved_rows_json is not valid JSON.
+## `okto_pulse_kg_get_learning_capture_context`
+
+Read the current semantic source for a Bug using `board_id` and `bug_id`.
+Returns `contract_version=learning-capture-context/v1`, source digest/version
+and linked scenarios with authenticated receipt availability. Requires all
+source read permissions and access to the Bug's Board/realm. It writes nothing
+and does not approve content or authorize Bug completion.
+
+Example: `{"board_id":"board-1","bug_id":"bug-1"}`. Use the returned
+`source_digest` and `source_policy_version` as the expected basis of creation.
+
+## `okto_pulse_kg_create_learning_capture`
+
+Persist an independently authored Learning capture before Bug completion.
+Arguments: `board_id`, `bug_id`, caller-generated `capture_id`,
+`expected_source_digest`, `expected_source_version`, authored `content`,
+`context`, `applicability`, and `scenario_ids` selected from the source preview.
+Source reads plus `kg.session.begin`, `kg.session.add_node`,
+`kg.session.add_edge`, and `kg.session.commit` are all required. The server
+derives author and timestamp, rereads under serialization, authenticates the
+selected receipts and commits through the shared application use case.
+
+Returns `capture_id`, `learning_id`, `fingerprint` and
+`status=captured_pending_materialization`. This is not execution approval or
+Bug completion. Exact retries use the same ID/content/current basis; changing
+content or using an obsolete basis returns a conflict. Preserve the authored
+text, reread context and review applicability before submitting a new capture.
+No raw graph session, polling or maintenance command is required.
+
+Example: `{"board_id":"board-1","bug_id":"bug-1","capture_id":"capture-1",
+"expected_source_digest":"<64-character digest from context>",
+"expected_source_version":1,"content":"Keep release metadata authoritative",
+"context":"Frontend packaging","applicability":"Compiled releases",
+"scenario_ids":["scenario-1"]}`.

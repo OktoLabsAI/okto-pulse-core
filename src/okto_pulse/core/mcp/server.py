@@ -20427,6 +20427,93 @@ async def okto_pulse_kg_takedown_status(
     return json.dumps(result, default=str)
 
 
+def _learning_capture_mcp_error(exc: Exception) -> str:
+    from okto_pulse.core.application.use_cases.base import EntityNotFoundError
+    from okto_pulse.core.ports.kg_cognitive_source import CognitiveSourceConflict
+
+    if isinstance(exc, PermissionDeniedError):
+        return json.dumps({'error': 'permission_denied', 'code': 'permission_denied'})
+    if isinstance(exc, EntityNotFoundError):
+        return json.dumps({'error': 'bug_not_found', 'code': 'bug_not_found'})
+    if isinstance(exc, CognitiveSourceConflict):
+        code = exc.failure_reason
+    elif str(exc) in {
+        'learning_capture_transaction_capability_unavailable',
+        'bug_semantic_source_serialization_unsupported', 'bug_semantic_source_serialization_failed',
+        'learning_capture_source_changed_or_unavailable', 'learning_capture_idempotency_conflict',
+        'learning_capture_request_invalid', 'learning_capture_payload_invalid', 'learning_capture_payload_limit',
+        'learning_capture_evidence_ambiguous', 'learning_capture_evidence_not_authenticated',
+    }:
+        code = str(exc)
+    else:
+        code = 'learning_capture_unavailable'
+    return json.dumps({'error': code, 'code': code})
+
+
+@mcp.tool()
+async def okto_pulse_kg_get_learning_capture_context(board_id: str, bug_id: str) -> str:
+    """Read the current Bug source and authenticated scenario choices for Learning authorship.
+
+    Returns source_digest/source_policy_version for the create request. This
+    preview is neither admission nor permission to close the Bug.
+    Full docs: okto-pulse://reference/tool-docs/kg.
+    """
+    from okto_pulse.core.application.use_cases.learning_capture import GetLearningCaptureSourceUseCase
+    from okto_pulse.core.application.use_cases.base import EntityNotFoundError
+    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
+    from okto_pulse.core.ports.kg_cognitive_source import CognitiveSourceError
+
+    ctx = await _get_agent_ctx(board_id)
+    if ctx is None:
+        return _auth_error()
+    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
+    try:
+        async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
+            result = await GetLearningCaptureSourceUseCase().execute(
+                board_id=board_id, bug_id=bug_id, actor=actor, uow=uow)
+        return json.dumps(result)
+    except (PermissionDeniedError, EntityNotFoundError, ValueError, RuntimeError, CognitiveSourceError) as exc:
+        return _learning_capture_mcp_error(exc)
+
+
+@mcp.tool()
+async def okto_pulse_kg_create_learning_capture(
+    board_id: str, bug_id: str, capture_id: str, expected_source_digest: str,
+    expected_source_version: int, content: str, context: str, applicability: str,
+    scenario_ids: list[str],
+) -> str:
+    """Persist authored Learning content against the current authenticated Bug evidence.
+
+    Reuse capture_id only for an exact retry. The result acknowledges durable
+    capture pending materialization, not implementation approval or Bug Done.
+    Requires source read and KG begin/add-node/add-edge/commit authority.
+    Full docs: okto-pulse://reference/tool-docs/kg.
+    """
+    from pydantic import ValidationError
+    from okto_pulse.core.application.use_cases.learning_capture import CreateLearningCaptureUseCase
+    from okto_pulse.core.application.use_cases.base import EntityNotFoundError
+    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
+    from okto_pulse.core.models.learning_capture import LearningCaptureCreateRequest
+    from okto_pulse.core.ports.kg_cognitive_source import CognitiveSourceError
+
+    ctx = await _get_agent_ctx(board_id)
+    if ctx is None:
+        return _auth_error()
+    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
+    try:
+        request = LearningCaptureCreateRequest(board_id=board_id, capture_id=capture_id,
+            expected_source_digest=expected_source_digest, expected_source_version=expected_source_version,
+            content=content, context=context, applicability=applicability, scenario_ids=scenario_ids)
+        async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
+            record = await CreateLearningCaptureUseCase().execute(request.command(bug_id), actor=actor, uow=uow)
+        return json.dumps({'capture_id': record.payload['capture_id'], 'learning_id': record.node_id,
+            'fingerprint': record.record_fingerprint, 'status': 'captured_pending_materialization'})
+    except ValidationError:
+        return json.dumps({'error': 'learning_capture_request_invalid', 'code': 'learning_capture_request_invalid'})
+    except (PermissionDeniedError, EntityNotFoundError, ValueError, RuntimeError, CognitiveSourceError) as exc:
+        return _learning_capture_mcp_error(exc)
+
+
 @mcp.tool()
 async def okto_pulse_kg_evaluate_bug_cognitive_closure(
     board_id: str,

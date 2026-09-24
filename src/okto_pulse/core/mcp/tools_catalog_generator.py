@@ -56,7 +56,7 @@ _RULES: tuple[tuple[str, str | None, str], ...] = (
      r"^okto_pulse_kg_(query_cypher|query_natural|query_reflective|schema_info|"
      r"verify_grounding|export_jsonld)$"),
     ("KG — Cognitive readiness & closeout", "kg",
-     r"^okto_pulse_kg_(evaluate_bug_cognitive_closure|evaluate_cognitive_readiness|"
+     r"^okto_pulse_kg_(get_learning_capture_context|create_learning_capture|evaluate_bug_cognitive_closure|evaluate_cognitive_readiness|"
      r"list_cognitive_pending_items|list_cognitive_readiness_items|"
      r"update_cognitive_pending_item|record_cognitive_skip|clear_cognitive_skip)$"),
     ("KG — Operational & health", "kg", r"^okto_pulse_kg_"),
