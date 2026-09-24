@@ -1115,11 +1115,12 @@ async def test_delete_between_extraction_and_publish_blocks_legacy_commit(monkey
     monkeypatch.setattr(
         consolidation,
         "_worker_node_to_candidate",
-        lambda _node: {
-            "candidate_id": "candidate-before-delete",
-            "node_type": "Requirement",
-            "title": "Candidate before governed delete",
-        },
+        lambda _node: consolidation.NodeCandidate(
+            candidate_id="candidate-before-delete",
+            node_type="Requirement",
+            title="Candidate before governed delete",
+            source_artifact_ref=f"spec:{entry.artifact_id}",
+        ),
     )
     monkeypatch.setattr(consolidation, "begin_consolidation", _begin)
     monkeypatch.setattr(consolidation, "propose_reconciliation", _propose)

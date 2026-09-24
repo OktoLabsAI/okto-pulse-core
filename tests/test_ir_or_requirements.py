@@ -104,6 +104,13 @@ async def test_code_evidence_coverage_skip_is_persisted_and_audited(
     spec_id = _id("code-evidence-skip-spec")
     actor_id = _id("code-evidence-skip-user")
     async with db_factory() as db:
+        # The shared test database can contain activity from other Boards.
+        foreign_board_id = _id("unrelated-evidence-board")
+        db.add(Board(id=foreign_board_id, name="Other Board", owner_id="other"))
+        db.add(ActivityLog(
+            board_id=foreign_board_id, action="spec_updated", actor_type="user",
+            actor_id="other", actor_name="Other", details={"fields": ["title"]},
+        ))
         db.add(Board(id=board_id, name="Evidence Board", owner_id=actor_id))
         db.add(
             Spec(
@@ -127,7 +134,11 @@ async def test_code_evidence_coverage_skip_is_persisted_and_audited(
         ).scalar_one()
         activity = (
             await db.execute(
-                select(ActivityLog).where(ActivityLog.action == "spec_updated")
+                select(ActivityLog).where(
+                    ActivityLog.action == "spec_updated",
+                    ActivityLog.board_id == board_id,
+                    ActivityLog.actor_id == actor_id,
+                )
             )
         ).scalar_one()
 
