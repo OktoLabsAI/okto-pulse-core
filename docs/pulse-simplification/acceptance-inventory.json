@@ -429,8 +429,12 @@
       "line": 623,
       "id": "T44",
       "normative_text": "| T44 | Wheel/frontend/Core par compatível e incompatível | Compatível funciona; incompatível falha cedo com diagnóstico, sem migrar parcialmente. |",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "verified_by_reviewed_execution",
+      "test_text_references": [],
+      "reviewed_execution": {
+        "artifact": "acceptance-distribution-execution.json",
+        "criterion_key": "BASE:T44"
+      }
     },
     {
       "key": "BASE:T45",
