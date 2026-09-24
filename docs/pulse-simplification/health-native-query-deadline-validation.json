@@ -1,37 +1,37 @@
 {
-  "scope": "F4 Health graph opening without maintenance",
+  "scope": "F4 native Board Cypher deadline shared by one Health worker",
   "base_heads": {
-    "core": "7b517b51",
-    "community": "38203582"
+    "core": "394c3b93",
+    "community": "695ba1c8"
   },
   "provenance": {
-    "checked_at": "2026-09-24T04:42:33.338572+00:00",
+    "checked_at": "2026-09-24T04:58:29.043410+00:00",
     "python": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Scripts\\python.exe",
     "packages": {
       "core": {
         "python_files": 824,
         "origin": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages\\okto_pulse\\core\\__init__.py",
         "repository_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_core",
-        "commit": "7b517b51cf153cd1d56bdbe83ac52146b765ada4",
+        "commit": "394c3b937aaaaf4fd42671953723b89b71c00c4b",
         "dirty": true,
         "dirty_entry_count": 5,
         "distribution": "okto-pulse-core",
         "version": "0.3.4",
         "wheel": {
-          "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\dist-health-graph-observation\\okto_pulse_core-0.3.4-py3-none-any.whl",
-          "sha256": "78e63b43fab86c895f7ea411809612c5bf5d0bb31588d09b58a0f0640cb16ffd",
-          "size": 3683451
+          "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\dist-health-native-graph-deadline-final\\okto_pulse_core-0.3.4-py3-none-any.whl",
+          "sha256": "caf3c7d251ca693c31c5e67d84c08b3261d68d79db7f6d3452da9f10fd41495e",
+          "size": 3683805
         },
         "source_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_core\\src",
         "site_packages_root": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages",
         "package_prefix": "okto_pulse/core/",
         "byte_identical_member_count": 887,
         "byte_identical": true,
-        "aggregate_sha256": "0d21651a83190c82f8fefba4d3a000326f3bb2ce0d5d3676b679b8dfdad3ef81",
+        "aggregate_sha256": "d6ce463fd30c410e5ade83b96f22cd13dd92a55e368c815f661479a6235b4d16",
         "chain_hashes": {
-          "source": "0d21651a83190c82f8fefba4d3a000326f3bb2ce0d5d3676b679b8dfdad3ef81",
-          "wheel": "0d21651a83190c82f8fefba4d3a000326f3bb2ce0d5d3676b679b8dfdad3ef81",
-          "site_packages": "0d21651a83190c82f8fefba4d3a000326f3bb2ce0d5d3676b679b8dfdad3ef81"
+          "source": "d6ce463fd30c410e5ade83b96f22cd13dd92a55e368c815f661479a6235b4d16",
+          "wheel": "d6ce463fd30c410e5ade83b96f22cd13dd92a55e368c815f661479a6235b4d16",
+          "site_packages": "d6ce463fd30c410e5ade83b96f22cd13dd92a55e368c815f661479a6235b4d16"
         },
         "critical_resource_sha256": {
           "okto_pulse/core/mcp/resources/ska_resource_manifest.json": "55ed4cde6fc6f318c5b524ffcd7eaf65b1d9ee9bcee2e853865675f7bdd2f78a",
@@ -43,77 +43,85 @@
         "python_files": 359,
         "origin": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages\\okto_pulse\\community\\__init__.py",
         "repository_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_community",
-        "commit": "382035820bcb651f7318d2f6898bafc73680a2d2",
+        "commit": "695ba1c82f6f9b358098fed70d01e249b87b9b99",
         "dirty": true,
-        "dirty_entry_count": 3,
+        "dirty_entry_count": 4,
         "distribution": "okto-pulse",
         "version": "0.3.4",
         "wheel": {
-          "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\dist-health-graph-observation\\okto_pulse-0.3.4-py3-none-any.whl",
-          "sha256": "3bc8acd9f08f9fd965e0bb5cccd1cd7b8a163de83c6ad35a65f4bce024088c1e",
-          "size": 4476348
+          "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\dist-health-native-graph-deadline-final\\okto_pulse-0.3.4-py3-none-any.whl",
+          "sha256": "4962439331f8b40aaebfbdd9c89150ad51ff3f8b323ec837deec8ce0a9907ec0",
+          "size": 4476782
         },
         "source_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_community\\src",
         "site_packages_root": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages",
         "package_prefix": "okto_pulse/community/",
         "byte_identical_member_count": 444,
         "byte_identical": true,
-        "aggregate_sha256": "d74e5f41c78635e399141465b4a954be1068347e9db5f81fd25dee77a612f430",
+        "aggregate_sha256": "62e772f55d47587e9aa1697255665fde5616d99bab02a812575802c6043e0b4d",
         "chain_hashes": {
-          "source": "d74e5f41c78635e399141465b4a954be1068347e9db5f81fd25dee77a612f430",
-          "wheel": "d74e5f41c78635e399141465b4a954be1068347e9db5f81fd25dee77a612f430",
-          "site_packages": "d74e5f41c78635e399141465b4a954be1068347e9db5f81fd25dee77a612f430"
+          "source": "62e772f55d47587e9aa1697255665fde5616d99bab02a812575802c6043e0b4d",
+          "wheel": "62e772f55d47587e9aa1697255665fde5616d99bab02a812575802c6043e0b4d",
+          "site_packages": "62e772f55d47587e9aa1697255665fde5616d99bab02a812575802c6043e0b4d"
         },
         "critical_resource_sha256": {},
         "mismatches": []
       }
     }
   },
-  "campaigns": [
+  "reports": [
     {
-      "report": "health-graph-open-before.xml",
-      "sha256": "037eb5f951db70243bf12190d8f4539f2891023ee5a685f8cc9b507649f4374a",
+      "file": "health-native-graph-deadline-before-final.xml",
+      "sha256": "afd01ac2dac7b467c9495c6361d29c378fbe33dffcfbb49cddf5fad018a4a29b",
       "tests": 1,
       "failures": 1,
       "errors": 0,
       "skipped": 0
     },
     {
-      "report": "health-graph-step-before.xml",
-      "sha256": "25fd3ea8775673caf5e066efb4b8311e056cccfa480765279404748f502f6a7c",
+      "file": "health-worker-deadline-before.xml",
+      "sha256": "4334f304f7dd468c812bab70114d71d9a92904cd7ebfb4f252fbb87b60a61f90",
       "tests": 1,
       "failures": 1,
       "errors": 0,
       "skipped": 0
     },
     {
-      "report": "health-graph-observation-core.xml",
-      "sha256": "eb75f542409d9d770ce2ff08156ed9a38fb6eb3b287b17802544e7f5a76ec905",
+      "file": "health-native-graph-deadline-core.xml",
+      "sha256": "41b3ac8e2289c57938b9b65bab3445a10a5e517e124d15d1f51f44da6d7e7f89",
       "tests": 114,
       "failures": 0,
       "errors": 0,
       "skipped": 0
     },
     {
-      "report": "health-graph-observation-community.xml",
-      "sha256": "62d0a2cb34a451f75faa062de25407c59f10c4548fae6a0b39b0d93b8f48644f",
-      "tests": 26,
-      "failures": 2,
-      "errors": 0,
-      "skipped": 0
-    },
-    {
-      "report": "health-graph-observation-community-final.xml",
-      "sha256": "adc5626f2677410a4d887a9792b615b9bcf1d652d56212f397c779423cdb4358",
-      "tests": 26,
+      "file": "health-native-graph-deadline-community.xml",
+      "sha256": "7dd9fb5c1c1c5c1be680de567aa208495bdd21ea4e51965d9c5eb3e551aa2bc1",
+      "tests": 71,
       "failures": 0,
       "errors": 0,
       "skipped": 0
     },
     {
-      "report": "health-graph-observation-frontend.xml",
-      "sha256": "c9a55fc68b8b6a1d30410bc3a79fe993bb363d4afdaf27169e528e2486912584",
+      "file": "health-native-graph-deadline-frontend.xml",
+      "sha256": "4566134f7a73210f52a28a39ec3181d3ef7c1a43d805e49be2ee7aab369d006b",
       "tests": 55,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "file": "health-native-graph-deadline-final-core.xml",
+      "sha256": "0b2439fb928b37413c48e97c95e680ccfbd0ff13e17d3c275886a05a49230c3a",
+      "tests": 114,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "file": "health-native-graph-deadline-final-community.xml",
+      "sha256": "2836b00f31ad3a2e261a6b50a4d23f280d95abea2dc071899b1fe0f18cd32eca",
+      "tests": 72,
       "failures": 0,
       "errors": 0,
       "skipped": 0
@@ -209,18 +217,16 @@
     "ok": true,
     "version": "F16.2",
     "ownership_rows": 8658,
-    "full_report": {
-      "file": "closure-health-graph-observation-final.json",
-      "sha256": "c060ee7bbfd6b7d4994f5e80f71d7dd7059a4c08d2e5e3e5ef228d5919865331",
-      "versioned_full_copy_commit": "394c3b93",
-      "versioned_full_copy_path": "docs/pulse-simplification/health-graph-observation-validation.json"
+    "source_report": {
+      "file": "closure-health-native-graph-deadline-final.json",
+      "sha256": "852997d8d85aa2231b55ac8db23f774743e05bf31f13b753408229d85be41e4d"
     }
   },
   "limitations": [
-    "Opening refusal reproduction uses a controlled pool with the native error shape; it is not a corrupted native database fixture.",
-    "The initial Community run used the public metric_status name for the internal status key. Only the test oracle changed before the final passing run.",
-    "Core full-suite run was deliberately interrupted at 8 percent before the product edit, without a terminal JUnit report; it is not a full passing result.",
-    "No claim of native query deadlines or bounded filesystem enumeration is made by this recorte.",
-    "BASE:T35/T36 and the whole F4 remain open."
+    "Native engine tests use disposable real Grafx storage and a controlled clock; no wall-time benchmark is claimed.",
+    "The first native reproduction also had a test cleanup error; the final before report repeats the intended failure after cleanup correction.",
+    "Global reads, filesystem enumeration and blocked OS calls are outside this Board query deadline recorte.",
+    "Frontend sources/assets were unchanged; the frontend campaign preceded the final Core worker-scope edit.",
+    "BASE:T35/T36 and F4 remain open; full paired suites remain pending."
   ]
 }

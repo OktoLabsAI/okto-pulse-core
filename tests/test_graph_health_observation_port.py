@@ -26,7 +26,11 @@ def test_port_wraps_probe_and_exits_after_error(monkeypatch, probe):
     calls = []
 
     @contextmanager
-    def scope(board_id):
+    def scope(board_id, *, timeout_seconds):
+        assert timeout_seconds == (
+            health._HEALTH_PARITY_PROBE_BUDGET_S
+            if probe == health._PARITY_HEALTH_PROBE else health._HEALTH_PROBE_BUDGET_S
+        )
         calls.append(("enter", board_id))
         try:
             yield

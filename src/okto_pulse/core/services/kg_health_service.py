@@ -1150,7 +1150,14 @@ def _ensure_health_probe(
                         (request.board_id, epoch)
                     )
                     try:
-                        value = request.build()
+                        # Graph steps nest in this worker-owned scope. Their
+                        # native query budgets must not restart at every step.
+                        value = _run_health_probe_step(
+                            probe_name=request.name,
+                            board_id=request.board_id,
+                            step_name=request.name,
+                            build=request.build,
+                        )
                     except Exception as exc:
                         ok = False
                         value = None
@@ -1376,7 +1383,11 @@ def _run_health_probe_step(
             raise RuntimeError("graph_health_observation_unavailable")
         # Enter inside the worker, where the graph read actually executes.
         # Never fall back to an ordinary read that may recover/open a writer.
-        with observation.scope(board_id):
+        timeout = (
+            _HEALTH_PARITY_PROBE_BUDGET_S
+            if probe_name == _PARITY_HEALTH_PROBE else _HEALTH_PROBE_BUDGET_S
+        )
+        with observation.scope(board_id, timeout_seconds=timeout):
             return build()
     return build()
 
