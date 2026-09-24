@@ -56,7 +56,7 @@ def test_code_traceability_registers_exact_reviewed_inventory() -> None:
     assert server._CODE_TRACEABILITY_TOOL_NAMES == frozenset(EXPECTED_TOOLS)
     live = {tool.name for tool in server.mcp.iter_tools()}
     assert set(EXPECTED_TOOLS).issubset(live)
-    assert len(live) == 312  # Consolidated v1.3: 34 retired surfaces, 6 additions.
+    assert len(live) == 301  # Consolidated v1.3 after residual maintenance retirement.
 
 
 def test_every_code_traceability_tool_has_a_closed_specific_schema() -> None:
@@ -103,7 +103,7 @@ def test_code_traceability_tools_have_one_exact_granular_permission() -> None:
     }
     for tool_name, expected_flag in EXPECTED_TOOLS.items():
         assert policies[tool_name] == (expected_flag,)
-    assert len(MCP_TOOL_PERMISSION_POLICIES) == 308
+    assert len(MCP_TOOL_PERMISSION_POLICIES) == 298
 
 
 def test_code_traceability_lazy_docs_are_canonical_and_complete() -> None:
