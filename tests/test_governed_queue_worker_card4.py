@@ -1072,7 +1072,7 @@ async def test_delete_between_extraction_and_publish_blocks_legacy_commit(monkey
         missing_link_candidates=[],
         raw_content="legacy spec body",
         relational_projection_candidate_ids=(),
-        relational_projection_active_set_intent=None,
+        relational_projection_active_set_intents=(),
     )
 
     def _extract(*_args, **_kwargs):

@@ -26,12 +26,12 @@ def _projection_plan(source, result, metadata=None):
         'missing_link_candidates': [asdict(item) for item in result.missing_link_candidates],
         'spec_lineage_parent_intent': result.spec_lineage_parent_intent.value,
         'relational_projection_candidate_ids': sorted(result.relational_projection_candidate_ids),
-        'relational_projection_active_set_intent': (asdict(result.relational_projection_active_set_intent)
-            if result.relational_projection_active_set_intent is not None else None),
+        'relational_projection_active_set_intents': [asdict(intent)
+            for intent in result.relational_projection_active_set_intents],
         'content_hash': result.content_hash, 'raw_content': result.raw_content,
         'source_metadata': metadata or {},
     }
-    return DeterministicProjectionPlan(_encode({'format': 'deterministic-projection-plan/v2',
+    return DeterministicProjectionPlan(_encode({'format': 'deterministic-projection-plan/v3',
         'source': asdict(source), 'disposition': 'skipped_cancelled' if result is True else 'prepared',
         'projection': projection}))
 

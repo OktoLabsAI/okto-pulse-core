@@ -75,7 +75,7 @@ class ConsolidationSession:
     # Server-internal SK-A projection ownership. Candidate ids are resolved to
     # graph ids only inside the graph commit boundary.
     relational_projection_candidate_ids: frozenset[str] = frozenset()
-    relational_projection_active_set_intent: Any | None = None
+    relational_projection_active_set_intents: tuple[Any, ...] = ()
     reconciliation_hints: dict[str, ReconciliationHint] = field(default_factory=dict)
     # Fields populated during commit — used by abort/compensating delete.
     committed_graph_node_refs: list[dict[str, Any]] = field(default_factory=list)

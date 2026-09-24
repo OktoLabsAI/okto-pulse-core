@@ -3028,9 +3028,9 @@ def _cancelled_refinement_projection(artifact_id):
     """The same empty RDL replacement for live consolidation and offline plans."""
     return WorkerResult(
         raw_content=f"relational-projection-cleanup:refinement:{artifact_id}:cancelled",
-        relational_projection_active_set_intent=RelationalProjectionActiveSetIntent(
+        relational_projection_active_set_intents=(RelationalProjectionActiveSetIntent(
             owner_type="refinement", owner_id=artifact_id, namespace="rdl", active_refs=(),
-        ),
+        ),),
     )
 
 
@@ -3234,7 +3234,7 @@ async def _process_queue_entry(
 
     if (
         not node_candidates
-        and worker_result.relational_projection_active_set_intent is None
+        and not worker_result.relational_projection_active_set_intents
     ):
         return True  # nothing to do, but not a failure
 
@@ -3258,8 +3258,8 @@ async def _process_queue_entry(
         relational_projection_candidate_ids=frozenset(
             worker_result.relational_projection_candidate_ids
         ),
-        relational_projection_active_set_intent=(
-            worker_result.relational_projection_active_set_intent
+        relational_projection_active_set_intents=(
+            worker_result.relational_projection_active_set_intents
         ),
     )
     session_id = begin_resp.session_id

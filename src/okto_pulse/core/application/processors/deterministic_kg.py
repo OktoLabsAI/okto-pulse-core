@@ -181,9 +181,7 @@ class WorkerResult:
     # Relational projections are tracked explicitly so graph cleanup never
     # guesses ownership from candidate-id or source-ref prefixes.
     relational_projection_candidate_ids: set[str] = field(default_factory=set)
-    relational_projection_active_set_intent: (
-        RelationalProjectionActiveSetIntent | None
-    ) = None
+    relational_projection_active_set_intents: tuple[RelationalProjectionActiveSetIntent, ...] = ()
     content_hash: str = ""
     raw_content: str = ""
 
@@ -789,7 +787,7 @@ def _project_research_decisions(
                 )
             )
 
-    result.relational_projection_active_set_intent = (
+    result.relational_projection_active_set_intents = (
         RelationalProjectionActiveSetIntent(
             owner_type="refinement",
             owner_id=refinement_id,
@@ -803,7 +801,7 @@ def _project_research_decisions(
                     ),
                 )
             ),
-        )
+        ),
     )
 
 
@@ -1269,7 +1267,7 @@ class DeterministicWorker:
                         rule_id=rule_id,
                     )
                 )
-            result.relational_projection_active_set_intent = (
+            result.relational_projection_active_set_intents = (
                 RelationalProjectionActiveSetIntent(
                     owner_type="spec",
                     owner_id=str(spec_id),
@@ -1281,7 +1279,7 @@ class DeterministicWorker:
                             key=lambda edge: edge.candidate_id,
                         )
                     ),
-                )
+                ),
             )
 
         parent_refinement_id = spec.get("refinement_id")

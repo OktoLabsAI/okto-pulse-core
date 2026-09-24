@@ -159,7 +159,7 @@ async def test_terminal_refinement_cleanup_matches_live_without_reviving_root_or
     plan = board['plans'][0]
     assert plan['disposition'] == 'prepared'
     assert plan['projection']['nodes'] == plan['projection']['edges'] == []
-    assert plan['projection']['relational_projection_active_set_intent'] == {
+    assert plan['projection']['relational_projection_active_set_intents'][0] == {
         'owner_type': 'refinement', 'owner_id': 'refinement-one', 'namespace': 'rdl',
         'active_refs': [], 'active_edges': [],
     }
@@ -188,9 +188,9 @@ async def test_retained_terminal_cleanup_is_complete_and_owner_scoped(damage):
     if damage == 'missing':
         board['plans'] = []  # A pre-fix v2 document: never silently augment it.
     elif damage == 'wrong_owner':
-        board['plans'][0]['projection']['relational_projection_active_set_intent']['owner_id'] = 'another'
+        board['plans'][0]['projection']['relational_projection_active_set_intents'][0]['owner_id'] = 'another'
     elif damage == 'retained_child':
-        board['plans'][0]['projection']['relational_projection_active_set_intent']['active_refs'] = ['refinement:stale']
+        board['plans'][0]['projection']['relational_projection_active_set_intents'][0]['active_refs'] = ['refinement:stale']
     elif damage == 'duplicate':
         board['plans'].append(board['plans'][0])
     else:

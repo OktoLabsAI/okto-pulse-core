@@ -532,7 +532,7 @@ async def begin_consolidation(
         SpecLineageParentIntent.PRESERVE
     ),
     relational_projection_candidate_ids: frozenset[str] = frozenset(),
-    relational_projection_active_set_intent: object | None = None,
+    relational_projection_active_set_intents: tuple[object, ...] = (),
 ) -> BeginConsolidationResponse:
     """Open a new transactional session. SHA256-dedup against the last commit."""
     registry = get_kg_registry()
@@ -586,8 +586,19 @@ async def begin_consolidation(
     projection_candidate_ids = frozenset(
         str(candidate_id) for candidate_id in relational_projection_candidate_ids
     )
-    projection_intent = relational_projection_active_set_intent
-    if projection_intent is not None:
+    projection_intents = relational_projection_active_set_intents
+    _validate_projection_intent_collection(projection_intents, session_id=session_id)
+    declared_candidate_ids = frozenset(
+        str(getattr(ref, "candidate_id", ""))
+        for intent in projection_intents for ref in getattr(intent, "active_refs", ())
+    )
+    if projection_intents and declared_candidate_ids != projection_candidate_ids:
+        raise KGPrimitiveError(
+            "relational_projection_active_set_mismatch",
+            "Projection candidates must match the complete collection of active sets.",
+            session_id=session_id,
+        )
+    for projection_intent in projection_intents:
         owner_type = str(getattr(projection_intent, "owner_type", ""))
         owner_id = str(getattr(projection_intent, "owner_id", ""))
         namespace = str(getattr(projection_intent, "namespace", ""))
@@ -613,7 +624,7 @@ async def begin_consolidation(
         )
         if (
             "" in active_candidate_ids
-            or active_candidate_ids != projection_candidate_ids
+            or not active_candidate_ids.issubset(projection_candidate_ids)
         ):
             raise KGPrimitiveError(
                 "relational_projection_active_set_mismatch",
@@ -704,7 +715,7 @@ async def begin_consolidation(
                         session_id=session_id,
                     )
                 edge_candidate_ids.add(candidate_id)
-    elif projection_candidate_ids:
+    if not projection_intents and projection_candidate_ids:
         raise KGPrimitiveError(
             "relational_projection_intent_required",
             "Relational projection candidates require an exact active-set intent.",
@@ -757,7 +768,7 @@ async def begin_consolidation(
     session.node_candidates.update(deterministic_candidates)
     session.spec_lineage_parent_intent = lineage_intent
     session.relational_projection_candidate_ids = projection_candidate_ids
-    session.relational_projection_active_set_intent = projection_intent
+    session.relational_projection_active_set_intents = projection_intents
 
     # Spec 4007e4a3 (Ideação #3, FR6): structured counter for the
     # nothing_changed short-circuit. Lets observability tooling track how
@@ -1610,6 +1621,41 @@ def _validate_graph_connectivity_before_commit(
     )
 
 
+def _validate_projection_intent_collection(intents, *, session_id):
+    """Internal replacement intents have one unambiguous owner per namespace."""
+    if type(intents) is not tuple or len(intents) > 16:
+        raise KGPrimitiveError(
+            "relational_projection_active_set_invalid",
+            "Projection active sets require a bounded tuple.", session_id=session_id,
+        )
+    scopes = set()
+    members = set()
+    edges = set()
+    for intent in intents:
+        scope = tuple(getattr(intent, key, None) for key in ("owner_type", "owner_id", "namespace"))
+        if any(type(value) is not str or not value for value in scope) or scope in scopes:
+            raise KGPrimitiveError(
+                "relational_projection_scope_invalid",
+                "Projection active sets require distinct, complete ownership scopes.", session_id=session_id,
+            )
+        scopes.add(scope)
+        for field, seen in (("active_refs", members), ("active_edges", edges)):
+            refs = getattr(intent, field, ())
+            if type(refs) is not tuple:
+                raise KGPrimitiveError(
+                    "relational_projection_active_set_invalid",
+                    "Active-set members must be immutable tuples.", session_id=session_id,
+                )
+            for ref in refs:
+                candidate_id = getattr(ref, "candidate_id", None)
+                if type(candidate_id) is not str or not candidate_id or candidate_id in seen:
+                    raise KGPrimitiveError(
+                        "relational_projection_active_set_mismatch",
+                        "Each projection member must have exactly one owner.", session_id=session_id,
+                    )
+                seen.add(candidate_id)
+
+
 def _validated_deterministic_rdl_alternative_grants(
     *,
     agent_id: str,
@@ -1618,7 +1664,7 @@ def _validated_deterministic_rdl_alternative_grants(
     node_candidates: dict,
     edge_candidates: dict,
     relational_projection_candidate_ids: frozenset[str],
-    relational_projection_active_set_intent: object | None,
+    relational_projection_active_set_intents: tuple[object, ...],
 ) -> frozenset[str]:
     """Prove the narrow server-owned RDL Alternative writer exception.
 
@@ -1629,7 +1675,8 @@ def _validated_deterministic_rdl_alternative_grants(
     prefix collision, or mutable intent cannot inherit that authority.
     """
 
-    intent = relational_projection_active_set_intent
+    intents = relational_projection_active_set_intents
+    intent = intents[0] if type(intents) is tuple and len(intents) == 1 else None
     if (
         type(node_candidates) is not dict
         or type(edge_candidates) is not dict
@@ -2884,7 +2931,7 @@ def _do_graph_commit(
         SpecLineageParentIntent.PRESERVE
     ),
     relational_projection_candidate_ids: frozenset[str] = frozenset(),
-    relational_projection_active_set_intent: object | None = None,
+    relational_projection_active_set_intents: tuple[object, ...] = (),
 ) -> tuple[dict, object, list, datetime, dict, list[dict]]:
     """Synchronous graph writes for ``commit_consolidation``.
 
@@ -3013,12 +3060,27 @@ def _do_graph_commit(
             effective_hints=effective_hints,
             session_id=session_id,
         )
-        resolved_dependency_endpoints = _resolve_spec_dependency_endpoints(
-            projection_intent=relational_projection_active_set_intent,
-            edge_candidates=edge_candidates,
-            session_id=session_id,
-            graph_scope=graph_scope,
+        _validate_projection_intent_collection(
+            relational_projection_active_set_intents, session_id=session_id,
         )
+        declared_projection_ids = frozenset(
+            str(getattr(ref, "candidate_id", ""))
+            for intent in relational_projection_active_set_intents
+            for ref in getattr(intent, "active_refs", ())
+        )
+        if declared_projection_ids != frozenset(relational_projection_candidate_ids):
+            raise KGPrimitiveError(
+                "relational_projection_active_set_mismatch",
+                "Projection ownership changed after session admission.", session_id=session_id,
+            )
+        resolved_dependency_endpoints = {}
+        for projection_intent in relational_projection_active_set_intents:
+            resolved_dependency_endpoints.update(_resolve_spec_dependency_endpoints(
+                projection_intent=projection_intent,
+                edge_candidates=edge_candidates,
+                session_id=session_id,
+                graph_scope=graph_scope,
+            ))
         deterministic_rdl_alternative_grants = (
             _validated_deterministic_rdl_alternative_grants(
                 agent_id=agent_id,
@@ -3029,8 +3091,8 @@ def _do_graph_commit(
                 relational_projection_candidate_ids=(
                     relational_projection_candidate_ids
                 ),
-                relational_projection_active_set_intent=(
-                    relational_projection_active_set_intent
+                relational_projection_active_set_intents=(
+                    relational_projection_active_set_intents
                 ),
             )
         )
@@ -3910,7 +3972,7 @@ def _do_graph_commit(
                 to_type=to_hint,
             )
 
-        if relational_projection_active_set_intent is not None:
+        for projection_intent in relational_projection_active_set_intents:
             from okto_pulse.core.kg.interfaces.graph_transaction import (
                 ProjectionActiveSetIntent,
                 ProjectionEdgeRef,
@@ -3920,7 +3982,7 @@ def _do_graph_commit(
             active_nodes: list[ProjectionNodeRef] = []
             active_refs = tuple(
                 getattr(
-                    relational_projection_active_set_intent,
+                    projection_intent,
                     "active_refs",
                     (),
                 )
@@ -3928,7 +3990,7 @@ def _do_graph_commit(
             active_candidate_ids = frozenset(
                 str(getattr(ref, "candidate_id", "")) for ref in active_refs
             )
-            if active_candidate_ids != frozenset(relational_projection_candidate_ids):
+            if not active_candidate_ids.issubset(relational_projection_candidate_ids):
                 raise KGPrimitiveError(
                     "relational_projection_active_set_mismatch",
                     "Projection ownership changed after session admission.",
@@ -3957,7 +4019,7 @@ def _do_graph_commit(
             active_edges: list[ProjectionEdgeRef] = []
             active_edge_refs = tuple(
                 getattr(
-                    relational_projection_active_set_intent,
+                    projection_intent,
                     "active_edges",
                     (),
                 )
@@ -4034,14 +4096,14 @@ def _do_graph_commit(
                 )
             projection_owner_type = str(
                 getattr(
-                    relational_projection_active_set_intent,
+                    projection_intent,
                     "owner_type",
                     "",
                 )
             )
             projection_owner_id = str(
                 getattr(
-                    relational_projection_active_set_intent,
+                    projection_intent,
                     "owner_id",
                     "",
                 )
@@ -4076,7 +4138,7 @@ def _do_graph_commit(
                     owner_id=projection_owner_id,
                     namespace=str(
                         getattr(
-                            relational_projection_active_set_intent,
+                            projection_intent,
                             "namespace",
                             "",
                         )
@@ -4493,8 +4555,8 @@ async def commit_consolidation(
                     ),
                     getattr(
                         session,
-                        "relational_projection_active_set_intent",
-                        None,
+                        "relational_projection_active_set_intents",
+                        (),
                     ),
                     executor=blocking_execution,
                 ),
