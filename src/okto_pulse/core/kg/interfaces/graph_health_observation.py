@@ -17,11 +17,12 @@ class GraphHealthObservation(Protocol):
         exceptions. This scope grants no authority and changes no ordinary
         foreground read policy outside the diagnostic call.
 
-        Board Cypher queries share the remaining timeout across statements/retries;
+        Board and Global queries share the remaining timeout across statements/retries;
         nested scopes cannot extend it. The finite timeout is greater than zero
         and at most five seconds. An expired observation refuses further I/O.
         This does not promise preemption of an operating-system storage call.
-        Global graph reads and filesystem enumeration need their own budgets;
-        this Board scope does not establish those bounds.
+        Global reads may borrow existing live participants without opening a
+        writable one. Filesystem enumeration needs its own volume budget;
+        this query scope does not establish that bound.
         """
         ...
