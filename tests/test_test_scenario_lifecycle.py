@@ -404,6 +404,50 @@ async def test_update_test_scenario_resolves_linked_criteria(db_factory):
     assert spec.test_scenarios[0]["linked_criteria"] == ["ac_one"]
 
 
+async def test_last_criterion_removal_survives_delayed_event_and_queue_preparation(db_factory):
+    """The event wakes the owner; the worker reads the latest relational links."""
+    from sqlalchemy import select
+    from sqlalchemy_test_models import ConsolidationQueue, DomainEventRow
+    from okto_pulse.core.application.processors.consolidation import _prepare_deterministic_projection
+    from okto_pulse.core.events.handlers.consolidation_enqueuer import ConsolidationEnqueuer
+    from okto_pulse.core.events.types import SpecSemanticChanged
+
+    board_id, spec_id, _ = await _seed_spec(db_factory,
+        scenarios=[{'id': 'ts_a', 'title': 'A', 'status': 'ready', 'linked_criteria': []}])
+    async with db_factory() as db:
+        await SpecService(db).update_test_scenario(spec_id, USER, 'ts_a', linked_criteria=['ac_one'])
+    async with db_factory() as db:
+        old_row = (await db.execute(select(DomainEventRow).where(
+            DomainEventRow.board_id == board_id,
+            DomainEventRow.event_type == 'spec.semantic_changed',
+        ))).scalar_one()
+        delayed = SpecSemanticChanged(board_id=board_id, actor_id=USER,
+            event_id=old_row.id, occurred_at=old_row.occurred_at, **old_row.payload_json)
+    async with db_factory() as db:
+        await SpecService(db).update_test_scenario(spec_id, USER, 'ts_a', clear=['linked_criteria'])
+    async with db_factory() as db:
+        # Deliver the addition event only after the removal committed. Neither
+        # the event payload nor a retained proposal may resurrect the old link.
+        await ConsolidationEnqueuer().handle(delayed, db)
+        await db.commit()
+    async with db_factory() as db:
+        queued = (await db.execute(select(ConsolidationQueue).where(
+            ConsolidationQueue.board_id == board_id,
+            ConsolidationQueue.artifact_type == 'spec',
+            ConsolidationQueue.artifact_id == spec_id,
+        ))).scalar_one()
+        assert queued.status == 'pending'
+        prepared = await _prepare_deterministic_projection(db, queued)
+        assert isinstance(prepared, tuple)
+        result, _artifact = prepared
+        owned = [intent for intent in result.relational_projection_active_set_intents
+            if intent.namespace == 'scenario_criteria']
+        assert len(owned) == 1 and owned[0].owner_id == spec_id
+        assert owned[0].active_edges == ()
+        assert not any(edge.edge_type == 'tests' for edge in result.edges)
+        assert queued.status == 'pending'  # Preparation is not graph commit or ACK.
+
+
 async def test_update_test_scenario_unresolved_criteria_fails_closed(db_factory):
     _b, spec_id, _c = await _seed_spec(
         db_factory, scenarios=[{"id": "ts_a", "title": "A", "status": "ready"}]
