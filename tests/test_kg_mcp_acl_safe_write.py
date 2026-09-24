@@ -1102,7 +1102,7 @@ async def test_global_intent_query_filters_effective_board_read_overrides(
 
 
 @pytest.mark.asyncio
-async def test_schema_info_global_is_static_and_internal_requires_admin(
+async def test_schema_info_global_is_static_and_internal_option_is_absent(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from okto_pulse.core.mcp import kg_power_tools
@@ -1150,15 +1150,11 @@ async def test_schema_info_global_is_static_and_internal_requires_admin(
     tool = catalog.tools["okto_pulse_kg_schema_info"]
 
     public = json.loads(await tool())
-    internal = json.loads(await tool(include_internal="true"))
+    with pytest.raises(TypeError, match="include_internal"):
+        await tool(include_internal="true")
 
     assert public == {"schema_version": "test"}
     assert calls == [("", False)]
-    assert internal["error"]["code"] == "permission_denied"
-    assert (
-        internal["error"]["required_permission"]
-        == "kg.admin.settings_read"
-    )
     assert raw_agent_calls == 0
 
 

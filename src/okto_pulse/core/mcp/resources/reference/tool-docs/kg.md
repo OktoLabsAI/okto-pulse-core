@@ -25,7 +25,6 @@ Required permission by affected family:
 | global intent query | global `kg.query.global`; each included board also requires effective `board.read` and `kg.query.global` |
 | Cypher / natural / reflective query | `kg.power.cypher` / `kg.power.natural` |
 | schema info | `kg.power.schema_info` |
-| schema info with `include_internal=true` | additionally `kg.admin.settings_read` |
 | grounding | `board.read` |
 | JSON-LD export | `board.read` and `kg.query.global` |
 | health / health-readiness | `board.read` and `kg.operations.health.read` |

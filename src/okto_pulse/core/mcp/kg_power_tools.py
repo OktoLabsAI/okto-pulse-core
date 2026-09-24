@@ -404,13 +404,11 @@ okto-pulse://reference/tool-docs/kg."""
     @mcp.tool()
     async def okto_pulse_kg_schema_info(
         board_id: str = "",
-        include_internal: str = "false",
     ) -> str:
         """Return KG schema introspection: schema_version, stable node types, rel
         types and vector indexes (global namespace when board_id is empty).
-        Internal types require include_internal="true" + admin role.
+        Returns the public contract only; storage-internal types are not exposed.
         """
-        want_internal = include_internal.lower() in ("true", "1", "yes")
         if board_id:
             agent, board_agent, auth_error = await _authorized_board_agent(
                 board_id,
@@ -418,7 +416,6 @@ okto-pulse://reference/tool-docs/kg."""
             )
             if auth_error is not None:
                 return auth_error
-            permission_context = board_agent
         else:
             # Global schema introspection is static contract metadata. It never
             # enumerates or opens a board graph, and therefore has no implicit
@@ -449,27 +446,13 @@ okto-pulse://reference/tool-docs/kg."""
                     permission_error,
                     required_permission="kg.power.schema_info",
                 )
-        if want_internal:
-            permission_error = kg_permission_error(
-                permission_context,
-                "kg.admin.settings_read",
-                legacy_fallback=None,
-            )
-            if permission_error is not None:
-                return _err(
-                    "permission_denied",
-                    permission_error,
-                    required_permission="kg.admin.settings_read",
-                )
-
-        logger.debug("[KG] kg_schema_info called: board_id=%s include_internal=%s",
-                     board_id, include_internal)
+        logger.debug("[KG] kg_schema_info called: board_id=%s", board_id)
         logger.debug("[KG] kg_schema_info offloading to thread")
         result = await asyncio.wait_for(
             asyncio.to_thread(
                 get_schema_info,
                 board_id,
-                include_internal=want_internal,
+                include_internal=False,
             ),
             timeout=30.0,
         )

@@ -403,10 +403,11 @@ class TestSchemaInfo:
     def test_stable_types_count(self):
         info = get_schema_info("board-x")
         assert len(info["stable_node_types"]) == 11
-        # 11 REL_TYPES single-pair entries + 9 MULTI_REL_TYPES declarations.
+        # 11 REL_TYPES single-pair entries + 10 MULTI_REL_TYPES declarations.
         # SK-M contributes the deterministic Entity -> Entity `precedes` base
         # entry without overloading the cognitive Decision `depends_on` edge.
-        assert len(info["stable_rel_types"]) == 20
+        # Schema 0.6 adds Bug -> Requirement/Criterion `violates` endpoints.
+        assert len(info["stable_rel_types"]) == 21
         assert [row["name"] for row in info["stable_rel_types"]] == [
             "supersedes",
             "contradicts",
@@ -422,6 +423,7 @@ class TestSchemaInfo:
             "implements",
             "supports",
             "derives_from",
+            "violates",
             "overlaps",
             "supersedes",
             "relates_to",
