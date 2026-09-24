@@ -1388,10 +1388,11 @@ class DeterministicWorker:
             )
             _add_belongs_to(cid, "tr", i)
 
-        # 4. Acceptance criteria → Criterion (indexed by position — tests
-        #    reference them by index in the JSON, mirroring linked_criteria).
+        # 4. IDs own canonical links. Text/index lookup is legacy compatibility;
+        # repeated text or IDs must never select an arbitrary criterion.
         ac_by_index: dict[int, str] = {}
-        ac_by_text: dict[str, str] = {}
+        ac_by_id: dict[str, list[str]] = {}
+        ac_by_text: dict[str, list[str]] = {}
         for i, crit in enumerate(spec.get("acceptance_criteria") or []):
             text = (
                 crit
@@ -1401,7 +1402,9 @@ class DeterministicWorker:
             raw_parts.append(text)
             cid = f"{prefix}_ac_{i}"
             ac_by_index[i] = cid
-            ac_by_text[text.strip()] = cid
+            ac_by_text.setdefault(text.strip(), []).append(cid)
+            if isinstance(crit, dict) and crit.get("id") not in (None, ""):
+                ac_by_id.setdefault(str(crit["id"]), []).append(cid)
             result.nodes.append(
                 EmittedNode(
                     candidate_id=cid,
@@ -1482,19 +1485,29 @@ class DeterministicWorker:
                         from_candidate_id=ts_cid,
                         from_candidate_title=title,
                         reason="no_criterion_match",
-                        suggested_candidates=list(ac_by_text.values()),
+                        suggested_candidates=list(ac_by_index.values()),
                         artifact_ref=artifact_ref,
                     )
                 )
                 continue
             for idx, link in enumerate(linked):
                 target_cid = None
+                ambiguous: list[str] = []
                 if isinstance(link, int) and link in ac_by_index:
                     target_cid = ac_by_index[link]
                 elif isinstance(link, str):
-                    # Try exact text match first, then index lookup.
-                    target_cid = ac_by_text.get(link.strip())
-                    if target_cid is None:
+                    key = link.strip()
+                    matches = ac_by_id.get(key)
+                    # The canonical AC namespace must not be reinterpreted
+                    # as another criterion's legacy text when its ID is gone.
+                    if matches is None and not key.startswith("ac_"):
+                        matches = ac_by_text.get(key)
+                    if matches is not None:
+                        if len(matches) == 1:
+                            target_cid = matches[0]
+                        else:
+                            ambiguous = matches
+                    else:
                         try:
                             target_cid = ac_by_index.get(int(link))
                         except (ValueError, TypeError):
@@ -1505,8 +1518,8 @@ class DeterministicWorker:
                             edge_type="tests",
                             from_candidate_id=ts_cid,
                             from_candidate_title=title,
-                            reason="no_criterion_match",
-                            suggested_candidates=list(ac_by_text.values()),
+                            reason=("ambiguous_criterion_match" if ambiguous else "no_criterion_match"),
+                            suggested_candidates=(ambiguous[:3] if ambiguous else list(ac_by_index.values())),
                             artifact_ref=artifact_ref,
                         )
                     )
@@ -1518,7 +1531,7 @@ class DeterministicWorker:
                         from_candidate_id=ts_cid,
                         to_candidate_id=target_cid,
                         confidence=1.0,
-                        rule_id=f"tests/ac_match@{WORKER_VERSION}",
+                        rule_id="tests/ac_match@v2.1",
                     )
                 )
 

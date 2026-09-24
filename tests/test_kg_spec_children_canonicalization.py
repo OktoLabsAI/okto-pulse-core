@@ -166,8 +166,23 @@ async def test_commit_materializes_api_contract_implements_tr_constraint(
         "board_id": board_id,
         "created_at": "2001-01-02T00:00:00+00:00",
         "updated_at": "2002-03-04T00:00:00+00:00",
+        "acceptance_criteria": [
+            {"id": "ac-login", "text": "Login succeeds"},
+            {"id": "ac-audit", "text": "Event is written"},
+            {"id": "ac-duplicate-a", "text": "Repeated condition"},
+            {"id": "ac-duplicate-b", "text": "Repeated condition"},
+        ],
+        "test_scenarios": [
+            {"id": "ts-login", "title": "Login scenario", "given": "an account",
+             "when": "login", "then": "a session", "linked_criteria": ["ac-login"]},
+            {"id": "ts-audit", "title": "Audit scenario", "given": "an account",
+             "when": "login", "then": "an event", "linked_criteria": ["ac-audit"]},
+            {"id": "ts-ambiguous", "title": "Legacy ambiguous scenario", "given": "an account",
+             "when": "login", "then": "an observation", "linked_criteria": ["Repeated condition"]},
+        ],
         "functional_requirements": [
             {"id": "fr-login", "text": "User can log in"},
+            {"id": "fr-logout", "text": "User can log out"},
         ],
         "technical_requirements": [
             {"id": "tr-audit-events", "text": "Login API emits audit events"},
@@ -181,52 +196,57 @@ async def test_commit_materializes_api_contract_implements_tr_constraint(
             },
         ],
     }
-    worker_result = DeterministicWorker().process_spec(spec)
-    from okto_pulse.core.kg.source_projection_metadata import prepare_root_metadata
+    async def project_current_spec():
+        worker_result = DeterministicWorker().process_spec(spec)
+        from okto_pulse.core.kg.source_projection_metadata import prepare_root_metadata
 
-    node_candidates = [_worker_node_to_candidate(node) for node in worker_result.nodes]
-    metadata = await prepare_root_metadata(
-        None, SimpleNamespace(artifact_type="spec", artifact_id=spec_id),
-        spec, node_candidates, None,
-    )
-    for node in node_candidates:
-        node._source_projection_metadata = metadata.get(node.candidate_id)
-
-    async with db_factory() as db:
-        begin = await begin_consolidation(
-            BeginConsolidationRequest(
-                board_id=board_id,
-                artifact_type="spec",
-                artifact_id=spec_id,
-                raw_content=worker_result.raw_content or "tr linked api contract",
-                deterministic_candidates=node_candidates,
-            ),
-            agent_id="system:historical_consolidation",
-            db=db,
+        node_candidates = [_worker_node_to_candidate(node) for node in worker_result.nodes]
+        metadata = await prepare_root_metadata(
+            None, SimpleNamespace(artifact_type="spec", artifact_id=spec_id),
+            spec, node_candidates, None,
         )
+        for node in node_candidates:
+            node._source_projection_metadata = metadata.get(node.candidate_id)
 
-    for edge in worker_result.edges:
-        await add_edge_candidate(
-            AddEdgeCandidateRequest(
-                session_id=begin.session_id,
-                candidate=_worker_edge_to_candidate(edge),
-            ),
-            agent_id="system:historical_consolidation",
-        )
-    await propose_reconciliation(
-        ProposeReconciliationRequest(session_id=begin.session_id),
-        agent_id="system:historical_consolidation",
-        db=None,
-        force_reprocess=True,
-    )
-    async with db_factory() as db:
-        commit = await commit_consolidation(
-            CommitConsolidationRequest(session_id=begin.session_id),
-            agent_id="system:historical_consolidation",
-            db=db,
-        )
+        async with db_factory() as db:
+            begin = await begin_consolidation(
+                BeginConsolidationRequest(
+                    board_id=board_id,
+                    artifact_type="spec",
+                    artifact_id=spec_id,
+                    raw_content=worker_result.raw_content or "tr linked api contract",
+                    deterministic_candidates=node_candidates,
+                ),
+                agent_id="system:historical_consolidation",
+                db=db,
+                force_reprocess=True,
+            )
 
-    assert commit.connectivity["passed"] is True
+        for edge in worker_result.edges:
+            await add_edge_candidate(
+                AddEdgeCandidateRequest(
+                    session_id=begin.session_id,
+                    candidate=_worker_edge_to_candidate(edge),
+                ),
+                agent_id="system:historical_consolidation",
+            )
+        await propose_reconciliation(
+            ProposeReconciliationRequest(session_id=begin.session_id),
+            agent_id="system:historical_consolidation",
+            db=None,
+            force_reprocess=True,
+        )
+        async with db_factory() as db:
+            commit = await commit_consolidation(
+                CommitConsolidationRequest(session_id=begin.session_id),
+                agent_id="system:historical_consolidation",
+                db=db,
+            )
+
+        assert commit.connectivity["passed"] is True
+        return node_candidates
+
+    node_candidates = await project_current_spec()
     assert await _count_api_implements_constraint_async(
         board_id,
         api_title="POST /login",
@@ -235,29 +255,57 @@ async def test_commit_materializes_api_contract_implements_tr_constraint(
 
     def assert_chronology():
         with open_board_connection(board_id) as (_db, graph):
-            checked = set()
+            checked = {}
             for node in node_candidates:
                 label = str(getattr(node.node_type, "value", node.node_type))
                 result = graph.execute(
                     f"MATCH (n:{label}) WHERE n.source_artifact_ref=$ref "
-                    "RETURN n.source_created_at, n.source_updated_at",
+                    "RETURN n.id, n.source_created_at, n.source_updated_at",
                     {"ref": node.source_artifact_ref},
                 )
                 try:
                     assert result.has_next(), node.source_artifact_ref
-                    created, updated = result.get_next()
+                    identity, created, updated = result.get_next()
+                    assert not result.has_next(), node.source_artifact_ref
                     if node.source_artifact_ref == f"spec:{spec_id}":
                         assert created is not None and updated is not None
                     else:
                         assert created is None and updated is None, node.source_artifact_ref
-                    checked.add(node.source_artifact_ref)
+                    checked[node.source_artifact_ref] = identity
                 finally:
                     result.close()
-            assert {f"spec:{spec_id}:fr:fr-login", f"spec:{spec_id}:tr:tr-audit-events"} <= checked
+            assert {f"spec:{spec_id}:fr:fr-login", f"spec:{spec_id}:tr:tr-audit-events"} <= checked.keys()
+            links = graph.execute(
+                "MATCH (s:TestScenario)-[r:tests]->(c:Criterion) "
+                "RETURN s.source_artifact_ref, c.source_artifact_ref, r.confidence, r.rule_id"
+            )
+            try:
+                actual = set()
+                row_count = 0
+                while links.has_next():
+                    actual.add(tuple(links.get_next()))
+                    row_count += 1
+                assert row_count == len(actual)
+                assert actual == {
+                    (f"spec:{spec_id}:test_scenario:ts-{suffix}",
+                     f"spec:{spec_id}:ac:ac-{suffix}", 1.0, "tests/ac_match@v2.1")
+                    for suffix in ("login", "audit")
+                }
+            finally:
+                links.close()
+            return checked
 
-    await run_blocking_graph_io(
+    original_ids = await run_blocking_graph_io(
         assert_chronology, task_name="tests.spec_children.source_chronology",
     )
+
+    for field in ("acceptance_criteria", "functional_requirements", "test_scenarios"):
+        spec[field] = list(reversed(spec[field]))
+    node_candidates = await project_current_spec()
+    reordered_ids = await run_blocking_graph_io(
+        assert_chronology, task_name="tests.spec_children.reordered_identity",
+    )
+    assert reordered_ids == original_ids
 
 
 # ---------------------------------------------------------------------------

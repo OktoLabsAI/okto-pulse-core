@@ -1,0 +1,102 @@
+{
+  "scope": "KG scenario-to-criterion projection; bounded evidence, not whole-plan acceptance",
+  "tests": {
+    "name": "pytest",
+    "errors": "0",
+    "failures": "0",
+    "skipped": "0",
+    "tests": "66",
+    "time": "45.717",
+    "timestamp": "2026-09-24T11:22:07.548853-03:00",
+    "hostname": "Alienware_m15"
+  },
+  "budgets": [
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "import_boundary_baseline",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every import_boundary_baseline allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "singleton_baseline",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every singleton_baseline allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "dependency_temporary_exceptions",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every dependency_temporary_exceptions allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "graph_runtime_compatibility",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every graph_runtime_compatibility allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "rebuild_artifact_compatibility",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every rebuild_artifact_compatibility allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "community_private_reach_ins",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every community_private_reach_ins allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "community_adapter_bridges",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every community_adapter_bridges allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "af35_relational_residue",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every af35_relational_residue allowance before F16 completion."
+    }
+  ],
+  "limitations": [
+    "Write-path resolver and coverage gate equivalence remain under investigation.",
+    "No proof of obsolete historical edge cleanup or generic child active-set reconciliation.",
+    "Frontend JSDOM checks do not prove pixel rendering.",
+    "Prior KG-15 evidence remains historical and is not retroactively rehashed."
+  ],
+  "sha256": {
+    "PULSE_REFACTOR/.validation-v040/provenance-criterion-identity-final.json": "172fa4ee4e463f52ad3a03bb5a6b4904a69a46f51e73a0207ae7f01321fe5f91",
+    "PULSE_REFACTOR/.validation-v040/criterion-identity-final.xml": "a2ea299dcce41b5b3a700b8d3c594f367bcd702076aa5d234e2ef8b7c51473ef",
+    "PULSE_REFACTOR/.validation-v040/closure-criterion-identity-final.json": "3b9166bfc466cb8437e5c385c2cebf3e212e357b18cb8f552a869f71d5e117ac",
+    "PULSE_REFACTOR/.validation-v040/criterion-identity-frontend.xml": "86fd276c2ac040b11d6a8b5b85d7472b9e9e872eff4ef11deee0e464b4997991",
+    "okto_labs_pulse_core/src/okto_pulse/core/application/processors/deterministic_kg.py": "70e56e97b8c9d9682437f192935b4cf3b4e286b0b53be658ae1a8edb7093e8e0",
+    "okto_labs_pulse_core/tests/test_kg_scenario_criterion_identity.py": "7806e29c44ed6c7507f31e72b969c37466bb2f02e912b95cc968aac50979d9bc",
+    "okto_labs_pulse_core/tests/test_kg_spec_children_canonicalization.py": "659af8dc2ab3f3757f994e525fec1042e8f8848bc21b48b4988e6c0193360127"
+  }
+}
