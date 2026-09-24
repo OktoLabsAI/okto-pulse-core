@@ -81,3 +81,35 @@ def test_no_aggregate_invents_a_signal_for_zero_counts():
         "canonical_debt": {"open_count": 0},
         "operational_domains": {"global_outbox_dead_letter": {"count": 0}},
     }) == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("profile", ["summary", "full", "legacy"])
+@pytest.mark.parametrize("enforcement", [False, True])
+@pytest.mark.parametrize("known_dlq", [0, 2])
+@pytest.mark.parametrize("summary", [None, {}, {"open_count": None},
+    {"status": "unavailable", "open_count": 0}, {"open_count": -1}, {"open_count": True}])
+async def test_unavailable_debt_never_becomes_zero_or_clears_known_blocker(
+    monkeypatch, profile, enforcement, known_dlq, summary,
+):
+    async def get_health(board_id, db, **kwargs):
+        assert board_id == "authorized-board"
+        return {"overall_state": "healthy", "dead_letter_count": known_dlq,
+                "canonical_debt": summary}
+
+    async def active(db, board_id):
+        return enforcement
+
+    monkeypatch.setattr(health_service, "get_kg_health", get_health)
+    monkeypatch.setattr(readiness, "_enforcement_active", active)
+    result = await readiness.build_health_readiness("authorized-board", object(), profile=profile)
+    assert result["technical_signals"]["canonical_debt_open_count"] is None
+    assert result["operational_domains"]["canonical_debt"]["count"] is None
+    assert result["operational_domains"]["canonical_debt"]["status"] == "unavailable"
+    assert result["overall_state"] != "healthy"
+    expected_blocking = True if known_dlq else None
+    assert result["readiness"]["blocking"] is expected_blocking
+    assert result["readiness"]["would_block_done"] is (expected_blocking if enforcement else False)
+    assert result["readiness"]["canonical_debt_observation_status"] == "unavailable"
+    assert "canonical_debt_observation_unavailable" in result["readiness"]["reasons"]
+    assert result["readiness"]["policy_reason"] != "no open technical signal"

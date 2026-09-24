@@ -100,7 +100,7 @@ _STATE_SEVERITY = {
 logger = logging.getLogger("okto_pulse.services.kg_health")
 
 
-HEALTH_SCHEMA_VERSION = "1.1"
+HEALTH_SCHEMA_VERSION = "1.2"
 LEGACY_HEALTH_SCHEMA_VERSION = "1.0"
 _MATERIALIZATION_EVIDENCE_BUDGET_S = 2.0
 _MATERIALIZATION_EVIDENCE_UNAVAILABLE = "materialization_evidence_unavailable"
@@ -3227,6 +3227,7 @@ async def get_kg_health(
         )
 
         canonical_debt = await summarize_canonical_debt(db, board_id)
+        canonical_debt["status"] = "available"
     except Exception as exc:  # pragma: no cover - defensive health path
         logger.warning(
             "kg.health.canonical_debt_summary_failed board=%s err=%s",
@@ -3234,14 +3235,25 @@ async def get_kg_health(
             exc,
         )
         canonical_debt = {
-            "open_count": 0,
-            "retryable_count": 0,
-            "blocked_count": 0,
-            "retry_scheduled_count": 0,
-            "terminal_count": 0,
+            "open_count": None,
+            "retryable_count": None,
+            "blocked_count": None,
+            "retry_scheduled_count": None,
+            "terminal_count": None,
             "by_state": {},
             "status": "unavailable",
         }
+        if overall_state == HealthState.HEALTHY:
+            overall_state = HealthState.AT_RISK
+        combined_reasons.append("canonical_debt_observation_unavailable")
+        health_diagnostics["health_issues"].append({
+            "code": "canonical_debt_observation_unavailable",
+            "component": "canonical_graph",
+            "severity": "warning",
+            "reason": "canonical_debt_observation_unavailable",
+            "description": "Canonical projection status is unavailable; absence of pending work cannot be verified.",
+            "operator_action": "none",
+        })
     if int(canonical_debt.get("open_count") or 0) > 0:
         health_diagnostics["health_issues"].append(
             {
@@ -3661,7 +3673,8 @@ async def get_kg_health(
         "canonical_debt": {
             "domain": "canonical_debt",
             "semantics": "semantic_canonicality_pending",
-            "count": int(canonical_debt.get("open_count") or 0),
+            "count": canonical_debt["open_count"],
+            "status": canonical_debt["status"],
             "drill_down_tool": None,
         },
         _POLICY_CONSTRAINT_PROJECTION_DOMAIN: (policy_constraint_projection),
@@ -3809,13 +3822,16 @@ async def get_kg_health(
         "canonical_debt": canonical_debt,
         "rebuild_diagnostics": {
             "last_outcome": (
+                "unavailable"
+                if canonical_debt["status"] == "unavailable"
+                else
                 "rebuild_complete_with_canonical_debt"
                 if int(canonical_debt.get("open_count") or 0) > 0
                 else "rebuild_complete"
                 if current_kg_generation_id
                 else "no_generation"
             ),
-            "canonical_open_debt_count": int(canonical_debt.get("open_count") or 0),
+            "canonical_open_debt_count": canonical_debt["open_count"],
             "layer_counts_status": kg_layer_counts.get("status", "unknown"),
             "operator_action": health_diagnostics["operator_action"],
         },

@@ -446,7 +446,7 @@ async def test_ts33_kg_health_surfaces_latest_completed_tick(
 
 def test_ts34_health_schema_version_is_1_1():
     """The coordinated REST/MCP/Pydantic/frontend contract is version 1.1."""
-    assert HEALTH_SCHEMA_VERSION == "1.1"
+    assert HEALTH_SCHEMA_VERSION == "1.2"
 
 
 # ---------------------------------------------------------------------------
@@ -721,7 +721,9 @@ def test_kg_hit_flushed_event_class_registered():
     # checklist.binding_changed.v1 governance audit, the two RDL events, and
     # quality.clarification_changed.v1 for parent-consolidation invalidation;
     # Code Traceability subsequently added its governed classification events.
-    assert len(EVENT_TYPES) == 64
+    # F3 retired sprint.created, sprint.moved and sprint.closed.
+    assert len(EVENT_TYPES) == 61
+    assert not {"sprint.created", "sprint.moved", "sprint.closed"} & set(EVENT_TYPES)
     assert resolve_event_class("kg.hit_flushed") is KGHitFlushed
 
 
@@ -1379,7 +1381,9 @@ def test_impl_d_kg_daily_tick_event_class_registered():
     assert "kg.tick.daily" in EVENT_TYPES
     # Registry ratchet also includes the two research-decision events,
     # quality clarification, and the governed Code Traceability events.
-    assert len(EVENT_TYPES) == 64
+    # F3 retired sprint.created, sprint.moved and sprint.closed.
+    assert len(EVENT_TYPES) == 61
+    assert not {"sprint.created", "sprint.moved", "sprint.closed"} & set(EVENT_TYPES)
     assert resolve_event_class("kg.tick.daily") is KGDailyTick
 
 

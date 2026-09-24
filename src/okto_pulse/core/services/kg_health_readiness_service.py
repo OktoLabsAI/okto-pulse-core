@@ -45,7 +45,15 @@ def _persistence_present(health: dict) -> tuple[bool, str | None]:
     return present, (wal.get("error") or drain.get("error"))
 
 
-def build_technical_signal_counters(health: dict) -> dict[str, int]:
+def _canonical_debt_count(health: dict) -> int | None:
+    summary = health.get("canonical_debt")
+    if not isinstance(summary, dict) or summary.get("status") not in (None, "available", "ok"):
+        return None
+    value = summary.get("open_count")
+    return value if type(value) is int and value >= 0 else None
+
+
+def build_technical_signal_counters(health: dict) -> dict[str, int | None]:
     """Scalar counters with terminal queue domains kept explicitly separate.
 
     ``active_queue_count`` is NOT inferred from ``dead_letter_count``."""
@@ -59,7 +67,7 @@ def build_technical_signal_counters(health: dict) -> dict[str, int]:
         or health.get("global_outbox_dead_letter_count")
         or 0
     )
-    cdebt_open = int((health.get("canonical_debt") or {}).get("open_count") or 0)
+    cdebt_open = _canonical_debt_count(health)
     active_queue = int((domains.get("active_queue") or {}).get("count") or 0)
     policy_projection = domains.get("policy_constraint_projection") or {}
     return {
@@ -113,7 +121,8 @@ def _non_maskable_items(board_id: str, health: dict) -> list[dict[str, Any]]:
             "limitation": limitation,
             "drill_down_tool": None,
         }
-        for signal, counter, limitation in domains if counters[counter] > 0
+        for signal, counter, limitation in domains
+        if counters[counter] is not None and counters[counter] > 0
     ]
     present, _ = _persistence_present(health)
     if present:
@@ -156,7 +165,11 @@ async def build_health_readiness(
     ``non_maskable_items`` (bounded Board aggregates), ``readiness`` (blocking vs
     would_block_done) and the top-level ``cognitive_enforcement_mode`` /
     ``enforcement_active``. The full profile only ADDS the prose ``health_issues``
-    + ``root_cause``. Raises ``InvalidProfileError`` on an unknown profile."""
+    + ``root_cause``. Health 1.2 represents unavailable canonical debt as null;
+    absent a known blocker, blocking is null and would_block_done is null under
+    enforcement (false in advisory mode). This projection never runs or changes
+    the authoritative completion gate. Raises ``InvalidProfileError`` on an
+    unknown profile."""
     if profile not in VALID_PROFILES:
         raise InvalidProfileError(f"invalid_profile: {profile}")
 
@@ -168,6 +181,7 @@ async def build_health_readiness(
         scheduler_control=scheduler_control,
     )
     counters = build_technical_signal_counters(health)
+    debt_unavailable = counters["canonical_debt_open_count"] is None
     # Deprecated compatibility input: artifact_ref no longer selects technical rows.
     # Infrastructure status is Board-scoped; semantic artifact queries remain separate.
     items = _non_maskable_items(board_id, health)
@@ -176,11 +190,15 @@ async def build_health_readiness(
     blocking = bool(
         counters["technical_dlq_count"] > 0
         or counters["policy_constraint_projection_dlq_count"] > 0
-        or counters["canonical_debt_open_count"] > 0
+        or (counters["canonical_debt_open_count"] or 0) > 0
         or present
     )
     enforcement_active = await _enforcement_active(db, board_id)
-    would_block_done = blocking and enforcement_active
+    # Observation is not the authoritative gate. Preserve a known blocker;
+    # otherwise incomplete evidence is unknown, never an inferred passage.
+    if debt_unavailable and not blocking:
+        blocking = None
+    would_block_done = blocking if enforcement_active else False
     mode = "blocking" if enforcement_active else "advisory"
     reasons_set = {it["signal"] for it in items}
     if counters["dead_letter_count"] > 0:
@@ -189,11 +207,13 @@ async def build_health_readiness(
         reasons_set.add("global_outbox_dead_letter")
     if counters["policy_constraint_projection_dlq_count"] > 0:
         reasons_set.add(_POLICY_PROJECTION_DLQ_SIGNAL)
-    if counters["canonical_debt_open_count"] > 0:
+    if (counters["canonical_debt_open_count"] or 0) > 0:
         reasons_set.add("canonical_debt_open")
     if present:
         reasons_set.add("persistence_error")
     reasons = sorted(reasons_set)
+    if debt_unavailable:
+        reasons.append("canonical_debt_observation_unavailable")
 
     if would_block_done:
         policy_reason = (
@@ -202,19 +222,26 @@ async def build_health_readiness(
         policy_reason = (
             "open technical signal but enforcement_active=false (advisory) → "
             "would_block_done=false; the artifact is NOT ready while the blocker is open")
+    elif debt_unavailable:
+        policy_reason = "canonical projection observation unavailable; readiness cannot be determined"
     else:
         policy_reason = "no open technical signal"
 
     result: dict[str, Any] = {
         "board_id": board_id,
+        "health_schema_version": health.get("health_schema_version", "1.2"),
         "profile": "full" if _is_full(profile) else "summary",
-        "overall_state": health.get("overall_state"),
+        "overall_state": (
+            "at_risk" if debt_unavailable and health.get("overall_state") == "healthy"
+            else health.get("overall_state")
+        ),
         # top-level enforcement policy (fr_b3e1fd1b)
         "cognitive_enforcement_mode": mode,
         "enforcement_active": enforcement_active,
         # non-maskable in BOTH profiles
         "technical_signals": counters,
         "readiness": {
+            "canonical_debt_observation_status": "unavailable" if debt_unavailable else "available",
             "blocking": blocking,
             "would_block_done": would_block_done,
             "reasons": reasons,
@@ -222,7 +249,16 @@ async def build_health_readiness(
         },
         "non_maskable_items": items,
         # domain separation, additive (tr_22d4434d)
-        "operational_domains": health.get("operational_domains"),
+        "operational_domains": {
+            **(health.get("operational_domains") or {}),
+            "canonical_debt": {
+                "domain": "canonical_debt",
+                "semantics": "semantic_canonicality_pending",
+                "count": counters["canonical_debt_open_count"],
+                "status": "unavailable" if debt_unavailable else "available",
+                "drill_down_tool": None,
+            },
+        },
     }
     if _is_full(profile):
         result["health_issues"] = health.get("health_issues")
@@ -230,6 +266,8 @@ async def build_health_readiness(
 
     # OR or_36e0cd85: one bounded sample per surfaced open technical signal.
     for signal in (reasons or (["persistence_error"] if present and not reasons else [])):
+        if signal == "canonical_debt_observation_unavailable":
+            continue  # Unknown debt is not an observed open technical signal.
         emit_cognitive_technical_signal_sample(
             signal=signal, surface=surface, blocking=True,
             would_block_done=would_block_done, board_id=board_id)

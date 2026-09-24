@@ -223,7 +223,7 @@ async def test_health_response_carries_10_fields(db_factory, kg_health_board):
     assert set(result.keys()) == expected_fields
     assert result["schema_version"] == "1.0"
     assert result["health_schema_version"] == HEALTH_SCHEMA_VERSION
-    assert result["health_schema_version"] == "1.1"
+    assert result["health_schema_version"] == "1.2"
     assert isinstance(result["queue_depth"], int)
     assert result["oldest_pending_age_s"] is None or isinstance(
         result["oldest_pending_age_s"], float
