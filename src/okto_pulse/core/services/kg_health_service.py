@@ -13,9 +13,9 @@ JSON payload describing the live state of a board's knowledge graph:
     * schema_version is a fixed string ("1.0") versioning the response
       payload independently of the graph backend schema.
 
-When graph backend hasn't been bootstrapped for the board (or any aggregation
-fails), graph backend-derived fields gracefully degrade to zero and the response
-still ships. The endpoint must never 500 on a healthy app DB.
+Failed or incomplete observations retain explicit unavailability. Public graph
+totals are null and unavailable layer maps are empty; only confirmed observations
+can establish zero counts. The endpoint remains available when probes fail.
 """
 
 from __future__ import annotations
@@ -1970,13 +1970,7 @@ _DISCOVERY_HEALTH_PROBE = "discovery_snapshot"
 def _unavailable_kg_layer_counts(reason: str) -> dict[str, Any]:
     return {
         "status": "unavailable",
-        "by_layer": {
-            "canonical": 0,
-            "working": 0,
-            "none": 0,
-            "legacy_unknown": 0,
-            "unclassified": 0,
-        },
+        "by_layer": {},
         "by_maturity_status": {},
         "reason": reason,
     }
@@ -4281,12 +4275,7 @@ def _aggregate_kg_layer_counts(board_id: str) -> dict[str, Any]:
             board_id,
             exc,
         )
-        return {
-            "status": "unavailable",
-            "by_layer": counts,
-            "by_maturity_status": maturity_counts,
-            "reason": "schema_import_failed",
-        }
+        return _unavailable_kg_layer_counts("schema_import_failed")
 
     try:
         cypher = get_kg_registry().cypher_executor
@@ -4304,14 +4293,25 @@ def _aggregate_kg_layer_counts(board_id: str) -> dict[str, Any]:
                 for node_type in NODE_TYPES
             ],
         )
-        for result in results:
+        for _node_type, result in zip(NODE_TYPES, results, strict=True):
             try:
                 if isinstance(result, Exception):
                     raise result
-                for row in result.get("rows", []):
+                rows = result.get("rows")
+                if (
+                    not isinstance(rows, list)
+                    or len(rows) >= 10000
+                    or result.get("truncated")
+                    or result.get("has_more")
+                ):
+                    failed_node_types += 1
+                    continue
+                for row in rows:
                     layer = str(row[0] or "unclassified")
                     maturity = str(row[1] or "unclassified")
-                    count = int(row[2] or 0)
+                    count = row[2]
+                    if type(count) is not int or count < 0:
+                        raise ValueError("invalid_layer_count")
                     counts[layer] = counts.get(layer, 0) + count
                     maturity_counts[maturity] = maturity_counts.get(maturity, 0) + count
                 successful_node_types += 1
@@ -4324,22 +4324,19 @@ def _aggregate_kg_layer_counts(board_id: str) -> dict[str, Any]:
             board_id,
             exc,
         )
+        return _unavailable_kg_layer_counts("graph_open_failed")
+    if failed_node_types:
+        # A prefix is not the Board total. Keep completeness diagnostics while
+        # withholding all counts until every requested node type was observed.
         return {
-            "status": "unavailable",
-            "by_layer": counts,
-            "by_maturity_status": maturity_counts,
-            "reason": "graph_open_failed",
-        }
-    if successful_node_types == 0 and failed_node_types > 0:
-        return {
-            "status": "unavailable",
-            "by_layer": counts,
-            "by_maturity_status": maturity_counts,
-            "reason": "layer_columns_unavailable",
+            **_unavailable_kg_layer_counts(
+                "layer_counts_incomplete" if successful_node_types else "layer_columns_unavailable"
+            ),
+            "status": "partial" if successful_node_types else "unavailable",
             "failed_node_types": failed_node_types,
         }
     return {
-        "status": "partial" if failed_node_types else "ok",
+        "status": "ok",
         "by_layer": counts,
         "by_maturity_status": maturity_counts,
         "failed_node_types": failed_node_types,
