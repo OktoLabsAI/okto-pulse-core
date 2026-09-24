@@ -74,3 +74,68 @@ def test_duplicate_exact_target_ids_are_not_arbitrarily_selected(collection, nam
     value[collection].append(deepcopy(value[collection][0]))
     result, _ = projected(value)
     assert next(intent for intent in result.relational_projection_active_set_intents if intent.namespace == namespace).active_edges == ()
+
+
+@pytest.mark.parametrize('collection', ['integration_requirements', 'observability_requirements'])
+@pytest.mark.parametrize('missing', ['functional_requirements', 'technical_requirements'])
+def test_partial_requirement_source_cannot_prune_either_target_family(collection, missing):
+    value = source()
+    value[collection][0]['linked_requirements'] = []
+    del value[missing]
+    assert not any(item.namespace == collection for item in projected(value)[0].relational_projection_active_set_intents)
+
+
+@pytest.mark.parametrize('collection', ['integration_requirements', 'observability_requirements'])
+def test_requirement_text_is_unique_across_fr_tr_and_exact_id_takes_precedence(collection):
+    value = source()
+    value['technical_requirements'] = [{'id': 'tr_one', 'text': 'Technical condition'}]
+    value[collection][0]['linked_requirements'] = ['Technical condition']
+    def active_targets():
+        result, _ = projected(value)
+        refs = {node.candidate_id: node.source_artifact_ref for node in result.nodes}
+        intent = next(item for item in result.relational_projection_active_set_intents if item.namespace == collection)
+        return {refs[edge.to_candidate_id] for edge in intent.active_edges}
+    assert active_targets() == {'spec:owner:tr:tr_one'}
+    value['functional_requirements'][0]['text'] = 'Technical condition'
+    assert active_targets() == set()
+    value[collection][0]['linked_requirements'] = ['tr_one']
+    value['functional_requirements'][0]['text'] = 'tr_one'
+    assert active_targets() == {'spec:owner:tr:tr_one'}
+    value['technical_requirements'].append(deepcopy(value['technical_requirements'][0]))
+    assert active_targets() == set()
+
+
+def test_observability_requirement_and_integration_namespaces_remain_independent():
+    value = source()
+    value['observability_requirements'][0]['linked_requirements'] = ['fr_one']
+    result, _ = projected(value)
+    intents = {item.namespace: item for item in result.relational_projection_active_set_intents}
+    assert len(intents['observability_requirements'].active_edges) == 1
+    assert len(intents['observability_integrations'].active_edges) == 1
+    value['observability_requirements'][0]['linked_requirements'] = []
+    result, _ = projected(value)
+    intents = {item.namespace: item for item in result.relational_projection_active_set_intents}
+    assert intents['observability_requirements'].active_edges == ()
+    assert len(intents['observability_integrations'].active_edges) == 1
+
+
+@pytest.mark.parametrize('collection,section,identity,target_section,target_id', [
+    ('integration_requirements', 'integration_requirement', 'ir_one', 'tr', 'tr_one'),
+    ('observability_requirements', 'observability_requirement', 'or_one', 'fr', 'fr_one'),
+    ('observability_requirements', 'observability_requirement', 'or_one', 'tr', 'tr_one'),
+])
+def test_declared_requirement_lineage_includes_supported_fr_tr_targets(
+    collection, section, identity, target_section, target_id,
+):
+    value = source()
+    value['technical_requirements'] = [{'id': 'tr_one', 'text': 'Technical condition'}]
+    value[collection][0]['linked_requirements'] = [target_id]
+    expected = (f'spec:owner:{section}:{identity}', 'derives_from', f'spec:owner:{target_section}:{target_id}')
+    result, actual = projected(value)
+    assert expected in actual
+    intent = next(item for item in result.relational_projection_active_set_intents if item.namespace == collection)
+    assert len(intent.active_edges) == 1
+    value[collection][0]['linked_requirements'] = []
+    result, actual = projected(value)
+    assert expected not in actual
+    assert next(item for item in result.relational_projection_active_set_intents if item.namespace == collection).active_edges == ()

@@ -43,6 +43,9 @@ def test_member_cannot_be_owned_by_two_namespaces():
     ('decision_requirements', 'Decision', 'decision', 'Constraint', 'tr', 'derives_from', 'derives_from/explicit_link@v2.0'),
     ('business_rule_requirements', 'Constraint', 'business_rule', 'Requirement', 'fr', 'derives_from', 'derives_from/br_requirement@v2.1'),
     ('integration_requirements', 'Requirement', 'integration_requirement', 'Requirement', 'fr', 'derives_from', 'derives_from/ir_requirement@v2.1'),
+    ('integration_requirements', 'Requirement', 'integration_requirement', 'Constraint', 'tr', 'derives_from', 'derives_from/ir_requirement@v2.1'),
+    ('observability_requirements', 'Constraint', 'observability_requirement', 'Requirement', 'fr', 'derives_from', 'derives_from/or_requirement@v2.1'),
+    ('observability_requirements', 'Constraint', 'observability_requirement', 'Constraint', 'tr', 'derives_from', 'derives_from/or_requirement@v2.1'),
     ('observability_integrations', 'Constraint', 'observability_requirement', 'Requirement', 'integration_requirement', 'derives_from', 'derives_from/or_integration@v2.1'),
     ('api_business_rules', 'APIContract', 'api_contract', 'Constraint', 'business_rule', 'implements', 'implements/api_business_rule@v2.1'),
 ])

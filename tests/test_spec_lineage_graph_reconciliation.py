@@ -583,7 +583,7 @@ def test_graph_commit_preserves_lineage_error_and_avoids_double_compensation(
             "spec",
             SpecLineageParentIntent.PRESERVE,
             frozenset(),
-            None,
+            (),
         )
 
     failure = excinfo.value

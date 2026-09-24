@@ -29,6 +29,46 @@ def persistence(artifact):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize('collection,section,rule', [
+    ('integration_requirements', 'integration_requirement', 'ir_requirement'),
+    ('observability_requirements', 'observability_requirement', 'or_requirement'),
+])
+async def test_declared_requirement_plan_matches_live_and_rejects_changed_links(monkeypatch, collection, section, rule):
+    from dataclasses import asdict
+    artifact = spec(technical_requirements=[{'id': 'tr-one', 'text': 'Technical condition'}],
+        **{collection: [{'id': 'source-one', 'title': 'Declared source', 'status': 'active',
+                        'linked_requirements': ['fr-one', 'tr-one']}]})
+    port = persistence(artifact)
+    planner = make_deterministic_projection_planner(port)
+    source = DeterministicProjectionSource('board', 'spec', 'spec-one')
+    plan = json.loads((await planner.prepare(None, source)).document)['projection']
+    refs = {node['candidate_id']: node['source_artifact_ref'] for node in plan['nodes']}
+    declared = [edge for edge in plan['edges'] if edge['rule_id'] == f'derives_from/{rule}@v2.1']
+    assert {(refs[edge['from_candidate_id']], refs[edge['to_candidate_id']]) for edge in declared} == {
+        (f'spec:spec-one:{section}:source-one', f'spec:spec-one:{target}:{identity}')
+        for target, identity in [('fr', 'fr-one'), ('tr', 'tr-one')]}
+    class Captured(Exception):
+        pass
+    async def begin(request, **kwargs):
+        actual = json.loads(json.dumps([asdict(intent) for intent in kwargs['relational_projection_active_set_intents']]))
+        assert actual == plan['relational_projection_active_set_intents']
+        raise Captured
+    monkeypatch.setattr(live, 'get_consolidation_persistence_port', lambda: port)
+    monkeypatch.setattr(live, 'begin_consolidation', begin)
+    with pytest.raises(Captured):
+        await live._process_queue_entry(None, SimpleNamespace(board_id='board', artifact_type='spec',
+            artifact_id='spec-one', work_kind='consolidate'))
+    rows = ({'artifact_type': 'spec', 'id': 'spec-one', 'status': 'done',
+        'source_ref': 'spec:spec-one', 'source_version': 'v1', 'content_hash': 'a' * 64,
+        'created_at': '2026-09-21T00:00:00Z'},)
+    retained = await planner.prepare_board(None, board_id='board', source_rows=rows, cognitive_rows=(),
+        captured_at=datetime(2026, 9, 21, tzinfo=timezone.utc))
+    getattr(artifact, collection)[0]['linked_requirements'] = ['fr-one']
+    with pytest.raises(ValueError, match='retained_plan_mismatch'):
+        await planner.revalidate_board(None, retained, board_id='board', source_rows=rows, cognitive_rows=())
+
+
+@pytest.mark.asyncio
 async def test_preparation_matches_live_proposals_without_starting_a_graph_session(monkeypatch):
     port = persistence(spec(created_at=datetime(2001, 1, 2), updated_at=datetime(2002, 1, 3)))
     source = DeterministicProjectionSource('board', 'spec', 'spec-one')

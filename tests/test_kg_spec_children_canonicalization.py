@@ -190,8 +190,8 @@ async def test_commit_materializes_api_contract_implements_tr_constraint(
         "decisions": [{"id": "dec_explicit", "title": "Require login audit", "status": "active",
             "linked_requirements": ["fr-login", "tr-audit-events"]}],
         "business_rules": [{"id": "br_one", "title": "Audit rule", "rule": "Keep audit", "linked_requirements": ["fr-login"]}],
-        "integration_requirements": [{"id": "ir_one", "title": "Audit interface", "linked_requirements": ["fr-login"]}],
-        "observability_requirements": [{"id": "or_one", "title": "Observe audit", "linked_integration_requirements": ["ir_one"]}],
+        "integration_requirements": [{"id": "ir_one", "title": "Audit interface", "linked_requirements": ["fr-login", "tr-audit-events"]}],
+        "observability_requirements": [{"id": "or_one", "title": "Observe audit", "linked_integration_requirements": ["ir_one"], "linked_requirements": ["fr-login", "tr-audit-events"]}],
         "api_contracts": [
             {
                 "id": "api-login",
@@ -263,6 +263,9 @@ async def test_commit_materializes_api_contract_implements_tr_constraint(
     lineage_shapes = [
         ('Constraint', 'Requirement', 'derives_from', 'br_requirement', 'business_rule:br_one', 'fr:fr-login'),
         ('Requirement', 'Requirement', 'derives_from', 'ir_requirement', 'integration_requirement:ir_one', 'fr:fr-login'),
+        ('Requirement', 'Constraint', 'derives_from', 'ir_requirement', 'integration_requirement:ir_one', 'tr:tr-audit-events'),
+        ('Constraint', 'Requirement', 'derives_from', 'or_requirement', 'observability_requirement:or_one', 'fr:fr-login'),
+        ('Constraint', 'Constraint', 'derives_from', 'or_requirement', 'observability_requirement:or_one', 'tr:tr-audit-events'),
         ('Constraint', 'Requirement', 'derives_from', 'or_integration', 'observability_requirement:or_one', 'integration_requirement:ir_one'),
         ('APIContract', 'Constraint', 'implements', 'api_business_rule', 'api_contract:api-login', 'business_rule:br_one'),
     ]
@@ -362,7 +365,7 @@ async def test_commit_materializes_api_contract_implements_tr_constraint(
         scenario["linked_criteria"] = []
     decision_links = spec['decisions'][0]['linked_requirements']
     spec['decisions'][0]['linked_requirements'] = []
-    lineage_fields = [('business_rules', 'linked_requirements'), ('integration_requirements', 'linked_requirements'),
+    lineage_fields = [('observability_requirements', 'linked_requirements'), ('business_rules', 'linked_requirements'), ('integration_requirements', 'linked_requirements'),
         ('observability_requirements', 'linked_integration_requirements'), ('api_contracts', 'linked_rules')]
     lineage_links = {(collection, field): spec[collection][0][field] for collection, field in lineage_fields}
     for collection, field in lineage_fields:

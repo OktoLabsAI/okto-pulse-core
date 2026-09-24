@@ -1886,7 +1886,8 @@ class DeterministicWorker:
         # of the current relationship set while retaining their source nodes.
         lineage = (
             ('business_rules', 'br', 'linked_requirements', 'derives_from', 'br_requirement', 'fr'),
-            ('integration_requirements', 'ir', 'linked_requirements', 'derives_from', 'ir_requirement', 'fr'),
+            ('integration_requirements', 'ir', 'linked_requirements', 'derives_from', 'ir_requirement', 'requirements'),
+            ('observability_requirements', 'or', 'linked_requirements', 'derives_from', 'or_requirement', 'requirements'),
             ('observability_requirements', 'or', 'linked_integration_requirements', 'derives_from', 'or_integration', 'ir'),
             ('api_contracts', 'api', 'linked_rules', 'implements', 'api_business_rule', 'br'),
         )
@@ -1903,7 +1904,11 @@ class DeterministicWorker:
                 if not isinstance(item, dict) or item.get('status', 'active') != 'active':
                     continue
                 source_cid = f'{prefix}_{source_slot}_{index}'
-                if target_slot == 'fr':
+                if target_slot == 'requirements':
+                    targets = _declared_requirement_targets(item.get(link_field),
+                        spec.get('functional_requirements') or [], fr_ids,
+                        spec.get('technical_requirements') or [], tr_ids)
+                elif target_slot == 'fr':
                     targets = _declared_requirement_targets(item.get(link_field),
                         spec.get('functional_requirements') or [], fr_ids)
                 else:
@@ -1919,7 +1924,8 @@ class DeterministicWorker:
                         ))
         for namespace, collections, rule_id in (
             ('business_rule_requirements', ('business_rules', 'functional_requirements'), 'derives_from/br_requirement@v2.1'),
-            ('integration_requirements', ('integration_requirements', 'functional_requirements'), 'derives_from/ir_requirement@v2.1'),
+            ('integration_requirements', ('integration_requirements', 'functional_requirements', 'technical_requirements'), 'derives_from/ir_requirement@v2.1'),
+            ('observability_requirements', ('observability_requirements', 'functional_requirements', 'technical_requirements'), 'derives_from/or_requirement@v2.1'),
             ('observability_integrations', ('observability_requirements', 'integration_requirements'), 'derives_from/or_integration@v2.1'),
             ('api_business_rules', ('api_contracts', 'business_rules'), 'implements/api_business_rule@v2.1'),
         ):
