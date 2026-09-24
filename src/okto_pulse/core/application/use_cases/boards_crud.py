@@ -320,7 +320,7 @@ class UpdateBoardUseCase:
     async def execute(
         self, command: UpdateBoardCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> UpdateBoardResult:
-        await _require_owned_board(uow, command.board_id, actor)
+        current = await _require_owned_board(uow, command.board_id, actor)
         await require_authorization(
             actor,
             PermissionRequirement(
@@ -331,6 +331,26 @@ class UpdateBoardUseCase:
             board_id=command.board_id,
         )
         service = uow.services.boards
+        # D17: permission to edit a Board does not grant an executor authority
+        # to change its cognitive gate. Identity comes from the authenticated
+        # principal, never from the transport name (agents can use REST).
+        authored = command.data.model_dump(exclude_unset=True)
+        if "settings" in authored and actor.actor_kind != "human":
+            previous = dict(getattr(current, "settings", None) or {})
+            proposed = (
+                BoardGovernanceService.merge_settings_patch(previous, authored["settings"])
+                if authored["settings"] is not None else {}
+            )
+            if any(
+                previous.get(key, default) != proposed.get(key, default)
+                for key, default in (
+                    ("skip_cognitive_consolidation", False),
+                    ("cognitive_readiness_policy", "advisory"),
+                )
+            ):
+                raise PermissionDeniedError(
+                    "Cognitive policy changes require an authenticated human."
+                )
         board = await service.update_board(
             command.board_id,
             actor.actor_id,
