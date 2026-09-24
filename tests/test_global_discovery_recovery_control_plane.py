@@ -217,6 +217,14 @@ def test_preparing_to_prepared_is_the_only_complete_manifest_transition() -> Non
     store = MemoryRecoveryControlStore()
     control = RecoveryControlPlane(store=store, dispatcher=RecordingDispatcher())
     queued = control.prepare(preparation_command())
+    queued_payload = queued.to_dict()
+    assert queued_payload["status_operation"] == "status"
+    assert queued_payload["action_required"] == "internal_status_observation"
+    assert "status_tool" not in queued_payload
+    assert not any(
+        isinstance(value, str) and "okto_pulse_kg_global_discovery_recovery_" in value
+        for value in queued_payload.values()
+    )
     preparing = store.mark_preparing(run_id=queued.run_id, epoch=1, at=NOW)
     prepared = store.mark_prepared(
         run_id=queued.run_id,
@@ -236,7 +244,7 @@ def test_preparing_to_prepared_is_the_only_complete_manifest_transition() -> Non
     assert prepared.to_dict()["preflight_hash"] == prepared_result().preflight_hash
     assert (
         prepared.to_dict()["action_required"]
-        == "call_okto_pulse_kg_global_discovery_recovery_confirm"
+        == "internal_confirmation_required"
     )
 
     takeover = RecoveryLeaseTakeoverPolicy().evaluate(
@@ -390,7 +398,7 @@ def test_status_projection_is_closed_and_cancel_is_durable_idempotent() -> None:
         "superseded_by_epoch",
         "preparation_state",
         "confirmation_state",
-        "status_tool",
+        "status_operation",
         "audit_reason",
         "physical_truth",
     } <= set(cancelled.to_dict())

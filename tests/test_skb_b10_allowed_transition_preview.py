@@ -241,6 +241,11 @@ async def test_mcp_tool_documents_test_scenario_and_scoped_policy_semantics() ->
     documentation = tool.description
 
     assert documentation is not None
-    assert "test_scenario" in documentation
-    assert "Policy Compliance" in documentation
-    assert "policy_subject_required" in documentation
+    assert "okto-pulse://reference/tool-docs/misc" in documentation
+    assert "entity_id" in documentation and "unscoped pass" in documentation
+    assert len(documentation) <= 900
+    resource = mcp_server._load_resource_file("reference/tool-docs/misc.md")
+    section = resource.split("## `okto_pulse_get_allowed_transitions`", 1)[1].split("\n## ", 1)[0]
+    assert "test_scenario" in section
+    assert "Policy Compliance" in section
+    assert "policy_subject_required" in section

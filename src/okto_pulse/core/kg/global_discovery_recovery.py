@@ -1856,7 +1856,7 @@ class GlobalDiscoveryRecoveryService:
         )
         return {
             "outcome": "confirmation_required",
-            "action_required": ("call_okto_pulse_kg_global_discovery_recovery_confirm"),
+            "action_required": "internal_confirmation_required",
             "scope": GLOBAL_RECOVERY_SCOPE,
             "run_id": manifest.run_id,
             "attempt_id": manifest.attempt_id,
@@ -1943,7 +1943,7 @@ class GlobalDiscoveryRecoveryService:
         )
         return {
             "outcome": "confirmation_issued",
-            "action_required": "call_okto_pulse_kg_global_discovery_recovery_run",
+            "action_required": "internal_start_required",
             "confirmation_id": token.confirmation_id,
             "run_id": manifest.run_id,
             "attempt_id": manifest.attempt_id,
@@ -2623,7 +2623,7 @@ class GlobalDiscoveryRecoveryService:
                 **status,
                 "state": "completed",
                 "outcome": "completed",
-                "action_required": "wait_for_outbox_then_call_okto_pulse_kg_health",
+                "action_required": "internal_delivery_observation",
                 "delivery": dict(delivery),
             }
             self._manifests.write_status(run_id, payload)

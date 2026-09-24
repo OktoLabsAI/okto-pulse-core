@@ -45,7 +45,7 @@ from okto_pulse.core.kg.global_discovery_writer import (
 from okto_pulse.core.kg.global_discovery_recovery_control import (
     DEFAULT_RECOVERY_ATTEMPT_BUDGET_MS,
     GLOBAL_RECOVERY_SLOT_ID,
-    GLOBAL_RECOVERY_STATUS_TOOL,
+    INTERNAL_RECOVERY_STATUS_OPERATION,
     MAX_RECOVERY_CUMULATIVE_BUDGET_MS,
     RECOVERY_HEARTBEAT_INTERVAL_MS,
     RECOVERY_PREPARED_TTL_SECONDS,
@@ -370,7 +370,7 @@ def resolve_global_discovery_recovery_runtime_dependencies() -> tuple[
 __all__ = [
     "DEFAULT_RECOVERY_ATTEMPT_BUDGET_MS",
     "GLOBAL_RECOVERY_SLOT_ID",
-    "GLOBAL_RECOVERY_STATUS_TOOL",
+    "INTERNAL_RECOVERY_STATUS_OPERATION",
     "MAX_RECOVERY_CUMULATIVE_BUDGET_MS",
     "RECOVERY_HEARTBEAT_INTERVAL_MS",
     "RECOVERY_PREPARED_TTL_SECONDS",
