@@ -7,7 +7,10 @@ needed to assemble the contract (relational state and canonical graph state).
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, fields, replace
+from datetime import datetime, timezone
+import hashlib
+import json
 from typing import Protocol
 
 from okto_pulse.core.runtime_context import (
@@ -67,6 +70,7 @@ class BugCognitiveContext:
     # Relational concurrency fence for semantic capture. This is not a graph
     # generation or evidence admission: writers must re-read it under their UOW.
     source_policy_version: int | None = None
+    source_digest: str | None = None
 
     @property
     def eligible_for_closeout(self) -> bool:
@@ -98,9 +102,29 @@ class BugCognitiveContext:
         )
 
 
+BUG_SEMANTIC_SOURCE_MAX_BYTES = 8 * 1024 * 1024
+
+
+def _semantic_source_value(value):
+    if value is None or type(value) in (str, bool, int, float):
+        return value
+    if isinstance(value, datetime):
+        # Existing relational timestamps are UTC, including legacy naive rows.
+        return value.replace(tzinfo=timezone.utc).isoformat() if value.tzinfo is None else value.astimezone(timezone.utc).isoformat()
+    if isinstance(value, Mapping):
+        if any(type(key) is not str for key in value):
+            raise ValueError('bug_semantic_context_encoding_invalid')
+        return {key: _semantic_source_value(item) for key, item in value.items()}
+    if type(value) in (tuple, list):
+        return [_semantic_source_value(item) for item in value]
+    if type(value) is BugLinkedTestTask:
+        return {item.name: _semantic_source_value(getattr(value, item.name)) for item in fields(value)}
+    raise ValueError('bug_semantic_context_encoding_invalid')
+
+
 def qualify_bug_semantic_context(source: BugCognitiveContext) -> BugCognitiveContext:
     """Core-owned shape qualification; no claim of evidence or write authority."""
-    if source.contract_version != 'bug-semantic-context/v1':
+    if type(source) is not BugCognitiveContext or source.contract_version != 'bug-semantic-context/v1':
         raise ValueError('bug_semantic_context_contract_invalid')
     errors = list(source.load_errors)
     if source.card_exists:
@@ -110,7 +134,24 @@ def qualify_bug_semantic_context(source: BugCognitiveContext) -> BugCognitiveCon
             errors.append('bug_source_type_invalid')
     if source.canonical_bug_present is not None or any(ref.startswith('kg:') for ref in source.provenance_refs):
         errors.append('bug_semantic_context_projection_mixed')
-    return replace(source, load_errors=tuple(dict.fromkeys(errors)))
+    digest = source.source_digest
+    if source.card_exists and not errors:
+        try:
+            document = {item.name: _semantic_source_value(getattr(source, item.name))
+                for item in fields(source) if item.name != 'source_digest'}
+            encoded = json.dumps(document, ensure_ascii=False, sort_keys=True,
+                separators=(',', ':'), allow_nan=False).encode('utf-8')
+            if len(encoded) > BUG_SEMANTIC_SOURCE_MAX_BYTES:
+                errors.append('bug_semantic_context_size_limit')
+            else:
+                computed = hashlib.sha256(encoded).hexdigest()
+                if digest is not None and digest != computed:
+                    errors.append('bug_semantic_context_fingerprint_mismatch')
+                else:
+                    digest = computed
+        except (TypeError, ValueError, OverflowError):
+            errors.append('bug_semantic_context_encoding_invalid')
+    return replace(source, load_errors=tuple(dict.fromkeys(errors)), source_digest=digest)
 
 
 class BugCognitiveContextAssembler(Protocol):
@@ -182,10 +223,12 @@ def freeze_mapping_sequence(
 
 __all__ = [
     "BugCognitiveContext",
+    "BUG_SEMANTIC_SOURCE_MAX_BYTES",
     "BugCognitiveContextAssembler",
     "BugLinkedTestTask",
     "CanonicalBugNodeReadPort",
     "freeze_mapping_sequence",
+    "qualify_bug_semantic_context",
     "register_bug_cognitive_context_assembler",
     "register_canonical_bug_node_read_port",
     "reset_bug_cognitive_context_ports_for_tests",

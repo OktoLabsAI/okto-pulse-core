@@ -61,6 +61,53 @@ def test_semantic_source_qualification_does_not_reinterpret_legacy_projection_co
         qualify_bug_semantic_context(BugCognitiveContext(board_id=BOARD_ID, bug_id=BUG_ID, card_exists=True))
 
 
+def test_semantic_source_fingerprint_covers_related_evidence_not_only_card_version():
+    from okto_pulse.core.ports.bug_cognitive_context import qualify_bug_semantic_context
+    source = BugCognitiveContext(board_id=BOARD_ID, bug_id=BUG_ID, card_exists=True,
+        card_type='bug', status='in_progress', source_policy_version=3,
+        test_scenarios=({'id': 'scenario-one', 'status': 'passed', 'evidence': {'receipt': 'first'}},),
+        contract_version='bug-semantic-context/v1')
+    qualified = qualify_bug_semantic_context(source)
+    assert len(qualified.source_digest) == 64
+    same = qualify_bug_semantic_context(replace(source,
+        test_scenarios=({'evidence': {'receipt': 'first'}, 'status': 'passed', 'id': 'scenario-one'},)))
+    assert same.source_digest == qualified.source_digest
+    changed = qualify_bug_semantic_context(replace(source,
+        test_scenarios=({'id': 'scenario-one', 'status': 'passed', 'evidence': {'receipt': 'changed'}},)))
+    assert changed.source_policy_version == qualified.source_policy_version
+    assert changed.source_digest != qualified.source_digest
+    stale = qualify_bug_semantic_context(replace(qualified, test_scenarios=changed.test_scenarios))
+    assert not stale.verified
+    assert 'bug_semantic_context_fingerprint_mismatch' in stale.load_errors
+    assert stale.source_digest == qualified.source_digest  # Never silently reseal.
+
+
+@pytest.mark.parametrize('value', [float('nan'), object(), {1: 'ambiguous key'}])
+def test_semantic_source_fingerprint_rejects_unrepresentable_evidence(value):
+    from okto_pulse.core.ports.bug_cognitive_context import qualify_bug_semantic_context
+    source = BugCognitiveContext(board_id=BOARD_ID, bug_id=BUG_ID, card_exists=True,
+        card_type='bug', source_policy_version=3, contract_version='bug-semantic-context/v1',
+        conclusions=({'evidence': value},))
+    result = qualify_bug_semantic_context(source)
+    assert not result.verified and result.source_digest is None
+    assert 'bug_semantic_context_encoding_invalid' in result.load_errors
+
+
+def test_semantic_source_fingerprint_normalizes_utc_and_bounds_full_snapshot():
+    from datetime import datetime, timezone, timedelta
+    from okto_pulse.core.ports.bug_cognitive_context import qualify_bug_semantic_context, BUG_SEMANTIC_SOURCE_MAX_BYTES
+    source = BugCognitiveContext(board_id=BOARD_ID, bug_id=BUG_ID, card_exists=True,
+        card_type='bug', source_policy_version=3, contract_version='bug-semantic-context/v1',
+        comments=({'created_at': datetime(2026, 9, 24, 12)},))
+    first = qualify_bug_semantic_context(source)
+    shifted = qualify_bug_semantic_context(replace(source,
+        comments=({'created_at': datetime(2026, 9, 24, 9, tzinfo=timezone(timedelta(hours=-3)))},)))
+    assert first.source_digest == shifted.source_digest
+    too_large = qualify_bug_semantic_context(replace(source, description='x' * BUG_SEMANTIC_SOURCE_MAX_BYTES))
+    assert not too_large.verified and too_large.source_digest is None
+    assert 'bug_semantic_context_size_limit' in too_large.load_errors
+
+
 class _TrustedEvidenceVerifier:
     def verify(self, **_request):  # noqa: ANN003, ANN201
         return EvidenceWriteVerification(True)

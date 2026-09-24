@@ -21,6 +21,19 @@ leitura em outra sessão observa sua alteração. Esse token não substitui hash
 versões das evidências e fontes vinculadas: uma mudança no Test Card ou na Spec
 não é necessariamente uma mudança desse contador no Bug.
 
+O qualificador calcula `source_digest` sobre o contexto completo, incluindo a
+versão do Bug, conclusões, validações, cenários, Test Cards e proveniência.
+O formato canônico ordena chaves de objetos, conserva ordem de listas e normaliza
+timestamps relacionais para UTC. Recusa valores não representáveis e snapshots
+acima de 8 MiB; não trunca evidência para produzir um hash aparentemente válido.
+Ao receber um contexto já qualificado, uma divergência do digest é erro, sem
+recalcular e substituir silenciosamente o valor anterior.
+
+Esse digest detecta alterações; não é assinatura, autorização nem autenticação
+de evidência. O writer deve recompor a fonte no contexto relacional atual e
+aplicar as permissões e admission paths próprios. Não aceitar um digest enviado
+pelo cliente como prova de que essa revalidação ocorreu.
+
 `verified` informa completude da leitura e qualificação estrutural. Não autentica
 uma evidência, não aprova a narrativa, não concede permissão de captura e não
 autoriza uma transição. O consumidor deve aplicar esses controles separadamente.
