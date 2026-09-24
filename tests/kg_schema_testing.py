@@ -166,12 +166,15 @@ def _pools() -> tuple[Any, ...]:
     return tuple(dict.fromkeys(pools))
 
 
-def _close_composition() -> None:
+def _close_composition(*, strict: bool = False) -> None:
+    failures = []
     for pool in _pools():
         try:
             pool.close_all()
-        except Exception:  # noqa: BLE001 - teardown is best effort
-            pass
+        except Exception as failure:  # Attempt every owned pool before reporting.
+            failures.append(failure)
+    if strict and failures:
+        raise ExceptionGroup("test_graph_participant_cleanup_failed", failures)
 
 
 # ---------------------------------------------------------------------------
@@ -447,10 +450,10 @@ def close_board_db_cache(board_id: str | None = None) -> None:
             pass
 
 
-def close_all_connections() -> None:
+def close_all_connections(*, strict: bool = False) -> None:
     """Close every pooled Grafx handle held by the test composition."""
 
-    _close_composition()
+    _close_composition(strict=strict)
 
 
 def purge_board_graph_storage(board_id: str, *, reason: str) -> Any:

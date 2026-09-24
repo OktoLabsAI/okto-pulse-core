@@ -2481,7 +2481,7 @@ def _reset_rebuild_audit_artifact_store_state(_kg_registry_test_fakes):
 
 
 @pytest.fixture(scope="module", autouse=True)
-def _kg_registry_module_bootstrap_seed():
+def _kg_registry_module_bootstrap_seed(request: pytest.FixtureRequest):
     """Seed the registry for legacy module-scoped KG fixtures.
 
     A few older integration modules bootstrap the global discovery graph from a
@@ -2496,7 +2496,16 @@ def _kg_registry_module_bootstrap_seed():
     reset_registry_for_tests()
     configure_test_kg_registry()
     yield
-    reset_registry_for_tests()
+    _assert_kg_health_probes_drained(
+        nodeid=request.node.nodeid,
+        phase="before_module_graph_cleanup",
+    )
+    from kg_schema_testing import close_all_connections
+
+    try:
+        close_all_connections(strict=True)
+    finally:
+        reset_registry_for_tests()
 
 
 def _reset_commit_health_cache() -> None:
