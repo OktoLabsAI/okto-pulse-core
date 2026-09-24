@@ -552,6 +552,8 @@ class BoardErasureLease(Protocol):
 
 class KnowledgeGraphOperations(Protocol):
 
+    async def stage_new_learning_capture(self, request: object, *, author_id: str) -> object: ...
+
     async def evaluate_bug_cognitive_closure(
         self, readiness_service: object, **request: object
     ) -> dict[str, object]: ...

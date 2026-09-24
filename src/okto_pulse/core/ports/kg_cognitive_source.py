@@ -50,6 +50,7 @@ __all__ = [
     "CognitiveSourceRecord",
     "CognitiveSourceStore",
     "ConditionalCognitiveSourceWriter",
+    "TransactionalCognitiveSourceReader",
     "LatestVerifiedCognitiveSourceReader",
     "SealedBirthRestoration",
     "canonical_cognitive_source_fingerprint",
@@ -544,6 +545,19 @@ class LatestVerifiedCognitiveSourceReader(Protocol):
     async def enumerate_latest_verified(
         self, board_id: str
     ) -> tuple[CognitiveSourceRecord, ...]: ...
+
+
+@runtime_checkable
+class TransactionalCognitiveSourceReader(Protocol):
+    async def read_latest_in_context(
+        self, context: object, *, board_id: str, node_id: str, generation: int,
+    ) -> CognitiveSourceRecord | None:
+        """Verify all scoped revisions and read the head in the caller's UOW.
+
+        This read grants no lock itself; conditional mutations still require CAS.
+        It must include staged writes visible to that same transaction.
+        """
+        ...
 
 
 @runtime_checkable

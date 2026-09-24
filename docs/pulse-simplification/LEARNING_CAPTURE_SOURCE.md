@@ -28,7 +28,7 @@ Structural validity and a matching fingerprint do not establish authenticated
 authorship, current source facts, evidence admission, applicability, permission,
 independent review or Bug completion. A caller-supplied `admitted` flag is not
 part of the format. Metadata outside the fingerprint cannot supply that proof.
-The public capture writer and its governed transition binding are still pending.
+Public transports and the governed transition binding are still pending.
 
 The projection inventory validates every revision, including older captures,
 before selecting heads. Captures are reported as
@@ -61,8 +61,29 @@ guarantee, not evidence approval or permission to write.
 
 ## Remaining integrated work
 
-Implement the authorized capture use case and idempotency, fresh source and
-evidence admission, explicit reuse/supersedence CAS, policy and preview, Done
-binding/outbox, deterministic materializer, reopen currentness, transports and
-frontend. Qualify those paths with concurrency, upgrade/replay/rollback and
-installed-pair tests. This format alone does not complete F6 or change any gate.
+The creation use case now stages an authored capture through the same UOW. It
+requires Board/source read authority together with the existing KG begin,
+add-node, add-edge and commit permissions, and checks Card/Board/realm access
+before the serialized read. No new permission or read-to-write fallback exists.
+Author comes from the authenticated actor; timestamp comes from the application
+clock. The source digest and policy version must match freshly qualified facts.
+
+This first creation path accepts explicit IDs of scenarios already linked to
+the Bug's context. Each must have a receipt authenticated by the existing
+scenario evidence consumer. It does not equate a narrative or structural legacy
+test reference to an authenticated receipt, require the author to be the receipt
+issuer, or turn an authenticated observation into passing implementation credit.
+Reference grammar follows the existing `spec:<id>:test_scenario:<id>` convention.
+
+The identity is deterministic per Board, author and capture ID. A transactional
+source reader sees staged records as well as committed history. Repeating the
+same content and still-current basis returns the original record and timestamp;
+reusing the ID with different content fails. A changed basis requires a new
+evaluation and does not silently refresh the prior capture. The caller owns
+commit/rollback; successful staging does not mean the transaction committed.
+
+Complete other evidence-reference paths, explicit reuse/supersedence operations,
+policy and preview, Done binding/outbox, deterministic materializer, reopen
+currentness, transports and frontend. Qualify those paths with concurrency,
+upgrade/replay/rollback and installed-pair tests. Neither this format nor the
+staging use case completes F6 or changes a gate.

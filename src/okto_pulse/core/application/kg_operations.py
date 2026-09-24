@@ -179,6 +179,11 @@ class CoreKnowledgeGraphOperations:
         self.__relational_context = relational_context
         self.__clock = clock or (lambda: datetime.now(timezone.utc))
 
+    async def stage_new_learning_capture(self, request, *, author_id: str):
+        from okto_pulse.core.application.learning_capture import stage_new_learning_capture
+        return await stage_new_learning_capture(self.__relational_context, request,
+            author_id=author_id, captured_at=self.__clock())
+
 
     async def evaluate_bug_cognitive_closure(
         self, readiness_service: object, **request: object

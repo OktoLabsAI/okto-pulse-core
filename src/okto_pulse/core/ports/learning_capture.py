@@ -6,11 +6,35 @@ is not a literal graph node and cannot be restored as canonical knowledge.
 """
 
 from datetime import datetime
+from dataclasses import dataclass
 import json
 import re
 
 LEARNING_CAPTURE_FORMAT = 'learning-capture/v1'
 LEARNING_CAPTURE_MAX_BYTES = 256 * 1024
+
+
+@dataclass(frozen=True, slots=True)
+class CreateLearningCapture:
+    board_id: str
+    bug_id: str
+    capture_id: str
+    expected_source_digest: str
+    expected_source_version: int
+    content: str
+    context: str
+    applicability: str
+    scenario_ids: tuple[str, ...]
+
+    def __post_init__(self):
+        if (any(not _text(value) for value in (self.board_id, self.bug_id, self.capture_id))
+                or not _digest(self.expected_source_digest)
+                or type(self.expected_source_version) is not int or self.expected_source_version < 1
+                or any(not _text(value, 65536) for value in (self.content, self.context, self.applicability))
+                or type(self.scenario_ids) is not tuple or not 1 <= len(self.scenario_ids) <= 128
+                or any(not _text(value) for value in self.scenario_ids)
+                or len(set(self.scenario_ids)) != len(self.scenario_ids)):
+            raise ValueError('learning_capture_request_invalid')
 
 
 def _text(value, limit=4096):
