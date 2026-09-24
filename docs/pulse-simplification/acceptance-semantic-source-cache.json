@@ -1,0 +1,116 @@
+{
+  "scope": "F6 semantic context refresh within the current SQL snapshot",
+  "suites": {
+    "semantic-source-cache-core": {
+      "tests": 30,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "semantic-source-cache-community": {
+      "tests": 18,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    }
+  },
+  "budgets": [
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "import_boundary_baseline",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every import_boundary_baseline allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "singleton_baseline",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every singleton_baseline allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "dependency_temporary_exceptions",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every dependency_temporary_exceptions allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "graph_runtime_compatibility",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every graph_runtime_compatibility allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "rebuild_artifact_compatibility",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every rebuild_artifact_compatibility allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "community_private_reach_ins",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every community_private_reach_ins allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "community_adapter_bridges",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every community_adapter_bridges allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "af35_relational_residue",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every af35_relational_residue allowance before F16 completion."
+    }
+  ],
+  "verified": [
+    "Five baseline reproductions showed retained ORM entities hiding committed external changes.",
+    "Semantic assembly refreshes Bug, linked Test Card, Spec, Comment and lineage objects.",
+    "A deleted Bug cannot remain a verified source through the session identity map.",
+    "Caller staged content is visible after flush; caller rollback still discards it.",
+    "Legacy closeout assembly keeps its existing behavior."
+  ],
+  "limits": [
+    "Refresh observes the current SQL transaction snapshot, not changes beyond its isolation boundary.",
+    "The authorized capture writer still needs transaction serialization before read, admission and CAS.",
+    "No new evidence approval, gate, public writer, frontend or installed recovery campaign."
+  ],
+  "sha256": {
+    "PULSE_REFACTOR/.validation-v040/semantic-source-cache-core.xml": "f9dd8fe2eddcd708451cc7b84db83e0861fee708a80e42c62457062e8fe59090",
+    "PULSE_REFACTOR/.validation-v040/semantic-source-cache-test-core.log": "e355627cb7a62f469bde81abf81fdc37c8ce6fb6b1975d05c5fb472347997632",
+    "PULSE_REFACTOR/.validation-v040/semantic-source-cache-community.xml": "f3ad9f8587a596e63be5222bad8623921e672259b190464b518fb7970dedf45f",
+    "PULSE_REFACTOR/.validation-v040/semantic-source-cache-test-community.log": "0379d7b24d50f7bc6062d2d6334848528262aa64dd90856234d615a49f005799",
+    "PULSE_REFACTOR/.validation-v040/provenance-semantic-source-cache.json": "9c336d52bf50814979235059bbe6b0c497b43a893ebd1756aabc8663c62d3829",
+    "PULSE_REFACTOR/.validation-v040/closure-semantic-source-cache.json": "e95462a0a5b5bbfcbcad77e971561cae011c778629870f1913a901520cfdbf3b",
+    "PULSE_REFACTOR/.validation-v040/semantic-cache-before.xml": "7e77c348878d3c8141d0fbd007a4e130910806ce9eeee1317ec2cdba28669242",
+    "PULSE_REFACTOR/.validation-v040/semantic-cache-before.log": "7b3a9efddd350b831c51ffe1bc90c4ef94a333e24839be9407132074db7ca492",
+    "PULSE_REFACTOR/.validation-v040/run_semantic_source_cache.py": "c8c4b682440258e5c554293794657cf80dd6ab1999b5ecb61a38003e2911e53c",
+    "okto_labs_pulse_community/src/okto_pulse/community/adapters/bug_cognitive_context.py": "748098435c087648199f8859143baa675010f14adcd03761491eb2d046a31667",
+    "okto_labs_pulse_community/tests/test_bug_cognitive_context_adapter.py": "942dc9f44955abe99e9c11dc4f51504a5c6a600ec4d8434b299b24bd0acf6c26"
+  }
+}
