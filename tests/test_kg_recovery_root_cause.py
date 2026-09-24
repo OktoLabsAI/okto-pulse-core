@@ -186,7 +186,8 @@ def test_source_probe_failure_is_bounded_not_raised():
     configure_test_kg_registry(board_source_reader=_BadStore())
     out = _probe_rebuild_source_diagnostics("board-x")
     assert out["enumeration_failure"] is True
-    assert "RuntimeError" in out["error"]
+    assert out["error"] == "source_enumeration_unavailable"
+    assert "db is locked" not in str(out)
     assert out["source_count"] is None
 
 

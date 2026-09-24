@@ -167,20 +167,20 @@ def test_endpoint_is_read_only_no_mutating_methods_registered() -> None:
     )
 
 
-# -------- AC11 — KG-02 routes still reachable ---------------------------
+# -------- F4 supersedes the old public KG-02 maintenance surface --------
 
 
-def test_kg02_rebuild_routes_still_registered() -> None:
-    """AC11 regression: adding the new router must not unwire existing
-    KG-01/KG-02 endpoints."""
+def test_public_rebuild_routes_retired_while_cognitive_pending_remains() -> None:
+    """The cognitive read model survives without public maintenance writers."""
 
     paths = set(_openapi_paths())
-    for required in (
+    assert "/api/v1/kg/cognitive-pending" in paths
+    for retired in (
         "/api/v1/kg/rebuild/preflight",
         "/api/v1/kg/rebuild/confirm",
         "/api/v1/kg/rebuild/run",
     ):
-        assert required in paths, f"{required} unwired"
+        assert retired not in paths, f"{retired} exposed"
 
 
 # -------- Response shape: api_cce40fa6 ----------------------------------

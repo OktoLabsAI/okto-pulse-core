@@ -110,7 +110,7 @@ def plan_global_graph_retirement(snapshot, sources: tuple[GlobalRetirementSource
     targets = {owner: frozenset(item.removed_node_ids) for owner, item in facts.items() if item.removed_node_ids}
     boards, selected_owners, counts = set(), set(), []
 
-    def select(node):
+    def should_remove(node):
         if node.type_name != "DecisionDigest":
             return False
         owner = node.properties.get("board_id")
@@ -131,7 +131,7 @@ def plan_global_graph_retirement(snapshot, sources: tuple[GlobalRetirementSource
         counts.append((node.key, source.before_count, source.after_count))
         return replace(node, properties={**node.properties, "decision_count": source.after_count})
 
-    before, after, keys, relations = _measure(snapshot, select, scope="global_discovery", transform=transform)
+    before, after, keys, relations = _measure(snapshot, should_remove, scope="global_discovery", transform=transform)
     if selected_owners - boards:
         raise ValueError("global_retirement_board_summary_missing")
     return GlobalGraphRetirementPlan(ordered, before, after, tuple(key for _, key in keys), relations, tuple(sorted(counts)))

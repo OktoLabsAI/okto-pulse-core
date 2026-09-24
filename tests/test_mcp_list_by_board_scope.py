@@ -10,7 +10,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from mcp_runtime_testing import register_mcp_test_runtime
-from okto_pulse.core.application.use_cases.base import ActorContext
+from okto_pulse.core.application.use_cases.base import ActorContext, CommandValidationError
 from okto_pulse.core.application.use_cases.mcp_board_crud import (
     McpListByBoardCommand,
     McpListByBoardUseCase,
@@ -25,9 +25,6 @@ from sqlalchemy_test_models import (
     RefinementStatus,
     Spec,
     SpecStatus,
-    Sprint,
-    SprintLaneType,
-    SprintStatus,
 )
 
 
@@ -74,8 +71,6 @@ async def list_scope_graph(db_factory):
             "refinement_b",
             "spec_a",
             "spec_b",
-            "sprint_a",
-            "sprint_b",
         )
     }
     async with db_factory() as db:
@@ -137,24 +132,6 @@ async def list_scope_graph(db_factory):
                     status=RefinementStatus.DRAFT,
                     created_by="owner-b",
                 ),
-                Sprint(
-                    id=ids["sprint_a"],
-                    board_id=ids["board_a"],
-                    spec_id=ids["spec_a"],
-                    title="Visible sprint A",
-                    status=SprintStatus.DRAFT,
-                    lane_type=SprintLaneType.NORMAL,
-                    created_by=USER_ID,
-                ),
-                Sprint(
-                    id=ids["sprint_b"],
-                    board_id=ids["board_b"],
-                    spec_id=ids["spec_b"],
-                    title="SECRET sprint B",
-                    status=SprintStatus.DRAFT,
-                    lane_type=SprintLaneType.NORMAL,
-                    created_by="owner-b",
-                ),
             ]
         )
         await db.commit()
@@ -193,7 +170,6 @@ async def _call_list(db_factory, *, board_id: str, entity_type: str, filters: di
             "ideation_a",
             "refinement_a",
         ),
-        ("sprint", "spec_id", "spec_b", "spec_a", "sprint_a"),
     ],
 )
 async def test_parent_filtered_lists_hide_foreign_and_missing_parents(
@@ -238,20 +214,17 @@ async def test_list_use_case_rejects_actor_command_board_spoof_before_parent_rea
     ideations = SimpleNamespace(get_ideation=AsyncMock())
     refinements = SimpleNamespace(list_refinements=AsyncMock())
     specs = SimpleNamespace(get_spec=AsyncMock())
-    sprints = SimpleNamespace(list_sprints=AsyncMock())
     uow = SimpleNamespace(
         services=SimpleNamespace(
             ideations=ideations,
             refinements=refinements,
             specs=specs,
-            sprints=sprints,
         )
     )
     actor = ActorContext(USER_ID, "mcp", board_id="board-b")
 
     for entity_type, filters in (
         ("refinement", {"ideation_id": "ideation-a"}),
-        ("sprint", {"spec_id": "spec-a"}),
     ):
         result = await McpListByBoardUseCase().execute(
             McpListByBoardCommand("board-a", entity_type, filters),
@@ -267,4 +240,13 @@ async def test_list_use_case_rejects_actor_command_board_spoof_before_parent_rea
     ideations.get_ideation.assert_not_awaited()
     refinements.list_refinements.assert_not_awaited()
     specs.get_spec.assert_not_awaited()
-    sprints.list_sprints.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_retired_sprint_list_rejected_before_any_service_access():
+    with pytest.raises(CommandValidationError, match="unsupported_entity"):
+        await McpListByBoardUseCase().execute(
+            McpListByBoardCommand("board-a", "sprint", {"spec_id": "spec-a"}),
+            actor=ActorContext(USER_ID, "mcp", board_id="board-a"),
+            uow=SimpleNamespace(),
+        )

@@ -691,11 +691,11 @@ class TestDelegationContract:
             ".analytics.quality",
             ".analytics.validations",
             ".analytics.spec",
-            ".analytics.sprint",
         ):
             assert capability in uc_src, (
                 f"analytics use cases missing catalog delegation: {capability}"
             )
+        assert ".analytics.sprint" not in uc_src
         from okto_pulse.core.services import analytics_service
 
         svc_src = inspect.getsource(analytics_service)

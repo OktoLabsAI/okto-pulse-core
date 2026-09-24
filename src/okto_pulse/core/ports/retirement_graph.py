@@ -39,7 +39,7 @@ class GraphRetirementPlan:
             raise ValueError("retirement_graph_plan_invalid")
 
 
-def _measure(snapshot, select, require_incident=None, *, scope="board", transform=None):
+def _measure(snapshot, should_remove, require_incident=None, *, scope="board", transform=None):
     schema = snapshot.schema()
     if schema.scope != scope:
         raise ValueError("retirement_graph_scope_required")
@@ -70,7 +70,7 @@ def _measure(snapshot, select, require_incident=None, *, scope="board", transfor
                 raise ValueError("retirement_graph_duplicate_node")
             keys.add(identity)
             before.add_node(node)
-            if select(node):
+            if should_remove(node):
                 removed.add(identity)
             else:
                 survivor = transform(node) if transform is not None else node
@@ -112,7 +112,7 @@ def plan_sprint_graph_retirement(snapshot, *, board_id: str, archived_origin_ids
                 or value.strip() != value for value in archived_origin_ids)):
         raise ValueError("retirement_graph_origins_invalid")
 
-    def select(node):
+    def should_remove(node):
         ref = node.properties.get("source_artifact_ref", LOGICAL_NULL)
         if type(ref) is not str or not ref.strip().lower().startswith("sprint:"):
             return False
@@ -130,7 +130,7 @@ def plan_sprint_graph_retirement(snapshot, *, board_id: str, archived_origin_ids
                     "belongs_to/card_to_sprint", "belongs_to/sprint_to_board"}):
             raise ValueError("retirement_graph_relation_requires_disposition")
 
-    before, after, keys, relations = _measure(snapshot, select, require_incident)
+    before, after, keys, relations = _measure(snapshot, should_remove, require_incident)
     return GraphRetirementPlan(board_id, before, after, keys, relations)
 
 

@@ -18,7 +18,8 @@ from okto_pulse.community.api.kg_routes import (
 class TestEndpointRegistration:
     def test_endpoint_count(self):
         routes = [r for r in router.routes if hasattr(r, "methods")]
-        assert len(routes) >= 21
+        assert len(routes) == 18
+        assert not any("/rebuild" in r.path for r in routes)
 
     def test_all_under_kg_prefix(self):
         routes = [r for r in router.routes if hasattr(r, "path")]
