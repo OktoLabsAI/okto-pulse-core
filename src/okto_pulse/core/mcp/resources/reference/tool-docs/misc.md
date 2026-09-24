@@ -39,13 +39,13 @@ Returns:
 ## `okto_pulse_get_allowed_transitions`
 
 Return the allowed lifecycle transitions for a story, ideation, refinement,
-spec, card, or sprint from the Core SDLC registry — the same authority the move
+spec, card, or test_scenario from the Core SDLC registry — the same authority the move
 tools/endpoints enforce. Use it to know which `status` values a move will
 accept before calling `okto_pulse_move_*`.
 
 Args:
     board_id: Board ID
-    entity_type: One of: story, ideation, refinement, spec, card, sprint
+    entity_type: One of: story, ideation, refinement, spec, card, test_scenario
     entity_id: Target entity ID
     current_status: Optional status to evaluate from (empty = the entity's
         current status)
@@ -53,6 +53,9 @@ Args:
 Returns:
     JSON with target statuses plus gate, preconditions, capabilities, effects,
     stable reason codes and the registry source identifier.
+
+Supply entity_id for an entity-scoped Policy Compliance decision. Status-only
+discovery returns policy_subject_required on gated edges, never an unscoped pass.
 
 ## `okto_pulse_get_resource_gate_summary`
 

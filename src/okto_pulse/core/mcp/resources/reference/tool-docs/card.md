@@ -42,8 +42,9 @@ Create a new card on the board. Every card MUST be linked to a spec.
 Args:
     board_id: Board ID
     title: Card title
-    spec_id: REQUIRED — Spec ID to link this card to. Normal/bug cards
-        are allowed when the spec is approved, in_progress, or done.
+    spec_id: REQUIRED — Spec ID to link this card to. Normal cards
+        are blocked when the Spec is Done. Bug cards retain their own
+        origin, regression and lifecycle controls.
         Test cards are allowed once the spec is approved/validated or
         later, including regression tests for a bug on a locked spec.
         For bug cards, this is auto-resolved from the origin task if not provided.

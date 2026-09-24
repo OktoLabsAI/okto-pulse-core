@@ -1003,6 +1003,10 @@ _CODE_TRACEABILITY_TOOL_NAMES = frozenset(
 
 def tool_docs_family(tool_name: str) -> str:
     """Deterministic tool-docs family for a tool name (R1.1 / api_fd7c5878)."""
+    if tool_name == "okto_pulse_get_requirement_verification":
+        return "spec"
+    if tool_name == "okto_pulse_associate_amendment_revision_artifacts":
+        return "card"
     if tool_name in _CODE_TRACEABILITY_TOOL_NAMES:
         return "code-traceability"
     if "kg" in tool_name.split("_"):
@@ -3387,8 +3391,8 @@ async def okto_pulse_create_card(
     knowledge_propagation: KnowledgePropagationEnvelopeInput = None,  # type: ignore[assignment]
 ) -> str:
     """Create a new card on the board. Every card MUST be linked to a spec.
-    The spec must be approved/in_progress/done (test cards also accept
-    validated); create test cards BEFORE requesting spec validation.
+    Normal work is blocked in Spec Done. Bug/regression cards retain their
+    own controls; create test cards BEFORE requesting Spec validation.
 
     For card_type='test', test_scenario_ids is mandatory and limited by the
     board setting max_scenarios_per_card (default 3); split larger scenario
@@ -21475,6 +21479,96 @@ _LAZY_COMPACT_DESCRIPTION_OVERRIDES = {
 }
 
 
+# Reviewed summaries retain effect/authority warnings; detailed contracts are
+# available in the explicitly named lazy resource. No schema is compacted here.
+_LAZY_COMPACT_DESCRIPTION_OVERRIDES.update(
+{'okto_pulse_associate_amendment_revision_artifacts': 'Associate nonempty regression '
+                                                      'artifacts/evidence with an amendment; never '
+                                                      'reparent or bypass gates. Read '
+                                                      '`okto-pulse://reference/tool-docs/card` '
+                                                      'before use.',
+ 'okto_pulse_classify_architecture_candidates': 'Atomically classify adopted contracts as '
+                                                'promote_to_ir, associate_existing_ir or '
+                                                'context_only. CAS/digest/idempotency, permissions '
+                                                'and content lock apply; no waiver or execution '
+                                                'approval. Read '
+                                                '`okto-pulse://reference/tool-docs/architecture` '
+                                                'before use.',
+ 'okto_pulse_create_card': 'Create a Spec-linked Card. Normal work is blocked in Spec Done; '
+                           'bug/regression controls remain. Test Cards require scenarios within '
+                           'the Board cap and precede Spec validation. Read '
+                           '`okto-pulse://reference/tool-docs/card` before use.',
+ 'okto_pulse_get_allowed_transitions': 'Read canonical lifecycle gates/effects. Supply entity_id '
+                                       'for a scoped policy decision; status-only discovery never '
+                                       'advertises an unscoped pass. Read '
+                                       '`okto-pulse://reference/tool-docs/misc` before use.',
+ 'okto_pulse_get_delivery_evidence': 'Read current obligations/proof or paged ledger/resume '
+                                     'history. Inspect truncation, currentness and recovery '
+                                     'limits; history never gains current credit. Read '
+                                     '`okto-pulse://reference/tool-docs/code-traceability` before '
+                                     'use.',
+ 'okto_pulse_get_requirement_verification': 'Read qualifications, inheritance and prospective '
+                                            'obligations/contributions. Missing facts stay '
+                                            'unknown; planning is neither proof nor adoption. '
+                                            'Inspect pagination/currentness. Read '
+                                            '`okto-pulse://reference/tool-docs/spec` before use.',
+ 'okto_pulse_get_task_conclusions': 'Read completed Card conclusions, bug root cause and decisions '
+                                    'for later work. Read `okto-pulse://reference/tool-docs/misc` '
+                                    'before use.',
+ 'okto_pulse_get_traceability_report': 'Read consolidated SDLC traceability from ideation through '
+                                       'Spec/Card/Test/Bug to artifacts. Read '
+                                       '`okto-pulse://reference/tool-docs/traceability` before '
+                                       'use.',
+ 'okto_pulse_kg_health_readiness': 'Read non-maskable Board health/readiness aggregates. Summary '
+                                   'preserves blockers; artifact_ref is deprecated and does not '
+                                   'narrow signals. No row IDs/raw errors. Read '
+                                   '`okto-pulse://reference/tool-docs/kg` before use.',
+ 'okto_pulse_list_architecture_candidates': 'Page adopted contract summaries; candidate_id + '
+                                            'source_digest reads detail. Whole-population issues '
+                                            'remain visible; no classification, source fetch or '
+                                            'execution approval. Read '
+                                            '`okto-pulse://reference/tool-docs/architecture` '
+                                            'before use.',
+ 'okto_pulse_list_architecture_classifications': 'Page current/retired contract classifications; '
+                                                 'counts cover all candidates. Unknown sources '
+                                                 'stay unknown; normative IRs remain obligations. '
+                                                 'No source fetch/write. Read '
+                                                 '`okto-pulse://reference/tool-docs/architecture` '
+                                                 'before use.',
+ 'okto_pulse_list_by_board': 'List Spec/Ideation/Refinement/Story/Topic with validated filters and '
+                             'pagination. Refinement requires ideation_id; derivation_pending '
+                             'finds un-derived Done parents. Read '
+                             '`okto-pulse://reference/tool-docs/board` before use.',
+ 'okto_pulse_list_cards_by_status': 'Page Cards by status; open excludes done/cancelled. Archived '
+                                    'Cards require include_archived. Read '
+                                    '`okto-pulse://reference/tool-docs/card` before use.',
+ 'okto_pulse_migrate_spec_decisions': 'Convert Spec context Decisions bullets to structured '
+                                      'decisions, preserving existing entries and skipping '
+                                      'duplicate titles; idempotent. Read '
+                                      '`okto-pulse://reference/tool-docs/decision` before use.',
+ 'okto_pulse_move_refinement': 'Move Refinement through allowed states. Cancellation needs a '
+                               'reason; reopening creates a new version and clears cancellation. '
+                               'Read `okto-pulse://reference/tool-docs/refinement` before use.',
+ 'okto_pulse_record_delivery_evidence': 'Record progress or accepted proof; claims never prove '
+                                        'completion/recovery. Atomic batch/report retains every '
+                                        'admission and lifecycle gate. Retry the exact '
+                                        'envelope/key. Read '
+                                        '`okto-pulse://reference/tool-docs/code-traceability` '
+                                        'before use.',
+ 'okto_pulse_remove_spec_entity': 'Remove BR/API Contract or revoke Decision; Decision revocation '
+                                  'is restorable. Per-type aliases remain. Read '
+                                  '`okto-pulse://reference/tool-docs/spec` before use.',
+ 'okto_pulse_update_spec_entity': 'Author FR/BR/TR/Decision/AC/IR/OR or Project structure under '
+                                  'permissions/content locks. Verification declares obligations, '
+                                  'never proof. Read current digests/defaults first; structure '
+                                  'needs CAS/idempotency. Read '
+                                  '`okto-pulse://reference/tool-docs/spec` before use.'}
+)
+_TOOLS_WITH_LAZY_COMPACT_DESCRIPTION = (
+    _TOOLS_WITH_LAZY_COMPACT_DESCRIPTION | _LAZY_COMPACT_DESCRIPTION_OVERRIDES.keys()
+)
+
+
 def _compact_reviewed_tool_descriptions() -> None:
     catalog = mcp.resolve()
     missing = _TOOLS_WITH_LAZY_COMPACT_DESCRIPTION.difference(
@@ -21491,7 +21585,7 @@ def _compact_reviewed_tool_descriptions() -> None:
             tool,
             description=_LAZY_COMPACT_DESCRIPTION_OVERRIDES.get(
                 tool_name,
-                f"Run `{tool_name}`. Read `{tool_docs_uri(tool_name)}` before use.",
+                f"Read `{tool_docs_uri(tool_name)}` before use.",
             ),
         )
 
