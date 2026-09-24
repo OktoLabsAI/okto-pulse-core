@@ -11,7 +11,7 @@ from dataclasses import dataclass, fields, replace
 from datetime import datetime, timezone
 import hashlib
 import json
-from typing import Protocol
+from typing import Protocol, runtime_checkable
 
 from okto_pulse.core.runtime_context import (
     register_runtime_value,
@@ -181,6 +181,24 @@ class BugCognitiveContextAssembler(Protocol):
         ...
 
 
+@runtime_checkable
+class BugSemanticWriteSnapshotReader(Protocol):
+    async def assemble_semantic_for_write(
+        self, context: object, *, board_id: str, bug_id: str,
+    ) -> BugCognitiveContext:
+        """Serialize all relational source writers before assembling facts.
+
+        The caller must authorize before entering this boundary and retain the
+        same UOW through evidence admission, conditional append and commit.
+        Serialize linked evidence as well as the Bug; a Bug-only row lock does
+        not satisfy the contract. Refresh cached facts within that transaction.
+        Never commit/rollback for the caller. Unsupported serialization or a
+        lost transaction snapshot fails closed, with no unguarded fallback.
+        This capability is separate from the ordinary read-only assembler.
+        """
+        ...
+
+
 class CanonicalBugNodeReadPort(Protocol):
     async def exists(self, *, board_id: str, bug_id: str) -> bool: ...
 
@@ -225,6 +243,7 @@ __all__ = [
     "BugCognitiveContext",
     "BUG_SEMANTIC_SOURCE_MAX_BYTES",
     "BugCognitiveContextAssembler",
+    "BugSemanticWriteSnapshotReader",
     "BugLinkedTestTask",
     "CanonicalBugNodeReadPort",
     "freeze_mapping_sequence",

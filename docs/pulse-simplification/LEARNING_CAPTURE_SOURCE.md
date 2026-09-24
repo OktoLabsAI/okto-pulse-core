@@ -44,6 +44,21 @@ capture must not overwrite historical payloads or erase prior associations.
 Actual materialization must follow source/evidence/transition reconciliation,
 record its governed binding and preserve the existing substantive holds.
 
+## Transaction boundary for the capture writer
+
+The optional public `BugSemanticWriteSnapshotReader` capability serializes the
+relational sources before reading them. The application must authorize first,
+then retain the same UOW through source qualification, evidence admission,
+conditional append and commit. The ordinary semantic reader does not offer
+that serialization guarantee.
+
+Community implements this boundary with the SQLite writer slot, covering
+related Test Cards, Spec scenarios, comments and lineage as well as the Bug.
+It refreshes ORM entities inside the SQL snapshot and leaves commit/rollback
+to the caller. Unsupported database mechanisms and failed snapshot upgrades
+are refused without falling back to an unguarded read. This is a concurrency
+guarantee, not evidence approval or permission to write.
+
 ## Remaining integrated work
 
 Implement the authorized capture use case and idempotency, fresh source and

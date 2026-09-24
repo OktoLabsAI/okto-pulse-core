@@ -1,0 +1,118 @@
+{
+  "scope": "F6 transaction serialization before semantic source read",
+  "suites": {
+    "semantic-source-lock-core": {
+      "tests": 30,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "semantic-source-lock-community": {
+      "tests": 22,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    }
+  },
+  "budgets": [
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "import_boundary_baseline",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every import_boundary_baseline allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "singleton_baseline",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every singleton_baseline allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "dependency_temporary_exceptions",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every dependency_temporary_exceptions allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "graph_runtime_compatibility",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every graph_runtime_compatibility allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "rebuild_artifact_compatibility",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every rebuild_artifact_compatibility allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "community_private_reach_ins",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every community_private_reach_ins allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "community_adapter_bridges",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every community_adapter_bridges allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "af35_relational_residue",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every af35_relational_residue allowance before F16 completion."
+    }
+  ],
+  "verified": [
+    "SQLite write serialization begins before source assembly, including existing read transactions.",
+    "Concurrent linked Test Card evidence changes are refused while the caller UOW holds its writer slot.",
+    "Caller commit and rollback both release the slot; subsequent evidence correction changes the digest.",
+    "Unsupported dialect or failed writer acquisition cannot fall back to an unguarded source read.",
+    "The optional capability is distinct from the normal semantic reader."
+  ],
+  "limits": [
+    "The caller must authorize before entry and keep the same UOW through admission, CAS and completion.",
+    "Only SQLite serialization is qualified; other engines refuse this optional operation.",
+    "No public capture writer, evidence approval, Done integration, frontend or installed recovery campaign."
+  ],
+  "sha256": {
+    "PULSE_REFACTOR/.validation-v040/semantic-source-lock-core.xml": "3f2d96deaf11075817f55dc7b376c24e9d9db4d454ac23ac60df1048746c3059",
+    "PULSE_REFACTOR/.validation-v040/semantic-source-lock-test-core.log": "f9da6683cc2a4543e34a33a6f1db7fc49251b4aabc2aa29925ebac53b513315e",
+    "PULSE_REFACTOR/.validation-v040/semantic-source-lock-community.xml": "bd320bf45bccc00d5e6c2f49996156a43db8429220345fc05ae93e40526b1f98",
+    "PULSE_REFACTOR/.validation-v040/semantic-source-lock-test-community.log": "21196b0318a4c6e71324f5a0254a496dc28c2b480f979c9aafc25432acdd7704",
+    "PULSE_REFACTOR/.validation-v040/provenance-semantic-source-lock.json": "7315eda51708c96b264adb43d7249ab016a9b3a7024eb2a60cd5f3892d9ebdfb",
+    "PULSE_REFACTOR/.validation-v040/closure-semantic-source-lock.json": "40d636c1b43fe0132ac3dc09b6f70c0cb6ee39e436ade596419c229d2cfb1e08",
+    "PULSE_REFACTOR/.validation-v040/semantic-lock-before.xml": "faf9adb135e021cc30ebfe357a7cc59309c7461aec8d819f202daf75d366fe47",
+    "PULSE_REFACTOR/.validation-v040/semantic-lock-before.log": "34b83cdbaefe1befd0b279d570d219abd482d8f4ed16457e3a738d3c8e86d772",
+    "PULSE_REFACTOR/.validation-v040/run_semantic_source_lock.py": "a7fcd520eb2bffd3b6c7b8d273c8d4b239c5e5d26b6877af4881ef08c173da1b",
+    "okto_labs_pulse_core/src/okto_pulse/core/ports/bug_cognitive_context.py": "28537fa7eff053dfda386f504c4a0666a44c2ff69363dfab1516ddf1321bbe26",
+    "okto_labs_pulse_core/docs/pulse-simplification/LEARNING_CAPTURE_SOURCE.md": "48e09e317ebc312ca20575f43fa1f283a93309630c9e69e38811c5c5754ee76e",
+    "okto_labs_pulse_community/src/okto_pulse/community/adapters/bug_cognitive_context.py": "1149efedae855b3ad8485105d4fbf423779809229134d9cc8e79869935a9eb6d",
+    "okto_labs_pulse_community/tests/test_bug_cognitive_context_adapter.py": "d58bf4c09ac49bb4008547fea111f0e11c7eb526b8b1d13e7036e4ca779d364e"
+  }
+}
