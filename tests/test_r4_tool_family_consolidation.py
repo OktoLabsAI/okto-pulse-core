@@ -441,11 +441,11 @@ async def test_consolidated_tool_descriptions_point_to_lazy_family_docs():
     cases = [
         (
             "okto_pulse_remove_spec_entity",
-            "okto-pulse://reference/tool-families/spec_entity_remove",
+            "okto-pulse://reference/tool-docs/spec",
+            "reference/tool-docs/spec.md",
             "reference/tool-families/spec_entity_remove.md",
-            "reference/tool-families/spec_entity_remove.md",
-            # full-form legacy alias that lives in the doc, not the compact description
-            # (the description only abbreviates it to `/_api_contract`).
+            # Full legacy aliases live in the family resource reached via the
+            # compact tool-docs landing page.
             "okto_pulse_remove_api_contract",
         ),
         (
@@ -453,7 +453,7 @@ async def test_consolidated_tool_descriptions_point_to_lazy_family_docs():
             "okto-pulse://reference/tool-docs/qa",
             "reference/tool-docs/qa.md",
             "reference/tool-families/qa_ask.md",
-            # the description abbreviates to `/_spec_question`; full form is doc-only.
+            # Full aliases are doc-only.
             "okto_pulse_ask_spec_question",
         ),
     ]
@@ -470,7 +470,8 @@ async def test_consolidated_tool_descriptions_point_to_lazy_family_docs():
         # 3) the long migration detail is MOVED to the lazy resource, not deleted...
         landing_doc = load(landing_path)
         if detail_path != landing_path:
-            assert "okto-pulse://reference/tool-families/qa_ask" in landing_doc
+            detail_uri = "okto-pulse://" + detail_path.removesuffix(".md")
+            assert detail_uri in landing_doc
         doc = load(detail_path)
         assert doc and "R4 consolidation" in doc
         for section in ("Legacy aliases", "Telemetry"):
