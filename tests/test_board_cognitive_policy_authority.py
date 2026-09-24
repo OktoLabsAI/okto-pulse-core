@@ -100,7 +100,7 @@ async def test_executor_inherits_existing_template_cognitive_policy_without_over
 
     async with get_session_factory()() as db:
         template = await DefaultBoardConfigurationService(db).create_version(
-            actor=USER, settings_payload={"skip_cognitive_consolidation": True},
+            actor=USER, actor_kind="human", settings_payload={"skip_cognitive_consolidation": True},
             activate=True,
         )
         template_id = template.id

@@ -343,6 +343,7 @@ class McpCreateDefaultBoardConfigVersionUseCase:
             )
         data = await service.create_version(
             actor=actor.actor_id,
+            actor_kind=actor.actor_kind,
             settings_payload=settings_payload,
             scope=command.scope,
             guideline_default_refs=command.guideline_default_refs,
@@ -419,6 +420,7 @@ class McpActivateDefaultBoardConfigVersionUseCase:
         data = await uow.services.default_board_config.activate_version(
             template_id=command.template_id,
             actor=actor.actor_id,
+            actor_kind=actor.actor_kind,
             query_scope=query_scope,
         )
         await commit(uow)
@@ -465,7 +467,7 @@ class McpDeactivateDefaultBoardConfigVersionUseCase:
                 uow=uow,
             )
         data = await uow.services.default_board_config.deactivate_version(
-            template_id=command.template_id, actor=actor.actor_id
+            template_id=command.template_id, actor=actor.actor_id, actor_kind=actor.actor_kind,
         )
         await commit(uow)
         return _DataResult(data)

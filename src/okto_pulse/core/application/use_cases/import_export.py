@@ -709,6 +709,15 @@ class ImportBoardConfigUseCase:
         # The envelope is atomic. Preflight every item's ref delta before the
         # first staged create so a later governed item cannot leave earlier
         # versions pending in adapters that expose eager writes.
+        for index, item in enumerate(command.items):
+            try:
+                await service.prepare_version_settings(
+                    actor_kind=actor.actor_kind,
+                    settings_payload=item.get("settings_payload"),
+                    scope=str(item.get("scope") or "global"),
+                )
+            except DefaultBoardConfigurationError as exc:
+                raise ImportItemError(index, exc.to_dict()) from exc
         for item in command.items:
             diff = await service.preview_create_guideline_ref_diff(
                 scope=str(item.get("scope") or "global"),
@@ -729,6 +738,7 @@ class ImportBoardConfigUseCase:
             try:
                 await service.create_version(
                     actor=actor.actor_id,
+                    actor_kind=actor.actor_kind,
                     settings_payload=item.get("settings_payload"),
                     scope=item.get("scope") or "global",
                     guideline_default_refs=item.get("guideline_default_refs") or None,

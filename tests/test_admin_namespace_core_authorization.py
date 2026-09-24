@@ -82,6 +82,7 @@ from okto_pulse.core.application.use_cases.permission_presets import (
     CreatePermissionPresetUseCase,
 )
 from okto_pulse.core.domain.realm import RealmScope
+from okto_pulse.core.models.schemas import BoardUpdate
 
 
 class _ServiceSpy:
@@ -166,7 +167,7 @@ def _board_case() -> tuple[_Uow, _ServiceSpy]:
 
 async def _invoke_board(uow: _Uow, actor: ActorContext) -> Any:
     return await UpdateBoardUseCase().execute(
-        UpdateBoardCommand("board-1", SimpleNamespace()),
+        UpdateBoardCommand("board-1", BoardUpdate(name="Updated authorization board")),
         actor=actor,
         uow=uow,
     )

@@ -40,6 +40,7 @@ from okto_pulse.core.domain.checklist import (
     ChecklistMode,
 )
 from okto_pulse.core.models.schemas import BoardSettings
+from okto_pulse.core.ports.authentication import PrincipalKind
 from okto_pulse.core.ports.default_board_configuration import (
     DEFAULT_GUIDELINE_REF_ALLOWED_FIELDS,
     DEFAULT_GUIDELINE_REF_COMPATIBILITY_FIELDS,
@@ -80,6 +81,10 @@ BOARD_EVENT_APPLIED = "default_board_configuration_applied"
 BOARD_EVENT_FALLBACK = "board_created_without_default_config"
 
 _DEFAULT_SCOPE = "global"
+_COGNITIVE_POLICY_DEFAULTS = {
+    "skip_cognitive_consolidation": False,
+    "cognitive_readiness_policy": "advisory",
+}
 _ALLOWED_STATUSES = ("draft", "active", "inactive")
 DEFAULT_SPEC_CHECKLIST_MODE = ChecklistMode.ADVISORY.value
 
@@ -755,11 +760,51 @@ class DefaultBoardConfigurationService:
 
     # -- lifecycle ---------------------------------------------------------
 
+    @staticmethod
+    def _require_cognitive_policy_authority(actor_kind, previous, proposed) -> None:
+        if actor_kind == "human":
+            return
+        before, after = previous or {}, proposed or {}
+        if any(before.get(key, default) != after.get(key, default)
+               for key, default in _COGNITIVE_POLICY_DEFAULTS.items()):
+            raise DefaultBoardConfigurationError(
+                "human_control_required",
+                "Cognitive policy changes require an authenticated human.",
+                403,
+            )
+
+    async def prepare_version_settings(
+        self, *, settings_payload: BoardSettings | dict[str, Any] | None,
+        actor_kind: PrincipalKind, scope: str = _DEFAULT_SCOPE,
+    ) -> dict[str, Any]:
+        """Read-only admission, repeated by the writer after import preflight.
+
+        Executors inherit omitted cognitive controls. Unsupported readiness
+        authorship remains unsupported; only its existing stored value survives.
+        """
+        supplied = (
+            settings_payload.model_dump(mode="json", exclude_unset=True)
+            if isinstance(settings_payload, BoardSettings)
+            else dict(settings_payload or {})
+        )
+        active = await self.resolve_active(scope)
+        previous = (active.settings_payload or {}) if active else {}
+        if actor_kind != "human":
+            supplied.setdefault("skip_cognitive_consolidation", previous.get("skip_cognitive_consolidation", False))
+        supplied.setdefault("reviewer_separation_mode", "enforce")
+        supplied.setdefault("code_traceability", {"mode": "advisory"})
+        validated = self._validate_settings(supplied)
+        if "cognitive_readiness_policy" in previous:
+            validated["cognitive_readiness_policy"] = previous["cognitive_readiness_policy"]
+        self._require_cognitive_policy_authority(actor_kind, previous, validated)
+        return validated
+
     async def create_version(
         self,
         *,
         settings_payload: BoardSettings | dict[str, Any] | None,
         actor: str,
+        actor_kind: PrincipalKind = "unknown",
         scope: str = _DEFAULT_SCOPE,
         guideline_default_refs: list[Any] | None = None,
         design_system_default_ref: dict[str, Any] | None = None,
@@ -777,15 +822,9 @@ class DefaultBoardConfigurationService:
         is forward-only: legacy templates/boards are never backfilled and their
         absent value resolves explicitly to compatibility mode ``off``.
         """
-        if isinstance(settings_payload, BoardSettings):
-            supplied_settings = settings_payload.model_dump(
-                mode="json", exclude_unset=True
-            )
-        else:
-            supplied_settings = dict(settings_payload or {})
-        supplied_settings.setdefault("reviewer_separation_mode", "enforce")
-        supplied_settings.setdefault("code_traceability", {"mode": "advisory"})
-        validated_payload = self._validate_settings(supplied_settings)
+        validated_payload = await self.prepare_version_settings(
+            settings_payload=settings_payload, actor_kind=actor_kind, scope=scope,
+        )
         await self._validate_guideline_default_refs(
             guideline_default_refs,
             actor=actor,
@@ -840,6 +879,7 @@ class DefaultBoardConfigurationService:
             template = await self.activate_version(
                 template.id,
                 actor,
+                actor_kind=actor_kind,
                 query_scope=query_scope,
             )
         return template
@@ -849,6 +889,7 @@ class DefaultBoardConfigurationService:
         template_id: str,
         actor: str,
         *,
+        actor_kind: PrincipalKind = "unknown",
         query_scope: QueryScope | None = None,
     ) -> DefaultBoardTemplateRecord:
         """Activate a template; deactivate every other active template in the same
@@ -883,6 +924,18 @@ class DefaultBoardConfigurationService:
             scope=template.scope,
             exclude_template_id=template.id,
         )
+        # Compare at the mutation boundary with every active predecessor, after
+        # validation reads and before changing any active flag or audit record.
+        if others:
+            for other in others:
+                self._require_cognitive_policy_authority(
+                    actor_kind, other.settings_payload, template.settings_payload,
+                )
+        else:
+            self._require_cognitive_policy_authority(
+                actor_kind, template.settings_payload if template.is_active else {},
+                template.settings_payload,
+            )
         for other in others:
             other.is_active = False
             other.status = "inactive"
@@ -901,10 +954,12 @@ class DefaultBoardConfigurationService:
         return template
 
     async def deactivate_version(
-        self, template_id: str, actor: str
+        self, template_id: str, actor: str, *, actor_kind: PrincipalKind = "unknown",
     ) -> DefaultBoardTemplateRecord:
         """Deactivate a template (no active template remains unless another exists)."""
         template = await self._require(template_id)
+        if template.is_active:
+            self._require_cognitive_policy_authority(actor_kind, template.settings_payload, {})
         template.is_active = False
         template.status = "inactive"
         template = await get_default_board_configuration_store().save_template(

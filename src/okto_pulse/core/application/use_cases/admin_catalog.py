@@ -467,6 +467,7 @@ class CreateDefaultBoardConfigVersionUseCase:
             )
         data = await uow.services.default_board_config.create_version(
             actor=actor.actor_id,
+            actor_kind=actor.actor_kind,
             query_scope=_query_scope_for_actor(actor),
             **payload,
         )
@@ -502,6 +503,7 @@ class ActivateDefaultBoardConfigVersionUseCase:
         data = await uow.services.default_board_config.activate_version(
             template_id=command.template_id,
             actor=actor.actor_id,
+            actor_kind=actor.actor_kind,
             query_scope=_query_scope_for_actor(actor),
         )
         await commit(uow)
@@ -536,6 +538,7 @@ class DeactivateDefaultBoardConfigVersionUseCase:
         data = await uow.services.default_board_config.deactivate_version(
             template_id=command.template_id,
             actor=actor.actor_id,
+            actor_kind=actor.actor_kind,
         )
         await commit(uow)
         return DataResult(data)

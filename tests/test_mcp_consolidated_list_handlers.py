@@ -1141,32 +1141,31 @@ async def test_list_snapshots_refinement(seeded_board):
 
 
 def test_list_by_board_description_documents_filters_per_entity_type():
-    """Discoverability regression guard (ITEM 18): the live tools/list
-    description of okto_pulse_list_by_board must enumerate the allowed filter
-    keys per entity_type — sourced from filters.py so the docstring cannot
-    silently drift — highlight derivation_pending with a copy-pastable inline
-    example, document the invalid_filter behaviour, and point at the lazy
-    list_tools resource, all within the R1.1 per-tool budget (900 chars)."""
+    """The compact tool must lead to the complete, current filter contract."""
     import okto_pulse.core.mcp.server as _srv
     from okto_pulse.core.mcp.filters import ALLOWED_FILTERS_BY_BOARD
 
     tool = _srv.mcp._tool_manager._tools.get("okto_pulse_list_by_board")
     assert tool is not None, "okto_pulse_list_by_board not registered"
     desc = tool.description or ""
+    assert "okto-pulse://reference/tool-docs/board" in desc
+    board_docs = _srv._load_resource_file("reference/tool-docs/board.md")
+    assert "okto-pulse://reference/list_tools" in board_docs
+    filter_docs = _srv._load_resource_file("reference/list_tools.md")
 
     for entity_type, allowed in ALLOWED_FILTERS_BY_BOARD.items():
-        assert entity_type in desc, f"description missing entity_type {entity_type!r}"
+        assert entity_type in desc.lower(), f"description missing entity_type {entity_type!r}"
+        row = next(line for line in filter_docs.splitlines() if line.startswith(f"| `{entity_type}` |"))
         for key in allowed:
-            assert key in desc, (
-                f"description missing filter key {key!r} for entity_type={entity_type!r}"
+            assert f"`{key}`" in row, (
+                f"lazy contract missing filter key {key!r} for entity_type={entity_type!r}"
             )
 
     # derivation_pending triage carries a copy-pastable example.
-    assert '{"derivation_pending": true}' in desc
+    assert "derivation_pending" in desc
+    assert '{"derivation_pending": true}' in filter_docs
     # Unknown-filter behaviour is documented.
-    assert "invalid_filter" in desc
-    # Lazy long-form docs remain referenced.
-    assert "okto-pulse://reference/list_tools" in desc
+    assert "invalid_filter" in filter_docs
     # R1.1 compaction budget still holds (see test_r1_tool_compaction.py).
     assert len(desc) <= 900, f"description is {len(desc)} chars (budget 900)"
 

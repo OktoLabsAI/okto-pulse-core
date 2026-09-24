@@ -49,7 +49,8 @@ async def test_operational_mcp_tools_are_registered_and_described_currently():
     # create_card: compact summary keeps the core; the card-type enum prose +
     # "spec is approved" moved to the card tool-docs resource.
     create_card_desc = tools["okto_pulse_create_card"].description
-    assert "Create a new card" in create_card_desc
+    assert "Create a Spec-linked Card" in create_card_desc
+    assert "Spec Done" in create_card_desc
     assert "spec" in create_card_desc.lower()
     assert 'Card type - "normal" (default), "test", or "bug"' not in create_card_desc
     card_docs = load("reference/tool-docs/card.md")
@@ -57,13 +58,12 @@ async def test_operational_mcp_tools_are_registered_and_described_currently():
     assert 'Card type - "normal" (default), "test", or "bug"' in card_docs
     assert "spec is approved" in card_docs
 
-    # submit_task_validation: compact summary names the three dimensions; the
-    # full outcome prose ("failed remains in \u2026") moved to tool-docs.
+    # Validation dimensions and full outcome prose remain in the linked docs.
     validation_desc = tools["okto_pulse_submit_task_validation"].description
-    assert "confidence" in validation_desc
-    assert "completeness" in validation_desc
-    assert "drift" in validation_desc
+    assert "okto-pulse://reference/tool-docs/misc" in validation_desc
     validation_docs = load("reference/tool-docs/misc.md")
+    for dimension in ("confidence", "completeness", "drift"):
+        assert dimension in validation_docs
     assert "validation_outcome" in validation_docs
     assert "completion_outcome" in validation_docs
     assert "routes it to `rejected`" in validation_docs
@@ -89,7 +89,8 @@ async def test_operational_mcp_tools_are_registered_and_described_currently():
     # documented and keeps blocking vs would_block_done discoverable.
     assert "okto_pulse_kg_health_readiness" in kg_docs
     hr_desc = tools["okto_pulse_kg_health_readiness"].description
-    assert "would_block_done" in hr_desc
+    assert "okto-pulse://reference/tool-docs/kg" in hr_desc
+    assert "would_block_done" in kg_docs
     assert "non_maskable" in kg_docs.lower()
 
     # mockup family: "story" discoverability is preserved either in the compact
@@ -110,9 +111,12 @@ async def test_operational_mcp_tools_are_registered_and_described_currently():
     assert "include_content" in mockup_docs
     assert "html_content_sha256" in mockup_docs
 
-    # traceability summary keeps its full SDLC-chain identity inline.
+    # The lazy contract retains the complete SDLC chain.
     traceability_desc = tools["okto_pulse_get_traceability_report"].description
-    assert "traceability report" in traceability_desc
-    assert "ideation" in traceability_desc
-    assert "spec" in traceability_desc
-    assert "card/test/bug" in traceability_desc
+    traceability_uri = mcp_server.tool_docs_uri("okto_pulse_get_traceability_report")
+    assert traceability_uri in traceability_desc
+    traceability_docs = load(traceability_uri.removeprefix("okto-pulse://") + ".md")
+    assert "traceability report" in traceability_docs
+    assert "ideation" in traceability_docs
+    assert "spec" in traceability_docs
+    assert "card/test/bug" in traceability_docs
