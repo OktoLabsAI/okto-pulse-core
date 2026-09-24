@@ -397,11 +397,10 @@ async def test_ts24_post_recheck_stale_publication_is_observable_then_converges(
     monkeypatch.setattr(
         consolidation,
         "_worker_node_to_candidate",
-        lambda _node: {
-            "candidate_id": "n",
-            "node_type": "Requirement",
-            "title": "stale",
-        },
+        lambda _node: consolidation.NodeCandidate(
+            candidate_id="n", node_type="Requirement", title="stale",
+            source_artifact_ref="requirement:n",
+        ),
     )
     monkeypatch.setattr(
         consolidation,
@@ -484,7 +483,19 @@ async def test_ts24_post_recheck_stale_publication_is_observable_then_converges(
         legacy_task = asyncio.create_task(
             consolidation._process_queue_entry(object(), legacy)
         )
-        await asyncio.wait_for(commit_entered.wait(), timeout=2)
+        commit_waiter = asyncio.create_task(commit_entered.wait())
+        try:
+            done, _pending = await asyncio.wait(
+                (legacy_task, commit_waiter), timeout=2,
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+            if legacy_task in done:
+                await legacy_task  # Surface an early worker error, not a timeout.
+            assert commit_waiter in done, "worker never reached commit"
+        finally:
+            if not commit_waiter.done():
+                commit_waiter.cancel()
+            await asyncio.gather(commit_waiter, return_exceptions=True)
         # The authoritative claim CAS now runs once, after graph-writer
         # acquisition. Production holds that relational writer through graph
         # commit/ACK; this synthetic post-check publication still proves the
@@ -541,6 +552,9 @@ async def test_ts24_post_recheck_stale_publication_is_observable_then_converges(
         ]
         assert (delivered_at - T0).total_seconds() <= TAKEDOWN_NORMAL_SLO_SECONDS
     finally:
+        if not legacy_task.done():
+            legacy_task.cancel()
+        await asyncio.gather(legacy_task, return_exceptions=True)
         register_consolidation_persistence_port(previous_store)
         if previous_ledger is None:
             reset_delivery_ledger_port_for_tests()

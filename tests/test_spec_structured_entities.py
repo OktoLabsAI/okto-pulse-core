@@ -1200,7 +1200,7 @@ async def test_unsupported_operation_and_missing_entity_are_typed_errors(db_fact
 
 
 @pytest.mark.asyncio
-async def test_link_task_validates_target_card_before_persisting(db_factory):
+async def test_link_task_prunes_missing_target_and_preserves_live_card(db_factory):
     board_id = f"board-{uuid.uuid4()}"
     spec_id = f"spec-{uuid.uuid4()}"
     card_id = f"card-{uuid.uuid4()}"
@@ -1224,9 +1224,11 @@ async def test_link_task_validates_target_card_before_persisting(db_factory):
             )
         )
 
-        assert missing.success is False
-        assert missing.error_code == StructuredSpecEntityErrorCode.LINK_TARGET_INVALID
-        assert (await db.get(Spec, spec_id)).decisions[0].get("linked_task_ids") is None
+        # The v0.3.4 baseline prunes missing Card references in the shared
+        # final-state validator, including structured writes. Preserve that
+        # behavior while requiring that no dangling reference is persisted.
+        assert missing.success is True
+        assert (await db.get(Spec, spec_id)).decisions[0]["linked_task_ids"] == []
 
         db.add(
             Card(

@@ -1105,13 +1105,24 @@ async def test_commit_restore_failure_aborts_generic_cleanup_and_keeps_new_paren
                 scope = await original_transaction.begin(requested_board_id)
                 self.begin_calls += 1
                 if self.begin_calls == 2:
+                    # The captured production scope is slotted. Inject through
+                    # its public contract without mutating the scope or leaking
+                    # the transaction opened above on an AttributeError.
+                    class _FailRestoreScope:
+                        def __getattr__(self, name):
+                            return getattr(scope, name)
 
-                    def _fail_restore(_receipt) -> None:
-                        raise RuntimeError("injected restore-old failure")
+                        async def __aenter__(self):
+                            await scope.__aenter__()
+                            return self
 
-                    scope.compensate_spec_lineage_parent = (  # type: ignore[method-assign]
-                        _fail_restore
-                    )
+                        async def __aexit__(self, *args):
+                            return await scope.__aexit__(*args)
+
+                        def compensate_spec_lineage_parent(self, _receipt):
+                            raise RuntimeError("injected restore-old failure")
+
+                    return _FailRestoreScope()
                 return scope
 
         failing_transaction = _FailSecondBeginCompensation()
