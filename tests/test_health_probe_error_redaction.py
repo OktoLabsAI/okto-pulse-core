@@ -14,7 +14,7 @@ from okto_pulse.core.services import kg_health_service as health
     "x" * 400,
 ])
 def test_source_failure_is_unknown_with_stable_public_reason(monkeypatch, message):
-    def unavailable():
+    def unavailable(**kwargs):
         raise RuntimeError(message)
 
     monkeypatch.setattr(kg_rebuild, "build_source_store", unavailable)

@@ -20,7 +20,7 @@ class _IncompleteBoardSourceReader:
     def __init__(self) -> None:
         self.fetch_calls: list[str] = []
 
-    def fetch(self, board_id: str) -> BoardSourceSnapshot:
+    def fetch(self, board_id: str, *, observation_budget=None) -> BoardSourceSnapshot:
         self.fetch_calls.append(board_id)
         return BoardSourceSnapshot(complete=False, cause="table_missing")
 
@@ -98,8 +98,7 @@ def test_kg_health_source_diagnostic_reports_enumeration_failure_not_zero(
     assert diagnostic["source_count"] is None
     assert diagnostic["canonical_source_count"] is None
     assert diagnostic["working_source_count"] is None
-    assert "SourceUnavailableError" in diagnostic["error"]
-    assert "table_missing" in diagnostic["error"]
+    assert diagnostic["error"] == "source_enumeration_unavailable"
     assert incomplete_reader.fetch_calls == ["board-health-diagnostic"]
 
 

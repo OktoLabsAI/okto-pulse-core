@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
+import math
 from typing import Any, Literal, Protocol, overload
 
 
@@ -98,11 +99,32 @@ class InvalidArtifactTypeError(SourceReadError):
         super().__init__("invalid_artifact_type", message, cause_type)
 
 
+@dataclass(frozen=True, slots=True)
+class SourceObservationBudget:
+    """Aggregate relational read limits; no pagination or partial source census."""
+
+    max_rows: int = 10000
+    max_bytes: int = 4 * 1024 * 1024
+    timeout_seconds: float = 0.35
+
+    def __post_init__(self) -> None:
+        if type(self.max_rows) is not int or not 1 <= self.max_rows <= 10000:
+            raise ValueError("invalid_source_observation_rows")
+        if type(self.max_bytes) is not int or not 1024 <= self.max_bytes <= 16 * 1024 * 1024:
+            raise ValueError("invalid_source_observation_bytes")
+        if (type(self.timeout_seconds) not in (int, float)
+                or not math.isfinite(self.timeout_seconds)
+                or not 0 < self.timeout_seconds <= 5):
+            raise ValueError("invalid_source_observation_timeout")
+
+
 class BoardSourceReader(Protocol):
     """Reads raw SDLC source rows for a board."""
 
-    def fetch(self, board_id: str) -> BoardSourceSnapshot:
-        """Return one source snapshot whose completeness is authoritative."""
+    def fetch(
+        self, board_id: str, *, observation_budget: SourceObservationBudget | None = None
+    ) -> BoardSourceSnapshot:
+        """Return a complete snapshot or refuse; never ignore an observation budget."""
 
 
 class RebuildIngestionPort(Protocol):
@@ -119,6 +141,7 @@ RebuildStepAdapterFactory = RebuildIngestionPort
 
 
 __all__ = [
+    "SourceObservationBudget",
     "BoardSourceReader",
     "BoardSourceRow",
     "BoardSourceSnapshot",

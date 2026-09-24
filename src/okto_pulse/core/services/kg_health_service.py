@@ -10,7 +10,7 @@ JSON payload describing the live state of a board's knowledge graph:
       band (sintoma de inflation), and avg_relevance.
     * In-process counter from scoring.get_contradict_warn_count for
       contradict_warn_count.
-    * schema_version is a fixed string ("1.0") versioning the response
+    * schema_version is a fixed string ("1.3") versioning the response
       payload independently of the graph backend schema.
 
 Failed or incomplete observations retain explicit unavailability. Public graph
@@ -2414,8 +2414,8 @@ async def get_kg_health(
     """Compose the /api/v1/kg/health payload for ``board_id``.
 
     Raises ``BoardNotFoundError`` when the board is not found in the
-    SQLite app DB. All graph backend-derived metrics degrade to zero on lookup
-    errors — the endpoint never 500s for a transient graph backend issue.
+    relational app store. Failed graph observations retain explicit unknown
+    counts; an unavailable sensor is never evidence of an empty graph.
     """
     relational = await get_kg_health_read_port().queue_snapshot(
         db,
@@ -3952,9 +3952,15 @@ def _probe_rebuild_source_diagnostics(board_id: str) -> dict[str, Any]:
         from okto_pulse.core.kg.rebuild_sources import RebuildSourceEnumerator
 
         from okto_pulse.core.application.kg_rebuild import build_source_store
+        from okto_pulse.core.application.rebuild_ports import SourceObservationBudget
 
         source_set = RebuildSourceEnumerator(
-            source_store=build_source_store()
+            source_store=build_source_store(
+                observation_budget=SourceObservationBudget(timeout_seconds=_HEALTH_PROBE_BUDGET_S)
+            ),
+            # These two counters exclude the cognitive digest. Do not load or
+            # hash that separate store for a count-only Health observation.
+            cognitive_digest_provider=lambda _: {},
         ).enumerate(board_id=board_id)
         canonical = int(source_set.canonical_source_count)
         working = int(source_set.working_source_count)
