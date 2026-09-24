@@ -237,6 +237,17 @@ def _resolve_one_linked_criterion_to_id(entry, ac_list: list) -> str | None:
     if isinstance(entry, bool):
         return None
 
+    token = str(entry).strip()
+    if not token:
+        return None
+    # Canonical identity precedes legacy text/index compatibility. Ambiguous
+    # references stay unresolved so existing writers reject before mutation.
+    identities = [ac for ac in ac_list if _structured_ref_id(ac) == token]
+    if identities:
+        return token if len(identities) == 1 else None
+    if token.startswith(("ac_", "fr_", "tr_")):
+        return None
+
     idx: int | None = None
     if isinstance(entry, int):
         idx = entry
@@ -250,14 +261,10 @@ def _resolve_one_linked_criterion_to_id(entry, ac_list: list) -> str | None:
             return _structured_ref_id(ac) or _structured_ref_text(ac)
         return None
 
-    token = str(entry).strip()
-    if not token:
-        return None
-    for ac in ac_list:
-        ac_id = _structured_ref_id(ac)
-        ac_text = _structured_ref_text(ac)
-        if token == ac_id or token == ac_text:
-            return ac_id or ac_text
+    matches = [ac for ac in ac_list if _structured_ref_text(ac) == token]
+    if len(matches) == 1:
+        ac = matches[0]
+        return _structured_ref_id(ac) or _structured_ref_text(ac)
     return None
 
 

@@ -416,6 +416,30 @@ async def test_update_test_scenario_unresolved_criteria_fails_closed(db_factory)
             )
 
 
+async def test_ambiguous_criteria_edit_preserves_persisted_scenario_and_evidence(db_factory):
+    from copy import deepcopy
+
+    original = {
+        "id": "ts_a", "title": "Original", "status": "passed",
+        "linked_criteria": ["ac_one"], "evidence": dict(_VALID_EVIDENCE),
+    }
+    _b, spec_id, _c = await _seed_spec(
+        db_factory, scenarios=[deepcopy(original)],
+        acs=[{"id": "ac_one", "text": "Repeated"}, {"id": "ac_two", "text": "Repeated"}],
+    )
+    async with db_factory() as db:
+        svc = SpecService(db)
+        with pytest.raises(ValueError, match="unresolved_criteria"):
+            await svc.update_test_scenario(
+                spec_id, USER, "ts_a", title="Must not persist", linked_criteria=["Repeated"]
+            )
+        # Commit explicitly: rejection must not leave a partially dirty entity.
+        await db.commit()
+    async with db_factory() as db:
+        persisted = await SpecService(db).get_spec(spec_id)
+        assert persisted.test_scenarios == [original]
+
+
 async def test_semantic_edit_invalidates_evidence_cosmetic_preserves(db_factory):
     # ts_57e928b8
     base = {
