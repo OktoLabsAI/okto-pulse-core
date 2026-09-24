@@ -340,8 +340,12 @@
       "line": 614,
       "id": "T35",
       "normative_text": "| T35 | Health repetido em estado normal, degradado, sem provider e timeout | Estados verdadeiros, observação limitada e ausência de efeitos semânticos. |",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "verified_by_reviewed_execution",
+      "test_text_references": [],
+      "reviewed_execution": {
+        "artifact": "acceptance-health-execution.json",
+        "criterion_key": "BASE:T35"
+      }
     },
     {
       "key": "BASE:T36",
@@ -349,8 +353,12 @@
       "line": 615,
       "id": "T36",
       "normative_text": "| T36 | Provider de health com lazy-open/reconcile/tick | Teste garante que esses efeitos não são acionados pela leitura. |",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "verified_by_reviewed_execution",
+      "test_text_references": [],
+      "reviewed_execution": {
+        "artifact": "acceptance-health-execution.json",
+        "criterion_key": "BASE:T36"
+      }
     },
     {
       "key": "BASE:T37",

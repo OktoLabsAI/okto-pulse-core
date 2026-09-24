@@ -1,0 +1,549 @@
+{
+  "format": "pulse-v1.3-reviewed-execution/v1",
+  "scope": "BASE T35/T36 consolidated Health acceptance including REST metadata phase",
+  "provenance": {
+    "file": "provenance-health-final.json",
+    "sha256": "40998b62a12c5597671253e3617e28bfb066f9e676aa95cd5f88286c70cb6eaa",
+    "identity": {
+      "checked_at": "2026-09-24T10:10:14.239654+00:00",
+      "python": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Scripts\\python.exe",
+      "packages": {
+        "core": {
+          "python_files": 824,
+          "origin": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages\\okto_pulse\\core\\__init__.py",
+          "repository_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_core",
+          "commit": "2f49164bc36820beaf82a07cc79e4dfc87db4e3b",
+          "dirty": false,
+          "dirty_entry_count": 0,
+          "distribution": "okto-pulse-core",
+          "version": "0.3.4",
+          "wheel": {
+            "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\dist-legacy-manifest\\okto_pulse_core-0.3.4-py3-none-any.whl",
+            "sha256": "c9bed59587f9985d01e46af3b46807be69a6282014de61367f77ee77a70d4468",
+            "size": 3686699
+          },
+          "source_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_core\\src",
+          "site_packages_root": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages",
+          "package_prefix": "okto_pulse/core/",
+          "byte_identical_member_count": 887,
+          "byte_identical": true,
+          "aggregate_sha256": "2d11ebab26e78f265241e07b5b7c65601333bd77a0ad6b8cbb46adf306064ffb",
+          "chain_hashes": {
+            "source": "2d11ebab26e78f265241e07b5b7c65601333bd77a0ad6b8cbb46adf306064ffb",
+            "wheel": "2d11ebab26e78f265241e07b5b7c65601333bd77a0ad6b8cbb46adf306064ffb",
+            "site_packages": "2d11ebab26e78f265241e07b5b7c65601333bd77a0ad6b8cbb46adf306064ffb"
+          },
+          "critical_resource_sha256": {
+            "okto_pulse/core/mcp/resources/ska_resource_manifest.json": "f79413fcabd82a5f7c42df33a621ba02b70a1198281dc5e36525bd503a0ae6dc",
+            "okto_pulse/core/mcp/resources/ska_tool_manifest.json": "0c3fa3da1549baec20872eca3f4a289288627e6b9f6b80be10472ac962fa72b9"
+          },
+          "mismatches": []
+        },
+        "community": {
+          "python_files": 361,
+          "origin": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages\\okto_pulse\\community\\__init__.py",
+          "repository_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_community",
+          "commit": "ec55b2edc77a4f9d9dfba2fa275069538d99f989",
+          "dirty": false,
+          "dirty_entry_count": 0,
+          "distribution": "okto-pulse",
+          "version": "0.3.4",
+          "wheel": {
+            "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\dist-legacy-manifest\\okto_pulse-0.3.4-py3-none-any.whl",
+            "sha256": "d9da6de864fc73269c47d902e95e2132dbd6bc1a4d2f65991774f6abf8b6074f",
+            "size": 4483184
+          },
+          "source_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_community\\src",
+          "site_packages_root": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages",
+          "package_prefix": "okto_pulse/community/",
+          "byte_identical_member_count": 446,
+          "byte_identical": true,
+          "aggregate_sha256": "2f87e9649641be3471067a9989e0f4d8be8b6db445024610bbc6858c60a2a982",
+          "chain_hashes": {
+            "source": "2f87e9649641be3471067a9989e0f4d8be8b6db445024610bbc6858c60a2a982",
+            "wheel": "2f87e9649641be3471067a9989e0f4d8be8b6db445024610bbc6858c60a2a982",
+            "site_packages": "2f87e9649641be3471067a9989e0f4d8be8b6db445024610bbc6858c60a2a982"
+          },
+          "critical_resource_sha256": {},
+          "mismatches": []
+        }
+      }
+    }
+  },
+  "runs": {
+    "core": {
+      "file": "acceptance-health-final-core.xml",
+      "sha256": "f827a340917c9e5ad0d5fa2713c1a183c7d78de9ff4e78df71e22bbe7f3dd7a0",
+      "suites": [
+        {
+          "name": "pytest",
+          "errors": "0",
+          "failures": "0",
+          "skipped": "0",
+          "tests": "167",
+          "time": "36.571",
+          "timestamp": "2026-09-24T07:10:35.986951-03:00",
+          "hostname": "Alienware_m15"
+        }
+      ],
+      "sources": {
+        "tests/test_graph_health_observation_port.py": {
+          "source_sha256": "da9646a70b765b6fae863dae08c6b090708bae3d3528ff3a1f6bdf1b1875a18b",
+          "passed_cases": [
+            "test_missing_observation_port_refuses_before_graph_code[graph_snapshot]",
+            "test_missing_observation_port_refuses_before_graph_code[parity_snapshot]",
+            "test_port_wraps_probe_and_exits_after_error[graph_snapshot]",
+            "test_port_wraps_probe_and_exits_after_error[parity_snapshot]"
+          ]
+        },
+        "tests/test_health_graph_metrics_availability.py": {
+          "source_sha256": "79ef3abdf96dc3a765255c6feac1822ad48e64fcb4c8257101ba3ce750408803",
+          "passed_cases": [
+            "test_graph_metrics_report_completeness_and_keep_query_bounds[all_failed]",
+            "test_graph_metrics_report_completeness_and_keep_query_bounds[partial]",
+            "test_graph_metrics_report_completeness_and_keep_query_bounds[missing_rows]",
+            "test_graph_metrics_report_completeness_and_keep_query_bounds[truncated]",
+            "test_graph_metrics_report_completeness_and_keep_query_bounds[has_more]",
+            "test_graph_metrics_report_completeness_and_keep_query_bounds[cap]",
+            "test_graph_metrics_report_completeness_and_keep_query_bounds[empty]",
+            "test_graph_metrics_report_completeness_and_keep_query_bounds[complete]",
+            "test_missing_provider_is_not_a_successful_empty_observation"
+          ]
+        },
+        "tests/test_health_layer_counts_availability.py": {
+          "source_sha256": "7901cce79d4d876c20998061651d7090af8ab44a41509f07cd1b913e1fc9c15b",
+          "passed_cases": [
+            "test_layer_counts_require_complete_bounded_observation[all_failed]",
+            "test_layer_counts_require_complete_bounded_observation[partial]",
+            "test_layer_counts_require_complete_bounded_observation[missing_rows]",
+            "test_layer_counts_require_complete_bounded_observation[truncated]",
+            "test_layer_counts_require_complete_bounded_observation[has_more]",
+            "test_layer_counts_require_complete_bounded_observation[cap]",
+            "test_layer_counts_require_complete_bounded_observation[short]",
+            "test_layer_counts_require_complete_bounded_observation[negative]",
+            "test_layer_counts_require_complete_bounded_observation[null_count]",
+            "test_layer_counts_require_complete_bounded_observation[bool_count]",
+            "test_layer_counts_require_complete_bounded_observation[empty]",
+            "test_layer_counts_require_complete_bounded_observation[complete]",
+            "test_fallback_does_not_fabricate_zero_layer_counts"
+          ]
+        },
+        "tests/test_health_probe_error_redaction.py": {
+          "source_sha256": "1a7f8090c752d453e343241ba03332dd2eff3d29da8f4c332c7f9f116d827df1",
+          "passed_cases": [
+            "test_source_failure_is_unknown_with_stable_public_reason[D:/private/another-board/source.json]",
+            "test_source_failure_is_unknown_with_stable_public_reason[token=SYNTHETIC_SECRET\\nSELECT body FROM private_content]",
+            "test_source_failure_is_unknown_with_stable_public_reason[xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx]",
+            "test_safe_write_failure_exposes_no_exception_body"
+          ]
+        },
+        "tests/test_health_source_observation_budget.py": {
+          "source_sha256": "5c5b388ec1f9020cdd18401863f90db68756fbc53268a95c7e1c3b904be8cd40",
+          "passed_cases": [
+            "test_health_supplies_budget_and_preserves_counts_without_cognitive_io",
+            "test_health_never_retries_an_edition_without_budget_support",
+            "test_observation_budget_is_closed_and_bounded[patch0]",
+            "test_observation_budget_is_closed_and_bounded[patch1]",
+            "test_observation_budget_is_closed_and_bounded[patch2]",
+            "test_observation_budget_is_closed_and_bounded[patch3]",
+            "test_observation_budget_is_closed_and_bounded[patch4]",
+            "test_observation_budget_is_closed_and_bounded[patch5]",
+            "test_observation_budget_is_closed_and_bounded[patch6]",
+            "test_observation_budget_is_closed_and_bounded[patch7]",
+            "test_observation_budget_is_closed_and_bounded[patch8]"
+          ]
+        },
+        "tests/test_health_readiness_aggregate_retirement.py": {
+          "source_sha256": "49c3dbc9da2455986315a901b8db4a8f6601dbbd762baf4de75f4db58f6225f6",
+          "passed_cases": [
+            "test_aggregates_do_not_read_rows_or_expose_errors_and_preserve_policy[None-False-summary]",
+            "test_aggregates_do_not_read_rows_or_expose_errors_and_preserve_policy[None-False-full]",
+            "test_aggregates_do_not_read_rows_or_expose_errors_and_preserve_policy[None-False-legacy]",
+            "test_aggregates_do_not_read_rows_or_expose_errors_and_preserve_policy[None-True-summary]",
+            "test_aggregates_do_not_read_rows_or_expose_errors_and_preserve_policy[None-True-full]",
+            "test_aggregates_do_not_read_rows_or_expose_errors_and_preserve_policy[None-True-legacy]",
+            "test_aggregates_do_not_read_rows_or_expose_errors_and_preserve_policy[spec:foreign-or-sensitive-False-summary]",
+            "test_aggregates_do_not_read_rows_or_expose_errors_and_preserve_policy[spec:foreign-or-sensitive-False-full]",
+            "test_aggregates_do_not_read_rows_or_expose_errors_and_preserve_policy[spec:foreign-or-sensitive-False-legacy]",
+            "test_aggregates_do_not_read_rows_or_expose_errors_and_preserve_policy[spec:foreign-or-sensitive-True-summary]",
+            "test_aggregates_do_not_read_rows_or_expose_errors_and_preserve_policy[spec:foreign-or-sensitive-True-full]",
+            "test_aggregates_do_not_read_rows_or_expose_errors_and_preserve_policy[spec:foreign-or-sensitive-True-legacy]",
+            "test_persistence_error_text_is_not_copied_to_aggregate",
+            "test_no_aggregate_invents_a_signal_for_zero_counts",
+            "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[None-0-False-summary]",
+            "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[None-0-False-full]",
+            "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[None-0-False-legacy]",
+            "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[None-0-True-summary]",
+            "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[None-0-True-full]",
+            "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[None-0-True-legacy]",
+            "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[None-2-False-summary]",
+            "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[None-2-False-full]",
+            "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[None-2-False-legacy]",
+            "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[None-2-True-summary]",
+            "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[None-2-True-full]",
+            "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[None-2-True-legacy]",
+            "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary1-0-False-summary]",
+            "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary1-0-False-full]",
+            "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary1-0-False-legacy]",
+            "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary1-0-True-summary]",
+            "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary1-0-True-full]",
+            "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary1-0-True-legacy]",
+            "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary1-2-False-summary]",
+            "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary1-2-False-full]",
+            "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary1-2-False-legacy]",
+            "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary1-2-True-summary]",
+            "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary1-2-True-full]",
+            "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary1-2-True-legacy]",
+            "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary2-0-False-summary]",
+            "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary2-0-False-full]",
+            "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary2-0-False-legacy]",
+            "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary2-0-True-summary]",
+            "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary2-0-True-full]",
+            "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary2-0-True-legacy]",
+            "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary2-2-False-summary]",
+            "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary2-2-False-full]",
+            "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary2-2-False-legacy]",
+            "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary2-2-True-summary]",
+            "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary2-2-True-full]",
+            "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary2-2-True-legacy]",
+            "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary3-0-False-summary]",
+            "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary3-0-False-full]",
+            "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary3-0-False-legacy]",
+            "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary3-0-True-summary]",
+            "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary3-0-True-full]",
+            "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary3-0-True-legacy]",
+            "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary3-2-False-summary]",
+            "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary3-2-False-full]",
+            "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary3-2-False-legacy]",
+            "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary3-2-True-summary]",
+            "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary3-2-True-full]",
+            "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary3-2-True-legacy]",
+            "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary4-0-False-summary]",
+            "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary4-0-False-full]",
+            "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary4-0-False-legacy]",
+            "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary4-0-True-summary]",
+            "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary4-0-True-full]",
+            "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary4-0-True-legacy]",
+            "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary4-2-False-summary]",
+            "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary4-2-False-full]",
+            "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary4-2-False-legacy]",
+            "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary4-2-True-summary]",
+            "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary4-2-True-full]",
+            "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary4-2-True-legacy]",
+            "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary5-0-False-summary]",
+            "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary5-0-False-full]",
+            "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary5-0-False-legacy]",
+            "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary5-0-True-summary]",
+            "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary5-0-True-full]",
+            "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary5-0-True-legacy]",
+            "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary5-2-False-summary]",
+            "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary5-2-False-full]",
+            "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary5-2-False-legacy]",
+            "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary5-2-True-summary]",
+            "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary5-2-True-full]",
+            "test_unavailable_debt_never_becomes_zero_or_clears_known_blocker[summary5-2-True-legacy]"
+          ]
+        },
+        "tests/test_kg_materialization_health_policy.py": {
+          "source_sha256": "1bb417be180ea1a2a0ce3284a820311d481ff5adf19bbe4b1b19642e3330e81c",
+          "passed_cases": [
+            "test_all_materialization_probes_share_one_monotonic_deadline",
+            "test_four_state_runtime_factory_preserves_binary_consumers[present_readable_candidate-True-available]",
+            "test_four_state_runtime_factory_preserves_binary_consumers[confirmed_absent-False-absent]",
+            "test_four_state_runtime_factory_preserves_binary_consumers[present_unreadable_or_error-False-unavailable]",
+            "test_four_state_runtime_factory_preserves_binary_consumers[provider_unavailable-False-unavailable]",
+            "test_legacy_absence_is_not_promoted_to_confirmed_absence",
+            "test_confirmed_empty_is_known_healthy_but_discovery_stays_independent[confirmed_absent-healthy-healthy]",
+            "test_confirmed_empty_is_known_healthy_but_discovery_stays_independent[present_readable_candidate-at_risk-at_risk]",
+            "test_confirmed_empty_does_not_hide_independent_discovery_failure",
+            "test_incomplete_or_contradictory_board_evidence_fails_closed[board_store0-census0-board_stat_timeout]",
+            "test_incomplete_or_contradictory_board_evidence_fails_closed[board_store1-census1-board_provider_unavailable]",
+            "test_incomplete_or_contradictory_board_evidence_fails_closed[board_store2-census2-board_census_timeout]",
+            "test_incomplete_or_contradictory_board_evidence_fails_closed[board_store3-census3-board_census_nonzero]",
+            "test_mixed_generation_evidence_is_conservative",
+            "test_unbound_generations_report_the_actual_fail_closed_reason",
+            "test_unreadable_store_preserves_stronger_existing_health_state[recovery_needed]",
+            "test_unreadable_store_preserves_stronger_existing_health_state[quarantined]",
+            "test_present_readable_board_is_materialized_without_reclassifying_health"
+          ]
+        },
+        "tests/test_materialization_health_observability.py": {
+          "source_sha256": "081a18f0e957b73d8133970c2bc7c61a538530b46cd04eeace20cd61bb4c8376",
+          "passed_cases": [
+            "test_classification_metric_and_probe_audits_use_bounded_labels",
+            "test_first_write_convergence_is_monotonic_bounded_and_deduplicated",
+            "test_first_write_poll_observed_after_deadline_is_audited_once",
+            "test_mutation_guard_keeps_paths_out_of_metric_labels_and_samples",
+            "test_metric_counts_remain_monotonic_after_sample_retention_rolls_over"
+          ]
+        },
+        "tests/test_kg_health_probe_test_isolation.py": {
+          "source_sha256": "696f4f46650cbb937fcbcd92b07a6d383649673d81c8a3549908500785351a01",
+          "passed_cases": [
+            "test_probe_drain_guard_is_bounded_and_fails_closed",
+            "test_probe_then_sync_and_async_graph_tests_are_isolated"
+          ]
+        },
+        "tests/test_kg_health_query_batching.py": {
+          "source_sha256": "fa4a6893154ebb6478eae7394698a6170be6af27020278b5b8e2d0d43b0137df",
+          "passed_cases": [
+            "test_batch_preserves_queries_parameters_limits_order_and_answers",
+            "test_failed_or_incomplete_batch_discards_prefix_and_retries_scalar[raise]",
+            "test_failed_or_incomplete_batch_discards_prefix_and_retries_scalar[short]",
+            "test_failed_or_incomplete_batch_discards_prefix_and_retries_scalar[malformed]",
+            "test_per_type_failures_keep_partial_or_unavailable_status[failures0]",
+            "test_per_type_failures_keep_partial_or_unavailable_status[failures1]",
+            "test_scalar_port_is_not_forced_to_implement_optional_batch",
+            "test_empty_group_performs_no_read"
+          ]
+        },
+        "tests/test_health_schema_1_1_contract.py": {
+          "source_sha256": "1182af5554beee129ff2895e17265c2efc0e7dbeb4e88ece79a9983fa76506fd",
+          "passed_cases": [
+            "test_health_schema_version_advances_to_1_1",
+            "test_mcp_summary_preserves_versioned_materialization_contract",
+            "test_failed_debt_provider_remains_unavailable_through_health_and_mcp",
+            "test_confirmed_empty_composes_known_zero_contract_without_graph_reads",
+            "test_unreadable_store_preserves_concrete_recovery_state_without_open[False-recovery_needed]",
+            "test_unreadable_store_preserves_concrete_recovery_state_without_open[True-quarantined]",
+            "test_evidence_timeout_returns_typed_fail_closed_payload_without_open"
+          ]
+        }
+      }
+    },
+    "community": {
+      "file": "acceptance-health-final-community.xml",
+      "sha256": "753be0680d19e8e20b7e6a65485d1d2135e4a2d136e6cc95fdaf3293b770c45e",
+      "suites": [
+        {
+          "name": "pytest",
+          "errors": "0",
+          "failures": "0",
+          "skipped": "0",
+          "tests": "116",
+          "time": "121.943",
+          "timestamp": "2026-09-24T07:10:33.846236-03:00",
+          "hostname": "Alienware_m15"
+        }
+      ],
+      "sources": {
+        "tests/test_health_absence_observation.py": {
+          "source_sha256": "9107e80437e0f04ca242a8991d0c7813cf480816b5e6822d50e096aea5b1332f",
+          "passed_cases": [
+            "test_health_absence_proof_refuses_oversized_board_namespace",
+            "test_missing_primary_never_overrides_incomplete_canonical_absence",
+            "test_metadata_byte_budget_is_aggregate_and_does_not_trust_stat",
+            "test_metadata_entry_budget_is_shared_across_directories",
+            "test_metadata_budget_refuses_expired_or_missing_scope",
+            "test_absence_proof_expiring_during_final_metadata_step_is_discarded"
+          ]
+        },
+        "tests/test_health_artifact_observation.py": {
+          "source_sha256": "3d4c0890b655e2f634e78686ed7be0beedc7e7a50054579bee9a7b3b203e2db5",
+          "passed_cases": [
+            "test_health_does_not_clean_orphan_temporary_artifacts",
+            "test_corrupt_cognitive_artifact_is_unavailable_not_empty",
+            "test_invalid_cognitive_evidence_does_not_become_zero[array]",
+            "test_invalid_cognitive_evidence_does_not_become_zero[missing_generation]",
+            "test_invalid_cognitive_evidence_does_not_become_zero[unknown_status]",
+            "test_invalid_cognitive_evidence_does_not_become_zero[invalid_refs]",
+            "test_observation_budget_refuses_without_partial_result_or_cleanup[budget0]",
+            "test_observation_budget_refuses_without_partial_result_or_cleanup[budget1]",
+            "test_observation_budget_refuses_without_partial_result_or_cleanup[budget2]",
+            "test_observation_aggregate_bytes_and_no_unbounded_fallback",
+            "test_health_generation_observation_preserves_temporary_files_and_detects_invalid_pointer",
+            "test_absent_observation_does_not_create_a_board_directory",
+            "test_latest_generation_order_and_item_interpretation_are_preserved",
+            "test_expired_observation_stops_before_json_decoding",
+            "test_artifact_changed_during_observation_is_not_a_complete_snapshot"
+          ]
+        },
+        "tests/test_health_filesystem_observation.py": {
+          "source_sha256": "813700b3b444e9bd0d31f13c6fc19f1da2a564454e1e04c13c5ea841a7fab71c",
+          "passed_cases": [
+            "test_health_footprint_has_an_entry_budget_and_never_returns_a_prefix",
+            "test_exact_entry_budget_keeps_complete_size",
+            "test_depth_budget_refuses_instead_of_measuring_a_prefix",
+            "test_deadline_expiration_discards_observed_size"
+          ]
+        },
+        "tests/test_health_global_graph_observation.py": {
+          "source_sha256": "fb53bcaa1d670f2f1c71ae6fe50eff8877c0ccb6bc69d0d565615ba1c76c6353",
+          "passed_cases": [
+            "test_cold_global_health_never_opens_a_writable_participant",
+            "test_global_health_bounds_authenticated_manifest_reads",
+            "test_materialization_guard_does_not_read_unbounded_global_manifest",
+            "test_warm_global_health_receives_native_deadline",
+            "test_health_parity_distinguishes_unobserved_from_confirmed_empty[False]",
+            "test_health_parity_distinguishes_unobserved_from_confirmed_empty[True]",
+            "test_global_health_refuses_result_volume_instead_of_returning_prefix[UNWIND range(1, 1001) AS n RETURN n-params0]",
+            "test_global_health_refuses_result_volume_instead_of_returning_prefix[UNWIND range(1, 600) AS n RETURN $value-params1]",
+            "test_global_health_refuses_result_volume_instead_of_returning_prefix[UNWIND range(1, 600) AS n RETURN $value-params2]",
+            "test_global_health_accepts_exact_row_bound_and_preserves_foreground",
+            "test_global_health_closes_cursor_at_first_row_overflow"
+          ]
+        },
+        "tests/test_health_global_metadata.py": {
+          "source_sha256": "bf84f9bb909f8cf5f1be1d44985b19e77a43a668c8973a3a4d89eb556159c170",
+          "passed_cases": [
+            "test_global_health_shares_byte_budget_between_pointer_and_manifest",
+            "test_global_absence_refuses_incomplete_namespace_scan",
+            "test_global_metadata_discards_result_after_final_identity_check"
+          ]
+        },
+        "tests/test_health_graph_open_observation.py": {
+          "source_sha256": "d79a655b57d805040d7f786e93f7ebab3b6c63c66d8b110d3ad30c786e408889",
+          "passed_cases": [
+            "test_health_graph_query_does_not_checkpoint_or_close_rollback_on_read_join[graph_snapshot]",
+            "test_health_graph_query_does_not_checkpoint_or_close_rollback_on_read_join[parity_snapshot]",
+            "test_observation_context_restores_foreground_recovery_after_nested_failure",
+            "test_health_context_does_not_disable_another_threads_foreground_recovery",
+            "test_health_refuses_fences_before_mutation[write_fence]",
+            "test_health_refuses_fences_before_mutation[runtime_fence]",
+            "test_health_never_falls_back_to_a_writable_pool",
+            "test_health_writable_resolver_uses_only_reader",
+            "test_invalid_timeout_cannot_enter_observation[True]",
+            "test_invalid_timeout_cannot_enter_observation[False]",
+            "test_invalid_timeout_cannot_enter_observation[0]",
+            "test_invalid_timeout_cannot_enter_observation[-1]",
+            "test_invalid_timeout_cannot_enter_observation[5.1]",
+            "test_invalid_timeout_cannot_enter_observation[inf]",
+            "test_invalid_timeout_cannot_enter_observation[nan]",
+            "test_invalid_timeout_cannot_enter_observation[1]",
+            "test_nested_deadline_cannot_extend_parent_and_expiry_prevents_open",
+            "test_batch_shares_deadline_and_never_returns_a_partial_prefix",
+            "test_managed_graph_worker_shares_one_deadline_across_steps"
+          ]
+        },
+        "tests/test_health_metadata_observation.py": {
+          "source_sha256": "2699938f4bf8190499873cef4f6980e5ffc95341c149f71e2a786bb7bc8a638d",
+          "passed_cases": [
+            "test_composed_health_board_metadata_refuses_entry_overflow",
+            "test_metadata_entry_budget_stops_consumption_without_prefix[2000-available]",
+            "test_metadata_entry_budget_stops_consumption_without_prefix[5000-unavailable]",
+            "test_metadata_entry_scan_uses_shared_deadline"
+          ]
+        },
+        "tests/test_health_native_graph_deadline.py": {
+          "source_sha256": "166a17e512b4ba6751a39693e663edc0a31c49e4d8a1fc0006346dca02a767f0",
+          "passed_cases": [
+            "test_composed_health_query_has_native_deadline[scalar]",
+            "test_composed_health_query_has_native_deadline[pair]",
+            "test_composed_health_query_has_native_deadline[batch]"
+          ]
+        },
+        "tests/test_health_schema_1_1_contract.py": {
+          "source_sha256": "6d666dcec3acd0231467b5d18454df440b5e33eafdce570b284d53d991464040",
+          "passed_cases": [
+            "test_response_model_owns_the_atomic_schema_1_1_fields",
+            "test_materialization_contract_defaults_fail_closed",
+            "test_graph_storage_snapshot_reports_the_authenticated_active_routes",
+            "test_public_route_uses_only_inspection_and_preserves_unavailability[bound-bound-board]",
+            "test_public_route_uses_only_inspection_and_preserves_unavailability[bound-bound-global]",
+            "test_public_route_uses_only_inspection_and_preserves_unavailability[missing-missing-board]",
+            "test_public_route_uses_only_inspection_and_preserves_unavailability[missing-missing-global]",
+            "test_public_route_uses_only_inspection_and_preserves_unavailability[unavailable-unavailable-board]",
+            "test_public_route_uses_only_inspection_and_preserves_unavailability[unavailable-unavailable-global]",
+            "test_public_route_uses_only_inspection_and_preserves_unavailability[outside_root-unavailable-board]",
+            "test_public_route_uses_only_inspection_and_preserves_unavailability[outside_root-unavailable-global]"
+          ]
+        },
+        "tests/test_health_route_observation.py": {
+          "source_sha256": "07d4287960a3fb04a4d555ca2b2b7030547755d45ac4b49e679019acf1b96a08",
+          "passed_cases": [
+            "test_rest_route_metadata_cannot_block_the_event_loop",
+            "test_rest_route_metadata_bounds_global_manifest",
+            "test_previous_request_cannot_supply_stale_route_metadata",
+            "test_missing_route_observation_port_never_calls_resolver",
+            "test_repeated_route_reads_share_scope_on_worker_and_preserve_identity"
+          ]
+        },
+        "tests/test_source_observation_budget.py": {
+          "source_sha256": "b089af9039f34d287da4a88216539c13486a25ca9b96d9b5c2343357f85b92d7",
+          "passed_cases": [
+            "test_bounded_source_snapshot_preserves_hashes_and_never_writes",
+            "test_source_reader_refuses_row_budget_without_a_partial_snapshot",
+            "test_sqlite_rejects_oversized_value_before_python_decode",
+            "test_bytes_are_aggregate_across_queries_and_measured_as_utf8",
+            "test_native_vm_deadline_interrupts_work_before_a_result",
+            "test_expired_observation_does_not_start_sql",
+            "test_health_uses_the_real_bounded_reader_and_reports_unknown_on_overflow[False]",
+            "test_health_uses_the_real_bounded_reader_and_reports_unknown_on_overflow[True]"
+          ]
+        },
+        "tests/test_materialization_census_deadline.py": {
+          "source_sha256": "a833903697b59e16fd62ff12ed35aa1fed69373a6f029d05d0da41b24c31e882",
+          "passed_cases": [
+            "test_native_census_query_obeys_deadline_and_releases_connection",
+            "test_census_lock_wait_is_bounded_without_changing_database",
+            "test_successful_census_restores_native_settings_for_next_borrower"
+          ]
+        },
+        "tests/test_materialization_census_volume.py": {
+          "source_sha256": "c10ad026e48d96ba42b6d3bf95aca95d1fdbb81515b28388962b744c9d63ce78",
+          "passed_cases": [
+            "test_census_refuses_volume_before_decision_classification[rows]",
+            "test_census_refuses_volume_before_decision_classification[bytes]",
+            "test_census_refuses_volume_before_decision_classification[unicode_bytes]",
+            "test_census_refuses_volume_before_decision_classification[aggregate_bytes]",
+            "test_census_exact_under_budget_ignores_foreign_board_volume"
+          ]
+        },
+        "tests/test_materialization_health_adapters.py": {
+          "source_sha256": "4a23b84119595594951981730726d93fa4defae864e7d0a7098b758489bfdbf5",
+          "passed_cases": [
+            "test_relational_census_is_exact_and_board_scoped",
+            "test_relational_census_returns_typed_timeout_without_sql",
+            "test_relational_census_cancellation_drains_checked_out_session",
+            "test_cancellation_resistant_cleanup_is_bounded_through_real_asyncio_run",
+            "test_normal_commit_advances_generation_before_ack_and_rolls_back_on_failure",
+            "test_borrowed_audit_transaction_reuses_locked_writer_and_obeys_owner_commit",
+            "test_self_owned_audit_maps_real_sqlite_contention_to_stable_port_error",
+            "test_audit_contention_text_from_non_sqlite_driver_is_not_mapped"
+          ]
+        },
+        "tests/test_materialization_health_observability.py": {
+          "source_sha256": "7489bcd0974b8ae2fa43a241b2737bbb5eafb23923287552b584289c4c416f4a",
+          "passed_cases": [
+            "test_mutation_guard_missing_scope_or_expired_deadline_never_calls_paths",
+            "test_mutation_guard_bounds_consumed_paths_even_when_duplicated",
+            "test_mutation_guard_discards_late_stat_and_does_not_report_clean",
+            "test_blocked_guard_metadata_does_not_block_the_health_event_loop",
+            "test_previous_request_guard_result_cannot_attribute_a_mutation",
+            "test_missing_observation_capability_never_calls_graph_providers",
+            "test_each_materialization_worker_enters_and_restores_its_scope[False]",
+            "test_each_materialization_worker_enters_and_restores_its_scope[True]",
+            "test_materialization_worker_keeps_graph_observation_bounded",
+            "test_probe_records_clean_filesystem_guard_without_creating_paths",
+            "test_probe_metadata_change_cannot_be_attributed_without_writer_evidence"
+          ]
+        }
+      }
+    }
+  },
+  "criteria": {
+    "BASE:T35": {
+      "status": "verified_by_reviewed_execution",
+      "covered": "Normal/empty, recovery-needed, missing provider and timed-out observations preserve typed unavailable/unknown states. Repeated scoped reads do not reuse another request identity; graph, source, metadata and REST phases are bounded. No false zero debt or satisfied readiness on missing evidence.",
+      "evidence": [
+        "core",
+        "community"
+      ]
+    },
+    "BASE:T36": {
+      "status": "verified_by_reviewed_execution",
+      "covered": "Cold/warm Board and Global observation refuses writable fallback, checkpoint, rollback closure and mutation fences. Real bounded read-only source/graph paths preserve storage; foreground recovery remains available outside the observation scope. Missing observation capability refuses before provider access.",
+      "evidence": [
+        "core",
+        "community"
+      ]
+    }
+  },
+  "limits": [
+    "Individual phases have their own budgets; this is not a single total-request latency SLA.",
+    "Bounded daemon observation keeps the event loop responsive but cannot preempt an arbitrary blocked filesystem syscall. Late results are discarded; native SQL/graph queries receive their own deadline.",
+    "Observability counters/audit samples are expected; absence of semantic storage mutation is the invariant.",
+    "Disposable fixtures combine real SQLite/Grafx readers and injected delays/faults; no production process or data was changed.",
+    "This closes these two criteria only, not the complete plan or the full regression campaign."
+  ]
+}
