@@ -17,6 +17,8 @@ RETIRED = frozenset(path for path in (
     "kg.operations.integrity.backfill",
     "kg.operations.queue.read",
     "kg.operations.queue.reprocess",
+    "runtime.settings.read",
+    "runtime.settings.write",
     "kg.operations.historical.read",
     "kg.operations.settings.read",
     "kg.operations.settings.write",

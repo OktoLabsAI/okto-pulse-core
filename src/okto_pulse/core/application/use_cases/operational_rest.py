@@ -14,13 +14,11 @@ from typing import Any
 from okto_pulse.core.application.use_cases.board_access import load_accessible_board
 from okto_pulse.core.application.use_cases.authorization import (
     PermissionRequirement,
-    require_any_authority,
     require_authorization,
 )
 from okto_pulse.core.application.use_cases.base import (
     ActorContext,
     EntityNotFoundError,
-    PermissionDeniedError,
     commit,
 )
 from okto_pulse.core.application.knowledge_workspace import (
@@ -110,31 +108,6 @@ async def _require_resource_gate_entity(
     return entity
 
 
-async def _require_runtime_settings_authority(
-    actor: ActorContext,
-    uow: PulseUnitOfWork,
-    operation: str,
-) -> None:
-    legacy_operation = (
-        "kg.admin.settings_read"
-        if operation == "runtime.settings.read"
-        else "kg.admin.settings_write"
-    )
-    try:
-        await require_any_authority(
-            actor,
-            PermissionRequirement(
-                operation,
-                legacy_operation=legacy_operation,
-            ),
-            roles=("admin", "operator"),
-            uow=uow,
-        )
-    except PermissionDeniedError as exc:
-        action = "read" if operation.endswith(".read") else "write"
-        raise PermissionDeniedError(
-            f"Runtime settings {action} requires an admin or operator capability"
-        ) from exc
 
 
 @dataclass(frozen=True)
@@ -436,49 +409,12 @@ class UpdateResourceGateBoardSettingsUseCase:
         return DataResult({"board_id": command.board_id, "settings": settings})
 
 
-@dataclass(frozen=True)
-class GetRuntimeSettingsCommand:
-    pass
 
 
-@dataclass(frozen=True)
-class PutRuntimeSettingsCommand:
-    values: dict[str, int]
-    migration_plan_ref: str | None
-    restart_policy: str | None
-    scheduler_control: SchedulerControl | None
 
 
-class GetRuntimeSettingsUseCase:
-    async def execute(
-        self, command: GetRuntimeSettingsCommand, *, actor: ActorContext, uow: PulseUnitOfWork
-    ) -> DataResult:
-        await _require_runtime_settings_authority(
-            actor,
-            uow,
-            "runtime.settings.read",
-        )
-        return DataResult(await uow.services.get_runtime_settings())
 
 
-class PutRuntimeSettingsUseCase:
-    async def execute(
-        self, command: PutRuntimeSettingsCommand, *, actor: ActorContext, uow: PulseUnitOfWork
-    ) -> DataResult:
-        await _require_runtime_settings_authority(
-            actor,
-            uow,
-            "runtime.settings.write",
-        )
-        return DataResult(
-            await uow.services.put_runtime_settings(
-                command.values,
-                actor_id=actor.actor_id,
-                migration_plan_ref=command.migration_plan_ref,
-                restart_policy=command.restart_policy,
-                scheduler_control=command.scheduler_control,
-            )
-        )
 
 
 @dataclass(frozen=True)

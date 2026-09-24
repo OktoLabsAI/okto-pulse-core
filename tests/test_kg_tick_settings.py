@@ -123,15 +123,15 @@ async def test_ts3_put_outside_range_rejected_by_pydantic():
     no service. Verificamos diretamente via Pydantic ValidationError.
     """
     from pydantic import ValidationError
-    from okto_pulse.community.api.settings import RuntimeSettingsPayload
+    from okto_pulse.community.config import CommunitySettings
 
     with pytest.raises(ValidationError) as exc_info:
-        RuntimeSettingsPayload(kg_decay_tick_interval_minutes=4)
+        CommunitySettings(_env_file=None, kg_decay_tick_interval_minutes=4)
     msg = str(exc_info.value)
     assert "greater than or equal to 5" in msg or "ge=5" in msg or "5" in msg
 
     with pytest.raises(ValidationError):
-        RuntimeSettingsPayload(kg_decay_tick_interval_minutes=10081)
+        CommunitySettings(_env_file=None, kg_decay_tick_interval_minutes=10081)
 
 
 async def test_ts6_reset_last_recomputed_at_reports_typed_failure_for_empty_scope():

@@ -218,7 +218,7 @@ async def test_explicit_mapping_override_denial_precedes_accepted_role() -> None
 @pytest.mark.asyncio
 async def test_explicit_legacy_denial_precedes_role_for_introduced_flag() -> None:
     actor = _actor(
-        PermissionSet({"kg": {"admin": {"settings_read": False}}}),
+        PermissionSet({"board": {"read": False}}),
         roles=("operator",),
     )
 
@@ -226,8 +226,8 @@ async def test_explicit_legacy_denial_precedes_role_for_introduced_flag() -> Non
         await require_any_authority(
             actor,
             PermissionRequirement(
-                "runtime.settings.read",
-                legacy_operation="kg.admin.settings_read",
+                "metrics.local.summary.read",
+                legacy_operation="board.read",
             ),
             roles=("operator",),
         )
@@ -236,7 +236,7 @@ async def test_explicit_legacy_denial_precedes_role_for_introduced_flag() -> Non
 @pytest.mark.asyncio
 async def test_role_does_not_bypass_missing_historical_authority() -> None:
     actor = _actor(
-        PermissionSet({"runtime": {"settings": {"read": True}}}),
+        PermissionSet({"metrics": {"local": {"summary": {"read": True}}}}),
         roles=("operator",),
     )
 
@@ -244,8 +244,8 @@ async def test_role_does_not_bypass_missing_historical_authority() -> None:
         await require_any_authority(
             actor,
             PermissionRequirement(
-                "runtime.settings.read",
-                legacy_operation="kg.admin.settings_read",
+                "metrics.local.summary.read",
+                legacy_operation="board.read",
             ),
             roles=("operator",),
         )

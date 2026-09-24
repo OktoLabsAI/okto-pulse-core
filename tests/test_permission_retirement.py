@@ -18,7 +18,7 @@ def test_closed_retirement_policy_matches_frozen_authority():
     from okto_pulse.core.ports.permission_retirement import retired_feature_permission_flags
     flags = retired_feature_permission_flags()
     assert flags == tuple(sorted(RETIRED))
-    assert len(flags) == 58
+    assert len(flags) == 60
     assert sum(flag.startswith("sprint.") for flag in flags) == 33
 
 
@@ -209,3 +209,48 @@ def test_evidence_is_detached_from_inputs_and_exported_documents():
     exported = source.document()
     exported["decisions"].clear()
     assert len(source.decisions) == 599
+
+
+@pytest.mark.parametrize("path", [
+    "runtime.settings.read", "runtime.settings.write", "metrics.local.summary.read",
+    "metrics.local.purge", "amendment.coverage.confirm",
+])
+@pytest.mark.parametrize("value", [False, None, 1])
+def test_runtime_retirement_requires_complete_original_operational_generation(path, value):
+    from okto_pulse.core.ports.permission_policy import resolve_agent_permission_facts
+
+    document = deepcopy(GOLDEN["layers"]["full"])
+    parts = path.split(".")
+    parent = document
+    for part in parts[:-1]:
+        parent = parent[part]
+    if value is None:
+        del parent[parts[-1]]
+    else:
+        parent[parts[-1]] = value
+    source = capture(document)
+    candidate = resolve_agent_permission_facts(
+        agent_flags=document, legacy_permissions=None, preset_id=None,
+        presets=(), board_overrides=None,
+    )
+    assert source.owner_review_required and candidate.owner_review_required
+    check(source, candidate)
+
+
+@pytest.mark.parametrize("path", ["runtime", "runtime.settings"])
+@pytest.mark.parametrize("value", [False, 1, "invalid", {}, {"extension": True}])
+def test_runtime_retirement_preserves_malformed_and_extended_parent_review(path, value):
+    from okto_pulse.core.ports.permission_policy import resolve_agent_permission_facts
+
+    document = deepcopy(GOLDEN["layers"]["full"])
+    if path == "runtime":
+        document["runtime"] = value
+    else:
+        document["runtime"]["settings"] = value
+    source = capture(document)
+    candidate = resolve_agent_permission_facts(
+        agent_flags=document, legacy_permissions=None, preset_id=None,
+        presets=(), board_overrides=None,
+    )
+    assert source.owner_review_required and candidate.owner_review_required
+    check(source, candidate)

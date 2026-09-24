@@ -346,17 +346,7 @@ class ApplicationServiceCatalog(Protocol):
         require_spec_resource_task_coverage: bool,
     ) -> dict[str, object] | None: ...
 
-    async def get_runtime_settings(self) -> dict[str, object]: ...
 
-    async def put_runtime_settings(
-        self,
-        values: dict[str, int],
-        *,
-        actor_id: str,
-        migration_plan_ref: str | None,
-        restart_policy: str | None,
-        scheduler_control: object | None,
-    ) -> dict[str, object]: ...
 
     async def build_lineage_graph(
         self,

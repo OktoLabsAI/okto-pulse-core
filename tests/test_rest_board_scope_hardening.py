@@ -9,7 +9,6 @@ import pytest
 from okto_pulse.core.application.use_cases.base import (
     ActorContext,
     EntityNotFoundError,
-    PermissionDeniedError,
 )
 from okto_pulse.core.application.use_cases.discovery_crud import (
     ExecuteDiscoveryIntentCommand,
@@ -29,8 +28,6 @@ from okto_pulse.core.application.use_cases.operational_rest import (
     GetCognitiveReadinessMetricsUseCase,
     GetLineageGraphCommand,
     GetLineageGraphUseCase,
-    PutRuntimeSettingsCommand,
-    PutRuntimeSettingsUseCase,
     RecordCognitiveSkipUseCase,
 )
 from okto_pulse.core.ports.traceability import TraceabilityReadError
@@ -132,9 +129,6 @@ class _Services:
         self._events.append("dispatch")
         return {"rows": []}
 
-    async def put_runtime_settings(self, values, **kwargs):
-        self._events.append("put-runtime")
-        return {**values, "actor_id": kwargs["actor_id"]}
 
 
 class _Uow:
@@ -501,48 +495,3 @@ async def test_operational_owner_reaches_cognitive_skip_writer() -> None:
         "evaluate-readiness",
         "read-enforcement",
     ]
-
-
-@pytest.mark.asyncio
-async def test_runtime_settings_viewer_is_denied_before_writer() -> None:
-    uow = _Uow(board=None)
-    viewer = ActorContext("user-a", "rest", roles=("viewer",), permissions={})
-
-    with pytest.raises(PermissionDeniedError):
-        await PutRuntimeSettingsUseCase().execute(
-            PutRuntimeSettingsCommand({"kg_queue_max_attempts": 5}, None, None, None),
-            actor=viewer,
-            uow=uow,
-        )
-
-    assert "put-runtime" not in uow.events
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize(
-    "actor",
-    [
-        ActorContext("admin-a", "rest", roles=("admin",)),
-        ActorContext("operator-a", "rest", roles=("operator",)),
-        ActorContext(
-            "capability-a",
-            "rest",
-            permissions={
-                "runtime": {"settings": {"write": True}},
-                "kg": {"admin": {"settings_write": True}},
-            },
-        ),
-    ],
-    ids=["admin", "operator", "capability"],
-)
-async def test_runtime_settings_authorized_actor_reaches_writer(actor) -> None:
-    uow = _Uow(board=None)
-
-    result = await PutRuntimeSettingsUseCase().execute(
-        PutRuntimeSettingsCommand({"kg_queue_max_attempts": 5}, None, None, None),
-        actor=actor,
-        uow=uow,
-    )
-
-    assert result.data["actor_id"] == actor.actor_id
-    assert uow.events == ["put-runtime"]

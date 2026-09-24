@@ -1153,30 +1153,7 @@ class CoreApplicationServiceCatalog:
             require_spec_resource_task_coverage=require_spec_resource_task_coverage,
         )
 
-    async def get_runtime_settings(self):  # noqa: ANN201
-        from okto_pulse.core.services.settings_service import get_runtime_settings
 
-        return await get_runtime_settings(self.__relational_context)
-
-    async def put_runtime_settings(
-        self,
-        values: dict[str, int],
-        *,
-        actor_id: str,
-        migration_plan_ref: str | None,
-        restart_policy: str | None,
-        scheduler_control: object | None,
-    ):  # noqa: ANN201
-        from okto_pulse.core.services.settings_service import put_runtime_settings
-
-        return await put_runtime_settings(
-            self.__relational_context,
-            values,
-            actor_id=actor_id,
-            migration_plan_ref=migration_plan_ref,
-            restart_policy=restart_policy,
-            scheduler_control=scheduler_control,
-        )
 
     async def build_lineage_graph(
         self,

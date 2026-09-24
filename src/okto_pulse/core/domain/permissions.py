@@ -487,8 +487,6 @@ ADMIN_CATALOG_PERMISSION_INTRODUCTION_V1 = PermissionIntroductionManifest(
 
 
 _OPERATIONAL_PERMISSION_LEAVES: tuple[str, ...] = (
-    "runtime.settings.read",
-    "runtime.settings.write",
     "metrics.local.summary.read",
     "metrics.publish_health.read",
     "metrics.local.events.create",
@@ -533,8 +531,6 @@ OPERATIONAL_PERMISSION_INTRODUCTION_V1 = PermissionIntroductionManifest(
         },
     ),
     historical_authorities=(
-        ("runtime.settings.read", "kg.admin.settings_read"),
-        ("runtime.settings.write", "kg.admin.settings_write"),
         ("metrics.local.summary.read", "board.read"),
         ("metrics.publish_health.read", "board.read"),
         ("metrics.local.events.create", "board.analytics_read"),
@@ -1536,7 +1532,6 @@ PERMISSION_REGISTRY: dict[str, dict[str, Any]] = {
             "delete": True,
         },
     },
-    "runtime": {"settings": {"read": True, "write": True}},
     "metrics": {
         "local": {
             "summary": {"read": True},
@@ -2572,6 +2567,10 @@ def _canonical_permission_shape_is_valid(
     # Retired fields are not executable permissions, but malformed persisted
     # values must not become valid merely because the live registry shrank.
     if canonical is PERMISSION_REGISTRY and not _canonical_permission_shape_is_valid(
+        document, _RETIRED_RUNTIME_PERMISSION_SHAPE,
+    ):
+        return False
+    if canonical is PERMISSION_REGISTRY and not _canonical_permission_shape_is_valid(
         document, _RETIRED_KG_PERMISSION_SHAPE,
     ):
         return False
@@ -2888,8 +2887,13 @@ def normalize_agent_permission_overrides(
     # Retired operations are provenance, never active authority. Recognize only
     # the complete all-True v0.3.4 generation; partial generations,
     # False values and unknown extensions must still require owner review.
-    if not _remove_retired_kg_full_control_fingerprint(working):
+    fingerprint = copy.deepcopy(working)
+    if not (
+        _remove_retired_kg_full_control_fingerprint(fingerprint)
+        and _remove_retired_runtime_full_control_fingerprint(fingerprint)
+    ):
         return working
+    working = fingerprint
 
     # The retired ``any_to_cancelled`` leaf dominated every source-specific
     # cancellation check.  Some historical presets therefore carried a False
@@ -3019,6 +3023,27 @@ def normalize_agent_permission_overrides(
             ):
                 _set_nested(explicit_delta, flag_path, True)
     return explicit_delta
+
+
+_RETIRED_RUNTIME_PERMISSION_SHAPE = {"runtime": {"settings": {"read": True, "write": True}}}
+
+
+def _remove_retired_runtime_full_control_fingerprint(working: PermissionFlags) -> bool:
+    """Retired tuning belongs to OPERATIONAL/v1, independently of KG operations.
+
+    Recognize only that entire original all-True generation. Partial or denied
+    leaves, malformed parents and unknown extensions remain explicit evidence
+    for owner review; deleting tuning must never grant surviving capabilities.
+    """
+    if not _permission_value_presence(working, "runtime")[0]:
+        return True
+    retired = ("runtime.settings.read", "runtime.settings.write")
+    if not all(_get_nested(working, path) is True
+               for path in (*retired, *OPERATIONAL_PERMISSION_INTRODUCTION_V1.leaves)):
+        return False
+    for path in retired:
+        _delete_permission_value(working, path)
+    return True
 
 
 _RETIRED_KG_PERMISSION_SHAPE = {"kg": {"operations": {
