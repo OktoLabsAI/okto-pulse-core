@@ -2171,10 +2171,7 @@ def _read_cognitive_health_counts(board_id: str) -> tuple[int, int, str]:
         store = CognitiveConsolidationItemStore(
             artifact_store=require_rebuild_audit_artifact_store()
         )
-        generation = store.latest_generation(board_id)
-        if not generation:
-            return 0, 0, "available"
-        items = list(store.list_items(board_id, generation))
+        items = store.observe_latest_items(board_id)
         counts = compute_status_counts(items)
         active = (
             int(counts.get("pending", 0))
@@ -2205,7 +2202,7 @@ def _read_current_kg_generation(board_id: str) -> tuple[str | None, str, str]:
         artifact_store = get_kg_registry().require_rebuild_audit_artifact_store()
         generation_id = RebuildAuditKGGenerationRepository(
             artifact_store=artifact_store
-        ).get_current(board_id)
+        ).observe_current(board_id)
         return generation_id, "available", "ok"
     except Exception:
         return None, "unavailable", _CURRENT_GENERATION_STORE_UNAVAILABLE_REASON

@@ -38,6 +38,7 @@ from typing import Any
 from okto_pulse.core.kg.interfaces.rebuild_audit_storage import (
     RebuildAuditArtifactStore,
     RebuildAuditKey,
+    RebuildAuditObservationBudget,
 )
 from okto_pulse.core.kg.rebuild_audit import (
     resolve_rebuild_audit_artifact_store,
@@ -226,6 +227,21 @@ class RebuildAuditKGGenerationRepository:
         value = payload.get("kg_generation_id")
         if not isinstance(value, str) or not is_valid_kg_generation_id(value):
             return None
+        return value
+
+    def observe_current(self, board_id: str) -> str | None:
+        """Read the pointer without repair, locks or ordinary-read fallback."""
+        records = self.artifact_store.observe_health_json(
+            self._current_key(board_id),
+            budget=RebuildAuditObservationBudget(max_records=1, max_bytes=65536),
+        )
+        if not isinstance(records, (list, tuple)) or len(records) > 1:
+            raise ValueError("generation_observation_unavailable")
+        if not records:
+            return None
+        value = records[0].get("kg_generation_id")
+        if not isinstance(value, str) or not is_valid_kg_generation_id(value):
+            raise ValueError("generation_observation_invalid")
         return value
 
     def get_history_ref(self, board_id: str, generation_id: str) -> str | None:

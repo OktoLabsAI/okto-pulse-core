@@ -49,6 +49,7 @@ from typing import Any, Callable
 from okto_pulse.core.kg.interfaces.rebuild_audit_storage import (
     RebuildAuditArtifactStore,
     RebuildAuditKey,
+    RebuildAuditObservationBudget,
 )
 from okto_pulse.core.kg.query_contract import CognitiveOutcomeType
 from okto_pulse.core.observability.sample_buffer import runtime_counter_sample_buffer
@@ -2021,6 +2022,17 @@ class CognitiveConsolidationItemStore:
         record = self.load_record(board_id, kg_generation_id)
         if record is None:
             return []
+        return self.items_from_record(
+            record, board_id, kg_generation_id,
+            status_filter=status_filter, limit=limit, offset=offset,
+        )
+
+    @staticmethod
+    def items_from_record(
+        record: Mapping[str, Any], board_id: str, kg_generation_id: str, *,
+        status_filter: str | None = None, limit: int | None = None, offset: int = 0,
+    ) -> list[CognitiveConsolidationItem]:
+        """Shared interpretation for ordinary reads and health observations."""
         items_raw = record.get("items")
         if items_raw is None:
             # Legacy aggregate-only — synthesize from pending_refs.
@@ -2061,6 +2073,37 @@ class CognitiveConsolidationItemStore:
         if limit is not None:
             items = items[:limit]
         return items
+
+    def observe_latest_items(self, board_id: str) -> list[CognitiveConsolidationItem]:
+        """Complete bounded observation; no ordinary-read fallback or cleanup."""
+        records = self.artifact_store.observe_health_json(
+            RebuildAuditKey(namespace="cognitive_pending", board_id=board_id),
+            budget=RebuildAuditObservationBudget(),
+        )
+        if not isinstance(records, (list, tuple)):
+            raise ValueError("cognitive_observation_unavailable")
+        for record in records:
+            if (not isinstance(record, Mapping)
+                    or not isinstance(record.get("kg_generation_id"), str)
+                    or not record["kg_generation_id"]
+                    or not isinstance(record.get("recorded_at"), str)
+                    or record.get("board_id", board_id) != board_id):
+                raise ValueError("cognitive_observation_invalid")
+        if not records:
+            return []
+        # Preserve the established timestamp + generation-id tie breaker.
+        record = max(records, key=lambda row: (row["recorded_at"], row["kg_generation_id"]))
+        raw = record.get("items")
+        if raw is None:
+            refs = record.get("pending_refs")
+            if not isinstance(refs, list) or not all(isinstance(ref, str) and ref for ref in refs):
+                raise ValueError("cognitive_observation_invalid")
+        elif (not isinstance(raw, list) or any(
+            not isinstance(item, Mapping) or item.get("status") not in {status.value for status in CognitiveItemStatus}
+            for item in raw
+        )):
+            raise ValueError("cognitive_observation_invalid")
+        return self.items_from_record(record, board_id, record["kg_generation_id"])
 
     def _previous_terminal_state_by_source_ref(
         self,

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
+import math
 from typing import Any, Literal, Protocol
 
 from .storage_ref import StorageRef
@@ -41,6 +42,26 @@ AtomicConsumeOutcome = Literal[
 ]
 
 REBUILD_AUDIT_GLOBAL_BOARD_ID = "_global"
+
+
+@dataclass(frozen=True, slots=True)
+class RebuildAuditObservationBudget:
+    """Read-only health observation limits, shared across one artifact set."""
+
+    max_records: int = 1000
+    max_bytes: int = 4 * 1024 * 1024
+    max_entries: int = 2000
+    timeout_seconds: float = 0.35
+
+    def __post_init__(self) -> None:
+        for name, ceiling in (("max_records", 10000), ("max_bytes", 16 * 1024 * 1024), ("max_entries", 20000)):
+            value = getattr(self, name)
+            if type(value) is not int or not 1 <= value <= ceiling:
+                raise ValueError(f"invalid observation {name}")
+        if (type(self.timeout_seconds) not in (int, float)
+                or not math.isfinite(self.timeout_seconds)
+                or not 0 < self.timeout_seconds <= 5):
+            raise ValueError("invalid observation timeout_seconds")
 
 
 @dataclass(frozen=True, slots=True)
@@ -122,6 +143,18 @@ class RebuildAuditArtifactStore(Protocol):
         ...
 
     def list_json(self, prefix: RebuildAuditKey) -> Sequence[dict[str, Any]]: ...
+
+    def observe_health_json(
+        self, prefix: RebuildAuditKey, *, budget: RebuildAuditObservationBudget,
+    ) -> Sequence[dict[str, Any]]:
+        """Observe cognitive_pending or generation_current without maintenance.
+
+        No cleanup, directory/lock creation, repair or fallback to ordinary
+        reads. Apply aggregate byte, entry, record and time budgets; fail on
+        malformed or changing evidence, never return a truncated prefix.
+        Confirmed absence returns an empty sequence.
+        """
+        ...
 
     def list_json_bounded(
         self,
