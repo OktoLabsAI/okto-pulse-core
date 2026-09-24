@@ -205,7 +205,6 @@ Aggregator queries (`RETURN count(n)`, `RETURN sum(...)`) **do not** increment t
 | Trigger | Pattern |
 |---|---|
 | Spec reaches `done` | Begin canonical consolidation on the spec. The **cognitive** candidates you may create are `Decision`, `Assumption`, `Alternative`. `Criterion` (from acceptance criteria) and `Constraint` (from technical requirements / business rules) are **deterministic-only**: the deterministic worker materializes them — reference the existing deterministic nodes, never create `Criterion`/`Constraint` on the cognitive path. `approved` and `validated` remain working/diagnostic only. |
-| Sprint closes (moves to `closed`) | Consolidate retrospective Learnings + Bugs + Learning→validates→Bug edges |
 | Q&A on an ideation/refinement/spec gets an answer that contains a decision | Carry decision into next formalized spec first, then consolidate from that spec-side formalization |
 | Bug card moves to `done` with root cause + fix narrative | Consolidate a Learning node that validates the Bug node |
 | Complete SDLC/E2E flow about to be reported as finished | Create a final report consolidation session |

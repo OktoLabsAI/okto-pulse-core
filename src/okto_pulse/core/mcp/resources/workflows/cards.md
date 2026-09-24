@@ -282,7 +282,7 @@ When the **Task Validation Gate** is enabled, cards must pass through an indepen
 
 ### Reviewer Separation Modes
 
-`board.settings.reviewer_separation_mode` governs both task validation and sprint evaluation:
+`board.settings.reviewer_separation_mode` governs task validation:
 
 | Mode | Task-validation behavior |
 |------|--------------------------|
