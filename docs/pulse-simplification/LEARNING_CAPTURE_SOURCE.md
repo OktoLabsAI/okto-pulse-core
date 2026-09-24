@@ -28,7 +28,8 @@ Structural validity and a matching fingerprint do not establish authenticated
 authorship, current source facts, evidence admission, applicability, permission,
 independent review or Bug completion. A caller-supplied `admitted` flag is not
 part of the format. Metadata outside the fingerprint cannot supply that proof.
-Public transports and the governed transition binding are still pending.
+REST creation and preview are described below; MCP, UI and the governed
+transition binding are still pending.
 
 The projection inventory validates every revision, including older captures,
 before selecting heads. Captures are reported as
@@ -84,6 +85,28 @@ commit/rollback; successful staging does not mean the transaction committed.
 
 Complete other evidence-reference paths, explicit reuse/supersedence operations,
 policy and preview, Done binding/outbox, deterministic materializer, reopen
-currentness, transports and frontend. Qualify those paths with concurrency,
+currentness, MCP and frontend. Qualify those paths with concurrency,
 upgrade/replay/rollback and installed-pair tests. Neither this format nor the
 staging use case completes F6 or changes a gate.
+
+## REST source preview and standalone submission
+
+`GET /api/v1/bugs/{bug_id}/learning-capture-context?board_id=...` returns the
+current semantic source digest/version and linked scenarios with authenticated
+receipt availability. It requires the shared source read permissions and
+Card/Board/realm access. The preview does not lock or approve a capture.
+
+`POST /api/v1/bugs/{bug_id}/learning-captures` accepts the closed
+`LearningCaptureCreateRequest`: Board, capture identity, expected digest/version,
+authored content/context/applicability and selected scenario identities. The
+application requires all creation permissions, independently rereads the source
+under serialization, stages the capture and commits the caller UOW. Author and
+timestamp are server-derived; caller approval/author fields are rejected.
+Exact retries preserve one record while its source basis remains current.
+
+The response `captured_pending_materialization` acknowledges durable capture,
+not Bug completion or canonical graph materialization. REST returns 403 for
+permission denial, 404 for unavailable Bug access, 409 for stale/conflicting
+bases, 422 for invalid input/evidence and 503 for unavailable capabilities.
+Unexpected runtime details are not exposed. MCP/UI and completion integration
+remain separate outstanding work in the integrated F6 delivery.

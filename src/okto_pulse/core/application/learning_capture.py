@@ -16,6 +16,36 @@ from okto_pulse.core.ports.learning_capture import CreateLearningCapture, valida
 from okto_pulse.core.services.test_scenario_lifecycle import scenario_has_authenticated_required_evidence
 
 
+def _authenticated_scenario(source, scenario):
+    evidence = (scenario.get('evidence') or scenario.get('latest_evidence')) if scenario else None
+    return bool(source.spec_id and isinstance(evidence, dict) and evidence.get('execution_receipt')
+        and scenario_has_authenticated_required_evidence(board_id=source.board_id,
+            spec_id=source.spec_id, scenario=scenario, acceptance_criteria=list(source.acceptance_criteria)))
+
+
+async def get_learning_capture_source(context, *, board_id: str, bug_id: str):
+    reader = resolve_bug_cognitive_context_assembler()
+    if reader is None:
+        raise ValueError('learning_capture_transaction_capability_unavailable')
+    source = qualify_bug_semantic_context(await reader.assemble_semantic(context, board_id=board_id, bug_id=bug_id))
+    if not source.verified or source.board_id != board_id or source.bug_id != bug_id:
+        raise ValueError('learning_capture_source_changed_or_unavailable')
+    scenarios = []
+    identities = set()
+    for row in source.test_scenarios:
+        identity = row.get('id')
+        if type(identity) is not str or not identity or identity in identities:
+            raise ValueError('learning_capture_evidence_ambiguous')
+        identities.add(identity)
+        scenario = dict(row)
+        scenarios.append({'id': identity, 'title': str(scenario.get('title') or identity),
+            'status': str(scenario.get('status') or ''), 'verification_method': scenario.get('verification_method'),
+            'authenticated': _authenticated_scenario(source, scenario)})
+    return {'contract_version': 'learning-capture-context/v1', 'board_id': board_id, 'bug_id': bug_id,
+        'source_digest': source.source_digest, 'source_policy_version': source.source_policy_version,
+        'scenarios': scenarios}
+
+
 async def stage_new_learning_capture(context, request: CreateLearningCapture, *, author_id: str, captured_at: datetime):
     """Called only after the application boundary's complete authorization.
 
@@ -45,12 +75,9 @@ async def stage_new_learning_capture(context, request: CreateLearningCapture, *,
     refs = []
     for identity in request.scenario_ids:
         scenario = scenarios.get(identity)
-        evidence = (scenario.get('evidence') or scenario.get('latest_evidence')) if scenario else None
         # The shared consumer preserves structural legacy evidence for old
         # workflows. New capture references require an authenticated receipt.
-        if (not source.spec_id or not isinstance(evidence, dict) or not evidence.get('execution_receipt')
-                or not scenario_has_authenticated_required_evidence(board_id=source.board_id,
-                    spec_id=source.spec_id, scenario=scenario, acceptance_criteria=list(source.acceptance_criteria))):
+        if not _authenticated_scenario(source, scenario):
             raise ValueError('learning_capture_evidence_not_authenticated')
         refs.append(f'spec:{source.spec_id}:test_scenario:{identity}')
     node_id = mint_node_id(request.board_id, 'Learning',
