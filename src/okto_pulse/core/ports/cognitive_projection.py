@@ -47,6 +47,8 @@ def cognitive_projection_source_node(*, schema, board_id, record):
     replay rule. This does not select a generation, authorize writes, infer
     relations, or prove maturity, evidence, connectivity or accessibility.
     Validate the complete source inventory before using individual records.
+    Versioned semantic captures raise learning_capture_materialization_required;
+    they do not contain literal graph properties.
     """
     from okto_pulse.core.application.cognitive_projection import source_node
     return source_node(schema=schema, board_id=board_id, record=record)
@@ -57,7 +59,7 @@ class CognitiveRestorationObservation:
     node_type: str
     node_id: str
     state: Literal['ambiguous_generation', 'relational_source', 'projection_mismatch',
-        'connectivity_rejected', 'literal_candidate']
+    'connectivity_rejected', 'literal_candidate', 'capture_pending_materialization']
     generations: tuple[int, ...]
     reasons: tuple[str, ...]
     literal_fingerprint: str | None = None

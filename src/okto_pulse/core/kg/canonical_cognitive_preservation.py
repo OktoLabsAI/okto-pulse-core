@@ -509,9 +509,24 @@ def replay_durable_cognitive(board_id: str) -> dict[str, Any]:
     replayed = 0
     skipped_present = 0
     failed: list[dict[str, Any]] = []
+    from okto_pulse.core.ports.learning_capture import validate_learning_capture_payload
+
     for record in records:
         node_type = record.node_type
         if node_type not in COGNITIVE_TYPES:
+            continue
+        try:
+            captured = validate_learning_capture_payload(dict(record.payload), board_id=board_id,
+                node_type=node_type, node_id=record.node_id, generation=record.generation,
+                evidence_refs=record.evidence_refs)
+        except ValueError as exc:
+            failed.append({'node_id': record.node_id, 'error': str(exc)})
+            continue
+        if captured:
+            # Literal replay must neither drop the semantic source nor promote
+            # it before source/evidence/transition reconciliation. Report the
+            # existing incomplete outcome until its materializer has run.
+            failed.append({'node_id': record.node_id, 'error': 'learning_capture_materialization_required'})
             continue
         if is_relational_projection_node(
             node_type=node_type,

@@ -194,8 +194,10 @@ def canonical_cognitive_source_fingerprint(
 class CognitiveSourceRecord:
     """One immutable durable record of a committed cognitive node.
 
-    ``payload`` carries EVERY attribute persisted on the graph node so a
-    replay is a literal restoration; ``evidence_refs`` preserves the
+    Legacy ``payload`` carries EVERY attribute persisted on the graph node so
+    replay is literal. A versioned Learning capture instead retains semantic
+    content awaiting governed materialization; it is never literal replay.
+    ``evidence_refs`` preserves the
     original evidence binding (board decisions f47eff53e116/da16db6d1c4f:
     cognitive nodes are never re-generated without evidence).
     """

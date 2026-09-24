@@ -36,6 +36,11 @@ def observe(*, schema, board_id, records, nodes, relations):
                 ('multiple_durable_generations_for_one_graph_identity',)))
             continue
         record = group[0]
+        pending = compare_cognitive_projection(schema=schema, board_id=board_id, record=record, node=None)
+        if pending.state == 'capture_pending_materialization':
+            reports.append(CognitiveRestorationObservation(*key, 'capture_pending_materialization', epochs,
+                ('learning_capture_materialization_required',)))
+            continue
         node = cognitive_projection_source_node(schema=schema, board_id=board_id, record=record)
         parity = compare_cognitive_projection(schema=schema, board_id=board_id, record=record, node=node)
         if parity.state != 'matched':

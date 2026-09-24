@@ -9,6 +9,7 @@ from okto_pulse.core.kg.logical_transfer import (
     LOGICAL_NULL, LogicalNode, LogicalSchemaIndex, LogicalTimestamp, LogicalVector, encode_value,
 )
 from okto_pulse.core.ports.cognitive_projection import CognitiveProjectionParity
+from okto_pulse.core.ports.learning_capture import validate_learning_capture_payload
 from okto_pulse.core.ports.kg_cognitive_source import (
     COGNITIVE_SOURCE_VOLATILE_USAGE_FIELDS, canonical_cognitive_source_fingerprint,
     latest_cognitive_source_records,
@@ -82,6 +83,11 @@ def _source_projection(*, schema, board_id, record):
         payload=record['payload'], evidence_refs=record['evidence_refs'])
 
     definition = schema.node_type(record['node_type'])
+    if validate_learning_capture_payload(record['payload'], board_id=board_id,
+            node_type=record['node_type'], node_id=record['node_id'], generation=record['generation'],
+            evidence_refs=record['evidence_refs']):
+        return record, fingerprint, None
+
     expected = dict(record['payload'])
     if 'id' in expected and expected['id'] != record['node_id']:
         raise ValueError('cognitive_projection_payload_identity_invalid')
@@ -102,17 +108,28 @@ def _source_projection(*, schema, board_id, record):
 
 
 def source_node(*, schema, board_id, record):
-    return _source_projection(schema=schema, board_id=board_id, record=record)[2]
+    node = _source_projection(schema=schema, board_id=board_id, record=record)[2]
+    if node is None:
+        raise ValueError('learning_capture_materialization_required')
+    return node
 
 
 def compare(*, schema, board_id, record, node):
     record, fingerprint, projected = _source_projection(schema=schema, board_id=board_id, record=record)
-    expected = projected.properties
 
     def result(state, differences=(), usage=()):
         return CognitiveProjectionParity(record['node_type'], record['node_id'], record['generation'],
             record.get('source_revision', 0), fingerprint, state, tuple(sorted(differences)), tuple(sorted(usage)))
 
+    if projected is None:
+        if node is not None:
+            if (node.type_name, node.key) != (record['node_type'], record['node_id']):
+                raise ValueError('cognitive_projection_node_identity_invalid')
+            LogicalSchemaIndex.build(schema).validate_node(node)
+        # Even an existing node cannot establish admission or applicability of
+        # this capture. A later materialization needs its own governed binding.
+        return result('capture_pending_materialization')
+    expected = projected.properties
     if node is None:
         return result('missing_node')
     if (node.type_name, node.key) != (record['node_type'], record['node_id']):

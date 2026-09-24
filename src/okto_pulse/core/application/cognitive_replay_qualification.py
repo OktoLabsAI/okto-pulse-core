@@ -40,6 +40,10 @@ def qualify(*, schema, board_id, records, nodes, relations, restored):
             source, node = sources[0], by_key[key]
             parity = compare_cognitive_projection(schema=schema, board_id=board_id, record=source, node=node)
             fingerprint = parity.source_fingerprint
+            if parity.state == 'capture_pending_materialization':
+                results.append(CognitiveReplayQualification(*key, 'pending',
+                    ('learning_capture_materialization_required',), fingerprint))
+                continue
             if parity.state != 'matched':
                 reasons.append('durable_payload_mismatch')
             # This is a replay of an already committed canonical source, never
