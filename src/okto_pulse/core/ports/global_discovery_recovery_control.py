@@ -247,6 +247,47 @@ class GlobalDiscoveryRecoveryPreparationService:
         )
 
 
+class GlobalDiscoveryRecoveryAdmissionService:
+    """Internal edition seam for preparation and confirmed durable admission.
+
+    This facade never executes physical recovery or exposes the legacy direct
+    preflight/run paths. The caller must submit the resulting command through
+    RecoveryControlPlane, which owns the durable slot and epoch checks. It is
+    not a public transport or a grant of authority to an authenticated agent.
+    """
+
+    def __init__(
+        self, *, recovery: GlobalDiscoveryRecovery,
+        artifact_store: RebuildAuditArtifactStore,
+    ) -> None:
+        self.__service = _GlobalDiscoveryRecoveryService(
+            recovery=recovery, artifact_store=artifact_store,
+        )
+
+    def new_preparation_command(
+        self, *, actor_id: str,
+    ) -> RecoveryPreparationCommand:
+        return self.__service.new_preparation_command(actor_id=actor_id)
+
+    def confirm(
+        self, *, actor_id: str, run_id: str, manifest_ref: str,
+        preflight_hash: str,
+    ) -> dict[str, object]:
+        return self.__service.confirm(
+            actor_id=actor_id, run_id=run_id, manifest_ref=manifest_ref,
+            preflight_hash=preflight_hash,
+        )
+
+    def prepare_durable_start(
+        self, *, actor_id: str, confirmation_id: str, manifest_ref: str,
+        preflight_hash: str, reason: str,
+    ) -> RecoveryStartCommand:
+        return self.__service.prepare_durable_start(
+            actor_id=actor_id, confirmation_id=confirmation_id,
+            manifest_ref=manifest_ref, preflight_hash=preflight_hash, reason=reason,
+        )
+
+
 class GlobalDiscoveryPreparedRevocationService:
     """Narrow create-only revocation boundary for edition coordination."""
 
@@ -338,6 +379,7 @@ __all__ = [
     "GlobalDiscoveryRecoveryBoardSeedInput",
     "GlobalDiscoveryRecoveryBoardSeedInputService",
     "GlobalDiscoveryRecoveryBoardSeedService",
+    "GlobalDiscoveryRecoveryAdmissionService",
     "GlobalDiscoveryRecoveryWorkerInputStore",
     "GlobalDiscoveryRecoveryWorkerInputs",
     "GlobalDiscoveryWriterLease",
