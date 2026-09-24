@@ -66,7 +66,10 @@ def test_batch_preserves_queries_parameters_limits_order_and_answers(monkeypatch
     expected = snapshot(monkeypatch, scalar)
     batch = Batch()
     assert snapshot(monkeypatch, batch) == expected
-    assert expected[0] == {"total_nodes": 4, "default_score_count": 1, "avg_relevance": 0.5333}
+    assert expected[0] == {
+        "total_nodes": 4, "default_score_count": 1, "avg_relevance": 0.5333,
+        "status": "available", "reason": "ok",
+    }
     assert len(scalar.singles) == 4
     assert len(batch.batches) == 2 and batch.singles == []
     flattened = [(board, query, params, limit) for board, group in batch.batches

@@ -3946,14 +3946,6 @@ _SAFE_WRITE_OUTCOME_SEVERITY: dict[str, int] = {
 }
 
 
-def _bounded_probe_error(exc: BaseException) -> str:
-    """Bounded, body-free description of a probe failure (type + short msg)."""
-    msg = str(exc).replace("\n", " ").strip()
-    if len(msg) > 200:
-        msg = msg[:200] + "…"
-    return f"{type(exc).__name__}: {msg}" if msg else type(exc).__name__
-
-
 def _probe_rebuild_source_diagnostics(board_id: str) -> dict[str, Any]:
     """Read-only probe of the deterministic rebuild source enumeration (D1/D3).
 
@@ -3990,7 +3982,9 @@ def _probe_rebuild_source_diagnostics(board_id: str) -> dict[str, Any]:
             "canonical_source_count": None,
             "working_source_count": None,
             "enumeration_failure": True,
-            "error": _bounded_probe_error(exc),
+            # Exception bodies may contain storage paths, SQL or credentials.
+            # Truncation is not redaction; public diagnostics use stable codes.
+            "error": "source_enumeration_unavailable",
         }
 
 
@@ -4039,7 +4033,7 @@ def _probe_safe_write_diagnostics(board_id: str) -> dict[str, Any]:
             "last_safe_write_outcome": "unknown",
             "drain_failure": False,
             "outcomes": {},
-            "probe_error": _bounded_probe_error(exc),
+            "probe_error": "safe_write_observation_unavailable",
         }
 
 
