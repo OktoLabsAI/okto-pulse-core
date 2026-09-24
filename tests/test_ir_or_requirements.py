@@ -33,6 +33,34 @@ def _id(prefix: str) -> str:
     return f"{prefix}-{uuid.uuid4()}"
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize('collection,prefix', [
+    ('integration_requirements', 'ir'), ('observability_requirements', 'or'),
+])
+async def test_declared_technical_requirement_link_persists_through_spec_service(
+    db_factory, collection, prefix,
+):
+    """A technical reference is domain data, independently of graph projection."""
+    board_id, spec_id, actor_id = _id('board'), _id('spec'), _id('actor')
+    async with db_factory() as db:
+        db.add(Board(id=board_id, name='Technical lineage', owner_id=actor_id))
+        db.add(Spec(id=spec_id, board_id=board_id, title='Technical lineage',
+            status=SpecStatus.DRAFT, created_by=actor_id,
+            technical_requirements=[{'id': 'tr_declared', 'text': 'Bounded response time'}]))
+        await db.commit()
+        updated = await SpecService(db).update_spec(spec_id, actor_id, SpecUpdate(**{
+            collection: [{'id': prefix + '_declared', 'title': 'Observe technical condition',
+                'linked_requirements': ['tr_declared']}],
+        }))
+        assert updated is not None
+        await db.commit()
+    async with db_factory() as db:
+        persisted = (await db.execute(select(Spec).where(Spec.id == spec_id))).scalar_one()
+        assert getattr(persisted, collection)[0]['linked_requirements'] == ['tr_declared']
+        histories = (await db.execute(select(SpecHistory).where(SpecHistory.spec_id == spec_id))).scalars().all()
+        assert any(change['field'] == collection for history in histories for change in history.changes)
+
+
 def test_ir_or_spec_update_permissions_detect_create_edit_delete_and_links():
     spec = SimpleNamespace(
         integration_requirements=[
