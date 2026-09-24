@@ -49,6 +49,7 @@ __all__ = [
     "CognitiveSourcePersistedRevision",
     "CognitiveSourceRecord",
     "CognitiveSourceStore",
+    "ConditionalCognitiveSourceWriter",
     "LatestVerifiedCognitiveSourceReader",
     "SealedBirthRestoration",
     "canonical_cognitive_source_fingerprint",
@@ -57,6 +58,7 @@ __all__ = [
     "latest_cognitive_source_records",
     "register_cognitive_source_store",
     "require_cognitive_source_store",
+    "require_cognitive_source_head",
     "reset_cognitive_source_store_for_tests",
     "resolve_cognitive_source_store",
     "restore_sealed_birth_fields",
@@ -540,6 +542,47 @@ class LatestVerifiedCognitiveSourceReader(Protocol):
     async def enumerate_latest_verified(
         self, board_id: str
     ) -> tuple[CognitiveSourceRecord, ...]: ...
+
+
+@runtime_checkable
+class ConditionalCognitiveSourceWriter(Protocol):
+    async def append_many_if_current_in_context(
+        self, context: object, records: tuple[CognitiveSourceRecord, ...], *,
+        expected_fingerprints: tuple[str | None, ...],
+    ) -> tuple[str, ...]:
+        """Compare verified current heads and stage one atomic append batch.
+
+        One expectation per distinct scoped record; None requires absence.
+        The edition serializes comparison with all writers of those identities.
+        A stale head is a conflict, including replay after a later revision.
+        Never commit or roll back the caller's UOW. Authorization, idempotency
+        of a domain request and evidence admission remain the caller's duties.
+        """
+        ...
+
+
+def require_cognitive_source_head(
+    record: CognitiveSourceRecord, *, expected_fingerprint: str | None,
+    history: tuple[CognitiveSourceRecord, ...],
+) -> None:
+    """Pure CAS semantics after the edition has serialized the scoped read."""
+    if expected_fingerprint is not None and (type(expected_fingerprint) is not str
+            or len(expected_fingerprint) != 64
+            or any(character not in '0123456789abcdef' for character in expected_fingerprint)):
+        raise ValueError('cognitive_source_precondition_invalid')
+    incoming = _verified_record_fingerprint(record)
+    latest = latest_cognitive_source_records(history)
+    def identity(item):
+        return item.board_id, item.node_type, item.node_id, item.generation
+    if len(latest) > 1 or (latest and identity(latest[0]) != identity(record)):
+        raise CognitiveSourceConflict('cognitive_source_scope_conflict', board_id=record.board_id, node_id=record.node_id)
+    current = _verified_record_fingerprint(latest[0]) if latest else None
+    if current != expected_fingerprint:
+        raise CognitiveSourceConflict('cognitive_source_head_changed', board_id=record.board_id, node_id=record.node_id)
+    if incoming != current and any(_verified_record_fingerprint(prior) == incoming for prior in history):
+        # Legacy append resolves old identical payloads to their original row.
+        # A conditional write must not report that as a new current head.
+        raise CognitiveSourceConflict('cognitive_source_non_head_replay', board_id=record.board_id, node_id=record.node_id)
 
 
 @runtime_checkable
