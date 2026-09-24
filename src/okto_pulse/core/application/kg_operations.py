@@ -188,6 +188,11 @@ class CoreKnowledgeGraphOperations:
         from okto_pulse.core.application.learning_capture import get_learning_capture_source
         return await get_learning_capture_source(self.__relational_context, board_id=board_id, bug_id=bug_id)
 
+    async def list_learning_captures(self, *, board_id: str, bug_id: str, cursor=None, limit=20):
+        from okto_pulse.core.application.learning_capture import list_learning_captures
+        return await list_learning_captures(self.__relational_context, board_id=board_id, bug_id=bug_id,
+            cursor=cursor, limit=limit)
+
 
     async def evaluate_bug_cognitive_closure(
         self, readiness_service: object, **request: object

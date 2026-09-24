@@ -28,6 +28,22 @@ from okto_pulse.core.mcp.catalog import (
 LIVE_TOOL_NAMES = tuple(tool.name for tool in server.mcp.resolve().iter_tools())
 
 
+def test_learning_capture_manifest_preserves_complete_use_case_authority():
+    from okto_pulse.core.application.use_cases.learning_capture import (
+        LEARNING_CAPTURE_READ_PERMISSIONS, LEARNING_CAPTURE_CREATE_PERMISSIONS,
+        LEARNING_CAPTURE_HISTORY_PERMISSIONS,
+    )
+    from okto_pulse.core.domain.mcp_permission_registry import McpAdmissionClass
+    policies = {row.tool_name: row for row in MCP_TOOL_PERMISSION_POLICIES}
+    for name, flags, admission in (
+        ('okto_pulse_kg_get_learning_capture_context', LEARNING_CAPTURE_READ_PERMISSIONS, McpAdmissionClass.READER),
+        ('okto_pulse_kg_create_learning_capture', LEARNING_CAPTURE_CREATE_PERMISSIONS, McpAdmissionClass.WRITER),
+        ('okto_pulse_kg_list_learning_captures', LEARNING_CAPTURE_HISTORY_PERMISSIONS, McpAdmissionClass.READER),
+    ):
+        assert set(policies[name].permission_flags) == set(flags)
+        assert policies[name].admission_class == admission
+
+
 # Reviewed semantic allowlist for tools whose required leaf depends on an input,
 # current lifecycle state, or an opt-in projection.  Keep this independent from
 # the production manifest so replacing a conditional policy with a broad CRUD
@@ -236,8 +252,8 @@ def test_live_catalog_has_one_exact_policy_or_audited_human_only_exemption() -> 
     report = registry_vs_tools_report(list(LIVE_TOOL_NAMES))
 
     assert report.is_valid
-    assert len(report.live_tools) == 301
-    assert len(MCP_TOOL_PERMISSION_POLICIES) == 298
+    assert len(report.live_tools) == 304
+    assert len(MCP_TOOL_PERMISSION_POLICIES) == 301
     assert len(HUMAN_ONLY_MCP_TOOL_EXEMPTIONS) == 3
     assert tuple(policy.tool_name for policy in MCP_TOOL_PERMISSION_POLICIES) == tuple(
         sorted(policy.tool_name for policy in MCP_TOOL_PERMISSION_POLICIES)

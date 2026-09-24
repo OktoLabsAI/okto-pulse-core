@@ -20443,6 +20443,7 @@ def _learning_capture_mcp_error(exc: Exception) -> str:
         'learning_capture_source_changed_or_unavailable', 'learning_capture_idempotency_conflict',
         'learning_capture_request_invalid', 'learning_capture_payload_invalid', 'learning_capture_payload_limit',
         'learning_capture_evidence_ambiguous', 'learning_capture_evidence_not_authenticated',
+        'learning_capture_page_invalid',
     }:
         code = str(exc)
     else:
@@ -20471,6 +20472,34 @@ async def okto_pulse_kg_get_learning_capture_context(board_id: str, bug_id: str)
         async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
             result = await GetLearningCaptureSourceUseCase().execute(
                 board_id=board_id, bug_id=bug_id, actor=actor, uow=uow)
+        return json.dumps(result)
+    except (PermissionDeniedError, EntityNotFoundError, ValueError, RuntimeError, CognitiveSourceError) as exc:
+        return _learning_capture_mcp_error(exc)
+
+
+@mcp.tool()
+async def okto_pulse_kg_list_learning_captures(
+    board_id: str, bug_id: str, cursor: str | None = None, limit: int = 20,
+) -> str:
+    """Read paginated durable Learning captures for a Bug, including older revisions.
+
+    Requires source read and kg.query.learning_from_bugs authority. Captures
+    do not attest current applicability, execution approval or materialization.
+    Full docs: okto-pulse://reference/tool-docs/kg.
+    """
+    from okto_pulse.core.application.use_cases.learning_capture import ListLearningCapturesUseCase
+    from okto_pulse.core.application.use_cases.base import EntityNotFoundError
+    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
+    from okto_pulse.core.ports.kg_cognitive_source import CognitiveSourceError
+
+    ctx = await _get_agent_ctx(board_id)
+    if ctx is None:
+        return _auth_error()
+    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
+    try:
+        async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
+            result = await ListLearningCapturesUseCase().execute(board_id=board_id, bug_id=bug_id,
+                actor=actor, uow=uow, cursor=cursor, limit=limit)
         return json.dumps(result)
     except (PermissionDeniedError, EntityNotFoundError, ValueError, RuntimeError, CognitiveSourceError) as exc:
         return _learning_capture_mcp_error(exc)

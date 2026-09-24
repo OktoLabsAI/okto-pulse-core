@@ -9,9 +9,37 @@ from datetime import datetime
 from dataclasses import dataclass
 import json
 import re
+from typing import Protocol, runtime_checkable
+
+from okto_pulse.core.ports.kg_cognitive_source import CognitiveSourceRecord
 
 LEARNING_CAPTURE_FORMAT = 'learning-capture/v1'
 LEARNING_CAPTURE_MAX_BYTES = 256 * 1024
+
+
+@dataclass(frozen=True, slots=True)
+class LearningCaptureHistoryPage:
+    records: tuple[CognitiveSourceRecord, ...]
+    next_cursor: str | None
+
+
+@runtime_checkable
+class LearningCaptureHistoryReader(Protocol):
+    async def read_capture_history_in_context(
+        self, context: object, *, board_id: str, bug_id: str,
+        cursor: str | None = None, limit: int = 20,
+    ) -> LearningCaptureHistoryPage:
+        """Read a page of source identities containing captures of this Bug.
+
+        Verify every revision of each selected identity, including revisions
+        not returned as captures. Preserve older captures when the head changes.
+        Return only matching capture records, never unrelated Board cognition.
+        Bound identity count (1..50), revision count (200) and returned payload
+        bytes (8 MiB); fail explicitly rather than truncate a history. Cursor is
+        a stable ordered identity selector, not authorization or a snapshot.
+        No graph, commit, repair or inference of semantic applicability.
+        """
+        ...
 
 
 @dataclass(frozen=True, slots=True)

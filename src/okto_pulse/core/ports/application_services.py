@@ -556,6 +556,9 @@ class KnowledgeGraphOperations(Protocol):
 
     async def get_learning_capture_source(self, *, board_id: str, bug_id: str) -> dict[str, object]: ...
 
+    async def list_learning_captures(self, *, board_id: str, bug_id: str,
+        cursor: str | None = None, limit: int = 20) -> dict[str, object]: ...
+
     async def evaluate_bug_cognitive_closure(
         self, readiness_service: object, **request: object
     ) -> dict[str, object]: ...

@@ -121,3 +121,29 @@ Create uses the authenticated agent identity and commits its UOW; preview does
 not commit. The registry catalog and exact tool documentation describe the
 arguments, current-basis retry and pending-materialization result. Neither tool
 exposes graph maintenance or changes the existing closeout policy.
+
+## Persistent capture history
+
+`GET /api/v1/bugs/{bug_id}/learning-captures?board_id=...` and
+`okto_pulse_kg_list_learning_captures` share the authorized history use case.
+They require the nine source read permissions plus the existing
+`kg.query.learning_from_bugs` authority. Source access and authorship alone do
+not grant reading other authors' cognitive content.
+
+`LearningCaptureHistoryReader` selects source identities with a capture of the
+requested Bug in either the immutable base or a later revision. It audits all
+revisions of each selected identity before returning its matching captures.
+Older authored captures survive later literal heads. Only the scoped Board/Bug
+captures are returned; no graph lookup, mutation, repair or commit occurs.
+
+`limit` bounds source identities to 1..50 (default20); the whole selected history
+is limited to 200 records and returned payload to 8 MiB. Overflow fails rather
+than returning a truncated history. This is not a native SQL execution deadline
+or a bound on deserializing arbitrary legacy payloads. Cursor order is stable
+but paging is not a frozen snapshot; refresh to observe concurrent insertions.
+
+The response `learning-capture-history/v1` contains authored `capture`, Learning
+identity/generation/revision, fingerprint and `next_cursor`. Presence in history
+does not attest applicability, approval, completion or materialization. Source
+preview and authored applicability must be reviewed independently. Missing or
+corrupt history is unavailable, never a successful empty response.

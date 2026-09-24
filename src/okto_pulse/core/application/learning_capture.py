@@ -10,9 +10,11 @@ from okto_pulse.core.ports.bug_cognitive_context import (
 )
 from okto_pulse.core.ports.kg_cognitive_source import (
     CognitiveSourceRecord, ConditionalCognitiveSourceWriter, TransactionalCognitiveSourceReader,
-    require_cognitive_source_store,
+    require_cognitive_source_store, latest_cognitive_source_records,
 )
-from okto_pulse.core.ports.learning_capture import CreateLearningCapture, validate_learning_capture_payload
+from okto_pulse.core.ports.learning_capture import (
+    CreateLearningCapture, LearningCaptureHistoryReader, validate_learning_capture_payload,
+)
 from okto_pulse.core.services.test_scenario_lifecycle import scenario_has_authenticated_required_evidence
 
 
@@ -44,6 +46,37 @@ async def get_learning_capture_source(context, *, board_id: str, bug_id: str):
     return {'contract_version': 'learning-capture-context/v1', 'board_id': board_id, 'bug_id': bug_id,
         'source_digest': source.source_digest, 'source_policy_version': source.source_policy_version,
         'scenarios': scenarios}
+
+
+async def list_learning_captures(context, *, board_id: str, bug_id: str, cursor=None, limit=20):
+    store = require_cognitive_source_store()
+    if not isinstance(store, LearningCaptureHistoryReader):
+        raise ValueError('learning_capture_history_unavailable')
+    if (type(limit) is not int or not 1 <= limit <= 50
+            or (cursor is not None and (type(cursor) is not str or not 1 <= len(cursor) <= 4096))):
+        raise ValueError('learning_capture_page_invalid')
+    page = await store.read_capture_history_in_context(context, board_id=board_id, bug_id=bug_id,
+        cursor=cursor, limit=limit)
+    if len(page.records) > 200:
+        raise ValueError('learning_capture_history_limit')
+    latest_cognitive_source_records(page.records)
+    items = []
+    for record in page.records:
+        payload = dict(record.payload)
+        if (record.board_id != board_id or not validate_learning_capture_payload(payload,
+                board_id=board_id, node_type=record.node_type, node_id=record.node_id,
+                generation=record.generation, evidence_refs=record.evidence_refs)
+                or payload['source']['bug_id'] != bug_id):
+            raise ValueError('learning_capture_history_unavailable')
+        items.append({'learning_id': record.node_id, 'generation': record.generation,
+            'source_revision': record.source_revision, 'fingerprint': record.record_fingerprint,
+            'capture': payload})
+    if len(json.dumps(items, ensure_ascii=False).encode('utf-8')) > 8 * 1024 * 1024:
+        raise ValueError('learning_capture_history_limit')
+    # A historical capture alone does not prove current applicability or
+    # projection state. Consumers compare a fresh preview explicitly.
+    return {'contract_version': 'learning-capture-history/v1', 'board_id': board_id,
+        'bug_id': bug_id, 'items': items, 'next_cursor': page.next_cursor}
 
 
 async def stage_new_learning_capture(context, request: CreateLearningCapture, *, author_id: str, captured_at: datetime):

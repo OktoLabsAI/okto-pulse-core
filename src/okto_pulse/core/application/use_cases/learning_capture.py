@@ -13,6 +13,7 @@ LEARNING_CAPTURE_CREATE_PERMISSIONS = (
     *LEARNING_CAPTURE_READ_PERMISSIONS,
     'kg.session.begin', 'kg.session.add_node', 'kg.session.add_edge', 'kg.session.commit',
 )
+LEARNING_CAPTURE_HISTORY_PERMISSIONS = (*LEARNING_CAPTURE_READ_PERMISSIONS, 'kg.query.learning_from_bugs')
 
 
 class StageLearningCaptureUseCase:
@@ -45,3 +46,14 @@ class GetLearningCaptureSourceUseCase:
         if card is None:
             raise EntityNotFoundError('card', bug_id)
         return await uow.services.kg.get_learning_capture_source(board_id=board_id, bug_id=bug_id)
+
+
+class ListLearningCapturesUseCase:
+    async def execute(self, *, board_id: str, bug_id: str, actor, uow, cursor=None, limit=20):
+        await require_all(actor, *(PermissionRequirement(flag) for flag in LEARNING_CAPTURE_HISTORY_PERMISSIONS),
+            uow=uow, board_id=board_id)
+        card = await load_accessible_card(uow, bug_id, actor, expected_board_id=board_id)
+        if card is None:
+            raise EntityNotFoundError('card', bug_id)
+        return await uow.services.kg.list_learning_captures(board_id=board_id, bug_id=bug_id,
+            cursor=cursor, limit=limit)

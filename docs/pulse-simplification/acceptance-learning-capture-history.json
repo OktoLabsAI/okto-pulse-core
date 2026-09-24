@@ -1,0 +1,180 @@
+{
+  "scope": "F6 paginated durable Learning capture history in REST/MCP and exact MCP permission manifest",
+  "suites": {
+    "learning-capture-history-core": {
+      "tests": 94,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "learning-capture-history-community": {
+      "tests": 110,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "capture-registry-before": {
+      "tests": 10,
+      "failures": 3,
+      "errors": 0,
+      "skipped": 0
+    },
+    "learning-capture-history-authority-core": {
+      "tests": 105,
+      "failures": 1,
+      "errors": 0,
+      "skipped": 0
+    },
+    "learning-capture-history-authority-community": {
+      "tests": 112,
+      "failures": 1,
+      "errors": 0,
+      "skipped": 0
+    },
+    "learning-capture-history-final-core": {
+      "tests": 108,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "learning-capture-history-final-community": {
+      "tests": 113,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    }
+  },
+  "budgets": [
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "import_boundary_baseline",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every import_boundary_baseline allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "singleton_baseline",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every singleton_baseline allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "dependency_temporary_exceptions",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every dependency_temporary_exceptions allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "graph_runtime_compatibility",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every graph_runtime_compatibility allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "rebuild_artifact_compatibility",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every rebuild_artifact_compatibility allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "community_private_reach_ins",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every community_private_reach_ins allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "community_adapter_bridges",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every community_adapter_bridges allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "af35_relational_residue",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every af35_relational_residue allowance before F16 completion."
+    }
+  ],
+  "verified": [
+    "Historical captures are returned from base or later revisions even after a literal head.",
+    "Selected identities audit all historical fingerprints; corruption in an older non-capture revision refuses the page.",
+    "Board/Bug isolation and ten explicit permission denials are enforced; Learning query authority is preserved.",
+    "Pagination is explicit; actual 200-record and 8-MiB overflows fail instead of truncating history.",
+    "Live MCP registry has an exact policy for all three capture tools and closed reader/writer admission metadata.",
+    "MCP and REST use the same source/UOW; presence in history never claims approval or current applicability."
+  ],
+  "limits": [
+    "Frontend integration remains pending and no frontend changes were made in this increment.",
+    "Cursor pagination is not a frozen snapshot; concurrent inserts can require refresh.",
+    "Return byte/count budgets do not establish native SQL deadlines or bounds for arbitrary legacy deserialization.",
+    "Persistence/JSON predicates are qualified on SQLite, not other database dialects.",
+    "Reuse/supersedence, other evidence paths, policy/Done/outbox/materialization and installed recovery remain pending.",
+    "MCP tests invoke live registry functions; they do not constitute an MCP HTTP campaign.",
+    "Initial registry omission and obsolete test oracles are preserved as failed evidence; later reports do not rewrite them.",
+    "Historical absent-permission defaults remain unchanged; denial tests use explicit False.",
+    "Suite counts are per run with overlap, not unique test totals."
+  ],
+  "sha256": {
+    "PULSE_REFACTOR/.validation-v040/learning-capture-history-core.xml": "f66f06a678320c3743df55cb405ec5ae3b7bce237b66d6dbae1d423c90124cc1",
+    "PULSE_REFACTOR/.validation-v040/learning-capture-history-test-core.log": "77f14502d2d621496ff13ecf04220d4b151f7d15697f167667bedcde4f23f5d1",
+    "PULSE_REFACTOR/.validation-v040/learning-capture-history-community.xml": "ceb4ffec7af19cd84dcb3ea6919c588e9233ba644138d2c0214051b296162688",
+    "PULSE_REFACTOR/.validation-v040/learning-capture-history-test-community.log": "8b068c24ea38eb442da424766902bd7af0be89012c84cbe30f14547c543d219f",
+    "PULSE_REFACTOR/.validation-v040/capture-registry-before.xml": "8710a897ca1bd347c009b087b1d028b5cb07fba6f78a91b7d19fa5ab9a100db4",
+    "PULSE_REFACTOR/.validation-v040/capture-registry-before.log": "da33d904e0fcf8f537e4c57f861e8fd0975be325ee050f58a425f7fe98d31895",
+    "PULSE_REFACTOR/.validation-v040/learning-capture-history-authority-core.xml": "d87cfd60d9961eeca560addd85a543c19822764803d7bf02f3a4980490462867",
+    "PULSE_REFACTOR/.validation-v040/learning-capture-history-authority-test-core.log": "c41336758bfb614a46a2e2155968e5026404d48d80d12928bdce99cc761927d1",
+    "PULSE_REFACTOR/.validation-v040/learning-capture-history-authority-community.xml": "38db5920c186fadd4d71f333f5c9786a85e5c58ff55f2b3fa514029320d4a050",
+    "PULSE_REFACTOR/.validation-v040/learning-capture-history-authority-test-community.log": "ae10376b4049c581eb72441803e49defc696187315adf4dbc910ae0ac90ed996",
+    "PULSE_REFACTOR/.validation-v040/learning-capture-history-final-core.xml": "cd7a70e1eae944f7273f41c4d586bb35631e9afb721f4b04d252cf30dcad06d4",
+    "PULSE_REFACTOR/.validation-v040/learning-capture-history-final-test-core.log": "715acad1ae85df58f97dbc057fe102a80d282edddad08b9c9b1ce28b4d42654e",
+    "PULSE_REFACTOR/.validation-v040/learning-capture-history-final-community.xml": "0a09f4f0a7061ffe52e7262198c47d82ff3142158c18725d682e4cb80448b4ff",
+    "PULSE_REFACTOR/.validation-v040/learning-capture-history-final-test-community.log": "67a7b6aa2e305e794af1d97e840a7a0f7744142bf5680b0570f5ac7b815f5e96",
+    "PULSE_REFACTOR/.validation-v040/closure-learning-capture-history.json": "8cd92047afbdda958d04d984dbd03460fd8c9c19e726f2a341b24abb9e26bf53",
+    "PULSE_REFACTOR/.validation-v040/provenance-learning-capture-history.json": "8167823c0849a791af54a1f1ef307afb54dca586fe70afff9f3e628301b7e238",
+    "PULSE_REFACTOR/.validation-v040/run_learning_capture_history.py": "60b85f676533161baafb5523710926537e3d70e72e949ec0bbd100fbd6ad247e",
+    "PULSE_REFACTOR/.validation-v040/closure-learning-capture-history-authority.json": "70eaae43ffe1e0539db5a8ae1e652b01dd36d48017957c4289f0aeabfa99f9c1",
+    "PULSE_REFACTOR/.validation-v040/provenance-learning-capture-history-authority.json": "0b70e3a10eac3a15d8c75e0c7b90ef1e52d3103c8bc36b060dfa0660f4c8a312",
+    "PULSE_REFACTOR/.validation-v040/run_learning_capture_history_authority.py": "e7d276bf9d960d922fc1c1296843affce74df5681381c3e01df712c17b53cd9e",
+    "PULSE_REFACTOR/.validation-v040/closure-learning-capture-history-final.json": "34b909abf87595a12c05836f7ecb257b7b9128f40340b0df0b25b1d433763220",
+    "PULSE_REFACTOR/.validation-v040/provenance-learning-capture-history-final.json": "3daec16bbb6b81ff8f36b852af6d8baef194da41ec93ccd1309b4b864c136d39",
+    "PULSE_REFACTOR/.validation-v040/run_learning_capture_history_final.py": "41445ca8e4693a76d9198697f3caf84641a0342abab282879bd15596d04bf883",
+    "okto_labs_pulse_core/src/okto_pulse/core/ports/learning_capture.py": "7f655e251670e6a6aee325b943b5a0e0e471a6d65b08cda52b482f9437a75914",
+    "okto_labs_pulse_core/src/okto_pulse/core/ports/application_services.py": "15a310671c4db2a62803d94533e0eb63b5011b43609a1bd8b4da46d325eb2f85",
+    "okto_labs_pulse_core/src/okto_pulse/core/application/learning_capture.py": "38c87d83b05de29c1c681ebee8487a14b5750d78f0325cea9332709b8851cbb6",
+    "okto_labs_pulse_core/src/okto_pulse/core/application/use_cases/learning_capture.py": "6473782974bbbedc01491fb43476e3acf2f88be70a58b0e12b33420a07203b5b",
+    "okto_labs_pulse_core/src/okto_pulse/core/application/kg_operations.py": "786b4a0884d09270a9324f70e2e4197cff588716aeb06db08998abddd9a27135",
+    "okto_labs_pulse_core/src/okto_pulse/core/domain/mcp_permission_registry.py": "21e85bf332ea59257baf502ba5dcec6f9faca63cfdcaf7b21c8d759987f205f7",
+    "okto_labs_pulse_core/src/okto_pulse/core/mcp/server.py": "bb32faf509c2dacd390f260b7f31356cc51e77215c3c2c2daa6539acf5021a73",
+    "okto_labs_pulse_core/src/okto_pulse/core/mcp/tools_catalog_generator.py": "fc836206d86fbab9b627c4133bd96dea6f38e1da5d9cd06ac27aae53e5e13b17",
+    "okto_labs_pulse_core/src/okto_pulse/core/mcp/resources/reference/tools_catalog.md": "0b62ec4a40e33866c211c48bd03cb6d636804dc3afa1171466bc697d841ae4be",
+    "okto_labs_pulse_core/src/okto_pulse/core/mcp/resources/reference/tool-docs/kg.md": "b9b80f70913f5ff56eb5d8493554ce0be317e46821f986710df0808da4b4e77c",
+    "okto_labs_pulse_community/src/okto_pulse/community/adapters/sqlalchemy_kg_cognitive_source.py": "e2a4d0a4778189ed80a86f3acc3e8809372f5316e811b53cb0c9bf0383a2bc7a",
+    "okto_labs_pulse_community/src/okto_pulse/community/api/bug_cognitive_closure.py": "416d95e90dd33bd760f19f38851aa3446376bfc1d21d5042eea5b05c4382e1d0",
+    "okto_labs_pulse_community/tests/test_learning_capture_history.py": "243d19a25701db2f4686b62f451d951b79db5c8c24e272fe26b6731f99634ff0",
+    "okto_labs_pulse_community/tests/test_learning_capture_mcp.py": "bff4ad56fae71f7b41eefc2cf94883a0efb1835f44cf788d11425befde2eb3b4",
+    "okto_labs_pulse_core/tests/test_mcp_permission_registry.py": "0a1bd0ef2d4fcc20e3603715c2641dc5bbc66a4a3e362c9f29bd2a0813268c76"
+  }
+}

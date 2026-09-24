@@ -51,6 +51,7 @@ Semantic guideline protocol:
 - `okto_pulse_kg_get_learning_capture_context` — docs: `okto-pulse://reference/tool-docs/kg`
 - `okto_pulse_kg_list_cognitive_pending_items` — docs: `okto-pulse://reference/tool-docs/kg`
 - `okto_pulse_kg_list_cognitive_readiness_items` — docs: `okto-pulse://reference/tool-docs/kg`
+- `okto_pulse_kg_list_learning_captures` — docs: `okto-pulse://reference/tool-docs/kg`
 - `okto_pulse_kg_record_cognitive_skip` — docs: `okto-pulse://reference/tool-docs/kg`
 - `okto_pulse_kg_update_cognitive_pending_item` — docs: `okto-pulse://reference/tool-docs/kg`
 

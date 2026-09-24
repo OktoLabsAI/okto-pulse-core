@@ -704,3 +704,20 @@ Example: `{"board_id":"board-1","bug_id":"bug-1","capture_id":"capture-1",
 "expected_source_version":1,"content":"Keep release metadata authoritative",
 "context":"Frontend packaging","applicability":"Compiled releases",
 "scenario_ids":["scenario-1"]}`.
+## `okto_pulse_kg_list_learning_captures`
+
+Read durable capture history using `board_id`, `bug_id`, optional `cursor`
+and `limit` (default20, range1..50 source identities). Requires the source read
+permissions plus `kg.query.learning_from_bugs`; authorship does not grant reading
+other authors' Learning content. Returns `learning-capture-history/v1`, `items`
+and `next_cursor`. Each item includes Learning identity/generation/revision,
+fingerprint and the authored capture. Older captures remain visible even when
+later revisions contain materialized properties. A page audits the complete
+history of its selected identities; corruption, unavailable history or a budget
+overflow is an error, never an empty/partial success.
+
+Example: `{"board_id":"board-1","bug_id":"bug-1","limit":20}`. Follow
+`next_cursor` until null. Paging is not a frozen snapshot; refresh to observe
+concurrent insertions. Presence in history does not prove current applicability,
+approval or graph materialization. Compare the current source preview and
+review applicability before reusing authored content.
