@@ -446,7 +446,7 @@ async def test_ts33_kg_health_surfaces_latest_completed_tick(
 
 def test_ts34_health_schema_version_is_1_1():
     """The coordinated REST/MCP/Pydantic/frontend contract is version 1.1."""
-    assert HEALTH_SCHEMA_VERSION == "1.2"
+    assert HEALTH_SCHEMA_VERSION == "1.3"
 
 
 # ---------------------------------------------------------------------------

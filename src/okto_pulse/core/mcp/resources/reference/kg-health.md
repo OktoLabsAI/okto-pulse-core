@@ -40,10 +40,13 @@ Contract fields you must understand (`api_3ed9037f`):
 | Field | Meaning |
 |---|---|
 | `graph_state` / `discovery_state` | Per-graph state from the 5-state machine (`healthy`, `at_risk`, `backpressure`, `recovery_needed`, `quarantined`). |
-| `overall_state` | Worst-case fold of the two above. It gates ordinary writes but does not authorize recovery. Inspect `graph_state` versus `discovery_state` to identify the affected component. |
+| `overall_state` | Aggregate observation of component states and incomplete diagnostics. Inspect `graph_state` versus `discovery_state` to identify the affected component. This reading grants no mutation authority and does not replace the affected operation's own guards. |
 | `metric_status` | `available` or `unavailable`. **`unavailable` never means "graph is fine, sensor is just off"** — BR br_2a8cdfdc forbids degrading to healthy when telemetry can't be read. Treat the graph as `at_risk` until telemetry recovers. |
 | `classification_reason` | Single-string explanation of why the state was assigned (e.g. `graph:metric.unavailable`). |
-| `health_schema_version` | Version of the coordinated REST/MCP/model/frontend health contract. Version `1.1` adds the materialization diagnosis while the legacy `schema_version` alias remains `1.0` for backward compatibility. |
+| `health_schema_version` | Coordinated REST/MCP/model/frontend contract, currently `1.3`. Version `1.2` made unavailable canonical-debt counts nullable and removed per-node orphan samples; `1.3` makes incomplete graph metrics nullable. The legacy `schema_version` alias remains `1.0`; it does not describe these response changes. |
+| `total_nodes`, `default_score_count`, `default_score_ratio`, `avg_relevance` | Null when graph observation is incomplete, failed, missing, or reaches its result limit. A successful complete empty observation remains numeric zero. `probe_diagnostics.graph_metrics` carries availability and a stable reason. Never treat a partial total as a complete census. |
+| `canonical_debt` / `operational_domains.canonical_debt` | Aggregate counts with explicit availability. Unavailable observations carry null counts, not zero pending work. In health-readiness, `blocking` is null if this missing observation prevents a conclusion and no blocker is already known; `would_block_done` is null under enforcement and false in advisory mode. Known blockers remain visible. This is an observation, not execution of the authoritative completion gate. |
+| `orphan_integrity` | Aggregate counts/classification only; no scanner samples, per-node writer/source references or internal provider extensions. |
 | `materialization_state` | Board-scoped diagnosis: `not_materialized`, `materialized`, or fail-closed `unknown`. `not_materialized` requires same-generation confirmed board-store absence plus a successful all-zero relational census; it is never inferred from a timeout, I/O error, provider failure, unreadable path, nonzero census, or generation race. |
 | `materialization_generation` | Generation fence shared by the store observations and relational census. It is null when evidence is unknown or raced. |
 | `probe_reason_codes` | Stable reasons for `board_graph`, `board_census`, and `global_discovery`. Use these codes to distinguish confirmed absence from timeout/error/provider failure without parsing prose. |
@@ -56,7 +59,7 @@ Contract fields you must understand (`api_3ed9037f`):
 | `current_kg_generation_id` | Identifies the active graph generation. Changes after a clean rebuild; same generation across health calls means storage hasn't been replaced. |
 | `recent_events` | Recent state transitions, WAL/commit failures and memory-pressure samples. Empty when the safe observability path (KG-01.5) hasn't shipped yet. |
 | `memory_pressure_status` | `unconfirmed` or `confirmed_primary_cause`. **Only** `confirmed_primary_cause` justifies recommending a memory-pressure mitigation — anything else means the deterministic criterion (>90% in ≥3 samples within 10 min before WAL/commit failure) did NOT match. |
-| Legacy fields (`contradict_warn_count`, `last_decay_tick_at`, `nodes_recomputed_in_last_tick`, `default_score_ratio`, …) | Preserved for backward compatibility with the dashboard. `contradict_warn_count` counts CONTRADICT_PENALTY warnings; it does not request score recomputation. |
+| Other legacy fields (`contradict_warn_count`, `last_decay_tick_at`, `nodes_recomputed_in_last_tick`, …) | `contradict_warn_count` counts CONTRADICT_PENALTY warnings; it does not request score recomputation. Read each field's observation status; the retained names do not make missing data available. |
 
 ## What you MUST NOT do
 

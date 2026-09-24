@@ -100,7 +100,7 @@ _STATE_SEVERITY = {
 logger = logging.getLogger("okto_pulse.services.kg_health")
 
 
-HEALTH_SCHEMA_VERSION = "1.2"
+HEALTH_SCHEMA_VERSION = "1.3"
 LEGACY_HEALTH_SCHEMA_VERSION = "1.0"
 _MATERIALIZATION_EVIDENCE_BUDGET_S = 2.0
 _MATERIALIZATION_EVIDENCE_UNAVAILABLE = "materialization_evidence_unavailable"
@@ -2630,6 +2630,7 @@ async def get_kg_health(
     graph_metrics_available = confirmed_empty_evidence or (
         not skip_board_graph_reads
         and (graph_probe.status != "unavailable" or "graph_metrics" in graph_partial)
+        and graph_snapshot["graph_metrics"].get("status") == "available"
     )
     artifact_snapshot = dict(artifact_probe.value)
     if artifact_probe.status == "unavailable":
@@ -2749,7 +2750,7 @@ async def get_kg_health(
         _DISCOVERY_HEALTH_PROBE: discovery_probe.diagnostic(),
         "graph_metrics": {
             "status": ("available" if graph_metrics_available else "unavailable"),
-            "reason": "ok" if graph_metrics_available else graph_probe.reason,
+            "reason": "ok" if graph_metrics_available else graph_metrics.get("reason", graph_probe.reason),
         },
         "schema_version": {
             "status": (
@@ -3073,6 +3074,14 @@ async def get_kg_health(
         )
         if materialization_probe_reason not in combined_reasons:
             combined_reasons.append(materialization_probe_reason)
+        classification_reason = ";".join(combined_reasons)
+
+    if not graph_metrics_available:
+        rest_metric_status = "unavailable"
+        if overall_state == HealthState.HEALTHY:
+            overall_state = HealthState.AT_RISK
+        if "graph_metrics_observation_incomplete" not in combined_reasons:
+            combined_reasons.append("graph_metrics_observation_incomplete")
         classification_reason = ";".join(combined_reasons)
 
     # FR1/TR1 (spec R2c): feed real ring-buffer observations to the
@@ -3731,6 +3740,9 @@ async def get_kg_health(
         safe_write_diag=safe_write_diag,
         scope=root_cause_scope,
     )
+    if not graph_metrics_available:
+        root_cause["materialized_node_count"] = None
+        root_cause["categories"]["empty_after_materialized_history"]["materialized_node_count"] = None
     # Card detail #4: an unavailable recovery drill-down must NOT read as healthy.
     if root_cause["drilldown_unavailable"]:
         if overall_state == HealthState.HEALTHY:
@@ -3784,10 +3796,10 @@ async def get_kg_health(
         # source_enumeration_failure / safe_write_drain_failure with materialized
         # node count, source count, queue state and last safe-write outcome.
         "root_cause": root_cause,
-        "total_nodes": total_nodes,
-        "default_score_count": default_score_count,
-        "default_score_ratio": round(default_score_ratio, 4),
-        "avg_relevance": graph_metrics["avg_relevance"],
+        "total_nodes": total_nodes if graph_metrics_available else None,
+        "default_score_count": default_score_count if graph_metrics_available else None,
+        "default_score_ratio": round(default_score_ratio, 4) if graph_metrics_available else None,
+        "avg_relevance": graph_metrics["avg_relevance"] if graph_metrics_available else None,
         "source_count": (
             int(source_diag["source_count"])
             if source_diag.get("source_count") is not None
@@ -4162,8 +4174,8 @@ def _aggregate_graph_metrics(board_id: str) -> dict[str, Any]:
     """Pull node-level aggregates from graph backend for ``board_id``.
 
     Returns a dict with total_nodes, default_score_count and avg_relevance.
-    On any graph backend error (board not bootstrapped, schema drift, lock contention)
-    returns zeroed defaults so the health endpoint stays available.
+    Any failed or bounded result makes the observation incomplete. Internal
+    arithmetic placeholders never become public zero counts (Health 1.3).
     """
     try:
         from okto_pulse.core.kg.interfaces import get_kg_registry
@@ -4180,6 +4192,8 @@ def _aggregate_graph_metrics(board_id: str) -> dict[str, Any]:
     default_score_count = 0
     relevance_sum = 0.0
     relevance_n = 0
+    incomplete = False
+    limit_reached = False
 
     try:
         cypher = get_kg_registry().cypher_executor
@@ -4196,6 +4210,7 @@ def _aggregate_graph_metrics(board_id: str) -> dict[str, Any]:
                 if isinstance(result, Exception):
                     raise result
             except Exception as exc:
+                incomplete = True
                 logger.debug(
                     "kg.health.graph_query_failed board=%s type=%s err=%s",
                     board_id,
@@ -4203,7 +4218,14 @@ def _aggregate_graph_metrics(board_id: str) -> dict[str, Any]:
                     exc,
                 )
                 continue
-            for row in result.get("rows", []):
+            rows = result.get("rows")
+            if not isinstance(rows, list):
+                incomplete = True
+                continue
+            if len(rows) >= 10000 or result.get("truncated") or result.get("has_more"):
+                incomplete = True
+                limit_reached = True
+            for row in rows:
                 rel = row[0]
                 total_nodes += 1
                 if rel is not None:
@@ -4226,6 +4248,8 @@ def _aggregate_graph_metrics(board_id: str) -> dict[str, Any]:
         "total_nodes": total_nodes,
         "default_score_count": default_score_count,
         "avg_relevance": avg_relevance,
+        "status": "unavailable" if incomplete else "available",
+        "reason": "graph_metrics_limit_reached" if limit_reached else "graph_metrics_query_unavailable" if incomplete else "ok",
     }
 
 
@@ -4234,6 +4258,8 @@ def _zero_graph_metrics() -> dict[str, Any]:
         "total_nodes": 0,
         "default_score_count": 0,
         "avg_relevance": 0.0,
+        "status": "unavailable",
+        "reason": "graph_metrics_unavailable",
     }
 
 

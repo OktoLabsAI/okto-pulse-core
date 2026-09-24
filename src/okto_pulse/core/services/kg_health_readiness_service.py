@@ -229,7 +229,7 @@ async def build_health_readiness(
 
     result: dict[str, Any] = {
         "board_id": board_id,
-        "health_schema_version": health.get("health_schema_version", "1.2"),
+        "health_schema_version": health.get("health_schema_version", "1.3"),
         "profile": "full" if _is_full(profile) else "summary",
         "overall_state": (
             "at_risk" if debt_unavailable and health.get("overall_state") == "healthy"

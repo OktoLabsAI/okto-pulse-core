@@ -28,7 +28,7 @@ from sqlalchemy_test_models import Board
 
 
 def test_health_schema_version_advances_to_1_1() -> None:
-    assert HEALTH_SCHEMA_VERSION == "1.2"
+    assert HEALTH_SCHEMA_VERSION == "1.3"
 
 
 def test_mcp_summary_preserves_versioned_materialization_contract() -> None:
@@ -249,7 +249,7 @@ async def test_confirmed_empty_composes_known_zero_contract_without_graph_reads(
         reset_materialization_evidence_port_for_tests()
 
     assert result["schema_version"] == "1.0"
-    assert result["health_schema_version"] == "1.2"
+    assert result["health_schema_version"] == "1.3"
     assert result["materialization_state"] == "not_materialized"
     assert result["materialization_generation"] == "generation-empty-1"
     assert result["classification_reason"] == "empty_board_not_materialized"
@@ -335,6 +335,11 @@ async def test_unreadable_store_preserves_concrete_recovery_state_without_open(
     assert result["graph_state"] == expected_state
     assert result["overall_state"] == expected_state
     assert result["metric_status"] == "unavailable"
+    assert result["total_nodes"] is None
+    assert result["default_score_count"] is None
+    assert result["default_score_ratio"] is None
+    assert result["avg_relevance"] is None
+    assert result["root_cause"]["materialized_node_count"] is None
     assert result["probe_reason_codes"]["board_graph"].startswith("board_graph_")
     assert result["probe_diagnostics"]["graph_metrics"]["status"] == ("unavailable")
     assert forbidden_calls == []
@@ -380,7 +385,7 @@ async def test_evidence_timeout_returns_typed_fail_closed_payload_without_open(
     finally:
         reset_materialization_evidence_port_for_tests()
 
-    assert result["health_schema_version"] == "1.2"
+    assert result["health_schema_version"] == "1.3"
     assert result["materialization_state"] == "unknown"
     assert result["materialization_generation"] is None
     assert result["metric_status"] == "unavailable"

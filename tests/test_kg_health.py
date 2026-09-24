@@ -223,7 +223,7 @@ async def test_health_response_carries_10_fields(db_factory, kg_health_board):
     assert set(result.keys()) == expected_fields
     assert result["schema_version"] == "1.0"
     assert result["health_schema_version"] == HEALTH_SCHEMA_VERSION
-    assert result["health_schema_version"] == "1.2"
+    assert result["health_schema_version"] == "1.3"
     assert isinstance(result["queue_depth"], int)
     assert result["oldest_pending_age_s"] is None or isinstance(
         result["oldest_pending_age_s"], float
@@ -379,6 +379,7 @@ async def test_orphan_integrity_warning_is_at_risk_not_recovery_needed(
             "total_nodes": 10,
             "default_score_count": 0,
             "avg_relevance": 0.75,
+            "status": "available",
         },
     )
     monkeypatch.setattr(
@@ -458,12 +459,13 @@ async def test_default_response_is_conservative_never_healthy(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("observation_status", ["available", "unavailable"])
 async def test_empty_graph_after_materialized_history_requires_recovery(
-    monkeypatch, db_factory, kg_health_board
+    monkeypatch, db_factory, kg_health_board, observation_status
 ):
     """If SQLite audit proves prior KG materialization but the Community graph runtime (Grafx) reports
-    zero nodes, Health must surface recovery_needed instead of a generic
-    at_risk/empty state.
+    zero nodes, Health must surface recovery_needed. An unavailable observation
+    does not prove that those previously materialized nodes disappeared.
     """
     now = datetime.now(timezone.utc)
     async with db_factory() as session:
@@ -487,6 +489,16 @@ async def test_empty_graph_after_materialized_history_requires_recovery(
 
     monkeypatch.setattr(
         svc,
+        "_aggregate_graph_metrics",
+        lambda _board_id: {
+            "total_nodes": 0,
+            "default_score_count": 0,
+            "avg_relevance": 0.0,
+            "status": observation_status,
+        },
+    )
+    monkeypatch.setattr(
+        svc,
         "_probe_board_graph_telemetry",
         lambda **_kwargs: svc._telemetry_unavailable("board"),
     )
@@ -498,6 +510,14 @@ async def test_empty_graph_after_materialized_history_requires_recovery(
 
     async with db_factory() as session:
         result = await get_kg_health(kg_health_board, session)
+
+    if observation_status == "unavailable":
+        assert result["total_nodes"] is None
+        assert result["metric_status"] == "unavailable"
+        assert "graph:empty_after_materialized_history" not in result["classification_reason"]
+        assert result["root_cause"]["materialized_node_count"] is None
+        assert result["overall_state"] != "healthy"
+        return
 
     assert result["total_nodes"] == 0
     assert result["graph_state"] == "recovery_needed"
@@ -571,6 +591,7 @@ async def test_health_stays_recovery_needed_with_actionable_drilldown(
             "total_nodes": 0,
             "default_score_count": 0,
             "avg_relevance": 0.0,
+            "status": "available",
         },
     )
     monkeypatch.setattr(
@@ -627,6 +648,7 @@ async def test_queryable_graph_with_unavailable_telemetry_is_not_recovery_requir
             "total_nodes": 7,
             "default_score_count": 1,
             "avg_relevance": 0.61,
+            "status": "available",
         }
 
     svc._aggregate_graph_metrics = _metrics
@@ -698,6 +720,7 @@ async def test_dead_letters_are_operational_debt_not_graph_rebuild_signal(
             "total_nodes": 3,
             "default_score_count": 0,
             "avg_relevance": 0.8,
+            "status": "available",
         }
 
     svc._aggregate_graph_metrics = _metrics
@@ -746,6 +769,7 @@ async def test_discovery_open_error_is_concrete_recovery_signal(
             "total_nodes": 5,
             "default_score_count": 0,
             "avg_relevance": 0.7,
+            "status": "available",
         },
     )
     monkeypatch.setattr(svc, "_get_graph_schema_version", lambda _board_id: "0.3.5")
@@ -1304,6 +1328,7 @@ async def test_default_score_ratio_skew_emits_alarm_log(
             "total_nodes": 10,
             "default_score_count": 8,
             "avg_relevance": 0.5,
+            "status": "available",
         }
 
     svc._aggregate_graph_metrics = _stub
@@ -1971,6 +1996,7 @@ async def test_each_blocking_health_probe_respects_endpoint_budget(
             "total_nodes": 0,
             "default_score_count": 0,
             "avg_relevance": 0.0,
+            "status": "available",
         },
         "schema_version": None,
         "board_telemetry": svc._telemetry_unavailable("board"),
