@@ -372,6 +372,10 @@ class _CoreTestSchemaLifecycle:
                 from okto_pulse.community.adapters.sqlalchemy_base import (
                     Base as CommunityBase,
                 )
+                # Register all edition mappings before create_all. Otherwise a
+                # focused/nested suite can import CodeEvidence only on its first
+                # service call, after this schema snapshot was already created.
+                from okto_pulse.community.adapters import sqlalchemy_models  # noqa: F401
 
                 # SK-B's immutable policy authority is an edition extension.
                 # Cross-repo integration runs compose it explicitly while

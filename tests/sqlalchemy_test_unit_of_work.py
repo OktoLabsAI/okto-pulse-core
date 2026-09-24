@@ -64,6 +64,17 @@ class _UnsupportedHistoricalArchiveGrants:
         raise NotImplementedError("historical archive grants are not configured")
 
 
+class _UnsupportedHistoricalContextReader:
+    async def has_current_target_access(self, **kwargs: object) -> None:
+        raise NotImplementedError("historical context reader is not configured")
+
+    async def list_bindings(self, **kwargs: object) -> None:
+        raise NotImplementedError("historical context reader is not configured")
+
+    async def read_binding(self, **kwargs: object) -> None:
+        raise NotImplementedError("historical context reader is not configured")
+
+
 class SQLAlchemyUnitOfWork:
     """PulseUnitOfWork backed by a SQLAlchemy AsyncSession."""
 
@@ -103,6 +114,7 @@ class SQLAlchemyUnitOfWork:
         self.entity_exports = _UnsupportedEntityExportReadPort()
         self.historical_archive_grants = _UnsupportedHistoricalArchiveGrants()
         self.historical_archive_reader = self.historical_archive_grants
+        self.historical_context_reader = _UnsupportedHistoricalContextReader()
 
     async def __aenter__(self) -> "SQLAlchemyUnitOfWork":
         return self

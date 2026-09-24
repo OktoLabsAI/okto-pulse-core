@@ -1005,6 +1005,8 @@ def tool_docs_family(tool_name: str) -> str:
     """Deterministic tool-docs family for a tool name (R1.1 / api_fd7c5878)."""
     if tool_name == "okto_pulse_get_requirement_verification":
         return "spec"
+    if tool_name == "okto_pulse_admit_test_verification_report":
+        return "test-scenario"
     if tool_name == "okto_pulse_associate_amendment_revision_artifacts":
         return "card"
     if tool_name in _CODE_TRACEABILITY_TOOL_NAMES:

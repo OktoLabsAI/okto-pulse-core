@@ -253,10 +253,11 @@ def test_ts_69b4ee2b_f16_f17_suite_is_green(tmp_path):
         f"STDOUT:\n{result.stdout}\n"
         f"STDERR:\n{result.stderr}"
     )
-    # confirm at least 15 tests ran (regression guard — suite should not shrink)
+    # F4 removed the three manual-tick cases; the twelve surviving Health
+    # cases must all run. Retired transports have separate absence tests.
     match = re.search(r"(\d+) passed", result.stdout)
-    assert match and int(match.group(1)) >= 15, (
-        f"Expected at least 15 tests in test_f16_f17_health_aware_gates.py, "
+    assert match and int(match.group(1)) >= 12, (
+        f"Expected at least 12 tests in test_f16_f17_health_aware_gates.py, "
         f"got: {result.stdout.strip()}"
     )
 
@@ -318,7 +319,8 @@ def _install_waived_delivery_evidence(monkeypatch) -> None:
         _ = session, original
         return _WaivedDeliveryStore()
 
-    async def _require(session, spec, *, for_update: bool = False) -> None:
+    async def _require(session, spec, *, for_update: bool = False, board=None) -> None:
+        assert board is not None and board.id == spec.board_id
         _store.spec = spec  # type: ignore[attr-defined]
         store = _store(session)
         if for_update:

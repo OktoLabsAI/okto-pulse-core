@@ -10,20 +10,20 @@ Domain and application engine for [Okto Pulse](https://github.com/OktoLabsAI/okt
 ## What's inside
 
 - **0 SQLAlchemy models** — Core owns no concrete relational mappings. This is checked by scanning for `__tablename__` assignments anywhere under `core/`; the Community edition owns the SQLAlchemy model and repository adapters.
-- **59 service classes** — Full business logic with governance rules, board agent governance, resource propagation + lineage, bug-regression workflow, archive/restore, traceability and board-level resource readiness. Source: classes ending in `Service` under `core/services`.
+- **56 service classes** — Full business logic with governance rules, board agent governance, resource propagation + lineage, bug-regression workflow, archive/restore, traceability and board-level resource readiness. Source: classes ending in `Service` under `core/services`.
 - **0 API route modules** — Core owns application contracts and use cases, not concrete FastAPI routers. The count scans `core/api/*.py`; Community owns the REST adapter and route modules.
-- **17 governance gates** — Resource readiness, resource-to-task coverage, spec coverage, validation, evaluation, task completion, cognitive closeout, architecture-findings, evidence, bug traceability and sprint health controls.
-- **340 MCP tools** — Complete Model Context Protocol command catalog for AI agent integration, counted from the transport-neutral Core catalog after importing the server, including:
-  - Pipeline CRUD (Ideation, Refinement, Spec, Sprint, Card)
+- **Governance gates** — Resource readiness, resource-to-task coverage, spec coverage, validation, evaluation, task completion, cognitive closeout, architecture-findings, evidence and bug traceability controls.
+- **301 MCP tools** — Complete Model Context Protocol command catalog for AI agent integration, counted from the transport-neutral Core catalog after importing the server, including:
+  - Pipeline CRUD (Ideation, Refinement, Spec, Card)
   - Q&A and choice questions across every entity
   - Mockups (HTML+Tailwind, sanitised) and Knowledge Bases at spec/refinement/card scope
   - Decisions with supersedence and coverage gates
   - Per-card Knowledge attachment lifecycle (`add_card_knowledge` and friends)
-  - 62 Knowledge Graph tools (consolidation, query primary/power, health, dead-letter, schema-migrate, decay tick controllability, board rebuild and global discovery recovery preflight/confirm/run)
-  - Community runtime exposure: 340 core MCP tools, 0 community-only MCP tools
+  - 32 Knowledge Graph tools: logical queries, cognitive consolidation, public schema, bounded Health and governed deletion status. Maintenance and recovery controls are internal.
+  - Community runtime exposure: 301 core MCP tools, 0 community-only MCP tools
 - **Application composition contracts** — edition-neutral runtime, auth, storage, persistence, graph, telemetry and transport ports; concrete app construction belongs to the edition
 - **Hexagonal backend ports** — runtime, telemetry, repository/UoW and KG provider seams, plus the adapter readiness ledger, documented in [`ARCHITECTURE.md`](./ARCHITECTURE.md)
-- **Knowledge Graph contracts and orchestration** — graph schema vocabulary, query/consolidation semantics, deterministic + cognitive workers, 11 node types and **16 relationship types**. Source: `len(KGEdgeType)` in `core/kg/schemas.py`; the concrete LadybugDB/Kuzu board and global graph runtimes are supplied by the active edition
+- **Knowledge Graph contracts and orchestration** — graph schema vocabulary, query/consolidation semantics, deterministic + cognitive workers, 11 node types and **16 relationship types**. Source: `len(KGEdgeType)` in `core/kg/schemas.py`; Community supplies the concrete Okto Grafx Board and Global runtimes through public ports.
 - **Bounded operational metric samples** — governance, architecture, bug-regression, resource-lineage and global-discovery observability keep capped diagnostic samples. Global-discovery count APIs remain monotonic totals and do not derive totals from the retained sample ring.
 
 ## Governance Gate Surface
@@ -36,7 +36,7 @@ a relevant tree or explicitly persist a justified non-applicability statement
 in the Spec context before advancing. This is an agent-review obligation, not
 an additional server gate. See the [canonical protocol and tested examples](src/okto_pulse/core/mcp/resources/reference/project_structure.md).
 
-Okto Pulse currently documents and enforces **17 named governance gates**:
+The main governance families are:
 
 | Gate family | Gates |
 | --- | --- |
@@ -44,7 +44,7 @@ Okto Pulse currently documents and enforces **17 named governance gates**:
 | Spec coverage | Scenario/test coverage; functional requirement/business rule coverage; technical requirement/task coverage; API contract/task coverage; active decision/task coverage |
 | Validation and evaluation | Spec validation; spec qualitative evaluation; task validation |
 | Execution quality | Task start/spec readiness; task conclusion; cognitive closeout; architecture-findings done; test evidence; bug test-first/traceability |
-| Sprint health | Sprint closure/evaluation |
+| Delivery and verification | Current implementation/test obligations, architecture classification and method-specific evidence admission |
 
 The two execution-quality additions introduced in 0.2.3 — **cognitive closeout** (a `done` transition is blocked while active cognitive-consolidation items remain) and the **architecture-findings done gate** (active architecture warnings block `spec`/card `done`) — remain enforced in the current release.
 
