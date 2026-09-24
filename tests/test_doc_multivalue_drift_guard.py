@@ -45,7 +45,7 @@ FORBIDDEN_STALE = [
 ]
 
 # tool-docs whose strict-coercion multivalue params were reconciled.
-RECONCILED_TOOLDOCS = ["ideation.md", "refinement.md", "spec.md", "sprint.md"]
+RECONCILED_TOOLDOCS = ["ideation.md", "refinement.md", "spec.md"]
 
 # Legitimate "Comma-separated" usage that MUST be preserved (NOT strict coercion):
 # board include is a plain include.split(",") (server.py:1554). Multi-value
@@ -94,6 +94,7 @@ def _no_forbidden_stale(text: str) -> bool:
 
 
 def test_ac1_strict_coercion_lines_reconciled() -> None:
+    assert not (TOOLDOCS / "sprint.md").exists()  # F3 retires this resource.
     for fname in RECONCILED_TOOLDOCS:
         text = _read(TOOLDOCS / fname)
         assert _no_forbidden_stale(text), (
