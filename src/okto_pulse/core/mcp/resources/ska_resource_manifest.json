@@ -42,7 +42,7 @@
     ],
     "source": "okto_pulse/core/mcp/agent_instructions.md"
   },
-  "manifest_sha256": "b4ed5e2ca039b00cb16ce95f0cf03ce795f5426707a854e230a81fd62fe2482b",
+  "manifest_sha256": "0e707bcaccff1b7b7c2b5d6a9ebbf60912b68cacb5d4101772d5abce2b9c2e28",
   "manifest_version": "agent-resources/v2",
   "resource_count": 22,
   "resources": [
@@ -127,7 +127,7 @@
       "uri": "okto-pulse://reference/list_tools"
     },
     {
-      "content_sha256": "4f3bfa16d9cf55b7b59a525711a5c255ab17ee49651334f1ef4d0dfe914fb274",
+      "content_sha256": "b6d46e7b00e47e48075c026982d8b7c7db1d6db07bd3db98c118e457b38197a6",
       "cross_links": [
         "okto-pulse://reference/errors",
         "okto-pulse://reference/projection-profiles",
@@ -338,7 +338,7 @@
       "uri": "okto-pulse://reference/tool-docs/test-scenario"
     },
     {
-      "content_sha256": "7a88b78aba85caa663e1fad3c97c21a9d39a114daa3c4866ecf08760729a1a0d",
+      "content_sha256": "0b62ec4a40e33866c211c48bd03cb6d636804dc3afa1171466bc697d841ae4be",
       "cross_links": [
         "okto-pulse://reference/list_tools",
         "okto-pulse://reference/policy-compliance",
@@ -404,7 +404,7 @@
       "uri": "okto-pulse://reference/transitions"
     },
     {
-      "content_sha256": "e0202045641523a8b5a5b276fa69b734d495b8b9be52d9e42b8deb13a4edb8c5",
+      "content_sha256": "4c710c86f808c5636e95ae932caa964696b60123d4ab8109d3300f372fc3df1c",
       "cross_links": [
         "okto-pulse://reference/card_types",
         "okto-pulse://reference/code-traceability",

@@ -28,8 +28,8 @@ Structural validity and a matching fingerprint do not establish authenticated
 authorship, current source facts, evidence admission, applicability, permission,
 independent review or Bug completion. A caller-supplied `admitted` flag is not
 part of the format. Metadata outside the fingerprint cannot supply that proof.
-REST/MCP creation and preview are described below; UI and the governed
-transition binding are still pending.
+REST/MCP and UI creation/preview are described below; the governed transition
+binding is still pending.
 
 The projection inventory validates every revision, including older captures,
 before selecting heads. Captures are reported as
@@ -85,7 +85,7 @@ commit/rollback; successful staging does not mean the transaction committed.
 
 Complete other evidence-reference paths, explicit reuse/supersedence operations,
 policy and preview, Done binding/outbox, deterministic materializer, reopen
-currentness and frontend. Qualify those paths with concurrency,
+currentness. Qualify those paths with concurrency,
 upgrade/replay/rollback and installed-pair tests. Neither this format nor the
 staging use case completes F6 or changes a gate.
 
@@ -108,8 +108,8 @@ The response `captured_pending_materialization` acknowledges durable capture,
 not Bug completion or canonical graph materialization. REST returns 403 for
 permission denial, 404 for unavailable Bug access, 409 for stale/conflicting
 bases, 422 for invalid input/evidence and 503 for unavailable capabilities.
-Unexpected runtime details are not exposed. UI and completion integration
-remain separate outstanding work in the integrated F6 delivery.
+Unexpected runtime details are not exposed. Completion integration remains
+outstanding work in the integrated F6 delivery.
 
 ## MCP authorship
 
@@ -147,3 +147,23 @@ identity/generation/revision, fingerprint and `next_cursor`. Presence in history
 does not attest applicability, approval, completion or materialization. Source
 preview and authored applicability must be reviewed independently. Missing or
 corrupt history is unavailable, never a successful empty response.
+
+## Frontend authorship and resumption
+
+The Bug modal exposes Learnings under Validation / Execution report, loading
+on first activation and retaining the draft across tab navigation. Authenticated
+API requests use the existing client. Source, creation and history permissions
+are separate; history denial does not disable authorized independent creation.
+Auth loading/errors initiate no requests. Board/Card changes reset the draft
+and abort old requests, preventing cross-selection content from arriving late.
+
+The editor offers authored content, context, applicability and authenticated
+scenario choices. An exact retry retains its capture ID; changed content or a
+reviewed new source basis uses another ID. Conflicts preserve the draft and
+require evidence refresh before another submission. Saved content is explicitly
+pending materialization, with no completion/approval claim. Paginated history
+renders authored text inertly and distinguishes unavailable history from empty
+history. A digest mismatch is shown as an earlier basis, not as inferred rejection.
+
+This interface supports independent creation/history, not reuse/supersedence,
+joint conclusion/capture submission, policy preview or governed Done binding.

@@ -232,6 +232,25 @@ okto_pulse_create_card(
 
 **If you get an error moving a bug card:** see the "Common Errors and How to Fix Them" section in the error reference.
 
+### Authored Learnings for a Bug
+
+Record a useful lesson with its context, applicability and authenticated scenario
+evidence. In the Bug modal, open **Validation → Execution report → Learnings**.
+For MCP, read `okto_pulse_kg_get_learning_capture_context`, then submit the authored
+content with `okto_pulse_kg_create_learning_capture`, using the returned source
+digest/version and explicit scenario IDs. Keep the capture ID for an exact retry.
+If the basis changes, preserve the text, refresh the evidence and review applicability
+before submitting a new intent. Do not invent evidence or copy a previous lesson as
+automatically applicable to a reopened correction.
+
+Use `okto_pulse_kg_list_learning_captures` or **Saved Learnings** to resume from
+durable authored history. Reading history requires the existing Learning-query
+permission in addition to source access; creating content requires the KG creation
+permissions. Historical presence is not execution approval, current applicability
+or canonical graph materialization. A successful capture is acknowledged as pending
+materialization and does not itself close the Bug or replace its existing completion
+gates. No manual graph session is required for capture authorship.
+
 ### Historical bug closure via Path B — operational checklist
 
 Reprocessing or closing a bug that surfaced AFTER its spec was locked
