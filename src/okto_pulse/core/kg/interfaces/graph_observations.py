@@ -8,14 +8,6 @@ from typing import Protocol
 
 
 class GraphHistory(Protocol):
-    def activate(
-        self,
-        board_id: str,
-        node_types: tuple[str, ...],
-        relationship_types: tuple[str, ...],
-        *,
-        reason: str,
-    ) -> dict: ...
     def commits(
         self, board_id: str, *, after: str | None = None, limit: int = 100
     ) -> dict: ...
@@ -38,16 +30,6 @@ class GraphHistory(Protocol):
         relationship_types: tuple[str, ...],
         *,
         max_rows: int = 1000,
-        max_bytes: int = 16777216,
-    ) -> dict: ...
-    def prune(
-        self,
-        board_id: str,
-        before: str,
-        node_types: tuple[str, ...],
-        relationship_types: tuple[str, ...],
-        *,
-        reason: str,
         max_bytes: int = 16777216,
     ) -> dict: ...
 

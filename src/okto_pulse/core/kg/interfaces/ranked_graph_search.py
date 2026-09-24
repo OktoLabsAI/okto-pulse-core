@@ -29,9 +29,6 @@ class RankedGraphQuery:
 class RankedGraphSearch(Protocol):
     def readiness(self, board_id: str, node_type: str) -> dict: ...
 
-    def prepare(self, board_id: str, node_type: str, *, reason: str) -> dict:
-        """Explicit privileged, idempotent index preparation, never a read side effect."""
-        ...
 
     def search(self, board_id: str, request: RankedGraphQuery) -> dict:
         """One-snapshot filtered ranked hits with qualified application identities.
