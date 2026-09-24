@@ -1,0 +1,27 @@
+{
+  "criterion": "KG-16 / KG-24",
+  "status": "incomplete_reproduced",
+  "pair": {
+    "core": "f81f492a",
+    "community": "baa710a6"
+  },
+  "scope": "Real Grafx commits through existing begin/propose/commit primitives with deterministic Spec worker; not queue/event propagation coverage.",
+  "observed": "Two deterministic tests edges remain after all linked_criteria are removed and a third projection commit completes.",
+  "expected": "The owned active set must converge to no tests edges without pruning another owner or writer.",
+  "junit": {
+    "name": "pytest",
+    "errors": "0",
+    "failures": "1",
+    "skipped": "0",
+    "tests": "1",
+    "time": "42.990",
+    "timestamp": "2026-09-24T11:41:25.647229-03:00",
+    "hostname": "Alienware_m15"
+  },
+  "sha256": {
+    "PULSE_REFACTOR/.validation-v040/probe_kg_scenario_link_removal.py": "5f5111b909d8a1dd9ea9dcd0daf70dc7fc99ce839d6bb24804b48fdc15a79436",
+    "PULSE_REFACTOR/.validation-v040/kg-removal-before.xml": "8292f5d249ad03f9da338bf47c6a74803bc358d55ec3ca4c30d98e70b16469ed",
+    "PULSE_REFACTOR/.validation-v040/kg-removal-before.log": "65630c79da0e4871a101f0587ba81071c9c257bb783a065358e630ae2d433f2e",
+    "PULSE_REFACTOR/.validation-v040/provenance-write-identity.json": "003535ed05f3d7690afb19e0f43c7c02a759e815669ef7a1cc275a5b8cce37b2"
+  }
+}
