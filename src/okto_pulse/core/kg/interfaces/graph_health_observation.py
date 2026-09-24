@@ -22,7 +22,11 @@ class GraphHealthObservation(Protocol):
         and at most five seconds. An expired observation refuses further I/O.
         This does not promise preemption of an operating-system storage call.
         Global reads may borrow existing live participants without opening a
-        writable one. Filesystem enumeration needs its own volume budget;
+        writable one. Global diagnostic results are complete or unavailable,
+        with at most 1000 rows and 4 MiB of accumulated scalar payload plus
+        conservative row/cell accounting; no truncated prefix is published.
+        Native single-value/operator limits remain edition responsibilities.
+        Filesystem enumeration needs its own volume budget;
         this query scope does not establish that bound.
         """
         ...
