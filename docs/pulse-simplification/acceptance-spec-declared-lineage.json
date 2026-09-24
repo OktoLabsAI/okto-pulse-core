@@ -18,6 +18,12 @@
       "failures": 0,
       "errors": 0,
       "skipped": 0
+    },
+    "lineage-preserved": {
+      "tests": 36,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
     }
   },
   "budgets": [
@@ -112,6 +118,7 @@
     "PULSE_REFACTOR/.validation-v040/spec-lineage-core.xml": "35a98e84d9d1424e35305fa8b7bc94e7449322575f1cc8e1d4313e94437ecae0",
     "PULSE_REFACTOR/.validation-v040/spec-lineage-community.xml": "138ae1becfc15c5229bfeb32f2a503271dd8298c5510ea7541dd5cc456991042",
     "PULSE_REFACTOR/.validation-v040/spec-lineage-frontend.xml": "11279d907a92b3ccdedb587b243372497da8ff1edb6f53c2b19436b1f9c042e3",
+    "PULSE_REFACTOR/.validation-v040/lineage-preserved.xml": "828d64dfca1cde904ab11f6ee4bf82d9a7acf6eba5306e0f39e232b3db2e46d4",
     "PULSE_REFACTOR/.validation-v040/provenance-spec-lineage-final.json": "17ce746e88fa1b5b412bc4c60e7f79b6f109ebc527f71727bedafd9eba5f087d",
     "PULSE_REFACTOR/.validation-v040/closure-spec-lineage-final.json": "d8f5fa6dc90b501256027bb330d2cbb91d83b3d5c4eb76641ee48dea1a6e0cf3",
     "PULSE_REFACTOR/.validation-v040/spec-lineage-before.xml": "776348b9a5ade88413d0c2612804b3927d28e1426cd947c4df08f14c884199c3",
@@ -122,6 +129,7 @@
     "okto_labs_pulse_core/tests/test_kg_decision_declared_relationships.py": "380e080b7868044ee60db1cc40cdfce56b1607f2209e07c3a65d82d7b0a5c62d",
     "okto_labs_pulse_core/tests/test_kg_spec_children_canonicalization.py": "b60373c7e629817c3d056f744b3ec38259faece7096d499425fef85d07088d26",
     "okto_labs_pulse_core/tests/test_projection_intent_collection.py": "b1233f4e8fe069e769acbfaa4815f7ae19881c0e90a6992517df6efeff8849c1",
-    "okto_labs_pulse_community/tests/test_grafx_spec_lineage.py": "006e9c23eb6cfa858e344d338e15c83d2b230c7b3d8be45d8c5a34328d57710b"
+    "okto_labs_pulse_community/tests/test_grafx_spec_lineage.py": "3e3748befd8e48e8dc64fdf9df54817d1dceb572a273850e8bd17a146a0b4273",
+    "okto_labs_pulse_community/tests/test_grafx_spec_declared_lineage.py": "006e9c23eb6cfa858e344d338e15c83d2b230c7b3d8be45d8c5a34328d57710b"
   }
 }
