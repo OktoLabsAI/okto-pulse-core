@@ -35,7 +35,7 @@ VERDICT_NEEDS_MIGRATION = "needs_migration"
 #:   - the Community CLI/seed bootstrap surfaces (separate package, not scanned here);
 #:   - every ASYNC + simple-linear ``open_board_connection`` Cypher call-site
 #:     (class A) → GraphTransaction (``async with begin(board_id) as scope:
-#:     scope.execute(...)``): get_kg_metrics + boost_node (api/kg_routes.py),
+#:     scope.execute(...)``): get_kg_metrics (api/kg_routes.py),
 #:     _reset_last_recomputed_at (api/kg_tick.py), and the three
 #:     canonical_learning_partition maintenance scans. ``api/kg_routes.py``,
 #:     ``api/kg_tick.py`` and ``kg/canonical_learning_partition.py`` thereby

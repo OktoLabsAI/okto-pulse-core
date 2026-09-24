@@ -26,7 +26,7 @@ PREFIX = "/api/v1"
 ACTOR = "local-user"
 
 # Exactly the seven "light" endpoints migrated by FU5-S2 (the out-of-scope
-# list_pending / list_pending_tree / retry_pending_entry / boost_node endpoints
+# Remaining lightweight KG endpoint contracts after F4 retirement
 # still bind a raw session and are NOT asserted here).
 _MIGRATED_ENDPOINTS = (
     "list_audit",

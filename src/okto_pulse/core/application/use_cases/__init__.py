@@ -609,20 +609,7 @@ from okto_pulse.core.application.use_cases.semantic_guideline_governance import 
     SemanticMetricWaiverMutationResult,
     SemanticPolicySkipMutationResult,
 )
-from okto_pulse.core.application.use_cases.kg_routes_crud import (
-    BoostNodeCommand,
-    BoostNodeResult,
-    BoostNodeUseCase,
-    DeleteBoardKgCommand,
-    DeleteBoardKgResult,
-    DeleteBoardKgUseCase,
-    GlobalSearchCommand,
-    GlobalSearchResult,
-    GlobalSearchUseCase,
-    ListAuditCommand,
-    ListAuditResult,
-    ListAuditUseCase,
-)
+from okto_pulse.core.application.use_cases.kg_routes_crud import DeleteBoardKgCommand, DeleteBoardKgResult, DeleteBoardKgUseCase, GlobalSearchCommand, GlobalSearchResult, GlobalSearchUseCase, ListAuditCommand, ListAuditResult, ListAuditUseCase
 from okto_pulse.core.application.use_cases.mcp_board_crud import (
     McpListByBoardCommand,
     McpListByBoardUseCase,
@@ -1504,9 +1491,6 @@ __all__ = [
     "McpRemoveCardDependencyCommand",
     "McpRemoveCardDependencyResult",
     "McpRemoveCardDependencyUseCase",
-    "BoostNodeCommand",
-    "BoostNodeResult",
-    "BoostNodeUseCase",
     "CopyArchitectureFromSpecToCardCommand",
     "CopyArchitectureFromSpecToCardResult",
     "CopyArchitectureFromSpecToCardUseCase",

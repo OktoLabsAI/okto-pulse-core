@@ -14,6 +14,7 @@ from okto_pulse.core.ports.permission_policy import flatten_permission_flags, no
 GOLDEN = json.loads((Path(__file__).parent / "fixtures/historical_archive_authority_v034.json").read_text(encoding="utf-8"))
 READS = ("sprint.entity.read", "sprint.qa.read", "sprint.evaluations.read", "sprint.history_read")
 RETIRED = frozenset(path for path in (
+    "kg.operations.node.boost",
     "kg.operations.integrity.backfill",
     "kg.operations.queue.read",
     "kg.operations.queue.reprocess",

@@ -228,31 +228,3 @@ async def right_to_erasure(*args: Any, **kwargs: Any) -> Any:
     from okto_pulse.core.kg.governance import right_to_erasure as _erase
 
     return await _erase(*args, **kwargs)
-
-
-
-
-
-
-
-
-async def boost_node(*args: Any, **kwargs: Any) -> Any:
-    from okto_pulse.core.kg.governance import boost_node as _boost
-
-    return await _boost(*args, **kwargs)
-
-
-async def mutate_boost_node_graph(*args: Any, **kwargs: Any) -> Any:
-    from okto_pulse.core.kg.governance import (
-        mutate_boost_node_graph as _mutate,
-    )
-
-    return await _mutate(*args, **kwargs)
-
-
-def stage_boost_node_audit(*args: Any, **kwargs: Any) -> Any:
-    from okto_pulse.core.kg.governance import (
-        stage_boost_node_audit as _stage,
-    )
-
-    return _stage(*args, **kwargs)

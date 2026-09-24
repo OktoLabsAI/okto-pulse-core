@@ -39,7 +39,6 @@ _NAMESPACE_REQUIREMENTS = (
     ("kg.operations.cognitive.skip", "kg.admin.settings_write"),
     ("kg.operations.cognitive.clear", "kg.admin.settings_write"),
     ("kg.operations.audit.read", "kg.admin.settings_read"),
-    ("kg.operations.node.boost", "kg.admin.settings_write"),
     ("kg.operations.board.erase", "kg.admin.wipe_board"),
 )
 
@@ -163,11 +162,6 @@ class _KgWriterSpy:
         self._write("queue.retry")
         return {}
 
-    async def mutate_boost_node_graph(
-        self, *_args: Any, **_kwargs: Any
-    ) -> dict[str, Any]:
-        self._write("node.boost")
-        return {}
 
     async def enqueue_digest_layer_reconciliation(
         self, **_kwargs: Any
@@ -223,13 +217,6 @@ _WRITE_CASES: tuple[
         "kg.admin.wipe_board",
         True,
     ),
-    (
-        kg_routes_crud.BoostNodeUseCase(),
-        lambda: kg_routes_crud.BoostNodeCommand(BOARD_ID, "node-1"),
-        "kg.operations.node.boost",
-        "kg.admin.settings_write",
-        True,
-    ),
 )
 
 
@@ -239,7 +226,6 @@ _WRITE_CASES: tuple[
     _WRITE_CASES,
     ids=(
         "board-erase",
-        "node-boost",
     ),
 )
 async def test_each_dedicated_kg_writer_authorizes_after_lookup_and_before_write(

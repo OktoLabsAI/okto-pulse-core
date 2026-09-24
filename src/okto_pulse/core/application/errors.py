@@ -1,6 +1,5 @@
 """Public application errors shared by inbound adapters."""
 
-from okto_pulse.core.kg.governance import BoostPersistError
 from okto_pulse.core.services.board_governance import QASelfAnsweringNotAllowedError
 from okto_pulse.core.services.canonical_debt_service import CanonicalDebtFilterError
 from okto_pulse.core.services.cancellation import CancellationReasonRequiredError
@@ -29,7 +28,6 @@ from okto_pulse.core.services.qa_selection import QASelectionError
 __all__ = [
     "AmbiguityGateError",
     "BoardNotFoundError",
-    "BoostPersistError",
     "CARD_RESOURCE_READ_ONLY_MESSAGE",
     "CancellationReasonRequiredError",
     "CanonicalDebtFilterError",

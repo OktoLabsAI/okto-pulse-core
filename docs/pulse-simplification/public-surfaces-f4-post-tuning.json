@@ -1,0 +1,5292 @@
+{
+  "format": "pulse-public-surfaces-f4/v1",
+  "provenance": {
+    "format": "pulse-live-surface-census/v1",
+    "scope": "schema inventory only; not handler-effect classification",
+    "core_sha": "c2dc3128",
+    "community_sha": "2a63942c",
+    "uncommitted_qualified_changes": true,
+    "provenance": "provenance-manual-boost-final.json",
+    "lifespan_entered": false,
+    "handlers_invoked": false,
+    "mcp_tools": 301,
+    "openapi_paths": 335,
+    "openapi_operations": 419,
+    "cli_parser_nodes": 16,
+    "files": {
+      "mcp-tools-f4-post-tuning.json": {
+        "bytes": 282618,
+        "sha256": "c4063ee0e9d02ee0c6b333c70fbb51737697d49e3b5f97c33c1cdc44d460ef08"
+      },
+      "openapi-f4-post-tuning.json": {
+        "bytes": 964212,
+        "sha256": "91d3bacaf925b3aac16fffd4a22d85befe4f60d65458d0211fbeb5947ee77ad3"
+      },
+      "routes-f4-post-tuning.json": {
+        "bytes": 120529,
+        "sha256": "361c620b530cef1778e684dd1f8c3772cecac610934b0a8134fa8597461a6062"
+      },
+      "cli-f4-post-tuning.json": {
+        "bytes": 2243,
+        "sha256": "1d9ff7d7eef6690b990b268f252ba0a6a9e991e1f42336701a88fbe65ce29660"
+      }
+    }
+  },
+  "payload_identity": {
+    "checked_at": "2026-09-24T04:16:25.029076+00:00",
+    "python": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Scripts\\python.exe",
+    "packages": {
+      "core": {
+        "python_files": 823,
+        "origin": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages\\okto_pulse\\core\\__init__.py",
+        "repository_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_core",
+        "commit": "c2dc3128756409ec9079209c7eedc26dbea67cf7",
+        "dirty": true,
+        "dirty_entry_count": 23,
+        "distribution": "okto-pulse-core",
+        "version": "0.3.4",
+        "wheel": {
+          "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\dist-manual-boost-final\\okto_pulse_core-0.3.4-py3-none-any.whl",
+          "sha256": "428abd3a5ef9c22d9b57f11c97023994bc9a9bd3424c931de93ae240eef244ec",
+          "size": 3682522
+        },
+        "source_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_core\\src",
+        "site_packages_root": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages",
+        "package_prefix": "okto_pulse/core/",
+        "byte_identical_member_count": 886,
+        "byte_identical": true,
+        "aggregate_sha256": "fc3d565ee380ebb27ec46b4b9f678479b806aebcc33b5b3e589ef092d9b06d3b",
+        "chain_hashes": {
+          "source": "fc3d565ee380ebb27ec46b4b9f678479b806aebcc33b5b3e589ef092d9b06d3b",
+          "wheel": "fc3d565ee380ebb27ec46b4b9f678479b806aebcc33b5b3e589ef092d9b06d3b",
+          "site_packages": "fc3d565ee380ebb27ec46b4b9f678479b806aebcc33b5b3e589ef092d9b06d3b"
+        },
+        "critical_resource_sha256": {
+          "okto_pulse/core/mcp/resources/ska_resource_manifest.json": "55ed4cde6fc6f318c5b524ffcd7eaf65b1d9ee9bcee2e853865675f7bdd2f78a",
+          "okto_pulse/core/mcp/resources/ska_tool_manifest.json": "0c3fa3da1549baec20872eca3f4a289288627e6b9f6b80be10472ac962fa72b9"
+        },
+        "mismatches": []
+      },
+      "community": {
+        "python_files": 359,
+        "origin": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages\\okto_pulse\\community\\__init__.py",
+        "repository_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_community",
+        "commit": "2a63942c9a6c63d159bc590d563859e3409cad18",
+        "dirty": true,
+        "dirty_entry_count": 42,
+        "distribution": "okto-pulse",
+        "version": "0.3.4",
+        "wheel": {
+          "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\dist-manual-boost-final\\okto_pulse-0.3.4-py3-none-any.whl",
+          "sha256": "0da041856d79212a0076cb829a8d0b87160131175ea14f82a32c7178cc2f2d21",
+          "size": 4476082
+        },
+        "source_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_community\\src",
+        "site_packages_root": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages",
+        "package_prefix": "okto_pulse/community/",
+        "byte_identical_member_count": 444,
+        "byte_identical": true,
+        "aggregate_sha256": "eea9d61c61f3c8c151b384a79d284d5ca2cb6e906a39b8629839bc7abd86084f",
+        "chain_hashes": {
+          "source": "eea9d61c61f3c8c151b384a79d284d5ca2cb6e906a39b8629839bc7abd86084f",
+          "wheel": "eea9d61c61f3c8c151b384a79d284d5ca2cb6e906a39b8629839bc7abd86084f",
+          "site_packages": "eea9d61c61f3c8c151b384a79d284d5ca2cb6e906a39b8629839bc7abd86084f"
+        },
+        "critical_resource_sha256": {},
+        "mismatches": []
+      }
+    }
+  },
+  "classification_complete": false,
+  "limits": [
+    "Installed schema/parser census without lifespan or command handlers.",
+    "Main validation venv uses system/user dependencies; this census is not a hermetic release qualification.",
+    "Frontend services inventory does not alone prove all component-local fetches or visible controls.",
+    "BASE:T35/T36, complete effect classification and initiative acceptance remain open."
+  ],
+  "previous_census": {
+    "file": "public-surfaces-f4-live.json",
+    "sha256": "a6a6f330e929f65d2b10cca4ebc32aa057aa5f29c0be4e6d288273e33126ef0c"
+  },
+  "removed_rest_since_previous": [
+    [
+      "/api/v1/kg/boards/{board_id}/audit/{session_id}/undo",
+      "POST"
+    ],
+    [
+      "/api/v1/kg/boards/{board_id}/nodes/{node_id}/boost",
+      "POST"
+    ]
+  ],
+  "mcp": [
+    {
+      "name": "okto_pulse_acknowledge_implementation_overlap",
+      "handler": {
+        "module": "okto_pulse.core.mcp.code_traceability_tools",
+        "symbol": "register_code_traceability_tools.<locals>.okto_pulse_acknowledge_implementation_overlap"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_activate_default_board_config_version",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_activate_default_board_config_version"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_add_api_contract",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_add_api_contract"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_add_architecture_design",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_add_architecture_design"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_add_business_rule",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_add_business_rule"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_add_card_dependency",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_add_card_dependency"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_add_card_knowledge",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_add_card_knowledge"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_add_choice_comment",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_add_choice_comment"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_add_comment",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_add_comment"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_add_decision",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_add_decision"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_add_ideation_knowledge",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_add_ideation_knowledge"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_add_integration_requirement",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_add_integration_requirement"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_add_observability_requirement",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_add_observability_requirement"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_add_refinement_knowledge",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_add_refinement_knowledge"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_add_screen_mockup",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_add_screen_mockup"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_add_spec_dependency",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_add_spec_dependency"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_add_spec_knowledge",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_add_spec_knowledge"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_add_test_scenario",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_add_test_scenario"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_admit_test_verification_report",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_admit_test_verification_report"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_adopt_guideline_revision",
+      "handler": {
+        "module": "okto_pulse.core.mcp.policy_governance_tools",
+        "symbol": "register_policy_governance_tools.<locals>.okto_pulse_adopt_guideline_revision"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_annotate_mockup",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_annotate_mockup"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_answer_ideation_question",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_answer_ideation_question"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_answer_question",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_answer_question"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_answer_refinement_question",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_answer_refinement_question"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_answer_spec_question",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_answer_spec_question"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_append_research_decision",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_append_research_decision"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_archive_story",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_archive_story"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_archive_topic",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_archive_topic"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_archive_tree",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_archive_tree"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_ask",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_ask"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_ask_ideation_choice_question",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_ask_ideation_choice_question"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_ask_ideation_question",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_ask_ideation_question"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_ask_question",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_ask_question"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_ask_refinement_choice_question",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_ask_refinement_choice_question"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_ask_refinement_question",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_ask_refinement_question"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_ask_spec_choice_question",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_ask_spec_choice_question"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_ask_spec_question",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_ask_spec_question"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_associate_amendment_revision_artifacts",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_associate_amendment_revision_artifacts"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_classify_architecture_candidates",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_classify_architecture_candidates"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_classify_legacy_code_evidence",
+      "handler": {
+        "module": "okto_pulse.core.mcp.code_traceability_tools",
+        "symbol": "register_code_traceability_tools.<locals>.okto_pulse_classify_legacy_code_evidence"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_clear_code_traceability_not_applicable",
+      "handler": {
+        "module": "okto_pulse.core.mcp.code_traceability_tools",
+        "symbol": "register_code_traceability_tools.<locals>.okto_pulse_clear_code_traceability_not_applicable"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_clear_resource_not_applicable",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_clear_resource_not_applicable"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_confirm_amendment_coverage",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_confirm_amendment_coverage"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_convert_stories_to_ideation",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_convert_stories_to_ideation"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_copy_architecture_to_card",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_copy_architecture_to_card"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_copy_knowledge_to_card",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_copy_knowledge_to_card"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_copy_mockups_to_card",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_copy_mockups_to_card"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_copy_qa_to_card",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_copy_qa_to_card"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_create_amendment_revision",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_create_amendment_revision"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_create_card",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_create_card"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_create_default_board_config_version",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_create_default_board_config_version"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_create_design_system",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_create_design_system"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_create_guideline",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_create_guideline"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_create_guideline_revision",
+      "handler": {
+        "module": "okto_pulse.core.mcp.policy_governance_tools",
+        "symbol": "register_policy_governance_tools.<locals>.okto_pulse_create_guideline_revision"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_create_ideation",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_create_ideation"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_create_implementation_target",
+      "handler": {
+        "module": "okto_pulse.core.mcp.code_traceability_tools",
+        "symbol": "register_code_traceability_tools.<locals>.okto_pulse_create_implementation_target"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_create_refinement",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_create_refinement"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_create_spec",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_create_spec"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_create_story",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_create_story"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_create_topic",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_create_topic"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_deactivate_default_board_config_version",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_deactivate_default_board_config_version"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_delete_architecture_design",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_delete_architecture_design"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_delete_attachment",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_delete_attachment"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_delete_card",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_delete_card"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_delete_card_knowledge",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_delete_card_knowledge"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_delete_comment",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_delete_comment"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_delete_design_system",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_delete_design_system"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_delete_guideline",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_delete_guideline"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_delete_ideation",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_delete_ideation"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_delete_ideation_knowledge",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_delete_ideation_knowledge"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_delete_ideation_question",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_delete_ideation_question"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_delete_question",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_delete_question"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_delete_refinement",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_delete_refinement"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_delete_refinement_knowledge",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_delete_refinement_knowledge"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_delete_refinement_question",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_delete_refinement_question"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_delete_screen_mockup",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_delete_screen_mockup"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_delete_spec",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_delete_spec"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_delete_spec_evaluation",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_delete_spec_evaluation"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_delete_spec_knowledge",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_delete_spec_knowledge"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_delete_spec_question",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_delete_spec_question"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_delete_test_scenario",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_delete_test_scenario"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_delete_topic",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_delete_topic"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_derive_spec_from_ideation",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_derive_spec_from_ideation"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_derive_spec_from_refinement",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_derive_spec_from_refinement"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_drop_card_knowledge_assignments",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_drop_card_knowledge_assignments"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_dump_architecture_diagram",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_dump_architecture_diagram"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_evaluate_ideation",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_evaluate_ideation"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_execute_test_scenario_evidence",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_execute_test_scenario_evidence"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_get_active_default_board_config",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_get_active_default_board_config"
+      },
+      "admission_class": "reader"
+    },
+    {
+      "name": "okto_pulse_get_activity_log",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_get_activity_log"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_get_allowed_transitions",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_get_allowed_transitions"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_get_amendment_revision",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_get_amendment_revision"
+      },
+      "admission_class": "reader"
+    },
+    {
+      "name": "okto_pulse_get_analytics",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_get_analytics"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_get_architecture_design",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_get_architecture_design"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_get_architecture_design_schema",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_get_architecture_design_schema"
+      },
+      "admission_class": "reader"
+    },
+    {
+      "name": "okto_pulse_get_board",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_get_board"
+      },
+      "admission_class": "reader"
+    },
+    {
+      "name": "okto_pulse_get_board_default_config_diff",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_get_board_default_config_diff"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_get_board_design_system",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_get_board_design_system"
+      },
+      "admission_class": "reader"
+    },
+    {
+      "name": "okto_pulse_get_board_guidelines",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_get_board_guidelines"
+      },
+      "admission_class": "reader"
+    },
+    {
+      "name": "okto_pulse_get_card",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_get_card"
+      },
+      "admission_class": "reader"
+    },
+    {
+      "name": "okto_pulse_get_card_dependencies",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_get_card_dependencies"
+      },
+      "admission_class": "reader"
+    },
+    {
+      "name": "okto_pulse_get_card_knowledge",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_get_card_knowledge"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_get_card_knowledge_propagation",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_get_card_knowledge_propagation"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_get_checklist_binding",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_get_checklist_binding"
+      },
+      "admission_class": "reader"
+    },
+    {
+      "name": "okto_pulse_get_checklist_receipt",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_get_checklist_receipt"
+      },
+      "admission_class": "reader"
+    },
+    {
+      "name": "okto_pulse_get_choice_responses",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_get_choice_responses"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_get_code_evidence",
+      "handler": {
+        "module": "okto_pulse.core.mcp.code_traceability_tools",
+        "symbol": "register_code_traceability_tools.<locals>.okto_pulse_get_code_evidence"
+      },
+      "admission_class": "reader"
+    },
+    {
+      "name": "okto_pulse_get_code_investigation_receipt",
+      "handler": {
+        "module": "okto_pulse.core.mcp.code_traceability_tools",
+        "symbol": "register_code_traceability_tools.<locals>.okto_pulse_get_code_investigation_receipt"
+      },
+      "admission_class": "reader"
+    },
+    {
+      "name": "okto_pulse_get_current_quality_assessment",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_get_current_quality_assessment"
+      },
+      "admission_class": "reader"
+    },
+    {
+      "name": "okto_pulse_get_current_semantic_guideline_assessment",
+      "handler": {
+        "module": "okto_pulse.core.mcp.policy_governance_tools",
+        "symbol": "register_policy_governance_tools.<locals>.okto_pulse_get_current_semantic_guideline_assessment"
+      },
+      "admission_class": "reader"
+    },
+    {
+      "name": "okto_pulse_get_delivery_evidence",
+      "handler": {
+        "module": "okto_pulse.core.mcp.code_traceability_tools",
+        "symbol": "register_code_traceability_tools.<locals>.okto_pulse_get_delivery_evidence"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_get_design_system",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_get_design_system"
+      },
+      "admission_class": "reader"
+    },
+    {
+      "name": "okto_pulse_get_guideline_impact",
+      "handler": {
+        "module": "okto_pulse.core.mcp.policy_governance_tools",
+        "symbol": "register_policy_governance_tools.<locals>.okto_pulse_get_guideline_impact"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_get_guideline_revision",
+      "handler": {
+        "module": "okto_pulse.core.mcp.policy_governance_tools",
+        "symbol": "register_policy_governance_tools.<locals>.okto_pulse_get_guideline_revision"
+      },
+      "admission_class": "reader"
+    },
+    {
+      "name": "okto_pulse_get_historical_context",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_get_historical_context"
+      },
+      "admission_class": "reader"
+    },
+    {
+      "name": "okto_pulse_get_ideation",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_get_ideation"
+      },
+      "admission_class": "reader"
+    },
+    {
+      "name": "okto_pulse_get_ideation_context",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_get_ideation_context"
+      },
+      "admission_class": "reader"
+    },
+    {
+      "name": "okto_pulse_get_ideation_history",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_get_ideation_history"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_get_ideation_knowledge",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_get_ideation_knowledge"
+      },
+      "admission_class": "reader"
+    },
+    {
+      "name": "okto_pulse_get_ideation_snapshot",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_get_ideation_snapshot"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_get_implementation_overlaps",
+      "handler": {
+        "module": "okto_pulse.core.mcp.code_traceability_tools",
+        "symbol": "register_code_traceability_tools.<locals>.okto_pulse_get_implementation_overlaps"
+      },
+      "admission_class": "reader"
+    },
+    {
+      "name": "okto_pulse_get_my_profile",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_get_my_profile"
+      },
+      "admission_class": "reader"
+    },
+    {
+      "name": "okto_pulse_get_publish_health",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_get_publish_health"
+      },
+      "admission_class": "reader"
+    },
+    {
+      "name": "okto_pulse_get_quality_assessment_receipt",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_get_quality_assessment_receipt"
+      },
+      "admission_class": "reader"
+    },
+    {
+      "name": "okto_pulse_get_refinement",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_get_refinement"
+      },
+      "admission_class": "reader"
+    },
+    {
+      "name": "okto_pulse_get_refinement_context",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_get_refinement_context"
+      },
+      "admission_class": "reader"
+    },
+    {
+      "name": "okto_pulse_get_refinement_history",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_get_refinement_history"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_get_refinement_knowledge",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_get_refinement_knowledge"
+      },
+      "admission_class": "reader"
+    },
+    {
+      "name": "okto_pulse_get_refinement_snapshot",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_get_refinement_snapshot"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_get_requirement_lint_preflight",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_get_requirement_lint_preflight"
+      },
+      "admission_class": "reader"
+    },
+    {
+      "name": "okto_pulse_get_requirement_verification",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_get_requirement_verification"
+      },
+      "admission_class": "reader"
+    },
+    {
+      "name": "okto_pulse_get_resource_gate_summary",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_get_resource_gate_summary"
+      },
+      "admission_class": "reader"
+    },
+    {
+      "name": "okto_pulse_get_semantic_guideline_assessment",
+      "handler": {
+        "module": "okto_pulse.core.mcp.policy_governance_tools",
+        "symbol": "register_policy_governance_tools.<locals>.okto_pulse_get_semantic_guideline_assessment"
+      },
+      "admission_class": "reader"
+    },
+    {
+      "name": "okto_pulse_get_semantic_guideline_waiver",
+      "handler": {
+        "module": "okto_pulse.core.mcp.policy_governance_tools",
+        "symbol": "register_policy_governance_tools.<locals>.okto_pulse_get_semantic_guideline_waiver"
+      },
+      "admission_class": "reader"
+    },
+    {
+      "name": "okto_pulse_get_spec",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_get_spec"
+      },
+      "admission_class": "reader"
+    },
+    {
+      "name": "okto_pulse_get_spec_context",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_get_spec_context"
+      },
+      "admission_class": "reader"
+    },
+    {
+      "name": "okto_pulse_get_spec_evaluation",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_get_spec_evaluation"
+      },
+      "admission_class": "reader"
+    },
+    {
+      "name": "okto_pulse_get_spec_history",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_get_spec_history"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_get_spec_knowledge",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_get_spec_knowledge"
+      },
+      "admission_class": "reader"
+    },
+    {
+      "name": "okto_pulse_get_task_conclusions",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_get_task_conclusions"
+      },
+      "admission_class": "reader"
+    },
+    {
+      "name": "okto_pulse_get_task_context",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_get_task_context"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_get_task_validation",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_get_task_validation"
+      },
+      "admission_class": "reader"
+    },
+    {
+      "name": "okto_pulse_get_traceability_report",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_get_traceability_report"
+      },
+      "admission_class": "reader"
+    },
+    {
+      "name": "okto_pulse_get_unseen_summary",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_get_unseen_summary"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_import_excalidraw_architecture_diagram",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_import_excalidraw_architecture_diagram"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_kg_abort_consolidation",
+      "handler": {
+        "module": "okto_pulse.core.mcp.kg_tools",
+        "symbol": "register_kg_tools.<locals>.okto_pulse_kg_abort_consolidation"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_kg_add_edge_candidate",
+      "handler": {
+        "module": "okto_pulse.core.mcp.kg_tools",
+        "symbol": "register_kg_tools.<locals>.okto_pulse_kg_add_edge_candidate"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_kg_add_node_candidate",
+      "handler": {
+        "module": "okto_pulse.core.mcp.kg_tools",
+        "symbol": "register_kg_tools.<locals>.okto_pulse_kg_add_node_candidate"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_kg_begin_consolidation",
+      "handler": {
+        "module": "okto_pulse.core.mcp.kg_tools",
+        "symbol": "register_kg_tools.<locals>.okto_pulse_kg_begin_consolidation"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_kg_clear_cognitive_skip",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_kg_clear_cognitive_skip"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_kg_commit_consolidation",
+      "handler": {
+        "module": "okto_pulse.core.mcp.kg_tools",
+        "symbol": "register_kg_tools.<locals>.okto_pulse_kg_commit_consolidation"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_kg_evaluate_bug_cognitive_closure",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_kg_evaluate_bug_cognitive_closure"
+      },
+      "admission_class": "reader"
+    },
+    {
+      "name": "okto_pulse_kg_evaluate_cognitive_readiness",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_kg_evaluate_cognitive_readiness"
+      },
+      "admission_class": "reader"
+    },
+    {
+      "name": "okto_pulse_kg_explain_constraint",
+      "handler": {
+        "module": "okto_pulse.core.mcp.kg_query_tools",
+        "symbol": "register_kg_query_tools.<locals>.okto_pulse_kg_explain_constraint"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_kg_export_jsonld",
+      "handler": {
+        "module": "okto_pulse.core.mcp.kg_export_tools",
+        "symbol": "register_kg_export_tools.<locals>.okto_pulse_kg_export_jsonld"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_kg_find_contradictions",
+      "handler": {
+        "module": "okto_pulse.core.mcp.kg_query_tools",
+        "symbol": "register_kg_query_tools.<locals>.okto_pulse_kg_find_contradictions"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_kg_find_similar_decisions",
+      "handler": {
+        "module": "okto_pulse.core.mcp.kg_query_tools",
+        "symbol": "register_kg_query_tools.<locals>.okto_pulse_kg_find_similar_decisions"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_kg_get_decision_history",
+      "handler": {
+        "module": "okto_pulse.core.mcp.kg_query_tools",
+        "symbol": "register_kg_query_tools.<locals>.okto_pulse_kg_get_decision_history"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_kg_get_learning_from_bugs",
+      "handler": {
+        "module": "okto_pulse.core.mcp.kg_query_tools",
+        "symbol": "register_kg_query_tools.<locals>.okto_pulse_kg_get_learning_from_bugs"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_kg_get_related_context",
+      "handler": {
+        "module": "okto_pulse.core.mcp.kg_query_tools",
+        "symbol": "register_kg_query_tools.<locals>.okto_pulse_kg_get_related_context"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_kg_get_similar_nodes",
+      "handler": {
+        "module": "okto_pulse.core.mcp.kg_tools",
+        "symbol": "register_kg_tools.<locals>.okto_pulse_kg_get_similar_nodes"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_kg_get_supersedence_chain",
+      "handler": {
+        "module": "okto_pulse.core.mcp.kg_query_tools",
+        "symbol": "register_kg_query_tools.<locals>.okto_pulse_kg_get_supersedence_chain"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_kg_health",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_kg_health"
+      },
+      "admission_class": "reader"
+    },
+    {
+      "name": "okto_pulse_kg_health_readiness",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_kg_health_readiness"
+      },
+      "admission_class": "reader"
+    },
+    {
+      "name": "okto_pulse_kg_list_alternatives",
+      "handler": {
+        "module": "okto_pulse.core.mcp.kg_query_tools",
+        "symbol": "register_kg_query_tools.<locals>.okto_pulse_kg_list_alternatives"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_kg_list_cognitive_pending_items",
+      "handler": {
+        "module": "okto_pulse.core.mcp.kg_tools",
+        "symbol": "register_kg_tools.<locals>.okto_pulse_kg_list_cognitive_pending_items"
+      },
+      "admission_class": "reader"
+    },
+    {
+      "name": "okto_pulse_kg_list_cognitive_readiness_items",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_kg_list_cognitive_readiness_items"
+      },
+      "admission_class": "reader"
+    },
+    {
+      "name": "okto_pulse_kg_propose_reconciliation",
+      "handler": {
+        "module": "okto_pulse.core.mcp.kg_tools",
+        "symbol": "register_kg_tools.<locals>.okto_pulse_kg_propose_reconciliation"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_kg_query_cypher",
+      "handler": {
+        "module": "okto_pulse.core.mcp.kg_power_tools",
+        "symbol": "register_kg_power_tools.<locals>.okto_pulse_kg_query_cypher"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_kg_query_global",
+      "handler": {
+        "module": "okto_pulse.core.mcp.kg_query_tools",
+        "symbol": "register_kg_query_tools.<locals>.okto_pulse_kg_query_global"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_kg_query_natural",
+      "handler": {
+        "module": "okto_pulse.core.mcp.kg_power_tools",
+        "symbol": "register_kg_power_tools.<locals>.okto_pulse_kg_query_natural"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_kg_query_reflective",
+      "handler": {
+        "module": "okto_pulse.core.mcp.kg_power_tools",
+        "symbol": "register_kg_power_tools.<locals>.okto_pulse_kg_query_reflective"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_kg_record_cognitive_skip",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_kg_record_cognitive_skip"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_kg_schema_info",
+      "handler": {
+        "module": "okto_pulse.core.mcp.kg_power_tools",
+        "symbol": "register_kg_power_tools.<locals>.okto_pulse_kg_schema_info"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_kg_takedown_status",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_kg_takedown_status"
+      },
+      "admission_class": "reader"
+    },
+    {
+      "name": "okto_pulse_kg_update_cognitive_pending_item",
+      "handler": {
+        "module": "okto_pulse.core.mcp.kg_tools",
+        "symbol": "register_kg_tools.<locals>.okto_pulse_kg_update_cognitive_pending_item"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_kg_verify_grounding",
+      "handler": {
+        "module": "okto_pulse.core.mcp.kg_power_tools",
+        "symbol": "register_kg_power_tools.<locals>.okto_pulse_kg_verify_grounding"
+      },
+      "admission_class": "reader"
+    },
+    {
+      "name": "okto_pulse_link_board_design_system",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_link_board_design_system"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_link_code_evidence",
+      "handler": {
+        "module": "okto_pulse.core.mcp.code_traceability_tools",
+        "symbol": "register_code_traceability_tools.<locals>.okto_pulse_link_code_evidence"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_link_guideline_to_board",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_link_guideline_to_board"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_link_story_to_ideation",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_link_story_to_ideation"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_link_task",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_link_task"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_list_agents",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_list_agents"
+      },
+      "admission_class": "reader"
+    },
+    {
+      "name": "okto_pulse_list_amendment_revisions",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_list_amendment_revisions"
+      },
+      "admission_class": "reader"
+    },
+    {
+      "name": "okto_pulse_list_api_contracts",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_list_api_contracts"
+      },
+      "admission_class": "reader"
+    },
+    {
+      "name": "okto_pulse_list_architecture_candidates",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_list_architecture_candidates"
+      },
+      "admission_class": "reader"
+    },
+    {
+      "name": "okto_pulse_list_architecture_classifications",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_list_architecture_classifications"
+      },
+      "admission_class": "reader"
+    },
+    {
+      "name": "okto_pulse_list_architecture_designs",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_list_architecture_designs"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_list_architecture_propagation_legacy",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_list_architecture_propagation_legacy"
+      },
+      "admission_class": "reader"
+    },
+    {
+      "name": "okto_pulse_list_attachments",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_list_attachments"
+      },
+      "admission_class": "reader"
+    },
+    {
+      "name": "okto_pulse_list_blockers",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_list_blockers"
+      },
+      "admission_class": "reader"
+    },
+    {
+      "name": "okto_pulse_list_board_members",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_list_board_members"
+      },
+      "admission_class": "reader"
+    },
+    {
+      "name": "okto_pulse_list_business_rules",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_list_business_rules"
+      },
+      "admission_class": "reader"
+    },
+    {
+      "name": "okto_pulse_list_by_board",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_list_by_board"
+      },
+      "admission_class": "reader"
+    },
+    {
+      "name": "okto_pulse_list_cards_by_status",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_list_cards_by_status"
+      },
+      "admission_class": "reader"
+    },
+    {
+      "name": "okto_pulse_list_code_evidence",
+      "handler": {
+        "module": "okto_pulse.core.mcp.code_traceability_tools",
+        "symbol": "register_code_traceability_tools.<locals>.okto_pulse_list_code_evidence"
+      },
+      "admission_class": "reader"
+    },
+    {
+      "name": "okto_pulse_list_comments",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_list_comments"
+      },
+      "admission_class": "reader"
+    },
+    {
+      "name": "okto_pulse_list_default_board_config_versions",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_list_default_board_config_versions"
+      },
+      "admission_class": "reader"
+    },
+    {
+      "name": "okto_pulse_list_default_guideline_candidates",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_list_default_guideline_candidates"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_list_design_systems",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_list_design_systems"
+      },
+      "admission_class": "reader"
+    },
+    {
+      "name": "okto_pulse_list_guideline_impact_items",
+      "handler": {
+        "module": "okto_pulse.core.mcp.policy_governance_tools",
+        "symbol": "register_policy_governance_tools.<locals>.okto_pulse_list_guideline_impact_items"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_list_guideline_revisions",
+      "handler": {
+        "module": "okto_pulse.core.mcp.policy_governance_tools",
+        "symbol": "register_policy_governance_tools.<locals>.okto_pulse_list_guideline_revisions"
+      },
+      "admission_class": "reader"
+    },
+    {
+      "name": "okto_pulse_list_guidelines",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_list_guidelines"
+      },
+      "admission_class": "reader"
+    },
+    {
+      "name": "okto_pulse_list_implementation_targets",
+      "handler": {
+        "module": "okto_pulse.core.mcp.code_traceability_tools",
+        "symbol": "register_code_traceability_tools.<locals>.okto_pulse_list_implementation_targets"
+      },
+      "admission_class": "reader"
+    },
+    {
+      "name": "okto_pulse_list_integration_requirements",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_list_integration_requirements"
+      },
+      "admission_class": "reader"
+    },
+    {
+      "name": "okto_pulse_list_knowledge",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_list_knowledge"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_list_my_boards",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_list_my_boards"
+      },
+      "admission_class": "reader"
+    },
+    {
+      "name": "okto_pulse_list_my_mentions",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_list_my_mentions"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_list_observability_requirements",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_list_observability_requirements"
+      },
+      "admission_class": "reader"
+    },
+    {
+      "name": "okto_pulse_list_qa",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_list_qa"
+      },
+      "admission_class": "reader"
+    },
+    {
+      "name": "okto_pulse_list_quality_assessments",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_list_quality_assessments"
+      },
+      "admission_class": "reader"
+    },
+    {
+      "name": "okto_pulse_list_quality_findings",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_list_quality_findings"
+      },
+      "admission_class": "reader"
+    },
+    {
+      "name": "okto_pulse_list_research_decisions",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_list_research_decisions"
+      },
+      "admission_class": "reader"
+    },
+    {
+      "name": "okto_pulse_list_screen_mockups",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_list_screen_mockups"
+      },
+      "admission_class": "reader"
+    },
+    {
+      "name": "okto_pulse_list_semantic_guideline_assessments",
+      "handler": {
+        "module": "okto_pulse.core.mcp.policy_governance_tools",
+        "symbol": "register_policy_governance_tools.<locals>.okto_pulse_list_semantic_guideline_assessments"
+      },
+      "admission_class": "reader"
+    },
+    {
+      "name": "okto_pulse_list_semantic_guideline_findings",
+      "handler": {
+        "module": "okto_pulse.core.mcp.policy_governance_tools",
+        "symbol": "register_policy_governance_tools.<locals>.okto_pulse_list_semantic_guideline_findings"
+      },
+      "admission_class": "reader"
+    },
+    {
+      "name": "okto_pulse_list_semantic_guideline_waiver_events",
+      "handler": {
+        "module": "okto_pulse.core.mcp.policy_governance_tools",
+        "symbol": "register_policy_governance_tools.<locals>.okto_pulse_list_semantic_guideline_waiver_events"
+      },
+      "admission_class": "reader"
+    },
+    {
+      "name": "okto_pulse_list_semantic_guideline_waivers",
+      "handler": {
+        "module": "okto_pulse.core.mcp.policy_governance_tools",
+        "symbol": "register_policy_governance_tools.<locals>.okto_pulse_list_semantic_guideline_waivers"
+      },
+      "admission_class": "reader"
+    },
+    {
+      "name": "okto_pulse_list_snapshots",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_list_snapshots"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_list_spec_dependencies",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_list_spec_dependencies"
+      },
+      "admission_class": "reader"
+    },
+    {
+      "name": "okto_pulse_list_spec_evaluations",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_list_spec_evaluations"
+      },
+      "admission_class": "reader"
+    },
+    {
+      "name": "okto_pulse_list_spec_validations",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_list_spec_validations"
+      },
+      "admission_class": "reader"
+    },
+    {
+      "name": "okto_pulse_list_task_validations",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_list_task_validations"
+      },
+      "admission_class": "reader"
+    },
+    {
+      "name": "okto_pulse_list_test_scenarios",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_list_test_scenarios"
+      },
+      "admission_class": "reader"
+    },
+    {
+      "name": "okto_pulse_mark_as_seen",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_mark_as_seen"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_mark_code_traceability_not_applicable",
+      "handler": {
+        "module": "okto_pulse.core.mcp.code_traceability_tools",
+        "symbol": "register_code_traceability_tools.<locals>.okto_pulse_mark_code_traceability_not_applicable"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_mark_resource_not_applicable",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_mark_resource_not_applicable"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_merge_topics",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_merge_topics"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_migrate_spec_decisions",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_migrate_spec_decisions"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_move_card",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_move_card"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_move_ideation",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_move_ideation"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_move_refinement",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_move_refinement"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_move_spec",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_move_spec"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_move_story",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_move_story"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_preview_guideline_impact",
+      "handler": {
+        "module": "okto_pulse.core.mcp.policy_governance_tools",
+        "symbol": "register_policy_governance_tools.<locals>.okto_pulse_preview_guideline_impact"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_record_ambiguity_assessment",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_record_ambiguity_assessment"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_record_delivery_evidence",
+      "handler": {
+        "module": "okto_pulse.core.mcp.code_traceability_tools",
+        "symbol": "register_code_traceability_tools.<locals>.okto_pulse_record_delivery_evidence"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_record_requirement_lint",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_record_requirement_lint"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_record_semantic_guideline_assessment",
+      "handler": {
+        "module": "okto_pulse.core.mcp.policy_governance_tools",
+        "symbol": "register_policy_governance_tools.<locals>.okto_pulse_record_semantic_guideline_assessment"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_record_semantic_guideline_assessment_v2",
+      "handler": {
+        "module": "okto_pulse.core.mcp.policy_governance_tools",
+        "symbol": "register_policy_governance_tools.<locals>.okto_pulse_record_semantic_guideline_assessment_v2"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_refresh_card_knowledge_assignments",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_refresh_card_knowledge_assignments"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_remove_api_contract",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_remove_api_contract"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_remove_business_rule",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_remove_business_rule"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_remove_card_dependency",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_remove_card_dependency"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_remove_decision",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_remove_decision"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_remove_spec_dependency",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_remove_spec_dependency"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_remove_spec_entity",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_remove_spec_entity"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_replace_card_knowledge_assignments",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_replace_card_knowledge_assignments"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_request_semantic_guideline_waiver",
+      "handler": {
+        "module": "okto_pulse.core.mcp.policy_governance_tools",
+        "symbol": "register_policy_governance_tools.<locals>.okto_pulse_request_semantic_guideline_waiver"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_resolve_bug_regression_scenarios",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_resolve_bug_regression_scenarios"
+      },
+      "admission_class": "reader"
+    },
+    {
+      "name": "okto_pulse_respond_to_choice",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_respond_to_choice"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_restore_story",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_restore_story"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_restore_topic",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_restore_topic"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_restore_tree",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_restore_tree"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_retire_guideline",
+      "handler": {
+        "module": "okto_pulse.core.mcp.policy_governance_tools",
+        "symbol": "register_policy_governance_tools.<locals>.okto_pulse_retire_guideline"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_revalidate_semantic_guideline_waiver",
+      "handler": {
+        "module": "okto_pulse.core.mcp.policy_governance_tools",
+        "symbol": "register_policy_governance_tools.<locals>.okto_pulse_revalidate_semantic_guideline_waiver"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_review_semantic_guideline_waiver",
+      "handler": {
+        "module": "okto_pulse.core.mcp.policy_governance_tools",
+        "symbol": "register_policy_governance_tools.<locals>.okto_pulse_review_semantic_guideline_waiver"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_revoke_semantic_guideline_waiver",
+      "handler": {
+        "module": "okto_pulse.core.mcp.policy_governance_tools",
+        "symbol": "register_policy_governance_tools.<locals>.okto_pulse_revoke_semantic_guideline_waiver"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_set_code_evidence_disposition",
+      "handler": {
+        "module": "okto_pulse.core.mcp.code_traceability_tools",
+        "symbol": "register_code_traceability_tools.<locals>.okto_pulse_set_code_evidence_disposition"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_set_default_design_system",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_set_default_design_system"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_set_ideation_ambiguity_gate_skip",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_set_ideation_ambiguity_gate_skip"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_start_checklist_execution",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_start_checklist_execution"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_start_code_investigation",
+      "handler": {
+        "module": "okto_pulse.core.mcp.code_traceability_tools",
+        "symbol": "register_code_traceability_tools.<locals>.okto_pulse_start_code_investigation"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_submit_checklist_execution",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_submit_checklist_execution"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_submit_code_evidence",
+      "handler": {
+        "module": "okto_pulse.core.mcp.code_traceability_tools",
+        "symbol": "register_code_traceability_tools.<locals>.okto_pulse_submit_code_evidence"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_submit_code_investigation_receipt",
+      "handler": {
+        "module": "okto_pulse.core.mcp.code_traceability_tools",
+        "symbol": "register_code_traceability_tools.<locals>.okto_pulse_submit_code_investigation_receipt"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_submit_implementation_target_execution_receipt",
+      "handler": {
+        "module": "okto_pulse.core.mcp.code_traceability_tools",
+        "symbol": "register_code_traceability_tools.<locals>.okto_pulse_submit_implementation_target_execution_receipt"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_submit_implementation_target_resolution",
+      "handler": {
+        "module": "okto_pulse.core.mcp.code_traceability_tools",
+        "symbol": "register_code_traceability_tools.<locals>.okto_pulse_submit_implementation_target_resolution"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_submit_spec_evaluation",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_submit_spec_evaluation"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_submit_spec_validation",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_submit_spec_validation"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_submit_task_validation",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_submit_task_validation"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_supersede_code_evidence",
+      "handler": {
+        "module": "okto_pulse.core.mcp.code_traceability_tools",
+        "symbol": "register_code_traceability_tools.<locals>.okto_pulse_supersede_code_evidence"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_transition_amendment_revision",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_transition_amendment_revision"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_unlink_board_design_system",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_unlink_board_design_system"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_unlink_code_evidence",
+      "handler": {
+        "module": "okto_pulse.core.mcp.code_traceability_tools",
+        "symbol": "register_code_traceability_tools.<locals>.okto_pulse_unlink_code_evidence"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_unlink_guideline_from_board",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_unlink_guideline_from_board"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_update_api_contract",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_update_api_contract"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_update_architecture_design",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_update_architecture_design"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_update_board_guideline_priority",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_update_board_guideline_priority"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_update_business_rule",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_update_business_rule"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_update_card",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_update_card"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_update_card_knowledge",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_update_card_knowledge"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_update_comment",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_update_comment"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_update_decision",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_update_decision"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_update_default_guideline_refs",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_update_default_guideline_refs"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_update_design_system",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_update_design_system"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_update_guideline",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_update_guideline"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_update_ideation",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_update_ideation"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_update_implementation_target",
+      "handler": {
+        "module": "okto_pulse.core.mcp.code_traceability_tools",
+        "symbol": "register_code_traceability_tools.<locals>.okto_pulse_update_implementation_target"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_update_my_profile",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_update_my_profile"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_update_refinement",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_update_refinement"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_update_screen_mockup",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_update_screen_mockup"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_update_spec",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_update_spec"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_update_spec_api_contract",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_update_spec_api_contract"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_update_spec_entity",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_update_spec_entity"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_update_story",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_update_story"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_update_test_scenario",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_update_test_scenario"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_update_test_scenario_status",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_update_test_scenario_status"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_update_topic",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_update_topic"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_upload_attachment",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_upload_attachment"
+      },
+      "admission_class": "writer"
+    },
+    {
+      "name": "okto_pulse_validate_architecture_design_payload",
+      "handler": {
+        "module": "okto_pulse.core.mcp.server",
+        "symbol": "okto_pulse_validate_architecture_design_payload"
+      },
+      "admission_class": "writer"
+    }
+  ],
+  "rest": [
+    {
+      "path": "/api/v1/agents",
+      "method": "GET",
+      "operation_id": "list_my_agents_api_v1_agents_get"
+    },
+    {
+      "path": "/api/v1/agents",
+      "method": "POST",
+      "operation_id": "create_agent_api_v1_agents_post"
+    },
+    {
+      "path": "/api/v1/agents/board/{board_id}",
+      "method": "GET",
+      "operation_id": "list_agents_for_board_api_v1_agents_board__board_id__get"
+    },
+    {
+      "path": "/api/v1/agents/{agent_id}",
+      "method": "DELETE",
+      "operation_id": "delete_agent_api_v1_agents__agent_id__delete"
+    },
+    {
+      "path": "/api/v1/agents/{agent_id}",
+      "method": "GET",
+      "operation_id": "get_agent_api_v1_agents__agent_id__get"
+    },
+    {
+      "path": "/api/v1/agents/{agent_id}",
+      "method": "PATCH",
+      "operation_id": "update_agent_api_v1_agents__agent_id__patch"
+    },
+    {
+      "path": "/api/v1/agents/{agent_id}/boards/{board_id}",
+      "method": "DELETE",
+      "operation_id": "revoke_board_access_api_v1_agents__agent_id__boards__board_id__delete"
+    },
+    {
+      "path": "/api/v1/agents/{agent_id}/boards/{board_id}",
+      "method": "PATCH",
+      "operation_id": "update_board_overrides_api_v1_agents__agent_id__boards__board_id__patch"
+    },
+    {
+      "path": "/api/v1/agents/{agent_id}/boards/{board_id}",
+      "method": "POST",
+      "operation_id": "grant_board_access_api_v1_agents__agent_id__boards__board_id__post"
+    },
+    {
+      "path": "/api/v1/agents/{agent_id}/regenerate-key",
+      "method": "POST",
+      "operation_id": "regenerate_agent_key_api_v1_agents__agent_id__regenerate_key_post"
+    },
+    {
+      "path": "/api/v1/analytics/overview",
+      "method": "GET",
+      "operation_id": "analytics_overview_api_v1_analytics_overview_get"
+    },
+    {
+      "path": "/api/v1/analytics/overview/export",
+      "method": "GET",
+      "operation_id": "analytics_overview_export_api_v1_analytics_overview_export_get"
+    },
+    {
+      "path": "/api/v1/architecture/propagation-legacy-report",
+      "method": "GET",
+      "operation_id": "architecture_propagation_legacy_report_api_v1_architecture_propagation_legacy_report_get"
+    },
+    {
+      "path": "/api/v1/architecture/validate",
+      "method": "POST",
+      "operation_id": "validate_architecture_payload_api_v1_architecture_validate_post"
+    },
+    {
+      "path": "/api/v1/architecture/{design_id}",
+      "method": "DELETE",
+      "operation_id": "delete_architecture_design_api_v1_architecture__design_id__delete"
+    },
+    {
+      "path": "/api/v1/architecture/{design_id}",
+      "method": "GET",
+      "operation_id": "get_architecture_design_api_v1_architecture__design_id__get"
+    },
+    {
+      "path": "/api/v1/architecture/{design_id}",
+      "method": "PATCH",
+      "operation_id": "update_architecture_design_api_v1_architecture__design_id__patch"
+    },
+    {
+      "path": "/api/v1/architecture/{design_id}/diagrams/import-excalidraw",
+      "method": "POST",
+      "operation_id": "import_excalidraw_architecture_diagram_api_v1_architecture__design_id__diagrams_import_excalidraw_post"
+    },
+    {
+      "path": "/api/v1/architecture/{design_id}/diagrams/{diagram_id}/payload",
+      "method": "GET",
+      "operation_id": "get_architecture_diagram_payload_api_v1_architecture__design_id__diagrams__diagram_id__payload_get"
+    },
+    {
+      "path": "/api/v1/architecture/{design_id}/diagrams/{diagram_id}/payload",
+      "method": "PUT",
+      "operation_id": "update_architecture_diagram_payload_api_v1_architecture__design_id__diagrams__diagram_id__payload_put"
+    },
+    {
+      "path": "/api/v1/architecture/{design_id}/diff",
+      "method": "GET",
+      "operation_id": "get_architecture_diff_api_v1_architecture__design_id__diff_get"
+    },
+    {
+      "path": "/api/v1/attachments/{board_id}/{card_id}",
+      "method": "POST",
+      "operation_id": "upload_attachment_api_v1_attachments__board_id___card_id__post"
+    },
+    {
+      "path": "/api/v1/attachments/{board_id}/{card_id}/{attachment_id}",
+      "method": "DELETE",
+      "operation_id": "delete_attachment_api_v1_attachments__board_id___card_id___attachment_id__delete"
+    },
+    {
+      "path": "/api/v1/attachments/{board_id}/{card_id}/{attachment_id}",
+      "method": "GET",
+      "operation_id": "download_attachment_api_v1_attachments__board_id___card_id___attachment_id__get"
+    },
+    {
+      "path": "/api/v1/boards",
+      "method": "GET",
+      "operation_id": "list_boards_api_v1_boards_get"
+    },
+    {
+      "path": "/api/v1/boards",
+      "method": "POST",
+      "operation_id": "create_board_api_v1_boards_post"
+    },
+    {
+      "path": "/api/v1/boards/{board_id}",
+      "method": "DELETE",
+      "operation_id": "delete_board_api_v1_boards__board_id__delete"
+    },
+    {
+      "path": "/api/v1/boards/{board_id}",
+      "method": "GET",
+      "operation_id": "get_board_api_v1_boards__board_id__get"
+    },
+    {
+      "path": "/api/v1/boards/{board_id}",
+      "method": "PATCH",
+      "operation_id": "update_board_api_v1_boards__board_id__patch"
+    },
+    {
+      "path": "/api/v1/boards/{board_id}/allowed-transitions",
+      "method": "GET",
+      "operation_id": "get_allowed_transitions_api_v1_boards__board_id__allowed_transitions_get"
+    },
+    {
+      "path": "/api/v1/boards/{board_id}/analytics/agents",
+      "method": "GET",
+      "operation_id": "board_agents_api_v1_boards__board_id__analytics_agents_get"
+    },
+    {
+      "path": "/api/v1/boards/{board_id}/analytics/blockers",
+      "method": "GET",
+      "operation_id": "board_blockers_api_v1_boards__board_id__analytics_blockers_get"
+    },
+    {
+      "path": "/api/v1/boards/{board_id}/analytics/coverage",
+      "method": "GET",
+      "operation_id": "board_coverage_api_v1_boards__board_id__analytics_coverage_get"
+    },
+    {
+      "path": "/api/v1/boards/{board_id}/analytics/coverage/canonical",
+      "method": "GET",
+      "operation_id": "canonical_board_coverage_api_v1_boards__board_id__analytics_coverage_canonical_get"
+    },
+    {
+      "path": "/api/v1/boards/{board_id}/analytics/coverage/canonical/export",
+      "method": "GET",
+      "operation_id": "canonical_board_coverage_export_api_v1_boards__board_id__analytics_coverage_canonical_export_get"
+    },
+    {
+      "path": "/api/v1/boards/{board_id}/analytics/delivery-intelligence",
+      "method": "GET",
+      "operation_id": "delivery_intelligence_api_v1_boards__board_id__analytics_delivery_intelligence_get"
+    },
+    {
+      "path": "/api/v1/boards/{board_id}/analytics/delivery-intelligence/export",
+      "method": "GET",
+      "operation_id": "delivery_intelligence_export_api_v1_boards__board_id__analytics_delivery_intelligence_export_get"
+    },
+    {
+      "path": "/api/v1/boards/{board_id}/analytics/entities",
+      "method": "GET",
+      "operation_id": "board_entities_api_v1_boards__board_id__analytics_entities_get"
+    },
+    {
+      "path": "/api/v1/boards/{board_id}/analytics/entity/{entity_type}/{entity_id}",
+      "method": "GET",
+      "operation_id": "board_entity_detail_api_v1_boards__board_id__analytics_entity__entity_type___entity_id__get"
+    },
+    {
+      "path": "/api/v1/boards/{board_id}/analytics/entity/{entity_type}/{entity_id}/export",
+      "method": "GET",
+      "operation_id": "board_entity_detail_export_api_v1_boards__board_id__analytics_entity__entity_type___entity_id__export_get"
+    },
+    {
+      "path": "/api/v1/boards/{board_id}/analytics/export",
+      "method": "GET",
+      "operation_id": "board_analytics_export_api_v1_boards__board_id__analytics_export_get"
+    },
+    {
+      "path": "/api/v1/boards/{board_id}/analytics/flow-health",
+      "method": "GET",
+      "operation_id": "canonical_flow_health_api_v1_boards__board_id__analytics_flow_health_get"
+    },
+    {
+      "path": "/api/v1/boards/{board_id}/analytics/flow-health/export",
+      "method": "GET",
+      "operation_id": "canonical_flow_health_export_api_v1_boards__board_id__analytics_flow_health_export_get"
+    },
+    {
+      "path": "/api/v1/boards/{board_id}/analytics/flow-health/settings",
+      "method": "GET",
+      "operation_id": "get_flow_health_settings_api_v1_boards__board_id__analytics_flow_health_settings_get"
+    },
+    {
+      "path": "/api/v1/boards/{board_id}/analytics/flow-health/settings",
+      "method": "PATCH",
+      "operation_id": "save_flow_health_settings_api_v1_boards__board_id__analytics_flow_health_settings_patch"
+    },
+    {
+      "path": "/api/v1/boards/{board_id}/analytics/flow-health/settings/restore",
+      "method": "POST",
+      "operation_id": "restore_flow_health_settings_api_v1_boards__board_id__analytics_flow_health_settings_restore_post"
+    },
+    {
+      "path": "/api/v1/boards/{board_id}/analytics/funnel",
+      "method": "GET",
+      "operation_id": "board_funnel_api_v1_boards__board_id__analytics_funnel_get"
+    },
+    {
+      "path": "/api/v1/boards/{board_id}/analytics/kg",
+      "method": "GET",
+      "operation_id": "board_kg_analytics_api_v1_boards__board_id__analytics_kg_get"
+    },
+    {
+      "path": "/api/v1/boards/{board_id}/analytics/kg-effectiveness",
+      "method": "GET",
+      "operation_id": "board_kg_analytics_api_v1_boards__board_id__analytics_kg_effectiveness_get"
+    },
+    {
+      "path": "/api/v1/boards/{board_id}/analytics/kg-effectiveness/export",
+      "method": "GET",
+      "operation_id": "board_kg_analytics_export_api_v1_boards__board_id__analytics_kg_effectiveness_export_get"
+    },
+    {
+      "path": "/api/v1/boards/{board_id}/analytics/kg/export",
+      "method": "GET",
+      "operation_id": "board_kg_analytics_export_api_v1_boards__board_id__analytics_kg_export_get"
+    },
+    {
+      "path": "/api/v1/boards/{board_id}/analytics/quality",
+      "method": "GET",
+      "operation_id": "board_quality_api_v1_boards__board_id__analytics_quality_get"
+    },
+    {
+      "path": "/api/v1/boards/{board_id}/analytics/readiness/policy-resource",
+      "method": "GET",
+      "operation_id": "canonical_policy_resource_readiness_api_v1_boards__board_id__analytics_readiness_policy_resource_get"
+    },
+    {
+      "path": "/api/v1/boards/{board_id}/analytics/readiness/policy-resource/export",
+      "method": "GET",
+      "operation_id": "canonical_policy_resource_readiness_export_api_v1_boards__board_id__analytics_readiness_policy_resource_export_get"
+    },
+    {
+      "path": "/api/v1/boards/{board_id}/analytics/readiness/spec",
+      "method": "GET",
+      "operation_id": "canonical_spec_readiness_api_v1_boards__board_id__analytics_readiness_spec_get"
+    },
+    {
+      "path": "/api/v1/boards/{board_id}/analytics/readiness/spec/export",
+      "method": "GET",
+      "operation_id": "canonical_spec_readiness_export_api_v1_boards__board_id__analytics_readiness_spec_export_get"
+    },
+    {
+      "path": "/api/v1/boards/{board_id}/analytics/spec/{spec_id}",
+      "method": "GET",
+      "operation_id": "board_spec_analytics_api_v1_boards__board_id__analytics_spec__spec_id__get"
+    },
+    {
+      "path": "/api/v1/boards/{board_id}/analytics/validations",
+      "method": "GET",
+      "operation_id": "board_validations_api_v1_boards__board_id__analytics_validations_get"
+    },
+    {
+      "path": "/api/v1/boards/{board_id}/analytics/velocity",
+      "method": "GET",
+      "operation_id": "board_velocity_api_v1_boards__board_id__analytics_velocity_get"
+    },
+    {
+      "path": "/api/v1/boards/{board_id}/archive/{entity_type}/{entity_id}",
+      "method": "POST",
+      "operation_id": "archive_tree_api_v1_boards__board_id__archive__entity_type___entity_id__post"
+    },
+    {
+      "path": "/api/v1/boards/{board_id}/bugs/{bug_id}/amendment-revisions",
+      "method": "GET",
+      "operation_id": "list_amendment_revisions_api_v1_boards__board_id__bugs__bug_id__amendment_revisions_get"
+    },
+    {
+      "path": "/api/v1/boards/{board_id}/bugs/{bug_id}/amendment-revisions",
+      "method": "POST",
+      "operation_id": "create_amendment_revision_api_v1_boards__board_id__bugs__bug_id__amendment_revisions_post"
+    },
+    {
+      "path": "/api/v1/boards/{board_id}/bugs/{bug_id}/amendment-revisions/{amendment_id}",
+      "method": "GET",
+      "operation_id": "get_amendment_revision_api_v1_boards__board_id__bugs__bug_id__amendment_revisions__amendment_id__get"
+    },
+    {
+      "path": "/api/v1/boards/{board_id}/bugs/{bug_id}/amendment-revisions/{amendment_id}/associate",
+      "method": "POST",
+      "operation_id": "associate_amendment_revision_artifacts_api_v1_boards__board_id__bugs__bug_id__amendment_revisions__amendment_id__associate_post"
+    },
+    {
+      "path": "/api/v1/boards/{board_id}/bugs/{bug_id}/amendment-revisions/{amendment_id}/lifecycle",
+      "method": "POST",
+      "operation_id": "transition_amendment_revision_api_v1_boards__board_id__bugs__bug_id__amendment_revisions__amendment_id__lifecycle_post"
+    },
+    {
+      "path": "/api/v1/boards/{board_id}/cards",
+      "method": "GET",
+      "operation_id": "list_board_cards_api_v1_boards__board_id__cards_get"
+    },
+    {
+      "path": "/api/v1/boards/{board_id}/cards",
+      "method": "POST",
+      "operation_id": "create_card_api_v1_boards__board_id__cards_post"
+    },
+    {
+      "path": "/api/v1/boards/{board_id}/cards/{card_id}/implementation-overlaps",
+      "method": "GET",
+      "operation_id": "get_implementation_overlaps_api_v1_boards__board_id__cards__card_id__implementation_overlaps_get"
+    },
+    {
+      "path": "/api/v1/boards/{board_id}/cards/{card_id}/implementation-overlaps/acknowledgements",
+      "method": "POST",
+      "operation_id": "acknowledge_implementation_overlap_api_v1_boards__board_id__cards__card_id__implementation_overlaps_acknowledgements_post"
+    },
+    {
+      "path": "/api/v1/boards/{board_id}/cards/{card_id}/implementation-targets",
+      "method": "POST",
+      "operation_id": "create_implementation_target_api_v1_boards__board_id__cards__card_id__implementation_targets_post"
+    },
+    {
+      "path": "/api/v1/boards/{board_id}/cards/{card_id}/implementation-targets/{target_id}",
+      "method": "PATCH",
+      "operation_id": "update_implementation_target_api_v1_boards__board_id__cards__card_id__implementation_targets__target_id__patch"
+    },
+    {
+      "path": "/api/v1/boards/{board_id}/cards/{card_id}/implementation-targets/{target_id}/execution-receipts",
+      "method": "POST",
+      "operation_id": "submit_implementation_target_execution_api_v1_boards__board_id__cards__card_id__implementation_targets__target_id__execution_receipts_post"
+    },
+    {
+      "path": "/api/v1/boards/{board_id}/cards/{card_id}/implementation-targets/{target_id}/resolution-receipts",
+      "method": "POST",
+      "operation_id": "submit_implementation_target_resolution_api_v1_boards__board_id__cards__card_id__implementation_targets__target_id__resolution_receipts_post"
+    },
+    {
+      "path": "/api/v1/boards/{board_id}/cards/{card_id}/project-structure",
+      "method": "GET",
+      "operation_id": "get_card_project_structure_api_v1_boards__board_id__cards__card_id__project_structure_get"
+    },
+    {
+      "path": "/api/v1/boards/{board_id}/cards/{card_id}/specs/{spec_id}/delivery-evidence",
+      "method": "POST",
+      "operation_id": "record_card_delivery_evidence_api_v1_boards__board_id__cards__card_id__specs__spec_id__delivery_evidence_post"
+    },
+    {
+      "path": "/api/v1/boards/{board_id}/checklist-bindings/{target_type}/{phase}",
+      "method": "GET",
+      "operation_id": "get_checklist_binding_api_v1_boards__board_id__checklist_bindings__target_type___phase__get"
+    },
+    {
+      "path": "/api/v1/boards/{board_id}/checklist-bindings/{target_type}/{phase}",
+      "method": "PUT",
+      "operation_id": "update_checklist_binding_api_v1_boards__board_id__checklist_bindings__target_type___phase__put"
+    },
+    {
+      "path": "/api/v1/boards/{board_id}/checklist-receipts/{receipt_id}",
+      "method": "GET",
+      "operation_id": "get_checklist_receipt_api_v1_boards__board_id__checklist_receipts__receipt_id__get"
+    },
+    {
+      "path": "/api/v1/boards/{board_id}/code-evidence",
+      "method": "GET",
+      "operation_id": "list_code_evidence_api_v1_boards__board_id__code_evidence_get"
+    },
+    {
+      "path": "/api/v1/boards/{board_id}/code-evidence",
+      "method": "POST",
+      "operation_id": "submit_code_evidence_api_v1_boards__board_id__code_evidence_post"
+    },
+    {
+      "path": "/api/v1/boards/{board_id}/code-evidence/legacy-classifications",
+      "method": "POST",
+      "operation_id": "classify_legacy_code_evidence_api_v1_boards__board_id__code_evidence_legacy_classifications_post"
+    },
+    {
+      "path": "/api/v1/boards/{board_id}/code-evidence/{evidence_id}",
+      "method": "GET",
+      "operation_id": "get_code_evidence_api_v1_boards__board_id__code_evidence__evidence_id__get"
+    },
+    {
+      "path": "/api/v1/boards/{board_id}/code-evidence/{evidence_id}/revoke",
+      "method": "POST",
+      "operation_id": "revoke_code_evidence_api_v1_boards__board_id__code_evidence__evidence_id__revoke_post"
+    },
+    {
+      "path": "/api/v1/boards/{board_id}/code-evidence/{evidence_id}/supersede",
+      "method": "POST",
+      "operation_id": "supersede_code_evidence_api_v1_boards__board_id__code_evidence__evidence_id__supersede_post"
+    },
+    {
+      "path": "/api/v1/boards/{board_id}/code-investigation-receipts",
+      "method": "GET",
+      "operation_id": "list_code_investigation_receipts_api_v1_boards__board_id__code_investigation_receipts_get"
+    },
+    {
+      "path": "/api/v1/boards/{board_id}/code-investigation-receipts/{receipt_id}",
+      "method": "GET",
+      "operation_id": "get_code_investigation_receipt_api_v1_boards__board_id__code_investigation_receipts__receipt_id__get"
+    },
+    {
+      "path": "/api/v1/boards/{board_id}/code-investigation-receipts/{receipt_id}/revoke",
+      "method": "POST",
+      "operation_id": "revoke_code_investigation_receipt_api_v1_boards__board_id__code_investigation_receipts__receipt_id__revoke_post"
+    },
+    {
+      "path": "/api/v1/boards/{board_id}/code-investigations",
+      "method": "POST",
+      "operation_id": "start_code_investigation_api_v1_boards__board_id__code_investigations_post"
+    },
+    {
+      "path": "/api/v1/boards/{board_id}/code-investigations/{request_id}/receipts",
+      "method": "POST",
+      "operation_id": "submit_code_investigation_receipt_api_v1_boards__board_id__code_investigations__request_id__receipts_post"
+    },
+    {
+      "path": "/api/v1/boards/{board_id}/code-traceability-projection",
+      "method": "GET",
+      "operation_id": "get_code_traceability_projection_api_v1_boards__board_id__code_traceability_projection_get"
+    },
+    {
+      "path": "/api/v1/boards/{board_id}/code-traceability-waivers",
+      "method": "POST",
+      "operation_id": "mark_code_traceability_not_applicable_api_v1_boards__board_id__code_traceability_waivers_post"
+    },
+    {
+      "path": "/api/v1/boards/{board_id}/code-traceability-waivers/{waiver_id}",
+      "method": "DELETE",
+      "operation_id": "clear_code_traceability_not_applicable_api_v1_boards__board_id__code_traceability_waivers__waiver_id__delete"
+    },
+    {
+      "path": "/api/v1/boards/{board_id}/columns",
+      "method": "GET",
+      "operation_id": "get_board_columns_api_v1_boards__board_id__columns_get"
+    },
+    {
+      "path": "/api/v1/boards/{board_id}/default-config-diff",
+      "method": "GET",
+      "operation_id": "get_board_default_config_diff_api_v1_boards__board_id__default_config_diff_get"
+    },
+    {
+      "path": "/api/v1/boards/{board_id}/design-system",
+      "method": "DELETE",
+      "operation_id": "unlink_board_design_system_api_v1_boards__board_id__design_system_delete"
+    },
+    {
+      "path": "/api/v1/boards/{board_id}/design-system",
+      "method": "GET",
+      "operation_id": "get_board_design_system_api_v1_boards__board_id__design_system_get"
+    },
+    {
+      "path": "/api/v1/boards/{board_id}/design-system",
+      "method": "POST",
+      "operation_id": "link_board_design_system_api_v1_boards__board_id__design_system_post"
+    },
+    {
+      "path": "/api/v1/boards/{board_id}/entity-exports/{entity_type}/{entity_id}/download",
+      "method": "POST",
+      "operation_id": "download_entity_export_api_v1_boards__board_id__entity_exports__entity_type___entity_id__download_post"
+    },
+    {
+      "path": "/api/v1/boards/{board_id}/entity-exports/{entity_type}/{entity_id}/preflight",
+      "method": "POST",
+      "operation_id": "preflight_entity_export_api_v1_boards__board_id__entity_exports__entity_type___entity_id__preflight_post"
+    },
+    {
+      "path": "/api/v1/boards/{board_id}/guidelines",
+      "method": "GET",
+      "operation_id": "get_board_guidelines_api_v1_boards__board_id__guidelines_get"
+    },
+    {
+      "path": "/api/v1/boards/{board_id}/guidelines",
+      "method": "POST",
+      "operation_id": "link_or_create_board_guideline_api_v1_boards__board_id__guidelines_post"
+    },
+    {
+      "path": "/api/v1/boards/{board_id}/guidelines/export",
+      "method": "GET",
+      "operation_id": "export_guideline_policy_v3_api_v1_boards__board_id__guidelines_export_get"
+    },
+    {
+      "path": "/api/v1/boards/{board_id}/guidelines/import",
+      "method": "POST",
+      "operation_id": "import_guideline_policy_v3_api_v1_boards__board_id__guidelines_import_post"
+    },
+    {
+      "path": "/api/v1/boards/{board_id}/guidelines/{guideline_id}",
+      "method": "DELETE",
+      "operation_id": "unlink_board_guideline_api_v1_boards__board_id__guidelines__guideline_id__delete"
+    },
+    {
+      "path": "/api/v1/boards/{board_id}/guidelines/{guideline_id}",
+      "method": "PATCH",
+      "operation_id": "update_board_guideline_priority_api_v1_boards__board_id__guidelines__guideline_id__patch"
+    },
+    {
+      "path": "/api/v1/boards/{board_id}/guidelines/{guideline_id}/adoptions",
+      "method": "POST",
+      "operation_id": "adopt_guideline_revision_api_v1_boards__board_id__guidelines__guideline_id__adoptions_post"
+    },
+    {
+      "path": "/api/v1/boards/{board_id}/guidelines/{guideline_id}/impact-previews",
+      "method": "POST",
+      "operation_id": "preview_guideline_impact_api_v1_boards__board_id__guidelines__guideline_id__impact_previews_post"
+    },
+    {
+      "path": "/api/v1/boards/{board_id}/guidelines/{guideline_id}/impact-previews/{receipt_id}",
+      "method": "GET",
+      "operation_id": "get_guideline_impact_api_v1_boards__board_id__guidelines__guideline_id__impact_previews__receipt_id__get"
+    },
+    {
+      "path": "/api/v1/boards/{board_id}/guidelines/{guideline_id}/impact-previews/{receipt_id}/items",
+      "method": "GET",
+      "operation_id": "list_guideline_impact_items_api_v1_boards__board_id__guidelines__guideline_id__impact_previews__receipt_id__items_get"
+    },
+    {
+      "path": "/api/v1/boards/{board_id}/guidelines/{guideline_id}/retire",
+      "method": "POST",
+      "operation_id": "retire_guideline_api_v1_boards__board_id__guidelines__guideline_id__retire_post"
+    },
+    {
+      "path": "/api/v1/boards/{board_id}/guidelines/{guideline_id}/revisions",
+      "method": "GET",
+      "operation_id": "list_guideline_revisions_api_v1_boards__board_id__guidelines__guideline_id__revisions_get"
+    },
+    {
+      "path": "/api/v1/boards/{board_id}/guidelines/{guideline_id}/revisions",
+      "method": "POST",
+      "operation_id": "create_guideline_revision_api_v1_boards__board_id__guidelines__guideline_id__revisions_post"
+    },
+    {
+      "path": "/api/v1/boards/{board_id}/guidelines/{guideline_id}/revisions/{revision_id}",
+      "method": "GET",
+      "operation_id": "get_guideline_revision_api_v1_boards__board_id__guidelines__guideline_id__revisions__revision_id__get"
+    },
+    {
+      "path": "/api/v1/boards/{board_id}/historical-archives",
+      "method": "GET",
+      "operation_id": "discover_historical_archives_api_v1_boards__board_id__historical_archives_get"
+    },
+    {
+      "path": "/api/v1/boards/{board_id}/historical-archives/{origin_kind}/{origin_id}/{section}",
+      "method": "GET",
+      "operation_id": "read_historical_archive_section_api_v1_boards__board_id__historical_archives__origin_kind___origin_id___section__get"
+    },
+    {
+      "path": "/api/v1/boards/{board_id}/historical-context/{target_kind}/{target_id}",
+      "method": "GET",
+      "operation_id": "read_historical_context_api_v1_boards__board_id__historical_context__target_kind___target_id__get"
+    },
+    {
+      "path": "/api/v1/boards/{board_id}/ideations",
+      "method": "GET",
+      "operation_id": "list_ideations_api_v1_boards__board_id__ideations_get"
+    },
+    {
+      "path": "/api/v1/boards/{board_id}/ideations",
+      "method": "POST",
+      "operation_id": "create_ideation_api_v1_boards__board_id__ideations_post"
+    },
+    {
+      "path": "/api/v1/boards/{board_id}/ideations/lookup",
+      "method": "GET",
+      "operation_id": "lookup_ideations_api_v1_boards__board_id__ideations_lookup_get"
+    },
+    {
+      "path": "/api/v1/boards/{board_id}/implementation-targets",
+      "method": "GET",
+      "operation_id": "list_implementation_targets_api_v1_boards__board_id__implementation_targets_get"
+    },
+    {
+      "path": "/api/v1/boards/{board_id}/implementation-targets/{target_id}",
+      "method": "GET",
+      "operation_id": "get_implementation_target_api_v1_boards__board_id__implementation_targets__target_id__get"
+    },
+    {
+      "path": "/api/v1/boards/{board_id}/lineage-graph",
+      "method": "GET",
+      "operation_id": "get_lineage_graph_api_v1_boards__board_id__lineage_graph_get"
+    },
+    {
+      "path": "/api/v1/boards/{board_id}/policy-waivers",
+      "method": "GET",
+      "operation_id": "list_semantic_metric_waivers_api_v1_boards__board_id__policy_waivers_get"
+    },
+    {
+      "path": "/api/v1/boards/{board_id}/policy-waivers",
+      "method": "POST",
+      "operation_id": "request_semantic_metric_waiver_api_v1_boards__board_id__policy_waivers_post"
+    },
+    {
+      "path": "/api/v1/boards/{board_id}/policy-waivers/{waiver_id}",
+      "method": "GET",
+      "operation_id": "get_semantic_metric_waiver_api_v1_boards__board_id__policy_waivers__waiver_id__get"
+    },
+    {
+      "path": "/api/v1/boards/{board_id}/policy-waivers/{waiver_id}/events",
+      "method": "GET",
+      "operation_id": "list_semantic_metric_waiver_events_api_v1_boards__board_id__policy_waivers__waiver_id__events_get"
+    },
+    {
+      "path": "/api/v1/boards/{board_id}/policy-waivers/{waiver_id}/revalidate",
+      "method": "POST",
+      "operation_id": "revalidate_semantic_metric_waiver_api_v1_boards__board_id__policy_waivers__waiver_id__revalidate_post"
+    },
+    {
+      "path": "/api/v1/boards/{board_id}/policy-waivers/{waiver_id}/review",
+      "method": "POST",
+      "operation_id": "review_semantic_metric_waiver_api_v1_boards__board_id__policy_waivers__waiver_id__review_post"
+    },
+    {
+      "path": "/api/v1/boards/{board_id}/policy-waivers/{waiver_id}/revoke",
+      "method": "POST",
+      "operation_id": "revoke_semantic_metric_waiver_api_v1_boards__board_id__policy_waivers__waiver_id__revoke_post"
+    },
+    {
+      "path": "/api/v1/boards/{board_id}/refinements",
+      "method": "GET",
+      "operation_id": "list_board_refinements_api_v1_boards__board_id__refinements_get"
+    },
+    {
+      "path": "/api/v1/boards/{board_id}/restore/{entity_type}/{entity_id}",
+      "method": "POST",
+      "operation_id": "restore_tree_api_v1_boards__board_id__restore__entity_type___entity_id__post"
+    },
+    {
+      "path": "/api/v1/boards/{board_id}/semantic-guideline-assessments",
+      "method": "GET",
+      "operation_id": "list_semantic_guideline_assessments_api_v1_boards__board_id__semantic_guideline_assessments_get"
+    },
+    {
+      "path": "/api/v1/boards/{board_id}/semantic-guideline-assessments",
+      "method": "POST",
+      "operation_id": "record_semantic_guideline_assessment_api_v1_boards__board_id__semantic_guideline_assessments_post"
+    },
+    {
+      "path": "/api/v1/boards/{board_id}/semantic-guideline-assessments/current",
+      "method": "GET",
+      "operation_id": "get_current_semantic_guideline_assessment_api_v1_boards__board_id__semantic_guideline_assessments_current_get"
+    },
+    {
+      "path": "/api/v1/boards/{board_id}/semantic-guideline-assessments/v2",
+      "method": "POST",
+      "operation_id": "record_semantic_guideline_assessment_v2_api_v1_boards__board_id__semantic_guideline_assessments_v2_post"
+    },
+    {
+      "path": "/api/v1/boards/{board_id}/semantic-guideline-assessments/{receipt_id}",
+      "method": "GET",
+      "operation_id": "get_semantic_guideline_assessment_api_v1_boards__board_id__semantic_guideline_assessments__receipt_id__get"
+    },
+    {
+      "path": "/api/v1/boards/{board_id}/semantic-guideline-findings",
+      "method": "GET",
+      "operation_id": "list_semantic_guideline_findings_api_v1_boards__board_id__semantic_guideline_findings_get"
+    },
+    {
+      "path": "/api/v1/boards/{board_id}/semantic-guideline-skips",
+      "method": "GET",
+      "operation_id": "list_semantic_policy_skips_api_v1_boards__board_id__semantic_guideline_skips_get"
+    },
+    {
+      "path": "/api/v1/boards/{board_id}/semantic-guideline-skips",
+      "method": "POST",
+      "operation_id": "create_semantic_policy_skip_api_v1_boards__board_id__semantic_guideline_skips_post"
+    },
+    {
+      "path": "/api/v1/boards/{board_id}/semantic-guideline-skips/{skip_id}",
+      "method": "GET",
+      "operation_id": "get_semantic_policy_skip_api_v1_boards__board_id__semantic_guideline_skips__skip_id__get"
+    },
+    {
+      "path": "/api/v1/boards/{board_id}/semantic-guideline-skips/{skip_id}/revoke",
+      "method": "POST",
+      "operation_id": "revoke_semantic_policy_skip_api_v1_boards__board_id__semantic_guideline_skips__skip_id__revoke_post"
+    },
+    {
+      "path": "/api/v1/boards/{board_id}/settings/resource-gate",
+      "method": "PATCH",
+      "operation_id": "update_resource_gate_board_settings_api_v1_boards__board_id__settings_resource_gate_patch"
+    },
+    {
+      "path": "/api/v1/boards/{board_id}/shares",
+      "method": "GET",
+      "operation_id": "list_board_shares_api_v1_boards__board_id__shares_get"
+    },
+    {
+      "path": "/api/v1/boards/{board_id}/shares",
+      "method": "POST",
+      "operation_id": "share_board_api_v1_boards__board_id__shares_post"
+    },
+    {
+      "path": "/api/v1/boards/{board_id}/shares/{share_id}",
+      "method": "DELETE",
+      "operation_id": "revoke_board_share_api_v1_boards__board_id__shares__share_id__delete"
+    },
+    {
+      "path": "/api/v1/boards/{board_id}/shares/{share_id}",
+      "method": "PATCH",
+      "operation_id": "update_board_share_api_v1_boards__board_id__shares__share_id__patch"
+    },
+    {
+      "path": "/api/v1/boards/{board_id}/specs",
+      "method": "GET",
+      "operation_id": "list_specs_api_v1_boards__board_id__specs_get"
+    },
+    {
+      "path": "/api/v1/boards/{board_id}/specs",
+      "method": "POST",
+      "operation_id": "create_spec_api_v1_boards__board_id__specs_post"
+    },
+    {
+      "path": "/api/v1/boards/{board_id}/specs/lookup",
+      "method": "GET",
+      "operation_id": "lookup_specs_api_v1_boards__board_id__specs_lookup_get"
+    },
+    {
+      "path": "/api/v1/boards/{board_id}/specs/{spec_id}/architecture-candidates",
+      "method": "GET",
+      "operation_id": "get_architecture_candidates_api_v1_boards__board_id__specs__spec_id__architecture_candidates_get"
+    },
+    {
+      "path": "/api/v1/boards/{board_id}/specs/{spec_id}/architecture-classifications",
+      "method": "GET",
+      "operation_id": "get_architecture_classifications_api_v1_boards__board_id__specs__spec_id__architecture_classifications_get"
+    },
+    {
+      "path": "/api/v1/boards/{board_id}/specs/{spec_id}/architecture-classifications",
+      "method": "POST",
+      "operation_id": "classify_architecture_candidates_api_v1_boards__board_id__specs__spec_id__architecture_classifications_post"
+    },
+    {
+      "path": "/api/v1/boards/{board_id}/specs/{spec_id}/checklist-executions",
+      "method": "GET",
+      "operation_id": "list_checklist_executions_api_v1_boards__board_id__specs__spec_id__checklist_executions_get"
+    },
+    {
+      "path": "/api/v1/boards/{board_id}/specs/{spec_id}/checklist-executions",
+      "method": "POST",
+      "operation_id": "start_checklist_execution_api_v1_boards__board_id__specs__spec_id__checklist_executions_post"
+    },
+    {
+      "path": "/api/v1/boards/{board_id}/specs/{spec_id}/checklist-executions/{execution_id}/submit",
+      "method": "POST",
+      "operation_id": "submit_checklist_execution_api_v1_boards__board_id__specs__spec_id__checklist_executions__execution_id__submit_post"
+    },
+    {
+      "path": "/api/v1/boards/{board_id}/specs/{spec_id}/checklist-state",
+      "method": "GET",
+      "operation_id": "get_checklist_spec_state_api_v1_boards__board_id__specs__spec_id__checklist_state_get"
+    },
+    {
+      "path": "/api/v1/boards/{board_id}/specs/{spec_id}/code-evidence-links",
+      "method": "POST",
+      "operation_id": "link_code_evidence_api_v1_boards__board_id__specs__spec_id__code_evidence_links_post"
+    },
+    {
+      "path": "/api/v1/boards/{board_id}/specs/{spec_id}/code-evidence-links/{link_id}",
+      "method": "DELETE",
+      "operation_id": "unlink_code_evidence_api_v1_boards__board_id__specs__spec_id__code_evidence_links__link_id__delete"
+    },
+    {
+      "path": "/api/v1/boards/{board_id}/specs/{spec_id}/code-evidence/rebase",
+      "method": "POST",
+      "operation_id": "apply_spec_code_evidence_rebase_api_v1_boards__board_id__specs__spec_id__code_evidence_rebase_post"
+    },
+    {
+      "path": "/api/v1/boards/{board_id}/specs/{spec_id}/code-evidence/rebase/preview",
+      "method": "POST",
+      "operation_id": "preview_spec_code_evidence_rebase_api_v1_boards__board_id__specs__spec_id__code_evidence_rebase_preview_post"
+    },
+    {
+      "path": "/api/v1/boards/{board_id}/specs/{spec_id}/code-evidence/{evidence_id}/disposition",
+      "method": "DELETE",
+      "operation_id": "clear_code_evidence_disposition_api_v1_boards__board_id__specs__spec_id__code_evidence__evidence_id__disposition_delete"
+    },
+    {
+      "path": "/api/v1/boards/{board_id}/specs/{spec_id}/code-evidence/{evidence_id}/disposition",
+      "method": "PUT",
+      "operation_id": "set_code_evidence_disposition_api_v1_boards__board_id__specs__spec_id__code_evidence__evidence_id__disposition_put"
+    },
+    {
+      "path": "/api/v1/boards/{board_id}/specs/{spec_id}/delivery-evidence",
+      "method": "GET",
+      "operation_id": "get_delivery_evidence_api_v1_boards__board_id__specs__spec_id__delivery_evidence_get"
+    },
+    {
+      "path": "/api/v1/boards/{board_id}/specs/{spec_id}/delivery-evidence",
+      "method": "POST",
+      "operation_id": "record_delivery_evidence_api_v1_boards__board_id__specs__spec_id__delivery_evidence_post"
+    },
+    {
+      "path": "/api/v1/boards/{board_id}/specs/{spec_id}/dependencies",
+      "method": "GET",
+      "operation_id": "list_spec_dependencies_api_v1_boards__board_id__specs__spec_id__dependencies_get"
+    },
+    {
+      "path": "/api/v1/boards/{board_id}/specs/{spec_id}/dependencies",
+      "method": "POST",
+      "operation_id": "add_spec_dependency_api_v1_boards__board_id__specs__spec_id__dependencies_post"
+    },
+    {
+      "path": "/api/v1/boards/{board_id}/specs/{spec_id}/dependencies/{dependency_id}",
+      "method": "DELETE",
+      "operation_id": "remove_spec_dependency_api_v1_boards__board_id__specs__spec_id__dependencies__dependency_id__delete"
+    },
+    {
+      "path": "/api/v1/boards/{board_id}/specs/{spec_id}/project-structure",
+      "method": "GET",
+      "operation_id": "get_project_structure_api_v1_boards__board_id__specs__spec_id__project_structure_get"
+    },
+    {
+      "path": "/api/v1/boards/{board_id}/specs/{spec_id}/project-structure",
+      "method": "PATCH",
+      "operation_id": "mutate_project_structure_api_v1_boards__board_id__specs__spec_id__project_structure_patch"
+    },
+    {
+      "path": "/api/v1/boards/{board_id}/specs/{spec_id}/requirement-verification",
+      "method": "GET",
+      "operation_id": "get_requirement_verification_api_v1_boards__board_id__specs__spec_id__requirement_verification_get"
+    },
+    {
+      "path": "/api/v1/boards/{board_id}/specs/{spec_id}/scenarios/{scenario_id}/verification-method",
+      "method": "PATCH",
+      "operation_id": "update_scenario_verification_method_api_v1_boards__board_id__specs__spec_id__scenarios__scenario_id__verification_method_patch"
+    },
+    {
+      "path": "/api/v1/boards/{board_id}/stories",
+      "method": "GET",
+      "operation_id": "list_stories_api_v1_boards__board_id__stories_get"
+    },
+    {
+      "path": "/api/v1/boards/{board_id}/stories",
+      "method": "POST",
+      "operation_id": "create_story_api_v1_boards__board_id__stories_post"
+    },
+    {
+      "path": "/api/v1/boards/{board_id}/stories/convert",
+      "method": "POST",
+      "operation_id": "convert_stories_api_v1_boards__board_id__stories_convert_post"
+    },
+    {
+      "path": "/api/v1/boards/{board_id}/stories/convert-to-ideation",
+      "method": "POST",
+      "operation_id": "convert_stories_api_v1_boards__board_id__stories_convert_to_ideation_post"
+    },
+    {
+      "path": "/api/v1/boards/{board_id}/topics",
+      "method": "GET",
+      "operation_id": "list_topics_api_v1_boards__board_id__topics_get"
+    },
+    {
+      "path": "/api/v1/boards/{board_id}/topics",
+      "method": "POST",
+      "operation_id": "create_topic_api_v1_boards__board_id__topics_post"
+    },
+    {
+      "path": "/api/v1/bugs/{bug_id}/cognitive-closure/evaluate",
+      "method": "POST",
+      "operation_id": "evaluate_bug_cognitive_closure_endpoint_api_v1_bugs__bug_id__cognitive_closure_evaluate_post"
+    },
+    {
+      "path": "/api/v1/cards/{card_id}",
+      "method": "DELETE",
+      "operation_id": "delete_card_api_v1_cards__card_id__delete"
+    },
+    {
+      "path": "/api/v1/cards/{card_id}",
+      "method": "GET",
+      "operation_id": "get_card_api_v1_cards__card_id__get"
+    },
+    {
+      "path": "/api/v1/cards/{card_id}",
+      "method": "PATCH",
+      "operation_id": "update_card_api_v1_cards__card_id__patch"
+    },
+    {
+      "path": "/api/v1/cards/{card_id}/activity",
+      "method": "GET",
+      "operation_id": "get_card_activity_api_v1_cards__card_id__activity_get"
+    },
+    {
+      "path": "/api/v1/cards/{card_id}/architecture",
+      "method": "GET",
+      "operation_id": "list_card_architecture_api_v1_cards__card_id__architecture_get"
+    },
+    {
+      "path": "/api/v1/cards/{card_id}/architecture",
+      "method": "POST",
+      "operation_id": "create_card_architecture_api_v1_cards__card_id__architecture_post"
+    },
+    {
+      "path": "/api/v1/cards/{card_id}/copy-architecture-from-spec/{spec_id}",
+      "method": "POST",
+      "operation_id": "copy_architecture_from_spec_to_card_api_v1_cards__card_id__copy_architecture_from_spec__spec_id__post"
+    },
+    {
+      "path": "/api/v1/cards/{card_id}/dependencies",
+      "method": "GET",
+      "operation_id": "get_dependencies_api_v1_cards__card_id__dependencies_get"
+    },
+    {
+      "path": "/api/v1/cards/{card_id}/dependencies/{depends_on_id}",
+      "method": "DELETE",
+      "operation_id": "remove_dependency_api_v1_cards__card_id__dependencies__depends_on_id__delete"
+    },
+    {
+      "path": "/api/v1/cards/{card_id}/dependencies/{depends_on_id}",
+      "method": "POST",
+      "operation_id": "add_dependency_api_v1_cards__card_id__dependencies__depends_on_id__post"
+    },
+    {
+      "path": "/api/v1/cards/{card_id}/dependents",
+      "method": "GET",
+      "operation_id": "get_dependents_api_v1_cards__card_id__dependents_get"
+    },
+    {
+      "path": "/api/v1/cards/{card_id}/knowledge",
+      "method": "GET",
+      "operation_id": "list_card_knowledge_api_v1_cards__card_id__knowledge_get"
+    },
+    {
+      "path": "/api/v1/cards/{card_id}/knowledge",
+      "method": "POST",
+      "operation_id": "create_card_knowledge_api_v1_cards__card_id__knowledge_post"
+    },
+    {
+      "path": "/api/v1/cards/{card_id}/knowledge-assignments",
+      "method": "GET",
+      "operation_id": "get_card_knowledge_assignments_api_v1_cards__card_id__knowledge_assignments_get"
+    },
+    {
+      "path": "/api/v1/cards/{card_id}/knowledge-assignments",
+      "method": "PUT",
+      "operation_id": "replace_card_knowledge_assignments_api_v1_cards__card_id__knowledge_assignments_put"
+    },
+    {
+      "path": "/api/v1/cards/{card_id}/knowledge-assignments/drop",
+      "method": "POST",
+      "operation_id": "drop_card_knowledge_assignments_api_v1_cards__card_id__knowledge_assignments_drop_post"
+    },
+    {
+      "path": "/api/v1/cards/{card_id}/knowledge-assignments/refresh",
+      "method": "POST",
+      "operation_id": "refresh_card_knowledge_assignments_api_v1_cards__card_id__knowledge_assignments_refresh_post"
+    },
+    {
+      "path": "/api/v1/cards/{card_id}/knowledge/{kb_id}",
+      "method": "DELETE",
+      "operation_id": "delete_card_knowledge_api_v1_cards__card_id__knowledge__kb_id__delete"
+    },
+    {
+      "path": "/api/v1/cards/{card_id}/knowledge/{kb_id}",
+      "method": "GET",
+      "operation_id": "get_card_knowledge_api_v1_cards__card_id__knowledge__kb_id__get"
+    },
+    {
+      "path": "/api/v1/cards/{card_id}/knowledge/{kb_id}",
+      "method": "PATCH",
+      "operation_id": "update_card_knowledge_api_v1_cards__card_id__knowledge__kb_id__patch"
+    },
+    {
+      "path": "/api/v1/cards/{card_id}/knowledge/{kb_id}/download",
+      "method": "GET",
+      "operation_id": "download_card_knowledge_api_v1_cards__card_id__knowledge__kb_id__download_get"
+    },
+    {
+      "path": "/api/v1/cards/{card_id}/move",
+      "method": "POST",
+      "operation_id": "move_card_api_v1_cards__card_id__move_post"
+    },
+    {
+      "path": "/api/v1/cards/{card_id}/regression-scenario-candidates",
+      "method": "GET",
+      "operation_id": "get_bug_regression_scenario_candidates_api_v1_cards__card_id__regression_scenario_candidates_get"
+    },
+    {
+      "path": "/api/v1/cards/{card_id}/seen",
+      "method": "GET",
+      "operation_id": "get_card_seen_status_api_v1_cards__card_id__seen_get"
+    },
+    {
+      "path": "/api/v1/cards/{card_id}/test-tasks",
+      "method": "POST",
+      "operation_id": "link_test_task_to_bug_api_v1_cards__card_id__test_tasks_post"
+    },
+    {
+      "path": "/api/v1/cards/{card_id}/test-tasks/{test_task_id}",
+      "method": "DELETE",
+      "operation_id": "unlink_test_task_from_bug_api_v1_cards__card_id__test_tasks__test_task_id__delete"
+    },
+    {
+      "path": "/api/v1/cards/{card_id}/validate",
+      "method": "POST",
+      "operation_id": "submit_task_validation_api_v1_cards__card_id__validate_post"
+    },
+    {
+      "path": "/api/v1/cards/{card_id}/validations",
+      "method": "GET",
+      "operation_id": "list_task_validations_api_v1_cards__card_id__validations_get"
+    },
+    {
+      "path": "/api/v1/cards/{card_id}/validations/{validation_id}",
+      "method": "DELETE",
+      "operation_id": "delete_task_validation_api_v1_cards__card_id__validations__validation_id__delete"
+    },
+    {
+      "path": "/api/v1/cards/{card_id}/validations/{validation_id}",
+      "method": "GET",
+      "operation_id": "get_task_validation_api_v1_cards__card_id__validations__validation_id__get"
+    },
+    {
+      "path": "/api/v1/checklist-templates",
+      "method": "GET",
+      "operation_id": "list_checklist_templates_api_v1_checklist_templates_get"
+    },
+    {
+      "path": "/api/v1/checklist-templates/{template_version}",
+      "method": "GET",
+      "operation_id": "get_checklist_template_api_v1_checklist_templates__template_version__get"
+    },
+    {
+      "path": "/api/v1/comments/card/{card_id}",
+      "method": "POST",
+      "operation_id": "create_comment_api_v1_comments_card__card_id__post"
+    },
+    {
+      "path": "/api/v1/comments/{comment_id}",
+      "method": "DELETE",
+      "operation_id": "delete_comment_api_v1_comments__comment_id__delete"
+    },
+    {
+      "path": "/api/v1/comments/{comment_id}",
+      "method": "PATCH",
+      "operation_id": "update_comment_api_v1_comments__comment_id__patch"
+    },
+    {
+      "path": "/api/v1/comments/{comment_id}/respond",
+      "method": "POST",
+      "operation_id": "respond_to_choice_api_v1_comments__comment_id__respond_post"
+    },
+    {
+      "path": "/api/v1/default-board-config/active",
+      "method": "GET",
+      "operation_id": "get_active_default_board_config_api_v1_default_board_config_active_get"
+    },
+    {
+      "path": "/api/v1/default-board-config/export",
+      "method": "GET",
+      "operation_id": "export_default_board_config_api_v1_default_board_config_export_get"
+    },
+    {
+      "path": "/api/v1/default-board-config/import",
+      "method": "POST",
+      "operation_id": "import_default_board_config_api_v1_default_board_config_import_post"
+    },
+    {
+      "path": "/api/v1/default-board-config/versions",
+      "method": "GET",
+      "operation_id": "list_default_board_config_versions_api_v1_default_board_config_versions_get"
+    },
+    {
+      "path": "/api/v1/default-board-config/versions",
+      "method": "POST",
+      "operation_id": "create_default_board_config_version_api_v1_default_board_config_versions_post"
+    },
+    {
+      "path": "/api/v1/default-board-config/versions/{template_id}/activate",
+      "method": "POST",
+      "operation_id": "activate_default_board_config_version_api_v1_default_board_config_versions__template_id__activate_post"
+    },
+    {
+      "path": "/api/v1/default-board-config/versions/{template_id}/deactivate",
+      "method": "POST",
+      "operation_id": "deactivate_default_board_config_version_api_v1_default_board_config_versions__template_id__deactivate_post"
+    },
+    {
+      "path": "/api/v1/default-board-configurations/{template_id}/design-system",
+      "method": "POST",
+      "operation_id": "set_default_design_system_api_v1_default_board_configurations__template_id__design_system_post"
+    },
+    {
+      "path": "/api/v1/default-board-configurations/{template_id}/guidelines",
+      "method": "POST",
+      "operation_id": "update_default_guideline_refs_api_v1_default_board_configurations__template_id__guidelines_post"
+    },
+    {
+      "path": "/api/v1/design-systems",
+      "method": "GET",
+      "operation_id": "list_design_systems_api_v1_design_systems_get"
+    },
+    {
+      "path": "/api/v1/design-systems",
+      "method": "POST",
+      "operation_id": "create_design_system_api_v1_design_systems_post"
+    },
+    {
+      "path": "/api/v1/design-systems/export",
+      "method": "GET",
+      "operation_id": "export_design_systems_api_v1_design_systems_export_get"
+    },
+    {
+      "path": "/api/v1/design-systems/import",
+      "method": "POST",
+      "operation_id": "import_design_systems_api_v1_design_systems_import_post"
+    },
+    {
+      "path": "/api/v1/design-systems/{design_system_id}",
+      "method": "DELETE",
+      "operation_id": "delete_design_system_api_v1_design_systems__design_system_id__delete"
+    },
+    {
+      "path": "/api/v1/design-systems/{design_system_id}",
+      "method": "GET",
+      "operation_id": "get_design_system_api_v1_design_systems__design_system_id__get"
+    },
+    {
+      "path": "/api/v1/design-systems/{design_system_id}",
+      "method": "PATCH",
+      "operation_id": "update_design_system_api_v1_design_systems__design_system_id__patch"
+    },
+    {
+      "path": "/api/v1/design-systems/{design_system_id}/export",
+      "method": "GET",
+      "operation_id": "export_design_system_api_v1_design_systems__design_system_id__export_get"
+    },
+    {
+      "path": "/api/v1/discovery/boards/{board_id}/saved-searches",
+      "method": "GET",
+      "operation_id": "list_saved_searches_api_v1_discovery_boards__board_id__saved_searches_get"
+    },
+    {
+      "path": "/api/v1/discovery/boards/{board_id}/search-history",
+      "method": "GET",
+      "operation_id": "list_search_history_api_v1_discovery_boards__board_id__search_history_get"
+    },
+    {
+      "path": "/api/v1/discovery/boards/{board_id}/selector-options",
+      "method": "GET",
+      "operation_id": "list_discovery_selector_options_api_v1_discovery_boards__board_id__selector_options_get"
+    },
+    {
+      "path": "/api/v1/discovery/intents",
+      "method": "GET",
+      "operation_id": "list_discovery_intents_api_v1_discovery_intents_get"
+    },
+    {
+      "path": "/api/v1/discovery/intents/{intent_id}/execute",
+      "method": "POST",
+      "operation_id": "execute_discovery_intent_api_v1_discovery_intents__intent_id__execute_post"
+    },
+    {
+      "path": "/api/v1/guidelines",
+      "method": "GET",
+      "operation_id": "list_guidelines_api_v1_guidelines_get"
+    },
+    {
+      "path": "/api/v1/guidelines",
+      "method": "POST",
+      "operation_id": "create_guideline_api_v1_guidelines_post"
+    },
+    {
+      "path": "/api/v1/guidelines/default-candidates",
+      "method": "GET",
+      "operation_id": "list_default_guideline_candidates_api_v1_guidelines_default_candidates_get"
+    },
+    {
+      "path": "/api/v1/guidelines/export",
+      "method": "GET",
+      "operation_id": "export_guidelines_api_v1_guidelines_export_get"
+    },
+    {
+      "path": "/api/v1/guidelines/import",
+      "method": "POST",
+      "operation_id": "import_guidelines_api_v1_guidelines_import_post"
+    },
+    {
+      "path": "/api/v1/guidelines/{guideline_id}",
+      "method": "DELETE",
+      "operation_id": "delete_guideline_api_v1_guidelines__guideline_id__delete"
+    },
+    {
+      "path": "/api/v1/guidelines/{guideline_id}",
+      "method": "GET",
+      "operation_id": "get_guideline_api_v1_guidelines__guideline_id__get"
+    },
+    {
+      "path": "/api/v1/guidelines/{guideline_id}",
+      "method": "PATCH",
+      "operation_id": "update_guideline_api_v1_guidelines__guideline_id__patch"
+    },
+    {
+      "path": "/api/v1/ideations/{ideation_id}",
+      "method": "DELETE",
+      "operation_id": "delete_ideation_api_v1_ideations__ideation_id__delete"
+    },
+    {
+      "path": "/api/v1/ideations/{ideation_id}",
+      "method": "GET",
+      "operation_id": "get_ideation_api_v1_ideations__ideation_id__get"
+    },
+    {
+      "path": "/api/v1/ideations/{ideation_id}",
+      "method": "PATCH",
+      "operation_id": "update_ideation_api_v1_ideations__ideation_id__patch"
+    },
+    {
+      "path": "/api/v1/ideations/{ideation_id}/ambiguity-gate-skip",
+      "method": "PATCH",
+      "operation_id": "set_ideation_ambiguity_gate_skip_api_v1_ideations__ideation_id__ambiguity_gate_skip_patch"
+    },
+    {
+      "path": "/api/v1/ideations/{ideation_id}/architecture",
+      "method": "GET",
+      "operation_id": "list_ideation_architecture_api_v1_ideations__ideation_id__architecture_get"
+    },
+    {
+      "path": "/api/v1/ideations/{ideation_id}/architecture",
+      "method": "POST",
+      "operation_id": "create_ideation_architecture_api_v1_ideations__ideation_id__architecture_post"
+    },
+    {
+      "path": "/api/v1/ideations/{ideation_id}/derive-spec",
+      "method": "POST",
+      "operation_id": "derive_spec_api_v1_ideations__ideation_id__derive_spec_post"
+    },
+    {
+      "path": "/api/v1/ideations/{ideation_id}/evaluate",
+      "method": "POST",
+      "operation_id": "evaluate_complexity_api_v1_ideations__ideation_id__evaluate_post"
+    },
+    {
+      "path": "/api/v1/ideations/{ideation_id}/history",
+      "method": "GET",
+      "operation_id": "list_ideation_history_api_v1_ideations__ideation_id__history_get"
+    },
+    {
+      "path": "/api/v1/ideations/{ideation_id}/knowledge",
+      "method": "GET",
+      "operation_id": "list_ideation_knowledge_api_v1_ideations__ideation_id__knowledge_get"
+    },
+    {
+      "path": "/api/v1/ideations/{ideation_id}/knowledge",
+      "method": "POST",
+      "operation_id": "create_ideation_knowledge_api_v1_ideations__ideation_id__knowledge_post"
+    },
+    {
+      "path": "/api/v1/ideations/{ideation_id}/knowledge/{knowledge_id}",
+      "method": "DELETE",
+      "operation_id": "delete_ideation_knowledge_api_v1_ideations__ideation_id__knowledge__knowledge_id__delete"
+    },
+    {
+      "path": "/api/v1/ideations/{ideation_id}/knowledge/{knowledge_id}",
+      "method": "GET",
+      "operation_id": "get_ideation_knowledge_api_v1_ideations__ideation_id__knowledge__knowledge_id__get"
+    },
+    {
+      "path": "/api/v1/ideations/{ideation_id}/move",
+      "method": "POST",
+      "operation_id": "move_ideation_api_v1_ideations__ideation_id__move_post"
+    },
+    {
+      "path": "/api/v1/ideations/{ideation_id}/qa",
+      "method": "GET",
+      "operation_id": "list_ideation_qa_api_v1_ideations__ideation_id__qa_get"
+    },
+    {
+      "path": "/api/v1/ideations/{ideation_id}/qa",
+      "method": "POST",
+      "operation_id": "create_ideation_question_api_v1_ideations__ideation_id__qa_post"
+    },
+    {
+      "path": "/api/v1/ideations/{ideation_id}/qa/{qa_id}",
+      "method": "DELETE",
+      "operation_id": "delete_ideation_question_api_v1_ideations__ideation_id__qa__qa_id__delete"
+    },
+    {
+      "path": "/api/v1/ideations/{ideation_id}/qa/{qa_id}/answer",
+      "method": "POST",
+      "operation_id": "answer_ideation_question_api_v1_ideations__ideation_id__qa__qa_id__answer_post"
+    },
+    {
+      "path": "/api/v1/ideations/{ideation_id}/quality-assessments",
+      "method": "GET",
+      "operation_id": "list_ideation_quality_assessments_api_v1_ideations__ideation_id__quality_assessments_get"
+    },
+    {
+      "path": "/api/v1/ideations/{ideation_id}/quality-assessments",
+      "method": "POST",
+      "operation_id": "record_ideation_ambiguity_assessment_api_v1_ideations__ideation_id__quality_assessments_post"
+    },
+    {
+      "path": "/api/v1/ideations/{ideation_id}/quality-assessments/current",
+      "method": "GET",
+      "operation_id": "get_current_ideation_quality_assessment_api_v1_ideations__ideation_id__quality_assessments_current_get"
+    },
+    {
+      "path": "/api/v1/ideations/{ideation_id}/quality-findings",
+      "method": "GET",
+      "operation_id": "list_ideation_quality_findings_api_v1_ideations__ideation_id__quality_findings_get"
+    },
+    {
+      "path": "/api/v1/ideations/{ideation_id}/refinements",
+      "method": "GET",
+      "operation_id": "list_refinements_api_v1_ideations__ideation_id__refinements_get"
+    },
+    {
+      "path": "/api/v1/ideations/{ideation_id}/refinements",
+      "method": "POST",
+      "operation_id": "create_refinement_api_v1_ideations__ideation_id__refinements_post"
+    },
+    {
+      "path": "/api/v1/ideations/{ideation_id}/snapshots",
+      "method": "GET",
+      "operation_id": "list_ideation_snapshots_api_v1_ideations__ideation_id__snapshots_get"
+    },
+    {
+      "path": "/api/v1/ideations/{ideation_id}/snapshots/{version}",
+      "method": "GET",
+      "operation_id": "get_ideation_snapshot_api_v1_ideations__ideation_id__snapshots__version__get"
+    },
+    {
+      "path": "/api/v1/ideations/{ideation_id}/stories",
+      "method": "POST",
+      "operation_id": "link_stories_to_ideation_api_v1_ideations__ideation_id__stories_post"
+    },
+    {
+      "path": "/api/v1/ideations/{subject_id}/validation-cycle",
+      "method": "GET",
+      "operation_id": "get_ideation_validation_cycle_api_v1_ideations__subject_id__validation_cycle_get"
+    },
+    {
+      "path": "/api/v1/ideations/{subject_id}/validation-cycle/results/{result_id}/technical-audit",
+      "method": "GET",
+      "operation_id": "get_ideation_validation_technical_audit_api_v1_ideations__subject_id__validation_cycle_results__result_id__technical_audit_get"
+    },
+    {
+      "path": "/api/v1/kg/boards/{board_id}/audit",
+      "method": "GET",
+      "operation_id": "list_audit_api_v1_kg_boards__board_id__audit_get"
+    },
+    {
+      "path": "/api/v1/kg/boards/{board_id}/audit/export",
+      "method": "GET",
+      "operation_id": "export_audit_api_v1_kg_boards__board_id__audit_export_get"
+    },
+    {
+      "path": "/api/v1/kg/boards/{board_id}/contradictions",
+      "method": "GET",
+      "operation_id": "find_contradictions_api_v1_kg_boards__board_id__contradictions_get"
+    },
+    {
+      "path": "/api/v1/kg/boards/{board_id}/cypher",
+      "method": "POST",
+      "operation_id": "cypher_query_api_v1_kg_boards__board_id__cypher_post"
+    },
+    {
+      "path": "/api/v1/kg/boards/{board_id}/events",
+      "method": "GET",
+      "operation_id": "stream_kg_events_api_v1_kg_boards__board_id__events_get"
+    },
+    {
+      "path": "/api/v1/kg/boards/{board_id}/events/poll",
+      "method": "GET",
+      "operation_id": "poll_kg_events_api_v1_kg_boards__board_id__events_poll_get"
+    },
+    {
+      "path": "/api/v1/kg/boards/{board_id}/exploration/analytics",
+      "method": "POST",
+      "operation_id": "analyze_graph_api_v1_kg_boards__board_id__exploration_analytics_post"
+    },
+    {
+      "path": "/api/v1/kg/boards/{board_id}/exploration/history/as-of",
+      "method": "POST",
+      "operation_id": "history_as_of_api_v1_kg_boards__board_id__exploration_history_as_of_post"
+    },
+    {
+      "path": "/api/v1/kg/boards/{board_id}/exploration/history/commits",
+      "method": "GET",
+      "operation_id": "history_commits_api_v1_kg_boards__board_id__exploration_history_commits_get"
+    },
+    {
+      "path": "/api/v1/kg/boards/{board_id}/exploration/history/diff",
+      "method": "POST",
+      "operation_id": "history_diff_api_v1_kg_boards__board_id__exploration_history_diff_post"
+    },
+    {
+      "path": "/api/v1/kg/boards/{board_id}/exploration/search",
+      "method": "POST",
+      "operation_id": "search_api_v1_kg_boards__board_id__exploration_search_post"
+    },
+    {
+      "path": "/api/v1/kg/boards/{board_id}/exploration/search/readiness/{node_type}",
+      "method": "GET",
+      "operation_id": "search_readiness_api_v1_kg_boards__board_id__exploration_search_readiness__node_type__get"
+    },
+    {
+      "path": "/api/v1/kg/boards/{board_id}/graph",
+      "method": "GET",
+      "operation_id": "get_subgraph_api_v1_kg_boards__board_id__graph_get"
+    },
+    {
+      "path": "/api/v1/kg/boards/{board_id}/kg",
+      "method": "DELETE",
+      "operation_id": "delete_board_kg_api_v1_kg_boards__board_id__kg_delete"
+    },
+    {
+      "path": "/api/v1/kg/boards/{board_id}/metrics",
+      "method": "GET",
+      "operation_id": "get_kg_metrics_api_v1_kg_boards__board_id__metrics_get"
+    },
+    {
+      "path": "/api/v1/kg/boards/{board_id}/nodes",
+      "method": "GET",
+      "operation_id": "list_nodes_api_v1_kg_boards__board_id__nodes_get"
+    },
+    {
+      "path": "/api/v1/kg/boards/{board_id}/nodes/{node_id}",
+      "method": "GET",
+      "operation_id": "get_node_detail_api_v1_kg_boards__board_id__nodes__node_id__get"
+    },
+    {
+      "path": "/api/v1/kg/boards/{board_id}/nodes/{node_id}/source",
+      "method": "GET",
+      "operation_id": "get_node_source_api_v1_kg_boards__board_id__nodes__node_id__source_get"
+    },
+    {
+      "path": "/api/v1/kg/boards/{board_id}/similar",
+      "method": "GET",
+      "operation_id": "find_similar_api_v1_kg_boards__board_id__similar_get"
+    },
+    {
+      "path": "/api/v1/kg/boards/{board_id}/stats",
+      "method": "GET",
+      "operation_id": "get_stats_api_v1_kg_boards__board_id__stats_get"
+    },
+    {
+      "path": "/api/v1/kg/boards/{board_id}/supersedence/{decision_id}",
+      "method": "GET",
+      "operation_id": "get_supersedence_api_v1_kg_boards__board_id__supersedence__decision_id__get"
+    },
+    {
+      "path": "/api/v1/kg/cognitive-effectiveness/inventory",
+      "method": "GET",
+      "operation_id": "get_cognitive_effectiveness_inventory_endpoint_api_v1_kg_cognitive_effectiveness_inventory_get"
+    },
+    {
+      "path": "/api/v1/kg/cognitive-pending",
+      "method": "GET",
+      "operation_id": "get_cognitive_pending_api_v1_kg_cognitive_pending_get"
+    },
+    {
+      "path": "/api/v1/kg/cognitive-pending/badges",
+      "method": "GET",
+      "operation_id": "get_cognitive_pending_badges_api_v1_kg_cognitive_pending_badges_get"
+    },
+    {
+      "path": "/api/v1/kg/cognitive-pending/candidate-decisions",
+      "method": "GET",
+      "operation_id": "list_candidate_decisions_api_v1_kg_cognitive_pending_candidate_decisions_get"
+    },
+    {
+      "path": "/api/v1/kg/cognitive-pending/candidate-decisions/{candidate_id}/command",
+      "method": "POST",
+      "operation_id": "submit_candidate_decision_command_api_v1_kg_cognitive_pending_candidate_decisions__candidate_id__command_post"
+    },
+    {
+      "path": "/api/v1/kg/global/search",
+      "method": "GET",
+      "operation_id": "global_search_api_v1_kg_global_search_get"
+    },
+    {
+      "path": "/api/v1/kg/health",
+      "method": "GET",
+      "operation_id": "get_kg_health_endpoint_api_v1_kg_health_get"
+    },
+    {
+      "path": "/api/v1/kg/health-readiness",
+      "method": "GET",
+      "operation_id": "get_kg_health_readiness_endpoint_api_v1_kg_health_readiness_get"
+    },
+    {
+      "path": "/api/v1/kg/openapi.json",
+      "method": "GET",
+      "operation_id": "openapi_spec_api_v1_kg_openapi_json_get"
+    },
+    {
+      "path": "/api/v1/kg/schema",
+      "method": "GET",
+      "operation_id": "schema_info_api_v1_kg_schema_get"
+    },
+    {
+      "path": "/api/v1/kg/{board_id}/cognitive-readiness/clear",
+      "method": "POST",
+      "operation_id": "clear_cognitive_skip_endpoint_api_v1_kg__board_id__cognitive_readiness_clear_post"
+    },
+    {
+      "path": "/api/v1/kg/{board_id}/cognitive-readiness/items",
+      "method": "GET",
+      "operation_id": "list_cognitive_readiness_items_api_v1_kg__board_id__cognitive_readiness_items_get"
+    },
+    {
+      "path": "/api/v1/kg/{board_id}/cognitive-readiness/metrics",
+      "method": "GET",
+      "operation_id": "get_cognitive_readiness_metrics_api_v1_kg__board_id__cognitive_readiness_metrics_get"
+    },
+    {
+      "path": "/api/v1/kg/{board_id}/cognitive-readiness/skip",
+      "method": "POST",
+      "operation_id": "record_cognitive_skip_endpoint_api_v1_kg__board_id__cognitive_readiness_skip_post"
+    },
+    {
+      "path": "/api/v1/me/permissions",
+      "method": "GET",
+      "operation_id": "get_my_permissions_api_v1_me_permissions_get"
+    },
+    {
+      "path": "/api/v1/me/system-flags",
+      "method": "GET",
+      "operation_id": "get_system_flags_api_v1_me_system_flags_get"
+    },
+    {
+      "path": "/api/v1/metrics/local",
+      "method": "DELETE",
+      "operation_id": "purge_local_metrics_api_v1_metrics_local_delete"
+    },
+    {
+      "path": "/api/v1/metrics/local/events",
+      "method": "POST",
+      "operation_id": "post_local_metrics_event_api_v1_metrics_local_events_post"
+    },
+    {
+      "path": "/api/v1/metrics/local/export",
+      "method": "POST",
+      "operation_id": "export_local_metrics_api_v1_metrics_local_export_post"
+    },
+    {
+      "path": "/api/v1/metrics/local/summary",
+      "method": "GET",
+      "operation_id": "get_local_metrics_summary_api_v1_metrics_local_summary_get"
+    },
+    {
+      "path": "/api/v1/metrics/publish-health",
+      "method": "GET",
+      "operation_id": "get_metrics_publish_health_api_v1_metrics_publish_health_get"
+    },
+    {
+      "path": "/api/v1/metrics/settings",
+      "method": "POST",
+      "operation_id": "post_metrics_settings_api_v1_metrics_settings_post"
+    },
+    {
+      "path": "/api/v1/metrics/settings/migration-notice/seen",
+      "method": "POST",
+      "operation_id": "mark_metrics_migration_notice_seen_api_v1_metrics_settings_migration_notice_seen_post"
+    },
+    {
+      "path": "/api/v1/presets",
+      "method": "GET",
+      "operation_id": "list_presets_api_v1_presets_get"
+    },
+    {
+      "path": "/api/v1/presets",
+      "method": "POST",
+      "operation_id": "create_preset_api_v1_presets_post"
+    },
+    {
+      "path": "/api/v1/presets/export",
+      "method": "GET",
+      "operation_id": "export_presets_api_v1_presets_export_get"
+    },
+    {
+      "path": "/api/v1/presets/import",
+      "method": "POST",
+      "operation_id": "import_presets_api_v1_presets_import_post"
+    },
+    {
+      "path": "/api/v1/presets/{preset_id}",
+      "method": "DELETE",
+      "operation_id": "delete_preset_api_v1_presets__preset_id__delete"
+    },
+    {
+      "path": "/api/v1/presets/{preset_id}",
+      "method": "PUT",
+      "operation_id": "update_preset_api_v1_presets__preset_id__put"
+    },
+    {
+      "path": "/api/v1/presets/{preset_id}/clone",
+      "method": "POST",
+      "operation_id": "clone_preset_api_v1_presets__preset_id__clone_post"
+    },
+    {
+      "path": "/api/v1/presets/{preset_id}/export",
+      "method": "GET",
+      "operation_id": "export_preset_api_v1_presets__preset_id__export_get"
+    },
+    {
+      "path": "/api/v1/qa/card/{card_id}",
+      "method": "POST",
+      "operation_id": "create_question_api_v1_qa_card__card_id__post"
+    },
+    {
+      "path": "/api/v1/qa/{qa_id}",
+      "method": "DELETE",
+      "operation_id": "delete_question_api_v1_qa__qa_id__delete"
+    },
+    {
+      "path": "/api/v1/qa/{qa_id}/answer",
+      "method": "POST",
+      "operation_id": "answer_question_api_v1_qa__qa_id__answer_post"
+    },
+    {
+      "path": "/api/v1/quality-assessment-receipts/{receipt_id}",
+      "method": "GET",
+      "operation_id": "get_quality_assessment_receipt_api_v1_quality_assessment_receipts__receipt_id__get"
+    },
+    {
+      "path": "/api/v1/quality-assessment-receipts/{receipt_id}/findings",
+      "method": "GET",
+      "operation_id": "list_quality_assessment_receipt_findings_api_v1_quality_assessment_receipts__receipt_id__findings_get"
+    },
+    {
+      "path": "/api/v1/refinements/{refinement_id}",
+      "method": "DELETE",
+      "operation_id": "delete_refinement_api_v1_refinements__refinement_id__delete"
+    },
+    {
+      "path": "/api/v1/refinements/{refinement_id}",
+      "method": "GET",
+      "operation_id": "get_refinement_api_v1_refinements__refinement_id__get"
+    },
+    {
+      "path": "/api/v1/refinements/{refinement_id}",
+      "method": "PATCH",
+      "operation_id": "update_refinement_api_v1_refinements__refinement_id__patch"
+    },
+    {
+      "path": "/api/v1/refinements/{refinement_id}/ambiguity-gate-skip",
+      "method": "PATCH",
+      "operation_id": "set_refinement_ambiguity_gate_skip_api_v1_refinements__refinement_id__ambiguity_gate_skip_patch"
+    },
+    {
+      "path": "/api/v1/refinements/{refinement_id}/architecture",
+      "method": "GET",
+      "operation_id": "list_refinement_architecture_api_v1_refinements__refinement_id__architecture_get"
+    },
+    {
+      "path": "/api/v1/refinements/{refinement_id}/architecture",
+      "method": "POST",
+      "operation_id": "create_refinement_architecture_api_v1_refinements__refinement_id__architecture_post"
+    },
+    {
+      "path": "/api/v1/refinements/{refinement_id}/derive-spec",
+      "method": "POST",
+      "operation_id": "derive_spec_api_v1_refinements__refinement_id__derive_spec_post"
+    },
+    {
+      "path": "/api/v1/refinements/{refinement_id}/history",
+      "method": "GET",
+      "operation_id": "list_refinement_history_api_v1_refinements__refinement_id__history_get"
+    },
+    {
+      "path": "/api/v1/refinements/{refinement_id}/knowledge",
+      "method": "GET",
+      "operation_id": "list_refinement_knowledge_api_v1_refinements__refinement_id__knowledge_get"
+    },
+    {
+      "path": "/api/v1/refinements/{refinement_id}/knowledge",
+      "method": "POST",
+      "operation_id": "create_refinement_knowledge_api_v1_refinements__refinement_id__knowledge_post"
+    },
+    {
+      "path": "/api/v1/refinements/{refinement_id}/knowledge/{knowledge_id}",
+      "method": "DELETE",
+      "operation_id": "delete_refinement_knowledge_api_v1_refinements__refinement_id__knowledge__knowledge_id__delete"
+    },
+    {
+      "path": "/api/v1/refinements/{refinement_id}/knowledge/{knowledge_id}",
+      "method": "GET",
+      "operation_id": "get_refinement_knowledge_api_v1_refinements__refinement_id__knowledge__knowledge_id__get"
+    },
+    {
+      "path": "/api/v1/refinements/{refinement_id}/move",
+      "method": "POST",
+      "operation_id": "move_refinement_api_v1_refinements__refinement_id__move_post"
+    },
+    {
+      "path": "/api/v1/refinements/{refinement_id}/qa",
+      "method": "GET",
+      "operation_id": "list_refinement_qa_api_v1_refinements__refinement_id__qa_get"
+    },
+    {
+      "path": "/api/v1/refinements/{refinement_id}/qa",
+      "method": "POST",
+      "operation_id": "create_refinement_question_api_v1_refinements__refinement_id__qa_post"
+    },
+    {
+      "path": "/api/v1/refinements/{refinement_id}/qa/{qa_id}",
+      "method": "DELETE",
+      "operation_id": "delete_refinement_question_api_v1_refinements__refinement_id__qa__qa_id__delete"
+    },
+    {
+      "path": "/api/v1/refinements/{refinement_id}/qa/{qa_id}/answer",
+      "method": "POST",
+      "operation_id": "answer_refinement_question_api_v1_refinements__refinement_id__qa__qa_id__answer_post"
+    },
+    {
+      "path": "/api/v1/refinements/{refinement_id}/quality-assessments",
+      "method": "GET",
+      "operation_id": "list_refinement_quality_assessments_api_v1_refinements__refinement_id__quality_assessments_get"
+    },
+    {
+      "path": "/api/v1/refinements/{refinement_id}/quality-assessments",
+      "method": "POST",
+      "operation_id": "record_refinement_ambiguity_assessment_api_v1_refinements__refinement_id__quality_assessments_post"
+    },
+    {
+      "path": "/api/v1/refinements/{refinement_id}/quality-assessments/current",
+      "method": "GET",
+      "operation_id": "get_current_refinement_quality_assessment_api_v1_refinements__refinement_id__quality_assessments_current_get"
+    },
+    {
+      "path": "/api/v1/refinements/{refinement_id}/quality-findings",
+      "method": "GET",
+      "operation_id": "list_refinement_quality_findings_api_v1_refinements__refinement_id__quality_findings_get"
+    },
+    {
+      "path": "/api/v1/refinements/{refinement_id}/research-decisions",
+      "method": "GET",
+      "operation_id": "list_research_decisions_api_v1_refinements__refinement_id__research_decisions_get"
+    },
+    {
+      "path": "/api/v1/refinements/{refinement_id}/research-decisions",
+      "method": "POST",
+      "operation_id": "append_or_supersede_research_decision_api_v1_refinements__refinement_id__research_decisions_post"
+    },
+    {
+      "path": "/api/v1/refinements/{refinement_id}/research-decisions/head",
+      "method": "GET",
+      "operation_id": "get_research_decision_head_api_v1_refinements__refinement_id__research_decisions_head_get"
+    },
+    {
+      "path": "/api/v1/refinements/{refinement_id}/snapshots",
+      "method": "GET",
+      "operation_id": "list_refinement_snapshots_api_v1_refinements__refinement_id__snapshots_get"
+    },
+    {
+      "path": "/api/v1/refinements/{refinement_id}/snapshots/{version}",
+      "method": "GET",
+      "operation_id": "get_refinement_snapshot_api_v1_refinements__refinement_id__snapshots__version__get"
+    },
+    {
+      "path": "/api/v1/refinements/{subject_id}/validation-cycle",
+      "method": "GET",
+      "operation_id": "get_refinement_validation_cycle_api_v1_refinements__subject_id__validation_cycle_get"
+    },
+    {
+      "path": "/api/v1/refinements/{subject_id}/validation-cycle/results/{result_id}/technical-audit",
+      "method": "GET",
+      "operation_id": "get_refinement_validation_technical_audit_api_v1_refinements__subject_id__validation_cycle_results__result_id__technical_audit_get"
+    },
+    {
+      "path": "/api/v1/resource-gate/specs/{spec_id}/task-coverage",
+      "method": "GET",
+      "operation_id": "get_spec_resource_task_coverage_api_v1_resource_gate_specs__spec_id__task_coverage_get"
+    },
+    {
+      "path": "/api/v1/resource-gate/{entity_type}/{entity_id}",
+      "method": "GET",
+      "operation_id": "get_resource_gate_summary_api_v1_resource_gate__entity_type___entity_id__get"
+    },
+    {
+      "path": "/api/v1/resource-gate/{entity_type}/{entity_id}/effective-resources",
+      "method": "GET",
+      "operation_id": "get_effective_resources_api_v1_resource_gate__entity_type___entity_id__effective_resources_get"
+    },
+    {
+      "path": "/api/v1/resource-gate/{entity_type}/{entity_id}/not-applicable",
+      "method": "POST",
+      "operation_id": "mark_resource_not_applicable_api_v1_resource_gate__entity_type___entity_id__not_applicable_post"
+    },
+    {
+      "path": "/api/v1/resource-gate/{entity_type}/{entity_id}/not-applicable/{resource_type}",
+      "method": "DELETE",
+      "operation_id": "clear_resource_not_applicable_api_v1_resource_gate__entity_type___entity_id__not_applicable__resource_type__delete"
+    },
+    {
+      "path": "/api/v1/specs/{spec_id}",
+      "method": "DELETE",
+      "operation_id": "delete_spec_api_v1_specs__spec_id__delete"
+    },
+    {
+      "path": "/api/v1/specs/{spec_id}",
+      "method": "GET",
+      "operation_id": "get_spec_api_v1_specs__spec_id__get"
+    },
+    {
+      "path": "/api/v1/specs/{spec_id}",
+      "method": "PATCH",
+      "operation_id": "update_spec_api_v1_specs__spec_id__patch"
+    },
+    {
+      "path": "/api/v1/specs/{spec_id}/architecture",
+      "method": "GET",
+      "operation_id": "list_spec_architecture_api_v1_specs__spec_id__architecture_get"
+    },
+    {
+      "path": "/api/v1/specs/{spec_id}/architecture",
+      "method": "POST",
+      "operation_id": "create_spec_architecture_api_v1_specs__spec_id__architecture_post"
+    },
+    {
+      "path": "/api/v1/specs/{spec_id}/evaluations",
+      "method": "GET",
+      "operation_id": "list_spec_evaluations_api_v1_specs__spec_id__evaluations_get"
+    },
+    {
+      "path": "/api/v1/specs/{spec_id}/evaluations",
+      "method": "POST",
+      "operation_id": "submit_spec_evaluation_api_v1_specs__spec_id__evaluations_post"
+    },
+    {
+      "path": "/api/v1/specs/{spec_id}/history",
+      "method": "GET",
+      "operation_id": "list_spec_history_api_v1_specs__spec_id__history_get"
+    },
+    {
+      "path": "/api/v1/specs/{spec_id}/integration-requirements/{requirement_id}/link-task/{card_id}",
+      "method": "POST",
+      "operation_id": "link_task_to_integration_requirement_api_v1_specs__spec_id__integration_requirements__requirement_id__link_task__card_id__post"
+    },
+    {
+      "path": "/api/v1/specs/{spec_id}/knowledge",
+      "method": "GET",
+      "operation_id": "list_spec_knowledge_api_v1_specs__spec_id__knowledge_get"
+    },
+    {
+      "path": "/api/v1/specs/{spec_id}/knowledge",
+      "method": "POST",
+      "operation_id": "create_spec_knowledge_api_v1_specs__spec_id__knowledge_post"
+    },
+    {
+      "path": "/api/v1/specs/{spec_id}/knowledge/{knowledge_id}",
+      "method": "DELETE",
+      "operation_id": "delete_spec_knowledge_api_v1_specs__spec_id__knowledge__knowledge_id__delete"
+    },
+    {
+      "path": "/api/v1/specs/{spec_id}/knowledge/{knowledge_id}",
+      "method": "GET",
+      "operation_id": "get_spec_knowledge_api_v1_specs__spec_id__knowledge__knowledge_id__get"
+    },
+    {
+      "path": "/api/v1/specs/{spec_id}/link-card/{card_id}",
+      "method": "POST",
+      "operation_id": "link_card_to_spec_api_v1_specs__spec_id__link_card__card_id__post"
+    },
+    {
+      "path": "/api/v1/specs/{spec_id}/move",
+      "method": "POST",
+      "operation_id": "move_spec_api_v1_specs__spec_id__move_post"
+    },
+    {
+      "path": "/api/v1/specs/{spec_id}/observability-requirements/{requirement_id}/link-task/{card_id}",
+      "method": "POST",
+      "operation_id": "link_task_to_observability_requirement_api_v1_specs__spec_id__observability_requirements__requirement_id__link_task__card_id__post"
+    },
+    {
+      "path": "/api/v1/specs/{spec_id}/qa",
+      "method": "GET",
+      "operation_id": "list_spec_qa_api_v1_specs__spec_id__qa_get"
+    },
+    {
+      "path": "/api/v1/specs/{spec_id}/qa",
+      "method": "POST",
+      "operation_id": "create_spec_question_api_v1_specs__spec_id__qa_post"
+    },
+    {
+      "path": "/api/v1/specs/{spec_id}/qa/{qa_id}",
+      "method": "DELETE",
+      "operation_id": "delete_spec_question_api_v1_specs__spec_id__qa__qa_id__delete"
+    },
+    {
+      "path": "/api/v1/specs/{spec_id}/qa/{qa_id}/answer",
+      "method": "POST",
+      "operation_id": "answer_spec_question_api_v1_specs__spec_id__qa__qa_id__answer_post"
+    },
+    {
+      "path": "/api/v1/specs/{spec_id}/quality-assessments",
+      "method": "GET",
+      "operation_id": "list_spec_quality_assessments_api_v1_specs__spec_id__quality_assessments_get"
+    },
+    {
+      "path": "/api/v1/specs/{spec_id}/quality-assessments",
+      "method": "POST",
+      "operation_id": "record_requirement_lint_api_v1_specs__spec_id__quality_assessments_post"
+    },
+    {
+      "path": "/api/v1/specs/{spec_id}/quality-assessments/current",
+      "method": "GET",
+      "operation_id": "get_current_spec_quality_assessment_api_v1_specs__spec_id__quality_assessments_current_get"
+    },
+    {
+      "path": "/api/v1/specs/{spec_id}/quality-assessments/preflight",
+      "method": "GET",
+      "operation_id": "get_spec_quality_assessment_preflight_api_v1_specs__spec_id__quality_assessments_preflight_get"
+    },
+    {
+      "path": "/api/v1/specs/{spec_id}/quality-findings",
+      "method": "GET",
+      "operation_id": "list_spec_quality_findings_api_v1_specs__spec_id__quality_findings_get"
+    },
+    {
+      "path": "/api/v1/specs/{spec_id}/requirement-lint",
+      "method": "POST",
+      "operation_id": "record_requirement_lint_api_v1_specs__spec_id__requirement_lint_post"
+    },
+    {
+      "path": "/api/v1/specs/{spec_id}/requirement-lint/preflight",
+      "method": "GET",
+      "operation_id": "get_requirement_lint_preflight_api_v1_specs__spec_id__requirement_lint_preflight_get"
+    },
+    {
+      "path": "/api/v1/specs/{spec_id}/scenarios/{scenario_id}/evidence/execute",
+      "method": "POST",
+      "operation_id": "execute_test_scenario_evidence_api_v1_specs__spec_id__scenarios__scenario_id__evidence_execute_post"
+    },
+    {
+      "path": "/api/v1/specs/{spec_id}/scenarios/{scenario_id}/evidence/reports",
+      "method": "POST",
+      "operation_id": "admit_test_verification_report_api_v1_specs__spec_id__scenarios__scenario_id__evidence_reports_post"
+    },
+    {
+      "path": "/api/v1/specs/{spec_id}/scenarios/{scenario_id}/link-task/{card_id}",
+      "method": "POST",
+      "operation_id": "link_task_to_scenario_api_v1_specs__spec_id__scenarios__scenario_id__link_task__card_id__post"
+    },
+    {
+      "path": "/api/v1/specs/{spec_id}/scenarios/{scenario_id}/status",
+      "method": "PATCH",
+      "operation_id": "update_test_scenario_status_api_v1_specs__spec_id__scenarios__scenario_id__status_patch"
+    },
+    {
+      "path": "/api/v1/specs/{spec_id}/scenarios/{scenario_id}/unlink-task/{card_id}",
+      "method": "POST",
+      "operation_id": "unlink_task_from_scenario_api_v1_specs__spec_id__scenarios__scenario_id__unlink_task__card_id__post"
+    },
+    {
+      "path": "/api/v1/specs/{spec_id}/structured-entities/{entity_type}",
+      "method": "POST",
+      "operation_id": "create_structured_spec_entity_api_v1_specs__spec_id__structured_entities__entity_type__post"
+    },
+    {
+      "path": "/api/v1/specs/{spec_id}/structured-entities/{entity_type}/{entity_id}",
+      "method": "PATCH",
+      "operation_id": "update_structured_spec_entity_api_v1_specs__spec_id__structured_entities__entity_type___entity_id__patch"
+    },
+    {
+      "path": "/api/v1/specs/{spec_id}/structured-entities/{entity_type}/{entity_id}",
+      "method": "POST",
+      "operation_id": "operate_structured_spec_entity_api_v1_specs__spec_id__structured_entities__entity_type___entity_id__post"
+    },
+    {
+      "path": "/api/v1/specs/{spec_id}/structured-entities/{entity_type}/{entity_id}/impact-preview",
+      "method": "POST",
+      "operation_id": "preview_structured_spec_entity_impact_api_v1_specs__spec_id__structured_entities__entity_type___entity_id__impact_preview_post"
+    },
+    {
+      "path": "/api/v1/specs/{spec_id}/unlink-card/{card_id}",
+      "method": "POST",
+      "operation_id": "unlink_card_from_spec_api_v1_specs__spec_id__unlink_card__card_id__post"
+    },
+    {
+      "path": "/api/v1/specs/{spec_id}/validation",
+      "method": "POST",
+      "operation_id": "submit_spec_validation_api_v1_specs__spec_id__validation_post"
+    },
+    {
+      "path": "/api/v1/specs/{spec_id}/validations",
+      "method": "GET",
+      "operation_id": "list_spec_validations_api_v1_specs__spec_id__validations_get"
+    },
+    {
+      "path": "/api/v1/specs/{spec_id}/validations/current",
+      "method": "GET",
+      "operation_id": "get_current_spec_validation_api_v1_specs__spec_id__validations_current_get"
+    },
+    {
+      "path": "/api/v1/specs/{subject_id}/validation-cycle",
+      "method": "GET",
+      "operation_id": "get_spec_validation_cycle_api_v1_specs__subject_id__validation_cycle_get"
+    },
+    {
+      "path": "/api/v1/specs/{subject_id}/validation-cycle/results/{result_id}/technical-audit",
+      "method": "GET",
+      "operation_id": "get_spec_validation_technical_audit_api_v1_specs__subject_id__validation_cycle_results__result_id__technical_audit_get"
+    },
+    {
+      "path": "/api/v1/stories/{story_id}",
+      "method": "DELETE",
+      "operation_id": "archive_story_api_v1_stories__story_id__delete"
+    },
+    {
+      "path": "/api/v1/stories/{story_id}",
+      "method": "GET",
+      "operation_id": "get_story_api_v1_stories__story_id__get"
+    },
+    {
+      "path": "/api/v1/stories/{story_id}",
+      "method": "PATCH",
+      "operation_id": "update_story_api_v1_stories__story_id__patch"
+    },
+    {
+      "path": "/api/v1/stories/{story_id}/ideations",
+      "method": "POST",
+      "operation_id": "link_story_to_ideation_api_v1_stories__story_id__ideations_post"
+    },
+    {
+      "path": "/api/v1/stories/{story_id}/move",
+      "method": "POST",
+      "operation_id": "move_story_api_v1_stories__story_id__move_post"
+    },
+    {
+      "path": "/api/v1/stories/{story_id}/restore",
+      "method": "POST",
+      "operation_id": "restore_story_api_v1_stories__story_id__restore_post"
+    },
+    {
+      "path": "/api/v1/topics/{source_topic_id}/merge",
+      "method": "POST",
+      "operation_id": "merge_topics_api_v1_topics__source_topic_id__merge_post"
+    },
+    {
+      "path": "/api/v1/topics/{topic_id}",
+      "method": "DELETE",
+      "operation_id": "delete_topic_api_v1_topics__topic_id__delete"
+    },
+    {
+      "path": "/api/v1/topics/{topic_id}",
+      "method": "PATCH",
+      "operation_id": "update_topic_api_v1_topics__topic_id__patch"
+    },
+    {
+      "path": "/api/v1/{entity_type}/{entity_id}/screen-mockups",
+      "method": "POST",
+      "operation_id": "create_screen_mockup_api_v1__entity_type___entity_id__screen_mockups_post"
+    },
+    {
+      "path": "/api/v1/{entity_type}/{entity_id}/screen-mockups/{screen_id}",
+      "method": "PATCH",
+      "operation_id": "update_screen_mockup_api_v1__entity_type___entity_id__screen_mockups__screen_id__patch"
+    },
+    {
+      "path": "/config.js",
+      "method": "GET",
+      "operation_id": "get_config_config_js_get"
+    },
+    {
+      "path": "/health",
+      "method": "GET",
+      "operation_id": "health_check_health_get"
+    },
+    {
+      "path": "/health/integrity",
+      "method": "GET",
+      "operation_id": "health_integrity_check_health_integrity_get"
+    }
+  ],
+  "cli": [
+    {
+      "command": [],
+      "handler": null,
+      "options": [
+        "--help",
+        "--version",
+        "-h"
+      ]
+    },
+    {
+      "command": [
+        "api-key"
+      ],
+      "handler": {
+        "module": "okto_pulse.community.cli",
+        "symbol": "cmd_api_key"
+      },
+      "options": [
+        "--handoff-file",
+        "--help",
+        "-h"
+      ]
+    },
+    {
+      "command": [
+        "code-traceability"
+      ],
+      "handler": null,
+      "options": [
+        "--help",
+        "-h"
+      ]
+    },
+    {
+      "command": [
+        "code-traceability",
+        "diagnose"
+      ],
+      "handler": {
+        "module": "okto_pulse.community.cli",
+        "symbol": "cmd_code_traceability"
+      },
+      "options": [
+        "--help",
+        "--json",
+        "-h"
+      ]
+    },
+    {
+      "command": [
+        "code-traceability",
+        "inspect"
+      ],
+      "handler": {
+        "module": "okto_pulse.community.cli",
+        "symbol": "cmd_code_traceability"
+      },
+      "options": [
+        "--help",
+        "--json",
+        "-h"
+      ]
+    },
+    {
+      "command": [
+        "code-traceability",
+        "receipts"
+      ],
+      "handler": {
+        "module": "okto_pulse.community.cli",
+        "symbol": "cmd_code_traceability"
+      },
+      "options": [
+        "--help",
+        "--json",
+        "--limit",
+        "--outcome",
+        "-h"
+      ]
+    },
+    {
+      "command": [
+        "code-traceability",
+        "requests"
+      ],
+      "handler": {
+        "module": "okto_pulse.community.cli",
+        "symbol": "cmd_code_traceability"
+      },
+      "options": [
+        "--help",
+        "--json",
+        "--limit",
+        "--status",
+        "-h"
+      ]
+    },
+    {
+      "command": [
+        "init"
+      ],
+      "handler": {
+        "module": "okto_pulse.community.cli",
+        "symbol": "cmd_init"
+      },
+      "options": [
+        "--agents",
+        "--bootstrap-key-handoff",
+        "--help",
+        "-h"
+      ]
+    },
+    {
+      "command": [
+        "metrics"
+      ],
+      "handler": null,
+      "options": [
+        "--help",
+        "-h"
+      ]
+    },
+    {
+      "command": [
+        "metrics",
+        "disable"
+      ],
+      "handler": {
+        "module": "okto_pulse.community.cli",
+        "symbol": "cmd_metrics"
+      },
+      "options": [
+        "--help",
+        "-h"
+      ]
+    },
+    {
+      "command": [
+        "metrics",
+        "enable-beacon"
+      ],
+      "handler": {
+        "module": "okto_pulse.community.cli",
+        "symbol": "cmd_metrics"
+      },
+      "options": [
+        "--help",
+        "--policy-version",
+        "--schema-version",
+        "--yes",
+        "-h"
+      ]
+    },
+    {
+      "command": [
+        "metrics",
+        "export"
+      ],
+      "handler": {
+        "module": "okto_pulse.community.cli",
+        "symbol": "cmd_metrics"
+      },
+      "options": [
+        "--help",
+        "--output",
+        "-h"
+      ]
+    },
+    {
+      "command": [
+        "metrics",
+        "purge-local"
+      ],
+      "handler": {
+        "module": "okto_pulse.community.cli",
+        "symbol": "cmd_metrics"
+      },
+      "options": [
+        "--help",
+        "--yes",
+        "-h"
+      ]
+    },
+    {
+      "command": [
+        "metrics",
+        "status"
+      ],
+      "handler": {
+        "module": "okto_pulse.community.cli",
+        "symbol": "cmd_metrics"
+      },
+      "options": [
+        "--help",
+        "--window-days",
+        "-h"
+      ]
+    },
+    {
+      "command": [
+        "serve"
+      ],
+      "handler": {
+        "module": "okto_pulse.community.cli",
+        "symbol": "cmd_serve"
+      },
+      "options": [
+        "--accept-terms",
+        "--api-port",
+        "--help",
+        "--mcp-port",
+        "-h"
+      ]
+    },
+    {
+      "command": [
+        "status"
+      ],
+      "handler": {
+        "module": "okto_pulse.community.cli",
+        "symbol": "cmd_status"
+      },
+      "options": [
+        "--api-port",
+        "--help",
+        "--json",
+        "--mcp-port",
+        "-h"
+      ]
+    }
+  ],
+  "frontend_clients": {
+    "scope": "All services source modules and exported values; component-local fetches/UI visibility still require audit",
+    "rows": [
+      {
+        "file": "frontend/src/services/api.ts",
+        "sha256": "438fc9519b95259241146492cb50a44d40af6a7fd0882be16b3e44613f7a9ab1",
+        "exports": [
+          {
+            "kind": "class",
+            "name": "LegacyEvidenceClassificationConflictError"
+          },
+          {
+            "kind": "variable",
+            "name": "STRUCTURED_SPEC_ENTITY_TYPE_BY_FIELD"
+          },
+          {
+            "kind": "function",
+            "name": "specEntityTypeForField"
+          },
+          {
+            "kind": "function",
+            "name": "useDashboardApi"
+          }
+        ]
+      },
+      {
+        "file": "frontend/src/services/board-settings-api.ts",
+        "sha256": "0f1436f091be06e61e74f1a15dd241d53b2e7db95b1bfe3e16dccd49729cb098",
+        "exports": [
+          {
+            "kind": "function",
+            "name": "getBoardSettings"
+          },
+          {
+            "kind": "function",
+            "name": "patchBoardSettings"
+          }
+        ]
+      },
+      {
+        "file": "frontend/src/services/candidate-decisions-api.ts",
+        "sha256": "5e1eb19ee7a0d15c8e219f4554ed3b76ec7260eb970e781f28b4c6078bae561f",
+        "exports": [
+          {
+            "kind": "function",
+            "name": "listCandidateDecisions"
+          },
+          {
+            "kind": "function",
+            "name": "submitCandidateDecisionCommand"
+          }
+        ]
+      },
+      {
+        "file": "frontend/src/services/cognitive-readiness-api.ts",
+        "sha256": "93b5563764d41a1b1ad324dda1e576948e5a4b18e63915cec6d7b10290450767",
+        "exports": [
+          {
+            "kind": "class",
+            "name": "ReadinessActionError"
+          },
+          {
+            "kind": "function",
+            "name": "getReadinessItems"
+          },
+          {
+            "kind": "function",
+            "name": "getReadinessMetrics"
+          },
+          {
+            "kind": "function",
+            "name": "recordCognitiveSkip"
+          },
+          {
+            "kind": "function",
+            "name": "clearCognitiveSkip"
+          }
+        ]
+      },
+      {
+        "file": "frontend/src/services/discovery-api.ts",
+        "sha256": "851c380ce6b6fa1029db643960b110308311b4bb380d27dca68974866ad35b57",
+        "exports": [
+          {
+            "kind": "function",
+            "name": "listIntents"
+          },
+          {
+            "kind": "function",
+            "name": "listSavedSearches"
+          },
+          {
+            "kind": "function",
+            "name": "listSearchHistory"
+          },
+          {
+            "kind": "function",
+            "name": "listSelectorOptions"
+          },
+          {
+            "kind": "function",
+            "name": "executeIntent"
+          }
+        ]
+      },
+      {
+        "file": "frontend/src/services/entity-export-api.ts",
+        "sha256": "77979dbe399e444efc1f9e8daa690a0e63954242b9adaa723847d273cffc676f",
+        "exports": [
+          {
+            "kind": "function",
+            "name": "parseEntityExportPreflight"
+          },
+          {
+            "kind": "function",
+            "name": "useEntityExportApi"
+          }
+        ]
+      },
+      {
+        "file": "frontend/src/services/historical-archives-api.ts",
+        "sha256": "8cbb17c815354dcfc9158372a9cfc002bbca3c2c6b4859e5b3f97a1a6c532b44",
+        "exports": [
+          {
+            "kind": "variable",
+            "name": "archiveSections"
+          },
+          {
+            "kind": "function",
+            "name": "parseArchiveList"
+          },
+          {
+            "kind": "function",
+            "name": "parseArchivePage"
+          },
+          {
+            "kind": "function",
+            "name": "useHistoricalArchivesApi"
+          }
+        ]
+      },
+      {
+        "file": "frontend/src/services/historical-context-api.ts",
+        "sha256": "a9cfca3ff82fd7404eb38f01193ef0862eabb62dc7ce90e4ab760e3d8d2f2993",
+        "exports": [
+          {
+            "kind": "function",
+            "name": "parseHistoricalContext"
+          },
+          {
+            "kind": "function",
+            "name": "useHistoricalContextApi"
+          }
+        ]
+      },
+      {
+        "file": "frontend/src/services/import-export-api.ts",
+        "sha256": "990bad6fda39a3d170580e8ba2fe33e95b43958c406aeabac7b283a1eb40ab56",
+        "exports": [
+          {
+            "kind": "function",
+            "name": "importExportFilename"
+          },
+          {
+            "kind": "function",
+            "name": "downloadJsonFile"
+          },
+          {
+            "kind": "function",
+            "name": "useImportExportApi"
+          }
+        ]
+      },
+      {
+        "file": "frontend/src/services/kg-api.ts",
+        "sha256": "cdafbc394a11eea85afd1edb7dbcc58b466cde7717b4edb9efc7e902b3c331ef",
+        "exports": [
+          {
+            "kind": "function",
+            "name": "listNodes"
+          },
+          {
+            "kind": "function",
+            "name": "getNodeDetail"
+          },
+          {
+            "kind": "function",
+            "name": "getNodeSource"
+          },
+          {
+            "kind": "function",
+            "name": "getSubgraph"
+          },
+          {
+            "kind": "function",
+            "name": "getStats"
+          },
+          {
+            "kind": "function",
+            "name": "listAudit"
+          },
+          {
+            "kind": "function",
+            "name": "findSimilar"
+          },
+          {
+            "kind": "function",
+            "name": "getSupersedenceChain"
+          },
+          {
+            "kind": "function",
+            "name": "findContradictions"
+          },
+          {
+            "kind": "function",
+            "name": "globalSearch"
+          },
+          {
+            "kind": "function",
+            "name": "deleteKG"
+          },
+          {
+            "kind": "function",
+            "name": "getSchemaInfo"
+          }
+        ]
+      },
+      {
+        "file": "frontend/src/services/kg-cognitive-pending-telemetry.ts",
+        "sha256": "1685339ef9113c90a4c4e8fdd5b86881172933d5b5b4fe887c93a4dd04ce8730",
+        "exports": [
+          {
+            "kind": "variable",
+            "name": "KG_COGNITIVE_PENDING_PANEL_STATE_VALUES"
+          },
+          {
+            "kind": "variable",
+            "name": "KG_COGNITIVE_PENDING_PANEL_METRIC_LABELS"
+          },
+          {
+            "kind": "function",
+            "name": "recordKGCognitivePendingPanelState"
+          },
+          {
+            "kind": "function",
+            "name": "getKGCognitivePendingPanelSamples"
+          },
+          {
+            "kind": "function",
+            "name": "getKGCognitivePendingPanelEventCount"
+          },
+          {
+            "kind": "function",
+            "name": "resetKGCognitivePendingPanelTelemetry"
+          }
+        ]
+      },
+      {
+        "file": "frontend/src/services/kg-health-api.ts",
+        "sha256": "e65cfabd8ad5c138489d1cea4bac14c77ea883d69d5ca5146b6ff0b0cf44d01a",
+        "exports": [
+          {
+            "kind": "function",
+            "name": "getKGHealth"
+          },
+          {
+            "kind": "function",
+            "name": "getKGCognitivePendingItems"
+          },
+          {
+            "kind": "variable",
+            "name": "KG_BADGE_LABEL_ACTIVE"
+          },
+          {
+            "kind": "variable",
+            "name": "KG_BADGE_ELIGIBLE_ENTITY_TYPES"
+          },
+          {
+            "kind": "function",
+            "name": "getKGCognitivePendingBadges"
+          }
+        ]
+      },
+      {
+        "file": "frontend/src/services/metrics-api.ts",
+        "sha256": "26b697cfd8c074e2e9ac227a0b207fbf1e221caa3fbe599ee7498cb09a0750d8",
+        "exports": [
+          {
+            "kind": "variable",
+            "name": "CURRENT_METRICS_SCHEMA_VERSION"
+          },
+          {
+            "kind": "function",
+            "name": "getMetricsSummary"
+          },
+          {
+            "kind": "function",
+            "name": "updateMetricsMode"
+          },
+          {
+            "kind": "function",
+            "name": "markMetricsMigrationNoticeSeen"
+          },
+          {
+            "kind": "function",
+            "name": "exportLocalMetrics"
+          },
+          {
+            "kind": "function",
+            "name": "purgeLocalMetrics"
+          }
+        ]
+      },
+      {
+        "file": "frontend/src/services/permissions-api.ts",
+        "sha256": "78287e4ffa9f7c43c1de1fbf3508a764587cb04b317778883f9360622777371f",
+        "exports": [
+          {
+            "kind": "function",
+            "name": "getMyPermissions"
+          }
+        ]
+      },
+      {
+        "file": "frontend/src/services/policy-compliance-telemetry.ts",
+        "sha256": "47e8db4c7756d9fd64d66d6014292adc32ac0c3a91442887337fa6f94338ef7a",
+        "exports": [
+          {
+            "kind": "variable",
+            "name": "POLICY_COMPLIANCE_RENDER_LABELS"
+          },
+          {
+            "kind": "function",
+            "name": "recordPolicyComplianceRender"
+          },
+          {
+            "kind": "function",
+            "name": "getPolicyComplianceRenderSamples"
+          },
+          {
+            "kind": "function",
+            "name": "resetPolicyComplianceRenderTelemetry"
+          }
+        ]
+      },
+      {
+        "file": "frontend/src/services/policy-governance-api.ts",
+        "sha256": "ea4f74c5854dc3dc531b1265059e441b35da129030cac6821d188faa4249f9af",
+        "exports": [
+          {
+            "kind": "class",
+            "name": "PolicyGovernanceApiError"
+          },
+          {
+            "kind": "function",
+            "name": "createPolicyGovernanceApi"
+          },
+          {
+            "kind": "function",
+            "name": "usePolicyGovernanceApi"
+          }
+        ]
+      },
+      {
+        "file": "frontend/src/services/research-decisions-api.ts",
+        "sha256": "5a9a6db6ebcd2eda476424670951b2448853820bfdbcaf9e3e24f54028a8f9fa",
+        "exports": [
+          {
+            "kind": "class",
+            "name": "ResearchDecisionApiError"
+          },
+          {
+            "kind": "function",
+            "name": "createResearchDecisionsApi"
+          },
+          {
+            "kind": "function",
+            "name": "useResearchDecisionsApi"
+          }
+        ]
+      },
+      {
+        "file": "frontend/src/services/terms-acceptance-api.ts",
+        "sha256": "7e21e3aff3200b0e11c5c1ed2064ee05781019c501e2cd4195e2bde17b2f256c",
+        "exports": [
+          {
+            "kind": "function",
+            "name": "loadAcceptance"
+          },
+          {
+            "kind": "function",
+            "name": "saveAcceptance"
+          },
+          {
+            "kind": "function",
+            "name": "clearAcceptance"
+          },
+          {
+            "kind": "function",
+            "name": "getValidAcceptance"
+          }
+        ]
+      },
+      {
+        "file": "frontend/src/services/validation-workspace-telemetry.ts",
+        "sha256": "81224a924a7c68ce0e45ace27b89848b13511eac391f4ae01908c5d07eb305be",
+        "exports": [
+          {
+            "kind": "variable",
+            "name": "VALIDATION_WORKSPACE_INTERACTION_METRIC"
+          },
+          {
+            "kind": "function",
+            "name": "measureValidationWorkspaceInteraction"
+          },
+          {
+            "kind": "function",
+            "name": "getValidationWorkspaceInteractionSamples"
+          },
+          {
+            "kind": "function",
+            "name": "resetValidationWorkspaceInteractionTelemetry"
+          }
+        ]
+      }
+    ]
+  },
+  "next_effect_reviews": [
+    "Health parity/graph providers and remaining unknown counters",
+    "Domain decision conversion and semantic reconciliation: preserve product authority; classify by effect",
+    "Complete CLI/UI documentation and caller map before F4 closure"
+  ]
+}

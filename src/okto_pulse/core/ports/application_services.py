@@ -680,19 +680,8 @@ class KnowledgeGraphOperations(Protocol):
 
 
 
-    async def boost_node(
-        self, board_id: str, node_id: str, *, actor_id: str
-    ) -> object: ...
 
-    async def mutate_boost_node_graph(
-        self,
-        board_id: str,
-        node_id: str,
-        *,
-        actor_id: str,
-    ) -> object: ...
 
-    def stage_boost_node_audit(self, mutation: object) -> dict[str, object]: ...
 
 
 

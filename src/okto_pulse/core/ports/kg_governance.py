@@ -15,14 +15,6 @@ from typing import Any, Protocol
 
 
 
-@dataclass(frozen=True, slots=True)
-class BoostAuditRecord:
-    session_id: str
-    board_id: str
-    artifact_id: str
-    agent_id: str
-    started_at: datetime
-    committed_at: datetime
 
 
 @dataclass(frozen=True, slots=True)
@@ -86,7 +78,6 @@ class KGGovernanceStore(Protocol):
         board_id: str,
     ) -> bool: ...
 
-    def add_boost_audit(self, context: Any, audit: BoostAuditRecord) -> None: ...
 
     async def commit(self, context: Any) -> None: ...
 
@@ -108,7 +99,6 @@ def reset_kg_governance_store_for_tests() -> None:
 
 __all__ = [
     "BoardErasureJobFact",
-    "BoostAuditRecord",
     "KGGovernanceStore",
     "get_kg_governance_store",
     "register_kg_governance_store",

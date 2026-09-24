@@ -475,39 +475,8 @@ class CoreKnowledgeGraphOperations:
 
 
 
-    async def boost_node(self, board_id: str, node_id: str, *, actor_id: str):  # noqa: ANN201
-        from okto_pulse.core.services.application_kg import boost_node
 
-        return await boost_node(
-            self.__relational_context,
-            board_id,
-            node_id,
-            actor_id=actor_id,
-        )
 
-    async def mutate_boost_node_graph(
-        self,
-        board_id: str,
-        node_id: str,
-        *,
-        actor_id: str,
-    ):  # noqa: ANN201
-        from okto_pulse.core.services.application_kg import (
-            mutate_boost_node_graph,
-        )
-
-        return await mutate_boost_node_graph(
-            board_id,
-            node_id,
-            actor_id=actor_id,
-        )
-
-    def stage_boost_node_audit(self, mutation: object):  # noqa: ANN201
-        from okto_pulse.core.services.application_kg import (
-            stage_boost_node_audit,
-        )
-
-        return stage_boost_node_audit(self.__relational_context, mutation)
 
 
 

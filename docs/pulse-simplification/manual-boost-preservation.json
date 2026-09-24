@@ -1,0 +1,93 @@
+[
+  {
+    "repository": "okto_labs_pulse_core",
+    "path": "src/okto_pulse/core/kg/governance.py",
+    "surviving_functions_unchanged": 18,
+    "removed_functions": [
+      "boost_node",
+      "mutate_boost_node_graph",
+      "stage_boost_node_audit"
+    ]
+  },
+  {
+    "repository": "okto_labs_pulse_core",
+    "path": "src/okto_pulse/core/application/use_cases/kg_routes_crud.py",
+    "surviving_functions_unchanged": 12,
+    "removed_functions": [
+      "BoostNodeCommand.__init__",
+      "BoostNodeResult.__init__",
+      "BoostNodeUseCase.execute",
+      "_BoostFenceHandle.__init__",
+      "_close_boost_fence",
+      "_close_boost_fence_sync",
+      "_mutate_boost_graph_inside_fence"
+    ]
+  },
+  {
+    "repository": "okto_labs_pulse_core",
+    "path": "src/okto_pulse/core/application/kg_operations.py",
+    "surviving_functions_unchanged": 26,
+    "removed_functions": [
+      "CoreKnowledgeGraphOperations.boost_node",
+      "CoreKnowledgeGraphOperations.mutate_boost_node_graph",
+      "CoreKnowledgeGraphOperations.stage_boost_node_audit"
+    ]
+  },
+  {
+    "repository": "okto_labs_pulse_core",
+    "path": "src/okto_pulse/core/services/application_kg.py",
+    "surviving_functions_unchanged": 23,
+    "removed_functions": [
+      "boost_node",
+      "mutate_boost_node_graph",
+      "stage_boost_node_audit"
+    ]
+  },
+  {
+    "repository": "okto_labs_pulse_core",
+    "path": "src/okto_pulse/core/ports/kg_governance.py",
+    "surviving_functions_unchanged": 11,
+    "removed_functions": [
+      "KGGovernanceStore.add_boost_audit"
+    ]
+  },
+  {
+    "repository": "okto_labs_pulse_core",
+    "path": "tests/sqlalchemy_kg_governance_store.py",
+    "surviving_functions_unchanged": 9,
+    "removed_functions": [
+      "TestSqlAlchemyKGGovernanceStore.add_boost_audit"
+    ]
+  },
+  {
+    "repository": "okto_labs_pulse_community",
+    "path": "src/okto_pulse/community/api/kg_routes.py",
+    "surviving_functions_unchanged": 40,
+    "removed_functions": [
+      "boost_node"
+    ]
+  },
+  {
+    "repository": "okto_labs_pulse_community",
+    "path": "src/okto_pulse/community/adapters/sqlalchemy_kg_governance.py",
+    "surviving_functions_unchanged": 12,
+    "removed_functions": [
+      "CommunitySqlAlchemyKGGovernanceStore.add_boost_audit"
+    ]
+  },
+  {
+    "path": "src/okto_pulse/core/domain/historical_permission_policy_v034.py",
+    "unchanged": true,
+    "git_blob_sha256": "3856be16963e571e5282ca2e6cb6c150c9458b48a17cdec9965b1a5818f23506"
+  },
+  {
+    "path": "src/okto_pulse/core/events/handlers/card_boost_recompute.py",
+    "unchanged": true,
+    "git_blob_sha256": "f6660989dba019baa2238572df78bc5ebc8a45fc72d36875bd8d6e3246f3f454"
+  },
+  {
+    "path": "tests/fixtures/sprint_permission_retirement_baseline.json",
+    "unchanged": true,
+    "git_blob_sha256": "e830aceca17d08a040ec0a7eb41e845db6b4f1a34451c70d73b68efec8bb55bd"
+  }
+]

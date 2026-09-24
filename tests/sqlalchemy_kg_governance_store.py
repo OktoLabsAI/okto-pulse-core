@@ -16,10 +16,7 @@ from sqlalchemy_test_models import (
     KuzuNodeRef,
 )
 from okto_pulse.core.ports.kg_events import HISTORICAL_PROGRESS_SETTINGS_KEY
-from okto_pulse.core.ports.kg_governance import (
-    BoardErasureJobFact,
-    BoostAuditRecord,
-)
+from okto_pulse.core.ports.kg_governance import BoardErasureJobFact
 
 
 class TestSqlAlchemyKGGovernanceStore:
@@ -140,20 +137,6 @@ class TestSqlAlchemyKGGovernanceStore:
         del context
         return self._board_erasure_jobs.pop(board_id, None) is not None
 
-    def add_boost_audit(self, context: Any, audit: BoostAuditRecord) -> None:
-        context.add(
-            ConsolidationAudit(
-                session_id=audit.session_id,
-                board_id=audit.board_id,
-                artifact_id=audit.artifact_id,
-                artifact_type="boost",
-                agent_id=audit.agent_id,
-                started_at=audit.started_at,
-                committed_at=audit.committed_at,
-                nodes_added=0,
-                edges_added=0,
-            )
-        )
 
     async def commit(self, context: Any) -> None:
         await context.commit()

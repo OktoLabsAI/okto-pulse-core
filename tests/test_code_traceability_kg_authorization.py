@@ -242,60 +242,6 @@ def test_generic_reconciliation_rejects_existing_ct_target_before_mutation() -> 
     assert len(scope.statements) == 1
 
 
-@pytest.mark.asyncio
-async def test_generic_boost_denies_ct_before_set_or_audit(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    from okto_pulse.core.domain.code_traceability_kg import (
-        CodeTraceabilityKGWriteViolation,
-    )
-    from okto_pulse.core.kg import governance
-    from okto_pulse.core.kg.interfaces import registry as registry_module
-    from okto_pulse.core.kg.interfaces.graph_transaction import GraphStatementResult
-
-    class _Scope:
-        def __init__(self) -> None:
-            self.statements: list[str] = []
-
-        async def __aenter__(self):
-            return self
-
-        async def __aexit__(self, *_args):
-            return None
-
-        def execute(self, statement: str, _params: dict) -> GraphStatementResult:
-            self.statements.append(statement)
-            if "SET " in statement:
-                raise AssertionError("CT boost reached SET")
-            if "MATCH (n:Entity" in statement:
-                return GraphStatementResult.from_rows(
-                    [[0.5, None, None, "code_evidence"]]
-                )
-            return GraphStatementResult()
-
-    class _Transaction:
-        def __init__(self, scope: _Scope) -> None:
-            self.scope = scope
-
-        async def begin(self, _board_id: str) -> _Scope:
-            return self.scope
-
-    scope = _Scope()
-    monkeypatch.setattr(
-        registry_module,
-        "get_kg_registry",
-        lambda: SimpleNamespace(graph_transaction=_Transaction(scope)),
-    )
-
-    with pytest.raises(CodeTraceabilityKGWriteViolation):
-        await governance.mutate_boost_node_graph(
-            BOARD_ID,
-            "ct-node",
-            actor_id="cognitive-agent",
-        )
-
-    assert scope.statements
-    assert all("SET " not in statement for statement in scope.statements)
 
 
 def test_bounded_query_templates_exclude_ct_before_limit_and_count() -> None:
