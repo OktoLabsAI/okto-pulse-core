@@ -1,0 +1,97 @@
+{
+  "scope": "Preserve exact offline 0.6.0 recovery contract independently of current schema",
+  "tests": {
+    "tests": 148,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "budgets": [
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "import_boundary_baseline",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every import_boundary_baseline allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "singleton_baseline",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every singleton_baseline allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "dependency_temporary_exceptions",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every dependency_temporary_exceptions allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "graph_runtime_compatibility",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every graph_runtime_compatibility allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "rebuild_artifact_compatibility",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every rebuild_artifact_compatibility allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "community_private_reach_ins",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every community_private_reach_ins allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "community_adapter_bridges",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every community_adapter_bridges allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "af35_relational_residue",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every af35_relational_residue allowance before F16 completion."
+    }
+  ],
+  "limits": [
+    "Production schema remains 0.6.0; IR/OR->TR graph pairs are still absent.",
+    "Different current contract is simulated in the real transfer test, not an implemented 0.7.0 upgrade.",
+    "No runtime compatibility mode, cutover, real-data migration or global release acceptance."
+  ],
+  "sha256": {
+    "PULSE_REFACTOR/.validation-v040/frozen-v060.xml": "28b0643f64e190d4c928fbca9feb882865c8f1b1b607cb01c3f1a136c4f335ba",
+    "PULSE_REFACTOR/.validation-v040/provenance-frozen-v060-final.json": "61909e50aca41f6729166f62f0da71cec56a3d9f8eee9c7aaca2f19b58f7440b",
+    "PULSE_REFACTOR/.validation-v040/closure-frozen-v060-final.json": "f000fe3ca7ba670fe2f41858954d7c0e8f9758152c286e68d40eefe6b4d9037e",
+    "okto_labs_pulse_community/tests/test_grafx_v060_recovery_contract.py": "79e76f4eebdb00d85c15a1bb4d2a6786187a63a71aab407e6888b20f3b2fb542",
+    "okto_labs_pulse_community/tests/test_retirement_schema_evolution.py": "ae5a159c1c5dba7774aefe549ea49543b980f7edaef2f8b1ab46e111a581a7c2",
+    "okto_labs_pulse_community/tests/test_grafx_schema_evolution.py": "26b67a15ebc1e2c615b1e846c923ef5d6a39671b9bdb9af6741716016c6e30c7",
+    "okto_labs_pulse_community/tests/test_logical_transfer_schema.py": "b091ce2da857bf8be0b5f2741a6bfe40b2603dc0bc7586289769e7233ef8f69a"
+  }
+}
