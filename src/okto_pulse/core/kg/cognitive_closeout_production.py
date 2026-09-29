@@ -438,6 +438,39 @@ class ConsolidationPipelinePersister:
     async def persist(self, board_id: str, artifact_type: str, candidate: CloseoutCandidate) -> bool:
         return await self._persist(board_id, artifact_type, candidate)
 
+    async def inspect_authored_learning(self, board_id, work):
+        """Read-only projection presence; absence and unavailable are distinct."""
+        from okto_pulse.core.ports.bug_cognitive_context import (
+            CanonicalBugNodeResolver, resolve_canonical_bug_node_read_port,
+        )
+        from okto_pulse.core.kg.interfaces import get_kg_registry
+
+        def inspect():
+            resolver = resolve_canonical_bug_node_read_port()
+            if not isinstance(resolver, CanonicalBugNodeResolver):
+                return 'unavailable'
+            target = resolver.resolve_current(board_id=board_id, bug_id=work.bug_id)
+            if target is None:
+                return 'missing'
+            result = get_kg_registry().cypher_executor.execute_read_only(board_id,
+                "MATCH (n:Learning)-[:validates]->(b:Bug) WHERE n.id = $id AND b.id = $target "
+                "AND n.source_artifact_ref = $ref AND n.graph_layer = 'canonical' "
+                "AND b.graph_layer = 'canonical' "
+                "AND (n.superseded_by IS NULL OR n.superseded_by = '') "
+                "AND (b.superseded_by IS NULL OR b.superseded_by = '') RETURN DISTINCT n.id",
+                {'id': work.learning_id, 'target': target, 'ref': f'bug:{work.bug_id}'}, max_rows=2)
+            rows = result.get('rows')
+            if rows is None or result.get('truncated') or result.get('error'):
+                return 'unavailable'
+            if not rows:
+                return 'missing'
+            return 'present' if rows == [[work.learning_id]] else 'unavailable'
+
+        try:
+            return await run_blocking_graph_io(inspect, task_name='core.kg.learning_capture.inspect_projection')
+        except Exception:
+            return 'unavailable'
+
     async def persist_authored_learning(self, board_id: str, bug_id: str, selection, *, raise_failures=False) -> bool:
         """Materialize the selected durable authorship through the same coordinator.
 
@@ -791,6 +824,27 @@ def open_cognitive_closeout_pending(
     return int(materialized.item_count)
 
 
+def _capture_work_owned_by_worker(item, worker_actor_id):
+    return (item.updated_by_agent_id in (None, worker_actor_id)
+            and not (item.reason_code or item.justification or item.actor or item.revisit_at))
+
+
+def recoverable_capture_projection(item, worker_actor_id):
+    """Only this worker's projection receipt is eligible for automatic repair."""
+    from okto_pulse.core.domain.learning_materialization_work import parse_learning_capture_work_ref
+    if (item.status != CognitiveItemStatus.CONSOLIDATED.value
+            or item.updated_by_agent_id != worker_actor_id
+            or item.outcome_type != CognitivePendingOutcomeType.CANDIDATE_CREATED.value
+            or item.reason != 'authored_capture_materialized'
+            or not _capture_work_owned_by_worker(item, worker_actor_id)):
+        return False
+    try:
+        work = parse_learning_capture_work_ref(item.source_ref)
+    except ValueError:
+        return False
+    return work is not None and item.evidence_refs == (f'kg:{work.learning_id}',)
+
+
 async def drain_cognitive_closeout_pending(
     relational_scope_factory,
     board_id: str,
@@ -800,6 +854,7 @@ async def drain_cognitive_closeout_pending(
     persister: CognitiveCandidatePersister | None = None,
     agent_id: str = "cognitive_closeout_worker",
     kg_generation_id: str | None = None,
+    recovery_item_ids: frozenset[str] = frozenset(),
 ) -> list[CloseoutResult]:
     """The dedicated cognitive worker: drains PENDING ledger items, runs the
     closeout OUTSIDE the event drain, and advances the SAME ledger
@@ -821,6 +876,7 @@ async def drain_cognitive_closeout_pending(
         item for item in store.list_items(board_id, gen)
         if item.status in (CognitiveItemStatus.PENDING.value,
                            CognitiveItemStatus.IN_PROGRESS.value)
+        or (item.item_id in recovery_item_ids and recoverable_capture_projection(item, agent_id))
     ]
     results: list[CloseoutResult] = []
     for item in pending:
@@ -837,8 +893,25 @@ async def drain_cognitive_closeout_pending(
             # Preserve legacy debt, reason and holds verbatim. Its absence of
             # authored work is not permission to infer Learning or waive it.
             continue
-        store.update_item(board_id=board_id, kg_generation_id=gen, item_id=item.item_id,
-            new_status=CognitiveItemStatus.IN_PROGRESS.value, updated_by_agent_id=agent_id)
+        if capture_work is not None and not _capture_work_owned_by_worker(item, agent_id):
+            continue
+        if item.status == CognitiveItemStatus.CONSOLIDATED.value:
+            presence = await persister.inspect_authored_learning(board_id, capture_work)
+            if presence == 'present':
+                continue
+            if presence == 'unavailable':
+                changed = store.update_item(board_id=board_id, kg_generation_id=gen, item_id=item.item_id,
+                    new_status=CognitiveItemStatus.PENDING.value, updated_by_agent_id=agent_id,
+                    reason='learning_capture_projection_unavailable', expected_item=item)
+                if changed is not None:
+                    results.append(CloseoutResult(item.source_ref, item.artifact_type,
+                        CloseoutOutcome.MATERIALIZATION_PENDING.value, detail='learning_capture_projection_unavailable'))
+                continue
+        working_item = store.update_item(board_id=board_id, kg_generation_id=gen, item_id=item.item_id,
+            new_status=CognitiveItemStatus.IN_PROGRESS.value, updated_by_agent_id=agent_id,
+            **({'expected_item': item} if capture_work is not None else {}))
+        if capture_work is not None and working_item is None:
+            continue
         if capture_work is not None:
             from okto_pulse.core.application.learning_materialization_worker import materialize_capture_work
             attempt = await materialize_capture_work(relational_scope_factory,
@@ -849,7 +922,7 @@ async def drain_cognitive_closeout_pending(
             new_status, outcome_type = _LEDGER_STATUS[result.outcome]
             store.update_item(board_id=board_id, kg_generation_id=gen, item_id=item.item_id,
                 new_status=new_status, updated_by_agent_id=agent_id, outcome_type=outcome_type,
-                reason=result.detail, evidence_refs=result.persisted_refs or None)
+                reason=result.detail, evidence_refs=result.persisted_refs or None, expected_item=working_item)
             results.append(result)
             continue
         try:

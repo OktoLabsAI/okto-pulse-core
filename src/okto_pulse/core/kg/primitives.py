@@ -4508,6 +4508,7 @@ async def commit_consolidation(
     ):
         from okto_pulse.core.ports.kg_cognitive_source import (
             CognitiveSourceError,
+            CognitiveSourceUnavailable,
             require_cognitive_source_store,
         )
 
@@ -4530,6 +4531,7 @@ async def commit_consolidation(
                 "kg_cognitive_source_unavailable",
                 "cognitive durable-source adapter is unavailable; graph "
                 "commit was rejected before its first write.",
+                retryable=isinstance(exc, CognitiveSourceUnavailable),
                 session_id=req.session_id,
                 details={
                     "board_id": session.board_id,
@@ -5753,6 +5755,7 @@ async def _append_cognitive_source_records(
     from okto_pulse.core.ports.kg_cognitive_source import (
         CognitiveSourceError,
         CognitiveSourceRecord,
+        CognitiveSourceUnavailable,
         require_cognitive_source_store,
     )
 
@@ -5828,6 +5831,7 @@ async def _append_cognitive_source_records(
             "idempotent per (node_id, generation, source_revision), while "
             "divergent replays "
             "are rejected as integrity conflicts.",
+            retryable=isinstance(exc, CognitiveSourceUnavailable),
             session_id=session_id,
             details={
                 "board_id": board_id,

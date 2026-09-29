@@ -9,7 +9,7 @@ from okto_pulse.core.ports.bug_cognitive_context import (
     resolve_bug_cognitive_context_assembler, resolve_canonical_bug_node_read_port,
 )
 from okto_pulse.core.ports.kg_cognitive_source import (
-    HistoricalCognitiveSourceReader, require_cognitive_source_store,
+    CognitiveSourceUnavailable, HistoricalCognitiveSourceReader, require_cognitive_source_store,
 )
 from okto_pulse.core.ports.learning_capture import validate_learning_capture_payload
 
@@ -65,6 +65,8 @@ async def materialize_capture_work(scope_factory, *, board_id, work, fingerprint
             raise_failures=True)
         return (CaptureMaterializationAttempt('persisted', 'authored_capture_materialized')
             if confirmed else pending('learning_capture_projection_not_confirmed'))
+    except CognitiveSourceUnavailable as exc:
+        return pending(exc.failure_reason)
     except (GuardedWriteError, KGPrimitiveError) as exc:
         return pending(exc.code) if exc.retryable else failed(exc.code)
     except (OSError, TimeoutError, ConnectionError) as exc:

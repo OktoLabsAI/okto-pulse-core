@@ -98,6 +98,13 @@ class CognitiveSourceError(Exception):
         super().__init__(f"{failure_reason}{(' [' + detail + ']') if detail else ''}")
 
 
+class CognitiveSourceUnavailable(CognitiveSourceError):
+    """Edition-classified technical I/O failure; retry after recovery.
+
+    This never represents an integrity, scope or immutable-revision conflict.
+    """
+
+
 class CognitiveSourceConflict(CognitiveSourceError):
     """Immutable replay conflict for one scoped semantic revision key.
 

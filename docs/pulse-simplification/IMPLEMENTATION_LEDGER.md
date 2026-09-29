@@ -5,10 +5,11 @@
 Iniciativa **incompleta; retomada explicitamente autorizada em 2026-09-23**.
 O usuário revogou a pausa e pediu execução até o final, sem parar em milestones.
 Frente atual (2026-09-29): F6/KG §7.5, reconciliação histórica de Learning.
-Último par enviado: Coree96c33b9/Community9ca5b1a9. Captura, binding em
+Último par enviado: Corec4acdbc7/Community0a658a84. Captura, binding em
 task validation, autoria conjunta, REST/MCP/UI/Delivery, policy/preview e
-materialização automática via outbox/worker foram enviados em incrementos
-delimitados. Proteção de holds mistos em validação final neste WIP.
+materialização automática via outbox/worker e proteção de holds mistos foram
+enviados em incrementos delimitados. Recuperação de projeção validada abaixo,
+com commit/push em finalização.
 Recuperação/upgrade históricos, reuso/supersedência e demais itens F6 pendem.
 Detalhes, limites e handles ficam no fim deste ledger.
 
@@ -95,6 +96,91 @@ Ruff F/E9 e diff --check passaram nos arquivos alterados. Sem processos ativos
 desta rodada. Pronto para commit/push; não promover KG7.5/F6/entrega global.
 Continuidade: provar recuperação autoritativa e restauração da obrigação de
 materializar após rebuild, além de reconciliar apenas o R7 técnico demonstrado.
+
+Commits c4acdbc7/0a658a84 enviados com pushes0. Continuação KG7.3/7.5:
+o worker só seleciona pending/in_progress, enquanto a fila preserva terminais
+inclusive entre gerações quando o hash não mudou. Portanto reentregar o evento
+não é, por si, recuperação de uma projeção perdida. Novo teste descartável
+test_learning_materialization_recovery.py cobre perda do nó/aresta após
+materialização, preservando a autoria SQL e sem nova submissão. O teste simula
+o efeito da perda, não qualifica o rebuild completo. Prova do par instalado
+provenance-learning-materialization-recovery-repro é byte-identical.
+Reprodução em execução; nenhum Python do pacote alterado nesta etapa ainda.
+
+Reprodução30453 terminou1:2fail/52.33s, worker processava0 após perda do nó ou
+da aresta. WIP implementa inspeção somente dos receipts produzidos pelo próprio
+worker (captura tipada, outcome/ref exatos e sem metadata de decisão humana).
+Lote padrão32, rotação entre captures e dedup entre gerações limitam probes.
+Presença é leitura; ausência reusa o materializador governado e sua revalidação
+da fonte/evidências/binding. Indisponibilidade é pendência, não ausência provada.
+Atualização condicional compara item e registro completo dentro do callback
+atômico do adaptador; mudanças humanas/concomitantes não são sobrescritas.
+Metadata humana em itens pending também impede processamento automático.
+Testes de recuperação, preservação de decisões, corrida entre stores e justiça
+do lote adicionados. Ruff F/E9 passou. Builds recovery-r1 ambos0, pip em curso;
+aguardar terminal e provar par antes dos testes. Nenhum rebuild/dado real usado.
+
+Pip3615 terminou0; provenance-recovery-r1 confirmou837/900+363/448
+byte-identical. Campanhas ativas: Core37495, Community72951, F1623435.
+Não editar Python/payload até os três terminais. Logs/JUnit têm prefixo
+learning-materialization-recovery-r1; runner validation inclui filas legadas,
+coordenação e dedup entre gerações, além dos casos novos. Depois: inspecionar
+falhas se houver, matrizes README/prova/F16 finais, acceptance e commit/push.
+
+Core37495 terminou0:54pass/11.15s. F1623435 terminou1 só por README,
+findings[]/oitoZERO. Community72951 ainda executa; dois casos de perda e os
+casos iniciais passaram até agora, sem resultado final. Inspeção de falhas
+transitórias identificou hipótese crítica no mesmo requisito de recuperação:
+CommunitySqlAlchemyCognitiveSourceStore._read_scoped_history deixa exceção SQL
+operacional escapar sem classificação pública; materialize_capture_work trata
+exceção desconhecida como failed permanente. Após esta campanha, reproduzir
+indisponibilidade da leitura e distinguir falha técnica de integridade antes
+de fechar a recuperação. Não importar SQLAlchemy no Core para tratar isso.
+
+Reprodução source-outage30322 terminou1:1fail operacional/1pass integridade,
+12.79s. Teste novo injeta falha operacional na leitura concreta do adapter,
+com captura/evento/fila reais descartáveis; confirma ausência de retry.
+Também foi acrescentado caso de append transitório com compensação e retry;
+64422 executa a reprodução completa (três casos), sem mudar o pacote instalado.
+72951 ainda executa recovery-r1. Aguardar ambos antes de classificar erros em
+CognitiveSourceUnavailable público e propagá-los como retryable pelo commit.
+Conflitos de fingerprint/escopo/revisão permanecem falhas de integridade.
+
+Community72951 terminou0:23pass/390.10s. Reprodução64422 terminou1:
+2fail (leitura e append operacionais),1pass integridade/32.04s. Implementada
+CognitiveSourceUnavailable no port público; Community classifica somente
+OperationalError/InterfaceError como indisponibilidade técnica. Core não
+importa ORM: worker mantém pending e commit propaga retryable após compensar.
+Demais erros e conflitos continuam fechados. Teste de probe gráfico indisponível
+também exige ausência de tentativa de reparo e recuperação posterior sem revisão
+nova. Builds source-outage-r1 ambos0; pip76576 em curso. Esta campanha foca
+classificação, commit/compensação e retry após a campanha ampla recovery-r1.
+
+Pip76576 terminou0; provenance-source-outage-r1 confirmou837/900+363/448
+byte-identical. Ativos: Core5111, Community49192 (quatro cenários de falha),
+F1652075. Nenhuma edição de payload durante a execução. Finalização deve usar
+o relatório source-outage-r1 para READMEs, rebuild/prova/F16 e acceptance único
+de recuperação, com as evidências recovery-r1 e das reproduções preservadas.
+
+Core5111 terminou0:29pass/190.16s. Community49192 terminou0:4pass/75.21s,
+incluindo compensação de append e recuperação sem nova autoria. F1652075
+terminou1 somente por README, findings[]/oitoZERO. READMEs regenerados após
+os terminais. Builds source-outage-final ambos0; instalação final em curso.
+Não somar campanhas sobrepostas como número de casos distintos. Próximo:
+prova final, F16, acceptance único e commit/push deste incremento integrado.
+
+Finalização: pip86038 terminou0; provenance-learning-materialization-source-outage-final
+confirmou837 Python/900 payload Core e363/448 Community byte-identical.
+F16final33987 terminou0: findings[]/documentation_findings[] e oito budgetsZERO.
+record_learning_materialization_recovery.py gerou acceptance-learning-materialization-recovery.json,
+selando campanhas54/23 de recuperação e29/4 de falhas transitórias, sem somar
+casos sobrepostos. Ruff F/E9 passou nos arquivos alterados. Nenhuma campanha
+permanece ativa; frontend inalterado. Recuperação simulada de nó/aresta não
+qualifica rebuild integral, upgrade histórico ou entrega F6.
+Próxima dependência KG7.5: reproduzir se o reparo autoritativo da captura fecha
+a dívida R7 exclusivamente técnica da mesma identidade. O hook histórico atual
+é chamado pelo consolidator determinístico, não pelo materializador autorado.
+Não ampliar a manutenção a outros holds nem antecipar fechamento sem prova.
 
 Continuacao do worker em andamento: CanonicalBugNodeResolver, capacidade
 publica implementada por CommunityCanonicalBugNodeReader, seleciona uma unica

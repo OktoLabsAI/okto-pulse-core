@@ -2478,6 +2478,7 @@ class CognitiveConsolidationItemStore:
         actor: str | None = None,
         revisit_at: str | None = None,
         clear_readiness_metadata: bool = False,
+        expected_item: CognitiveConsolidationItem | None = None,
     ) -> CognitiveConsolidationItem | None:
         """Single-item atomic update per br_d544da65 + FR3 + AC6.
 
@@ -2498,6 +2499,14 @@ class CognitiveConsolidationItemStore:
             record = self.load_record(board_id, kg_generation_id)
             if record is None:
                 return None
+            original_record = None
+            if expected_item is not None:
+                from copy import deepcopy
+                revisioned_replace = getattr(type(self.artifact_store), 'replace_json_with_revision', None)
+                if (not callable(revisioned_replace)
+                        or revisioned_replace is RebuildAuditArtifactStore.replace_json_with_revision):
+                    return None
+                original_record = deepcopy(record)
             items_raw = record.get("items")
             if items_raw is None:
                 # Legacy aggregate-only — synthesize items first so the
@@ -2544,6 +2553,8 @@ class CognitiveConsolidationItemStore:
                 else []
             )
             existing = items_raw[target_idx]
+            if expected_item is not None and CognitiveConsolidationItem.from_dict(existing) != expected_item:
+                return None
             src_ref = str(existing.get("source_ref", ""))
             items_raw[target_idx] = {
                 **existing,
@@ -2605,10 +2616,18 @@ class CognitiveConsolidationItemStore:
             record["pending_refs"] = active_refs
 
             key = self._record_key(board_id, kg_generation_id)
-            self._replace_record_with_overlay_revision(
-                key=key,
-                transform=lambda _current: record,
-            )
+            class ConcurrentItemChange(Exception):
+                pass
+
+            def transform(current):
+                if expected_item is not None and current != original_record:
+                    raise ConcurrentItemChange()
+                return record
+
+            try:
+                self._replace_record_with_overlay_revision(key=key, transform=transform)
+            except ConcurrentItemChange:
+                return None
 
             # NOTE (Codex audit val_036cb81e):
             # update_item MUST NOT emit on

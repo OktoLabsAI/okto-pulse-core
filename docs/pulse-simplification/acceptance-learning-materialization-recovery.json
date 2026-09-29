@@ -1,0 +1,154 @@
+{
+  "scope": "F6/KG7.3 and KG7.5 automatic recovery of admitted authored projections",
+  "suites": {
+    "learning-materialization-recovery-r1-core": {
+      "tests": 54,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "learning-materialization-recovery-r1-community": {
+      "tests": 23,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "learning-materialization-source-outage-r1-core": {
+      "tests": 29,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "learning-materialization-source-outage-r1-community": {
+      "tests": 4,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    }
+  },
+  "budgets": [
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "import_boundary_baseline",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every import_boundary_baseline allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "singleton_baseline",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every singleton_baseline allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "dependency_temporary_exceptions",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every dependency_temporary_exceptions allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "graph_runtime_compatibility",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every graph_runtime_compatibility allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "rebuild_artifact_compatibility",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every rebuild_artifact_compatibility allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "community_private_reach_ins",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every community_private_reach_ins allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "community_adapter_bridges",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every community_adapter_bridges allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "af35_relational_residue",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every af35_relational_residue allowance before F16 completion."
+    }
+  ],
+  "verified": [
+    "Projection loss previously remained invisible after the worker marked capture work consolidated.",
+    "The worker fairly inspects a bounded batch of its own capture receipts, deduplicating across generations.",
+    "A lost Learning node or validates edge is restored through governed source/evidence/binding revalidation without new authorship or source revision.",
+    "Human decisions and readiness metadata are not adopted by automatic recovery.",
+    "Conditional item updates compare the item and full record inside the edition atomic callback, preserving concurrent changes from another store instance.",
+    "Operational/connection failures are classified by Community through the public CognitiveSourceUnavailable error; Core imports no ORM.",
+    "Transient read failure stays pending; transient append is compensated and retried successfully.",
+    "Fingerprint integrity failure remains failed and is not automatically retried.",
+    "An unavailable graph probe does not attempt a repair; recovery later confirms the same literal source history."
+  ],
+  "limits": [
+    "Projection loss is simulated in disposable SQL/Grafx integration; this does not qualify the complete rebuild runtime.",
+    "Unrelated completion gates and graph health use explicit inherited fixtures.",
+    "The transient SQL tests inject provider failures into the real adapter path; they are not a live database outage exercise.",
+    "Recovery-r1 is the broad worker/writer campaign. Source-outage-r1 qualifies the later error-classification change and commit coordinator. Campaign counts overlap.",
+    "Only generated README matrices changed after source-outage-r1; final pair proof and F16 passed.",
+    "Historical R7 recovery/upgrade, explicit reuse/supersede, final installed admission and the full plan remain incomplete.",
+    "No real data changed. Frontend and global acceptance inventory unchanged."
+  ],
+  "sha256": {
+    "PULSE_REFACTOR/.validation-v040/closure-learning-materialization-source-outage-final.json": "47e7a31576afb8310ac7e497024dcdd27b231393dd3140f3bc263da4e05fbaa6",
+    "PULSE_REFACTOR/.validation-v040/learning-materialization-recovery-r1-core.xml": "d93d28bdcb7ddbe30ee0fa1a931793fa86d966e7ef124b93dddeea48a1b3c576",
+    "PULSE_REFACTOR/.validation-v040/learning-materialization-recovery-r1-community.xml": "5607a895bc1f73d0cb5af00faee62432d98e17cf7cc934a3758b066317f6d65f",
+    "PULSE_REFACTOR/.validation-v040/learning-materialization-source-outage-r1-core.xml": "99547b4ffeceabced61f3d2476fd59acbd66c2010ddd6bf2a6fb4a65b2f1271c",
+    "PULSE_REFACTOR/.validation-v040/learning-materialization-source-outage-r1-community.xml": "4e6c475a0d49843e21d6983ef91e8906d5a7a9279069539dc10092e5d0bd0f56",
+    "PULSE_REFACTOR/.validation-v040/provenance-learning-materialization-recovery-repro.json": "6eeaf89aca0ae2a093b29b00687e37226a599cd27464f16e5fb4f9c619831a05",
+    "PULSE_REFACTOR/.validation-v040/learning-materialization-recovery-repro-community.xml": "286462646dea4ef51d0ae3351aaf7ca6f808b65ebee29620cbe527125bbcb2a8",
+    "PULSE_REFACTOR/.validation-v040/learning-materialization-source-outage-repro-community.xml": "3cba3d6f5ba524f63b39557236233064e9067782bb6bb59f96e66d8f219b44e5",
+    "PULSE_REFACTOR/.validation-v040/learning-materialization-source-outage-append-repro-community.xml": "9fa016a16b6be10d71658cfe43db4427606c2de8666544a3279e8a3f557b0324",
+    "PULSE_REFACTOR/.validation-v040/provenance-learning-materialization-recovery-r1.json": "624d147647e4185da7f79c8a3ed6a9fd5d97a2ca23a9f5c6a760f7b616b8922c",
+    "PULSE_REFACTOR/.validation-v040/provenance-learning-materialization-source-outage-r1.json": "ecfa4f1637e64b3302a9d83338cb5df7e05bc7b213b6b07e4f56c397107130ae",
+    "PULSE_REFACTOR/.validation-v040/provenance-learning-materialization-source-outage-final.json": "2ffcb4d9cc1b912fa1ae246469e6f023b6d6992f43f932497e28f7017a7a720c",
+    "PULSE_REFACTOR/.validation-v040/run_learning_materialization_recovery.py": "d787d66953cec116b8fcfad1aa3f5717a300e2c4b816a371ec6c2b0b1f71f0f8",
+    "PULSE_REFACTOR/.validation-v040/run_learning_materialization_recovery_validation.py": "b5112fa52b53fd35160149448f9d2b4b4df83355a1ec542b49d352b9185bdbe4",
+    "PULSE_REFACTOR/.validation-v040/run_learning_materialization_source_outage.py": "437147a10ffa9aba408ee6e4cd45fab03a77c5449a66b97291730e4f7f6cf636",
+    "PULSE_REFACTOR/.validation-v040/run_learning_materialization_source_outage_validation.py": "80d5f14ceb51b010873254d13532dee693be222be2c9f2abc33cedc6a8f79800",
+    "PULSE_REFACTOR/.validation-v040/closure-learning-materialization-recovery-r1.json": "4b7b9d2f57c3aa16dfd7cce3b0bc8076be9f5984d818ec10f59227d70c681ec3",
+    "PULSE_REFACTOR/.validation-v040/closure-learning-materialization-source-outage-r1.json": "466d905d865b17ea699e1fd114db4fa3f775c024c4e4e1bff862901f9f4cd8f3",
+    "okto_labs_pulse_core/src/okto_pulse/core/kg/cognitive_closeout_production.py": "af05817db38ba7d026aaa2f22730dc715857a0b4dd400524c67b64214f44fa56",
+    "okto_labs_pulse_core/src/okto_pulse/core/kg/workers/cognitive_closeout.py": "21f793b664c0232c745b1503f553441699f0af069eff72283308251b81683042",
+    "okto_labs_pulse_core/src/okto_pulse/core/kg/rebuild_audit.py": "ae70d5c0b0e58ee33d420d20444d8e37116dfd9d8f3fb4b65411d43a0727b7d5",
+    "okto_labs_pulse_core/src/okto_pulse/core/kg/primitives.py": "98142afce662844ab50a91a4aec1d16b84403af4b684169df63121c631aca8fe",
+    "okto_labs_pulse_core/src/okto_pulse/core/application/learning_materialization_worker.py": "2c890b4893aca14aba3b1d9f80b1e9e8f4e9a921772a3b580e1c8873ce1e4293",
+    "okto_labs_pulse_core/src/okto_pulse/core/ports/kg_cognitive_source.py": "2f10a5082192c858e2010233a82edd4965cb4e02ac18baaa858fba4719d56ca2",
+    "okto_labs_pulse_core/tests/test_learning_recovery_batch.py": "df952c4df733aac495963e5e25c454588569e8a2c6861d43bbac572cf1e9e04d",
+    "okto_labs_pulse_community/src/okto_pulse/community/adapters/sqlalchemy_kg_cognitive_source.py": "cba2a50e50e6ad95af297ab425eb3d9eec92a6cda0261129313f6a8b797dfed1",
+    "okto_labs_pulse_community/tests/test_learning_materialization_recovery.py": "017a2d13ef489bbef4bff87838e10f723fdc4886092850499b351551da4c7757",
+    "okto_labs_pulse_community/tests/test_capture_work_conditional_update.py": "24313ffb35277b4d46e7a3325626079a7e175a58ad42bb86d2e58a903b672f51",
+    "okto_labs_pulse_community/tests/test_learning_materialization_source_outage.py": "452f33f653118681a7f44c84333c6ac84381b05b8aada92aa0e8023753ffff4b"
+  }
+}
