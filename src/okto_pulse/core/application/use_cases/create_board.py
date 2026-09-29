@@ -110,7 +110,7 @@ class CreateBoardUseCase:
             # transaction. An explicit false is also an override and could
             # replace a true template value; executors cannot author either.
             authored = settings.model_dump(exclude_unset=True)
-            if "skip_cognitive_consolidation" in authored:
+            if {"skip_cognitive_consolidation", "bug_learning_closeout"}.intersection(authored):
                 raise PermissionDeniedError(
                     "Cognitive policy overrides require an authenticated human."
                 )

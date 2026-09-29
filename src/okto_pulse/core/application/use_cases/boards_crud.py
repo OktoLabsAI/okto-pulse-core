@@ -346,6 +346,7 @@ class UpdateBoardUseCase:
                 for key, default in (
                     ("skip_cognitive_consolidation", False),
                     ("cognitive_readiness_policy", "advisory"),
+                    ("bug_learning_closeout", "advisory"),
                 )
             ):
                 raise PermissionDeniedError(

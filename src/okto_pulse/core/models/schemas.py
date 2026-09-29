@@ -4468,6 +4468,9 @@ class BoardSettings(BaseModel):
     skip_cognitive_consolidation: bool = (
         False  # if True, done closeout bypasses active cognitive pending blockers
     )
+    # KG §7.4: human policy for durable capture, independent of graph readiness.
+    # Missing legacy values remain advisory; no upgrade activates blocking.
+    bug_learning_closeout: Literal["advisory", "blocking"] = "advisory"
     allow_agent_self_answering: bool = (
         False  # explicit opt-in that permits same-principal Q&A answers
     )

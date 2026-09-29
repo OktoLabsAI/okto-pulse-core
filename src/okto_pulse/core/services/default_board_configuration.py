@@ -84,6 +84,7 @@ _DEFAULT_SCOPE = "global"
 _COGNITIVE_POLICY_DEFAULTS = {
     "skip_cognitive_consolidation": False,
     "cognitive_readiness_policy": "advisory",
+    "bug_learning_closeout": "advisory",
 }
 _ALLOWED_STATUSES = ("draft", "active", "inactive")
 DEFAULT_SPEC_CHECKLIST_MODE = ChecklistMode.ADVISORY.value
@@ -791,6 +792,7 @@ class DefaultBoardConfigurationService:
         previous = (active.settings_payload or {}) if active else {}
         if actor_kind != "human":
             supplied.setdefault("skip_cognitive_consolidation", previous.get("skip_cognitive_consolidation", False))
+            supplied.setdefault("bug_learning_closeout", previous.get("bug_learning_closeout", "advisory"))
         supplied.setdefault("reviewer_separation_mode", "enforce")
         supplied.setdefault("code_traceability", {"mode": "advisory"})
         validated = self._validate_settings(supplied)

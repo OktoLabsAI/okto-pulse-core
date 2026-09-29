@@ -234,6 +234,15 @@ okto_pulse_create_card(
 
 ### Authored Learnings for a Bug
 
+`board.settings.bug_learning_closeout` is human-controlled in Board Settings and
+default Board configuration. Omission resolves to `advisory`: no Learning is
+required for completion. In `blocking`, submit a valid durable capture with the
+report or select one for task validation. Empty queues, historical presence and
+provider failures are not proof. This policy does not replace legacy cognitive
+holds or other completion gates, and `skip_cognitive_consolidation` cannot waive
+it. Transition previews expose `valid_durable_learning_capture` as request input;
+they do not materialize the graph or approve a capture.
+
 The execution-report dialog can save a new Learning together with the report,
 including an optional final Delivery batch. For MCP `okto_pulse_move_card`, use
 `learning_submission` with a stable `capture_id`, the initial context's

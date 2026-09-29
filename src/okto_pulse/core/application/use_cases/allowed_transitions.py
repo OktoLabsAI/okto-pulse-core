@@ -474,6 +474,18 @@ class ListAllowedTransitionsUseCase:
         transitions = allowed_transitions_for_status(
             entity_type, current_status, card_type=card_type
         )
+        if entity_type == "card" and card_type == "bug":
+            from okto_pulse.core.domain.bug_learning_policy import (
+                LEARNING_CAPTURE_PRECONDITION, requires_bug_learning_capture,
+            )
+
+            if requires_bug_learning_capture(board.settings, card_type):
+                # Request-local input, like the report: absence in a read-only
+                # preview must not prevent opening the compound submission UI.
+                transitions = [replace(
+                    transition,
+                    preconditions=(*transition.preconditions, LEARNING_CAPTURE_PRECONDITION),
+                ) if transition.to_status == "done" else transition for transition in transitions]
         if entity_id:
             permissions = await resolve_actor_permissions(
                 actor,

@@ -5,11 +5,47 @@
 Iniciativa **incompleta; retomada explicitamente autorizada em 2026-09-23**.
 O usuário revogou a pausa e pediu execução até o final, sem parar em milestones.
 Frente atual (2026-09-29): F6/KG §7, captura durável de Learning e integração
-ao fechamento de Bug. Último par enviado: Core27744596/Community62ce6f59.
-Writer de binding opcional em task validation, REST/MCP e seleção no frontend
-estão em validação; detalhes e handles ficam no fim deste ledger. A captura
-independente e seu histórico já estão publicados. Policy/preview, autoria
-conjunta, materialização e recuperação ainda não estão concluídos.
+ao fechamento de Bug. Último par enviado: Core41125cf5/Community8f403b44.
+Writer de binding opcional em task validation e autoria conjunta de relato+
+Learning foram validados/enviados, incluindo REST/MCP/UI/Delivery. Policy e
+preview estão em implementação; materialização e recuperação seguem pendentes.
+Detalhes, limites e handles ficam no fim deste ledger.
+
+### Rodada atual: policy KG7.4 (WIP)
+
+Autoria conjunta enviada com pushes0: Core41125cf5/Community8f403b44. Em
+2026-09-29 foi iniciada a policy humana bug_learning_closeout advisory/blocking,
+separada dos controles legados; omissao advisory, valor invalido recusado,
+agente nao pode alterar/limpar/ativar/desativar a policy via Board/template.
+Done direto exige submissao conjunta; task validation exige selecao revalidada
+para completar. Ausencia com parecer aprovado segue a consequencia existente
+Rejected por completion gate. Preview expoe precondicao de entrada, sem bloquear
+abertura do formulario nem escrever no store. Nenhuma captura/projecao aprova
+implementacao ou dispensa holds legados. Materializador ainda pendente.
+
+Frontend Settings23 testes passaram; build19451 e lint91299 terminais0,
+331 warnings sem aumento. SPA79arquivos tree93195ba284cb4587c0097c4282a51553dccb31cea5713f8873cb2a45eb944270
+sincronizada/verificada. Builds bug-learning-policy ambos0; pip82318 terminal0;
+provenance-bug-learning-policy confirmou832/895 Core+363/448 Community antes
+das campanhas. Core78954, Community5334 e F1632325 em andamento; aguardar
+terminais, sem alterar produto Python/payload enquanto validam. Novos testes
+SQL usam agregado dos gates independentes como fixture explicita. Nao promover
+inventario global nem declarar F6 ou plano completo por este incremento.
+
+Terminais: Core78954=118 passed/179.34s, Community5334=86 passed/185.93s.
+F1632325 terminou1 somente por matriz README, findings=[]/8ZERO; READMEs
+regenerados oficialmente depois dos terminais. Texto UI deixou de afirmar
+opcionalidade universal; seletor usa Clear Learning selection. UI25875=114
+passed/47.87s, build34760=0, SPAfinal53327b2fab6109bee324e0795a09bea41424e74a68553dc1f4c2be19fad78013
+79arquivos sincronizados/verificados e staged para gate de distribuicao.
+Builds finais ambos0, pip56717=0, provenance-final832/895+363/448 byte-identical.
+Corefinal53338=8 passed/6.41s; Communityfinal81969=19 passed/17.97s;
+F16final96733=0/8ZERO. record_bug_learning_policy.py executado e gerou
+acceptance-bug-learning-policy.json, incluindo hashes e limites. Frontend desta
+rodada tem resultados de tool/handles, sem JUnit separado; nao inventar log.
+Nenhum processo desta rodada permanece ativo. Pronto para commit/push pareado.
+Proxima etapa continua materializacao/reabertura/recuperacao KG7.3/7.5; sem pausa
+em milestone, sem migracao real, release ou promocao do inventario global.
 Escopo permanece o pacote v1.3 e seus critérios existentes; acrescentar trabalho
 somente diante de problema reproduzido ou gap crítico, com justificativa.
 Não parar nos milestones nem confundir os incrementos abaixo com aceite global.

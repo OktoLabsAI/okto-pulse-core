@@ -5045,6 +5045,16 @@ class CardService:
                 card=card,
                 board=board,
             )
+            from okto_pulse.core.domain.bug_learning_policy import (
+                LEARNING_CAPTURE_REQUIRED, requires_bug_learning_capture,
+            )
+
+            if requires_bug_learning_capture(board.settings if board else None, card.card_type) and learning_record is None:
+                gate_failures = (*gate_failures, CompletionGateFailure(
+                    code=LEARNING_CAPTURE_REQUIRED,
+                    summary="A valid durable Learning capture is required to complete this Bug.",
+                    reason_codes=(LEARNING_CAPTURE_REQUIRED,),
+                ))
         decision = decide_card_completion(
             validation_outcome=outcome,
             gate_failures=gate_failures,
@@ -6406,6 +6416,19 @@ class CardService:
         board = await _application_get(self.db, "board", card.board_id)
         board_settings = board.settings or {} if board else {}
         skip_global = board_settings.get("skip_test_coverage_global", False)
+
+        if data.status is CardStatus.DONE:
+            from okto_pulse.core.domain.bug_learning_policy import (
+                LEARNING_CAPTURE_REQUIRED, requires_bug_learning_capture,
+            )
+
+            if requires_bug_learning_capture(board_settings, card_type_value) and data.learning_submission is None:
+                raise CardOperationError(
+                    LEARNING_CAPTURE_REQUIRED,
+                    "Submit a valid Learning with the Bug report, or select a saved capture during task validation.",
+                    remediation="submit_durable_learning_capture",
+                    facts={"card_id": card.id},
+                )
 
         # Block forward moves based on card_type and spec status.
         # Uses level comparison: spec must have reached the minimum required status.
