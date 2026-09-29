@@ -1,0 +1,130 @@
+{
+  "scope": "F6/KG7.2/7.3/7.6 scoped supersedence history and current applicability prerequisite",
+  "suites": {
+    "core": {
+      "passed": 107,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "community": {
+      "passed": 46,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0
+    }
+  },
+  "budgets": [
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "import_boundary_baseline",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every import_boundary_baseline allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "singleton_baseline",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every singleton_baseline allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "dependency_temporary_exceptions",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every dependency_temporary_exceptions allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "graph_runtime_compatibility",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every graph_runtime_compatibility allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "rebuild_artifact_compatibility",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every rebuild_artifact_compatibility allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "community_private_reach_ins",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every community_private_reach_ins allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "community_adapter_bridges",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every community_adapter_bridges allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "af35_relational_residue",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every af35_relational_residue allowance before F16 completion."
+    }
+  ],
+  "verified": [
+    "Public transactional history port reads the complete verified scoped identity, including staged revisions; SQL stays in the Community adapter.",
+    "A target scope reference requires exact historical capture, predecessor, unchanged target payload, claim revision and successor literal birth. Opaque references alone grant no authority.",
+    "Joint target/successor CAS commits or rolls back together in disposable SQLite; concurrent replacements have one winner without manufacturing a chain.",
+    "Later target curation cannot silently drop claim references; malformed, foreign or corrupt history fails closed.",
+    "Historical claims for distinct Bug source bases remain readable. Current applicability requires the current Done basis or exact server-owned closeout binding, not merely the Bug ID.",
+    "Real signed capture admission denies reuse/supersede of a target already replaced in the current source scope, preserves another Bug origin and permits explicit reassessment after a source change.",
+    "The reproduced overbroad Bug-only denial is retained as failing evidence and corrected under KG7.2/7.3, without rewriting history.",
+    "Final F16 has eight zero budgets and no documentation drift. Both installed package payloads match the working trees byte for byte."
+  ],
+  "limits": [
+    "Not full scoped supersedence materialization: no production writer emits target scope claims yet; graph mutation, compensation, replay/rebuild and public intent authoring remain pending.",
+    "Target/claim/successor literals are explicit test fixtures. The current-scope denial uses actual signed capture admission, but does not prove governed graph materialization or full lifecycle gates.",
+    "Closeout binding fixtures exercise historical applicability only. Existing closing writers still refuse supersede; no new transition authority is enabled.",
+    "The r2 Community campaign failed after 10 passes because the fixture lacked application persistence composition. The final fixture registers the concrete public-port provider and realm; product code was unchanged after r2.",
+    "r1 campaigns and reproduction are historical evidence, not additional distinct passed tests. PostgreSQL concurrency, full backend suites and installed release admission are not proved by this increment.",
+    "No frontend, public wire, real data, schema version or release changed. F6, K3/K4 and global plan acceptance remain incomplete."
+  ],
+  "sha256": {
+    "PULSE_REFACTOR/.validation-v040/closure-learning-scope-history-r3.json": "ee7bb1942890b875a6ea342ec497a574cefcb9cdd3e3fff0ca5fae765c426eb6",
+    "PULSE_REFACTOR/.validation-v040/learning-scope-history-r2-core.xml": "d02fba5fa820439acf92bb4821418941dc9d14c7e689ad929bb11aaf93013930",
+    "PULSE_REFACTOR/.validation-v040/learning-scope-history-r3-community.xml": "223de18ab102fc645edb7bf54ace85f3e232ea22139a04d96794a60eb006d308",
+    "PULSE_REFACTOR/.validation-v040/provenance-learning-scope-history-r1.json": "cbbf870257e47de7bbd68625caa10eea20586a3eceeb6e083cb6ad2ce9f24701",
+    "PULSE_REFACTOR/.validation-v040/provenance-learning-scope-history-r2.json": "1dac70965ddeb521ba376583c12d75201697e670a7f45d60d82d2469569f19e6",
+    "PULSE_REFACTOR/.validation-v040/provenance-learning-scope-history-r3.json": "ec3b604e2ff84d15e393dfb1e8902b1b65e2806d5b838cc6125821cb3dd41804",
+    "PULSE_REFACTOR/.validation-v040/learning-scope-history-r1-core.xml": "28d985af3d3bdddea7b783186d3e190a3d807d32c9254cc382fa1c2d9f70d0ab",
+    "PULSE_REFACTOR/.validation-v040/learning-scope-history-r1-community.xml": "86d1c082879b5d8e03829dea4ffb678798935c2a07a6fa9795bd24ea1d63c772",
+    "PULSE_REFACTOR/.validation-v040/learning-scope-history-r2-community.xml": "039bb9a387a356c3e20fd6f217a1d75c80ab75258011d6e033549306ead4a085",
+    "PULSE_REFACTOR/.validation-v040/scope-reassessment-repro.xml": "ad87d60321a76cf6986c723d3ba5c6d383bd321e1f94cd691352d17c32dd3b3f",
+    "PULSE_REFACTOR/.validation-v040/scope-reassessment-repro.log": "aefe26c6d3d69a6cec7c504d1291ae9f3bc3740402aac29ec4f9729998588624",
+    "PULSE_REFACTOR/.validation-v040/run_learning_scope_history.py": "833ba8ed651dffc57bbe529b3a4745aa98a0158ffb4f07fc67d9ac57a47db416",
+    "okto_labs_pulse_core/src/okto_pulse/core/ports/kg_cognitive_source.py": "453a5b502a870c268b37d801a9bce1906356b47be8db0df1647c1a81d8ba1bb4",
+    "okto_labs_pulse_core/src/okto_pulse/core/application/learning_capture.py": "8e02518eb1b991768ffe7ba0f3be6c095060c0018406e837154dd67f0ef655fd",
+    "okto_labs_pulse_core/src/okto_pulse/core/application/learning_supersedence.py": "9aa90aeb7c0b6e4c6621317408cf803d0b257cb27ed1089d6811cd7e86245c81",
+    "okto_labs_pulse_core/src/okto_pulse/core/domain/learning_supersedence.py": "b04bb985ebe4226766745f81cfb153d8d1c4cdcc2303e363ec25686704e8f22e",
+    "okto_labs_pulse_core/tests/test_learning_scope_history.py": "286be92e4ac9d76746a29aac029ad15d691f7e04b64f63766b03c2a2874ccb2d",
+    "okto_labs_pulse_community/src/okto_pulse/community/adapters/sqlalchemy_kg_cognitive_source.py": "d8ca517c9883ae7cbeed5cde7bc790247983034371458981a8d43a3ac7c2100d",
+    "okto_labs_pulse_community/tests/test_learning_scope_history.py": "61da379a522d626807b8e98de585bd7e1069fd87f87c29c0ecd85515e2f9daa4"
+  }
+}

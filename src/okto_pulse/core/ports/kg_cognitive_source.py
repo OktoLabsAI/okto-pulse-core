@@ -585,6 +585,23 @@ class HistoricalCognitiveSourceReader(Protocol):
 
 
 @runtime_checkable
+class TransactionalCognitiveHistoryReader(Protocol):
+    async def read_history_in_context(
+        self, context: object, *, board_id: str, node_id: str, generation: int,
+    ) -> tuple[CognitiveSourceRecord, ...]:
+        """Return all verified revisions of one identity in revision order.
+
+        Include staged writes in the caller UOW. Missing identity is an empty
+        tuple; wrong scope, any corrupt revision or unavailable storage fails.
+        Never truncate or return only the head: an omitted historical scope
+        replacement must not be erased by a later property-map revision.
+        This is neither semantic qualification nor a lock; writers still need
+        conditional append under their caller-owned transaction.
+        """
+        ...
+
+
+@runtime_checkable
 class FingerprintCognitiveSourceReader(Protocol):
     async def read_fingerprint_in_context(
         self, context: object, *, board_id: str, node_id: str, generation: int,

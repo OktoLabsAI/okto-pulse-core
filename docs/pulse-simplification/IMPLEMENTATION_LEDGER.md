@@ -2,10 +2,51 @@
 
 ## Estado para retomada
 
+Fechamento do incremento scope-history (2026-09-29): builds r2 ambos0,
+pip68956=0, provenance-r2 comprovou839/902 Core e363/448 Community byte-identical
+antes dos testes. Core59298=0:107pass/6.39s. Community31990=1:10pass/1falha de
+fixture sem application_persistence_port. Corrigida somente composição de teste
+com adapter real e realm local; nenhum guard relaxado. F16r2=1 só READMEs,
+regenerados oficialmente. Builds r3 ambos0, pip8207=0, provenance-r3 iguais
+byte-a-byte; Community60252=0:46pass/183.08s, F1638641=0:ok e oito budgets ZERO.
+Record exclusivo record_learning_scope_history.py executado após terminais,
+gerando acceptance-learning-scope-history.json e verificando que payloads r2/r3
+são idênticos. Ruff F/E9 passou. Não somar rodadas sobrepostas nem apagar a
+reprodução falha. Nenhuma campanha permanece em execução.
+
+Próximo trabalho permanece F6/KG7.6: integrar CAS conjunto de sucessor/claim no
+coordenador governado, mutação gráfica delimitada ao Bug com compensação,
+recuperação que não recrie vínculo substituído e qualificações de leitura/rebuild.
+O genérico supersede_node marca o alvo globalmente e não serve a esse escopo.
+GraphTransactionScope atualmente não tem remoção exata compensável de associação
+cognitiva; não usar namespace de projeção relacional para contornar isso.
+Definir a capacidade pública estreita e implementá-la somente no adapter Grafx,
+preservando outras origens e before-images; qualquer dialeto novo fica Community.
+Os readers de supersedence_chain e expansão semântica precisam respeitar escopo
+antes de expor novos vínculos, sem reinterpretar histórico v1. Não habilitar
+supersede em Done/wire/UI antes de coordenar esses caminhos. Produto/plano ainda
+incompletos; inventário76/33/137 permanece. Continuação autorizada sem pausa.
+
+Atualização 2026-09-29 — scope-history WIP: campanha r1 encerrada (handles já
+expirados; logs/JUnit finais): Core93 pass/6.08s, Community45 pass/174.52s.
+F16 r1 JSON completo: findings=[] e oito budgets ZERO; somente matrizes README
+divergentes, regeneradas pelo script oficial. Nenhum processo dessa campanha
+permanece ativo. Reprodução adicional scope-reassessment-repro.xml/log falhou
+como esperado: learning_capture_target_replaced_in_scope bloqueava autoria
+explícita atual por mera identidade do Bug, apesar de digest histórico distinto.
+KG7.2/7.3 exige vínculo Bug/versão/evidência e reavaliação após mudança/reabertura.
+Correção WIP delimita atualidade pela base Done exata ou binding exato da captura
+para essa conclusão; histórico preserva correções distintas do mesmo Bug.
+Bindings estruturais de supersede nos testes são fixtures: nenhum writer de
+fechamento foi habilitado por esse predicate. Testes SQL usam captura assinada
+real para a negação atual; claim/literal ainda são fixtures, não materialização
+governada. Novos builds/install/prova e campanhas r2 pendentes. Não promover F6
+nem inventário global. Sem frontend alterado, sem nova política/autoridade.
+
 Iniciativa **incompleta; retomada explicitamente autorizada em 2026-09-23**.
 O usuário revogou a pausa e pediu execução até o final, sem parar em milestones.
 Frente atual (2026-09-29): F6/KG §7.6, reuso/supersedência explícitos de Learning.
-Último par enviado: Coree8373889/Community346e6f45. Captura, binding em
+Último par enviado: Core12f197fd/Community6a1aaa84. Captura, binding em
 task validation, autoria conjunta, REST/MCP/UI/Delivery, policy/preview e
 materialização automática via outbox/worker e proteção de holds mistos foram
 enviados em incrementos delimitados. Recuperação de projeção validada/enviada.
@@ -508,6 +549,27 @@ posteriores em replay/curadoria. Arestas e recuperação devem respeitar origem
 coberta, mantendo as demais. Um recibo antigo não pode recriar associação já
 substituída. Essas são dependências de KG7.6, ainda não implementadas/qualificadas;
 não relaxar candidato/K4 nem declarar matriz global completa.
+
+Par12f197fd/6a1aaa84 enviado e limpo ao retomar; turno anterior foi progresso.
+WIP seguinte de KG7.6: porta TransactionalCognitiveHistoryReader retorna todas
+as revisões verificadas de uma identidade na UOW, inclusive staged, sem truncar
+nem substituir pelo head. Community reutiliza seu leitor/auditoria SQL privado;
+Core consome apenas a porta. Qualificador cruza predecessor-alvo, revisão-alvo
+com referência adicional, captura v2 e literal inicial do sucessor. Exige mesma
+Board/identidade, fingerprint esperado, revisões consecutivas na aplicação do
+claim, payload-alvo intacto e preservação exata das evidências anteriores.
+
+História completa detecta perda de claim em literal posterior; captura pendente
+de reuso é distinguida de literal, pois carrega somente suas evidências autorais.
+Admissão de novos intents já usa o qualificador para recusar alvo substituído no
+mesmo Bug, preservando elegibilidade em outras origens. Parsing isolado continua
+sem autoridade. Testes preparados exercitam CAS conjunto de sucessor/claim em
+SQL, rollback, um vencedor concorrente, corrupção, omissão posterior e escopo.
+Registros de sucessor/claim nesses testes são fixtures de fonte: NÃO qualificam
+writer gráfico, evidência assinada do supersede, nem materialização completa.
+Nenhum claim é emitido pelo coordenador de produção ainda; segue pendente sua
+integração com arestas/compensação e recuperação. Ainda não executar comportamento
+antes de build/install/prova do novo par; inventário global permanece inalterado.
 
 Continuacao do worker em andamento: CanonicalBugNodeResolver, capacidade
 publica implementada por CommunityCanonicalBugNodeReader, seleciona uma unica

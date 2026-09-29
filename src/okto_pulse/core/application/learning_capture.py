@@ -153,6 +153,12 @@ async def stage_new_learning_capture(context, request: CreateLearningCapture, *,
         if target is None or target.record_fingerprint != request.intent.expected_fingerprint:
             raise LearningCaptureTargetConflict(target)
         _require_learning_intent_target(request, target)
+        from okto_pulse.core.application.learning_supersedence import (
+            read_learning_scope_replacements, current_learning_scope_replacement,
+        )
+        replacements = await read_learning_scope_replacements(context, store, head=target)
+        if await current_learning_scope_replacement(context, replacements, source=source) is not None:
+            raise ValueError('learning_capture_target_replaced_in_scope')
     record = CognitiveSourceRecord(board_id=source.board_id, node_type='Learning', node_id=node_id,
         generation=generation, payload=payload, evidence_refs=tuple(refs),
         source_revision=target.source_revision + 1 if request.intent.kind == 'reuse' else 0,
