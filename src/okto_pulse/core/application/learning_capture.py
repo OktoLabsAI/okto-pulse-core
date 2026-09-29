@@ -1,7 +1,7 @@
 """Stage authored Learning content, never infer it or certify implementation."""
 
 from datetime import datetime, timezone
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 import json
 
 from okto_pulse.core.kg.node_identity import mint_node_id
@@ -20,6 +20,7 @@ from okto_pulse.core.ports.learning_capture import (
     LearningCaptureIdentityReservation, validate_learning_capture_payload,
 )
 from okto_pulse.core.services.test_scenario_lifecycle import scenario_has_authenticated_required_evidence
+from okto_pulse.core.domain.learning_materialization import CapturedLearningProjection
 
 
 def _authenticated_scenario(source, scenario):
@@ -208,6 +209,60 @@ class LearningMaterializationBasis:
     source: BugCognitiveContext
     closeout_transition_id: str | None
     head: CognitiveSourceRecord
+    projection: CapturedLearningProjection
+
+
+async def resolve_learning_capture_projection(context, store, *, capture, head, bug_id):
+    """Prove an exact authored revision chain, without inferring associations.
+
+    Every reuse points at an immutable literal predecessor. Walking strictly
+    backwards proves that a later head retains the selected capture, and keeps
+    old recovery receipts from overwriting later authored associations. This
+    is projection provenance only, not current Bug applicability or authority.
+    """
+    latest_cognitive_source_records((capture, head))
+    identity = (capture.board_id, 'Learning', capture.node_id, capture.generation)
+
+    async def read_exact(fingerprint, before):
+        if not isinstance(store, FingerprintCognitiveSourceReader):
+            raise ValueError('learning_capture_history_unavailable')
+        record = await store.read_fingerprint_in_context(context, board_id=capture.board_id,
+            node_id=capture.node_id, generation=capture.generation, fingerprint=fingerprint)
+        if (record is None or record.record_fingerprint != fingerprint
+                or (record.board_id, record.node_type, record.node_id, record.generation) != identity
+                or record.source_revision >= before):
+            raise ValueError('learning_materialization_projection_conflict')
+        latest_cognitive_source_records((record,))
+        return record
+
+    current, latest_plan = head, None
+    while True:
+        if (current.board_id, current.node_type, current.node_id, current.generation) != identity:
+            raise ValueError('learning_materialization_projection_conflict')
+        if 'capture_format' in current.payload:
+            if current.record_fingerprint != capture.record_fingerprint:
+                raise ValueError('learning_materialization_projection_pending')
+            owner = current
+        else:
+            fingerprint = current.payload.get('source_content_hash')
+            owner = (capture if fingerprint == capture.record_fingerprint else
+                await read_exact(fingerprint, current.source_revision))
+        if not validate_learning_capture_payload(dict(owner.payload), board_id=capture.board_id,
+                node_type=owner.node_type, node_id=owner.node_id, generation=owner.generation,
+                evidence_refs=owner.evidence_refs):
+            raise ValueError('learning_materialization_projection_conflict')
+        intent = owner.payload['intent']
+        predecessor = (await read_exact(intent['expected_fingerprint'], owner.source_revision)
+            if intent['kind'] == 'reuse' else None)
+        plan = CapturedLearningProjection(owner, current, owner.payload['source']['bug_id'], predecessor)
+        plan.require_literal_head()
+        latest_plan = latest_plan or plan
+        if owner.record_fingerprint == capture.record_fingerprint:
+            return replace(latest_plan, capture=capture, bug_id=bug_id,
+                projection_capture=latest_plan.capture)
+        if predecessor is None or owner.source_revision <= capture.source_revision:
+            raise ValueError('learning_materialization_projection_conflict')
+        current = predecessor
 
 
 async def revalidate_learning_capture_for_materialization(
@@ -261,10 +316,9 @@ async def revalidate_learning_capture_for_materialization(
     binding = qualify_learning_materialization_basis(record, source,
         getattr(bug, 'learning_closeout_bindings', None))
     _require_current_capture_evidence(source, record)
-    from okto_pulse.core.domain.learning_materialization import CapturedLearningProjection
-    projection = CapturedLearningProjection(record, head, bug_id)
-    projection.require_literal_head()
-    return LearningMaterializationBasis(record, source, binding.transition_id if binding else None, head)
+    projection = await resolve_learning_capture_projection(context, store,
+        capture=record, head=head, bug_id=bug_id)
+    return LearningMaterializationBasis(record, source, binding.transition_id if binding else None, head, projection)
 
 
 async def stage_report_learning_capture(context, *, initial, captured, conclusion,

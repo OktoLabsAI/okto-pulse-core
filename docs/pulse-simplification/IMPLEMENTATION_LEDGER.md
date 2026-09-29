@@ -4,8 +4,8 @@
 
 Iniciativa **incompleta; retomada explicitamente autorizada em 2026-09-23**.
 O usuário revogou a pausa e pediu execução até o final, sem parar em milestones.
-Frente atual (2026-09-29): F6/KG §7.5, reconciliação histórica de Learning.
-Último par enviado: Core63262e3c/Community72202a29. Captura, binding em
+Frente atual (2026-09-29): F6/KG §7.6, reuso/supersedência explícitos de Learning.
+Último par enviado: Core03f18a1b/Community9b2c2b1d. Captura, binding em
 task validation, autoria conjunta, REST/MCP/UI/Delivery, policy/preview e
 materialização automática via outbox/worker e proteção de holds mistos foram
 enviados em incrementos delimitados. Recuperação de projeção validada/enviada.
@@ -358,6 +358,59 @@ autoria, conteúdo, associações e histórico; recuperação dos recibos anteri
 deve reconhecer revisões legítimas sem sobrescrever reuso/curadoria posteriores.
 Done/transports/UI só devem admitir novos intents quando esse caminho estiver
 completo; mudanças de frontend terão testes. Não relaxar gate do candidato.
+
+Par de admissão enviado03f18a1b/9b2c2b1d, pushes0. WIP de materialização de
+reuso explícito pós-Done: mesma identidade/generation, conteúdo/contexto/autoria/
+origem/vetor anteriores, novo fingerprint de proveniência e refs da associação.
+Resolver segue fingerprints de predecessores literais em ordem estritamente
+decrescente para provar que um recibo antigo pertence à revisão atual; refs
+isoladas não provam autoria. Coordenador compara o predecessor gráfico inteiro,
+preserva curadoria e usa CAS/compensação existentes. Recuperação restaura a
+revisão literal mais recente provada, mas só a aresta do Bug revalidado nesta
+tentativa; outros recibos revalidam suas próprias origens. Probes verificam a
+origem do Bug-alvo, não exigem que cada associação seja a origem da Learning.
+Dívida R7 da origem original não é liberada ao anexar outro Bug. Preparados
+testes de dois Bugs, replay, perda de projeção, compensação e curadoria tardia.
+Ainda NÃO executados; build/install/prova antes de comportamento. Pré-Done,
+supersedência e exposição REST/MCP/UI seguem pendentes; nenhum gate relaxado.
+
+Builds reuse-materialization-r1 ambos0, pip58952=0, provenance-r1 confirmou
+837/900 Core+363/448 Community byte-identical antes das campanhas. Core90772
+terminou0:108pass/7.60s. F1690414 terminou0: sem findings/drift, oitoZERO.
+Community99369 ainda ativo, sinalizou duas falhas nos novos casos com segundo
+Bug; aguardar diagnóstico terminal antes de correções. Nenhum payload alterado
+durante os testes. Ruff F/E9 e diff-check passaram antes das campanhas.
+
+Community99369 terminou1:124pass/2fail em398.79s. Ambos novos casos de segundo
+Bug falharam na admissão por learning_capture_evidence_not_authenticated:
+fixture não vinculava cenário autenticado ao segundo Bug. Após todos terminais,
+acrescentado test_scenario_ids explícito na fixture, preservando o gate. Também
+classificada a espera por captura posterior admitida como materialization_pending
+no worker: um recibo antigo não pode sobrescrever o head ainda não materializado,
+nem perder sua possibilidade de recuperação. Novo teste exercita espera/retomada
+com SQL/Grafx reais. Produto worker mudou; novo build/prova e testes necessários.
+Resultados r1 preservados, sem apresentá-los como campanha integralmente verde.
+
+Builds r2 ambos0, pip54335=0, provenance-r2 comprovou mesmo par837/900+363/448
+byte-identical. Core8699=0:51pass/5.89s, cobrindo projeção/basis/work/recovery.
+F1666070=0: sem findings/drift, oitoZERO. Community99068 ainda ativo: cinco
+novos casos de reuso passaram, incluindo segundo Bug, rollback e espera/retomada;
+seguem regressões worker/recovery. Não editar payload até terminal. Recorder
+record_learning_reuse_materialization.py preparado, ainda NÃO executado.
+Próximo encadeamento existente: admitir reuso pré-Done via revalidação do
+predecessor e binding, antes de transporte/UI; supersedência precisa preservar
+associações fora do escopo e não usar mark_superseded global por conveniência.
+
+Community99068 terminou0:14pass/263.26s, incluindo cinco casos novos mais
+regressões worker/recovery. record_learning_reuse_materialization.py executado
+após terminais gerou acceptance-learning-reuse-materialization.json; sela
+campanhas108/51 Core (sobrepostas),14 Community final,124pass/2fail anteriores,
+provas de par instalado e F16zero. Não reclassificar a campanha inicial como
+verde. Nenhum payload mudou durante as campanhas; nenhum processo de validação
+permanece ativo. Reuso interno pós-Done pronto para commit/push, sem declarar
+KG7.6 ou plano completos. Transports/UI continuam create-only, e reuso pré-Done
+continua recusado até revalidar predecessor e integrar binding. Supersedência,
+K3/K4/candidato e demais itens do plano seguem pendentes no inventário global.
 
 Continuacao do worker em andamento: CanonicalBugNodeResolver, capacidade
 publica implementada por CommunityCanonicalBugNodeReader, seleciona uma unica

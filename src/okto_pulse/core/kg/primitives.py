@@ -3796,9 +3796,9 @@ def _do_graph_commit(
             )
             if learning_projection is not None:
                 node_id = learning_projection.node_id
-            embedding = (learning_projection.head.payload.get('embedding')
+            embedding = (learning_projection.literal_payload.get('embedding')
                 if learning_projection is not None
-                and learning_projection.head.record_fingerprint != learning_projection.capture.record_fingerprint
+                and (learning_projection.is_reuse or not learning_projection.is_initial)
                 else embedder.encode(f"{cand.title}\n{cand.content or ''}"))
 
             node_attrs = {
@@ -3837,10 +3837,10 @@ def _do_graph_commit(
                 node_attrs['created_at'] = learning_projection.capture.payload['captured_at']
                 node_attrs['created_by_agent'] = learning_projection.capture.payload['author_id']
                 node_attrs['source_content_hash'] = learning_projection.capture.record_fingerprint
-                if learning_projection.head.record_fingerprint != learning_projection.capture.record_fingerprint:
+                if learning_projection.is_reuse or not learning_projection.is_initial:
                     # Recovery restores the literal admitted revision, including
                     # its original vector and provenance, without re-extraction.
-                    node_attrs = dict(learning_projection.head.payload)
+                    node_attrs = learning_projection.literal_payload
 
             # A deterministic id is an idempotency key in its own right.
             # Normally NC-8 finds the node above by source_artifact_ref, but
@@ -3857,8 +3857,17 @@ def _do_graph_commit(
             if existing_identity is not None:
                 if learning_projection is not None:
                     actual = _read_captured_learning_node_attrs(graph_scope, node_id)
+                    if learning_projection.is_reuse and learning_projection.is_initial:
+                        # The explicit reuse changes only association provenance.
+                        # Compare the whole stable predecessor under this graph
+                        # fence; never overwrite a concurrent human correction.
+                        learning_projection.require_literal_graph_fields(
+                            actual, learning_projection.predecessor.payload)
+                        _apply_graph_node_update_partial(orch, node_type, node_id,
+                            {'source_content_hash': learning_projection.authored_capture.record_fingerprint})
+                        actual = _read_captured_learning_node_attrs(graph_scope, node_id)
                     learning_projection.require_authored_graph_fields(actual)
-                    if learning_projection.head.record_fingerprint != learning_projection.capture.record_fingerprint:
+                    if not learning_projection.is_initial:
                         from okto_pulse.core.ports.kg_cognitive_source import COGNITIVE_SOURCE_VOLATILE_USAGE_FIELDS
                         wanted = learning_projection.head.payload
                         if any(actual.get(key) != wanted.get(key) for key in set(actual) | set(wanted)
@@ -3868,8 +3877,8 @@ def _do_graph_commit(
                     candidate_to_node_type[cand_id] = node_type
                     orch.counters.nodes_noop += 1
                     _queue_cognitive_source_record(node_id=node_id, node_type=node_type,
-                        generation=0, attrs=(dict(learning_projection.head.payload)
-                            if learning_projection.head.record_fingerprint != learning_projection.capture.record_fingerprint
+                        generation=learning_projection.capture.generation, attrs=(learning_projection.literal_payload
+                            if not learning_projection.is_initial
                             else actual))
                     continue
                 existing_ref = str(
@@ -3976,7 +3985,7 @@ def _do_graph_commit(
             _queue_cognitive_source_record(
                 node_id=node_id,
                 node_type=node_type,
-                generation=0,
+                generation=learning_projection.capture.generation if learning_projection is not None else 0,
                 attrs=node_attrs,
             )
 
@@ -4627,11 +4636,11 @@ async def commit_consolidation(
         for cid, override in req.agent_overrides.items():
             effective_hints[cid] = override
         if learning_projection is not None:
-            # Explicit authored create is not a similarity-driven UPDATE or
-            # SUPERSEDE. The existing graph guards still validate the batch.
+            # Exact authored identity/intent is checked separately; generic
+            # similarity reconciliation cannot select or supersede its target.
             effective_hints = {LEARNING_CAPTURE_CANDIDATE_ID: ReconciliationHint(
                 candidate_id=LEARNING_CAPTURE_CANDIDATE_ID, operation=ReconciliationOperation.ADD,
-                confidence=1.0, reason='Explicit durable Learning create intent')}
+                confidence=1.0, reason='Explicit durable Learning capture intent')}
 
         # --- graph backend writes (offloaded to thread pool) ---
         try:

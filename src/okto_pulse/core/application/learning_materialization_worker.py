@@ -77,4 +77,10 @@ async def materialize_capture_work(scope_factory, *, board_id, work, fingerprint
         reason = getattr(exc, 'failure_reason', None)
         if reason is None and isinstance(exc, ValueError) and re.fullmatch(r'[a-z][a-z0-9_]{0,127}', str(exc)):
             reason = str(exc)
+        if reason == 'learning_materialization_projection_pending':
+            # A newer explicitly admitted capture owns the current head. Its
+            # materialization must complete before an older receipt can recover
+            # the proved latest literal. This is dependency waiting, not loss
+            # of the earlier authored association or a permission waiver.
+            return pending(reason)
         return failed(reason or type(exc).__name__)

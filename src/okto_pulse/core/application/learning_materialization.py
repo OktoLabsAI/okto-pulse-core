@@ -2,7 +2,7 @@
 
 from okto_pulse.core.application.learning_capture import revalidate_learning_capture_for_materialization
 from okto_pulse.core.domain.learning_materialization import (
-    CapturedLearningProjection, LEARNING_CAPTURE_CANDIDATE_ID, learning_capture_projection_fields,
+    LEARNING_CAPTURE_CANDIDATE_ID, learning_capture_projection_fields,
 )
 from okto_pulse.core.kg.schemas import NodeCandidate
 from okto_pulse.core.ports.kg_cognitive_source import (
@@ -10,13 +10,13 @@ from okto_pulse.core.ports.kg_cognitive_source import (
 )
 
 
-def authored_learning_candidate(capture) -> NodeCandidate:
+def authored_learning_candidate(capture, projection=None) -> NodeCandidate:
     return NodeCandidate(candidate_id=LEARNING_CAPTURE_CANDIDATE_ID, node_type='Learning',
-        **learning_capture_projection_fields(capture))
+        **(projection.fields if projection is not None else learning_capture_projection_fields(capture)))
 
 
 def require_capture_candidates(projection, candidates, edges):
-    expected = authored_learning_candidate(projection.capture)
+    expected = authored_learning_candidate(projection.capture, projection)
     if (set(candidates) != {LEARNING_CAPTURE_CANDIDATE_ID}
             or candidates[LEARNING_CAPTURE_CANDIDATE_ID].model_dump() != expected.model_dump()
             or getattr(candidates[LEARNING_CAPTURE_CANDIDATE_ID], '_source_projection_metadata', None) is not None
@@ -38,8 +38,8 @@ async def prepare_captured_learning_commit(context, session, selection):
         board_id=session.board_id, bug_id=session.artifact_id,
         learning_id=selection.learning_id, generation=selection.generation,
         expected_fingerprint=selection.fingerprint)
-    projection = CapturedLearningProjection(basis.capture, basis.head, basis.source.bug_id)
-    if basis.capture.generation != 0:
+    projection = basis.projection
+    if basis.capture.generation != 0 and basis.capture.payload['intent']['kind'] != 'reuse':
         raise ValueError('learning_materialization_generation_unsupported')
     require_capture_candidates(projection, session.node_candidates, session.edge_candidates)
     return projection

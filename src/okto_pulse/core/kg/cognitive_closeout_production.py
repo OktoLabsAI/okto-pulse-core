@@ -376,7 +376,7 @@ def _authored_learning_queryable(board_id: str, node_id: str, source_ref: str) -
     try:
         result = get_kg_registry().cypher_executor.execute_read_only(board_id,
             'MATCH (n:Learning)-[:validates]->(b:Bug) WHERE n.id = $id '
-            'AND n.source_artifact_ref = $ref RETURN n.id',
+            'AND b.source_artifact_ref = $ref RETURN n.id',
             {'id': node_id, 'ref': source_ref}, max_rows=1)
         return bool(result.get('rows'))
     except Exception:
@@ -454,7 +454,7 @@ class ConsolidationPipelinePersister:
                 return 'missing'
             result = get_kg_registry().cypher_executor.execute_read_only(board_id,
                 "MATCH (n:Learning)-[:validates]->(b:Bug) WHERE n.id = $id AND b.id = $target "
-                "AND n.source_artifact_ref = $ref AND n.graph_layer = 'canonical' "
+                "AND b.source_artifact_ref = $ref AND n.graph_layer = 'canonical' "
                 "AND b.graph_layer = 'canonical' "
                 "AND (n.superseded_by IS NULL OR n.superseded_by = '') "
                 "AND (b.superseded_by IS NULL OR b.superseded_by = '') RETURN DISTINCT n.id",
@@ -495,7 +495,7 @@ class ConsolidationPipelinePersister:
             task_name='core.kg.cognitive_closeout.resolve_authored_bug')
         if target is None:
             return False
-        node = authored_learning_candidate(basis.capture)
+        node = authored_learning_candidate(basis.capture, basis.projection)
         candidate = CloseoutCandidate('Learning', node.title, node.content,
             f'bug:{bug_id}', (CloseoutEdge('validates', target),))
         return await self._persist(board_id, 'bug', candidate,
@@ -642,7 +642,8 @@ class ConsolidationPipelinePersister:
                             write_lease.ensure_owned(
                                 failure_phase="before_relational_ack",
                             )
-                            if learning_capture is not None:
+                            if (learning_capture is not None
+                                    and authored_node.source_artifact_ref == candidate.source_artifact_ref):
                                 from okto_pulse.core.kg.canonical_learning_partition import (
                                     reconcile_materialized_learning_debt,
                                 )

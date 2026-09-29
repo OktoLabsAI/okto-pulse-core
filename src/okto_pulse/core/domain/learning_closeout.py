@@ -157,7 +157,7 @@ def qualify_learning_materialization_basis(
             node_id=capture.node_id, generation=capture.generation,
             evidence_refs=capture.evidence_refs)
             or payload['source']['bug_id'] != source.bug_id
-            or payload['intent']['kind'] != 'create'):
+            or payload['intent']['kind'] not in {'create', 'reuse'}):
         raise ValueError('learning_materialization_capture_invalid')
     if history is not None and type(history) is not list:
         raise ValueError('learning_closeout_history_invalid')

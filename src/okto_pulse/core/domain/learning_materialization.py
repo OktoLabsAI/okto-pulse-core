@@ -3,7 +3,10 @@
 from dataclasses import dataclass
 from datetime import datetime
 
-from okto_pulse.core.ports.kg_cognitive_source import CognitiveSourceRecord
+from okto_pulse.core.ports.kg_cognitive_source import (
+    CognitiveSourceRecord, COGNITIVE_SOURCE_VOLATILE_USAGE_FIELDS,
+    latest_cognitive_source_records,
+)
 
 
 LEARNING_CAPTURE_CANDIDATE_ID = 'authored-learning-capture'
@@ -45,6 +48,37 @@ class CapturedLearningProjection:
     capture: CognitiveSourceRecord
     head: CognitiveSourceRecord
     bug_id: str
+    predecessor: CognitiveSourceRecord | None = None
+    projection_capture: CognitiveSourceRecord | None = None
+
+    @property
+    def authored_capture(self) -> CognitiveSourceRecord:
+        # Recovery of an earlier association preserves the latest proved
+        # authored revision. Membership in that lineage is checked by the
+        # application resolver, never inferred from evidence_refs alone.
+        return self.projection_capture or self.capture
+
+    @property
+    def is_reuse(self) -> bool:
+        return self.authored_capture.payload['intent']['kind'] == 'reuse'
+
+    @property
+    def is_initial(self) -> bool:
+        return self.head.record_fingerprint == self.authored_capture.record_fingerprint
+
+    @property
+    def literal_payload(self) -> dict:
+        if not self.is_initial:
+            return dict(self.head.payload)
+        if not self.is_reuse or self.predecessor is None:
+            raise ValueError('learning_materialization_literal_unavailable')
+        payload = dict(self.predecessor.payload)
+        payload.pop('source_session_id', None)
+        # The new association is authored, even when it repeats a Bug/ref.
+        # Advance the literal's provenance so payload dedup cannot leave the
+        # capture as the head. Birth/content/origin remain the predecessor's.
+        payload['source_content_hash'] = self.authored_capture.record_fingerprint
+        return payload
 
     @property
     def node_id(self) -> str:
@@ -52,27 +86,72 @@ class CapturedLearningProjection:
 
     @property
     def fields(self) -> dict:
-        return learning_capture_projection_fields(self.capture)
+        if self.is_reuse:
+            payload = self.literal_payload
+            return {key: payload.get(key) for key in learning_capture_projection_fields(self.authored_capture)}
+        return learning_capture_projection_fields(self.authored_capture)
 
     @property
     def evidence_refs(self) -> tuple[str, ...]:
-        return tuple(dict.fromkeys((*self.capture.evidence_refs, f'bug:{self.bug_id}')))
+        capture = self.authored_capture
+        previous = self.predecessor.evidence_refs if self.is_reuse and self.predecessor else ()
+        return tuple(dict.fromkeys((*previous, *capture.evidence_refs, f"bug:{capture.payload['source']['bug_id']}")))
+
+    def require_predecessor(self) -> None:
+        capture, target = self.authored_capture, self.predecessor
+        intent = capture.payload['intent']
+        if not self.is_reuse or target is None:
+            raise ValueError('learning_materialization_projection_conflict')
+        latest_cognitive_source_records((target, capture))
+        if ((target.board_id, target.node_type, target.node_id, target.generation)
+                != (capture.board_id, 'Learning', capture.node_id, capture.generation)
+                or intent['target_node_id'] != target.node_id
+                or intent['target_generation'] != target.generation
+                or intent['expected_fingerprint'] != target.record_fingerprint
+                or capture.source_revision != target.source_revision + 1
+                or 'capture_format' in target.payload
+                or target.payload.get('graph_layer') != 'canonical'
+                or target.payload.get('maturity_status') != 'canonical_eligible'
+                or target.payload.get('superseded_by') or target.payload.get('revocation_reason')
+                or capture.payload['content'] != target.payload.get('content')
+                or any(not isinstance(target.payload.get(key), str) or not target.payload[key].strip()
+                       for key in ('content', 'context', 'created_by_agent', 'created_at'))):
+            raise ValueError('learning_materialization_projection_conflict')
+
+    @staticmethod
+    def require_literal_graph_fields(attrs, wanted) -> None:
+        ignored = COGNITIVE_SOURCE_VOLATILE_USAGE_FIELDS | {'created_at', 'source_session_id'}
+        if (any(attrs.get(key) != wanted.get(key) for key in set(attrs) | set(wanted) if key not in ignored)
+                or not same_authored_timestamp(attrs.get('created_at'), wanted.get('created_at'))):
+            raise ValueError('learning_materialization_projection_conflict')
 
     def require_authored_graph_fields(self, attrs) -> None:
-        wanted = {**self.fields, 'created_by_agent': self.capture.payload['author_id'],
-            'generation': self.capture.generation}
+        if self.is_reuse:
+            self.require_predecessor()
+            wanted = dict(self.predecessor.payload)
+            wanted['source_content_hash'] = self.authored_capture.record_fingerprint
+            self.require_literal_graph_fields(attrs, wanted)
+            return
+        capture = self.authored_capture
+        wanted = {**self.fields, 'created_by_agent': capture.payload['author_id'],
+            'generation': capture.generation}
         if (any(attrs.get(key) != value for key, value in wanted.items())
-                or not same_authored_timestamp(attrs.get('created_at'), self.capture.payload['captured_at'])
+                or not same_authored_timestamp(attrs.get('created_at'), capture.payload['captured_at'])
                 or attrs.get('human_curated') or attrs.get('superseded_by')
                 or attrs.get('revocation_reason')):
             raise ValueError('learning_materialization_projection_conflict')
 
     def require_literal_head(self) -> None:
-        if self.head.record_fingerprint == self.capture.record_fingerprint:
+        capture = self.authored_capture
+        if self.is_reuse:
+            self.require_predecessor()
+        elif capture.payload['intent']['kind'] != 'create':
+            raise ValueError('learning_materialization_intent_unsupported')
+        if self.is_initial:
             return
         if ((self.head.board_id, self.head.node_type, self.head.node_id, self.head.generation)
                 != (self.capture.board_id, 'Learning', self.node_id, self.capture.generation)
-                or self.head.source_revision <= self.capture.source_revision
+                or self.head.source_revision <= capture.source_revision
                 or self.head.evidence_refs != self.evidence_refs
                 or 'capture_format' in self.head.payload):
             raise ValueError('learning_materialization_projection_conflict')
