@@ -136,6 +136,55 @@ def closeout_binding_is_current(value, source: BugCognitiveContext) -> bool:
         and source.source_policy_version == binding.closed_version)
 
 
+def qualify_learning_materialization_basis(
+    capture: CognitiveSourceRecord, source: BugCognitiveContext, history,
+) -> LearningCloseoutBinding | None:
+    """Qualify a current Done basis without rewriting an earlier capture.
+
+    A capture authored against the current Done source needs no synthetic
+    transition. Otherwise its exact source revision must have been admitted by
+    the closing writer. None denotes the first case, never an absent proof.
+    The caller must authenticate the current evidence under its source fence;
+    this pure check grants neither graph authority nor a legacy hold waiver.
+    """
+    source = qualify_bug_semantic_context(source)
+    if not source.verified or not source.eligible_for_closeout:
+        raise ValueError('learning_materialization_source_not_eligible')
+    latest_cognitive_source_records((capture,))
+    payload = dict(capture.payload)
+    if (capture.board_id != source.board_id or not validate_learning_capture_payload(
+            payload, board_id=source.board_id, node_type=capture.node_type,
+            node_id=capture.node_id, generation=capture.generation,
+            evidence_refs=capture.evidence_refs)
+            or payload['source']['bug_id'] != source.bug_id
+            or payload['intent']['kind'] != 'create'):
+        raise ValueError('learning_materialization_capture_invalid')
+    if history is not None and type(history) is not list:
+        raise ValueError('learning_closeout_history_invalid')
+    bindings, identities = [], set()
+    for raw in history or []:
+        binding = verify_learning_closeout_binding(raw)
+        if (binding.board_id != source.board_id or binding.bug_id != source.bug_id
+                or binding.transition_id in identities):
+            raise ValueError('learning_closeout_history_invalid')
+        identities.add(binding.transition_id)
+        bindings.append(binding)
+    if (payload['source']['digest'] == source.source_digest
+            and payload['source']['policy_version'] == source.source_policy_version):
+        return None
+    matching = [binding for binding in bindings if (
+        binding.capture.learning_id == capture.node_id
+        and binding.capture.generation == capture.generation
+        and binding.capture.fingerprint == capture.record_fingerprint
+        and binding.capture_revision == capture.source_revision
+        and binding.before_digest == payload['source']['digest']
+        and binding.before_version == payload['source']['policy_version']
+        and closeout_binding_is_current(binding, source))]
+    if len(matching) != 1:
+        raise ValueError('learning_materialization_current_binding_required')
+    return matching[0]
+
+
 def append_learning_closeout_binding(history, value) -> list[dict]:
     """Append a server binding, preserving history and exact transition retry.
 

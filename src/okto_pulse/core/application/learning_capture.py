@@ -1,11 +1,13 @@
 """Stage authored Learning content, never infer it or certify implementation."""
 
 from datetime import datetime, timezone
+from dataclasses import dataclass
 import json
 
 from okto_pulse.core.kg.node_identity import mint_node_id
 from okto_pulse.core.ports.bug_cognitive_context import (
     BugSemanticWriteSnapshotReader, qualify_bug_semantic_context,
+    BugCognitiveContext,
     resolve_bug_cognitive_context_assembler,
 )
 from okto_pulse.core.ports.kg_cognitive_source import (
@@ -142,6 +144,61 @@ async def stage_new_learning_capture(context, request: CreateLearningCapture, *,
     return record
 
 
+@dataclass(frozen=True)
+class LearningMaterializationBasis:
+    """Current relational admission only, not graph admission or persistence."""
+
+    capture: CognitiveSourceRecord
+    source: BugCognitiveContext
+    closeout_transition_id: str | None
+
+
+async def revalidate_learning_capture_for_materialization(
+    context, *, board_id: str, bug_id: str, learning_id: str,
+    generation: int, expected_fingerprint: str,
+) -> LearningMaterializationBasis:
+    """Internal worker precondition, retaining the caller's relational fence.
+
+    Reads only one selected head and the Bug's existing transition history.
+    No canonical node, Learning revision, retry work or history is invented.
+    Graph eligibility, governed admission and compensation remain separate
+    obligations for the materializer that consumes this value in the same UOW.
+    """
+    from okto_pulse.core.domain.learning_closeout import (
+        LearningCaptureSelection, qualify_learning_materialization_basis,
+    )
+    from okto_pulse.core.ports.application_persistence import get_application_persistence_port
+
+    selection = LearningCaptureSelection(learning_id=learning_id, generation=generation,
+        fingerprint=expected_fingerprint)
+    reader, store = resolve_bug_cognitive_context_assembler(), require_cognitive_source_store()
+    if (not isinstance(reader, BugSemanticWriteSnapshotReader)
+            or not isinstance(store, TransactionalCognitiveSourceReader)):
+        raise ValueError('learning_capture_transaction_capability_unavailable')
+    source = qualify_bug_semantic_context(await reader.assemble_semantic_for_write(
+        context, board_id=board_id, bug_id=bug_id))
+    if not source.verified or source.board_id != board_id or source.bug_id != bug_id:
+        raise ValueError('learning_capture_source_changed_or_unavailable')
+    record = await store.read_latest_in_context(context, board_id=board_id,
+        node_id=selection.learning_id, generation=selection.generation)
+    if record is None:
+        raise ValueError('learning_capture_selected_record_unavailable')
+    if (record.node_id != selection.learning_id or record.generation != selection.generation
+            or record.record_fingerprint != selection.fingerprint):
+        raise ValueError('learning_capture_selection_changed')
+    persistence = get_application_persistence_port()
+    bug = await persistence.get(context, entity='card', record_id=bug_id)
+    if bug is None:
+        raise ValueError('learning_capture_source_changed_or_unavailable')
+    bug = await persistence.refresh(context, bug)
+    if bug.board_id != board_id or str(getattr(bug.status, 'value', bug.status)) != source.status:
+        raise ValueError('learning_capture_source_changed_or_unavailable')
+    binding = qualify_learning_materialization_basis(record, source,
+        getattr(bug, 'learning_closeout_bindings', None))
+    _require_current_capture_evidence(source, record)
+    return LearningMaterializationBasis(record, source, binding.transition_id if binding else None)
+
+
 async def stage_report_learning_capture(context, *, initial, captured, conclusion,
     submission, author_id, capture_status):
     """Use only the server's admitted report delta, never rebase old content."""
@@ -207,6 +264,11 @@ async def revalidate_learning_capture_for_closeout(
     # Those operations need their own admitted target/CAS contract.
     if payload['intent']['kind'] != 'create':
         raise ValueError('learning_capture_intent_not_admitted')
+    _require_current_capture_evidence(source, record)
+    return record
+
+
+def _require_current_capture_evidence(source, record):
     scenarios = {}
     for row in source.test_scenarios:
         identity = row.get('id')
@@ -219,4 +281,3 @@ async def revalidate_learning_capture_for_closeout(
     for ref in record.evidence_refs:
         if not _authenticated_scenario(source, scenarios.get(ref)):
             raise ValueError('learning_capture_evidence_not_authenticated')
-    return record

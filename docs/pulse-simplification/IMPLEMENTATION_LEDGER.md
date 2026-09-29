@@ -5,10 +5,10 @@
 Iniciativa **incompleta; retomada explicitamente autorizada em 2026-09-23**.
 O usuário revogou a pausa e pediu execução até o final, sem parar em milestones.
 Frente atual (2026-09-29): F6/KG §7, captura durável de Learning e integração
-ao fechamento de Bug. Último par enviado: Core41125cf5/Community8f403b44.
+ao fechamento de Bug. Último par enviado: Core10f855ef/Community710e4375.
 Writer de binding opcional em task validation e autoria conjunta de relato+
 Learning foram validados/enviados, incluindo REST/MCP/UI/Delivery. Policy e
-preview estão em implementação; materialização e recuperação seguem pendentes.
+preview tambem foram enviados; materialização e recuperação seguem pendentes.
 Detalhes, limites e handles ficam no fim deste ledger.
 
 ### Rodada atual: policy KG7.4 (WIP)
@@ -46,6 +46,48 @@ rodada tem resultados de tool/handles, sem JUnit separado; nao inventar log.
 Nenhum processo desta rodada permanece ativo. Pronto para commit/push pareado.
 Proxima etapa continua materializacao/reabertura/recuperacao KG7.3/7.5; sem pausa
 em milestone, sem migracao real, release ou promocao do inventario global.
+
+### Materializacao KG7.3 — base relacional em validacao
+
+Policy enviada Core10f855ef/Community710e4375, pushes0. WIP seguinte reutiliza
+as portas existentes de fonte cognitiva e ApplicationPersistencePort, sem
+mecanismo concreto no Core. qualify_learning_materialization_basis admite
+captura feita sobre o Done atual sem fabricar transicao; captura anterior
+requer revisao/fingerprint/binding exatos e atuais. Reabertura, conclusao ou
+evidencia alterada nao reutilizam o recibo antigo. Aplicacao adquire fence
+semantico, relê head e Card/historico e autentica novamente a evidencia. Esta
+primitiva NAO materializa, agenda ou dispensa hold; falta integrar writer/worker.
+
+Primeiros builds terminaram0, mas Ruff detectou extracao do helper no bloco
+errado (20 F821); esse par NAO foi instalado nem testado. Corrigido antes de
+novos builds r2. Ruff passou; builds r2 ambos0, pip67298=0 e provenance-r2
+confirmou832/895+363/448 byte-identical antes das suites. Core29380 terminou0:
+67 passed/8.13s. Community12564 ainda em andamento, com uma falha nova; aguardar
+terminal antes de corrigir. F1665767 terminou1; analisar resumo restrito, sem
+despejar matriz inteira. Fonte Python estavel durante campanhas.
+
+Investigacao do writer seguinte: pipeline cognitivo atual faz dedup por
+source_artifact_ref e pode superseder automaticamente ao mudar titulo. Para
+captura com intent=create isto nao atende KG7.6; integrar identidade/intencao
+explicita ao pipeline governado existente, preservando guards, curadoria,
+compensacao e source ledger. Ainda sem decisao de contrato implementada para
+essa integracao. Nao confundir o novo preflight relacional com materializacao
+canonica, prova de recovery ou entrega integral.
+
+Community12564 terminou1:88 passed/1 failed/147.39s. O caso de autoria depois
+de Done passou na admissao, mas comparava o DTO retornado com o registro
+persistido inteiro (committed_at passa pelo codec SQL). Corrigido o oraculo:
+payload/fingerprint iguais ao retornado e snapshot duravel completo antes/depois
+do preflight identico. Focado62783=6 passed/17.12s. Nenhum produto Python
+mudou apos r2. F16r2 findings=[]/8ZERO, apenas README; matrizes regeneradas
+oficialmente. Builds finais ambos0, pip37690=0, provenance-final832/895+363/448.
+Uma invocacao F1690240 usou argumento duplicado incorreto de wheel e terminou1;
+nao vale como qualificacao. Invocacao correta58407 terminou0; record_learning_materialization_basis.py
+executado confirmou8ZERO e gerou acceptance-learning-materialization-basis.json.
+Todos processos terminais. Incremento preflight pronto para commit/push; nao
+declare materializador conectado, nem promova aceite global. Proxima integracao
+deve preservar intent=create e identidade da captura no pipeline governado,
+revalidar fonte na UOW de commit e manter compensacao, curadoria e holds.
 Escopo permanece o pacote v1.3 e seus critérios existentes; acrescentar trabalho
 somente diante de problema reproduzido ou gap crítico, com justificativa.
 Não parar nos milestones nem confundir os incrementos abaixo com aceite global.
