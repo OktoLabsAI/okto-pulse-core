@@ -84,7 +84,7 @@ def test_malformed_capture_is_not_hidden_by_a_later_valid_revision(change):
     old, current = capture_record(), capture_record()
     current['source_revision'] = 1
     payload = old['payload']
-    if change == 'unknown_format': payload['capture_format'] = 'learning-capture/v2'
+    if change == 'unknown_format': payload['capture_format'] = 'learning-capture/v999'
     elif change == 'extra': payload['extra'] = 'surprise'
     elif change == 'untrusted_admitted': payload['admitted'] = True
     elif change == 'wrong_board': payload['source']['board_id'] = 'other'

@@ -10,10 +10,12 @@ from dataclasses import dataclass, field
 import json
 import re
 from typing import Protocol, runtime_checkable
+from urllib.parse import quote, unquote
 
 from okto_pulse.core.ports.kg_cognitive_source import CognitiveSourceRecord
 
 LEARNING_CAPTURE_FORMAT = 'learning-capture/v1'
+LEARNING_SCOPED_CAPTURE_FORMAT = 'learning-capture/v2'
 LEARNING_CAPTURE_MAX_BYTES = 256 * 1024
 
 
@@ -73,6 +75,10 @@ class LearningCaptureIntent:
     target_generation: int | None = None
     expected_fingerprint: str | None = None
     reason: str | None = None
+    # Explicitly replaces applicability for this capture's source Bug only.
+    # None preserves the original v1 format; legacy supersede captures do not
+    # acquire a scope or new historical effect merely by being read.
+    scope: str | None = None
 
     def __post_init__(self):
         if self.kind == 'create':
@@ -82,6 +88,7 @@ class LearningCaptureIntent:
             valid = (self.kind in ('reuse', 'supersede') and _text(self.target_node_id)
                 and type(self.target_generation) is int and self.target_generation >= 0
                 and _digest(self.expected_fingerprint) and _text(self.reason, 16384))
+        valid = valid and (self.scope is None or (self.kind == 'supersede' and self.scope == 'source_bug'))
         if not valid:
             raise ValueError('learning_capture_intent_invalid')
 
@@ -119,6 +126,53 @@ def _digest(value):
     return type(value) is str and re.fullmatch('[0-9a-f]{64}', value) is not None
 
 
+def learning_capture_intent_payload(intent: LearningCaptureIntent) -> dict:
+    """Preserve v1 bytes/meaning when the caller has not declared a scope."""
+    value = dict(kind=intent.kind, target_node_id=intent.target_node_id,
+        target_generation=intent.target_generation, expected_fingerprint=intent.expected_fingerprint,
+        reason=intent.reason)
+    if intent.scope is not None:
+        value['scope'] = intent.scope
+    return value
+
+
+@dataclass(frozen=True, slots=True)
+class LearningCaptureSourceRef:
+    """Reference to durable authored intent, not standalone supersedence proof.
+
+    A target revision may cite this source alongside its prior evidence. The
+    domain must resolve, within the enclosing Board, the exact capture, target fingerprint, scope and its
+    committed successor before assigning any effective relationship. Parsing
+    this reference grants no authority and infers no applicability.
+    """
+    node_id: str
+    generation: int
+    fingerprint: str
+
+    def __post_init__(self):
+        if (not _text(self.node_id) or type(self.generation) is not int
+                or self.generation < 0 or not _digest(self.fingerprint)):
+            raise ValueError('learning_capture_source_ref_invalid')
+
+    def encode(self) -> str:
+        return f'learning-capture-source/v1:{quote(self.node_id, safe="")}:{self.generation}:{self.fingerprint}'
+
+
+def parse_learning_capture_source_ref(value: str) -> LearningCaptureSourceRef | None:
+    prefix = 'learning-capture-source/v1:'
+    if type(value) is not str or not value.startswith('learning-capture-source/'):
+        return None
+    if not value.startswith(prefix) or len(value) > 16384:
+        raise ValueError('learning_capture_source_ref_invalid')
+    parts = value[len(prefix):].split(':')
+    if len(parts) != 3 or not re.fullmatch(r'0|[1-9][0-9]*', parts[1]):
+        raise ValueError('learning_capture_source_ref_invalid')
+    reference = LearningCaptureSourceRef(unquote(parts[0]), int(parts[1]), parts[2])
+    if reference.encode() != value:
+        raise ValueError('learning_capture_source_ref_invalid')
+    return reference
+
+
 def validate_learning_capture_payload(payload, *, board_id, node_type, node_id, generation, evidence_refs):
     """Return whether this is a capture, rejecting malformed/unknown formats.
 
@@ -131,7 +185,7 @@ def validate_learning_capture_payload(payload, *, board_id, node_type, node_id, 
     invalid = ValueError('learning_capture_payload_invalid')
     if (set(payload) != {'capture_format', 'capture_id', 'author_id', 'captured_at',
             'content', 'context', 'applicability', 'source', 'intent'}
-            or payload['capture_format'] != LEARNING_CAPTURE_FORMAT
+            or payload['capture_format'] not in (LEARNING_CAPTURE_FORMAT, LEARNING_SCOPED_CAPTURE_FORMAT)
             or node_type != 'Learning' or not _text(node_id)
             or type(generation) is not int or generation < 0
             or not _text(payload['capture_id']) or not _text(payload['author_id'])
@@ -155,7 +209,13 @@ def validate_learning_capture_payload(payload, *, board_id, node_type, node_id, 
             or type(evidence_refs) not in (list, tuple)
             or tuple(source['evidence_refs']) != tuple(evidence_refs)):
         raise invalid
-    if type(intent) is not dict or set(intent) != {'kind', 'target_node_id', 'target_generation', 'expected_fingerprint', 'reason'}:
+    scoped = payload['capture_format'] == LEARNING_SCOPED_CAPTURE_FORMAT
+    intent_keys = {'kind', 'target_node_id', 'target_generation', 'expected_fingerprint', 'reason'}
+    if scoped:
+        intent_keys.add('scope')
+    if type(intent) is not dict or set(intent) != intent_keys:
+        raise invalid
+    if scoped and (intent['kind'] != 'supersede' or intent['scope'] != 'source_bug'):
         raise invalid
     if intent['kind'] == 'create':
         if any(intent[key] is not None for key in ('target_node_id', 'target_generation', 'expected_fingerprint', 'reason')):

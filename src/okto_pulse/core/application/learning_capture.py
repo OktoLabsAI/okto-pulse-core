@@ -1,7 +1,7 @@
 """Stage authored Learning content, never infer it or certify implementation."""
 
 from datetime import datetime, timezone
-from dataclasses import asdict, dataclass, replace
+from dataclasses import dataclass, replace
 import json
 
 from okto_pulse.core.kg.node_identity import mint_node_id
@@ -18,6 +18,7 @@ from okto_pulse.core.ports.kg_cognitive_source import (
 from okto_pulse.core.ports.learning_capture import (
     CreateLearningCapture, LearningCaptureHistoryReader, LearningCaptureTargetConflict,
     LearningCaptureIdentityReservation, validate_learning_capture_payload,
+    LEARNING_CAPTURE_FORMAT, LEARNING_SCOPED_CAPTURE_FORMAT, learning_capture_intent_payload,
 )
 from okto_pulse.core.services.test_scenario_lifecycle import scenario_has_authenticated_required_evidence
 from okto_pulse.core.domain.learning_materialization import CapturedLearningProjection
@@ -126,12 +127,13 @@ async def stage_new_learning_capture(context, request: CreateLearningCapture, *,
         node_id, generation = request.intent.target_node_id, request.intent.target_generation
     prior = await store.reserve_capture_identity_in_context(context, board_id=request.board_id,
         author_id=author_id, capture_id=request.capture_id)
-    payload = {'capture_format': 'learning-capture/v1', 'capture_id': request.capture_id,
+    payload = {'capture_format': (LEARNING_SCOPED_CAPTURE_FORMAT if request.intent.scope is not None else LEARNING_CAPTURE_FORMAT),
+        'capture_id': request.capture_id,
         'author_id': author_id, 'captured_at': captured_at.isoformat(),
         'content': request.content, 'context': request.context, 'applicability': request.applicability,
         'source': {'board_id': source.board_id, 'bug_id': source.bug_id,
             'policy_version': source.source_policy_version, 'digest': source.source_digest, 'evidence_refs': refs},
-        'intent': asdict(request.intent)}
+        'intent': learning_capture_intent_payload(request.intent)}
     validate_learning_capture_payload(payload, board_id=source.board_id, node_type='Learning',
         node_id=node_id, generation=generation, evidence_refs=refs)
     if prior is not None:

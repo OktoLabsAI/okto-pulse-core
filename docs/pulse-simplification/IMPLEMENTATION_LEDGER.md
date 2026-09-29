@@ -5,7 +5,7 @@
 Iniciativa **incompleta; retomada explicitamente autorizada em 2026-09-23**.
 O usuário revogou a pausa e pediu execução até o final, sem parar em milestones.
 Frente atual (2026-09-29): F6/KG §7.6, reuso/supersedência explícitos de Learning.
-Último par enviado: Core25738cc5/Community96e88278. Captura, binding em
+Último par enviado: Coree8373889/Community346e6f45. Captura, binding em
 task validation, autoria conjunta, REST/MCP/UI/Delivery, policy/preview e
 materialização automática via outbox/worker e proteção de holds mistos foram
 enviados em incrementos delimitados. Recuperação de projeção validada/enviada.
@@ -456,6 +456,58 @@ Próximo passo integrado permanece supersedência explícita com escopo/concorr�
 e preservação de associações; depois expor intents na autoria/conclusão REST/MCP/UI
 com testes de frontend. Submissão conjunta ainda create-only; não declará-la
 qualificada para reuso apenas porque o binding puro suporta esse intent.
+
+Continuação: e8373889/346e6f45 enviados, árvores limpas ao retomar; turno
+anterior classificado progresso. KG7.6 exige escopo explícito e preservação das
+associações não cobertas. Inspeção de TransactionOrchestrator.supersede_node
+mostra mark_superseded global; probes excluem a Learning inteira por esse campo.
+Preparada reprodução com duas origens em SQL/Grafx para demonstrar essa limitação
+sem mudar a semântica genérica. Não usar SUPERSEDE genérico para o novo caminho.
+
+WIP do contrato: learning-capture/v2 somente para supersede com declaração
+intent.scope=source_bug; Board/Bug/base/evidências continuam os da fonte capturada.
+V1 permanece legível e é emitido com os mesmos campos para create/reuse e pedidos
+sem escopo; uma captura v1 antiga não ganha efeito por interpretação retroativa.
+Referência tipada LearningCaptureSourceRef permite citar a captura semântica no
+evidence_refs da revisão-alvo existente (que participa do fingerprint/CAS), sem
+novo banco, tabela ou propriedade física de grafo. Parsing isolado não concede
+autoridade: a futura aplicação precisa verificar captura exata no Board, alvo,
+scope, predecessor e sucessor commitado. Referências ainda NÃO são emitidas pelo
+materializador; v2 ainda é captura pendente, nunca literal canônica. Materialização
+supersede/binding/transport/UI permanecem recusados ou não expostos até integração.
+Testes de formato/referência/admissão e caracterização preparados, ainda não
+executados. Próximo: build/install/prova, testes afetados/F16 antes de prosseguir
+para CAS conjunto do sucessor e reivindicação de escopo na revisão-alvo.
+
+Builds scope-r1 ambos0, pip70135=0; provenance-r1 confirmou837/900+363/448
+byte-identical. Core7645=0:85pass/5.94s. Community66793 terminou1:1fail/10.71s
+por comparar DTO original do seed com registro SQL normalizado, apesar do
+fingerprint igual. Após todos terminais, teste captura baseline SQL persistido
+antes da operação e exige preservação desse registro integral. Produto não mudou.
+F1612330 terminou1 somente matrizes README; findings[]/oitoZERO. READMEs
+regenerados oficialmente. Build/prova documental r2 precederão Community e F16;
+Core85 permanece prova do mesmo Python. A reprodução gráfica ainda não rodou
+porque -x parou no primeiro teste; não apresentá-la como evidência executada.
+
+R2: pip84203=0, provenance-r2 confirmou837/900+363/448 byte-identical e mesmos
+hashes agregados de payload que r1. Community9727=0:89pass/115.42s, incluindo
+reprodução gráfica de duas origens: ambas deixam de ser reconhecidas pelo probe
+após supersede_node genérico; arestas históricas e fonte SQL ficam preservadas.
+F1612806=0, sem findings/drift, oitoZERO. Recorder executado após terminais,
+acceptance-learning-supersedence-scope.json sela85 Core/89 Community e falha
+anterior preservada. Ruff F/E9/diff-check verdes. Nenhum processo ativo.
+
+Contrato pronto para commit/push, NÃO supersedência funcional concluída. Próxima
+integração deve resolver referência pela porta pública no Board, provar o
+predecessor literal indicado pela captura e o literal do sucessor, e escrever
+sucessor + revisão-alvo com referência adicional na MESMA operação CAS/UOW.
+evidence_refs participa do fingerprint; metadata do envelope não participa e
+não deve guardar autoridade de escopo. Não basta confiar na presença da string
+da referência: auditar cadeia/história e impedir perda silenciosa de claims
+posteriores em replay/curadoria. Arestas e recuperação devem respeitar origem
+coberta, mantendo as demais. Um recibo antigo não pode recriar associação já
+substituída. Essas são dependências de KG7.6, ainda não implementadas/qualificadas;
+não relaxar candidato/K4 nem declarar matriz global completa.
 
 Continuacao do worker em andamento: CanonicalBugNodeResolver, capacidade
 publica implementada por CommunityCanonicalBugNodeReader, seleciona uma unica
