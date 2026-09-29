@@ -5,11 +5,10 @@
 Iniciativa **incompleta; retomada explicitamente autorizada em 2026-09-23**.
 O usuário revogou a pausa e pediu execução até o final, sem parar em milestones.
 Frente atual (2026-09-29): F6/KG §7.5, reconciliação histórica de Learning.
-Último par enviado: Corec4acdbc7/Community0a658a84. Captura, binding em
+Último par enviado: Corecc920c01/Community7b666140. Captura, binding em
 task validation, autoria conjunta, REST/MCP/UI/Delivery, policy/preview e
 materialização automática via outbox/worker e proteção de holds mistos foram
-enviados em incrementos delimitados. Recuperação de projeção validada abaixo,
-com commit/push em finalização.
+enviados em incrementos delimitados. Recuperação de projeção validada/enviada.
 Recuperação/upgrade históricos, reuso/supersedência e demais itens F6 pendem.
 Detalhes, limites e handles ficam no fim deste ledger.
 
@@ -181,6 +180,49 @@ Próxima dependência KG7.5: reproduzir se o reparo autoritativo da captura fech
 a dívida R7 exclusivamente técnica da mesma identidade. O hook histórico atual
 é chamado pelo consolidator determinístico, não pelo materializador autorado.
 Não ampliar a manutenção a outros holds nem antecipar fechamento sem prova.
+
+Commits cc920c01/7b666140 enviados, ambos pushes0. Prova byte-a-byte
+provenance-authored-learning-debt-repro confirmou o par antes da reprodução.
+authored-learning-debt-repro5321 terminou1:1fail/25.90s, a aresta é restaurada
+e a autoria preservada, mas a dívida exclusivamente técnica continua pending.
+Correção delimitada KG7.5: reconciliar somente a Learning reparada na mesma
+UOW, após durabilidade do grafo e antes do commit SQL, reusando filtro técnico
+e CAS existentes. Não acrescentar scan/manutenção geral pós-fence nem fechar
+versão que a evidência não comprova. Testes de identidade/restrição/rollback
+precederão o aceite; ainda não implementado/validado neste registro.
+
+Implementada reconciliação de uma identidade no mesmo coordenador, depois de
+ensure_durable e antes do commit SQL; falhas propagam para rollback/compensação.
+Nenhum scanner adicional, endpoint, permissão ou mecanismo concreto no Core.
+Fixture de materialização registra explicitamente o adaptador Community de
+dívidas já registrado pelo runtime. Testes9: fechamento técnico, sete restrições
+preservadas e falha de ack SQL após CAS. Runner também cobre writer, outages,
+R7 histórico, restrições mistas e coordenador relacional. Ruff F/E9 passou.
+Builds authored-learning-debt-r1 ambos0, pip80809 terminou0, provenance-r1
+confirmou837/900+363/448 byte-identical. Campanhas ativas: Core46457,
+Community61409, F165202. Não editar payload enquanto estiverem em execução.
+
+Core46457 terminou0:26pass/270.38s. Community61409 terminou0:25pass/482.00s,
+incluindo os nove cenários novos e regressões writer/outages. F165202 terminou1
+somente pelas matrizes README, findings[] e oitoZERO. Após todos terminais,
+READMEs regenerados; builds authored-learning-debt-final ambos0 e instalação
+final iniciada. Produto Python não mudou após a campanha. Falta prova final,
+F16 final e record_authored_learning_debt.py (preparado, ainda não executado).
+
+Pip53366 terminou0; provenance-authored-learning-debt-final confirmou837/900
+Core e363/448 Community byte-identical. F16final49694 terminou0, sem findings
+ou drift documental e oito budgetsZERO. record_authored_learning_debt.py
+executado: acceptance-authored-learning-debt.json registra26 Core/25 Community,
+reprodução falha e hashes das provas. Diff-check passou. Nenhuma campanha ativa.
+Pronto para commit/push pareado; entrega global permanece incompleta.
+Continuidade do escopo existente: qualificar rebuild/upgrade com capturas
+sem materialização e com head literal, sem promover captura por simples replay.
+Leitura preliminar: replay_durable_cognitive reporta captura como
+learning_capture_materialization_required; CommunityRebuildEffects.restore
+converte replay_failed em integrity_error. O caminho candidato também diferencia
+capture_pending_materialization. Caracterizar esses caminhos antes de modificar
+gates e preservar obrigação durável/evento/fila; ainda não há reprodução nova
+nem autorização para tratar presença de captura como projeção canônica.
 
 Continuacao do worker em andamento: CanonicalBugNodeResolver, capacidade
 publica implementada por CommunityCanonicalBugNodeReader, seleciona uma unica

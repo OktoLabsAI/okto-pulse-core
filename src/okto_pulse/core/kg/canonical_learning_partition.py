@@ -341,6 +341,26 @@ async def reconcile_canonical_learning_partition_debt(
     return result
 
 
+async def reconcile_materialized_learning_debt(
+    db: object, *, board_id: str, node_id: str, source_ref: str, actor_id: str,
+) -> dict:
+    """Reconcile one authored projection inside its governed commit UOW.
+
+    The caller must have revalidated capture, source, binding and canonical
+    target under its fences and confirmed graph durability. This helper does
+    not scan or manufacture evidence for other Learnings. No source version
+    is asserted: a versioned historical restriction remains unresolved.
+    Failure propagates so the caller rolls back debt and compensates graph.
+    """
+    if not node_id or not _is_bug_derived_ref(source_ref):
+        raise ValueError('canonical_learning_debt_identity_required')
+    return await reconcile_canonical_debt_with_evidence(
+        db, board_id=board_id,
+        canonical_evidence=[_canonical_evidence_for(node_id, source_ref)],
+        actor_id=actor_id, eligible_debt=_technical_partition_wait,
+    )
+
+
 async def run_canonical_learning_partition_maintenance(
     db: object,
     *,

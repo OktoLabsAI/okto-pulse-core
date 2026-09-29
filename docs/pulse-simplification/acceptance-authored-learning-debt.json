@@ -1,0 +1,120 @@
+{
+  "scope": "F6/KG7.5 authored recovery reconciles only demonstrated technical partition debt",
+  "suites": {
+    "core": {
+      "passed": 26,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "community": {
+      "passed": 25,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0
+    }
+  },
+  "budgets": [
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "import_boundary_baseline",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every import_boundary_baseline allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "singleton_baseline",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every singleton_baseline allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "dependency_temporary_exceptions",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every dependency_temporary_exceptions allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "graph_runtime_compatibility",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every graph_runtime_compatibility allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "rebuild_artifact_compatibility",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every rebuild_artifact_compatibility allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "community_private_reach_ins",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every community_private_reach_ins allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "community_adapter_bridges",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every community_adapter_bridges allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "af35_relational_residue",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every af35_relational_residue allowance before F16 completion."
+    }
+  ],
+  "verified": [
+    "Reproduction restored a validates edge but left its exclusively technical CanonicalDebt pending.",
+    "Authored materialization now reconciles the same Learning identity after graph durability, inside the same fenced SQL UOW.",
+    "The existing conditional writer compares full debt records; no broad post-commit maintenance is added.",
+    "Authority, blocked, DLQ, unproven source version, source absence, other Learning and other target remain unchanged.",
+    "Injected relational ack failure observes staged committed debt, then verifies SQL rollback, graph compensation and unchanged source history."
+  ],
+  "limits": [
+    "Integration uses disposable SQL/Grafx with explicit fixtures for unrelated gates and graph health.",
+    "This qualifies captured authored projections, not the full historical upgrade or rebuild runtime.",
+    "Versioned debt is deliberately left unresolved when no corresponding version evidence is supplied.",
+    "Only generated README ownership matrices changed after the test campaign.",
+    "No real data changed; frontend and global acceptance inventory unchanged. F6 and full delivery remain incomplete."
+  ],
+  "sha256": {
+    "PULSE_REFACTOR/.validation-v040/closure-authored-learning-debt-final.json": "249ac0dd2b800173ddaa83defb1ffcb115746d2d7d5ba8ad010aed16cf21d254",
+    "PULSE_REFACTOR/.validation-v040/authored-learning-debt-r1-core.xml": "4a02e94dfc7363da87034a034a0b30a75f07620529d38b8d3804101d6ed84800",
+    "PULSE_REFACTOR/.validation-v040/authored-learning-debt-r1-community.xml": "2f0d31e266829d4e0163ba0e69cf0d336992204a894db1f618c392decbc506c1",
+    "PULSE_REFACTOR/.validation-v040/provenance-authored-learning-debt-repro.json": "b9273946ed8cd73811dccbf20c4a9d5e078856c587651c1e476a1d2884c55a88",
+    "PULSE_REFACTOR/.validation-v040/authored-learning-debt-repro-community.xml": "89b54fe5afb2ae00029b6830097773a4c668c872465c71b53c01b38674adb6ee",
+    "PULSE_REFACTOR/.validation-v040/provenance-authored-learning-debt-r1.json": "5427a46ded2dccac1aa297370160413f4b250889b0e3a15ae72e37a583246c49",
+    "PULSE_REFACTOR/.validation-v040/provenance-authored-learning-debt-final.json": "cf83703405f25420e35f5b82de33278664f830ce031be0950c4b85fe75a3bd63",
+    "PULSE_REFACTOR/.validation-v040/run_authored_learning_debt.py": "22916e0910fcb66d0b6a6ef28d2c8ace1524f7db93f0fd1a44a7a0435f7c9050",
+    "PULSE_REFACTOR/.validation-v040/closure-authored-learning-debt-r1.json": "7dba8b6d88ac5a43ce5989331b8c53bfdb785e17da1200c4c94bccebe21dccd3",
+    "okto_labs_pulse_core/src/okto_pulse/core/kg/canonical_learning_partition.py": "d9efa733097199087c4ddb8485bc59eec423a271de07bea52a070702c3762d24",
+    "okto_labs_pulse_core/src/okto_pulse/core/kg/cognitive_closeout_production.py": "4fc7bd661df25dd68c881a8f58a3d50d03ab642a8846eb1a24e06fbecaadb959",
+    "okto_labs_pulse_community/tests/test_authored_learning_debt_recovery.py": "22e7d6d064018de969a8c7ef3992fd5a0ad63289d559154f0f6c68f2f3cf1e43",
+    "okto_labs_pulse_community/tests/test_learning_materialization_writer.py": "a8e5f4fcd644e24b4d1943f2deaa55b49c6a81a2b88befc4a0f72f712a0a289f"
+  }
+}

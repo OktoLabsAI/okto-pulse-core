@@ -642,6 +642,16 @@ class ConsolidationPipelinePersister:
                             write_lease.ensure_owned(
                                 failure_phase="before_relational_ack",
                             )
+                            if learning_capture is not None:
+                                from okto_pulse.core.kg.canonical_learning_partition import (
+                                    reconcile_materialized_learning_debt,
+                                )
+                                await reconcile_materialized_learning_debt(
+                                    db, board_id=board_id,
+                                    node_id=learning_capture.learning_id,
+                                    source_ref=candidate.source_artifact_ref,
+                                    actor_id=self._agent_id,
+                                )
                             await get_consolidation_persistence_port().commit(db)
                             relational_commit_confirmed = True
                             await finalize_deferred_consolidation(
