@@ -5,7 +5,7 @@
 Iniciativa **incompleta; retomada explicitamente autorizada em 2026-09-23**.
 O usuário revogou a pausa e pediu execução até o final, sem parar em milestones.
 Frente atual (2026-09-29): F6/KG §7, captura durável de Learning e integração
-ao fechamento de Bug. Último par enviado: Core3e1c5094/Community2d9959d7.
+ao fechamento de Bug. Último par enviado: Core55beba24/Community322d55b0.
 Writer de binding opcional em task validation e autoria conjunta de relato+
 Learning foram validados/enviados, incluindo REST/MCP/UI/Delivery. Policy e
 preview tambem foram enviados; writer governado validado nesta rodada,
@@ -13,6 +13,44 @@ integracao automatica ao worker e demais itens F6 seguem pendentes.
 Detalhes, limites e handles ficam no fim deste ledger.
 
 ### Writer de materializacao KG7.3 — validado, integracao automatica pendente
+
+Em 2026-09-29, evento learning.capture_admitted.v1 e consumer implementados
+em WIP: outbox na mesma UOW da captura, referência interna por captura no
+ledger existente, agrupamento no Bug e materialização pelo worker governado.
+Done sem captura não infere Learning nem abre nova dívida genérica. Itens
+legados são preservados sem alteração; configuração experimental permanece.
+Novos testes cobrem replay, alvo canônico tardio e duas capturas independentes.
+Ainda sem validação funcional deste WIP. Próximo: build pareado, instalação,
+prova byte-a-byte, suites afetadas e F16; não declarar F6 ou entrega concluídos.
+
+Continuação: builds worker-r1 ambos0, pip68540=0; provenance-worker-r1 confirmou
+837/900 Core e363/448 Community byte-identical. Core92402 terminou1 com158pass
+e quatro expectativas do trigger inferencial aposentado por KG7.7/L-H.
+Foram substituídas por provas de ausência de inferência, ausência de dívida
+nova por Done isolado e preservação integral dos itens legados. Core44068=0:
+162pass/56.10s; regressão adicional1455=0:36pass/4.75s.
+Community55939=0:44pass/385.30s (SQL, evidência assinada e Grafx descartáveis).
+Teste pré-Done53997 falhou por comparar DTO staged com representação SQL;
+o oráculo agora compara o histórico SQL antes/depois e o fingerprint admitido.
+79859=0:1pass/11.02s, pendência pré-Done sem invocar materialização.
+F1644210 terminou1 somente pelas matrizes README: findings[] e oitoZERO.
+Ruff F/E9 passou. READMEs regenerados; builds worker-final ambos0;
+instalação final em andamento. Aguardar terminal, prova pareada e F16 final.
+Harness entrega o evento ao handler real; não equivale ao dispatcher completo
+em runtime instalado. Gates independentes e health são fixtures explícitas.
+Sem alteração de frontend. R7 misto, reabertura, reuso/supersedência e demais
+itens F6/plano continuam pendentes; inventário global não foi promovido.
+
+Pip final51971 terminou0; provenance-worker-final confirmou837/900+363/448
+byte-identical. F16final56509 terminou0: sem findings/docdrift, oitoZERO.
+record_learning_materialization_worker.py registrou a evidência em
+acceptance-learning-materialization-worker.json; diff --check passou nos dois
+repos. Nenhuma campanha desta rodada permanece em execução. Incremento pronto
+para commit/push; continuar F6 sem pausa nem promoção da entrega global.
+Próxima investigação KG7.5: record_cognitive_working_only_hold preserva session
+e reason_code; canonical_learning_partition já possui manutenção post-commit
+para dívida histórica. Reusar contratos existentes e provar causas técnicas,
+sem fechar holds mistos por presença de qualquer aresta canônica.
 
 Continuacao do worker em andamento: CanonicalBugNodeResolver, capacidade
 publica implementada por CommunityCanonicalBugNodeReader, seleciona uma unica

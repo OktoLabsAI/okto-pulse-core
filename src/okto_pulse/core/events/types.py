@@ -16,6 +16,7 @@ from datetime import datetime, timezone
 from typing import Annotated, ClassVar, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
+from okto_pulse.core.domain.learning_closeout import LearningCaptureSelection
 
 from okto_pulse.core.domain.guideline_impact import (
     GUIDELINE_ADOPTION_EVENT_TYPE,
@@ -77,6 +78,15 @@ class DomainEvent(BaseModel):
                 "occurred_at",
             },
         )
+
+
+class LearningCaptureAdmitted(DomainEvent):
+    """Projection work for an already-authorized durable capture, not approval."""
+    model_config = ConfigDict(extra='forbid', populate_by_name=True)
+    event_type: ClassVar[str] = 'learning.capture_admitted.v1'
+    bug_id: str = Field(min_length=1, max_length=4096)
+    capture_author_id: str = Field(min_length=1, max_length=4096)
+    capture: LearningCaptureSelection
 
 
 class PolicyAdoptionChanged(DomainEvent):
@@ -1266,6 +1276,7 @@ class KGDeliveryRedriveTick(DomainEvent):
 # Ordered list of all event_type strings known to the MVP. The dispatcher
 # uses this to resolve DomainEventRow → subclass during reconstruction.
 EVENT_TYPES: list[str] = [
+    LearningCaptureAdmitted.event_type,
     PolicyAdoptionChanged.event_type,
     PolicyRetirementChanged.event_type,
     PolicyBindingMaterialized.event_type,
@@ -1331,6 +1342,7 @@ EVENT_TYPES: list[str] = [
 
 
 _EVENT_CLASS_BY_TYPE: dict[str, type[DomainEvent]] = {
+    LearningCaptureAdmitted.event_type: LearningCaptureAdmitted,
     PolicyAdoptionChanged.event_type: PolicyAdoptionChanged,
     PolicyRetirementChanged.event_type: PolicyRetirementChanged,
     PolicyBindingMaterialized.event_type: PolicyBindingMaterialized,

@@ -151,6 +151,16 @@ async def stage_new_learning_capture(context, request: CreateLearningCapture, *,
         generation=0, payload=payload, evidence_refs=tuple(refs),
         source_session_id='capture:' + request.capture_id, committed_at=captured_at.isoformat())
     await store.append_many_if_current_in_context(context, (record,), expected_fingerprints=(None,))
+    from okto_pulse.core.events.bus import publish
+    from okto_pulse.core.events.types import LearningCaptureAdmitted
+    from okto_pulse.core.domain.learning_closeout import LearningCaptureSelection
+    # Admission and its work notification share this caller-owned transaction.
+    # The engine emits the event; authorship remains explicit in the capture.
+    # Exact retries returned above and never mint a second work notification.
+    await publish(LearningCaptureAdmitted(board_id=source.board_id, bug_id=source.bug_id,
+        actor_type='system', capture_author_id=author_id, occurred_at=captured_at,
+        capture=LearningCaptureSelection(learning_id=record.node_id,
+            generation=record.generation, fingerprint=record.record_fingerprint)), session=context)
     return record
 
 

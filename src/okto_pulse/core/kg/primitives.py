@@ -3074,7 +3074,9 @@ def _do_graph_commit(
                     or target_attrs.get('superseded_by')
                     or not target.is_bug_derived
                     or target.canonical_artifact_ref != expected.canonical_artifact_ref):
-                raise ValueError('learning_materialization_canonical_bug_required')
+                raise KGPrimitiveError('learning_materialization_target_changed',
+                    'The canonical Bug target changed before graph mutation',
+                    session_id=session_id, retryable=True)
         _require_no_code_traceability_existing_targets(
             graph_scope,
             node_candidates=node_candidates,

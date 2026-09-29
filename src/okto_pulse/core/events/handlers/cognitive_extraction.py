@@ -1,41 +1,8 @@
-"""CognitiveExtractionHandler — auto-emits Learning/Alternative/Assumption
-candidates when a card transitions to ``done`` (spec 3d907a87, FR1-FR7).
+"""Legacy Alternative/Assumption candidates and Spec closeout work.
 
-Closes the gap audited in 2026-04-28 of Global Discovery: extractors
-existed in ``kg/agent/extractors/`` (learnings.py, alternatives.py) plus
-the new ``assumptions.py`` (FR4 / D2) but had **zero call sites** in
-production. The result was that ``learning_from_bugs`` and the
-Alternative/Assumption queries always returned empty, even on boards
-with rich post-mortems.
-
-Design — Decision D1 (umbrella refinement a647d21a):
-    - Trigger: ``CardMoved`` event with ``to_status == "done"`` (Learning from
-      bug cards; legacy Alternative/Assumption candidate logs from spec-linked
-      cards). RKG-03: ``SpecMoved`` with ``to_status == "done"`` is the CANONICAL
-      trigger that opens spec cognitive-closeout pending in the ledger (FR1/AC1).
-    - Bug cards with ``action_plan`` ≥ 50 chars → ``extract_learning_from_bug``.
-    - Cards with ``spec_id`` set → ``extract_alternatives`` + ``extract_assumptions``
-      over the spec context.
-    - LLM dependency for Learning is **opt-in** via
-      ``Board.settings.cognitive_llm_config`` (D5). Absent → log info + skip
-      Learning. Regex extractors (Alternative + Assumption) always run.
-    - Idempotency (D3 / FR5): query graph backend for the equivalent node before
-      invoking each extractor. v1 skip silently if already exists; never
-      supersede.
-
-This handler intentionally **does not** push candidates into the graph backend
-store directly — that is not safe inside an event drain transaction. It
-emits a structured ``cognitive.extraction.*.candidate`` log line per
-candidate AND (RKG-03) opens DURABLE cognitive-closeout work in the
-existing ledger (``CognitiveConsolidationItemStore``) via
-``open_cognitive_closeout_pending`` — a ledger-only write, safe in the
-drain. The dedicated cognitive worker
-(``cognitive_closeout_production.drain_cognitive_closeout_pending``,
-started alongside the consolidation worker) drains that pending work and
-persists Alternative/Assumption/Learning through the consolidation
-pipeline (``begin_consolidation`` → ``add_node_candidate`` →
-``add_edge_candidate`` → ``commit_consolidation``) OUTSIDE this
-transaction, advancing the ledger pending→consolidated/skipped/failed.
+Authored Learning capture admission has its own outbox handler. Card Done
+alone neither invokes a Learning summariser nor opens generic Bug work.
+Historical extraction helpers and configuration are retained for compatibility.
 """
 
 from __future__ import annotations
@@ -68,8 +35,8 @@ class CognitiveExtractionHandler:
     extractor invocations and opens cognitive-closeout pending work in the ledger.
 
     FR1/AC1 (codex): a spec reaching done is the CANONICAL trigger for spec
-    cognitive closeout (``SpecMoved``), independent of any card. A bug card
-    reaching done triggers the Learning closeout.
+    cognitive closeout (``SpecMoved``), independent of any card. Authored Learning
+    closeout is opened by LearningCaptureMaterializationEnqueuer.
     """
 
     async def handle(self, event: DomainEvent, session: object) -> None:
@@ -110,23 +77,10 @@ class CognitiveExtractionHandler:
             )
             return
 
-        board_settings = await self._load_board_settings(session, event.board_id)
-        llm_config = (board_settings or {}).get("cognitive_llm_config") if isinstance(
-            board_settings, dict
-        ) else None
-
-        # Bug branch → Learning (BR2 + BR5 idempotency).
-        if _card_type_value(card.card_type) == "bug":
-            await self._maybe_extract_learning(card, llm_config, event)
-            # RKG-03: open DURABLE cognitive closeout work in the ledger (no graph
-            # write here — safe in the drain). The dedicated cognitive worker
-            # drains it and persists outside this transaction.
-            self._open_closeout_pending(
-                event.board_id,
-                f"bug:{card.card_id}",
-                "bug",
-                content_hash=card.content_hash,
-            )
+        # Learning work is opened by learning.capture_admitted.v1 in the
+        # author's transaction. Done alone neither invents a lesson nor opens
+        # an endless advisory obligation for every Bug. Legacy config/data and
+        # existing pending/hold history remain untouched.
 
         # Spec branch → Alternative + Assumption candidate logs (legacy behaviour).
         # The spec-done CLOSEOUT pending is opened on SpecMoved(done) above — NOT

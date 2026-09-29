@@ -506,7 +506,7 @@ async def test_ts_6c2adf69_spec_done_opens_ledger_only_no_kg_write(
 
 
 @pytest.mark.asyncio
-async def test_ts_6c2adf69_bug_done_opens_ledger_only_no_kg_write(
+async def test_bug_done_without_capture_opens_no_learning_work(
     _ledger_boundary_spies,
 ):
     opened = _ledger_boundary_spies
@@ -516,7 +516,7 @@ async def test_ts_6c2adf69_bug_done_opens_ledger_only_no_kg_write(
         board=_board(llm_config={"provider": "openai", "model": "gpt-4o-mini"}),
     )
     await handler.handle(_bug_moved(card_id="card-7"), sess)
-    assert ("board-1", "bug:card-7", "bug") in opened
+    assert opened == []  # KG7.4/7.7: authored admission is the Learning trigger.
 
 
 @pytest.mark.asyncio
@@ -532,7 +532,7 @@ async def test_ts_6c2adf69_non_done_transition_opens_nothing(
 
 
 @pytest.mark.asyncio
-async def test_terminal_transitions_forward_source_hash_to_closeout_ledger(
+async def test_spec_transition_forwards_hash_without_inventing_bug_capture(
     monkeypatch,
 ):
     from okto_pulse.core.ports.domain_event_delivery import (
@@ -581,7 +581,6 @@ async def test_terminal_transitions_forward_source_hash_to_closeout_ledger(
 
     assert [call["content_hash"] for call in opened] == [
         "spec-hash",
-        "bug-hash",
     ]
 
 

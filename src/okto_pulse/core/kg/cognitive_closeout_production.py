@@ -84,6 +84,8 @@ class CloseoutOutcome(str, Enum):
     SKIPPED_NO_LLM_CONFIG = "skipped_no_llm_config"
     EXTRACTOR_NOT_TRIGGERED = "extractor_not_triggered"
     EXTRACTOR_TRIGGERED_BUT_NOT_PERSISTED = "extractor_triggered_but_not_persisted"
+    MATERIALIZATION_PENDING = 'materialization_pending'
+    MATERIALIZATION_FAILED = 'materialization_failed'
 
 
 @dataclass(frozen=True)
@@ -436,7 +438,7 @@ class ConsolidationPipelinePersister:
     async def persist(self, board_id: str, artifact_type: str, candidate: CloseoutCandidate) -> bool:
         return await self._persist(board_id, artifact_type, candidate)
 
-    async def persist_authored_learning(self, board_id: str, bug_id: str, selection) -> bool:
+    async def persist_authored_learning(self, board_id: str, bug_id: str, selection, *, raise_failures=False) -> bool:
         """Materialize the selected durable authorship through the same coordinator.
 
         The commit revalidates this preflight under its relational source fence.
@@ -464,10 +466,10 @@ class ConsolidationPipelinePersister:
         candidate = CloseoutCandidate('Learning', node.title, node.content,
             f'bug:{bug_id}', (CloseoutEdge('validates', target),))
         return await self._persist(board_id, 'bug', candidate,
-            authored_node=node, learning_capture=selection)
+            authored_node=node, learning_capture=selection, raise_failures=raise_failures)
 
     async def _persist(self, board_id: str, artifact_type: str, candidate: CloseoutCandidate,
-                       *, authored_node=None, learning_capture=None) -> bool:
+                       *, authored_node=None, learning_capture=None, raise_failures=False) -> bool:
         import hashlib
 
         from okto_pulse.core.kg.guarded_write import (
@@ -709,6 +711,8 @@ class ConsolidationPipelinePersister:
             # commit) is NOT fabricated as success.
             logger.info("cognitive_closeout.persist_failed ref=%s step_err=%s",
                         candidate.source_artifact_ref, getattr(exc, "code", exc))
+            if raise_failures:
+                raise
             return False
         if learning_capture is not None:
             # The primitive validated the exact identity, authored fields and
@@ -741,6 +745,8 @@ class ConsolidationPipelinePersister:
 # CloseoutOutcome → (ledger status, outcome_type). The ledger is updated by the
 # worker; persisted→consolidated, honest-absence→skipped, persist-fail→failed.
 _LEDGER_STATUS: dict[str, tuple[str, str | None]] = {
+    CloseoutOutcome.MATERIALIZATION_PENDING.value: (CognitiveItemStatus.PENDING.value, None),
+    CloseoutOutcome.MATERIALIZATION_FAILED.value: (CognitiveItemStatus.FAILED.value, None),
     CloseoutOutcome.PERSISTED.value: (
         CognitiveItemStatus.CONSOLIDATED.value, CognitivePendingOutcomeType.CANDIDATE_CREATED.value),
     CloseoutOutcome.NO_MATERIAL.value: (
@@ -818,10 +824,34 @@ async def drain_cognitive_closeout_pending(
     ]
     results: list[CloseoutResult] = []
     for item in pending:
-        store.update_item(
-            board_id=board_id, kg_generation_id=gen, item_id=item.item_id,
-            new_status=CognitiveItemStatus.IN_PROGRESS.value, updated_by_agent_id=agent_id,
-        )
+        from okto_pulse.core.domain.learning_materialization_work import parse_learning_capture_work_ref
+        try:
+            capture_work = parse_learning_capture_work_ref(item.source_ref)
+        except ValueError:
+            capture_work = None
+            store.update_item(board_id=board_id, kg_generation_id=gen, item_id=item.item_id,
+                new_status=CognitiveItemStatus.FAILED.value, updated_by_agent_id=agent_id,
+                reason='learning_capture_work_reference_invalid')
+            continue
+        if capture_work is None and (item.artifact_type == 'bug' or item.source_ref.startswith('bug:')):
+            # Preserve legacy debt, reason and holds verbatim. Its absence of
+            # authored work is not permission to infer Learning or waive it.
+            continue
+        store.update_item(board_id=board_id, kg_generation_id=gen, item_id=item.item_id,
+            new_status=CognitiveItemStatus.IN_PROGRESS.value, updated_by_agent_id=agent_id)
+        if capture_work is not None:
+            from okto_pulse.core.application.learning_materialization_worker import materialize_capture_work
+            attempt = await materialize_capture_work(relational_scope_factory,
+                board_id=board_id, work=capture_work, fingerprint=item.content_hash, persister=persister)
+            result = CloseoutResult(item.source_ref, item.artifact_type, attempt.outcome,
+                detail=attempt.reason, candidates_emitted=1,
+                persisted_refs=[f'kg:{capture_work.learning_id}'] if attempt.outcome == 'persisted' else [])
+            new_status, outcome_type = _LEDGER_STATUS[result.outcome]
+            store.update_item(board_id=board_id, kg_generation_id=gen, item_id=item.item_id,
+                new_status=new_status, updated_by_agent_id=agent_id, outcome_type=outcome_type,
+                reason=result.detail, evidence_refs=result.persisted_refs or None)
+            results.append(result)
+            continue
         try:
             inputs = await input_loader(board_id, item)
         except Exception as exc:  # pragma: no cover - defensive

@@ -2,8 +2,8 @@
 
 Started in ``core/app.py`` alongside the deterministic consolidation worker, it
 periodically drains PENDING cognitive-closeout work from the ledger
-(opened by the CognitiveExtractionHandler) and persists Alternative/Assumption/
-Learning to board graph OUTSIDE the event drain, advancing the SAME ledger
+(opened by the Spec and authored-capture event handlers) and persists Alternative/Assumption/
+authored Learning to board graph OUTSIDE the event drain, advancing the SAME ledger
 pending→consolidated/skipped/failed.
 
 The worker NEVER writes the graph inside the event drain and uses a cognitive
@@ -79,12 +79,8 @@ def build_closeout_input_loader(relational_scope_factory):
     """The production input loader: derives the closeout inputs for a pending
     ledger item from SQL (Card/Spec/Board settings) + the live graph (bug probe,
     related Decision)."""
-    from okto_pulse.core.events.handlers.cognitive_extraction import _summariser_factory
     from okto_pulse.core.ports.domain_event_delivery import (
         get_domain_event_fact_reader,
-    )
-    from okto_pulse.core.ports.bug_cognitive_context import (
-        resolve_bug_cognitive_context_assembler,
     )
 
     async def _loader(board_id: str, item) -> dict:
@@ -92,30 +88,7 @@ def build_closeout_input_loader(relational_scope_factory):
         ident = item.source_ref.split(":", 1)[-1]
         reader = get_domain_event_fact_reader()
         if item.artifact_type == "bug" or kind == "bug":
-            assembler = resolve_bug_cognitive_context_assembler()
-            if assembler is None:
-                raise RuntimeError("bug_cognitive_context_assembler_not_configured")
-            async with relational_scope_factory() as db:
-                bug_context = await assembler.assemble(
-                    db,
-                    board_id=board_id,
-                    bug_id=ident,
-                )
-                settings = await reader.load_board_settings(db, board_id=board_id)
-            settings = settings or {}
-            llm_config = settings.get("cognitive_llm_config")
-            summariser = _summariser_factory(llm_config) if llm_config else None
-            return {
-                "bug_card_id": ident,
-                "bug_title": bug_context.title or "",
-                "bug_action_plan": bug_context.action_plan or "",
-                "bug_context": bug_context,
-                "llm_config": llm_config,
-                "summariser": summariser,
-                "bug_probe": lambda uuid: (
-                    uuid == ident and bug_context.canonical_bug_present is True
-                ),
-            }
+            raise ValueError('legacy_bug_closeout_requires_authored_capture')
         if item.artifact_type == "spec" or kind == "spec":
             async with relational_scope_factory() as db:
                 spec = await reader.load_cognitive_spec_facts(db, spec_id=ident)

@@ -401,7 +401,7 @@ async def test_transport_operation_resolves_the_registered_shared_assembler() ->
 
 
 @pytest.mark.asyncio
-async def test_worker_loader_uses_the_same_registered_context() -> None:
+async def test_legacy_worker_loader_requires_authored_capture() -> None:
     from okto_pulse.core.kg.workers.cognitive_closeout import (
         build_closeout_input_loader,
     )
@@ -427,15 +427,12 @@ async def test_worker_loader_uses_the_same_registered_context() -> None:
         yield relational_context
 
     loader = build_closeout_input_loader(_scope)
-    inputs = await loader(
-        "board-1",
-        SimpleNamespace(source_ref=f"bug:{BUG_ID}", artifact_type="bug"),
-    )
-
-    assert assembler.calls == [(relational_context, "board-1", BUG_ID)]
-    assert inputs["bug_context"] is context
-    assert inputs["bug_probe"](BUG_ID) is True
-    assert inputs["bug_probe"]("different-bug") is False
+    with pytest.raises(ValueError, match="legacy_bug_closeout_requires_authored_capture"):
+        await loader(
+            "board-1",
+            SimpleNamespace(source_ref=f"bug:{BUG_ID}", artifact_type="bug"),
+        )
+    assert assembler.calls == []
 
 
 def test_core_bug_context_boundary_has_no_edition_or_orm_imports() -> None:

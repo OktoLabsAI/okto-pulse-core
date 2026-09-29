@@ -88,8 +88,8 @@ def test_node_with_source_ref_exists_false_on_exception(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_handler_skips_learning_when_already_exists(caplog, monkeypatch):
-    """TC-3 (TS3): re-mover bug done com Learning existente → skip silencioso."""
+async def test_done_replay_does_not_infer_or_reinterpret_existing_learning(caplog, monkeypatch):
+    """KG7.7: graph presence cannot activate the legacy inference path."""
     handler = CognitiveExtractionHandler()
     sess = AsyncMock()
 
@@ -116,9 +116,7 @@ async def test_handler_skips_learning_when_already_exists(caplog, monkeypatch):
     )
     with caplog.at_level(logging.DEBUG, logger="okto_pulse.core.events.cognitive_extraction"):
         await handler.handle(event, sess)
-    skipped = [r for r in caplog.records if "learning.skipped" in r.message
-               and getattr(r, "reason", None) == "already_exists"]
-    assert skipped, f"expected learning.skipped already_exists, got {[r.message for r in caplog.records]}"
+    assert not any("learning" in r.message for r in caplog.records)
 
 
 def test_summariser_factory_returns_openai_for_openai_provider():

@@ -58,6 +58,7 @@ plug in exactly the same way — one decorator, one `handle()` method.
 
 | Event | Publisher | Key payload fields |
 |-------|-----------|--------------------|
+| `learning.capture_admitted.v1` | authored Learning admission, in the source UOW | `bug_id`, `capture_author_id`, exact capture identity/generation/fingerprint; no narrative or approval |
 | `card.created` | `CardService.create_card` | `card_id`, `spec_id`, `card_type`, `priority` |
 | `card.moved` | `CardService.move_card` | `card_id`, `from_status`, `to_status` |
 | `card.cancelled` | `CardService.move_card` (→ cancelled) | `card_id`, `previous_status` |
@@ -86,6 +87,14 @@ materialize Sprint. Historical queue work and archive lifecycle replay fail
 closed until the fenced offline retirement resolves them; they are not reported
 as delivered. Historical fixtures must supply the old payload explicitly instead
 of constructing it from current event DTOs.
+
+Learning admission emits one work notification with the durable capture in the
+same transaction. Exact retries emit no duplicate. Its handler opens one item
+per capture in the existing cognitive ledger; the dedicated worker revalidates
+source, evidence and canonical eligibility outside the event drain. Pending
+projection is not approval. Bug Done no longer starts internal Learning
+inference or creates an obligation for every advisory Bug. Old inference
+configuration and old debt/hold records remain intact for scoped reconciliation.
 
 ### Rolling deployment for forced rebuild ticks
 

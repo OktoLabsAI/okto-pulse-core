@@ -612,6 +612,11 @@ def normalize_cognitive_artifact_id(source_ref: str) -> str:
     """
 
     ref = str(source_ref or "").strip()
+    from okto_pulse.core.domain.learning_materialization_work import parse_learning_capture_work_ref
+    capture_work = parse_learning_capture_work_ref(ref)
+    if capture_work is not None:
+        # Work identity is per capture; readiness still groups the owning Bug.
+        ref = f'bug:{capture_work.bug_id}'
     if ":" not in ref:
         return ref
     prefix, rest = ref.split(":", 1)

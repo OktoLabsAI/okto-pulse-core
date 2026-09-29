@@ -4577,8 +4577,8 @@ class BoardSettings(BaseModel):
     # Schema (free-form dict so it can evolve without a migration):
     #   {"provider": "openai" | "anthropic" | ..., "model": "...",
     #    "api_key_env": "OPENAI_API_KEY", "max_tokens": 800, "timeout_s": 30}
-    # Absent or None → CognitiveExtractionHandler skips Learning extraction
-    # and emits log info. Alternative + Assumption (regex) run regardless.
+    # Retained for historical experimental configuration. The authored Learning
+    # worker does not consume this field or invoke an internal summariser.
     cognitive_llm_config: dict | None = None
 
     @field_validator("auto_derive_spec_resource_types")

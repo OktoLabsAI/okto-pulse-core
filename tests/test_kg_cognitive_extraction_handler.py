@@ -118,36 +118,40 @@ async def test_bug_done_short_action_plan_skips_learning(caplog):
 
 
 @pytest.mark.asyncio
-async def test_bug_done_no_llm_config_skips_learning(caplog):
-    """TC-5 (TS5): action_plan rich + no LLM config → skip with log info."""
+async def test_bug_done_no_llm_config_does_not_infer_learning(caplog, monkeypatch):
+    """KG7.7/L-H: absence of experimental configuration is not an error."""
     handler = CognitiveExtractionHandler()
+    infer = AsyncMock(side_effect=AssertionError("No internal Learning inference"))
+    monkeypatch.setattr(handler, "_maybe_extract_learning", infer)
     sess = _make_session(
         card=_bug_card(action_plan="x" * 200),
         board=_board(llm_config=None),
     )
     with caplog.at_level(logging.INFO, logger="okto_pulse.core.events.cognitive_extraction"):
         await handler.handle(_moved_event(), sess)
-    skipped = [r for r in caplog.records if "learning.skipped" in r.message]
-    assert skipped, f"expected a learning.skipped log, got {[r.message for r in caplog.records]}"
-    # Make sure the reason field is present in the structured payload.
-    assert any(getattr(r, "reason", None) == "no_llm_config" for r in skipped)
+    infer.assert_not_called()
+    assert not any("learning" in r.message for r in caplog.records)
 
 
 @pytest.mark.asyncio
-async def test_bug_done_with_llm_config_emits_candidate(caplog):
-    """TC-1 (TS1): action_plan rich + LLM config → emits learning.candidate."""
+async def test_bug_done_with_llm_config_neither_infers_nor_enqueues(caplog, monkeypatch):
+    """KG7.4/7.7: historical config cannot activate new inferred debt."""
+    from unittest.mock import Mock
+    from okto_pulse.core.kg import cognitive_closeout_production
     handler = CognitiveExtractionHandler()
+    infer = AsyncMock(side_effect=AssertionError("No internal Learning inference"))
+    enqueue = Mock(side_effect=AssertionError("Done alone is not authored admission"))
+    monkeypatch.setattr(handler, "_maybe_extract_learning", infer)
+    monkeypatch.setattr(cognitive_closeout_production, "open_cognitive_closeout_pending", enqueue)
     sess = _make_session(
         card=_bug_card(action_plan="x" * 200),
         board=_board(llm_config={"provider": "openai", "model": "gpt-4o-mini"}),
     )
     with caplog.at_level(logging.INFO, logger="okto_pulse.core.events.cognitive_extraction"):
         await handler.handle(_moved_event(), sess)
-    cands = [r for r in caplog.records if "learning.candidate" in r.message]
-    assert cands, f"expected learning.candidate log, got {[r.message for r in caplog.records]}"
-    rec = cands[0]
-    assert getattr(rec, "card_id", None) == "card-1"
-    assert getattr(rec, "llm_provider", None) == "openai"
+    infer.assert_not_called()
+    enqueue.assert_not_called()
+    assert not any("learning" in r.message for r in caplog.records)
 
 
 @pytest.mark.asyncio
