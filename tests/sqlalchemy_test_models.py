@@ -1657,6 +1657,7 @@ class Card(Base):
     # general_justification, recommendation, outcome, threshold_violations, created_at}]
     validations: Mapped[list | None] = mapped_column(JSON, nullable=True)
     # Append-only rejection history plus the bounded Current cause projection.
+    learning_closeout_bindings: Mapped[list | None] = mapped_column(JSON, nullable=True)
     rejection_records: Mapped[list | None] = mapped_column(JSON, nullable=True)
     current_rejection_kind: Mapped[str | None] = mapped_column(
         String(64), nullable=True

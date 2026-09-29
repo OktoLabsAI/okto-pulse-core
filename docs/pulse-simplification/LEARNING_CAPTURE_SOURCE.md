@@ -193,3 +193,28 @@ the global blocking switch on. It also governs legacy debt/skip semantics;
 there is no implemented `bug_learning_closeout` setting. Preserve that finding
 when defining the typed human-authored policy and migration: do not silently
 reinterpret the existing switch, erase skips or claim the target gate exists.
+
+## Binding a capture to one closeout
+
+`domain.learning_closeout` defines `learning-closeout-binding/v1`, containing
+only the selected capture identity/revision/fingerprint, Board/Bug, transition
+identity, actor/time, operation and before/closed semantic digests and versions.
+It does not duplicate authored content. Its integrity hash is not a signature
+or permission grant. Lifecycle authorization and authenticated revalidation
+remain prerequisites supplied by the application writer.
+
+The builder compares the complete qualified before/closed contexts. It allows
+status/version changes and, for task validation, exactly one server-constructed
+review append. Conclusions and all other related facts must remain identical.
+A new conclusion must be included in the admitted capture basis first; changing
+it during closeout cannot silently requalify an existing capture. Reopen or any
+later semantic-source change makes this historical binding non-current without
+deleting it. Exact transition retries preserve history; changed bindings using
+the same transition identity and corrupt older entries are rejected.
+
+Community owns the nullable `cards.learning_closeout_bindings` JSON storage.
+The additive pre-create-all migration creates no bindings for old Done cards,
+does not change conclusions, and refuses incompatible existing column shape.
+These references are operational metadata, excluded from guideline semantic
+intent changes. This contract/storage increment does not yet connect a producer
+to lifecycle, public transports, preview, policy or the materialization worker.
