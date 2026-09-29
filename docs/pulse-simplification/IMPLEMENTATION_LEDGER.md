@@ -4,15 +4,15 @@
 
 Iniciativa **incompleta; retomada explicitamente autorizada em 2026-09-23**.
 O usuário revogou a pausa e pediu execução até o final, sem parar em milestones.
-Frente atual (2026-09-29): F6/KG §7, captura durável de Learning e integração
-ao fechamento de Bug. Último par enviado: Core55beba24/Community322d55b0.
-Writer de binding opcional em task validation e autoria conjunta de relato+
-Learning foram validados/enviados, incluindo REST/MCP/UI/Delivery. Policy e
-preview tambem foram enviados; writer governado validado nesta rodada,
-integracao automatica ao worker e demais itens F6 seguem pendentes.
+Frente atual (2026-09-29): F6/KG §7.5, reconciliação histórica de Learning.
+Último par enviado: Coree96c33b9/Community9ca5b1a9. Captura, binding em
+task validation, autoria conjunta, REST/MCP/UI/Delivery, policy/preview e
+materialização automática via outbox/worker foram enviados em incrementos
+delimitados. Proteção de holds mistos em validação final neste WIP.
+Recuperação/upgrade históricos, reuso/supersedência e demais itens F6 pendem.
 Detalhes, limites e handles ficam no fim deste ledger.
 
-### Writer de materializacao KG7.3 — validado, integracao automatica pendente
+### F6 — integração de Learning e reconciliação histórica
 
 Em 2026-09-29, evento learning.capture_admitted.v1 e consumer implementados
 em WIP: outbox na mesma UOW da captura, referência interna por captura no
@@ -51,6 +51,50 @@ Próxima investigação KG7.5: record_cognitive_working_only_hold preserva sessi
 e reason_code; canonical_learning_partition já possui manutenção post-commit
 para dívida histórica. Reusar contratos existentes e provar causas técnicas,
 sem fechar holds mistos por presença de qualquer aresta canônica.
+
+Os commits e96c33b9/9ca5b1a9 foram enviados, pushes0. Na continuação KG7.5,
+inspeção identificou que reconcile_canonical_debt_with_evidence seleciona
+apenas board/source/hash e versão opcional; a manutenção de partição não
+delimita target_status/failure_reason/blocked/DLQ. Nova reprodução isolada
+test_learning_partition_reconciliation_scope.py exercita essas quatro
+restrições no SQL/grafo descartável. Nenhuma mudança de semântica implementada
+até aqui. Provenance-learning-partition-repro confirmou o último par instalado
+byte-a-byte antes da reprodução. Investigar o resultado antes de alterar.
+
+Reprodução61276 terminou1: os quatro casos fechavam indevidamente a dívida.
+Correção em WIP: reconciliação da partição filtra alvo/motivo/estado/DLQ/erro,
+não aceita extra_evidence como prova de layer ou versão e exige origem
+correspondente com Learning/Bug não supersedidos. Fonte ausente conserva seu
+diagnóstico até recuperação autoritativa; aresta presente não basta.
+ConditionalCanonicalDebtWriter acrescenta CAS público implementado em Community;
+Core exige essa capacidade para atualizar/fechar apenas a espera técnica.
+Redetecção preserva restrições e versão; mudança concorrente não é sobrescrita.
+Testes de mixed holds, origem errada, supersedidos, versão ausente, evidência
+apenas declarada e CAS SQL adicionados. Ruff F/E9 passou; builds r1 iniciados.
+Sem aprovação/gate novo, sem ferramenta pública de reparo e sem dados reais.
+Este incremento não prova toda reconciliação KG7.5: recuperação autoritativa
+da fonte, retarget de históricos, rotina de upgrade e go-forward R7 pendem.
+
+Builds partition-r1 ambos0; pip70452 terminou0. Prova pareada confirmou837/900
+Core e363/448 Community byte-identical. Community97688 terminou0:7pass/15.06s
+para CAS real, seis restrições concorrentes e commit/rollback do chamador.
+Core90547 permanece em execução (scope novo, R7 IMP2/IMP3 e canonical_debt).
+F165398 terminou1 somente por README, findings[] e oitoZERO. Não editar payload
+até o terminal Core; depois regenerar matrizes, rebuild/prova/F16 finais.
+
+Core90547 terminou0:43pass/313.65s. Os sete casos Community também passaram.
+READMEs regenerados pelo helper oficial após os terminais; builds finais0,
+pip44540=0 e provenance-partition-final837/900+363/448 byte-identical.
+Nenhum Python funcional mudou depois da campanha r1. F16 final em execução;
+aguardar terminal antes de registrar acceptance e commitar. Há uma evidência
+de reprodução com4fail preservada, não apresentada como validação verde.
+
+F16final51414 terminou0: findings[]/documentation_findings[]/oitoZERO.
+record_learning_partition_reconciliation.py gerou acceptance correspondente.
+Ruff F/E9 e diff --check passaram nos arquivos alterados. Sem processos ativos
+desta rodada. Pronto para commit/push; não promover KG7.5/F6/entrega global.
+Continuidade: provar recuperação autoritativa e restauração da obrigação de
+materializar após rebuild, além de reconciliar apenas o R7 técnico demonstrado.
 
 Continuacao do worker em andamento: CanonicalBugNodeResolver, capacidade
 publica implementada por CommunityCanonicalBugNodeReader, seleciona uma unica

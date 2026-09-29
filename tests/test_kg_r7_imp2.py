@@ -111,6 +111,7 @@ def _seed_learning_validating_bug(
     """Materialize a canonical Learning that validates a Bug at ``bug_layer``."""
     from kg_schema_testing import open_board_connection
     from okto_pulse.core.kg.transaction import TransactionOrchestrator
+    from okto_pulse.core.kg.cognitive_source_ref_resolver import strip_concept_suffix
 
     learning_id = f"r7l_{uuid.uuid4().hex[:12]}"
     bug_id = f"r7b_{uuid.uuid4().hex[:12]}"
@@ -132,7 +133,7 @@ def _seed_learning_validating_bug(
             maturity_status=MATURITY_CANONICAL_ELIGIBLE,
         )
         _seed_node(
-            kconn, orch, "Bug", bug_id, f"bug:{bug_id}",
+            kconn, orch, "Bug", bug_id, strip_concept_suffix(learning_source_ref),
             graph_layer=bug_layer, maturity_status=bug_maturity,
         )
         orch.create_edge(
@@ -150,9 +151,15 @@ def _add_canonical_bug_validates(board_id: str, learning_id: str) -> str:
     """Give an EXISTING Learning a validates edge to a fresh CANONICAL Bug."""
     from kg_schema_testing import open_board_connection
     from okto_pulse.core.kg.transaction import TransactionOrchestrator
+    from okto_pulse.core.kg.cognitive_source_ref_resolver import strip_concept_suffix
 
     bug_id = f"r7cb_{uuid.uuid4().hex[:12]}"
     with open_board_connection(board_id) as (_db, kconn):
+        result = kconn.execute('MATCH (l:Learning) WHERE l.id = $id RETURN l.source_artifact_ref', {'id': learning_id})
+        try:
+            source_ref = strip_concept_suffix(result.get_next()[0])
+        finally:
+            result.close()
         orch = TransactionOrchestrator(
             graph_scope=kconn,
 
@@ -160,7 +167,7 @@ def _add_canonical_bug_validates(board_id: str, learning_id: str) -> str:
             board_id=board_id,
         )
         _seed_node(
-            kconn, orch, "Bug", bug_id, f"bug:{bug_id}",
+            kconn, orch, "Bug", bug_id, source_ref,
             graph_layer=GRAPH_LAYER_CANONICAL,
             maturity_status=MATURITY_CANONICAL_ELIGIBLE,
         )
@@ -336,7 +343,7 @@ async def test_source_absent_debt_identity_is_per_learning(db_factory):
 
 
 @pytest.mark.asyncio
-async def test_source_absent_debt_closes_with_matching_canonical_evidence(db_factory):
+async def test_source_absent_debt_requires_authoritative_recovery_not_graph_presence(db_factory):
     board_id = await _setup_board(db_factory)
     source_ref = f"card:bug:{uuid.uuid4()}:learning:{uuid.uuid4()}"
     learning_id, _working_bug = _seed_learning_validating_bug(
@@ -363,9 +370,9 @@ async def test_source_absent_debt_closes_with_matching_canonical_evidence(db_fac
     async with db_factory() as db:
         listed = await list_canonical_debt(db, board_id=board_id)
 
-    assert result["committed_count"] == 1
+    assert result["committed_count"] == 0
     assert listed.total == 1
-    assert listed.items[0]["canonical_state"] == "committed"
+    assert listed.items[0]["canonical_state"] == "pending"
     assert listed.items[0]["failure_reason"] == SOURCE_ABSENT_DEBT_REASON
 
 

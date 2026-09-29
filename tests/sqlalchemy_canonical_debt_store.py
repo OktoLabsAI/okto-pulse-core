@@ -2,7 +2,7 @@
 
 from collections.abc import Sequence
 
-from sqlalchemy import and_, func, select
+from sqlalchemy import and_, func, select, update
 
 from sqlalchemy_test_models import CanonicalDebt
 from okto_pulse.core.ports.canonical_debt import CanonicalDebtRecord
@@ -27,6 +27,14 @@ def _apply(row: CanonicalDebt, record: CanonicalDebtRecord) -> None:
 
 class TestSqlAlchemyCanonicalDebtStore:
     __test__ = False
+
+    async def replace_if_current(self, context, *, expected, replacement):
+        fields = CanonicalDebtRecord.__dataclass_fields__
+        result = await context.execute(update(CanonicalDebt).where(*(
+            getattr(CanonicalDebt, name) == getattr(expected, name) for name in fields
+        )).values(**{name: getattr(replacement, name) for name in fields if name != 'id'})
+            .execution_options(synchronize_session="fetch"))
+        return result.rowcount == 1
 
     async def counts_by_state(
         self,

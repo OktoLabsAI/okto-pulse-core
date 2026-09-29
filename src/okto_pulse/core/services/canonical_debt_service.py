@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
+from collections.abc import Callable
 from datetime import datetime, timezone
 from typing import Any
 
 from okto_pulse.core.ports.canonical_debt import (
     CanonicalDebtRecord,
+    ConditionalCanonicalDebtWriter,
     get_canonical_debt_store,
 )
 from okto_pulse.core.kg.source_maturity import CANONICAL_ARTIFACT_TYPES
@@ -228,6 +230,7 @@ async def upsert_canonical_debt(
     queue_ref: str | None = None,
     dlq_ref: str | None = None,
     evidence_ref: str | None = None,
+    eligible_existing: Callable[[CanonicalDebtRecord], bool] | None = None,
 ) -> CanonicalDebtRecord:
     if not content_hash:
         raise ValueError("content_hash is required for CanonicalDebt")
@@ -241,6 +244,7 @@ async def upsert_canonical_debt(
         content_hash=content_hash,
     )
     now = datetime.now(timezone.utc)
+    expected = None
     if row is None:
         row = CanonicalDebtRecord(
             board_id=board_id,
@@ -264,6 +268,10 @@ async def upsert_canonical_debt(
             updated_at=now,
         )
     else:
+        if eligible_existing is not None:
+            if not isinstance(store, ConditionalCanonicalDebtWriter) or not eligible_existing(row):
+                return row
+            expected = replace(row)
         row.source_ref = source_ref
         row.source_version = source_version
         row.canonical_state = canonical_state
@@ -277,6 +285,13 @@ async def upsert_canonical_debt(
         row.dlq_ref = dlq_ref
         row.evidence_ref = evidence_ref
         row.updated_at = now
+    if expected is not None:
+        if await store.replace_if_current(db, expected=expected, replacement=row):
+            return row
+        current = await store.get(db, debt_id=row.id)
+        if current is None:
+            raise ValueError('canonical_debt_changed_during_reconciliation')
+        return current
     return await store.save(db, row)
 
 
@@ -289,6 +304,7 @@ async def reconcile_canonical_debt_with_evidence(
     canonical_evidence: list[dict[str, Any]],
     actor_id: str,
     report_ref: str | None = None,
+    eligible_debt: Callable[[CanonicalDebtRecord], bool] | None = None,
 ) -> dict[str, Any]:
     store = get_canonical_debt_store()
     now = datetime.now(timezone.utc)
@@ -306,22 +322,30 @@ async def reconcile_canonical_debt_with_evidence(
             open_states=tuple(OPEN_STATES),
         )
         for row in rows:
+            if eligible_debt is not None and (
+                not isinstance(store, ConditionalCanonicalDebtWriter) or not eligible_debt(row)
+            ):
+                continue
             evidence_version = evidence.get("source_version")
+            if eligible_debt is not None and row.source_version is not None and (
+                evidence_version is None or str(evidence_version) != str(row.source_version)
+            ):
+                continue
             if (
                 evidence_version
                 and row.source_version
                 and str(evidence_version) != str(row.source_version)
             ):
                 continue
-            row.canonical_state = "committed"
-            row.evidence_ref = (
-                str(evidence.get("evidence_ref") or evidence.get("node_ref") or "")
-                or report_ref
-            )
-            row.owner_agent_id = actor_id
-            row.updated_at = now
-            await store.save(db, row)
-            committed.append(canonical_debt_to_dict(row))
+            replacement = replace(row, canonical_state="committed",
+                evidence_ref=str(evidence.get("evidence_ref") or evidence.get("node_ref") or "") or report_ref,
+                owner_agent_id=actor_id, updated_at=now)
+            if eligible_debt is not None:
+                if not await store.replace_if_current(db, expected=row, replacement=replacement):
+                    continue
+            else:
+                await store.save(db, replacement)
+            committed.append(canonical_debt_to_dict(replacement))
     summary = await summarize_canonical_debt(db, board_id)
     return {
         "committed_count": len(committed),

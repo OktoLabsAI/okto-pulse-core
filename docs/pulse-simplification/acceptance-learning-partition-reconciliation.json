@@ -1,0 +1,128 @@
+{
+  "scope": "F6/KG7.5 preserve substantive restrictions during technical partition reconciliation",
+  "suites": {
+    "learning-partition-reconciliation-r1-core": {
+      "tests": 43,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "learning-partition-reconciliation-r1-community": {
+      "tests": 7,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    }
+  },
+  "budgets": [
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "import_boundary_baseline",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every import_boundary_baseline allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "singleton_baseline",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every singleton_baseline allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "dependency_temporary_exceptions",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every dependency_temporary_exceptions allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "graph_runtime_compatibility",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every graph_runtime_compatibility allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "rebuild_artifact_compatibility",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every rebuild_artifact_compatibility allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "community_private_reach_ins",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every community_private_reach_ins allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "community_adapter_bridges",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every community_adapter_bridges allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "af35_relational_residue",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every af35_relational_residue allowance before F16 completion."
+    }
+  ],
+  "verified": [
+    "Four reproduced failures showed graph presence discharging other-target, authority, blocked or DLQ debt.",
+    "Partition maintenance now selects only its technical reason/target and preserves substantive restrictions during detection and reconciliation.",
+    "A validates edge must match the Learning source; superseded Bug/Learning identities do not establish recovery.",
+    "Extra evidence cannot assert canonical layer or an otherwise unproven source version.",
+    "Source absence remains diagnosed; graph presence alone does not prove authoritative recovery.",
+    "Community implements the public conditional writer with an atomic full-record comparison.",
+    "Concurrent state, reason, target, DLQ, version or error changes cannot be overwritten; the caller owns commit/rollback.",
+    "Generic reconciliation callers without the optional eligibility predicate retain their existing contract."
+  ],
+  "limits": [
+    "This is a bounded guard correction, not completion of KG7.5 or the full plan.",
+    "Authoritative recovery, historical edge retargeting, go-forward R7 replay and internal upgrade remain pending.",
+    "Core integration uses the existing test SQL store; Community tests separately exercise the production conditional adapter.",
+    "Functional tests ran after paired r1 proof; only generated README matrices changed before final paired proof and F16.",
+    "No real data migrated or modified. Frontend unchanged. Global acceptance inventory unchanged."
+  ],
+  "sha256": {
+    "PULSE_REFACTOR/.validation-v040/closure-learning-partition-reconciliation-final.json": "f1608951d742a2b149c3d5d12fc6144ef9c492b178d7a794e90524afe25dd75f",
+    "PULSE_REFACTOR/.validation-v040/learning-partition-reconciliation-r1-core.xml": "2abecd7aa90995c6d554bccc7937e9cd8bb95e3211620f5aff4503929349c715",
+    "PULSE_REFACTOR/.validation-v040/learning-partition-reconciliation-r1-community.xml": "3d75034cf725575daf9b1eda00231ee64f0e9bc8b140b3a32e80e41287fa6526",
+    "PULSE_REFACTOR/.validation-v040/provenance-learning-partition-repro.json": "136367f867c8466c946d866383b13367fd9031d49a522a7185cda2cb42cfdf30",
+    "PULSE_REFACTOR/.validation-v040/learning-partition-reconciliation-repro-core.xml": "fcbe4f51b48c8c48975bc03cc2b5b2e6a1aaaf7d1f807be35cad5580a7c0b056",
+    "PULSE_REFACTOR/.validation-v040/provenance-learning-partition-reconciliation-r1.json": "d342a66a826a5b42fe7078601c3c5adca68669e1b3e7de71c9f8ac6afb3734a2",
+    "PULSE_REFACTOR/.validation-v040/provenance-learning-partition-reconciliation-final.json": "c07a25656f2068a05c67a3feaaa165b7240d67bcf64892f302b6299cc391ac2a",
+    "PULSE_REFACTOR/.validation-v040/run_learning_partition_reconciliation.py": "1b62e5b9c44457375337f235424a705ebcb57c146b84cb49781dd25b3ea11101",
+    "PULSE_REFACTOR/.validation-v040/run_learning_partition_reconciliation_validation.py": "9b0869878ebd30aa40bdddedf97dc1f43ee910f3edc918bace462fd25029a170",
+    "PULSE_REFACTOR/.validation-v040/closure-learning-partition-reconciliation-r1.json": "829de47c3506f1d4f74f1b96840462da4e6e4f6aa87fbbc438e13197037d35cf",
+    "okto_labs_pulse_core/src/okto_pulse/core/kg/canonical_learning_partition.py": "a2d031795c65a799415251d59ccb272a97e92c4455498f64615785196b6fd221",
+    "okto_labs_pulse_core/src/okto_pulse/core/services/canonical_debt_service.py": "b0fea4b0cf2b75fa26c9564dddd9a0bd6b201f877c931c851b4cd0311ce384e7",
+    "okto_labs_pulse_core/src/okto_pulse/core/ports/canonical_debt.py": "23324dc2caf2a1a7a9bf58764f6bb93577a59babcc81254865ab3f0c891b6ae8",
+    "okto_labs_pulse_core/tests/test_learning_partition_reconciliation_scope.py": "5e6eaf6728826252ef600bbf29bd0b25e39a4c0471dfbdd5d0be19499fb6b17d",
+    "okto_labs_pulse_core/tests/test_kg_r7_imp2.py": "4e810de9cc6a93a8a13341699ee01a496f8220924d5c2bfa6872d20102ce3b31",
+    "okto_labs_pulse_core/tests/sqlalchemy_canonical_debt_store.py": "b805276f39ab6986210930a83b21960ec527e99ee3aa9270c4c4ffdaf3b52b1a",
+    "okto_labs_pulse_community/src/okto_pulse/community/adapters/sqlalchemy_canonical_debt.py": "1aff455cd2479e75c55d0a30f6d4fc3325b5cb17742fd178c437d6b0313e5931",
+    "okto_labs_pulse_community/tests/test_canonical_debt_conditional_writer.py": "f5fef257ec80d4bd601e4783d32a0bc85f2e0968ac7587d229a93c2a1c7f58df"
+  }
+}

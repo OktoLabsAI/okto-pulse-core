@@ -9,8 +9,8 @@ but lack a ``validates -> canonical Bug`` edge. Those are remediation debt and
 are recorded in the existing ``CanonicalDebt`` ledger — NEVER cognitive pending
 (that is go-forward, IMP1) and NEVER DLQ.
 
-The debt is closed deterministically only when the SAME Learning later gains a
-canonical Bug validates edge: a post-commit reconcile pass builds canonical-only
+Technical waiting debt is closed only when the SAME active Learning has a
+canonical Bug validates edge matching its source: a post-commit pass builds canonical-only
 evidence and feeds it to ``reconcile_canonical_debt_with_evidence`` (which is
 layer-blind by contract — so every caller MUST pre-filter to the canonical
 layer first). Working-layer evidence can therefore never close the debt.
@@ -59,6 +59,28 @@ PARTITION_TARGET_STATUS = "canonical_learning_partition_integrity"
 EVIDENCE_LAYER_CANONICAL = "canonical"
 
 _BUG_REF_PREFIXES = ("bug:", "card:bug:")
+
+
+def _technical_partition_identity(row: CanonicalDebtRecord) -> bool:
+    return (
+        row.artifact_type == 'bug'
+        and row.target_status == PARTITION_TARGET_STATUS
+        and row.failure_reason == HISTORICAL_DEBT_REASON
+        and not row.dlq_ref and not row.last_error
+    )
+
+
+def _technical_partition_wait(row: CanonicalDebtRecord) -> bool:
+    """KG7.5: graph evidence resolves only the identified projection wait."""
+    return _technical_partition_identity(row) and row.canonical_state in {
+        'pending', 'deferred', 'retryable', 'retry_scheduled', 'failed'}
+
+
+def _technical_partition_refresh(row: CanonicalDebtRecord) -> bool:
+    # Redetection may reopen a previously resolved technical violation, but
+    # cannot erase a human discard/waiver or a concurrent substantive hold.
+    return _technical_partition_wait(row) or (
+        _technical_partition_identity(row) and row.canonical_state == 'committed')
 
 
 def _is_bug_derived_ref(source_ref: str) -> bool:
@@ -112,9 +134,8 @@ async def upsert_canonical_learning_debt(
 
     All writers share the same per-Learning content hash so stale reconciliation,
     historical maintenance and canonical-evidence reconciliation converge on one
-    row.  ``source_absent`` is sticky over the less-specific historical reason:
-    a later maintenance scan must not erase the governed-delete diagnosis or its
-    correlation id merely because the graph also looks working-only.
+    row. Source absence, substantive restrictions and human terminal decisions
+    survive generic scans. Technical updates compare the full prior record.
     """
 
     if not node_id or not source_ref:
@@ -135,11 +156,10 @@ async def upsert_canonical_learning_debt(
     effective_reason = failure_reason
     effective_correlation_id = correlation_id
     if existing is not None:
-        if (
-            existing.failure_reason == SOURCE_ABSENT_DEBT_REASON
-            and failure_reason == HISTORICAL_DEBT_REASON
-        ):
-            effective_reason = SOURCE_ABSENT_DEBT_REASON
+        # A graph scan is not authority to erase a substantive restriction.
+        # Source absence remains explicit until authoritative recovery proves it.
+        if not _technical_partition_refresh(existing):
+            return existing
         if effective_correlation_id is None:
             effective_correlation_id = existing.correlation_id
 
@@ -150,6 +170,7 @@ async def upsert_canonical_learning_debt(
         artifact_id=artifact_id,
         source_ref=source_ref,
         content_hash=content_hash,
+        source_version=existing.source_version if existing is not None else None,
         target_status=PARTITION_TARGET_STATUS,
         canonical_state="pending",
         graph_layer="canonical",
@@ -157,6 +178,7 @@ async def upsert_canonical_learning_debt(
         failure_reason=effective_reason,
         owner_agent_id=actor_id,
         correlation_id=effective_correlation_id,
+        eligible_existing=lambda row: existing is not None and row == existing and _technical_partition_refresh(row),
     )
 
 
@@ -185,17 +207,25 @@ def _scan_partition(graph_scope) -> tuple[list[tuple[str, str]], list[tuple[str,
         logger.warning("kg.clp.scan_learnings_failed err=%s", exc)
         return [], []
 
+    from okto_pulse.core.kg.cognitive_source_ref_resolver import resolve_cognitive_source_ref
+    learning_refs = {nid: resolve_cognitive_source_ref(ref).canonical_artifact_ref
+                     for nid, ref in all_learnings}
     satisfied_ids: set[str] = set()
     try:
         res = graph_scope.execute(
             "MATCH (l:Learning)-[r:validates]->(b:Bug) "
             "WHERE l.graph_layer = 'canonical' AND b.graph_layer = 'canonical' "
-            "RETURN l.id"
+            "RETURN l.id, b.source_artifact_ref, b.superseded_by, l.superseded_by"
         )
         for row in res.rows:
-            satisfied_ids.add(str(row[0]))
+            if len(row) != 4 or row[2] or row[3]:
+                continue
+            bug = resolve_cognitive_source_ref(row[1], canonical_bug_probe=lambda _identity: True)
+            if bug.is_bug_derived and bug.canonical_artifact_ref == learning_refs.get(str(row[0])):
+                satisfied_ids.add(str(row[0]))
     except Exception as exc:  # pragma: no cover - defensive
         logger.warning("kg.clp.scan_satisfied_failed err=%s", exc)
+        satisfied_ids.clear()
 
     violating = [(nid, ref) for nid, ref in all_learnings if nid not in satisfied_ids]
     satisfied = [(nid, ref) for nid, ref in all_learnings if nid in satisfied_ids]
@@ -280,8 +310,9 @@ async def reconcile_canonical_learning_partition_debt(
     Builds canonical-only evidence from the SATISFIED partition, pre-filters to
     the canonical layer (so working-layer evidence can never close debt), then
     calls the layer-blind ``reconcile_canonical_debt_with_evidence``.
-    ``extra_evidence`` (optional) is folded through the SAME pre-filter, so a
-    caller cannot smuggle working-layer evidence past the guard."""
+    The legacy ``extra_evidence`` argument cannot expand the scan or assert
+    source versions. Substantive debt and source absence require their own
+    authoritative recovery; a matching graph edge is insufficient."""
     from okto_pulse.core.kg.interfaces.registry import get_kg_registry
 
     # R05-C: scan through the #06 GraphTransaction port (see detect_* above).
@@ -289,8 +320,8 @@ async def reconcile_canonical_learning_partition_debt(
         _violating, satisfied = _scan_partition(scope)
 
     evidence = [_canonical_evidence_for(nid, ref) for nid, ref in satisfied]
-    if extra_evidence:
-        evidence.extend(extra_evidence)
+    # Keep the legacy call signature, but an evidence_layer string supplied by
+    # a caller cannot expand the authoritative graph scan or assert a version.
     canonical_evidence = _canonical_only_evidence(evidence)
 
     result = await reconcile_canonical_debt_with_evidence(
@@ -299,6 +330,7 @@ async def reconcile_canonical_learning_partition_debt(
         canonical_evidence=canonical_evidence,
         actor_id=actor_id,
         report_ref=f"canonical_learning_partition:{board_id}",
+        eligible_debt=_technical_partition_wait,
     )
     if result.get("committed_count"):
         logger.info(
@@ -351,6 +383,7 @@ async def run_canonical_learning_partition_maintenance(
         canonical_evidence=canonical_evidence,
         actor_id=actor_id,
         report_ref=f"canonical_learning_partition:{board_id}",
+        eligible_debt=_technical_partition_wait,
     )
     return {"opened": opened, "closed": reconciled.get("committed_count", 0)}
 
