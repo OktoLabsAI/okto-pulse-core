@@ -6,7 +6,7 @@ is not a literal graph node and cannot be restored as canonical knowledge.
 """
 
 from datetime import datetime
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import json
 import re
 from typing import Protocol, runtime_checkable
@@ -17,10 +17,34 @@ LEARNING_CAPTURE_FORMAT = 'learning-capture/v1'
 LEARNING_CAPTURE_MAX_BYTES = 256 * 1024
 
 
+class LearningCaptureTargetConflict(ValueError):
+    """A stale explicit target; current identity is server-observed, not authority."""
+    def __init__(self, current: CognitiveSourceRecord | None):
+        super().__init__('learning_capture_target_changed')
+        self.current_target = (None if current is None else {
+            'learning_id': current.node_id, 'generation': current.generation,
+            'source_revision': current.source_revision, 'fingerprint': current.record_fingerprint})
+
+
 @dataclass(frozen=True, slots=True)
 class LearningCaptureHistoryPage:
     records: tuple[CognitiveSourceRecord, ...]
     next_cursor: str | None
+
+
+@runtime_checkable
+class LearningCaptureIdentityReservation(Protocol):
+    async def reserve_capture_identity_in_context(
+        self, context: object, *, board_id: str, author_id: str, capture_id: str,
+    ) -> CognitiveSourceRecord | None:
+        """Serialize one author request identity through the caller's UOW.
+
+        Audit complete histories of matching captures across target identities.
+        Return the one original capture, or None while retaining the reservation
+        until caller commit/rollback. Duplicate or corrupt identities fail.
+        This creates no source, graph node, policy or separate memory store.
+        """
+        ...
 
 
 @runtime_checkable
@@ -43,6 +67,26 @@ class LearningCaptureHistoryReader(Protocol):
 
 
 @dataclass(frozen=True, slots=True)
+class LearningCaptureIntent:
+    kind: str = 'create'
+    target_node_id: str | None = None
+    target_generation: int | None = None
+    expected_fingerprint: str | None = None
+    reason: str | None = None
+
+    def __post_init__(self):
+        if self.kind == 'create':
+            valid = all(value is None for value in (self.target_node_id, self.target_generation,
+                self.expected_fingerprint, self.reason))
+        else:
+            valid = (self.kind in ('reuse', 'supersede') and _text(self.target_node_id)
+                and type(self.target_generation) is int and self.target_generation >= 0
+                and _digest(self.expected_fingerprint) and _text(self.reason, 16384))
+        if not valid:
+            raise ValueError('learning_capture_intent_invalid')
+
+
+@dataclass(frozen=True, slots=True)
 class CreateLearningCapture:
     board_id: str
     bug_id: str
@@ -53,6 +97,7 @@ class CreateLearningCapture:
     context: str
     applicability: str
     scenario_ids: tuple[str, ...]
+    intent: LearningCaptureIntent = field(default_factory=LearningCaptureIntent)
 
     def __post_init__(self):
         if (any(not _text(value) for value in (self.board_id, self.bug_id, self.capture_id))
@@ -61,7 +106,8 @@ class CreateLearningCapture:
                 or any(not _text(value, 65536) for value in (self.content, self.context, self.applicability))
                 or type(self.scenario_ids) is not tuple or not 1 <= len(self.scenario_ids) <= 128
                 or any(not _text(value) for value in self.scenario_ids)
-                or len(set(self.scenario_ids)) != len(self.scenario_ids)):
+                or len(set(self.scenario_ids)) != len(self.scenario_ids)
+                or type(self.intent) is not LearningCaptureIntent):
             raise ValueError('learning_capture_request_invalid')
 
 

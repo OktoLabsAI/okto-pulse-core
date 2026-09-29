@@ -30,6 +30,9 @@ class StageLearningCaptureUseCase:
             raise ValueError('learning_capture_request_invalid')
         await require_all(actor, *(PermissionRequirement(flag) for flag in LEARNING_CAPTURE_CREATE_PERMISSIONS),
             uow=uow, board_id=command.board_id)
+        if command.intent.kind != 'create':
+            await require_all(actor, PermissionRequirement('kg.query.learning_from_bugs'),
+                uow=uow, board_id=command.board_id)
         card = await load_accessible_card(uow, command.bug_id, actor, expected_board_id=command.board_id)
         if card is None:
             raise EntityNotFoundError('card', command.bug_id)

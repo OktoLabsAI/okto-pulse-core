@@ -1,7 +1,7 @@
 """Stage authored Learning content, never infer it or certify implementation."""
 
 from datetime import datetime, timezone
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 import json
 
 from okto_pulse.core.kg.node_identity import mint_node_id
@@ -11,12 +11,13 @@ from okto_pulse.core.ports.bug_cognitive_context import (
     resolve_bug_cognitive_context_assembler,
 )
 from okto_pulse.core.ports.kg_cognitive_source import (
-    CognitiveSourceRecord, ConditionalCognitiveSourceWriter, TransactionalCognitiveSourceReader,
-    HistoricalCognitiveSourceReader, FingerprintCognitiveSourceReader,
+    CognitiveSourceRecord, CognitiveSourceConflict, ConditionalCognitiveSourceWriter, TransactionalCognitiveSourceReader,
+    FingerprintCognitiveSourceReader,
     require_cognitive_source_store, latest_cognitive_source_records,
 )
 from okto_pulse.core.ports.learning_capture import (
-    CreateLearningCapture, LearningCaptureHistoryReader, validate_learning_capture_payload,
+    CreateLearningCapture, LearningCaptureHistoryReader, LearningCaptureTargetConflict,
+    LearningCaptureIdentityReservation, validate_learning_capture_payload,
 )
 from okto_pulse.core.services.test_scenario_lifecycle import scenario_has_authenticated_required_evidence
 
@@ -94,7 +95,8 @@ async def stage_new_learning_capture(context, request: CreateLearningCapture, *,
     store = require_cognitive_source_store()
     if (not isinstance(reader, BugSemanticWriteSnapshotReader)
             or not isinstance(store, ConditionalCognitiveSourceWriter)
-            or not isinstance(store, TransactionalCognitiveSourceReader)):
+            or not isinstance(store, TransactionalCognitiveSourceReader)
+            or not isinstance(store, LearningCaptureIdentityReservation)):
         raise ValueError('learning_capture_transaction_capability_unavailable')
     source = qualify_bug_semantic_context(await reader.assemble_semantic_for_write(
         context, board_id=request.board_id, bug_id=request.bug_id))
@@ -118,39 +120,56 @@ async def stage_new_learning_capture(context, request: CreateLearningCapture, *,
         refs.append(f'spec:{source.spec_id}:test_scenario:{identity}')
     node_id = mint_node_id(request.board_id, 'Learning',
         'capture:' + json.dumps([author_id, request.capture_id], separators=(',', ':')), 0)
+    generation, target = 0, None
+    if request.intent.kind == 'reuse':
+        node_id, generation = request.intent.target_node_id, request.intent.target_generation
+    prior = await store.reserve_capture_identity_in_context(context, board_id=request.board_id,
+        author_id=author_id, capture_id=request.capture_id)
     payload = {'capture_format': 'learning-capture/v1', 'capture_id': request.capture_id,
         'author_id': author_id, 'captured_at': captured_at.isoformat(),
         'content': request.content, 'context': request.context, 'applicability': request.applicability,
         'source': {'board_id': source.board_id, 'bug_id': source.bug_id,
             'policy_version': source.source_policy_version, 'digest': source.source_digest, 'evidence_refs': refs},
-        'intent': {'kind': 'create', 'target_node_id': None, 'target_generation': None,
-            'expected_fingerprint': None, 'reason': None}}
+        'intent': asdict(request.intent)}
     validate_learning_capture_payload(payload, board_id=source.board_id, node_type='Learning',
-        node_id=node_id, generation=0, evidence_refs=refs)
-    prior = await store.read_latest_in_context(context, board_id=request.board_id, node_id=node_id, generation=0)
+        node_id=node_id, generation=generation, evidence_refs=refs)
     if prior is not None:
-        if 'capture_format' not in prior.payload:
-            # Materialization appends a literal projection at the same identity.
-            # Retry compares the immutable authored birth, never that projection.
-            if not isinstance(store, HistoricalCognitiveSourceReader):
-                raise ValueError('learning_capture_history_unavailable')
-            prior = await store.read_revision_in_context(context, board_id=request.board_id,
-                node_id=node_id, generation=0, source_revision=0)
-            if prior is None:
-                raise ValueError('learning_capture_history_unavailable')
         if not validate_learning_capture_payload(dict(prior.payload), board_id=request.board_id,
-                node_type=prior.node_type, node_id=node_id, generation=0, evidence_refs=prior.evidence_refs):
+                node_type=prior.node_type, node_id=prior.node_id, generation=prior.generation, evidence_refs=prior.evidence_refs):
             raise ValueError('learning_capture_idempotency_conflict')
         previous = dict(prior.payload)
         previous.pop('captured_at', None)
         comparison = {key: value for key, value in payload.items() if key != 'captured_at'}
-        if prior.node_type != 'Learning' or previous != comparison:
+        if ((prior.board_id, prior.node_type, prior.node_id, prior.generation)
+                != (request.board_id, 'Learning', node_id, generation) or previous != comparison):
             raise ValueError('learning_capture_idempotency_conflict')
         return prior
+    if request.intent.kind != 'create':
+        target = await store.read_latest_in_context(context, board_id=request.board_id,
+            node_id=request.intent.target_node_id, generation=request.intent.target_generation)
+        if target is None or target.record_fingerprint != request.intent.expected_fingerprint:
+            raise LearningCaptureTargetConflict(target)
+        _require_learning_intent_target(request, target)
     record = CognitiveSourceRecord(board_id=source.board_id, node_type='Learning', node_id=node_id,
-        generation=0, payload=payload, evidence_refs=tuple(refs),
+        generation=generation, payload=payload, evidence_refs=tuple(refs),
+        source_revision=target.source_revision + 1 if request.intent.kind == 'reuse' else 0,
         source_session_id='capture:' + request.capture_id, committed_at=captured_at.isoformat())
-    await store.append_many_if_current_in_context(context, (record,), expected_fingerprints=(None,))
+    try:
+        if request.intent.kind == 'supersede':
+            # Compare both identities in the edition's one atomic batch. Replaying
+            # the unchanged target is a semantic no-op, not a target mutation.
+            await store.append_many_if_current_in_context(context, (record, target),
+                expected_fingerprints=(None, target.record_fingerprint))
+        else:
+            await store.append_many_if_current_in_context(context, (record,),
+                expected_fingerprints=(target.record_fingerprint if target is not None else None,))
+    except CognitiveSourceConflict as exc:
+        if (target is None or exc.failure_reason != 'cognitive_source_head_changed'
+                or exc.board_id != request.board_id or exc.node_id != target.node_id):
+            raise
+        current = await store.read_latest_in_context(context, board_id=request.board_id,
+            node_id=target.node_id, generation=target.generation)
+        raise LearningCaptureTargetConflict(current) from exc
     from okto_pulse.core.events.bus import publish
     from okto_pulse.core.events.types import LearningCaptureAdmitted
     from okto_pulse.core.domain.learning_closeout import LearningCaptureSelection
@@ -162,6 +181,23 @@ async def stage_new_learning_capture(context, request: CreateLearningCapture, *,
         capture=LearningCaptureSelection(learning_id=record.node_id,
             generation=record.generation, fingerprint=record.record_fingerprint)), session=context)
     return record
+
+
+def _require_learning_intent_target(request, target):
+    """Admission of a target reference, not its graph/applicability proof."""
+    latest_cognitive_source_records((target,))
+    intent, payload = request.intent, target.payload
+    if ((target.board_id, target.node_type, target.node_id, target.generation)
+            != (request.board_id, 'Learning', intent.target_node_id, intent.target_generation)
+            or target.record_fingerprint != intent.expected_fingerprint
+            or 'capture_format' in payload or payload.get('graph_layer') != 'canonical'
+            or payload.get('maturity_status') != 'canonical_eligible'
+            or payload.get('superseded_by') or payload.get('revocation_reason')
+            or any(type(payload.get(key)) is not str or not payload[key].strip()
+                   for key in ('content', 'context', 'created_by_agent', 'created_at'))):
+        raise ValueError('learning_capture_target_not_eligible')
+    if intent.kind == 'reuse' and request.content != payload['content']:
+        raise ValueError('learning_capture_reuse_content_changed')
 
 
 @dataclass(frozen=True)

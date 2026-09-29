@@ -5,7 +5,7 @@
 Iniciativa **incompleta; retomada explicitamente autorizada em 2026-09-23**.
 O usuário revogou a pausa e pediu execução até o final, sem parar em milestones.
 Frente atual (2026-09-29): F6/KG §7.5, reconciliação histórica de Learning.
-Último par enviado: Core3c1a454b/Community8d711343. Captura, binding em
+Último par enviado: Core63262e3c/Community72202a29. Captura, binding em
 task validation, autoria conjunta, REST/MCP/UI/Delivery, policy/preview e
 materialização automática via outbox/worker e proteção de holds mistos foram
 enviados em incrementos delimitados. Recuperação de projeção validada/enviada.
@@ -290,6 +290,74 @@ gates. NOOP genérico resolve por source_ref, portanto não serve como escolha
 do alvo por ID; não reutilizá-lo como prova de reuso explícito. Implementar
 target exato no coordenador existente com histórico e rollback, antes de
 habilitar os transports/UI. Frontend deverá ter testes quando for alterado.
+
+Continuação: par63262e3c/72202a29 enviado; árvores limpas ao retomar. WIP K3:
+LearningCaptureIntent tipado em CreateLearningCapture, create default inalterado;
+reuso mantém identidade/generation do alvo e conteúdo exato, supersede captura
+nova identidade. Admissão exige fonte/evidência atuais, target literal canônico
+não revogado/supersedido, fingerprint explícito e leitura kg.query.learning_from_bugs.
+Supersede compara captura ausente e head-alvo na mesma operação CAS; replay do
+alvo literal é no-op. Nenhuma projeção/aresta do alvo é alterada na admissão.
+
+Idempotência entre alvos: a porta LearningCaptureIdentityReservation reserva
+(Board, autor, capture_id) até commit/rollback e devolve captura histórica exata.
+Community usa slot writer SQLite ou advisory lock transacional PostgreSQL; não
+há tabela/store novo. A busca audita a história completa das identidades
+selecionadas e falha em duplicação/corrupção. Isso evita que trocar alvo ou
+intenção com o mesmo capture_id crie uma segunda autoria. Ordem: fence da
+fonte Bug, reserva da identidade e CAS do alvo, todos na UOW do chamador.
+Testes preparados cobrem payload tipado, dois intents, replay, rollback,
+concorrência, mudança de alvo, permissão e target obsoleto/inelegível. PostgreSQL
+ainda não foi exercitado por integração. Ainda NÃO validado; builds/prova
+precedem testes. Transports/UI não expõem intents e materializador/Done seguem
+create-only; não declarar reuso/supersedência entregues neste estado intermediário.
+
+Builds learning-intent-admission-r1 ambos0, pip96738 terminou0;
+provenance-r1 confirmou837/900 Core+363/448 Community byte-identical.
+Ativos Core20151, Community23129 e F1628703. Ruff/diff-check passaram.
+Não editar payload até os três terminais. A comparação de supersede nesta
+admissão não toma posse definitiva do alvo: o materializador ainda deve fazer
+CAS do head-alvo junto da mutação e rejeitar o perdedor sem criar cadeia
+arbitrária. Os testes novos de concorrência da admissão cobrem reuso do mesmo
+head e capture_id igual entre alvos diferentes, não essa futura corrida gráfica.
+
+Core20151 terminou0:66pass/5.27s. Community23129 terminou1:37pass/48fail/
+11errors em219.63s. Treze casos novos de intenção passaram; falha do teste de
+permissão usa dataclasses.replace em ActorContext (que não é dataclass).
+Demais falhas/erros vêm do helper prepare: asdict(request) passou a incluir
+intent interno, enviado ao LearningSubmission wire create-only com extra=forbid.
+Inspeção dos writers reais confirmou construção explícita, sem esse asdict.
+Após terminais, corrigidas essas fixtures e os builders REST/MCP equivalentes,
+mantendo o contrato público fechado. Nenhuma semântica de produto relaxada.
+F1628703 terminou1 somente matrizes README, findings[]/oitoZERO; regeneradas.
+Rerun Community deve incluir REST/MCP, composto e writer além dos casos novos;
+produto Python Core66 permanece o mesmo. Builds/prova do par documental antes
+da nova campanha, preservando os resultados r1 sem reclassificá-los como verdes.
+
+Acrescentado tratamento delimitado do conflito tardio de CAS no mesmo alvo:
+devolve LearningCaptureTargetConflict com identidade/revisão/fingerprint atuais,
+sem converter conflito de outra identidade nem rebase automático. Dois testes
+injetam mudança no limite real de CAS (reuse/supersede), confirmando ausência
+de captura/outbox e preservação da alteração interveniente. Não é prova de
+contenção PostgreSQL ao vivo. Portanto produto mudou desde r1 e Core também
+será repetido. Builds r2 ambos0; pip87543 em curso. Aguardar terminal/prova.
+
+Pip87543 terminou0; provenance-learning-intent-admission-r2 confirmou837/900
+Core+363/448 Community byte-identical. Campanhas r2: Core32153,
+Community39219 (inclui REST/MCP) e F1685019. Não editar payload até terminais.
+
+Rodada r2 terminal: Core32153=0,66pass/5.13s; Community39219=0,
+122pass/316.85s. F1685019=0, sem findings/documentation drift, oito budgets
+ZERO. record_learning_intent_admission.py executado depois dos terminais;
+acceptance-learning-intent-admission.json sela evidências e limites, preservando
+a campanha r1 falha. Nenhum payload mudou após a prova byte-a-byte ou durante
+as campanhas; nenhum processo de validação permanece ativo. Incremento de
+admissão pronto para commit/push, não conclusão de KG7.6 nem entrega integral.
+Próxima dependência: materialização explícita com CAS e preservação de origem,
+autoria, conteúdo, associações e histórico; recuperação dos recibos anteriores
+deve reconhecer revisões legítimas sem sobrescrever reuso/curadoria posteriores.
+Done/transports/UI só devem admitir novos intents quando esse caminho estiver
+completo; mudanças de frontend terão testes. Não relaxar gate do candidato.
 
 Continuacao do worker em andamento: CanonicalBugNodeResolver, capacidade
 publica implementada por CommunityCanonicalBugNodeReader, seleciona uma unica

@@ -1,0 +1,120 @@
+{
+  "scope": "F6/KG7.6 explicit Learning intent admission prerequisite",
+  "suites": {
+    "core": {
+      "passed": 66,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "community": {
+      "passed": 122,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0
+    }
+  },
+  "budgets": [
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "import_boundary_baseline",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every import_boundary_baseline allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "singleton_baseline",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every singleton_baseline allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "dependency_temporary_exceptions",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every dependency_temporary_exceptions allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "graph_runtime_compatibility",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every graph_runtime_compatibility allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "rebuild_artifact_compatibility",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every rebuild_artifact_compatibility allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "community_private_reach_ins",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every community_private_reach_ins allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "community_adapter_bridges",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every community_adapter_bridges allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "af35_relational_residue",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every af35_relational_residue allowance before F16 completion."
+    }
+  ],
+  "verified": [
+    "Typed create/reuse/supersede intent; explicit eligible target and exact expected fingerprint, with target-read authority.",
+    "Reuse preserves target identity/content; supersede stages a new capture while comparing the unchanged target in the same atomic batch.",
+    "Existing source history reserves Board/author/capture identity through the caller UOW; exact retry returns the original capture and emits no second event.",
+    "SQLite integration proves rollback, concurrent reuse and capture identity conflicts, stale target rejection and typed late CAS conflict with current target identity.",
+    "Existing create writer, compound submission, materialization and REST/MCP regressions pass against the byte-identical installed pair."
+  ],
+  "limits": [
+    "Admission alone does not complete reuse/supersede: materializer and Done remain create-only; public transports and frontend expose no new intent.",
+    "Target literals are SQL fixtures; this is not graph admission or target materialization proof.",
+    "PostgreSQL advisory locking has not been integration-tested; late CAS tests inject changes at the real CAS boundary, not live PostgreSQL contention.",
+    "First campaign retained with 37 passed, 48 failed, 11 errors from fixture incompatibilities; final campaign is a separate result.",
+    "No frontend or real data changed. K3/K4, candidate promotion and complete plan acceptance remain pending."
+  ],
+  "sha256": {
+    "PULSE_REFACTOR/.validation-v040/closure-learning-intent-admission-r2.json": "a1329ddeee3a51653604d2fda09f4bc3b072f26df3d1a328c7c4883ef33a14db",
+    "PULSE_REFACTOR/.validation-v040/learning-intent-admission-r2-core.xml": "1515017910a9e2c3d37c578a994033e60a1fb8601607f936020e28d17393db9a",
+    "PULSE_REFACTOR/.validation-v040/learning-intent-admission-r2-community.xml": "51d321793b15d8461ce3274e513c32dbe618a9ac310ec92400d68d0960478631",
+    "PULSE_REFACTOR/.validation-v040/provenance-learning-intent-admission-r2.json": "bff6c94ff1c7a4d938ea05dc0f47f75edd1f12ed274125a610096238e39b51f7",
+    "PULSE_REFACTOR/.validation-v040/learning-intent-admission-r1-community.xml": "336339c08d61f03b629b2022223deaa3ab92b7cda71cf36b04bac41d358fa84d",
+    "PULSE_REFACTOR/.validation-v040/run_learning_intent_admission.py": "63fbc58409d46d6ff73f5a6870fb873757a1023bb6e68532a85582d1146adcc1",
+    "PULSE_REFACTOR/.validation-v040/run_learning_intent_admission_validation.py": "97d03099578c173a6a8c4dc8feccae22a2561a9472afeda7609f5f268e3853b9",
+    "okto_labs_pulse_core/src/okto_pulse/core/ports/learning_capture.py": "5be84adad95f417bd1df59628f2849119fb6a510fa0d2db26e505e4215d3329d",
+    "okto_labs_pulse_core/src/okto_pulse/core/application/learning_capture.py": "33b26180818e7093525801fe2bbf085b26008f15958494443895bdc8740d54df",
+    "okto_labs_pulse_core/src/okto_pulse/core/application/use_cases/learning_capture.py": "3ee60a18607eebbc5d9d3b87f06e9677717a8e9148ce37b60887bd9c8f83c470",
+    "okto_labs_pulse_core/tests/test_learning_capture_intent_contract.py": "3be1969ee1abaf565900449b1110798141dd71e82852ebf96c302f29bb22c9c1",
+    "okto_labs_pulse_community/src/okto_pulse/community/adapters/sqlalchemy_kg_cognitive_source.py": "af8dcfe407dbec6564d4e1b9ce91a7ff72999dcd6b41a22befc3e8105025b332",
+    "okto_labs_pulse_community/tests/test_learning_capture_intents.py": "de1ba00ab68f662dbb453d13255a433cdb32c9a36014c486316f6297d6e6683c"
+  }
+}
