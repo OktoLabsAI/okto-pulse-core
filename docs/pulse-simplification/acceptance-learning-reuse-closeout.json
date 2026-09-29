@@ -1,0 +1,128 @@
+{
+  "scope": "F6/KG7.6 explicit reuse captured before Done and existing closeout binding",
+  "suites": {
+    "core": {
+      "passed": 57,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "community": {
+      "passed": 21,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "community-r2-partial": {
+      "passed": 25,
+      "failed": 1,
+      "errors": 0,
+      "new_reuse_cases_passed": 6,
+      "note": "The one obsolete outbox oracle was corrected and the whole affected file passed r3."
+    }
+  },
+  "budgets": [
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "import_boundary_baseline",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every import_boundary_baseline allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "singleton_baseline",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every singleton_baseline allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "dependency_temporary_exceptions",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every dependency_temporary_exceptions allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "graph_runtime_compatibility",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every graph_runtime_compatibility allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "rebuild_artifact_compatibility",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every rebuild_artifact_compatibility allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "community_private_reach_ins",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every community_private_reach_ins allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "community_adapter_bridges",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every community_adapter_bridges allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "af35_relational_residue",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every af35_relational_residue allowance before F16 completion."
+    }
+  ],
+  "verified": [
+    "Closeout revalidates the selected reuse capture as current head, its exact eligible predecessor, current source digest/version and signed evidence.",
+    "Real task validation appends the exact review/status/binding delta in one caller UOW, with original capture fingerprint and source revision.",
+    "Default/advisory/blocking fixtures prove waiting before Done, exact validation retry, materialization after bound Done, and refusal after a later reopen.",
+    "Changed Card version or capture head prevents closeout; injected late binding failure rolls back validation/status/binding without changing durable Learning history or its existing graph association.",
+    "Pure binding tests cover both existing operation types and refusal to materialize a pre-Done reuse without its exact current binding."
+  ],
+  "limits": [
+    "Independent completion gates and graph health are explicit fixtures; this is not full lifecycle acceptance or authorization of reopen.",
+    "First Community campaign retained with 3 passed and 1 failed: its stale-basis oracle expected a later error, while the Card version gate correctly rejected earlier.",
+    "Second campaign retained with 25 passed and 1 failed: an older rollback oracle ignored the already committed capture event. The focused third campaign verifies exact event identity/type/payload preservation. Counts overlap, not an aggregate distinct total.",
+    "Only the test oracle changed after the first installed-pair proof; Core/F16 and final Community tests exercise the same product payload.",
+    "Wire/UI and compound report submission still expose create only. Explicit supersedence and complete KG7.6 remain pending.",
+    "No frontend or real data changed; K3/K4, candidate promotion and complete plan acceptance remain pending."
+  ],
+  "sha256": {
+    "PULSE_REFACTOR/.validation-v040/closure-learning-reuse-closeout-r1.json": "50fb93635f83a20f290b780bf9d9bf1f6aeabc47ffe0d41eb6daf9eb31d7ae8b",
+    "PULSE_REFACTOR/.validation-v040/learning-reuse-closeout-r1-core.xml": "e2911de5b11a0bf341e601169b40b00101d6b88848eecbf4b15f64dd484a3983",
+    "PULSE_REFACTOR/.validation-v040/learning-reuse-closeout-r3-community.xml": "758ae3f76d5cf349cea242f20fb67084c08c92784d2744ccd59e34dad981f097",
+    "PULSE_REFACTOR/.validation-v040/learning-reuse-closeout-r2-community.xml": "d2c3b2c0d1bc0f235a6b02da4322422dfac978a3f9f887d5e2b1d4c6f818cb01",
+    "PULSE_REFACTOR/.validation-v040/provenance-learning-reuse-closeout-r1.json": "6316eea35f5c392dad72979eb9d5d1c9daf612498c849c7adad58f40fc79cf10",
+    "PULSE_REFACTOR/.validation-v040/learning-reuse-closeout-r1-community.xml": "585b7d3f7ac9f16f5ef362af0bb07ee90f16895296259a56e7061e035dd2322f",
+    "PULSE_REFACTOR/.validation-v040/run_learning_reuse_closeout.py": "282be780e78388f0fa9e314f0174e6885e9d978f96b53d6880b973cee4f322e8",
+    "PULSE_REFACTOR/.validation-v040/run_learning_reuse_closeout_regression.py": "acc83b32c9d1663c27ed07c1ffd5bd243bdf86f219a607b333cd8262f1590ef5",
+    "okto_labs_pulse_core/src/okto_pulse/core/application/learning_capture.py": "49ce576ee605ea222d8427049944c0594c82efa5670bf33f15a432e132c1f3cb",
+    "okto_labs_pulse_core/src/okto_pulse/core/domain/learning_closeout.py": "67946c19a4634eddd728fbf9d502696fc4283e339f207defd722ad6aba4368d3",
+    "okto_labs_pulse_core/tests/test_learning_closeout_binding.py": "caf45e085704785fdb6f923cfcddba2fe95e3e488b418b0edf490ebe6e2854f5",
+    "okto_labs_pulse_community/tests/test_learning_reuse_closeout.py": "a89dc64a2f05d00c302617e36888513e8bfe68b3a7f188f12f74c4c474b28d34",
+    "okto_labs_pulse_community/tests/test_learning_capture_validation_binding.py": "7892ec79f4620a0be46d847bd3d688f90e7e7d6ea4f11f5719f99515072b1e47"
+  }
+}

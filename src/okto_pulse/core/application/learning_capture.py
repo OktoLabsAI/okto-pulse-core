@@ -382,9 +382,13 @@ async def revalidate_learning_capture_for_closeout(
             or payload['source']['digest'] != source.source_digest
             or payload['source']['policy_version'] != source.source_policy_version):
         raise ValueError('learning_capture_source_changed_or_unavailable')
-    # Reuse/supersede payload syntax alone does not prove target applicability.
-    # Those operations need their own admitted target/CAS contract.
-    if payload['intent']['kind'] != 'create':
+    # Syntax alone is not target admission. Reuse must still be the current
+    # capture head and name the exact eligible literal predecessor admitted
+    # under CAS. Graph materialization remains a later governed operation.
+    if payload['intent']['kind'] == 'reuse':
+        await resolve_learning_capture_projection(context, store,
+            capture=record, head=record, bug_id=bug_id)
+    elif payload['intent']['kind'] != 'create':
         raise ValueError('learning_capture_intent_not_admitted')
     _require_current_capture_evidence(source, record)
     return record

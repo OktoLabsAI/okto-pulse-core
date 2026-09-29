@@ -52,6 +52,24 @@ def test_binding_seals_exact_transition_without_rewriting_capture():
     assert verify_learning_closeout_binding(binding.model_dump()) == binding
 
 
+@pytest.mark.parametrize('operation', ['move_card', 'submit_task_validation'])
+def test_explicit_reuse_binding_preserves_target_intent_and_requires_current_closed_basis(operation):
+    from okto_pulse.core.domain.learning_closeout import qualify_learning_materialization_basis
+    before = source()
+    record = captured(before)
+    record = replace(record, record_fingerprint='', payload={**record.payload,
+        'intent': {'kind': 'reuse', 'target_node_id': record.node_id,
+            'target_generation': record.generation, 'expected_fingerprint': 'a' * 64,
+            'reason': 'Explicit applicability to this correction'}})
+    reviews = ({'id': 'review', 'outcome': 'success'},) if operation == 'submit_task_validation' else ()
+    closed = source(status='done', source_policy_version=4, validations=reviews)
+    binding = bind(before, closed, capture=record, operation=operation, appended_validations=reviews)
+    assert binding.capture.fingerprint == record.record_fingerprint
+    assert qualify_learning_materialization_basis(record, closed, [binding.model_dump()]) == binding
+    with pytest.raises(ValueError, match='current_binding_required'):
+        qualify_learning_materialization_basis(record, closed, [])
+
+
 def test_validation_append_must_be_the_exact_server_delta():
     before = source()
     review = {'id': 'review', 'outcome': 'success', 'reviewer_id': 'reviewer'}

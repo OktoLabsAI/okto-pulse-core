@@ -5,7 +5,7 @@
 Iniciativa **incompleta; retomada explicitamente autorizada em 2026-09-23**.
 O usuário revogou a pausa e pediu execução até o final, sem parar em milestones.
 Frente atual (2026-09-29): F6/KG §7.6, reuso/supersedência explícitos de Learning.
-Último par enviado: Core03f18a1b/Community9b2c2b1d. Captura, binding em
+Último par enviado: Core25738cc5/Community96e88278. Captura, binding em
 task validation, autoria conjunta, REST/MCP/UI/Delivery, policy/preview e
 materialização automática via outbox/worker e proteção de holds mistos foram
 enviados em incrementos delimitados. Recuperação de projeção validada/enviada.
@@ -411,6 +411,51 @@ permanece ativo. Reuso interno pós-Done pronto para commit/push, sem declarar
 KG7.6 ou plano completos. Transports/UI continuam create-only, e reuso pré-Done
 continua recusado até revalidar predecessor e integrar binding. Supersedência,
 K3/K4/candidato e demais itens do plano seguem pendentes no inventário global.
+
+Par pós-Done25738cc5/96e88278 enviado com pushes0. WIP seguinte: revalidação de
+reuso pré-Done exige captura ainda como head e predecessor literal exato/íntegro;
+binding admite esse intent sem reautorar conteúdo nem fabricar materialização.
+Supersede continua recusado. Preparados testes SQL/Grafx do writer real de
+validação com advisory/blocking, retry, espera até Done, materialização depois
+do binding, reopen, base/head alterados e rollback tardio. Gate agregado de
+conclusão e health mantêm fixtures explícitas; não alegar aceite integral do
+ciclo de vida. Contrato wire/UI e submissão conjunta continuam create-only.
+Testes novos ainda NÃO executados; build pareado/prova devem precedê-los.
+
+Builds reuse-closeout-r1 ambos0, pip88729 terminou0; provenance-r1 confirmou
+837/900 Core+363/448 Community byte-identical. Core4871=0:57pass/5.31s.
+Community73033 e F1693651 ainda ativos; não editar payload até terminais.
+Testes positivos iniciais de validação/reuso passaram, sem resultado final ainda.
+
+Community73033 terminou1 por -x:3pass/1fail em90.55s. Os três modos de policy
+passaram. Base alterada foi corretamente recusada antes da revalidação Learning
+por task_validation_subject_version_conflict; teste esperava erro da etapa
+posterior. Após terminais, corrigido oráculo para exigir código público exato,
+sem alterar produto. F1693651 terminou0: sem findings/drift, oitoZERO. Rerun
+Community usa o MESMO par r1 provado; apenas fixture/teste mudou, sem rebuild
+desnecessário. Core57 e F16r1 permanecem provas do produto atual.
+
+Rerun73033 foi substituído por88642, terminal1:25pass/1fail em139.31s. Todos
+seis casos novos de reuso e quinze de revalidação passaram. Regressão antiga
+test_learning_capture_validation_binding esperava outbox vazio após recusa,
+ignorando learning.capture_admitted.v1 já commitado na preparação desde o
+incremento do worker. Corrigido oráculo para preservar snapshot exato de id/tipo/
+payload dos eventos anteriores e exigir que seja a captura (não contar só zero).
+Mesma correção no rollback tardio equivalente. Produto continua inalterado;
+rerun focado somente nesse arquivo, sem repetir os seis casos novos aprovados.
+
+Rerun focado49221 terminou0:21pass/33.01s. record_learning_reuse_closeout.py
+executado após terminais selou acceptance-learning-reuse-closeout.json com
+Core57, Community parcial25pass/1fail (seis casos novos verdes), rerun21 verde
+e r1 falho preservados. Contagens sobrepostas; não somar como total distinto
+nem reclassificar campanha parcial. F16r1 sem drift/oitoZERO, mesmo payload
+instalado/provado durante todas as rodadas. Ruff F/E9/diff-check passaram.
+Nenhum processo de validação permanece ativo. Reuso pré-Done via seleção e
+writer de validação pronto para commit/push, não conclusão de KG7.6/plano.
+Próximo passo integrado permanece supersedência explícita com escopo/concorrência
+e preservação de associações; depois expor intents na autoria/conclusão REST/MCP/UI
+com testes de frontend. Submissão conjunta ainda create-only; não declará-la
+qualificada para reuso apenas porque o binding puro suporta esse intent.
 
 Continuacao do worker em andamento: CanonicalBugNodeResolver, capacidade
 publica implementada por CommunityCanonicalBugNodeReader, seleciona uma unica

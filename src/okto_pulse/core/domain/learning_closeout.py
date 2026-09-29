@@ -97,7 +97,7 @@ def bind_learning_capture_to_closed_source(
     if (capture.board_id != before.board_id or payload['source']['bug_id'] != before.bug_id
             or payload['source']['digest'] != before.source_digest
             or payload['source']['policy_version'] != before.source_policy_version
-            or payload['intent']['kind'] != 'create'):
+            or payload['intent']['kind'] not in {'create', 'reuse'}):
         raise ValueError('learning_closeout_capture_basis_mismatch')
     if type(appended_validations) is not tuple:
         raise ValueError('learning_closeout_delta_invalid')
