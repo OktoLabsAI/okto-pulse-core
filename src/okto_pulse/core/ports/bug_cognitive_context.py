@@ -203,6 +203,19 @@ class CanonicalBugNodeReadPort(Protocol):
     async def exists(self, *, board_id: str, bug_id: str) -> bool: ...
 
 
+@runtime_checkable
+class CanonicalBugNodeResolver(Protocol):
+    def resolve_current(self, *, board_id: str, bug_id: str) -> str | None:
+        """Resolve one active canonical Bug identity in the requested board.
+
+        Ignore working and superseded projections. Return None only for verified
+        absence; ambiguous identity or backend failure must raise. The caller
+        offloads this synchronous read and rechecks eligibility under its writer
+        fence before mutation. A resolved id is not lifecycle authority.
+        """
+        ...
+
+
 _ASSEMBLER_KEY = "ports.bug_cognitive_context.assembler"
 _CANONICAL_BUG_READER_KEY = "ports.bug_cognitive_context.canonical_bug_reader"
 
@@ -246,6 +259,7 @@ __all__ = [
     "BugSemanticWriteSnapshotReader",
     "BugLinkedTestTask",
     "CanonicalBugNodeReadPort",
+    "CanonicalBugNodeResolver",
     "freeze_mapping_sequence",
     "qualify_bug_semantic_context",
     "register_bug_cognitive_context_assembler",

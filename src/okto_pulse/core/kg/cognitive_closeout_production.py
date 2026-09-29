@@ -444,14 +444,25 @@ class ConsolidationPipelinePersister:
         """
         from okto_pulse.core.application.learning_capture import revalidate_learning_capture_for_materialization
         from okto_pulse.core.application.learning_materialization import authored_learning_candidate
+        from okto_pulse.core.ports.bug_cognitive_context import (
+            CanonicalBugNodeResolver, resolve_canonical_bug_node_read_port,
+        )
 
         async with self._relational_scope_factory() as db:
             basis = await revalidate_learning_capture_for_materialization(db,
                 board_id=board_id, bug_id=bug_id, learning_id=selection.learning_id,
                 generation=selection.generation, expected_fingerprint=selection.fingerprint)
+        resolver = resolve_canonical_bug_node_read_port()
+        if not isinstance(resolver, CanonicalBugNodeResolver):
+            raise ValueError('learning_materialization_canonical_resolver_required')
+        target = await run_blocking_graph_io(
+            partial(resolver.resolve_current, board_id=board_id, bug_id=bug_id),
+            task_name='core.kg.cognitive_closeout.resolve_authored_bug')
+        if target is None:
+            return False
         node = authored_learning_candidate(basis.capture)
         candidate = CloseoutCandidate('Learning', node.title, node.content,
-            f'bug:{bug_id}', (CloseoutEdge('validates', f'bug:{bug_id}'),))
+            f'bug:{bug_id}', (CloseoutEdge('validates', target),))
         return await self._persist(board_id, 'bug', candidate,
             authored_node=node, learning_capture=selection)
 
@@ -524,7 +535,7 @@ class ConsolidationPipelinePersister:
                 # Decision id) OR a canonical ref (e.g. card:<uuid> for the Bug);
                 # resolve the canonical ref to the real node id (RKG-02 identity).
                 target_label = "Bug" if edge.edge_type == "validates" else "Decision"
-                node_id = await run_blocking_graph_io(
+                node_id = edge.to_ref if learning_capture is not None else await run_blocking_graph_io(
                     partial(
                         _resolve_existing_node_id,
                         board_id,

@@ -3064,12 +3064,14 @@ def _do_graph_commit(
                 raise ValueError('learning_materialization_intent_mismatch')
             edge, = edge_candidates.values()
             target_id = edge.to_candidate_id[3:]
-            target_ref = _lookup_node_source_ref_by_id(graph_scope, 'Bug', target_id)
+            target_attrs = _read_cognitive_source_node_attrs(graph_scope, 'Bug', target_id)
+            target_ref = target_attrs.get('source_artifact_ref')
             target = resolve_cognitive_source_ref(target_ref,
                 canonical_bug_probe=lambda identity: identity == learning_projection.bug_id)
             expected = resolve_cognitive_source_ref(f'bug:{learning_projection.bug_id}')
             if (learning_projection.capture.board_id != board_id
-                    or _lookup_node_layer_by_id(graph_scope, 'Bug', target_id) != 'canonical'
+                    or target_attrs.get('graph_layer') != 'canonical'
+                    or target_attrs.get('superseded_by')
                     or not target.is_bug_derived
                     or target.canonical_artifact_ref != expected.canonical_artifact_ref):
                 raise ValueError('learning_materialization_canonical_bug_required')

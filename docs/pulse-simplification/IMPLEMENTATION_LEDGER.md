@@ -5,7 +5,7 @@
 Iniciativa **incompleta; retomada explicitamente autorizada em 2026-09-23**.
 O usuário revogou a pausa e pediu execução até o final, sem parar em milestones.
 Frente atual (2026-09-29): F6/KG §7, captura durável de Learning e integração
-ao fechamento de Bug. Último par enviado: Corea8065e8c/Community6f5c3426.
+ao fechamento de Bug. Último par enviado: Core3e1c5094/Community2d9959d7.
 Writer de binding opcional em task validation e autoria conjunta de relato+
 Learning foram validados/enviados, incluindo REST/MCP/UI/Delivery. Policy e
 preview tambem foram enviados; writer governado validado nesta rodada,
@@ -13,6 +13,38 @@ integracao automatica ao worker e demais itens F6 seguem pendentes.
 Detalhes, limites e handles ficam no fim deste ledger.
 
 ### Writer de materializacao KG7.3 — validado, integracao automatica pendente
+
+Continuacao do worker em andamento: CanonicalBugNodeResolver, capacidade
+publica implementada por CommunityCanonicalBugNodeReader, seleciona uma unica
+identidade canonica ativa por origem verificavel. Nao escolhe a primeira
+projecao working/supersedida, nem resolve ambiguidade por ordem da query.
+O probe legado exists conserva sua semantica. Commit revalida a origem, layer
+e superseded_by sob o fence, com leitura que falha fechado em erro.
+Testes novos cobrem working, supersedida, ambigua, ausente e mudanca apos lookup.
+Builds target-r1 ambos0; instalacao em andamento. Sem resultado funcional ainda.
+Eventos/worker continuam sendo a proxima ligacao; nenhum codigo de evento foi
+alterado nesta continuacao ate agora. Nao marcar entrega ou F6 completos.
+
+Pip34173 terminou0; provenance-target-r1 confirmou834/897+363/448 byte-identical.
+Core15291=108 passed/8.41s. Community84183 e F1663640 em andamento; aguardar
+terminais. Nao editar Python/payload durante estas campanhas.
+Investigacao da ligacao seguinte: stage_new_learning_capture ainda nao publica
+evento; precisa outbox na mesma UOW tambem para autoria independente pos-Done.
+Fila existente usa identidade por source_ref e aceita tipos fechados; varios
+captures de um Bug nao podem se apagar nem herdar terminalidade por engano.
+Preservar agrupamento do Bug nos consumidores de readiness ao definir a ref
+interna por captura. Loader atual ainda instancia summariser legado para Bug;
+KG7.7/L-H exige ligar o novo caminho deterministico sem ativar cognição interna.
+Nenhum novo DTO/evento/ref de trabalho foi implementado ate este registro.
+
+Community84183 terminou0:41 passed/265.06s. F1663640 terminou1 somente por
+README; findings[]/8ZERO. READMEs regenerados oficialmente apos os terminais.
+Builds target-final ambos0, pip51788=0; provenance-target-final834/897+363/448
+byte-identical. Nenhum Python/payload funcional mudou apos target-r1; somente
+matrizes README. F16final16938 terminou0, sem findings/docdrift e oitoZERO.
+record_learning_materialization_target.py executado gerou acceptance-learning-materialization-target.json.
+Ruff F/E9 e diff --check passaram; nenhum processo desta rodada permanece ativo.
+Incremento pronto para commit/push; continuar evento/UOW/consumer, sem pausa.
 
 Em 2026-09-29, integracao em curso no commit de consolidacao existente.
 Captura autoral conserva seu node_id e revisao de nascimento; o commit deve
