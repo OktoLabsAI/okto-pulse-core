@@ -56,6 +56,7 @@ from okto_pulse.core.mcp.catalog import CoreMcpCatalog, CoreMcpResource, closed_
 from okto_pulse.core.domain.architecture_classification import ArchitectureClassificationBatch
 from okto_pulse.core.domain.execution_contract import SpecExecutionContractAdoption
 from okto_pulse.core.domain.learning_closeout import LearningCaptureSelection
+from okto_pulse.core.domain.learning_submission import LearningSubmission
 from okto_pulse.core.mcp.cancellation_projection import project_cancellation
 from okto_pulse.core.mcp.filters import (
     BoardEntityType,
@@ -4834,6 +4835,7 @@ async def okto_pulse_move_card(
         DeliverySelectionParam,
         Field(description="Optional exact Card ledger selection sealed into this execution report; requires Card/Spec/delivery revisions and persisted record IDs. Does not approve proof or waive impact policy."),
     ] = None,
+    learning_submission: LearningSubmission | None = None,
 ) -> str:
     """Move a card to a different column/position on the board.
 
@@ -4847,6 +4849,10 @@ async def okto_pulse_move_card(
     Errors: resource_gate_missing_resources;
     missing_regression_test_task (bug -> in_progress);
     impact_evidence_required (mode 'require' without a populated block).
+    Optional learning_submission authors a new Bug Learning with this report.
+    Its initial source digest/version must match; all capture and report write
+    permissions apply. The report, capture, transition and outbox share a UOW.
+    Exact retries preserve one authored record; this never approves execution.
     """
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
@@ -4902,6 +4908,7 @@ async def okto_pulse_move_card(
             cancellation_reason=cancellation_reason or None,
             impact_evidence=impact_evidence,
             delivery_selection=delivery_selection,
+            learning_submission=learning_submission,
         )
 
         try:
@@ -4912,6 +4919,8 @@ async def okto_pulse_move_card(
                     uow=uow,
                 )
             ).card
+        except PermissionDeniedError as e:
+            return MCPAdapterContract.error(e)
         except EntityNotFoundError:
             return json.dumps({"error": "Card not found"})
         except CardOperationError as e:

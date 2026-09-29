@@ -143,6 +143,9 @@ class RecordCardDeliveryEvidenceUseCase:
         return options
 
     async def submit_report(self, command, *, actor, uow: PulseUnitOfWork):
+        from okto_pulse.core.application.use_cases.learning_capture import authorize_learning_submission
+
+        await authorize_learning_submission(command.report, actor=actor, uow=uow, board_id=command.board_id)
         batch = command.batch_command()
         options = await self.authorize_in_transaction(batch, actor=actor, uow=uow)
         await require_authorization(actor, transition_permission_requirement(

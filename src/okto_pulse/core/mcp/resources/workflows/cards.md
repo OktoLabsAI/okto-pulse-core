@@ -234,6 +234,17 @@ okto_pulse_create_card(
 
 ### Authored Learnings for a Bug
 
+The execution-report dialog can save a new Learning together with the report,
+including an optional final Delivery batch. For MCP `okto_pulse_move_card`, use
+`learning_submission` with a stable `capture_id`, the initial context's
+`expected_source_digest`/`expected_source_version`, authored `content`, `context`,
+`applicability`, and authenticated `scenario_ids`. All capture permissions and
+`card.conclusion.write` are required in addition to the transition authority.
+The server admits the exact new report into the capture basis and persists the
+compound operation atomically. Keep the complete request unchanged for a retry;
+changed content is a new intent. Retrying after a later reopen does not close
+the Bug again or make the old lesson applicable to its new correction.
+
 Record a useful lesson with its context, applicability and authenticated scenario
 evidence. In the Bug modal, open **Validation → Execution report → Learnings**.
 For MCP, read `okto_pulse_kg_get_learning_capture_context`, then submit the authored

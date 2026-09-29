@@ -306,7 +306,23 @@ class McpMoveCardUseCase:
             service, command.card_id, command.board_id, actor
         )
         current_state = entity_state(existing)
+        transition_from = existing.status
         target_state = str(getattr(command.data.status, "value", command.data.status))
+        learning_submission = getattr(command.data, 'learning_submission', None)
+        if learning_submission is not None:
+            from okto_pulse.core.application.use_cases.learning_capture import authorize_learning_submission
+            from okto_pulse.core.domain.learning_submission import (
+                learning_submission_replay, learning_submission_request_digest,
+            )
+
+            await authorize_learning_submission(command.data, actor=actor, uow=uow, board_id=existing.board_id)
+            replay = learning_submission_replay(existing.conclusions, actor_id=actor.actor_id,
+                capture_id=learning_submission.capture_id,
+                request_digest=learning_submission_request_digest(board_id=existing.board_id,
+                    bug_id=existing.id, actor_id=actor.actor_id, move=command.data))
+            if replay is not None:
+                current_state = replay.from_status
+                transition_from = replay.from_status
         requirement = (
             card_requirement(
                 "card.entity.edit_fields",
@@ -316,7 +332,7 @@ class McpMoveCardUseCase:
             if current_state == target_state
             else transition_permission_requirement(
                 "card",
-                existing.status,
+                transition_from,
                 command.data.status,
                 legacy_operation="cards:move",
             )
@@ -327,21 +343,25 @@ class McpMoveCardUseCase:
             uow=uow,
             board_id=existing.board_id,
         )
-        updated = await service.move_card(
-            command.card_id, actor.actor_id, command.data, actor.actor_name
-        )
-        if not updated:
-            return McpMoveCardResult(None)
-        # Flush and refresh inside the still-open transaction.  Refreshing
-        # after commit would create a causal gap where a concurrent writer
-        # could advance the row again (or where refresh failure would report a
-        # failed call after the mutation had already become durable).
-        await uow.synchronize()
-        await uow.reload(
-            updated,
-            fields=("status", "position", "policy_version"),
-        )
-        await commit(uow)
+        try:
+            updated = await service.move_card(
+                command.card_id, actor.actor_id, command.data, actor.actor_name
+            )
+            if not updated:
+                return McpMoveCardResult(None)
+            # Flush and refresh inside the still-open transaction. Refreshing
+            # after commit would create a gap where another writer could move
+            # the row or a refresh failure could misreport a durable write.
+            await uow.synchronize()
+            await uow.reload(
+                updated,
+                fields=("status", "position", "policy_version"),
+            )
+            await commit(uow)
+        except BaseException:
+            if learning_submission is not None:
+                await uow.rollback()
+            raise
         return McpMoveCardResult(updated)
 
 

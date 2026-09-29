@@ -6311,6 +6311,38 @@ class CardService:
             ).acquire_lifecycle_write_fence(board_id=card.board_id)
             card = await _application_refresh(self.db, card)
 
+        learning_submission = getattr(data, 'learning_submission', None)
+        learning_initial = learning_record = learning_capture_basis = None
+        learning_request_digest = None
+        if learning_submission is not None:
+            from okto_pulse.core.domain.learning_submission import (
+                learning_submission_replay, learning_submission_request_digest,
+            )
+            from okto_pulse.core.ports.bug_cognitive_context import (
+                BugSemanticWriteSnapshotReader, qualify_bug_semantic_context,
+                resolve_bug_cognitive_context_assembler,
+            )
+
+            if card.card_type != CardType.BUG or data.status not in (CardStatus.VALIDATION, CardStatus.DONE):
+                raise ValueError('learning_submission_requires_bug_report')
+            learning_reader = resolve_bug_cognitive_context_assembler()
+            if not isinstance(learning_reader, BugSemanticWriteSnapshotReader):
+                raise ValueError('learning_capture_transaction_capability_unavailable')
+            learning_initial = qualify_bug_semantic_context(await learning_reader.assemble_semantic_for_write(
+                self.db, board_id=card.board_id, bug_id=card.id))
+            card = await _application_refresh(self.db, card)
+            learning_request_digest = learning_submission_request_digest(board_id=card.board_id,
+                bug_id=card.id, actor_id=user_id, move=data)
+            if learning_submission_replay(card.conclusions, actor_id=user_id,
+                    capture_id=learning_submission.capture_id, request_digest=learning_request_digest) is not None:
+                return card
+            if (not learning_initial.verified
+                    or learning_initial.source_digest != learning_submission.expected_source_digest
+                    or learning_initial.source_policy_version != learning_submission.expected_source_version):
+                raise ValueError('learning_capture_source_changed_or_unavailable')
+            if card.status == data.status:
+                raise ValueError('learning_submission_requires_new_report')
+
         archived_block = archived_card_block(
             CardTransitionFacts(
                 card_id=card.id,
@@ -7171,6 +7203,12 @@ class CardService:
                 "drift_justification": data.drift_justification.strip(),
                 "source": report_source,
             }
+            if learning_submission is not None:
+                from okto_pulse.core.domain.learning_submission import LearningSubmissionReceipt
+
+                conclusion_entry['learning_submission'] = LearningSubmissionReceipt(
+                    capture_id=learning_submission.capture_id, request_digest=learning_request_digest,
+                    from_status=old_status.value, to_status=data.status.value).model_dump()
             if impact_block is not None:
                 # FR-1: the block persists next to the conclusion in the
                 # append-only JSON; omitted optional fields stay omitted so
@@ -7289,6 +7327,20 @@ class CardService:
             )
 
         spec_for_auto_rollback = None
+        if learning_submission is not None:
+            if pending_conclusion_entry is None:
+                raise ValueError('learning_submission_requires_new_report')
+            if data.status == CardStatus.DONE:
+                from okto_pulse.core.application.learning_capture import stage_report_learning_capture
+
+                await _application_flush(self.db)
+                learning_capture_basis = await learning_reader.assemble_semantic_for_write(
+                    self.db, board_id=card.board_id, bug_id=card.id)
+                learning_record = await stage_report_learning_capture(self.db,
+                    initial=learning_initial, captured=learning_capture_basis,
+                    conclusion=pending_conclusion_entry, submission=learning_submission,
+                    author_id=user_id, capture_status=old_status.value)
+
         if data.status == CardStatus.CANCELLED and card.spec_id:
             candidate = await _application_get(self.db, "spec", card.spec_id)
             if candidate is not None and candidate.status == SpecStatus.VALIDATED:
@@ -7389,6 +7441,30 @@ class CardService:
         # Application records are detached from adapter-specific identity maps.
         # Synchronize the transition before another service reads it in this UoW.
         await _application_flush(self.db)
+
+        if learning_submission is not None:
+            learning_after = await learning_reader.assemble_semantic_for_write(
+                self.db, board_id=card.board_id, bug_id=card.id)
+            if data.status == CardStatus.VALIDATION:
+                from okto_pulse.core.application.learning_capture import stage_report_learning_capture
+
+                await stage_report_learning_capture(self.db,
+                    initial=learning_initial, captured=learning_after,
+                    conclusion=pending_conclusion_entry, submission=learning_submission,
+                    author_id=user_id, capture_status='validation')
+            else:
+                from okto_pulse.core.domain.learning_closeout import (
+                    append_learning_closeout_binding, bind_learning_capture_to_closed_source,
+                )
+
+                binding = bind_learning_capture_to_closed_source(capture=learning_record,
+                    before=learning_capture_basis, closed=learning_after,
+                    transition_id='learning:' + learning_request_digest, actor_id=user_id,
+                    bound_at=datetime.now(timezone.utc), operation='move_card')
+                card.learning_closeout_bindings = append_learning_closeout_binding(
+                    getattr(card, 'learning_closeout_bindings', None), binding)
+                card.mark_dirty('learning_closeout_bindings')
+                await _application_flush(self.db)
 
         resolved_name = actor_name or await resolve_actor_name(
             self.db, user_id, card.board_id

@@ -167,8 +167,8 @@ history. A digest mismatch is shown as an earlier basis, not as inferred rejecti
 
 The execution-report interface supports independent creation/history. The Bug
 task-validation form separately offers an optional saved-capture selection.
-Reuse/supersedence, joint conclusion/capture submission and policy preview
-remain outstanding.
+The execution-report dialog also supports the joint authorship path below.
+Reuse/supersedence and policy preview remain outstanding.
 
 ## Closeout revalidation primitive
 
@@ -245,5 +245,32 @@ is explicit and included in the request identity. Matching displayed digests
 are not proof of admission: the server still checks the current head and
 receipts. Unavailable history is never displayed as an empty result.
 
-This optional path does not implement a required-Learning policy, direct
-move-to-Done joint authorship, reuse/supersedence or graph materialization.
+This optional selection path does not implement a required-Learning policy,
+reuse/supersedence or graph materialization. Joint authorship is described below.
+
+## Joint execution-report authorship (KG §7.3)
+
+`CardMove.learning_submission` carries new authored content and the source
+digest/version observed before the report. It requires the existing thirteen
+capture permissions plus `card.conclusion.write` and the lifecycle authority.
+REST, MCP and the compound Delivery report writer share this authorization.
+
+The writer locks and checks the initial source, admits the execution report
+through its normal gates, and compares the exact report append with the captured
+basis. Every other semantic fact must remain unchanged. Validation captures the
+post-transition source for later independent review; direct Done captures the
+report before the terminal transition and appends its closeout binding afterward.
+Both paths persist source, report, lifecycle and outbox in the same UOW.
+
+The conclusion contains a server-owned `learning-submission/v1` receipt with
+capture ID, request digest and original edge. It seals the complete request and
+actor for idempotency; it is not a proof of applicability or implementation.
+Retries preserve one report/capture and return current Card state. A later
+reopen is not repeated or undone by replay. A changed request cannot reuse the
+same capture ID. The independent capture endpoint remains available.
+
+The execution-report UI keeps authorship optional, loads authenticated evidence
+on demand, and keeps text after failure. It refuses incomplete selected drafts
+and uses a stable capture ID only while the report and selected content remain
+identical. Refreshing evidence requires explicit reselection. This adds no
+required-Learning policy, semantic evaluator or graph materialization.

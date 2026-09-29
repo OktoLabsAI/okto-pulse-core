@@ -25,6 +25,7 @@ from okto_pulse.core.discovery_params_schema import (
 )
 from okto_pulse.core.domain.requirement_verification import VerificationQualifiedModel
 from okto_pulse.core.domain.learning_closeout import LearningCaptureSelection
+from okto_pulse.core.domain.learning_submission import LearningSubmission
 from okto_pulse.core.domain.execution_contract import SpecExecutionContract, SpecExecutionContractAdoption
 from okto_pulse.core.domain.task_validation_policy import MigratedTaskValidationPolicy, ResolvedTaskValidationConfig, reject_migrated_validation_policy_write, read_migrated_validation_policy
 from okto_pulse.core.models.delivery_selection import DeliverySelectionInput, DeliverySelectionManifest
@@ -3552,6 +3553,8 @@ class CardMove(BaseModel):
                 raise ValueError(f"card_move_empty_anchor: {name} must be non-blank")
         return self
 
+    learning_submission: LearningSubmission | None = Field(default=None,
+        description="Optional new Learning authored with a Bug execution report; initial source fence and all capture permissions required.")
     delivery_selection: DeliverySelectionInput | None = None
     conclusion: str | None = Field(
         None,

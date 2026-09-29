@@ -1,6 +1,6 @@
 """Stage authored Learning content, never infer it or certify implementation."""
 
-from datetime import datetime
+from datetime import datetime, timezone
 import json
 
 from okto_pulse.core.kg.node_identity import mint_node_id
@@ -140,6 +140,22 @@ async def stage_new_learning_capture(context, request: CreateLearningCapture, *,
         source_session_id='capture:' + request.capture_id, committed_at=captured_at.isoformat())
     await store.append_many_if_current_in_context(context, (record,), expected_fingerprints=(None,))
     return record
+
+
+async def stage_report_learning_capture(context, *, initial, captured, conclusion,
+    submission, author_id, capture_status):
+    """Use only the server's admitted report delta, never rebase old content."""
+    from okto_pulse.core.domain.learning_submission import qualify_learning_submission_basis
+
+    source = qualify_learning_submission_basis(initial=initial, captured=captured,
+        conclusion=conclusion, capture_status=capture_status)
+    request = CreateLearningCapture(board_id=source.board_id, bug_id=source.bug_id,
+        capture_id=submission.capture_id, expected_source_digest=source.source_digest,
+        expected_source_version=source.source_policy_version, content=submission.content,
+        context=submission.context, applicability=submission.applicability,
+        scenario_ids=tuple(submission.scenario_ids))
+    return await stage_new_learning_capture(context, request, author_id=author_id,
+        captured_at=datetime.now(timezone.utc))
 
 
 async def revalidate_learning_capture_for_closeout(

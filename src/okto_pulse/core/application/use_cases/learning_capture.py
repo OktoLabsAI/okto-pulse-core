@@ -16,6 +16,14 @@ LEARNING_CAPTURE_CREATE_PERMISSIONS = (
 LEARNING_CAPTURE_HISTORY_PERMISSIONS = (*LEARNING_CAPTURE_READ_PERMISSIONS, 'kg.query.learning_from_bugs')
 
 
+async def authorize_learning_submission(move, *, actor, uow, board_id):
+    """Shared authority for REST, MCP and compound Delivery report writers."""
+    if getattr(move, 'learning_submission', None) is not None:
+        await require_all(actor,
+            *(PermissionRequirement(flag) for flag in LEARNING_CAPTURE_CREATE_PERMISSIONS),
+            PermissionRequirement('card.conclusion.write'), uow=uow, board_id=board_id)
+
+
 class StageLearningCaptureUseCase:
     async def execute(self, command: CreateLearningCapture, *, actor, uow):
         if type(command) is not CreateLearningCapture:
