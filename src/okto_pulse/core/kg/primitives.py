@@ -34,6 +34,9 @@ from datetime import datetime, timezone
 from functools import partial
 from typing import TypeVar
 
+from okto_pulse.core.domain.learning_closeout import LearningCaptureSelection
+from okto_pulse.core.domain.learning_materialization import CapturedLearningProjection, LEARNING_CAPTURE_CANDIDATE_ID
+
 from okto_pulse.core.domain.code_traceability_kg import (
     CODE_TRACEABILITY_DETERMINISTIC_WRITER_PATH,
     CodeTraceabilityKGWriteViolation,
@@ -2956,6 +2959,7 @@ def _do_graph_commit(
     ),
     relational_projection_candidate_ids: frozenset[str] = frozenset(),
     relational_projection_active_set_intents: tuple[object, ...] = (),
+    learning_projection: CapturedLearningProjection | None = None,
 ) -> tuple[dict, object, list, datetime, dict, list[dict]]:
     """Synchronous graph writes for ``commit_consolidation``.
 
@@ -3048,6 +3052,27 @@ def _do_graph_commit(
         )
 
     try:
+        if learning_projection is not None:
+            from okto_pulse.core.application.learning_materialization import require_capture_candidates
+            from okto_pulse.core.kg.cognitive_source_ref_resolver import resolve_cognitive_source_ref
+
+            require_capture_candidates(learning_projection, node_candidates, edge_candidates)
+            learning_projection.require_literal_head()
+            capture_hint = effective_hints.get(LEARNING_CAPTURE_CANDIDATE_ID)
+            if (capture_hint is None or _resolve_op(capture_hint, 1.0) != ReconciliationOperation.ADD
+                    or getattr(capture_hint, 'target_node_id', None)):
+                raise ValueError('learning_materialization_intent_mismatch')
+            edge, = edge_candidates.values()
+            target_id = edge.to_candidate_id[3:]
+            target_ref = _lookup_node_source_ref_by_id(graph_scope, 'Bug', target_id)
+            target = resolve_cognitive_source_ref(target_ref,
+                canonical_bug_probe=lambda identity: identity == learning_projection.bug_id)
+            expected = resolve_cognitive_source_ref(f'bug:{learning_projection.bug_id}')
+            if (learning_projection.capture.board_id != board_id
+                    or _lookup_node_layer_by_id(graph_scope, 'Bug', target_id) != 'canonical'
+                    or not target.is_bug_derived
+                    or target.canonical_artifact_ref != expected.canonical_artifact_ref):
+                raise ValueError('learning_materialization_canonical_bug_required')
         _require_no_code_traceability_existing_targets(
             graph_scope,
             node_candidates=node_candidates,
@@ -3527,7 +3552,7 @@ def _do_graph_commit(
             # every spec.semantic_changed / spec.moved / spec.version_bumped
             # event spawns a duplicate Entity for the same source.
             source_ref = cand.source_artifact_ref or ""
-            if source_ref:
+            if source_ref and learning_projection is None:
                 existing_id = _lookup_existing_node(graph_scope, node_type, source_ref)
                 if existing_id:
                     is_curated = _node_is_human_curated(
@@ -3765,7 +3790,12 @@ def _do_graph_commit(
                 derive_natural_key(cand.source_artifact_ref, node_type, cand.title),
                 0,
             )
-            embedding = embedder.encode(f"{cand.title}\n{cand.content or ''}")
+            if learning_projection is not None:
+                node_id = learning_projection.node_id
+            embedding = (learning_projection.head.payload.get('embedding')
+                if learning_projection is not None
+                and learning_projection.head.record_fingerprint != learning_projection.capture.record_fingerprint
+                else embedder.encode(f"{cand.title}\n{cand.content or ''}"))
 
             node_attrs = {
                 "title": cand.title,
@@ -3799,6 +3829,15 @@ def _do_graph_commit(
                 "embedding": embedding,
             }
 
+            if learning_projection is not None:
+                node_attrs['created_at'] = learning_projection.capture.payload['captured_at']
+                node_attrs['created_by_agent'] = learning_projection.capture.payload['author_id']
+                node_attrs['source_content_hash'] = learning_projection.capture.record_fingerprint
+                if learning_projection.head.record_fingerprint != learning_projection.capture.record_fingerprint:
+                    # Recovery restores the literal admitted revision, including
+                    # its original vector and provenance, without re-extraction.
+                    node_attrs = dict(learning_projection.head.payload)
+
             # A deterministic id is an idempotency key in its own right.
             # Normally NC-8 finds the node above by source_artifact_ref, but
             # an at-least-once replay can observe a node that was already
@@ -3812,6 +3851,23 @@ def _do_graph_commit(
                 graph_scope, node_type, node_id
             )
             if existing_identity is not None:
+                if learning_projection is not None:
+                    actual = _read_captured_learning_node_attrs(graph_scope, node_id)
+                    learning_projection.require_authored_graph_fields(actual)
+                    if learning_projection.head.record_fingerprint != learning_projection.capture.record_fingerprint:
+                        from okto_pulse.core.ports.kg_cognitive_source import COGNITIVE_SOURCE_VOLATILE_USAGE_FIELDS
+                        wanted = learning_projection.head.payload
+                        if any(actual.get(key) != wanted.get(key) for key in set(actual) | set(wanted)
+                                if key not in COGNITIVE_SOURCE_VOLATILE_USAGE_FIELDS and key != 'created_at'):
+                            raise ValueError('learning_materialization_projection_conflict')
+                    candidate_to_graph_id[cand_id] = node_id
+                    candidate_to_node_type[cand_id] = node_type
+                    orch.counters.nodes_noop += 1
+                    _queue_cognitive_source_record(node_id=node_id, node_type=node_type,
+                        generation=0, attrs=(dict(learning_projection.head.payload)
+                            if learning_projection.head.record_fingerprint != learning_projection.capture.record_fingerprint
+                            else actual))
+                    continue
                 existing_ref = str(
                     existing_identity.get("source_artifact_ref") or ""
                 ).strip()
@@ -3905,6 +3961,12 @@ def _do_graph_commit(
                 continue
 
             _apply_graph_node_create(orch, node_type, node_id, node_attrs)
+            if learning_projection is not None:
+                # Seal the actual admitted projection, including graph defaults
+                # and codec representations. Pre-write attrs omit stable fields
+                # that an exact replay must compare, not silently overwrite.
+                node_attrs = _read_captured_learning_node_attrs(graph_scope, node_id)
+                learning_projection.require_authored_graph_fields(node_attrs)
             candidate_to_graph_id[cand_id] = node_id
             candidate_to_node_type[cand_id] = node_type
             _queue_cognitive_source_record(
@@ -4373,6 +4435,7 @@ async def commit_consolidation(
     db=None,
     blocking_execution: BlockingExecutionPort | None = None,
     defer_session_finalization: bool = False,
+    learning_capture: LearningCaptureSelection | None = None,
 ) -> CommitConsolidationResponse:
     """Atomically write graph backend nodes/edges + audit + outbox event.
 
@@ -4413,6 +4476,12 @@ async def commit_consolidation(
             "relational UnitOfWork",
             session_id=req.session_id,
         )
+
+    if learning_capture is not None and (
+        not isinstance(learning_capture, LearningCaptureSelection)
+        or db is None or not defer_session_finalization or req.agent_overrides
+    ):
+        raise ValueError('learning_materialization_transaction_required')
 
     # FR5/FR6 barrier check. Uses session.board_id so a multi-board
     # process never blocks the wrong board. Raises in STRICT, logs+counter
@@ -4472,6 +4541,11 @@ async def commit_consolidation(
     ) -> CommitConsolidationResponse:
         nonlocal owns_deferred_claim
         request_payload = req.model_dump(mode="json")
+        learning_projection = None
+        if learning_capture is not None:
+            from okto_pulse.core.application.learning_materialization import prepare_captured_learning_commit
+            learning_projection = await prepare_captured_learning_commit(db, session, learning_capture)
+            request_payload['learning_capture'] = learning_capture.model_dump(mode='json')
         pending = getattr(session, "pending_commit", None)
         if pending is not None:
             if not isinstance(pending, _PendingConsolidationCommit):
@@ -4522,6 +4596,7 @@ async def commit_consolidation(
                     list(pending.cognitive_source_records),
                     context=db,
                     store=cognitive_source_store,
+                    **({'learning_projection': learning_projection} if learning_projection else {}),
                 ),
             )
             await observe_consolidation_phase(
@@ -4545,6 +4620,12 @@ async def commit_consolidation(
         effective_hints = dict(session.reconciliation_hints)
         for cid, override in req.agent_overrides.items():
             effective_hints[cid] = override
+        if learning_projection is not None:
+            # Explicit authored create is not a similarity-driven UPDATE or
+            # SUPERSEDE. The existing graph guards still validate the batch.
+            effective_hints = {LEARNING_CAPTURE_CANDIDATE_ID: ReconciliationHint(
+                candidate_id=LEARNING_CAPTURE_CANDIDATE_ID, operation=ReconciliationOperation.ADD,
+                confidence=1.0, reason='Explicit durable Learning create intent')}
 
         # --- graph backend writes (offloaded to thread pool) ---
         try:
@@ -4584,6 +4665,7 @@ async def commit_consolidation(
                         (),
                     ),
                     executor=blocking_execution,
+                    **({'learning_projection': learning_projection} if learning_projection else {}),
                 ),
             )
         except KGPrimitiveError:
@@ -4616,6 +4698,7 @@ async def commit_consolidation(
                     cognitive_source_records,
                     context=db,
                     store=cognitive_source_store,
+                    **({'learning_projection': learning_projection} if learning_projection else {}),
                 ),
             )
 
@@ -5509,6 +5592,17 @@ def _read_cognitive_source_node_attrs(
     }
 
 
+def _read_captured_learning_node_attrs(graph_scope, node_id: str) -> dict:
+    attrs = _read_cognitive_source_node_attrs(graph_scope, 'Learning', node_id)
+    # The transaction marker belongs to the current graph write and its
+    # compensation, not to authored content. Keep the original source session
+    # in the record envelope; replay must receive a fresh compensation marker.
+    # This normalization applies only to the new authored capture projection,
+    # never to legacy source history or its fingerprint contract.
+    attrs.pop('source_session_id', None)
+    return attrs
+
+
 def _cognitive_source_json_value(value):
     """Normalize graph-native values for the relational JSON payload."""
 
@@ -5636,6 +5730,7 @@ async def _append_cognitive_source_records(
     *,
     context: object | None = None,
     store: object | None = None,
+    learning_projection: CapturedLearningProjection | None = None,
 ) -> None:
     """Append cognitive-source records fail-closed (spec MKG-A-S1 FR4/D5).
 
@@ -5646,6 +5741,9 @@ async def _append_cognitive_source_records(
     the process-global embedded writer.
     """
 
+    if not records and learning_projection is not None:
+        raise KGPrimitiveError('learning_materialization_projection_missing',
+            'The authored capture commit must stage its literal source revision', session_id=session_id)
     if not records:
         return
     from okto_pulse.core.ports.kg_cognitive_source import (
@@ -5656,6 +5754,19 @@ async def _append_cognitive_source_records(
 
     try:
         resolved_store = store or require_cognitive_source_store()
+        if learning_projection is not None:
+            from okto_pulse.core.ports.kg_cognitive_source import ConditionalCognitiveSourceWriter
+            if context is None or not isinstance(resolved_store, ConditionalCognitiveSourceWriter) or len(records) != 1:
+                raise CognitiveSourceError('learning_materialization_conditional_append_required', board_id=board_id)
+            raw, = records
+            if ((raw['node_id'], raw['node_type'], raw['generation'], raw['board_id'])
+                    != (learning_projection.node_id, 'Learning', learning_projection.capture.generation, board_id)):
+                raise CognitiveSourceError('learning_materialization_projection_conflict', board_id=board_id)
+            learning_projection.require_authored_graph_fields(raw['payload'])
+            record = CognitiveSourceRecord(**{**raw, 'evidence_refs': learning_projection.evidence_refs})
+            await resolved_store.append_many_if_current_in_context(context, (record,),
+                expected_fingerprints=(learning_projection.head.record_fingerprint,))
+            return
         if context is None:
             source_records = tuple(
                 CognitiveSourceRecord(**kwargs) for kwargs in records

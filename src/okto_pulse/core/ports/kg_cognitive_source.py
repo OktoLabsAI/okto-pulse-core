@@ -51,6 +51,7 @@ __all__ = [
     "CognitiveSourceStore",
     "ConditionalCognitiveSourceWriter",
     "TransactionalCognitiveSourceReader",
+    "HistoricalCognitiveSourceReader",
     "LatestVerifiedCognitiveSourceReader",
     "SealedBirthRestoration",
     "canonical_cognitive_source_fingerprint",
@@ -556,6 +557,21 @@ class TransactionalCognitiveSourceReader(Protocol):
 
         This read grants no lock itself; conditional mutations still require CAS.
         It must include staged writes visible to that same transaction.
+        """
+        ...
+
+
+@runtime_checkable
+class HistoricalCognitiveSourceReader(Protocol):
+    async def read_revision_in_context(
+        self, context: object, *, board_id: str, node_id: str, generation: int,
+        source_revision: int,
+    ) -> CognitiveSourceRecord | None:
+        """Read one immutable revision after auditing the complete scoped history.
+
+        A later materialized projection does not replace the authored capture.
+        Missing/corrupt history cannot be supplied by the graph or a cache.
+        This read grants no lock, permission or current applicability.
         """
         ...
 

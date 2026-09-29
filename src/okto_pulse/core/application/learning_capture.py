@@ -12,6 +12,7 @@ from okto_pulse.core.ports.bug_cognitive_context import (
 )
 from okto_pulse.core.ports.kg_cognitive_source import (
     CognitiveSourceRecord, ConditionalCognitiveSourceWriter, TransactionalCognitiveSourceReader,
+    HistoricalCognitiveSourceReader,
     require_cognitive_source_store, latest_cognitive_source_records,
 )
 from okto_pulse.core.ports.learning_capture import (
@@ -128,6 +129,15 @@ async def stage_new_learning_capture(context, request: CreateLearningCapture, *,
         node_id=node_id, generation=0, evidence_refs=refs)
     prior = await store.read_latest_in_context(context, board_id=request.board_id, node_id=node_id, generation=0)
     if prior is not None:
+        if 'capture_format' not in prior.payload:
+            # Materialization appends a literal projection at the same identity.
+            # Retry compares the immutable authored birth, never that projection.
+            if not isinstance(store, HistoricalCognitiveSourceReader):
+                raise ValueError('learning_capture_history_unavailable')
+            prior = await store.read_revision_in_context(context, board_id=request.board_id,
+                node_id=node_id, generation=0, source_revision=0)
+            if prior is None:
+                raise ValueError('learning_capture_history_unavailable')
         if not validate_learning_capture_payload(dict(prior.payload), board_id=request.board_id,
                 node_type=prior.node_type, node_id=node_id, generation=0, evidence_refs=prior.evidence_refs):
             raise ValueError('learning_capture_idempotency_conflict')
@@ -151,6 +161,7 @@ class LearningMaterializationBasis:
     capture: CognitiveSourceRecord
     source: BugCognitiveContext
     closeout_transition_id: str | None
+    head: CognitiveSourceRecord
 
 
 async def revalidate_learning_capture_for_materialization(
@@ -183,6 +194,14 @@ async def revalidate_learning_capture_for_materialization(
         node_id=selection.learning_id, generation=selection.generation)
     if record is None:
         raise ValueError('learning_capture_selected_record_unavailable')
+    head = record
+    if 'capture_format' not in record.payload:
+        if not isinstance(store, HistoricalCognitiveSourceReader):
+            raise ValueError('learning_capture_history_unavailable')
+        record = await store.read_revision_in_context(context, board_id=board_id,
+            node_id=selection.learning_id, generation=selection.generation, source_revision=0)
+        if record is None:
+            raise ValueError('learning_capture_history_unavailable')
     if (record.node_id != selection.learning_id or record.generation != selection.generation
             or record.record_fingerprint != selection.fingerprint):
         raise ValueError('learning_capture_selection_changed')
@@ -196,7 +215,10 @@ async def revalidate_learning_capture_for_materialization(
     binding = qualify_learning_materialization_basis(record, source,
         getattr(bug, 'learning_closeout_bindings', None))
     _require_current_capture_evidence(source, record)
-    return LearningMaterializationBasis(record, source, binding.transition_id if binding else None)
+    from okto_pulse.core.domain.learning_materialization import CapturedLearningProjection
+    projection = CapturedLearningProjection(record, head, bug_id)
+    projection.require_literal_head()
+    return LearningMaterializationBasis(record, source, binding.transition_id if binding else None, head)
 
 
 async def stage_report_learning_capture(context, *, initial, captured, conclusion,

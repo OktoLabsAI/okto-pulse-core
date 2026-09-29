@@ -5,11 +5,80 @@
 Iniciativa **incompleta; retomada explicitamente autorizada em 2026-09-23**.
 O usuário revogou a pausa e pediu execução até o final, sem parar em milestones.
 Frente atual (2026-09-29): F6/KG §7, captura durável de Learning e integração
-ao fechamento de Bug. Último par enviado: Core10f855ef/Community710e4375.
+ao fechamento de Bug. Último par enviado: Corea8065e8c/Community6f5c3426.
 Writer de binding opcional em task validation e autoria conjunta de relato+
 Learning foram validados/enviados, incluindo REST/MCP/UI/Delivery. Policy e
-preview tambem foram enviados; materialização e recuperação seguem pendentes.
+preview tambem foram enviados; writer governado validado nesta rodada,
+integracao automatica ao worker e demais itens F6 seguem pendentes.
 Detalhes, limites e handles ficam no fim deste ledger.
+
+### Writer de materializacao KG7.3 — validado, integracao automatica pendente
+
+Em 2026-09-29, integracao em curso no commit de consolidacao existente.
+Captura autoral conserva seu node_id e revisao de nascimento; o commit deve
+anexar a projecao literal por CAS na mesma UOW de auditoria/outbox. Intent=create
+nao usa dedup por source_ref nem supersedencia por similaridade. O persister
+reutiliza fences, durabilidade e compensacao existentes; nao ha rota publica
+nova nem nova permissao. O worker automatico ainda nao foi conectado.
+HistoricalCognitiveSourceReader permite recuperar a autoria apos projecao,
+auditando todo o historico da identidade pelo adaptador SQL. Preflight recusa
+adapter sem CAS e geracao nao suportada antes de mutar o grafo.
+
+Testes novos exercitam SQL/evidencia assinada/Grafx descartaveis, com gates
+independentes e health explicitamente em fixture. Builds writer-r1 ambos0;
+pip18177 em andamento. Aguardar terminal, provar par byte-a-byte e somente
+entao executar comportamento. Nenhum resultado funcional desta rodada ainda.
+Nao promover inventario, F6 ou entrega global. Sem alteracao de frontend.
+
+Pip18177 terminou0, provenance-r1 confirmou834/897 Core+363/448 Community.
+Core12629=67 passed/5.72s; Community72701=32 passed/1 failed/80.05s. Diagnostico
+34780 mostrou fixture sem write-lock real; depois34713 mostrou falta da porta
+de consolidacao. Fixtures corrigidas com adapters reais, sem afrouxar guards.
+7389=3 passed/1 failed: escrita passou; oraculo tuple/list incorreto corrigido.
+57419=4 passed/1 failed: replay recusou; 75274/27640 isolaram timestamp UTC
+renderizado como Z no Grafx vs +00:00 na captura. Comparacao agora por instante
+com fuso, mantendo texto original no ledger; naive/diferente continua recusado.
+Core projection inicial=14 passed/1 failed por fixture revisao2 usada com
+head1; corrigido oraculo, domain2=15 passed. Coordenador93483=21 passed/4.21s.
+F1637898 terminou1 somente README; findings=[] e oito budgetsZERO.
+
+Builds r2 ambos0, pip24887=0, provenance-r2 byte-identical834/897+363/448.
+Campanhas atuais Core18093/Community56792 em andamento; incluem timestamps,
+replay/restauracao literal sem reembedding, duas criacoes distintas no mesmo
+Bug sem supersedencia implicita, leitura de historia e retry de autoria.
+Aguardar terminais antes de editar payload Python ou atualizar README/build.
+Teste de compensacao agora exige que o append injetado tenha sido chamado,
+evitando verde por recusa anterior ao grafo. Sem worker automatico conectado.
+
+Core18093=108 passed/9.40s; Community56792=33 passed/1 failed/110.07s.
+Diagnostico80766 mostrou que todos atributos enviados coincidiam, mas a leitura
+completa incluia campos estaveis omitidos. Writer passou a selar a leitura real
+apos criar, nao apenas o dicionario de entrada. Builds r3/pip34048/provenance0;
+Core75229=108 passed/9.17s; Community81849=34 passed/1 failed/148.00s.
+Replay passou; restauracao encontrou source_session_id reservado ao transaction
+scope. Novo caminho normaliza apenas esse marcador operacional: sessao original
+fica no envelope da revisao, autoria/instante/vetor/proveniencia seguem selados;
+restauracao recebe marcador novo para a compensacao excluir somente sua escrita.
+Contrato/fingerprints de fontes legadas nao foram alterados. F1628224=1 apenas
+README/findings[]/8ZERO. Builds r4 ambos0, pip77182 em andamento. Rodadas
+falhas permanecem falhas; nao somar seus counts como aceite final.
+
+Pip77182 terminou0; provenance-r4 byte-identical834/897+363/448. Focado84184
+terminou0:1 passed/29.64s, cobrindo criacao/replay/restauracao sem reembedding,
+historico imutavel e leitura da autoria. READMEs regenerados oficialmente.
+Builds finais ambos0, pip49823=0; provenance-final834/897+363/448 identicos.
+Core29952=108 passed/8.71s; Community3803=36 passed/170.34s; F1622526=0,
+findings[]/documentation_findings[]/8ZERO. Compensacao inclui falha no append
+na criacao inicial e na restauracao; curadoria concreta preservada sem overwrite.
+Ruff F/E9 e git diff --check passaram. record_learning_materialization_writer.py
+executado; acceptance-learning-materialization-writer.json guarda hashes,
+campanhas falhas e finais, limites e escopo. Nenhum processo desta rodada ativo.
+Proxima etapa autorizada: conectar captura/evento/worker automaticamente,
+resolver identidade canonica frente a working historico, preservar R7 mistos,
+e continuar reuso/supersedencia e itens restantes do pacote. O writer interno
+nao e uma nova operacao publica. Sem mudanca de frontend, migracao real ou
+release; inventario global permanece inalterado. Commit/push deste incremento
+nao encerram F6 nem autorizam anunciar entrega integral.
 
 ### Rodada atual: policy KG7.4 (WIP)
 

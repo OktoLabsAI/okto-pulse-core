@@ -1,0 +1,176 @@
+{
+  "scope": "F6/KG7.3 governed materialization of an explicit durable create capture",
+  "suites": {
+    "learning-materialization-writer-r1-core": {
+      "tests": 67,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "learning-materialization-writer-r1-community": {
+      "tests": 33,
+      "failures": 1,
+      "errors": 0,
+      "skipped": 0
+    },
+    "learning-materialization-writer-r2-core": {
+      "tests": 108,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "learning-materialization-writer-r2-community": {
+      "tests": 34,
+      "failures": 1,
+      "errors": 0,
+      "skipped": 0
+    },
+    "learning-materialization-writer-r3-core": {
+      "tests": 108,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "learning-materialization-writer-r3-community": {
+      "tests": 35,
+      "failures": 1,
+      "errors": 0,
+      "skipped": 0
+    },
+    "materializer-focus-r4": {
+      "tests": 1,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "learning-materialization-writer-final-core": {
+      "tests": 108,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "learning-materialization-writer-final-community": {
+      "tests": 36,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    }
+  },
+  "budgets": [
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "import_boundary_baseline",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every import_boundary_baseline allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "singleton_baseline",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every singleton_baseline allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "dependency_temporary_exceptions",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every dependency_temporary_exceptions allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "graph_runtime_compatibility",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every graph_runtime_compatibility allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "rebuild_artifact_compatibility",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every rebuild_artifact_compatibility allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "community_private_reach_ins",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every community_private_reach_ins allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "community_adapter_bridges",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every community_adapter_bridges allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "af35_relational_residue",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every af35_relational_residue allowance before F16 completion."
+    }
+  ],
+  "verified": [
+    "Same node identity; original authored capture remains immutable and readable after materialization.",
+    "Conditional source append shares the audit/outbox SQL unit of work and retains source/evidence revalidation.",
+    "Exact replay and missing-node restoration preserve the literal revision and sealed vector without re-extraction.",
+    "Two distinct explicit creates on the same Bug do not implicitly merge or supersede.",
+    "Reopened Bug basis and human-curated graph content refuse materialization without historical overwrite.",
+    "Injected append failures compensate both initial graph creation and missing-node restoration.",
+    "Generic closeout coordinator and deferred-commit regression tests passed."
+  ],
+  "limits": [
+    "Automatic worker/event integration, canonical working-to-canonical reconciliation, mixed R7 holds and reuse/supersede intent remain pending.",
+    "Independent completion gates and health probe are fixtures. This is not a full lifecycle or release qualification.",
+    "Initial fixture wiring failures, tuple/list assertion, UTC representation, pre-write snapshot omissions and reserved transaction marker were corrected before final qualification.",
+    "Only new authored projections normalize the operational graph session marker; original record session remains in the envelope. Legacy fingerprints/history unchanged.",
+    "Failed campaigns remain failed; overlapping test counts are not additive acceptance.",
+    "The runner was extended after r1 to add focused projection/coordinator tests; its recorded hash is the final runner, not the historical r1 command snapshot.",
+    "Frontend unchanged. Global acceptance inventory unchanged. Full plan incomplete."
+  ],
+  "sha256": {
+    "PULSE_REFACTOR/.validation-v040/closure-learning-materialization-writer-final.json": "cd85bd3b161e3d85139feb6b481c295fc96f1c5a98b69f6f5eeaafdf559dab26",
+    "PULSE_REFACTOR/.validation-v040/learning-materialization-writer-r1-core.xml": "c674c20cc29e5dc457f011bc9a44c55a03a2cfa42801deb1050cb647277cdb9a",
+    "PULSE_REFACTOR/.validation-v040/learning-materialization-writer-r1-community.xml": "7e2eae670863da9bc5b74d7a110be21f9d71a83b009d4b1c92c42ce89779a3b6",
+    "PULSE_REFACTOR/.validation-v040/learning-materialization-writer-r2-core.xml": "0e8e7760738663a335444f238ea2274e58e0a660dce6d3d3535a958909953a20",
+    "PULSE_REFACTOR/.validation-v040/learning-materialization-writer-r2-community.xml": "6b378c18ad7622aef2c94491f0bf3a76ecc664be8850691edd0dda76771c7ef8",
+    "PULSE_REFACTOR/.validation-v040/learning-materialization-writer-r3-core.xml": "44d46ddca4a8bb038ddc272222489e215225a052823d960282dc557261a04aed",
+    "PULSE_REFACTOR/.validation-v040/learning-materialization-writer-r3-community.xml": "ce7beb44884a48a017f9c3dad3463cb7b20b8289c0d17a1a2e07740fc2a43ad0",
+    "PULSE_REFACTOR/.validation-v040/materializer-focus-r4.xml": "db8e537fe90a93a20d25f7221e5c69be83d3017ad0faef4bd09cb615fd378d18",
+    "PULSE_REFACTOR/.validation-v040/learning-materialization-writer-final-core.xml": "8073194223bc970f2f591be3d6d9d202f68c8c16832597b28e612a8845562b53",
+    "PULSE_REFACTOR/.validation-v040/learning-materialization-writer-final-community.xml": "a1554c888eaf718fcc90cb38f00bd470c7153dd4d7cc1746a1d622d01e4ca4e8",
+    "PULSE_REFACTOR/.validation-v040/provenance-learning-materialization-writer-final.json": "f858e4b4b6e745a47d06046e0c26ae5a64ffb8adf012abbcb93d26676b7d835c",
+    "PULSE_REFACTOR/.validation-v040/run_learning_materialization_writer.py": "c70d1e5040e46b4937a1fbc53decbc185ef1902d1d6134508f761f13604ffde2",
+    "PULSE_REFACTOR/.validation-v040/run_materializer_focus.py": "2fecc443443a600e373350e475e54979cb62b11e9f7a91c27d4813a65a1aff5f",
+    "PULSE_REFACTOR/.validation-v040/closure-learning-materialization-writer-r3.json": "82cdf0a3e396b10a559066bcdfc51278e94bde89d1bde9d3b72c77bbd271de00",
+    "okto_labs_pulse_core/src/okto_pulse/core/domain/learning_materialization.py": "7ae7b7195cc68164518205e5319c9c6245d0ff4fd8e0a9b36c936a6dd35e55a6",
+    "okto_labs_pulse_core/src/okto_pulse/core/application/learning_materialization.py": "c93c04e241fd381998dd0b3f50bace4635e868afe8640d4c5e37c7146476a903",
+    "okto_labs_pulse_core/src/okto_pulse/core/application/learning_capture.py": "6f889ee1992dd7d545832bac4b0c3c96a60d6a5baba4f03feae21d91d1a7c819",
+    "okto_labs_pulse_core/src/okto_pulse/core/ports/kg_cognitive_source.py": "72dc1515468576ca759e39226c1ed6c3f1d022d78a8cc771545193d0d0819cea",
+    "okto_labs_pulse_core/src/okto_pulse/core/kg/primitives.py": "4f6a83c507a3661c67227ae322cee8a8ebae8534e5d016cb0267bda4793b5697",
+    "okto_labs_pulse_core/src/okto_pulse/core/kg/cognitive_closeout_production.py": "504fdaa495c585eccc7386a55203747b7190116d1ccd1aece6e8cbfb2c949b00",
+    "okto_labs_pulse_core/tests/test_learning_materialization_projection.py": "02f51afca13f0b3f2c537fbb084a819294192cd5539580943b1c79e6c76ce952",
+    "okto_labs_pulse_community/src/okto_pulse/community/adapters/sqlalchemy_kg_cognitive_source.py": "643a8648616c0ea714cd9f44b0ae196017c36a3ed640661f661ebaae85e323fc",
+    "okto_labs_pulse_community/tests/test_learning_materialization_writer.py": "be83ebb779943762995c41f1eddbf90cb437e069f163cfeb925a48a7a71c14b6"
+  }
+}

@@ -368,6 +368,20 @@ def _count_nodes_by_source_ref(board_id: str, node_type: str, source_artifact_re
     return 0
 
 
+def _authored_learning_queryable(board_id: str, node_id: str, source_ref: str) -> bool:
+    from okto_pulse.core.kg.interfaces import get_kg_registry
+
+    try:
+        result = get_kg_registry().cypher_executor.execute_read_only(board_id,
+            'MATCH (n:Learning)-[:validates]->(b:Bug) WHERE n.id = $id '
+            'AND n.source_artifact_ref = $ref RETURN n.id',
+            {'id': node_id, 'ref': source_ref}, max_rows=1)
+        return bool(result.get('rows'))
+    except Exception:
+        logger.info('cognitive_closeout.authored_query_failed id=%s', node_id, exc_info=True)
+        return False
+
+
 def _resolve_existing_node_id(board_id: str, label: str, ref: str) -> str:
     """Resolve an edge endpoint to an existing node id. A bare id (no ':') is
     used as-is; a canonical ref (e.g. ``card:<uuid>`` for the Bug) is matched
@@ -420,6 +434,29 @@ class ConsolidationPipelinePersister:
         return _count_nodes_by_source_ref(board_id, node_type, source_artifact_ref) > 0
 
     async def persist(self, board_id: str, artifact_type: str, candidate: CloseoutCandidate) -> bool:
+        return await self._persist(board_id, artifact_type, candidate)
+
+    async def persist_authored_learning(self, board_id: str, bug_id: str, selection) -> bool:
+        """Materialize the selected durable authorship through the same coordinator.
+
+        The commit revalidates this preflight under its relational source fence.
+        Neither this read nor a matching source_ref counts as persistence.
+        """
+        from okto_pulse.core.application.learning_capture import revalidate_learning_capture_for_materialization
+        from okto_pulse.core.application.learning_materialization import authored_learning_candidate
+
+        async with self._relational_scope_factory() as db:
+            basis = await revalidate_learning_capture_for_materialization(db,
+                board_id=board_id, bug_id=bug_id, learning_id=selection.learning_id,
+                generation=selection.generation, expected_fingerprint=selection.fingerprint)
+        node = authored_learning_candidate(basis.capture)
+        candidate = CloseoutCandidate('Learning', node.title, node.content,
+            f'bug:{bug_id}', (CloseoutEdge('validates', f'bug:{bug_id}'),))
+        return await self._persist(board_id, 'bug', candidate,
+            authored_node=node, learning_capture=selection)
+
+    async def _persist(self, board_id: str, artifact_type: str, candidate: CloseoutCandidate,
+                       *, authored_node=None, learning_capture=None) -> bool:
         import hashlib
 
         from okto_pulse.core.kg.guarded_write import (
@@ -453,6 +490,8 @@ class ConsolidationPipelinePersister:
 
         artifact_id = candidate.source_artifact_ref.split(":", 1)[-1]
         cid = "cog_" + hashlib.sha256(candidate.source_artifact_ref.encode()).hexdigest()[:16]
+        if authored_node is not None:
+            cid = authored_node.candidate_id
         # #6 (codex 2026-06-25): a failure in ANY pipeline step before/at commit
         # (begin/add_node/add_edge/propose/commit) must fail-closed to "not
         # persisted", never escape as an uncaught error or a fabricated success.
@@ -472,7 +511,7 @@ class ConsolidationPipelinePersister:
             await add_node_candidate(
                 AddNodeCandidateRequest(
                     session_id=begin.session_id,
-                    candidate=NodeCandidate(
+                    candidate=authored_node if authored_node is not None else NodeCandidate(
                         candidate_id=cid, node_type=KGNodeType(candidate.node_type),
                         title=candidate.title, content=candidate.content,
                         source_artifact_ref=candidate.source_artifact_ref, source_confidence=0.7,
@@ -510,10 +549,11 @@ class ConsolidationPipelinePersister:
                     ),
                     agent_id=self._agent_id,
                 )
-            await propose_reconciliation(
-                ProposeReconciliationRequest(session_id=begin.session_id),
-                agent_id=self._agent_id, db=None, force_reprocess=True,
-            )
+            if learning_capture is None:
+                await propose_reconciliation(
+                    ProposeReconciliationRequest(session_id=begin.session_id),
+                    agent_id=self._agent_id, db=None, force_reprocess=True,
+                )
             with guarded_board_write(
                 board_id,
                 operation=COGNITIVE_CLOSEOUT_COMMIT_OPERATION,
@@ -531,6 +571,7 @@ class ConsolidationPipelinePersister:
                                 agent_id=self._agent_id,
                                 db=db,
                                 defer_session_finalization=True,
+                                **({'learning_capture': learning_capture} if learning_capture is not None else {}),
                             )
                             # The returned deferred snapshot belongs to this
                             # caller even if the immediately following graph
@@ -658,6 +699,15 @@ class ConsolidationPipelinePersister:
             logger.info("cognitive_closeout.persist_failed ref=%s step_err=%s",
                         candidate.source_artifact_ref, getattr(exc, "code", exc))
             return False
+        if learning_capture is not None:
+            # The primitive validated the exact identity, authored fields and
+            # Bug edge; SQL acknowledged its literal revision before success.
+            # Source-ref counts could falsely credit a different Learning.
+            return await run_blocking_graph_io(
+                partial(_authored_learning_queryable, board_id, learning_capture.learning_id,
+                    candidate.source_artifact_ref),
+                task_name='core.kg.cognitive_closeout.confirm_authored_learning',
+            )
         # BR2: effective only when actually queryable in board graph.
         return await run_blocking_graph_io(
             partial(
