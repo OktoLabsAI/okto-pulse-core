@@ -12,7 +12,7 @@ from okto_pulse.core.ports.bug_cognitive_context import (
 )
 from okto_pulse.core.ports.kg_cognitive_source import (
     CognitiveSourceRecord, ConditionalCognitiveSourceWriter, TransactionalCognitiveSourceReader,
-    HistoricalCognitiveSourceReader,
+    HistoricalCognitiveSourceReader, FingerprintCognitiveSourceReader,
     require_cognitive_source_store, latest_cognitive_source_records,
 )
 from okto_pulse.core.ports.learning_capture import (
@@ -205,11 +205,11 @@ async def revalidate_learning_capture_for_materialization(
     if record is None:
         raise ValueError('learning_capture_selected_record_unavailable')
     head = record
-    if 'capture_format' not in record.payload:
-        if not isinstance(store, HistoricalCognitiveSourceReader):
+    if record.record_fingerprint != selection.fingerprint:
+        if not isinstance(store, FingerprintCognitiveSourceReader):
             raise ValueError('learning_capture_history_unavailable')
-        record = await store.read_revision_in_context(context, board_id=board_id,
-            node_id=selection.learning_id, generation=selection.generation, source_revision=0)
+        record = await store.read_fingerprint_in_context(context, board_id=board_id,
+            node_id=selection.learning_id, generation=selection.generation, fingerprint=selection.fingerprint)
         if record is None:
             raise ValueError('learning_capture_history_unavailable')
     if (record.node_id != selection.learning_id or record.generation != selection.generation

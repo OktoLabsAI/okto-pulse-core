@@ -5,7 +5,7 @@
 Iniciativa **incompleta; retomada explicitamente autorizada em 2026-09-23**.
 O usuário revogou a pausa e pediu execução até o final, sem parar em milestones.
 Frente atual (2026-09-29): F6/KG §7.5, reconciliação histórica de Learning.
-Último par enviado: Corefd40469e/Community51fca44e. Captura, binding em
+Último par enviado: Core3c1a454b/Community8d711343. Captura, binding em
 task validation, autoria conjunta, REST/MCP/UI/Delivery, policy/preview e
 materialização automática via outbox/worker e proteção de holds mistos foram
 enviados em incrementos delimitados. Recuperação de projeção validada/enviada.
@@ -254,6 +254,42 @@ não repetir build/testes sem nova alteração. record_capture_rebuild_restore.p
 gerou acceptance-capture-rebuild-restore.json com provas e reprodução anterior.
 Nenhuma campanha ativa. Pronto para commit/push; continuar qualificação do
 candidato com obrigação durável de captura preservada, sem declarar F6 completo.
+
+Continuação: par3c1a454b/8d711343 enviado, árvores limpas ao retomar. A matriz
+KG§11 exige K1–K3 antes de K4. Inspeção do candidato v17 confirmou que a
+promoção continua bloqueada por captura pendente; não alterar esse gate antes
+de completar reuso/supersedência explícitos (KG7.6, dependência K3). Retoma-se
+essa pendência já registrada, sem novo escopo. O restore anterior segue válido.
+Contratos atuais: payload v1 admite sintaxe reuse/supersede, porém writer e
+qualifiers só admitem create. Reuse usa a mesma identidade de Learning, então
+seleção fixa da revisão0 é insuficiente. WIP introduz porta pública de leitura
+por fingerprint exato com auditoria da história inteira, implementada no
+adaptador SQL Community. Worker/materializer passam a selecionar a captura
+solicitada, sem admitir novos intents ainda. Testes SQL cobrem seleção histórica,
+ausência, escopo, identidade malformada e corrupção em revisão não selecionada.
+Ainda sem testes comportamentais deste WIP; construir/instalar/provar primeiro.
+
+Builds learning-fingerprint-selection-r1 ambos0; pip60958 terminou0 e
+provenance-r1 confirmou837/900 Core+363/448 Community byte-identical.
+Campanhas: Core73784 (log já indica57pass, aguardar handle terminal),
+Community25456 e F1619952. Ruff F/E9 passou. Não editar payload até terminais.
+Reuso/supersedência continuam NÃO admitidos. Próxima implementação deve usar
+seleção exata da captura e do head-alvo, sem substituir a projeção existente
+enquanto a nova intenção aguarda elegibilidade; CAS e proveniência de cada
+associação precisam entrar na mesma UOW/coordenador compensável. A porta de
+leitura sozinha não conclui KG7.6 e não autoriza relaxar o gate do candidato.
+
+Core73784 terminou0:57pass/4.53s. Community25456 terminou0:29pass/308.00s; resultado e
+hashes registrados em acceptance-learning-fingerprint-selection.json pelo
+record_learning_fingerprint_selection.py, executado após todos terminais.
+F1619952 terminou0: sem findings/drift e oitoZERO. Não houve alteração de
+payload depois da prova/campanhas; README inalterado, sem rebuild extra.
+Nenhum processo de validação permanece ativo. Próximo: contrato de intenção
+explícita e admissão CAS do alvo em KG7.6, preservando o fluxo create e seus
+gates. NOOP genérico resolve por source_ref, portanto não serve como escolha
+do alvo por ID; não reutilizá-lo como prova de reuso explícito. Implementar
+target exato no coordenador existente com histórico e rollback, antes de
+habilitar os transports/UI. Frontend deverá ter testes quando for alterado.
 
 Continuacao do worker em andamento: CanonicalBugNodeResolver, capacidade
 publica implementada por CommunityCanonicalBugNodeReader, seleciona uma unica

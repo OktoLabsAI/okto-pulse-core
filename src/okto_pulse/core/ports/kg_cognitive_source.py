@@ -52,6 +52,7 @@ __all__ = [
     "ConditionalCognitiveSourceWriter",
     "TransactionalCognitiveSourceReader",
     "HistoricalCognitiveSourceReader",
+    "FingerprintCognitiveSourceReader",
     "LatestVerifiedCognitiveSourceReader",
     "SealedBirthRestoration",
     "canonical_cognitive_source_fingerprint",
@@ -579,6 +580,22 @@ class HistoricalCognitiveSourceReader(Protocol):
         A later materialized projection does not replace the authored capture.
         Missing/corrupt history cannot be supplied by the graph or a cache.
         This read grants no lock, permission or current applicability.
+        """
+        ...
+
+
+@runtime_checkable
+class FingerprintCognitiveSourceReader(Protocol):
+    async def read_fingerprint_in_context(
+        self, context: object, *, board_id: str, node_id: str, generation: int,
+        fingerprint: str,
+    ) -> CognitiveSourceRecord | None:
+        """Select one exact revision after auditing all history of the identity.
+
+        Captures and literal revisions may share an identity. A selection must
+        never silently resolve to revision zero or the latest head. Missing
+        identity/fingerprint returns None; corrupt, foreign or ambiguous
+        history fails closed. No lock, permission or applicability is granted.
         """
         ...
 

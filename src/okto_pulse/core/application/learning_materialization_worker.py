@@ -9,7 +9,7 @@ from okto_pulse.core.ports.bug_cognitive_context import (
     resolve_bug_cognitive_context_assembler, resolve_canonical_bug_node_read_port,
 )
 from okto_pulse.core.ports.kg_cognitive_source import (
-    CognitiveSourceUnavailable, HistoricalCognitiveSourceReader, require_cognitive_source_store,
+    CognitiveSourceUnavailable, FingerprintCognitiveSourceReader, require_cognitive_source_store,
 )
 from okto_pulse.core.ports.learning_capture import validate_learning_capture_payload
 
@@ -32,11 +32,11 @@ async def materialize_capture_work(scope_factory, *, board_id, work, fingerprint
             generation=work.generation, fingerprint=fingerprint)
         store = require_cognitive_source_store()
         reader = resolve_bug_cognitive_context_assembler()
-        if not isinstance(store, HistoricalCognitiveSourceReader) or reader is None:
+        if not isinstance(store, FingerprintCognitiveSourceReader) or reader is None:
             return pending('learning_capture_reader_unavailable')
         async with scope_factory() as context:
-            capture = await store.read_revision_in_context(context, board_id=board_id,
-                node_id=work.learning_id, generation=work.generation, source_revision=0)
+            capture = await store.read_fingerprint_in_context(context, board_id=board_id,
+                node_id=work.learning_id, generation=work.generation, fingerprint=selection.fingerprint)
             if (capture is None or capture.record_fingerprint != selection.fingerprint
                     or capture.payload.get('source', {}).get('bug_id') != work.bug_id
                     or not validate_learning_capture_payload(dict(capture.payload), board_id=board_id,
