@@ -165,8 +165,10 @@ pending materialization, with no completion/approval claim. Paginated history
 renders authored text inertly and distinguishes unavailable history from empty
 history. A digest mismatch is shown as an earlier basis, not as inferred rejection.
 
-This interface supports independent creation/history, not reuse/supersedence,
-joint conclusion/capture submission, policy preview or governed Done binding.
+The execution-report interface supports independent creation/history. The Bug
+task-validation form separately offers an optional saved-capture selection.
+Reuse/supersedence, joint conclusion/capture submission and policy preview
+remain outstanding.
 
 ## Closeout revalidation primitive
 
@@ -184,7 +186,8 @@ The return value is the existing capture record, not a durable closeout receipt.
 There is no commit, state transition, outbox write, graph materialization or
 policy waiver. Callers must keep the UOW and source fence through final checks
 and the actual transition; subsequent conclusion/status changes do not make an
-old digest current. This primitive is not yet called by lifecycle or preview.
+old digest current. Task validation calls this primitive when a capture is
+explicitly selected; policy preview is not yet integrated.
 
 The characterization suite exercises actual Bug `move_card` and both cognitive
 gates with a healthy-graph observation and independent Delivery fixture. The
@@ -216,5 +219,31 @@ Community owns the nullable `cards.learning_closeout_bindings` JSON storage.
 The additive pre-create-all migration creates no bindings for old Done cards,
 does not change conclusions, and refuses incompatible existing column shape.
 These references are operational metadata, excluded from guideline semantic
-intent changes. This contract/storage increment does not yet connect a producer
-to lifecycle, public transports, preview, policy or the materialization worker.
+intent changes.
+
+## Task-validation writer and optional selection
+
+REST and MCP accept an optional typed `learning_capture` reference with
+`learning_id`, `generation` and `fingerprint`. With no selection the legacy
+payload and request digest remain unchanged. With a selection, the use case
+requires all ten source/history read authorities in addition to task-validation
+authority. No capture creation or policy-edit authority is inferred.
+
+The service acquires the source write fence, refreshes the Card, checks the
+current capture and authenticates its evidence again before completion. An
+existing executor report must already be in the captured basis; the legacy
+fallback that generates a new conclusion cannot reuse an older capture.
+Independent completion gates remain in force. Only actual Done appends the
+binding, in the same transaction as the review, status and outbox event. A
+late failure rolls the composed operation back even if an outer caller catches
+the exception and later commits. Exact retries return the recorded result.
+
+The Bug validation form loads saved captures on demand with the authenticated
+client. It displays context/applicability as inert text, disables mismatching
+bases and clears selection on refresh, pagination or context change. Selection
+is explicit and included in the request identity. Matching displayed digests
+are not proof of admission: the server still checks the current head and
+receipts. Unavailable history is never displayed as an empty result.
+
+This optional path does not implement a required-Learning policy, direct
+move-to-Done joint authorship, reuse/supersedence or graph materialization.

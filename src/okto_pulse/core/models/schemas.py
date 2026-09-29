@@ -24,6 +24,7 @@ from okto_pulse.core.discovery_params_schema import (
     normalize_discovery_params_schema,
 )
 from okto_pulse.core.domain.requirement_verification import VerificationQualifiedModel
+from okto_pulse.core.domain.learning_closeout import LearningCaptureSelection
 from okto_pulse.core.domain.execution_contract import SpecExecutionContract, SpecExecutionContractAdoption
 from okto_pulse.core.domain.task_validation_policy import MigratedTaskValidationPolicy, ResolvedTaskValidationConfig, reject_migrated_validation_policy_write, read_migrated_validation_policy
 from okto_pulse.core.models.delivery_selection import DeliverySelectionInput, DeliverySelectionManifest
@@ -3825,6 +3826,11 @@ class CardPageItem(BaseSchema):
 
 class TaskValidationSubmit(BaseModel):
     """Request body for submitting a task validation."""
+
+    learning_capture: LearningCaptureSelection | None = Field(
+        default=None,
+        description="Explicit existing Learning capture to bind if this Bug completion succeeds; never approves execution.",
+    )
 
     expected_subject_version: int = Field(
         ...,

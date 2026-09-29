@@ -251,6 +251,15 @@ or canonical graph materialization. A successful capture is acknowledged as pend
 materialization and does not itself close the Bug or replace its existing completion
 gates. No manual graph session is required for capture authorship.
 
+When submitting the Bug's task validation, optionally select a current capture
+with `learning_capture={learning_id, generation, fingerprint}`. The validation
+writer rechecks its source and authenticated evidence and records the linkage
+only if the existing completion gates allow Done. Source reads and the existing
+Learning-query permission are required. This does not approve implementation or
+materialize the graph. A changed execution report requires a capture on its new
+basis; a legacy card without its executor report cannot attach an older capture
+to a conclusion inferred from the review.
+
 ### Historical bug closure via Path B — operational checklist
 
 Reprocessing or closing a bug that surfaced AFTER its spec was locked

@@ -1,0 +1,172 @@
+{
+  "scope": "F6/KG 7.3: optional saved Learning binding in task validation, REST/MCP and UI",
+  "suites": {
+    "learning-validation-binding-core": {
+      "tests": 134,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "learning-validation-binding-community": {
+      "tests": 128,
+      "failures": 15,
+      "errors": 0,
+      "skipped": 0
+    },
+    "learning-validation-binding-focus-r2": {
+      "tests": 15,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "learning-validation-binding-ui": {
+      "tests": 94,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "learning-validation-binding-ui-core": {
+      "tests": 148,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "learning-validation-binding-ui-community": {
+      "tests": 151,
+      "failures": 3,
+      "errors": 0,
+      "skipped": 0
+    },
+    "learning-validation-binding-final-community": {
+      "tests": 19,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    }
+  },
+  "budgets": [
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "import_boundary_baseline",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every import_boundary_baseline allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "singleton_baseline",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every singleton_baseline allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "dependency_temporary_exceptions",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every dependency_temporary_exceptions allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "graph_runtime_compatibility",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every graph_runtime_compatibility allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "rebuild_artifact_compatibility",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every rebuild_artifact_compatibility allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "community_private_reach_ins",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every community_private_reach_ins allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "community_adapter_bridges",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every community_adapter_bridges allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "af35_relational_residue",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every af35_relational_residue allowance before F16 completion."
+    }
+  ],
+  "frontend_tree_sha256": "4ff83324c0f7ee8f2d9474944e1375d8492b265ed8513ac4fba39d003fccda79",
+  "verified": [
+    "Typed optional capture identity; absent selection preserves legacy payload and idempotency digest.",
+    "All ten existing source/history authorities required in addition to validation authority.",
+    "Source fence and authenticated evidence revalidation precede successful Done binding.",
+    "New legacy fallback conclusion cannot requalify an older capture.",
+    "Review/status/binding/outbox are committed together; late failures roll back even before an outer commit.",
+    "Independent completion rejection remains effective; exact retries create no duplicate binding/outbox.",
+    "REST and live MCP registry exercise the real SQL writer with success and denied access.",
+    "UI explicit selection, inert history, obsolete basis, pagination/context cancellation and retry identity tested.",
+    "Frontend build/sync/verify and paired wheel/site/source provenance are current."
+  ],
+  "limits": [
+    "Independent completion-gate aggregate is explicitly mocked in SQL binding tests; no claim of full gate admission E2E.",
+    "Transport fixtures inject authenticated actors/UOW; these do not certify deployed authentication.",
+    "Frontend validation is JSDOM, not browser pixel inspection or deployed E2E.",
+    "Required-Learning policy/preview, joint move-card authorship, materialization and recovery remain outstanding.",
+    "Reuse/supersedence and additional evidence paths remain outstanding under the existing plan.",
+    "Failed suites are retained. Final focused rerun does not rename the broader failed campaign as fully green.",
+    "Overlapping suite counts are not distinct totals; whole-plan acceptance inventory is unchanged.",
+    "No release/tag/deployment or real data migration performed."
+  ],
+  "sha256": {
+    "PULSE_REFACTOR/.validation-v040/learning-validation-binding-core.xml": "c8e0479d20bfa551853126872793f1eb3aee48f1d8de4d6bf05432b9bc33876f",
+    "PULSE_REFACTOR/.validation-v040/learning-validation-binding-community.xml": "9413b3158a073022e670e1a6aadd46e75651e150474387507d7363c64b4efff8",
+    "PULSE_REFACTOR/.validation-v040/learning-validation-binding-focus-r2.xml": "c7c1f1dacf853c0d97f87670bd38f4d46e954d8d6bc8e8dd5f884d4b1fb152e9",
+    "PULSE_REFACTOR/.validation-v040/learning-validation-binding-ui.xml": "e570348d1f10b05e90cd82faf7c82815647bd490fdea1247a192ebdcd8ceeeed",
+    "PULSE_REFACTOR/.validation-v040/learning-validation-binding-ui-core.xml": "c8055f718ea34d5b44094f84b7e265602fd52ad5951e5e14e50e92edd50d9063",
+    "PULSE_REFACTOR/.validation-v040/learning-validation-binding-ui-community.xml": "c73dfc4613c8ffd440bb8a56c17fb03c368c382908a2ea6d1d82c54b49cbb1dd",
+    "PULSE_REFACTOR/.validation-v040/learning-validation-binding-final-community.xml": "ce0a255caccfb7a7df0ecccf0fc2aa4243b586c3ac3ba4f2f9eb129ca7991276",
+    "PULSE_REFACTOR/.validation-v040/closure-learning-validation-binding-final.json": "b5c3917400b6869606cbea62b02a5645cb6da858639bc9c599594a47a10980e5",
+    "PULSE_REFACTOR/.validation-v040/provenance-learning-validation-binding-final.json": "b4c2cd812cf54be77cac8548ae8570e2dd7def8b09b3d07c3b27ac3c7142a3ae",
+    "PULSE_REFACTOR/.validation-v040/learning-validation-binding-ui.log": "0d21fa8f7ebd54565a6b293dfcbc95b3ce229cb7109fbe8cfff9138bb9bb9e98",
+    "PULSE_REFACTOR/.validation-v040/learning-validation-binding-ui-build.log": "d4fdfad4aed99f655f470c27e38957e76a49bb545e1537f0c51d846a0b141080",
+    "PULSE_REFACTOR/.validation-v040/learning-validation-binding-ui-lint.log": "491cbeb72f5c8f90f2537ee8a8ff152b1461dae7ea5cc336413c74a6086e93b0",
+    "PULSE_REFACTOR/.validation-v040/learning-validation-binding-final-test-community.log": "47068d6074d6eea262fddba18f5562bd4bb300e5a94b5b0dbc885093fb7a9bfc",
+    "PULSE_REFACTOR/.validation-v040/run_learning_validation_binding_final.py": "954212cd4114dbaa6f90e1b9e56174dd9c500dc6b73e308e4ec4485017ca9e93",
+    "okto_labs_pulse_core/src/okto_pulse/core/application/use_cases/card_crud.py": "0015e61250ebc23f4c7a960296a86cc7d8556ec140b4f82f1fe8650d672a846a",
+    "okto_labs_pulse_core/src/okto_pulse/core/services/main.py": "45cd160366545f15ca4d876f74acb1ebab6485cf7c6e565a7374b4243bb1f7f1",
+    "okto_labs_pulse_core/src/okto_pulse/core/models/schemas.py": "ce392b2644464b94e2b15a30fe18abe931f12d5cc5b45e71642cacd78cf0b999",
+    "okto_labs_pulse_core/src/okto_pulse/core/mcp/server.py": "ff25761d522c727b7f43a4d572331f3de06e0d0a85da5f25dea3995ca0d5552d",
+    "okto_labs_pulse_core/src/okto_pulse/core/mcp/resources/workflows/cards.md": "4e5e75e195a7b5c16bfc4f3770426d13af0e190779fa2287846aab1de2a87993",
+    "okto_labs_pulse_core/src/okto_pulse/core/mcp/resources/ska_resource_manifest.json": "18357f473091e1ddcbff3e71091c1903d2a6d069bab7d99cd1164ee95f79b153",
+    "okto_labs_pulse_community/tests/test_learning_capture_validation_binding.py": "c152bb2566849f6646a44856142a9a17bbdc68dae0b6a1b675571380617e1112",
+    "okto_labs_pulse_community/frontend/src/components/kanban/LearningCaptureSelector.tsx": "ced6c30d0f0b66fa22b3fc72e06faeb8451fa0c69181c2a0080f6c0e8d00230e",
+    "okto_labs_pulse_community/frontend/src/components/kanban/CardModal.tsx": "69eb8064ba97c7d3f133b72fa64447ff03ea5a894dd0745b78f167177b22d337",
+    "okto_labs_pulse_community/frontend/src/types/index.ts": "da7438e32c32340d4a70b34caf6ee9e305891cfd8ba276aa6e5da2e5e585ad60",
+    "okto_labs_pulse_community/frontend/src/components/kanban/__tests__/LearningCaptureSelector.test.tsx": "212f24b72723a1066003ae95c3742677ba57e2ac944d22270da2b1026970ae4e",
+    "okto_labs_pulse_community/frontend/src/components/kanban/__tests__/CardModal.test.tsx": "6e2fec63e81c6cdebf31aff73df7fa1e4d3f4ce32f880e86e39d8c5cf1c88efd",
+    "okto_labs_pulse_community/src/okto_pulse/community/frontend_dist/pulse-frontend-contract.json": "104468d095d0e8700464c4c0db7801dfb4204ff80e75e5726a19c26de927cf20"
+  }
+}

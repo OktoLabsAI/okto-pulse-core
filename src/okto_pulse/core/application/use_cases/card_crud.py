@@ -689,7 +689,7 @@ class SubmitTaskValidationUseCase:
         if data.get("recommendation") not in ("approve", "reject"):
             raise CommandValidationError("recommendation must be 'approve' or 'reject'")
         try:
-            data = TaskValidationSubmit.model_validate(data).model_dump()
+            data = TaskValidationSubmit.model_validate(data).model_dump(exclude_none=True)
         except ValidationError as exc:
             raise CommandValidationError(str(exc)) from exc
 
@@ -722,13 +722,27 @@ class SubmitTaskValidationUseCase:
             except Exception:
                 reviewer_name = actor.actor_id
 
-        result = await service.submit_task_validation(
-            card_id=command.card_id,
-            reviewer_id=actor.actor_id,
-            reviewer_name=reviewer_name,
-            data=data,
-        )
-        await commit(uow)
+        if data.get("learning_capture") is not None:
+            from okto_pulse.core.application.use_cases.learning_capture import LEARNING_CAPTURE_HISTORY_PERMISSIONS
+
+            await require_all(actor,
+                *(PermissionRequirement(flag) for flag in LEARNING_CAPTURE_HISTORY_PERMISSIONS),
+                uow=uow, board_id=card.board_id)
+        try:
+            result = await service.submit_task_validation(
+                card_id=command.card_id,
+                reviewer_id=actor.actor_id,
+                reviewer_name=reviewer_name,
+                data=data,
+            )
+            await commit(uow)
+        except BaseException:
+            # The selected-capture command owns one compound transaction.
+            # A late binding/outbox error must remain atomic even if a caller
+            # catches it and subsequently commits its outer UOW.
+            if data.get("learning_capture") is not None:
+                await uow.rollback()
+            raise
         return SubmitTaskValidationResult(result)
 
 

@@ -4,12 +4,20 @@
 
 Iniciativa **incompleta; retomada explicitamente autorizada em 2026-09-23**.
 O usuário revogou a pausa e pediu execução até o final, sem parar em milestones.
-Frente atual: F4, retirada integrada da manutenção pública e de seus resíduos
-exclusivos, seguida da auditoria dos critérios de aceitação. Painel/API de tuning,
-fila/reparo manuais e divulgação do path físico no Health já foram retirados.
-Startup de configuração e processamento automático permanecem preservados.
-Ainda faltam a disponibilidade/redação integral de Health, inventário vivo de
-superfícies, campanhas integradas e fechamento requisito a requisito.
+Frente atual (2026-09-29): F6/KG §7, captura durável de Learning e integração
+ao fechamento de Bug. Último par enviado: Core27744596/Community62ce6f59.
+Writer de binding opcional em task validation, REST/MCP e seleção no frontend
+estão em validação; detalhes e handles ficam no fim deste ledger. A captura
+independente e seu histórico já estão publicados. Policy/preview, autoria
+conjunta, materialização e recuperação ainda não estão concluídos.
+Escopo permanece o pacote v1.3 e seus critérios existentes; acrescentar trabalho
+somente diante de problema reproduzido ou gap crítico, com justificativa.
+Não parar nos milestones nem confundir os incrementos abaixo com aceite global.
+
+O texto a seguir resume frentes anteriores; prevalecem as evidências mais
+recentes no fim do ledger. Painel/API de tuning, fila/reparo manuais e divulgação
+do path físico no Health foram retirados. Startup de configuração e
+processamento automático permanecem preservados.
 Relatórios especializados já publicados no ciclo
 comum de cenário, Test Card e Delivery, com assinatura/autoria e atualidade.
 Instalação terminal separada já publicada, com prova do candidato e journal,
@@ -16484,3 +16492,13 @@ Builds finais ambos0, pip22244 terminal0, provenance-learning-closeout-binding-f
 Community final51978 terminou1:141 passed/2 failed/170.65s; falhas somente nos oraculos R16B count75->76 e listas de skip sem a nova migracao. Apos terminal, atualizados explicitamente esses oraculos, mantendo igualdade de conjuntos, ordem, golden schema e recusas. Rerun migrator88156 terminou0:30 passed/28.56s. Nao reclassificar campanha143 original como integralmente verde. Corefinal126 passou; testes novos de storage/modelo passaram na campanha Community final. F16final ok/oito ZERO. record_learning_closeout_binding.py executado apos terminais gerou acceptance-learning-closeout-binding.json com hashes/provas/falhas preservadas. Ruff F/E9 e diff-check verdes.
 
 Incremento contrato/storage pronto para commit pareado; NAO pausa nem entrega integral. Proximo passo imediato: usar binding no submit_task_validation real sob fence, mantendo digest idempotente legado quando selecao ausente e exigindo autoridades de leitura da captura quando presente; impedir que conclusao legada auto-inferida seja incorporada a uma captura anterior. Persistir binding e evento na mesma UOW com rollback de falha tardia. Depois completar move_card com submissao conjunta sobre a conclusao ja admitida, policy humana/preview/UI/MCP, materializador e recuperacao. Nenhum processo desta validacao permanece ativo.
+
+Contrato/storage enviados Core27744596/Community62ce6f59 (pushes0). WIP seguinte: TaskValidationSubmit aceita selecao tipada opcional de captura existente; usecase exige as10 autoridades ja vigentes de leitura e executa rollback em falha da operacao composta. Ausencia de selecao preserva payload/digest legado de idempotencia. Service obtem fonte/fence e refresca Card apos replay, revalida captura em tentativa aprovada, recusa fallback legado de conclusao nova sobre captura velha; apos Done efetivo deriva binding com parecer exato e persiste antes do outbox na mesma UOW. Rejeicao de outro gate continua sem binding. Testes Community preparados com SQL/recibos/transition/outbox reais e agregado dos gates independentes explicitamente como fixture; ainda NAO executados. Nao afirmar integracao de gate blocking/MCP/frontend/materializador: seguem pendentes. Novos builds/prova necessarios antes de qualquer comportamento deste WIP.
+
+Validacao inicial do writer de binding: builds/pip41723/provenance-learning-validation-binding terminais0 (830/893+363/448) antes das suites. Core60439 terminou0:134 passed/16.53s. Community77800 terminou1:113 passed/15 failed/156.12s; todos15 novos casos recusados antes da transicao por Card inacessivel via realm do application reader. F1644469 terminou1 somente matrizes README, findings=[]/oito ZERO. Apos terminais fixture passou a declarar Board.realm_id=local e RealmScope.local na sessao da UOW, preservando guard de isolamento. Rerun focado -x41877 esta em andamento; nao editar produto nem declarar writer validado ate terminal. Nenhum fonte Python mudou apos o par instalado/provado, somente fixture de teste.
+
+Rerun focado41877 terminou0:15 passed/28.96s. Apos terminal, MCP recebeu selecao tipada/erro de permissao; workflow e manifest regenerados oficialmente. Quatro casos REST/MCP adicionados e ainda nao executados. Frontend ganhou seletor opcional lazy de captura salva no formulario de validacao Bug, com dez permissoes de leitura, base digest/version, limpeza por pagina/contexto/refresh e referencia incluida na identidade de retry. UI43969 terminou0:94 passed; build11381/lint33464 terminais0,331 warnings dentro do ratchet sem aumento. SPA79 arquivos/78 assets tree4ff83324c0f7ee8f2d9474944e1375d8492b265ed8513ac4fba39d003fccda79; verify passou e frontend_dist staged para teste de distribuicao. Builds dist-learning-validation-binding-ui ambos terminaram0; pip iniciado. Nao executar comportamento Python antes de terminal e verify_pair. Nao confundir esta selecao opcional com policy blocking, autoria conjunta ou materializacao, ainda pendentes. Continua ate entrega integral, sem pausa nos milestones conforme ultima instrucao.
+
+Pip67331/provenance-ui terminais0:830/893 Core+363/448 Community byte-identical antes dos testes. Core73332 terminou0:148 passed/28.39s. Community36202 terminou1:148 passed/3 failed/229.52s; falhas somente fixtures de transporte, prefixo cards ausente na app REST e expectativa code incorreta no envelope MCP existente. Apos todos terminais, corrigidas fixtures sem alterar produto; sucesso MCP ja passou com binding real. F1628716 terminou1 somente matrizes README, findings=[]/oito ZERO; regeneradas oficialmente. Builds finais ambos0; pip final iniciado. Repetir apenas arquivo afetado19 casos e F16 apos prova final; campanhas anteriores permanecem preservadas, sem reclassificar151 casos como todos verdes. Escopo reafirmado pelo usuario: seguir plano sem alvos moveis; registrar somente problemas/gaps criticos reproduzidos como trabalho adicional.
+
+Pip final18563/provenance-final terminaram0:830/893+363/448 byte-identical. Community focado31663 terminou0:19 passed/48.61s. F16 final37443 terminou0; record_learning_validation_binding.py confirmou ok=true/oito ZERO e gerou acceptance-learning-validation-binding.json com hashes e campanhas falhas preservadas. Nenhum processo de teste/build desta rodada permanece ativo. Contrato/writer/transports/UI opcionais prontos para commit pareado; nenhuma policy foi ativada, e o agregado de gates independentes nos novos testes SQL continua explicitamente fixture. Proximo passo do escopo existente: autoria conjunta de resultado+Learning (KG7.3), com base anterior cercada, conclusao admitida na base da nova captura, retry exato e rollback; depois policy/preview e worker/reabertura/recuperacao conforme KG7.4/7.5. O inventario global de aceite nao foi promovido por este incremento.

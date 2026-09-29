@@ -55,6 +55,7 @@ from okto_pulse.core.infra.permissions import Permissions, check_permission
 from okto_pulse.core.mcp.catalog import CoreMcpCatalog, CoreMcpResource, closed_mcp_schema
 from okto_pulse.core.domain.architecture_classification import ArchitectureClassificationBatch
 from okto_pulse.core.domain.execution_contract import SpecExecutionContractAdoption
+from okto_pulse.core.domain.learning_closeout import LearningCaptureSelection
 from okto_pulse.core.mcp.cancellation_projection import project_cancellation
 from okto_pulse.core.mcp.filters import (
     BoardEntityType,
@@ -18672,13 +18673,14 @@ async def okto_pulse_submit_task_validation(
     drift_justification: Annotated[str, Field(min_length=10)],
     general_justification: Annotated[str, Field(min_length=20)],
     recommendation: Literal["approve", "reject"],
+    learning_capture: LearningCaptureSelection | None = None,
 ) -> str:
     """
     Submit a task validation for a card in 'validation' status.
 
     Evaluates the implementation quality of a completed task against three
     dimensions: confidence, completeness, and drift. The system applies
-    threshold checks (resolved from sprint → spec → board hierarchy) and
+    threshold checks (preserved Card migration override → Spec → Board) and
     applies the board's reviewer-separation policy to task creator, assignee,
     and executor conflicts. ``enforce`` returns
     ``reviewer_separation_required`` as an actionable outcome; ``warn`` and
@@ -18689,7 +18691,13 @@ async def okto_pulse_submit_task_validation(
     validation or other admitted completion blocker → rejected. Rejected is a
     rework handoff: an executor must first move it to in_progress. Exact
     retries use ``idempotency_key`` and are resolved before the mutable status
-    check; ``expected_subject_version`` is the optimistic concurrency fence."""
+    check; ``expected_subject_version`` is the optimistic concurrency fence.
+    Optional ``learning_capture`` selects an existing authored Bug capture by
+    Learning identity/generation/fingerprint. Requires all capture-source reads
+    and kg.query.learning_from_bugs. It is bound only on successful completion,
+    with source/evidence revalidation and atomic rollback on failure. It never
+    approves implementation or bypasses another completion gate. A new execution
+    report requires a capture of that new basis, not requalification of an old one."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -18717,6 +18725,8 @@ async def okto_pulse_submit_task_validation(
         "drift_justification": drift_justification,
         "general_justification": general_justification,
         "recommendation": recommendation,
+        **({"learning_capture": learning_capture.model_dump()}
+            if learning_capture is not None else {}),
     }
 
     from okto_pulse.core.application.use_cases import (
@@ -18738,6 +18748,8 @@ async def okto_pulse_submit_task_validation(
                 uow=uow,
             )
         return json.dumps(result.validation, default=str)
+    except PermissionDeniedError as e:
+        return MCPAdapterContract.error(e)
     except EntityNotFoundError as e:
         if e.entity_type == "card":
             return json.dumps({"error": "Card not found"})

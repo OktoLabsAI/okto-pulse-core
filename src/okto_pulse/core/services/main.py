@@ -4413,6 +4413,10 @@ class CardService:
                 "drift_justification": data.get("drift_justification"),
                 "general_justification": data.get("general_justification"),
                 "recommendation": data.get("recommendation"),
+                # Preserve the exact historical digest when no capture was
+                # selected, including retries of already persisted decisions.
+                **({"learning_capture": data["learning_capture"]}
+                    if data.get("learning_capture") is not None else {}),
             }
         )
 
@@ -4885,6 +4889,36 @@ class CardService:
         if replay is not None:
             return replay
 
+        learning_selection = None
+        learning_source_before = None
+        learning_record = None
+        if data.get("learning_capture") is not None:
+            from okto_pulse.core.domain.learning_closeout import LearningCaptureSelection
+            from okto_pulse.core.ports.bug_cognitive_context import (
+                BugSemanticWriteSnapshotReader, qualify_bug_semantic_context,
+                resolve_bug_cognitive_context_assembler,
+            )
+
+            learning_selection = LearningCaptureSelection.model_validate(data["learning_capture"])
+            if getattr(card, "card_type", CardType.NORMAL) != CardType.BUG:
+                raise ValueError("learning_capture_requires_bug")
+            learning_reader = resolve_bug_cognitive_context_assembler()
+            if not isinstance(learning_reader, BugSemanticWriteSnapshotReader):
+                raise ValueError("learning_capture_transaction_capability_unavailable")
+            learning_source_before = qualify_bug_semantic_context(
+                await learning_reader.assemble_semantic_for_write(
+                    self.db, board_id=card.board_id, bug_id=card.id))
+            if not learning_source_before.verified:
+                raise ValueError("learning_capture_source_changed_or_unavailable")
+            card = await _application_refresh(self.db, card)
+            current_subject_version = self._card_subject_version(card)
+            # A concurrent exact retry may have completed while acquiring the
+            # source fence; its recorded result still precedes the state guard.
+            replay = self._task_validation_replay(card, idempotency_key=idempotency_key,
+                request_digest=request_digest)
+            if replay is not None:
+                return replay
+
         if card.status != CardStatus.VALIDATION:
             raise ValueError(
                 f"Card is not in 'validation' status (currently '{card.status.value}'). "
@@ -4992,6 +5026,21 @@ class CardService:
 
         gate_failures: tuple[CompletionGateFailure, ...] = ()
         if outcome == TaskValidationOutcome.SUCCESS.value:
+            if learning_selection is not None:
+                from okto_pulse.core.application.learning_capture import revalidate_learning_capture_for_closeout
+
+                # Legacy fallback would append a new conclusion from this
+                # review. It cannot silently become the basis of an older
+                # Learning. Require an actual report/capture handoff first.
+                if not any(isinstance(entry, dict) and entry.get("source") == "move_to_validation"
+                        for entry in (card.conclusions or [])):
+                    raise ValueError("learning_closeout_requires_current_execution_report")
+                learning_record = await revalidate_learning_capture_for_closeout(
+                    self.db, board_id=card.board_id, bug_id=card.id,
+                    learning_id=learning_selection.learning_id, generation=learning_selection.generation,
+                    expected_fingerprint=learning_selection.fingerprint)
+                if learning_record.payload["source"]["digest"] != learning_source_before.source_digest:
+                    raise ValueError("learning_capture_source_changed_or_unavailable")
             gate_failures = await self._task_completion_gate_failures(
                 card=card,
                 board=board,
@@ -5283,6 +5332,23 @@ class CardService:
             extra_columns=(old_status, target_status),
             records={card.id: card},
         )
+
+        if learning_record is not None and target_status == CardStatus.DONE:
+            from okto_pulse.core.domain.learning_closeout import (
+                append_learning_closeout_binding, bind_learning_capture_to_closed_source,
+            )
+
+            learning_closed_source = await learning_reader.assemble_semantic_for_write(
+                self.db, board_id=card.board_id, bug_id=card.id)
+            learning_binding = bind_learning_capture_to_closed_source(
+                capture=learning_record, before=learning_source_before, closed=learning_closed_source,
+                transition_id=validation_id, actor_id=reviewer_id,
+                bound_at=datetime.now(timezone.utc), operation="submit_task_validation",
+                appended_validations=(validation,))
+            card.learning_closeout_bindings = append_learning_closeout_binding(
+                getattr(card, "learning_closeout_bindings", None), learning_binding)
+            card.mark_dirty("learning_closeout_bindings")
+            await _application_flush(self.db)
 
         if old_status != card.status:
             from okto_pulse.core.events import publish as event_publish
