@@ -5,7 +5,7 @@
 Iniciativa **incompleta; retomada explicitamente autorizada em 2026-09-23**.
 O usuário revogou a pausa e pediu execução até o final, sem parar em milestones.
 Frente atual (2026-09-29): F6/KG §7.5, reconciliação histórica de Learning.
-Último par enviado: Corecc920c01/Community7b666140. Captura, binding em
+Último par enviado: Corefd40469e/Community51fca44e. Captura, binding em
 task validation, autoria conjunta, REST/MCP/UI/Delivery, policy/preview e
 materialização automática via outbox/worker e proteção de holds mistos foram
 enviados em incrementos delimitados. Recuperação de projeção validada/enviada.
@@ -223,6 +223,37 @@ converte replay_failed em integrity_error. O caminho candidato também diferenci
 capture_pending_materialization. Caracterizar esses caminhos antes de modificar
 gates e preservar obrigação durável/evento/fila; ainda não há reprodução nova
 nem autorização para tratar presença de captura como projeção canônica.
+
+Continuação: commits fd40469e/51fca44e enviados, ambos pushes0; árvores limpas
+ao retomar. Teste novo CommunityLearningCaptureRebuildRestore usa SQL/Grafx,
+snapshot/restore reais e fila do worker existente (não o rebuild integral).
+Provenance-capture-rebuild-restore-repro confirmou o par byte-a-byte.
+Reprodução24357 terminou1:1fail/1pass/44.93s. Captura ainda sem projeção faz
+restore retornar integrity_error; head materializado/snapshot é restaurado
+corretamente. KG7.2 diferencia fonte durável aguardando projeção de corrupção.
+Correção planejada: relatório interno separa capture_pending_materialization
+de replay_failed, sem escrever nó/aresta ou dispensar obrigação; fonte e fila
+permanecem intactas para o mesmo worker governado. Corrupção continua falha.
+Ainda não qualifica promoção do candidato, upgrade integral ou F6 concluído.
+
+WIP: replay_pending_materialization reporta identidade/revisão/motivo separado
+de replay_failed. Nenhum nó é criado para captura, nenhuma fila/fonte alterada.
+Teste novo de payload malformado mantém falha. Integração exige fila e história
+iguais após restore, replay do receipt idempotente e worker materializando após
+o restore. Builds capture-rebuild-restore-r1 ambos0, pip82638 terminou0;
+provenance-r1 confirmou837/900+363/448 byte-identical. Ruff F/E9 passou.
+Ativos: Core35567, Community26140, F1636142. Não editar payload até terminais.
+Inspeção do caminho candidato confirma gate próprio: v17 exige toda parity
+matched e não aceita capture_pending_materialization. Continua pendente de
+caracterização/prova de obrigação preservada, sem relaxamento neste incremento.
+
+Core35567 terminou0:29pass/87.49s; Community26140 terminou0:37pass/56.37s.
+F1636142 terminou0: sem findings/drift documental e oitoZERO. Não houve edição
+de fonte durante/depois das campanhas nem necessidade de regenerar READMEs;
+não repetir build/testes sem nova alteração. record_capture_rebuild_restore.py
+gerou acceptance-capture-rebuild-restore.json com provas e reprodução anterior.
+Nenhuma campanha ativa. Pronto para commit/push; continuar qualificação do
+candidato com obrigação durável de captura preservada, sem declarar F6 completo.
 
 Continuacao do worker em andamento: CanonicalBugNodeResolver, capacidade
 publica implementada por CommunityCanonicalBugNodeReader, seleciona uma unica

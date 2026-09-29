@@ -466,7 +466,9 @@ def replay_durable_cognitive(board_id: str) -> dict[str, Any]:
     Returns a dict merged into the preservation summary:
     ``replayed_cognitive_count`` (OR2), ``replay_skipped_present_count``,
     ``durable_source_status`` (``ok`` | ``absent`` | ``error:<reason>``)
-    and ``replay_failed`` items (never silently dropped).
+    and ``replay_failed`` items (never silently dropped). Valid semantic
+    captures are listed in ``replay_pending_materialization``: they are not
+    literal nodes, corruption, or evidence of canonical applicability.
     """
 
     from okto_pulse.core.ports.kg_cognitive_source import (
@@ -509,6 +511,7 @@ def replay_durable_cognitive(board_id: str) -> dict[str, Any]:
     replayed = 0
     skipped_present = 0
     failed: list[dict[str, Any]] = []
+    pending: list[dict[str, Any]] = []
     from okto_pulse.core.ports.learning_capture import validate_learning_capture_payload
 
     for record in records:
@@ -524,9 +527,13 @@ def replay_durable_cognitive(board_id: str) -> dict[str, Any]:
             continue
         if captured:
             # Literal replay must neither drop the semantic source nor promote
-            # it before source/evidence/transition reconciliation. Report the
-            # existing incomplete outcome until its materializer has run.
-            failed.append({'node_id': record.node_id, 'error': 'learning_capture_materialization_required'})
+            # it before source/evidence/transition reconciliation. KG7.2 treats
+            # a valid capture awaiting projection separately from corruption.
+            # The original source/outbox/work remain owned by the governed
+            # materializer; this read-only receipt does not discharge them.
+            pending.append({'node_id': record.node_id, 'generation': record.generation,
+                'source_revision': record.source_revision,
+                'reason': 'learning_capture_materialization_required'})
             continue
         if is_relational_projection_node(
             node_type=node_type,
@@ -572,6 +579,7 @@ def replay_durable_cognitive(board_id: str) -> dict[str, Any]:
         "replay_skipped_present_count": skipped_present,
         "durable_source_status": "ok",
         "replay_failed": failed,
+        "replay_pending_materialization": pending,
     }
 
 

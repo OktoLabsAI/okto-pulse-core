@@ -1,0 +1,117 @@
+{
+  "scope": "F6/KG7.2 and KG7.3 distinguish captured semantic source from literal rebuild replay failure",
+  "suites": {
+    "core": {
+      "passed": 29,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "community": {
+      "passed": 37,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0
+    }
+  },
+  "budgets": [
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "import_boundary_baseline",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every import_boundary_baseline allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "singleton_baseline",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every singleton_baseline allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "dependency_temporary_exceptions",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every dependency_temporary_exceptions allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "graph_runtime_compatibility",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every graph_runtime_compatibility allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "rebuild_artifact_compatibility",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every rebuild_artifact_compatibility allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "community_private_reach_ins",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every community_private_reach_ins allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "community_adapter_bridges",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every community_adapter_bridges allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "af35_relational_residue",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every af35_relational_residue allowance before F16 completion."
+    }
+  ],
+  "verified": [
+    "Real snapshot/restore previously reported integrity_error for a valid durable capture without a literal projection.",
+    "The replay reports pending identity/revision separately, without creating a graph node or discharging the source/work obligation.",
+    "The real Community restore effect preserves source history and durable work; the existing governed worker materializes afterward.",
+    "An already materialized Learning survives snapshot/restore with its validates edge; repeated receipt replay is idempotent.",
+    "Malformed captures and actual replay/provider failures remain failures."
+  ],
+  "limits": [
+    "This qualifies snapshot/restore and subsequent worker execution, not full rebuild or candidate promotion.",
+    "Integration uses disposable SQL/Grafx with explicit unrelated completion-gate and graph-health fixtures.",
+    "Candidate promotion has an independent pending-capture gate and remains to be qualified.",
+    "No source or frontend changes followed the campaign; F16 passed without README regeneration.",
+    "No real data changed; global acceptance inventory and full-plan incomplete status remain unchanged."
+  ],
+  "sha256": {
+    "PULSE_REFACTOR/.validation-v040/closure-capture-rebuild-restore-r1.json": "7c2b79adc63b4f0e7d5ac7eace0d2c18ea9125ae2bd1e2d16aea3c42d79205a1",
+    "PULSE_REFACTOR/.validation-v040/capture-rebuild-restore-r1-core.xml": "b680e5c328a48067a311b7c60bbfd1cd10dc02d8e7ef3523868a3b7da082252d",
+    "PULSE_REFACTOR/.validation-v040/capture-rebuild-restore-r1-community.xml": "1b9cf103eeef7f04fc240cd794b923306ddc08b7b6059360037153fd5e9312b4",
+    "PULSE_REFACTOR/.validation-v040/provenance-capture-rebuild-restore-repro.json": "0fdef480ab6dbf5302c1426f1875a612c8e944aa55eb1be634cdc3a88ab76f78",
+    "PULSE_REFACTOR/.validation-v040/capture-rebuild-restore-repro.xml": "9b24cb5a95b352e794afbca30a600496436fbf6cc6f28b4acf13d7c0ed04da68",
+    "PULSE_REFACTOR/.validation-v040/provenance-capture-rebuild-restore-r1.json": "5dc37f2c01144159014f83b3eca0ca730275bd13634c9839678a34943915810c",
+    "PULSE_REFACTOR/.validation-v040/run_capture_rebuild_restore.py": "d2e289b0ff85c9dae8ab28f51063a7dc8e0eb84da78ce7d50bd9ac22a9ac67b6",
+    "okto_labs_pulse_core/src/okto_pulse/core/kg/canonical_cognitive_preservation.py": "752e576ec0549107b4b2a9e47a56a88fcc81e49fe51d9557adeac34239d7cb92",
+    "okto_labs_pulse_core/tests/test_learning_capture_projection.py": "919aa044f6e3e245e3828ce06662e821f44df30f82f834ef71fb8ebb10c90617",
+    "okto_labs_pulse_community/tests/test_learning_capture_rebuild_restore.py": "1e8b7135ed99be81b64c2b7ebf86705338cfe26cf2e0762c675c57acb1e12b4b"
+  }
+}

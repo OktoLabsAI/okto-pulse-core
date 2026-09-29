@@ -137,4 +137,24 @@ def test_legacy_replay_reports_capture_and_never_touches_graph(monkeypatch):
     finally:
         reset_cognitive_source_store_for_tests()
     assert report['replayed_cognitive_count'] == 0
-    assert report['replay_failed'] == [{'node_id': 'old', 'error': 'learning_capture_materialization_required'}]
+    assert report['replay_failed'] == []
+    assert report['replay_pending_materialization'] == [{'node_id': 'old', 'generation': 0,
+        'source_revision': 0, 'reason': 'learning_capture_materialization_required'}]
+
+
+def test_legacy_replay_keeps_malformed_capture_as_failure():
+    from okto_pulse.core.kg import canonical_cognitive_preservation as replay
+    from test_kg_cognitive_replay import _MemoryStore
+    source = capture_record()
+    source['payload']['content'] = ' '
+    store = _MemoryStore()
+    store.records.append(CognitiveSourceRecord(**source))
+    register_cognitive_source_store(store)
+    try:
+        report = replay.replay_durable_cognitive('board')
+    finally:
+        reset_cognitive_source_store_for_tests()
+    assert report['replayed_cognitive_count'] == 0
+    assert report['replay_pending_materialization'] == []
+    assert len(report['replay_failed']) == 1
+    assert report['replay_failed'][0]['node_id'] == 'old'
