@@ -2,6 +2,68 @@
 
 ## Estado para retomada
 
+Aplicabilidade final: builds/install74353/prova/F1646483 TODOS terminais0.
+Par847 Python/910payload Core+368/453 Community byte-identical; F16ok,
+findings/documentation_findings vazios e oito budgetsZERO (recorder valida).
+record_learning_applicability.py executado UMA vez: acceptance-learning-applicability.json
+registra42+1+3 com limites, sem alegar K3/K4 completo. RuffF/E9/diff-check0.
+Nenhum processo desta campanha vivo. Commit/push deste incremento autorizado;
+seguir composicao final de fase/aplicabilidade/paridade, preservando gates
+de historia e formatos anteriores. Inventario78/33/135 ainda inalterado.
+
+learning-applicability-integrated1 TERMINAL0: Community79317=3 passed/724.34s.
+Tres variantes superseded/reused/fresh passaram com SQL original intacto,
+replay frio e completion ainda recusado. Fresh: history not_applicable,
+connectivity vazia,16 relacoes matched/zero divergencias, Globalmatched;
+resta compor capture_pending_materialization com fase e aplicabilidade.
+Nao reclassificar autoria desconhecida dos outros dois casos. F1661021=1
+somente matrizes, findings=[]/oitoZERO. Apos TODOS terminais, READMEs
+regenerados oficialmente. Builds learning-applicability-final ambos0;
+install74353 em andamento. Recorder record_learning_applicability.py preparado,
+NAO executado; exige prova/F16final terminais antes de selar e commit/push.
+
+learning-applicability-integrated1 builds0/install99263=0/prova58373=0:
+847/910+368/453 byte-identical antes das suites. Community79317 (3 variantes
+superseded/reused/fresh) e F1661021 em andamento, produto congelado. Core42
+da rodada anterior cobre mesmo Python Core. Nao repetir suites verdes sem
+mudanca. Depois terminal e matrizes finais, registrar evidencia/commit/push.
+Composicao completion ainda pendente: v8 guarda observacao mas v18 continua
+recusando admissao; nao tratar materialized=True ou lista vazia como prova.
+
+learning-applicability1 TODOS terminais: Core68909=0:42 passed/8.919s;
+Community28586=0:1 passed/85.907s (fase nativa real, read-only idempotente,
+inventario intocado, evidencia adulterada e reabertura recusadas). F1677087=1
+somente README, findings=[]/oitoZERO. Apos terminais, observador ligado ao
+coordenador e checkpoint: novo projection/v8 guarda learning_applicability
+rederivada de VerifiedLearningPhase; v6/v7 mantem campos/semantica anterior.
+Trabalho nao materializado fica explicito; observacao nao concede completion.
+Teste coordenador ampliado com variante fresh (Bug removido somente da fixture
+antes do backup), para separar candidato com fonte demonstrada dos negativos
+com autoria historica desconhecida. Agora3 variantes; ainda NAO executadas.
+Ruff0; builds learning-applicability-integrated1 iniciados. Core Python nao
+mudou desde42 testes, Community mudou: nova install/prova/suite integrada/F16
+necessarias. Ultimo par publicado d647e3f1/0e588b05.
+
+learning-applicability1 builds0/install23463=0/prova26593=0:847/910 Core e
+368/453 Community byte-identical ANTES das campanhas. Em andamento:
+Core68909, Community28586 (fase privada real + observador read-only),
+F1677087. Produto congelado ate TODOS terminais. Nao anunciar aplicabilidade
+validada antes dos resultados; checkpoint/completion ainda nao chamam a porta.
+Ultimo par publicado d647e3f1/0e588b05; nova frente WIP nao commitada.
+
+Publicado Global/raizes Core d647e3f1 /Community0e588b05, pushes0. Novo WIP
+aplicabilidade: worker conserva assemble_semantic_for_write; observador usa
+assemble_semantic e compartilha TODAS regras de fonte/binding/evidencia/
+linhagem na funcao interna comum. Porta publica retorna somente observacao
+identidade/digests, nao autoridade de escrita. Adapter Community compoe apenas
+readers em isolated_runtime_provider_scope(inherit=False), SQL query_only/BEGIN
+com sessao semantica e verifier de evidencia do stage; nao compoe runtimeWAL,
+nao le grafo nem escreve locks. Ainda NAO ligado ao checkpoint/completion.
+Teste privado ampliado para revalidacao idempotente, inventario byte-identical,
+proibicao explicita de writer fence, evidencia adulterada e Bug reaberto;
+originais ficam intactos. Ruff0, builds learning-applicability1 iniciados.
+Exigir instalacao/prova antes de testes; nenhum aceite deste WIP ainda.
+
 Global/raizes final validado: F1632396 TERMINAL0, ok=true/findings e docs
 vazios/oitoZERO. Recorder executado uma vez: acceptance-candidate-overlay-roots.json
 com9/56/10 e reproducao falha preservada. Builds/install/prova847/910+367/452

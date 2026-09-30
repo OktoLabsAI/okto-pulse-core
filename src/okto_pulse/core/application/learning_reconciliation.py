@@ -33,6 +33,28 @@ def qualify_debt_change(*, before, after, execution):
     return replacement is not None and after == replacement
 
 
+async def observe_applicability(context, *, execution):
+    from okto_pulse.core.application.learning_capture import observe_learning_capture_materialization_basis
+    from okto_pulse.core.domain.learning_materialization_work import parse_learning_capture_work_ref
+    from okto_pulse.core.ports.learning_reconciliation import (
+        LearningReconciliationExecution, LearningReconciliationApplicability,
+    )
+
+    if (type(execution) is not LearningReconciliationExecution or execution.materialized is not True
+            or not execution.consolidation_session_id):
+        raise ValueError('learning_reconciliation_execution_invalid')
+    work = parse_learning_capture_work_ref(execution.work_ref)
+    if work is None or work.fingerprint is None:
+        raise ValueError('learning_reconciliation_fingerprinted_work_required')
+    basis = await observe_learning_capture_materialization_basis(context,
+        board_id=execution.board_id, bug_id=work.bug_id, learning_id=work.learning_id,
+        generation=work.generation, expected_fingerprint=work.fingerprint)
+    basis.projection.require_literal_head()
+    return LearningReconciliationApplicability(execution.board_id, work.bug_id,
+        work.learning_id, work.generation, work.fingerprint, basis.source.source_digest,
+        basis.source.source_policy_version, basis.head.record_fingerprint, basis.closeout_transition_id)
+
+
 async def source_basis(context, store, *, execution):
     from okto_pulse.core.application.learning_capture import resolve_learning_capture_projection
     from okto_pulse.core.application.learning_materialization import authored_learning_candidate

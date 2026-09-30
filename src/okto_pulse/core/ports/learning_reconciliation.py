@@ -44,6 +44,31 @@ class LearningReconciliationSourceBasis:
     scoped_target_id: str | None
 
 
+@dataclass(frozen=True, slots=True)
+class LearningReconciliationApplicability:
+    """Read-only source/evidence observation, never mutation authority."""
+
+    board_id: str
+    bug_id: str
+    learning_id: str
+    generation: int
+    capture_fingerprint: str
+    source_digest: str
+    source_policy_version: int
+    head_fingerprint: str
+    closeout_transition_id: str | None
+
+
+async def observe_learning_reconciliation_applicability(context, *, execution):
+    """Revalidate current source, signed evidence and authored lineage read-only.
+
+    The edition owns the authenticated offline snapshot. This observation does
+    not acquire a write fence, admit a graph or satisfy completion by itself.
+    """
+    from okto_pulse.core.application.learning_reconciliation import observe_applicability
+    return await observe_applicability(context, execution=execution)
+
+
 async def learning_reconciliation_source_basis(context, store, *, execution):
     """Derive audit identity from verified authorship, without write authority."""
     from okto_pulse.core.application.learning_reconciliation import source_basis

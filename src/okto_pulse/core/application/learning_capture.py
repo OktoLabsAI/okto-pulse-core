@@ -307,10 +307,7 @@ async def revalidate_learning_capture_for_materialization(
     Graph eligibility, governed admission and compensation remain separate
     obligations for the materializer that consumes this value in the same UOW.
     """
-    from okto_pulse.core.domain.learning_closeout import (
-        LearningCaptureSelection, qualify_learning_materialization_basis,
-    )
-    from okto_pulse.core.ports.application_persistence import get_application_persistence_port
+    from okto_pulse.core.domain.learning_closeout import LearningCaptureSelection
 
     selection = LearningCaptureSelection(learning_id=learning_id, generation=generation,
         fingerprint=expected_fingerprint)
@@ -320,6 +317,36 @@ async def revalidate_learning_capture_for_materialization(
         raise ValueError('learning_capture_transaction_capability_unavailable')
     source = qualify_bug_semantic_context(await reader.assemble_semantic_for_write(
         context, board_id=board_id, bug_id=bug_id))
+    return await _qualify_materialization_basis(context, board_id=board_id, bug_id=bug_id,
+        selection=selection, source=source, store=store)
+
+
+async def observe_learning_capture_materialization_basis(
+    context, *, board_id: str, bug_id: str, learning_id: str,
+    generation: int, expected_fingerprint: str,
+) -> LearningMaterializationBasis:
+    """Observe the same rules in the caller's stable read-only snapshot.
+
+    This does not acquire the worker's write fence or authorize materialization.
+    The offline caller separately authenticates its snapshot and evidence files.
+    """
+    from okto_pulse.core.domain.learning_closeout import LearningCaptureSelection
+
+    selection = LearningCaptureSelection(learning_id=learning_id, generation=generation,
+        fingerprint=expected_fingerprint)
+    reader, store = resolve_bug_cognitive_context_assembler(), require_cognitive_source_store()
+    if reader is None or not isinstance(store, TransactionalCognitiveSourceReader):
+        raise ValueError('learning_capture_read_capability_unavailable')
+    source = qualify_bug_semantic_context(await reader.assemble_semantic(
+        context, board_id=board_id, bug_id=bug_id))
+    return await _qualify_materialization_basis(context, board_id=board_id, bug_id=bug_id,
+        selection=selection, source=source, store=store)
+
+
+async def _qualify_materialization_basis(context, *, board_id, bug_id, selection, source, store):
+    from okto_pulse.core.domain.learning_closeout import qualify_learning_materialization_basis
+    from okto_pulse.core.ports.application_persistence import get_application_persistence_port
+
     if not source.verified or source.board_id != board_id or source.bug_id != bug_id:
         raise ValueError('learning_capture_source_changed_or_unavailable')
     record = await store.read_latest_in_context(context, board_id=board_id,
