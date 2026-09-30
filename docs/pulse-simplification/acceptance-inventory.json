@@ -472,8 +472,12 @@
       "line": 618,
       "id": "T39",
       "normative_text": "| T39 | Evidência/decisão contraditória substantiva | Continua bloqueando quando policy determina, mesmo com gate operacional do KG retirado. |",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "partial",
+      "test_text_references": [],
+      "reviewed_execution": {
+        "artifact": "evidence-completion-projection-separation.json",
+        "criterion_key": "BASE:T39"
+      }
     },
     {
       "key": "BASE:T40",
@@ -481,8 +485,12 @@
       "line": 619,
       "id": "T40",
       "normative_text": "| T40 | Só projeção do KG pendente e prova de produto válida no store autoritativo | Entrega não depende de operação de manutenção; saúde informa atraso. |",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "partial",
+      "test_text_references": [],
+      "reviewed_execution": {
+        "artifact": "evidence-completion-projection-separation.json",
+        "criterion_key": "BASE:T40"
+      }
     },
     {
       "key": "BASE:T41",

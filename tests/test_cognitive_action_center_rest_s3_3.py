@@ -411,7 +411,7 @@ async def test_rest_list_enforcement_annotation(tmp_path, db_factory, monkeypatc
 
 
 @pytest.mark.asyncio
-async def test_rest_list_enforcement_active_blocks(tmp_path, db_factory, monkeypatch):
+async def test_rest_list_keeps_projection_visible_without_completion_block(tmp_path, db_factory, monkeypatch):
     board, gen = "ac3-list-enf", "gen-1"
     await _board(db_factory, board, settings={"cognitive_readiness_policy": "blocking"})
     _enable_global_flag(monkeypatch)
@@ -432,7 +432,8 @@ async def test_rest_list_enforcement_active_blocks(tmp_path, db_factory, monkeyp
         out = await _list(board, db, limit=200)
     assert out["summary"]["enforcement_active"] is True
     by_art = {it["artifact_id"]: it for it in out["items"]}
-    assert by_art[f"card:{UUID_A}"]["would_block_done"] is True       # técnico enforça
+    assert by_art[f"card:{UUID_A}"]["blocking"] is True
+    assert by_art[f"card:{UUID_A}"]["would_block_done"] is False
     assert by_art[f"task:{UUID_T}"]["would_block_done"] is False      # task advisory
 
 

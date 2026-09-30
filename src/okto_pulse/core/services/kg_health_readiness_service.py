@@ -166,8 +166,8 @@ async def build_health_readiness(
     would_block_done) and the top-level ``cognitive_enforcement_mode`` /
     ``enforcement_active``. The full profile only ADDS the prose ``health_issues``
     + ``root_cause``. Health 1.2 represents unavailable canonical debt as null;
-    absent a known blocker, blocking is null and would_block_done is null under
-    enforcement (false in advisory mode). This projection never runs or changes
+    absent a known blocker, blocking is null. would_block_done is unknown because
+    Board technical aggregates do not evaluate artifact completion. This projection never runs or changes
     the authoritative completion gate. Raises ``InvalidProfileError`` on an
     unknown profile."""
     if profile not in VALID_PROFILES:
@@ -198,7 +198,7 @@ async def build_health_readiness(
     # otherwise incomplete evidence is unknown, never an inferred passage.
     if debt_unavailable and not blocking:
         blocking = None
-    would_block_done = blocking if enforcement_active else False
+    would_block_done = None
     mode = "blocking" if enforcement_active else "advisory"
     reasons_set = {it["signal"] for it in items}
     if counters["dead_letter_count"] > 0:
@@ -215,17 +215,10 @@ async def build_health_readiness(
     if debt_unavailable:
         reasons.append("canonical_debt_observation_unavailable")
 
-    if would_block_done:
-        policy_reason = (
-            "open technical signal + enforcement_active=true → the gate blocks done")
-    elif blocking:
-        policy_reason = (
-            "open technical signal but enforcement_active=false (advisory) → "
-            "would_block_done=false; the artifact is NOT ready while the blocker is open")
-    elif debt_unavailable:
-        policy_reason = "canonical projection observation unavailable; readiness cannot be determined"
-    else:
-        policy_reason = "no open technical signal"
+    policy_reason = (
+        "Technical projection observation does not assess product completion. "
+        "Artifact completion requires its authoritative evidence and policy gates."
+    )
 
     result: dict[str, Any] = {
         "board_id": board_id,

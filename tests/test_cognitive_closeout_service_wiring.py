@@ -529,8 +529,9 @@ def test_blocking_active_needs_both_flag_and_policy(monkeypatch: pytest.MonkeyPa
 
 
 @pytest.mark.asyncio
-async def test_done_records_rejection_on_open_canonical_debt_without_active_item(
+async def test_done_preserves_validation_with_only_projection_debt(
     isolated_closeout_kg_dir: Path, monkeypatch: pytest.MonkeyPatch,
+    accepted_card_delivery,
 ) -> None:
     board_id, _, card_id = await _seed_card(
         CardType.NORMAL, CardStatus.VALIDATION,
@@ -554,18 +555,15 @@ async def test_done_records_rejection_on_open_canonical_debt_without_active_item
 
     card = await _card_row(card_id)
     assert result["validation_outcome"] == "success"
-    assert result["completion_outcome"] == "rejected"
-    assert any(
-        item["code"] == "canonical_debt_open"
-        for item in result["completion_gate_failures"]
-    )
-    assert card.status == CardStatus.REJECTED
+    assert result["card_status"] == CardStatus.DONE.value, str(result.get("completion_gate_failures"))
+    assert card.status == CardStatus.DONE
     assert len(card.validations or []) == 1
 
 
 @pytest.mark.asyncio
-async def test_done_blocks_on_technical_dlq_before_status_mutation(
+async def test_done_does_not_require_technical_dlq_maintenance(
     isolated_closeout_kg_dir: Path, monkeypatch: pytest.MonkeyPatch,
+    accepted_card_delivery,
 ) -> None:
     board_id, _, card_id = await _seed_card(
         CardType.NORMAL, CardStatus.VALIDATION,
@@ -580,23 +578,25 @@ async def test_done_blocks_on_technical_dlq_before_status_mutation(
 
     db_factory = get_session_factory()
     async with db_factory() as db:
+        await _mark_card_resources_na(db, board_id, card_id)
+        await db.commit()
+    async with db_factory() as db:
         service = CardService(db)
         service._cognitive_closeout_gate_factory = lambda: _AllowGate()
-        with pytest.raises(ValueError, match="technical_dlq"):
-            await service.move_card(
-                card_id=card_id, user_id=USER_ID,
-                data=CardMove(
-                    status=CardStatus.DONE, conclusion="impl",
-                    completeness=100, completeness_justification="c",
-                    drift=0, drift_justification="n",
-                ),
-                actor_name=USER_ID,
-            )
-        await db.rollback()
+        await service.move_card(
+            card_id=card_id, user_id=USER_ID,
+            data=CardMove(
+                status=CardStatus.DONE, conclusion="impl",
+                completeness=100, completeness_justification="c",
+                drift=0, drift_justification="n",
+            ),
+            actor_name=USER_ID,
+        )
+        await db.commit()
 
     card = await _card_row(card_id)
-    assert card.status == CardStatus.VALIDATION
-    assert card.conclusions in (None, [])
+    assert card.status == CardStatus.DONE
+    assert len(card.conclusions) == 1
 
 
 @pytest.mark.asyncio
@@ -660,7 +660,7 @@ class _ExplodingReadiness:
     """Readiness service whose evaluation always fails — to prove blocking-active
     enforcement is fail-CLOSED (visible) rather than a silent skip."""
 
-    async def evaluate_artifact(self, *_a, **_k):
+    async def evaluate_completion(self, *_a, **_k):
         raise RuntimeError("readiness backend down")
 
 

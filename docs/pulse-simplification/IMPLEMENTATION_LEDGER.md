@@ -2,6 +2,79 @@
 
 ## Estado para retomada
 
+BASE F6E/T39/T40 — recorte pronto: readiness de fechamento separada da
+projeção técnica, com MCP/REST/Health alinhados. evaluate_completion lê obrigações
+cognitivas; evaluate_artifact mantém diagnóstico e acrescenta completion_tier
+ao precedence_explanation, calculado do MESMO conjunto de itens/instante.
+Helper público completion_would_block_done evita que DLQ oculte skip vencido.
+GATE_BLOCKING_TIERS suplementar contém apenas skip_expired; itens ativos
+continuam no gate legado, sem alteração de policy/skip/grant. Health técnico
+agregado retorna would_block_done=null: não avalia conclusão de um artefato.
+
+evidence-completion-projection-separation.json:234 casos finais distintos,
+Core200/Community8/frontend26. Core33435=1,185passed1failed32.53s por asserção
+REST antiga que exigia bloqueio por DLQ; módulo substituído no conjunto final
+pelo suplemento82527=0,24passed12.22s, junto dos176 casos prévios fora dele.
+Community26218=0,8passed10.89s; frontend92801=0,26passed53.10s(Vitest/jsdom).
+Nenhuma falha descartada do histórico. Campanhas anteriores permanecem no relatório.
+Dist completion-projection-separation4 construída/instalada; preflight57854=0,
+provenance-completion-projection-separation4.json,859/922+373/458 byte-idênticos.
+F16 session5635=0,ok=true,findings/documentation0, oito budgets ZERO. Ruff F/E9
+e diff-check passaram. Produto não mudou após o par4; alterações posteriores
+somente em testes/docs. SPA produtiva intacta; testes de front incluídos.
+
+T39/T40 PARCIAIS, não encerrados: qualificar contradição substantiva e evidência
+autenticada no ciclo completo; investigar gate legado graph_state/geração sem
+converter indisponibilidade de fonte cognitiva em ausência de obrigações.
+Próximo passo exatamente essa separação já exigida por F6E/T40; não ampliar
+escopo. Inventário103 verificados/41 parciais/102 não auditados. KG-10/T23
+aguardam decisões já solicitadas. Nenhum processo pendente, nenhum dado real
+alterado. Nota WIP abaixo é histórica e foi superada para este recorte.
+
+WIP BASE F6E/T39/T40 — separação de readiness no fechamento, ainda não enviada.
+Último par publicado: Core80e60fa0 / Community69d4b431, feature/v0.4.0.
+T40 continua incompleto: helper produtivo consultava evaluate_artifact e
+bloqueava por technical_dlq/canonical_debt_open. Reproduzido no par instalado
+byte-idêntico, provenance-completion-projection-before1.json, terminal0c6c96=0.
+Teste novo test_completion_readiness_projection_separation.py executou antes
+da mudança: session52382=1,1failed7.15s, rejeição technical_dlq sem obrigação
+cognitiva. Não é novo requisito: plano-base F6E/T40 exige essa separação.
+
+Alteração local: CognitiveReadinessService.evaluate_completion compõe somente
+obrigações cognitivas pelo store existente; evaluate_artifact mantém os sinais
+técnicos de diagnóstico. _evaluate_cognitive_readiness_or_raise usa o novo
+caminho. Policies/grants/skip e gate legado não alterados. Gate legado ainda
+governa itens ativos; readiness suplementar governa skips vencidos. Nenhuma
+captura, aprovação ou histórico é fabricado para liberar a transição.
+
+Builds Coreafdc0b=0/Community6a21c0=0; install59234=0. Novo par instalado em
+dist-learning-reconciliation-completion-projection-separation1; preflight40970=0,
+provenance-completion-projection-separation1.json:859/922+373/458 byte-idênticos.
+Campanha final completion-projection-separation3 Core74223=0,49passed7.82s:
+8 casos novos,25 de composição e16 de wiring. Fontes produtivas não mudaram
+após esse build. Logs/XML preservados na .validation-v040.
+Intermediários: separation1 session24356=1,2passed/1failed8.80s, teste atribuía
+itens ativos ao gate suplementar em vez do gate legado; corrigido o oráculo
+para verificar ambos sem alterar a autoridade. separation2 session65995=1,
+43passed/1failed6.99s: conclusão liberada da DLQ encontrou o gate independente
+de recursos. Fixture final marca Architecture/Mockup N/A pelo helper existente;
+produto mantém o gate. Delivery é fixture nesse arquivo; não alegar E2E de prova.
+
+ANTES DE COMMIT/PUSH: alinhar os consumidores que ainda anunciam o bloqueio
+técnico antigo. Inspeção confirmou GATE_BLOCKING_TIERS em Core mcp/server.py
+(helpers20707+) e Community api/cognitive_action_center.py; Health
+services/kg_health_readiness_service.py:201 calcula would_block_done do sinal
+técnico. Teste test_rkg06_two_key_policy.py ainda exige bloqueio por dívida.
+Não editar somente o conjunto de tiers: esconderia skip vencido atrás de DLQ.
+Revisar use case cognitive_readiness e payload/read models para levar o verdict
+substantivo separado, preservando diagnóstico técnico. Alinhar frontend e seus
+testes se o comportamento exposto mudar. Gate legado de graph_state também
+precisa investigação para T40 completo; não remover controle de fonte cognitiva
+indisponível por inferência. Rebuild/prova/gates F16 após mudanças finais.
+Nenhum F16 novo alegado, nenhum critério novo marcado verificado. Inventário
+permanece103 verificados/39 parciais/104 não auditados. Não há processos vivos.
+T39/T40 seguem abertos; KG-10/T23 aguardam decisões já solicitadas.
+
 BASE T32 verificado: acceptance-retirement-mixed-projection.json,79 casos
 existentes revisados e executados (Core51, Community28), sem skips/falhas.
 Terminais: Core83724=0,51passed4.37s; Community67770=0,28passed286.21s.

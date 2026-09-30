@@ -1810,24 +1810,14 @@ async def _evaluate_cognitive_readiness_or_raise(
     target_label: str,
     policy_blocking: bool,
 ) -> None:
-    """S1.3 production wiring: consult the single ``CognitiveReadinessService``
-    on a ``done`` transition and block on the readiness tiers the legacy gate
-    does NOT cover — technical DLQ, canonical_debt OPEN, and a lapsed
-    revisit-required skip — BEFORE any status / conclusion / snapshot / activity
-    mutation. The legacy ``CognitiveCloseoutGate`` still governs active cognitive
-    items.
+    """Enforce substantive readiness before any lifecycle mutation.
 
-    Rollout safety (fr_9d42c5e2 / dec_41db6a36): when ``policy_blocking`` is
-    False (the default for existing boards, or the global flag off) this is a
-    NO-OP — readiness stays advisory. Carve-out: a task/test (no reusable
-    cognition) never blocks on the cognitive/advisory tiers, but the technical
-    no-mask tiers (DLQ / open canonical_debt) still block when policy is active.
-
-    Failure semantics: while ``policy_blocking`` is False this is a NO-OP. Once
-    blocking is ACTIVE, a resolution/evaluation failure is fail-CLOSED with a
-    visible ``cognitive_readiness_unavailable`` error BEFORE any mutation — a
-    silent skip would make the enforcement point an appearance of control
-    (validator carry-forward).
+    BASE F6E separates projection diagnostics from product completion. Read
+    cognitive obligations directly so a coexisting DLQ/debt cannot hide an
+    active item or expired skip. Technical diagnostics remain in Health.
+    Existing policy activation and the independent evidence/Learning/legacy
+    closeout gates retain their authority. Resolution or cognitive-store
+    failure remains fail-closed while the blocking policy is active.
     """
 
     if not policy_blocking:
@@ -1866,8 +1856,7 @@ async def _evaluate_cognitive_readiness_or_raise(
         return
 
     # Carve-out: the entity's own ref is refs[0] (``<normalized_type>:<id>``).
-    # task/test carry no reusable cognition → advisory for cognitive tiers (the
-    # technical DLQ/debt no-mask tiers still apply via compose_readiness).
+    # task/test with no recorded cognitive obligation remain advisory.
     primary_type = refs[0].split(":", 1)[0]
     has_reusable_cognition = primary_type not in ("task", "test")
 
@@ -1880,7 +1869,7 @@ async def _evaluate_cognitive_readiness_or_raise(
     blocking_tiers = GATE_BLOCKING_TIERS
     for ref in refs:
         try:
-            verdict = await service.evaluate_artifact(
+            verdict = await service.evaluate_completion(
                 db,
                 board_id=board_id,
                 source_ref=ref,

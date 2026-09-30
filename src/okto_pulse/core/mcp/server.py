@@ -20702,16 +20702,10 @@ async def _cognitive_enforcement_active(kg_operations, board_id: str) -> bool:
 
 
 def _would_block_done(item_or_tier, enforcement_active: bool) -> bool:
-    """``blocking`` means a pending/unresolved verdict; it does NOT by itself mean
-    the done-gate will block (S3.1 validator carry-forward). The gate only
-    enforces GATE_BLOCKING_TIERS, and only when the board policy is active."""
-    from okto_pulse.core.kg.cognitive_readiness import GATE_BLOCKING_TIERS
+    """Supplementary completion enforcement, independent of projection tiers."""
+    from okto_pulse.core.kg.cognitive_readiness import completion_would_block_done
 
-    if isinstance(item_or_tier, dict):
-        tier = (item_or_tier.get("precedence_explanation") or {}).get("tier")
-    else:
-        tier = item_or_tier
-    return bool(enforcement_active and tier in GATE_BLOCKING_TIERS)
+    return completion_would_block_done(item_or_tier, enforcement_active)
 
 
 async def _evaluate_card_cognitive_verdict(
@@ -20762,7 +20756,7 @@ async def _evaluate_card_cognitive_verdict(
         "blocking": bool(getattr(verdict, "blocking", False)),
         "revisit_at": getattr(verdict, "revisit_at", None),
         "would_block_done": _would_block_done(
-            getattr(verdict, "tier", None), enforcement_active
+            verdict, enforcement_active
         ),
     }
 
@@ -20894,7 +20888,7 @@ async def okto_pulse_kg_evaluate_cognitive_readiness(
     enforcement_active = uc_result.enforcement_active
 
     payload = verdict.to_api()
-    payload["would_block_done"] = _would_block_done(verdict.tier, enforcement_active)
+    payload["would_block_done"] = _would_block_done(verdict, enforcement_active)
     payload["enforcement_active"] = enforcement_active
     return json.dumps(payload, default=str)
 

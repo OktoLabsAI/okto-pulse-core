@@ -61,7 +61,7 @@ async def test_aggregates_do_not_read_rows_or_expose_errors_and_preserve_policy(
     assert result["technical_signals"]["technical_dlq_count"] == 500003
     assert result["technical_signals"]["active_queue_count"] == 7
     assert result["readiness"]["blocking"] is True
-    assert result["readiness"]["would_block_done"] is enforcement
+    assert result["readiness"]["would_block_done"] is None
     assert set(result["readiness"]["reasons"]) == {i["signal"] for i in items}
 
 
@@ -109,7 +109,7 @@ async def test_unavailable_debt_never_becomes_zero_or_clears_known_blocker(
     assert result["overall_state"] != "healthy"
     expected_blocking = True if known_dlq else None
     assert result["readiness"]["blocking"] is expected_blocking
-    assert result["readiness"]["would_block_done"] is (expected_blocking if enforcement else False)
+    assert result["readiness"]["would_block_done"] is None
     assert result["readiness"]["canonical_debt_observation_status"] == "unavailable"
     assert "canonical_debt_observation_unavailable" in result["readiness"]["reasons"]
     assert result["readiness"]["policy_reason"] != "no open technical signal"

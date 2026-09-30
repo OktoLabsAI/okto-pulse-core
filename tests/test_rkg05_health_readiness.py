@@ -1,16 +1,7 @@
-"""RKG-05 — non-maskable technical KG signals in health/readiness.
+"""BASE F6E: technical Health remains visible without predicting completion.
 
-Real integration tests: seed a real ConsolidationDeadLetter (technical signal) and
-prove the canonical /kg/health-readiness projection + the kg_health summary
-profile never mask it, that advisory distinguishes blocking vs would_block_done,
-and that the OR counter okto_pulse_kg_cognitive_technical_signal_total fires.
-
-Coverage:
-  TS1 ts_802a9a69 (integration): health summary preserves DLQ + drill_down_tool.
-  TS2 ts_fcf6300e (integration): advisory with a technical blocker -> blocking=true,
-     would_block_done=false, not declared ready.
-  TS3 ts_2ef50880 (integration): the technical signal is derived from health, so a
-     cognitive skip/no_action cannot reduce or hide it.
+Existing policy activation is preserved. Artifact lifecycle gates, not Board
+technical aggregates, determine product completion.
 """
 
 from __future__ import annotations
@@ -92,7 +83,7 @@ async def test_ts2_advisory_blocking_distinct_from_would_block_done(db_factory):
     assert hr["cognitive_enforcement_mode"] == "advisory"
     r = hr["readiness"]
     assert r["blocking"] is True            # a technical problem IS visible
-    assert r["would_block_done"] is False   # advisory -> the gate does not block
+    assert r["would_block_done"] is None   # artifact completion is not evaluated here
     assert "technical_dlq" in r["reasons"]
     assert r["policy_reason"]               # not declared ready; reason given
 
@@ -160,7 +151,7 @@ async def test_mcp_health_readiness_tool_exposes_signals(db_factory, monkeypatch
     data = json.loads(await tool.fn(board_id=board_id, profile="summary"))
     assert data["technical_signals"]["technical_dlq_count"] >= 1
     assert data["readiness"]["blocking"] is True
-    assert data["readiness"]["would_block_done"] is False
+    assert data["readiness"]["would_block_done"] is None
     assert any(i["signal"] == "technical_dlq" for i in data["non_maskable_items"])
 
     # Invalid profiles use the shared MCP projection error (not silent summary).

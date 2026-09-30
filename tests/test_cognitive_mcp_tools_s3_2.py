@@ -448,8 +448,8 @@ async def test_would_block_done_enforcement(tmp_path, db_factory, monkeypatch):
     )
     assert out["summary"]["enforcement_active"] is True
     by_art = _by_artifact(out["items"])
-    # técnico (DLQ) sob enforcement → would_block_done True.
-    assert by_art[f"card:{UUID_A}"][0]["would_block_done"] is True
+    # BASE F6E: technical DLQ remains visible without becoming a completion gate.
+    assert by_art[f"card:{UUID_A}"][0]["would_block_done"] is False
     # cognitivo ativo (card) → blocking True MAS would_block_done False (não está no gate).
     card_active = by_art[f"card:{UUID_B}"][0]
     assert card_active["blocking"] is True and card_active["would_block_done"] is False

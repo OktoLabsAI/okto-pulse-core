@@ -35,7 +35,7 @@ readiness signals / error causes only — NEVER selectable reason_codes
 from __future__ import annotations
 
 from collections.abc import Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 from enum import Enum
 from typing import Any
@@ -145,17 +145,28 @@ class ReadinessTier(str, Enum):
     READY = "ready"                            # no pending cognitive work
 
 
-# The deterministic subset of tiers the DONE-GATE actually ENFORCES when a
-# board's blocking policy is active (services/main.py). A COGNITIVE_ACTIVE
-# verdict is ``blocking=True`` at the verdict level but ADVISORY at the gate —
-# which is exactly why a task/test cognitive-pending never blocks done. Kept as
-# a single shared source so the gate AND the MCP report enforcement WITHOUT
-# recomputing it (S3.2 carry-forward: never recompute enforcement in the MCP).
+# Supplementary readiness enforcement; active items retain the independent
+# legacy closeout gate. Projection diagnostics never become completion policy.
 GATE_BLOCKING_TIERS: frozenset[str] = frozenset({
-    ReadinessTier.TECHNICAL_DLQ.value,
-    ReadinessTier.CANONICAL_DEBT_OPEN.value,
     ReadinessTier.SKIP_EXPIRED.value,
 })
+
+
+def completion_would_block_done(value: Any, enforcement_active: bool) -> bool:
+    """Read the independently composed tier, including behind technical debt.
+
+    This reports the supplementary readiness gate, not a certification of all
+    lifecycle gates. Values are server-owned verdicts/rows, never client claims.
+    """
+    if isinstance(value, dict):
+        explanation = value.get('precedence_explanation') or {}
+        tier = explanation.get('completion_tier', explanation.get('tier', value.get('tier')))
+    elif isinstance(value, str):
+        tier = value
+    else:
+        explanation = getattr(value, 'precedence_explanation', {}) or {}
+        tier = explanation.get('completion_tier', getattr(value, 'tier', None))
+    return bool(enforcement_active and tier in GATE_BLOCKING_TIERS)
 
 
 class CognitiveReadinessError(Exception):
@@ -328,31 +339,35 @@ def compose_readiness(
     """
 
     now = now or _now()
+    completion = compose_cognitive_readiness(
+        artifact_id=artifact_id, cognitive_items=cognitive_items,
+        has_reusable_cognition=has_reusable_cognition, now=now,
+    )
+
+    def with_completion(verdict: CognitiveReadinessVerdict) -> CognitiveReadinessVerdict:
+        return replace(verdict, precedence_explanation={
+            **verdict.precedence_explanation, 'completion_tier': completion.tier,
+        })
 
     # Tier 1 — technical DLQ.
     if technical_dlq:
-        return CognitiveReadinessVerdict(
+        return with_completion(CognitiveReadinessVerdict(
             artifact_id=artifact_id, ready=False, blocking=True,
             tier=ReadinessTier.TECHNICAL_DLQ.value,
             readiness_signal=TECHNICAL_DLQ_SIGNAL,
-            detail="Technical dead-letter present; resolve the DLQ before closure.",
-        )
+            detail="Technical dead-letter present; projection is delayed. Product completion uses substantive obligations.",
+        ))
 
     # Tier 2 — canonical_debt OPEN.
     if canonical_debt_open:
-        return CognitiveReadinessVerdict(
+        return with_completion(CognitiveReadinessVerdict(
             artifact_id=artifact_id, ready=False, blocking=True,
             tier=ReadinessTier.CANONICAL_DEBT_OPEN.value,
             readiness_signal=CANONICAL_DEBT_OPEN_SIGNAL,
-            detail="Canonical debt is OPEN; resolve/retry before closure.",
-        )
+            detail="Canonical projection debt is OPEN. Product completion uses substantive obligations.",
+        ))
 
-    return compose_cognitive_readiness(
-        artifact_id=artifact_id,
-        cognitive_items=cognitive_items,
-        has_reusable_cognition=has_reusable_cognition,
-        now=now,
-    )
+    return with_completion(completion)
 
 
 def compose_cognitive_readiness(
@@ -511,6 +526,30 @@ class CognitiveReadinessService:
             technical_dlq=technical_dlq,
             canonical_debt_open=debt_open,
             cognitive_items=items,
+            has_reusable_cognition=has_reusable_cognition,
+            now=self._now(),
+        )
+
+    async def evaluate_completion(
+        self,
+        context: Any,
+        *,
+        board_id: str,
+        source_ref: str,
+        kg_generation_id: str | None = None,
+        has_reusable_cognition: bool = True,
+    ) -> CognitiveReadinessVerdict:
+        """Product closeout reads substantive obligations independently of projection.
+
+        BASE F6E/T39/T40: diagnostics retain DLQ/debt precedence in
+        ``evaluate_artifact``. Filtering that diagnostic verdict would hide
+        active obligations or expired skips behind a technical signal.
+        Store failures still propagate to the fail-closed lifecycle boundary.
+        """
+        artifact_id = _canonical_artifact_id(source_ref)
+        return compose_cognitive_readiness(
+            artifact_id=artifact_id,
+            cognitive_items=self._items_for_artifact(board_id, artifact_id, kg_generation_id),
             has_reusable_cognition=has_reusable_cognition,
             now=self._now(),
         )
@@ -704,5 +743,6 @@ __all__ = [
     "TECHNICAL_READINESS_SIGNALS",
     "TERMINAL_REASON_CODES",
     "compose_readiness",
+    "completion_would_block_done",
     "validate_skip_reason",
 ]
