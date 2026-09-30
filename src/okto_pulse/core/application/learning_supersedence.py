@@ -1,10 +1,29 @@
 """Resolve scoped replacement evidence through public transactional ports."""
 from okto_pulse.core.domain.learning_supersedence import (
     scope_reference_additions, qualify_learning_scope_replacement,
+    prepare_learning_scope_replacement,
 )
 from okto_pulse.core.ports.kg_cognitive_source import (
     TransactionalCognitiveHistoryReader, latest_cognitive_source_records,
+    ConditionalCognitiveSourceWriter,
 )
+
+
+async def stage_learning_scope_replacement(context, store, *, previous, capture, successor):
+    """Stage both source revisions in the caller's one conditional UOW.
+
+    This internal write is not admission: the governed caller must already
+    hold the source fence and qualify current applicability, target history and
+    the graph projection. It must compensate the graph on a late CAS/UOW failure.
+    No independent commit, event, permission or capture re-authoring occurs here.
+    """
+    if context is None or not isinstance(store, ConditionalCognitiveSourceWriter):
+        raise ValueError('learning_materialization_conditional_append_required')
+    replacement = prepare_learning_scope_replacement(previous=previous,
+        capture=capture, successor=successor)
+    await store.append_many_if_current_in_context(context, (replacement.successor, replacement.claimed),
+        expected_fingerprints=(capture.record_fingerprint, previous.record_fingerprint))
+    return replacement
 
 
 async def read_learning_scope_replacements(context, store, *, head):

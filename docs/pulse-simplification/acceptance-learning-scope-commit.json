@@ -1,0 +1,116 @@
+{
+  "scope": "F6/KG7.6 joint scoped target claim and successor source writer",
+  "suites": {
+    "core": {
+      "passed": 108,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "community": {
+      "passed": 25,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0
+    }
+  },
+  "budgets": [
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "import_boundary_baseline",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every import_boundary_baseline allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "singleton_baseline",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every singleton_baseline allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "dependency_temporary_exceptions",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every dependency_temporary_exceptions allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "graph_runtime_compatibility",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every graph_runtime_compatibility allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "rebuild_artifact_compatibility",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every rebuild_artifact_compatibility allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "community_private_reach_ins",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every community_private_reach_ins allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "community_adapter_bridges",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every community_adapter_bridges allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "af35_relational_residue",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every af35_relational_residue allowance before F16 completion."
+    }
+  ],
+  "verified": [
+    "Production claim preparation preserves target payload, birth fields and prior evidence while adding the exact typed capture provenance reference.",
+    "The internal application writer stages successor and target claim through one public conditional append in the caller UOW; it owns no separate commit or authorization.",
+    "Disposable SQLite commit/rollback and concurrent one-winner tests now invoke the real writer rather than hand-assembling its source batch.",
+    "Advancing either the target or capture head rejects the joint write and leaves no partial successor visible even in the failed caller transaction.",
+    "The installed paired wheels matched both source trees byte-for-byte before tests; F16 has no drift and eight zero budgets."
+  ],
+  "limits": [
+    "Still an integration prerequisite. The governed materializer does not yet invoke this writer, and supersede remains unsupported for closeout/materialization.",
+    "Caller still must prove current signed source, capture, target history and projected graph under its fences, then compensate graph mutations on any late CAS/UOW failure.",
+    "New tests qualify SQL atomicity and pure projection provenance with explicit literal fixtures, not end-to-end graph/lifecycle/public authoring.",
+    "Scope-aware recovery, query exposure, full rebuild, REST/MCP/UI intent authoring and full plan acceptance remain pending.",
+    "No frontend, physical schema, public tool, real data, release or deployment changed. No global acceptance inventory promotion."
+  ],
+  "sha256": {
+    "PULSE_REFACTOR/.validation-v040/closure-learning-scope-commit-r1.json": "b756006fc2e34da1f87fc7c39ab588bef717a34d0547d4875a805f9b874fd6eb",
+    "PULSE_REFACTOR/.validation-v040/learning-scope-commit-r1-core.xml": "d90fc71a8503a603f89c618d48de869b3e0497d355d7eda92aa1a1d1c020d53c",
+    "PULSE_REFACTOR/.validation-v040/learning-scope-commit-r1-community.xml": "eb8c4075464ee65c6e5b38e10ea3fbb7cce52a41d907c9d4276fd3a3a46c6ed2",
+    "PULSE_REFACTOR/.validation-v040/provenance-learning-scope-commit-r1.json": "e9493914ed0f21819c8ecc56296fef50bbc3dbbefaa8d865150d2188864649ca",
+    "PULSE_REFACTOR/.validation-v040/run_learning_scope_commit.py": "cfff7369ea3f809126fc07e0c1945a8f6aeb119e18a9f65431f9d78e0993ada1",
+    "okto_labs_pulse_core/src/okto_pulse/core/domain/learning_supersedence.py": "0f2d1a79718f1ee20fcafc28c5c1e0818fa7fd5064e1b46bfc77daef57127f4e",
+    "okto_labs_pulse_core/src/okto_pulse/core/application/learning_supersedence.py": "c0fd85941e2064e8ca012be608adab977a3d4c5d8c87eb22a1cb83887308f298",
+    "okto_labs_pulse_core/tests/test_learning_scope_history.py": "6e2aec1ca886fcd838bd2a6ec9ffb355171c2a52f7bbb044dd296493d4d8aacf",
+    "okto_labs_pulse_community/tests/test_learning_scope_history.py": "c5b95022d7ff19967e0873fc851a0e990153693d046f776e827f96b3d3585970"
+  }
+}

@@ -42,6 +42,18 @@ def test_scope_claim_preserves_literal_target_and_has_exact_committed_successor(
     assert scope_reference_additions((previous, claimed))[0][:2] == (previous, claimed)
 
 
+def test_prepared_scope_claim_changes_only_provenance_and_keeps_target_birth():
+    from okto_pulse.core.domain.learning_supersedence import prepare_learning_scope_replacement
+    previous, claimed, capture, successor = records()
+    successor = replace(successor, source_session_id='governed-commit', committed_at='2026-09-29T16:00:00+00:00')
+    prepared = prepare_learning_scope_replacement(previous=previous, capture=capture, successor=successor)
+    assert prepared.claimed.record_fingerprint == claimed.record_fingerprint
+    assert prepared.claimed.payload == previous.payload
+    assert prepared.claimed.source_session_id == 'governed-commit'
+    assert prepared.claimed.committed_at == successor.committed_at
+    assert prepared.claimed.evidence_refs[:-1] == previous.evidence_refs
+
+
 @pytest.mark.parametrize('damage', ['target_content', 'dropped_evidence', 'unknown_reference', 'target_revision',
     'successor_revision', 'successor_content', 'successor_evidence', 'successor_identity', 'v1', 'wrong_target'])
 def test_claim_cannot_substitute_target_or_uncommitted_successor(damage):

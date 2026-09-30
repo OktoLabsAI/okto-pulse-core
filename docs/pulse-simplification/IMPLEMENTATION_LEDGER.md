@@ -2,6 +2,28 @@
 
 ## Estado para retomada
 
+Writer conjunto validado (2026-09-29): builds scope-commit-r1 ambos0, pip12956=0,
+provenance-r1 confirmou839/902 Core+363/448 Community byte-identical antes dos
+testes. Core48365=0:108pass/6.58s; Community26357=0:25pass/38.04s. F1622547=0,
+ok sem findings/docdrift e oito budgets ZERO. Recorder exclusivo gerou
+acceptance-learning-scope-commit.json após terminais. Nenhuma campanha ativa.
+Sem frontend alterado ou promoção global de aceite. Próximo passo é integrar
+o writer ao CapturedLearningProjection e _persist_cognitive_source_records,
+sob a qualificação atual de fonte; ainda não habilitar captura supersede como
+Done/materializável sem tratar recovery e queries. O escopo final não mudou.
+
+Continuação 2026-09-29: par c24e51cc/0c29e6f4 enviado (pushes0), árvores limpas
+confirmadas. Integração do writer conjunto em WIP: prepare_learning_scope_replacement
+deriva claim preservando payload/evidência/birth do alvo, apenas acrescentando a
+referência tipada da captura; stage_learning_scope_replacement grava sucessor e
+claim via um append_many_if_current na UOW do chamador. Não comita nem adquire
+autoridade/fence sozinho. Caller governado ainda precisa conectar projeção,
+compensação e leitura/recovery antes de habilitar supersede no worker/Done.
+Casos SQL de concorrência/rollback agora chamam o writer real em vez de montar
+o batch manualmente; casos adicionais recusam avanço de cada head sem sucessor
+parcial staged. Ruff passou; novos testes ainda não executados. Próximos builds
+dist-learning-scope-commit-r1 e prova obrigatória antes de comportamento.
+
 Learning-association validada em 2026-09-29: instalação43016=0 e provenance-r1
 com839/902 Core+363/448 Community byte-identical antes dos testes. Core19pass
 /3.22s. Communityr1=1:1pass/1falha no setup de ownership da fixture (arestas
@@ -85,7 +107,7 @@ nem inventário global. Sem frontend alterado, sem nova política/autoridade.
 Iniciativa **incompleta; retomada explicitamente autorizada em 2026-09-23**.
 O usuário revogou a pausa e pediu execução até o final, sem parar em milestones.
 Frente atual (2026-09-29): F6/KG §7.6, reuso/supersedência explícitos de Learning.
-Último par enviado: Core10fc6db6/Community9ab8f87e. Captura, binding em
+Último par enviado: Corec24e51cc/Community0c29e6f4. Captura, binding em
 task validation, autoria conjunta, REST/MCP/UI/Delivery, policy/preview e
 materialização automática via outbox/worker e proteção de holds mistos foram
 enviados em incrementos delimitados. Recuperação de projeção validada/enviada.

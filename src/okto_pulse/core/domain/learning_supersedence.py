@@ -4,7 +4,7 @@ No relationship is authorized by an opaque ref alone. The capture, target
 predecessor, target claim revision and successor birth must agree exactly.
 These checks do not attest current Bug eligibility or perform a graph write.
 """
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from okto_pulse.core.domain.learning_materialization import CapturedLearningProjection
 from okto_pulse.core.ports.kg_cognitive_source import CognitiveSourceRecord, latest_cognitive_source_records
@@ -156,3 +156,18 @@ def qualify_learning_scope_replacement(*, previous, claimed, capture, successor)
     if successor.evidence_refs != plan.evidence_refs:
         raise ValueError('learning_scope_claim_invalid')
     return LearningScopeReplacement(previous, claimed, capture, successor)
+
+
+def prepare_learning_scope_replacement(*, previous, capture, successor) -> LearningScopeReplacement:
+    """Derive the exact target revision from admitted authored provenance.
+
+    The original target payload and all prior evidence remain byte-for-byte
+    semantic inputs. No node field is repurposed to carry scope or retirement.
+    The caller must qualify the current source and target history separately.
+    """
+    reference = LearningCaptureSourceRef(capture.node_id, capture.generation, capture.record_fingerprint).encode()
+    claimed = replace(previous, source_revision=previous.source_revision + 1, record_fingerprint='',
+        evidence_refs=(*previous.evidence_refs, reference),
+        source_session_id=successor.source_session_id, committed_at=successor.committed_at)
+    return qualify_learning_scope_replacement(previous=previous, claimed=claimed,
+        capture=capture, successor=successor)
