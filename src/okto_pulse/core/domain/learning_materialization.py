@@ -51,6 +51,9 @@ class CapturedLearningProjection:
     predecessor: CognitiveSourceRecord | None = None
     projection_capture: CognitiveSourceRecord | None = None
     scope_evidence_refs: tuple[str, ...] = ()
+    scope_target: CognitiveSourceRecord | None = None
+    scope_target_head: CognitiveSourceRecord | None = None
+    scope_claim_committed: bool = False
 
     @property
     def authored_capture(self) -> CognitiveSourceRecord:
@@ -148,7 +151,9 @@ class CapturedLearningProjection:
         if self.is_reuse:
             self.require_predecessor()
         elif capture.payload['intent']['kind'] != 'create':
-            raise ValueError('learning_materialization_intent_unsupported')
+            from okto_pulse.core.ports.learning_capture import is_scoped_learning_supersede
+            if not is_scoped_learning_supersede(capture.payload):
+                raise ValueError('learning_materialization_intent_unsupported')
         if self.is_initial:
             return
         if ((self.head.board_id, self.head.node_type, self.head.node_id, self.head.generation)
@@ -158,3 +163,21 @@ class CapturedLearningProjection:
                 or 'capture_format' in self.head.payload):
             raise ValueError('learning_materialization_projection_conflict')
         self.require_authored_graph_fields(self.head.payload)
+
+    def require_scope_target(self) -> None:
+        from okto_pulse.core.ports.learning_capture import is_scoped_learning_supersede
+        if not is_scoped_learning_supersede(self.capture.payload):
+            if self.scope_target is not None or self.scope_target_head is not None or self.scope_claim_committed:
+                raise ValueError('learning_scope_claim_invalid')
+            return
+        previous, current = self.scope_target, self.scope_target_head
+        if previous is None or current is None:
+            raise ValueError('learning_scope_target_required')
+        latest_cognitive_source_records((previous, current))
+        intent = self.capture.payload['intent']
+        wanted = (self.capture.board_id, 'Learning', intent['target_node_id'], intent['target_generation'])
+        if (any((row.board_id, row.node_type, row.node_id, row.generation) != wanted for row in (previous, current))
+                or previous.record_fingerprint != intent['expected_fingerprint']
+                or (not self.scope_claim_committed and current != previous)
+                or self.scope_claim_committed == self.is_initial):
+            raise ValueError('learning_scope_claim_invalid')

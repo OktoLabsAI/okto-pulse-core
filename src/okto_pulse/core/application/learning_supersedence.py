@@ -1,4 +1,5 @@
 """Resolve scoped replacement evidence through public transactional ports."""
+from dataclasses import replace
 from okto_pulse.core.domain.learning_supersedence import (
     scope_reference_additions, qualify_learning_scope_replacement,
     prepare_learning_scope_replacement,
@@ -7,6 +8,51 @@ from okto_pulse.core.ports.kg_cognitive_source import (
     TransactionalCognitiveHistoryReader, latest_cognitive_source_records,
     ConditionalCognitiveSourceWriter,
 )
+from okto_pulse.core.ports.learning_capture import is_scoped_learning_supersede, LearningCaptureTargetConflict
+
+
+async def bind_learning_scope_materialization(context, store, *, projection, source):
+    """Fence the selected scope's exact target, or prove its committed claim.
+
+    Replay may observe later target history, but never rewrites it. The final
+    joint CAS still compares this observed target head with the successor head.
+    """
+    capture = projection.capture
+    if not is_scoped_learning_supersede(capture.payload):
+        return projection
+    intent = capture.payload['intent']
+    target = await store.read_latest_in_context(context, board_id=capture.board_id,
+        node_id=intent['target_node_id'], generation=intent['target_generation'])
+    if target is None:
+        raise LearningCaptureTargetConflict(None)
+    latest_cognitive_source_records((target,))
+    if (target.board_id, target.node_type, target.node_id, target.generation) != (
+            capture.board_id, 'Learning', intent['target_node_id'], intent['target_generation']):
+        raise ValueError('learning_scope_claim_invalid')
+    if 'capture_format' in target.payload:
+        raise ValueError('learning_materialization_projection_pending')
+    if (target.payload.get('graph_layer') != 'canonical'
+            or target.payload.get('maturity_status') != 'canonical_eligible'
+            or target.payload.get('superseded_by') or target.payload.get('revocation_reason')
+            or any(type(target.payload.get(key)) is not str or not target.payload[key].strip()
+                for key in ('content', 'context', 'created_by_agent', 'created_at'))):
+        raise ValueError('learning_capture_target_not_eligible')
+    claims = await read_learning_scope_replacements(context, store, head=target)
+    own = [claim for claim in claims if (claim.capture.node_id, claim.capture.generation,
+        claim.capture.record_fingerprint) == (capture.node_id, capture.generation, capture.record_fingerprint)]
+    current = await current_learning_scope_replacement(context, claims, source=source)
+    if own:
+        if len(own) != 1 or current != own[0]:
+            raise ValueError('learning_scope_claim_invalid')
+        previous = own[0].previous
+    else:
+        if target.record_fingerprint != intent['expected_fingerprint']:
+            raise LearningCaptureTargetConflict(target)
+        if current is not None:
+            raise ValueError('learning_capture_target_replaced_in_scope')
+        previous = target
+    return replace(projection, scope_target=previous, scope_target_head=target,
+        scope_claim_committed=bool(own))
 
 
 async def stage_learning_scope_replacement(context, store, *, previous, capture, successor):

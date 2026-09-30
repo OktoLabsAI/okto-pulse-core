@@ -3058,6 +3058,7 @@ def _do_graph_commit(
 
             require_capture_candidates(learning_projection, node_candidates, edge_candidates)
             learning_projection.require_literal_head()
+            learning_projection.require_scope_target()
             capture_hint = effective_hints.get(LEARNING_CAPTURE_CANDIDATE_ID)
             if (capture_hint is None or _resolve_op(capture_hint, 1.0) != ReconciliationOperation.ADD
                     or getattr(capture_hint, 'target_node_id', None)):
@@ -3077,6 +3078,11 @@ def _do_graph_commit(
                 raise KGPrimitiveError('learning_materialization_target_changed',
                     'The canonical Bug target changed before graph mutation',
                     session_id=session_id, retryable=True)
+            if learning_projection.scope_target_head is not None:
+                previous = learning_projection.scope_target_head
+                if 'Learning' in graph_scope.find_node_types(previous.node_id):
+                    learning_projection.require_literal_graph_fields(
+                        _read_captured_learning_node_attrs(graph_scope, previous.node_id), previous.payload)
         _require_no_code_traceability_existing_targets(
             graph_scope,
             node_candidates=node_candidates,
@@ -4070,6 +4076,13 @@ def _do_graph_commit(
                 from_type=from_hint,
                 to_type=to_hint,
             )
+
+        if learning_projection is not None and learning_projection.scope_target is not None:
+            # Scoped replacement retires only this exact association. Durable
+            # claim history carries its provenance; no global superseded_by
+            # marker or unscoped supersedes chain is authored here.
+            orch.replace_learning_bug_association(learning_projection.scope_target.node_id,
+                learning_projection.node_id, target_id)
 
         for projection_intent in relational_projection_active_set_intents:
             from okto_pulse.core.kg.interfaces.graph_transaction import (
@@ -5780,6 +5793,22 @@ async def _append_cognitive_source_records(
                 raise CognitiveSourceError('learning_materialization_projection_conflict', board_id=board_id)
             learning_projection.require_authored_graph_fields(raw['payload'])
             record = CognitiveSourceRecord(**{**raw, 'evidence_refs': learning_projection.evidence_refs})
+            learning_projection.require_scope_target()
+            if learning_projection.scope_target is not None:
+                if not learning_projection.scope_claim_committed:
+                    from dataclasses import replace
+                    from okto_pulse.core.application.learning_supersedence import stage_learning_scope_replacement
+                    await stage_learning_scope_replacement(context, resolved_store,
+                        previous=learning_projection.scope_target, capture=learning_projection.capture,
+                        successor=replace(record, source_revision=learning_projection.capture.source_revision + 1,
+                            record_fingerprint=''))
+                else:
+                    # Preserve later target curation/reuse/claims verbatim.
+                    # Compare both heads even on a no-op successor recovery.
+                    target = learning_projection.scope_target_head
+                    await resolved_store.append_many_if_current_in_context(context, (record, target),
+                        expected_fingerprints=(learning_projection.head.record_fingerprint, target.record_fingerprint))
+                return
             await resolved_store.append_many_if_current_in_context(context, (record,),
                 expected_fingerprints=(learning_projection.head.record_fingerprint,))
             return

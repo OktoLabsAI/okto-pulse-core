@@ -39,6 +39,7 @@ async def prepare_captured_learning_commit(context, session, selection):
         learning_id=selection.learning_id, generation=selection.generation,
         expected_fingerprint=selection.fingerprint)
     projection = basis.projection
+    projection.require_scope_target()
     if basis.capture.generation != 0 and basis.capture.payload['intent']['kind'] != 'reuse':
         raise ValueError('learning_materialization_generation_unsupported')
     require_capture_candidates(projection, session.node_candidates, session.edge_candidates)

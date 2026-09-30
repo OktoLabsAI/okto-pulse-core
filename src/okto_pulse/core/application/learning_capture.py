@@ -19,6 +19,7 @@ from okto_pulse.core.ports.learning_capture import (
     CreateLearningCapture, LearningCaptureHistoryReader, LearningCaptureTargetConflict,
     LearningCaptureIdentityReservation, validate_learning_capture_payload,
     LEARNING_CAPTURE_FORMAT, LEARNING_SCOPED_CAPTURE_FORMAT, learning_capture_intent_payload,
+    is_scoped_learning_supersede,
 )
 from okto_pulse.core.services.test_scenario_lifecycle import scenario_has_authenticated_required_evidence
 from okto_pulse.core.domain.learning_materialization import CapturedLearningProjection
@@ -342,6 +343,8 @@ async def revalidate_learning_capture_for_materialization(
     _require_current_capture_evidence(source, record)
     projection = await resolve_learning_capture_projection(context, store,
         capture=record, head=head, bug_id=bug_id)
+    from okto_pulse.core.application.learning_supersedence import bind_learning_scope_materialization
+    projection = await bind_learning_scope_materialization(context, store, projection=projection, source=source)
     return LearningMaterializationBasis(record, source, binding.transition_id if binding else None, head, projection)
 
 
@@ -412,6 +415,10 @@ async def revalidate_learning_capture_for_closeout(
     if payload['intent']['kind'] == 'reuse':
         await resolve_learning_capture_projection(context, store,
             capture=record, head=record, bug_id=bug_id)
+    elif is_scoped_learning_supersede(payload):
+        from okto_pulse.core.application.learning_supersedence import bind_learning_scope_materialization
+        await bind_learning_scope_materialization(context, store,
+            projection=CapturedLearningProjection(record, record, bug_id), source=source)
     elif payload['intent']['kind'] != 'create':
         raise ValueError('learning_capture_intent_not_admitted')
     _require_current_capture_evidence(source, record)

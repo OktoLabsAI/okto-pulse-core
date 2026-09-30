@@ -142,7 +142,7 @@ def test_scope_binding_matches_exact_capture_and_current_closed_basis(damage):
     closed = source(status='done', source_policy_version=4, bug_id='covered-bug')
     previous, claimed, capture, successor = records(source=before)
     claim = qualify_learning_scope_replacement(previous=previous, claimed=claimed, capture=capture, successor=successor)
-    # Structural binding fixture only; the lifecycle writer still refuses supersede.
+    # Structural binding fixture; lifecycle admission is qualified by integration tests.
     value = bind(before, closed).model_dump(exclude={'sha256'})
     value.update(capture={'learning_id': capture.node_id, 'generation': capture.generation,
         'fingerprint': capture.record_fingerprint}, capture_revision=capture.source_revision)

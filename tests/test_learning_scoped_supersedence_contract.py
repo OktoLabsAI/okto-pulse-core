@@ -82,3 +82,23 @@ def test_malformed_reserved_source_reference_fails_closed(tail):
 def test_unknown_reference_version_is_not_reinterpreted_as_legacy_evidence():
     with pytest.raises(ValueError, match='source_ref_invalid'):
         parse_learning_capture_source_ref('learning-capture-source/v2:node:0:' + 'a' * 64)
+
+
+def test_scoped_syntax_without_qualified_target_cannot_enter_commit():
+    from okto_pulse.core.domain.learning_materialization import CapturedLearningProjection
+    from okto_pulse.core.ports.kg_cognitive_source import CognitiveSourceRecord
+    capture = CognitiveSourceRecord(**scoped_record())
+    plan = CapturedLearningProjection(capture, capture, 'bug-a')
+    with pytest.raises(ValueError, match='learning_scope_target_required'):
+        plan.require_scope_target()
+
+
+def test_v1_supersede_is_not_silently_given_source_bug_scope():
+    from okto_pulse.core.domain.learning_materialization import CapturedLearningProjection
+    from okto_pulse.core.ports.kg_cognitive_source import CognitiveSourceRecord
+    raw = scoped_record()
+    raw['payload']['capture_format'] = 'learning-capture/v1'
+    del raw['payload']['intent']['scope']
+    capture = CognitiveSourceRecord(**raw)
+    with pytest.raises(ValueError, match='learning_materialization_intent_unsupported'):
+        CapturedLearningProjection(capture, capture, 'bug-a').require_literal_head()

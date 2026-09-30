@@ -2,6 +2,73 @@
 
 ## Estado para retomada
 
+Scoped materializer validado (2026-09-29): Community76433 terminou0 com53pass
+/567.98s; replay adicional7506=0:1pass/35.71s. Core129pass/7.37s (r2, payload Core
+idêntico ao r3 provado por aggregate_sha256); frontend24pass. F1630822=0/oitoZERO,
+sem findings/docdrift. Recorder exclusivo gerou acceptance-scoped-materializer.json
+com hashes, falhas intermediárias preservadas e limites do fixture. Ruff/diff-check
+passaram. Todos os processos desta rodada estão terminais. Nenhum produto Python
+mudou depois da instalação/prova r3; teste r3b corrigiu somente assert de metadata.
+Materializador agora produz successor+claim REAIS, preserva outras origens, recusa
+alvo alterado, recupera perda de nós e compensa tanto append quanto commit externo
+tardio. Pré-Done v2/source_bug foi testado nos modos advisory/blocking; v1 sem
+escopo não recebe semântica nova. Replay conserva revisão posterior legítima do alvo.
+Próximo trabalho continua no mesmo F6/KG: leitura/apresentação de linhagem por
+escopo sem alegar substituição global, e exposição dos intents já implementados
+nas superfícies REST/MCP/UI e submissão composta, com testes de frontend e geração
+de catálogo/manifest quando seus contratos mudarem. K3/K4/rebuild e aceite final
+continuam pendentes, conforme inventário existente76/33/137. Não ampliar o escopo
+para corrigir históricos sem fonte ou publicar operações de reparo.
+
+Scoped-materializer avanço r3b: F1630822 terminou0, relatório r3 sem findings
+nem drift e oito budgets ZERO. Produto permanece no par r3 instalado/provado.
+Campanha Community76433 ainda em execução (25 casos concluídos no último poll);
+não tratar como encerrada. Teste adicional somente de teste, replay7506, terminou0:
+1pass/35.71s; após substituição real, reuso legítimo posterior do alvo na origem
+não coberta foi preservado no replay e na recuperação do sucessor, sem perder
+claim nem avançar histórico. Não houve mudança de produto para esse caso.
+
+Scoped-materializer r3: install23340=0/prova0. Community84762 terminou1 depois
+de o primeiro commit real concluir e preservar os dois escopos corretamente:
+assert do teste comparava committed_at operacional pré/pós codec SQL (UTC com
+offset versus sem offset). Fingerprint e payload autoral são idênticos. Ajustado
+somente o assert para essas evidências e autoria captured_at preservada; produto
+r3 não mudou. Rodada r3b testa novamente sobre o mesmo par instalado/provado.
+
+Scoped-materializer r2: instalação2891=0 e byte-proof0. Core90750=0:129pass/7.37s;
+Community50038=1 no primeiro caso: a mesma camada de captura ocultava assinatura
+do cleanup e o gate de preserved_projection_edges recusou corretamente a remoção.
+Correção usa functools.wraps no proxy, preservando assinatura REAL do delegado;
+gate Core não relaxado. Testes distinguem parâmetro explícito de **kwargs legado.
+Frontend24pass nesta rodada. F1615969 terminal1, aguardando resumo/documentação.
+Processos r2 encerrados; rebuild r3 exigido após correção do proxy.
+
+Scoped-materializer r1: builds/install63727=0 e prova839/902+363/448 idênticos.
+Core17946=0:129pass/8.54s. Community71626=1: primeiro caso expôs que o proxy
+CapturedGraphTransactionScope de PRODUÇÃO não expunha a nova capability aos
+Protocols no Python3.13 (__getattr__ não participa da checagem estática). A fixture
+já usava o adapter roteado de produção; não é falha do engine nem autorização
+para remover o gate. Proxy agora declara os três métodos, valida a capacidade
+do delegado e captura prepare/commit também para remoção/restauração. Testes
+específicos acrescentados, ainda não rodados. F16r1 somente README/oito ZERO.
+Todos os processos r1 terminais; preparar r2 sem reusar artifacts anteriores.
+
+Scoped materializer em implementação (2026-09-29), após pushes fc9ec94d/17ce8778:
+bind_learning_scope_materialization compara alvo exato na primeira execução e
+qualifica o claim completo no replay; conserva o head atual do alvo no CAS.
+CapturedLearningProjection carrega alvo original/head observado. Primitiva
+compara payload gráfico do alvo se presente, cria sucessor/validates e remove
+somente o par substituído via receipt compensável. _append_cognitive_source_records
+grava primeiro successor+claim juntos; replay compara successor+head atual sem
+reescrever revisões posteriores. Nenhum superseded_by/supersedes global emitido.
+Formato v2/source_bug admitido no vínculo pré-Done após validar alvo e evidência;
+supersede v1 sem escopo continua recusado. Adapter admite before-image vazia se
+o nó antigo falta, permitindo recuperação sem recriar associação substituída.
+Novos testes usam materializador real (sem successor fixture), perda de nós,
+falha de append, alvo alterado/curado e pré-Done advisory/blocking. Ainda não
+executados; próxima rodada scoped-materializer-r1 build/install/prova. Consultas
+de linhagem por escopo e autoria pública REST/MCP/UI permanecem pendentes.
+
 Capture-work identity validado (2026-09-29): builds r1 ambos0, instalação55022=0,
 prova byte-a-byte839/902 Core+363/448 Community antes das campanhas. Core57312=0:
 65pass/7.26s; Community80878=0:21pass/206.60s, incluindo o fluxo real outbox/worker

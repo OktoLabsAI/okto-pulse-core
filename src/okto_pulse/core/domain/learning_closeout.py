@@ -18,7 +18,7 @@ from okto_pulse.core.ports.bug_cognitive_context import (
 from okto_pulse.core.ports.kg_cognitive_source import (
     CognitiveSourceRecord, latest_cognitive_source_records,
 )
-from okto_pulse.core.ports.learning_capture import validate_learning_capture_payload
+from okto_pulse.core.ports.learning_capture import validate_learning_capture_payload, is_scoped_learning_supersede
 
 
 class LearningCaptureSelection(BaseModel):
@@ -97,7 +97,7 @@ def bind_learning_capture_to_closed_source(
     if (capture.board_id != before.board_id or payload['source']['bug_id'] != before.bug_id
             or payload['source']['digest'] != before.source_digest
             or payload['source']['policy_version'] != before.source_policy_version
-            or payload['intent']['kind'] not in {'create', 'reuse'}):
+            or (payload['intent']['kind'] not in {'create', 'reuse'} and not is_scoped_learning_supersede(payload))):
         raise ValueError('learning_closeout_capture_basis_mismatch')
     if type(appended_validations) is not tuple:
         raise ValueError('learning_closeout_delta_invalid')
@@ -157,7 +157,7 @@ def qualify_learning_materialization_basis(
             node_id=capture.node_id, generation=capture.generation,
             evidence_refs=capture.evidence_refs)
             or payload['source']['bug_id'] != source.bug_id
-            or payload['intent']['kind'] not in {'create', 'reuse'}):
+            or (payload['intent']['kind'] not in {'create', 'reuse'} and not is_scoped_learning_supersede(payload))):
         raise ValueError('learning_materialization_capture_invalid')
     if history is not None and type(history) is not list:
         raise ValueError('learning_closeout_history_invalid')

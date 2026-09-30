@@ -19,6 +19,13 @@ LEARNING_SCOPED_CAPTURE_FORMAT = 'learning-capture/v2'
 LEARNING_CAPTURE_MAX_BYTES = 256 * 1024
 
 
+def is_scoped_learning_supersede(payload) -> bool:
+    """Recognize the explicit scoped format; this is not target admission."""
+    intent = payload.get('intent', {})
+    return (payload.get('capture_format') == LEARNING_SCOPED_CAPTURE_FORMAT
+        and intent.get('kind') == 'supersede' and intent.get('scope') == 'source_bug')
+
+
 class LearningCaptureTargetConflict(ValueError):
     """A stale explicit target; current identity is server-observed, not authority."""
     def __init__(self, current: CognitiveSourceRecord | None):
