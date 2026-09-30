@@ -498,8 +498,12 @@
       "line": 620,
       "id": "T41",
       "normative_text": "| T41 | Knowledge/resource snapshot aprovado com origem atualizada | Não troca silenciosamente conteúdo; proveniência e refresh governados. |",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "verified_by_reviewed_execution",
+      "test_text_references": [],
+      "reviewed_execution": {
+        "artifact": "acceptance-snapshot-currentness.json",
+        "criterion_key": "BASE:T41"
+      }
     },
     {
       "key": "BASE:T42",
@@ -507,8 +511,12 @@
       "line": 621,
       "id": "T42",
       "normative_text": "| T42 | Status de cenário muda sem `Spec.version` | Readiness observa valor atual; nenhum cache stale libera indevidamente. |",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "verified_by_reviewed_execution",
+      "test_text_references": [],
+      "reviewed_execution": {
+        "artifact": "acceptance-snapshot-currentness.json",
+        "criterion_key": "BASE:T42"
+      }
     },
     {
       "key": "BASE:T43",

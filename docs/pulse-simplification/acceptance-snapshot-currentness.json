@@ -1,0 +1,142 @@
+{
+  "format": "pulse-v1.3-reviewed-execution/v1",
+  "scope": "BASE T41/T42 snapshot and operational currentness",
+  "criteria": {
+    "BASE:T41": {
+      "status": "verified",
+      "covered": "Two snapshot assignments keep their exact frozen bytes and revision stamps when four source KBs advance; references follow the new revision while snapshots are marked stale. Explicit MCP refresh updates only selected snapshots with source hashes and revision, preserving closed assignments/snapshots and replace/refresh ledger history. Core suite covers invalid sources, forbidden refresh targets, optimistic revision conflict, replay divergence and legacy history."
+    },
+    "BASE:T42": {
+      "status": "verified",
+      "covered": "Real SQLite adopted contract has a passing delivery rollup. The canonical SpecService operational scenario writer moves passed to ready without changing Spec.version or historical evidence. Both the same delivery store and a fresh SQL session refuse readiness with delivery_test_result_missing; persisted delivery records remain byte-equivalent as JSON."
+    }
+  },
+  "final_distinct_cases": 55,
+  "provenance": "evidence-completion-authenticated.json",
+  "runs": [
+    {
+      "file": "learning-reconciliation-snapshot-currentness1-core.xml",
+      "sha256": "30929764df9cc0d186b26e686cf6f8ceb56917b38aba1863047aa2c93b57943f",
+      "log_sha256": "4a74fdf21631ee5eb09d29944a68f78a6c0b6c59b1520a452b76fb2513f556a5",
+      "terminal_session": 74622,
+      "exit_code": 0,
+      "suites": [
+        {
+          "name": "pytest",
+          "errors": "0",
+          "failures": "0",
+          "skipped": "0",
+          "tests": "53",
+          "time": "8.790",
+          "timestamp": "2026-09-30T20:33:18.073184-03:00",
+          "hostname": "Alienware_m15"
+        }
+      ],
+      "cases": [
+        "tests.test_card_knowledge_snapshot_refresh::test_manual_copy_refreshes_changed_snapshot_then_true_noops_when_equivalent",
+        "tests.test_card_knowledge_snapshot_refresh::test_manual_then_auto_refresh_preserves_lineage_and_writes_only_on_change",
+        "tests.test_card_knowledge_snapshot_refresh::test_card_snapshot_never_promotes_a_legacy_grandparent_to_canonical_root",
+        "tests.test_knowledge_propagation_service::test_read_normalizes_persistence_port_error",
+        "tests.test_knowledge_propagation_service::test_identical_replay_precedes_revision_check_and_divergence_conflicts",
+        "tests.test_knowledge_propagation_service::test_rejected_canonical_result_replays_the_same_error_for_audit",
+        "tests.test_knowledge_propagation_service::test_revision_rejection_carries_a_post_rollback_ledger_attempt",
+        "tests.test_knowledge_propagation_service::test_partial_or_foreign_selection_reports_requested_matched_missing",
+        "tests.test_knowledge_propagation_service::test_reference_and_snapshot_each_stage_one_complete_plan[reference]",
+        "tests.test_knowledge_propagation_service::test_reference_and_snapshot_each_stage_one_complete_plan[snapshot]",
+        "tests.test_knowledge_propagation_service::test_omitted_is_persisted_distinct_and_explicit_empty_suppresses_globally",
+        "tests.test_knowledge_propagation_service::test_repeated_explicit_empty_supersedes_the_current_global_tombstone",
+        "tests.test_knowledge_propagation_service::test_drop_delta_closes_only_selected_root_and_preserves_other_assignment",
+        "tests.test_knowledge_propagation_service::test_drop_delta_closes_a_prior_global_tombstone_before_root_drop",
+        "tests.test_knowledge_propagation_service::test_invalid_source_or_hash_fails_before_any_stage",
+        "tests.test_knowledge_propagation_service::test_refresh_replaces_only_current_snapshot_and_closes_old_records",
+        "tests.test_knowledge_propagation_service::test_refresh_rejects_non_snapshot_or_non_current_assignment[reference]",
+        "tests.test_knowledge_propagation_service::test_refresh_rejects_non_snapshot_or_non_current_assignment[closed]",
+        "tests.test_knowledge_propagation_service::test_refresh_rejects_non_selected_missing_or_tombstoned_snapshot[omitted-True-no-tombstone]",
+        "tests.test_knowledge_propagation_service::test_refresh_rejects_non_selected_missing_or_tombstoned_snapshot[explicit_empty-True-no-tombstone]",
+        "tests.test_knowledge_propagation_service::test_refresh_rejects_non_selected_missing_or_tombstoned_snapshot[explicit_ids-False-no-tombstone]",
+        "tests.test_knowledge_propagation_service::test_refresh_rejects_non_selected_missing_or_tombstoned_snapshot[explicit_ids-True-root-1]",
+        "tests.test_knowledge_propagation_service::test_refresh_rejects_non_selected_missing_or_tombstoned_snapshot[explicit_ids-True-None]",
+        "tests.test_knowledge_propagation_service::test_dual_read_legacy_and_v2_resolution_preserves_history",
+        "tests.test_knowledge_propagation_service::test_v2_read_falls_back_to_root_and_keeps_reference_snapshot_semantics",
+        "tests.test_knowledge_propagation_service::test_legacy_snapshot_without_governance_metadata_projects_incomplete",
+        "tests.test_knowledge_propagation_service::test_v2_read_includes_local_post_activation_attachments",
+        "tests.test_knowledge_propagation_service::test_current_tombstones_are_authoritative_but_preserve_history[tombstones0-expected_dropped0]",
+        "tests.test_knowledge_propagation_service::test_current_tombstones_are_authoritative_but_preserve_history[tombstones1-expected_dropped1]",
+        "tests.test_knowledge_propagation_service::test_divergent_adapter_receipt_fails_closed_after_single_stage",
+        "tests.test_knowledge_propagation_service::test_grandfather_classification_is_conservative[evidence0-legacy_all]",
+        "tests.test_knowledge_propagation_service::test_grandfather_classification_is_conservative[evidence1-selected_legacy]",
+        "tests.test_knowledge_propagation_service::test_grandfather_classification_is_conservative[evidence2-legacy_unresolved]",
+        "tests.test_knowledge_propagation_service::test_grandfather_classification_is_conservative[evidence3-legacy_unresolved]",
+        "tests.test_knowledge_propagation_service::test_grandfather_classification_is_conservative[evidence4-legacy_unresolved]",
+        "tests.test_knowledge_propagation_service::test_grandfather_stages_canonical_non_activating_ledger_and_replays",
+        "tests.test_knowledge_propagation_service::test_grandfather_rejects_partial_inventory_with_audit_attempt",
+        "tests.test_knowledge_propagation_service::test_grandfather_never_replaces_an_active_v2_scope",
+        "tests.test_knowledge_propagation_service::test_relink_reset_closes_current_records_without_legacy_fallback",
+        "tests.test_knowledge_propagation_service::test_relink_reset_rejects_an_inactive_v2_scope_with_audit_attempt",
+        "tests.test_knowledge_propagation_service::test_relink_reset_supports_unlink_spec_reparent_and_repair[target0-previous_parent0-None]",
+        "tests.test_knowledge_propagation_service::test_relink_reset_supports_unlink_spec_reparent_and_repair[target1-previous_parent1-next_parent1]",
+        "tests.test_knowledge_propagation_service::test_relink_reset_supports_unlink_spec_reparent_and_repair[target2-None-next_parent2]",
+        "tests.test_knowledge_propagation_service::test_relink_reset_command_rejects_incoherent_parent_scope[target0-previous_parent0-None-relink_parent_target_invalid]",
+        "tests.test_knowledge_propagation_service::test_relink_reset_command_rejects_incoherent_parent_scope[target1-previous_parent1-None-relink_parent_target_invalid]",
+        "tests.test_knowledge_propagation_service::test_relink_reset_command_rejects_incoherent_parent_scope[target2-None-None-relink_parents_missing]",
+        "tests.test_knowledge_propagation_service::test_creation_preflight_is_target_independent_revalidated_and_replay_safe",
+        "tests.test_knowledge_propagation_service::test_preflight_evidence_change_rejects_mutation_without_staging",
+        "tests.test_knowledge_propagation_service::test_public_refresh_resolves_root_and_inherits_assignment_semantics",
+        "tests.test_knowledge_propagation_service::test_public_refresh_invalid_resolution_is_zero_effect[reference]",
+        "tests.test_knowledge_propagation_service::test_public_refresh_invalid_resolution_is_zero_effect[missing]",
+        "tests.test_knowledge_propagation_service::test_public_refresh_invalid_resolution_is_zero_effect[ambiguous]",
+        "tests.test_knowledge_propagation_service::test_existing_card_mutation_revalidates_relevance_against_linked_spec"
+      ]
+    },
+    {
+      "file": "learning-reconciliation-snapshot-currentness1-community.xml",
+      "sha256": "ed0c158fc2f4e644f7a37b8dc081bb0acc24c59f64090e2c016722ab6348eb92",
+      "log_sha256": "4814bb3cb253c4bce26ad2b3e7f6e44af96cdc9514eb0b34c3a726dd28f09def",
+      "terminal_session": 35213,
+      "exit_code": 0,
+      "suites": [
+        {
+          "name": "pytest",
+          "errors": "0",
+          "failures": "0",
+          "skipped": "0",
+          "tests": "1",
+          "time": "14.192",
+          "timestamp": "2026-09-30T20:33:14.469686-03:00",
+          "hostname": "Alienware_m15"
+        }
+      ],
+      "cases": [
+        "tests.test_spec_b_knowledge_propagation_e2e::test_ts_1e0f5761_reference_snapshot_temporal_semantics"
+      ]
+    },
+    {
+      "file": "learning-reconciliation-scenario-currentness1-community.xml",
+      "sha256": "a25faa29931b6e353153eaa5b8d6eec13dc9a2306dfa180908a3cec6845baf85",
+      "log_sha256": "e6c58e8259a14c23ba5c56418d1a699b4108aee8bd10e327e99f990aec6d2331",
+      "terminal_session": 57249,
+      "exit_code": 0,
+      "suites": [
+        {
+          "name": "pytest",
+          "errors": "0",
+          "failures": "0",
+          "skipped": "0",
+          "tests": "1",
+          "time": "9.798",
+          "timestamp": "2026-09-30T20:34:09.276531-03:00",
+          "hostname": "Alienware_m15"
+        }
+      ],
+      "cases": [
+        "tests.test_scenario_readiness_currentness::test_scenario_status_writer_invalidates_passing_rollup_without_spec_version_bump"
+      ]
+    }
+  ],
+  "limits": [
+    "No product, UI, policy or migration changes. Source tests use the pair already proven byte-identical to installed wheels before this campaign.",
+    "T41 calls real MCP/REST handlers with fixture actor contexts and real SQL; no authentication-wire claim.",
+    "T42 uses the existing signed evidence fixture and real operational writer/read model. It qualifies currentness, not external product execution; the latter is covered by T40.",
+    "Historical snapshots/receipts are preserved; no automatic refresh or invented approval is introduced."
+  ]
+}

@@ -2,6 +2,22 @@
 
 ## Estado para retomada
 
+BASE T41/T42 verificados, sem alteração produtiva. T41: snapshots mantêm
+bytes/revisão após fonte atualizada, marcam stale, refresh explícito conserva
+linhagem e histórico fechado; referências seguem revisão atual. Core74622=0,
+53passed8.84s; Community35213=0,1passed14.20s. T42: writer operacional real
+passed→ready mantém Spec.version e evidência histórica; rollup antes aprovado
+passa a negar na mesma sessão e em sessão SQL nova. Community57249=0,
+1passed9.80s. 55 casos distintos, acceptance-snapshot-currentness.json.
+
+Inventário107 verificados/39 parciais/100 não auditados. Par produtivo instalado
+permanece o já provado em provenance-completion-authenticated1.json; somente
+testes/docs alterados. Último par publicado Core7ce3ef92/Communitydf6ca30d.
+Próximos itens originais: T45 import/export, T01–T12 fluxo governado e lacunas
+dos complementos; T43 benchmark e distribuição final continuam pendentes.
+KG-10/T23 aguardam decisões já solicitadas. Não alegar entrega total. Nenhum
+processo de teste pendente nem dado real alterado neste recorte.
+
 BASE T39/T40 concluídos no recorte de aceitação previsto, sem nova alteração
 produtiva. Test Card fecha pelo caso de uso canônico com prova assinada de uma
 chamada real à rota /health do app via ASGI; issuer, verifier, SQLite, delivery
