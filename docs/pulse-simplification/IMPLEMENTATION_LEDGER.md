@@ -2,6 +2,84 @@
 
 ## Estado para retomada
 
+Selecao historica/recibo interno KG7.5 validado (2026-09-30), pronto para
+commit/push. Integrado29542 terminou0:1passed/198.51s no par fixed byte-proven;
+construcao, checkpoint/replay, rollback de publicacao e ativacao/admissao em
+fixture descartavel passaram. Core58 e Community17 anteriores verdes;4 casos
+nativos passaram antes da primeira falha integrada,11 bootstrap antes da falha
+temporal. Contagens sobrepostas, NAO somar como suite unica integralmente verde.
+F16fixed ok=true, sem findings/docdrift, oito budgets ZERO. Ruff/diff-check0.
+record_learning_reconciliation.py executado APOS todos terminais gerou
+acceptance-learning-reconciliation-selection.json com hashes e falhas mantidas.
+Nenhum processo desta rodada continua ativo; nao rerodar recorder historico.
+
+Entregue neste recorte: porta publica/politica pura seleciona captura explicita
+mais recente por origem apos validar TODAS revisoes; ambiguidade de geracao e
+falta de fonte semantica ficam explicitas, sem usar hash narrativo como prova.
+Community inclui selecao no recibo privado v2 e a rederiva no checkpoint;
+v1 continua com conjunto fechado antigo. Nenhuma selecao autoriza aresta ou
+quitacao. Corrigido bootstrap para reconhecer SOMENTE adicao NULL ja prevista
+de learning_closeout_bindings, preservando celulas anteriores. Fixture temporal
+ajustada antes do backup, sem mexer em TTL/status de produto.
+
+Continuar SEM pausa de milestone: executar trabalho selecionado dentro do
+candidato privado com o materializador governado e provar deltas SQL/grafo,
+preservando holds substantivos e fonte/head/evidencia/binding sob fences.
+Hoje recibo cobre Boards com cognitive_rows; inventario de grafo sem fonte
+segue pendente na qualificacao historica. Completion/paridade NAO foram
+relaxados. Inventario global78/33/135 permanece inalterado; K3/K4 e entrega
+integral NAO concluidos. Nenhuma alteracao frontend, migracao/dado real,
+reinicio Pulse ou release. Ultimo par publicado antes deste recorte:
+Core9d3bafdc/Community2e452ca6; registrar novos SHAs na proxima retomada.
+
+Fixed: builds/install63764/prova45674 terminais0 (845/908+363/448), antes dos
+testes; F1649599=0/ok=true/oito ZERO. Community65285=1:11passed/1failed/374.34s.
+Os3 novos e8 antigos de bootstrap passaram. Integrado AGORA construiu candidato,
+mas history_qualification=historical_source_unclassified. Relatorio preservado
+mostra motivo exato: Spec draft da fixture datada2026-09-21 expirou em2026-09-28
+pela TTL vigente7dias; census skipped_expired_working=1, apenas Cards elegiveis,
+4 relacoes versus5 esperadas. NAO e falha do gate nem motivo para afrouxa-lo.
+
+Corrigida somente precondicao temporal da fixture reutilizada: updated_at do
+draft descartavel e recente ANTES de qualquer captura/backup. Status draft,
+TTL e regras de produto inalterados. Nao aplicar essa atualizacao em dado real.
+Rerun apenas integrado no mesmo par fixed byte-proven; nenhum produto alterado.
+record permanece NAO executado e deve preservar ambas falhas integradas.
+
+Selecao historica validada parcialmente: r1 Core87974=58passed/8.18s;
+Community61349=17passed/112.05s. F16 r1 findings=[]/oito ZERO, apenas README;
+matrizes regeneradas apos terminais. Par final install61565/prova845/908+363/448
+terminais0 antes dos testes. F16 final12404=0, ok=true/oito ZERO. Final58210=1:
+4passed/1failed/104.87s. Os quatro casos nativos passaram; integrado recusou
+bootstrap ANTES do candidato por retirement_bootstrap_card_content_changed.
+
+Problema concreto da dependencia: bootstrap-repro41995=1/21.03s caracterizou
+antes/depois e provou delta EXCLUSIVO learning_closeout_bindings=NULL, adicao
+prevista pela migracao de binding ja implementada. Todos valores antigos iguais
+(salvo position, normalizacao ja existente). Correcao local do bootstrap aceita
+somente esse NULL quando campo era ausente, preserva valores existentes e todas
+demais comparacoes. Novos negativos exigem rollback de preenchimento '[]' e
+coluna inesperada. NAO relaxar guard geral nem atualizar fixture para esconder
+upgrade real. Build/prova/rerun fixed pendentes; record NAO executado, commits
+desta selecao ainda nao enviados. Nenhum processo anterior permanece ativo.
+
+KG7.5/K3 em andamento (2026-09-30). Invalidacao publicada com pushes0:
+Core9d3bafdc/Community2e452ca6; arvores limpas ao retomar. A etapa seguinte
+mantem a dependencia acordada de reconciliacao historica no upgrade privado.
+Reproducao82376 terminou1:1failed/16.70s, apos nova prova byte-identical do par
+final2 (843/906+363/448). O recibo de restauracao literal nao distingue falta
+da fonte semantica original nem enumera capturas historicas para revalidacao.
+JUnit learning-reconciliation-repro-community.xml preservado. Isto reproduz
+uma ausencia do contrato de upgrade, nao corrupcao ou perda dos dados.
+
+Primeiro passo: selecionar trabalho interno exato a partir de TODAS revisoes
+validadas e registrar limitacoes de fonte/geracao no recibo privado. Captura
+selecionada continua exigindo fonte atual, evidencia, binding, identidade e
+holds sob fences do materializador; o plano nao autoriza aresta ou quitacao.
+Recibos antigos conservam seu significado. Em seguida ligar execucao e provas
+dos deltas do candidato, sem relaxar completion/paridade nem fabricar Learning.
+Nenhum dado real ou UI alterado. Inventario global permanece78/33/135.
+
 Invalidacao KG4.5 validada e pronta para commit/push (2026-09-30). R11 77091=0:
 8passed/175.87s, incluindo identidade UUID emitida pelo processador, confirmacao
 real, invalidacao delimitada, origem alheia/ambigua e recuperacao. Core final60,
