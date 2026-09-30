@@ -496,11 +496,9 @@ class CognitiveReadinessService:
     def _items_for_artifact(
         self, board_id: str, artifact_id: str, kg_generation_id: str | None
     ) -> list[CognitiveConsolidationItem]:
-        gen = kg_generation_id or self._store.latest_generation(board_id)
-        if not gen:
-            return []
+        _, items = self._store.read_completion_snapshot(board_id, kg_generation_id)
         return [
-            item for item in self._store.list_items(board_id, gen)
+            item for item in items
             if item.artifact_id == artifact_id
         ]
 

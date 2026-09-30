@@ -2081,9 +2081,27 @@ class CognitiveConsolidationItemStore:
 
     def observe_latest_items(self, board_id: str) -> list[CognitiveConsolidationItem]:
         """Complete bounded observation; no ordinary-read fallback or cleanup."""
+        return self._observe_cognitive_snapshot(board_id, None, RebuildAuditObservationBudget())[1]
+
+    def read_completion_snapshot(
+        self, board_id: str, kg_generation_id: str | None = None,
+    ) -> tuple[str | None, list[CognitiveConsolidationItem]]:
+        """Read authoritative cognitive state without inferring from graph health.
+
+        Reuse the edition's complete, bounded observation capability. Missing
+        capability, malformed content or an incomplete read must propagate;
+        ordinary best-effort readers cannot certify absence for completion.
+        """
+        return self._observe_cognitive_snapshot(
+            board_id, kg_generation_id, RebuildAuditObservationBudget(timeout_seconds=5),
+        )
+
+    def _observe_cognitive_snapshot(
+        self, board_id: str, kg_generation_id: str | None, budget: RebuildAuditObservationBudget,
+    ) -> tuple[str | None, list[CognitiveConsolidationItem]]:
         records = self.artifact_store.observe_health_json(
-            RebuildAuditKey(namespace="cognitive_pending", board_id=board_id),
-            budget=RebuildAuditObservationBudget(),
+            RebuildAuditKey(namespace="cognitive_pending", board_id=board_id, kg_generation_id=kg_generation_id),
+            budget=budget,
         )
         if not isinstance(records, (list, tuple)):
             raise ValueError("cognitive_observation_unavailable")
@@ -2092,10 +2110,13 @@ class CognitiveConsolidationItemStore:
                     or not isinstance(record.get("kg_generation_id"), str)
                     or not record["kg_generation_id"]
                     or not isinstance(record.get("recorded_at"), str)
-                    or record.get("board_id", board_id) != board_id):
+                    or record.get("board_id", board_id) != board_id
+                    or (kg_generation_id is not None and record["kg_generation_id"] != kg_generation_id)):
                 raise ValueError("cognitive_observation_invalid")
         if not records:
-            return []
+            if kg_generation_id is not None:
+                raise ValueError("cognitive_generation_unavailable")
+            return None, []
         # Preserve the established timestamp + generation-id tie breaker.
         record = max(records, key=lambda row: (row["recorded_at"], row["kg_generation_id"]))
         raw = record.get("items")
@@ -2108,7 +2129,7 @@ class CognitiveConsolidationItemStore:
             for item in raw
         )):
             raise ValueError("cognitive_observation_invalid")
-        return self.items_from_record(record, board_id, record["kg_generation_id"])
+        return record["kg_generation_id"], self.items_from_record(record, board_id, record["kg_generation_id"])
 
     def _previous_terminal_state_by_source_ref(
         self,

@@ -475,7 +475,7 @@
       "review_status": "partial",
       "test_text_references": [],
       "reviewed_execution": {
-        "artifact": "evidence-completion-projection-separation.json",
+        "artifact": "evidence-completion-source-observation.json",
         "criterion_key": "BASE:T39"
       }
     },
@@ -488,7 +488,7 @@
       "review_status": "partial",
       "test_text_references": [],
       "reviewed_execution": {
-        "artifact": "evidence-completion-projection-separation.json",
+        "artifact": "evidence-completion-source-observation.json",
         "criterion_key": "BASE:T40"
       }
     },

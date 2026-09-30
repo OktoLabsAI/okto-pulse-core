@@ -15,7 +15,6 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Protocol
 
-from okto_pulse.core.kg.backpressure import _RISK_STATE_HARD_REJECT
 from okto_pulse.core.kg.rebuild_audit import (
     ACTIVE_ITEM_STATUSES,
     CognitiveConsolidationItem,
@@ -35,6 +34,7 @@ class CognitiveCloseoutReason(str, Enum):
     COGNITIVE_CONSOLIDATION_PENDING = "cognitive_consolidation_pending"
     COGNITIVE_STATUS_UNAVAILABLE = "cognitive_status_unavailable"
     BOARD_SKIP_ENABLED = "board_skip_enabled"
+    # Historical reason retained for reading old records; no longer emitted.
     DEGRADED_KG_AUTO_SKIP = "degraded_kg_auto_skip"
 
 
@@ -56,17 +56,9 @@ class CognitiveCloseoutGateError(Exception):
 
 
 class CognitiveItemStoreProtocol(Protocol):
-    def latest_generation(self, board_id: str) -> str | None: ...
-
-    def list_items(
-        self,
-        board_id: str,
-        kg_generation_id: str,
-        *,
-        status_filter: str | None = None,
-        limit: int | None = None,
-        offset: int = 0,
-    ) -> list[CognitiveConsolidationItem]: ...
+    def read_completion_snapshot(
+        self, board_id: str, kg_generation_id: str | None = None,
+    ) -> tuple[str | None, list[CognitiveConsolidationItem]]: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -372,12 +364,7 @@ class CognitiveCloseoutGate:
             refs = tuple(dict.fromkeys(str(ref) for ref in source_refs if ref))
 
         try:
-            resolved_generation = kg_generation_id or self.store.latest_generation(board_id)
-            items = (
-                self.store.list_items(board_id, resolved_generation)
-                if resolved_generation
-                else []
-            )
+            resolved_generation, items = self.store.read_completion_snapshot(board_id, kg_generation_id)
         except Exception:
             if board_skip_enabled:
                 result = CognitiveCloseoutResult(
@@ -418,110 +405,9 @@ class CognitiveCloseoutGate:
             )
             return result
 
-        # F16 positive liveness check: surface the EXISTING unavailable outcome
-        # (instead of silently falling through to ALLOWED) when cognitive status
-        # cannot be confirmed for a ``done`` transition. graph_state is a plain
-        # input threaded by the async caller (no I/O here — the gate stays
-        # sync/pure). Two distinct conditions:
-        #   - degraded: graph_state is a hard-reject member (recovery_needed /
-        #     quarantined) — the KG is known-broken, status is unreadable.
-        #     NC-1 Degraded-KG Auto-Skip: when NOT board_skip_enabled, the gate
-        #     auto-skips with allowed=True + outcome=UNAVAILABLE + reason=
-        #     DEGRADED_KG_AUTO_SKIP (auditable, not silent). board_skip_enabled
-        #     still wins as SKIPPED (short-circuit before this branch).
-        #   - unconfirmed: health could NOT be resolved (graph_state is None)
-        #     AND there is no generation — the genuine can't-read shape (the
-        #     3cf5dede live failure). KEEP fail-closed (allowed=False) per DEC-B.
-        #     A CONFIRMED-healthy graph with no generation is NOT unavailable —
-        #     it simply has no pending cognitive work, so it stays ALLOWED
-        #     (a missing generation alone never blocks).
-        degraded = graph_state is not None and graph_state in _RISK_STATE_HARD_REJECT
-        unconfirmed = graph_state is None and resolved_generation is None
-
-        if degraded:
-            if board_skip_enabled:
-                result = CognitiveCloseoutResult(
-                    allowed=True,
-                    reason=CognitiveCloseoutReason.BOARD_SKIP_ENABLED.value,
-                    outcome=CognitiveCloseoutOutcome.SKIPPED.value,
-                    skip_enabled=True,
-                    source_refs=refs,
-                    kg_generation_id=kg_generation_id,
-                )
-                _emit_closeout_sample(
-                    board_id=board_id,
-                    entity_id=entity_id or _get_attr_or_key(entity, "id"),
-                    entity_type=normalized_type,
-                    outcome=result.outcome,
-                    reason=CognitiveCloseoutReason.COGNITIVE_STATUS_UNAVAILABLE.value,
-                    skip_enabled=True,
-                    blocking_count=0,
-                )
-                return result
-
-            # NC-1: degraded KG auto-skip — allowed=True, auditable via telemetry.
-            # outcome reuses UNAVAILABLE.value (no new enum member on outcome per F16
-            # no-new-enum constraint); reason is the new type-safe DEGRADED_KG_AUTO_SKIP.
-            result = CognitiveCloseoutResult(
-                allowed=True,
-                reason=CognitiveCloseoutReason.DEGRADED_KG_AUTO_SKIP.value,
-                outcome=CognitiveCloseoutOutcome.UNAVAILABLE.value,
-                skip_enabled=False,
-                source_refs=refs,
-                kg_generation_id=kg_generation_id,
-            )
-            _emit_closeout_sample(
-                board_id=board_id,
-                entity_id=entity_id or _get_attr_or_key(entity, "id"),
-                entity_type=normalized_type,
-                outcome=CognitiveCloseoutOutcome.UNAVAILABLE.value,
-                reason=CognitiveCloseoutReason.DEGRADED_KG_AUTO_SKIP.value,
-                skip_enabled=False,
-                blocking_count=0,
-            )
-            return result
-
-        if unconfirmed:
-            # DEC-B / 3cf5dede: fail-closed — cannot confirm cognitive status,
-            # KEEP allowed=False.
-            if board_skip_enabled:
-                result = CognitiveCloseoutResult(
-                    allowed=True,
-                    reason=CognitiveCloseoutReason.BOARD_SKIP_ENABLED.value,
-                    outcome=CognitiveCloseoutOutcome.SKIPPED.value,
-                    skip_enabled=True,
-                    source_refs=refs,
-                    kg_generation_id=kg_generation_id,
-                )
-                _emit_closeout_sample(
-                    board_id=board_id,
-                    entity_id=entity_id or _get_attr_or_key(entity, "id"),
-                    entity_type=normalized_type,
-                    outcome=result.outcome,
-                    reason=CognitiveCloseoutReason.COGNITIVE_STATUS_UNAVAILABLE.value,
-                    skip_enabled=True,
-                    blocking_count=0,
-                )
-                return result
-
-            result = CognitiveCloseoutResult(
-                allowed=False,
-                reason=CognitiveCloseoutReason.COGNITIVE_STATUS_UNAVAILABLE.value,
-                outcome=CognitiveCloseoutOutcome.UNAVAILABLE.value,
-                skip_enabled=False,
-                source_refs=refs,
-                kg_generation_id=kg_generation_id,
-            )
-            _emit_closeout_sample(
-                board_id=board_id,
-                entity_id=entity_id or _get_attr_or_key(entity, "id"),
-                entity_type=normalized_type,
-                outcome=result.outcome,
-                reason=result.reason,
-                skip_enabled=False,
-                blocking_count=0,
-            )
-            return result
+        # BASE F6E/T39/T40: graph_state is retained as a compatibility input,
+        # never as proof of cognitive availability or authority to skip items.
+        # The complete source observation above governs absence/unavailability.
 
         refs_set = frozenset(refs)
         active = tuple(

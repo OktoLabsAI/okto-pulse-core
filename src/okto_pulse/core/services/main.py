@@ -1764,14 +1764,11 @@ def _evaluate_cognitive_closeout_or_raise(
     blocking_count = _cognitive_blocking_count(result)
     if reason == "cognitive_status_unavailable":
         detail = (
-            "because cognitive status could not be read. "
-            "The KG graph may be in a degraded state (recovery_needed / quarantined). "
-            "Per the Degraded-KG Fallback Rule, if the board is confirmed degraded "
-            "you may enable the board setting `skip_cognitive_consolidation` to allow "
-            "done transitions while the graph is unavailable. "
-            "Consult `okto-pulse://reference/kg-health` for component status "
-            "and limitations. Health has no repair action. Recovery requires "
-            "an authorized external support/release procedure."
+            "because the authoritative cognitive source could not be read completely. "
+            "Graph health cannot certify absence of cognitive obligations. "
+            "Retry the source read; persistent source failures require an authorized "
+            "external support/release procedure. Health reports observation limits "
+            "and has no repair action."
         )
     else:
         detail = "by active cognitive consolidation items"
@@ -1929,11 +1926,9 @@ async def _evaluate_entity_cognitive_done_or_raise(
     snapshots, status changes, histories, activities, or outbox writes.
     """
 
-    graph_state = (
-        await _resolve_closeout_graph_state(board_id, db)
-        if resolve_graph_state
-        else None
-    )
+    # Compatibility argument retained for internal callers; completion reads
+    # the authoritative cognitive snapshot and never invokes graph Health.
+    graph_state = None
     _evaluate_cognitive_closeout_or_raise(
         gate_factory=gate_factory,
         board=board,

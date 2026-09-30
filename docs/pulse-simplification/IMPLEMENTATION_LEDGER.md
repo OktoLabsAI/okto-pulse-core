@@ -2,6 +2,40 @@
 
 ## Estado para retomada
 
+BASE F6E/T39/T40: gate legado agora observa fonte cognitiva estritamente.
+read_completion_snapshot reutiliza a porta de observação completa/bounded já
+existente no adapter, com orçamento5s para conclusão; Health mantém o próprio
+orçamento. Core não ganhou filesystem/SQL/router. Fonte ausente comprovada não
+depende de geração/Health; corrupção, provider/capability ausente e geração
+explicitamente perdida falham cognitive_status_unavailable. Sem fallback para
+list_json/load_record best-effort. Shared helper de lifecycle/preview não chama
+Health. Degradação gráfica deixa de dispensar itens ativos; skip explícito e
+enum histórico degraded_kg_auto_skip preservados, sem reescrever registros.
+
+Reprodução instalada anterior368030=0; before1 terminou6failed6passed2.55s,
+seis divergências reais registradas em evidence-completion-source-observation.json.
+Core1 session48560=1,16passed1failed8.87s: asserção antiga exigia telemetria skip
+mesmo sem obrigação. Fixture final verifica skip explícito sobre item pendente.
+Core2 session56110=0,49passed6.80s; Community1 session29679=0,30passed4.39s.
+Par3 reconstruído/instalado e byte-provado61776=0. Campanhas FINAIS: Core5195=0,
+225passed35.85s;Community80169=0,30passed5.06s;frontend8873=0,44passed7.81s.
+299 casos distintos finais; intermediários não somados. Ruff F/E9 e diff verdes.
+
+F16 inicial48696=1 SOMENTE por README matrix drift após remoção de import,
+budgets todos0 e findings[]; matrizes regeneradas pelo renderer oficial.
+Wheels finais em dist-learning-reconciliation-completion-source-observation-final;
+preflight0ae3ca=0:859/922+373/458 byte-idênticos à fonte/install e aggregate_sha256
+igual ao par3 testado. Mudou somente README/metadados das wheels. Ver resultado
+terminal de F16 final no relatório:session70665=0,ok=true,findings/documentation[],
+oito budgets ZERO. Nenhuma alteração produtiva depois do build.
+
+Inventário permanece103 verificados/41 parciais/102 não auditados. T39/T40 ainda
+PARCIAIS: falta qualificar fechamento completo instalado com prova autenticada
+de produto e contradição substantiva. A separação graph_state/fonte foi resolvida;
+não repeti-la nem criar requisito novo. Próxima frente é esse cenário original.
+Último par publicado antes deste recorte: Core9fb60a6a/Communitye637e2c2.
+KG-10/T23 aguardam decisões já solicitadas. Dados reais intocados.
+
 BASE F6E/T39/T40 — recorte pronto: readiness de fechamento separada da
 projeção técnica, com MCP/REST/Health alinhados. evaluate_completion lê obrigações
 cognitivas; evaluate_artifact mantém diagnóstico e acrescenta completion_tier

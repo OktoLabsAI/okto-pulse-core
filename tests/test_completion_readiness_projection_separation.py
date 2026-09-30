@@ -28,6 +28,9 @@ class Store:
     def latest_generation(self, board):
         return 'generation'
 
+    def read_completion_snapshot(self, board, kg_generation_id=None):
+        return 'generation', self.items
+
     def list_items(self, board, generation):
         return self.items
 
