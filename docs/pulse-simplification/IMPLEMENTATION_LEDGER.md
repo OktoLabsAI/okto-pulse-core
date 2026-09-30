@@ -2,6 +2,51 @@
 
 ## Estado para retomada
 
+R7 preservacao concluida neste incremento: install73572/prova64293 terminais0,
+841/904 Core+363/448 Community byte-identical. F16 final29361 terminou0, sem
+findings/docdrift e oito budgets ZERO. record_r7_hold.py executado apos terminais
+gerou acceptance-r7-hold-preservation.json com reproducao4fail, suites44/20,
+hashes e limites. Ruff/diff-check passaram. Nenhum processo permanece ativo.
+Pronto para commit/push pareado; sem alterar inventario78/33/135.
+Proxima dependencia KG7.5: qualificar reconciliacao/upgrade historicos por fonte,
+versao e identidade exatas. Leitura ja caracterizada: o worker preserva legacy
+bug holds sem captura; retirement_candidate_cognitive_restoration restaura
+literais sem inferir arestas e cognitive_replay_qualification deixa Learning
+pendente de aplicabilidade/associacao. Reutilizar esses caminhos internos e
+fontes existentes, reproduzir o gap antes de alterar semantica; nao inventar
+autoria nem liberar hold antigo pela mera presenca de uma Learning do mesmo Bug.
+O restante K3/K4, consultas, campanhas integrais e release segue pendente.
+
+R7 r1 terminais: Core5496=0:44pass/370.82s; Community3367=0:20pass/358.04s.
+F1647160=1 somente matrizes README; findings=[] e oito budgets ZERO. Apos
+todos os terminais, READMEs regenerados oficialmente e builds finais ambos0.
+Install final iniciado; faltam prova final,F16 final,record_r7_hold.py (preparado)
+e commit/push. Nenhum produto Python foi alterado apos os testes. Preservacao
+de autoridade concorrente e historico passou; nao somar campanhas como cobertura
+global nem promover KG-37/38 antes de qualificar a reconciliacao historica.
+
+R7 r1: install77457 terminou0; provenance-r7-hold-r1.json confirmou841/904
+Core+363/448 Community byte-identical ANTES das suites. Em execucao Core5496,
+Community3367,F1647160; seis casos novos ja passaram na campanha Community,
+sem confundir progresso parcial com terminal. Produto congelado ate terminais.
+Depois resumir F16, tratar somente eventual drift README pelo gerador oficial,
+registrar artefato de aceite com reproducao4fail e resultados finais,commit/push.
+
+R7 KG7.5 em validacao (2026-09-30), par publicado db69e6f9/9d3687a3.
+Reproducao r7-hold-repro terminou1:4fail/2.31s; record_cognitive_working_only_hold
+sobrescrevia restricao substantiva em pending/in_progress e reabria skipped/
+consolidated. Prova do par candidates/fanin antecedeu a reproducao; nenhum
+produto mudara desde ela. Correcao delimitada troca marker+update incondicionais
+por insercao atomica sob a porta de revision existente, preservando qualquer
+item da mesma identidade normalizada e registros agregados legados. Nao fecha
+holds, nao cria permissao nem interpreta observacao tecnica como waiver.
+Testes adicionais cobrem insercao nova, replay, outra origem e corrida com
+gravacao substantiva. Ruff0. Builds r7-hold-r1 ambos0; install iniciado.
+Ainda faltam install terminal,prova byte-a-byte,suites,F16,registro e commit/push.
+Sem frontend alterado. KG-37/38 nao promovidos: upgrade/reconciliacao historica
+com identidade demonstrada continua pendente, sem presumir que qualquer Learning
+nova do mesmo Bug autoriza apagar um hold antigo.
+
 Fan-in KG-35/KG-36 revisado (2026-09-30): par candidates publicado Core6b8542a6 /
 Community39a82bca, pushes0 e arvores limpas antes dos testes adicionais.
 Nova prova provenance-learning-fanin.json confirmou o MESMO par byte-identical

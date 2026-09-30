@@ -2638,6 +2638,68 @@ class CognitiveConsolidationItemStore:
             return CognitiveConsolidationItem.from_dict(items_raw[target_idx])
 
 
+    def open_working_only_hold(
+        self, *, board_id: str, kg_generation_id: str, source_ref: str,
+        artifact_type: str, session_id: str, actor_id: str, reason_code: str,
+    ) -> CognitiveConsolidationItem | None:
+        """Record new technical work without reauthoring an existing decision.
+
+        The source-only legacy key cannot establish that a new observation
+        supersedes a prior restriction, receipt or session. Preserve every
+        existing item until qualified reconciliation proves its exact cause.
+        Selection and insertion share the edition's atomic revision fence.
+        """
+        implementation = getattr(type(self.artifact_store), 'replace_json_with_revision', None)
+        if not callable(implementation) or implementation is RebuildAuditArtifactStore.replace_json_with_revision:
+            return None
+        now = datetime.now(timezone.utc).isoformat()
+        item = CognitiveConsolidationItem(
+            item_id=compute_cognitive_item_id(board_id, kg_generation_id, source_ref),
+            board_id=board_id, kg_generation_id=kg_generation_id, source_ref=source_ref,
+            artifact_type=artifact_type, status=CognitiveItemStatus.PENDING.value,
+            recorded_at=now, event_ref=f'r7_cognitive_hold:{session_id}', updated_at=now,
+            updated_by_agent_id=actor_id, consolidation_session_id=session_id or None,
+            reason_code=reason_code,
+            reason='R7: canonical Learning held — bug evidence is working-only (awaiting canonical Bug).',
+            source_ref_original=source_ref, artifact_id=normalize_cognitive_artifact_id(source_ref),
+        )
+        from okto_pulse.core.kg.refinement_cognitive_guard import assert_deterministic_only_pending
+        assert_deterministic_only_pending(board_id=board_id, items=[item])
+
+        class ExistingHold(Exception):
+            pass
+
+        def transform(current):
+            if current is not None:
+                # Aggregate-only history cannot prove absence of an owned item.
+                if (current.get('board_id') != board_id or current.get('kg_generation_id') != kg_generation_id
+                        or type(current.get('items')) is not list):
+                    raise ExistingHold()
+                rows = current['items']
+                if any(type(row) is not dict or not isinstance(row.get('source_ref'), str) for row in rows):
+                    raise ExistingHold()
+                if any(row.get('item_id') == item.item_id
+                       or normalize_cognitive_artifact_id(row['source_ref']) == item.artifact_id for row in rows):
+                    raise ExistingHold()
+                payload = {**current, 'items': [*rows, item.to_dict()]}
+            else:
+                payload = dict(board_id=board_id, kg_generation_id=kg_generation_id,
+                    event_ref=item.event_ref, recorded_at=now,
+                    status=CognitivePendingStatus.PENDING_MARKED.value, items=[item.to_dict()])
+            refs = sorted({row['source_ref'] for row in payload['items'] if row.get('status') in ACTIVE_ITEM_STATUSES})
+            return {**payload, 'pending_count': len(refs), 'pending_refs': refs}
+
+        try:
+            with self._lock:
+                written = self._replace_record_with_overlay_revision(
+                    key=self._record_key(board_id, kg_generation_id), transform=transform)
+        except ExistingHold:
+            return None
+        _emit_materialized_sample(board_id=board_id,
+            outcome=CognitiveMaterializeOutcome.MATERIALIZED.value, item_count=len(written['items']))
+        return item
+
+
 def _cognitive_hold_artifact_type(
     hold_payload: Mapping[str, Any], source_ref: str
 ) -> str:
@@ -2668,9 +2730,10 @@ def record_cognitive_working_only_hold(
     """Persist an R7 working-only canonical Learning go-forward HOLD as a
     cognitive pending item (NEVER CanonicalDebt / DLQ / a parallel store).
 
-    Reuses the existing CognitiveConsolidationItemStore: it materializes one
-    pending row for the held source and stamps the R7 ``reason_code`` via
-    ``update_item``. The store is file-backed (rebuild base dir), so this needs
+    Reuses the existing CognitiveConsolidationItemStore: it atomically inserts
+    one pending row only when that source has no existing owned state. A prior
+    hold, outcome or legacy aggregate is preserved without reopening it.
+    The edition owns storage (rebuild base dir), so this needs
     no SQL db and is safe to call from any caller that catches the structured
     ``KGPrimitiveError`` (MCP commit tool, live consolidation, adapters).
 
@@ -2681,8 +2744,9 @@ def record_cognitive_working_only_hold(
     ledger). A legacy ``KGGenerationRepository`` fallback remains only when the
     runtime registry is unavailable in tests/legacy callsites.
 
-    Returns ``{generation_id, item_id, artifact_type}`` on success, or None
-    when the payload is unusable / the artifact_type is not consolidable (the
+    Returns ``{generation_id, item_id, artifact_type}`` on insertion, or None
+    when existing history must be preserved, the payload is unusable, the
+    artifact_type is not consolidable or atomic revision fencing is absent (the
     structured error has already surfaced to the caller in that case).
     """
     source_ref = str(hold_payload.get("source_ref") or "")
@@ -2724,31 +2788,14 @@ def record_cognitive_working_only_hold(
         or generate_kg_generation_id()
     )
     session_id = str(hold_payload.get("session_id") or "")
-    store.materialize_from_marker(
-        board_id=board_id,
-        kg_generation_id=generation_id,
-        event_ref=f"r7_cognitive_hold:{session_id}",
-        source_set=[{"source_ref": source_ref, "artifact_type": artifact_type}],
-    )
-    item_id = compute_cognitive_item_id(board_id, generation_id, source_ref)
-    updated = store.update_item(
-        board_id=board_id,
-        kg_generation_id=generation_id,
-        item_id=item_id,
-        new_status=CognitiveItemStatus.PENDING.value,
-        updated_by_agent_id=actor_id,
-        consolidation_session_id=session_id or None,
-        reason_code=reason_code,
-        reason=(
-            "R7: canonical Learning held — bug evidence is working-only "
-            "(awaiting canonical Bug)."
-        ),
-    )
+    updated = store.open_working_only_hold(board_id=board_id, kg_generation_id=generation_id,
+        source_ref=source_ref, artifact_type=artifact_type, session_id=session_id,
+        actor_id=actor_id, reason_code=reason_code)
     if updated is None:
         return None
     return {
         "generation_id": generation_id,
-        "item_id": item_id,
+        "item_id": updated.item_id,
         "artifact_type": artifact_type,
     }
 
