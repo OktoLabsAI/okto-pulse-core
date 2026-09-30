@@ -1155,8 +1155,17 @@
       "line": 646,
       "id": "KG-35",
       "normative_text": "| KG-35 | Reuso de Learning sugerido por similaridade alta | Sem anexo automático por score; intenção autorizada e evidência antes de novo vínculo. |",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "verified_by_reviewed_execution",
+      "test_text_references": [
+        {
+          "path": "okto_labs_pulse_community/tests/test_learning_fanin_acceptance.py",
+          "line": 1
+        }
+      ],
+      "reviewed_execution": {
+        "artifact": "acceptance-learning-fanin.json",
+        "criterion_key": "KG:KG-35"
+      }
     },
     {
       "key": "KG:KG-36",
@@ -1164,8 +1173,17 @@
       "line": 647,
       "id": "KG-36",
       "normative_text": "| KG-36 | Supersedência com aplicabilidade mais estreita | Não herdar todas as validações antigas; manter história e associações válidas. |",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "verified_by_reviewed_execution",
+      "test_text_references": [
+        {
+          "path": "okto_labs_pulse_community/tests/test_learning_fanin_acceptance.py",
+          "line": 1
+        }
+      ],
+      "reviewed_execution": {
+        "artifact": "acceptance-learning-fanin.json",
+        "criterion_key": "KG:KG-36"
+      }
     },
     {
       "key": "KG:KG-37",

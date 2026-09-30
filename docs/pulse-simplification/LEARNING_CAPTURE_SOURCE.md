@@ -314,8 +314,11 @@ closed. Reading does not materialize, reconcile, change policy or clear debt.
 
 The Bug panel renders the declared target and reason as inert text and labels
 historical linkage separately from current applicability. This presentation is
-not a global supersedence chain. The complete scoped graph-query surface remains
-separate pending work.
+not a global supersedence chain. KG-35/KG-36 are qualified by the integrated
+candidate-to-capture-to-materialization-to-history tests recorded in
+`acceptance-learning-fanin.json`. General bounded graph-lineage acceptance
+remains part of the KG query criteria; these two fan-in criteria do not introduce
+an additional Learning-specific endpoint.
 
 ## Joint execution-report authorship (KG §7.3)
 

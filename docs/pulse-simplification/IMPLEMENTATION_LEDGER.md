@@ -2,6 +2,25 @@
 
 ## Estado para retomada
 
+Fan-in KG-35/KG-36 revisado (2026-09-30): par candidates publicado Core6b8542a6 /
+Community39a82bca, pushes0 e arvores limpas antes dos testes adicionais.
+Nova prova provenance-learning-fanin.json confirmou o MESMO par byte-identical
+841/904+363/448 antes da campanha. Teste integrado70339 terminou0:2pass/66.21s.
+Consulta nativa score1.0 nao escreve; permissao ausente/evidencia nao autenticada
+negam; intent autorizado materializa somente a origem selecionada; historico
+anterior, outra origem e replay preservados. Leitura publica qualifica a claim
+historica source_bug. Frontend154/transportes do incremento anterior compoem
+as provas; fixture controla embedding e mocka gates/health independentes.
+Recorder exclusivo record_learning_fanin.py gerou acceptance-learning-fanin.json
+e promoveu SOMENTE KG-35/KG-36: inventario78 verificadas/33 parciais/135 nao
+auditadas. Sem produto empacotado alterado, sem nova auditoria F16 necessaria:
+o fechamento final candidates continua aplicavel. Ruff e diff-check passam.
+Precisao de escopo: KG-35/KG-36 nao exigem criar endpoint adicional de Learning;
+linhagem geral bounded continua nos criterios de consulta KG ja previstos.
+Proxima pendencia KG7.5/KG-37/38: revisar holds tecnicos/substantivos e upgrade
+historico contra implementacao/provas existentes antes de alterar comportamento.
+Objetivo integral permanece ativo; nao declarar F6/K3/K4/release completos.
+
 Candidates concluido neste incremento: install final94065/prova final=0,
 841 Python/904 payloads Core +363 Python/448 payloads Community identicos.
 F16 final25862 terminou0: findings=[], documentation_findings=[], oito budgets
