@@ -2,6 +2,37 @@
 
 ## Estado para retomada
 
+Par publicado Core887d46e7/Community2bd88284, pushes0/limpos.
+Integracao em andamento: verify_candidate_learning_chain liga a sequencia
+de Boards autorizada pelo coordenador ao SQL intermediario e SQL final,
+rederiva cada receipt e exige igualdade do ultimo grafo retido com inventario
+nativo final fornecido pelo coordenador. Caminhos numericos exatos, sem aliases
+ou Board omitido/reordenado; SQLs exigem ausencia de sidecars. Sem autoridade
+de completion. Teste nativo existente ampliado com boundaries SQL/grafo,
+recusa de path traversal e verificacao cold sem providers. Ruff0; campanha
+retained-execution-chain1 builds0/install63604=0/prova0(846/909+367/452),
+Community89902=0:4passed/146.51s; F1666631=0,sem findings/drift,oito ZERO.
+Apos todos terminais, acrescentado limite agregado64MiB dos reports da cadeia.
+retained-execution-chain2 builds0/install74665=0/prova0(846/909+367/452),
+Community79388=0:4passed/122.17s; F1698065=0,sem findings/drift,oito ZERO.
+Ruff/diff0. record_learning_chain.py executado UMA vez apos todos terminais;
+acceptance-learning-chain-boundaries.json registra hashes/provas/limites.
+Produto congelado durante campanhas; Core funcional inalterado. Nenhuma
+campanha ativa. Nenhuma UI/dado real/restart/release. Inventario78/33/135.
+Ainda nao ligado ao coordenador/checkpoint v7; formato v6 preservado.
+Inspecao para proxima integracao: _board_graph atualmente so admite arestas
+novas deterministicas; observe_candidate_history reconcilia somente envelopes
+ProjectionPropertyEffects; verify_candidate_cognitive_restoration exige o
+fingerprint literal e zero arestas incidentes aos nos restaurados. Portanto
+rederivar esses guards sobre frames iniciais autenticados, antes dos efeitos
+Learning, e compor os deltas provados com o censo nativo final. Nao dispensar
+os guards no candidato final nem reclassificar v6/v17 retroativamente.
+LogicalGraphFileSnapshotSource + read_graph_record_census ja leem o formato
+retido: reutilizar em vez de introduzir um novo formato de grafo/censo.
+cognitive_replay_qualification.qualify deixa Learning pendente por aplicabilidade;
+o fechamento deve usar a revalidacao existente de captura/associacao e nao
+tratar recibo de execucao/materialized=True isolado como admissao do runtime.
+
 Fechamento da validacao retained-execution: instalacao final terminou0;
 prova final byte-a-byte0 (Core846/909 + Community367/452).
 F16 final24142=0; recorder record_retained_learning_execution.py executado
