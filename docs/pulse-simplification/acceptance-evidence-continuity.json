@@ -1,0 +1,146 @@
+{
+  "scope": "KG7.5/K3 prerequisite: authenticated evidence continuity in a private upgrade candidate",
+  "suites": {
+    "evidence-repro-community": {
+      "passed": 0,
+      "failed": 1,
+      "errors": 0,
+      "skipped": 0
+    },
+    "evidence-fixed1-community": {
+      "passed": 0,
+      "failed": 1,
+      "errors": 0,
+      "skipped": 0
+    },
+    "evidence-fixed2-community": {
+      "passed": 41,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "evidence-activation-community": {
+      "passed": 1,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0
+    }
+  },
+  "budgets": [
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "import_boundary_baseline",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every import_boundary_baseline allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "singleton_baseline",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every singleton_baseline allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "dependency_temporary_exceptions",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every dependency_temporary_exceptions allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "graph_runtime_compatibility",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every graph_runtime_compatibility allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "rebuild_artifact_compatibility",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every rebuild_artifact_compatibility allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "community_private_reach_ins",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every community_private_reach_ins allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "community_adapter_bridges",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every community_adapter_bridges allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "af35_relational_residue",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every af35_relational_residue allowance before F16 completion."
+    }
+  ],
+  "preserved_failures": {
+    "evidence-repro": "Original signed receipt authenticates before capture but restored candidate reports evidence_v2.receipt_not_registered.",
+    "evidence-fixed1": "Windows DirEntry.stat returns st_nlink=0 for regular files; lstat verifies actual links without relaxing hardlink refusal."
+  },
+  "verified": [
+    "Explicit evidence root produces joint snapshot v8, carrying original key, receipts and manifests as private bytes.",
+    "No key generation, receipt issuance, authority upgrade or original-data mutation occurs in recovery.",
+    "Retained tampering, missing key, hardlinked files and source changes refuse publication.",
+    "Absent evidence storage remains absent; original authentication and denial decisions survive the byte copy.",
+    "Private candidate seed binds the same evidence inventory as the original backup.",
+    "Candidate and activation preserve original authenticated evidence while retaining source guards.",
+    "Source and installed Python/payload files matched byte for byte before behavioral validation."
+  ],
+  "limits": [
+    "V1-v7 joint snapshots retain their older guarantees; omission of evidence_root does not certify evidence continuity.",
+    "The installer owns the offline window. Stable scans detect drift but are not a fence against an uncooperative raw writer.",
+    "Explicit root integration into the final installer and completed historical Learning work execution remain pending.",
+    "No frontend changes, real-data migration, active runtime restart or final paired release occurred.",
+    "Global inventory remains 78 verified / 33 partial / 135 unaudited; full plan not complete."
+  ],
+  "sha256": {
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-evidence-fixed2-closure.log": "6882087d537d5d87dbcae04b7394968d34e99a5b11eb684fc584c01509d5d9e0",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-evidence-repro-community.xml": "faf624891a0da2c22dc65546dfc1b3f6d3b71695ce83394004a56cd05a82423a",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-evidence-repro-community.log": "0a5e4e2e3901def09534ca406b4f4862eb9a59deec112bc718c554118514200e",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-evidence-fixed1-community.xml": "ff39fb50e787e5056ff39b4ece59f19997241d05912d05addef23e7d3df43e91",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-evidence-fixed1-community.log": "fcb69a8866873ecb7d28b8a34213c0fe8bfff61943e0e89d3f1b6a0892e19e45",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-evidence-fixed2-community.xml": "88f5e351b9ea955f0ddd31b1f61460d04ef2d028a40f97c25d56c2748687fab0",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-evidence-fixed2-community.log": "cd66d6df3e11b18b5f05b9c2f2e50e1a873a2087e58fd4f4a7aac48fabb3a6c4",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-evidence-activation-community.xml": "bfb2abe64c41f98e4054b5d0eada37fc659ed61cbcef2c638b92491f5f5e31b5",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-evidence-activation-community.log": "754ab9ac3ff840d655bdecead90b5757c98ee80b5baab695dc70210eb2865076",
+    "PULSE_REFACTOR/.validation-v040/provenance-learning-evidence-repro.json": "013ff12066cc19ddcc0059af127697eaf8149a91b73b5f5aaa8d3f0acf172043",
+    "PULSE_REFACTOR/.validation-v040/provenance-learning-evidence-fixed1.json": "1c41888f005db4cc43226ace63af63159218d074db444d46b2387aaf4e7a6be7",
+    "PULSE_REFACTOR/.validation-v040/provenance-learning-evidence-fixed2.json": "a252cf09f8bc6efef2f6bd3dfb7535a9db061f89f1f0211937711f81a15ddd92",
+    "PULSE_REFACTOR/.validation-v040/run_learning_reconciliation.py": "7f1e0d066d61d4b83e948591390540a1a1f7015df30b2927bbaf21b05db73d2e",
+    "okto_labs_pulse_community/src/okto_pulse/community/adapters/evidence_recovery.py": "70d5e7bd94e5dee9c87024cbaa9bf63936c20db99e66a9231ba8ca491ff711d0",
+    "okto_labs_pulse_community/src/okto_pulse/community/adapters/joint_recovery_snapshot.py": "ab488799d91e72fdc7df6e2e35b7fc57001b6bd59c0902c66a35091b8f9460ac",
+    "okto_labs_pulse_community/src/okto_pulse/community/adapters/retirement_offline_run.py": "e1c3e0124828ad423cfbd34b1bf96423d07f3361999f7931667c9aec5faf3a49",
+    "okto_labs_pulse_community/src/okto_pulse/community/adapters/retirement_graph_candidate.py": "ae79ae390c542f5291d4762e4d12a82b16b945f2bf006a46d15207e4df8c512d",
+    "okto_labs_pulse_community/src/okto_pulse/community/adapters/retirement_activation_installation.py": "d0c76fa28f281ad0644ff6b23883306eaaf5ee8be20cfc4d35e66b5be4e25200",
+    "okto_labs_pulse_community/tests/test_evidence_recovery.py": "2179c71f6ef94a7fb8f2aa4f41706d0ca66c5596ed9bb9b6b7bb24dd1d74e5b0",
+    "okto_labs_pulse_community/tests/test_retirement_evidence_continuity.py": "7036fb7262ab9085b6f2f66a900e55f3e9cecdcf2ea276aec90a5ad0cff24d82",
+    "okto_labs_pulse_community/tests/test_retirement_reused_history.py": "9df54aa54cde9f702cdae072639104439515b21bba0d235b4f9728d4810b9344"
+  }
+}

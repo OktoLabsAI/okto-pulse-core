@@ -2,6 +2,55 @@
 
 ## Estado para retomada
 
+Continuidade de evidencia validada (2026-09-30), pronta para commit/push.
+fixed2 Community53681=0:41passed/489.97s. Ativacao48268=0:1passed/233.47s,
+no MESMO par instalado byte-proven845/908+364/449. Teste existente estendido
+somente para o caso durable-technical-report: recibo original autentica na
+origem, candidato projetado e instalacao privada; checkpoint/replay, rollback
+de publicacao, ativacao/resume e admissao instalada continuam passando.
+F1688340=0/ok=true,findings/docdrift vazios,oito budgets ZERO; Ruff/diff-check0.
+record_evidence_continuity.py executado uma unica vez apos TODOS terminais,
+gerando acceptance-evidence-continuity.json com hashes, suites e falhas mantidas.
+NAO rerodar recorders historicos. Nenhum processo desta rodada segue ativo.
+
+Escopo deste incremento: correcao demonstrada de perda do registro autenticador
+na cadeia backup -> seed -> candidato -> instalacao privada. Snapshot v8 usa
+evidence_root explicito; preserva arquivos, chave e decisoes de admissao, recusa
+alteracao da origem/adulteracao, nao reemite evidencia nem eleva legado.
+V1-v7 nao recebem garantia nova implicitamente. O instalador final ainda precisa
+fornecer a raiz explicita; o trabalho Learning selecionado ainda precisa executar
+pelo materializador governado com prova dos deltas SQL/grafo e preservacao dos
+holds. Essa e a proxima dependencia de KG7.5/K3. Inventario78/33/135 inalterado;
+K3/K4 e entrega integral NAO concluidos. Nenhum frontend/dado real/release tocado.
+
+Continuidade de evidencia em implementacao (2026-09-30): adapter Community
+evidence_recovery e snapshot conjunto v8 com evidence_root explicito; guarda
+origem ate publicacao, sem reemitir recibos/chave. Seed compara inventario com
+backup original; restauracao, replay e ativacao privada preservam a mesma fonte.
+V1-v7 mantem significado anterior; sem evidence_root NAO ha essa nova prova.
+fixed1: builds/install30229/prova0 (845/908+364/449); Community21054=1,
+1failed/11.57s. DirEntry.stat no Windows informou st_nlink=0; lstat provou1.
+Correcao usa lstat mantendo recusa de hardlink. F1669204=0/oito ZERO.
+fixed2: builds/install21460/prova0 (845/908+364/449) antes dos testes;
+F1688340=0,ok=true,findings/docdrift vazios,oito ZERO. Community53681 ainda
+em execucao; nao somar pontos de progresso como resultado terminal.
+Testes unitarios10 e reproducao integrada ja passaram; campanha de regressao
+de backup ainda deve terminar. Teste de ativacao existente sera estendido
+para verificar o mesmo recibo apos copia. Nenhum commit desta correcao ainda.
+
+Par publicado: Core9f4956d4/Community85bb6604, pushes terminais0. Retomada
+2026-09-30 dentro de KG7.5/K3: reproduzida perda da continuidade de evidencia
+assinada no candidato privado. evidence-repro20577=1,1failed/28.58s, apos
+provenance-learning-evidence-repro.json byte-identical845/908+363/448.
+JUnit learning-reconciliation-evidence-repro-community.xml preservado.
+O mesmo recibo autentica na origem e falha no candidato com
+evidence_v2.receipt_not_registered: backup conjunto nao captura data_dir/evidence.
+Teste somente em predecessor descartavel; nenhum dado real, chave ou conteudo
+sigiloso foi publicado. Dependencia critica da revalidacao de Learning, nao novo
+alvo: preservar registro/chave originais no backup privado e restaura-los sem
+reemissao, promovendo apenas os mesmos acessos e negacoes anteriores. Correcao
+em andamento, ainda NAO validada; nao declarar K3/K4 nem entrega concluidos.
+
 Selecao historica/recibo interno KG7.5 validado (2026-09-30), pronto para
 commit/push. Integrado29542 terminou0:1passed/198.51s no par fixed byte-proven;
 construcao, checkpoint/replay, rollback de publicacao e ativacao/admissao em
