@@ -20,7 +20,8 @@ import logging
 import math
 import re
 import unicodedata
-from okto_pulse.core.kg.interfaces.graph_errors import GraphQueryTimeout
+from okto_pulse.core.kg.interfaces.graph_errors import GraphQueryTimeout, GraphQueryResourceLimit
+from okto_pulse.core.kg.query_response_budget import enforce_query_response_budget
 from typing import Any
 
 from okto_pulse.core.kg.query_contract import (
@@ -682,12 +683,12 @@ def execute_cypher_read_only(
                 max_rows=max_rows,
                 timeout_ms=clamp_timeout(timeout_ms),
             )
-        return _apply_canonical_projection(
+        return enforce_query_response_budget(_apply_canonical_projection(
             result,
             include_working=include_working,
             canonical_filter_mode=canonical_filter_mode,
             comparison_result=comparison_result,
-        )
+        ))
 
     raise TierPowerError(
         "graph_backend_unconfigured",
@@ -776,7 +777,7 @@ def _find_literal_node_matches(
                 )
                 for row in result.get("rows") or []:
                     _append(row, node_type, 1.0)
-            except GraphQueryTimeout:
+            except (GraphQueryTimeout, GraphQueryResourceLimit):
                 raise
             except Exception:
                 pass
@@ -798,11 +799,11 @@ def _find_literal_node_matches(
                 )
                 for row in result.get("rows") or []:
                     _append(row, node_type, 0.65)
-            except GraphQueryTimeout:
+            except (GraphQueryTimeout, GraphQueryResourceLimit):
                 raise
             except Exception:
                 pass
-    except GraphQueryTimeout:
+    except (GraphQueryTimeout, GraphQueryResourceLimit):
         raise
     except Exception as exc:
         logger.debug(
@@ -856,7 +857,7 @@ def _filter_natural_source_confidence(board_id: str, rows: list[dict], minimum: 
                 {"ids": sorted(identities), "minimum": minimum}, max_rows=len(identities),
             )
             allowed.update((kind, row[0]) for row in result.get("rows", []) if row and row[0] in identities)
-    except GraphQueryTimeout:
+    except (GraphQueryTimeout, GraphQueryResourceLimit):
         raise
     except Exception as exc:
         raise TierPowerError("query_confidence_unavailable", "Source confidence could not be resolved.") from exc
@@ -954,7 +955,7 @@ def execute_natural_query(
             fusion_paraphrases=fusion_paraphrases,
         )
         rewrite_result = rewriter.rewrite(nl_query)
-    except GraphQueryTimeout:
+    except (GraphQueryTimeout, GraphQueryResourceLimit):
         raise
     except Exception as e:  # noqa: BLE001 — anything falls back
         logger.warning(
@@ -978,7 +979,7 @@ def execute_natural_query(
     if applied_strategy == "hyde" and rewrite_result.hyde_passage:
         try:
             hyde_vec = embedder.encode(rewrite_result.hyde_passage)
-        except GraphQueryTimeout:
+        except (GraphQueryTimeout, GraphQueryResourceLimit):
             raise
         except Exception:
             hyde_vec = None
@@ -993,7 +994,7 @@ def execute_natural_query(
         )
         try:
             query_vec = override_vec if override_vec is not None else embedder.encode(variant_query)
-        except GraphQueryTimeout:
+        except (GraphQueryTimeout, GraphQueryResourceLimit):
             raise
         except Exception:
             query_vec = None
@@ -1028,7 +1029,7 @@ def execute_natural_query(
                             "source_artifact_ref": None,
                             "similarity": 0.5,
                         })
-                except GraphQueryTimeout:
+                except (GraphQueryTimeout, GraphQueryResourceLimit):
                     raise
                 except Exception:
                     pass
@@ -1052,7 +1053,7 @@ def execute_natural_query(
                                 "source_artifact_ref": None,
                                 "similarity": 0.5,
                             })
-                    except GraphQueryTimeout:
+                    except (GraphQueryTimeout, GraphQueryResourceLimit):
                         raise
                     except Exception:
                         pass
@@ -1069,7 +1070,7 @@ def execute_natural_query(
             # so existing callers still see the warning they expect.
             try:
                 embedder.encode(nl_query)
-            except GraphQueryTimeout:
+            except (GraphQueryTimeout, GraphQueryResourceLimit):
                 raise
             except Exception:
                 warning = "embedding_unavailable"
@@ -1181,7 +1182,7 @@ def execute_natural_query(
                 r["parent_artifact"] = parent_map.get(
                     r.get("source_artifact_ref", ""),
                 )
-        except GraphQueryTimeout:
+        except (GraphQueryTimeout, GraphQueryResourceLimit):
             raise
         except Exception as e:  # noqa: BLE001 — never break on parent lookup
             logger.warning(
@@ -1212,7 +1213,7 @@ def execute_natural_query(
                     "approx_compressed_tokens": comp.approx_compressed_tokens,
                 }
                 compression_applied = True
-        except GraphQueryTimeout:
+        except (GraphQueryTimeout, GraphQueryResourceLimit):
             raise
         except Exception as e:  # noqa: BLE001
             logger.warning(

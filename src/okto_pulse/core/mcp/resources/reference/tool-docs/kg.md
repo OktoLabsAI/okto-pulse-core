@@ -537,6 +537,14 @@ Returns:
     filter is active the response also carries ``temporal_filter``
     metadata (candidates_before_filter, filtered_out).
 
+Cypher, natural and reflective query data envelopes have a 4 MiB serialized
+JSON budget, including query metadata. Transport framing is separate. Native
+value/operator bounds may refuse a query earlier. A refusal returns
+`graph_query_resource_limit` with the resource and, when available, its limit
+and observed value; REST Cypher uses HTTP 413. Reduce the selected data or page
+the query. No incomplete aggregate is returned as a successful complete result,
+and resource refusals are not transient-outage retries or query-count quotas.
+
 ## `okto_pulse_kg_query_reflective`
 
 Run the real bounded ``retrieve → critic → corrective action`` loop. The

@@ -107,3 +107,35 @@ def test_natural_confidence_never_converts_native_timeout_into_fallback(monkeypa
     monkeypatch.setattr(get_kg_registry(), 'cypher_executor', SimpleNamespace(execute_read_only=expired))
     with pytest.raises(GraphQueryTimeout):
         _filter_natural_source_confidence('b', [dict(node_type='Decision', node_id='n')], 0.5)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('kind', ['cypher', 'natural', 'reflective'])
+async def test_mcp_exposes_query_resource_limit(monkeypatch, kind):
+    from okto_pulse.core.kg.interfaces.graph_errors import GraphQueryResourceLimit
+    from okto_pulse.core.ports.kg_query_policy import KGQueryPolicy
+
+    monkeypatch.setattr(api, '_read_query_policy', AsyncMock(return_value=KGQueryPolicy()))
+    registry = get_kg_registry()
+    monkeypatch.setattr(registry, 'auth_context_factory', lambda: SimpleNamespace(
+        get_agent_id=AsyncMock(return_value='a'), get_accessible_boards=AsyncMock(return_value=['b'])))
+    monkeypatch.setattr(registry, 'reflective_retrieval', object())
+    monkeypatch.setattr(registry, 'reflective_critic', object())
+
+    def limited(*args, **kwargs):
+        raise GraphQueryResourceLimit('Query exceeds value limit.',
+                                      details=dict(resource='result_value', limit=1024, observed=1025))
+
+    monkeypatch.setattr(api, 'execute_cypher_read_only', limited)
+    monkeypatch.setattr(api, 'execute_natural_query', limited)
+    from okto_pulse.core.kg import retrieve_critic
+    monkeypatch.setattr(retrieve_critic, 'run_reflective_query', limited)
+    catalog = CoreMcpCatalog(name='query-limit', version='test')
+    api.register_kg_power_tools(catalog,
+        get_agent=AsyncMock(return_value=SimpleNamespace(id='a')),
+        get_board_agent=AsyncMock(return_value=SimpleNamespace(agent_id='a', permissions=None)))
+    tool = await catalog.get_tool('okto_pulse_kg_query_' + kind)
+    args = dict(cypher='RETURN 1') if kind == 'cypher' else dict(nl_query='decision')
+    result = json.loads(await tool.fn(board_id='b', **args))
+    assert result['error']['code'] == 'graph_query_resource_limit'
+    assert result['error']['details'] == dict(resource='result_value', limit=1024, observed=1025)

@@ -14,7 +14,8 @@ import logging
 import re
 from typing import Any
 
-from okto_pulse.core.kg.interfaces.graph_errors import GraphQueryTimeout
+from okto_pulse.core.kg.interfaces.graph_errors import GraphQueryTimeout, GraphQueryResourceLimit
+from okto_pulse.core.kg.query_response_budget import enforce_query_response_budget
 from okto_pulse.core.kg.blocking_io import run_blocking_graph_io
 
 from okto_pulse.core.mcp.kg_authorization import (
@@ -185,7 +186,7 @@ async def _run_query_with_deadline(board_id: str, timeout_ms: int, operation):
 
     def run():
         with execution.scope(board_id, timeout_ms=timeout_ms):
-            return operation()
+            return enforce_query_response_budget(operation())
 
     return await run_blocking_graph_io(run, task_name=f"mcp.kg.query:{board_id}")
 
@@ -351,6 +352,8 @@ okto-pulse://reference/tool-docs/kg."""
             result = annotate_truncation(result, effective_rows)
             result = round_kg_numbers(result)
             return json.dumps(result, default=str)
+        except GraphQueryResourceLimit as exc:
+            return _err(exc.code, str(exc), details=exc.details)
         except GraphQueryTimeout:
             return _err("timeout", "Query exceeded its native execution deadline")
         except ValueError as exc:
@@ -429,6 +432,8 @@ okto-pulse://reference/tool-docs/kg."""
             # FR3: round numeric scores at the response boundary.
             result = round_kg_numbers(result)
             return json.dumps(result, default=str)
+        except GraphQueryResourceLimit as exc:
+            return _err(exc.code, str(exc), details=exc.details)
         except GraphQueryTimeout:
             return _err("timeout", "Query exceeded its execution deadline")
         except ValueError as exc:
@@ -695,6 +700,8 @@ args: okto-pulse://reference/tool-docs/kg."""
             )
             result["applied_graph_layer"] = applied_layer
             return json.dumps(round_kg_numbers(result), default=str)
+        except GraphQueryResourceLimit as exc:
+            return _err(exc.code, str(exc), details=exc.details)
         except GraphQueryTimeout:
             return _err("timeout", "Reflective query exceeded its deadline")
         except KGToolError as e:

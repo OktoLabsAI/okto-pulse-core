@@ -38,6 +38,12 @@ class GraphQueryTimeout(GraphError):
     code = "graph_query_timeout"
 
 
+class GraphQueryResourceLimit(GraphError):
+    """A query exceeded an explicit provider or response resource bound."""
+
+    code = "graph_query_resource_limit"
+
+
 class GraphCorruption(GraphError):
     code = "graph_corruption"
 
@@ -116,6 +122,7 @@ __all__ = [
     "GraphInvalidQuery",
     "GraphLockContention",
     "GraphQueryTimeout",
+    "GraphQueryResourceLimit",
     "GraphUnavailable",
     "graph_memory_pressure_retry_after_seconds",
 ]

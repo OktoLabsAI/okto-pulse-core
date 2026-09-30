@@ -2,6 +2,79 @@
 
 ## Estado para retomada
 
+Aggregate-final F1688087 TERMINAL0,oitoZERO/semfindings. Recorder executado
+uma vez apos terminal, acceptance-query-aggregate-bounds.json registra
+45/129 e88/9 (sobrepostos), limites/falhas de hipotese preservados. Pronto
+para commit/push deste recorte. Caracterizacao independente query-work-
+characterization44718 em andamento, APENAS novo teste Community fora do commit:
+reader native com caps de operador2, query count com uma linha, writer livre.
+Produto nao mudou. A caracterizacao de mecanismos native nao prova composicao
+foreground; esta continua proximo item KG6.5. Nenhuma pausa do objetivo final.
+
+Install aggregate-final77121 terminou0. Primeira verificacao39615 tambem0,
+mas foi iniciada antes da coleta do terminal do pip: NAO usar como prova
+pos-install. Repetida apos ambos terminais com novo arquivo imutavel
+provenance-query-aggregate-final-terminal.json,terminal0:852/915+371/456.
+Somente depois iniciada closure final; nenhuma suite ocorreu sob prova
+prematura. Recorder aponta exclusivamente para prova terminal confirmada.
+
+query-aggregate2 builds0/install35700=0/prova49454=0:852Python/915payload Core,
+371/456 Community identicos antes de suites. Core70407=0:88passed/60.77s;
+Community27861=0:9passed/20.14s. F1665231=1 somente README/findings[]/oitoZERO.
+Readmes regenerados oficialmente apos todos terminais; builds aggregate-final0,
+install77121/provafinal em andamento. record_query_aggregate.py preparado,
+NAO executado antes de F16final. Escopo cobre classificacao de recusas e teto
+4MiB do envelope; NAO bounds finitos native fanout/paths/query-memory.
+Proxima composicao deve ser foreground para nao atingir rebuild. Se leitores
+dedicados forem usados, incluir em _all_pools/close, kg_shutdown e finally de
+retirement_candidate_execution; nao omitir cleanup nem duplicar quotas.
+Native opcoes sao por participante; defaults existentesNone. Nenhuma mudanca
+de pools/bounds native implementada ainda. Ultimo push921d26ea/a8b55653.
+
+Limites tipados query-aggregate1 builds0/install83717=0/prova0(851/914+371/456)
+antes de campanhas: Core14160=0:45passed/8.92s; Community73779=0:129passed/70.32s;
+F1644997=0 semdrift/oitoZERO. Ainda nao enviado: agregado com proximo requisito
+do MESMO KG6.5. Repro query-payload-repro79685=1,1failed/4.09s:150celulas<65536
+chars e<200rows nao possuem teto agregado. WIP query_response_budget Core
+conta JSON envelope por iterencode, teto tecnico4MiB (mesmo teto de payload
+diagnostico ja existente; aqui aplicado a consultas foreground), recusa tipada
+sem prefixo/contagem incompleta; observed e contador no ponto de recusa.
+Cypher Core/REST e helper MCP natural/reflexivo aplicam; framing de transporte
+separado. Documento publico atualizado e manifest gerado oficialmente. Testes
+Unicode/metadata/contagens preservadas/cleanup preparados, NAO executados.
+Proximo build/prova query-aggregate2. Fanout/paths/memoria nativa ainda pendentes,
+nao afirmar KG6.5 inteiro concluido. Nenhum processo anterior ativo.
+
+WIP exposicao de limites: GraphQueryResourceLimit publico nao-retryable,
+mapa Community de GrafxQueryBudgetExceeded e causa tipada result-value/limit
+de GrafxPlanError (sem parsing de mensagem nem leak de conteudo). MCP tres
+entradas expoem codigo/details; REST usa413 semRetry-After; natural/critic
+nao convertem recusa em fallback vazio. Testes incluem collect native10001,
+cinco budgets, negativos sem limite/malformed/param e tres MCP. Nao modifica
+limite nativo1024 nem afirma memoria/fanout/payload resolvidos. Frontendsrc
+nao possui consumidor query/cypher (busca de tres grafias; apenas Help enumera
+tools), nenhum fluxo UI modificado neste recorte. Ainda NAO validado:
+builds query-aggregate1/install/prova antes de testes/F16. Todos repros vermelhos
+anteriores preservados. Produto tera freeze durante campanhas.
+
+Prazo composto publicado Core921d26ea/Communitya8b55653,pushes0. Investigacao
+KG6.5 agregados, SEM codigo de produto novo: Grafx ja limita colecoes1024,
+maps256 e valoresstring configurados<=65536. Repros query-aggregate-repro
+(params10001) e generated-repro(range10001) recusaram ANTES do collect;
+nao provaram resultado ilimitado. stored-repro93223=1,1failed/9.50s, criou
+10001Item em fixture descartavel e collect runtime tambem foi recusado pelo
+snapshot publico Grafx. Correcao de hipotese: nao duplicar/trocar limite nativo.
+Repro limit-repro73945=1 agora exige exposicao explicita; failure atual e
+GraphInvalidQuery plan_error. Cause tipada GrafxConfigurationError tem
+field=query.result.rows[0][0],limit1024,value1025. O adapter perde esses limites
+na taxonomia generica. Novo teste tests/test_kg_query_aggregate_bounds.py WIP;
+nao declarar passagem nem alterar semantica para satisfazer primeira hipotese.
+Faltam bounds native fanout/paths/memoria por foreground e payload serializado;
+native ConnectOptions os oferece por participante, defaultNone, nao por execute.
+Evitar limitar scans internos/rebuild, manter backpressure e isolamento.
+Nenhum processo ativo desta investigacao; par instalado/provado permanece
+851/914+371/456. Inventario global78/33/135 permanece; nao concluir plano.
+
 Prazo composto FINAL: builds0/install43303=0/prova0(851/914+371/456), antes
 de rerun. Community fixture54412=0:8passed/67.42s; F16final9814=0,oitoZERO,
 sem findings/documentation drift. record_query_compound.py executado uma vez
