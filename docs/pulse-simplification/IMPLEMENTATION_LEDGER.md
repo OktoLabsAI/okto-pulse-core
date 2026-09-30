@@ -2,6 +2,52 @@
 
 ## Estado para retomada
 
+Porta publica de execucao Learning validada (2026-09-30), pronta para commit/push.
+execution-port1: install38779=0/prova0 (845/908+364/449) ANTES dos testes;
+Core90796=0:37passed/4.09s; Community30494=0:17passed/311.28s. F1668519=1
+somente matrizes README, findings=[] e oito ZERO. Matrizes regeneradas APOS
+todos terminais. Par final builds0/install53724=0/prova0 (mesmas contagens);
+F1626133=0/ok=true,findings/docdrift vazios,oito ZERO; Community60180=0:
+7passed/112.96s. Cinco testes se repetem da primeira campanha; nao somar como
+casos distintos. Recorder record_learning_execution_port.py executado uma vez
+apos TODOS terminais gerou acceptance-learning-execution-port.json. Nao rerodar.
+Nenhum processo permanece ativo. Ruff0; entrega integral ainda NAO concluida.
+
+Entregue: execute_learning_reconciliation pela porta publica Core, usando o mesmo
+materializador/actor/gates e referencia capture-v2 com fingerprint. Resultado
+retorna sessao desta invocacao APOS confirmacao SQL e bool de presenca no grafo;
+callers existentes continuam recebendo bool. Sem Core concreto/adaptador novo.
+Provas reais: sessao bate audit nos dois estados de head, desconhecido nao escreve,
+Bug ausente nao inventa sessao, replay aponta novo audit sem reautorar captura,
+confirmacao grafica indisponivel mantem sessao ja confirmada e materialized=false.
+NAO usar false como prova de ausencia de efeitos ou resultado como completion.
+
+Segue integrar no candidato privado: executar selecao, reter e rederivar ownership
+SQL/grafo pelo trabalho/sessao, preservar holds e historia, manter formatos antigos
+e guards de completion. O verificador SQL atual exige ACKs deterministas; fonte
+cognitiva, head/evento e propriedades de uso requerem ownership proprio exato.
+Checkpoint/censo/restauracao literal hoje tambem recusam arestas novas em nos
+literalmente restaurados e comparam after_sql; nao relaxar essas comparacoes.
+Global source inputs sao capturados depois da restauracao cognitiva; a integracao
+deve considerar a revisao literal nova antes de certificar paridade global.
+Inventario78/33/135 inalterado. Nenhum UI/dado real/restart/release executado.
+
+Retomada apos par publicado Core43f61753/Community3cf61fdc (pushes0, limpos).
+Turno anterior teve progresso concreto: correcao de evidencia e caracterizacao
+executavel, nao bloqueio. Em implementacao a porta publica
+execute_learning_reconciliation: referencia capture-v2 exata, mesmo actor
+cognitive_closeout_worker, mesma prevalidacao/pipeline/gates; retorna sessao
+confirmada desta invocacao e presenca confirmada no grafo. Retornos booleanos
+anteriores preservados por wrapper. Resultado NAO e recibo de ownership nem
+admissao/completion. Erro pode deixar efeito privado confirmado; caller nao
+pode interpreta-lo como no-op e o coordenador deve descartar/verificar o stage.
+Community so consome porta publica. Teste de efeito passou a conferir sessao
+retornada contra audit real; adicionados recusas de ref sem fingerprint,
+fingerprint desconhecido sem escrita e Bug ausente sem inventar sessao.
+Produto ainda NAO validado nesta rodada. execution-port1 builds terminais0;
+install38779 em andamento. Prova byte-a-byte e testes devem vir APOS install
+terminal. Proxima integracao continua exigindo recibos/deltas exatos no candidato.
+
 Caracterizacao do materializador concluida neste recorte, KG7.5/K3 ainda aberto.
 effects-characterization5 95956=0:2passed/43.81s, cobrindo head ausente e existente.
 characterization4 49622=1/26.28s identificou somente last_recomputed_at e

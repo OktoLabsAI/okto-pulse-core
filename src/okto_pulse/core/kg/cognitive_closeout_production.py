@@ -401,6 +401,12 @@ def _resolve_existing_node_id(board_id: str, label: str, ref: str) -> str:
     return ref
 
 
+@dataclass(frozen=True, slots=True)
+class _PipelinePersistenceResult:
+    materialized: bool
+    committed_session_id: str | None = None
+
+
 class ConsolidationPipelinePersister:
     """The production persister: drives begin→add_node→add_edge→propose→commit and
     confirms the node is queryable in board graph. This is the consumer/worker that
@@ -462,6 +468,10 @@ class ConsolidationPipelinePersister:
             return 'unavailable'
 
     async def persist_authored_learning(self, board_id: str, bug_id: str, selection, *, raise_failures=False) -> bool:
+        return (await self._authored_learning_result(board_id, bug_id, selection,
+            raise_failures=raise_failures)).materialized
+
+    async def _authored_learning_result(self, board_id: str, bug_id: str, selection, *, raise_failures=False):
         """Materialize the selected durable authorship through the same coordinator.
 
         The commit revalidates this preflight under its relational source fence.
@@ -484,15 +494,21 @@ class ConsolidationPipelinePersister:
             partial(resolver.resolve_current, board_id=board_id, bug_id=bug_id),
             task_name='core.kg.cognitive_closeout.resolve_authored_bug')
         if target is None:
-            return False
+            return _PipelinePersistenceResult(False)
         node = authored_learning_candidate(basis.capture, basis.projection)
         candidate = CloseoutCandidate('Learning', node.title, node.content,
             f'bug:{bug_id}', (CloseoutEdge('validates', target),))
-        return await self._persist(board_id, 'bug', candidate,
+        return await self._persist_result(board_id, 'bug', candidate,
             authored_node=node, learning_capture=selection, raise_failures=raise_failures)
 
     async def _persist(self, board_id: str, artifact_type: str, candidate: CloseoutCandidate,
                        *, authored_node=None, learning_capture=None, raise_failures=False) -> bool:
+        return (await self._persist_result(board_id, artifact_type, candidate,
+            authored_node=authored_node, learning_capture=learning_capture,
+            raise_failures=raise_failures)).materialized
+
+    async def _persist_result(self, board_id: str, artifact_type: str, candidate: CloseoutCandidate,
+                       *, authored_node=None, learning_capture=None, raise_failures=False):
         import hashlib
 
         from okto_pulse.core.kg.guarded_write import (
@@ -747,7 +763,8 @@ class ConsolidationPipelinePersister:
                         candidate.source_artifact_ref, getattr(exc, "code", exc))
             if raise_failures:
                 raise
-            return False
+            return _PipelinePersistenceResult(False,
+                deferred_session_id if relational_commit_confirmed else None)
         if learning_capture is not None:
             # The primitive validated the exact identity, authored fields and
             # Bug edge; SQL acknowledged its literal revision before success.
@@ -755,9 +772,10 @@ class ConsolidationPipelinePersister:
             from okto_pulse.core.domain.learning_materialization_work import LearningCaptureWorkRef
             work = LearningCaptureWorkRef(artifact_id, learning_capture.learning_id,
                 learning_capture.generation, learning_capture.fingerprint)
-            return await self.inspect_authored_learning(board_id, work) == 'present'
+            return _PipelinePersistenceResult(await self.inspect_authored_learning(board_id, work) == 'present',
+                deferred_session_id if relational_commit_confirmed else None)
         # BR2: effective only when actually queryable in board graph.
-        return await run_blocking_graph_io(
+        materialized = await run_blocking_graph_io(
             partial(
                 self.already_persisted,
                 board_id,
@@ -766,6 +784,8 @@ class ConsolidationPipelinePersister:
             ),
             task_name="core.kg.cognitive_closeout.confirm_queryable",
         )
+        return _PipelinePersistenceResult(materialized,
+            deferred_session_id if relational_commit_confirmed else None)
 
 
 # ---------------------------------------------------------------------------

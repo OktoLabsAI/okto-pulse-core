@@ -9,6 +9,29 @@ from okto_pulse.core.ports.kg_cognitive_source import canonical_cognitive_source
 from okto_pulse.core.ports.learning_reconciliation import LearningReconciliationSelection
 
 
+async def execute(*, board_id, work_ref, relational_scope_factory):
+    from okto_pulse.core.domain.learning_closeout import LearningCaptureSelection
+    from okto_pulse.core.domain.learning_materialization_work import parse_learning_capture_work_ref
+    from okto_pulse.core.kg.cognitive_closeout_production import ConsolidationPipelinePersister
+    from okto_pulse.core.ports.learning_reconciliation import LearningReconciliationExecution
+
+    if (type(board_id) is not str or not board_id.strip() or len(board_id) > 256
+            or type(work_ref) is not str or len(work_ref) > 25000
+            or not callable(relational_scope_factory)):
+        raise ValueError('learning_reconciliation_execution_invalid')
+    work = parse_learning_capture_work_ref(work_ref)
+    if work is None or work.fingerprint is None:
+        raise ValueError('learning_reconciliation_fingerprinted_work_required')
+    # Keep the existing cognitive actor; system:* would select the unrelated
+    # deterministic ownership bypass in the consolidation primitives.
+    persister = ConsolidationPipelinePersister(relational_scope_factory)
+    result = await persister._authored_learning_result(board_id, work.bug_id,
+        LearningCaptureSelection(learning_id=work.learning_id, generation=work.generation,
+            fingerprint=work.fingerprint), raise_failures=True)
+    return LearningReconciliationExecution(board_id, work_ref,
+        result.committed_session_id, result.materialized)
+
+
 def select(*, schema, board_id, records, nodes):
     # Validate the complete history even if there is no Learning to return.
     latest = validate_cognitive_projection_sources(schema=schema, board_id=board_id, records=records)
