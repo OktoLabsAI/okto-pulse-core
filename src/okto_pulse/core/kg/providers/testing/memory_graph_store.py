@@ -1328,6 +1328,10 @@ class _InMemoryGraphTransactionScope:
     ) -> ProjectionActiveSetReceipt:
         """Reconcile one exact relational node or edge projection."""
 
+        from okto_pulse.core.kg.interfaces.graph_transaction import ProjectionRemovalOnlyIntent
+        if isinstance(intent, ProjectionRemovalOnlyIntent):
+            raise ProjectionActiveSetReconciliationError(
+                'projection_active_set_scope_invalid', 'Removal-only namespace is unsupported.')
         from okto_pulse.core.ports.spec_projection import SPEC_RELATIONSHIP_NAMESPACES
         if intent.owner_type == "spec" and intent.namespace in SPEC_RELATIONSHIP_NAMESPACES:
             return self._reconcile_spec_relationships(intent)

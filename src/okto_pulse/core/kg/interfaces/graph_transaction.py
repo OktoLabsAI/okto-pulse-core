@@ -171,6 +171,31 @@ class ProjectionActiveSetIntent:
 
 
 @dataclass(frozen=True)
+class ProjectionLogicalEdgeRef:
+    """Expected source identity, independent of graph materialization."""
+
+    edge_type: str
+    from_type: str
+    to_type: str
+    source_ref: str
+    target_ref: str
+    rule_id: str
+
+
+@dataclass(frozen=True)
+class ProjectionRemovalOnlyIntent(ProjectionActiveSetIntent):
+    """Remove obsolete owned edges from a complete, fenced source snapshot.
+
+    Logical edges are the entire desired set, including unmaterialized targets.
+    Retain existing matches; never create endpoints or acknowledge convergence.
+    Physical active_nodes/active_edges must be empty. Unsupported namespaces
+    must refuse this mode, rather than interpreting the empty physical set.
+    """
+
+    expected_edges: tuple[ProjectionLogicalEdgeRef, ...] = ()
+
+
+@dataclass(frozen=True)
 class ProjectionEdgeBeforeImage:
     """Complete relationship state for exact restoration and session cleanup.
 

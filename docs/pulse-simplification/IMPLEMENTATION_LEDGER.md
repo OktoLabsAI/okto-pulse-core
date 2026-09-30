@@ -2,6 +2,53 @@
 
 ## Estado para retomada
 
+§4.5 Card/remocoes conhecidas validado no par final: Core49passed8.83s
+(22457=0), recovery49passed9.87s(32231=0), Community22passed110.60s(80399=0).
+Rollback SQL restaura before-image integral; replay conserva pendencia sem
+audit/ACK completo; apos Spec materializar alvo, Card conclui e fila esvazia.
+Read failure segue recusa explicita antes de mutacao. Final wheels ambos0,
+install72531=0/prova542fa2=0:859/922+373/458 identicos; F1661309=0, findings e
+documentation_findings vazios, oito budgetsZERO. README regenerado oficialmente.
+Recorder record_known_removal.py executado UMA vez apos terminais; evidencia
+versionada evidence-known-card-removal.json preserva reproducao e erros de teste.
+Ruff F/E9 e diff-check verdes. Sem processo pendente, pronto para commit/push.
+Este incremento fecha o caso Card reproduzido, nao todo §4.5/G2/G12. Fonte e
+fronteiras arquiteturais preservadas; inventario81/38/127 continua sem promocao.
+Seguir pendencias JA registradas do complemento KG e auditoria consolidada;
+nao acrescentar escopo. Proxima verificacao: remocoes conhecidas de dependencias
+Spec com prerequisite ainda ausente, e o gap Spec sem referencias semanticas
+registrado anteriormente. Nao relaxar connectivity guard nem alterar gate.
+
+WIP §4.5 restrito ao caso reproduzido Card/cenarios: fonte lida apos writer
+do grafo + CAS SQL da fila; intent tipado de somente-remocao conserva alvos
+logicos esperados mesmo ausentes do KG. Adapter Grafx remove apenas arestas
+do writer/familia/dono fechados. Recibo existente guarda before-images;
+resultado interno de progresso mantem fila e NAO gera audit/outbox/ACK completo.
+Exact rebuild permanece no contrato imutavel anterior. Nenhum schema SQL,
+gate, permissao ou superficie publica nova; nenhuma mudanca frontend.
+Wheels known-removal1 ambos0/install65947=0/prova85b3af=0:859Python/922payload
+Core e373/458Community byte-identicos. Reproducao agora1passed27.96s(session
+75036=0); Core49passed8.11s(90369=0), recovery49passed8.61s(19665=0).
+Community3 provou conclusao apos prerequisite (1passed), mas teste de rollback
+errou ao tentar interceptar helper local; corrigido SOMENTE teste. Community2
+tambem teve erro de fixture(id em vez de session_id do audit). Logs preservados.
+Community4 session47533 em andamento inclui rollback real/replay/retomada e
+adapters de propriedade/compensacao; fonte congelada ate terminal. F1692058=1
+apenas matrizes README, findings[] e oito budgetsZERO. Regenerar somente apos
+terminais, empacotar/provar par final e fechar evidencia/commit/push.
+
+Par contextual publicado: Core702481c9/Communityd8619034, pushes0 e arvores
+limpas confirmadas antes deste recorte. Reproducao nativa do complemento KG
+§4.5: k2-known-removal-characterization1 Community(session68754=1), 1failed
+30.43s. A origem substitui ts_one por ts_next, valido na Spec mas ainda nao
+materializado; fila pending com relational_projection_edge_unresolved e antiga
+supports Card->ts_one ainda canonica. Nao e timeout. Teste exige invalidar a
+remocao conhecida, preservar fila/ACK incompleto e nao inventar ts_next no KG.
+Somente teste/harness alterados ate esta constatacao; produto instalado segue
+a prova contextual final. Correcao deve preservar compensacao, fence da fonte,
+durabilidade e replay; nao reutilizar reference_findings como pendencia tecnica.
+Inventario81/38/127 inalterado. Entrega integral continua aberta conforme plano.
+
 Contexto Card de referencias pronto: F16final17191=0, findings/documentacao[]
 e oitoZERO; prova80753=0:858/921+373/458 byte-identicos no par final. Core82
 passed18.10s e frontend83passed67.87s, Python/SPA iguais aos testados; README

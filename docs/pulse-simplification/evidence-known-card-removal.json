@@ -1,0 +1,247 @@
+{
+  "scope": "KG supplement §4.5: known Card relation removals while a valid target awaits materialization",
+  "acceptance_promotions": [],
+  "domain_gate_changed": false,
+  "campaigns": [
+    {
+      "file": "learning-reconciliation-k2-known-removal-characterization1-community.xml",
+      "counts": {
+        "tests": 1,
+        "failures": 1,
+        "errors": 0,
+        "skipped": 0
+      },
+      "sha256": "cb21538bda0c435cf9f05ee2717dbf9a528f258ac01d504898554a98ce7ad5e8"
+    },
+    {
+      "file": "learning-reconciliation-k2-known-removal1-community.xml",
+      "counts": {
+        "tests": 1,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      "sha256": "e16ecb6ecc25d0bdd06c61e7ab1cd360c563bd1a2b87d673fb91255fb441212b"
+    },
+    {
+      "file": "learning-reconciliation-k2-known-removal2-community.xml",
+      "counts": {
+        "tests": 1,
+        "failures": 1,
+        "errors": 0,
+        "skipped": 0
+      },
+      "sha256": "a6d982d1a7d29f7a4a2fdd7f327ded719dc7b3e1a228c1b66981dcbf3f6ff97f"
+    },
+    {
+      "file": "learning-reconciliation-k2-known-removal3-community.xml",
+      "counts": {
+        "tests": 2,
+        "failures": 1,
+        "errors": 0,
+        "skipped": 0
+      },
+      "sha256": "b59dfa70e0bf658880618e52ad6c38c12ccbc11ea4fa7263088ee4a5f4cc07f2"
+    },
+    {
+      "file": "learning-reconciliation-k2-known-removal4-community.xml",
+      "counts": {
+        "tests": 22,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      "sha256": "8ae141ee4ebd1daef1541b7cc379c2ff18892f9cd0dad906614c8c04ecb0fb93"
+    },
+    {
+      "file": "learning-reconciliation-k2-known-removal-final-core.xml",
+      "counts": {
+        "tests": 49,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      "sha256": "7a2ce7283ab992cb607db8f2a9dd1c778ca624e56db6f37c2b0272fd2a277e51"
+    },
+    {
+      "file": "learning-reconciliation-k2-known-removal-recovery-final-core.xml",
+      "counts": {
+        "tests": 49,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      "sha256": "7bd5349a1f104cf8b3e92041b1ff8ac1cb9d486037c35d3477cf4f36ef792eb6"
+    },
+    {
+      "file": "learning-reconciliation-k2-known-removal-final-community.xml",
+      "counts": {
+        "tests": 22,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      "sha256": "e62e02d6b8f760aa3fd2dcb46d717aa2ebd182acc8c0755133e466525ca1cc6f"
+    }
+  ],
+  "provenance": {
+    "checked_at": "2026-09-30T20:00:51.135277+00:00",
+    "python": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Scripts\\python.exe",
+    "packages": {
+      "core": {
+        "python_files": 859,
+        "origin": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages\\okto_pulse\\core\\__init__.py",
+        "repository_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_core",
+        "commit": "702481c92b613c2a500271753324f93a2064917f",
+        "dirty": true,
+        "dirty_entry_count": 9,
+        "distribution": "okto-pulse-core",
+        "version": "0.3.4",
+        "wheel": {
+          "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\dist-learning-reconciliation-k2-known-removal-final\\okto_pulse_core-0.3.4-py3-none-any.whl",
+          "sha256": "708d67927fdf57921c85dc8ed2161131b4a7182edc726e84b50dd6777dfc646b",
+          "size": 3791419
+        },
+        "source_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_core\\src",
+        "site_packages_root": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages",
+        "package_prefix": "okto_pulse/core/",
+        "byte_identical_member_count": 922,
+        "byte_identical": true,
+        "aggregate_sha256": "b88b911c07e8d27ea68121274d3f4a90bce88ac79e7e94c2774bd8e29fc31725",
+        "chain_hashes": {
+          "source": "b88b911c07e8d27ea68121274d3f4a90bce88ac79e7e94c2774bd8e29fc31725",
+          "wheel": "b88b911c07e8d27ea68121274d3f4a90bce88ac79e7e94c2774bd8e29fc31725",
+          "site_packages": "b88b911c07e8d27ea68121274d3f4a90bce88ac79e7e94c2774bd8e29fc31725"
+        },
+        "critical_resource_sha256": {
+          "okto_pulse/core/mcp/resources/ska_resource_manifest.json": "87fab2a5ded5f6ee273af8628555c21f7065d32379945784132bb6c300d05865",
+          "okto_pulse/core/mcp/resources/ska_tool_manifest.json": "0c3fa3da1549baec20872eca3f4a289288627e6b9f6b80be10472ac962fa72b9"
+        },
+        "mismatches": []
+      },
+      "community": {
+        "python_files": 373,
+        "origin": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages\\okto_pulse\\community\\__init__.py",
+        "repository_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_community",
+        "commit": "d8619034becdb9bdb9fcf818e175387241aaff9c",
+        "dirty": true,
+        "dirty_entry_count": 5,
+        "distribution": "okto-pulse",
+        "version": "0.3.4",
+        "wheel": {
+          "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\dist-learning-reconciliation-k2-known-removal-final\\okto_pulse-0.3.4-py3-none-any.whl",
+          "sha256": "544ad9df2f1ae699f914ad598871ca405e66ea512755a4b69f372330185e3248",
+          "size": 4534473
+        },
+        "source_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_community\\src",
+        "site_packages_root": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages",
+        "package_prefix": "okto_pulse/community/",
+        "byte_identical_member_count": 458,
+        "byte_identical": true,
+        "aggregate_sha256": "d4aae61303b7239525cb5b7ad312933cff6aaa9f2df35e72bce8a771155f9c43",
+        "chain_hashes": {
+          "source": "d4aae61303b7239525cb5b7ad312933cff6aaa9f2df35e72bce8a771155f9c43",
+          "wheel": "d4aae61303b7239525cb5b7ad312933cff6aaa9f2df35e72bce8a771155f9c43",
+          "site_packages": "d4aae61303b7239525cb5b7ad312933cff6aaa9f2df35e72bce8a771155f9c43"
+        },
+        "critical_resource_sha256": {},
+        "mismatches": []
+      }
+    }
+  },
+  "closure": {
+    "budgets": [
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "import_boundary_baseline",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every import_boundary_baseline allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "singleton_baseline",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every singleton_baseline allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "dependency_temporary_exceptions",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every dependency_temporary_exceptions allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "graph_runtime_compatibility",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every graph_runtime_compatibility allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "rebuild_artifact_compatibility",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every rebuild_artifact_compatibility allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "community_private_reach_ins",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every community_private_reach_ins allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "community_adapter_bridges",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every community_adapter_bridges allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "af35_relational_residue",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every af35_relational_residue allowance before F16 completion."
+      }
+    ],
+    "sha256": "6ed52b79a61fbfd09d6732e4c86c5e641e0c99256fe186b0496fdb8d29501a03"
+  },
+  "contracts": [
+    "Read the complete Card/Spec source after graph writer acquisition and SQL queue/source fence; retain it through caller commit.",
+    "Logical expected endpoints survive absent graph materialization; remove only obsolete deterministic edges in closed Card namespaces.",
+    "Partial progress retains queue, retry budget and exact before-images; no complete audit/outbox/ACK or placeholder target.",
+    "Caller rollback compensates removals. Replay is idempotent; materializing the Spec allows normal Card commit and ACK.",
+    "Read failures and incomplete/ambiguous sources never become empty authoritative sets."
+  ],
+  "failures_preserved": [
+    "Characterization retained canonical ts_one after source replaced it by valid but unmaterialized ts_next.",
+    "Campaign2 test used nonexistent audit.id instead of session_id; no product failure.",
+    "Campaign3 rollback test attempted to patch a nested helper; corrected injection at persistence.commit."
+  ],
+  "limits": [
+    "This increment handles live Card parent/scenario relationships; immutable exact-rebuild protocol is unchanged.",
+    "Other KG ownership namespaces and whole-plan acceptance are not promoted by these tests.",
+    "No frontend changed; no frontend test claim for this backend increment.",
+    "Validation Python inherits site dependencies and is not hermetic; no real-data migration or active server restart."
+  ]
+}

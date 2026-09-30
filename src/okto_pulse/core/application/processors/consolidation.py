@@ -76,6 +76,7 @@ from okto_pulse.core.kg.schemas import (
     NodeCandidate,
     ProposeReconciliationRequest,
 )
+from okto_pulse.core.kg.projection_removals import DeferredProjectionProgress
 from okto_pulse.core.kg.primitives import (
     KGPrimitiveError,
     add_edge_candidate,
@@ -1549,6 +1550,7 @@ async def _commit_consolidation_with_board_graph_lifecycle(
     now: datetime | None = None,
     defer_session_finalization: bool = False,
     enter_graph_write: _GraphWriteEnter | None = None,
+    allow_known_removals: bool = False,
 ):
     """Commit a queue item and prove the persisted graph before ACK.
 
@@ -1586,6 +1588,7 @@ async def _commit_consolidation_with_board_graph_lifecycle(
                 db=db,
                 blocking_execution=blocking_execution,
                 defer_session_finalization=defer_session_finalization,
+                **({'allow_known_removals': True} if allow_known_removals else {}),
             )
         except KGPrimitiveError as exc:
             # The dependency endpoint barrier is deliberately read-only.  It
@@ -1648,7 +1651,7 @@ async def _process_queue_entry_serialized(
     stale_reconcile_telemetry: dict[str, object] | None = None,
     deferred_session_ids: list[str] | None = None,
     enter_graph_write: _GraphWriteEnter | None = None,
-) -> bool | StaleSweepRunReceipt:
+) -> bool | StaleSweepRunReceipt | DeferredProjectionProgress:
     """Process one queue row under a process-local per-board mutex.
 
     The queue claim contract prevents duplicate rows, but reprocess tools,
@@ -3188,7 +3191,7 @@ async def _process_queue_entry(
     stale_reconcile_telemetry: dict[str, object] | None = None,
     deferred_session_ids: list[str] | None = None,
     enter_graph_write: _GraphWriteEnter | None = None,
-) -> bool | StaleSweepRunReceipt:
+) -> bool | StaleSweepRunReceipt | DeferredProjectionProgress:
     """Process one queue entry through the primitives pipeline.
     Returns True on success, False on failure."""
 
@@ -3219,8 +3222,26 @@ async def _process_queue_entry(
         )
         return False
 
+    # A removal must be derived from source read AFTER the queue/source fence,
+    # retained through the caller UOW. Preserve graph-writer -> SQL-writer order.
+    # Exact candidate rebuild keeps its immutable membership/ACK protocol.
+    allow_known_removals = bool(
+        entry.artifact_type == 'card' and not _queue_source(entry).startswith('rebuild:')
+        and enter_graph_write is not None and deferred_session_ids is not None
+        and _claim_token(entry) is not None
+    )
+    if allow_known_removals:
+        source_lease = enter_graph_write(f'{entry.artifact_type}:{entry.artifact_id}:{entry.id}:source')
+        if not await _queue_claim_is_current_and_unfenced(db, entry):
+            raise _QueueClaimLostOrFenced(f'queue_claim_lost_before_source entry_id={entry.id}')
+        enter_graph_write = lambda mutation_ref: source_lease
     preparation = await _prepare_deterministic_projection(db, entry)
     if isinstance(preparation, bool):
+        if allow_known_removals:
+            # No graph mutation started: unwind the guarded scope as a source
+            # refusal, rather than completing a writer without its lifecycle.
+            raise KGPrimitiveError('relational_projection_source_unavailable',
+                'The fenced Card projection source could not be prepared.')
         return preparation
     worker_result, artifact = preparation
     node_candidates = [_worker_node_to_candidate(n) for n in worker_result.nodes]
@@ -3314,7 +3335,11 @@ async def _process_queue_entry(
         now=clock.now() if clock is not None else None,
         defer_session_finalization=deferred_session_ids is not None,
         enter_graph_write=enter_graph_write,
+        **({'allow_known_removals': True} if allow_known_removals else {}),
     )
+
+    if isinstance(commit_resp, DeferredProjectionProgress):
+        return commit_resp
 
     logger.info(
         "consolidated %s:%s → nodes_added=%d edges_added=%d",
@@ -3407,7 +3432,7 @@ def _is_deferred_spec_endpoint(entry: ConsolidationQueueRecord) -> bool:
     error = getattr(entry, "last_error", None)
     return (
         _work_kind(entry) == "consolidate"
-        and getattr(entry, "artifact_type", None) == "spec"
+        and getattr(entry, "artifact_type", None) in {"spec", "card"}
         and not _queue_source(entry).startswith("rebuild:")
         and isinstance(error, str)
         and error.startswith("relational_projection_endpoint_pending:")
@@ -4383,7 +4408,17 @@ class ConsolidationProcessor:
                             deferred_session_ids=deferred_session_ids,
                             enter_graph_write=_enter_graph_write,
                         )
-                        if isinstance(outcome, StaleSweepRunReceipt):
+                        if isinstance(outcome, DeferredProjectionProgress):
+                            if exact_protocol or deferred_session_ids != [outcome.session_id]:
+                                raise RuntimeError('projection_removal_progress_scope_invalid')
+                            fresh = await store.get_queue_entry(db, entry_id=entry.id)
+                            if fresh is None or not _same_claim(entry, fresh):
+                                raise _QueueClaimLostOrFenced('projection_removal_progress_claim_lost')
+                            await self._defer_relational_projection_endpoint(db, fresh,
+                                error_text=f'{outcome.error_code}:Known removals applied; projection awaits its target.')
+                            # Commit queue retry + finalize compensable removals below.
+                            # No audit, ACK, processed count or post-ACK maintenance.
+                        elif isinstance(outcome, StaleSweepRunReceipt):
                             if (
                                 _work_kind(entry) != "stale_sweep"
                                 or outcome.entry_id != entry.id

@@ -109,6 +109,9 @@ from okto_pulse.core.kg.session_manager import (
     compute_content_hash,
 )
 from okto_pulse.core.ports.runtime_workers import BlockingExecutionPort
+from okto_pulse.core.kg.projection_removals import (
+    DeferredProjectionProgress, GraphRemovalProgress, card_removal_intents,
+)
 
 logger = logging.getLogger("okto_pulse.kg.primitives")
 
@@ -129,7 +132,7 @@ class _PendingConsolidationCommit:
     records: tuple[object, ...]
     counters: object
     cognitive_source_records: tuple[dict, ...]
-    response: CommitConsolidationResponse
+    response: CommitConsolidationResponse | DeferredProjectionProgress
     in_flight: bool = False
 
 
@@ -3002,7 +3005,8 @@ def _do_graph_commit(
     relational_projection_candidate_ids: frozenset[str] = frozenset(),
     relational_projection_active_set_intents: tuple[object, ...] = (),
     learning_projection: CapturedLearningProjection | None = None,
-) -> tuple[dict, object, list, datetime, dict, list[dict]]:
+    allow_known_removals: bool = False,
+) -> tuple[dict, object, list, datetime, dict, list[dict]] | GraphRemovalProgress:
     """Synchronous graph writes for ``commit_consolidation``.
 
     Runs in the thread pool via ``_run_graph_io``. Returns
@@ -3174,6 +3178,17 @@ def _do_graph_commit(
                 "relational_projection_active_set_mismatch",
                 "Projection ownership changed after session admission.", session_id=session_id,
             )
+        if allow_known_removals:
+            removal_intents = card_removal_intents(
+                intents=relational_projection_active_set_intents,
+                nodes=node_candidates, edges=edge_candidates,
+                resolve_endpoint=lambda endpoint: _resolve_endpoint(endpoint, {}, graph_scope=graph_scope),
+            )
+            if removal_intents:
+                for removal_intent in removal_intents:
+                    orch.reconcile_projection_active_set(removal_intent)
+                run_async_blocking(graph_scope.commit())
+                return GraphRemovalProgress(tuple(orch.records), orch.counters, datetime.now(timezone.utc))
         resolved_dependency_endpoints = {}
         for projection_intent in relational_projection_active_set_intents:
             resolved_dependency_endpoints.update(_resolve_spec_dependency_endpoints(
@@ -4508,7 +4523,8 @@ async def commit_consolidation(
     blocking_execution: BlockingExecutionPort | None = None,
     defer_session_finalization: bool = False,
     learning_capture: LearningCaptureSelection | None = None,
-) -> CommitConsolidationResponse:
+    allow_known_removals: bool = False,
+) -> CommitConsolidationResponse | DeferredProjectionProgress:
     """Atomically write graph backend nodes/edges + audit + outbox event.
 
     Graph writes are offloaded to the thread pool via ``_run_graph_io`` and
@@ -4534,6 +4550,11 @@ async def commit_consolidation(
         agent_id,
         allow_pending_commit=True,
     )
+    if allow_known_removals and (
+        agent_id != 'system:historical_consolidation' or session.artifact_type != 'card'
+        or not defer_session_finalization or db is None or req.agent_overrides
+    ):
+        raise ValueError('known_removal_worker_transaction_required')
 
     _require_code_traceability_candidate_ownership(
         dict(session.node_candidates),
@@ -4659,6 +4680,12 @@ async def commit_consolidation(
             # another invocation's ``in_flight`` snapshot.
             owns_deferred_claim = True
 
+            if isinstance(pending.response, DeferredProjectionProgress):
+                # There is no complete projection audit/outbox to restage.
+                pending.in_flight = True
+                session.touch(registry.require_session_store().default_ttl_seconds)
+                return pending.response
+
             # The graph was already applied by the first attempt.  Restage only
             # the relational ledger/audit/outbox in the fresh caller UOW.
             await observe_consolidation_phase(
@@ -4703,14 +4730,7 @@ async def commit_consolidation(
 
         # --- graph backend writes (offloaded to thread pool) ---
         try:
-            (
-                candidate_to_graph_id,
-                counters,
-                records,
-                committed_at,
-                connectivity,
-                cognitive_source_records,
-            ) = await observe_consolidation_phase(
+            graph_result = await observe_consolidation_phase(
                 "graph_dispatch",
                 req.session_id,
                 _run_graph_io(
@@ -4740,6 +4760,7 @@ async def commit_consolidation(
                     ),
                     executor=blocking_execution,
                     **({'learning_projection': learning_projection} if learning_projection else {}),
+                    **({'allow_known_removals': True} if allow_known_removals else {}),
                 ),
             )
         except KGPrimitiveError:
@@ -4752,6 +4773,19 @@ async def commit_consolidation(
                 session_id=req.session_id,
                 details=details,
             ) from exc
+
+        if isinstance(graph_result, GraphRemovalProgress):
+            response = DeferredProjectionProgress(req.session_id)
+            session.pending_commit = _PendingConsolidationCommit(
+                request_payload=request_payload, records=graph_result.records,
+                counters=graph_result.counters, cognitive_source_records=(),
+                response=response, in_flight=True,
+            )
+            owns_deferred_claim = True
+            session.touch(registry.require_session_store().default_ttl_seconds)
+            return response
+        (candidate_to_graph_id, counters, records, committed_at,
+            connectivity, cognitive_source_records) = graph_result
 
         # --- relational staging (async, graph writer already released) ---
         # Ladybug/Kuzu can auto-commit individual graph statements, so this is
@@ -5013,6 +5047,12 @@ async def finalize_deferred_consolidation(
         # error handler from an older caller may have released that volatile
         # flag after durability was already established.  Finalization must
         # never restage INSERTs or replay graph writes.
+        if isinstance(pending.response, DeferredProjectionProgress):
+            session.pending_commit = None
+            await registry.require_session_store().remove(session_id)
+            registry.require_cache_backend().invalidate_board(session.board_id)
+            _COMMIT_HEALTH_CACHE.pop(session.board_id, None)
+            return
         await _finalize_consolidation_session_unlocked(
             registry,
             session,
