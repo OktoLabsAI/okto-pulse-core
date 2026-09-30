@@ -59,6 +59,35 @@ class LearningReconciliationApplicability:
     closeout_transition_id: str | None
 
 
+@dataclass(frozen=True, slots=True)
+class LearningReconciliationQualification:
+    """Composition of authenticated phase facts, not standalone admission."""
+
+    state: Literal['current_captures_reconciled', 'pending']
+    reasons: tuple[str, ...]
+    qualified_sources: tuple[tuple[str, int, str], ...]
+    unmatched_cognitive_sources: int
+
+
+def qualify_learning_reconciliation_sources(*, board_id, selections, executions, applicability, parity):
+    """Compose full phase selection/effects with freshly revalidated sources.
+
+    The edition must authenticate the complete SQL/graph chain through the
+    terminal candidate before supplying these facts. Only an exact pending
+    semantic capture can be satisfied here; history, connectivity, other
+    cognitive sources and final runtime admission retain their own gates.
+    """
+    from okto_pulse.core.application.learning_reconciliation_qualification import qualify
+    return qualify(board_id=board_id, selections=selections, executions=executions,
+        applicability=applicability, parity=parity)
+
+
+def require_learning_reconciliation_qualification(*, qualification, parity):
+    """Check detailed capture/count consistency after full authenticated replay."""
+    from okto_pulse.core.application.learning_reconciliation_qualification import require_consistent
+    return require_consistent(qualification=qualification, parity=parity)
+
+
 async def observe_learning_reconciliation_applicability(context, *, execution):
     """Revalidate current source, signed evidence and authored lineage read-only.
 

@@ -2,6 +2,118 @@
 
 ## Estado para retomada
 
+Fechamento Learning composition: activation3 Community90851 terminou0,
+2 passed/540.94s. Matrizes regeneradas oficialmente apos todos terminais.
+Builds/install finais concluidos; prova75523 terminal0:848 Python/911 payload
+Core e370/455 Community byte-identical. F16final57632 terminal0:ok=true,
+findings/documentation_findings vazios, oito budgets ZERO. Recorder
+record_learning_composition.py executado UMA vez, acceptance-learning-composition.json
+preserva campanhas51/21/70/2 (escopos sobrepostos) e reproducoes anteriores.
+Instalacao descartavel source-backed aprovada; autoria historica desconhecida
+continua recusada. Nenhum dado real migrado. Pronto para commit/push pareado.
+Proxima frente continua D15/D18 do KG6.5; nenhum produto dessa frente editado.
+Inventario global78 verificados/33 parciais/135 nao auditados inalterado.
+
+activation3 builds/install29776/prova terminais0,848/911+370/455 identicos.
+Community90851 AINDA VIVO: primeiro caso fresh PASSOU (sem Sprint artificial,
+schema/bootstrap/candidato/completion, interrupcao de publicacao, instalacao,
+resume, startup -I de wheels, escrita posterior e prova adulterada recusada).
+Segundo caso durable-technical-report verifica compatibilidade v6 sem Learning.
+F1620941 terminal1:findings=[],oitoZERO, somente matrizes. Produto congelado.
+Ruff/diff-check0. Recorder record_learning_composition.py preparado, NAO
+executado: exige51+21+70+2 e F16final verde, preserva tres reproducoes falhas.
+Depois terminal90851: regenerar matrizes oficialmente, build/install/prova/
+F16 learning-composition-final, recorder UMA vez, commits/pushes pareados.
+Ultimo par publicado continua2ca6cde1/1d5b139c; este WIP nao enviado.
+
+empty-retirement2 TERMINAL0:70 passed/492.10s (6 novos e regressao de
+contexto/Card/work/journal). Nenhum processo anterior vivo. F16activation2
+findings=[]/oitoZERO, apenas matrizes. Apos terminais, ultimo consumidor
+schema_cutover ligado a verify_empty_context antes do corte; comparacao de
+TODAS as celulas retiradas contra documents={} permanece obrigatoria.
+Builds activation3 ambos0, instalacao iniciada. Core51 e Community21/70
+nao repetir sem mudanca nesses contratos; falta ensaio fresh completo de
+schema/bootstrap/projecao/completion/ativacao/startup instalado e F16final.
+
+Leitura independente da frente JA prevista D15/D18 (sem editar produto):
+core/kg/tier_power.py check_rate_limit ainda usa30/60s e MCP kg_power_tools
+chama em3 caminhos. Defaults atuais5s/1000linhas, max30s/10000; parametro
+timeout_ms de execute_cypher_read_only nao e repassado ao executor. Community
+GrafxCypherExecutor ja suporta native timeout_seconds via callback, mas
+composicao routed_board_graph_composition injeta access.health_query_timeout,
+restrito a observacao health. Reusar capacidade nativa e porta publica para
+escopo de consulta; plano KG6.5 exige15/30s,200/1000linhas, limites agregados,
+Board policy e ausencia de quota por contagem. Nao e novo alvo. Nenhuma
+alteracao D15/D18 iniciada; concluir validacao/commit do corte em andamento.
+
+activation2 builds/install36468/prova0:848/911+370/455 identicos. Suite
+empty-retirement2 Community95732 segue viva (caminho vazio e replay passaram).
+Activation50319 TERMINAL1:1failed/94s, avancou ate schema cutover; ultimo
+consumidor _documents em retirement_schema_cutover ainda rejeita refs().
+F1631780 terminal1. Busca completa de _documents delimitou consumidores:
+contexto ja desvia somente com checkpoint, offline plan ja recaptura, falta
+schema cutover verificar o mesmo recibo vazio antes de cut_retired_schema,
+cujo require_archived_owned_rows deve continuar exigindo tabelas vazias.
+NAO editar produto antes de terminal95732; nao anunciar instalacao passada.
+
+Rodada learning-composition-activation: builds/install62557/prova0,848/911+
+370/455 byte-identical. TODOS terminais: F1620386=1 apenas README;
+empty-retirement1 Community86197=1:1failed/24.12s; diagnostic78834=1;
+activation40848=1:1failed/87.81s. Mesma causa: censo inclui o proprio
+retirement_data_checkpoints.record_json, que passa de1 para2 no checkpoint.
+Diagnostico recursivo confirmou que E A UNICA diferenca. Apos terminais,
+comparacao aceita exatamente esse incremento +1 ja autenticado pelo journal;
+todos demais fatos/contagens/referencias continuam iguais. Nenhuma regra
+de dominio relaxada. Rodada activation2 deve provar ajuste+instalacao.
+
+learning-composition2 TERMINAL: Core51passed; Community21174=0:21passed/
+734.44s. Fresh concluiu; reused recusado connectivity_pending; superseded
+recusado history_pending. Apos TODOS terminais, K4 WIP reconhece somente
+pares v6/v16-v17 e v9/v19 na ativacao (v7/v8/v18 nao promovidos). Ensaio
+fresh ampliado com interrupcao antes de publicar, instalacao, resume,
+startup -I do par instalado, escrita posterior legitima e corrupcao de prova.
+
+Gap zero-Sprint WIP corrigido sem archive/Board/contexto ficticio: preparacao
+permite references() apenas com plano vazio e recaptura completa; contexto
+exige checkpoint e gera recibo tecnico vinculado a input_sha256, antes/depois
+do censo sob mesma transacao. Replay exige cadeia retida, nao recaptura
+fontes transformadas. Cards/work reconhecem os checkpoints vazios existentes,
+sem fabricar eventos. _documents continua estrito fora desse caminho provado.
+Fresh K3/K4 agora remove o Sprint artificial da fixture e exercita coordenador
+inteiro vazio. Testes de censo omitido, perda de resposta nas3 etapas e
+recibo incorreto preparados. AINDA NAO executados apos alteracao.
+Ruff0; exigir build/install/prova novos antes de comportamento.
+
+learning-composition2 builds/install76623/prova92174 terminais0:848/911Core
++369/454Community byte-identical ANTES das suites. Core16128=0:51passed/6.43s;
+F1617581=1 apenas matrizes, findings=[]; Community21174 ainda executa,
+18 testes de gate/compatibilidade ja passaram, tres coordenadores pendentes.
+Produto congelado. learning-composition1 teve somente build/install0, sem
+prova/testes; revisao adicionou consistencia detalhada captura/contagem antes
+da campanha2. Nao reutilizar esses artefatos como prova comportamental.
+
+Investigacao independente do gap JA conhecido sem Sprints: novo teste real
+test_retirement_empty_population.py (fora da suite ativa), mesmo par provado,
+empty-retirement-repro Community68527=1:1failed/12.38s. O caminho publico
+interno prepare_retirement_data_run recusa references=() ANTES do contexto,
+em _references:retirement_data_archives_invalid. Captura completa retorna()
+legitimamente. Nao simplesmente remover guard: exige provar censo vazio,
+checkpoint e replay em todos consumidores (context/cards/work/cutover).
+Nenhuma correcao de produto desse gap implementada ainda; nenhum dado real.
+
+Aplicabilidade publicada: Core2ca6cde1 /Community1d5b139c, pushes0.
+Composicao K3 WIP: Core qualifica apenas captura exata por Board/origem/
+Learning/geracao/fingerprint, com selecao completa, execucao materializada
+e observacao atual; fonte desconhecida, binding ausente e outros cognitivos
+continuam pendentes. Community adapta VerifiedLearningPhase ja rederivada;
+projection/v9 + reconciliation/v19 compoem o predicado sem modificar provas
+anteriores. v6/v7/v8/v18 preservam significado e v18 continua recusado.
+Completion usa gates Core existentes de historia/relacoes/conectividade/
+Global, substituindo somente contagem cognitiva composta. Testes preparados:
+Core negativos de escopo/prova/paridade e tres coordenadores: fresh deve
+concluir, reused/superseded devem continuar recusados pela historia efetiva.
+AINDA NAO executados. Nenhuma migracao/ativacao real autorizada ou feita.
+
 Aplicabilidade final: builds/install74353/prova/F1646483 TODOS terminais0.
 Par847 Python/910payload Core+368/453 Community byte-identical; F16ok,
 findings/documentation_findings vazios e oito budgetsZERO (recorder valida).
