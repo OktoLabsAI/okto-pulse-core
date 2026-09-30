@@ -2,6 +2,35 @@
 
 ## Estado para retomada
 
+BASE T39/T40 concluídos no recorte de aceitação previsto, sem nova alteração
+produtiva. Test Card fecha pelo caso de uso canônico com prova assinada de uma
+chamada real à rota /health do app via ASGI; issuer, verifier, SQLite, delivery
+admission e CardService reais. Dívida de projeção permanece pending e diagnóstico
+canonical_debt_open permanece visível. Pendência cognitiva failed recusa o mesmo
+fechamento sem registro parcial/evento; replay idêntico conserva o resultado.
+
+Fonte: completion-authenticated4, session90745=0, 2passed10.83s. Instalado:
+python -I, installed-completion2, session87089=0; dois cenários e todas as origens
+Pulse verificadas dentro da venv. Par pré-provado d933c8=0, 859/922 + 373/458
+byte-idênticos. Não somar repetições como casos distintos. Relatório completo:
+evidence-completion-authenticated.json. Limites explícitos: membership injetada,
+receipt de implementação semeado, obrigação cognitiva semeada; prova de teste
+realmente executada/assinada; sem E2E de autenticação/socket nem juízo de agente.
+
+Três falhas intermediárias preservadas: grant spec.tests.execute ausente,
+Architecture/Mockup N/A ausentes no Test Card e tarefa de implementação ainda
+in_progress. Corrigidas somente fixtures. Primeira tentativa instalada não
+achou pytest em -I; wrapper devolveu zero incorretamente e NÃO conta como passe.
+Dependências externas explicitamente acrescentadas depois das wheels no runner
+final; ambiente não é hermético. Ruff F/E9 e diff-check passam.
+
+Inventário: 105 verificados / 39 parciais / 102 não auditados. Próxima frente:
+BASE T41/T42 (snapshot governado/atualidade de cenário), conforme plano; não
+reabrir T39/T40 sem nova falha. Pacotes produtivos e SPA intactos; F16 anterior
+continua sendo o último executado, oito budgets ZERO. KG-10/T23 continuam
+aguardando decisões já solicitadas. Último par antes deste commit:
+Core2b2a417c / Communityefad69b6. Nenhum dado ou processo real alterado.
+
 BASE F6E/T39/T40: gate legado agora observa fonte cognitiva estritamente.
 read_completion_snapshot reutiliza a porta de observação completa/bounded já
 existente no adapter, com orçamento5s para conclusão; Health mantém o próprio
