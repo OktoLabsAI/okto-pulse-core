@@ -2,6 +2,30 @@
 
 ## Estado para retomada
 
+BASE T20 concluído nas superfícies existentes: test-card-surfaces4
+session8133=0,16passed27.22s. REST ASGI e handler MCP real, contextos autenticados
+injetados, grants/use cases/UoW/adapters reais. Matriz de envelope Knowledge
+ausente/v2: cenário válido cria Card/backlink; grant create_test ausente recusa;
+lista com cenário válido seguida de cenário de outra Spec/Board não deixa Card,
+backlink, outbox ou atividade. Leitura independente confirma persistência.
+CardCreate/McpCreateCardCommand e writers revisados: criação pública é um Card
+com coleção de cenários. Não há API separada de criação multi-Card encontrada,
+nem foi introduzida. Esse aceite não certifica todos os lotes homogêneos de F6B.
+Sem alegação de autenticação HTTP MCP: ferramenta .fn recebe contexto resolvido.
+
+Preflight41e5f3=0, provenance-test-card-surfaces1.json:859/922+373/458 idênticos
+entre fontes/site/wheels owner-final, antes de processos novos. Runs anteriores
+retidos:1 session44735=1 falhou por api_key_hash obrigatório omitido na fixture;
+2 session68518=0,8passed21.71s;3 session91086=1 por session_factory omitida no
+constructor da fixture Knowledge. Run4 substitui run2 na contagem final.
+Recorder record_test_card_surfaces_review.py executado uma vez após terminais;
+acceptance-test-card-surfaces.json. Inventário94 verificados/39 parciais/113
+não auditados. Somente testes/docs; nenhum frontend/produto/gate alterado.
+Último F16 continua com oito ZERO; nenhuma nova execução alegada.
+Próxima frente independente do plano: BASE T17, derivações múltiplas de
+refinamento sem Sprint, reaproveitando os testes/contratos existentes.
+KG-10/T23 continuam aguardando decisão; entrega integral segue aberta.
+
 BASE T19 verificado e T20 parcial: Core atomicity2 session14052=0,
 4passed3.91s; Community atomicity1 session88669=0,4passed12.29s. Criação única
 persiste Test Card e vínculos bidirecionais; rollback remove também outbox e
