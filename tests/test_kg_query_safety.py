@@ -438,6 +438,36 @@ async def test_cypher_handler_sanitizes_bounds_and_rounds():
 
 
 @pytest.mark.asyncio
+async def test_cypher_handler_reports_native_deadline_after_executor_ends():
+    import okto_pulse.core.mcp.kg_power_tools as kpt
+    from okto_pulse.core.kg.interfaces.graph_errors import GraphQueryTimeout
+
+    finished = []
+
+    def execute(*args, **kwargs):
+        try:
+            raise GraphQueryTimeout("native deadline")
+        finally:
+            finished.append(True)
+
+    async def abandoned_wait(*args, **kwargs):
+        raise AssertionError("Cypher must wait for native resource release")
+
+    mcp = _fresh_mcp("test-native-deadline")
+    with (
+        patch.object(kpt, "execute_cypher_read_only", execute),
+        patch.object(kpt, "check_rate_limit", lambda *_a, **_k: None),
+        patch.object(kpt.asyncio, "wait_for", abandoned_wait),
+    ):
+        kpt.register_kg_power_tools(mcp, get_agent=_stub_get_agent,
+                                    get_board_agent=_stub_get_board_agent)
+        tool = await mcp.get_tool("okto_pulse_kg_query_cypher")
+        payload = _json.loads(await tool.fn(board_id="b1", cypher="MATCH (n) RETURN n"))
+    assert finished == [True]
+    assert payload["error"]["code"] == "timeout"
+
+
+@pytest.mark.asyncio
 async def test_cypher_handler_rejects_above_hard_cap():
     """FR2 wired: a request above the hard cap is rejected before execution."""
     import okto_pulse.core.mcp.kg_power_tools as kpt

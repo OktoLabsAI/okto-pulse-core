@@ -582,6 +582,7 @@ class InMemoryCypherExecutor:
         params: dict[str, Any] | None = None,
         *,
         max_rows: int = 1000,
+        timeout_ms: int | None = None,
     ) -> dict:
         self.queries.append((board_id, cypher, dict(params or {})))
         return {

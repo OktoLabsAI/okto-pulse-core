@@ -2,6 +2,36 @@
 
 ## Estado para retomada
 
+Deadline nativo pronto para envio: regressao routed11808 terminal0,94 passed/
+19.70s. Matrizes regeneradas oficialmente com caminho completo; buildsfinal2,
+install43442/prova10338 terminais0,848/911+370/455 byte-identical. F16final63352
+terminal0,ok=true/findings e docs vazios/oitoZERO. Recorder record_query_deadline.py
+executado UMA vez: acceptance-query-native-deadline.json registra68/31/94 e
+limites; nenhum processo desta campanha vivo. D18 segue parcial conforme lista
+abaixo. Proxima implementacao: kg_query_timeout_ms humano no Board/default,
+leitura autorizada compartilhada e clamp nos endpoints (MCP, REST Cypher,
+exploration search/analytics); frontend BoardSettingsForm compartilhado requer
+teste/build/distribuicao. Natural/reflexiva e payload/fanout ainda pendentes.
+
+Par Learning composition publicado: Coreff72e95d/Communityb06d9315, pushes0.
+D18 WIP delimitado: CypherExecutor recebe timeout_ms, Community aplica prazo
+nativo unico por scalar/pair/batch e retries, combinando com prazo health
+sem ampliar nenhum. GraphQueryTimeout e contrato publico neutro; MCP Cypher
+aguarda termino nativo sem wait_for que abandonava thread. Nenhum dialeto
+ou mecanismo novo no Core. Configuracao Board/default, limites agregados,
+natural/reflexiva e retirada de quota seguem PENDENTES, nao declarar D18 pronto.
+Build/install20171/prova query-deadline1 terminais0,848/911+370/455 identicos.
+Core89653 terminal0:68 passed/30.34s. Community13595 terminal1 por DDL da
+fixture fora da transacao write; corrigido somente teste, rerun59507 terminal0:
+31 passed/14.15s. Nativo real com clock controlado libera leitura e permite
+write/checkpoint subsequentes; par/batch compartilham prazo, health nao amplia.
+F1658311 terminal1:findings=[],oitoZERO,somente matrizesREADME. Regressao
+routed11808 iniciada, aguardar terminal antes de editar produto. Tentativa de
+regenerar README usou caminho relativo errado e NAO alterou arquivos; builds
+query-deadline-final foram feitos antes da regeneracao, NAO usar como parfinal.
+Depois testes: regenerar com caminho completo, build/install/prova/F16final2,
+registro e commit/push pareados, seguir a politica Board D15/D18.
+
 Fechamento Learning composition: activation3 Community90851 terminou0,
 2 passed/540.94s. Matrizes regeneradas oficialmente apos todos terminais.
 Builds/install finais concluidos; prova75523 terminal0:848 Python/911 payload

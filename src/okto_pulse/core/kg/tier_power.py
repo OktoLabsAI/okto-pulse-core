@@ -705,6 +705,7 @@ def execute_cypher_read_only(
                 unfiltered_cleaned,
                 params,
                 max_rows=max_rows,
+                timeout_ms=clamp_timeout(timeout_ms),
             )
             result = dict(paired_result["primary"])
             comparison_result = dict(paired_result["comparison"])
@@ -714,6 +715,7 @@ def execute_cypher_read_only(
                 cleaned,
                 params,
                 max_rows=max_rows,
+                timeout_ms=clamp_timeout(timeout_ms),
             )
         return _apply_canonical_projection(
             result,

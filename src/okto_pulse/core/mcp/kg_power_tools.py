@@ -14,6 +14,8 @@ import logging
 import re
 from typing import Any
 
+from okto_pulse.core.kg.interfaces.graph_errors import GraphQueryTimeout
+
 from okto_pulse.core.mcp.kg_authorization import (
     kg_permission_error,
     principal_id,
@@ -284,15 +286,14 @@ okto-pulse://reference/tool-docs/kg."""
                     hard_cap=bound_err["hard_cap"],
                 )
             logger.debug("[KG] kg_query_cypher offloading to thread")
-            result = await asyncio.wait_for(
-                asyncio.to_thread(
-                    execute_cypher_read_only,
-                    board_id, cypher, params,
-                    max_rows=effective_rows,
-                    timeout_ms=timeout_ms,
-                    include_working=include_working,
-                ),
-                timeout=30.0,
+            # The executor enforces the native deadline. Do not abandon a
+            # running thread and report completion while it still holds reads.
+            result = await asyncio.to_thread(
+                execute_cypher_read_only,
+                board_id, cypher, params,
+                max_rows=effective_rows,
+                timeout_ms=timeout_ms,
+                include_working=include_working,
             )
             logger.debug("[KG] kg_query_cypher thread returned: row_count=%d",
                          result.get("row_count", "unknown"))
@@ -320,9 +321,8 @@ okto-pulse://reference/tool-docs/kg."""
             result = annotate_truncation(result, effective_rows)
             result = round_kg_numbers(result)
             return json.dumps(result, default=str)
-        except asyncio.TimeoutError:
-            logger.error("[KG] kg_query_cypher timed out after 30s: board_id=%s", board_id)
-            return _err("timeout", "Query exceeded 30s timeout")
+        except GraphQueryTimeout:
+            return _err("timeout", "Query exceeded its native execution deadline")
         except TierPowerError as e:
             return _err(e.code, e.message, details=e.details)
 

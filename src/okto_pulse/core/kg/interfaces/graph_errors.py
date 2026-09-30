@@ -32,6 +32,12 @@ class GraphInvalidQuery(GraphError):
     code = "graph_invalid_query"
 
 
+class GraphQueryTimeout(GraphError):
+    """Native query work has ended after exhausting its execution deadline."""
+
+    code = "graph_query_timeout"
+
+
 class GraphCorruption(GraphError):
     code = "graph_corruption"
 
@@ -109,6 +115,7 @@ __all__ = [
     "GraphIndexUnavailable",
     "GraphInvalidQuery",
     "GraphLockContention",
+    "GraphQueryTimeout",
     "GraphUnavailable",
     "graph_memory_pressure_retry_after_seconds",
 ]
