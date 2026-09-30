@@ -2,6 +2,61 @@
 
 ## Estado para retomada
 
+Contexto Card de referencias pronto: F16final17191=0, findings/documentacao[]
+e oitoZERO; prova80753=0:858/921+373/458 byte-identicos no par final. Core82
+passed18.10s e frontend83passed67.87s, Python/SPA iguais aos testados; README
+gerado e empacotado atualizado. Recorder executado UMA vez apos terminais:
+evidence-reference-context.json registra provas e falha adversarial original.
+Sem processo pendente; pronto para commit/push. Inventario81/38/127 permanece:
+nao equiparar diagnosticos Card a todo G12/coverage ou a gate. Legado MCP nao
+recebe bloco; contexto e resposta de edicao usam fonte autorizada atual, sem
+autoridade derivada de audit, KG ou fingerprint. Sem nova tool de manutencao.
+Proxima dependencia concreta (§4.5): primitives.py recusa intent inteiro com
+relational_projection_edge_unresolved (resolucao de endpoints, ~linha4260);
+reproduzir remocao antiga conhecida junto de alvo valido ainda nao materializado
+e corrigir invalidacao sem forjar ACK completo/perder compensacao. Gap Spec
+sem referencias semanticas e auditoria integral continuam conforme plano.
+
+Context2 F1639943=1 SOMENTE matrizes README; findings[]/oitoZERO. Regeneracao
+oficial executada apos todos terminais. Context-final wheels0/install19451=0;
+prova80753 em andamento. Python e SPA inalterados desde suites82+83 verdes;
+apenas README mudou. Depois prova executar F16final, recorder uma vez, commit/
+push pareado. Sem motivo para repetir suites verdes sem nova mudanca Python/UI.
+
+Context2 install34506=0/prova52938=0:858/921+373/458 identicos. Core71435=0:
+82passed18.10s, incluindo SQL real, REST use cases/endpoint, MCP legacy/full/
+gate, resposta de alteracao e budget adversarial. Frontend83verde inalterado.
+F16context2 session39943 ainda em andamento; aguardar antes de regenerar
+README. Recorder record_reference_context.py preparado NAO executado; espera
+closure/provenance context-final e preserva falha context1. Fonte congelada.
+
+Context1 Core70422=1:15passed/1failed10.81s; caso adversarial mostrou fallback
+de budget preexistente retornando40765bytes apesar de limite32768. Corrigido
+fechamento agregado apos os limites por container, identidades diagnosticas
+ficam reservadas e intactas; erro explicito se nem fallback cabe. Nao muda gate.
+F161162=1 apenas README, findings[] e budgetsZERO. Apos terminais, completada
+resposta contextual de PATCH Card e MCP update com test_scenario_ids (§5.3),
+testes SQL/transportes ampliados. Ruffverde. Python mudou: novo build/prova
+obrigatorios antes de repetir. UI e seus83testes permanecem inalterados.
+
+Context1 frontend build2450=0 e testes15574=0:83passed67.87s. Wheels ambos0,
+install20560=0/prova52092=0:Core858Python/921payload+Community373/458 identicos.
+Campanha Core contextual iniciada apos prova. Nenhuma afirmacao de aceite
+integral; ainda verificar respostas das alteracoes relevantes (§5.3), F16 e
+suite terminal antes do registro e envio. Fonte congelada durante campanha.
+
+Par worker publicado b03d0583/520ec455, pushes0 e arvores limpas confirmadas.
+Novo WIP (§5.3): CardScenarioReferenceContext tipado, somente leitura de fontes
+relacionais atuais apos seis permissoes e Board/realm; sem depender de audit/KG.
+Leitura seleciona apenas IDs/Board/links e cenarios; metadata da Spec antes do
+conteudo evita carregar cenarios de outro Board. Fonte falha/incompleta e acesso
+negado nao viram zero; contexto nao altera gate/autoridade. GET Card e MCP
+nao-legacy integrados, budget preserva IDs inteiros/count/truncated; UI em
+Card References/Lineage com motivos e superficie normativa de correcao.
+Testes pure, SQL real/MCP, CRUD/projection e frontend preparados. AINDA NAO
+validados; frontend build contexto1 em andamento. Depois wheels pareados,
+install/prova byte-a-byte ANTES de suites Python e F16. Sem schema SQL novo.
+
 Recorte worker/reference findings e reconciliacao card_parent validado:
 Core94passed8.57s; Community40 casos unicos verdes reunidos nas campanhas
 parent-final2(17),final3(1),unlinked(1) e recovery(21passed196.19s,session41400=0).

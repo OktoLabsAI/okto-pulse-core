@@ -4507,6 +4507,9 @@ async def okto_pulse_get_task_context(
         # are additive only on the profiled surfaces and must not leak through
         # the legacy passthrough projector.
         if _resolved_profile != "legacy":
+            from okto_pulse.core.application.use_cases.card_reference_context import GetCardScenarioReferenceContextUseCase
+            result["scenario_reference_context"] = (await GetCardScenarioReferenceContextUseCase().execute(
+                board_id=board_id, card_id=card.id, actor=actor, uow=uow)).model_dump(mode='json')
             from okto_pulse.core.inbound.historical_context import historical_context_follow_up
             result["historical_context_read"] = historical_context_follow_up(board_id, "card", card.id)
             result["code_traceability"] = await _mcp_code_traceability_projection(
@@ -4776,9 +4779,15 @@ async def okto_pulse_update_card(
         except ValueError as e:
             return json.dumps({"error": str(e)})
 
+        reference_context = {}
+        if "test_scenario_ids" in update_data:
+            from okto_pulse.core.application.use_cases.card_reference_context import GetCardScenarioReferenceContextUseCase
+            reference_context['scenario_reference_context'] = (await GetCardScenarioReferenceContextUseCase().execute(
+                board_id=board_id, card_id=updated.id, actor=actor, uow=uow)).model_dump(mode='json')
         return json.dumps(
             {
                 "success": True,
+                **reference_context,
                 "card": {
                     "id": updated.id,
                     "title": updated.title,

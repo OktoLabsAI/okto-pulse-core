@@ -29,6 +29,7 @@ from okto_pulse.core.domain.learning_submission import LearningSubmission
 from okto_pulse.core.domain.execution_contract import SpecExecutionContract, SpecExecutionContractAdoption
 from okto_pulse.core.domain.task_validation_policy import MigratedTaskValidationPolicy, ResolvedTaskValidationConfig, reject_migrated_validation_policy_write, read_migrated_validation_policy
 from okto_pulse.core.models.delivery_selection import DeliverySelectionInput, DeliverySelectionManifest
+from okto_pulse.core.models.reference_context import CardScenarioReferenceContext
 from okto_pulse.core.domain.card_completion import (
     REJECTION_CODE_MAX_LENGTH,
     REJECTION_ID_MAX_LENGTH,
@@ -3619,6 +3620,10 @@ class CardResponse(BaseSchema):
     id: str
     board_id: str
     spec_id: str | None = None
+    scenario_reference_context: CardScenarioReferenceContext | None = Field(
+        default=None, description="Authorized current scenario-reference read; null means not observed.",
+        json_schema_extra={"readOnly": True},
+    )
     migrated_validation_policy: MigratedTaskValidationPolicy | None = Field(
         default=None, description="Deprecated migration-only policy preservation; read-only historical provenance.",
     )

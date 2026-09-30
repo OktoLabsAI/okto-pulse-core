@@ -182,6 +182,7 @@ _STRUCTURED_BUDGET_PATHS: tuple[tuple[str, ...], ...] = (
 _RECENT_FIRST_COLLECTION_KEYS = frozenset({"comments", "validations", "evaluations"})
 _TRUNCATION_SUFFIX = "…[truncated]"
 _POST_ASSEMBLY_SEMANTIC_BLOCKS = (
+    "scenario_reference_context",
     "test_card_operational_flow",
     "gate_readiness",
     "code_traceability",
@@ -503,6 +504,23 @@ def _path_value(root: Mapping[str, Any], path: tuple[str, ...]) -> Any:
             return None
         current = current[component]
     return current
+
+
+def _strict_context_budget(value: dict[str, Any], budget: int) -> tuple[dict[str, Any], int]:
+    """Finish the existing truncation path without claiming an oversized read.
+
+    Protected routing and reference identities have already been removed and
+    reserved by the caller. A bound on each container is not an aggregate bound.
+    """
+    omitted = 0
+    for limit in (16, 8, 4, 2, 1):
+        if _stable_payload_bytes(value) <= budget:
+            return value, omitted
+        value, dropped, _ = _bounded_clone(value, string_limit=64, list_limit=limit, mapping_limit=limit)
+        omitted += dropped
+    if _stable_payload_bytes(value) > budget:
+        raise ValueError('context_response_budget_exceeded')
+    return value, omitted
 
 
 def _drop_path(root: dict[str, Any], path: tuple[str, ...]) -> int:
@@ -914,13 +932,14 @@ def _project_task_gate_context(
         # the additive drilldown inventory.
         projected["content_manifest"] = _content_manifest(source)
 
-    historical_read = source.get("historical_context_read")
-    if historical_read is not None:
-        projected["historical_context_read"] = historical_read
+    protected = {key: source[key] for key in ("historical_context_read", "scenario_reference_context")
+                 if source.get(key) is not None}
+    projected.update(protected)
     omitted = max(0, _count_fields(source) - _count_fields(projected))
-    projected.pop("historical_context_read", None)
+    for key in protected:
+        projected.pop(key, None)
     truncated = False
-    reserved = _stable_payload_bytes({"historical_context_read": historical_read}) if historical_read is not None else 0
+    reserved = _stable_payload_bytes(protected) if protected else 0
     body_budget = CONTEXT_GATE_BUDGET_BYTES - _PROJECTION_METADATA_RESERVE_BYTES - reserved
     if _stable_payload_bytes(projected) > body_budget:
         projected, bounded_omitted, truncated = _bounded_clone(
@@ -977,8 +996,11 @@ def _project_task_gate_context(
         omitted += strict_omitted
         truncated = True
 
-    if historical_read is not None:
-        projected["historical_context_read"] = historical_read
+    if _stable_payload_bytes(projected) > body_budget:
+        projected, strict_omitted = _strict_context_budget(projected, body_budget)
+        omitted += strict_omitted
+        truncated = True
+    projected.update(protected)
     projection: dict[str, Any] = {
         "profile": "full",
         "context_scope": "gate",
@@ -1163,6 +1185,10 @@ def _apply_profile_budget(
         omitted += strict_omitted
         truncated = True
 
+    if _stable_payload_bytes(current) > body_budget:
+        current, strict_omitted = _strict_context_budget(current, body_budget)
+        omitted += strict_omitted
+        truncated = True
     return current, omitted, truncated
 
 
@@ -1391,15 +1417,15 @@ class MCPContextProjectionService:
         if task_context_budgeted:
             # Keep complete routing identities/offset=0, even under strict fallback.
             # Reserve their actual size instead of truncating a follow-up argument.
-            historical_read = projected.pop("historical_context_read", None)
-            reserved = _stable_payload_bytes({"historical_context_read": historical_read}) if historical_read is not None else 0
+            protected = {key: projected.pop(key) for key in ("historical_context_read", "scenario_reference_context")
+                         if projected.get(key) is not None}
+            reserved = _stable_payload_bytes(protected) if protected else 0
             projected, budget_omitted, truncated = _apply_profile_budget(
                 projected,
                 profile=resolved_profile,
                 reserved_bytes=reserved,
             )
-            if historical_read is not None:
-                projected["historical_context_read"] = historical_read
+            projected.update(protected)
             omitted += budget_omitted
 
         # FR-10 / ac_622687f9: canonical R5 projection metadata. The byte counter

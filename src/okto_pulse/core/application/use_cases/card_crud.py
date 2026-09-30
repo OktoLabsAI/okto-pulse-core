@@ -186,6 +186,9 @@ class GetCardUseCase:
         visible = await project_card_validation_visibility(projected, actor=actor, uow=uow)
         response = CardResponse.model_validate(visible)
         response.validation_config = await _read_card_validation_config(card, uow=uow)
+        from okto_pulse.core.application.use_cases.card_reference_context import GetCardScenarioReferenceContextUseCase
+        response.scenario_reference_context = await GetCardScenarioReferenceContextUseCase().execute(
+            board_id=card.board_id, card_id=card.id, actor=actor, uow=uow)
         return GetCardResult(response)
 
 
@@ -267,13 +270,16 @@ class UpdateCardUseCase:
             refreshed,
             target_type="card",
         )
-        return UpdateCardResult(
-            await project_card_validation_visibility(
+        visible = await project_card_validation_visibility(
                 projected,
                 actor=actor,
                 uow=uow,
             )
-        )
+        response = CardResponse.model_validate(visible)
+        from okto_pulse.core.application.use_cases.card_reference_context import GetCardScenarioReferenceContextUseCase
+        response.scenario_reference_context = await GetCardScenarioReferenceContextUseCase().execute(
+            board_id=refreshed.board_id, card_id=refreshed.id, actor=actor, uow=uow)
+        return UpdateCardResult(response)
 
 
 # --- delete -----------------------------------------------------------------
