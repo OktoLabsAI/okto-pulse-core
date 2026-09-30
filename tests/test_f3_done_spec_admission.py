@@ -23,6 +23,57 @@ from okto_pulse.core.models.knowledge_propagation import (
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize('has_validation', (False, True))
+@pytest.mark.parametrize('operation', ('title', 'requirements', 'scenario_body'))
+async def test_done_spec_normative_content_requires_revision_before_any_write(has_validation, operation):
+    """BASE T24: a post-delivery correction cannot rewrite normative history."""
+    from copy import deepcopy
+    from okto_pulse.core.domain.human_validation_cycle import SubjectEditRequiresDraftError
+    from okto_pulse.core.models.schemas import SpecUpdate
+
+    suffix = uuid4().hex
+    board_id, spec_id = f'board-{suffix}', f'spec-{suffix}'
+    scenario = dict(id='regression', title='Existing regression', given='Original input',
+                    when='Original action', then='Original condition', status='passed')
+    async with get_session_factory()() as db:
+        db.add(Board(id=board_id, name='Delivered', owner_id='owner'))
+        db.add(Spec(id=spec_id, board_id=board_id, title='Delivered contract',
+                    status=SpecStatus.DONE, created_by='owner', version=7,
+                    functional_requirements=[dict(id='fr-one', text='Original requirement')],
+                    test_scenarios=[scenario],
+                    current_validation_id='approved' if has_validation else None,
+                    validations=[dict(id='approved', outcome='success')] if has_validation else []))
+        await db.commit()
+        spec = await db.get(Spec, spec_id)
+        before = deepcopy((spec.title, spec.functional_requirements, spec.test_scenarios,
+                           spec.version, spec.edition, spec.current_validation_id, spec.validations))
+        writes = []
+
+        def capture(_conn, _cursor, sql, _params, _context, _many):
+            if sql.lstrip().split()[0].lower() in {'insert', 'update', 'delete', 'replace'}:
+                writes.append(sql)
+
+        event.listen(db.bind.sync_engine, 'before_cursor_execute', capture)
+        try:
+            service = SpecService(db)
+            with pytest.raises(SubjectEditRequiresDraftError) as failure:
+                if operation == 'scenario_body':
+                    await service.update_test_scenario(spec_id, 'owner', 'regression', then='Changed condition')
+                else:
+                    data = (SpecUpdate(title='Hotfix rewrite') if operation == 'title'
+                            else SpecUpdate(functional_requirements=[dict(id='fr-one', text='Changed requirement')]))
+                    await service.update_spec(spec_id, 'owner', data)
+            assert failure.value.code == 'subject_edit_requires_draft'
+            assert writes == []
+            await db.refresh(spec)
+            assert spec.status is SpecStatus.DONE
+            assert (spec.title, spec.functional_requirements, spec.test_scenarios,
+                    spec.version, spec.edition, spec.current_validation_id, spec.validations) == before
+        finally:
+            event.remove(db.bind.sync_engine, 'before_cursor_execute', capture)
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("has_closed_sprint", (False, True))
 @pytest.mark.parametrize("operation", ("create", "edit", "unlink", "link_out", "link_in", "reparent_out", "reparent_in",
     "delete", "upload", "delete_attachment", "add_dependency", "remove_dependency",

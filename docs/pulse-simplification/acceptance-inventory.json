@@ -161,8 +161,12 @@
       "line": 595,
       "id": "T16",
       "normative_text": "| T16 | Spec nova executando sem Sprint | Sem erro de assignment/active lane; demais gates vigentes. |",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "verified_by_reviewed_execution",
+      "test_text_references": [],
+      "reviewed_execution": {
+        "artifact": "acceptance-execution-gates-review.json",
+        "criterion_key": "BASE:T16"
+      }
     },
     {
       "key": "BASE:T17",
@@ -179,8 +183,12 @@
       "line": 597,
       "id": "T18",
       "normative_text": "| T18 | Dependência explícita de Spec não concluída/ciclo | Gate/ciclo mantidos; ausência de Sprint não libera execução. |",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "verified_by_reviewed_execution",
+      "test_text_references": [],
+      "reviewed_execution": {
+        "artifact": "acceptance-execution-gates-review.json",
+        "criterion_key": "BASE:T18"
+      }
     },
     {
       "key": "BASE:T19",
@@ -206,8 +214,12 @@
       "line": 600,
       "id": "T21",
       "normative_text": "| T21 | Bug Path A após Spec done | Executável por regras próprias, sem hotfix lane e com regressão requerida. |",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "verified_by_reviewed_execution",
+      "test_text_references": [],
+      "reviewed_execution": {
+        "artifact": "acceptance-execution-gates-review.json",
+        "criterion_key": "BASE:T21"
+      }
     },
     {
       "key": "BASE:T22",
@@ -215,8 +227,12 @@
       "line": 601,
       "id": "T22",
       "normative_text": "| T22 | Bug Path B com amendment confirmado legítimo | Vínculos cross-spec aceitos só na extensão autorizada. |",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "verified_by_reviewed_execution",
+      "test_text_references": [],
+      "reviewed_execution": {
+        "artifact": "acceptance-execution-gates-review.json",
+        "criterion_key": "BASE:T22"
+      }
     },
     {
       "key": "BASE:T23",
@@ -224,8 +240,12 @@
       "line": 602,
       "id": "T23",
       "normative_text": "| T23 | Amendment incompleto/unrelated/stale/sem validador | Continua bloqueado; lane removida não amplia elegibilidade. |",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "partial",
+      "test_text_references": [],
+      "reviewed_execution": {
+        "artifact": "acceptance-execution-gates-review.json",
+        "criterion_key": "BASE:T23"
+      }
     },
     {
       "key": "BASE:T24",
@@ -233,8 +253,12 @@
       "line": 603,
       "id": "T24",
       "normative_text": "| T24 | Atualizar conteúdo normativo de Spec concluída sob pretexto de hotfix | Recusa; evidência operacional legítima continua permitida. |",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "verified_by_reviewed_execution",
+      "test_text_references": [],
+      "reviewed_execution": {
+        "artifact": "acceptance-execution-gates-review.json",
+        "criterion_key": "BASE:T24"
+      }
     },
     {
       "key": "BASE:T25",

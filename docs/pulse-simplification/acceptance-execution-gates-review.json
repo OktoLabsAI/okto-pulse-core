@@ -1,0 +1,2998 @@
+{
+  "format": "pulse-v1.3-reviewed-execution/v1",
+  "scope": "BASE T16/T18/T21-T24 execution gates",
+  "runs": {
+    "core": {
+      "file": "learning-reconciliation-execution-gates-review2-core.xml",
+      "sha256": "5c0b5b44f04890a6d619fdd019b52d8029432b9adb16c0030a150bcbe1431b32",
+      "edition": "core",
+      "log_sha256": "6ff39d41abc49b8d01a546dda2dcd23f76c2cbb61847ea6eef5ea18c1c19d411",
+      "suites": [
+        {
+          "name": "pytest",
+          "errors": "0",
+          "failures": "0",
+          "skipped": "0",
+          "tests": "184",
+          "time": "18.681",
+          "timestamp": "2026-09-30T18:06:20.735595-03:00",
+          "hostname": "Alienware_m15"
+        }
+      ]
+    },
+    "community": {
+      "file": "learning-reconciliation-execution-gates-review1-community.xml",
+      "sha256": "f34d179c7facd473ef4119f5e54426921c27f45d48ec5839bae4e459b575e179",
+      "edition": "community",
+      "log_sha256": "bae6c55b572fd6657b9fc448519322c9adec061802e0a6fc35b251de0a81964a",
+      "suites": [
+        {
+          "name": "pytest",
+          "errors": "0",
+          "failures": "0",
+          "skipped": "0",
+          "tests": "55",
+          "time": "42.125",
+          "timestamp": "2026-09-30T18:03:10.647242-03:00",
+          "hostname": "Alienware_m15"
+        }
+      ]
+    },
+    "frontend": {
+      "file": "execution-gates-review1-frontend.xml",
+      "sha256": "7df4050e2889d725e3e0ea051e0d7d8d3442c5652c81515c71b80c1ac0afc262",
+      "edition": "community",
+      "log_sha256": "aad1320ff2700bfa524a91d3687744ba72321175b590d5f8c85f7839b8cf5302",
+      "suites": [
+        {
+          "name": "src/components/kanban/__tests__/CardModal.test.tsx",
+          "timestamp": "2026-09-30T21:05:21.175Z",
+          "hostname": "Alienware_m15",
+          "tests": "79",
+          "failures": "0",
+          "errors": "0",
+          "skipped": "0",
+          "time": "46.4874299"
+        },
+        {
+          "name": "src/components/kanban/__tests__/CreateCardModal.knowledgePropagation.test.tsx",
+          "timestamp": "2026-09-30T21:05:21.196Z",
+          "hostname": "Alienware_m15",
+          "tests": "10",
+          "failures": "0",
+          "errors": "0",
+          "skipped": "0",
+          "time": "5.0744819"
+        },
+        {
+          "name": "src/components/kanban/__tests__/PathBRemediationPanel.test.tsx",
+          "timestamp": "2026-09-30T21:05:21.199Z",
+          "hostname": "Alienware_m15",
+          "tests": "11",
+          "failures": "0",
+          "errors": "0",
+          "skipped": "0",
+          "time": "0.2310393"
+        },
+        {
+          "name": "src/components/specs/__tests__/SpecModal.dependencies.test.tsx",
+          "timestamp": "2026-09-30T21:05:21.202Z",
+          "hostname": "Alienware_m15",
+          "tests": "12",
+          "failures": "0",
+          "errors": "0",
+          "skipped": "0",
+          "time": "14.0341106"
+        }
+      ]
+    },
+    "core_supplement": {
+      "file": "learning-reconciliation-execution-gates-supplement1-core.xml",
+      "sha256": "472fb4ecfc2a3cf650d517493523a49bb876d644d565f0e6eca461ea8d9e578a",
+      "edition": "core",
+      "log_sha256": "004403c9be0f518921f10b4821ef881332dd60400aff187af4312184863b58a3",
+      "suites": [
+        {
+          "name": "pytest",
+          "errors": "0",
+          "failures": "0",
+          "skipped": "0",
+          "tests": "24",
+          "time": "10.386",
+          "timestamp": "2026-09-30T18:07:38.007740-03:00",
+          "hostname": "Alienware_m15"
+        }
+      ]
+    },
+    "community_supplement": {
+      "file": "learning-reconciliation-execution-gates-supplement1-community.xml",
+      "sha256": "9af95fb83a27e4dc060b1487333be1db8a7eab7d7433ad0095d9ac35e6953b68",
+      "edition": "community",
+      "log_sha256": "f84a5cc07de6a93f948e4b8246c1d3e5bf613cb672681196363939cafe327115",
+      "suites": [
+        {
+          "name": "pytest",
+          "errors": "0",
+          "failures": "0",
+          "skipped": "0",
+          "tests": "2",
+          "time": "17.874",
+          "timestamp": "2026-09-30T18:07:37.674561-03:00",
+          "hostname": "Alienware_m15"
+        }
+      ]
+    }
+  },
+  "criteria": {
+    "BASE:T16": {
+      "status": "verified_by_reviewed_execution",
+      "covered": "Actual REST start of the new execution contract reaches in_progress after required classification and assessment; incomplete classification and rejected assessment still block. Normal Card start/resume ignores every retired Sprint state and absent assignment. Incomplete Cards still block Spec completion.",
+      "remaining": null,
+      "evidence": [
+        {
+          "run": "core",
+          "repository": "okto_labs_pulse_core",
+          "file": "tests/test_f3_retired_sprint_admission.py",
+          "source_sha256": "8de7ccdb15101192d30bd18609aa398a2cdb8a986b210b8e9fd0e24357feeb0d",
+          "executions": [
+            {
+              "classname": "tests.test_f3_retired_sprint_admission",
+              "name": "test_normal_start_preview_and_mutation_ignore_retired_sprint_state[False-None]",
+              "time": "2.536"
+            },
+            {
+              "classname": "tests.test_f3_retired_sprint_admission",
+              "name": "test_normal_start_preview_and_mutation_ignore_retired_sprint_state[False-draft]",
+              "time": "0.323"
+            },
+            {
+              "classname": "tests.test_f3_retired_sprint_admission",
+              "name": "test_normal_start_preview_and_mutation_ignore_retired_sprint_state[False-active]",
+              "time": "0.352"
+            },
+            {
+              "classname": "tests.test_f3_retired_sprint_admission",
+              "name": "test_normal_start_preview_and_mutation_ignore_retired_sprint_state[False-review]",
+              "time": "0.334"
+            },
+            {
+              "classname": "tests.test_f3_retired_sprint_admission",
+              "name": "test_normal_start_preview_and_mutation_ignore_retired_sprint_state[False-closed]",
+              "time": "0.349"
+            },
+            {
+              "classname": "tests.test_f3_retired_sprint_admission",
+              "name": "test_normal_start_preview_and_mutation_ignore_retired_sprint_state[False-cancelled]",
+              "time": "0.378"
+            },
+            {
+              "classname": "tests.test_f3_retired_sprint_admission",
+              "name": "test_normal_start_preview_and_mutation_ignore_retired_sprint_state[True-None]",
+              "time": "0.302"
+            },
+            {
+              "classname": "tests.test_f3_retired_sprint_admission",
+              "name": "test_normal_start_preview_and_mutation_ignore_retired_sprint_state[True-draft]",
+              "time": "0.294"
+            },
+            {
+              "classname": "tests.test_f3_retired_sprint_admission",
+              "name": "test_normal_start_preview_and_mutation_ignore_retired_sprint_state[True-active]",
+              "time": "0.303"
+            },
+            {
+              "classname": "tests.test_f3_retired_sprint_admission",
+              "name": "test_normal_start_preview_and_mutation_ignore_retired_sprint_state[True-review]",
+              "time": "0.348"
+            },
+            {
+              "classname": "tests.test_f3_retired_sprint_admission",
+              "name": "test_normal_start_preview_and_mutation_ignore_retired_sprint_state[True-closed]",
+              "time": "0.328"
+            },
+            {
+              "classname": "tests.test_f3_retired_sprint_admission",
+              "name": "test_normal_start_preview_and_mutation_ignore_retired_sprint_state[True-cancelled]",
+              "time": "0.314"
+            },
+            {
+              "classname": "tests.test_f3_retired_sprint_admission",
+              "name": "test_spec_completion_keeps_pending_task_gate_independent_of_retired_sprints[None]",
+              "time": "0.120"
+            },
+            {
+              "classname": "tests.test_f3_retired_sprint_admission",
+              "name": "test_spec_completion_keeps_pending_task_gate_independent_of_retired_sprints[draft]",
+              "time": "0.130"
+            },
+            {
+              "classname": "tests.test_f3_retired_sprint_admission",
+              "name": "test_spec_completion_keeps_pending_task_gate_independent_of_retired_sprints[active]",
+              "time": "0.109"
+            },
+            {
+              "classname": "tests.test_f3_retired_sprint_admission",
+              "name": "test_spec_completion_keeps_pending_task_gate_independent_of_retired_sprints[review]",
+              "time": "0.117"
+            },
+            {
+              "classname": "tests.test_f3_retired_sprint_admission",
+              "name": "test_spec_completion_keeps_pending_task_gate_independent_of_retired_sprints[closed]",
+              "time": "0.113"
+            },
+            {
+              "classname": "tests.test_f3_retired_sprint_admission",
+              "name": "test_spec_completion_keeps_pending_task_gate_independent_of_retired_sprints[cancelled]",
+              "time": "0.102"
+            }
+          ]
+        },
+        {
+          "run": "community_supplement",
+          "repository": "okto_labs_pulse_community",
+          "file": "tests/test_architecture_start_transition.py",
+          "source_sha256": "a6eb1c00cbb0bcfcc02a1910f5fb9f01e6b5e907f556163116a683e33b45d420",
+          "executions": [
+            {
+              "classname": "tests.test_architecture_start_transition",
+              "name": "test_pending_architecture_blocks_actual_start_without_workflow_mutation[3]",
+              "time": "3.800"
+            },
+            {
+              "classname": "tests.test_architecture_start_transition",
+              "name": "test_pending_architecture_blocks_actual_start_without_workflow_mutation[31]",
+              "time": "2.969"
+            }
+          ]
+        }
+      ]
+    },
+    "BASE:T18": {
+      "status": "verified_by_reviewed_execution",
+      "covered": "Only non-archived Done prerequisites satisfy readiness; execution transitions retain the dependency blocker and edition fence. Real SQLite serializes reciprocal additions and rejects the resulting cycle. REST preserves structured blockers and the frontend distinguishes archived Done from unfinished prerequisites.",
+      "remaining": null,
+      "evidence": [
+        {
+          "run": "core",
+          "repository": "okto_labs_pulse_core",
+          "file": "tests/test_spec_dependencies_core.py",
+          "source_sha256": "b8cfc1e2f28716a18d9f034fcc2fc6477bbf16f2c3aed0d22cdaf70a42bd8ccd",
+          "executions": [
+            {
+              "classname": "tests.test_spec_dependencies_core",
+              "name": "test_manage_dependency_permission_is_a_fail_closed_introduction",
+              "time": "0.029"
+            },
+            {
+              "classname": "tests.test_spec_dependencies_core",
+              "name": "test_list_use_case_derives_and_enforces_remove_capability[rest-False]",
+              "time": "0.022"
+            },
+            {
+              "classname": "tests.test_spec_dependencies_core",
+              "name": "test_list_use_case_derives_and_enforces_remove_capability[mcp-False]",
+              "time": "0.018"
+            },
+            {
+              "classname": "tests.test_spec_dependencies_core",
+              "name": "test_list_use_case_derives_and_enforces_remove_capability[rest-True]",
+              "time": "0.026"
+            },
+            {
+              "classname": "tests.test_spec_dependencies_core",
+              "name": "test_readiness_starts_consistent_read_before_spec_load_and_permission",
+              "time": "0.025"
+            },
+            {
+              "classname": "tests.test_spec_dependencies_core",
+              "name": "test_add_use_case_normalizes_only_missing_target_without_disclosure",
+              "time": "0.020"
+            },
+            {
+              "classname": "tests.test_spec_dependencies_core",
+              "name": "test_add_use_case_authorizes_source_before_target_lookup",
+              "time": "0.017"
+            },
+            {
+              "classname": "tests.test_spec_dependencies_core",
+              "name": "test_add_use_case_requires_both_endpoint_reads_and_masks_target_denial",
+              "time": "0.017"
+            },
+            {
+              "classname": "tests.test_spec_dependencies_core",
+              "name": "test_remove_use_case_requires_source_read_after_manage_authorization",
+              "time": "0.026"
+            },
+            {
+              "classname": "tests.test_spec_dependencies_core",
+              "name": "test_mutation_use_cases_bind_stateful_authorization_to_source_status",
+              "time": "0.020"
+            },
+            {
+              "classname": "tests.test_spec_dependencies_core",
+              "name": "test_mcp_dependency_list_projection_matches_closed_public_contract",
+              "time": "0.025"
+            },
+            {
+              "classname": "tests.test_spec_dependencies_core",
+              "name": "test_full_spec_readiness_uses_same_public_shape_as_rest_and_mcp",
+              "time": "0.019"
+            },
+            {
+              "classname": "tests.test_spec_dependencies_core",
+              "name": "test_readiness_detail_limit_preserves_zero_and_bounds_other_values",
+              "time": "0.019"
+            },
+            {
+              "classname": "tests.test_spec_dependencies_core",
+              "name": "test_dependency_query_rejects_cursor_beyond_shared_core_bound",
+              "time": "0.018"
+            },
+            {
+              "classname": "tests.test_spec_dependencies_core",
+              "name": "test_dependency_service_rejects_removal_reason_beyond_shared_core_bound",
+              "time": "0.022"
+            },
+            {
+              "classname": "tests.test_spec_dependencies_core",
+              "name": "test_active_duplicate_is_rejected_without_any_durable_write",
+              "time": "0.018"
+            },
+            {
+              "classname": "tests.test_spec_dependencies_core",
+              "name": "test_add_locks_both_endpoint_specs_in_lexicographic_order",
+              "time": "0.028"
+            },
+            {
+              "classname": "tests.test_spec_dependencies_core",
+              "name": "test_mutation_rejects_status_changed_after_stateful_authorization[add]",
+              "time": "0.027"
+            },
+            {
+              "classname": "tests.test_spec_dependencies_core",
+              "name": "test_mutation_rejects_status_changed_after_stateful_authorization[remove]",
+              "time": "0.021"
+            },
+            {
+              "classname": "tests.test_spec_dependencies_core",
+              "name": "test_idempotency_lookup_is_scoped_by_actor_type",
+              "time": "0.018"
+            },
+            {
+              "classname": "tests.test_spec_dependencies_core",
+              "name": "test_visible_cross_board_target_uses_explicit_conflict",
+              "time": "0.021"
+            },
+            {
+              "classname": "tests.test_spec_dependencies_core",
+              "name": "test_done_is_the_only_satisfying_target_and_cycle_check_is_directed",
+              "time": "0.017"
+            },
+            {
+              "classname": "tests.test_spec_dependencies_core",
+              "name": "test_every_card_execution_start_or_resume_edge_uses_dependency_blocker",
+              "time": "0.016"
+            },
+            {
+              "classname": "tests.test_spec_dependencies_core",
+              "name": "test_spec_gate_readiness_surfaces_precedence_as_active_gate",
+              "time": "0.016"
+            },
+            {
+              "classname": "tests.test_spec_dependencies_core",
+              "name": "test_error_retryability_and_mcp_inventory_are_closed",
+              "time": "0.016"
+            },
+            {
+              "classname": "tests.test_spec_dependencies_core",
+              "name": "test_spec_dependency_mcp_resource_documents_the_three_tool_contract",
+              "time": "0.016"
+            },
+            {
+              "classname": "tests.test_spec_dependencies_core",
+              "name": "test_only_validated_to_in_progress_starts_spec_execution",
+              "time": "0.015"
+            },
+            {
+              "classname": "tests.test_spec_dependencies_core",
+              "name": "test_same_principal_same_request_is_a_side_effect_free_replay",
+              "time": "0.016"
+            },
+            {
+              "classname": "tests.test_spec_dependencies_core",
+              "name": "test_same_idempotency_key_with_a_different_digest_is_closed_conflict",
+              "time": "0.018"
+            },
+            {
+              "classname": "tests.test_spec_dependencies_core",
+              "name": "test_remove_receipt_snapshots_current_target_satisfaction",
+              "time": "0.020"
+            },
+            {
+              "classname": "tests.test_spec_dependencies_core",
+              "name": "test_add_receipt_seals_human_readable_endpoint_snapshots",
+              "time": "0.018"
+            },
+            {
+              "classname": "tests.test_spec_dependencies_core",
+              "name": "test_ac19_add_fault_injection_rolls_back_the_complete_mutation[insert_dependency]",
+              "time": "0.016"
+            },
+            {
+              "classname": "tests.test_spec_dependencies_core",
+              "name": "test_ac19_add_fault_injection_rolls_back_the_complete_mutation[bump_source_spec_version]",
+              "time": "0.019"
+            },
+            {
+              "classname": "tests.test_spec_dependencies_core",
+              "name": "test_ac19_add_fault_injection_rolls_back_the_complete_mutation[store_mutation_receipt]",
+              "time": "0.019"
+            },
+            {
+              "classname": "tests.test_spec_dependencies_core",
+              "name": "test_ac19_add_fault_injection_rolls_back_the_complete_mutation[spec.version_bumped]",
+              "time": "0.021"
+            },
+            {
+              "classname": "tests.test_spec_dependencies_core",
+              "name": "test_ac19_add_fault_injection_rolls_back_the_complete_mutation[spec.dependency_added]",
+              "time": "0.019"
+            },
+            {
+              "classname": "tests.test_spec_dependencies_core",
+              "name": "test_ac19_add_fault_injection_rolls_back_the_complete_mutation[activity_log]",
+              "time": "0.018"
+            },
+            {
+              "classname": "tests.test_spec_dependencies_core",
+              "name": "test_ac19_add_fault_injection_rolls_back_the_complete_mutation[spec_history]",
+              "time": "0.017"
+            },
+            {
+              "classname": "tests.test_spec_dependencies_core",
+              "name": "test_ac19_add_fault_injection_rolls_back_the_complete_mutation[commit]",
+              "time": "0.016"
+            },
+            {
+              "classname": "tests.test_spec_dependencies_core",
+              "name": "test_ac19_remove_fault_injection_rolls_back_the_complete_mutation[tombstone_dependency]",
+              "time": "0.016"
+            },
+            {
+              "classname": "tests.test_spec_dependencies_core",
+              "name": "test_ac19_remove_fault_injection_rolls_back_the_complete_mutation[bump_source_spec_version]",
+              "time": "0.016"
+            },
+            {
+              "classname": "tests.test_spec_dependencies_core",
+              "name": "test_ac19_remove_fault_injection_rolls_back_the_complete_mutation[store_mutation_receipt]",
+              "time": "0.019"
+            },
+            {
+              "classname": "tests.test_spec_dependencies_core",
+              "name": "test_ac19_remove_fault_injection_rolls_back_the_complete_mutation[spec.version_bumped]",
+              "time": "0.021"
+            },
+            {
+              "classname": "tests.test_spec_dependencies_core",
+              "name": "test_ac19_remove_fault_injection_rolls_back_the_complete_mutation[spec.dependency_removed]",
+              "time": "0.023"
+            },
+            {
+              "classname": "tests.test_spec_dependencies_core",
+              "name": "test_ac19_remove_fault_injection_rolls_back_the_complete_mutation[activity_log]",
+              "time": "0.025"
+            },
+            {
+              "classname": "tests.test_spec_dependencies_core",
+              "name": "test_ac19_remove_fault_injection_rolls_back_the_complete_mutation[spec_history]",
+              "time": "0.021"
+            },
+            {
+              "classname": "tests.test_spec_dependencies_core",
+              "name": "test_ac19_remove_fault_injection_rolls_back_the_complete_mutation[commit]",
+              "time": "0.019"
+            },
+            {
+              "classname": "tests.test_spec_dependencies_core",
+              "name": "test_legacy_terminal_source_without_marker_is_still_post_start[in_progress]",
+              "time": "0.016"
+            },
+            {
+              "classname": "tests.test_spec_dependencies_core",
+              "name": "test_legacy_terminal_source_without_marker_is_still_post_start[done]",
+              "time": "0.015"
+            },
+            {
+              "classname": "tests.test_spec_dependencies_core",
+              "name": "test_legacy_terminal_source_without_marker_is_still_post_start[cancelled]",
+              "time": "0.017"
+            },
+            {
+              "classname": "tests.test_spec_dependencies_core",
+              "name": "test_execution_marker_is_written_once_per_lifecycle_edition",
+              "time": "0.016"
+            },
+            {
+              "classname": "tests.test_spec_dependencies_core",
+              "name": "test_lifecycle_fence_can_be_reused_without_double_locking",
+              "time": "0.017"
+            },
+            {
+              "classname": "tests.test_spec_dependencies_core",
+              "name": "test_execution_gate_rejects_lifecycle_change_under_graph_fence[locked_snapshot0-in_progress-False]",
+              "time": "0.019"
+            },
+            {
+              "classname": "tests.test_spec_dependencies_core",
+              "name": "test_execution_gate_rejects_lifecycle_change_under_graph_fence[locked_snapshot1-in_progress-False]",
+              "time": "0.018"
+            },
+            {
+              "classname": "tests.test_spec_dependencies_core",
+              "name": "test_lifecycle_and_card_writers_take_dependency_fence_at_safe_boundary",
+              "time": "0.042"
+            },
+            {
+              "classname": "tests.test_spec_dependencies_core",
+              "name": "test_execution_gate_rejects_a_changed_edition_even_if_already_marked",
+              "time": "0.021"
+            },
+            {
+              "classname": "tests.test_spec_dependencies_core",
+              "name": "test_allowed_transition_and_mutation_gate_share_exact_blocking_facts",
+              "time": "0.020"
+            },
+            {
+              "classname": "tests.test_spec_dependencies_core",
+              "name": "test_readiness_overflow_uses_exact_categories_outside_blocker_sample",
+              "time": "0.023"
+            },
+            {
+              "classname": "tests.test_spec_dependencies_core",
+              "name": "test_archive_guard_excludes_only_internal_sources_and_returns_typed_facts",
+              "time": "0.020"
+            },
+            {
+              "classname": "tests.test_spec_dependencies_core",
+              "name": "test_archive_guard_reports_bounded_incoming_facts_without_false_total",
+              "time": "0.028"
+            },
+            {
+              "classname": "tests.test_spec_dependencies_core",
+              "name": "test_observability_is_typed_timed_and_cardinality_safe",
+              "time": "0.028"
+            },
+            {
+              "classname": "tests.test_spec_dependencies_core",
+              "name": "test_mutation_observation_spans_commit_and_preserves_receipt",
+              "time": "0.024"
+            },
+            {
+              "classname": "tests.test_spec_dependencies_core",
+              "name": "test_mcp_remove_projects_receipt_satisfaction_not_creation_status",
+              "time": "0.025"
+            },
+            {
+              "classname": "tests.test_spec_dependencies_core",
+              "name": "test_mcp_archive_and_delete_preserve_typed_dependency_error_envelope",
+              "time": "0.022"
+            }
+          ]
+        },
+        {
+          "run": "community",
+          "repository": "okto_labs_pulse_community",
+          "file": "tests/test_skm_spec_dependency_persistence.py",
+          "source_sha256": "6de122ee4aa80fbbedb8bff88e1bba90a8d58f5d0d8b45c820057cd3c71f368d",
+          "executions": [
+            {
+              "classname": "tests.test_skm_spec_dependency_persistence",
+              "name": "test_dependency_delete_guards_block_direct_erasure_and_allow_parent_cascades",
+              "time": "1.099"
+            },
+            {
+              "classname": "tests.test_skm_spec_dependency_persistence",
+              "name": "test_relational_authority_rejects_cross_board_edges_and_spec_reparenting",
+              "time": "0.824"
+            },
+            {
+              "classname": "tests.test_skm_spec_dependency_persistence",
+              "name": "test_incoming_lifecycle_guard_keeps_one_bounded_probe_row",
+              "time": "0.831"
+            },
+            {
+              "classname": "tests.test_skm_spec_dependency_persistence",
+              "name": "test_mutation_ledger_replays_exact_actor_type_and_preserves_audit",
+              "time": "0.833"
+            },
+            {
+              "classname": "tests.test_skm_spec_dependency_persistence",
+              "name": "test_legacy_mutation_receipt_without_satisfaction_remains_replayable",
+              "time": "0.803"
+            },
+            {
+              "classname": "tests.test_skm_spec_dependency_persistence",
+              "name": "test_ac19_add_rolls_back_every_sql_effect_after_injected_failure",
+              "time": "0.782"
+            },
+            {
+              "classname": "tests.test_skm_spec_dependency_persistence",
+              "name": "test_ac19_remove_rolls_back_every_sql_effect_after_injected_failure",
+              "time": "1.060"
+            },
+            {
+              "classname": "tests.test_skm_spec_dependency_persistence",
+              "name": "test_page_and_batch_are_bounded_and_archived_done_is_a_blocker",
+              "time": "1.332"
+            },
+            {
+              "classname": "tests.test_skm_spec_dependency_persistence",
+              "name": "test_sqlite_page_uses_one_snapshot_across_concurrent_commit[add]",
+              "time": "0.859"
+            },
+            {
+              "classname": "tests.test_skm_spec_dependency_persistence",
+              "name": "test_sqlite_page_uses_one_snapshot_across_concurrent_commit[remove]",
+              "time": "0.741"
+            },
+            {
+              "classname": "tests.test_skm_spec_dependency_persistence",
+              "name": "test_sqlite_uow_snapshot_starts_before_authorization_read",
+              "time": "0.767"
+            },
+            {
+              "classname": "tests.test_skm_spec_dependency_persistence",
+              "name": "test_readiness_keeps_exact_blocker_categories_beyond_detail_limit",
+              "time": "0.787"
+            },
+            {
+              "classname": "tests.test_skm_spec_dependency_persistence",
+              "name": "test_sqlite_board_lock_serializes_reciprocal_adds_as_one_cycle",
+              "time": "0.830"
+            }
+          ]
+        },
+        {
+          "run": "community",
+          "repository": "okto_labs_pulse_community",
+          "file": "tests/test_skm_spec_dependency_rest.py",
+          "source_sha256": "4c0857cbed5c3c5484af0f5d2de3e99581e620327007293701973f07570fcb70",
+          "executions": [
+            {
+              "classname": "tests.test_skm_spec_dependency_rest",
+              "name": "test_dependency_capability_schema_accepts_permission_denied_reason",
+              "time": "0.023"
+            },
+            {
+              "classname": "tests.test_skm_spec_dependency_rest",
+              "name": "test_malformed_dependency_write_is_rejected_before_uow_resolution",
+              "time": "0.119"
+            },
+            {
+              "classname": "tests.test_skm_spec_dependency_rest",
+              "name": "test_dependency_writes_require_expected_spec_edition_before_uow_resolution[POST-/api/v1/boards/board-1/specs/source/dependencies-body0]",
+              "time": "0.145"
+            },
+            {
+              "classname": "tests.test_skm_spec_dependency_rest",
+              "name": "test_dependency_writes_require_expected_spec_edition_before_uow_resolution[DELETE-/api/v1/boards/board-1/specs/source/dependencies/dependency-1-body1]",
+              "time": "0.162"
+            },
+            {
+              "classname": "tests.test_skm_spec_dependency_rest",
+              "name": "test_dependency_list_query_validation_uses_closed_400_before_uow[direction=sideways]",
+              "time": "0.171"
+            },
+            {
+              "classname": "tests.test_skm_spec_dependency_rest",
+              "name": "test_dependency_list_query_validation_uses_closed_400_before_uow[limit=0]",
+              "time": "0.206"
+            },
+            {
+              "classname": "tests.test_skm_spec_dependency_rest",
+              "name": "test_dependency_list_query_validation_uses_closed_400_before_uow[limit=101]",
+              "time": "0.177"
+            },
+            {
+              "classname": "tests.test_skm_spec_dependency_rest",
+              "name": "test_dependency_list_query_validation_uses_closed_400_before_uow[limit=not-an-integer]",
+              "time": "0.141"
+            },
+            {
+              "classname": "tests.test_skm_spec_dependency_rest",
+              "name": "test_dependency_list_query_validation_uses_closed_400_before_uow[active_state=pending]",
+              "time": "0.141"
+            },
+            {
+              "classname": "tests.test_skm_spec_dependency_rest",
+              "name": "test_dependency_list_query_validation_uses_closed_400_before_uow[satisfaction=pending]",
+              "time": "0.118"
+            },
+            {
+              "classname": "tests.test_skm_spec_dependency_rest",
+              "name": "test_dependency_list_query_validation_uses_closed_400_before_uow[retrospective=maybe]",
+              "time": "0.178"
+            },
+            {
+              "classname": "tests.test_skm_spec_dependency_rest",
+              "name": "test_dependency_list_query_validation_uses_closed_400_before_uow[related_status=pending]",
+              "time": "0.179"
+            },
+            {
+              "classname": "tests.test_skm_spec_dependency_rest",
+              "name": "test_dependency_list_query_validation_uses_closed_400_before_uow[lineage=unknown]",
+              "time": "0.191"
+            },
+            {
+              "classname": "tests.test_skm_spec_dependency_rest",
+              "name": "test_dependency_list_query_validation_uses_closed_400_before_uow[unexpected=true]",
+              "time": "0.163"
+            },
+            {
+              "classname": "tests.test_skm_spec_dependency_rest",
+              "name": "test_allowed_transitions_rest_preserves_structured_dependency_blockers",
+              "time": "0.045"
+            },
+            {
+              "classname": "tests.test_skm_spec_dependency_rest",
+              "name": "test_add_remove_and_list_project_closed_dependency_contract",
+              "time": "0.173"
+            },
+            {
+              "classname": "tests.test_skm_spec_dependency_rest",
+              "name": "test_dependency_writes_preserve_client_edition_fence_after_draft_reentry",
+              "time": "0.175"
+            },
+            {
+              "classname": "tests.test_skm_spec_dependency_rest",
+              "name": "test_dependency_routes_publish_closed_openapi_response_contracts",
+              "time": "1.291"
+            },
+            {
+              "classname": "tests.test_skm_spec_dependency_rest",
+              "name": "test_source_not_found_is_distinct_on_every_dependency_route[POST-/api/v1/boards/board-1/specs/source/dependencies-body0]",
+              "time": "0.163"
+            },
+            {
+              "classname": "tests.test_skm_spec_dependency_rest",
+              "name": "test_source_not_found_is_distinct_on_every_dependency_route[DELETE-/api/v1/boards/board-1/specs/source/dependencies/dependency-1-body1]",
+              "time": "0.192"
+            },
+            {
+              "classname": "tests.test_skm_spec_dependency_rest",
+              "name": "test_source_not_found_is_distinct_on_every_dependency_route[GET-/api/v1/boards/board-1/specs/source/dependencies-None]",
+              "time": "0.172"
+            },
+            {
+              "classname": "tests.test_skm_spec_dependency_rest",
+              "name": "test_add_target_unavailable_is_non_disclosing_and_not_source_not_found",
+              "time": "0.175"
+            },
+            {
+              "classname": "tests.test_skm_spec_dependency_rest",
+              "name": "test_dependency_list_permission_denial_uses_fixed_non_disclosing_envelope",
+              "time": "0.159"
+            },
+            {
+              "classname": "tests.test_skm_spec_dependency_rest",
+              "name": "test_delete_and_archive_preserve_typed_dependency_conflict",
+              "time": "0.029"
+            },
+            {
+              "classname": "tests.test_skm_spec_dependency_rest",
+              "name": "test_closed_error_vocabulary_maps_without_sql_details[invalid_spec_dependency_request-400-Spec dependency request is invalid.]",
+              "time": "0.027"
+            },
+            {
+              "classname": "tests.test_skm_spec_dependency_rest",
+              "name": "test_closed_error_vocabulary_maps_without_sql_details[invalid_cursor-400-The Spec dependency cursor is invalid for this query.]",
+              "time": "0.028"
+            },
+            {
+              "classname": "tests.test_skm_spec_dependency_rest",
+              "name": "test_closed_error_vocabulary_maps_without_sql_details[dependency_target_unavailable-404-Dependency target is unavailable.]",
+              "time": "0.028"
+            },
+            {
+              "classname": "tests.test_skm_spec_dependency_rest",
+              "name": "test_closed_error_vocabulary_maps_without_sql_details[spec_dependency_not_found-404-Active Spec dependency was not found.]",
+              "time": "0.031"
+            },
+            {
+              "classname": "tests.test_skm_spec_dependency_rest",
+              "name": "test_closed_error_vocabulary_maps_without_sql_details[spec_dependency_version_conflict-409-Spec changed after the dependency request was prepared.]",
+              "time": "0.034"
+            },
+            {
+              "classname": "tests.test_skm_spec_dependency_rest",
+              "name": "test_closed_error_vocabulary_maps_without_sql_details[spec_dependency_cycle-409-This dependency would create a cycle between Specs.]",
+              "time": "0.031"
+            },
+            {
+              "classname": "tests.test_skm_spec_dependency_rest",
+              "name": "test_closed_error_vocabulary_maps_without_sql_details[cross_board_dependency_forbidden-409-Operational Spec dependencies cannot cross board boundaries.]",
+              "time": "0.031"
+            },
+            {
+              "classname": "tests.test_skm_spec_dependency_rest",
+              "name": "test_closed_error_vocabulary_maps_without_sql_details[spec_dependency_state_conflict-409-Spec dependency operation conflicts with the current state.]",
+              "time": "0.031"
+            },
+            {
+              "classname": "tests.test_skm_spec_dependency_rest",
+              "name": "test_unknown_dependency_error_code_fails_closed_without_leaking_details",
+              "time": "0.026"
+            }
+          ]
+        },
+        {
+          "run": "frontend",
+          "repository": "okto_labs_pulse_community",
+          "file": "frontend/src/components/specs/__tests__/SpecModal.dependencies.test.tsx",
+          "source_sha256": "2552f1e5c9c9002537fbc823dfd22e71f36e45fc2b93492c78ba3ae83949c452",
+          "executions": [
+            {
+              "classname": "src/components/specs/__tests__/SpecModal.dependencies.test.tsx",
+              "name": "SpecModal Dependencies workspace > uses context readiness in the header without eagerly listing rows",
+              "time": "1.0280845"
+            },
+            {
+              "classname": "src/components/specs/__tests__/SpecModal.dependencies.test.tsx",
+              "name": "SpecModal Dependencies workspace > ignores an older dependency reload after a newer manual reload resolves first",
+              "time": "1.2721394"
+            },
+            {
+              "classname": "src/components/specs/__tests__/SpecModal.dependencies.test.tsx",
+              "name": "SpecModal Dependencies workspace > keeps separate direction filters and pages incoming relationships lazily",
+              "time": "1.3987725"
+            },
+            {
+              "classname": "src/components/specs/__tests__/SpecModal.dependencies.test.tsx",
+              "name": "SpecModal Dependencies workspace > distinguishes an archived Done prerequisite from an unfinished prerequisite",
+              "time": "2.2292265"
+            },
+            {
+              "classname": "src/components/specs/__tests__/SpecModal.dependencies.test.tsx",
+              "name": "SpecModal Dependencies workspace > distinguishes duplicate and idempotency conflicts from version conflicts",
+              "time": "1.4364146"
+            },
+            {
+              "classname": "src/components/specs/__tests__/SpecModal.dependencies.test.tsx",
+              "name": "SpecModal Dependencies workspace > refreshes the edition fence after validated-to-draft reentry without changing the idempotency key",
+              "time": "1.2779607"
+            },
+            {
+              "classname": "src/components/specs/__tests__/SpecModal.dependencies.test.tsx",
+              "name": "SpecModal Dependencies workspace > submits add with CAS/idempotency and requires a reason before removal",
+              "time": "1.2143808"
+            },
+            {
+              "classname": "src/components/specs/__tests__/SpecModal.dependencies.test.tsx",
+              "name": "SpecModal Dependencies workspace > withholds dependency mutation affordances without interact_in for the current Spec state",
+              "time": "0.5962086"
+            },
+            {
+              "classname": "src/components/specs/__tests__/SpecModal.dependencies.test.tsx",
+              "name": "SpecModal Dependencies workspace > disables adding from an archived source and explains capability denials",
+              "time": "0.5269207"
+            },
+            {
+              "classname": "src/components/specs/__tests__/SpecModal.dependencies.test.tsx",
+              "name": "SpecModal Dependencies workspace > keeps removed dependencies legible as lifecycle history with the removal Spec version",
+              "time": "0.6353548"
+            },
+            {
+              "classname": "src/components/specs/__tests__/SpecModal.dependencies.test.tsx",
+              "name": "SpecModal Dependencies workspace > has no serious or critical accessibility violations in light mode",
+              "time": "1.2613102"
+            },
+            {
+              "classname": "src/components/specs/__tests__/SpecModal.dependencies.test.tsx",
+              "name": "SpecModal Dependencies workspace > has no serious or critical accessibility violations in dark mode",
+              "time": "1.1519167"
+            }
+          ]
+        }
+      ]
+    },
+    "BASE:T21": {
+      "status": "verified_by_reviewed_execution",
+      "covered": "Eligible regression starts a Bug after Spec Done without lane mutation/reopening. Missing regression, unrelated scenario and pre-Bug Test Card remain blocked. Canonical scenario/validation content is preserved; UI retains Done Specs for Bug/Test work and restricts normal work.",
+      "remaining": null,
+      "evidence": [
+        {
+          "run": "core",
+          "repository": "okto_labs_pulse_core",
+          "file": "tests/test_bug_regression_locked_spec.py",
+          "source_sha256": "3ee9e231ff249ab12fbd431ef264d68bcde130f1b20f06da6f2e29a3120fc673",
+          "executions": [
+            {
+              "classname": "tests.test_bug_regression_locked_spec",
+              "name": "test_bug_gate_allows_existing_scenario_with_new_test_card",
+              "time": "0.133"
+            },
+            {
+              "classname": "tests.test_bug_regression_locked_spec",
+              "name": "test_active_hotfix_lane_allows_bug_with_new_regression_test_task",
+              "time": "0.102"
+            },
+            {
+              "classname": "tests.test_bug_regression_locked_spec",
+              "name": "test_active_hotfix_lane_does_not_bypass_missing_bug_test_task",
+              "time": "0.037"
+            },
+            {
+              "classname": "tests.test_bug_regression_locked_spec",
+              "name": "test_bug_gate_rejects_same_spec_unrelated_scenario",
+              "time": "0.054"
+            },
+            {
+              "classname": "tests.test_bug_regression_locked_spec",
+              "name": "test_bug_gate_rejects_cross_spec_scenario_reference",
+              "time": "0.054"
+            },
+            {
+              "classname": "tests.test_bug_regression_locked_spec",
+              "name": "test_bug_gate_rejects_pre_bug_test_card_even_when_scenario_eligible",
+              "time": "0.036"
+            },
+            {
+              "classname": "tests.test_bug_regression_locked_spec",
+              "name": "test_bug_gate_path_a_preserves_locked_spec_canonical_content",
+              "time": "0.094"
+            },
+            {
+              "classname": "tests.test_bug_regression_locked_spec",
+              "name": "test_retired_lane_state_does_not_block_valid_regression[draft]",
+              "time": "0.107"
+            },
+            {
+              "classname": "tests.test_bug_regression_locked_spec",
+              "name": "test_retired_lane_state_does_not_block_valid_regression[review]",
+              "time": "0.101"
+            },
+            {
+              "classname": "tests.test_bug_regression_locked_spec",
+              "name": "test_retired_lane_state_does_not_block_valid_regression[closed]",
+              "time": "0.112"
+            },
+            {
+              "classname": "tests.test_bug_regression_locked_spec",
+              "name": "test_retired_lane_state_does_not_block_valid_regression[cancelled]",
+              "time": "0.110"
+            },
+            {
+              "classname": "tests.test_bug_regression_locked_spec",
+              "name": "test_done_spec_bug_without_regression_still_blocked",
+              "time": "0.044"
+            },
+            {
+              "classname": "tests.test_bug_regression_locked_spec",
+              "name": "test_post_closure_bug_executes_without_rewriting_historical_assignment",
+              "time": "0.097"
+            },
+            {
+              "classname": "tests.test_bug_regression_locked_spec",
+              "name": "test_bug_gate_path_b_full_lineage_blocks_coverage_pending_and_preview_agrees",
+              "time": "0.059"
+            },
+            {
+              "classname": "tests.test_bug_regression_locked_spec",
+              "name": "test_bug_gate_path_b_draft_amendment_blocks_blocked_status",
+              "time": "0.056"
+            },
+            {
+              "classname": "tests.test_bug_regression_locked_spec",
+              "name": "test_confirm_amendment_coverage_enables_gate_allow",
+              "time": "0.148"
+            },
+            {
+              "classname": "tests.test_bug_regression_locked_spec",
+              "name": "test_confirm_rejects_foreign_artifact_binding",
+              "time": "0.042"
+            },
+            {
+              "classname": "tests.test_bug_regression_locked_spec",
+              "name": "test_confirm_rejects_unmet_preconditions",
+              "time": "0.054"
+            },
+            {
+              "classname": "tests.test_bug_regression_locked_spec",
+              "name": "test_create_strips_reserved_coverage_confirmation_key",
+              "time": "0.024"
+            },
+            {
+              "classname": "tests.test_bug_regression_locked_spec",
+              "name": "test_hotfix_lane_does_not_bypass_cross_spec_without_amendment",
+              "time": "0.049"
+            }
+          ]
+        },
+        {
+          "run": "frontend",
+          "repository": "okto_labs_pulse_community",
+          "file": "frontend/src/components/kanban/__tests__/CreateCardModal.knowledgePropagation.test.tsx",
+          "source_sha256": "c24265d87b6581a6894dc139b52e113662927c894215e3873843a8d0a52c3893",
+          "executions": [
+            {
+              "classname": "src/components/kanban/__tests__/CreateCardModal.knowledgePropagation.test.tsx",
+              "name": "CreateCardModal selective Knowledge integration > keeps Done Specs for bug/regression work and clears the parent on switching to normal work",
+              "time": "1.5091118"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CreateCardModal.knowledgePropagation.test.tsx",
+              "name": "CreateCardModal selective Knowledge integration > only offers initial lifecycle states and normalizes validation on create",
+              "time": "0.1129135"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CreateCardModal.knowledgePropagation.test.tsx",
+              "name": "CreateCardModal selective Knowledge integration > only offers initial lifecycle states and normalizes rejected on create",
+              "time": "0.089925"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CreateCardModal.knowledgePropagation.test.tsx",
+              "name": "CreateCardModal selective Knowledge integration > routes standard and test card types through their distinct create leaves",
+              "time": "0.38423"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CreateCardModal.knowledgePropagation.test.tsx",
+              "name": "CreateCardModal selective Knowledge integration > starts with zero KBs selected and sends an authoritative v2 omitted envelope",
+              "time": "0.5288357"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CreateCardModal.knowledgePropagation.test.tsx",
+              "name": "CreateCardModal selective Knowledge integration > uses the effective inventory, including inherited provenance, and sends its stable root",
+              "time": "0.6427643"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CreateCardModal.knowledgePropagation.test.tsx",
+              "name": "CreateCardModal selective Knowledge integration > preserves the idempotency key for an exact retry after failure",
+              "time": "0.5212917"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CreateCardModal.knowledgePropagation.test.tsx",
+              "name": "CreateCardModal selective Knowledge integration > rotates the key when a failed request changes intent and sends explicit_empty",
+              "time": "0.6073275"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CreateCardModal.knowledgePropagation.test.tsx",
+              "name": "CreateCardModal selective Knowledge integration > consumes Escape and ignores backdrop clicks while create is in flight",
+              "time": "0.510816"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CreateCardModal.knowledgePropagation.test.tsx",
+              "name": "CreateCardModal selective Knowledge integration > does not load board agents without agent.board_access.read",
+              "time": "0.1614171"
+            }
+          ]
+        },
+        {
+          "run": "frontend",
+          "repository": "okto_labs_pulse_community",
+          "file": "frontend/src/components/kanban/__tests__/CardModal.test.tsx",
+          "source_sha256": "49bc56e46448a17c07fbc7ff784b2dad7c3ef0c7e52086b50cd57e6d8d2ee675",
+          "executions": [
+            {
+              "classname": "src/components/kanban/__tests__/CardModal.test.tsx",
+              "name": "CardModal > reads historical context for the selected normal Card without mutation",
+              "time": "0.7785332"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CardModal.test.tsx",
+              "name": "CardModal > reads historical context for the selected bug Card without mutation",
+              "time": "0.3780915"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CardModal.test.tsx",
+              "name": "CardModal > reads historical context for the selected test Card without mutation",
+              "time": "0.3015259"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CardModal.test.tsx",
+              "name": "CardModal > renders the canonical top-level workspace for a 'normal' card",
+              "time": "0.4833862"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CardModal.test.tsx",
+              "name": "CardModal > renders the canonical top-level workspace for a 'bug' card",
+              "time": "0.5512476"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CardModal.test.tsx",
+              "name": "CardModal > renders the canonical top-level workspace for a 'test' card",
+              "time": "0.4757941"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CardModal.test.tsx",
+              "name": "CardModal > loads Learning authorship lazily for a Bug and retains text across modal tabs",
+              "time": "0.6646576"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CardModal.test.tsx",
+              "name": "CardModal > applies the Done Spec content restriction only to normal normal work",
+              "time": "1.1493756"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CardModal.test.tsx",
+              "name": "CardModal > applies the Done Spec content restriction only to bug normal work",
+              "time": "1.1302243"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CardModal.test.tsx",
+              "name": "CardModal > applies the Done Spec content restriction only to test normal work",
+              "time": "0.9837512"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CardModal.test.tsx",
+              "name": "CardModal > keeps cancellation audit context in Details instead of creating a transient tab",
+              "time": "0.2483407"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CardModal.test.tsx",
+              "name": "CardModal > shows only the current and canonically allowed lifecycle statuses",
+              "time": "0.0558747"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CardModal.test.tsx",
+              "name": "CardModal > shows the current failed validation and the only authorized Rejected rework exit",
+              "time": "0.8346261"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CardModal.test.tsx",
+              "name": "CardModal > shows every governed completion gate that caused the current rejection",
+              "time": "0.5248345"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CardModal.test.tsx",
+              "name": "CardModal > fails closed when a rolling-upgrade authority projects manual inbound Rejected",
+              "time": "0.0815675"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CardModal.test.tsx",
+              "name": "CardModal > fails closed and excludes a policy-blocked transition from the lifecycle selector",
+              "time": "0.4982532"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CardModal.test.tsx",
+              "name": "CardModal > keeps lifecycle fail-closed when the canonical transition envelope is malformed",
+              "time": "0.5112882"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CardModal.test.tsx",
+              "name": "CardModal > reports a structured policy 409 and reloads transition authority without a readiness card",
+              "time": "0.514623"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CardModal.test.tsx",
+              "name": "CardModal > exposes Policy Compliance as the only Validation workspace for a restricted test card",
+              "time": "0.2361573"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CardModal.test.tsx",
+              "name": "CardModal > refreshes lifecycle authority after Policy Compliance evaluation and refresh",
+              "time": "0.8401591"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CardModal.test.tsx",
+              "name": "CardModal > refreshes lifecycle authority after a Knowledge resource mutation",
+              "time": "1.1702255"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CardModal.test.tsx",
+              "name": "CardModal > ignores a stale allowed-transitions response after switching cards",
+              "time": "0.0950195"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CardModal.test.tsx",
+              "name": "CardModal > keeps read-only collaboration and requirement workspaces non-mutating",
+              "time": "1.0496969"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CardModal.test.tsx",
+              "name": "CardModal > reconciles the Kanban open Q&A count after asking and answering the last question",
+              "time": "0.7249779"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CardModal.test.tsx",
+              "name": "CardModal > preserves the projected open Q&A count when full-card loads omit it",
+              "time": "0.0339285"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CardModal.test.tsx",
+              "name": "CardModal > does not restore a projected Q&A count when card.qa.read is denied",
+              "time": "0.0195725"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CardModal.test.tsx",
+              "name": "CardModal > disables only assignment when card.entity.assign is false",
+              "time": "0.2148598"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CardModal.test.tsx",
+              "name": "CardModal > disables existing-card mutations when interact_in for its state is false",
+              "time": "0.2069695"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CardModal.test.tsx",
+              "name": "CardModal > does not leak knowledge roots from a previous card after switching to an orphan card",
+              "time": "0.736007"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CardModal.test.tsx",
+              "name": "CardModal > submits the selected Bug Learning, preserves exact retry and changes intent when selection is removed",
+              "time": "2.5712894"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CardModal.test.tsx",
+              "name": "CardModal > does not offer Learning selection without board.read",
+              "time": "0.8441214"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CardModal.test.tsx",
+              "name": "CardModal > does not offer Learning selection without card.entity.read",
+              "time": "0.8589064"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CardModal.test.tsx",
+              "name": "CardModal > does not offer Learning selection without card.entity.context_read",
+              "time": "0.9569457"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CardModal.test.tsx",
+              "name": "CardModal > does not offer Learning selection without card.validation.read",
+              "time": "0.829318"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CardModal.test.tsx",
+              "name": "CardModal > does not offer Learning selection without card.comments.read",
+              "time": "0.8025983"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CardModal.test.tsx",
+              "name": "CardModal > does not offer Learning selection without card.conclusion.read",
+              "time": "0.5871281"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CardModal.test.tsx",
+              "name": "CardModal > does not offer Learning selection without card.tests.read",
+              "time": "0.5915318"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CardModal.test.tsx",
+              "name": "CardModal > does not offer Learning selection without spec.entity.read",
+              "time": "0.5211037"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CardModal.test.tsx",
+              "name": "CardModal > does not offer Learning selection without spec.tests.read",
+              "time": "0.574374"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CardModal.test.tsx",
+              "name": "CardModal > does not offer Learning selection without kg.query.learning_from_bugs",
+              "time": "0.6172851"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CardModal.test.tsx",
+              "name": "CardModal > submits the explicit task-validation contract from circular score inputs",
+              "time": "0.7198853"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CardModal.test.tsx",
+              "name": "CardModal > shows the active board thresholds in the task-validation form",
+              "time": "0.4644249"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CardModal.test.tsx",
+              "name": "CardModal > uses the Core policy instead of recomputing from parent records",
+              "time": "0.4463513"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CardModal.test.tsx",
+              "name": "CardModal > shows the preserved Card threshold 60 without a live Sprint",
+              "time": "0.4855097"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CardModal.test.tsx",
+              "name": "CardModal > shows the preserved Card threshold 90 without a live Sprint",
+              "time": "0.5032342"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CardModal.test.tsx",
+              "name": "CardModal > fails closed when threshold authority cannot load and retries explicitly",
+              "time": "0.6755828"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CardModal.test.tsx",
+              "name": "CardModal > ignores an older same-card polling response that finishes last",
+              "time": "1.0310163"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CardModal.test.tsx",
+              "name": "CardModal > renders validation history against the thresholds captured at submission time",
+              "time": "0.5938095"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CardModal.test.tsx",
+              "name": "CardModal > shows the bug origin task and linked regression tests in lineage references",
+              "time": "0.2300394"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CardModal.test.tsx",
+              "name": "CardModal > toggles the human task requirement link skip from requirement references",
+              "time": "0.5588458"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CardModal.test.tsx",
+              "name": "CardModal > shows a dedicated evidence tab for test cards",
+              "time": "0.4115146"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CardModal.test.tsx",
+              "name": "CardModal > exposes canonical report export without invoking legacy rendering or mutations",
+              "time": "0.0250021"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CardModal.test.tsx",
+              "name": "CardModal > does not hydrate card or inherited Spec architecture in the modal export path",
+              "time": "0.0294315"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CardModal.test.tsx",
+              "name": "CardModal > renders canonical bug workflow remediation in the tests tab",
+              "time": "0.2265381"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CardModal.test.tsx",
+              "name": "CardModal > uses the shared activity renderer in the activity tab",
+              "time": "0.2164116"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CardModal.test.tsx",
+              "name": "CardModal > shows task status activity as a Before to After transition",
+              "time": "0.8056831"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CardModal.test.tsx",
+              "name": "CardModal > preserves the no-activity empty state through the shared renderer",
+              "time": "0.2793962"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CardModal.test.tsx",
+              "name": "CardModal > keeps the Knowledge tab mounted and ignores Escape, backdrop, and tab changes during assign",
+              "time": "1.9948245"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CardModal.test.tsx",
+              "name": "CardModal > keeps the Knowledge tab mounted and ignores Escape, backdrop, and tab changes during drop",
+              "time": "1.7094661"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CardModal.test.tsx",
+              "name": "CardModal > keeps the Knowledge tab mounted and ignores Escape, backdrop, and tab changes during refresh",
+              "time": "1.2629518"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CardModal.test.tsx",
+              "name": "CardModal > does not list amendment revisions without amendment.revision.read",
+              "time": "0.0346237"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CardModal.test.tsx",
+              "name": "TestEvidenceTab — re-executable evidence visibility (spec 9e0bf979) > shows external report evidence on the Test Card without claiming independent approval",
+              "time": "0.0052012"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CardModal.test.tsx",
+              "name": "TestEvidenceTab — re-executable evidence visibility (spec 9e0bf979) > renders the new re-executable evidence fields for a replay_command scenario",
+              "time": "0.0050388"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CardModal.test.tsx",
+              "name": "TestEvidenceTab — re-executable evidence visibility (spec 9e0bf979) > renders the non_replayable_justification block for a run_log scenario",
+              "time": "0.0034937"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CardModal.test.tsx",
+              "name": "TestEvidenceTab — re-executable evidence visibility (spec 9e0bf979) > renders legacy evidence (no evidence_class) without breaking",
+              "time": "0.0045134"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CardModal.test.tsx",
+              "name": "TestEvidenceTab — re-executable evidence visibility (spec 9e0bf979) > renders negative as supported and a historical unknown type explicitly",
+              "time": "0.0030912"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CardModal.test.tsx",
+              "name": "ExecutionReportsPanel impact evidence (TS-11) > renders every declared section read-only",
+              "time": "0.0059844"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CardModal.test.tsx",
+              "name": "ExecutionReportsPanel impact evidence (TS-11) > omits the section entirely when the conclusion has no block",
+              "time": "0.0018576"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CardModal.test.tsx",
+              "name": "conclusion prompt keeps state on impact_evidence_required (TS-16) > submits joint Bug Learning once with stable retry; batch=false edit=false",
+              "time": "0.7566824"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CardModal.test.tsx",
+              "name": "conclusion prompt keeps state on impact_evidence_required (TS-16) > submits joint Bug Learning once with stable retry; batch=false edit=true",
+              "time": "0.8105332"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CardModal.test.tsx",
+              "name": "conclusion prompt keeps state on impact_evidence_required (TS-16) > submits joint Bug Learning once with stable retry; batch=true edit=false",
+              "time": "1.1499747"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CardModal.test.tsx",
+              "name": "conclusion prompt keeps state on impact_evidence_required (TS-16) > submits joint Bug Learning once with stable retry; batch=true edit=true",
+              "time": "1.1058468"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CardModal.test.tsx",
+              "name": "conclusion prompt keeps state on impact_evidence_required (TS-16) > keeps the Done report, selection and unsent batch when delivery proof blocks completion",
+              "time": "0.7696385"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CardModal.test.tsx",
+              "name": "conclusion prompt keeps state on impact_evidence_required (TS-16) > submits the last batch once and preserves retry content, edit=false",
+              "time": "0.6298476"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CardModal.test.tsx",
+              "name": "conclusion prompt keeps state on impact_evidence_required (TS-16) > submits the last batch once and preserves retry content, edit=true",
+              "time": "0.7044078"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CardModal.test.tsx",
+              "name": "conclusion prompt keeps state on impact_evidence_required (TS-16) > blocks double submission and treats a refresh failure after commit as saved",
+              "time": "0.6371694"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CardModal.test.tsx",
+              "name": "conclusion prompt keeps state on impact_evidence_required (TS-16) > keeps a changed delivery revision from silently rebasing queued entries",
+              "time": "1.1772962"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CardModal.test.tsx",
+              "name": "conclusion prompt keeps state on impact_evidence_required (TS-16) > shows the remediation and retries with sealed selection=false",
+              "time": "0.3406438"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CardModal.test.tsx",
+              "name": "conclusion prompt keeps state on impact_evidence_required (TS-16) > shows the remediation and retries with sealed selection=true",
+              "time": "0.4162846"
+            }
+          ]
+        }
+      ]
+    },
+    "BASE:T22": {
+      "status": "verified_by_reviewed_execution",
+      "covered": "Bound validator confirmation admits legitimate cross-Spec regression without a lane; unconfirmed or undeclared bindings remain blocked. The public confirmation use case denies before the writer and binds expected Board. A same-Spec inert claim cannot manufacture Path B eligibility.",
+      "remaining": null,
+      "evidence": [
+        {
+          "run": "core",
+          "repository": "okto_labs_pulse_core",
+          "file": "tests/test_bug_regression_locked_spec.py",
+          "source_sha256": "3ee9e231ff249ab12fbd431ef264d68bcde130f1b20f06da6f2e29a3120fc673",
+          "executions": [
+            {
+              "classname": "tests.test_bug_regression_locked_spec",
+              "name": "test_bug_gate_allows_existing_scenario_with_new_test_card",
+              "time": "0.133"
+            },
+            {
+              "classname": "tests.test_bug_regression_locked_spec",
+              "name": "test_active_hotfix_lane_allows_bug_with_new_regression_test_task",
+              "time": "0.102"
+            },
+            {
+              "classname": "tests.test_bug_regression_locked_spec",
+              "name": "test_active_hotfix_lane_does_not_bypass_missing_bug_test_task",
+              "time": "0.037"
+            },
+            {
+              "classname": "tests.test_bug_regression_locked_spec",
+              "name": "test_bug_gate_rejects_same_spec_unrelated_scenario",
+              "time": "0.054"
+            },
+            {
+              "classname": "tests.test_bug_regression_locked_spec",
+              "name": "test_bug_gate_rejects_cross_spec_scenario_reference",
+              "time": "0.054"
+            },
+            {
+              "classname": "tests.test_bug_regression_locked_spec",
+              "name": "test_bug_gate_rejects_pre_bug_test_card_even_when_scenario_eligible",
+              "time": "0.036"
+            },
+            {
+              "classname": "tests.test_bug_regression_locked_spec",
+              "name": "test_bug_gate_path_a_preserves_locked_spec_canonical_content",
+              "time": "0.094"
+            },
+            {
+              "classname": "tests.test_bug_regression_locked_spec",
+              "name": "test_retired_lane_state_does_not_block_valid_regression[draft]",
+              "time": "0.107"
+            },
+            {
+              "classname": "tests.test_bug_regression_locked_spec",
+              "name": "test_retired_lane_state_does_not_block_valid_regression[review]",
+              "time": "0.101"
+            },
+            {
+              "classname": "tests.test_bug_regression_locked_spec",
+              "name": "test_retired_lane_state_does_not_block_valid_regression[closed]",
+              "time": "0.112"
+            },
+            {
+              "classname": "tests.test_bug_regression_locked_spec",
+              "name": "test_retired_lane_state_does_not_block_valid_regression[cancelled]",
+              "time": "0.110"
+            },
+            {
+              "classname": "tests.test_bug_regression_locked_spec",
+              "name": "test_done_spec_bug_without_regression_still_blocked",
+              "time": "0.044"
+            },
+            {
+              "classname": "tests.test_bug_regression_locked_spec",
+              "name": "test_post_closure_bug_executes_without_rewriting_historical_assignment",
+              "time": "0.097"
+            },
+            {
+              "classname": "tests.test_bug_regression_locked_spec",
+              "name": "test_bug_gate_path_b_full_lineage_blocks_coverage_pending_and_preview_agrees",
+              "time": "0.059"
+            },
+            {
+              "classname": "tests.test_bug_regression_locked_spec",
+              "name": "test_bug_gate_path_b_draft_amendment_blocks_blocked_status",
+              "time": "0.056"
+            },
+            {
+              "classname": "tests.test_bug_regression_locked_spec",
+              "name": "test_confirm_amendment_coverage_enables_gate_allow",
+              "time": "0.148"
+            },
+            {
+              "classname": "tests.test_bug_regression_locked_spec",
+              "name": "test_confirm_rejects_foreign_artifact_binding",
+              "time": "0.042"
+            },
+            {
+              "classname": "tests.test_bug_regression_locked_spec",
+              "name": "test_confirm_rejects_unmet_preconditions",
+              "time": "0.054"
+            },
+            {
+              "classname": "tests.test_bug_regression_locked_spec",
+              "name": "test_create_strips_reserved_coverage_confirmation_key",
+              "time": "0.024"
+            },
+            {
+              "classname": "tests.test_bug_regression_locked_spec",
+              "name": "test_hotfix_lane_does_not_bypass_cross_spec_without_amendment",
+              "time": "0.049"
+            }
+          ]
+        },
+        {
+          "run": "core_supplement",
+          "repository": "okto_labs_pulse_core",
+          "file": "tests/test_path_b_e2e.py",
+          "source_sha256": "5f4834647a52a177a2d1e25b54cf39263c3e4d3546ab5fe40bd2bc0173af9368",
+          "executions": [
+            {
+              "classname": "tests.test_path_b_e2e",
+              "name": "test_ts_64a2d5aa_positive_path_b_lifecycle_with_kg_checkpoints",
+              "time": "0.928"
+            },
+            {
+              "classname": "tests.test_path_b_e2e",
+              "name": "test_ts_38dc9e19_false_variants_stay_blocked[no_amendment-missing_amendment_revision]",
+              "time": "0.066"
+            },
+            {
+              "classname": "tests.test_path_b_e2e",
+              "name": "test_ts_38dc9e19_false_variants_stay_blocked[draft-blocked_amendment_status]",
+              "time": "0.090"
+            },
+            {
+              "classname": "tests.test_path_b_e2e",
+              "name": "test_ts_38dc9e19_false_variants_stay_blocked[cancelled-blocked_amendment_status]",
+              "time": "0.071"
+            },
+            {
+              "classname": "tests.test_path_b_e2e",
+              "name": "test_ts_38dc9e19_false_variants_stay_blocked[superseded-blocked_amendment_status]",
+              "time": "0.074"
+            },
+            {
+              "classname": "tests.test_path_b_e2e",
+              "name": "test_ts_38dc9e19_false_variants_stay_blocked[incomplete_lineage-incomplete_amendment_lineage]",
+              "time": "0.062"
+            },
+            {
+              "classname": "tests.test_path_b_e2e",
+              "name": "test_ts_38dc9e19_hotfix_lane_without_amendment_stays_blocked",
+              "time": "0.061"
+            },
+            {
+              "classname": "tests.test_path_b_e2e",
+              "name": "test_ts_38dc9e19_automated_evidence_without_required_fields_blocks_confirmation",
+              "time": "0.091"
+            },
+            {
+              "classname": "tests.test_path_b_e2e",
+              "name": "test_agent_facing_lifecycle_reaches_path_b_ready_and_gate_allows",
+              "time": "0.222"
+            },
+            {
+              "classname": "tests.test_path_b_e2e",
+              "name": "test_676b_eligible_amendment_unblocks_content_locked_bug_without_bypass",
+              "time": "0.214"
+            },
+            {
+              "classname": "tests.test_path_b_e2e",
+              "name": "test_confirmed_cross_spec_regression_can_start_bug_without_lane",
+              "time": "0.140"
+            },
+            {
+              "classname": "tests.test_path_b_e2e",
+              "name": "test_unconfirmed_cross_spec_regression_still_blocks_bug_start",
+              "time": "0.092"
+            }
+          ]
+        },
+        {
+          "run": "core_supplement",
+          "repository": "okto_labs_pulse_core",
+          "file": "tests/test_amendment_namespace_authorization.py",
+          "source_sha256": "f5967d8de13ada403a83b05534eec1e569545f9bff510d6039d18c6df73b2e8e",
+          "executions": [
+            {
+              "classname": "tests.test_amendment_namespace_authorization",
+              "name": "test_amendment_use_cases_deny_before_writer_and_accept_legacy[amendment.revision.create]",
+              "time": "2.278"
+            },
+            {
+              "classname": "tests.test_amendment_namespace_authorization",
+              "name": "test_amendment_use_cases_deny_before_writer_and_accept_legacy[amendment.revision.read0]",
+              "time": "0.027"
+            },
+            {
+              "classname": "tests.test_amendment_namespace_authorization",
+              "name": "test_amendment_use_cases_deny_before_writer_and_accept_legacy[amendment.revision.read1]",
+              "time": "0.271"
+            },
+            {
+              "classname": "tests.test_amendment_namespace_authorization",
+              "name": "test_amendment_use_cases_deny_before_writer_and_accept_legacy[amendment.revision.associate]",
+              "time": "0.041"
+            },
+            {
+              "classname": "tests.test_amendment_namespace_authorization",
+              "name": "test_amendment_use_cases_deny_before_writer_and_accept_legacy[amendment.revision.transition]",
+              "time": "0.046"
+            },
+            {
+              "classname": "tests.test_amendment_namespace_authorization",
+              "name": "test_confirm_coverage_denies_before_writer_and_binds_expected_board",
+              "time": "0.052"
+            }
+          ]
+        },
+        {
+          "run": "core_supplement",
+          "repository": "okto_labs_pulse_core",
+          "file": "tests/test_bug02_coverage_matrix.py",
+          "source_sha256": "b509a110ce7ccf39358e5346f72206f4d5cba49b42699ffa731fab8e70eee48f",
+          "executions": [
+            {
+              "classname": "tests.test_bug02_coverage_matrix",
+              "name": "test_bug02_2_no_persist_and_gate_stays_blocked",
+              "time": "0.138"
+            },
+            {
+              "classname": "tests.test_bug02_coverage_matrix",
+              "name": "test_bug02_4a_binding_invalid_scenario_before_consumability",
+              "time": "0.052"
+            },
+            {
+              "classname": "tests.test_bug02_coverage_matrix",
+              "name": "test_bug02_4b_precondition_unmet_before_consumability",
+              "time": "0.071"
+            },
+            {
+              "classname": "tests.test_bug02_coverage_matrix",
+              "name": "test_bug02_4c_amendment_mismatch_test_task_before_consumability",
+              "time": "0.055"
+            },
+            {
+              "classname": "tests.test_bug02_coverage_matrix",
+              "name": "test_bug02_4d_test_task_not_done_before_consumability",
+              "time": "0.071"
+            },
+            {
+              "classname": "tests.test_bug02_coverage_matrix",
+              "name": "test_bug02_5_resolver_never_relaxes_unrelated_scenario",
+              "time": "0.026"
+            }
+          ]
+        },
+        {
+          "run": "frontend",
+          "repository": "okto_labs_pulse_community",
+          "file": "frontend/src/components/kanban/__tests__/PathBRemediationPanel.test.tsx",
+          "source_sha256": "af7bdf987d4b9eb69fa8e51d6e5f6c0752ff2281e5c115762f414791f242837c",
+          "executions": [
+            {
+              "classname": "src/components/kanban/__tests__/PathBRemediationPanel.test.tsx",
+              "name": "PathBRemediationPanel > shows regression and amendment paths without execution lane controls",
+              "time": "0.0766997"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/PathBRemediationPanel.test.tsx",
+              "name": "PathBRemediationPanel > keeps amendment lineage pending even before revisions are loaded",
+              "time": "0.0102766"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/PathBRemediationPanel.test.tsx",
+              "name": "PathBRemediationPanel > coverage_pending is shown NOT closure-ready",
+              "time": "0.012911"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/PathBRemediationPanel.test.tsx",
+              "name": "PathBRemediationPanel > tolerates the prose vocabulary: \"pending\" pending, \"validated\" validated",
+              "time": "0.0185521"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/PathBRemediationPanel.test.tsx",
+              "name": "PathBRemediationPanel > shows \"Path B not required\" when Path A covers the bug",
+              "time": "0.0054196"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/PathBRemediationPanel.test.tsx",
+              "name": "PathBRemediationPanel > renders missing lineage links + rejected reason codes via resolver details",
+              "time": "0.0218729"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/PathBRemediationPanel.test.tsx",
+              "name": "PathBRemediationPanel > exposes NO skip/bypass/override control anywhere (FR5)",
+              "time": "0.027593"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/PathBRemediationPanel.test.tsx",
+              "name": "PathBRemediationPanel > create/associate fire ONLY on user click — never on render",
+              "time": "0.0175891"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/PathBRemediationPanel.test.tsx",
+              "name": "PathBRemediationPanel > gates create and associate independently with amendment permissions",
+              "time": "0.0140202"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/PathBRemediationPanel.test.tsx",
+              "name": "PathBRemediationPanel > ts_b6d87391: blocked bug shows create action (no revision) and associate action (with revision)",
+              "time": "0.0126055"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/PathBRemediationPanel.test.tsx",
+              "name": "PathBRemediationPanel > ts_5b0f1272: lineage eligible + coverage_pending shows pending, never closure-ready",
+              "time": "0.0076353"
+            }
+          ]
+        }
+      ]
+    },
+    "BASE:T23": {
+      "status": "partial",
+      "covered": "Missing, draft, cancelled, superseded or incomplete amendment; unrelated scenario; missing validator/evidence; undeclared artifact and inert confirmation all remain blocked. Retired lane cannot bypass eligibility.",
+      "remaining": "These executions do not establish revalidation after a previously confirmed artifact changes semantically while retaining its IDs. Audit that stale-confirmation case before full T23 acceptance.",
+      "evidence": [
+        {
+          "run": "core",
+          "repository": "okto_labs_pulse_core",
+          "file": "tests/test_bug_regression_path_b.py",
+          "source_sha256": "d3e9d77ba45273f280171c61c0b910cefcdf99b45d2ef940517aae54c2cb0ebd",
+          "executions": [
+            {
+              "classname": "tests.test_bug_regression_path_b",
+              "name": "test_legacy_mode_preserves_cross_spec_reject",
+              "time": "0.028"
+            },
+            {
+              "classname": "tests.test_bug_regression_path_b",
+              "name": "test_p2_p3_no_amendment_blocks_missing_amendment_revision",
+              "time": "0.018"
+            },
+            {
+              "classname": "tests.test_bug_regression_path_b",
+              "name": "test_amendment_must_formally_link_this_bug_and_spec",
+              "time": "0.020"
+            },
+            {
+              "classname": "tests.test_bug_regression_path_b",
+              "name": "test_blocked_amendment_status_for_each_blocking_state",
+              "time": "0.023"
+            },
+            {
+              "classname": "tests.test_bug_regression_path_b",
+              "name": "test_path_b_draft_amendment_blocks_gate",
+              "time": "0.032"
+            },
+            {
+              "classname": "tests.test_bug_regression_path_b",
+              "name": "test_incomplete_amendment_lineage_blocks",
+              "time": "0.026"
+            },
+            {
+              "classname": "tests.test_bug_regression_path_b",
+              "name": "test_missing_regression_artifact_when_scenario_not_declared",
+              "time": "0.025"
+            },
+            {
+              "classname": "tests.test_bug_regression_path_b",
+              "name": "test_adj_a_fabricated_task_id_blocks_unrelated_cross_spec",
+              "time": "0.021"
+            },
+            {
+              "classname": "tests.test_bug_regression_path_b",
+              "name": "test_adj_a_partial_claim_keeps_only_compatible_membership",
+              "time": "0.021"
+            },
+            {
+              "classname": "tests.test_bug_regression_path_b",
+              "name": "test_p6_full_lineage_without_coverage_is_pending_not_ready",
+              "time": "0.021"
+            },
+            {
+              "classname": "tests.test_bug_regression_path_b",
+              "name": "test_path_b_ready_only_with_bound_validator_attestation",
+              "time": "0.019"
+            },
+            {
+              "classname": "tests.test_bug_regression_path_b",
+              "name": "test_coverage_attestation_foreign_amendment_does_not_confirm",
+              "time": "0.017"
+            },
+            {
+              "classname": "tests.test_bug_regression_path_b",
+              "name": "test_coverage_attestation_foreign_artifact_does_not_confirm",
+              "time": "0.017"
+            },
+            {
+              "classname": "tests.test_bug_regression_path_b",
+              "name": "test_coverage_attestation_missing_validator_or_evidence_does_not_confirm",
+              "time": "0.020"
+            },
+            {
+              "classname": "tests.test_bug_regression_path_b",
+              "name": "test_gate_allows_only_path_b_ready",
+              "time": "0.023"
+            },
+            {
+              "classname": "tests.test_bug_regression_path_b",
+              "name": "test_gate_blocks_coverage_pending",
+              "time": "0.027"
+            },
+            {
+              "classname": "tests.test_bug_regression_path_b",
+              "name": "test_gate_blocks_when_no_amendment",
+              "time": "0.021"
+            },
+            {
+              "classname": "tests.test_bug_regression_path_b",
+              "name": "test_predicate_does_not_mutate_inputs",
+              "time": "0.020"
+            }
+          ]
+        },
+        {
+          "run": "core",
+          "repository": "okto_labs_pulse_core",
+          "file": "tests/test_bug_regression_locked_spec.py",
+          "source_sha256": "3ee9e231ff249ab12fbd431ef264d68bcde130f1b20f06da6f2e29a3120fc673",
+          "executions": [
+            {
+              "classname": "tests.test_bug_regression_locked_spec",
+              "name": "test_bug_gate_allows_existing_scenario_with_new_test_card",
+              "time": "0.133"
+            },
+            {
+              "classname": "tests.test_bug_regression_locked_spec",
+              "name": "test_active_hotfix_lane_allows_bug_with_new_regression_test_task",
+              "time": "0.102"
+            },
+            {
+              "classname": "tests.test_bug_regression_locked_spec",
+              "name": "test_active_hotfix_lane_does_not_bypass_missing_bug_test_task",
+              "time": "0.037"
+            },
+            {
+              "classname": "tests.test_bug_regression_locked_spec",
+              "name": "test_bug_gate_rejects_same_spec_unrelated_scenario",
+              "time": "0.054"
+            },
+            {
+              "classname": "tests.test_bug_regression_locked_spec",
+              "name": "test_bug_gate_rejects_cross_spec_scenario_reference",
+              "time": "0.054"
+            },
+            {
+              "classname": "tests.test_bug_regression_locked_spec",
+              "name": "test_bug_gate_rejects_pre_bug_test_card_even_when_scenario_eligible",
+              "time": "0.036"
+            },
+            {
+              "classname": "tests.test_bug_regression_locked_spec",
+              "name": "test_bug_gate_path_a_preserves_locked_spec_canonical_content",
+              "time": "0.094"
+            },
+            {
+              "classname": "tests.test_bug_regression_locked_spec",
+              "name": "test_retired_lane_state_does_not_block_valid_regression[draft]",
+              "time": "0.107"
+            },
+            {
+              "classname": "tests.test_bug_regression_locked_spec",
+              "name": "test_retired_lane_state_does_not_block_valid_regression[review]",
+              "time": "0.101"
+            },
+            {
+              "classname": "tests.test_bug_regression_locked_spec",
+              "name": "test_retired_lane_state_does_not_block_valid_regression[closed]",
+              "time": "0.112"
+            },
+            {
+              "classname": "tests.test_bug_regression_locked_spec",
+              "name": "test_retired_lane_state_does_not_block_valid_regression[cancelled]",
+              "time": "0.110"
+            },
+            {
+              "classname": "tests.test_bug_regression_locked_spec",
+              "name": "test_done_spec_bug_without_regression_still_blocked",
+              "time": "0.044"
+            },
+            {
+              "classname": "tests.test_bug_regression_locked_spec",
+              "name": "test_post_closure_bug_executes_without_rewriting_historical_assignment",
+              "time": "0.097"
+            },
+            {
+              "classname": "tests.test_bug_regression_locked_spec",
+              "name": "test_bug_gate_path_b_full_lineage_blocks_coverage_pending_and_preview_agrees",
+              "time": "0.059"
+            },
+            {
+              "classname": "tests.test_bug_regression_locked_spec",
+              "name": "test_bug_gate_path_b_draft_amendment_blocks_blocked_status",
+              "time": "0.056"
+            },
+            {
+              "classname": "tests.test_bug_regression_locked_spec",
+              "name": "test_confirm_amendment_coverage_enables_gate_allow",
+              "time": "0.148"
+            },
+            {
+              "classname": "tests.test_bug_regression_locked_spec",
+              "name": "test_confirm_rejects_foreign_artifact_binding",
+              "time": "0.042"
+            },
+            {
+              "classname": "tests.test_bug_regression_locked_spec",
+              "name": "test_confirm_rejects_unmet_preconditions",
+              "time": "0.054"
+            },
+            {
+              "classname": "tests.test_bug_regression_locked_spec",
+              "name": "test_create_strips_reserved_coverage_confirmation_key",
+              "time": "0.024"
+            },
+            {
+              "classname": "tests.test_bug_regression_locked_spec",
+              "name": "test_hotfix_lane_does_not_bypass_cross_spec_without_amendment",
+              "time": "0.049"
+            }
+          ]
+        },
+        {
+          "run": "core_supplement",
+          "repository": "okto_labs_pulse_core",
+          "file": "tests/test_path_b_e2e.py",
+          "source_sha256": "5f4834647a52a177a2d1e25b54cf39263c3e4d3546ab5fe40bd2bc0173af9368",
+          "executions": [
+            {
+              "classname": "tests.test_path_b_e2e",
+              "name": "test_ts_64a2d5aa_positive_path_b_lifecycle_with_kg_checkpoints",
+              "time": "0.928"
+            },
+            {
+              "classname": "tests.test_path_b_e2e",
+              "name": "test_ts_38dc9e19_false_variants_stay_blocked[no_amendment-missing_amendment_revision]",
+              "time": "0.066"
+            },
+            {
+              "classname": "tests.test_path_b_e2e",
+              "name": "test_ts_38dc9e19_false_variants_stay_blocked[draft-blocked_amendment_status]",
+              "time": "0.090"
+            },
+            {
+              "classname": "tests.test_path_b_e2e",
+              "name": "test_ts_38dc9e19_false_variants_stay_blocked[cancelled-blocked_amendment_status]",
+              "time": "0.071"
+            },
+            {
+              "classname": "tests.test_path_b_e2e",
+              "name": "test_ts_38dc9e19_false_variants_stay_blocked[superseded-blocked_amendment_status]",
+              "time": "0.074"
+            },
+            {
+              "classname": "tests.test_path_b_e2e",
+              "name": "test_ts_38dc9e19_false_variants_stay_blocked[incomplete_lineage-incomplete_amendment_lineage]",
+              "time": "0.062"
+            },
+            {
+              "classname": "tests.test_path_b_e2e",
+              "name": "test_ts_38dc9e19_hotfix_lane_without_amendment_stays_blocked",
+              "time": "0.061"
+            },
+            {
+              "classname": "tests.test_path_b_e2e",
+              "name": "test_ts_38dc9e19_automated_evidence_without_required_fields_blocks_confirmation",
+              "time": "0.091"
+            },
+            {
+              "classname": "tests.test_path_b_e2e",
+              "name": "test_agent_facing_lifecycle_reaches_path_b_ready_and_gate_allows",
+              "time": "0.222"
+            },
+            {
+              "classname": "tests.test_path_b_e2e",
+              "name": "test_676b_eligible_amendment_unblocks_content_locked_bug_without_bypass",
+              "time": "0.214"
+            },
+            {
+              "classname": "tests.test_path_b_e2e",
+              "name": "test_confirmed_cross_spec_regression_can_start_bug_without_lane",
+              "time": "0.140"
+            },
+            {
+              "classname": "tests.test_path_b_e2e",
+              "name": "test_unconfirmed_cross_spec_regression_still_blocks_bug_start",
+              "time": "0.092"
+            }
+          ]
+        },
+        {
+          "run": "core_supplement",
+          "repository": "okto_labs_pulse_core",
+          "file": "tests/test_bug02_coverage_matrix.py",
+          "source_sha256": "b509a110ce7ccf39358e5346f72206f4d5cba49b42699ffa731fab8e70eee48f",
+          "executions": [
+            {
+              "classname": "tests.test_bug02_coverage_matrix",
+              "name": "test_bug02_2_no_persist_and_gate_stays_blocked",
+              "time": "0.138"
+            },
+            {
+              "classname": "tests.test_bug02_coverage_matrix",
+              "name": "test_bug02_4a_binding_invalid_scenario_before_consumability",
+              "time": "0.052"
+            },
+            {
+              "classname": "tests.test_bug02_coverage_matrix",
+              "name": "test_bug02_4b_precondition_unmet_before_consumability",
+              "time": "0.071"
+            },
+            {
+              "classname": "tests.test_bug02_coverage_matrix",
+              "name": "test_bug02_4c_amendment_mismatch_test_task_before_consumability",
+              "time": "0.055"
+            },
+            {
+              "classname": "tests.test_bug02_coverage_matrix",
+              "name": "test_bug02_4d_test_task_not_done_before_consumability",
+              "time": "0.071"
+            },
+            {
+              "classname": "tests.test_bug02_coverage_matrix",
+              "name": "test_bug02_5_resolver_never_relaxes_unrelated_scenario",
+              "time": "0.026"
+            }
+          ]
+        }
+      ]
+    },
+    "BASE:T24": {
+      "status": "verified_by_reviewed_execution",
+      "covered": "Done Spec rejects title, requirement and scenario-body changes before any SQL write, with or without an old validation. Status, version, edition, validation history and content remain unchanged. Normal Card content/start/reopen is blocked; reads/collaboration and Bug/Test content remain governed by their own controls. Real adapter rechecks concurrent Spec closure/reparenting.",
+      "remaining": null,
+      "evidence": [
+        {
+          "run": "core",
+          "repository": "okto_labs_pulse_core",
+          "file": "tests/test_f3_done_spec_admission.py",
+          "source_sha256": "0dab8043da817aed04c7c95860d391302e2837049af47f263d9a33b4411ab1da",
+          "executions": [
+            {
+              "classname": "tests.test_f3_done_spec_admission",
+              "name": "test_done_spec_normative_content_requires_revision_before_any_write[title-False]",
+              "time": "0.052"
+            },
+            {
+              "classname": "tests.test_f3_done_spec_admission",
+              "name": "test_done_spec_normative_content_requires_revision_before_any_write[title-True]",
+              "time": "0.036"
+            },
+            {
+              "classname": "tests.test_f3_done_spec_admission",
+              "name": "test_done_spec_normative_content_requires_revision_before_any_write[requirements-False]",
+              "time": "0.035"
+            },
+            {
+              "classname": "tests.test_f3_done_spec_admission",
+              "name": "test_done_spec_normative_content_requires_revision_before_any_write[requirements-True]",
+              "time": "0.035"
+            },
+            {
+              "classname": "tests.test_f3_done_spec_admission",
+              "name": "test_done_spec_normative_content_requires_revision_before_any_write[scenario_body-False]",
+              "time": "0.039"
+            },
+            {
+              "classname": "tests.test_f3_done_spec_admission",
+              "name": "test_done_spec_normative_content_requires_revision_before_any_write[scenario_body-True]",
+              "time": "0.042"
+            },
+            {
+              "classname": "tests.test_f3_done_spec_admission",
+              "name": "test_done_spec_blocks_normal_content_without_writes[create-False]",
+              "time": "0.047"
+            },
+            {
+              "classname": "tests.test_f3_done_spec_admission",
+              "name": "test_done_spec_blocks_normal_content_without_writes[create-True]",
+              "time": "0.044"
+            },
+            {
+              "classname": "tests.test_f3_done_spec_admission",
+              "name": "test_done_spec_blocks_normal_content_without_writes[edit-False]",
+              "time": "0.041"
+            },
+            {
+              "classname": "tests.test_f3_done_spec_admission",
+              "name": "test_done_spec_blocks_normal_content_without_writes[edit-True]",
+              "time": "0.043"
+            },
+            {
+              "classname": "tests.test_f3_done_spec_admission",
+              "name": "test_done_spec_blocks_normal_content_without_writes[unlink-False]",
+              "time": "0.038"
+            },
+            {
+              "classname": "tests.test_f3_done_spec_admission",
+              "name": "test_done_spec_blocks_normal_content_without_writes[unlink-True]",
+              "time": "0.030"
+            },
+            {
+              "classname": "tests.test_f3_done_spec_admission",
+              "name": "test_done_spec_blocks_normal_content_without_writes[link_out-False]",
+              "time": "0.036"
+            },
+            {
+              "classname": "tests.test_f3_done_spec_admission",
+              "name": "test_done_spec_blocks_normal_content_without_writes[link_out-True]",
+              "time": "0.052"
+            },
+            {
+              "classname": "tests.test_f3_done_spec_admission",
+              "name": "test_done_spec_blocks_normal_content_without_writes[link_in-False]",
+              "time": "0.037"
+            },
+            {
+              "classname": "tests.test_f3_done_spec_admission",
+              "name": "test_done_spec_blocks_normal_content_without_writes[link_in-True]",
+              "time": "0.039"
+            },
+            {
+              "classname": "tests.test_f3_done_spec_admission",
+              "name": "test_done_spec_blocks_normal_content_without_writes[reparent_out-False]",
+              "time": "0.044"
+            },
+            {
+              "classname": "tests.test_f3_done_spec_admission",
+              "name": "test_done_spec_blocks_normal_content_without_writes[reparent_out-True]",
+              "time": "0.045"
+            },
+            {
+              "classname": "tests.test_f3_done_spec_admission",
+              "name": "test_done_spec_blocks_normal_content_without_writes[reparent_in-False]",
+              "time": "0.044"
+            },
+            {
+              "classname": "tests.test_f3_done_spec_admission",
+              "name": "test_done_spec_blocks_normal_content_without_writes[reparent_in-True]",
+              "time": "0.041"
+            },
+            {
+              "classname": "tests.test_f3_done_spec_admission",
+              "name": "test_done_spec_blocks_normal_content_without_writes[delete-False]",
+              "time": "0.030"
+            },
+            {
+              "classname": "tests.test_f3_done_spec_admission",
+              "name": "test_done_spec_blocks_normal_content_without_writes[delete-True]",
+              "time": "0.033"
+            },
+            {
+              "classname": "tests.test_f3_done_spec_admission",
+              "name": "test_done_spec_blocks_normal_content_without_writes[upload-False]",
+              "time": "0.029"
+            },
+            {
+              "classname": "tests.test_f3_done_spec_admission",
+              "name": "test_done_spec_blocks_normal_content_without_writes[upload-True]",
+              "time": "0.032"
+            },
+            {
+              "classname": "tests.test_f3_done_spec_admission",
+              "name": "test_done_spec_blocks_normal_content_without_writes[delete_attachment-False]",
+              "time": "0.039"
+            },
+            {
+              "classname": "tests.test_f3_done_spec_admission",
+              "name": "test_done_spec_blocks_normal_content_without_writes[delete_attachment-True]",
+              "time": "0.041"
+            },
+            {
+              "classname": "tests.test_f3_done_spec_admission",
+              "name": "test_done_spec_blocks_normal_content_without_writes[add_dependency-False]",
+              "time": "0.043"
+            },
+            {
+              "classname": "tests.test_f3_done_spec_admission",
+              "name": "test_done_spec_blocks_normal_content_without_writes[add_dependency-True]",
+              "time": "0.047"
+            },
+            {
+              "classname": "tests.test_f3_done_spec_admission",
+              "name": "test_done_spec_blocks_normal_content_without_writes[remove_dependency-False]",
+              "time": "0.046"
+            },
+            {
+              "classname": "tests.test_f3_done_spec_admission",
+              "name": "test_done_spec_blocks_normal_content_without_writes[remove_dependency-True]",
+              "time": "0.043"
+            },
+            {
+              "classname": "tests.test_f3_done_spec_admission",
+              "name": "test_done_spec_blocks_normal_content_without_writes[knowledge_drop-False]",
+              "time": "0.033"
+            },
+            {
+              "classname": "tests.test_f3_done_spec_admission",
+              "name": "test_done_spec_blocks_normal_content_without_writes[knowledge_drop-True]",
+              "time": "0.048"
+            },
+            {
+              "classname": "tests.test_f3_done_spec_admission",
+              "name": "test_done_spec_blocks_normal_content_without_writes[knowledge_replace-False]",
+              "time": "0.045"
+            },
+            {
+              "classname": "tests.test_f3_done_spec_admission",
+              "name": "test_done_spec_blocks_normal_content_without_writes[knowledge_replace-True]",
+              "time": "0.038"
+            },
+            {
+              "classname": "tests.test_f3_done_spec_admission",
+              "name": "test_done_spec_blocks_normal_content_without_writes[knowledge_refresh-False]",
+              "time": "0.051"
+            },
+            {
+              "classname": "tests.test_f3_done_spec_admission",
+              "name": "test_done_spec_blocks_normal_content_without_writes[knowledge_refresh-True]",
+              "time": "0.047"
+            },
+            {
+              "classname": "tests.test_f3_done_spec_admission",
+              "name": "test_done_spec_blocks_normal_content_without_writes[architecture_copy-False]",
+              "time": "0.044"
+            },
+            {
+              "classname": "tests.test_f3_done_spec_admission",
+              "name": "test_done_spec_blocks_normal_content_without_writes[architecture_copy-True]",
+              "time": "0.054"
+            },
+            {
+              "classname": "tests.test_f3_done_spec_admission",
+              "name": "test_done_spec_execution_preview_matches_mutation[not_started-started]",
+              "time": "0.112"
+            },
+            {
+              "classname": "tests.test_f3_done_spec_admission",
+              "name": "test_done_spec_execution_preview_matches_mutation[started-in_progress]",
+              "time": "0.153"
+            },
+            {
+              "classname": "tests.test_f3_done_spec_admission",
+              "name": "test_done_spec_execution_preview_matches_mutation[on_hold-in_progress]",
+              "time": "0.133"
+            },
+            {
+              "classname": "tests.test_f3_done_spec_admission",
+              "name": "test_done_spec_execution_preview_matches_mutation[done-in_progress]",
+              "time": "0.101"
+            },
+            {
+              "classname": "tests.test_f3_done_spec_admission",
+              "name": "test_done_spec_preserves_bug_and_test_content[bug]",
+              "time": "0.063"
+            },
+            {
+              "classname": "tests.test_f3_done_spec_admission",
+              "name": "test_done_spec_preserves_bug_and_test_content[test]",
+              "time": "0.052"
+            },
+            {
+              "classname": "tests.test_f3_done_spec_admission",
+              "name": "test_done_spec_normal_card_keeps_collaboration_and_reads",
+              "time": "0.048"
+            }
+          ]
+        },
+        {
+          "run": "community",
+          "repository": "okto_labs_pulse_community",
+          "file": "tests/test_f3_done_spec_content_fence.py",
+          "source_sha256": "c035b48fd33f08b7fe7441dbac720a3bb7b81ec49e94154eeff50cd0b4229a27",
+          "executions": [
+            {
+              "classname": "tests.test_f3_done_spec_content_fence",
+              "name": "test_normal_content_fence_revalidates_after_initial_read[none]",
+              "time": "2.584"
+            },
+            {
+              "classname": "tests.test_f3_done_spec_content_fence",
+              "name": "test_normal_content_fence_revalidates_after_initial_read[closed]",
+              "time": "1.757"
+            },
+            {
+              "classname": "tests.test_f3_done_spec_content_fence",
+              "name": "test_normal_content_fence_revalidates_after_initial_read[reparented]",
+              "time": "2.248"
+            },
+            {
+              "classname": "tests.test_f3_done_spec_content_fence",
+              "name": "test_real_resource_projection_preserves_freezes_and_eligible_targets[normal-done-done-normal_card_spec_done]",
+              "time": "2.139"
+            },
+            {
+              "classname": "tests.test_f3_done_spec_content_fence",
+              "name": "test_real_resource_projection_preserves_freezes_and_eligible_targets[normal-rejected-in_progress-card_rejected_operational_freeze]",
+              "time": "2.151"
+            },
+            {
+              "classname": "tests.test_f3_done_spec_content_fence",
+              "name": "test_real_resource_projection_preserves_freezes_and_eligible_targets[bug-rejected-done-card_rejected_operational_freeze]",
+              "time": "2.147"
+            },
+            {
+              "classname": "tests.test_f3_done_spec_content_fence",
+              "name": "test_real_resource_projection_preserves_freezes_and_eligible_targets[normal-not_started-in_progress-None]",
+              "time": "1.735"
+            },
+            {
+              "classname": "tests.test_f3_done_spec_content_fence",
+              "name": "test_real_resource_projection_preserves_freezes_and_eligible_targets[bug-not_started-done-None]",
+              "time": "1.706"
+            },
+            {
+              "classname": "tests.test_f3_done_spec_content_fence",
+              "name": "test_real_resource_projection_preserves_freezes_and_eligible_targets[test-not_started-done-None]",
+              "time": "1.770"
+            }
+          ]
+        },
+        {
+          "run": "core",
+          "repository": "okto_labs_pulse_core",
+          "file": "tests/test_bug_regression_locked_spec.py",
+          "source_sha256": "3ee9e231ff249ab12fbd431ef264d68bcde130f1b20f06da6f2e29a3120fc673",
+          "executions": [
+            {
+              "classname": "tests.test_bug_regression_locked_spec",
+              "name": "test_bug_gate_allows_existing_scenario_with_new_test_card",
+              "time": "0.133"
+            },
+            {
+              "classname": "tests.test_bug_regression_locked_spec",
+              "name": "test_active_hotfix_lane_allows_bug_with_new_regression_test_task",
+              "time": "0.102"
+            },
+            {
+              "classname": "tests.test_bug_regression_locked_spec",
+              "name": "test_active_hotfix_lane_does_not_bypass_missing_bug_test_task",
+              "time": "0.037"
+            },
+            {
+              "classname": "tests.test_bug_regression_locked_spec",
+              "name": "test_bug_gate_rejects_same_spec_unrelated_scenario",
+              "time": "0.054"
+            },
+            {
+              "classname": "tests.test_bug_regression_locked_spec",
+              "name": "test_bug_gate_rejects_cross_spec_scenario_reference",
+              "time": "0.054"
+            },
+            {
+              "classname": "tests.test_bug_regression_locked_spec",
+              "name": "test_bug_gate_rejects_pre_bug_test_card_even_when_scenario_eligible",
+              "time": "0.036"
+            },
+            {
+              "classname": "tests.test_bug_regression_locked_spec",
+              "name": "test_bug_gate_path_a_preserves_locked_spec_canonical_content",
+              "time": "0.094"
+            },
+            {
+              "classname": "tests.test_bug_regression_locked_spec",
+              "name": "test_retired_lane_state_does_not_block_valid_regression[draft]",
+              "time": "0.107"
+            },
+            {
+              "classname": "tests.test_bug_regression_locked_spec",
+              "name": "test_retired_lane_state_does_not_block_valid_regression[review]",
+              "time": "0.101"
+            },
+            {
+              "classname": "tests.test_bug_regression_locked_spec",
+              "name": "test_retired_lane_state_does_not_block_valid_regression[closed]",
+              "time": "0.112"
+            },
+            {
+              "classname": "tests.test_bug_regression_locked_spec",
+              "name": "test_retired_lane_state_does_not_block_valid_regression[cancelled]",
+              "time": "0.110"
+            },
+            {
+              "classname": "tests.test_bug_regression_locked_spec",
+              "name": "test_done_spec_bug_without_regression_still_blocked",
+              "time": "0.044"
+            },
+            {
+              "classname": "tests.test_bug_regression_locked_spec",
+              "name": "test_post_closure_bug_executes_without_rewriting_historical_assignment",
+              "time": "0.097"
+            },
+            {
+              "classname": "tests.test_bug_regression_locked_spec",
+              "name": "test_bug_gate_path_b_full_lineage_blocks_coverage_pending_and_preview_agrees",
+              "time": "0.059"
+            },
+            {
+              "classname": "tests.test_bug_regression_locked_spec",
+              "name": "test_bug_gate_path_b_draft_amendment_blocks_blocked_status",
+              "time": "0.056"
+            },
+            {
+              "classname": "tests.test_bug_regression_locked_spec",
+              "name": "test_confirm_amendment_coverage_enables_gate_allow",
+              "time": "0.148"
+            },
+            {
+              "classname": "tests.test_bug_regression_locked_spec",
+              "name": "test_confirm_rejects_foreign_artifact_binding",
+              "time": "0.042"
+            },
+            {
+              "classname": "tests.test_bug_regression_locked_spec",
+              "name": "test_confirm_rejects_unmet_preconditions",
+              "time": "0.054"
+            },
+            {
+              "classname": "tests.test_bug_regression_locked_spec",
+              "name": "test_create_strips_reserved_coverage_confirmation_key",
+              "time": "0.024"
+            },
+            {
+              "classname": "tests.test_bug_regression_locked_spec",
+              "name": "test_hotfix_lane_does_not_bypass_cross_spec_without_amendment",
+              "time": "0.049"
+            }
+          ]
+        },
+        {
+          "run": "frontend",
+          "repository": "okto_labs_pulse_community",
+          "file": "frontend/src/components/kanban/__tests__/CardModal.test.tsx",
+          "source_sha256": "49bc56e46448a17c07fbc7ff784b2dad7c3ef0c7e52086b50cd57e6d8d2ee675",
+          "executions": [
+            {
+              "classname": "src/components/kanban/__tests__/CardModal.test.tsx",
+              "name": "CardModal > reads historical context for the selected normal Card without mutation",
+              "time": "0.7785332"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CardModal.test.tsx",
+              "name": "CardModal > reads historical context for the selected bug Card without mutation",
+              "time": "0.3780915"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CardModal.test.tsx",
+              "name": "CardModal > reads historical context for the selected test Card without mutation",
+              "time": "0.3015259"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CardModal.test.tsx",
+              "name": "CardModal > renders the canonical top-level workspace for a 'normal' card",
+              "time": "0.4833862"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CardModal.test.tsx",
+              "name": "CardModal > renders the canonical top-level workspace for a 'bug' card",
+              "time": "0.5512476"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CardModal.test.tsx",
+              "name": "CardModal > renders the canonical top-level workspace for a 'test' card",
+              "time": "0.4757941"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CardModal.test.tsx",
+              "name": "CardModal > loads Learning authorship lazily for a Bug and retains text across modal tabs",
+              "time": "0.6646576"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CardModal.test.tsx",
+              "name": "CardModal > applies the Done Spec content restriction only to normal normal work",
+              "time": "1.1493756"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CardModal.test.tsx",
+              "name": "CardModal > applies the Done Spec content restriction only to bug normal work",
+              "time": "1.1302243"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CardModal.test.tsx",
+              "name": "CardModal > applies the Done Spec content restriction only to test normal work",
+              "time": "0.9837512"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CardModal.test.tsx",
+              "name": "CardModal > keeps cancellation audit context in Details instead of creating a transient tab",
+              "time": "0.2483407"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CardModal.test.tsx",
+              "name": "CardModal > shows only the current and canonically allowed lifecycle statuses",
+              "time": "0.0558747"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CardModal.test.tsx",
+              "name": "CardModal > shows the current failed validation and the only authorized Rejected rework exit",
+              "time": "0.8346261"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CardModal.test.tsx",
+              "name": "CardModal > shows every governed completion gate that caused the current rejection",
+              "time": "0.5248345"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CardModal.test.tsx",
+              "name": "CardModal > fails closed when a rolling-upgrade authority projects manual inbound Rejected",
+              "time": "0.0815675"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CardModal.test.tsx",
+              "name": "CardModal > fails closed and excludes a policy-blocked transition from the lifecycle selector",
+              "time": "0.4982532"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CardModal.test.tsx",
+              "name": "CardModal > keeps lifecycle fail-closed when the canonical transition envelope is malformed",
+              "time": "0.5112882"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CardModal.test.tsx",
+              "name": "CardModal > reports a structured policy 409 and reloads transition authority without a readiness card",
+              "time": "0.514623"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CardModal.test.tsx",
+              "name": "CardModal > exposes Policy Compliance as the only Validation workspace for a restricted test card",
+              "time": "0.2361573"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CardModal.test.tsx",
+              "name": "CardModal > refreshes lifecycle authority after Policy Compliance evaluation and refresh",
+              "time": "0.8401591"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CardModal.test.tsx",
+              "name": "CardModal > refreshes lifecycle authority after a Knowledge resource mutation",
+              "time": "1.1702255"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CardModal.test.tsx",
+              "name": "CardModal > ignores a stale allowed-transitions response after switching cards",
+              "time": "0.0950195"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CardModal.test.tsx",
+              "name": "CardModal > keeps read-only collaboration and requirement workspaces non-mutating",
+              "time": "1.0496969"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CardModal.test.tsx",
+              "name": "CardModal > reconciles the Kanban open Q&A count after asking and answering the last question",
+              "time": "0.7249779"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CardModal.test.tsx",
+              "name": "CardModal > preserves the projected open Q&A count when full-card loads omit it",
+              "time": "0.0339285"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CardModal.test.tsx",
+              "name": "CardModal > does not restore a projected Q&A count when card.qa.read is denied",
+              "time": "0.0195725"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CardModal.test.tsx",
+              "name": "CardModal > disables only assignment when card.entity.assign is false",
+              "time": "0.2148598"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CardModal.test.tsx",
+              "name": "CardModal > disables existing-card mutations when interact_in for its state is false",
+              "time": "0.2069695"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CardModal.test.tsx",
+              "name": "CardModal > does not leak knowledge roots from a previous card after switching to an orphan card",
+              "time": "0.736007"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CardModal.test.tsx",
+              "name": "CardModal > submits the selected Bug Learning, preserves exact retry and changes intent when selection is removed",
+              "time": "2.5712894"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CardModal.test.tsx",
+              "name": "CardModal > does not offer Learning selection without board.read",
+              "time": "0.8441214"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CardModal.test.tsx",
+              "name": "CardModal > does not offer Learning selection without card.entity.read",
+              "time": "0.8589064"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CardModal.test.tsx",
+              "name": "CardModal > does not offer Learning selection without card.entity.context_read",
+              "time": "0.9569457"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CardModal.test.tsx",
+              "name": "CardModal > does not offer Learning selection without card.validation.read",
+              "time": "0.829318"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CardModal.test.tsx",
+              "name": "CardModal > does not offer Learning selection without card.comments.read",
+              "time": "0.8025983"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CardModal.test.tsx",
+              "name": "CardModal > does not offer Learning selection without card.conclusion.read",
+              "time": "0.5871281"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CardModal.test.tsx",
+              "name": "CardModal > does not offer Learning selection without card.tests.read",
+              "time": "0.5915318"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CardModal.test.tsx",
+              "name": "CardModal > does not offer Learning selection without spec.entity.read",
+              "time": "0.5211037"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CardModal.test.tsx",
+              "name": "CardModal > does not offer Learning selection without spec.tests.read",
+              "time": "0.574374"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CardModal.test.tsx",
+              "name": "CardModal > does not offer Learning selection without kg.query.learning_from_bugs",
+              "time": "0.6172851"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CardModal.test.tsx",
+              "name": "CardModal > submits the explicit task-validation contract from circular score inputs",
+              "time": "0.7198853"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CardModal.test.tsx",
+              "name": "CardModal > shows the active board thresholds in the task-validation form",
+              "time": "0.4644249"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CardModal.test.tsx",
+              "name": "CardModal > uses the Core policy instead of recomputing from parent records",
+              "time": "0.4463513"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CardModal.test.tsx",
+              "name": "CardModal > shows the preserved Card threshold 60 without a live Sprint",
+              "time": "0.4855097"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CardModal.test.tsx",
+              "name": "CardModal > shows the preserved Card threshold 90 without a live Sprint",
+              "time": "0.5032342"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CardModal.test.tsx",
+              "name": "CardModal > fails closed when threshold authority cannot load and retries explicitly",
+              "time": "0.6755828"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CardModal.test.tsx",
+              "name": "CardModal > ignores an older same-card polling response that finishes last",
+              "time": "1.0310163"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CardModal.test.tsx",
+              "name": "CardModal > renders validation history against the thresholds captured at submission time",
+              "time": "0.5938095"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CardModal.test.tsx",
+              "name": "CardModal > shows the bug origin task and linked regression tests in lineage references",
+              "time": "0.2300394"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CardModal.test.tsx",
+              "name": "CardModal > toggles the human task requirement link skip from requirement references",
+              "time": "0.5588458"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CardModal.test.tsx",
+              "name": "CardModal > shows a dedicated evidence tab for test cards",
+              "time": "0.4115146"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CardModal.test.tsx",
+              "name": "CardModal > exposes canonical report export without invoking legacy rendering or mutations",
+              "time": "0.0250021"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CardModal.test.tsx",
+              "name": "CardModal > does not hydrate card or inherited Spec architecture in the modal export path",
+              "time": "0.0294315"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CardModal.test.tsx",
+              "name": "CardModal > renders canonical bug workflow remediation in the tests tab",
+              "time": "0.2265381"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CardModal.test.tsx",
+              "name": "CardModal > uses the shared activity renderer in the activity tab",
+              "time": "0.2164116"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CardModal.test.tsx",
+              "name": "CardModal > shows task status activity as a Before to After transition",
+              "time": "0.8056831"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CardModal.test.tsx",
+              "name": "CardModal > preserves the no-activity empty state through the shared renderer",
+              "time": "0.2793962"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CardModal.test.tsx",
+              "name": "CardModal > keeps the Knowledge tab mounted and ignores Escape, backdrop, and tab changes during assign",
+              "time": "1.9948245"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CardModal.test.tsx",
+              "name": "CardModal > keeps the Knowledge tab mounted and ignores Escape, backdrop, and tab changes during drop",
+              "time": "1.7094661"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CardModal.test.tsx",
+              "name": "CardModal > keeps the Knowledge tab mounted and ignores Escape, backdrop, and tab changes during refresh",
+              "time": "1.2629518"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CardModal.test.tsx",
+              "name": "CardModal > does not list amendment revisions without amendment.revision.read",
+              "time": "0.0346237"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CardModal.test.tsx",
+              "name": "TestEvidenceTab — re-executable evidence visibility (spec 9e0bf979) > shows external report evidence on the Test Card without claiming independent approval",
+              "time": "0.0052012"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CardModal.test.tsx",
+              "name": "TestEvidenceTab — re-executable evidence visibility (spec 9e0bf979) > renders the new re-executable evidence fields for a replay_command scenario",
+              "time": "0.0050388"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CardModal.test.tsx",
+              "name": "TestEvidenceTab — re-executable evidence visibility (spec 9e0bf979) > renders the non_replayable_justification block for a run_log scenario",
+              "time": "0.0034937"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CardModal.test.tsx",
+              "name": "TestEvidenceTab — re-executable evidence visibility (spec 9e0bf979) > renders legacy evidence (no evidence_class) without breaking",
+              "time": "0.0045134"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CardModal.test.tsx",
+              "name": "TestEvidenceTab — re-executable evidence visibility (spec 9e0bf979) > renders negative as supported and a historical unknown type explicitly",
+              "time": "0.0030912"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CardModal.test.tsx",
+              "name": "ExecutionReportsPanel impact evidence (TS-11) > renders every declared section read-only",
+              "time": "0.0059844"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CardModal.test.tsx",
+              "name": "ExecutionReportsPanel impact evidence (TS-11) > omits the section entirely when the conclusion has no block",
+              "time": "0.0018576"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CardModal.test.tsx",
+              "name": "conclusion prompt keeps state on impact_evidence_required (TS-16) > submits joint Bug Learning once with stable retry; batch=false edit=false",
+              "time": "0.7566824"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CardModal.test.tsx",
+              "name": "conclusion prompt keeps state on impact_evidence_required (TS-16) > submits joint Bug Learning once with stable retry; batch=false edit=true",
+              "time": "0.8105332"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CardModal.test.tsx",
+              "name": "conclusion prompt keeps state on impact_evidence_required (TS-16) > submits joint Bug Learning once with stable retry; batch=true edit=false",
+              "time": "1.1499747"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CardModal.test.tsx",
+              "name": "conclusion prompt keeps state on impact_evidence_required (TS-16) > submits joint Bug Learning once with stable retry; batch=true edit=true",
+              "time": "1.1058468"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CardModal.test.tsx",
+              "name": "conclusion prompt keeps state on impact_evidence_required (TS-16) > keeps the Done report, selection and unsent batch when delivery proof blocks completion",
+              "time": "0.7696385"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CardModal.test.tsx",
+              "name": "conclusion prompt keeps state on impact_evidence_required (TS-16) > submits the last batch once and preserves retry content, edit=false",
+              "time": "0.6298476"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CardModal.test.tsx",
+              "name": "conclusion prompt keeps state on impact_evidence_required (TS-16) > submits the last batch once and preserves retry content, edit=true",
+              "time": "0.7044078"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CardModal.test.tsx",
+              "name": "conclusion prompt keeps state on impact_evidence_required (TS-16) > blocks double submission and treats a refresh failure after commit as saved",
+              "time": "0.6371694"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CardModal.test.tsx",
+              "name": "conclusion prompt keeps state on impact_evidence_required (TS-16) > keeps a changed delivery revision from silently rebasing queued entries",
+              "time": "1.1772962"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CardModal.test.tsx",
+              "name": "conclusion prompt keeps state on impact_evidence_required (TS-16) > shows the remediation and retries with sealed selection=false",
+              "time": "0.3406438"
+            },
+            {
+              "classname": "src/components/kanban/__tests__/CardModal.test.tsx",
+              "name": "conclusion prompt keeps state on impact_evidence_required (TS-16) > shows the remediation and retries with sealed selection=true",
+              "time": "0.4162846"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "provenance": {
+    "file": "provenance-execution-gates-review1.json",
+    "sha256": "8640b5b51581d4b96808d4ad9215eebb960fbf4f9989ef1141b474d95f270054",
+    "identity": {
+      "checked_at": "2026-09-30T21:02:54.812313+00:00",
+      "python": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Scripts\\python.exe",
+      "packages": {
+        "core": {
+          "python_files": 859,
+          "origin": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages\\okto_pulse\\core\\__init__.py",
+          "repository_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_core",
+          "commit": "e39ce87b12246a3553827bdee4c9f16b6f0a467b",
+          "dirty": false,
+          "dirty_entry_count": 0,
+          "distribution": "okto-pulse-core",
+          "version": "0.3.4",
+          "wheel": {
+            "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\dist-learning-reconciliation-k2-spec-owner-final\\okto_pulse_core-0.3.4-py3-none-any.whl",
+            "sha256": "a6f77fab8288ae5a91690a7d2796ea8d19db5b10c8a7c7263629553ebeff0312",
+            "size": 3793229
+          },
+          "source_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_core\\src",
+          "site_packages_root": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages",
+          "package_prefix": "okto_pulse/core/",
+          "byte_identical_member_count": 922,
+          "byte_identical": true,
+          "aggregate_sha256": "acb90eccf7d1f8cacb71280c263b68a5e5dc3c26f49552f9b7b91404280eddb7",
+          "chain_hashes": {
+            "source": "acb90eccf7d1f8cacb71280c263b68a5e5dc3c26f49552f9b7b91404280eddb7",
+            "wheel": "acb90eccf7d1f8cacb71280c263b68a5e5dc3c26f49552f9b7b91404280eddb7",
+            "site_packages": "acb90eccf7d1f8cacb71280c263b68a5e5dc3c26f49552f9b7b91404280eddb7"
+          },
+          "critical_resource_sha256": {
+            "okto_pulse/core/mcp/resources/ska_resource_manifest.json": "87fab2a5ded5f6ee273af8628555c21f7065d32379945784132bb6c300d05865",
+            "okto_pulse/core/mcp/resources/ska_tool_manifest.json": "0c3fa3da1549baec20872eca3f4a289288627e6b9f6b80be10472ac962fa72b9"
+          },
+          "mismatches": []
+        },
+        "community": {
+          "python_files": 373,
+          "origin": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages\\okto_pulse\\community\\__init__.py",
+          "repository_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_community",
+          "commit": "935d839086e24455133a2462dab837b0108d9469",
+          "dirty": false,
+          "dirty_entry_count": 0,
+          "distribution": "okto-pulse",
+          "version": "0.3.4",
+          "wheel": {
+            "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\dist-learning-reconciliation-k2-spec-owner-final\\okto_pulse-0.3.4-py3-none-any.whl",
+            "sha256": "3d1eb7b80776aa6ba91a8e0e24d194c6d09769d70a4637a6423e0f57872ecd55",
+            "size": 4535175
+          },
+          "source_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_community\\src",
+          "site_packages_root": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages",
+          "package_prefix": "okto_pulse/community/",
+          "byte_identical_member_count": 458,
+          "byte_identical": true,
+          "aggregate_sha256": "94e3b3e820cf74f6c6d891b03b4aed41523ec3396fa781d7cf180f1da379463b",
+          "chain_hashes": {
+            "source": "94e3b3e820cf74f6c6d891b03b4aed41523ec3396fa781d7cf180f1da379463b",
+            "wheel": "94e3b3e820cf74f6c6d891b03b4aed41523ec3396fa781d7cf180f1da379463b",
+            "site_packages": "94e3b3e820cf74f6c6d891b03b4aed41523ec3396fa781d7cf180f1da379463b"
+          },
+          "critical_resource_sha256": {},
+          "mismatches": []
+        }
+      }
+    }
+  },
+  "limits": [
+    "377 distinct cases in the final selected campaign; criterion evidence overlaps.",
+    "Core legacy service tests use the established SQL test adapter; Community tests exercise real production adapters on disposable SQLite.",
+    "Assessment outcomes in the actual start test are seeded; assessment submission is a separate criterion.",
+    "Frontend uses jsdom with mocked API responses, not browser/backend E2E.",
+    "No product or permission change, real-data migration, benchmark or full-plan completion is claimed.",
+    "KG-10 guard decision remains pending and independent of this acceptance."
+  ]
+}

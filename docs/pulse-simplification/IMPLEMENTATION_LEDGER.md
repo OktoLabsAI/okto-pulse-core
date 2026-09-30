@@ -2,6 +2,40 @@
 
 ## Estado para retomada
 
+BASE T16/T18/T21/T22/T24 auditados e verificados; T23 permanece parcial com
+lacuna delimitada de atualidade, sem nova semântica implementada. Inventário:
+89 verificados / 39 parciais / 118 não auditados. Evidência consolidada em
+acceptance-execution-gates-review.json, recorder record_execution_gates_review.py
+executado uma vez após TODOS os terminais. Não é entrega integral concluída.
+
+Par de entrada publicado e limpo: Core e39ce87b / Community 935d8390. Preflight
+495e7a=0, provenance-execution-gates-review1.json: Python859/373 e payload922/458
+idênticos entre fontes/site/wheels owner-final. Nenhum produto alterado.
+Campanhas: review1 Core36757=0,178passed27.07s; Community76520=0,55passed42.14s;
+frontend14224=0,112passed86.40s. Adicionados seis casos BASE T24 no teste Core
+test_f3_done_spec_admission.py: Done rejeita título/requisito/corpo do cenário
+antes de INSERT/UPDATE/DELETE, com/sem validação antiga, preservando conteúdo,
+versão, edição e validações. review2 Core59137=0,184passed18.75s (substitui a
+contagem Core anterior, não somar). Suplemento Core62793=0,24passed10.42s;
+Community36246=0,2passed17.88s. Campanha final: 377 casos distintos, com
+referências sobrepostas por critério. RuffF/E9 e diff-check verdes. Sem processos
+pendentes. Nenhuma alteração frontend: testes existentes executados para gates
+do modal, criação, dependências e remediação Path B. Frontend jsdom/API simulada;
+não anunciar browser E2E. Fixtures Core usam o adapter SQL de testes; Community
+usa adapters reais SQLite descartáveis. Pareceres no teste de início são inputs
+preparados, não validação do writer de avaliação. F16 permanece no último par de
+produto comprovado com oito ZERO; nenhuma nova execução F16 foi alegada.
+
+Próximas ações do MESMO plano: (1) resolver KG-10 somente após a decisão já
+solicitada; (2) concluir T23 examinando a atualidade de uma confirmação Path B
+quando o artefato confirmado muda semanticamente mantendo IDs. O código atual
+confirm_amendment_coverage sela validator/amendment/test/scenario/evidence_ref/
+confirmed_at; essa inspeção isolada NÃO prova bug nem autoriza alterar história.
+Seguir writer autorizado → persistência/evento → gate/preview antes de concluir.
+As variantes ausente/draft/cancelled/superseded/incomplete/unrelated/sem validador
+já estão cobertas; não refazer essa implementação. Prosseguir inventário do
+pacote sem novos requisitos ou relaxamento de gates.
+
 Consolidação de aceite KG-43/44/45 concluída sem mudança de produto: prova
 `provenance-query-acceptance-review1.json` terminal 08df21=0, Python859/373 e
 payload922/458 byte-identical entre fontes, site e wheels do par owner-final.
