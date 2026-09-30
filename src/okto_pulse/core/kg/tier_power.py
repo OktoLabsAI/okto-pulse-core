@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import math
 import re
 import unicodedata
 from typing import Any
@@ -759,6 +760,7 @@ def _find_literal_node_matches(
     query_text: str,
     *,
     limit: int,
+    min_confidence: float = 0.5,
 ) -> list[dict]:
     """Exact/text fallback across every node type.
 
@@ -800,12 +802,12 @@ def _find_literal_node_matches(
                 result = executor.execute_read_only(
                     board_id,
                     f"MATCH (n:{node_type}) "
-                    "WHERE n.id = $q "
+                    "WHERE n.source_confidence >= $minimum AND (n.id = $q "
                     "OR n.title = $q "
-                    "OR n.source_artifact_ref = $q "
+                    "OR n.source_artifact_ref = $q) "
                     "RETURN n.id, n.title, n.source_artifact_ref "
                     "LIMIT $k",
-                    {"q": query_text, "k": max(1, limit - len(out))},
+                    {"q": query_text, "k": max(1, limit - len(out)), "minimum": min_confidence},
                     max_rows=max(1, limit - len(out)),
                 )
                 for row in result.get("rows") or []:
@@ -820,12 +822,12 @@ def _find_literal_node_matches(
                 result = executor.execute_read_only(
                     board_id,
                     f"MATCH (n:{node_type}) "
-                    "WHERE n.title CONTAINS $q "
+                    "WHERE n.source_confidence >= $minimum AND (n.title CONTAINS $q "
                     "OR n.content CONTAINS $q "
-                    "OR n.source_artifact_ref CONTAINS $q "
+                    "OR n.source_artifact_ref CONTAINS $q) "
                     "RETURN n.id, n.title, n.source_artifact_ref "
                     "LIMIT $k",
-                    {"q": query_text[:200], "k": max(1, limit - len(out))},
+                    {"q": query_text[:200], "k": max(1, limit - len(out)), "minimum": min_confidence},
                     max_rows=max(1, limit - len(out)),
                 )
                 for row in result.get("rows") or []:
@@ -855,6 +857,38 @@ def _dedupe_natural_results(rows: list[dict]) -> list[dict]:
         if row.get("similarity", 0.0) > current.get("similarity", 0.0):
             best[node_id] = {**current, **row}
     return [best[node_id] for node_id in order]
+
+
+def _filter_natural_source_confidence(board_id: str, rows: list[dict], minimum: float) -> list[dict]:
+    """Qualify final identities, including vector hits and equivalence survivors.
+
+    Similarity/RRF scores are not source confidence. An absent confidence or
+    unavailable qualification cannot silently admit a candidate.
+    """
+    from okto_pulse.core.kg.interfaces.registry import get_kg_registry
+
+    if not rows:
+        return []
+    executor = get_kg_registry().cypher_executor
+    if executor is None:
+        raise TierPowerError("query_confidence_unavailable", "Source confidence could not be resolved.")
+    grouped: dict[str, set[str]] = {}
+    for row in rows:
+        kind, identity = row.get("node_type"), row.get("node_id")
+        if kind in NODE_TYPES and isinstance(identity, str) and identity:
+            grouped.setdefault(kind, set()).add(identity)
+    allowed: set[tuple[str, str]] = set()
+    try:
+        for kind, identities in grouped.items():
+            result = executor.execute_read_only(
+                board_id,
+                f"MATCH (n:{kind}) WHERE n.id IN $ids AND n.source_confidence >= $minimum RETURN n.id",
+                {"ids": sorted(identities), "minimum": minimum}, max_rows=len(identities),
+            )
+            allowed.update((kind, row[0]) for row in result.get("rows", []) if row and row[0] in identities)
+    except Exception as exc:
+        raise TierPowerError("query_confidence_unavailable", "Source confidence could not be resolved.") from exc
+    return [row for row in rows if (row.get("node_type"), row.get("node_id")) in allowed]
 
 
 def execute_natural_query(
@@ -908,6 +942,10 @@ def execute_natural_query(
     # normalize_graph_layer (the single layer allowlist) so there is no second
     # vocabulary to drift from query_global/get_related_context.
     from okto_pulse.core.kg.kg_service import KGToolError, normalize_graph_layer
+
+    if (type(min_confidence) not in (int, float) or not math.isfinite(min_confidence)
+            or not 0 <= min_confidence <= 1):
+        raise TierPowerError("invalid_param", "min_confidence must be a finite number from 0 to 1.")
 
     try:
         graph_layer = normalize_graph_layer(graph_layer)
@@ -975,6 +1013,7 @@ def execute_natural_query(
             board_id,
             variant_query,
             limit=fetch_limit,
+            min_confidence=min_confidence,
         )
         try:
             query_vec = override_vec if override_vec is not None else embedder.encode(variant_query)
@@ -999,7 +1038,7 @@ def execute_natural_query(
                         "similarity": r["similarity"],
                     })
         elif store is not None:
-            f = QueryFilters(min_confidence=0.0, max_rows=fetch_limit)
+            f = QueryFilters(min_confidence=min_confidence, max_rows=fetch_limit)
             for node_type in NODE_TYPES:
                 try:
                     rows = store.find_by_topic(board_id, node_type, variant_query[:50], f)
@@ -1020,9 +1059,9 @@ def execute_natural_query(
                     try:
                         result = executor.execute_read_only(
                             board_id,
-                            f"MATCH (n:{node_type}) WHERE n.title CONTAINS $q "
+                            f"MATCH (n:{node_type}) WHERE n.title CONTAINS $q AND n.source_confidence >= $minimum "
                             f"RETURN n.id, n.title LIMIT $k",
-                            {"q": variant_query[:50], "k": fetch_limit},
+                            {"q": variant_query[:50], "k": fetch_limit, "minimum": min_confidence},
                             max_rows=fetch_limit,
                         )
                         for row in result.get("rows") or []:
@@ -1091,6 +1130,7 @@ def execute_natural_query(
             all_results, _eqv_mapping,
             id_keys=("node_id",), dedupe_key="node_id", score_key="similarity",
         )
+    all_results = _filter_natural_source_confidence(board_id, all_results, min_confidence)
     filtered_out = 0
     if temporal_filter_requested and all_results:
         node_ids = [r["node_id"] for r in all_results]

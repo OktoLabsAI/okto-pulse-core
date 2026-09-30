@@ -2,6 +2,34 @@
 
 ## Estado para retomada
 
+Filtro de confianca validado: query-confidence1 install9809/prova0,
+850 Python/913 payload Core e370/455 Community identicos. Core53367 terminou1
+(1passed/1failed), por Board repetido na parametrizacao; corrigida somente
+identidade da fixture. Rerun55716 terminal0:98passed/171.30s, incluindo Grafx
+real e regressoes layer/rewrite/temporal/tier_power. F1674366 terminal1 apenas
+matrizes README, findings=[]/oitoZERO. Regeneracao oficial apos terminais;
+builds query-confidence-final0/install26846=0/prova3901=0; F1699051=0.
+record_query_confidence.py executado uma vez apos terminais; acceptance-query-
+confidence.json preserva reproducao vermelha, falha de fixture e hashes.
+Pronto para commit/push; nenhum processo ativo deste incremento. Inventario
+global78/33/135 permanece, sem declaracao de entrega integral. Proximo item
+KG6.5/KG-45: retirar quota por contagem das tres entradas MCP, preservando
+autorizacao, limites por chamada e backpressure concorrente; depois prazo
+comum natural/reflexivo e limites agregados previstos no mesmo plano.
+
+Policy publicada Core08c668c5/Community1159eb48, pushes0. WIP min_confidence:
+validacao finita0..1 antes de provider; predicado source_confidence nos dois
+caminhos literais e fallbacktopic, e qualificacao por tipo/id FINAL apos fold
+de equivalencia (inclui vetor), sem tratar similaridade/RRF como confianca.
+Falha do reader de confianca e erro explicito, nao sucesso vazio. Dialeto
+adicionado e somente predicado portavel existente, nenhum runtime no Core.
+Teste nativo expandido0/.8/1, vetor de similaridadealta com confiancabaixa,
+argumentos invalidos/reader indisponivel; fixture rewrite declara confianca1
+por reader de teste, sem dispensar regra do produto. Ainda NAO executados.
+Builds query-confidence1 ambos0, instalacao iniciada. Exigir install/prova,
+Core confidence/layer/rewrite/temporal/tier_power eF16 antes de novos edits.
+Ultimo par publicado e policy; nao declarar novo filtro validado ainda.
+
 Policyfinal F1664735 TERMINAL0,ok=true/findings e docs vazios/oitoZERO.
 record_query_policy.py executado UMA vez, acceptance-query-policy.json registra
 110/66/87/62/3 e28frontend (campanhas sobrepostas), identidade SPA e limites.

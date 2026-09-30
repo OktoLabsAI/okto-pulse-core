@@ -358,7 +358,15 @@ def stub_registry(monkeypatch):
     # contract the registry grows, instead of a local fake that drifts.
     from okto_pulse.core.kg.interfaces.registry import KGProviderRegistry
 
-    reg = KGProviderRegistry(embedding_provider=embedder, graph_store=store)
+    class ConfidenceReader:
+        # These rewrite fixtures have source confidence 1.0; the native
+        # confidence tests cover low/unknown values and provider failures.
+        def execute_read_only(self, board_id, query, params=None, **kwargs):
+            ids = (params or {}).get('ids', [])
+            return {'rows': [[identity] for identity in ids]}
+
+    reg = KGProviderRegistry(embedding_provider=embedder, graph_store=store,
+                             cypher_executor=ConfidenceReader())
     monkeypatch.setattr(
         registry_mod, "get_kg_registry", lambda: reg, raising=True,
     )
