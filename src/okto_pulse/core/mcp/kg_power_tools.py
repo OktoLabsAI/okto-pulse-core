@@ -317,14 +317,14 @@ okto-pulse://reference/tool-docs/kg."""
             logger.debug("[KG] kg_query_cypher offloading to thread")
             # The executor enforces the native deadline. Do not abandon a
             # running thread and report completion while it still holds reads.
-            result = await run_blocking_graph_io(
+            result = await _run_query_with_deadline(
+                board_id, timeout_ms,
                 lambda: execute_cypher_read_only(
                     board_id, cypher, params,
                     max_rows=effective_rows,
                     timeout_ms=timeout_ms,
                     include_working=include_working,
                 ),
-                task_name=f"mcp.kg.cypher:{board_id}",
             )
             logger.debug("[KG] kg_query_cypher thread returned: row_count=%d",
                          result.get("row_count", "unknown"))

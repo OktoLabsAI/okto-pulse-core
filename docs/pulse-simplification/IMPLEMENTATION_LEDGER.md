@@ -2,6 +2,55 @@
 
 ## Estado para retomada
 
+Foreground concluido neste recorte: query-work-fixture2 Community27250=0,
+112passed/250.46s. Builds query-work-final0/install95860=0; prova28723=0
+852Python/915payload Core e372/457 Community identicos. F16final42238=0:
+sem findings/drift e oito budgets ZERO. Recorder record_query_work.py rodado
+UMA vez depois do terminal; acceptance-query-work-limits.json guarda hashes,
+limites e investigacao da fixture. Nao houve alteracao de frontend neste recorte.
+Documentacao explicita cache adicional por Board/lane e limites por statement.
+Pronto para commit/push, sem anunciar entrega total.
+
+K2 validacao existente: k2-active-set1 Core61970=0:151passed/21.45s;
+Community94565=0:48passed/94.80s. Cobre classificacao/rebuild deterministico,
+conjuntos ativos/compensacao e tres suites Grafx reais. Ainda NAO equivale a
+prova integrada de igualdade dos conjuntos incremental/rebuild G1-G15. Proximo:
+examinar oracle ja existente em scripts/release_artifact_gate.py (referenciado
+por test_release_artifact_gate.py) antes de criar qualquer teste redundante.
+Inventario consolidado permanece78verificados/33parciais/135nao auditados;
+faltam auditoria final, benchmarks reais e versoes/pins0.4.0. Nenhum processo
+de validacao ativo neste checkpoint. Nao parar em milestone.
+
+query-work1: builds/install/provenance terminal0, 852/915 Core e372/457
+Community byte-a-byte. Core2297=0:41passed/37.37s; Community2892=1:
+37passed/1failed/156.40s; F1647959=1 somente matrizes README, findings[] e
+oito budgets ZERO. A falha candidate_execution NAO veio de limites native:
+projection/run.json preserva captured_at2026-09-30, Spec draft original
+updated2026-09-21 e expires_at2026-09-28; census skipped_expired_working=1.
+Consequencia:2ACKs e source_projection_mismatch por endpoints da Spec ausentes.
+Politica source_maturity/planner preservada. Teste agora fixa APENAS relogio
+de captura em2026-09-22, sem reescrever fixture congelada/datas/status nem
+relaxar3ACKs/reconciliacao. query-work-fixture2 Community27250 em andamento;
+nao afirmar verde antes do terminal. Demais suites posteriores ao -x da
+primeira campanha ainda dependem desta execucao. Nenhum commit WIP ainda.
+
+Agregados enviados Core0819f949/Community3060c50b,pushes0. Caracterizacao native
+query-work-characterization44718=0:3passed/4.18s;characterization285540=0:
+4passed/4.66s(inclui memoria). Engines reais confirmam refusal dos quatro
+orcamentos mesmo com aggregate1row e writer disponivel depois. WIP composicao
+foreground: pools readonly lazy separados dos readers internos; caps por
+statement10000resultrows/50000intermediate/50000expansions/10000paths/16MiB
+query memory, sempre min de limite configurado menor. Cache adicional<=16MiB
+por lane configurada. Contagem de perguntas continua semquota; lanes e MCP
+admission compartilhadas. _all_pools/lifecycleclose, shutdown e finally do
+candidate_execution incluem os novos leitores. MCP Cypher entrou no scope
+existente; REST resolve a porta publica via application/kg_runtime_access e
+entra no scope no worker. Scope nao concede autoridade nem muda policyBoard.
+Testes de composicao real/restauracao para leitor interno/cleanup e transports
+preparados; ainda NAO executados. Builds query-work1/install/prova antes de
+comportamento/F16. Ultimo par instalado/provado852/915+371/456 e anterior ao WIP;
+nao validar novo comportamento contra install anterior. Nenhum processo ativo.
+
 Aggregate-final F1688087 TERMINAL0,oitoZERO/semfindings. Recorder executado
 uma vez apos terminal, acceptance-query-aggregate-bounds.json registra
 45/129 e88/9 (sobrepostos), limites/falhas de hipotese preservados. Pronto
