@@ -33,6 +33,59 @@ def qualify_debt_change(*, before, after, execution):
     return replacement is not None and after == replacement
 
 
+async def require_source_append(context, store, *, appended, execution):
+    from okto_pulse.core.application.learning_capture import resolve_learning_capture_projection
+    from okto_pulse.core.application.learning_supersedence import read_learning_scope_replacements
+    from okto_pulse.core.domain.learning_materialization_work import parse_learning_capture_work_ref
+    from okto_pulse.core.ports.kg_cognitive_source import (
+        CognitiveSourceRecord, FingerprintCognitiveSourceReader, latest_cognitive_source_records,
+    )
+    from okto_pulse.core.ports.learning_capture import is_scoped_learning_supersede
+    from okto_pulse.core.ports.learning_reconciliation import LearningReconciliationExecution
+
+    if (type(execution) is not LearningReconciliationExecution
+            or not execution.consolidation_session_id or type(appended) is not tuple
+            or not 1 <= len(appended) <= 2 or any(type(row) is not CognitiveSourceRecord for row in appended)
+            or not isinstance(store, FingerprintCognitiveSourceReader)):
+        raise ValueError('learning_reconciliation_source_append_invalid')
+    work = parse_learning_capture_work_ref(execution.work_ref)
+    if work is None or work.fingerprint is None:
+        raise ValueError('learning_reconciliation_fingerprinted_work_required')
+    latest_cognitive_source_records(appended)
+    if any(row.board_id != execution.board_id or row.node_type != 'Learning'
+            or row.source_session_id != execution.consolidation_session_id
+            or 'capture_format' in row.payload for row in appended):
+        raise ValueError('learning_reconciliation_source_append_unowned')
+    primary = [row for row in appended if (row.node_id, row.generation) == (work.learning_id, work.generation)]
+    if len(primary) != 1:
+        raise ValueError('learning_reconciliation_source_append_unowned')
+    head, = primary
+    capture = await store.read_fingerprint_in_context(context, board_id=execution.board_id,
+        node_id=work.learning_id, generation=work.generation, fingerprint=work.fingerprint)
+    if (capture is None or capture.record_fingerprint != work.fingerprint
+            or (capture.board_id, capture.node_type, capture.node_id, capture.generation)
+                != (execution.board_id, 'Learning', work.learning_id, work.generation)
+            or head.source_revision != capture.source_revision + 1):
+        raise ValueError('learning_reconciliation_source_append_unowned')
+    plan = await resolve_learning_capture_projection(context, store,
+        capture=capture, head=head, bug_id=work.bug_id)
+    plan.require_literal_head()
+    if capture.payload['source']['bug_id'] != work.bug_id:
+        raise ValueError('learning_reconciliation_source_append_unowned')
+    if is_scoped_learning_supersede(capture.payload):
+        targets = [row for row in appended if row is not head]
+        if len(targets) != 1:
+            raise ValueError('learning_reconciliation_source_append_unowned')
+        target, = targets
+        claims = await read_learning_scope_replacements(context, store, head=target)
+        own = [claim for claim in claims if claim.capture == capture and claim.successor == head
+            and claim.claimed == target]
+        if len(own) != 1 or target.committed_at != head.committed_at:
+            raise ValueError('learning_reconciliation_source_append_unowned')
+    elif len(appended) != 1:
+        raise ValueError('learning_reconciliation_source_append_unowned')
+
+
 async def execute(*, board_id, work_ref, relational_scope_factory):
     from okto_pulse.core.domain.learning_closeout import LearningCaptureSelection
     from okto_pulse.core.domain.learning_materialization_work import parse_learning_capture_work_ref

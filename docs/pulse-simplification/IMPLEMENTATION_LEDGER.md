@@ -2,6 +2,38 @@
 
 ## Estado para retomada
 
+Par anterior publicado Core2fd0863d/Community29f25992, pushes0/limpos.
+Em implementacao KG7.5/K3: require_learning_reconciliation_source_append na porta
+publica usa resolve_learning_capture_projection/read_learning_scope_replacements
+existentes para qualificar lote literal da sessao confirmada, incluindo o par
+scoped-supersede. Community CandidateLearningHistory implementa somente leitura
+historica delimitada, imutavel entre lotes, com limite100k/64MiB e recusa de revisao
+duplicada/salto/replay como append. Nao autentica baseline/sessao nem substitui
+prova de deltas SQL completos. Ainda falta composicao pelo coordenador privado.
+Testes novos cobrem autoria/reuso/par atomico e adulteracoes; testes nativos de
+efeitos verificam a visao com fontes reais e isolamento de mutacao.
+Validacao source-append1: builds0, Ruff93009=0, install28694=0/prova0 ANTES dos
+testes (Core845/908,Community365/450). Core43487=0:70passed/7.50s;
+Community50714=0:7passed/144.34s, dois avisos record_property/xunit2, sem falhas.
+F1623666=1 somente matrizes README; findings=[] e oito ZERO. Matrizes regeneradas
+apos todos terminais. Builds finais0/install2073=0/prova0 mesmas contagens.
+F16 final34571=0, ok=true,findings/documentation_findings vazios,oito ZERO.
+record_learning_source_append.py executado UMA vez depois de todos terminais
+gerou acceptance-learning-source-append.json; nao rerodar contra fontes futuras.
+Nenhuma sessao de validacao permanece ativa. Commit/push deste incremento seguem.
+Produto congelado durante campanhas. Nenhuma mudanca de policy/autoridade/guards/UI.
+
+Proxima composicao concreta: apos projecao deterministica/restauracao literal e
+antes de global_source_inputs, executar trabalhos Learning selecionados e reter
+as fronteiras SQL por fase. O verificador ACK original e after_sql/checkpoint v6
+continuam estritos. Nao adicionar tabelas permitidas genericamente: provar audit,
+refs,outbox,eventos,head,fence,fontes/debt e efeitos grafos por sessao/trabalho,
+usando os qualificadores Core e a visao historica Community agora testados.
+Global source capture ja le SQL/overlay do candidato (projection fornece metadata
+Board); requer rederivacao posterior a esses efeitos. Recibo/checkpoint e censos
+precisam integrar a fase nova sem reinterpretar formatos antigos. Inventario
+78/33/135 e entrega integral permanecem incompletos.
+
 Validacao da transicao compartilhada concluida em 2026-09-30. debt-transition1:
 builds/install/prova0 ANTES dos testes (Core845Python/908payload,
 Community364/449, byte-identicos). Core31326=0:56passed/215.39s;

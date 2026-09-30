@@ -48,6 +48,18 @@ def qualify_learning_reconciliation_debt_change(*, before, after, execution):
     return qualify_debt_change(before=before, after=after, execution=execution)
 
 
+async def require_learning_reconciliation_source_append(context, store, *, appended, execution):
+    """Check authored lineage for one committed candidate source append batch.
+
+    The edition supplies the complete, verified history as of this execution,
+    including both sides of a scoped replacement atomically. It separately
+    proves that these are the only new rows and binds the session to its audit.
+    This read-only check grants neither current applicability nor admission.
+    """
+    from okto_pulse.core.application.learning_reconciliation import require_source_append
+    await require_source_append(context, store, appended=appended, execution=execution)
+
+
 def select_learning_reconciliation(*, schema, board_id, records, nodes):
     """Select bounded historical work from an authenticated offline snapshot.
 
