@@ -329,43 +329,6 @@ def auto_bound_var_length_path(cypher: str, max_depth: int = 20) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Rate limiter — token bucket (FR-5)
-# ---------------------------------------------------------------------------
-#
-# R03 IMP1 (FR2/AC2): the in-memory token bucket lives ONLY behind the
-# RateLimiter port — the canonical concrete is
-# ``community.adapters.memory.CommunityInMemoryRateLimiter`` (the Community
-# edition composes ``CommunityInMemoryRateLimiter``). The duplicate module-global
-# ``_TokenBucket`` / ``_rate_limiter`` that used to live here was vestigial — the
-# runtime resolves the slot through ``require_rate_limiter()`` — so it is removed,
-# together with its ``BASELINE_SINGLETONS`` ledger entry. Token-bucket
-# semantics (30 tokens / 60s window per agent) are unchanged.
-
-
-def reset_rate_limiter_for_tests() -> None:
-    """Reset the rate limiter — drops the whole KG registry (tests only)."""
-    from okto_pulse.core.kg.interfaces.registry import reset_registry_for_tests
-
-    reset_registry_for_tests()
-
-
-def check_rate_limit(agent_id: str) -> None:
-    from okto_pulse.core.kg.interfaces.registry import get_kg_registry
-
-    # AC3 (base fail-closed): read the rate limiter through the required port —
-    # an unregistered slot raises ``runtime_provider_missing`` instead of a late
-    # ``AttributeError`` on ``None`` or a silent concrete fallback.
-    limiter = get_kg_registry().require_rate_limiter()
-    allowed, retry_after = limiter.allow(agent_id)
-    if not allowed:
-        raise TierPowerError(
-            "rate_limited",
-            "Rate limit exceeded: 30 queries/min",
-            details={"retry_after": retry_after},
-        )
-
-
-# ---------------------------------------------------------------------------
 # Pattern hash for audit telemetry (FR-8)
 # ---------------------------------------------------------------------------
 

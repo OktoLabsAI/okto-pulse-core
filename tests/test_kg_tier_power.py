@@ -1,4 +1,4 @@
-"""Test suite for Tier Power — Cypher safety, rate limit, NL search, schema info."""
+"""Test suite for Tier Power — Cypher safety, NL search, schema info."""
 
 import os
 import sys
@@ -12,25 +12,21 @@ from okto_pulse.core.kg.tier_power import (
     _apply_canonical_projection,
     _auto_bound_var_length_path,
     _auto_inject_limit,
-    check_rate_limit,
     clamp_max_rows,
     clamp_timeout,
     compute_pattern_hash,
     execute_natural_query,
     get_schema_info,
-    reset_rate_limiter_for_tests,
     validate_cypher_read_only,
 )
 from kg_registry_testing import configure_test_kg_registry
+from okto_pulse.core.kg.interfaces.registry import reset_registry_for_tests
 
 
 @pytest.fixture(autouse=True)
-def _reset_rate():
-    # reset_rate_limiter_for_tests() resets the whole KG registry; R-P2-03 no
-    # longer lazy-builds defaults, so re-configure the embedded fakes explicitly
-    # (this autouse fixture runs after the conftest one, so it must restore a
-    # configured registry for the tests that read get_kg_registry()).
-    reset_rate_limiter_for_tests()
+def _reset_registry():
+    # This suite explicitly uses in-memory providers after the shared fixture.
+    reset_registry_for_tests()
     configure_test_kg_registry(graph_provider="inmemory")
 
 
@@ -371,21 +367,6 @@ class TestSafetyRails:
 
         assert "graph_layer = 'canonical'" not in fake.seen
         assert result["query_state"] == "canonical_and_working"
-
-
-class TestRateLimit:
-    def test_allows_30_then_rejects(self):
-        for _ in range(30):
-            check_rate_limit("agent-rl")
-        with pytest.raises(TierPowerError) as exc:
-            check_rate_limit("agent-rl")
-        assert exc.value.code == "rate_limited"
-        assert "retry_after" in exc.value.details
-
-    def test_different_agents_independent(self):
-        for _ in range(30):
-            check_rate_limit("agent-a")
-        check_rate_limit("agent-b")
 
 
 class TestPatternHash:

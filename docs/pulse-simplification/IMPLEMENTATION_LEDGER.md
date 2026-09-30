@@ -2,6 +2,38 @@
 
 ## Estado para retomada
 
+F16final quota50085 TERMINAL0; recorder executado uma vez confirmou oitoZERO
+e acceptance-query-quota.json com114Core/52Community, hashes e red preservado.
+Nenhum processo deste incremento ativo. Pronto para commit/push pareado.
+Entrega integral ainda pendente; continuar no escopo acima sem pausa.
+
+KG-45 query-quota1 builds0/install53756=0/prova65569=0:850/913+370/455
+byte-identical antes de comportamento. Core43302=0:114passed/96.74s;
+Community9638=0:52passed/19.50s. Tres entradas MCP35chamadas cada sem
+consultar contador e35Cypher Grafx reais passaram; permissao por chamada,
+regressoes de seguranca, prazo e admissao concorrente preservadas. F1625482=1
+somente README, findings=[]/oitoZERO. Regeneracao oficial apos terminais,
+builds query-quota-final0/install30777=0/prova44765=0; F1650085 em andamento.
+record_query_quota.py preparado, NAO executar antes do F16terminal verde.
+Proxima frente dentro KG6.5/D18: porta de prazo por consulta implementada
+Community, contexto de prazo compartilhado por Cypher/store/vector/retries,
+MCP natural/reflexivo lendo policy Board e usando run_blocking_graph_io;
+nenhum codigo dessa frente escrito ainda. Nao reutilizar scope Health como
+query: ele tambem proibe manutencao, tem teto5s e semantica propria. Limites
+de fanout/arrays/payload e demais aceites continuam pendentes.
+
+Confianca publicada Core5420ecac/Community0d966ee0,pushes0. KG-45 reproducao
+query-quota-repro77225 terminal1: chamada31 recusada rate_limited;1failed/4.65s,
+par final anterior instalado/provado. Retiradas chamadas de quota de Cypher,
+natural e reflexiva e helper privado obsoleto; porta generica RateLimiter
+permanece tipada/fail-closed para consumidores explicitos. Testes substituem
+obrigacao antiga por35 chamadas nas3 entradas com autenticacao por chamada
+e nenhum acesso ao contador, mais35 leituras Grafx reais. Testes legados de
+porta permanecem; backpressure/read lanes/admission e prazo nativo farao
+parte da validacao Community. WIP ainda NAO validado; builds/prova antes
+de suites. Sem alteracao frontend neste incremento. Nao mudar produto em
+campanha. Proximo trabalho continua prazo unico e bounds KG6.5, sem alvos novos.
+
 Filtro de confianca validado: query-confidence1 install9809/prova0,
 850 Python/913 payload Core e370/455 Community identicos. Core53367 terminou1
 (1passed/1failed), por Board repetido na parametrizacao; corrigida somente

@@ -109,7 +109,7 @@ class TestCacheBackendIntegration:
 
 
 class TestRateLimiterIntegration:
-    """ts_77d9f363 — AC-8: tier_power rate limit uses registry.rate_limiter."""
+    """Generic limiter port remains usable; KG queries have no count quota."""
 
     def test_allows_within_limit(self):
         limiter = get_kg_registry().rate_limiter
@@ -147,18 +147,6 @@ class TestRateLimiterIntegration:
 
         allowed, _ = limiter.allow("agent-b")
         assert allowed is True
-
-    def test_check_rate_limit_raises_on_exceed(self):
-        from okto_pulse.core.kg.tier_power import TierPowerError, check_rate_limit
-
-        limiter = get_kg_registry().rate_limiter
-        for _ in range(30):
-            limiter.allow("agent-x")
-
-        with pytest.raises(TierPowerError) as exc_info:
-            check_rate_limit("agent-x")
-        assert exc_info.value.code == "rate_limited"
-
 
 # -----------------------------------------------------------------------
 # ts_7f474a39 — Backward compat + import identity

@@ -25,7 +25,6 @@ async def test_mcp_uses_authorized_board_policy(monkeypatch, requested, expected
         yield uow
 
     monkeypatch.setattr(runtime_registry, 'resolve_unit_of_work_factory', lambda: factory)
-    monkeypatch.setattr(api, 'check_rate_limit', lambda agent: None)
     calls = []
 
     def query(*args, **kwargs):

@@ -130,10 +130,8 @@ def test_rate_porta_fail_closed_when_limiter_absent():  # ts_ac6759d6
     _configure()
     try:
         get_kg_registry().rate_limiter = None
-        from okto_pulse.core.kg.tier_power import check_rate_limit
-
         with pytest.raises(RuntimeProviderMissing) as exc:
-            check_rate_limit("agent-1")
+            get_kg_registry().require_rate_limiter()
         assert exc.value.provider_key == "rate_limiter"
     finally:
         reset_registry_for_tests()

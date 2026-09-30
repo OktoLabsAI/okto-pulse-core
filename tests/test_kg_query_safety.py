@@ -358,7 +358,6 @@ async def test_natural_handler_rejects_oversize_before_executor():
     mcp = _fresh_mcp("test-kg-safety-natural-reject")
     with (
         patch.object(kpt, "execute_natural_query", _spy_execute),
-        patch.object(kpt, "check_rate_limit", lambda *_a, **_k: None),
     ):
         kpt.register_kg_power_tools(
             mcp,
@@ -390,7 +389,6 @@ async def test_natural_handler_runs_executor_for_normal_query():
     mcp = _fresh_mcp("test-kg-safety-natural-ok")
     with (
         patch.object(kpt, "execute_natural_query", _spy_execute),
-        patch.object(kpt, "check_rate_limit", lambda *_a, **_k: None),
     ):
         kpt.register_kg_power_tools(
             mcp,
@@ -432,7 +430,6 @@ async def test_cypher_handler_sanitizes_bounds_and_rounds():
     mcp = _fresh_mcp("test-kg-safety-cypher")
     with (
         patch.object(kpt, "execute_cypher_read_only", _spy_cypher),
-        patch.object(kpt, "check_rate_limit", lambda *_a, **_k: None),
     ):
         kpt.register_kg_power_tools(
             mcp,
@@ -469,7 +466,6 @@ async def test_cypher_handler_reports_native_deadline_after_executor_ends():
     mcp = _fresh_mcp("test-native-deadline")
     with (
         patch.object(kpt, "execute_cypher_read_only", execute),
-        patch.object(kpt, "check_rate_limit", lambda *_a, **_k: None),
         patch.object(kpt.asyncio, "wait_for", abandoned_wait),
     ):
         kpt.register_kg_power_tools(mcp, get_agent=_stub_get_agent,
@@ -494,7 +490,6 @@ async def test_cypher_handler_rejects_above_hard_cap():
     mcp = _fresh_mcp("test-kg-safety-cypher-cap")
     with (
         patch.object(kpt, "execute_cypher_read_only", _spy_cypher),
-        patch.object(kpt, "check_rate_limit", lambda *_a, **_k: None),
     ):
         kpt.register_kg_power_tools(
             mcp,

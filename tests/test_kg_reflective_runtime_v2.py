@@ -422,7 +422,6 @@ async def test_mcp_reflective_tool_enforces_acl_then_runs_real_loop(monkeypatch)
 
     monkeypatch.setattr(interfaces, "get_kg_registry", lambda: registry)
     monkeypatch.setattr(kg_service, "get_kg_service", lambda: _Service())
-    monkeypatch.setattr(power_tools, "check_rate_limit", lambda _agent_id: None)
     mcp = _MCP()
 
     async def get_agent():
@@ -471,7 +470,6 @@ async def test_mcp_reflective_tool_denies_board_before_retrieval(monkeypatch):
 
     monkeypatch.setattr(interfaces, "get_kg_registry", lambda: registry)
     monkeypatch.setattr(kg_service, "get_kg_service", lambda: _Service())
-    monkeypatch.setattr(power_tools, "check_rate_limit", lambda _agent_id: None)
     mcp = _MCP()
 
     async def get_agent():

@@ -23,7 +23,6 @@ from okto_pulse.core.mcp.kg_authorization import (
 )
 from okto_pulse.core.kg.tier_power import (
     TierPowerError,
-    check_rate_limit,
     execute_cypher_read_only,
     execute_natural_query,
     get_schema_info,
@@ -289,7 +288,6 @@ okto-pulse://reference/tool-docs/kg."""
         logger.debug("[KG] kg_query_cypher called: board_id=%s cypher_len=%d max_rows=%d timeout_ms=%s",
                      board_id, len(cypher), max_rows, timeout_ms)
         try:
-            check_rate_limit(agent.id)
             policy = await _read_query_policy(board_id, board_agent)
             timeout_ms = policy.effective_timeout(timeout_ms)
             # FR2/FR9: clamp to an agent-safe page; reject above the hard cap.
@@ -383,7 +381,6 @@ okto-pulse://reference/tool-docs/kg."""
         logger.debug("[KG] kg_query_natural called: board_id=%s query=%r limit=%d",
                      board_id, nl_query[:80], limit)
         try:
-            check_rate_limit(agent.id)
             # FR0: reject an oversize natural query at the MCP boundary BEFORE
             # the embedding provider is resolved. execute_natural_query resolves
             # registry.require_embedding_provider internally, so the guard MUST run
@@ -646,7 +643,6 @@ args: okto-pulse://reference/tool-docs/kg."""
                 return _err("unauthorized", "authentication required")
             boards = sorted(set(await auth.get_accessible_boards() or []))
             get_kg_service().check_board_access(boards, board_id)
-            check_rate_limit(str(agent_id))
 
             retrieval = registry.require_reflective_retrieval()
             critic = registry.require_reflective_critic()
