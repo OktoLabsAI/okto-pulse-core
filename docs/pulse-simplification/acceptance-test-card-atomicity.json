@@ -1,0 +1,169 @@
+{
+  "format": "pulse-v1.3-reviewed-execution/v1",
+  "criteria": {
+    "BASE:T19": {
+      "status": "verified_by_reviewed_execution",
+      "remaining": null,
+      "covered": "Single CardService create writes Test Card scenario IDs and both scenario reverse links; independent session verifies commit. Caller rollback removes Card, links, outbox and activity. Production Community SQLite persistence/event adapters plus Core SQL test adapter.",
+      "evidence": [
+        {
+          "repository": "core",
+          "file": "tests/test_test_card_creation_atomicity.py",
+          "source_sha256": "df6f3e613c37ad3ee24191f695fc542c96e30c4be7b52b122f67a9ba8a363ff5"
+        },
+        {
+          "repository": "community",
+          "file": "tests/test_test_card_creation_atomicity.py",
+          "source_sha256": "ee877c723515256d075320ef3c4e3cfd5ac02088939fcf07946261fd2408ffc5"
+        }
+      ]
+    },
+    "BASE:T20": {
+      "status": "partial",
+      "covered": "A valid scenario followed by a scenario from a different Spec or Board rejects the entire create; committing after the caught denial leaves no Card, reverse links, outbox or activity in production SQLite.",
+      "remaining": "Direct service create audited. Public create/batch surface coverage and exposure mapping remain to be reviewed; no claim of a Card batch API or transport authorization proof.",
+      "evidence": [
+        {
+          "repository": "core",
+          "file": "tests/test_test_card_creation_atomicity.py",
+          "source_sha256": "df6f3e613c37ad3ee24191f695fc542c96e30c4be7b52b122f67a9ba8a363ff5"
+        },
+        {
+          "repository": "community",
+          "file": "tests/test_test_card_creation_atomicity.py",
+          "source_sha256": "ee877c723515256d075320ef3c4e3cfd5ac02088939fcf07946261fd2408ffc5"
+        }
+      ]
+    }
+  },
+  "provenance": {
+    "file": "provenance-test-card-atomicity1.json",
+    "sha256": "5ca0ebee92244f700b207c56d821e9551eff24d94e0696db316179f6a097d6a8",
+    "identity": {
+      "checked_at": "2026-09-30T21:41:16.168828+00:00",
+      "python": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Scripts\\python.exe",
+      "packages": {
+        "core": {
+          "python_files": 859,
+          "origin": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages\\okto_pulse\\core\\__init__.py",
+          "repository_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_core",
+          "commit": "28eafdad148d2d11c8ebb653d4faf405c0f834cb",
+          "dirty": true,
+          "dirty_entry_count": 1,
+          "distribution": "okto-pulse-core",
+          "version": "0.3.4",
+          "wheel": {
+            "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\dist-learning-reconciliation-k2-spec-owner-final\\okto_pulse_core-0.3.4-py3-none-any.whl",
+            "sha256": "a6f77fab8288ae5a91690a7d2796ea8d19db5b10c8a7c7263629553ebeff0312",
+            "size": 3793229
+          },
+          "source_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_core\\src",
+          "site_packages_root": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages",
+          "package_prefix": "okto_pulse/core/",
+          "byte_identical_member_count": 922,
+          "byte_identical": true,
+          "aggregate_sha256": "acb90eccf7d1f8cacb71280c263b68a5e5dc3c26f49552f9b7b91404280eddb7",
+          "chain_hashes": {
+            "source": "acb90eccf7d1f8cacb71280c263b68a5e5dc3c26f49552f9b7b91404280eddb7",
+            "wheel": "acb90eccf7d1f8cacb71280c263b68a5e5dc3c26f49552f9b7b91404280eddb7",
+            "site_packages": "acb90eccf7d1f8cacb71280c263b68a5e5dc3c26f49552f9b7b91404280eddb7"
+          },
+          "critical_resource_sha256": {
+            "okto_pulse/core/mcp/resources/ska_resource_manifest.json": "87fab2a5ded5f6ee273af8628555c21f7065d32379945784132bb6c300d05865",
+            "okto_pulse/core/mcp/resources/ska_tool_manifest.json": "0c3fa3da1549baec20872eca3f4a289288627e6b9f6b80be10472ac962fa72b9"
+          },
+          "mismatches": []
+        },
+        "community": {
+          "python_files": 373,
+          "origin": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages\\okto_pulse\\community\\__init__.py",
+          "repository_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_community",
+          "commit": "935d839086e24455133a2462dab837b0108d9469",
+          "dirty": false,
+          "dirty_entry_count": 0,
+          "distribution": "okto-pulse",
+          "version": "0.3.4",
+          "wheel": {
+            "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\dist-learning-reconciliation-k2-spec-owner-final\\okto_pulse-0.3.4-py3-none-any.whl",
+            "sha256": "3d1eb7b80776aa6ba91a8e0e24d194c6d09769d70a4637a6423e0f57872ecd55",
+            "size": 4535175
+          },
+          "source_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_community\\src",
+          "site_packages_root": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages",
+          "package_prefix": "okto_pulse/community/",
+          "byte_identical_member_count": 458,
+          "byte_identical": true,
+          "aggregate_sha256": "94e3b3e820cf74f6c6d891b03b4aed41523ec3396fa781d7cf180f1da379463b",
+          "chain_hashes": {
+            "source": "94e3b3e820cf74f6c6d891b03b4aed41523ec3396fa781d7cf180f1da379463b",
+            "wheel": "94e3b3e820cf74f6c6d891b03b4aed41523ec3396fa781d7cf180f1da379463b",
+            "site_packages": "94e3b3e820cf74f6c6d891b03b4aed41523ec3396fa781d7cf180f1da379463b"
+          },
+          "critical_resource_sha256": {},
+          "mismatches": []
+        }
+      }
+    }
+  },
+  "runs": [
+    {
+      "xml": "learning-reconciliation-test-card-atomicity2-core.xml",
+      "xml_sha256": "48072c64dfe495204dece73baf98ffeb6c16727011a2f8f8881d1c5bdf9ec6aa",
+      "log": "learning-reconciliation-test-card-atomicity2-core.log",
+      "log_sha256": "a51a9fc6c93eac5b38a8eed11add349b855cf0e0a9eb4a574ffa57e2f95d9978",
+      "suites": [
+        {
+          "name": "pytest",
+          "errors": "0",
+          "failures": "0",
+          "skipped": "0",
+          "tests": "4",
+          "time": "3.891",
+          "timestamp": "2026-09-30T18:42:22.627557-03:00",
+          "hostname": "Alienware_m15"
+        }
+      ]
+    },
+    {
+      "xml": "learning-reconciliation-test-card-atomicity1-community.xml",
+      "xml_sha256": "1e43eb184d5f6d21dc9b1589e5307d100062c11d566500270896a1d7d2be4059",
+      "log": "learning-reconciliation-test-card-atomicity1-community.log",
+      "log_sha256": "99fc6579142b144e754c30bde34e5139ba8a0abdf0152b9c2c32952f02379dfd",
+      "suites": [
+        {
+          "name": "pytest",
+          "errors": "0",
+          "failures": "0",
+          "skipped": "0",
+          "tests": "4",
+          "time": "12.275",
+          "timestamp": "2026-09-30T18:44:04.071775-03:00",
+          "hostname": "Alienware_m15"
+        }
+      ]
+    }
+  ],
+  "retained_fixture_failure": {
+    "xml": "learning-reconciliation-test-card-atomicity1-core.xml",
+    "xml_sha256": "e4b85e8f142fe573d944e524cdac99a7e54831e097db362b505b13f2aeffc59d",
+    "log": "learning-reconciliation-test-card-atomicity1-core.log",
+    "log_sha256": "842271596abe1e5027a88a080453624705b68f6ceff9f252309cba5e266a6884",
+    "suites": [
+      {
+        "name": "pytest",
+        "errors": "0",
+        "failures": "1",
+        "skipped": "0",
+        "tests": "4",
+        "time": "6.199",
+        "timestamp": "2026-09-30T18:41:32.777138-03:00",
+        "hostname": "Alienware_m15"
+      }
+    ]
+  },
+  "limits": [
+    "Initial Core campaign: three passed, fourth failed because shared legacy seed accumulated another Spec. Final tests use unique Board/Spec identities; no product change.",
+    "Seeded authorized owner invokes service directly; this does not exercise transport grants.",
+    "No product/frontend change or new F16 execution."
+  ]
+}

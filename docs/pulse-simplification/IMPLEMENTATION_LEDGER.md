@@ -2,6 +2,25 @@
 
 ## Estado para retomada
 
+BASE T19 verificado e T20 parcial: Core atomicity2 session14052=0,
+4passed3.91s; Community atomicity1 session88669=0,4passed12.29s. Criação única
+persiste Test Card e vínculos bidirecionais; rollback remove também outbox e
+atividade. Cenário válido seguido de cenário de outra Spec/Board recusa tudo;
+commit após a recusa prova ausência de efeitos parciais. Community usa banco
+SQLite descartável e adapters reais; Core usa adapter SQL de testes. Autor
+owner preparado chama serviço diretamente; não é prova de grants de transporte.
+Falha intermediária Core atomicity1 session46813=1:3passed/1failed6.23s, fixture
+compartilhada acumulava Spec e falhava no lookup; corrigida com IDs exclusivos.
+Logs preservados. Prova8e28db=0 anterior aos processos: fontes/site/wheels
+859/922+373/458 idênticos. Recorder record_test_card_atomicity_review.py executado
+uma vez após terminais; acceptance-test-card-atomicity.json. Inventário93
+verificados/40 parciais/113 não auditados. Não promover T20 além do create no
+serviço: falta revisar cobertura das superfícies públicas create/batch; não
+inventar API batch. Sem alteração de produto/frontend/gates, sem novo F16.
+Próxima ação: concluir esse mapeamento de T20 e continuar inventário acordado.
+T14/T15 publicados em71d02a15/28eafdad; decisões KG-10/T23 continuam pendentes.
+Entrega integral permanece aberta.
+
 BASE T15 verificado: grouped-variant1 session47854 terminou0,
 11passed3.72s. Nove variantes de link_task, 11 folhas de permissão (IR/OR
 exigem duas): negar uma folha mantendo as demais concede erro exato antes

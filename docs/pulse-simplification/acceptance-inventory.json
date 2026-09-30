@@ -208,8 +208,12 @@
       "line": 598,
       "id": "T19",
       "normative_text": "| T19 | Criar Test Card com cenários válidos | Card e vínculos surgem atomicamente, sem chamada de link redundante. |",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "verified_by_reviewed_execution",
+      "test_text_references": [],
+      "reviewed_execution": {
+        "artifact": "acceptance-test-card-atomicity.json",
+        "criterion_key": "BASE:T19"
+      }
     },
     {
       "key": "BASE:T20",
@@ -217,8 +221,12 @@
       "line": 599,
       "id": "T20",
       "normative_text": "| T20 | Cenário de outro board/Spec não autorizado em create/batch | Nenhuma criação parcial; recusa adequada. |",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "partial",
+      "test_text_references": [],
+      "reviewed_execution": {
+        "artifact": "acceptance-test-card-atomicity.json",
+        "criterion_key": "BASE:T20"
+      }
     },
     {
       "key": "BASE:T21",
