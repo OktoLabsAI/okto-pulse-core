@@ -2,6 +2,51 @@
 
 ## Estado para retomada
 
+Caracterizacao do materializador concluida neste recorte, KG7.5/K3 ainda aberto.
+effects-characterization5 95956=0:2passed/43.81s, cobrindo head ausente e existente.
+characterization4 49622=1/26.28s identificou somente last_recomputed_at e
+relevance_score no Bug referenciado. Investigacao em primitives.py:4265-4325
+confirmou hook existente degree_delta e protecao dessas propriedades na saga;
+nao alterada semantica nem guarda de produto. Teste agora exige esse delta exato,
+preservando demais propriedades, nos/arestas existentes e fonte imutavel.
+SQL: audit/ref/outbox/revisao cognitiva/evento/head do Board ligados a mesma
+sessao; fence transacional real avanca exatamente5. Celulas fora desses efeitos
+permanecem identicas. Ledger de evidencias mantido autentico no incremento anterior.
+record_learning_effects.py executado UMA vez apos terminais gerou
+acceptance-learning-materialization-effects.json; nao rerodar. Ruff0.
+Nenhum processo permanece ativo. Somente teste/documentacao nesta caracterizacao;
+mesmo par byte-proven do incremento anterior, sem alteracao de produto.
+
+Proximo passo concreto: composicao publica Core para chamar o materializador
+governado e recibo interno que ligue trabalho selecionado aos efeitos SQL/grafo.
+O verificador atual retirement_candidate_sql_delta aceita ACK deterministico;
+NAO basta incluir nomes de tabelas em allowlist. Provar tambem replay, holds
+substantivos e fonte indisponivel antes de ligar completion. O materializador
+atual retorna bool; sua sessao/auditoria/head/evento precisam manter ownership
+exato na composicao, sem reach-in privado pelo Community. Inventario78/33/135
+continua inalterado; caracterizacao NAO e execucao do candidato nem entrega final.
+
+Publicado incremento de continuidade: Core6ba423c5/Community7c9f9dc2,
+pushes0, arvores limpas antes da etapa seguinte. KG7.5/K3 continua SEM pausa:
+caracterizacao dos efeitos do materializador governado sobre trabalho selecionado.
+Novo teste Community test_learning_reconciliation_effects.py usa captura/evidencia
+assinada real e Grafx, com os mesmos gates alheios/health explicitamente em fixture
+do suite original. Nenhum produto alterado nesta caracterizacao.
+Nova prova provenance-learning-effects-characterization.json=0 confirma mesmo
+par845/908+364/449 antes dos testes. effects-characterization51992=1/35.98s:
+alem de audit/ref/outbox/revisao cognitiva, writer altera app_settings/domain_events.
+Investigacao confirmou EXATAMENTE head kg_mat_gen do Board e evento
+kg.materialization_generation_advanced correlacionado a sessao; nao configuracao
+geral. Fixture agora instala fence transacional pela migracao real antes da base.
+characterization2 65649=1/26.00s: somente erro da assercao de FK no teste;
+revisao usa cognitive_source_id -> kg_cognitive_sources.id, nao node_id direto.
+characterization3 42702=1/28.02s: propriedade de no preexistente mudou; SQL ja
+passou com sete tabelas classificadas, linhagem/evento/head exatos e delta de
+revision=5. NAO relaxar historico nem guard de candidato. characterizaton4
+49622 em execucao para registrar nomes/valores exatos do delta grafico no JUnit.
+Nao declarar esta caracterizacao concluida. Teste tem parametros head ausente e
+head preexistente; -x ainda impediu chegar ao segundo. Falhas anteriores mantidas.
+
 Continuidade de evidencia validada (2026-09-30), pronta para commit/push.
 fixed2 Community53681=0:41passed/489.97s. Ativacao48268=0:1passed/233.47s,
 no MESMO par instalado byte-proven845/908+364/449. Teste existente estendido
