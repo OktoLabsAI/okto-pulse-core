@@ -54,6 +54,7 @@ class CapturedLearningProjection:
     scope_target: CognitiveSourceRecord | None = None
     scope_target_head: CognitiveSourceRecord | None = None
     scope_claim_committed: bool = False
+    association_capture: CognitiveSourceRecord | None = None
 
     @property
     def authored_capture(self) -> CognitiveSourceRecord:

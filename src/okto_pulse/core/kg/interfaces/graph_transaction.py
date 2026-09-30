@@ -235,6 +235,52 @@ class LearningBugAssociationTransaction(Protocol):
 
 
 @dataclass(frozen=True)
+class LearningAssociationInvalidationReceipt:
+    """Exact before-image for one qualified stale origin, without replacement.
+
+    This receipt provides compensation, never authority to invalidate a source.
+    The caller must retain its semantic source fence through graph mutation.
+    """
+
+    board_id: str
+    learning_id: str
+    bug_id: str
+    removed_edges: tuple[ProjectionEdgeBeforeImage, ...] = ()
+
+    def __post_init__(self) -> None:
+        if (any(type(value) is not str or not value.strip() or len(value) > 4096
+                for value in (self.board_id, self.learning_id, self.bug_id))
+                or type(self.removed_edges) is not tuple
+                or any(not isinstance(edge, ProjectionEdgeBeforeImage)
+                    or (edge.edge_type, edge.from_type, edge.to_type, edge.from_id, edge.to_id)
+                    != ('validates', 'Learning', 'Bug', self.learning_id, self.bug_id)
+                    for edge in self.removed_edges)):
+            raise ValueError('learning_invalidation_receipt_invalid')
+
+
+@runtime_checkable
+class LearningAssociationInvalidationTransaction(Protocol):
+    """Optional pair-scoped removal; no node or other-origin mutation."""
+
+    def snapshot_learning_invalidation(self, learning_id: str,
+        bug_id: str) -> LearningAssociationInvalidationReceipt:
+        """Snapshot all parallel edges for the exact pair, including properties."""
+        ...
+
+    def invalidate_learning_association(self, receipt: LearningAssociationInvalidationReceipt) -> None:
+        """Compare the entire before-image before removing the selected pair.
+
+        Missing pairs are idempotent; changed pairs fail closed. Discard staged
+        effects on failure or leave them compensable with the exact receipt.
+        """
+        ...
+
+    def restore_learning_invalidation(self, receipt: LearningAssociationInvalidationReceipt) -> None:
+        """Restore exact multiplicity/properties idempotently; refuse conflicts."""
+        ...
+
+
+@dataclass(frozen=True)
 class ProjectionNodeBeforeImage:
     """Complete node state needed to reverse an active-set mutation."""
 
@@ -484,6 +530,8 @@ class GraphTransaction(Protocol):
 __all__ = [
     "LearningBugAssociationReceipt",
     "LearningBugAssociationTransaction",
+    "LearningAssociationInvalidationReceipt",
+    "LearningAssociationInvalidationTransaction",
     "GraphStatementResult",
     "GraphNodePropertyBeforeImage",
     "GraphTransaction",

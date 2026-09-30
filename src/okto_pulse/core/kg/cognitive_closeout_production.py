@@ -371,20 +371,6 @@ def _count_nodes_by_source_ref(board_id: str, node_type: str, source_artifact_re
     return 0
 
 
-def _authored_learning_queryable(board_id: str, node_id: str, source_ref: str) -> bool:
-    from okto_pulse.core.kg.interfaces import get_kg_registry
-
-    try:
-        result = get_kg_registry().cypher_executor.execute_read_only(board_id,
-            'MATCH (n:Learning)-[:validates]->(b:Bug) WHERE n.id = $id '
-            'AND b.source_artifact_ref = $ref RETURN n.id',
-            {'id': node_id, 'ref': source_ref}, max_rows=1)
-        return bool(result.get('rows'))
-    except Exception:
-        logger.info('cognitive_closeout.authored_query_failed id=%s', node_id, exc_info=True)
-        return False
-
-
 def _resolve_existing_node_id(board_id: str, label: str, ref: str) -> str:
     """Resolve an edge endpoint to an existing node id. A bare id (no ':') is
     used as-is; a canonical ref (e.g. ``card:<uuid>`` for the Bug) is matched
@@ -453,13 +439,16 @@ class ConsolidationPipelinePersister:
             target = resolver.resolve_current(board_id=board_id, bug_id=work.bug_id)
             if target is None:
                 return 'missing'
+            # The resolver already qualifies the canonical Bug identity and
+            # supported source aliases. Deterministic projection uses card:<id>;
+            # do not narrow that proved identity back to a literal bug:<id>.
             result = get_kg_registry().cypher_executor.execute_read_only(board_id,
                 "MATCH (n:Learning)-[:validates]->(b:Bug) WHERE n.id = $id AND b.id = $target "
-                "AND b.source_artifact_ref = $ref AND n.graph_layer = 'canonical' "
+                "AND n.graph_layer = 'canonical' "
                 "AND b.graph_layer = 'canonical' "
                 "AND (n.superseded_by IS NULL OR n.superseded_by = '') "
                 "AND (b.superseded_by IS NULL OR b.superseded_by = '') RETURN DISTINCT n.id",
-                {'id': work.learning_id, 'target': target, 'ref': f'bug:{work.bug_id}'}, max_rows=2)
+                {'id': work.learning_id, 'target': target}, max_rows=2)
             rows = result.get('rows')
             if rows is None or result.get('truncated') or result.get('error'):
                 return 'unavailable'
@@ -763,11 +752,10 @@ class ConsolidationPipelinePersister:
             # The primitive validated the exact identity, authored fields and
             # Bug edge; SQL acknowledged its literal revision before success.
             # Source-ref counts could falsely credit a different Learning.
-            return await run_blocking_graph_io(
-                partial(_authored_learning_queryable, board_id, learning_capture.learning_id,
-                    candidate.source_artifact_ref),
-                task_name='core.kg.cognitive_closeout.confirm_authored_learning',
-            )
+            from okto_pulse.core.domain.learning_materialization_work import LearningCaptureWorkRef
+            work = LearningCaptureWorkRef(artifact_id, learning_capture.learning_id,
+                learning_capture.generation, learning_capture.fingerprint)
+            return await self.inspect_authored_learning(board_id, work) == 'present'
         # BR2: effective only when actually queryable in board graph.
         return await run_blocking_graph_io(
             partial(
@@ -933,7 +921,13 @@ async def drain_cognitive_closeout_pending(
             continue
         if capture_work is not None and not _capture_work_owned_by_worker(item, agent_id):
             continue
-        if item.status == CognitiveItemStatus.CONSOLIDATED.value:
+        # These refs identify a prior projection, not current applicability.
+        # Preserve them through technical retries without requiring graph
+        # access for a fresh capture that has never reached Done/materialization.
+        if capture_work is not None and (
+                item.status == CognitiveItemStatus.CONSOLIDATED.value
+                or item.evidence_refs == (f'kg:{capture_work.learning_id}',)
+                or item.reason in {'learning_invalidation_pending', 'learning_capture_projection_unavailable'}):
             presence = await persister.inspect_authored_learning(board_id, capture_work)
             if presence == 'present':
                 from okto_pulse.core.application.learning_materialization_worker import inspect_capture_work_basis
@@ -941,24 +935,66 @@ async def drain_cognitive_closeout_pending(
                     board_id=board_id, work=capture_work, fingerprint=item.content_hash)
                 if inspection is not None:
                     new_status, outcome_type = _LEDGER_STATUS[inspection.outcome]
+                    if inspection.reason in {'learning_materialization_current_binding_required',
+                            'learning_capture_awaiting_done'}:
+                        from okto_pulse.core.kg.learning_invalidation import invalidate_obsolete_learning_association
+                        def acknowledge_invalidation(*, supported=False):
+                            if supported and item.status == CognitiveItemStatus.CONSOLIDATED.value:
+                                return False
+                            status, outcome = (_LEDGER_STATUS['persisted'] if supported
+                                else (new_status, outcome_type))
+                            return store.update_item(board_id=board_id, kg_generation_id=gen,
+                                item_id=item.item_id, new_status=status, updated_by_agent_id=agent_id,
+                                outcome_type=outcome, reason=('authored_capture_materialized' if supported
+                                    else inspection.reason), evidence_refs=(
+                                        (f'kg:{capture_work.learning_id}',) if supported else None),
+                                expected_item=item) is not None
+                        try:
+                            invalidation = await invalidate_obsolete_learning_association(relational_scope_factory,
+                                board_id=board_id, work=capture_work, fingerprint=item.content_hash,
+                                actor_id=agent_id, acknowledge=acknowledge_invalidation)
+                        except Exception:
+                            # Keep the namespace explicitly incomplete and
+                            # retryable. A failed removal is not a current ACK.
+                            logger.warning('learning_invalidation_not_confirmed', exc_info=True)
+                            changed = store.update_item(board_id=board_id, kg_generation_id=gen,
+                                item_id=item.item_id, new_status=CognitiveItemStatus.PENDING.value,
+                                updated_by_agent_id=agent_id, reason='learning_invalidation_pending',
+                                evidence_refs=item.evidence_refs or (f'kg:{capture_work.learning_id}',),
+                                expected_item=item)
+                            if changed is not None:
+                                results.append(CloseoutResult(item.source_ref, item.artifact_type,
+                                    CloseoutOutcome.MATERIALIZATION_PENDING.value,
+                                    detail='learning_invalidation_pending'))
+                            continue
+                        if invalidation.changed:
+                            results.append(CloseoutResult(item.source_ref, item.artifact_type,
+                                'persisted' if invalidation.supported else inspection.outcome,
+                                detail=('authored_capture_materialized' if invalidation.supported
+                                    else inspection.reason)))
+                        continue
                     changed = store.update_item(board_id=board_id, kg_generation_id=gen, item_id=item.item_id,
                         new_status=new_status, updated_by_agent_id=agent_id, outcome_type=outcome_type,
-                        reason=inspection.reason, expected_item=item)
+                        reason=inspection.reason, evidence_refs=(item.evidence_refs
+                            if new_status == CognitiveItemStatus.PENDING.value else None), expected_item=item)
                     if changed is not None:
                         results.append(CloseoutResult(item.source_ref, item.artifact_type, inspection.outcome,
                             detail=inspection.reason))
-                continue
+                    continue
+                if item.status == CognitiveItemStatus.CONSOLIDATED.value:
+                    continue
             if presence == 'unavailable':
                 changed = store.update_item(board_id=board_id, kg_generation_id=gen, item_id=item.item_id,
                     new_status=CognitiveItemStatus.PENDING.value, updated_by_agent_id=agent_id,
-                    reason='learning_capture_projection_unavailable', expected_item=item)
+                    reason='learning_capture_projection_unavailable', evidence_refs=item.evidence_refs,
+                    expected_item=item)
                 if changed is not None:
                     results.append(CloseoutResult(item.source_ref, item.artifact_type,
                         CloseoutOutcome.MATERIALIZATION_PENDING.value, detail='learning_capture_projection_unavailable'))
                 continue
         working_item = store.update_item(board_id=board_id, kg_generation_id=gen, item_id=item.item_id,
             new_status=CognitiveItemStatus.IN_PROGRESS.value, updated_by_agent_id=agent_id,
-            **({'expected_item': item} if capture_work is not None else {}))
+            **({'expected_item': item, 'evidence_refs': item.evidence_refs} if capture_work is not None else {}))
         if capture_work is not None and working_item is None:
             continue
         if capture_work is not None:
@@ -971,7 +1007,9 @@ async def drain_cognitive_closeout_pending(
             new_status, outcome_type = _LEDGER_STATUS[result.outcome]
             store.update_item(board_id=board_id, kg_generation_id=gen, item_id=item.item_id,
                 new_status=new_status, updated_by_agent_id=agent_id, outcome_type=outcome_type,
-                reason=result.detail, evidence_refs=result.persisted_refs or None, expected_item=working_item)
+                reason=result.detail, evidence_refs=(result.persisted_refs or
+                    (working_item.evidence_refs if new_status == CognitiveItemStatus.PENDING.value else None)),
+                expected_item=working_item)
             results.append(result)
             continue
         try:

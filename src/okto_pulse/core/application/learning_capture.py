@@ -257,7 +257,7 @@ async def resolve_learning_capture_projection(context, store, *, capture, head, 
         latest_cognitive_source_records((record,))
         return record
 
-    current, latest_plan = head, None
+    current, latest_plan, association_capture = head, None, None
     while True:
         if (current.board_id, current.node_type, current.node_id, current.generation) != identity:
             raise ValueError('learning_materialization_projection_conflict')
@@ -273,6 +273,8 @@ async def resolve_learning_capture_projection(context, store, *, capture, head, 
                 node_type=owner.node_type, node_id=owner.node_id, generation=owner.generation,
                 evidence_refs=owner.evidence_refs):
             raise ValueError('learning_materialization_projection_conflict')
+        if association_capture is None and owner.payload['source']['bug_id'] == bug_id:
+            association_capture = owner
         intent = owner.payload['intent']
         predecessor = (await read_exact(intent['expected_fingerprint'], owner.source_revision)
             if intent['kind'] == 'reuse' else None)
@@ -288,7 +290,7 @@ async def resolve_learning_capture_projection(context, store, *, capture, head, 
         latest_plan = latest_plan or plan
         if owner.record_fingerprint == capture.record_fingerprint:
             return replace(latest_plan, capture=capture, bug_id=bug_id,
-                projection_capture=latest_plan.capture)
+                projection_capture=latest_plan.capture, association_capture=association_capture)
         if predecessor is None or owner.source_revision <= capture.source_revision:
             raise ValueError('learning_materialization_projection_conflict')
         current = predecessor

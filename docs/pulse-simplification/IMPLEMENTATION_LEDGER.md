@@ -2,6 +2,248 @@
 
 ## Estado para retomada
 
+Invalidacao KG4.5 validada e pronta para commit/push (2026-09-30). R11 77091=0:
+8passed/175.87s, incluindo identidade UUID emitida pelo processador, confirmacao
+real, invalidacao delimitada, origem alheia/ambigua e recuperacao. Core final60,
+Community55+12 r5 e8 r11 (5 r11 sobrepoem recuperacao) verdes; sem skips/erros.
+F16 final2=ok,true sem findings/docdrift, oito budgets ZERO. Instalacao/prova
+final2 antecederam r10/r11; produto permaneceu inalterado, r11 corrigiu apenas
+contagem do helper de fixture. record_learning_invalidation.py executado APOS
+todos terminais gerou acceptance-learning-invalidation.json com hashes, falhas
+preservadas e limites. Ruff/diff-check0; nenhum processo ativo nesta frente.
+
+Resultado: alteracao conhecida de base/reabertura retira apenas o par obsoleto,
+com fonte/head cercados, before-image completo e compensacao; suporte atual de
+captura mais recente e outras origens permanecem. Pending conserva referencia
+historica para retry sem conferir atualidade; captura nova antes de Done nao
+depende de grafo. Confirmacao/inspecao compartilham identidade canonica real.
+Core consome Protocol; mecanica Grafx e captura de rollout ficam no Community.
+Sem frontend alterado, migracao real, LLM ou processo Pulse reiniciado.
+
+Plano integral continua ativo; inventario78 verificadas/33 parciais/135 nao
+auditadas sem promocao neste recorte. Proxima dependencia KG7.5/K3: reconciliar
+historico comprovado no upgrade/rebuild interno preservando holds substantivos
+e limites quando falta fonte/versao. A qualificacao atual de replay permite
+apenas roots tecnicos standalone; Learning ainda exige aplicabilidade/associacao
+demonstradas (cognitive_replay_qualification.py). Nao usar hash narrativo legado
+como prova semantica. Demais consultas/eventos, campanhas integrais, benchmark,
+pins0.4.0 e distribuicao pareada permanecem conforme inventario; nao declarar
+entrega total a partir deste incremento. Continuar sem pausa de milestone.
+
+Final2 install71246/prova terminais0 (843/906+363/448). Core52461=0:60pass/5.70s;
+F1667242=0:ok=true,findings/docdrift vazios,oito ZERO. R10 55132=1:1fail/31.04s:
+UUID materializado, legado perde par, inspect present e confirmedTrue passaram;
+unica falha foi expectativa do helper deliver_capture_events, que REENVIA todos
+os eventos (2:origem inicial+reuso), nao so novos. Corrigida fixture para2, como
+test_same_bug_reuse_outbox_work... existente; produto nao alterado. R11 oito
+casos iniciado no MESMO par final2. Record agora exige r11, ainda NAO executado.
+
+R7 98387=1:1fail/27.03s; R8 27185=1:1fail/26.93s. UUID e resolver corretos,
+persist retornavaFalse sem excecao. Investigacao localizou SEGUNDO filtro
+bug:<id> em _authored_learning_queryable apos commit. R9 3173=1:1fail/28.46s
+AGORA prova materializacao: duas associacoes presentes, predicado legado0,
+inspect corrigido present, mas confirmedFalse. Artefatos r6/r7/r8 preservados;
+nao apresentar primeiro identity-repro como prova suficiente.
+Apos todos terminais, removido helper duplicado e confirmacao usa MESMA
+inspect_authored_learning com LearningCaptureWorkRef tipado/resolver canonico.
+Nenhum parser, permissao ou dialeto acrescentado. Ruff0; builds final2 ambos0,
+install iniciado. Depois prova final2,r10 oito casos,F16 final2 e record/commit.
+Ultimo par publicado permanece9b028709/c72af5d4; WIP nao enviado ainda.
+
+F16 final36094=0:ok=true,findings/documentation_findings vazios,oito ZERO.
+R6 99810=1:1failed/27.82s. Diagnostico corrigido: fixture de identidade usava
+bug-context (nao UUID); card:bug-context e corretamente INVALID_SOURCE_REF no
+parser. prepare_worker so confirmava contagem processada, nao materializacao;
+portanto o primeiro identity-repro NAO prova sozinho o filtro defeituoso.
+Nao relaxado parser nem alterado produto novamente. Fixture r7 agora usa Card
+UUID valido, exige persist_authored_learning=True e associações existentes;
+executa predicado antigo depois dessa prova, esperando0, e exige inspecao atual
+present/invalidation apenas da origem real. Dois negativos mantidos. Perfil
+r7 (8 casos) rodando no MESMO par final provado; unico handle98387. Aguardar
+terminal; record deve usar r7 e preservar falhas/limite da fixture inicial.
+
+Par final install10715/prova terminais0:843/906 Core+363/448 Community
+byte-identical. Ativos99810 (r6 identidade+recuperacao,8 previstos) e36094
+(F16 final). Ruff F/E9 todos arquivos alterados0; diff-check ambos0; branches
+feature/v0.4.0 confirmadas. Record preparado exige r5 Core60,Community55+12
+e r6 oito (5 repetem recuperacao; nao somar como casos distintos). Aguardar
+terminais antes de executar record_learning_invalidation.py e commitar/enviar.
+
+Community85362=0:55passed/496.59s, completando67 Community r5 (55+12 distintos)
+e60 Core. Identidade66554=1:1failed/30.24s: materializou com ref real card:<id>,
+mas inspect retornou missing. Apos terminais, removido somente filtro literal
+bug:<id> redundante; resolver canônico continua exigindo origem unica/Board/
+particao antes de fornecer target. Sem parser alterado nem novo dialeto Core.
+Adicionados2 negativos (origem alheia/ambigua) junto a reproducao com processador
+real. Ruff0; matrizes README regeneradas do F16 r5. Builds finais ambos0,
+incluindo Community99593. Depois instalar,
+provar par final, executar r6 (identidade+recuperacao) e F16 final. Record deve
+incluir r6 e repro identidade antes de executar. Nenhum commit ainda.
+
+Conferencia de identidade encontrou divergencia concreta: DeterministicWorker.
+process_card emite Bug com source_artifact_ref=card:<id>; resolve_current aceita
+essa identidade, mas inspect_authored_learning adiciona filtro apenas bug:<id>.
+Teste test_learning_projection_identity.py usa ref emitida pelo processador real
+e verifica materializacao/inspecao/invalidacao. Repro66554 em execucao no par r5
+provado; nenhum produto alterado. Community85362 terminou0, coletar contagem/log.
+Este e gap critico do mesmo requisito de atualidade, nao alvo novo. Apos repro
+terminal, corrigir filtro redundante sem alterar o parser/autoridade de identidade;
+revalidar caso real antes de fechar F16/commit. Nao afirmar pronto com fixtures
+que usam apenas alias bug:<id>.
+
+R5 worker/integracao8461=0:12passed/310.18s. F1658073=1 somente matrizes README;
+findings=[] e oito budgets ZERO. Core10980=0:60passed/6.03s. UNICO processo
+ativo85362 (restante Community55 previstos), confirmado vivo e9 casos emitidos
+no ultimo poll. Nao alterar produto ate terminal. Regenerar READMEs a partir
+de closure-learning-invalidation-r5.json, depois par final/prova/F16/record.
+Nenhum commit/push deste WIP ainda; ultimo par publicado9b028709/c72af5d4.
+
+R5 install95884=0/prova terminal0:843/906+363/448 byte-identical. Core10980=0:
+60passed/6.03s. Ativos:8461 worker+integracao(12 casos previstos),85362 restante
+Community(55 previstos, exclui worker ja no8461),58073 F16 r5. Produto congelado
+ate TODOS terminais. Teste antes de Done ja passou no8461; nao declarar suite
+completa antes do terminal. Record preparado exige suites r5 60/55/12 e prova
+final; contagens reais ainda devem ser conferidas. README deve ser regenerado
+do relatorio r5 depois dos terminais, seguido de builds/install/prova/F16 final.
+
+Regressao Community75498 terminou1:10pass/1fail/217.66s. Captura nova antes de
+Done deve aguardar origem sem depender de grafo; pre-inspecao irrestrita em r4
+mudou reason para projection_unavailable. Apos terminal, restringida inspecao
+a recibo consolidated, ref historica kg:<learning> ou retry conhecido de
+invalidation/projection_unavailable. Refs de projecao anterior agora sao
+preservadas explicitamente em pending/in_progress/retry; NAO provam atualidade,
+que continua revalidada. Captura nova segue preflight relacional antes do grafo.
+Ruff0; builds r5 ambos0/install iniciado. Perfil r5 inclui arquivo worker (onde
+ocorreu regressao) e7 casos novos. Nenhum outro teste ativo; falta prova e
+validacao desse par, depois regressao restante,F16 e commit/push.
+
+R4 integracao2742=0:7passed/175.28s; casos de captura mais recente, fan-in,
+hold concorrente apos commit, falha apos commit/durabilidade com retry e
+pending apos outage passaram. Community final75498 iniciado no MESMO par r4
+provado, sem alterar produto. Unico handle ativo75498, aguardar terminal.
+Core final2752=0:60passed/6.04s. Record preparado exige final-regression-community
+60 casos, Core r4 e integracao r4, sem reaproveitar r2 como final. Depois:
+regenerar matrizes a partir de closure-learning-invalidation-r3.json,
+build/install/prova final,F16 final,record,ledger,commit/push. Inventario global
+inalterado; KG7.5 historico/rebuild e outros criterios ainda pendentes.
+
+R4:install36307=0/prova terminal0 confirmou843/906 Core+363/448 Community
+byte-identical antes das campanhas. Core2752=0:60passed/6.04s. Integracao2742
+segue ativa (7 casos previstos). Nenhum outro processo ativo. Aguardar terminal
+antes de alterar produto; depois regressao Community do novo ramo pending,
+matrizes README oficiais, builds/install/prova final,F16,record,commit/push.
+Record preparado aponta r4; ainda NAO executar nem confundir Community r2
+60passed com a regressao final que falta. Autoridade e budgets nao relaxados.
+
+R3:install8804/prova terminais0 (843/906+363/448). Core12918=0:60pass/6.50s;
+F169923=1 apenas README, findings=[]/oito ZERO. Fanin48422=1:3pass/1fail/104.58s:
+falha apos commit foi compensada, mas retry preservou aresta obsoleta. Causa
+confirmada em update_item: mudanca para pending limpa evidence_refs quando
+nao passadas explicitamente. Condicao baseada nesses refs perdia o recibo.
+Apos todos terminais, worker agora inspeciona TODO capture_work worker-owned
+pendente/in_progress/consolidated selecionado, mantendo filtro de restricoes.
+Captura nova sem projecao segue materializacao; existente exige atualidade.
+ACK de suporte mais recente repoe refs apenas depois da prova, sob CAS/fence.
+Ruff passou, builds r4 ambos0/install iniciado. Faltam prova e rodadas finais;
+nenhum commit deste WIP. R3 source_outage/pending ainda nao executados por -x.
+
+44250 terminou0:60passed/557.34s. Apos todos terminais, corrigidos ramos de
+suporte atual sem remocao e recibo pending com evidencia de materializacao.
+Suporte mais recente precisa passar autenticacao atual da evidencia, igualdade
+do literal grafico e presenca do par antes de recuperar pending->consolidated;
+ACK permanece dentro dos fences e CAS. Caminho sem remocao finaliza lifecycle
+exigido pelo guard, sem relaxa-lo. Acrescentado caso pending recuperado por nova
+captura valida. Ruff F/E9 passou; builds r3 ambos0/install iniciado. Perfil r3
+testa7 casos fan-in/falhas tardias/pending. Faltam terminal install,prova,campanha,
+regressao apropriada apos mudanca do ramo pending e F16 final. Record preparado
+precisa refletir contagens finais reais (r3 agora7, nao5). Nenhum commit novo.
+
+Reproducao pending31304=1:1failed/41.72s. Leitura grafica temporariamente
+unavailable muda recibo para pending/projection_unavailable; fonte muda depois,
+retry falha materializacao mas conserva validates antigo. Evidencia em
+learning-invalidation-pending-repro.xml/log, mesmo par r2 previamente provado.
+A correcao deve reinspecionar projecao de todo recibo worker-owned que ja tem
+evidence_refs kg:<learning>, inclusive pending de outage, preservando holds.
+Aguardar44250 terminal antes de editar produto; unico processo ainda ativo.
+
+Handoff de execucao: UNICO handle ativo44250 (Community r2), confirmado vivo
+por write_stdin; log chegou a7 casos sem falha no ultimo poll. Demais handles
+terminais. Depois do terminal, corrigir obsolete=None com lifecycle exigido
+pelo guard, builds/install/prova r3 e repetir fan-in5 (runner precisa incluir
+r3 no perfil fan-in). record_learning_invalidation.py preparado NAO executado;
+contagens esperadas devem ser confirmadas nos XMLs reais, nao presumidas.
+Investigar tambem caminho pending apos indisponibilidade da projecao: o ramo
+de invalidacao atual so reconhece consolidated ou learning_invalidation_pending;
+nao concluir cobertura de eventos/retry geral sem reproduzir mudanca de origem
+durante aquela pendencia. Nenhuma excecao de budget nem autoridade solicitada.
+
+R2:98550=0:60passed/5.13s. Fanin91581=1:1failed/30.30s (-x): ramo
+obsolete=None sai de guarded_board_write sem ensure_durable, provocando
+durability_not_applied. R1 mantinha recibo antigo nesse erro, mascarando-o no
+teste de resultado; R2 pending explicito revelou a falha. Corrigir saida sem
+mutacao apos44250 terminar, sem relaxar guard. Fonte/associacao foram preservadas.
+Campanha44250 permanece ativa no par r2; nao alterar produto antes do terminal.
+
+Invalidacao r2 install59558=0/prova terminal0 confirmou843/906+363/448 antes
+das campanhas:91581 fan-in/falhas tardias(5 casos),98550 Core,
+44250 Community ampliado(recuperacao/escopo/fonte/portas/rollout). Todas iniciadas
+no mesmo par r2, sem modificar produto. Aguardar terminais; nao repetir por
+timeout de observacao. F16 r1 unico desvio README; F16 final ainda necessario.
+Limite semantico explicito: invalidacao atual qualifica perda demonstrada de
+elegibilidade/binding; evidencia nao autenticada pode representar indisponibilidade
+e nao foi convertida automaticamente em autorizacao de prune. Historico/upgrade,
+paridade de rebuild e entrega integral permanecem pendentes conforme plano.
+
+Invalidacao r1 adicional: fanin26962=0:3passed/78.74s; Core51628=0:60passed/6.11s.
+F1641626=1 somente matrizes README, findings=[]/oito ZERO. Apos todos terminais,
+coordenador passou a proteger cancelamento e compensar commit que aplica e
+depois lanca excecao. Falha de invalidacao deixa pending explicito e reentra
+na verificacao antes de retry, sem ACK de atualidade falso. Dois testes novos
+injetam falha apos commit/durabilidade e exigem restauracao, pending e retry.
+Builds r2 ambos0; instalacao iniciada, aguardar terminal/prova antes de testar.
+Produto congelado para essa rodada; demais regressões/F16 final ainda pendentes.
+
+Invalidacao integrada r1: builds ambos0/install12101=0/prova terminal0 confirmou
+843/906 Core+363/448 Community byte-identical antes da campanha25497=0:
+5passed/109.77s (2 da reproducao antes vermelha e3 de source-drift/hold).
+Novo qualifier obtem origem sob assemble_semantic_for_write e percorre cadeia
+autoral verificada; association_capture identifica suporte mais recente do
+mesmo Bug, impedindo recibo antigo de retirar par ainda suportado. Coordenador
+usa porta grafica, before-image, durabilidade e ACK condicional; CAS perdido
+restaura par. Ligacao inicial somente no caminho de recibo consolidated/present.
+Testes adicionais fan-in/nova captura/hold apos commit iniciados; F16 r1 iniciado.
+Nao alterar produto enquanto essas campanhas estiverem ativas. Ainda faltam
+falhas tardias/recuperacao, regressao ampla e finalizacao F16/README. WIP ativo.
+
+Invalidacao-port: campanha44746 terminou0:35passed/9.27s, apos prova byte-a-byte
+terminal. Inclui testes novos da porta/adaptador/wrapper e regressoes de
+supersedencia/captura rollout; total terminal35. diff-check ambos0. Nenhum processo
+ativo. Somente mecanismo qualificado; source-invalidation-repro continua2fail
+conhecidos e integracao ainda nao existe. WIP nao commitado, nenhum aceite
+global promovido. Proximo passo direto: coordenador de invalidacao no worker,
+com revalidacao de origem e suporte mais recente do mesmo par dentro do fence;
+casos de nova captura valida, fan-in, falha tardia/compensacao e hold concorrente.
+
+Invalidacao KG4.5 em andamento (2026-09-30). Source-drift enviado: Core9b028709 /
+Communityc72af5d4, pushes0. Reproducao93204=1:2failed/47.81s em
+learning-invalidation-repro.xml/log: action_plan alterado e Bug reaberto deixam
+validates antigo depois do tick, apesar de work ledger detectar a divergencia.
+Prova final do incremento anterior antecedeu essa reproducao, sem mudar produto.
+WIP porta LearningAssociationInvalidationTransaction/Receipt permite snapshot,
+remocao de um par exato e restauracao de propriedades/multiplicidade. Grafx
+implementa mecanismo; wrapper de rollout captura mutacao antes da escrita e
+expoe Protocol explicitamente. Nao reutilizar contrato de supersedencia, que
+exige substituto. Core continua sem novo dialeto concreto. Ruff F/E9 passou.
+Builds dist-learning-invalidation-port ambos0/install14722=0/prova terminal0:
+841/904 Core+363/448 Community byte-identical. Campanha mecanica iniciada;
+nao altera produto ate terminal. Ainda NAO integrado ao worker. Teste de
+aceitacao test_learning_source_invalidation.py continua vermelho conhecido.
+Integracao deve qualificar fonte/head atuais dentro do fence, impedir recibo
+antigo de retirar associacao suportada por captura mais nova do MESMO Bug,
+preservar outras origens, registrar/compensar antes de mutacao e confirmar
+durabilidade antes de ACK. Falha de leitura nao autoriza remocao. Reativacao,
+integracao, campanhas e F16 deste WIP pendentes; nao commitar como entrega pronta.
+
 Source-drift validado (2026-09-30): Core77821=0:60pass/6.53s;
 Community4400=0:23pass/425.20s, incluindo3 casos novos. Prova r1 antecedeu
 as campanhas. F16 r1 falhou somente por matrizes README; apos todos terminais,
