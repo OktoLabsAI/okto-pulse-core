@@ -2,6 +2,40 @@
 
 ## Estado para retomada
 
+Par publicado anterior Core4eaaf97a/Community90f19b4c, pushes0 e limpos.
+Em andamento KG7.5/K3 verificador retirement_learning_sql_delta de snapshots
+quiescentes completos: delta de todas tabelas, audit ligado a conteudo autoral
+pela nova porta learning_reconciliation_source_basis, refs/outbox/evento/head,
+append pela visao historica e quitacao pela policy Core, fence real de triggers.
+Sem permissao generica de tabela: qualquer alteracao nao classificada falha.
+Testes nativos existentes agora copiam snapshots privados antes/depois, verificam
+primeira materializacao/replay e adulteram oito classes de celulas. Builds
+sql-delta1 terminais0/Ruff0/install23394=0/prova0 ANTES de testes
+(Core845/908,Community366/451 byte-identicos). Core64805=0:70passed/7.96s;
+Community49479=0:7passed/154.10s. F1649461=1 somente matrizes README,
+findings=[] e oito ZERO. Produto nao alterado desde prova. Adicionados apenas
+testes de variantes reais: sql-delta-variants1 Community44614=0,
+3passed/70.09s para reuso, scoped-supersede e quitacao tecnica. O writer registra
+node refs apenas para nos criados (primitives._commit_audit_records); atualizacao
+de Learning nao fabrica ref operation=update. Verificador respeita essa regra.
+README regenerado apos TODOS terminais. Builds final0/install70388=0, mas esse
+par NAO foi usado para testes: revisao identificou que bags de tabelas nao
+detectariam indice/trigger alheio. Acrescentada comparacao exata de sqlite_schema
+e nono ataque DDL no teste nativo. Nova rodada sql-delta-final2 builds0/install
+22953=0/prova0 (845/908+366/451) ANTES das campanhas. F164110=0/ok=true,
+findings/documentation_findings vazios e oito ZERO. Community63715=0:
+7passed/142.61s, repeticao da campanha inicial com nono ataque DDL. Nao somar
+como sete casos distintos. record_learning_sql_delta.py executado UMA vez apos
+todos terminais gerou acceptance-learning-sql-delta.json. Nao rerodar esse recorder.
+Nenhum processo de validacao ativo. Ruff/diff-check0. Escopo continua a prova SQL
+da mesma execucao; nao e mudanca de autoridade ou novo objetivo.
+Coordenador/checkpoint ainda NAO integram esta fase; nao reivindicar K3 concluido.
+Proximo passo: compor fase Learning depois da restauracao literal, preservando
+snapshot intermediario para prova ACK existente e snapshots por execucao para
+verify_learning_sql_delta; ainda provar efeitos graficos e integrar recibo,
+checkpoint, censos e completion sem relaxar formatos antigos. Inventario global
+78/33/135 permanece inalterado. Nenhuma migracao real/UI/restart/release efetuada.
+
 Par anterior publicado Core2fd0863d/Community29f25992, pushes0/limpos.
 Em implementacao KG7.5/K3: require_learning_reconciliation_source_append na porta
 publica usa resolve_learning_capture_projection/read_learning_scope_replacements

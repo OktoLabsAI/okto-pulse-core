@@ -1,0 +1,142 @@
+{
+  "scope": "KG7.5/K3 exact whole-SQL delta qualification for a governed Learning execution",
+  "suites": {
+    "sql-delta1-core": {
+      "passed": 70,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "sql-delta1-community": {
+      "passed": 7,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "sql-delta-variants1-community": {
+      "passed": 3,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "sql-delta-final2-community": {
+      "passed": 7,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0
+    }
+  },
+  "budgets": [
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "import_boundary_baseline",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every import_boundary_baseline allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "singleton_baseline",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every singleton_baseline allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "dependency_temporary_exceptions",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every dependency_temporary_exceptions allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "graph_runtime_compatibility",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every graph_runtime_compatibility allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "rebuild_artifact_compatibility",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every rebuild_artifact_compatibility allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "community_private_reach_ins",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every community_private_reach_ins allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "community_adapter_bridges",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every community_adapter_bridges allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "af35_relational_residue",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every af35_relational_residue allowance before F16 completion."
+    }
+  ],
+  "verified": [
+    "The Community verifier compares complete bounded table bags from quiescent SQLite snapshots and rejects unclassified changes.",
+    "Public Core composition derives the expected audit content hash from the selected authored projection; Community imports no private Core module.",
+    "Audit, node refs, outbox, event, generation head, cognitive source appends and technical debt transitions are tied to one execution.",
+    "Source history and technical debt use the existing shared Core qualifiers rather than duplicated semantic rules.",
+    "Both real source-fence trigger manifests are verified and the revision delta is exact for the classified mutations.",
+    "Native first materialization with absent/existing heads and replay pass, while nine classes of SQL/DDL tampering are rejected.",
+    "Native reuse, scoped replacement and technical-debt CAS pass with exact source append, node-ref and debt counts.",
+    "Installed pair matched source bytes before behavioral validation; final F16 has no findings or documentation drift and all budgets remain zero."
+  ],
+  "limits": [
+    "The verifier is not yet composed into the private candidate coordinator/checkpoint and does not certify full graph/evidence ownership or admission.",
+    "Native fixtures substitute unrelated lifecycle gates and graph health; full lifecycle or final upgrade acceptance is not claimed.",
+    "Final rebuild adds explicit sqlite_schema preservation; its seven-test behavioral suite repeats initial cases with an added DDL attack. Counts are not all distinct.",
+    "No UI change, real-data migration, runtime restart or release occurred.",
+    "Full-plan acceptance remains incomplete; inventory is 78 verified / 33 partial / 135 unaudited."
+  ],
+  "sha256": {
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-sql-delta-final2-closure.log": "2b9cdb6e77b81284fa4d937361e6921263d56ea2c182e903b680072648fc71cd",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-sql-delta1-closure.log": "73071b2455240efcece845a02af0f084ac305e614f7cb16024c14dd6ddf8bb9e",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-sql-delta1-core.xml": "183622b6f26bda6ed6c5fe2d2f90def45f3a5794e9f670b01640c033c080b1aa",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-sql-delta1-core.log": "62f1d7b01dad156be1bd2cbd7a70032b07e752032ebce72eaf7781367b9f2f5e",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-sql-delta1-community.xml": "cafaf4da95c445b839da7a3a77b9ce2a2068747bc0bc53126b6847f82335fbd7",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-sql-delta1-community.log": "90c4020bd937698bef5f0fd41b1cfb40f90cb0fb8cb56c1585327fdee74cb20b",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-sql-delta-variants1-community.xml": "4bf14a2e33b2d1f8db72232d6df0da2a13e82cf08b4a1c378713438a27a289f8",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-sql-delta-variants1-community.log": "e39d691999082fd1928fc1285a885dd5e8a0fe455b310f4c535a70248b031db8",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-sql-delta-final2-community.xml": "ec547807c5f5dd516cfb89360443271a54875a43d9f2224618007e4097b36f5a",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-sql-delta-final2-community.log": "08bf24a6597c69ce448cdb5ab2588c74590b4f0e7d4c9d9ada213ddd64d62f68",
+    "PULSE_REFACTOR/.validation-v040/provenance-learning-sql-delta1.json": "d95406c49433a79fe04316cecff5a95c1f6c62ae0d2a31cc545eac1ba7281408",
+    "PULSE_REFACTOR/.validation-v040/provenance-learning-sql-delta-final2.json": "b769dbfcaddda545ac14aea3869adcfb4c83687ad53ebb9e258d0ea25b073660",
+    "PULSE_REFACTOR/.validation-v040/run_learning_reconciliation.py": "0748375a5722a957ee1842506e489b9ff4da445e105ed10d38ac940cb3e51ea4",
+    "okto_labs_pulse_core/src/okto_pulse/core/application/learning_reconciliation.py": "e7706c3a2fdba48afb82c62ba7de86bafb21b86edbc17e93b6247f1e0bdd47a2",
+    "okto_labs_pulse_core/src/okto_pulse/core/ports/learning_reconciliation.py": "7931b8e771a964cd3624f064b09371a8566f0953fbf9581c20cde72aa322295b",
+    "okto_labs_pulse_community/src/okto_pulse/community/adapters/retirement_learning_sql_delta.py": "d1b0088574e89f8d75ee7b2ac58ea297a14a789d62a3d2ec59afd544eeb33ea0",
+    "okto_labs_pulse_community/tests/test_learning_reconciliation_effects.py": "04a31bf7a04ad2cd4bf094f47ee94d1ebece04d71c3dfb67484b563d261a1c05",
+    "okto_labs_pulse_community/tests/test_learning_reconciliation_sql_variants.py": "225f8b1246647a2a292a0c75cc0da01aec9911fb1c27fe01e49f9a9beb711a13",
+    "okto_labs_pulse_core/README.md": "ebda961a982370b5796af609788d5ea07721c3cd581c13a187b24eda556f174c",
+    "okto_labs_pulse_community/README.md": "f9440ff3366ad4c1bdd51e1b9af9c0320c74108c6b5d9bd7b1220be1ebd83e81"
+  }
+}

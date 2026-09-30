@@ -33,6 +33,34 @@ def qualify_debt_change(*, before, after, execution):
     return replacement is not None and after == replacement
 
 
+async def source_basis(context, store, *, execution):
+    from okto_pulse.core.application.learning_capture import resolve_learning_capture_projection
+    from okto_pulse.core.application.learning_materialization import authored_learning_candidate
+    from okto_pulse.core.domain.learning_materialization_work import parse_learning_capture_work_ref
+    from okto_pulse.core.kg.session_manager import compute_content_hash
+    from okto_pulse.core.ports.learning_capture import is_scoped_learning_supersede
+    from okto_pulse.core.ports.learning_reconciliation import (
+        LearningReconciliationExecution, LearningReconciliationSourceBasis,
+    )
+    if type(execution) is not LearningReconciliationExecution or not execution.consolidation_session_id:
+        raise ValueError('learning_reconciliation_execution_invalid')
+    work = parse_learning_capture_work_ref(execution.work_ref)
+    if work is None or work.fingerprint is None:
+        raise ValueError('learning_reconciliation_fingerprinted_work_required')
+    capture = await store.read_fingerprint_in_context(context, board_id=execution.board_id,
+        node_id=work.learning_id, generation=work.generation, fingerprint=work.fingerprint)
+    history = await store.read_history_in_context(context, board_id=execution.board_id,
+        node_id=work.learning_id, generation=work.generation)
+    if (capture is None or not history or capture.payload.get('source', {}).get('bug_id') != work.bug_id):
+        raise ValueError('learning_reconciliation_source_unavailable')
+    plan = await resolve_learning_capture_projection(context, store,
+        capture=capture, head=history[-1], bug_id=work.bug_id)
+    node = authored_learning_candidate(capture, plan)
+    return LearningReconciliationSourceBasis(work.bug_id, work.learning_id, work.generation, work.fingerprint,
+        compute_content_hash(node.content or node.title or '', work.bug_id, execution.board_id),
+        capture.payload['intent']['target_node_id'] if is_scoped_learning_supersede(capture.payload) else None)
+
+
 async def require_source_append(context, store, *, appended, execution):
     from okto_pulse.core.application.learning_capture import resolve_learning_capture_projection
     from okto_pulse.core.application.learning_supersedence import read_learning_scope_replacements

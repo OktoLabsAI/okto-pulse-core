@@ -22,6 +22,22 @@ class LearningReconciliationExecution:
     materialized: bool
 
 
+@dataclass(frozen=True, slots=True)
+class LearningReconciliationSourceBasis:
+    bug_id: str
+    learning_id: str
+    generation: int
+    capture_fingerprint: str
+    audit_content_hash: str
+    scoped_target_id: str | None
+
+
+async def learning_reconciliation_source_basis(context, store, *, execution):
+    """Derive audit identity from verified authorship, without write authority."""
+    from okto_pulse.core.application.learning_reconciliation import source_basis
+    return await source_basis(context, store, execution=execution)
+
+
 async def execute_learning_reconciliation(*, board_id, work_ref, relational_scope_factory):
     """Execute exact selected authorship through the existing governed writer.
 
