@@ -2,6 +2,46 @@
 
 ## Estado para retomada
 
+Prazo composto FINAL: builds0/install43303=0/prova0(851/914+371/456), antes
+de rerun. Community fixture54412=0:8passed/67.42s; F16final9814=0,oitoZERO,
+sem findings/documentation drift. record_query_compound.py executado uma vez
+apos terminais, acceptance-query-compound-deadline.json registra71Core/89Community,
+122passed+1failed na regressao original e8rerun, sem somar sobreposicoes.
+Nenhum processo vivo desta campanha. Pronto para commit/push. Proximo item
+original KG6.5: bounds agregados; native ConnectOptions oferece max_intermediate_rows,
+max_traversal_expansions/paths e query_memory_budget_bytes POR PARTICIPANTE,
+nao por execute. Nao aplicar teto1000 global aos readers de rebuild. Investigar
+com reproducao collect() antes de compor limites de foreground; arrays/payload
+precisam truncacao/limitacao explicita. Nenhum codigo desse novo item escrito.
+
+Prazo composto query-compound1: geracao64786=0; builds0/install85574=0/prova3262=0,
+851Python/914payload Core+371/456 Community identicos antes de comportamento.
+Core11340=0:71passed/147.63s; Community41041=0:89passed/13.27s. F1616274=1
+somente README/findings[]/oitoZERO. Regressao ampliada43189=1:122passed/1failed
+98.25s, fixture MCP Community graph-only sem leitor Board/policy. Corrigido
+somente UOW-reader da fixture com Board/realm tipado; usecase/ACL continuam reais.
+Doc natural/reflexiva atualizada(default15s/prazoBoard), manifestresource gerado
+oficialmente apos terminais; matrizesREADME regeneradas. Builds finais em
+dist-learning-reconciliation-query-compound-final. Exigir install/prova antes
+de rerun query-compound-fixture2 Community e F16final. Produto Python inalterado
+desde primeira prova; nenhum test falho promovido a verde. Registrar native
+deadline/cleanup, nesting/restauracao e limite externo sem preempcao como tais.
+
+Quota publicada Core3a97d907/Communityefbaba03,pushes0. WIP prazo composto:
+GraphQueryExecution Protocol no Core; CommunityGraphQueryExecution possui
+ContextVar por instancia/Board, deadline absoluto/nesting minimo/restauracao
+e check de conclusao. Access combina prazo com Health sem mudar guard Health.
+Cypher, store e vetor recebem restante nativo; fallback exato nao reinicia
+orcamento. MCP natural le policy Board, timeout_ms opcional so estreita;
+reflexiva deadline_ms opcional herda Board(default15s) e divide orcamento
+entre iteracoes. Ambas usam run_blocking_graph_io, nao wait_for que abandona
+thread. Timeouts nativos nao viram fallback vazio no natural/critic.
+Testes preparados de nativecleanup, vetor, nesting, Boardpolicy e cancelacao;
+ainda NAO executados. Geracao oficial catalogo/manifest iniciada64786.
+Exigir builds/install/prova antes de comportamento e F16. Limite de provider
+externo/IO do SO continua explicitado: worker drenado, sem promessa de preempcao.
+Nao afirmar fanout/arrays/payload ou entrega integral concluidos.
+
 F16final quota50085 TERMINAL0; recorder executado uma vez confirmou oitoZERO
 e acceptance-query-quota.json com114Core/52Community, hashes e red preservado.
 Nenhum processo deste incremento ativo. Pronto para commit/push pareado.

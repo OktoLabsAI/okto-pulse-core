@@ -1,0 +1,130 @@
+{
+  "scope": "KG6.5/D18 shared natural and reflective native query deadline",
+  "campaigns": {
+    "query-compound1-core": 71,
+    "query-compound1-community": 89,
+    "query-compound-fixture2-community": 8
+  },
+  "regression": {
+    "passed": 122,
+    "failed": 1,
+    "fixture_rerun": "query-compound-fixture2-community"
+  },
+  "counts_overlap": true,
+  "budgets": [
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "import_boundary_baseline",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every import_boundary_baseline allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "singleton_baseline",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every singleton_baseline allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "dependency_temporary_exceptions",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every dependency_temporary_exceptions allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "graph_runtime_compatibility",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every graph_runtime_compatibility allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "rebuild_artifact_compatibility",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every rebuild_artifact_compatibility allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "community_private_reach_ins",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every community_private_reach_ins allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "community_adapter_bridges",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every community_adapter_bridges allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "af35_relational_residue",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every af35_relational_residue allowance before F16 completion."
+    }
+  ],
+  "verified": [
+    "Natural and reflective MCP queries resolve Board policy and only narrow its timeout; omission uses Board/default 15 seconds.",
+    "Core knows a Protocol; Community owns the per-Board context and monotonic deadline.",
+    "Cypher, store and vector fallback receive decreasing native time; nested scopes cannot extend or change Board.",
+    "Actual Grafx timeout completes the read and permits subsequent writer, checkpoint and read.",
+    "Cancellation drains the owned worker before propagation; expired qualification is not an empty successful result.",
+    "Existing store, route, native health and reflective regressions are preserved; final fixture rerun supplies its absent Board reader without replacing policy or ACL."
+  ],
+  "limits": [
+    "Arbitrary external providers and operating-system I/O are not claimed preemptible; their owned worker is drained.",
+    "Aggregate fan-out, expanded paths, arrays and serialized payload limits remain a separate pending part of KG6.5.",
+    "No frontend behavior changed; no real data or running Pulse process was modified.",
+    "Full-plan inventory remains 78 verified / 33 partial / 135 unaudited; this is not complete-plan acceptance."
+  ],
+  "sha256": {
+    "PULSE_REFACTOR/.validation-v040/record_query_compound.py": "4c857e143089b474802cf30bb1b6a62adc5640e8d64758aaf1afe76c5127823d",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-query-compound-final-closure.log": "3fe32f10a72bc6f82421dc5afa56d2034285f5ac36775f6386b24b6827fb6408",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-query-compound1-core.xml": "7fccd8956fc44cb4a14cbec44d33dd10e8eb00b129c96ca2e08a9084d3a77b96",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-query-compound1-core.log": "551093fc36d360bf19ba341c9258c84f0001521a10fe7127669377ce42aa684a",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-query-compound1-community.xml": "e993ab2ea62e1a2f2c71474b3149f7a76ba8347bc2f7be20a206ca3af52988a1",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-query-compound1-community.log": "be31ab40a2bfec2172c3c065e254796973417cc4bf6d14cfb891076a212da114",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-query-compound-fixture2-community.xml": "a9418014459119754367fc54bb1c91764446be7b60c66fc040bfba8e46e1a891",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-query-compound-fixture2-community.log": "1878d838681d6767229510ca3408576891d76508e929fe6532c213cb3b95f306",
+    "PULSE_REFACTOR/.validation-v040/provenance-query-compound1.json": "bcc0a1c9698b5d3299220ad7792ff3854bfdb2cedd32da6e0ae46f5b29a07148",
+    "PULSE_REFACTOR/.validation-v040/provenance-query-compound-final.json": "c9ce3a9b781a3b039131a57ca2cc3767792f27fa9414c84b079c59e80636eaf5",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-query-compound-regression-community.log": "b8d6158bf1d88437db9b802fb8a1668c69064889ada6f79344d344b9714284ec",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-query-compound-regression-community.xml": "9ca2afa7c7f944726b9f7283258d4725f94a187147cf9aaaf60325eb2ab3c83b",
+    "okto_labs_pulse_core/src/okto_pulse/core/kg/interfaces/graph_query_execution.py": "6f8c6235499191996ed18f5f2430c26eab1980914e2d9a9a69d84a8e818c16af",
+    "okto_labs_pulse_core/src/okto_pulse/core/kg/interfaces/registry.py": "a76155b1dd5b3a643d1a052987c2bfb31f00586cf81719b0966e4cdfdb230749",
+    "okto_labs_pulse_core/src/okto_pulse/core/kg/retrieve_critic/orchestrator.py": "9050f9e7e21f688d2a1e7eeaeecc76db26471016b03f61c803ec388c11224a47",
+    "okto_labs_pulse_core/src/okto_pulse/core/kg/tier_power.py": "904ba97a0ad616b354de98667bdabc2e5a245d3ff297929202d6ef7b0463895a",
+    "okto_labs_pulse_core/src/okto_pulse/core/mcp/kg_power_tools.py": "6d3512a0dc4be0eda7fa38a26a4b9c74b33770836f40ef49da189d1448f77cde",
+    "okto_labs_pulse_core/src/okto_pulse/core/mcp/resources/reference/tool-docs/kg.md": "49c2eaf11e6645eb8416e9c2d1251413517f7370fa495482e7789bc3627f70f4",
+    "okto_labs_pulse_core/tests/test_kg_compound_query_deadline.py": "f1e233ce020efc2a3fe9e2446370ffa44b9dd038454750154bb9f9760d6ffdec",
+    "okto_labs_pulse_core/tests/test_kg_reflective_runtime_v2.py": "65c6a586ad12f195ef7273dc91ca7a01ddbd6df2eed729a72ee467453e819cbe",
+    "okto_labs_pulse_community/src/okto_pulse/community/adapters/grafx_query_execution.py": "a5ec694c5ddb15e73c88dba48507dfb7899c8a68b73bfe17c765076d691c3687",
+    "okto_labs_pulse_community/src/okto_pulse/community/adapters/grafx_graph_store.py": "fae1516be96a37ecd8253bd220c37be88762e5927aa68f2d4918e20a3f6b8f5d",
+    "okto_labs_pulse_community/src/okto_pulse/community/adapters/grafx_board_vector_search.py": "4141ce692ecc8775eb306fd9aa9120340755a8a714411e91b0c0eb8dedbaa3c0",
+    "okto_labs_pulse_community/src/okto_pulse/community/adapters/routed_board_graph_composition.py": "49bf638e93f0091de386629c5c6561b9263d1201b86cfdac4a9f301bf5246dc2",
+    "okto_labs_pulse_community/tests/test_grafx_query_execution_scope.py": "76fc1ca9f7ce948c0f6e2dda1c8f425c49e6a9c0b32a9d5a003c428df3a1aa82",
+    "okto_labs_pulse_community/tests/test_reflective_query_adapters.py": "bd5a7e68317bbd3b872ffc0fdfaf26c529df818a9a42bf2f635d82633731b372"
+  }
+}

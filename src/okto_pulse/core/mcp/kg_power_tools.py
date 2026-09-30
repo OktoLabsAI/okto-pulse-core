@@ -176,6 +176,20 @@ async def _read_query_policy(board_id: str, board_agent):
         raise TierPowerError("query_policy_unavailable", "Board query policy could not be resolved.") from exc
 
 
+async def _run_query_with_deadline(board_id: str, timeout_ms: int, operation):
+    from okto_pulse.core.kg.interfaces.registry import get_kg_registry
+
+    execution = get_kg_registry().graph_query_execution
+    if execution is None:
+        raise TierPowerError("query_execution_unavailable", "Graph query execution budget is not configured.")
+
+    def run():
+        with execution.scope(board_id, timeout_ms=timeout_ms):
+            return operation()
+
+    return await run_blocking_graph_io(run, task_name=f"mcp.kg.query:{board_id}")
+
+
 def register_kg_power_tools(
     mcp,
     *,
@@ -353,6 +367,7 @@ okto-pulse://reference/tool-docs/kg."""
         since: str = "",
         until: str = "",
         graph_layer: str = "canonical",
+        timeout_ms: int | None = None,
     ) -> str:
         """Natural-language search over a board's knowledge graph using hybrid
         search (embedding + HNSW + traversal), falling back to string match when
@@ -362,6 +377,8 @@ okto-pulse://reference/tool-docs/kg."""
         results by KG layer and fails closed on invalid values BEFORE execution.
         Returns nodes, total_matches, applied_graph_layer and a layer_audit where
         metadata/legacy_unknown never count as canonical/working leakage.
+        Execution shares the Board timeout (default 15000ms, maximum 30000ms)
+        across native reads; timeout_ms may only narrow that policy.
         Docs: okto-pulse://reference/tool-docs/kg.
         """
         agent, board_agent, auth_error = await _authorized_board_agent(
@@ -397,24 +414,25 @@ okto-pulse://reference/tool-docs/kg."""
                     max_chars=rejection["rejection"]["max_chars"],
                 )
             logger.debug("[KG] kg_query_natural offloading to thread")
-            result = await asyncio.wait_for(
-                asyncio.to_thread(
-                    execute_natural_query,
+            policy = await _read_query_policy(board_id, board_agent)
+            result = await _run_query_with_deadline(
+                board_id, policy.effective_timeout(timeout_ms),
+                lambda: execute_natural_query(
                     board_id, nl_query,
                     limit=limit, min_confidence=min_confidence,
                     since=since or None, until=until or None,
                     graph_layer=graph_layer,
                 ),
-                timeout=30.0,
             )
             logger.debug("[KG] kg_query_natural thread returned: total_matches=%d",
                          result.get("total_matches", "unknown"))
             # FR3: round numeric scores at the response boundary.
             result = round_kg_numbers(result)
             return json.dumps(result, default=str)
-        except asyncio.TimeoutError:
-            logger.error("[KG] kg_query_natural timed out after 30s: board_id=%s", board_id)
-            return _err("timeout", "Query exceeded 30s timeout")
+        except GraphQueryTimeout:
+            return _err("timeout", "Query exceeded its execution deadline")
+        except ValueError as exc:
+            return _err("invalid_param", str(exc))
         except TierPowerError as e:
             return _err(e.code, e.message, details=e.details)
 
@@ -559,7 +577,7 @@ args: okto-pulse://reference/tool-docs/kg."""
         min_confidence: float = 0.5,
         graph_layer: str = "canonical",
         max_iterations: int = 3,
-        deadline_ms: int = 5000,
+        deadline_ms: int | None = None,
         budget_units: int = 10,
     ) -> str:
         """Run the bounded retrieve→critic→corrective-action KG loop.
@@ -569,6 +587,8 @@ args: okto-pulse://reference/tool-docs/kg."""
         required. Terminal reasons distinguish accepted, rejected, malformed
         critic output, no progress, exhausted budget/deadline and provider
         failures. ``graph_layer`` is canonical|working|all (default canonical).
+        deadline_ms narrows the current Board timeout; omission uses that policy
+        (default 15000ms). One native budget spans every iteration and fallback.
         """
         agent, board_agent, auth_error = await _authorized_board_agent(
             board_id,
@@ -618,7 +638,7 @@ args: okto-pulse://reference/tool-docs/kg."""
                     "invalid_max_iterations",
                     "max_iterations must be between 1 and 8",
                 )
-            if not 50 <= int(deadline_ms) <= 30_000:
+            if deadline_ms is not None and (type(deadline_ms) is not int or not 50 <= deadline_ms <= 30_000):
                 return _err(
                     "invalid_deadline_ms",
                     "deadline_ms must be between 50 and 30000",
@@ -643,6 +663,8 @@ args: okto-pulse://reference/tool-docs/kg."""
                 return _err("unauthorized", "authentication required")
             boards = sorted(set(await auth.get_accessible_boards() or []))
             get_kg_service().check_board_access(boards, board_id)
+            policy = await _read_query_policy(board_id, board_agent)
+            deadline_ms = policy.effective_timeout(deadline_ms)
 
             retrieval = registry.require_reflective_retrieval()
             critic = registry.require_reflective_critic()
@@ -654,9 +676,9 @@ args: okto-pulse://reference/tool-docs/kg."""
             )
             acl_scope_hash = hashlib.sha256(acl_raw.encode("utf-8")).hexdigest()
 
-            result = await asyncio.wait_for(
-                asyncio.to_thread(
-                    run_reflective_query,
+            result = await _run_query_with_deadline(
+                board_id, deadline_ms,
+                lambda: run_reflective_query(
                     board_id=board_id,
                     query=nl_query,
                     limit=int(limit),
@@ -670,11 +692,10 @@ args: okto-pulse://reference/tool-docs/kg."""
                     critic=critic,
                     telemetry=telemetry,
                 ),
-                timeout=(int(deadline_ms) / 1000.0) + 0.25,
             )
             result["applied_graph_layer"] = applied_layer
             return json.dumps(round_kg_numbers(result), default=str)
-        except asyncio.TimeoutError:
+        except GraphQueryTimeout:
             return _err("timeout", "Reflective query exceeded its deadline")
         except KGToolError as e:
             return _err(e.code, e.message, details=e.details)

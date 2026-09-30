@@ -524,6 +524,8 @@ Args:
     nl_query: Natural language query
     limit: Max results (default 20)
     min_confidence: Min confidence threshold (default 0.5)
+    timeout_ms: Optional positive timeout in ms, narrowed to the current Board
+        policy (default 15000, maximum 30000). All reads and fallbacks share it.
     since: Optional ISO-8601 timestamp — return only nodes with
         ``created_at >= since``. Empty string = no lower bound.
         Invalid timestamps are ignored (best-effort).
@@ -548,7 +550,8 @@ Args:
     min_confidence: 0.0..1.0, default 0.5.
     graph_layer: ``canonical|working|all``; default canonical.
     max_iterations: 1..8, default 3.
-    deadline_ms: 50..30000, default 5000.
+    deadline_ms: Optional 50..30000, narrowed to the current Board timeout.
+        Omission uses that policy (default 15000); iterations share one budget.
     budget_units: 1..10000, default 10.
 
 Returns:

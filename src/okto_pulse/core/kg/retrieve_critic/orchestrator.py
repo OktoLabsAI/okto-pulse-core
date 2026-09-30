@@ -10,6 +10,7 @@ import time
 from typing import Any, Callable, Mapping
 
 from okto_pulse.core.runtime_context import runtime_state
+from okto_pulse.core.kg.interfaces.graph_errors import GraphQueryTimeout
 
 from .interfaces import (
     Adequacy,
@@ -514,6 +515,8 @@ def run_reflective_query(
         )
         try:
             batch = retrieval.retrieve(request)
+        except GraphQueryTimeout:
+            raise
         except Exception as exc:  # noqa: BLE001
             logger.warning(
                 "reflect.retrieval_error iter=%d error=%s qhash=%s",
@@ -576,6 +579,8 @@ def run_reflective_query(
         if decision is None:
             try:
                 decision = critic.evaluate(critic_request)
+            except GraphQueryTimeout:
+                raise
             except Exception as exc:  # noqa: BLE001
                 logger.warning(
                     "reflect.critic_error iter=%d error=%s qhash=%s",

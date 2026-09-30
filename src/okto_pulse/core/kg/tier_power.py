@@ -7,7 +7,7 @@ schema_info: schema introspection with stable/internal type ACL
 Safety rails applied to ALL tier power queries:
 - Timeout: 15s default, 30s hard ceiling, enforced by the native executor
 - Max rows: 200 default, 1000 max
-- Rate limit: 30 queries/min per agent (token bucket)
+- Resource concurrency is enforced by the edition, without question-count quotas
 - Cypher injection mitigation via parser whitelist
 
 All queries logged in tier_power_audit with pattern_hash for telemetry.
@@ -20,6 +20,7 @@ import logging
 import math
 import re
 import unicodedata
+from okto_pulse.core.kg.interfaces.graph_errors import GraphQueryTimeout
 from typing import Any
 
 from okto_pulse.core.kg.query_contract import (
@@ -775,6 +776,8 @@ def _find_literal_node_matches(
                 )
                 for row in result.get("rows") or []:
                     _append(row, node_type, 1.0)
+            except GraphQueryTimeout:
+                raise
             except Exception:
                 pass
 
@@ -795,8 +798,12 @@ def _find_literal_node_matches(
                 )
                 for row in result.get("rows") or []:
                     _append(row, node_type, 0.65)
+            except GraphQueryTimeout:
+                raise
             except Exception:
                 pass
+    except GraphQueryTimeout:
+        raise
     except Exception as exc:
         logger.debug(
             "kg.natural.literal_fallback_failed board=%s err=%s",
@@ -849,6 +856,8 @@ def _filter_natural_source_confidence(board_id: str, rows: list[dict], minimum: 
                 {"ids": sorted(identities), "minimum": minimum}, max_rows=len(identities),
             )
             allowed.update((kind, row[0]) for row in result.get("rows", []) if row and row[0] in identities)
+    except GraphQueryTimeout:
+        raise
     except Exception as exc:
         raise TierPowerError("query_confidence_unavailable", "Source confidence could not be resolved.") from exc
     return [row for row in rows if (row.get("node_type"), row.get("node_id")) in allowed]
@@ -945,6 +954,8 @@ def execute_natural_query(
             fusion_paraphrases=fusion_paraphrases,
         )
         rewrite_result = rewriter.rewrite(nl_query)
+    except GraphQueryTimeout:
+        raise
     except Exception as e:  # noqa: BLE001 — anything falls back
         logger.warning(
             "execute_natural_query.rewrite_failed strategy=%s error=%s",
@@ -967,6 +978,8 @@ def execute_natural_query(
     if applied_strategy == "hyde" and rewrite_result.hyde_passage:
         try:
             hyde_vec = embedder.encode(rewrite_result.hyde_passage)
+        except GraphQueryTimeout:
+            raise
         except Exception:
             hyde_vec = None
 
@@ -980,6 +993,8 @@ def execute_natural_query(
         )
         try:
             query_vec = override_vec if override_vec is not None else embedder.encode(variant_query)
+        except GraphQueryTimeout:
+            raise
         except Exception:
             query_vec = None
 
@@ -1013,6 +1028,8 @@ def execute_natural_query(
                             "source_artifact_ref": None,
                             "similarity": 0.5,
                         })
+                except GraphQueryTimeout:
+                    raise
                 except Exception:
                     pass
         else:
@@ -1035,6 +1052,8 @@ def execute_natural_query(
                                 "source_artifact_ref": None,
                                 "similarity": 0.5,
                             })
+                    except GraphQueryTimeout:
+                        raise
                     except Exception:
                         pass
         return _dedupe_natural_results(out)
@@ -1050,6 +1069,8 @@ def execute_natural_query(
             # so existing callers still see the warning they expect.
             try:
                 embedder.encode(nl_query)
+            except GraphQueryTimeout:
+                raise
             except Exception:
                 warning = "embedding_unavailable"
 
@@ -1160,6 +1181,8 @@ def execute_natural_query(
                 r["parent_artifact"] = parent_map.get(
                     r.get("source_artifact_ref", ""),
                 )
+        except GraphQueryTimeout:
+            raise
         except Exception as e:  # noqa: BLE001 — never break on parent lookup
             logger.warning(
                 "execute_natural_query.parent_lookup_failed error=%s",
@@ -1189,6 +1212,8 @@ def execute_natural_query(
                     "approx_compressed_tokens": comp.approx_compressed_tokens,
                 }
                 compression_applied = True
+        except GraphQueryTimeout:
+            raise
         except Exception as e:  # noqa: BLE001
             logger.warning(
                 "execute_natural_query.compression_failed error=%s",
