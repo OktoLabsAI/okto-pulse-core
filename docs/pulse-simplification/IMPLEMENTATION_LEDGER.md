@@ -2,6 +2,33 @@
 
 ## Estado para retomada
 
+Par atual enviado: Corefff592b9/Community1db01493, pushes0, ambas arvores
+limpas antes desta nota. Ultimo install/prova: k2-card-invalidation-final.
+Nenhum processo ativo. G2/G14 continuam parciais; entrega total nao concluida.
+
+Investigacao seguinte G2/G12, ainda SEM alteracao de produto: busca literal
+missing_link_gate/missing_links_open vazia em ambas src Python; BoardSettings
+instalado nao declara campo e descarta entrada blocking (repro read-only
+.validation-v040/missing-link-gate-characterization1.json, exit0). Isso confirma
+nota anterior F6E, nao constitui nova autorizacao para reinterpretar settings
+ou inventar migracao de policy. Nao criar novo gate silenciosamente.
+Findings de guidelines e qualidade sao autoridades especificas; nao reutilizar
+para projetar refs quebradas como se fossem avaliacoes. MissingLinkCandidate
+atual alimenta fallback cognitivo e nao representa o diagnostico de KG5.
+
+Candidato concreto de reuso a qualificar antes de novo storage: ConsolidationAudit
+ja e append-only por sessao, registra content_hash, tem AuditRepository publico
+com get_latest_for_artifact(Board,tipo,ID), stage_consolidation_records na UOW
+do commit/ACK e undo_status. DTO audit_dtos.py hoje NAO possui finding snapshot;
+modelo Community tem error_details, mas nao sobrecarregar erro com achado semantico.
+Possivel extensao tipada do audit existente deve distinguir snapshot ausente de
+snapshot completo vazio, nao deixar sessao cognitiva posterior esconder findings,
+respeitar CAS/compensacao e revalidar fonte atual. Nenhuma porta/tabela criada.
+Se adotar, qualificar compatibilidade de planos/receipts e contexto/coverage
+sem novas tools de manutencao, conforme KG5.2-5.5. Leitura completa dessas
+secoes refeita. link_card_traceability exige mesma Spec (card_traceability.py),
+e caminho locked FR/TR/Decision tambem; nao assumir cross-Spec pela busca de IDs.
+
 G14 cenario final94205=0 (oitoZERO, sem findings/drift). Recorder executado
 UMA vez apos terminais: acceptance-k2-card-invalidation.json,76+9+10passados.
 Pronto para commit/push; nenhum processo ativo; inventario inalterado.
