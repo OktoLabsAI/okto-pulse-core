@@ -11,7 +11,9 @@ from okto_pulse.core.kg.logical_transfer import LOGICAL_NULL, LogicalSchemaIndex
 from okto_pulse.core.kg.primitives import _cross_session_entity_source_prefix, _parse_source_ref_endpoint
 from okto_pulse.core.kg.schema_contract import NODE_TYPES
 from okto_pulse.core.kg.schemas import EdgeCandidate, NodeCandidate
-from okto_pulse.core.ports.projection_history import ProjectionSourceIdentity, ProjectionSourceRoot, select_projection_source_roots
+from okto_pulse.core.ports.projection_history import (
+    ProjectionSourceIdentity, ProjectionSourceRoot, select_projection_source_roots, projection_source_root_aliases,
+)
 from okto_pulse.core.ports.projection_relations import ProjectionRelationComparison
 
 
@@ -75,13 +77,21 @@ def compare(*, document, schema, nodes, relations, new_sessions):
             roots.add(root)
         plans.append((local, tuple(EdgeCandidate.model_validate(edge) for edge in projection['edges'])))
     # Select current local candidates using precisely the existing reuse rule.
+    root_keys = {root: tuple(key for alias in projection_source_root_aliases(root)
+        for key in by_source.get((alias.node_type, alias.source_artifact_ref), ())) for root in roots}
+    seen_identities = set()
     for root in roots:
-        for key in by_source.get((root.node_type, root.source_artifact_ref), ()):
+        for key in root_keys[root]:
+            if key in seen_identities:
+                continue
+            seen_identities.add(key)
             node = by_key[key]
-            identities.append(ProjectionSourceIdentity(node.type_name, node.key, root.source_artifact_ref,
+            identities.append(ProjectionSourceIdentity(node.type_name, node.key, value(node, 'source_artifact_ref'),
                 value(node, 'generation'), value(node, 'superseded_by')))
-    available = tuple(sorted(root for root in roots if any(value(by_key[key], 'superseded_by') is None
-        for key in by_source.get((root.node_type, root.source_artifact_ref), ()))))
+    available = tuple(sorted(root for root in roots if any(
+        value(by_key[key], 'superseded_by') is None or
+        (len(projection_source_root_aliases(root)) > 1 and value(by_key[key], 'superseded_by') == '')
+        for key in root_keys[root])))
     selected = {root: (node.node_type, node.node_id) for root, node in zip(available,
         select_projection_source_roots(roots=available, nodes=tuple(identities)), strict=True)}
     entity_sources = sorted((source, key) for (kind, source), keys in by_source.items()

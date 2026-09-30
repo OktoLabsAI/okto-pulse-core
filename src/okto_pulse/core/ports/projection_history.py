@@ -104,8 +104,14 @@ class ProjectionSourceIdentity:
         _identity((self.node_type, self.node_id, self.source_artifact_ref))
         if self.generation is not None and (type(self.generation) is not int or self.generation < 0):
             raise ValueError('projection_history_generation_invalid')
-        if self.superseded_by is not None:
+        if self.superseded_by is not None and not (self.node_type == 'Bug' and self.superseded_by == ''):
             _identity((self.superseded_by,))
+
+
+def projection_source_root_aliases(root: ProjectionSourceRoot) -> tuple[ProjectionSourceRoot, ...]:
+    """Exact aliases of an already typed root; never prefix matching or rewriting."""
+    from okto_pulse.core.application.projection_history import source_root_aliases
+    return source_root_aliases(root)
 
 
 def select_projection_source_roots(

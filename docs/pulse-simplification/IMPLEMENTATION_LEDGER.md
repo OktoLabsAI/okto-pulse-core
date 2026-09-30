@@ -2,6 +2,79 @@
 
 ## Estado para retomada
 
+Global/raizes final validado: F1632396 TERMINAL0, ok=true/findings e docs
+vazios/oitoZERO. Recorder executado uma vez: acceptance-candidate-overlay-roots.json
+com9/56/10 e reproducao falha preservada. Builds/install/prova847/910+367/452
+terminais0; Ruff/diff-check0. Nenhum processo desta rodada vivo. Pronto para
+commits/pushes pareados. Proximo trabalho: aplicabilidade atual de Learning
+em replay somente-leitura e composicao final de K3. A fixture atual tem
+created_by/source_session desconhecidos no Bug original por construcao:
+a recusa writer_not_connectivity_owner NAO deve ser apagada nem transformada
+em autoria inventada para obter verde. Criar tambem caso positivo com
+proveniencia demonstrada/sem legado desconhecido antes de alterar esse gate.
+Historico sem autoridade preserva limitacao conforme KG8.2/8.3. Supersedencia
+autenticada prova efeito/identidade, nao aprova conteudo ou origem perdida.
+
+Par final Global/raizes: builds0/install72727=0/prova0 (847/910+367/452
+byte-identical). F16final32396 EM ANDAMENTO, unico processo desta rodada.
+record_candidate_overlay_roots.py preparado com9/56/10 e falha inicial
+preservada, NAO executado. Aguardar terminal; nao editar produto durante F16.
+Depois recorder/diff-check/commits e pushes pareados; seguir diretamente para
+classificacao de historico e aplicabilidade Learning, sem pausa de milestone.
+
+bug-projection-roots1 Community80009 TERMINAL0:10 passed/424.092s (8 Global
+e2 coordenadores superseded/reused). Core56 passou. F1660192 terminal1
+somente README, findings=[]/oitoZERO; apos TODOS terminais matrizes regeneradas.
+Relatorio reused:16 expected/matched, zero missing/unresolved/unexpected,
+history current_source_reconciled1. Superseded:16matched, supersedes ainda
+nao composta e predecessor historico nao classificado. AMBOS preservam
+writer_path unknown/rejected; nao converter nascimento desconhecido em
+autoria atual. Globalmatched/replayfrio/completionrefused passaram ambos.
+Builds finais candidate-overlay-roots-final em andamento; exigir install/
+prova/F16final antes de recorder e novos commits/pushes.
+
+bug-projection-roots1 install78242/prova terminais0 (847/910+367/452) ANTES
+das suites. Core16294 terminal0:56 passed/6.576s. Community80009 e F1660192
+ainda em andamento; produto congelado. Proxima observacao decisiva: candidato
+reused deve preservar canonical-bug/source_ref original, sem perder fonte
+atual nem escolher duplicata. Nao declarar K3 entregue por testes de helper.
+
+Seletor de raizes WIP alinhado ao writer para Bug tipado: aliases inteiros
+compartilhados pela porta publica, original preservado, duplicata ativa
+recusada (sem tie-break), null/vazio ativo. Outros tipos mantem regra anterior.
+Comparador de relacoes e filtro de inventario Community usam a mesma porta.
+Teste Core cobre tipos/prefixos/conceitos/raizes alias duplicadas; coordenador
+agora tem variantes superseded/reused (titulo original igual ao SQL somente
+na fixture). Ainda NAO executados apos edicao. Ruff0, builds bug-projection-roots1
+ambos0; instalacao iniciada, aguardar terminal/prova antes das suites. Ultimo
+par publicado47447a32/3d0345ba, WIP Global/raizes nao commitado.
+
+candidate-overlay1 Community67657 TERMINAL0:9 passed/187.888s. Global agora
+matched no coordenador, com original SQL intacto/replay frio e completion
+ainda recusado. F16passou sem drift e oitoZERO; nenhuma suite desta rodada
+ativa. Proximo ajuste e o seletor offline de identidade Bug reproduzido acima;
+prova Global permanece desta versao, novos builds/prova exigidos apos edicoes.
+
+candidate-overlay1 builds/install87882/prova terminais0:847/910+367/452.
+F1675282 terminal0, sem findings/drift/oitoZERO; Community67657 segue vivo
+(8 testes locais passaram, coordenador pendente). Produto congelado.
+Revisao de consistencia no MESMO caminho identificou seletor offline de
+raizes ainda por referencia exata/tie-break antigo, divergindo da porta Bug
+atual. Repro bug-projection-roots-repro Core45876 terminal1:1 failed/5.34s,
+root card:id nao reconhece identidade ativa Bug bug:id (current_root_missing).
+Teste novo test_bug_projection_roots.py preservado. Corrigir apos terminal
+Community; cobrir ausencia/aliases/duplicata e candidato sem supersedencia.
+Nao e autorizacao para reescrever referencias historicas nem escolher vencedor.
+
+Par integrado publicado Core47447a32/Community3d0345ba; pushes0. Segue WIP
+Global no escopo K3: inicializador interno cria somente revisao tecnica
+ausente no stage privado com fence vivo; nunca repara revisao existente
+invalida/unfenced, nao remove pendencias e nao altera captura/read-only replay.
+Ligado apenas a construcao com Learning; recibos anteriores sem Learning
+mantem caminho original. Testes preparados de exclusoes SQL201, preservacao
+literal/idempotencia/revisao invalida/fence ausente e coordenador com Global
+matched; ainda NAO executados. Ruff0. Proximos builds candidate-overlay1.
+
 Incremento integrado validado em2026-09-30: install9881/prova43494/F16final18359
 terminais0. Par dist-learning-reconciliation-candidate-learning-integration-final
 847/910 Core+367/452 Community byte-identical; F16ok=true, findings=[] e

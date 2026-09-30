@@ -63,6 +63,19 @@ def compare(before_nodes, after_nodes, before_edges, after_edges):
     )
 
 
+def source_root_aliases(root):
+    if type(root) is not ProjectionSourceRoot:
+        raise TypeError('projection_history_root_required')
+    ref = root.source_artifact_ref
+    if root.node_type == 'Bug' and (
+        (ref.startswith(('bug:', 'card:')) and ref.count(':') == 1)
+        or (ref.startswith('card:bug:') and ref.count(':') == 2)
+    ):
+        from okto_pulse.core.kg.cognitive_source_ref_resolver import typed_bug_source_reference_aliases
+        return tuple(ProjectionSourceRoot('Bug', alias) for alias in typed_bug_source_reference_aliases(ref))
+    return (root,)
+
+
 def select_source_roots(roots, nodes):
     if type(roots) is not tuple or type(nodes) is not tuple or max(len(roots), len(nodes)) > 100_000:
         raise ValueError('projection_history_node_limit')
@@ -71,7 +84,12 @@ def select_source_roots(roots, nodes):
     if len(set(roots)) != len(roots):
         raise ValueError('projection_history_duplicate_root')
     selected, identities = {}, set()
-    wanted = set(roots)
+    wanted = {}
+    for root in roots:
+        for alias in source_root_aliases(root):
+            if alias in wanted:
+                raise ValueError('projection_history_duplicate_root')
+            wanted[alias] = root
     for node in nodes:
         if type(node) is not ProjectionSourceIdentity:
             raise TypeError('projection_history_source_identity_required')
@@ -79,15 +97,19 @@ def select_source_roots(roots, nodes):
         if key in identities:
             raise ValueError('projection_history_duplicate_node')
         identities.add(key)
-        root = ProjectionSourceRoot(node.node_type, node.source_artifact_ref)
-        if root not in wanted or node.superseded_by is not None:
+        physical = ProjectionSourceRoot(node.node_type, node.source_artifact_ref)
+        root = wanted.get(physical)
+        typed_bug = node.node_type == 'Bug' and len(source_root_aliases(physical)) > 1
+        if root is None or (node.superseded_by is not None and not (typed_bug and node.superseded_by == '')):
             continue
         current = selected.get(root)
+        if typed_bug and current is not None:
+            raise ValueError('projection_history_bug_identity_ambiguous')
         # kg.primitives._lookup_existing_node uses this exact order: active
         # records, coalesce(generation, 0) DESC, id DESC. No score or similarity.
         if current is None or (node.generation or 0, node.node_id) > (current.generation or 0, current.node_id):
             selected[root] = node
-    if set(selected) != wanted:
+    if set(selected) != set(roots):
         raise ValueError('projection_history_current_root_missing')
     return tuple(selected[root] for root in roots)
 
