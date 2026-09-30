@@ -2,6 +2,23 @@
 
 ## Estado para retomada
 
+BASE T14 verificado: mcp-concurrency2 session51311=0,1passed12.97s.
+Dois clientes MCP Streamable HTTP concorrentes, credenciais reais via middleware,
+UoW Community e banco descartável: 12 chamadas, seis leituras do próprio Board
+com ID/owner corretos e seis recusas cruzadas sem conteúdo alheio. Schemas de
+tools/list iguais e sem dados dos agentes/Boards. Transporte HTTP sobre ASGI em
+processo; não é daemon de rede nem catálogo personalizado por grant.
+Primeira execução session8764=0 passou mas deixou watcher SSE pendente; preservada
+como evidência intermediária. Fixture final cancela/drena somente novos watchers;
+log final limpo. Prova8d3b2e=0 antecedeu testes: provenance-mcp-concurrency1.json,
+859/922 Core e373/458 Community idênticos entre fontes/site/wheels owner-final.
+Recorder record_mcp_concurrency_review.py executado uma vez após terminais;
+acceptance-concurrent-mcp-isolation.json. Inventário91 verificados/39 parciais/
+116 não auditados. Produto/frontend não alterados; último F16 continua com oito
+ZERO, sem nova execução alegada. Decisões KG-10 e T23 continuam pendentes.
+Próximo critério independente do mesmo plano: BASE T15, variantes de grants
+em tool agrupada devem recusar antes de persistir. Entrega integral ainda aberta.
+
 BASE T13 verificado nesta rodada: auth-acceptance5 session41399 terminou0,
 13passed57.88s. Teste novo test_cached_mcp_revocation usa a mesma sessão FastMCP
 e catálogo listado antes da revogação, com autenticação/UoW/banco/tool reais.
