@@ -2,6 +2,66 @@
 
 ## Estado para retomada
 
+BASE T13 verificado nesta rodada: auth-acceptance5 session41399 terminou0,
+13passed57.88s. Teste novo test_cached_mcp_revocation usa a mesma sessão FastMCP
+e catálogo listado antes da revogação, com autenticação/UoW/banco/tool reais.
+Desativação, troca do hash da chave e retirada de grant do Board recusam nova
+leitura e não retornam conteúdo do Board nem alteram o estado do agente.
+Apenas extração de credencial HTTP é injetada no transporte em memória.
+Não alegar persistência do cache de permissões entre contextos de request.
+As primeiras quatro campanhas falharam na fixture/oráculo antes da revogação:
+adapter SQL legado esperava cards.sprint_id; substituído pelo UoW Community real,
+Board passou a declarar realm local; tentativa de campo realm no Agent inexistente
+foi removida; assertion de cache no contexto do teste não correspondia ao escopo
+do host e foi retirada. Catálogo em cache e recusa real continuam obrigatórios.
+
+Recorder record_auth_and_currentness_review.py executado UMA vez após terminais,
+gerando acceptance-cached-mcp-revocation.json e evidence-path-b-currentness-conflict.json.
+Inventário:90 verificados/39 parciais/117 não auditados. T23 NÃO promovido:
+characterized3 session24540=0,1xfail5.88s documenta somente o resultado exato já
+reproduzido; não é teste verde de atualidade. Duas falhas originais mantidas.
+Decisões T23 e KG-10 solicitadas, ainda sem resposta; não alterar gates/histórico.
+Somente testes/docs mudaram, nenhum frontend/produto. Prova5787db antecedeu
+todas as campanhas; último F16 de produto segue com oito ZERO, sem nova alegação
+de execução. RuffF/E9 e diff-check verdes, nenhum processo pendente.
+Próxima etapa independente: continuar aceite por requisito do inventário,
+incluindo T14 isolamento de dados/catálogo (o teste atual de concorrência cobre
+identidade, não fecha sozinho todo o critério). Não ampliar T13 para T14.
+
+### Decisão T23 pendente — atualidade da confirmação Path B
+
+Reprodução sem alteração de produto, sobre Core956b19fe/Community935d8390 e
+prova terminal5787db=0 (provenance-path-b-currentness1.json,859/922+373/458).
+`test_path_b_confirmation_currentness.py`: fonte prepara regressão cross-Spec,
+confirma pelo writer CardService.confirm_amendment_coverage; depois o writer
+operacional SpecService.set_test_scenario_status muda automated→ready, sem editar
+SQL diretamente. O preview continua path_b_ready e move_card inicia o Bug.
+Campanha path-b-currentness1 session82844=1 (1failed4.37s, preview); campanha2
+session1755=1 (1failed4.77s) captura ambos: preview=path_b_ready, blocked=False,
+gate=CardStatus.IN_PROGRESS. Logs/XML imutáveis no diretório de validação.
+
+Cadeia inspecionada: REST specs status → SetTestScenarioStatusUseCase (scope,
+permissão e lifecycle) → set_test_scenario_status → persistência estreita e
+activity_log; confirmação → use case/critical-context → amendment reserved key;
+BugRegressionScenarioPreviewService e gate carregam AmendmentLineageFact e
+_coverage_confirmed_for verifica apenas IDs/validator/evidence_ref não vazio.
+A confirmação não sela revisão/digest do cenário/prova; voltar a ready não
+remove nem invalida seu efeito. Isso contradiz o cenário stale de BASE T23.
+É defeito reproduzido de atualidade; não há evidência de perda do histórico.
+
+Proposta de decisão: confirmação passa a se vincular à revisão semântica e à
+evidência atual do artefato autorizado, reutilizando os digests/contratos de prova
+existentes. Preview e início/reabertura revalidam a mesma fonte delimitada;
+sem evidência atual ou após mudança semântica, coverage_pending até nova
+confirmação por quem já possui autoridade de validação. Confirmações antigas sem
+base verificável são preservadas como histórico, mas exigem reconfirmação para
+novo consumo; não fabricar snapshot retrospectivo nem reabrir Bugs Done em lote.
+Sem nova permissão ao executor, sem override de policy, sem depender do KG.
+Alternativa: manter efeito legado e declarar T23 não atendido. Recomendação é
+vincular/revalidar, mas aguardar decisão por efeito no gate/histórico conforme
+plano §10.2/10.4 e entrada “Quando investigar e quando perguntar”.
+Esta frente e KG-10 ficam isoladas; demais critérios do pacote continuam.
+
 BASE T16/T18/T21/T22/T24 auditados e verificados; T23 permanece parcial com
 lacuna delimitada de atualidade, sem nova semântica implementada. Inventário:
 89 verificados / 39 parciais / 118 não auditados. Evidência consolidada em

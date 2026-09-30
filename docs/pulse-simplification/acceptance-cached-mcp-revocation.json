@@ -1,0 +1,202 @@
+{
+  "format": "pulse-v1.3-reviewed-execution/v1",
+  "scope": "BASE T13 cached discovery and revocation",
+  "provenance": {
+    "file": "provenance-path-b-currentness1.json",
+    "sha256": "21b43ff7d0e847cfb3c8b26053814abba0dce39d7108380102ea72b1828dbd70",
+    "identity": {
+      "checked_at": "2026-09-30T21:12:53.344652+00:00",
+      "python": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Scripts\\python.exe",
+      "packages": {
+        "core": {
+          "python_files": 859,
+          "origin": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages\\okto_pulse\\core\\__init__.py",
+          "repository_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_core",
+          "commit": "956b19fe0a394e444419e11c396e796c86a0f438",
+          "dirty": false,
+          "dirty_entry_count": 0,
+          "distribution": "okto-pulse-core",
+          "version": "0.3.4",
+          "wheel": {
+            "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\dist-learning-reconciliation-k2-spec-owner-final\\okto_pulse_core-0.3.4-py3-none-any.whl",
+            "sha256": "a6f77fab8288ae5a91690a7d2796ea8d19db5b10c8a7c7263629553ebeff0312",
+            "size": 3793229
+          },
+          "source_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_core\\src",
+          "site_packages_root": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages",
+          "package_prefix": "okto_pulse/core/",
+          "byte_identical_member_count": 922,
+          "byte_identical": true,
+          "aggregate_sha256": "acb90eccf7d1f8cacb71280c263b68a5e5dc3c26f49552f9b7b91404280eddb7",
+          "chain_hashes": {
+            "source": "acb90eccf7d1f8cacb71280c263b68a5e5dc3c26f49552f9b7b91404280eddb7",
+            "wheel": "acb90eccf7d1f8cacb71280c263b68a5e5dc3c26f49552f9b7b91404280eddb7",
+            "site_packages": "acb90eccf7d1f8cacb71280c263b68a5e5dc3c26f49552f9b7b91404280eddb7"
+          },
+          "critical_resource_sha256": {
+            "okto_pulse/core/mcp/resources/ska_resource_manifest.json": "87fab2a5ded5f6ee273af8628555c21f7065d32379945784132bb6c300d05865",
+            "okto_pulse/core/mcp/resources/ska_tool_manifest.json": "0c3fa3da1549baec20872eca3f4a289288627e6b9f6b80be10472ac962fa72b9"
+          },
+          "mismatches": []
+        },
+        "community": {
+          "python_files": 373,
+          "origin": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages\\okto_pulse\\community\\__init__.py",
+          "repository_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_community",
+          "commit": "935d839086e24455133a2462dab837b0108d9469",
+          "dirty": false,
+          "dirty_entry_count": 0,
+          "distribution": "okto-pulse",
+          "version": "0.3.4",
+          "wheel": {
+            "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\dist-learning-reconciliation-k2-spec-owner-final\\okto_pulse-0.3.4-py3-none-any.whl",
+            "sha256": "3d1eb7b80776aa6ba91a8e0e24d194c6d09769d70a4637a6423e0f57872ecd55",
+            "size": 4535175
+          },
+          "source_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_community\\src",
+          "site_packages_root": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages",
+          "package_prefix": "okto_pulse/community/",
+          "byte_identical_member_count": 458,
+          "byte_identical": true,
+          "aggregate_sha256": "94e3b3e820cf74f6c6d891b03b4aed41523ec3396fa781d7cf180f1da379463b",
+          "chain_hashes": {
+            "source": "94e3b3e820cf74f6c6d891b03b4aed41523ec3396fa781d7cf180f1da379463b",
+            "wheel": "94e3b3e820cf74f6c6d891b03b4aed41523ec3396fa781d7cf180f1da379463b",
+            "site_packages": "94e3b3e820cf74f6c6d891b03b4aed41523ec3396fa781d7cf180f1da379463b"
+          },
+          "critical_resource_sha256": {},
+          "mismatches": []
+        }
+      }
+    }
+  },
+  "run": {
+    "xml": "learning-reconciliation-auth-acceptance5-core.xml",
+    "xml_sha256": "88522cf795e82c7d15e462ad573dcdfd3f190bb4ff9894e209fd134b07f6791b",
+    "log": "learning-reconciliation-auth-acceptance5-core.log",
+    "log_sha256": "218477e21d4b84ff5a3dca5b8e52839526fc90625a6a2a1fe796d5277803e15e",
+    "suites": [
+      {
+        "name": "pytest",
+        "errors": "0",
+        "failures": "0",
+        "skipped": "0",
+        "tests": "13",
+        "time": "57.862",
+        "timestamp": "2026-09-30T18:23:15.992690-03:00",
+        "hostname": "Alienware_m15"
+      }
+    ]
+  },
+  "criteria": {
+    "BASE:T13": {
+      "status": "verified_by_reviewed_execution",
+      "remaining": null,
+      "covered": "Same materialized FastMCP session caches tools/list, successfully reads Board, then reuses the discovered tool after credential deactivation, key rotation or Board grant deletion. Each revoked call returns an error with no Board content; auth reads do not mutate agent state.",
+      "evidence": [
+        {
+          "repository": "core",
+          "file": "tests/test_cached_mcp_revocation.py",
+          "source_sha256": "6b8b3ca0e51eddc02eaa6abd64f5c59c4178566f8a66353e1b6b26c124cfd404",
+          "executions": [
+            {
+              "classname": "tests.test_cached_mcp_revocation",
+              "name": "test_cached_catalog_cannot_authorize_revoked_access[inactive]",
+              "time": "4.784"
+            },
+            {
+              "classname": "tests.test_cached_mcp_revocation",
+              "name": "test_cached_catalog_cannot_authorize_revoked_access[rotated_key]",
+              "time": "4.890"
+            },
+            {
+              "classname": "tests.test_cached_mcp_revocation",
+              "name": "test_cached_catalog_cannot_authorize_revoked_access[board_grant]",
+              "time": "3.825"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "retained_fixture_failures": [
+    {
+      "xml": "learning-reconciliation-auth-acceptance1-core.xml",
+      "xml_sha256": "67a6dbc1926577f0ccca4a99c7d4e746b495a4b3797827a32991c4b3bf3c7697",
+      "log": "learning-reconciliation-auth-acceptance1-core.log",
+      "log_sha256": "eb3bf0acb7d5d0e7d2f5ee23231799d868eb16d7bb199234c659a37eb7666c0c",
+      "suites": [
+        {
+          "name": "pytest",
+          "errors": "0",
+          "failures": "1",
+          "skipped": "0",
+          "tests": "1",
+          "time": "15.060",
+          "timestamp": "2026-09-30T18:19:12.285366-03:00",
+          "hostname": "Alienware_m15"
+        }
+      ]
+    },
+    {
+      "xml": "learning-reconciliation-auth-acceptance2-core.xml",
+      "xml_sha256": "92905115cc1a03b436b9fc61aa72a482a9b8a5f374a43b2dcd7ea1b99041953b",
+      "log": "learning-reconciliation-auth-acceptance2-core.log",
+      "log_sha256": "d805da859c6477d3ae1d65b957d22c479ca60f7e660ae596e4bd49e13000498d",
+      "suites": [
+        {
+          "name": "pytest",
+          "errors": "0",
+          "failures": "1",
+          "skipped": "0",
+          "tests": "1",
+          "time": "14.509",
+          "timestamp": "2026-09-30T18:20:25.529776-03:00",
+          "hostname": "Alienware_m15"
+        }
+      ]
+    },
+    {
+      "xml": "learning-reconciliation-auth-acceptance3-core.xml",
+      "xml_sha256": "23c2303677bb416816e8c8b1c21135beab6c5a89c6a701a657b3f5918df8dda8",
+      "log": "learning-reconciliation-auth-acceptance3-core.log",
+      "log_sha256": "be9ab2a98aedbf9173a56f902ad03f0eefd8f7da8b5a721babf6c367de0a48eb",
+      "suites": [
+        {
+          "name": "pytest",
+          "errors": "0",
+          "failures": "1",
+          "skipped": "0",
+          "tests": "1",
+          "time": "13.698",
+          "timestamp": "2026-09-30T18:21:21.139776-03:00",
+          "hostname": "Alienware_m15"
+        }
+      ]
+    },
+    {
+      "xml": "learning-reconciliation-auth-acceptance4-core.xml",
+      "xml_sha256": "80e77ebc17b1b7826eb5baef74d1a4a0a573b16ffad630f745854baed36e62db",
+      "log": "learning-reconciliation-auth-acceptance4-core.log",
+      "log_sha256": "5e94f0d36c52c40e627aa46f52d71b06bc79d5559b2e92e3953ac97237ac703d",
+      "suites": [
+        {
+          "name": "pytest",
+          "errors": "0",
+          "failures": "1",
+          "skipped": "0",
+          "tests": "1",
+          "time": "12.765",
+          "timestamp": "2026-09-30T18:22:19.241561-03:00",
+          "hostname": "Alienware_m15"
+        }
+      ]
+    }
+  ],
+  "limits": [
+    "In-process FastMCP injects only credential extraction; real authenticator, production UoW, database and tool execute.",
+    "Older auth fixture required production UoW and explicit local Board realm for actual Board content reads. Agent has no realm column; the erroneous fixture attempt was corrected.",
+    "A test-thread assertion about request-scoped permission cache was removed: T13 concerns cached discovery; no claim of cross-request permission-cache reuse is made.",
+    "No product/permission/frontend change; no new F16 run; previous zero budgets remain unchanged."
+  ]
+}

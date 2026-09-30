@@ -134,8 +134,12 @@
       "line": 592,
       "id": "T13",
       "normative_text": "| T13 | Credencial revogada com catálogo em cache | Chamada recusada; nenhuma autorização persistente na sessão. |",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "verified_by_reviewed_execution",
+      "test_text_references": [],
+      "reviewed_execution": {
+        "artifact": "acceptance-cached-mcp-revocation.json",
+        "criterion_key": "BASE:T13"
+      }
     },
     {
       "key": "BASE:T14",
