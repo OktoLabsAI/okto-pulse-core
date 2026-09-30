@@ -20475,6 +20475,7 @@ def _learning_capture_mcp_error(exc: Exception) -> str:
         'learning_capture_page_invalid',
         'learning_capture_intent_invalid', 'learning_capture_target_not_eligible',
         'learning_capture_reuse_content_changed', 'learning_capture_target_replaced_in_scope',
+        'learning_capture_candidate_query_invalid',
     }:
         code = str(exc)
     else:
@@ -20483,11 +20484,13 @@ def _learning_capture_mcp_error(exc: Exception) -> str:
 
 
 @mcp.tool()
-async def okto_pulse_kg_get_learning_capture_context(board_id: str, bug_id: str) -> str:
+async def okto_pulse_kg_get_learning_capture_context(board_id: str, bug_id: str, candidate_query: str | None = None) -> str:
     """Read the current Bug source and authenticated scenario choices for Learning authorship.
 
     Returns source_digest/source_policy_version for the create request. This
     preview is neither admission nor permission to close the Bug.
+    Optional candidate_query adds up to three source-qualified cosine suggestions
+    and requires kg.query.learning_from_bugs. Search is never mandatory for create.
     Full docs: okto-pulse://reference/tool-docs/kg.
     """
     from okto_pulse.core.application.use_cases.learning_capture import GetLearningCaptureSourceUseCase
@@ -20502,7 +20505,7 @@ async def okto_pulse_kg_get_learning_capture_context(board_id: str, bug_id: str)
     try:
         async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
             result = await GetLearningCaptureSourceUseCase().execute(
-                board_id=board_id, bug_id=bug_id, actor=actor, uow=uow)
+                board_id=board_id, bug_id=bug_id, actor=actor, uow=uow, candidate_query=candidate_query)
         return json.dumps(result)
     except (PermissionDeniedError, EntityNotFoundError, ValueError, RuntimeError, CognitiveSourceError) as exc:
         return _learning_capture_mcp_error(exc)

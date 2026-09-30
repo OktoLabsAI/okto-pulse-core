@@ -184,9 +184,10 @@ class CoreKnowledgeGraphOperations:
         return await stage_new_learning_capture(self.__relational_context, request,
             author_id=author_id, captured_at=self.__clock())
 
-    async def get_learning_capture_source(self, *, board_id: str, bug_id: str):
+    async def get_learning_capture_source(self, *, board_id: str, bug_id: str, candidate_query: str | None = None):
         from okto_pulse.core.application.learning_capture import get_learning_capture_source
-        return await get_learning_capture_source(self.__relational_context, board_id=board_id, bug_id=bug_id)
+        return await get_learning_capture_source(self.__relational_context, board_id=board_id, bug_id=bug_id,
+            candidate_query=candidate_query)
 
     async def list_learning_captures(self, *, board_id: str, bug_id: str, cursor=None, limit=20):
         from okto_pulse.core.application.learning_capture import list_learning_captures

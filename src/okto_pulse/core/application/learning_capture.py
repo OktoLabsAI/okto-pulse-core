@@ -32,7 +32,7 @@ def _authenticated_scenario(source, scenario):
             spec_id=source.spec_id, scenario=scenario, acceptance_criteria=list(source.acceptance_criteria)))
 
 
-async def get_learning_capture_source(context, *, board_id: str, bug_id: str):
+async def get_learning_capture_source(context, *, board_id: str, bug_id: str, candidate_query: str | None = None):
     reader = resolve_bug_cognitive_context_assembler()
     if reader is None:
         raise ValueError('learning_capture_transaction_capability_unavailable')
@@ -50,9 +50,13 @@ async def get_learning_capture_source(context, *, board_id: str, bug_id: str):
         scenarios.append({'id': identity, 'title': str(scenario.get('title') or identity),
             'status': str(scenario.get('status') or ''), 'verification_method': scenario.get('verification_method'),
             'authenticated': _authenticated_scenario(source, scenario)})
-    return {'contract_version': 'learning-capture-context/v1', 'board_id': board_id, 'bug_id': bug_id,
+    result = {'contract_version': 'learning-capture-context/v1', 'board_id': board_id, 'bug_id': bug_id,
         'source_digest': source.source_digest, 'source_policy_version': source.source_policy_version,
         'scenarios': scenarios}
+    if candidate_query is not None:
+        from okto_pulse.core.application.learning_candidates import learning_capture_candidates
+        result['candidates'] = await learning_capture_candidates(context, board_id=board_id, query=candidate_query)
+    return result
 
 
 async def list_learning_captures(context, *, board_id: str, bug_id: str, cursor=None, limit=20):

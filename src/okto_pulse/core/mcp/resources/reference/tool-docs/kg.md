@@ -681,6 +681,16 @@ and does not approve content or authorize Bug completion.
 Example: `{"board_id":"board-1","bug_id":"bug-1"}`. Use the returned
 `source_digest` and `source_policy_version` as the expected basis of creation.
 
+Optional `candidate_query` (1–4096 characters) requests up to three related
+Learnings and additionally requires `kg.query.learning_from_bugs`. This is an
+optional search, not a prerequisite for create. It uses a bounded vector window
+and verifies each offered literal against its cognitive source head. The
+response identifies cosine similarity, graph snapshot, native search regime and
+limitations; it is not exhaustive and does not assess current applicability.
+Scores ≥0.95 suggest considering reuse, 0.85–0.95 suggest review for a possible
+replacement, and 0.60–0.85 indicate related content. No score selects an intent
+or grants approval. Unavailable search remains explicit, never an empty success.
+
 ## `okto_pulse_kg_create_learning_capture`
 
 Persist an independently authored Learning capture before Bug completion.

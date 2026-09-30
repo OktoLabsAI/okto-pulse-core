@@ -54,13 +54,16 @@ class CreateLearningCaptureUseCase:
 
 
 class GetLearningCaptureSourceUseCase:
-    async def execute(self, *, board_id: str, bug_id: str, actor, uow):
+    async def execute(self, *, board_id: str, bug_id: str, actor, uow, candidate_query=None):
         await require_all(actor, *(PermissionRequirement(flag) for flag in LEARNING_CAPTURE_READ_PERMISSIONS),
             uow=uow, board_id=board_id)
+        if candidate_query is not None:
+            await require_all(actor, PermissionRequirement('kg.query.learning_from_bugs'), uow=uow, board_id=board_id)
         card = await load_accessible_card(uow, bug_id, actor, expected_board_id=board_id)
         if card is None:
             raise EntityNotFoundError('card', bug_id)
-        return await uow.services.kg.get_learning_capture_source(board_id=board_id, bug_id=bug_id)
+        options = {} if candidate_query is None else {'candidate_query': candidate_query}
+        return await uow.services.kg.get_learning_capture_source(board_id=board_id, bug_id=bug_id, **options)
 
 
 class ListLearningCapturesUseCase:

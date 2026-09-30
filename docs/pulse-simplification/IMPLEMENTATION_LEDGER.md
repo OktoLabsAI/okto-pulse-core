@@ -2,6 +2,53 @@
 
 ## Estado para retomada
 
+Candidates concluido neste incremento: install final94065/prova final=0,
+841 Python/904 payloads Core +363 Python/448 payloads Community identicos.
+F16 final25862 terminou0: findings=[], documentation_findings=[], oito budgets
+ZERO. Recorder exclusivo record_learning_candidates.py executado depois dos
+terminais gerou acceptance-learning-candidates.json. Core47/Community92/
+frontend154 passaram, sem falhas, erros ou skips. Build/verify SPA, lint,
+Ruff e diff-check passaram. Nenhum processo de validacao permanece pendente.
+Pronto para commit/push pareado. Este registro substitui o estado WIP abaixo;
+nao promove aceite global, calibracao de modelo ou deadline integral D18.
+Proximo trabalho permanece no plano: qualificar KG-35/KG-36 contra as provas,
+fechar lacunas de linhagem scoped e os criterios pendentes do inventario;
+depois K3/K4, campanhas integradas e release pareado. Sem alvos adicionais.
+
+Candidates r1 terminais: Core52456=0:47pass/8.73s; Community93257=0:92pass/138.19s,
+inclui Grafx nativo (filtro/deadline/snapshot), contexto REST/MCP e consulta sobre
+Learning realmente materializada + fonte SQL, alem de distribuicao SPA.
+F1697093=1 somente README, findings=[]/oitoZERO. Produto permaneceu congelado
+durante campanhas. Apos terminais, matrizes README regeneradas oficialmente e
+builds finais iniciados; faltam install/prova/F16 final,recorder e commit/push.
+Fixture integrada controla embedding e mocka gates/health independentes; nao
+confundir recuperacao correta com calibracao de modelo nem aceite final global.
+
+Candidates WIP integrado: contexto REST/MCP opcional, parser fechado e seletor
+compartilhado nos editores independente/relatorio; reuso copia literal escolhido
+e preserva conteudo, substituicao exige source_bug/razao. Nenhuma busca automatica
+ou escolha por score. Refresh invalida alvo; perda de permissao impede envio.
+Build SPA51563/verify0,79 arquivos tree21a5292ebf00191d161b994830d6e3ce16b5c04bbdc662abcf0b546f06ec2c6f;
+frontend23167=0:154pass/62.59s; lint40511=0,331 avisos sem aumento. Catalogo e
+manifests regenerados oficialmente. Builds r1/install93701/prova0 confirmaram
+841/904 Core+363/448 Community byte-identical ANTES das suites Python. Core,
+Community e F16 r1 iniciados; aguardar terminais. Nenhum aceite global promovido.
+
+Retomada candidates (2026-09-29): par publicado confirmado limpo Core f328e3d5 /
+Community cb067556. Turno anterior foi progresso (commits/pushes e provas).
+SDK local Okto Grafx inspecionado: Database.search_vectors aceita deadline e
+RecordIdFilter antes do ranking, devolve regime/achieved_k; espaco Pulse usa
+cosine384. WIP acrescenta modo vector a porta ranked existente, com scan bounded,
+mesmo snapshot, validacao de metrica e sem depender/criar indice lexical.
+Leitor Core consulta janela20, piso0.60, oferece ate3 candidatos apos comparar
+literal projetado com head cognitivo verificado; historico limitado200 registros
+na pagina. Score somente sugere banda; nao escolhe intent nem certifica
+aplicabilidade. Contexto existente recebe candidate_query opcional com permissao
+adicional kg.query.learning_from_bugs, sem nova tool. REST/MCP em integracao.
+Ainda SEM build/prova/testes deste WIP; frontend e testes de candidato pendentes.
+Limite nativo15s e filtro10000 desta consulta nao concluem a configuracao Board
+D18 nem o aceite global de deadline. Sem mudanca de dados/schema/gates.
+
 Public-intents validado: install final77823/prova13105=0; F1684627 terminou0,
 sem findings/docdrift e oito budgets ZERO. Recorder exclusivo
 record_public_intents.py executado apos terminais, gerou acceptance-public-intents.json

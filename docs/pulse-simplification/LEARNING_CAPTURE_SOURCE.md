@@ -264,7 +264,35 @@ remain server-owned. A stale target returns its observed identity, revision and
 fingerprint through a typed conflict after authorization, without rebasing or
 inventing an association. Compound failures roll back the report, capture,
 binding and outbox together. Public client types preserve the selected intent;
-interactive candidate selection and ranking remain pending.
+interactive candidate selection uses the optional context lookup below.
+
+## Optional candidate lookup and explicit selection
+
+The existing context read accepts `candidate_query` (1–4096 characters) after
+the additional Learning-read permission. An omitted query preserves the old
+source-only read and performs no graph search. The query uses the existing
+ranked graph port's vector mode, with native cosine scores, a 20-hit window,
+canonical/non-superseded visibility, a 10,000-row filter bound and a 15-second
+native graph deadline. It does not use BM25 or fusion scores as cosine values.
+
+The Community adapter qualifies the vector space and applies visibility before
+native search in one snapshot, without creating a lexical index. The Core
+compares offered graph content/context/source reference with the exact durable
+Learning head. Source history has a shared 200-record budget. Missing,
+ineligible, oversized or stale sources are omitted with explicit limitations.
+At most three candidates at or above 0.60 are offered. Unavailable search is
+distinct from an empty successful window; all responses are non-exhaustive and
+leave current applicability unassessed. These bounds do not claim completion
+of the separate Board query-configuration or global deadline acceptance.
+
+Both existing editors expose the optional lookup. A score never selects reuse
+or replacement. Choosing reuse copies and preserves the selected literal;
+replacement retains the new authored text and explicitly covers this Bug only.
+Both require an authored reason and the observed fingerprint. Refreshing source
+evidence invalidates a prior target choice. Candidate-read permission loss blocks
+the selected intent and allows an explicit switch to create. No search is required
+for new authorship, and unavailable suggestions do not invent a waiver or block
+an otherwise valid create request.
 
 ## Scoped historical linkage on capture pages
 
@@ -286,8 +314,8 @@ closed. Reading does not materialize, reconcile, change policy or clear debt.
 
 The Bug panel renders the declared target and reason as inert text and labels
 historical linkage separately from current applicability. This presentation is
-not a global supersedence chain. The complete scoped graph-query surface and
-interactive intent selection remain separate pending work.
+not a global supersedence chain. The complete scoped graph-query surface remains
+separate pending work.
 
 ## Joint execution-report authorship (KG §7.3)
 
