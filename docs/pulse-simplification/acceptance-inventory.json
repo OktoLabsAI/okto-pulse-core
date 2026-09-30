@@ -186,8 +186,12 @@
       "line": 596,
       "id": "T17",
       "normative_text": "| T17 | Refinamento com várias Specs | Derivações preservadas, sem Sprint ou substituto obrigatório. |",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "verified_by_reviewed_execution",
+      "test_text_references": [],
+      "reviewed_execution": {
+        "artifact": "acceptance-multiple-spec-derivation.json",
+        "criterion_key": "BASE:T17"
+      }
     },
     {
       "key": "BASE:T18",

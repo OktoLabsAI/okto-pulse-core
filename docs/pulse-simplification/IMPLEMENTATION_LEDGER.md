@@ -2,6 +2,27 @@
 
 ## Estado para retomada
 
+BASE T17 verificado: multiple-spec-derivation1 Community41464=0,
+1passed12.25s; Core93526=0,2passed6.88s. Teste Community existente foi reforçado:
+três chamadas independentes derivam três Specs Draft distintas do mesmo
+refinamento Done, com Board/ideação/snapshot imutável preservados. As três
+continuam presentes após última derivação; seleção Knowledge/ledger de cada
+uma permanece delimitado. Não exige Sprint ou entidade substituta.
+Adapters Community reais e banco descartável; contexto autenticado e snapshot
+de fonte concluída preparados. Chamadas diretas aos handlers, não HTTP E2E;
+não certifica gates que produziram o snapshot. Core suplementa linhagem via
+ideação/refinamento em adapter SQL de testes. Só casos nomeados executados.
+Preflight425260=0: provenance-multiple-spec-derivation1.json, par idêntico
+859/922+373/458. Recorder record_multiple_spec_derivation_review.py executado
+uma vez após todos os terminais; acceptance-multiple-spec-derivation.json.
+Inventário95 verificados/39 parciais/112 não auditados. Só teste/docs, nenhum
+produto/frontend/gate mudou; nenhuma nova execução F16 alegada.
+T20 publicado no par Coredb62be31/Communitycc914dbb. Próxima frente independente:
+auditar critérios BASE T25–T31 da migração já implementada, começando pela
+instalação limpa e preservação/idempotência. Revisar fixtures antes de contar
+testes como aceite; não migrar dados reais. Decisões KG-10/T23 pendentes.
+Entrega completa ainda não atingida; continuar o inventário do mesmo plano.
+
 BASE T20 concluído nas superfícies existentes: test-card-surfaces4
 session8133=0,16passed27.22s. REST ASGI e handler MCP real, contextos autenticados
 injetados, grants/use cases/UoW/adapters reais. Matriz de envelope Knowledge
