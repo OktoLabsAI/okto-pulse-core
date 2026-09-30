@@ -936,6 +936,17 @@ async def drain_cognitive_closeout_pending(
         if item.status == CognitiveItemStatus.CONSOLIDATED.value:
             presence = await persister.inspect_authored_learning(board_id, capture_work)
             if presence == 'present':
+                from okto_pulse.core.application.learning_materialization_worker import inspect_capture_work_basis
+                inspection = await inspect_capture_work_basis(relational_scope_factory,
+                    board_id=board_id, work=capture_work, fingerprint=item.content_hash)
+                if inspection is not None:
+                    new_status, outcome_type = _LEDGER_STATUS[inspection.outcome]
+                    changed = store.update_item(board_id=board_id, kg_generation_id=gen, item_id=item.item_id,
+                        new_status=new_status, updated_by_agent_id=agent_id, outcome_type=outcome_type,
+                        reason=inspection.reason, expected_item=item)
+                    if changed is not None:
+                        results.append(CloseoutResult(item.source_ref, item.artifact_type, inspection.outcome,
+                            detail=inspection.reason))
                 continue
             if presence == 'unavailable':
                 changed = store.update_item(board_id=board_id, kg_generation_id=gen, item_id=item.item_id,

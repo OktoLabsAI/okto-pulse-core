@@ -1,0 +1,136 @@
+{
+  "scope": "KG4.4/KG7.5 source-drift inspection before accepting a present authored Learning projection",
+  "suites": {
+    "core": {
+      "passed": 60,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "community": {
+      "passed": 23,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0
+    }
+  },
+  "budgets": [
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "import_boundary_baseline",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every import_boundary_baseline allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "singleton_baseline",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every singleton_baseline allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "dependency_temporary_exceptions",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every dependency_temporary_exceptions allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "graph_runtime_compatibility",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every graph_runtime_compatibility allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "rebuild_artifact_compatibility",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every rebuild_artifact_compatibility allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "community_private_reach_ins",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every community_private_reach_ins allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "community_adapter_bridges",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every community_adapter_bridges allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "af35_relational_residue",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every af35_relational_residue allowance before F16 completion."
+    }
+  ],
+  "reproduction": {
+    "failed": 1,
+    "cause": "The worker processed zero items after a semantic source change because an old canonical edge was still present."
+  },
+  "verified": [
+    "A present projection receipt is checked against the selected historical capture, current source/binding and signed evidence using the existing fenced revalidator.",
+    "Changed applicability basis becomes an explicit failure; reopened Bug waits for Done rather than retaining an unquestioned consolidated receipt.",
+    "The conditional work-ledger update preserves a concurrent substantive restriction.",
+    "Inspection writes no cognitive source revision and does not materialize graph data; authored history is preserved.",
+    "Existing projection-loss recovery, scope replacement and source-outage regressions pass.",
+    "A separate reproduction proves narrative/session content_hash is unchanged by action_plan, expected_behavior and conclusion changes; it cannot qualify historical semantic currentness."
+  ],
+  "limits": [
+    "Current graph-association invalidation still requires an owned, fenced and compensable mutation; this work-ledger inspection does not complete it.",
+    "Source inspection is a point-in-time observation; graph invalidation and reactivation must revalidate inside the eventual mutation fence.",
+    "Legacy source/version qualification, historical upgrade, full rebuild and release qualification remain pending.",
+    "Fixture mocks unrelated completion gates and health; no full lifecycle acceptance is inferred.",
+    "No frontend/public transport change or real-data mutation. Global inventory remains 78 verified / 33 partial / 135 unaudited."
+  ],
+  "sha256": {
+    "PULSE_REFACTOR/.validation-v040/closure-learning-source-drift-final.json": "107e79e396abca8002f4ec7c1fee64319d43ef844e118f31077688a32f875f41",
+    "PULSE_REFACTOR/.validation-v040/learning-source-drift-repro.xml": "b37e902d1564ce7a98049ac14a5b2fb130e283cc6ea6b784e21c459ee1bbdcc8",
+    "PULSE_REFACTOR/.validation-v040/learning-source-drift-repro.log": "7972d94da232928ef362ad619ae0a6556a8fdf5040a2a1668831cf495cc956f0",
+    "PULSE_REFACTOR/.validation-v040/learning-source-drift-r1-core.xml": "707cfe49540b8a6dd97568504da75bc9a384b06628ac0713295afe46943be8a5",
+    "PULSE_REFACTOR/.validation-v040/learning-source-drift-r1-test-core.log": "19496f9060413208c7a8ac14a5a849a28892ffb28483e310edd76206137d55a9",
+    "PULSE_REFACTOR/.validation-v040/learning-source-drift-r1-community.xml": "255ed11feb664f89c6e38f6fc9f3ce65a47c3459199671e5dd0f46e53d8c9b0b",
+    "PULSE_REFACTOR/.validation-v040/learning-source-drift-r1-test-community.log": "93e723860c510de94d7de9e3ae5fc809dbba384e2e040a44aae63d92a4de0aab",
+    "PULSE_REFACTOR/.validation-v040/provenance-learning-source-drift-repro.json": "1f1bfdd1a966e650af85aef59107acdbf62ecde5bded74e4d716f65ce02ebdb7",
+    "PULSE_REFACTOR/.validation-v040/provenance-learning-source-drift-r1.json": "5cf2841a5469d22c3e7eec865155545e3b9c40a6bb787c6ef40208b1b075f55f",
+    "PULSE_REFACTOR/.validation-v040/provenance-learning-source-drift-final.json": "ee5f3cfbe2b77ac91348de422eddd29c961be39d057102cd5b03ab0dcde12cbf",
+    "PULSE_REFACTOR/.validation-v040/closure-learning-source-drift-r1.json": "99dd150d2dcfc887e2a0c18d2355f3c9590e27f5b7eae959623488557dd2aaa7",
+    "PULSE_REFACTOR/.validation-v040/run_learning_source_drift.py": "0a0a95edf70f7f1f191f95ba0d94882d117c65e3e2a502039b48fc22f53e1169",
+    "PULSE_REFACTOR/.validation-v040/run_learning_source_drift_probe.py": "0fdd07b2ef0b75085cd8530e2995fce2bab609e262857012b1d143365ffbedfe",
+    "PULSE_REFACTOR/.validation-v040/probe_legacy_learning_version_basis.py": "aebb8abf58da61a68ac93caa58ee359edb356100827c530f92114af1c427a1b5",
+    "PULSE_REFACTOR/.validation-v040/probe-legacy-learning-version-basis.json": "40c08abe8a0a11f0951b3b65a53aa8f9de3bb3454711f1133dfd1f614cde5f07",
+    "okto_labs_pulse_core/src/okto_pulse/core/application/learning_materialization_worker.py": "e026366d72164a1883908819f9f38534d5c98cf31eed57cc0e01904853b4de67",
+    "okto_labs_pulse_core/src/okto_pulse/core/kg/cognitive_closeout_production.py": "36a4dbf675084c4d18882fdb6077c2150f193833a82650a69b30a02889f2524b",
+    "okto_labs_pulse_core/src/okto_pulse/core/application/learning_capture.py": "661402701e965dc8206ef194b0352bb0f0de9b1f324794946316cabddf6adbe2",
+    "okto_labs_pulse_core/src/okto_pulse/core/domain/learning_closeout.py": "aa27fa2d2ef41f6139ae3dd3710d114159da83333f4509bf63cba46427f8869b",
+    "okto_labs_pulse_community/tests/test_learning_materialization_source_drift.py": "079fcfe68807aeb8b61d46038c225429cef6aa0dc4144b61e6424a07c07dcbd3",
+    "okto_labs_pulse_community/tests/test_learning_materialization_recovery.py": "017a2d13ef489bbef4bff87838e10f723fdc4886092850499b351551da4c7757",
+    "okto_labs_pulse_community/tests/test_learning_materialization_worker.py": "7f42bdeef54b401bf22931397a107f322e64423ea53ac1fbdaf795ee0391f7ca",
+    "okto_labs_pulse_community/tests/test_learning_scoped_materialization.py": "0baa96c365fc9a81ee416761d37f7a6f5baf48067c8af58db328c1829d22260b",
+    "okto_labs_pulse_community/tests/test_learning_materialization_source_outage.py": "452f33f653118681a7f44c84333c6ac84381b05b8aada92aa0e8023753ffff4b"
+  }
+}

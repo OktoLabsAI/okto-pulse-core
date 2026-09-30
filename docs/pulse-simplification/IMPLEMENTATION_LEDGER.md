@@ -2,6 +2,43 @@
 
 ## Estado para retomada
 
+Source-drift validado (2026-09-30): Core77821=0:60pass/6.53s;
+Community4400=0:23pass/425.20s, incluindo3 casos novos. Prova r1 antecedeu
+as campanhas. F16 r1 falhou somente por matrizes README; apos todos terminais,
+matrizes regeneradas oficialmente e builds finais ambos0/install47978=0.
+Prova final terminal0 confirmou841 Python/904 payload Core e363/448 Community
+byte-identical. F16 final77549=0: findings/documentation_findings vazios,
+oito budgets ZERO. record_learning_source_drift.py executado apos terminais
+gerou acceptance-learning-source-drift.json. Nenhum teste/build fica pendente.
+Pronto para commit/push deste incremento; inventario78/33/135 preservado.
+Proxima etapa existente KG4.4/7.5: invalidar somente a associacao de origem
+comprovadamente obsoleta, sob fence, com before-images/compensacao e sem apagar
+outras origens ou autoria. Inspecao atual e pontual: nao usar seu resultado fora
+do fence como autoridade para mutacao futura. Reativacao e qualificacao historica
+tambem pendentes; hash narrativo legado nao prova base semantica. Plano integral
+continua ativo, sem pausa entre milestones conforme ultima autorizacao.
+
+Source-drift WIP (2026-09-30), par publicado a05c9452/2136402c confirmado limpo.
+Turno anterior foi progresso: KG-35/36, R7 preservacao, testes e pushes.
+Investigacao KG7.5: source_session_id/audit.content_hash legado nao prova versao
+semantica. probe_legacy_learning_version_basis.py terminou0 e registrou que
+action_plan/expected_behavior/conclusions distintos produzem MESMO raw_content
+e hash de sessao. Preservar esse contrato narrativo, nao usa-lo para liberar
+holds antigos. Ainda sem prova suficiente para retarget historico generico.
+Prova provenance-learning-source-drift-repro confirmou841/904+363/448 antes
+da reproducao SQL/Grafx37564:1fail/27.60s. Apos mudar action_plan, source_digest
+muda mas o worker processa0 porque encontra a aresta antiga; nao observa drift.
+Correcao em curso KG4.4/7.5: quando a projecao existe, revalidar captura exata,
+fonte/binding e evidencia assinada pelo revalidator existente, sem materializar;
+registrar resultado com CAS preservando restricoes concorrentes. Classificacao
+de erro compartilhada com materializacao; reabertura fica awaiting_done.
+Testes incluem alteracao de fonte, reabertura e corrida com hold humano; regressao
+inclui recuperacao, escopo e falhas de fonte. Ruff0; builds r1 ambos0/install
+iniciado. Ainda faltam prova, suites, F16, registro e commit/push.
+Este incremento identifica atualidade no work ledger. Invalidacao da aresta
+atual com propriedade/fences e reconciliacao historica continuam necessarias;
+nao declarar captura, KG-37/38 ou upgrade integrais com esse teste focado.
+
 R7 preservacao concluida neste incremento: install73572/prova64293 terminais0,
 841/904 Core+363/448 Community byte-identical. F16 final29361 terminou0, sem
 findings/docdrift e oito budgets ZERO. record_r7_hold.py executado apos terminais
