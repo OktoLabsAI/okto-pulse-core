@@ -1277,8 +1277,12 @@
       "line": 654,
       "id": "KG-43",
       "normative_text": "| KG-43 | Uma linha contém agregação enorme | Limite de arrays/payload aplicado; truncamento/continuação explícitos. |",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "verified_by_reviewed_execution",
+      "test_text_references": [],
+      "reviewed_execution": {
+        "artifact": "acceptance-query-consolidated-review.json",
+        "criterion_key": "KG:KG-43"
+      }
     },
     {
       "key": "KG:KG-44",
@@ -1286,8 +1290,12 @@
       "line": 655,
       "id": "KG-44",
       "normative_text": "| KG-44 | Consulta nativa ultrapassa prazo | Deadline/cancelamento ou isolamento comprovado; sem trabalho órfão acumulando recursos após timeout. |",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "verified_by_reviewed_execution",
+      "test_text_references": [],
+      "reviewed_execution": {
+        "artifact": "acceptance-query-consolidated-review.json",
+        "criterion_key": "KG:KG-44"
+      }
     },
     {
       "key": "KG:KG-45",
@@ -1295,8 +1303,12 @@
       "line": 656,
       "id": "KG-45",
       "normative_text": "| KG-45 | Mais que antigo limite de consultas, runtime saudável | Sem quota por contagem; backpressure concorrente e timeouts continuam operando. |",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "verified_by_reviewed_execution",
+      "test_text_references": [],
+      "reviewed_execution": {
+        "artifact": "acceptance-query-consolidated-review.json",
+        "criterion_key": "KG:KG-45"
+      }
     },
     {
       "key": "KG:KG-46",

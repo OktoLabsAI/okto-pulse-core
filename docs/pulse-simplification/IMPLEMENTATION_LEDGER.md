@@ -2,6 +2,62 @@
 
 ## Estado para retomada
 
+Consolidação de aceite KG-43/44/45 concluída sem mudança de produto: prova
+`provenance-query-acceptance-review1.json` terminal 08df21=0, Python859/373 e
+payload922/458 byte-identical entre fontes, site e wheels do par owner-final.
+Campanha query-acceptance-review1: Core50445=0 (25passed33.41s),
+Community23204=0 (70passed27.79s). Recorder record_query_acceptance_review.py
+executado uma vez após ambos terminais: acceptance-query-consolidated-review.json.
+Inventário agora84 verificados/38 parciais/124 não auditados. Aceite inclui
+recusa explícita de agregados/payload excessivos, deadline nativo com liberação
+de recursos e retirada de quota por contagem preservando admissão concorrente.
+Limite: relógio controlado no teste nativo não constitui benchmark de desempenho.
+Nenhuma superfície frontend mudou; nenhum gate ou budget arquitetural alterado.
+
+KG-10 continua PENDENTE de decisão enviada ao usuário. A reprodução original
+falhou duas vezes; teste final foi nomeado explicitamente como caracterização
+(`test_spec_without_links_characterizes_rebuild_guard_conflict`) e verifica
+incremental sem links seguido da recusa exata no rebuild. Não é paridade verde,
+não promove KG-10/24/25 e deve ser convertido em teste de paridade após resolução
+autorizada. Campanha characterized3 session44621 terminou0. RuffF/E9 e diff-check
+verdes. Sem processos desta rodada pendentes. Produto e F16 permanecem no par
+publicado anterior, com oito budgets ZERO; não foi alegada nova execução F16.
+Próxima ação dependente: decisão KG-10 abaixo; auditoria dos critérios restantes
+do pacote pode prosseguir sem alterar essa semântica. Entrega integral aberta.
+
+### Decisão KG-10 pendente — Decision de Spec sem vínculo semântico
+
+Par publicado de entrada: Core 8c16d325 / Community 6cab1ee9.
+Reprodução nativa em `test_spec_without_semantic_links_matches_clean_rebuild`:
+incremental remove todos os vínculos explícitos e confirma; rebuild da mesma
+fonte falha antes da mutação. Campanhas imutáveis `k2-spec-empty-characterization1`
+(1 failed, 61.57s) e `k2-spec-empty-characterization2` (session 57519, exit 1,
+1 failed, 71.54s). Produto inalterado desde prova `provenance-k2-spec-owner-final.json`.
+Segunda reprodução captura o diagnóstico: Decision `spec:spec:decision:dec_one`,
+writer `deterministic_worker`, `missing_required_edge` no grupo de julgamento.
+`belongs_to` de proveniência existe; não há vínculo semântico declarado.
+O guard em `kg/connectivity_guard.py::_decision_judgement_group` exige julgamento
+além da proveniência para toda Decision. `kg/primitives.py` também considera
+arestas preexistentes na validação incremental, antes da reconciliação do active set.
+
+Conflito delimitado: complemento KG §4.1 G-origins/KG-10 exige preservar Decision
+sem inventar coocorrência; KG-25 exige conteúdo e guard válidos. Não excluir o nó,
+fabricar `mentions` para satisfazer guard, nem usar aresta antiga como prova atual.
+RDL possui caminho separado com `mentions/relational_rdl_owner`; não transferir
+essa semântica silenciosamente à Spec nem reclassificar sua história cognitiva.
+
+Proposta: somente na projeção interna autenticada de filhos Decision de uma Spec,
+validada por identidade de fonte fechada e dono, admitir proveniência `belongs_to`
+para a Spec real sem exigir julgamento não declarado. Manter julgamento para
+Decisions cognitivas genéricas, negar grants externos/forjados e preservar histórico,
+ACLs, maturidade e active sets. Não criar tipos/arestas, permissões ou gates de produto.
+Por alterar o efeito do guard existente, aguardar decisão conforme entrada
+“Quando investigar e quando perguntar” e plano §10.2/10.4 antes de implementar.
+Testes previstos: fonte sem links, legado, FR/TR explícitos, identidade/owner
+inválido, chamada cognitiva sem grant e paridade incremental/rebuild nativa.
+Somente teste de reprodução alterado nesta frente; nenhuma alteração de produto.
+Auditoria consolidada dos critérios do plano pode continuar independentemente.
+
 Identidade de filhos normativos da Spec fechada neste incremento: Corefinal
 84153=0,40passed141.74s; compensation83381=0,31passed10.73s; Community10165=0,
 2passed93.44s. Prova final8caa9d=0(859/922+373/458); F1641837=0/oitoZERO e

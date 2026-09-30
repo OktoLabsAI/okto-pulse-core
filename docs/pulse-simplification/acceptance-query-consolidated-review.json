@@ -1,0 +1,773 @@
+{
+  "format": "pulse-v1.3-reviewed-execution/v1",
+  "scope": "Consolidated KG-43/44/45 acceptance, existing implementation only",
+  "runs": {
+    "core": {
+      "file": "learning-reconciliation-query-acceptance-review1-core.xml",
+      "sha256": "7df91e145aab36fe77a73d9d22fdf55035be8adde6c833583127cf94d2e6a749",
+      "suites": [
+        {
+          "name": "pytest",
+          "errors": "0",
+          "failures": "0",
+          "skipped": "0",
+          "tests": "25",
+          "time": "33.392",
+          "timestamp": "2026-09-30T17:55:24.683235-03:00",
+          "hostname": "Alienware_m15"
+        }
+      ]
+    },
+    "community": {
+      "file": "learning-reconciliation-query-acceptance-review1-community.xml",
+      "sha256": "3160240d7ed1fa087c2476befc071121a9f10adc96c5e9a1fd566ac5a9814d8a",
+      "suites": [
+        {
+          "name": "pytest",
+          "errors": "0",
+          "failures": "0",
+          "skipped": "0",
+          "tests": "70",
+          "time": "27.784",
+          "timestamp": "2026-09-30T17:55:22.858895-03:00",
+          "hostname": "Alienware_m15"
+        }
+      ]
+    }
+  },
+  "criteria": {
+    "KG:KG-43": {
+      "status": "verified_by_reviewed_execution",
+      "covered": "Native collect over 10001 persisted nodes refuses a value above 1024 independently of max_rows=1. Aggregate envelope has a 4 MiB serialized bound, including metadata/escaping. MCP exposes a typed resource refusal and REST maps it to 413; smaller complete counts are preserved. No fabricated truncated success.",
+      "remaining": null,
+      "evidence": [
+        {
+          "repository": "community",
+          "file": "tests/test_kg_query_aggregate_bounds.py",
+          "source_sha256": "678632ac9275144a0cb907cfc1fcd06a26e0ce53b877b0dfcf8b3b69a196cdd6",
+          "executions": [
+            {
+              "classname": "tests.test_kg_query_aggregate_bounds",
+              "name": "test_native_collect_is_bounded_independently_of_result_rows",
+              "time": "12.358"
+            },
+            {
+              "classname": "tests.test_kg_query_aggregate_bounds",
+              "name": "test_typed_native_budget_is_explicit_and_not_retryable[max_result_rows-result_rows]",
+              "time": "2.709"
+            },
+            {
+              "classname": "tests.test_kg_query_aggregate_bounds",
+              "name": "test_typed_native_budget_is_explicit_and_not_retryable[max_intermediate_rows-intermediate_rows]",
+              "time": "0.019"
+            },
+            {
+              "classname": "tests.test_kg_query_aggregate_bounds",
+              "name": "test_typed_native_budget_is_explicit_and_not_retryable[max_traversal_expansions-traversal_expansions]",
+              "time": "0.019"
+            },
+            {
+              "classname": "tests.test_kg_query_aggregate_bounds",
+              "name": "test_typed_native_budget_is_explicit_and_not_retryable[max_traversal_paths-traversal_paths]",
+              "time": "0.019"
+            },
+            {
+              "classname": "tests.test_kg_query_aggregate_bounds",
+              "name": "test_typed_native_budget_is_explicit_and_not_retryable[query_memory_budget_bytes-query_memory_bytes]",
+              "time": "0.019"
+            },
+            {
+              "classname": "tests.test_kg_query_aggregate_bounds",
+              "name": "test_non_budget_plan_errors_keep_original_classification[details0]",
+              "time": "0.020"
+            },
+            {
+              "classname": "tests.test_kg_query_aggregate_bounds",
+              "name": "test_non_budget_plan_errors_keep_original_classification[details1]",
+              "time": "0.021"
+            },
+            {
+              "classname": "tests.test_kg_query_aggregate_bounds",
+              "name": "test_non_budget_plan_errors_keep_original_classification[details2]",
+              "time": "0.018"
+            }
+          ]
+        },
+        {
+          "repository": "core",
+          "file": "tests/test_kg_query_response_budget.py",
+          "source_sha256": "d0ad27f00ba89e4d34c37385abaf4128f5b94558f9e395c0b20c67c66403b4c4",
+          "executions": [
+            {
+              "classname": "tests.test_kg_query_response_budget",
+              "name": "test_many_individually_bounded_cells_cannot_exceed_response_budget",
+              "time": "0.045"
+            },
+            {
+              "classname": "tests.test_kg_query_response_budget",
+              "name": "test_small_aggregate_and_server_counts_are_not_rewritten",
+              "time": "0.017"
+            },
+            {
+              "classname": "tests.test_kg_query_response_budget",
+              "name": "test_payload_limit_counts_metadata_and_json_escaping",
+              "time": "0.025"
+            },
+            {
+              "classname": "tests.test_kg_query_response_budget",
+              "name": "test_compound_query_envelope_uses_the_same_budget",
+              "time": "0.031"
+            }
+          ]
+        },
+        {
+          "repository": "core",
+          "file": "tests/test_kg_compound_query_deadline.py",
+          "source_sha256": "b0b69d01eec653cd1656fde8adf079690bc9fbede8ec53732dd8910d0f8a41cf",
+          "executions": [
+            {
+              "classname": "tests.test_kg_compound_query_deadline",
+              "name": "test_compound_query_reads_current_board_policy[None-800-natural]",
+              "time": "0.028"
+            },
+            {
+              "classname": "tests.test_kg_compound_query_deadline",
+              "name": "test_compound_query_reads_current_board_policy[None-800-reflective]",
+              "time": "0.020"
+            },
+            {
+              "classname": "tests.test_kg_compound_query_deadline",
+              "name": "test_compound_query_reads_current_board_policy[30000-800-natural]",
+              "time": "0.020"
+            },
+            {
+              "classname": "tests.test_kg_compound_query_deadline",
+              "name": "test_compound_query_reads_current_board_policy[30000-800-reflective]",
+              "time": "0.021"
+            },
+            {
+              "classname": "tests.test_kg_compound_query_deadline",
+              "name": "test_compound_query_reads_current_board_policy[100-100-natural]",
+              "time": "0.023"
+            },
+            {
+              "classname": "tests.test_kg_compound_query_deadline",
+              "name": "test_compound_query_reads_current_board_policy[100-100-reflective]",
+              "time": "0.021"
+            },
+            {
+              "classname": "tests.test_kg_compound_query_deadline",
+              "name": "test_compound_worker_is_drained_on_cancellation",
+              "time": "0.016"
+            },
+            {
+              "classname": "tests.test_kg_compound_query_deadline",
+              "name": "test_natural_confidence_never_converts_native_timeout_into_fallback",
+              "time": "0.014"
+            },
+            {
+              "classname": "tests.test_kg_compound_query_deadline",
+              "name": "test_mcp_exposes_query_resource_limit[cypher]",
+              "time": "0.020"
+            },
+            {
+              "classname": "tests.test_kg_compound_query_deadline",
+              "name": "test_mcp_exposes_query_resource_limit[natural]",
+              "time": "0.021"
+            },
+            {
+              "classname": "tests.test_kg_compound_query_deadline",
+              "name": "test_mcp_exposes_query_resource_limit[reflective]",
+              "time": "0.020"
+            }
+          ]
+        }
+      ]
+    },
+    "KG:KG-44": {
+      "status": "verified_by_reviewed_execution",
+      "covered": "Scalar/pair/batch and compound native reads terminate on deadline, release transactions and permit subsequent write/checkpoint/read. Compound cancellation drains the worker; nested scopes cannot widen the deadline or switch Board. No late success or timeout-to-confidence fallback.",
+      "remaining": null,
+      "evidence": [
+        {
+          "repository": "core",
+          "file": "tests/test_kg_native_query_deadline.py",
+          "source_sha256": "f630159e7ed8db385bb2e069070173515ded81e427fdda8e27a4bbaa8a4e81b1",
+          "executions": [
+            {
+              "classname": "tests.test_kg_native_query_deadline",
+              "name": "test_core_passes_deadline_to_scalar_and_paired_read[None-15000-False]",
+              "time": "0.024"
+            },
+            {
+              "classname": "tests.test_kg_native_query_deadline",
+              "name": "test_core_passes_deadline_to_scalar_and_paired_read[None-15000-True]",
+              "time": "0.013"
+            },
+            {
+              "classname": "tests.test_kg_native_query_deadline",
+              "name": "test_core_passes_deadline_to_scalar_and_paired_read[1500-1500-False]",
+              "time": "0.014"
+            },
+            {
+              "classname": "tests.test_kg_native_query_deadline",
+              "name": "test_core_passes_deadline_to_scalar_and_paired_read[1500-1500-True]",
+              "time": "0.016"
+            },
+            {
+              "classname": "tests.test_kg_native_query_deadline",
+              "name": "test_core_passes_deadline_to_scalar_and_paired_read[99999-30000-False]",
+              "time": "0.020"
+            },
+            {
+              "classname": "tests.test_kg_native_query_deadline",
+              "name": "test_core_passes_deadline_to_scalar_and_paired_read[99999-30000-True]",
+              "time": "0.020"
+            }
+          ]
+        },
+        {
+          "repository": "core",
+          "file": "tests/test_kg_compound_query_deadline.py",
+          "source_sha256": "b0b69d01eec653cd1656fde8adf079690bc9fbede8ec53732dd8910d0f8a41cf",
+          "executions": [
+            {
+              "classname": "tests.test_kg_compound_query_deadline",
+              "name": "test_compound_query_reads_current_board_policy[None-800-natural]",
+              "time": "0.028"
+            },
+            {
+              "classname": "tests.test_kg_compound_query_deadline",
+              "name": "test_compound_query_reads_current_board_policy[None-800-reflective]",
+              "time": "0.020"
+            },
+            {
+              "classname": "tests.test_kg_compound_query_deadline",
+              "name": "test_compound_query_reads_current_board_policy[30000-800-natural]",
+              "time": "0.020"
+            },
+            {
+              "classname": "tests.test_kg_compound_query_deadline",
+              "name": "test_compound_query_reads_current_board_policy[30000-800-reflective]",
+              "time": "0.021"
+            },
+            {
+              "classname": "tests.test_kg_compound_query_deadline",
+              "name": "test_compound_query_reads_current_board_policy[100-100-natural]",
+              "time": "0.023"
+            },
+            {
+              "classname": "tests.test_kg_compound_query_deadline",
+              "name": "test_compound_query_reads_current_board_policy[100-100-reflective]",
+              "time": "0.021"
+            },
+            {
+              "classname": "tests.test_kg_compound_query_deadline",
+              "name": "test_compound_worker_is_drained_on_cancellation",
+              "time": "0.016"
+            },
+            {
+              "classname": "tests.test_kg_compound_query_deadline",
+              "name": "test_natural_confidence_never_converts_native_timeout_into_fallback",
+              "time": "0.014"
+            },
+            {
+              "classname": "tests.test_kg_compound_query_deadline",
+              "name": "test_mcp_exposes_query_resource_limit[cypher]",
+              "time": "0.020"
+            },
+            {
+              "classname": "tests.test_kg_compound_query_deadline",
+              "name": "test_mcp_exposes_query_resource_limit[natural]",
+              "time": "0.021"
+            },
+            {
+              "classname": "tests.test_kg_compound_query_deadline",
+              "name": "test_mcp_exposes_query_resource_limit[reflective]",
+              "time": "0.020"
+            }
+          ]
+        },
+        {
+          "repository": "community",
+          "file": "tests/test_grafx_query_deadline.py",
+          "source_sha256": "05ced1f3b427ff299ca338ece633d7b56740ef5b3393b2a9eebe5b8404481b08",
+          "executions": [
+            {
+              "classname": "tests.test_grafx_query_deadline",
+              "name": "test_native_deadline_finishes_and_releases_read_resources[scalar]",
+              "time": "0.416"
+            },
+            {
+              "classname": "tests.test_grafx_query_deadline",
+              "name": "test_native_deadline_finishes_and_releases_read_resources[pair]",
+              "time": "0.415"
+            },
+            {
+              "classname": "tests.test_grafx_query_deadline",
+              "name": "test_native_deadline_finishes_and_releases_read_resources[batch]",
+              "time": "0.403"
+            },
+            {
+              "classname": "tests.test_grafx_query_deadline",
+              "name": "test_statements_share_one_deadline_and_snapshot[pair]",
+              "time": "0.027"
+            },
+            {
+              "classname": "tests.test_grafx_query_deadline",
+              "name": "test_statements_share_one_deadline_and_snapshot[batch]",
+              "time": "0.024"
+            },
+            {
+              "classname": "tests.test_grafx_query_deadline",
+              "name": "test_health_deadline_cannot_be_widened_by_query_timeout",
+              "time": "0.021"
+            }
+          ]
+        },
+        {
+          "repository": "community",
+          "file": "tests/test_grafx_query_execution_scope.py",
+          "source_sha256": "76fc1ca9f7ce948c0f6e2dda1c8f425c49e6a9c0b32a9d5a003c428df3a1aa82",
+          "executions": [
+            {
+              "classname": "tests.test_grafx_query_execution_scope",
+              "name": "test_nested_scope_cannot_extend_or_change_board_and_restores_context",
+              "time": "0.021"
+            },
+            {
+              "classname": "tests.test_grafx_query_execution_scope",
+              "name": "test_native_shared_deadline_ends_read_and_releases_writer[store]",
+              "time": "0.420"
+            },
+            {
+              "classname": "tests.test_grafx_query_execution_scope",
+              "name": "test_native_shared_deadline_ends_read_and_releases_writer[cypher]",
+              "time": "0.381"
+            },
+            {
+              "classname": "tests.test_grafx_query_execution_scope",
+              "name": "test_vector_index_and_exact_fallback_share_remaining_budget",
+              "time": "0.020"
+            },
+            {
+              "classname": "tests.test_grafx_query_execution_scope",
+              "name": "test_invalid_scope_timeout_does_not_enter[0]",
+              "time": "0.019"
+            },
+            {
+              "classname": "tests.test_grafx_query_execution_scope",
+              "name": "test_invalid_scope_timeout_does_not_enter[30001]",
+              "time": "0.021"
+            },
+            {
+              "classname": "tests.test_grafx_query_execution_scope",
+              "name": "test_invalid_scope_timeout_does_not_enter[True]",
+              "time": "0.020"
+            },
+            {
+              "classname": "tests.test_grafx_query_execution_scope",
+              "name": "test_invalid_scope_timeout_does_not_enter[0.5]",
+              "time": "0.021"
+            },
+            {
+              "classname": "tests.test_grafx_query_execution_scope",
+              "name": "test_invalid_scope_timeout_does_not_enter[None]",
+              "time": "0.023"
+            }
+          ]
+        }
+      ]
+    },
+    "KG:KG-45": {
+      "status": "verified_by_reviewed_execution",
+      "covered": "35 successive authorized calls through each query entry bypass the former 30-call quota; native Cypher also succeeds 35 times. Concurrent read lanes and MCP admission retain bounded saturation, retry, cancellation and slot release. Timeouts remain enforced.",
+      "remaining": null,
+      "evidence": [
+        {
+          "repository": "core",
+          "file": "tests/test_kg_query_count_policy.py",
+          "source_sha256": "2ab69c3fa528f9b99777563acda7ecaee2dfd0c1fecbf0298dc22353cb6d9405",
+          "executions": [
+            {
+              "classname": "tests.test_kg_query_count_policy",
+              "name": "test_more_than_old_quota_reaches_query_without_counting[cypher]",
+              "time": "2.368"
+            },
+            {
+              "classname": "tests.test_kg_query_count_policy",
+              "name": "test_more_than_old_quota_reaches_query_without_counting[natural]",
+              "time": "0.064"
+            },
+            {
+              "classname": "tests.test_kg_query_count_policy",
+              "name": "test_more_than_old_quota_reaches_query_without_counting[reflective]",
+              "time": "0.080"
+            },
+            {
+              "classname": "tests.test_kg_query_count_policy",
+              "name": "test_native_cypher_reads_remain_available_after_old_quota",
+              "time": "24.707"
+            }
+          ]
+        },
+        {
+          "repository": "community",
+          "file": "tests/test_grafx_read_lanes.py",
+          "source_sha256": "9c4cda949ab5e65c02afb45e3aebb90d6c8ce67b180801c7f2aea71d7b1c7990",
+          "executions": [
+            {
+              "classname": "tests.test_grafx_read_lanes",
+              "name": "test_prefers_idle_lane_after_peer_finishes_instead_of_round_robin_busy_lane",
+              "time": "0.022"
+            },
+            {
+              "classname": "tests.test_grafx_read_lanes",
+              "name": "test_overload_is_balanced_without_waiting_or_allocating_extra_lanes",
+              "time": "0.020"
+            },
+            {
+              "classname": "tests.test_grafx_read_lanes",
+              "name": "test_parallel_reservations_do_not_hold_bookkeeping_lock_during_io",
+              "time": "0.022"
+            },
+            {
+              "classname": "tests.test_grafx_read_lanes",
+              "name": "test_invalid_lane_count_refused[0]",
+              "time": "0.034"
+            },
+            {
+              "classname": "tests.test_grafx_read_lanes",
+              "name": "test_invalid_lane_count_refused[-1]",
+              "time": "0.030"
+            },
+            {
+              "classname": "tests.test_grafx_read_lanes",
+              "name": "test_invalid_lane_count_refused[True]",
+              "time": "0.022"
+            },
+            {
+              "classname": "tests.test_grafx_read_lanes",
+              "name": "test_invalid_lane_count_refused[1.5]",
+              "time": "0.019"
+            },
+            {
+              "classname": "tests.test_grafx_read_lanes",
+              "name": "test_scope_covers_query_and_cleanup_and_releases_before_retry[None-scalar]",
+              "time": "0.017"
+            },
+            {
+              "classname": "tests.test_grafx_read_lanes",
+              "name": "test_scope_covers_query_and_cleanup_and_releases_before_retry[None-pair]",
+              "time": "0.017"
+            },
+            {
+              "classname": "tests.test_grafx_read_lanes",
+              "name": "test_scope_covers_query_and_cleanup_and_releases_before_retry[None-batch]",
+              "time": "0.020"
+            },
+            {
+              "classname": "tests.test_grafx_read_lanes",
+              "name": "test_scope_covers_query_and_cleanup_and_releases_before_retry[None-store]",
+              "time": "0.019"
+            },
+            {
+              "classname": "tests.test_grafx_read_lanes",
+              "name": "test_scope_covers_query_and_cleanup_and_releases_before_retry[timeout-scalar]",
+              "time": "0.018"
+            },
+            {
+              "classname": "tests.test_grafx_read_lanes",
+              "name": "test_scope_covers_query_and_cleanup_and_releases_before_retry[timeout-pair]",
+              "time": "0.016"
+            },
+            {
+              "classname": "tests.test_grafx_read_lanes",
+              "name": "test_scope_covers_query_and_cleanup_and_releases_before_retry[timeout-batch]",
+              "time": "0.018"
+            },
+            {
+              "classname": "tests.test_grafx_read_lanes",
+              "name": "test_scope_covers_query_and_cleanup_and_releases_before_retry[timeout-store]",
+              "time": "0.028"
+            },
+            {
+              "classname": "tests.test_grafx_read_lanes",
+              "name": "test_scope_covers_query_and_cleanup_and_releases_before_retry[error-scalar]",
+              "time": "0.027"
+            },
+            {
+              "classname": "tests.test_grafx_read_lanes",
+              "name": "test_scope_covers_query_and_cleanup_and_releases_before_retry[error-pair]",
+              "time": "0.020"
+            },
+            {
+              "classname": "tests.test_grafx_read_lanes",
+              "name": "test_scope_covers_query_and_cleanup_and_releases_before_retry[error-batch]",
+              "time": "0.018"
+            },
+            {
+              "classname": "tests.test_grafx_read_lanes",
+              "name": "test_scope_covers_query_and_cleanup_and_releases_before_retry[error-store]",
+              "time": "0.014"
+            },
+            {
+              "classname": "tests.test_grafx_read_lanes",
+              "name": "test_failed_open_releases_the_scheduling_charge",
+              "time": "0.013"
+            },
+            {
+              "classname": "tests.test_grafx_read_lanes",
+              "name": "test_composition_scope_passes_selected_lane_and_releases_on_resolution_failure",
+              "time": "0.114"
+            },
+            {
+              "classname": "tests.test_grafx_read_lanes",
+              "name": "test_base_exception_does_not_leak_board_state",
+              "time": "0.017"
+            },
+            {
+              "classname": "tests.test_grafx_read_lanes",
+              "name": "test_schema_reads_charge_lane_through_admission_and_cleanup[current_version-None]",
+              "time": "0.016"
+            },
+            {
+              "classname": "tests.test_grafx_read_lanes",
+              "name": "test_schema_reads_charge_lane_through_admission_and_cleanup[current_version-open]",
+              "time": "0.019"
+            },
+            {
+              "classname": "tests.test_grafx_read_lanes",
+              "name": "test_schema_reads_charge_lane_through_admission_and_cleanup[current_version-admission]",
+              "time": "0.018"
+            },
+            {
+              "classname": "tests.test_grafx_read_lanes",
+              "name": "test_schema_reads_charge_lane_through_admission_and_cleanup[current_version-read]",
+              "time": "0.017"
+            },
+            {
+              "classname": "tests.test_grafx_read_lanes",
+              "name": "test_schema_reads_charge_lane_through_admission_and_cleanup[current_version-interrupt]",
+              "time": "0.016"
+            },
+            {
+              "classname": "tests.test_grafx_read_lanes",
+              "name": "test_schema_reads_charge_lane_through_admission_and_cleanup[current_version-cleanup]",
+              "time": "0.017"
+            },
+            {
+              "classname": "tests.test_grafx_read_lanes",
+              "name": "test_schema_reads_charge_lane_through_admission_and_cleanup[validate-None]",
+              "time": "0.017"
+            },
+            {
+              "classname": "tests.test_grafx_read_lanes",
+              "name": "test_schema_reads_charge_lane_through_admission_and_cleanup[validate-open]",
+              "time": "0.018"
+            },
+            {
+              "classname": "tests.test_grafx_read_lanes",
+              "name": "test_schema_reads_charge_lane_through_admission_and_cleanup[validate-admission]",
+              "time": "0.020"
+            },
+            {
+              "classname": "tests.test_grafx_read_lanes",
+              "name": "test_schema_reads_charge_lane_through_admission_and_cleanup[validate-read]",
+              "time": "0.027"
+            },
+            {
+              "classname": "tests.test_grafx_read_lanes",
+              "name": "test_schema_reads_charge_lane_through_admission_and_cleanup[validate-interrupt]",
+              "time": "0.017"
+            },
+            {
+              "classname": "tests.test_grafx_read_lanes",
+              "name": "test_schema_reads_charge_lane_through_admission_and_cleanup[validate-cleanup]",
+              "time": "0.016"
+            },
+            {
+              "classname": "tests.test_grafx_read_lanes",
+              "name": "test_schema_reads_charge_lane_through_admission_and_cleanup[validate-validate]",
+              "time": "0.019"
+            }
+          ]
+        },
+        {
+          "repository": "community",
+          "file": "tests/test_mcp_admission_control.py",
+          "source_sha256": "12bc4b457b9514f2c41e1115bcbe986f0fe31f33f3280bf3d317228b6320acdf",
+          "executions": [
+            {
+              "classname": "tests.test_mcp_admission_control",
+              "name": "test_admission_policy_is_closed_and_loads_community_settings_shape",
+              "time": "0.019"
+            },
+            {
+              "classname": "tests.test_mcp_admission_control",
+              "name": "test_tool_classification_is_exact_and_conservative",
+              "time": "0.018"
+            },
+            {
+              "classname": "tests.test_mcp_admission_control",
+              "name": "test_materialized_host_installs_one_controller_without_gating_transport",
+              "time": "0.030"
+            },
+            {
+              "classname": "tests.test_mcp_admission_control",
+              "name": "test_dual_server_keeps_api_ui_app_outside_mcp_admission",
+              "time": "0.204"
+            },
+            {
+              "classname": "tests.test_mcp_admission_control",
+              "name": "test_admission_is_per_session_fair_and_releases_slots",
+              "time": "0.021"
+            },
+            {
+              "classname": "tests.test_mcp_admission_control",
+              "name": "test_writer_waits_before_total_slot_and_reader_can_pass",
+              "time": "0.020"
+            },
+            {
+              "classname": "tests.test_mcp_admission_control",
+              "name": "test_queued_and_active_cancellation_keep_accounting_exact",
+              "time": "0.018"
+            },
+            {
+              "classname": "tests.test_mcp_admission_control",
+              "name": "test_repeated_request_cancellation_cannot_interrupt_slot_release",
+              "time": "0.023"
+            },
+            {
+              "classname": "tests.test_mcp_admission_control",
+              "name": "test_saturation_is_bounded_retryable_and_never_calls_rejected_tool",
+              "time": "0.070"
+            },
+            {
+              "classname": "tests.test_mcp_admission_control",
+              "name": "test_mcp_burst_keeps_unrelated_api_loop_probe_responsive",
+              "time": "0.172"
+            },
+            {
+              "classname": "tests.test_mcp_admission_control",
+              "name": "test_large_transport_projection_runs_off_the_shared_event_loop",
+              "time": "0.098"
+            }
+          ]
+        },
+        {
+          "repository": "community",
+          "file": "tests/test_grafx_query_deadline.py",
+          "source_sha256": "05ced1f3b427ff299ca338ece633d7b56740ef5b3393b2a9eebe5b8404481b08",
+          "executions": [
+            {
+              "classname": "tests.test_grafx_query_deadline",
+              "name": "test_native_deadline_finishes_and_releases_read_resources[scalar]",
+              "time": "0.416"
+            },
+            {
+              "classname": "tests.test_grafx_query_deadline",
+              "name": "test_native_deadline_finishes_and_releases_read_resources[pair]",
+              "time": "0.415"
+            },
+            {
+              "classname": "tests.test_grafx_query_deadline",
+              "name": "test_native_deadline_finishes_and_releases_read_resources[batch]",
+              "time": "0.403"
+            },
+            {
+              "classname": "tests.test_grafx_query_deadline",
+              "name": "test_statements_share_one_deadline_and_snapshot[pair]",
+              "time": "0.027"
+            },
+            {
+              "classname": "tests.test_grafx_query_deadline",
+              "name": "test_statements_share_one_deadline_and_snapshot[batch]",
+              "time": "0.024"
+            },
+            {
+              "classname": "tests.test_grafx_query_deadline",
+              "name": "test_health_deadline_cannot_be_widened_by_query_timeout",
+              "time": "0.021"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "provenance": {
+    "file": "provenance-query-acceptance-review1.json",
+    "sha256": "bc9cffe685dea9583e284b4685460ec9f1e8a6ad7c777ad4d208a8b8657476b7",
+    "identity": {
+      "checked_at": "2026-09-30T20:54:51.935304+00:00",
+      "python": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Scripts\\python.exe",
+      "packages": {
+        "core": {
+          "python_files": 859,
+          "origin": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages\\okto_pulse\\core\\__init__.py",
+          "repository_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_core",
+          "commit": "8c16d32500fed6ce93f00b99ab636b01dd744ed1",
+          "dirty": true,
+          "dirty_entry_count": 1,
+          "distribution": "okto-pulse-core",
+          "version": "0.3.4",
+          "wheel": {
+            "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\dist-learning-reconciliation-k2-spec-owner-final\\okto_pulse_core-0.3.4-py3-none-any.whl",
+            "sha256": "a6f77fab8288ae5a91690a7d2796ea8d19db5b10c8a7c7263629553ebeff0312",
+            "size": 3793229
+          },
+          "source_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_core\\src",
+          "site_packages_root": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages",
+          "package_prefix": "okto_pulse/core/",
+          "byte_identical_member_count": 922,
+          "byte_identical": true,
+          "aggregate_sha256": "acb90eccf7d1f8cacb71280c263b68a5e5dc3c26f49552f9b7b91404280eddb7",
+          "chain_hashes": {
+            "source": "acb90eccf7d1f8cacb71280c263b68a5e5dc3c26f49552f9b7b91404280eddb7",
+            "wheel": "acb90eccf7d1f8cacb71280c263b68a5e5dc3c26f49552f9b7b91404280eddb7",
+            "site_packages": "acb90eccf7d1f8cacb71280c263b68a5e5dc3c26f49552f9b7b91404280eddb7"
+          },
+          "critical_resource_sha256": {
+            "okto_pulse/core/mcp/resources/ska_resource_manifest.json": "87fab2a5ded5f6ee273af8628555c21f7065d32379945784132bb6c300d05865",
+            "okto_pulse/core/mcp/resources/ska_tool_manifest.json": "0c3fa3da1549baec20872eca3f4a289288627e6b9f6b80be10472ac962fa72b9"
+          },
+          "mismatches": []
+        },
+        "community": {
+          "python_files": 373,
+          "origin": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages\\okto_pulse\\community\\__init__.py",
+          "repository_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_community",
+          "commit": "6cab1ee9c9debac91b9af824c278d36daccd56ce",
+          "dirty": true,
+          "dirty_entry_count": 1,
+          "distribution": "okto-pulse",
+          "version": "0.3.4",
+          "wheel": {
+            "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\dist-learning-reconciliation-k2-spec-owner-final\\okto_pulse-0.3.4-py3-none-any.whl",
+            "sha256": "3d1eb7b80776aa6ba91a8e0e24d194c6d09769d70a4637a6423e0f57872ecd55",
+            "size": 4535175
+          },
+          "source_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_community\\src",
+          "site_packages_root": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages",
+          "package_prefix": "okto_pulse/community/",
+          "byte_identical_member_count": 458,
+          "byte_identical": true,
+          "aggregate_sha256": "94e3b3e820cf74f6c6d891b03b4aed41523ec3396fa781d7cf180f1da379463b",
+          "chain_hashes": {
+            "source": "94e3b3e820cf74f6c6d891b03b4aed41523ec3396fa781d7cf180f1da379463b",
+            "wheel": "94e3b3e820cf74f6c6d891b03b4aed41523ec3396fa781d7cf180f1da379463b",
+            "site_packages": "94e3b3e820cf74f6c6d891b03b4aed41523ec3396fa781d7cf180f1da379463b"
+          },
+          "critical_resource_sha256": {},
+          "mismatches": []
+        }
+      }
+    }
+  },
+  "limits": [
+    "Native deadline checks use the real engine with a controlled clock, not a performance benchmark.",
+    "MCP composition tests use authenticated fixtures; this is not a complete live multi-actor workflow.",
+    "No product, frontend, source semantics, architecture budgets or domain gates changed.",
+    "Spec Decision rebuild guard conflict remains open and is not covered by these acceptances."
+  ]
+}
