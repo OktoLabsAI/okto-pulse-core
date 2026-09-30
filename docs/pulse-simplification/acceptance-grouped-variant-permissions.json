@@ -1,0 +1,109 @@
+{
+  "format": "pulse-v1.3-reviewed-execution/v1",
+  "scope": "BASE T15 grouped tool grants",
+  "provenance": {
+    "file": "provenance-grouped-variant1.json",
+    "sha256": "9ba728ee314400ec87c51156823ad1a2502981f99d93f79b72056ba8ad5b7717",
+    "identity": {
+      "checked_at": "2026-09-30T21:36:24.555556+00:00",
+      "python": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Scripts\\python.exe",
+      "packages": {
+        "core": {
+          "python_files": 859,
+          "origin": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages\\okto_pulse\\core\\__init__.py",
+          "repository_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_core",
+          "commit": "71d02a153ef951003e35846fca04f00dcee8a0f7",
+          "dirty": true,
+          "dirty_entry_count": 1,
+          "distribution": "okto-pulse-core",
+          "version": "0.3.4",
+          "wheel": {
+            "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\dist-learning-reconciliation-k2-spec-owner-final\\okto_pulse_core-0.3.4-py3-none-any.whl",
+            "sha256": "a6f77fab8288ae5a91690a7d2796ea8d19db5b10c8a7c7263629553ebeff0312",
+            "size": 3793229
+          },
+          "source_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_core\\src",
+          "site_packages_root": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages",
+          "package_prefix": "okto_pulse/core/",
+          "byte_identical_member_count": 922,
+          "byte_identical": true,
+          "aggregate_sha256": "acb90eccf7d1f8cacb71280c263b68a5e5dc3c26f49552f9b7b91404280eddb7",
+          "chain_hashes": {
+            "source": "acb90eccf7d1f8cacb71280c263b68a5e5dc3c26f49552f9b7b91404280eddb7",
+            "wheel": "acb90eccf7d1f8cacb71280c263b68a5e5dc3c26f49552f9b7b91404280eddb7",
+            "site_packages": "acb90eccf7d1f8cacb71280c263b68a5e5dc3c26f49552f9b7b91404280eddb7"
+          },
+          "critical_resource_sha256": {
+            "okto_pulse/core/mcp/resources/ska_resource_manifest.json": "87fab2a5ded5f6ee273af8628555c21f7065d32379945784132bb6c300d05865",
+            "okto_pulse/core/mcp/resources/ska_tool_manifest.json": "0c3fa3da1549baec20872eca3f4a289288627e6b9f6b80be10472ac962fa72b9"
+          },
+          "mismatches": []
+        },
+        "community": {
+          "python_files": 373,
+          "origin": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages\\okto_pulse\\community\\__init__.py",
+          "repository_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_community",
+          "commit": "935d839086e24455133a2462dab837b0108d9469",
+          "dirty": false,
+          "dirty_entry_count": 0,
+          "distribution": "okto-pulse",
+          "version": "0.3.4",
+          "wheel": {
+            "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\dist-learning-reconciliation-k2-spec-owner-final\\okto_pulse-0.3.4-py3-none-any.whl",
+            "sha256": "3d1eb7b80776aa6ba91a8e0e24d194c6d09769d70a4637a6423e0f57872ecd55",
+            "size": 4535175
+          },
+          "source_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_community\\src",
+          "site_packages_root": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages",
+          "package_prefix": "okto_pulse/community/",
+          "byte_identical_member_count": 458,
+          "byte_identical": true,
+          "aggregate_sha256": "94e3b3e820cf74f6c6d891b03b4aed41523ec3396fa781d7cf180f1da379463b",
+          "chain_hashes": {
+            "source": "94e3b3e820cf74f6c6d891b03b4aed41523ec3396fa781d7cf180f1da379463b",
+            "wheel": "94e3b3e820cf74f6c6d891b03b4aed41523ec3396fa781d7cf180f1da379463b",
+            "site_packages": "94e3b3e820cf74f6c6d891b03b4aed41523ec3396fa781d7cf180f1da379463b"
+          },
+          "critical_resource_sha256": {},
+          "mismatches": []
+        }
+      }
+    }
+  },
+  "run": {
+    "xml": "learning-reconciliation-grouped-variant1-core.xml",
+    "xml_sha256": "6e508d90a12512b696dd6de33fe5dd9869dd568b0908a21bbd861e277b0df2dd",
+    "log": "learning-reconciliation-grouped-variant1-core.log",
+    "log_sha256": "8a3f9bc38fbcdf6db9f120a859f700d64e66be15346b32278b049fc894b47a95",
+    "suites": [
+      {
+        "name": "pytest",
+        "errors": "0",
+        "failures": "0",
+        "skipped": "0",
+        "tests": "11",
+        "time": "3.698",
+        "timestamp": "2026-09-30T18:36:42.045320-03:00",
+        "hostname": "Alienware_m15"
+      }
+    ]
+  },
+  "criteria": {
+    "BASE:T15": {
+      "status": "verified_by_reviewed_execution",
+      "remaining": null,
+      "covered": "Eleven permission leaves across nine grouped link_task variants: deny each leaf while all other leaves are granted, assert exact permission_missing before UoW lookup. Same actor reaches persistence boundary through a permitted sibling variant; granting missing leaf permits original variant to reach boundary. Both independent IR and OR grants covered.",
+      "evidence": [
+        {
+          "repository": "core",
+          "file": "tests/test_grouped_tool_variant_permissions.py",
+          "source_sha256": "6648aeb46a21a03cea6b52f1720b7dbc416ec82784bdc09e450c4037bad386f8"
+        }
+      ]
+    }
+  },
+  "limits": [
+    "Unit boundary test: actor context injected and UoW resolution replaced by a raising sentinel. Real dispatcher and permission policy execute; no claim of successful persistence or HTTP integration.",
+    "No product/frontend/authority change; no new F16 run."
+  ]
+}

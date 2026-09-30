@@ -2,6 +2,20 @@
 
 ## Estado para retomada
 
+BASE T15 verificado: grouped-variant1 session47854 terminou0,
+11passed3.72s. Nove variantes de link_task, 11 folhas de permissão (IR/OR
+exigem duas): negar uma folha mantendo as demais concede erro exato antes
+de resolver UoW; variante irmã permitida e concessão da folha ausente chegam
+ao limite de persistência. Dispatcher/policy reais; contexto injetado e UoW
+substituída por sentinela que lança erro. Não afirmar gravação ou HTTP E2E.
+Proveniência terminala8cbfa=0, provenance-grouped-variant1.json, fontes/site/
+wheels idênticos859/922+373/458, anterior ao processo novo de teste.
+Recorder record_grouped_variant_review.py executado uma vez após terminais;
+acceptance-grouped-variant-permissions.json. Inventário92 verificados/39
+parciais/115 não auditados. Só teste/docs; sem nova execução F16 ou frontend.
+T14 já publicado em71d02a15; decisões KG-10/T23 aguardam resposta.
+Continuar os critérios ainda abertos do inventário, sem ampliar o plano.
+
 BASE T14 verificado: mcp-concurrency2 session51311=0,1passed12.97s.
 Dois clientes MCP Streamable HTTP concorrentes, credenciais reais via middleware,
 UoW Community e banco descartável: 12 chamadas, seis leituras do próprio Board
