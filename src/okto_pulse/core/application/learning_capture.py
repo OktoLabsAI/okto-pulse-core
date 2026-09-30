@@ -358,6 +358,7 @@ async def stage_report_learning_capture(context, *, initial, captured, conclusio
     submission, author_id, capture_status):
     """Use only the server's admitted report delta, never rebase old content."""
     from okto_pulse.core.domain.learning_submission import qualify_learning_submission_basis
+    from okto_pulse.core.ports.learning_capture import LearningCaptureIntent
 
     source = qualify_learning_submission_basis(initial=initial, captured=captured,
         conclusion=conclusion, capture_status=capture_status)
@@ -365,7 +366,8 @@ async def stage_report_learning_capture(context, *, initial, captured, conclusio
         capture_id=submission.capture_id, expected_source_digest=source.source_digest,
         expected_source_version=source.source_policy_version, content=submission.content,
         context=submission.context, applicability=submission.applicability,
-        scenario_ids=tuple(submission.scenario_ids))
+        scenario_ids=tuple(submission.scenario_ids),
+        intent=submission.intent.command() if submission.intent is not None else LearningCaptureIntent())
     return await stage_new_learning_capture(context, request, author_id=author_id,
         captured_at=datetime.now(timezone.utc))
 

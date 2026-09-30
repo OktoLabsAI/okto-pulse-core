@@ -22,6 +22,10 @@ async def authorize_learning_submission(move, *, actor, uow, board_id):
         await require_all(actor,
             *(PermissionRequirement(flag) for flag in LEARNING_CAPTURE_CREATE_PERMISSIONS),
             PermissionRequirement('card.conclusion.write'), uow=uow, board_id=board_id)
+        intent = move.learning_submission.intent
+        if intent is not None and intent.kind != 'create':
+            await require_all(actor, PermissionRequirement('kg.query.learning_from_bugs'),
+                uow=uow, board_id=board_id)
 
 
 class StageLearningCaptureUseCase:

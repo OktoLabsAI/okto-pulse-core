@@ -248,6 +248,24 @@ receipts. Unavailable history is never displayed as an empty result.
 This optional selection path does not implement a required-Learning policy,
 reuse/supersedence or graph materialization. Joint authorship is described below.
 
+## Public explicit intent contract
+
+Standalone REST/MCP capture and compound `learning_submission` accept the same
+closed optional intent. Absence preserves the original create behavior and the
+legacy compound request digest. Explicit create carries only `kind=create`.
+Reuse requires the target node ID, generation, expected fingerprint and authored
+reason. Supersede additionally requires an explicit `scope=source_bug`; global
+or absent replacement scope is rejected for new public requests.
+
+Both target operations require the existing Learning-read authority in addition
+to capture/conclusion/lifecycle authorities. The compound path checks this before
+replay or mutation. Reuse preserves literal content; target admission and CAS
+remain server-owned. A stale target returns its observed identity, revision and
+fingerprint through a typed conflict after authorization, without rebasing or
+inventing an association. Compound failures roll back the report, capture,
+binding and outbox together. Public client types preserve the selected intent;
+interactive candidate selection and ranking remain pending.
+
 ## Scoped historical linkage on capture pages
 
 The existing capture-history response preserves authored v1/v2 intents. A
@@ -268,8 +286,8 @@ closed. Reading does not materialize, reconcile, change policy or clear debt.
 
 The Bug panel renders the declared target and reason as inert text and labels
 historical linkage separately from current applicability. This presentation is
-not a global supersedence chain. Public authoring of reuse/scoped supersedence
-and the complete scoped graph-query surface remain separate pending work.
+not a global supersedence chain. The complete scoped graph-query surface and
+interactive intent selection remain separate pending work.
 
 ## Joint execution-report authorship (KG §7.3)
 

@@ -57,6 +57,8 @@ from okto_pulse.core.domain.architecture_classification import ArchitectureClass
 from okto_pulse.core.domain.execution_contract import SpecExecutionContractAdoption
 from okto_pulse.core.domain.learning_closeout import LearningCaptureSelection
 from okto_pulse.core.domain.learning_submission import LearningSubmission
+from okto_pulse.core.domain.learning_intent import LearningIntentRequest
+from okto_pulse.core.ports.learning_capture import LearningCaptureTargetConflict
 from okto_pulse.core.mcp.cancellation_projection import project_cancellation
 from okto_pulse.core.mcp.filters import (
     BoardEntityType,
@@ -4939,6 +4941,8 @@ async def okto_pulse_move_card(
             return json.dumps({"error": e.code, **e.to_dict()})
         except PolicyTransitionRejected as e:
             return MCPAdapterContract.error(e)
+        except LearningCaptureTargetConflict as e:
+            return json.dumps({'error': e.code, **e.to_dict(), 'blocked_by_dependencies': False})
         except ValueError as e:
             return json.dumps({"error": str(e), "blocked_by_dependencies": False})
 
@@ -20451,11 +20455,15 @@ async def okto_pulse_kg_takedown_status(
 def _learning_capture_mcp_error(exc: Exception) -> str:
     from okto_pulse.core.application.use_cases.base import EntityNotFoundError
     from okto_pulse.core.ports.kg_cognitive_source import CognitiveSourceConflict
+    from okto_pulse.core.ports.learning_capture import LearningCaptureTargetConflict
 
     if isinstance(exc, PermissionDeniedError):
         return json.dumps({'error': 'permission_denied', 'code': 'permission_denied'})
     if isinstance(exc, EntityNotFoundError):
         return json.dumps({'error': 'bug_not_found', 'code': 'bug_not_found'})
+    if isinstance(exc, LearningCaptureTargetConflict):
+        return json.dumps({'error': 'learning_capture_target_changed', 'code': 'learning_capture_target_changed',
+            'current_target': exc.current_target})
     if isinstance(exc, CognitiveSourceConflict):
         code = exc.failure_reason
     elif str(exc) in {
@@ -20465,6 +20473,8 @@ def _learning_capture_mcp_error(exc: Exception) -> str:
         'learning_capture_request_invalid', 'learning_capture_payload_invalid', 'learning_capture_payload_limit',
         'learning_capture_evidence_ambiguous', 'learning_capture_evidence_not_authenticated',
         'learning_capture_page_invalid',
+        'learning_capture_intent_invalid', 'learning_capture_target_not_eligible',
+        'learning_capture_reuse_content_changed', 'learning_capture_target_replaced_in_scope',
     }:
         code = str(exc)
     else:
@@ -20530,13 +20540,15 @@ async def okto_pulse_kg_list_learning_captures(
 async def okto_pulse_kg_create_learning_capture(
     board_id: str, bug_id: str, capture_id: str, expected_source_digest: str,
     expected_source_version: int, content: str, context: str, applicability: str,
-    scenario_ids: list[str],
+    scenario_ids: list[str], intent: LearningIntentRequest | None = None,
 ) -> str:
     """Persist authored Learning content against the current authenticated Bug evidence.
 
     Reuse capture_id only for an exact retry. The result acknowledges durable
     capture pending materialization, not implementation approval or Bug Done.
     Requires source read and KG begin/add-node/add-edge/commit authority.
+    Optional explicit reuse or source_bug supersede also requires Learning read
+    authority and an exact target fingerprint. Similarity grants no authority.
     Full docs: okto-pulse://reference/tool-docs/kg.
     """
     from pydantic import ValidationError
@@ -20553,7 +20565,7 @@ async def okto_pulse_kg_create_learning_capture(
     try:
         request = LearningCaptureCreateRequest(board_id=board_id, capture_id=capture_id,
             expected_source_digest=expected_source_digest, expected_source_version=expected_source_version,
-            content=content, context=context, applicability=applicability, scenario_ids=scenario_ids)
+            content=content, context=context, applicability=applicability, scenario_ids=scenario_ids, intent=intent)
         async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
             record = await CreateLearningCaptureUseCase().execute(request.command(bug_id), actor=actor, uow=uow)
         return json.dumps({'capture_id': record.payload['capture_id'], 'learning_id': record.node_id,

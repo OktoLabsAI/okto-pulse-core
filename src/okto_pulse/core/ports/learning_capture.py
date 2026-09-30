@@ -28,11 +28,15 @@ def is_scoped_learning_supersede(payload) -> bool:
 
 class LearningCaptureTargetConflict(ValueError):
     """A stale explicit target; current identity is server-observed, not authority."""
+    code = 'learning_capture_target_changed'
     def __init__(self, current: CognitiveSourceRecord | None):
         super().__init__('learning_capture_target_changed')
         self.current_target = (None if current is None else {
             'learning_id': current.node_id, 'generation': current.generation,
             'source_revision': current.source_revision, 'fingerprint': current.record_fingerprint})
+
+    def to_dict(self):
+        return {'code': self.code, 'current_target': self.current_target}
 
 
 @dataclass(frozen=True, slots=True)

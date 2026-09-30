@@ -2,6 +2,7 @@
 
 from pydantic import BaseModel, ConfigDict, Field
 from okto_pulse.core.ports.learning_capture import CreateLearningCapture
+from okto_pulse.core.domain.learning_intent import LearningIntentRequest
 
 
 class LearningCaptureCreateRequest(BaseModel):
@@ -14,7 +15,10 @@ class LearningCaptureCreateRequest(BaseModel):
     context: str = Field(min_length=1, max_length=65536)
     applicability: str = Field(min_length=1, max_length=65536)
     scenario_ids: list[str] = Field(min_length=1, max_length=128)
+    intent: LearningIntentRequest | None = None
 
     def command(self, bug_id: str) -> CreateLearningCapture:
+        from okto_pulse.core.ports.learning_capture import LearningCaptureIntent
         return CreateLearningCapture(bug_id=bug_id,
-            **{**self.model_dump(), 'scenario_ids': tuple(self.scenario_ids)})
+            **{**self.model_dump(exclude={'intent'}), 'scenario_ids': tuple(self.scenario_ids),
+                'intent': self.intent.command() if self.intent is not None else LearningCaptureIntent()})

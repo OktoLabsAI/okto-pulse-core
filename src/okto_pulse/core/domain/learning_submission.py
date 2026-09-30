@@ -11,6 +11,7 @@ from dataclasses import fields, replace
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from okto_pulse.core.domain.quality_canonicalization import canonical_sha256
+from okto_pulse.core.domain.learning_intent import LearningIntentRequest
 from okto_pulse.core.ports.bug_cognitive_context import qualify_bug_semantic_context
 
 
@@ -23,6 +24,8 @@ class LearningSubmission(BaseModel):
     context: str = Field(min_length=1, max_length=65536)
     applicability: str = Field(min_length=1, max_length=65536)
     scenario_ids: list[str] = Field(min_length=1, max_length=128)
+    # None is omitted from legacy request digests (exclude_none=True).
+    intent: LearningIntentRequest | None = None
 
     @field_validator('capture_id', 'content', 'context', 'applicability')
     @classmethod

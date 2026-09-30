@@ -1,0 +1,154 @@
+{
+  "scope": "F6/KG7.3/7.6 public typed Learning intents and compound propagation",
+  "suites": {
+    "core": {
+      "passed": 82,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "community": {
+      "passed": 104,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "compound_transport_conflicts": {
+      "passed": 2,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "frontend": {
+      "passed": 52,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0
+    }
+  },
+  "budgets": [
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "import_boundary_baseline",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every import_boundary_baseline allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "singleton_baseline",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every singleton_baseline allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "dependency_temporary_exceptions",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every dependency_temporary_exceptions allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "graph_runtime_compatibility",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every graph_runtime_compatibility allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "rebuild_artifact_compatibility",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every rebuild_artifact_compatibility allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "community_private_reach_ins",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every community_private_reach_ins allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "community_adapter_bridges",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every community_adapter_bridges allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "af35_relational_residue",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every af35_relational_residue allowance before F16 completion."
+    }
+  ],
+  "verified": [
+    "Shared closed create/reuse/supersede union rejects implicit or global replacement scope, malformed target selectors and client approval metadata.",
+    "Absent intent preserves create behavior and the existing exclude-none compound digest; historical unscoped v1 records are unchanged.",
+    "Standalone REST/MCP forwards exact target intent, authenticates evidence, preserves author identity and replays the same capture.",
+    "Learning-read authority is checked before target details, compound mutation and replay, without adding new permissions or changing compatibility defaults.",
+    "Stale target conflicts expose the observed target identity/revision/fingerprint after authorization; no automatic rebase, target write or new capture occurs.",
+    "Compound Validation/Done propagates reuse and source_bug supersede through the real source writer, preserving one report and exact retry; Done binds the admitted capture.",
+    "Stale target and late binding failure roll back report, capture, binding and outbox even when an outer caller later commits.",
+    "Compound REST/MCP stale-target responses preserve the current target and leave the report unwritten.",
+    "Frontend request types support both paths; client tests prove one unchanged request and no automatic conflict retry. SPA build/verification is unchanged byte-for-byte.",
+    "Catalog and manifests were regenerated from the live registry; paired install was proved before behavior tests and final F16 has eight zero budgets."
+  ],
+  "limits": [
+    "Target literals in public transport fixtures are seeded source records; independent completion gates in compound fixtures are mocked. This increment is not final lifecycle or graph acceptance.",
+    "Interactive target selection, candidate search/ranking and complete scoped graph queries remain pending; no UI selector is claimed here.",
+    "No new public tool, similarity-based decision, permission, schema column, real-data migration, release or deployment.",
+    "Global acceptance inventory is not promoted by these focused suites; full backend/rebuild/installed release and benchmark criteria remain open."
+  ],
+  "sha256": {
+    "PULSE_REFACTOR/.validation-v040/closure-public-intents-final.json": "c87b9c5a462467b86475eba283e74f1dacf5395e5512b2ce6fdde85d9cf138ec",
+    "PULSE_REFACTOR/.validation-v040/public-intents-r1-core.xml": "c36ad1d3696b6d8c6fb421676710e4451783c27ba9c45bc8553168d7219bd712",
+    "PULSE_REFACTOR/.validation-v040/public-intents-r1-community.xml": "aa06568f581dc97a2b58caec11197c794bb08f7cbcd44288e03352799077d0e6",
+    "PULSE_REFACTOR/.validation-v040/public-intent-moves.xml": "0f4092c9f52a3365104a43ddb12f1920966efbc76013dee6fad96162bb5ed3f7",
+    "PULSE_REFACTOR/.validation-v040/public-intents-frontend.xml": "97f6c64b20bbe0d1c9de6f7689315ed85cacad24568e7cba5b985272a5a972a1",
+    "PULSE_REFACTOR/.validation-v040/provenance-public-intents-r1.json": "6d1ab967f8c24f265a0aecee5bd764f03d256907d1738d2765fc6d3b1a876a9b",
+    "PULSE_REFACTOR/.validation-v040/provenance-public-intents-final.json": "9fc29cd22ecec861e08b4d8bf8bb49c1744f58b89269b77baf8d2744892254f0",
+    "PULSE_REFACTOR/.validation-v040/closure-public-intents-r1.json": "94a1c49a27e5dc68ff20841520750e40d58e4933fd1543a0e582fd01dcd52642",
+    "PULSE_REFACTOR/.validation-v040/public-intents-frontend-build.log": "b1fb1c8cd4d7980de58ca562223ff1eda4b3027c8a091bdc4f32f40a3ba35c96",
+    "PULSE_REFACTOR/.validation-v040/public-intents-lint.log": "60c013c5cdb55810fc3705a7ccab5e2075260d4f4092c9ef00b88139232c1365",
+    "PULSE_REFACTOR/.validation-v040/run_public_intents.py": "80a807dc541c7defdd0674420a0506bb901bd432ad2d0777326f223fce7bb19c",
+    "okto_labs_pulse_core/src/okto_pulse/core/domain/learning_intent.py": "f5dad69367bbef50ae1eae0d281775f687d6531c36f592cbfcbaa904a0b73e19",
+    "okto_labs_pulse_core/src/okto_pulse/core/domain/learning_submission.py": "79ed04a1c180a65347af636f133eb32d59ca52eb3f43d1073312363495a8d65c",
+    "okto_labs_pulse_core/src/okto_pulse/core/models/learning_capture.py": "c298c686a24da6fca809a04fc90f256266f6aac44d89ba47307ebc2af9964186",
+    "okto_labs_pulse_core/src/okto_pulse/core/ports/learning_capture.py": "2bc9410d7040ea4a49ac2a24e2c59b2cdda71d11b029579dfb20cd76d2d2525f",
+    "okto_labs_pulse_core/src/okto_pulse/core/application/learning_capture.py": "4faf3aede5a21b939a135eaaed443c8016499f6ff43987dd243eebcc22a7bca9",
+    "okto_labs_pulse_core/src/okto_pulse/core/application/use_cases/learning_capture.py": "b2a95bb16dcdbfe73f5482964c6f3e824630ea0d945102d693c76dea99ba0c0b",
+    "okto_labs_pulse_core/src/okto_pulse/core/mcp/server.py": "3047c3eeb9a7a6b4ebfd009cb03e516e6d390d10e7a275d2fab4b1194ae05946",
+    "okto_labs_pulse_core/src/okto_pulse/core/mcp/resources/reference/tool-docs/kg.md": "3ad561d861b71c680c9ef4eee6e1dafebf58dc64c3baf90fb3dcb94b50fc6de0",
+    "okto_labs_pulse_core/src/okto_pulse/core/mcp/resources/reference/tools_catalog.md": "0b62ec4a40e33866c211c48bd03cb6d636804dc3afa1171466bc697d841ae4be",
+    "okto_labs_pulse_core/src/okto_pulse/core/mcp/resources/ska_tool_manifest.json": "0c3fa3da1549baec20872eca3f4a289288627e6b9f6b80be10472ac962fa72b9",
+    "okto_labs_pulse_core/src/okto_pulse/core/mcp/resources/ska_resource_manifest.json": "87fab2a5ded5f6ee273af8628555c21f7065d32379945784132bb6c300d05865",
+    "okto_labs_pulse_core/tests/test_learning_public_intents.py": "0bd15f79151388e32f677787c17e7a55e0ef7de5c33d7ea8239803cd10ad3308",
+    "okto_labs_pulse_core/docs/pulse-simplification/LEARNING_CAPTURE_SOURCE.md": "d2dedc7f9937eac3bf38d3b2834eb0afac9ce1eff96c862c8ced416831d4dbf6",
+    "okto_labs_pulse_community/src/okto_pulse/community/api/bug_cognitive_closure.py": "339c35f9d47b1675e2dd9eddec2e8ed0f5743fba537c97204b712a47dbf7e02d",
+    "okto_labs_pulse_community/src/okto_pulse/community/api/cards.py": "fb8b4349818e3f481482374de12130c93f02a5f88453d55803240c99d9ffdaad",
+    "okto_labs_pulse_community/tests/test_learning_public_intents.py": "0849fa3372f9b16f947c020d9e0c13a00d313eb78d045ae041cd2cda38dae9f0",
+    "okto_labs_pulse_community/tests/test_learning_public_intent_moves.py": "6df09c50bb16fea8c46d1f1fbc8801f7b55e47409e64e50f2d39283add5c237a",
+    "okto_labs_pulse_community/frontend/src/types/index.ts": "3653db9297d2f3b80dadea6048d25a1a936080263fab57096f883f34c4c1f1b1",
+    "okto_labs_pulse_community/frontend/src/services/learning-capture-api.ts": "7a2c370a08018ef3d431076f3c10db9390706c9c1a254f24e4c249ce4812f8f4",
+    "okto_labs_pulse_community/frontend/src/services/__tests__/learning-capture-api.test.tsx": "60ed96f182890d003416f7781d630e2b98f802e11a5838ec583f3a15aa907d93"
+  }
+}

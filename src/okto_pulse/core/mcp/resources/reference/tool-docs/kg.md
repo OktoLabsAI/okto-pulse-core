@@ -699,6 +699,22 @@ content or using an obsolete basis returns a conflict. Preserve the authored
 text, reread context and review applicability before submitting a new capture.
 No raw graph session, polling or maintenance command is required.
 
+Optional `intent` defaults to creating a new Learning when absent. Explicit
+`{"kind":"create"}` is also accepted. Reuse requires `kind="reuse"`,
+`target_node_id`, `target_generation`, `expected_fingerprint` and an authored
+`reason`; preserve the existing Learning content exactly. A replacement uses
+`kind="supersede"` with the same target fields and an explicit
+`scope="source_bug"`. It covers this Bug only, never all origins of the old
+Learning. No similarity score selects or authorizes either operation.
+
+Target intents additionally require `kg.query.learning_from_bugs`. A stale target
+returns `learning_capture_target_changed` with `current_target` identity,
+revision and fingerprint when available. This is a conflict for the caller to
+review, not an automatic retry against the new head. Other authorization or
+storage failures do not expose that target. The same typed intent is accepted
+inside `learning_submission` on the existing compound report operation; its
+report, capture, binding when applicable and outbox share the caller's UOW.
+
 Example: `{"board_id":"board-1","bug_id":"bug-1","capture_id":"capture-1",
 "expected_source_digest":"<64-character digest from context>",
 "expected_source_version":1,"content":"Keep release metadata authoritative",

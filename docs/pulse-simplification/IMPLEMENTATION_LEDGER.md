@@ -2,6 +2,46 @@
 
 ## Estado para retomada
 
+Public-intents validado: install final77823/prova13105=0; F1684627 terminou0,
+sem findings/docdrift e oito budgets ZERO. Recorder exclusivo
+record_public_intents.py executado apos terminais, gerou acceptance-public-intents.json
+com fontes/hashes/provas/limites. Core82,Community104+2,frontend52 passaram;
+Ruff/diff-check/build/verify/lint passaram. Todos processos estao terminais.
+Pronto para commit/push pareado; objetivo integral continua ativo.
+Proximo trabalho do KG7.6: busca delimitada e selecao explicita de candidatos
+nos paineis existentes, consumindo os intents agora publicos. Investigacao inicial:
+kg/interfaces/ranked_graph_search.py e Community grafx_ranked_search.py oferecem
+busca bounded com deadline nativo text/hybrid; BM25/RRF NAO sao similaridade
+cosine e nao podem usar bandas0.60/0.85/0.95 como se fossem. Caminho antigo
+GraphStore.vector_search/grafx_board_vector_search.py usa execute e fallback
+exato; nao presumir limite/deadline compativel para nova superficie. Reutilizar
+porta adequada e investigar score/identidade ate adapter antes de implementar.
+Nenhuma interface de busca nova foi criada neste incremento; nao ampliar escopo.
+Depois continuam linhagem scoped completa,K3/K4 e aceite integrado conforme
+inventario76/33/137, ainda inalterado. Nao declarar plano ou F6 completos.
+
+Public-intents validacao r1: catalogo/manifests gerados oficialmente; SPA
+build68212/verify0 com MESMO tree d5b61261cfd76bcb5f4cb9de920604f15bf02a8c4dc1659a28587ca6937bf52b
+(mudanca frontend de tipos/testes, sem runtime JS). Frontend52pass; lint16525=0,
+331 avisos. Builds/install61301/prova0,840/903 Core+363/448 Community idênticos
+ANTES das suites. Core54631=0:82pass/14.74s. Community31824=0:104pass/247.52s;
+transportes compostos11676=0:2pass/22.56s (conflito preserva alvo atual e faz
+rollback do relatorio). F1689676=1 somente README, findings=[]/oitoZERO.
+Apos todos terminais, READMEs regenerados; builds finais iniciados. Nenhum
+produto alterado durante campanhas. Restam install/prova/F16 finais,recorder,
+commit/push. Candidatos e selecao interativa de intent continuam pendentes.
+
+Scope-lineage enviado: Core dec7fa2b / Community 85e8a981, pushes0.
+WIP public-intents: contrato discriminado compartilhado para create/reuse e
+supersede com scope=source_bug obrigatorio. REST/MCP independentes e submissao
+composta propagam intent para a admissao existente; ausencia preserva criacao e
+digest legado. Autoridade de leitura de Learning exigida antes de mutacao/replay
+composto. Conflito de alvo preserva identidade/revisao/fingerprint observados,
+sem rebase automatico; wrappers de Delivery mantem o erro tipado. Testes novos
+de contrato e SQL/transporte preparados, ainda nao executados. Catalogo/manifest
+serao regenerados e novo par instalado/provado antes de comportamento. UI de
+escolha e busca de candidatos seguem pendentes; nao anunciar feature integral.
+
 Scope-lineage encerrado tecnicamente: install final15590/prova final=0; F16
 15853 terminou0, sem findings/docdrift e oito budgets ZERO. Recorder exclusivo
 record_scope_lineage.py executado apos terminais gerou acceptance-scope-lineage.json
