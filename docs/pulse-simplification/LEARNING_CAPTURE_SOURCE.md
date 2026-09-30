@@ -248,6 +248,29 @@ receipts. Unavailable history is never displayed as an empty result.
 This optional selection path does not implement a required-Learning policy,
 reuse/supersedence or graph materialization. Joint authorship is described below.
 
+## Scoped historical linkage on capture pages
+
+The existing capture-history response preserves authored v1/v2 intents. A
+v2 `supersede` intent with `scope=source_bug` can additionally return
+`learning-scope-history/v1` metadata. `recorded` means the exact capture,
+immutable target claim and successor birth were qualified together from source
+history. It does not mean current applicability, semantic approval or an
+available graph projection; both currentness fields explicitly say
+`not_assessed`. Legacy unscoped requests do not acquire scope retrospectively.
+
+One page shares a 200-record history budget and a request-local cache. The
+public bounded-history port must return complete verified history or an
+explicit limit failure; the Community SQL adapter applies the bound to the
+revision query, including an overflow probe. Missing capability, missing target
+history, pending materialization and exhausted history budget remain
+`unverified` with a specific limitation. Inconsistent partial claims fail
+closed. Reading does not materialize, reconcile, change policy or clear debt.
+
+The Bug panel renders the declared target and reason as inert text and labels
+historical linkage separately from current applicability. This presentation is
+not a global supersedence chain. Public authoring of reuse/scoped supersedence
+and the complete scoped graph-query surface remain separate pending work.
+
 ## Joint execution-report authorship (KG §7.3)
 
 `CardMove.learning_submission` carries new authored content and the source

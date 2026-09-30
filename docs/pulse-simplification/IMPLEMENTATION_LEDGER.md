@@ -2,6 +2,43 @@
 
 ## Estado para retomada
 
+Scope-lineage encerrado tecnicamente: install final15590/prova final=0; F16
+15853 terminou0, sem findings/docdrift e oito budgets ZERO. Recorder exclusivo
+record_scope_lineage.py executado apos terminais gerou acceptance-scope-lineage.json
+com hashes e limites. Suites Core69,Community72+61 e frontend50 passaram; build,
+verify SPA,lint e diff-check passaram. Nenhum processo permanece pendente.
+Pronto para commit/push pareados. Objetivo integral continua ativo, inventario
+76 verificadas/33 parciais/137 nao auditadas inalterado. Proximo passo do mesmo
+KG7: publicar intents tipados create/reuse/supersede(source_bug), propagar pela
+submissao composta sem mudar digest legado ausente, conservar CAS/autoridades e
+retornar conflito delimitado; depois candidatos/UI/projecao e demais criterios
+registrados. Nao aceitar scope global nem inferir supersedencia por similaridade.
+
+Scope-lineage validacao inicial: SPA build72877/verify terminais0,79 arquivos,
+tree d5b61261cfd76bcb5f4cb9de920604f15bf02a8c4dc1659a28587ca6937bf52b.
+Builds/install69122/prova4198 terminais0,839/902 Core +363/448 Community
+byte-identical antes dos testes Python. Core5420=0:69pass/11.86s; Community
+26585=0:72pass/198.51s. Read-surfaces55846=0:61pass/112.00s (historico,
+REST/MCP e distribuicao SPA). Frontend82363=0:50pass; lint45868=0,331 avisos
+dentro do ratchet402. F1684710=1 somente matrizes README, findings=[]/oitoZERO.
+Apos todos terminais, matrizes regeneradas oficialmente e builds finais0.
+Install final iniciado; faltam prova final,F16 final,recorder e commits/pushes.
+Nenhum codigo de produto mudou durante as campanhas. Nao repetir suites sem
+nova falha ou mudanca: rodada final altera somente projecao documental.
+
+WIP scope-lineage (2026-09-29), base publicada Core df923557 / Community
+98bd20e1. Leitor de pagina usa nova porta publica de historico limitado (200
+registros compartilhados por pagina, cache somente na UOW), implementada pelo
+adapter SQL com LIMIT e recusa de truncamento. A listagem existente acrescenta
+linhagem somente para v2/source_bug: liga captura, claim e nascimento do sucessor
+por fingerprints; nao afirma aplicabilidade atual, autoridade ou disponibilidade
+do grafo. Ausencia/limite de capacidade e explicitamente unverified; historico
+inconsistente falha fechado. Frontend preserva intents v1/v2 e apresenta escopo,
+razao e qualificacao historica sem inferir aprovacao. Testes novos Core/SQL/UI
+preparados; ainda sem campanha Python/build instalado correspondente. Build SPA
+72877 em andamento. Nenhum aceite global promovido; autoria publica dos intents,
+linhagem de consulta/projecao, K3/K4 e restantes criterios continuam pendentes.
+
 Scoped materializer validado (2026-09-29): Community76433 terminou0 com53pass
 /567.98s; replay adicional7506=0:1pass/35.71s. Core129pass/7.37s (r2, payload Core
 idêntico ao r3 provado por aggregate_sha256); frontend24pass. F1630822=0/oitoZERO,

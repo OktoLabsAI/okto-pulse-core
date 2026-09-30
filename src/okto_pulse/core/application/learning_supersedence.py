@@ -6,9 +6,85 @@ from okto_pulse.core.domain.learning_supersedence import (
 )
 from okto_pulse.core.ports.kg_cognitive_source import (
     TransactionalCognitiveHistoryReader, latest_cognitive_source_records,
-    ConditionalCognitiveSourceWriter,
+    ConditionalCognitiveSourceWriter, BoundedCognitiveHistoryReader, CognitiveSourceUnavailable,
 )
 from okto_pulse.core.ports.learning_capture import is_scoped_learning_supersede, LearningCaptureTargetConflict
+
+
+class LearningScopeHistoryPageReader:
+    """Read historical linkage for one capture page, without currentness claims.
+
+    Histories are cached only inside this request/UOW. The 200-record budget is
+    shared by all lineage lookups on the page; an overflow never looks complete.
+    No graph projection, source applicability, permission or write is inferred.
+    """
+    def __init__(self, context, store):
+        self.context, self.store = context, store
+        self.remaining = 200
+        self.histories = {}
+
+    async def _history(self, board_id, node_id, generation):
+        identity = (board_id, node_id, generation)
+        if identity in self.histories:
+            return self.histories[identity]
+        if self.remaining == 0:
+            raise CognitiveSourceUnavailable('cognitive_source_history_limit', board_id=board_id, node_id=node_id)
+        try:
+            records = await self.store.read_bounded_history_in_context(self.context,
+                board_id=board_id, node_id=node_id, generation=generation, max_records=self.remaining)
+        except CognitiveSourceUnavailable as exc:
+            if exc.failure_reason == 'cognitive_source_history_limit':
+                self.remaining = 0
+            raise
+        if (type(records) is not tuple or len(records) > self.remaining
+                or any((row.board_id, row.node_type, row.node_id, row.generation)
+                    != (board_id, 'Learning', node_id, generation) for row in records)
+                or any(left.source_revision >= right.source_revision for left, right in zip(records, records[1:]))):
+            raise ValueError('learning_scope_history_invalid')
+        latest_cognitive_source_records(records)
+        self.remaining -= len(records)
+        self.histories[identity] = records
+        return records
+
+    async def lineage(self, capture):
+        if not is_scoped_learning_supersede(capture.payload):
+            return None
+        intent = capture.payload['intent']
+        result = dict(contract_version='learning-scope-history/v1', scope='source_bug',
+            bug_id=capture.payload['source']['bug_id'], capture_fingerprint=capture.record_fingerprint,
+            target=dict(learning_id=intent['target_node_id'], generation=intent['target_generation'],
+                fingerprint=intent['expected_fingerprint']), state='unverified', limitation='not_recorded',
+            current_applicability='not_assessed', graph_projection='not_assessed')
+        if not isinstance(self.store, BoundedCognitiveHistoryReader):
+            return {**result, 'limitation': 'history_capability_unavailable'}
+        try:
+            target = await self._history(capture.board_id, intent['target_node_id'], intent['target_generation'])
+            successor_history = await self._history(capture.board_id, capture.node_id, capture.generation)
+        except CognitiveSourceUnavailable as exc:
+            if exc.failure_reason != 'cognitive_source_history_limit':
+                raise
+            return {**result, 'limitation': 'history_limit'}
+        matches = [(previous, claimed) for previous, claimed, reference in scope_reference_additions(target)
+            if (reference.node_id, reference.generation, reference.fingerprint)
+                == (capture.node_id, capture.generation, capture.record_fingerprint)]
+        exact_capture = [row for row in successor_history if row.record_fingerprint == capture.record_fingerprint]
+        successors = [row for row in successor_history if row.source_revision == capture.source_revision + 1]
+        if (len(exact_capture) != 1 or exact_capture[0].source_revision != capture.source_revision
+                or exact_capture[0].payload != capture.payload or exact_capture[0].evidence_refs != capture.evidence_refs):
+            raise ValueError('learning_scope_history_invalid')
+        if not target:
+            return {**result, 'limitation': 'target_history_unavailable'}
+        if not matches and not successors:
+            return result
+        if len(matches) != 1 or len(successors) != 1:
+            raise ValueError('learning_scope_claim_invalid')
+        previous, claimed = matches[0]
+        replacement = qualify_learning_scope_replacement(previous=previous, claimed=claimed,
+            capture=capture, successor=successors[0])
+        return {**result, 'state': 'recorded', 'limitation': None,
+            'target_claim': {'revision': claimed.source_revision, 'fingerprint': claimed.record_fingerprint},
+            'successor_birth': {'revision': replacement.successor.source_revision,
+                'fingerprint': replacement.successor.record_fingerprint}}
 
 
 async def bind_learning_scope_materialization(context, store, *, projection, source):

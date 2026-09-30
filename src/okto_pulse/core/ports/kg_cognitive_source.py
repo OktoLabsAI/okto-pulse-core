@@ -602,6 +602,23 @@ class TransactionalCognitiveHistoryReader(Protocol):
 
 
 @runtime_checkable
+class BoundedCognitiveHistoryReader(Protocol):
+    async def read_bounded_history_in_context(
+        self, context: object, *, board_id: str, node_id: str, generation: int,
+        max_records: int,
+    ) -> tuple[CognitiveSourceRecord, ...]:
+        """Read complete verified history, or refuse before unbounded loading.
+
+        max_records is a positive limit including revision zero (at most 200).
+        A missing identity returns (). Exceeding the limit raises
+        CognitiveSourceUnavailable('cognitive_source_history_limit'); never
+        return a truncated history as complete. Include caller-staged writes.
+        This read grants neither authority nor current applicability.
+        """
+        ...
+
+
+@runtime_checkable
 class FingerprintCognitiveSourceReader(Protocol):
     async def read_fingerprint_in_context(
         self, context: object, *, board_id: str, node_id: str, generation: int,

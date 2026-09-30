@@ -67,6 +67,8 @@ async def list_learning_captures(context, *, board_id: str, bug_id: str, cursor=
     if len(page.records) > 200:
         raise ValueError('learning_capture_history_limit')
     latest_cognitive_source_records(page.records)
+    from okto_pulse.core.application.learning_supersedence import LearningScopeHistoryPageReader
+    lineage_reader = LearningScopeHistoryPageReader(context, store)
     items = []
     for record in page.records:
         payload = dict(record.payload)
@@ -75,9 +77,13 @@ async def list_learning_captures(context, *, board_id: str, bug_id: str, cursor=
                 generation=record.generation, evidence_refs=record.evidence_refs)
                 or payload['source']['bug_id'] != bug_id):
             raise ValueError('learning_capture_history_unavailable')
-        items.append({'learning_id': record.node_id, 'generation': record.generation,
+        item = {'learning_id': record.node_id, 'generation': record.generation,
             'source_revision': record.source_revision, 'fingerprint': record.record_fingerprint,
-            'capture': payload})
+            'capture': payload}
+        lineage = await lineage_reader.lineage(record)
+        if lineage is not None:
+            item['lineage'] = lineage
+        items.append(item)
     if len(json.dumps(items, ensure_ascii=False).encode('utf-8')) > 8 * 1024 * 1024:
         raise ValueError('learning_capture_history_limit')
     # A historical capture alone does not prove current applicability or
