@@ -2,6 +2,240 @@
 
 ## Estado para retomada
 
+Incremento integrado validado em2026-09-30: install9881/prova43494/F16final18359
+terminais0. Par dist-learning-reconciliation-candidate-learning-integration-final
+847/910 Core+367/452 Community byte-identical; F16ok=true, findings=[] e
+documentation_findings=[], oito budgets ZERO. Recorder executado UMA vez apos
+terminais: acceptance-candidate-learning-integration.json sela campanhas e
+hashes com limites explicitos. Ruff F/E9/diff-check passaram. Nenhum processo
+desta campanha ativo. Pronto para commits/pushes pareados, sem pausa do objetivo.
+Retomada imediata: inicializacao explicita de revisao tecnica Global SOMENTE
+no candidato privado cercado, mantendo replay somente leitura e recusando
+revisao invalida; depois compor classificacao historica/supersedencia e
+aplicabilidade atual de Learning antes de admitir completion. Endpoint
+Amendment->Bug resolvido e comprovado. Nao declarar entrega integral:78/33/135
+inalterado, K3/K4/K2, demais inventarios/benchmarks e distribuicao final pendentes.
+
+Community runtime4 sessao33402 TERMINAL0:7 passed/569.474s. Coordenador
+nativo exige16 relacoes previstas/16 matched, missing=unresolved=0; a unica
+aresta nova fora do plano deterministico e supersedes autenticada. Original
+SQL/replay frio/recusa completion passaram. Apos todos terminais, READMEs
+regenerados do F16 observado; builds candidate-learning-integration-final
+ambos0, instalacao iniciada. Falta prova final/F16/recorder/commits e pushes.
+
+Instalacao amendment-bug-endpoint1 sessao90961 terminal0/prova0:847/910+367/452
+byte-identical. Core71147 terminal0:101 passed/10.235s. F1645537 terminal1
+somente matrizes README; findings=[] e oito budgetsZERO. Community runtime4
+sessao33402 em andamento; primeiro coordenador com novo assert de todas as
+relacoes previstas resolvidas/matched ja passou, aguardar suite completa.
+Nao regenerar README nem editar produto antes do terminal. Recorder de
+integracao preparado, ainda NAO executado. Sem commit/push deste WIP.
+
+Regressao supersedence-history-regression1 terminal0:13 passed/47.267s.
+Apos terminal, corrigido endpoint de Amendment->Bug: emissor usa kgref:Bug
+com ID completo; resolver transacional e observador compartilham aliases
+inteiros existentes e recusam identidades ativas ambiguas, sem Entity/prefixo.
+Testes adicionais cobrem aliases, null/vazio ativo, supersedidos, ausencia,
+erro de leitura e colisao; ainda nao executados. Ruff F/E9 passou. Builds
+amendment-bug-endpoint1 ambos0; instalacao iniciada, exigir terminal e prova
+antes de testes. Nenhum novo dialeto, permissao ou aprovacao de historia.
+
+Atualizacao 2026-09-30: candidate-learning-runtime3 TERMINAL0:7 passed/486.020s.
+Builds pareados0/install94348=0/prova0:847/910 Core+367/452 Community
+byte-identical ANTES da suite. F1612920 terminal0:ok=true, findings e
+documentation_findings vazios, oito budgets current=limit=0. Coordenador
+com Learning, preservacao SQL original, trilha supersedes autenticada, replay
+frio e recusa de completion passaram; regressao durable-technical-report passou.
+Isso substitui os estados pendentes abaixo para esta campanha, nao os registros
+historicos. Relatorio ainda pending: predecessor canonical-bug sem classificacao
+historica, endpoint amendment_lineage-_belongs_to_origin_bug irresolvido e
+Global cognitive_overlay_stable_revision_required. Nao promover aceite K3/K4.
+Nova prova provenance-supersedence-history-regression1.json confirmou mesmos
+bytes; campanha de tres arquivos historicos em andamento, sessao93857. Produto
+congelado ate terminal. WIP ainda nao enviado, ultimo par3fd796fe/8224bd00.
+
+Integracao seguinte WIP: censo ganhou callback opcional de relacao; observador
+de historia v5 recolhe Bugs do snapshot anterior a Learning e chama a porta
+Core de supersedencia com before-image e trace dos ACKs. Dono vem do trace,
+nao da auto-declaracao da aresta. Limite agregado64MiB preservado. Validacao
+de grafo confere old-change exato, novo node_ref/ACK, fingerprint integral do
+sucessor e da aresta, unicidade, contagens/sessoes; nao permite generico layer
+cognitive. Comparacao de relacoes/classificacao historica e completion ainda
+pendentes: reconhecer efeito mecanico nao e aprovar conteudo historico. v4/v6/
+v17 sem a fase mantem comportamento estrito anterior. Teste integrado passou
+a exigir trilha retida para canonical-bug e replay frio. Ruff0; nova campanha
+candidate-learning-runtime3 ainda precisa build/instalacao/prova e testes.
+
+Atualizacao mais recente: observer Core de supersedencia NC8 implementado e
+48 testes focados passaram; NAO integrado ainda ao coordenador/completion.
+Par instalado/provado: dist-learning-reconciliation-projection-supersedence-final,
+847 Python/910 payload Core e367/452 Community identicos. Builds0, install21832=0,
+prova23458=0 e F16final7747=0; parser confirmou oito budgets ZERO e nenhum drift.
+Todos processos desta rodada terminaram. Core/community seguem feature/v0.4.0;
+WIP nao commitado/enviado, ultimo par publicado3fd796fe/8224bd00. Inventario de
+aceite global78/33/135 permanece sem promocao; entrega integral NAO concluida.
+Proximo passo concreto: usar observe_bug_projection_supersedence em
+retirement_candidate_history sobre before-image original, snapshot antes de
+Learning e efeitos autenticados dos ACKs; compor a aresta historica e sua
+classificacao no Core, sem reclassificar recibos v6/v17 antigos. So entao
+rerodar coordenador (ultimo resultado14=1 por supersedes Bug comprovado) e
+concluir aplicabilidade atual Learning/completion/K3/K4. Nao repetir o teste
+integrado sem corrigir sua causa conhecida nem substituir supersedencia por
+UPDATE. Demais pendencias do plano continuam no inventario, sem novos alvos.
+
+Investigacao de aliases em andamento (KG7.5, sem ampliar escopo): a busca
+NC8 era por referencia exata; o leitor canonico de Bug reconhece tres aliases.
+WIP acrescenta consulta tipada transacional ao Protocol, implementada somente
+no adapter Grafx, com limite de duas identidades distintas e erros propagados.
+Core concentra aliases de Bug ja tipado, sem mudar o parser cognitivo generico.
+Reuso de projecao relacional nao curada preserva ID/birth/arestas e inclui a
+referencia canonica no envelope de efeitos (before-image retido); curadoria
+continua protegida. Nenhum dialeto novo foi acrescentado ao Core.
+bug-source-identity1 builds0/install95809=0/prova0 (846/909+367/452).
+Core47391=0:19 passed/5.27s. Community30814=1:1 passed/1 failed/4.67s;
+teste nativo de lookup passou; outro oraculo esperava KeyError, mas adapter
+corretamente traduz para GraphError. F1611637=1, findings=[]/oito budgetsZERO;
+verificar/regenerar matrizes documentais antes do par final. Sem aceite deste
+WIP. coordinator9 Community96036 ainda executando contra esse par provado;
+nao editar produto ate terminal. Revisao estatica encontrou dois consumidores
+Learning ainda limitados a bug:<id>/parser UUID; reconciliar aliases exatos
+no contexto Bug autenticado, sem aceitar conceito/Board/fonte diferentes.
+coordinator9 terminou1/152.05s: duplicata resolvida, falha reproduzida no
+guard learning_materialization_target_changed por card:bug-context opaco.
+Apos todos terminais, guard passa a comparar aliases INTEIROS do Bug tipado
+da captura autenticada contra a tabela Bug do Board cercado; canonical e
+supersedence continuam exigidos. Qualificador de delta usa os mesmos aliases
+e exclui supersedidos/nao canonicos. Parser cognitivo generico nao ampliado.
+Teste do delta exercita tres aliases validos e recusa outro Bug/conceito.
+Oraculo do adapter corrigido para GraphError com causa KeyError; READMEs
+regenerados pelo relatorio F16 terminal. bug-source-identity2 builds0,
+instalacao/prova e campanhas ainda pendentes; nenhuma alegacao de aceite.
+bug-source-identity2 install67244/prova0 antes das suites. Core53973=0:
+71 passed/48.19s. Community25120=1:68 passed/1 failed/106.85s; todos testes
+do adapter passaram, delta Learning recusado por erro novo: LOGICAL_NULL e
+sentinela truthy no formato portatil, nao None. coordinator10 Community20596
+terminou1/198.25s na mesma condicao, apos materializacao efetiva. F1680149=1
+somente README, findings=[]/oitoZERO. Apos TODOS terminais, comparacao mudou
+para (LOGICAL_NULL, string vazia), nao ausencia desconhecida; testes adicionais
+distinguem vazio ativo, supersedencia real e layer working. READMEs regenerados.
+Nova rodada bug-source-identity3 e coordinator11 ainda precisam provas/testes.
+bug-source-identity3 builds0/install96462/prova0, F1683854=0, sem findings ou
+drift e oitoZERO. Community23055=0:7 passed/183.52s, dois warnings preexistentes
+de record_property/JUnit. coordinator11 Community94335=1/205.68s: passou a
+fase Learning e chegou a reconciliacao anterior a Learning, que recusou uma
+aresta com retirement_candidate_graph_edge_invalid. Guard NAO relaxado.
+Diagnostico SOMENTE no teste retém dataclass da relacao rejeitada via traceback
+antes de repropagar erro original. coordinator12 foi iniciado indevidamente
+apos Ruff detectar import asdict ausente; interrompido o PID61284 exato do
+pytest descartavel, runner79736 terminou1. Nao contar como teste concluido;
+nenhum dado real/processo Pulse foi tocado. Import corrigido. Produto Python
+continua exatamente dist-bug-source-identity3, com prova adicional
+provenance-candidate-learning-coordinator12.json. Nova rodada13 necessaria.
+Nenhum commit/push deste WIP nem promocao de aceite integral. Proximo passo:
+identificar origem/regra/layer da aresta recusada, corrigir somente causa
+demonstrada e completar coordenador/checkpoint antes de qualificar completion.
+coordinator13 prova0/Community36597=1/227.52s: guard original reproduzido,
+mas diagnostico asdict falhou em MappingProxyType. Corrigido SOMENTE serializer
+do teste para campos explicitos e dict(properties); nenhuma alteracao de gate.
+coordinator14 prova0/Community57612=1/223.54s retém diagnostico exato em
+.validation-v040/learning-reconciliation-candidate-learning-coordinator14-community-tmp/
+test_coordinator_retains_learn0/candidate-edge-diagnostic.json: supersedes
+Bug bug_f01f05511072b5dac915859a -> canonical-bug, confidence1, layer cognitive,
+rule_id vazio, ator/sessao kgses_1a7471d51ab54f32. E o caminho NC8 existente
+TransactionOrchestrator.supersede_node quando titulo normalizado muda, NAO
+callback de Learning. O ID predecessor/conteudo ficam retidos; successor novo
+e aresta de historia sao comportamento legado que nao sera substituido por
+UPDATE para fazer upgrade passar. Correcao da interpretacao anterior: flag
+relational_projection_candidate_ids NAO abrange esse Bug; removido ramo WIP
+de normalizacao source_ref que nao se aplicava ao caso. Aliases continuam
+resolvidos pela porta transacional, com ambiguidade recusada.
+Implementacao Core em andamento: observe_bug_projection_supersedence verifica
+snapshots completos do predecessor, trace ordenado/ACK scope, identidade e
+geracao deterministica do sucessor, mesma fonte tipada e envelope exato da
+aresta NC8. Nao e aprovacao de fonte historica ou runtime. Testes de contrato
+preparados (historico adulterado/curadoria/fonte/conceito/sessao/timestamp).
+Ainda NAO testado nem integrado ao qualificador final; guards existentes
+permanecem. Todos processos anteriores terminais; nova build/prova requerida.
+projection-supersedence1 builds0/install22387/prova0 (847/910+367/452).
+Core67191=1/6.85s por ordem posicional errada de LogicalRelation na fixture;
+produto nao alterado. Fixture agora usa campos nomeados. Nova prova2 confirmou
+mesmos bytes; Core48046=0:48 passed/5.75s (18 casos do observador de trilha,
+efeitos/reconciliacao existentes e aliases). F1614703=1 apenas matrizes README,
+findings=[]/oitoZERO. READMEs regenerados depois do terminal. Observer ainda
+NAO conectado ao coordenador: proximo trabalho e derivar a observacao dos
+snapshots/ACKs reais, compor arestas e classificacao historica com o Core,
+preservando significado de recibos antigos; depois completar aplicabilidade
+Learning e completion/K3/K4. Nao usar a observacao sozinha como aprovacao.
+Build/prova/F16 finais documentais pendentes. Sem commit/push do WIP integrado.
+
+Par publicado Core3fd796fe/Community8224bd00, pushes0/limpos.
+Integracao NAO VALIDADA em working tree: coordenador chama Learning antes do
+Global; projection/v7 retém deterministic_after_sql + phase digest; checkpoint
+reabre phase/v1, rederiva cadeia e verifica ACKs sobre baseline SQL anterior.
+VerifiedLearningPhase disponibiliza frames iniciais autenticados; history/v5
+preserva censo nativo final e censo anterior a Learning, usando o anterior
+para provar envelopes deterministas/restauracao literal sem relaxar guards.
+Graph reconciliation/v18 explicita observacao dos Boards antes de Learning
+e estado learning_reconciliation_pending. ESSE ESTADO E TEMPORARIO DE
+IMPLEMENTACAO: ainda precisa qualificar aplicabilidade atual e compor
+historico/arestas cognitivas no Core; completion recusa v18. Nao equivale a
+entrega/K3/K4 completos. v6/v17 conservam interpretacao anterior.
+Teste novo tenta upgrade completo da fixture assinada, replay checkpoint e
+recusa de completion pendente; teste fase privada agora reabre receipt da fase
+e ataca baseline/geracao. Ruff0. Campanha candidate-learning-coordinator1 a
+iniciar; produto congelado enquanto campanhas ativas. Nenhum dado real/UI.
+coordinator1 builds0/install23814=0/prova0 (846/909+367/452).
+F1623002=0; Community7869=1/22.52s antes de chamar coordenador: import de
+SOURCE/MIGRATION apos fixture prepend Core/tests resolveu helper homonimo
+errado. Todos terminais. Teste agora instancia RecoveryBuildPair sinteticos
+diretamente, sem importar suites auxiliares (nenhuma mudanca no produto).
+Repetir campanha coordinator2 para investigar runtime real; NAO registrar
+aceite antes de testes completos, nem marcar v18 pendente como entrega final.
+coordinator2 builds0/install65030=0/prova0 (846/909+367/452), F1686618=0.
+Community74119=1/47.55s: fixture criada pelo metadata atual ja nao tem sprints;
+preflight recusou corretamente predecessor incompleto. Todos terminais.
+Teste acrescenta SOMENTE schema legado vazio e cards.sprint_id nullable pela
+fixture legacy_sprint_schema isolada, antes de qualquer backup/manifesto;
+nao altera metadata runtime, gates ou dados reais. coordinator3 a iniciar.
+coordinator3 builds0/install59247=0/prova0 (846/909+367/452), F1668485=0;
+Community51239=1/63.57s: zero Sprints gera archive references=(), recusado em
+context_disposition_retirement._documents. Gap preexistente reproduzido para
+upgrade sem qualquer Sprint; registrar para F2/K4, nao relaxar scope guard.
+Para isolar a integracao Learning, fixture passa a conter UMA Sprint vazia
+sem membros/contexto substantivo, usando tabela legada isolada antes do backup.
+Nenhuma policy/captura/Card alterada. Todos terminais; coordinator4 a iniciar.
+coordinator4 builds0/install24944=0/prova0 (846/909+367/452), F1623523=0;
+Community2383=1/28.86s: INSERT da Sprint fixture sem created_by obrigatorio.
+Schema legado revisado; acrescentado created_by somente no teste. Produto
+inalterado desde dist coordinator4, portanto proxima campanha coordinator5
+reusa esse par instalado apos NOVA prova byte-a-byte; nao precisa rebuild.
+coordinator5 prova0 sobre dist4; Community65225=1/63.10s: helper enable_fence
+mantinha monkeypatch get_engine fixo durante bootstrap, ignorando o binding
+de schema_transaction_runtime na conexao com BEGIN IMMEDIATE. Fixture agora limita
+patch ao contexto da migracao de setup; engines de producao nao alterados.
+Nenhum processo ativo. coordinator6 reutiliza dist4 apos prova nova.
+coordinator6 prova0; Community96863=1/70.44s: chegou ao bootstrap e guard
+retirement_bootstrap_card_content_changed recusou delta de Cards. Nao relaxar.
+coordinator7 instrumenta SOMENTE _load_cards na fixture e grava delta dos campos
+(exceto position) em bootstrap-card-delta.json antes de repropagar erro.
+Objetivo: identificar mudanca concreta/migrador, sem inferir autoridade/policy.
+coordinator7 prova0; Community96159=1/85.03s. Delta concreto salvo: validations
+de bug-context/regression-test adicionou verdict=pass ao outcome=success.
+Migrador existente _migrate_heal_task_validation_field_names executa isso no
+startup; fixture Base.create_all deixava aliases legados artificiais. Nova
+coordinator_graph_runtime aplica ESSE migrador na fixture ANTES da autoria
+da captura/closeout, com patch de session_factory limitado ao setup. Guard
+de preservacao de Cards permanece integral, nenhuma autorizacao nova.
+coordinator8 reusa dist4 apos prova nova; produto continua congelado.
+coordinator8 Community55057=1/192.85s; sem campanhas ativas. Chegou a fase
+Learning no coordenador: canonical_bug_identity_ambiguous. Fixture original
+tem Bug canonical-bug com source_artifact_ref=bug:bug-context; projecao
+deterministica usa card:bug-context e cria outro Bug canonico. Resolver
+CommunityCanonicalBugNodeReader aceita aliases e recusa dois candidatos.
+Investigar reuso da identidade por aliases de dominio (KG7.5), sem apagar
+historico, reescrever fixture para esconder duplicata ou relaxar ambiguidade.
+Ainda SEM commit/push desta integracao (8 arquivos Community + ledger WIP).
+
 Par publicado Core61e3189d/Community22736480, pushes0/limpos.
 Integracao runtime em andamento: extraida candidate_execution_runtime da
 fase deterministica, mantendo providers/locks/ator; fechamento SQL em finally

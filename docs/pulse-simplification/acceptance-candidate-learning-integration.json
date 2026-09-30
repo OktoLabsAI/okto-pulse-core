@@ -1,0 +1,169 @@
+{
+  "scope": "KG7.5/K3 private Learning coordinator, exact Bug identity and authenticated NC8 history",
+  "campaigns": {
+    "projection-supersedence2-core": {
+      "passed": 48,
+      "distinct_across_campaigns": false
+    },
+    "bug-source-identity2-core": {
+      "passed": 71,
+      "distinct_across_campaigns": false
+    },
+    "bug-source-identity3-community": {
+      "passed": 7,
+      "distinct_across_campaigns": false
+    },
+    "candidate-learning-runtime3-community": {
+      "passed": 7,
+      "distinct_across_campaigns": false
+    },
+    "supersedence-history-regression1-community": {
+      "passed": 13,
+      "distinct_across_campaigns": false
+    },
+    "amendment-bug-endpoint1-core": {
+      "passed": 101,
+      "distinct_across_campaigns": false
+    },
+    "candidate-learning-runtime4-community": {
+      "passed": 7,
+      "distinct_across_campaigns": false
+    }
+  },
+  "budgets": [
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "import_boundary_baseline",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every import_boundary_baseline allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "singleton_baseline",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every singleton_baseline allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "dependency_temporary_exceptions",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every dependency_temporary_exceptions allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "graph_runtime_compatibility",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every graph_runtime_compatibility allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "rebuild_artifact_compatibility",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every rebuild_artifact_compatibility allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "community_private_reach_ins",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every community_private_reach_ins allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "community_adapter_bridges",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every community_adapter_bridges allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "af35_relational_residue",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every af35_relational_residue allowance before F16 completion."
+    }
+  ],
+  "verified": [
+    "Coordinator executes the isolated retained Learning phase, authenticates its SQL and graph boundaries, and cold-replays the sealed candidate.",
+    "Original disposable SQL remains unchanged; candidate completion refuses unresolved reconciliation.",
+    "Historical Bug aliases use a public transactional port implemented by Grafx; ambiguity and reader failures are not absence.",
+    "NC8 supersedence is observed from original before-image, full successor/edge fingerprints and authenticated ACK property effects, without inventing source authority.",
+    "Amendment origin Bug resolves by whole typed identity, not an Entity prefix; integrated comparison requires every planned relation resolved and matched.",
+    "Paired installed Python and payload bytes were proved before behavioral campaigns; final F16 has no findings or documentation drift."
+  ],
+  "limits": [
+    "K3/K4 and the full initiative remain incomplete; acceptance inventory remains 78 verified / 33 partial / 135 unaudited.",
+    "Historical classification, certified supersedence relation composition, Global overlay initialization and current Learning applicability still block final candidate admission.",
+    "The fixture substitutes unrelated lifecycle gates and does not prove full product admission or real-data migration.",
+    "Zero-Sprint archive-scope reproduction remains unresolved; existing negative campaigns are preserved in the ledger.",
+    "No UI changed; no active runtime restart, real-data writes, migration, deployment, release or tag occurred.",
+    "Versions remain 0.3.4 during feature/v0.4.0 implementation; final paired distribution and full-plan tests remain pending."
+  ],
+  "sha256": {
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-candidate-learning-integration-final-closure.log": "fc2f12a5e3db91d73c39cf0f1ba7a28f157749ffe12a904ce7a368ddfef62d47",
+    "PULSE_REFACTOR/.validation-v040/provenance-candidate-learning-integration-final.json": "b3995015a0f54f5d05fce39756c31e15bdf04d62637fe6e52b634e46dc8ef782",
+    "PULSE_REFACTOR/.validation-v040/run_learning_reconciliation.py": "a7bdb03dc0b76077561156d665b2cd3ba3b217101f5875fcc2e2322b8b4ab132",
+    "PULSE_REFACTOR/.validation-v040/record_candidate_learning_integration.py": "36452ea55f496d48117c34bbe71a778ebaa8f6612bef0bea001cdfc247d0e00a",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-projection-supersedence2-core.xml": "94d406fa4353c0ba735493dbd00c5ab0b61fa493b62c082105d0c34be6326ad1",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-projection-supersedence2-core.log": "440dc8d7f06404e02bf3399a9bf1ae3180eeb66e081b634b05ee1947e6fe1881",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-bug-source-identity2-core.xml": "3803feffc394a6263e5febbec77c3c2c6d8945fa5ae2d608558157da66a2a442",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-bug-source-identity2-core.log": "1c253181b7e86eca5b52f1be53e8bc0c52a31c3416b3de56cd08087cdf71b442",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-bug-source-identity3-community.xml": "93ba17f3a3dbfbf3bb3d2b3ad60ef35c8824e800e77a1313d2632aa99acde9dc",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-bug-source-identity3-community.log": "1af3269cefc30efe5f24f0e0c91a40ae84244197647bc96f9f7afcb16911855d",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-candidate-learning-runtime3-community.xml": "076d9d8f787ceee859a160afff153c81c13309a21d25a13f0e312cd78de33861",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-candidate-learning-runtime3-community.log": "3f0c9f8ec1dbb4b8e62b9876b2f53c5874d34f4143dcef69f7d0b4f4df656e3f",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-supersedence-history-regression1-community.xml": "9483770bb3c7556a8bb4023d73ace95075e8fe0185c3889ebeb8bef029b49d92",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-supersedence-history-regression1-community.log": "37ca14ab0333b14e93ca21b0130fb1e06780858d2348642d2e502db8abd66f91",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-amendment-bug-endpoint1-core.xml": "c2e50c855895d8d740e5149f880f8112a808dba215624111ecd43ef812519c8d",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-amendment-bug-endpoint1-core.log": "db46832f0918da270e42389347308524950a86a2a07a36e1361f4bdc9c1b5b8a",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-candidate-learning-runtime4-community.xml": "b13cc439ff900c73004db9eac849d9bff931752e5db76a7b2d0f6307b04e0b63",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-candidate-learning-runtime4-community.log": "e367831e1a2c5d44457fe5dc706fd8c14825eb5ee190d81d84a1e42e63383c85",
+    "okto_labs_pulse_core/README.md": "bdb0e90a6e071eb275ee1e74596b836de0c29138fcd6df09c2cc66732462bc65",
+    "okto_labs_pulse_core/src/okto_pulse/core/application/learning_reconciliation_graph.py": "01c9735c622fe4e920be94b75f7bce2e0927fc97b3587f043e4cd9c0596e7ef0",
+    "okto_labs_pulse_core/src/okto_pulse/core/application/processors/deterministic_kg.py": "2879ddb60dc5c8aea2d561bcc0fc53bcfcc596f741032cb6b9429014bef009ea",
+    "okto_labs_pulse_core/src/okto_pulse/core/application/projection_relations.py": "4c3a63863580704ed0a8a801dc9c8aecdaa1380d730c9e4a4674119729498cd7",
+    "okto_labs_pulse_core/src/okto_pulse/core/kg/cognitive_source_ref_resolver.py": "9cf45d8537d9beddf6fce46efa30a885ab621d2869af5c87def2303e42c01b0a",
+    "okto_labs_pulse_core/src/okto_pulse/core/kg/interfaces/graph_transaction.py": "cb295c216013ca0f5907a3594a1bb75ee6338fbaf9d565b3245b4c725bb84217",
+    "okto_labs_pulse_core/src/okto_pulse/core/kg/primitives.py": "55de75a5c8ce682e7062aea84bfc1798e7167b0f810f54601699bf3ec5e279b8",
+    "okto_labs_pulse_core/src/okto_pulse/core/ports/projection_effects.py": "345bb103ed6da5ee1f62dc672baf5bd55fa879c67041749ef8ffe5d53f762793",
+    "okto_labs_pulse_core/tests/test_amendment_kg_rebuild.py": "48e313d0a6e21e2be2ee84414bbf1aad0fa288a9205ee80fd4d1e85abf0f7b34",
+    "okto_labs_pulse_core/tests/test_projection_relations.py": "204764090b0700410f4856be256be733dd6e8f3db08eedb407c4dd8f0effc85e",
+    "okto_labs_pulse_core/src/okto_pulse/core/application/projection_supersedence.py": "e5b30145b2755117c22179563cedb9007dd13cf311ca804c8dceb12733732447",
+    "okto_labs_pulse_core/tests/test_bug_source_identity.py": "72ca7bd1b8026c29c055c3ddc9d5968cf653d7eb85168be8a1d9eae57c32af31",
+    "okto_labs_pulse_core/tests/test_projection_supersedence.py": "5b96fad42ca42d67bf63d852ee368d85cf038ff77961f7ec2787de85103bbecb",
+    "okto_labs_pulse_community/README.md": "91fbee0fb49d0cf8ce90d01829b939341437ccfb15e5f138546e990e29f0ddae",
+    "okto_labs_pulse_community/src/okto_pulse/community/adapters/grafx_graph_transaction.py": "4a6a3f578044f043fe95d4298264793206aa8a186b04110a4c4fe05e5dee9bd3",
+    "okto_labs_pulse_community/src/okto_pulse/community/adapters/retirement_candidate_checkpoint.py": "891b47dc61eba83f85882b5f59321d4169364ddbac1497169612ddc2c1b8bb46",
+    "okto_labs_pulse_community/src/okto_pulse/community/adapters/retirement_candidate_cognitive_restoration.py": "d96ee6e89fa550ec3b627d60052ca57ab761ea833bc90f8543f0cf4850cb2e23",
+    "okto_labs_pulse_community/src/okto_pulse/community/adapters/retirement_candidate_completion.py": "d694d2beb9a9b08cc5a8815959d2dc0148d6d6aa4551d21168460aae5e528e5f",
+    "okto_labs_pulse_community/src/okto_pulse/community/adapters/retirement_candidate_graph_reconciliation.py": "e15677cf230f9fdd19ca5dec48f2474dc2c4c662321e3f6c025dd130a5757114",
+    "okto_labs_pulse_community/src/okto_pulse/community/adapters/retirement_candidate_history.py": "d3814acadffdecbba4dced5812e097cfbf41248b5c3cd9fdaa97667335fa4edf",
+    "okto_labs_pulse_community/src/okto_pulse/community/adapters/retirement_graph_candidate.py": "25ab984d4d8e279010aca0cb14f8dedbbac2c40907bcf46abf69016d113f756d",
+    "okto_labs_pulse_community/src/okto_pulse/community/adapters/retirement_historical_graph_census.py": "56a7810add29ec7d2cb5f9f6d877657ba4eb46d60492f8e4cbc6815de23ba5bd",
+    "okto_labs_pulse_community/src/okto_pulse/community/adapters/retirement_learning_execution.py": "a8aba3c1df1098315f274fb9463f3f49ff458c0b7fe1923b27c1224bca985eb9",
+    "okto_labs_pulse_community/tests/test_learning_reconciliation_effects.py": "9850eb69a89aeefbef92e2a5441d9a8d1de9753fdaf81233e04ff7ece8fb799c",
+    "okto_labs_pulse_community/tests/test_retirement_learning_execution.py": "2520b25a0d799980e92b944be239418b1b6dc584c2732917cce36c5ca3d327c5",
+    "okto_labs_pulse_community/tests/test_grafx_source_identity.py": "95bd56c2fa32eb9b3472067167adb83a3078d5825df61a5358e211ebf7608ef3"
+  }
+}

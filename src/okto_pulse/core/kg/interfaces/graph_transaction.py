@@ -343,6 +343,18 @@ class GraphStatementResult:
 
 @runtime_checkable
 class GraphTransactionScope(Protocol):
+    def find_active_node_ids_by_source_refs(
+        self, node_type: str, source_refs: tuple[str, ...],
+    ) -> tuple[str, ...]:
+        """Read at most two distinct active identities in this transaction.
+
+        Match exact references and the requested node type in this Board only.
+        Active means no superseding identity (NULL or empty). Two results prove
+        ambiguity; never choose by generation or silently swallow read errors.
+        Reads must include this transaction's staged changes.
+        """
+        ...
+
     def execute(
         self,
         statement: str,

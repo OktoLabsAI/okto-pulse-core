@@ -63,6 +63,27 @@ class CognitiveRefResolutionStatus(str, Enum):
 CanonicalBugProbe = Callable[[str], bool]
 
 
+def bug_source_reference_aliases(bug_id: str) -> tuple[str, str, str]:
+    """Exact source keys for an already typed Bug identity, including opaque IDs.
+
+    This is not a parser for arbitrary cognitive references: callers must have
+    established the Bug type. Concept suffixes and qualified paths are refused;
+    the generic UUID/type-aware cognitive resolver keeps its existing contract.
+    """
+    if (type(bug_id) is not str or not bug_id or bug_id != bug_id.strip()
+            or len(bug_id) > 1015 or ':' in bug_id):
+        raise ValueError('bug_source_identity_invalid')
+    return (f'bug:{bug_id}', f'card:{bug_id}', f'card:bug:{bug_id}')
+
+
+def typed_bug_source_reference_aliases(source_ref: str) -> tuple[str, ...]:
+    """Resolve only whole-artifact aliases after the caller established Bug type."""
+    for prefix in ('card:bug:', 'bug:', 'card:'):
+        if source_ref.startswith(prefix):
+            return bug_source_reference_aliases(source_ref[len(prefix):])
+    raise ValueError('bug_source_identity_invalid')
+
+
 @dataclass(frozen=True, slots=True)
 class CognitiveRefResolution:
     source_ref_original: str

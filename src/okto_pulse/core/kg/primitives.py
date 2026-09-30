@@ -3054,7 +3054,7 @@ def _do_graph_commit(
     try:
         if learning_projection is not None:
             from okto_pulse.core.application.learning_materialization import require_capture_candidates
-            from okto_pulse.core.kg.cognitive_source_ref_resolver import resolve_cognitive_source_ref
+            from okto_pulse.core.kg.cognitive_source_ref_resolver import bug_source_reference_aliases
 
             require_capture_candidates(learning_projection, node_candidates, edge_candidates)
             learning_projection.require_literal_head()
@@ -3067,14 +3067,14 @@ def _do_graph_commit(
             target_id = edge.to_candidate_id[3:]
             target_attrs = _read_cognitive_source_node_attrs(graph_scope, 'Bug', target_id)
             target_ref = target_attrs.get('source_artifact_ref')
-            target = resolve_cognitive_source_ref(target_ref,
-                canonical_bug_probe=lambda identity: identity == learning_projection.bug_id)
-            expected = resolve_cognitive_source_ref(f'bug:{learning_projection.bug_id}')
+            # Both identities are already typed Bug: one from the authenticated
+            # capture, the other read from the Bug table in this Board's scope.
+            # Compare whole source aliases, never concept-prefix approximations.
+            expected_refs = bug_source_reference_aliases(learning_projection.bug_id)
             if (learning_projection.capture.board_id != board_id
                     or target_attrs.get('graph_layer') != 'canonical'
                     or target_attrs.get('superseded_by')
-                    or not target.is_bug_derived
-                    or target.canonical_artifact_ref != expected.canonical_artifact_ref):
+                    or target_ref not in expected_refs):
                 raise KGPrimitiveError('learning_materialization_target_changed',
                     'The canonical Bug target changed before graph mutation',
                     session_id=session_id, retryable=True)
@@ -5079,9 +5079,30 @@ def _lookup_existing_node(
     is generation zero).  Returns the graph node id if found, ``None``
     otherwise.  Used when NOOP to find existing nodes so edges can still be
     resolved and by NC-8 to update/supersede the current assertion.
+
+    Whole Bug source aliases use the typed transactional lookup and require one
+    active identity. Ambiguity and read failures are never interpreted as absence.
     """
     if not source_artifact_ref:
         return None
+    if node_type == 'Bug' and (
+        (source_artifact_ref.startswith(('bug:', 'card:'))
+         and source_artifact_ref.count(':') == 1)
+        or (source_artifact_ref.startswith('card:bug:')
+            and source_artifact_ref.count(':') == 2)
+    ):
+        from okto_pulse.core.kg.cognitive_source_ref_resolver import (
+            typed_bug_source_reference_aliases,
+        )
+        aliases = typed_bug_source_reference_aliases(source_artifact_ref)
+        identities = graph_scope.find_active_node_ids_by_source_refs('Bug', aliases)
+        if (type(identities) is not tuple or len(identities) > 2
+                or any(type(value) is not str or not value for value in identities)
+                or len(set(identities)) != len(identities)):
+            raise ValueError('canonical_bug_identity_unavailable')
+        if len(identities) > 1:
+            raise ValueError('canonical_bug_identity_ambiguous')
+        return identities[0] if identities else None
     cypher = (
         f"MATCH (n:{node_type}) "
         "WHERE n.source_artifact_ref = $ref "
@@ -6205,6 +6226,13 @@ def _resolve_endpoint(
     source_ref_endpoint = _parse_source_ref_endpoint(endpoint)
     if source_ref_endpoint is not None:
         node_type, source_artifact_ref = source_ref_endpoint
+        if node_type == "Bug" and (
+            (source_artifact_ref.startswith(("bug:", "card:")) and source_artifact_ref.count(":") == 1)
+            or (source_artifact_ref.startswith("card:bug:") and source_artifact_ref.count(":") == 2)
+        ):
+            # Share NC8's whole, typed aliases; never resolve a Bug via an
+            # Entity prefix or select an arbitrary active historical identity.
+            return _lookup_existing_node(graph_scope, node_type, source_artifact_ref), node_type
         result = graph_scope.execute(
             f"MATCH (n:{node_type}) "
             "WHERE n.source_artifact_ref = $ref "

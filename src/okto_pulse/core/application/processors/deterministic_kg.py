@@ -2555,7 +2555,7 @@ class DeterministicWorker:
                     candidate_id=f"{prefix}_belongs_to_origin_bug",
                     edge_type="belongs_to",
                     from_candidate_id=amendment_cid,
-                    to_candidate_id=f"card_{origin_bug_id[:8]}_entity",
+                    to_candidate_id=_source_ref_endpoint("Bug", f"card:{origin_bug_id}"),
                     confidence=1.0,
                     rule_id=f"belongs_to/amendment_to_origin_bug@{WORKER_VERSION}",
                 )

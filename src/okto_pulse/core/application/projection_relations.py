@@ -6,6 +6,7 @@ import hashlib
 import json
 
 from okto_pulse.core.application.deterministic_projection import require_terminal_cleanup
+from okto_pulse.core.kg.cognitive_source_ref_resolver import typed_bug_source_reference_aliases
 from okto_pulse.core.kg.logical_transfer import LOGICAL_NULL, LogicalSchemaIndex, canonical_bytes, encode_value
 from okto_pulse.core.kg.primitives import _cross_session_entity_source_prefix, _parse_source_ref_endpoint
 from okto_pulse.core.kg.schema_contract import NODE_TYPES
@@ -99,6 +100,15 @@ def compare(*, document, schema, nodes, relations, new_sessions):
             return resolved_external[endpoint]
         source = _parse_source_ref_endpoint(endpoint)
         if source is not None:
+            if source[0] == 'Bug' and (
+                (source[1].startswith(('bug:', 'card:')) and source[1].count(':') == 1)
+                or (source[1].startswith('card:bug:') and source[1].count(':') == 2)
+            ):
+                aliases = typed_bug_source_reference_aliases(source[1])
+                resolved_external[endpoint] = unique([key for alias in aliases
+                    for key in by_source.get(('Bug', alias), ())
+                    if value(by_key[key], 'superseded_by') in (None, '')])
+                return resolved_external[endpoint]
             resolved_external[endpoint] = unique([key for key in by_source.get(source, ())
                 if value(by_key[key], 'superseded_by') is None])
             return resolved_external[endpoint]

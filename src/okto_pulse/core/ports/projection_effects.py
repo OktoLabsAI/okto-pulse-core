@@ -9,9 +9,35 @@ import hashlib
 import json
 
 from okto_pulse.core.kg.schema_contract import NODE_TYPES, STABLE_NODE_PROPERTIES
+from okto_pulse.core.ports.projection_history import (
+    ProjectionEdgeFingerprint, ProjectionNodeChange, ProjectionNodeFingerprint,
+)
 
 _LIMIT = 64 * 1024 * 1024
 _PROPERTIES = frozenset(STABLE_NODE_PROPERTIES) | {'embedding'}
+
+
+@dataclass(frozen=True, slots=True)
+class ProjectionSupersedenceEffect:
+    """Observed NC8 history transition, not current-source or runtime approval."""
+    board_id: str
+    session_id: str
+    predecessor: ProjectionNodeChange
+    successor: ProjectionNodeFingerprint
+    edge: ProjectionEdgeFingerprint
+
+
+def observe_bug_projection_supersedence(*, schema, board_id, session_id,
+        before, after, successor, relation, effects):
+    """Verify the existing Bug title-change trail against exact property effects.
+
+    The caller separately authenticates complete inventories, ACK ownership and
+    the successor's current relational source. This never promotes the retained
+    predecessor's content or exempts unrelated cognitive edges from their gates.
+    """
+    from okto_pulse.core.application.projection_supersedence import observe_bug
+    return observe_bug(schema=schema, board_id=board_id, session_id=session_id,
+        before=before, after=after, successor=successor, relation=relation, effects=effects)
 
 
 def _json(value):

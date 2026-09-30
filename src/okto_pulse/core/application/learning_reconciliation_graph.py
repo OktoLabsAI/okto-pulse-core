@@ -4,8 +4,9 @@ from dataclasses import asdict, replace
 
 from okto_pulse.core.application.learning_reconciliation import source_basis
 from okto_pulse.core.application.learning_supersedence import read_learning_scope_replacements
-from okto_pulse.core.kg.logical_transfer import LogicalSchemaIndex, LogicalTimestamp, canonical_bytes, encode_value
+from okto_pulse.core.kg.logical_transfer import LOGICAL_NULL, LogicalSchemaIndex, LogicalTimestamp, canonical_bytes, encode_value
 from okto_pulse.core.kg.schemas import EdgeCandidate
+from okto_pulse.core.kg.cognitive_source_ref_resolver import bug_source_reference_aliases
 from okto_pulse.core.ports.cognitive_projection import compare_cognitive_projection, cognitive_projection_source_node
 
 
@@ -48,8 +49,11 @@ async def qualify(context, store, *, schema, execution, before_nodes, before_rel
     added = set(after) - set(before)
     if set(before) - set(after) or added - {learning_key} or learning_key not in after:
         raise ValueError('learning_reconciliation_graph_nodes_unowned')
+    bug_refs = bug_source_reference_aliases(basis.bug_id)
     bugs = [node for key, node in before.items() if key[0] == 'Bug'
-        and node.properties.get('source_artifact_ref') == 'bug:' + basis.bug_id]
+        and node.properties.get('source_artifact_ref') in bug_refs
+        and node.properties.get('graph_layer') == 'canonical'
+        and node.properties.get('superseded_by') in (LOGICAL_NULL, '')]
     if len(bugs) != 1:
         raise ValueError('learning_reconciliation_graph_bug_ambiguous')
     bug_key = 'Bug', bugs[0].key

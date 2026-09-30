@@ -145,3 +145,23 @@ def test_diagnostics_are_bounded_without_hiding_unresolved_counts():
     result = compare(plan=data, relations=())
     assert result.unresolved_count == 101 and result.expected_count == 0
     assert len(result.issues) == 100 and result.issues_truncated
+
+
+@pytest.mark.parametrize('alias', ['bug:bug-full-id', 'card:bug-full-id', 'card:bug:bug-full-id'])
+@pytest.mark.parametrize('active_marker', [LOGICAL_NULL, ''])
+def test_typed_bug_endpoint_reconciles_alias_without_using_entity_prefix(alias, active_marker):
+    schema = LogicalSchema('board', SCHEMA.node_types + (LogicalNodeType('Bug', 'id', PROPS),),
+        SCHEMA.relation_layouts + (LogicalRelationLayout('belongs_to', 'Requirement', 'Bug', EDGE_PROPS),))
+    bug = node('Bug', 'bug-current', alias, superseded_by=active_marker)
+    old = node('Bug', 'bug-old', 'bug:bug-full-id', superseded_by='bug-current')
+    decoy = node('Entity', 'decoy', 'card:bug-full-other')
+    relation = replace(RELATION, target_type='Bug', target_key='bug-current')
+    kwargs = dict(document=document('kgref:Bug:card:bug-full-id'), schema=schema,
+        nodes=(ROOT, CHILD, bug, old, decoy), relations=(relation,), new_sessions=('new',))
+    result = compare_projection_relations(**kwargs)
+    assert (result.matched_count, result.unresolved_count, result.unexpected_new_count) == (1, 0, 0)
+    duplicate = node('Bug', 'duplicate', 'card:bug:bug-full-id')
+    ambiguous = compare_projection_relations(**{**kwargs, 'nodes': kwargs['nodes'] + (duplicate,)})
+    assert ambiguous.unresolved_count == 1 and ambiguous.matched_count == 0
+    absent = compare_projection_relations(**{**kwargs, 'nodes': (ROOT, CHILD, old, decoy), 'relations': ()})
+    assert absent.unresolved_count == 1 and absent.matched_count == 0
