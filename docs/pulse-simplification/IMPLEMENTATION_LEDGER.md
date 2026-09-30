@@ -2,6 +2,58 @@
 
 ## Estado para retomada
 
+findings-final F168866=0, sem findings/drift e oito budgets ZERO. Recorder
+record_reference_findings_contract.py executado UMA vez apos terminal:
+evidence-reference-findings-contract.json vincula17 testes e prova856/919+
+373/458. Escopo explicitamente puro, production_hook/storage/gate_changed=false.
+Pronto para commit/push de fundacao; nenhum processo ativo. Proximo passo
+necessario continua integracao audit/worker/contexto (nao declarar G2/G12
+concluidos nem promover inventario por estes17testes).
+
+findings-final install74157=0/prova86d17f=0:856/919+373/458 identicos.
+F16 final em andamento; Python inalterado desde17passados. Nenhum novo fluxo
+frontend nem endpoint. Exposicao futura deve respeitar Card/Spec read e escopo
+do seletor, nao health.read; referencia originada so na Spec nao pode vazar
+seu ID/conteudo por contexto de Card sem permissao correspondente (KG5.3).
+
+findings2 Core19581=0:17passed/5.51s; F1661433=1 somente matrizesREADME,
+findings[], oitoZERO. Matrizes regeneradas; par findings-final builds0,
+install em andamento. Nao ha hook produtivo: este incremento e o contrato
+de analise, nao entrega de G2/G12 nem alteracao de gate.
+Storage investigado: preferir extensao nullable dedicada do audit existente
+(nao error_details nem summary_text) a novo subsistema. Manter DTO historico
+AuditRow/ConsolidationAuditData wire inalterado; parametrizacao interna opcional
+do stage na mesma UOW e leitura por namespace/Board/dono sao candidatas.
+Faltam implementar/qualificar migracao idempotente, ausencia versus vazio,
+cognitive posterior sem shadow, undo/CAS e prova de payload contra plano exato
+no retirement_candidate_sql_delta. Nao basta aceitar coluna/tabela nova no
+allowlist. Nenhuma dessas alteracoes de storage foi aplicada.
+
+G2/G12 tipos/analise WIP: build findings1 NAO usado para testes; revisao antes
+de install corrigiu seletor de origem em alvo ambiguo declarado so pela Spec.
+Par findings2 builds0/install14098=0/prova60809=0:Core856/919 Community373/458
+byte-identical. Suite Core e F16 em andamento. Preparador produtivo inalterado.
+Investigacao de storage: alterar Audit DTO/serializacao historica ou inserir
+nova tabela exige qualificar retirement_candidate_sql_delta (allowlist de
+efeitos por exact ACK) e retirement_learning_sql_delta (cognitive nao pode
+fabricar findings de fonte). Nao ampliar allowlist nem reutilizar error_details
+sem contrato/exatos before-images. AuditRepository.stage_consolidation_records
+usa UOW caller-owned, boa base para integrar snapshot sem novo subsistema.
+
+G2/G12 WIP novo, ainda SEM hook produtivo nem storage/gate: DTOs em
+ports/projection_findings.py e analise pura domain/card_scenario_references.py.
+Chave de finding inclui Board/dono/namespace/seletor/alvo, exclui motivo;
+snapshot completo vazio distinto de ausencia, recusa escopo misturado/duplicata.
+Analise separa parent/target comprovadamente ausentes e alvo ambiguo de fonte
+incompleta; mantem links validos e proveniencia observada, nao emite placeholders
+nem considera associacao opcional ausente como defeito. Source fingerprint
+versionado de referencias, sem tocar hashes historicos/avaliacoes.
+Testes novos test_projection_reference_findings.py e
+test_card_scenario_reference_analysis.py ainda NAO executados; par
+k2-reference-findings1 em build. Preparador produtivo anterior continua recusando
+referencias sem pai/nao resolvidas ate persistencia/visibilidade estarem qualificadas.
+Nao declarar retirada conhecida entregue por mera analise pura.
+
 Par atual enviado: Corefff592b9/Community1db01493, pushes0, ambas arvores
 limpas antes desta nota. Ultimo install/prova: k2-card-invalidation-final.
 Nenhum processo ativo. G2/G14 continuam parciais; entrega total nao concluida.
