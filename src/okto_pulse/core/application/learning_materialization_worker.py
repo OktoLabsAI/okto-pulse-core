@@ -77,6 +77,11 @@ async def materialize_capture_work(scope_factory, *, board_id, work, fingerprint
         reason = getattr(exc, 'failure_reason', None)
         if reason is None and isinstance(exc, ValueError) and re.fullmatch(r'[a-z][a-z0-9_]{0,127}', str(exc)):
             reason = str(exc)
+        if reason == 'learning_materialization_scope_replaced':
+            # The current source-qualified successor owns this association.
+            # Preserve history without claiming that the old graph edge exists,
+            # opening technical debt or repeatedly recreating the replaced edge.
+            return CaptureMaterializationAttempt('scope_replaced', reason)
         if reason == 'learning_materialization_projection_pending':
             # A newer explicitly admitted capture owns the current head. Its
             # materialization must complete before an older receipt can recover

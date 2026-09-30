@@ -29,6 +29,12 @@ class History:
     async def read_fingerprint_in_context(self, context, **selector):
         return self.records.get(selector['fingerprint'])
 
+    async def read_history_in_context(self, context, **selector):
+        return tuple(sorted((record for record in self.records.values()
+            if (record.board_id, record.node_id, record.generation) == (
+                selector['board_id'], selector['node_id'], selector['generation'])),
+            key=lambda record: record.source_revision))
+
 
 def test_reuse_keeps_curated_content_birth_generation_and_original_origin():
     original = projection()
@@ -88,3 +94,33 @@ def test_repeated_same_bug_association_advances_provenance_without_reauthoring_c
     assert head.payload['content'] == birth.payload['content']
     assert head.record_fingerprint != birth.record_fingerprint
     assert head.payload['source_content_hash'] == reused.capture.record_fingerprint
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('reuse_after_claim', [False, True])
+async def test_recovery_keeps_proved_scope_refs_without_changing_other_origins(reuse_after_claim):
+    from test_learning_scope_history import records
+    original = projection()
+    birth = literal(original)
+    _, claimed, replacement_capture, successor = records(predecessor=birth)
+    history = [original.capture, birth, claimed, replacement_capture, successor]
+    head = claimed
+    if reuse_after_claim:
+        reused, head = reuse(claimed, original.capture, bug_id='uncovered-bug')
+        history.extend((reused.capture, head))
+    plan = await resolve_learning_capture_projection(None, History(*history), capture=original.capture,
+        head=head, bug_id=original.bug_id)
+    assert plan.evidence_refs == head.evidence_refs
+    assert plan.literal_payload == head.payload
+    assert plan.capture == original.capture
+
+
+@pytest.mark.asyncio
+async def test_recovery_does_not_preserve_an_opaque_scope_ref_without_successor_proof():
+    from test_learning_scope_history import records
+    original = projection()
+    birth = literal(original)
+    _, claimed, replacement_capture, _ = records(predecessor=birth)
+    with pytest.raises(ValueError, match='learning_scope_claim_invalid'):
+        await resolve_learning_capture_projection(None, History(original.capture, birth, claimed, replacement_capture),
+            capture=original.capture, head=claimed, bug_id=original.bug_id)

@@ -50,6 +50,7 @@ class CapturedLearningProjection:
     bug_id: str
     predecessor: CognitiveSourceRecord | None = None
     projection_capture: CognitiveSourceRecord | None = None
+    scope_evidence_refs: tuple[str, ...] = ()
 
     @property
     def authored_capture(self) -> CognitiveSourceRecord:
@@ -95,7 +96,8 @@ class CapturedLearningProjection:
     def evidence_refs(self) -> tuple[str, ...]:
         capture = self.authored_capture
         previous = self.predecessor.evidence_refs if self.is_reuse and self.predecessor else ()
-        return tuple(dict.fromkeys((*previous, *capture.evidence_refs, f"bug:{capture.payload['source']['bug_id']}")))
+        return tuple(dict.fromkeys((*previous, *capture.evidence_refs,
+            f"bug:{capture.payload['source']['bug_id']}", *self.scope_evidence_refs)))
 
     def require_predecessor(self) -> None:
         capture, target = self.authored_capture, self.predecessor

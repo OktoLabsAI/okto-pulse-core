@@ -180,3 +180,33 @@ async def test_history_preserves_distinct_corrections_of_one_bug(same_basis):
     else:
         claims = await read_learning_scope_replacements(None, MultipleHistory(), head=second[1])
         assert len(claims) == 2 and claims[0].bug_id == claims[1].bug_id
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('authenticated', [True, False])
+async def test_current_scope_requires_evidence_authentication_even_when_digest_matches(monkeypatch, authenticated):
+    from types import SimpleNamespace
+    from test_learning_closeout_binding import source
+    from okto_pulse.core.application import learning_capture
+    from okto_pulse.core.application.learning_supersedence import current_learning_scope_replacement
+    from okto_pulse.core.ports import application_persistence
+    current = source(status='done', bug_id='covered-bug')
+    previous, claimed, capture, successor = records(source=current)
+    claim = qualify_learning_scope_replacement(previous=previous, claimed=claimed, capture=capture, successor=successor)
+    bug = SimpleNamespace(board_id=current.board_id, status=current.status, learning_closeout_bindings=[])
+    class Persistence:
+        async def get(self, *args, **kwargs): return bug
+        async def refresh(self, context, value): return value
+    monkeypatch.setattr(application_persistence, 'get_application_persistence_port', lambda: Persistence())
+    checked = []
+    def authenticate(observed, selected):
+        checked.append((observed, selected))
+        if not authenticated:
+            raise ValueError('learning_capture_evidence_not_authenticated')
+    monkeypatch.setattr(learning_capture, '_require_current_capture_evidence', authenticate)
+    if authenticated:
+        assert await current_learning_scope_replacement(None, (claim,), source=current) == claim
+    else:
+        with pytest.raises(ValueError, match='learning_capture_evidence_not_authenticated'):
+            await current_learning_scope_replacement(None, (claim,), source=current)
+    assert checked == [(current, capture)]

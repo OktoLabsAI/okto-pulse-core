@@ -1,0 +1,138 @@
+{
+  "scope": "F6/KG7.3/7.6 current scoped replacement and old projection recovery",
+  "suites": {
+    "core": {
+      "passed": 69,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "community": {
+      "passed": 1,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "frontend": {
+      "passed": 24,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0
+    }
+  },
+  "budgets": [
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "import_boundary_baseline",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every import_boundary_baseline allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "singleton_baseline",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every singleton_baseline allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "dependency_temporary_exceptions",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every dependency_temporary_exceptions allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "graph_runtime_compatibility",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every graph_runtime_compatibility allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "rebuild_artifact_compatibility",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every rebuild_artifact_compatibility allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "community_private_reach_ins",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every community_private_reach_ins allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "community_adapter_bridges",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every community_adapter_bridges allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "af35_relational_residue",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every af35_relational_residue allowance before F16 completion."
+    }
+  ],
+  "verified": [
+    "Projection recovery retains scope references only after complete target/capture/successor history qualification, including later reuse, without rewriting payload or birth.",
+    "Current replacement applicability additionally reauthenticates its evidence. Digest/binding equality alone cannot authorize retiring old work after verifier state changes.",
+    "Disposable SQL/Grafx worker test removes the old node after two real authored associations, restores only the uncovered origin and never recreates the currently replaced association.",
+    "Replaced old work ends as historical consolidated/no_action_required with no new persisted graph refs; repeated worker ticks do not retry it.",
+    "Real readiness composition classifies that work as terminal_history, not skip_valid. Technical DLQ, canonical debt and active cognitive work still block.",
+    "Frontend renders this existing read-model shape as history without waiver or clear actions. Only a frontend test changed; compiled SPA is unchanged.",
+    "Paired builds/install and byte-for-byte proof precede behavior tests. Final F16 has eight zero budgets and no architectural/documentation drift."
+  ],
+  "limits": [
+    "The successor literal in the integrated recovery test is an explicit fixture; signed capture admission and joint source writer are real, but governed supersede materialization remains pending.",
+    "First Community regression campaign passed 15 tests on r1. It is preserved separately: consumer review then corrected the WIP skipped classification to historical consolidated, before committing. r2/r3 focused case verifies the corrected behavior and readiness precedence.",
+    "Initial frontend campaign had 23 passes and one matcher failure because the label includes an artifact-type prefix; only the assertion matcher changed, then all 24 passed.",
+    "No claim of full backend or installed release acceptance. Public supersede authoring, scope-aware graph queries, final graph/CAS coordinator integration and rebuild remain pending.",
+    "No public tool, physical schema, real data, release, deployment or global acceptance inventory promotion."
+  ],
+  "sha256": {
+    "PULSE_REFACTOR/.validation-v040/closure-learning-scoped-recovery-r4.json": "c6de7f2ccbf0a2aa1d62eb21bbe6ddab27ce5d824a14462624a5a79b305baabb",
+    "PULSE_REFACTOR/.validation-v040/learning-scoped-recovery-r3-core.xml": "464874f88dd1d063fb1ab86719bbebf839850111cb6d4512241fc032157cd55e",
+    "PULSE_REFACTOR/.validation-v040/learning-scoped-recovery-r3-community.xml": "aeca1224e205e14a2a8f2a6df6f986bd408c63d771546bd30c232a6d420539ab",
+    "PULSE_REFACTOR/.validation-v040/learning-scoped-recovery-frontend-r2.xml": "aaf74360daf008555db519942c5a95294cf9938f8ac0bc0ca00c408f0361b80d",
+    "PULSE_REFACTOR/.validation-v040/provenance-learning-scoped-recovery-r1.json": "84bc11eed909478a0cd3085530fd62ece24f3787bbd119d347fe271d5adff713",
+    "PULSE_REFACTOR/.validation-v040/provenance-learning-scoped-recovery-r2.json": "9178b0bdff5611159960c454d4e624930a70ec2d8c44c2b2709b3c8235481996",
+    "PULSE_REFACTOR/.validation-v040/provenance-learning-scoped-recovery-r3.json": "20020aa9b675a00ba2bb25fc89138d3c593805643dbd188c16b9f1c1b3bd546d",
+    "PULSE_REFACTOR/.validation-v040/provenance-learning-scoped-recovery-r4.json": "5202224ac853112e771a98b95ea0809e082a81f51dbc709cae455d3c93be2c0c",
+    "PULSE_REFACTOR/.validation-v040/learning-scoped-recovery-r1-core.xml": "207d567a4876fb87747f6c06e49d14c5419c5dc87fce549c5badfd9fa190f611",
+    "PULSE_REFACTOR/.validation-v040/learning-scoped-recovery-r1-community.xml": "df685c6a4b174c51ce60c6d016aec8cf753e68fc5a813f768a3722e297260a2f",
+    "PULSE_REFACTOR/.validation-v040/learning-scoped-recovery-r2-core.xml": "c7e7293aea9fc1945a4cd65adcc0d2a378fb2defa905e2ad2ebd81bd7b836bc9",
+    "PULSE_REFACTOR/.validation-v040/learning-scoped-recovery-r2-community.xml": "31027be8534fbffc86434235284bd62d1492e5c8c2d86cc9cbc9fa91e5b67a42",
+    "PULSE_REFACTOR/.validation-v040/learning-scoped-recovery-frontend.xml": "a30caf19fa51899a9471b7111391aa90f48339707a4137891275b4eed844c7d5",
+    "PULSE_REFACTOR/.validation-v040/run_learning_scoped_recovery.py": "309c5113d89ebba4f8015dec27f7931a63517b32c6c8e3e284fb2f8592811e49",
+    "okto_labs_pulse_core/src/okto_pulse/core/domain/learning_materialization.py": "843c410f217c7c60a4c21d9e76090a42b06982b88655277aaf1d6ce695e64131",
+    "okto_labs_pulse_core/src/okto_pulse/core/application/learning_capture.py": "90ef1e70c15b039f1d0184aba1515d0fff11b2c2e045e7593c91d22ff41f7153",
+    "okto_labs_pulse_core/src/okto_pulse/core/application/learning_materialization_worker.py": "6ec8cd7893574c5ab9fc98ed0355cba90f2c8a0fc95b3f62273443f23735fc0c",
+    "okto_labs_pulse_core/src/okto_pulse/core/application/learning_supersedence.py": "119d352917e4f3c8caac605f2c6e6684fd27c719afa1993981140d461dc523c9",
+    "okto_labs_pulse_core/src/okto_pulse/core/kg/cognitive_closeout_production.py": "574518fc4cf7d66a22a8fe4fcb7fd2822ce8ae67dbc41b664b832cc3655495f3",
+    "okto_labs_pulse_core/tests/test_learning_reuse_projection.py": "a6e21964334b76494478780678e45173682f488c58f5d43c499d8b30f6b1361a",
+    "okto_labs_pulse_core/tests/test_learning_scope_history.py": "83cc73033332c5630a148a4901d22d19fa55567d51adda1ab2f0b97719a5b818",
+    "okto_labs_pulse_community/tests/test_learning_scoped_recovery.py": "407ae7bfbfae73c999261c546e3abe11a0c16fbb37718645e061d0d70554be3b",
+    "okto_labs_pulse_community/frontend/src/components/knowledge/CognitiveActionCenterView.test.tsx": "2969782bb7d07f855a7c1b24e2a1a4c6bcccdea64c76c39e6beb42d78da5f45e"
+  }
+}

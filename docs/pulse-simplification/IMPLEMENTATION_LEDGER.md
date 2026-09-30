@@ -2,6 +2,52 @@
 
 ## Estado para retomada
 
+Scoped-recovery validado (2026-09-29): r3 Core69pass/5.23s e Community1pass/29.42s;
+frontend24pass. Builds e instalação r4 concluídos0; prova byte-a-byte839/902 Core
+e363/448 Community, payload idêntico ao r3. F16r4 terminou0, sem findings nem
+drift documental, oito budgets ZERO. acceptance-learning-scoped-recovery.json
+registra evidências, falhas anteriores e limites. Estado final do trabalho antigo
+coberto é CONSOLIDATED/no_action_required (terminal_history), não SKIPPED;
+os parágrafos WIP abaixo são histórico das revisões. Autenticação atual da
+evidência é exigida. Supersede governado, consultas por escopo e aceite final
+continuam pendentes; nenhuma promoção do inventário global.
+Próxima investigação delimitada: verificar se duas capturas distintas do mesmo
+Bug/Learning/generation colidem no source_ref do trabalho. É hipótese de leitura,
+ainda não reproduzida; não autoriza alterar terminais nem decisões humanas.
+
+Scoped-recovery, revisão de integração (2026-09-29): r1 instalado/provado,
+Core99549=0:67pass/5.10s; Community95465=0:15pass/272.75s. F1638826=1 somente
+matrizes README, regeneradas oficialmente. Inspeção do consumidor encontrou
+que SKIPPED/no_action_required vira ready_skip/waiver: corrigido o WIP antes
+de commit para CONSOLIDATED/no_action_required, reason scope_replaced e zero
+refs de nova persistência. É histórico terminal, não dispensa. r2 instal39110=0,
+prova839/902+363/448; Core27386=0:67pass/5.53s, Community75994=0:1 caso focado
+pass/30.35s. Caso agora prova terminal_history e precedência de DLQ/dívida/ativo.
+F1654034=0/oitoZERO. Teste frontend acrescentado conforme instrução do usuário:
+primeira rodada23pass/1falha no matcher de texto (label inclui prefixo do tipo);
+matcher corrigido, rodada frontend-r2 terminou0:24pass. Só teste frontend mudou,
+SPA/produto UI não alterados. Campanhas anteriores preservadas.
+
+Revisão adicional fechou a qualificação atual com autenticação da evidência da
+captura substituta, além de digest/binding; evidência revogada/indisponível não
+autoriza encerrar trabalho antigo. Dois testes Core verificam essa fronteira;
+novo teste SQL/Grafx usa captura assinada real. Builds scoped-recovery-r3 ambos0,
+instalação iniciada. Aguardar terminal/prova e novas campanhas antes de editar
+produto. Materializador supersede e queries por escopo ainda não habilitados.
+
+WIP scoped-recovery (2026-09-29), após pushes af64c491/57f7b142 confirmados0:
+antes de habilitar o materializador supersede, recuperação antiga consulta o
+histórico completo qualificado e verifica atualidade da substituição sob o fence
+da fonte. Caso coberto vira outcome interno scope_replaced/skipped sem recibo de
+persistência nem abertura/liberação de dívida. Origens não cobertas preservam os
+refs tipados somente após provar target/capture/successor; refs opacas não contam.
+CapturedLearningProjection retém essa proveniência sem alterar payload/birth.
+Teste novo prepara captura assinada real, writer conjunto e perda do nó antigo;
+sucessor literal ainda fixture explícita, worker antigo/materialização/reuso reais.
+Ruff passou; comportamento ainda não testado. Não habilitado supersede no Done
+ou materializador, não criada aresta supersedes global. Próximo build/prova e
+campanhas learning-scoped-recovery-r1. Integração final continua pendente.
+
 Writer conjunto validado (2026-09-29): builds scope-commit-r1 ambos0, pip12956=0,
 provenance-r1 confirmou839/902 Core+363/448 Community byte-identical antes dos
 testes. Core48365=0:108pass/6.58s; Community26357=0:25pass/38.04s. F1622547=0,
@@ -107,7 +153,7 @@ nem inventário global. Sem frontend alterado, sem nova política/autoridade.
 Iniciativa **incompleta; retomada explicitamente autorizada em 2026-09-23**.
 O usuário revogou a pausa e pediu execução até o final, sem parar em milestones.
 Frente atual (2026-09-29): F6/KG §7.6, reuso/supersedência explícitos de Learning.
-Último par enviado: Corec24e51cc/Community0c29e6f4. Captura, binding em
+Último par enviado: Coreaf64c491/Community57f7b142. Captura, binding em
 task validation, autoria conjunta, REST/MCP/UI/Delivery, policy/preview e
 materialização automática via outbox/worker e proteção de holds mistos foram
 enviados em incrementos delimitados. Recuperação de projeção validada/enviada.

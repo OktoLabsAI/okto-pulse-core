@@ -86,6 +86,7 @@ class CloseoutOutcome(str, Enum):
     EXTRACTOR_TRIGGERED_BUT_NOT_PERSISTED = "extractor_triggered_but_not_persisted"
     MATERIALIZATION_PENDING = 'materialization_pending'
     MATERIALIZATION_FAILED = 'materialization_failed'
+    SCOPE_REPLACED = 'scope_replaced'
 
 
 @dataclass(frozen=True)
@@ -789,6 +790,10 @@ class ConsolidationPipelinePersister:
 # CloseoutOutcome → (ledger status, outcome_type). The ledger is updated by the
 # worker; persisted→consolidated, honest-absence→skipped, persist-fail→failed.
 _LEDGER_STATUS: dict[str, tuple[str, str | None]] = {
+    # Historical completion of this projection work, never a selectable
+    # cognitive waiver. No new persisted graph reference accompanies it.
+    CloseoutOutcome.SCOPE_REPLACED.value: (CognitiveItemStatus.CONSOLIDATED.value,
+        CognitivePendingOutcomeType.NO_ACTION_REQUIRED.value),
     CloseoutOutcome.MATERIALIZATION_PENDING.value: (CognitiveItemStatus.PENDING.value, None),
     CloseoutOutcome.MATERIALIZATION_FAILED.value: (CognitiveItemStatus.FAILED.value, None),
     CloseoutOutcome.PERSISTED.value: (
@@ -928,7 +933,7 @@ async def drain_cognitive_closeout_pending(
             attempt = await materialize_capture_work(relational_scope_factory,
                 board_id=board_id, work=capture_work, fingerprint=item.content_hash, persister=persister)
             result = CloseoutResult(item.source_ref, item.artifact_type, attempt.outcome,
-                detail=attempt.reason, candidates_emitted=1,
+                detail=attempt.reason, candidates_emitted=0 if attempt.outcome == 'scope_replaced' else 1,
                 persisted_refs=[f'kg:{capture_work.learning_id}'] if attempt.outcome == 'persisted' else [])
             new_status, outcome_type = _LEDGER_STATUS[result.outcome]
             store.update_item(board_id=board_id, kg_generation_id=gen, item_id=item.item_id,

@@ -230,6 +230,9 @@ async def resolve_learning_capture_projection(context, store, *, capture, head, 
     """
     latest_cognitive_source_records((capture, head))
     identity = (capture.board_id, 'Learning', capture.node_id, capture.generation)
+    from okto_pulse.core.application.learning_supersedence import read_learning_scope_replacements
+    from okto_pulse.core.ports.learning_capture import LearningCaptureSourceRef
+    replacements = await read_learning_scope_replacements(context, store, head=head)
 
     async def read_exact(fingerprint, before):
         if not isinstance(store, FingerprintCognitiveSourceReader):
@@ -262,7 +265,14 @@ async def resolve_learning_capture_projection(context, store, *, capture, head, 
         intent = owner.payload['intent']
         predecessor = (await read_exact(intent['expected_fingerprint'], owner.source_revision)
             if intent['kind'] == 'reuse' else None)
-        plan = CapturedLearningProjection(owner, current, owner.payload['source']['bug_id'], predecessor)
+        # Extra scope references are retained only after the complete target and
+        # successor histories proved their introduction. An opaque head ref is
+        # never sufficient, and an older predecessor cannot inherit future refs.
+        scope_refs = tuple(LearningCaptureSourceRef(claim.capture.node_id, claim.capture.generation,
+            claim.capture.record_fingerprint).encode() for claim in replacements
+            if claim.claimed.source_revision <= current.source_revision)
+        plan = CapturedLearningProjection(owner, current, owner.payload['source']['bug_id'], predecessor,
+            scope_evidence_refs=scope_refs)
         plan.require_literal_head()
         latest_plan = latest_plan or plan
         if owner.record_fingerprint == capture.record_fingerprint:
@@ -321,6 +331,12 @@ async def revalidate_learning_capture_for_materialization(
     bug = await persistence.refresh(context, bug)
     if bug.board_id != board_id or str(getattr(bug.status, 'value', bug.status)) != source.status:
         raise ValueError('learning_capture_source_changed_or_unavailable')
+    from okto_pulse.core.application.learning_supersedence import (
+        read_learning_scope_replacements, current_learning_scope_replacement,
+    )
+    replacements = await read_learning_scope_replacements(context, store, head=head)
+    if await current_learning_scope_replacement(context, replacements, source=source) is not None:
+        raise ValueError('learning_materialization_scope_replaced')
     binding = qualify_learning_materialization_basis(record, source,
         getattr(bug, 'learning_closeout_bindings', None))
     _require_current_capture_evidence(source, record)

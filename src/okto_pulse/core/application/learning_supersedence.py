@@ -82,4 +82,9 @@ async def current_learning_scope_replacement(context, replacements, *, source):
         claim, source, getattr(bug, 'learning_closeout_bindings', None))]
     if len(current) > 1:
         raise ValueError('learning_scope_claim_ambiguous')
+    if current:
+        # A matching digest/binding is not a substitute for checking the
+        # original signed evidence against its present verifier/ledger state.
+        from okto_pulse.core.application.learning_capture import _require_current_capture_evidence
+        _require_current_capture_evidence(source, current[0].capture)
     return current[0] if current else None
