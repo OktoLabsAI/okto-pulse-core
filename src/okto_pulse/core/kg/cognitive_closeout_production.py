@@ -840,6 +840,28 @@ def open_cognitive_closeout_pending(
     return int(materialized.item_count)
 
 
+def open_learning_capture_pending(*, board_id, reference, store=None):
+    """Queue one capture without reauthoring existing work or human decisions.
+
+    A legacy v1 item with this exact fingerprint remains the delivery owner.
+    A distinct capture gets its own v2 identity, even for the same Learning.
+    """
+    from okto_pulse.core.domain.learning_materialization_work import LearningCaptureWorkRef
+    encoded = reference.encode()
+    if reference.fingerprint is None:
+        raise ValueError('learning_capture_work_reference_invalid')
+    store = store or _default_store()
+    generation = _resolve_generation(store, board_id, None)
+    legacy = LearningCaptureWorkRef(reference.bug_id, reference.learning_id, reference.generation).encode()
+    if any(item.source_ref in (legacy, encoded) and item.content_hash == reference.fingerprint
+            for item in store.list_items(board_id, generation)):
+        # Returning without replay also preserves nonterminal holds verbatim.
+        return 0
+    return open_cognitive_closeout_pending(board_id=board_id, source_ref=encoded,
+        artifact_type='bug', content_hash=reference.fingerprint, store=store,
+        kg_generation_id=generation)
+
+
 def _capture_work_owned_by_worker(item, worker_actor_id):
     return (item.updated_by_agent_id in (None, worker_actor_id)
             and not (item.reason_code or item.justification or item.actor or item.revisit_at))

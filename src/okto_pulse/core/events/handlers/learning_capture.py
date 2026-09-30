@@ -9,7 +9,7 @@ class LearningCaptureMaterializationEnqueuer:
     async def handle(self, event, session):
         if not isinstance(event, LearningCaptureAdmitted):
             raise ValueError('learning_capture_event_invalid')
-        from okto_pulse.core.kg.cognitive_closeout_production import open_cognitive_closeout_pending
-        reference = LearningCaptureWorkRef(event.bug_id, event.capture.learning_id, event.capture.generation)
-        open_cognitive_closeout_pending(board_id=event.board_id, source_ref=reference.encode(),
-            artifact_type='bug', content_hash=event.capture.fingerprint)
+        from okto_pulse.core.kg.cognitive_closeout_production import open_learning_capture_pending
+        reference = LearningCaptureWorkRef(event.bug_id, event.capture.learning_id,
+            event.capture.generation, event.capture.fingerprint)
+        open_learning_capture_pending(board_id=event.board_id, reference=reference)

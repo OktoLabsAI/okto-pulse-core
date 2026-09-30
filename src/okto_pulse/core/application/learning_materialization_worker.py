@@ -28,6 +28,8 @@ async def materialize_capture_work(scope_factory, *, board_id, work, fingerprint
     pending = lambda reason: CaptureMaterializationAttempt('materialization_pending', reason)
     failed = lambda reason: CaptureMaterializationAttempt('materialization_failed', reason)
     try:
+        if work.fingerprint is not None and work.fingerprint != fingerprint:
+            return failed('learning_capture_work_source_mismatch')
         selection = LearningCaptureSelection(learning_id=work.learning_id,
             generation=work.generation, fingerprint=fingerprint)
         store = require_cognitive_source_store()

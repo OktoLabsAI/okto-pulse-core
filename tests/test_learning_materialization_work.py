@@ -40,3 +40,29 @@ def test_capture_event_round_trips_only_identity_not_narrative_or_approval():
     assert set(event.payload_for_storage()) == {'bug_id', 'capture_author_id', 'capture'}
     with pytest.raises(ValueError):
         LearningCaptureAdmitted.model_validate({**event.model_dump(), 'approved': True})
+
+
+def test_distinct_capture_fingerprints_have_distinct_work_without_changing_bug_group():
+    first = LearningCaptureWorkRef('bug:opaque', 'learning:opaque', 2, 'a' * 64)
+    second = LearningCaptureWorkRef(first.bug_id, first.learning_id, first.generation, 'b' * 64)
+    assert first.encode() != second.encode()
+    assert parse_learning_capture_work_ref(first.encode()) == first
+    assert parse_learning_capture_work_ref(second.encode()) == second
+    assert normalize_cognitive_artifact_id(first.encode()) == normalize_cognitive_artifact_id(second.encode())
+    assert LearningCaptureWorkRef('b', 'n', 0).encode() == 'bug:b:learning:capture-v1:n:0'
+
+
+@pytest.mark.parametrize('suffix', ['0', '01:' + 'a' * 64, '0:' + 'A' * 64,
+    '0:' + 'a' * 63, '0:' + 'a' * 65, '0:' + 'a' * 64 + ':extra'])
+def test_malformed_v2_references_fail_closed(suffix):
+    with pytest.raises(ValueError, match='learning_capture_work_reference_invalid'):
+        parse_learning_capture_work_ref('bug:b:learning:capture-v2:n:' + suffix)
+
+
+@pytest.mark.asyncio
+async def test_v2_fingerprint_mismatch_never_invokes_source_or_graph():
+    from okto_pulse.core.application.learning_materialization_worker import materialize_capture_work
+    result = await materialize_capture_work(None, board_id='board',
+        work=LearningCaptureWorkRef('b', 'n', 0, 'a' * 64), fingerprint='b' * 64, persister=None)
+    assert result.outcome == 'materialization_failed'
+    assert result.reason == 'learning_capture_work_source_mismatch'

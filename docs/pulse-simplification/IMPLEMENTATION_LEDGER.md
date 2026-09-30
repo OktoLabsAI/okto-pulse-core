@@ -2,6 +2,37 @@
 
 ## Estado para retomada
 
+Capture-work identity validado (2026-09-29): builds r1 ambos0, instalação55022=0,
+prova byte-a-byte839/902 Core+363/448 Community antes das campanhas. Core57312=0:
+65pass/7.26s; Community80878=0:21pass/206.60s, incluindo o fluxo real outbox/worker
+de reuso no mesmo Bug. Frontend24pass/2.14s no painel contextual, SPA intacta.
+F16r1=1 somente matriz README; regenerada oficialmente. Builds r2 ambos0,
+instalação85177=0, prova novamente idêntica; F1635495=0, sem findings/docdrift,
+oito budgets ZERO. Recorder exclusivo gerou acceptance-capture-work-identity.json,
+atestando payload r1/r2 idêntico. Ruff e diff-check passaram. Nenhuma campanha ativa.
+Próximo passo permanece integração governada da supersedência por origem:
+resolver projeção/target qualificado e conectar writer conjunto ao método real
+_append_cognitive_source_records em kg/primitives.py (referências anteriores a
+_persist_cognitive_source_records eram nome de trabalho impreciso), junto da
+remoção delimitada da associação e compensação. Não emitir supersedes global
+para escopo parcial; qualificar consulta de linhagem antes da ativação pública.
+Inventário global76 verificados/33 parciais/137 não auditados permanece inalterado.
+Entrega final ainda incompleta; este fechamento não pausa o objetivo.
+
+Capture-work identity em implementação (2026-09-29), após pushes ad5a880c/1f008e3b:
+reproduce_capture_work_collision.py executado no par instalado/provado r4
+confirmou que dois fingerprints no mesmo Bug/Learning/generation resultam em
+um único trabalho terminal antigo, sem enfileirar a segunda captura. Evidência
+reproduction-capture-work-collision.json. Bloqueia reuso explícito do KG7.3/7.6;
+não é mudança de autoridade nem permissão para reabrir decisões humanas.
+Correção delimitada: referência interna capture-v2 inclui fingerprint, v1 continua
+legível; redelivery de v1/v2 existente com fingerprint exato preserva a linha
+inteira, inclusive holds. Captura distinta cria seu próprio pending. Worker
+recusa divergência entre fingerprint da referência e content_hash antes de I/O.
+Preparados testes de contrato, replay em cinco estados com origem v1/v2 e fluxo
+real outbox/SQL/Grafx para reuso no mesmo Bug após primeira captura concluída.
+Ainda não testados; próxima rodada capture-work-identity-r1 build/install/prova.
+
 Scoped-recovery validado (2026-09-29): r3 Core69pass/5.23s e Community1pass/29.42s;
 frontend24pass. Builds e instalação r4 concluídos0; prova byte-a-byte839/902 Core
 e363/448 Community, payload idêntico ao r3. F16r4 terminou0, sem findings nem
