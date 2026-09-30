@@ -23,6 +23,7 @@ partial writes (BR `CLI dry-run reporta diff sem escrever`).
 """
 
 from __future__ import annotations
+from okto_pulse.core.ports.projection_findings import ProjectionFindingSnapshot
 
 import hashlib
 import json
@@ -182,6 +183,7 @@ class WorkerResult:
     # guesses ownership from candidate-id or source-ref prefixes.
     relational_projection_candidate_ids: set[str] = field(default_factory=set)
     relational_projection_active_set_intents: tuple[RelationalProjectionActiveSetIntent, ...] = ()
+    reference_findings: ProjectionFindingSnapshot | None = None
     content_hash: str = ""
     raw_content: str = ""
 

@@ -31,6 +31,8 @@ def _projection_plan(source, result, metadata=None):
         'content_hash': result.content_hash, 'raw_content': result.raw_content,
         'source_metadata': metadata or {},
     }
+    if result is not True and result.reference_findings is not None:
+        projection['reference_findings'] = result.reference_findings.to_payload()
     return DeterministicProjectionPlan(_encode({'format': 'deterministic-projection-plan/v3',
         'source': asdict(source), 'disposition': 'skipped_cancelled' if result is True else 'prepared',
         'projection': projection}))

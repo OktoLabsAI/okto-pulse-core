@@ -2,6 +2,141 @@
 
 ## Estado para retomada
 
+Recorte worker/reference findings e reconciliacao card_parent validado:
+Core94passed8.57s; Community40 casos unicos verdes reunidos nas campanhas
+parent-final2(17),final3(1),unlinked(1) e recovery(21passed196.19s,session41400=0).
+Frontend31passed57.54s; F16parent-final=0, oito budgetsZERO. Builds/install/
+prova parent-final byte-a-byte856Python/919payloadCore+373/458Community.
+record_findings_worker.py executado UMA vez apos todos terminais, gerando
+evidence-reference-findings-worker.json com hashes, limites e falhas preservadas.
+Sem processo pendente. As recusas por deadline do probe sao limite observado,
+nao resolvido nem ocultado pelo sucesso isolado; nenhum prazo/gate relaxado.
+Pronto para commit/push pareado. Inventario81/38/127 sem promocao automatica.
+Proxima dependencia do plano: leitura contextual autorizada da fonte atual
+para diagnosticos semanticos (§5.3), sem tomar audit antigo como atual/gate;
+depois independencia de remocoes conhecidas (§4.5) e gap Spec vazio descrito
+abaixo, seguido da auditoria integral de aceite/distribuicao. Nao criar nova
+tool publica de manutencao, nao alterar autoridade ou semantica sem criterio.
+
+Parent-unlinked session5495=0:1passed85.44s. Oracle Counter integral igual
+apos unlink definitivo, audit diagnostico preservado e sem parent obsoleto.
+Parent-recovery session41400 em andamento:ACK4+retirement5+audit12. Mesmo
+par Python provado, sem source edit. Os dois timeouts continuam limitacao
+explicita; passar isoladamente nao prova estabilidade temporal do probe.
+
+Parent-final3 session81951=1:1passed(Bug)/1failed160.02s. Agora final_unlinked
+falhou no rebuild de Card por MESMO probe deadline/deferred_degraded_graph,
+antes de mutacao; nao e Counter divergente. Nao alterar guard nem prazo.
+Campanha isolada parent-unlinked session5495 em andamento; depois recovery
+ACK4+retirement5+audit12 que -x ainda nao alcancou. Recorder preserva ambos
+timeouts como limite de qualificacao mesmo se os casos isolados passarem.
+
+Parent-final2 session61826=1:17passed/1failed321.93s. Native parent4,
+scenario10 e paridade Spec/Card normal/test verdes; Bug parou em probe
+materialization kind=deadline/outcome=fail_closed, antes de mutacao. Nenhum
+prazo/gate alterado. Final3 session81951 executa somente Bug e testes nao
+alcancados (unlinked final, ACK4, retirement5, audit12), mesmo par provado.
+Ruff F/E9 e diff-check verdes. Recorder ainda pendente de terminais.
+
+Parent-final install95016=0/prova73464=0:856/919+373/458 identicos.
+F1619459=0, oitoZERO e nenhum finding; frontend62537=0:31passed57.54s.
+Community71761=1: fixture nova omitiu source_session_id obrigatorio no seed,
+1error12.90s antes do comportamento. Corrigido SOMENTE teste, produto instalado
+inalterado; campanha parent-final2 session61826 em andamento. Core94 verde
+permanece valido para esses mesmos Python. Recorder preparado preserva todas
+as falhas e ainda NAO foi executado; aguardar terminal Community.
+
+Parent1 builds0/install92083=0/prova66471=0:856/919+373/458 identicos.
+Core68037=0:94passed8.57s. F165968=1 somente README, findings[]/oitoZERO.
+READMEs regenerados depois dos terminais; par parent-final builds0/install
+em andamento. Community ainda NAO iniciou sobre parent (executar apos prova
+e F16 para nao sobrepor I/O da auditoria aos probes com prazo curto).
+Fonte Python congelada desde parent1; ausencia2 continua prova vermelha que
+a nova reconciliacao precisa fazer passar, sem reduzir Counter comparado.
+
+Absence2 session21026=1:1failed86.13s. Counter completo confirma19 itens
+iguais e UMA aresta extra incremental: belongs_to Card:card -> Spec:spec,
+rule belongs_to/card_to_spec@v2.0, deterministic/worker_layer1. Causa concreta
+de paridade G2, nao gate: namespace card_scenarios nao possuia esse parent.
+Correcao WIP adiciona namespace card_parent com regra publica fechada, alvo
+Entity/spec:<id> tipado, active set do vinculo atual. Pai ausente nao gera
+placeholder; raiz Board existente preservada. Adapter reutiliza reconciliacao
+de edges e before-images, compensacao agora filtra parent rule/layer/writer;
+arestas humanas/outro Card/Board fora da propriedade. Cancelados preservam
+semantica anterior (nao passam por novo parent cleanup automaticamente).
+Testes native novos Entity/Bug de unlink/compensacao repetida/troca de pai,
+regressao scenario e full Counter final_unlinked preparados. Ainda NAO testado;
+novo build/install/prova obrigatorio. Recorder worker preparado precisa revisar
+para preservar absence1/2 falhos e campanhas parent, NAO executar versao atual.
+
+Absence1 session20261=1:1failed90.48s. Falha foi no rebuild da SPEC, nao no
+Card: fixture final_unlinked tambem deixava source([]), removendo referencias
+semanticas de sete familias, e connectivity guard recusou spec:spec. Incremental
+desse estado passou; evidencia preservada para G3/G5/paridade, NAO relaxar
+guard como correcao do unlink Card. Fixture absence2 agora mantem source(ac_two)
+na etapa final e remove SOMENTE card.spec_id. Session21026 em execucao.
+Worker/Card ja emite _attach_to_board_root; hipotese inicial de raiz Card sem
+ancora nao confirmada. Ainda verificar Counter completo para eventual belongs_to
+antigo, pois namespace card_scenarios reconcilia somente supports. Nenhum novo
+produto alterado; recorder ainda NAO executado, ultimo par enviado541dbe7d/b37ad0dc.
+
+Worker-recovery1 install75901/prova540b59=0 antes das campanhas; mesmas
+contagens856/919+373/458. F1634388=0. Community47526=0:17passed212.59s,
+inclusive caso antes recusado por health deadline, sem relaxar gate/prazo.
+Acrescido teste native final_unlinked para comparar estado final ainda com
+spec_id=NULL/IDs preservados, alem de remover/restaurar; somente teste fora
+da campanha ativa foi alterado, nenhum produto. Absence1 session20261 em
+andamento usando MESMO par instalado/provado; aguardar terminal. Recorder
+record_findings_worker.py preparado, ainda NAO executado. Contexto/frontend,
+currentness autorizado e independencia de remocao conhecida quando outro alvo
+valido aguarda projecao continuam dependencias pendentes, nao nova ampliacao.
+
+Worker1 Community14405=1:8passed/1failed408.30s. Quatro novos testes ACK/plano
+e quatro paridades native (Spec+Card normal/test/bug) passaram. Falha no retry
+do primeiro retirement_candidate_execution: materialization_probe_audit
+kind=deadline/outcome=fail_closed em spec-a, KGPrimitiveError degraded antes
+de mutacao, execute_candidate_projection_not_acked. Preservar falha, NAO
+aumentar deadline/desligar gate. Repetir somente recovery+audit nao alcancado
+em processo novo. READMEs regenerados oficialmente apos terminais; Python
+inalterado. Build/install/prova worker-recovery1 precedera rerun e F16.
+
+Worker1 builds0/install13295=0/prova24901=0:856/919+373/458 identicos.
+Core2031=0:94passed/10.60s. F1673477=1 somente README, findings[]/oitoZERO.
+Community14405 em andamento; dois tipos Card native ja passaram (SQL audit,
+unlink mantendo IDs, replay/rebuild), aguardar todos terminais antes de editar.
+Superficie seguinte localizada: MCP server.okto_pulse_get_task_context usa
+context_projection, preserva legacy shape; dominio possui permissoes reais
+card.entity.read/context_read/card.tests.read e spec.entity.read/spec.tests.read.
+Nao inventar spec.read/card.read. Usar require_all + load_accessible_card e
+mesmo Board/realm antes de ler fonte/diagnostico. API cards.py (nao api/routes)
+e fachada CoreKnowledgeGraphOperations em application/kg_operations.py sao
+os pontos atuais. CardKnowledgeTab e KB, NAO visualizador KG; nao acoplar
+diagnostico erroneamente a essa aba. Contexto/coverage/frontend ainda pendentes.
+
+WIP worker: testes Core conhecidos-parent/target/unlink e erro de provider
+preparados; suite native de paridade agora exercita unlink real (IDs de cenario
+preservados, spec_id=NULL) nos tres tipos Card e confere audit apos cada ACK.
+Novos testes digest preservam wire v1/v2 sem snapshot e vinculam motivo v3
+mesmo quando finding_id estavel; plano retido recusa escopo Board divergente.
+Callsites de testes exact agora fornecem source_plan autenticado. Ruff F/E9
+verde. Builds worker1 em andamento; ainda nenhum teste comportamental deste
+par. Planos Card antigos sem snapshot nao serao silenciosamente aumentados ao
+revalidar: preparacao atual deve corresponder ao par exato, historico imutavel.
+
+Novo WIP a partir do par publicado Core541dbe7d/Communityb37ad0dc (arvores
+limpas confirmadas): snapshot transportado WorkerResult -> begin/session ->
+audit stage, param interno validado por Board/dono/writer. Planner inclui campo
+somente quando presente. Preparador Card usa analise pura, distingue pai/alvo
+comprovadamente ausentes de fonte incompleta/foreign/erro; duplicata continua
+recusada sem escolher alvo. Hash interno card-scenarios/v2 inclui fingerprint.
+ACK digest v3 inclui snapshot tipado, preservando bytes v1/v2 quando ausente.
+Recovery SQL recebe plano da fonte dos dois callers produtivos e compara payload
+exato por Board/tipo/dono; cognitive continua proibido. Tudo AINDA NAO testado,
+sem novos builds. Necessario ajustar/adicionar testes de ausencia conhecida,
+transporte/rollback/ACK adulterado e paridade native/recovery antes de envio.
+Contexto/coverage autorizado e tratamento independente de endpoint valido ainda
+pendente continuam no escopo; NAO declarar G2/G12 concluidos por este WIP.
+
 Audit3 Community91535 terminou0:90passed/672.49s,2warnings. Core25passed
 (audit1; fontes Core Python inalterados desde entao). F1634181=0, oitoZERO,
 findings/documentation_findings vazios. record_findings_audit.py executado UMA

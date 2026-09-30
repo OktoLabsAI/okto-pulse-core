@@ -4,6 +4,8 @@ These rules record the relational references that were observed. Even a
 reciprocal link is neither an execution result nor coverage accepted by a gate.
 """
 CARD_SCENARIO_NAMESPACE = 'card_scenarios'
+CARD_PARENT_NAMESPACE = 'card_parent'
+CARD_PARENT_RULE = 'belongs_to/card_to_spec@v2.0'
 CARD_SCENARIO_RULE_PREFIX = 'supports/card_scenario_observed_'
 CARD_SCENARIO_RULES = frozenset(
     CARD_SCENARIO_RULE_PREFIX + origin + '@v2.1'
@@ -47,3 +49,19 @@ def owns_card_scenario_endpoints(*, owner_id, source_type, target_type, source_r
 
 def is_card_scenario_writer(*, rule_id, layer, created_by):
     return rule_id in CARD_SCENARIO_RULES and layer == 'deterministic' and created_by == 'worker_layer1'
+
+
+def is_spec_source_reference(reference):
+    if type(reference) is not str:
+        return False
+    parts = reference.split(':')
+    return len(parts) == 2 and parts[0] == 'spec' and bool(parts[1]) and parts[1].strip() == parts[1]
+
+
+def owns_card_parent_endpoints(*, owner_id, source_type, target_type, source_ref, target_ref):
+    return (source_type in {'Entity', 'Bug'} and target_type == 'Entity'
+            and source_ref == f'card:{owner_id}' and is_spec_source_reference(target_ref))
+
+
+def is_card_parent_writer(*, rule_id, layer, created_by):
+    return rule_id == CARD_PARENT_RULE and layer == 'deterministic' and created_by == 'worker_layer1'

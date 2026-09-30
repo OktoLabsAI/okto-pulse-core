@@ -3275,6 +3275,7 @@ async def _process_queue_entry(
         relational_projection_active_set_intents=(
             worker_result.relational_projection_active_set_intents
         ),
+        reference_findings=worker_result.reference_findings,
     )
     session_id = begin_resp.session_id
     if deferred_session_ids is not None:

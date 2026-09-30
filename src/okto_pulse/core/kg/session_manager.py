@@ -12,6 +12,7 @@ multi-process setups this would need to move to Redis — out of scope for MVP.
 """
 
 from __future__ import annotations
+from okto_pulse.core.ports.projection_findings import ProjectionFindingSnapshot
 
 from okto_pulse.core.runtime_context import register_runtime_value, reset_runtime_values, resolve_runtime_value
 
@@ -76,6 +77,7 @@ class ConsolidationSession:
     # graph ids only inside the graph commit boundary.
     relational_projection_candidate_ids: frozenset[str] = frozenset()
     relational_projection_active_set_intents: tuple[Any, ...] = ()
+    reference_findings: ProjectionFindingSnapshot | None = None
     reconciliation_hints: dict[str, ReconciliationHint] = field(default_factory=dict)
     # Fields populated during commit — used by abort/compensating delete.
     committed_graph_node_refs: list[dict[str, Any]] = field(default_factory=list)

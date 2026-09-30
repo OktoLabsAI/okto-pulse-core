@@ -29,6 +29,11 @@ async def test_current_card_and_scenario_sources_converge_to_one_support(card_ty
     document = await make_deterministic_projection_planner(port).prepare(None,
         DeterministicProjectionSource('board', 'card', 'card-one'))
     projection = json.loads(document.document)['projection']
+    assert projection['reference_findings']['findings'] == []
+    parent_intent, = [item for item in projection['relational_projection_active_set_intents']
+                      if item['namespace'] == 'card_parent']
+    assert len(parent_intent['active_edges']) == 1
+    assert parent_intent['active_edges'][0]['to_candidate_id'] == 'kgref:Entity:spec:spec-one'
     nodes = {node['candidate_id']: node for node in projection['nodes']}
     edges = [edge for edge in projection['edges'] if edge['edge_type'] == 'supports']
     assert len(edges) == 1
@@ -62,8 +67,7 @@ async def test_retired_card_plans_empty_owned_set_without_reviving_root(card_typ
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize('damage', ['card_scope', 'incomplete_card', 'missing_parent',
-                                    'parent_scope', 'duplicate_target', 'missing_target'])
+@pytest.mark.parametrize('damage', ['card_scope', 'incomplete_card', 'parent_scope', 'duplicate_target'])
 async def test_incomplete_or_ambiguous_sources_do_not_authorize_empty_replacement(damage):
     from okto_pulse.core.application.processors.card_scenario_projection import prepare_card_scenario_projection
     card = SimpleNamespace(id='card-one', board_id='board', spec_id='spec-one', test_scenario_ids=['ts_one'])
@@ -74,17 +78,47 @@ async def test_incomplete_or_ambiguous_sources_do_not_authorize_empty_replacemen
         card.board_id = 'foreign'
     elif damage == 'incomplete_card':
         del card.test_scenario_ids
-    elif damage == 'missing_parent':
-        parent = None
     elif damage == 'parent_scope':
         parent.board_id = 'foreign'
     elif damage == 'duplicate_target':
         parent.test_scenarios *= 2
-    elif damage == 'missing_target':
-        parent.test_scenarios = []
     with pytest.raises(ValueError, match='card_scenario_'):
         await prepare_card_scenario_projection(None, board_id='board', card=card, result=result,
             persistence=SimpleNamespace(load_artifact=AsyncMock(return_value=parent)))
     assert result.edges == []
     assert result.relational_projection_active_set_intents == ()
     assert result.content_hash == 'before'
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('absence', ['parent', 'target', 'unlinked'])
+async def test_known_absence_produces_empty_owned_set_and_durable_diagnostic(absence):
+    from okto_pulse.core.application.processors.card_scenario_projection import prepare_card_scenario_projection
+    from okto_pulse.core.application.processors.deterministic_kg import WorkerResult
+    card = SimpleNamespace(id='card-one', board_id='board', spec_id='spec-one', test_scenario_ids=['ts_one'])
+    parent = spec(test_scenarios=[])
+    if absence == 'parent': parent = None
+    if absence == 'unlinked': card.spec_id = None
+    result = WorkerResult(nodes=[SimpleNamespace(candidate_id='root', node_type='Entity',
+        source_artifact_ref='card:card-one')], content_hash='before')
+    await prepare_card_scenario_projection(None, board_id='board', card=card, result=result,
+        persistence=SimpleNamespace(load_artifact=AsyncMock(return_value=parent)))
+    assert result.edges == []
+    assert all(intent.active_edges == () for intent in result.relational_projection_active_set_intents)
+    finding, = result.reference_findings.findings
+    assert finding.reason_code == ('target_absent' if absence == 'target' else 'parent_absent')
+    assert finding.target_ref == ('ts_one' if absence == 'unlinked' else 'spec:spec-one:test_scenario:ts_one')
+    assert result.content_hash != 'before'
+
+
+@pytest.mark.asyncio
+async def test_source_provider_failure_does_not_become_absence_or_cleanup():
+    from okto_pulse.core.application.processors.card_scenario_projection import prepare_card_scenario_projection
+    from okto_pulse.core.application.processors.deterministic_kg import WorkerResult
+    card = SimpleNamespace(id='card-one', board_id='board', spec_id='spec-one', test_scenario_ids=['ts_one'])
+    result = WorkerResult()
+    with pytest.raises(RuntimeError, match='source unavailable'):
+        await prepare_card_scenario_projection(None, board_id='board', card=card, result=result,
+            persistence=SimpleNamespace(load_artifact=AsyncMock(side_effect=RuntimeError('source unavailable'))))
+    assert result.reference_findings is None
+    assert result.relational_projection_active_set_intents == ()
