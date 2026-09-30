@@ -99,6 +99,7 @@ _HIGH_PRIORITY_EVENTS = {"card.cancelled", "spec.version_bumped"}
     "card.restored",
     "card.linked_to_spec",
     "card.unlinked_from_spec",
+    "card.scenario_projection_changed.v1",
     "spec.created",
     "spec.dependency_added",
     "spec.dependency_removed",
@@ -146,6 +147,32 @@ class ConsolidationEnqueuer:
 
     async def handle(self, event: DomainEvent, session: object) -> None:
         targets = self._map_targets(event)
+        if (event.event_type in {'spec.semantic_changed', 'spec.version_bumped'}
+                and 'test_scenarios' in getattr(event, 'changed_fields', ())):
+            # A Card-side reference can exist without a reciprocal linked_task_id.
+            # Read consumers of this Spec through the public relational port,
+            # never by scanning the Board or consulting the derived graph.
+            from okto_pulse.core.ports.application_persistence import (
+                ApplicationFilter, ApplicationQuery, get_application_persistence_port,
+            )
+            cards = await get_application_persistence_port().list(session, ApplicationQuery(
+                entity='card', filters=(ApplicationFilter('board_id', 'eq', event.board_id),
+                    ApplicationFilter('spec_id', 'eq', event.spec_id))))
+            for card in cards:
+                target = ('card', card.id)
+                if target not in targets:
+                    targets.append(target)
+        explicit_ids = tuple(dict.fromkeys(getattr(event, 'projection_card_ids', ())))
+        if explicit_ids:
+            from okto_pulse.core.ports.application_persistence import (
+                ApplicationFilter, ApplicationQuery, get_application_persistence_port,
+            )
+            scoped = await get_application_persistence_port().list(session, ApplicationQuery(
+                entity='card', filters=(ApplicationFilter('board_id', 'eq', event.board_id),
+                    ApplicationFilter('id', 'in', explicit_ids))))
+            scoped_ids = {card.id for card in scoped}
+            targets = [target for target in targets
+                       if target[0] != 'card' or target[1] not in explicit_ids or target[1] in scoped_ids]
         if not targets:
             # Defensive: unknown event_type or missing payload field.
             return
@@ -335,6 +362,13 @@ class ConsolidationEnqueuer:
         et = event.event_type
         targets: list[tuple[str, str]] = []
 
+        if et == 'card.scenario_projection_changed.v1':
+            for identity in dict.fromkeys((event.old_spec_id, event.new_spec_id)):
+                if identity:
+                    targets.append(('spec', identity))
+            targets.append(('card', event.card_id))
+            return targets
+
         # Code Traceability events contain only bounded identifiers/states/
         # digests/counts.  Queue targets are relational Pulse artifacts; this
         # handler never receives, opens or resolves a code locator.
@@ -446,6 +480,8 @@ class ConsolidationEnqueuer:
             sid = getattr(event, "spec_id", None)
             if sid:
                 targets.append(("spec", sid))
+            targets.extend(('card', identity) for identity in dict.fromkeys(
+                getattr(event, 'projection_card_ids', ())))
             return targets
         if et.startswith(_CARD_EVENT_PREFIX):
             cid = getattr(event, "card_id", None)
@@ -474,6 +510,8 @@ class ConsolidationEnqueuer:
             sid = getattr(event, "spec_id", None)
             if sid:
                 targets.append(("spec", sid))
+            targets.extend(('card', identity) for identity in dict.fromkeys(
+                getattr(event, 'projection_card_ids', ())))
             return targets
         if et.startswith(_REFINEMENT_EVENT_PREFIX):
             rid = getattr(event, "refinement_id", None)

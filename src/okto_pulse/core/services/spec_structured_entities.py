@@ -822,6 +822,9 @@ class StructuredSpecEntityService:
         spec.version = old_version + 1
 
         changed_fields = list(update_data.keys())
+        from okto_pulse.core.ports.card_projection import scenario_linked_card_ids
+        projection_card_ids = scenario_linked_card_ids(
+            old_values.get('test_scenarios'), update_data.get('test_scenarios'))
         await event_publish(
             SpecVersionBumped(
                 board_id=spec.board_id,
@@ -830,6 +833,7 @@ class StructuredSpecEntityService:
                 old_version=old_version,
                 new_version=spec.version,
                 changed_fields=changed_fields,
+                projection_card_ids=projection_card_ids,
             ),
             session=self.db,
         )
@@ -845,6 +849,7 @@ class StructuredSpecEntityService:
                     actor_id=command.actor_id,
                     spec_id=spec.id,
                     changed_fields=semantic_changed,
+                    projection_card_ids=projection_card_ids,
                 ),
                 session=self.db,
             )
@@ -874,6 +879,7 @@ class StructuredSpecEntityService:
                     operation=command.operation,
                     changed_fields=event_changed_fields,
                     spec_version=spec.version,
+                    projection_card_ids=projection_card_ids,
                 ),
                 session=self.db,
             )

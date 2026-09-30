@@ -565,6 +565,7 @@ class SpecVersionBumped(DomainEvent):
     old_version: int
     new_version: int
     changed_fields: list[str] = Field(default_factory=list)
+    projection_card_ids: list[str] = Field(default_factory=list)
 
 
 class SpecDependencyAdded(DomainEvent):
@@ -614,6 +615,7 @@ class SpecSemanticChanged(DomainEvent):
     event_type: ClassVar[str] = "spec.semantic_changed"
     spec_id: str
     changed_fields: list[str] = Field(default_factory=list)
+    projection_card_ids: list[str] = Field(default_factory=list)
 
 
 class StructuredSpecEntityEvent(DomainEvent):
@@ -631,6 +633,7 @@ class StructuredSpecEntityEvent(DomainEvent):
     operation: str
     changed_fields: list[str] = Field(default_factory=list)
     spec_version: int
+    projection_card_ids: list[str] = Field(default_factory=list)
 
 
 class StructuredSpecEntityCreated(StructuredSpecEntityEvent):
@@ -748,6 +751,16 @@ class CardLinkedToSpec(DomainEvent):
     event_type: ClassVar[str] = "card.linked_to_spec"
     card_id: str
     spec_id: str
+
+
+class CardScenarioProjectionChanged(DomainEvent):
+    """Durable invalidation of observed links; grants no graph or domain authority."""
+
+    event_type: ClassVar[str] = "card.scenario_projection_changed.v1"
+    card_id: str
+    old_spec_id: str | None = None
+    new_spec_id: str | None = None
+    changed_fields: list[Literal['test_scenario_ids', 'spec_id', 'card_type']]
 
 
 class CardUnlinkedFromSpec(DomainEvent):
@@ -1288,6 +1301,7 @@ EVENT_TYPES: list[str] = [
     CardRestored.event_type,
     CardLinkedToSpec.event_type,
     CardUnlinkedFromSpec.event_type,
+    CardScenarioProjectionChanged.event_type,
     SpecCreated.event_type,
     SpecMoved.event_type,
     SpecVersionBumped.event_type,
@@ -1354,6 +1368,7 @@ _EVENT_CLASS_BY_TYPE: dict[str, type[DomainEvent]] = {
     CardRestored.event_type: CardRestored,
     CardLinkedToSpec.event_type: CardLinkedToSpec,
     CardUnlinkedFromSpec.event_type: CardUnlinkedFromSpec,
+    CardScenarioProjectionChanged.event_type: CardScenarioProjectionChanged,
     SpecCreated.event_type: SpecCreated,
     SpecMoved.event_type: SpecMoved,
     SpecVersionBumped.event_type: SpecVersionBumped,

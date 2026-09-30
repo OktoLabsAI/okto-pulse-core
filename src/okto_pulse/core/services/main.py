@@ -4134,6 +4134,15 @@ class CardService:
             user_id,
             card.board_id,
         )
+        projection_fields = sorted(field for field in ('test_scenario_ids', 'spec_id', 'card_type')
+            if field in update_data and old_update_data.get(field) != update_data[field])
+        if projection_fields:
+            from okto_pulse.core.events import publish as event_publish
+            from okto_pulse.core.events.types import CardScenarioProjectionChanged
+            await event_publish(CardScenarioProjectionChanged(
+                board_id=card.board_id, actor_id=user_id, card_id=card.id,
+                old_spec_id=old_spec_id, new_spec_id=card.spec_id,
+                changed_fields=projection_fields), session=self.db)
         extra_activity_details = {
             field: activity_log_value(value)
             for field, value in (activity_details or {}).items()
@@ -11257,6 +11266,7 @@ class SpecService:
         if bumps_version:
             from okto_pulse.core.events import publish as event_publish
             from okto_pulse.core.events.types import SpecVersionBumped
+            from okto_pulse.core.ports.card_projection import scenario_linked_card_ids
 
             changed_struct_fields = sorted(content_fields & update_data.keys())
             await event_publish(
@@ -11267,6 +11277,8 @@ class SpecService:
                     old_version=old_version,
                     new_version=spec.version,
                     changed_fields=changed_struct_fields,
+                    projection_card_ids=scenario_linked_card_ids(
+                        old_data.get('test_scenarios'), update_data.get('test_scenarios')),
                 ),
                 session=self.db,
             )
@@ -11279,6 +11291,7 @@ class SpecService:
         if bumps_semantic:
             from okto_pulse.core.events import publish as event_publish
             from okto_pulse.core.events.types import SpecSemanticChanged
+            from okto_pulse.core.ports.card_projection import scenario_linked_card_ids
 
             changed_semantic = sorted(_semantic_changed_fields())
             await event_publish(
@@ -11287,6 +11300,8 @@ class SpecService:
                     actor_id=user_id,
                     spec_id=spec.id,
                     changed_fields=changed_semantic,
+                    projection_card_ids=scenario_linked_card_ids(
+                        old_data.get('test_scenarios'), update_data.get('test_scenarios')),
                 ),
                 session=self.db,
             )
@@ -11416,6 +11431,7 @@ class SpecService:
                     actor_id=user_id,
                     spec_id=spec.id,
                     changed_fields=[target_field],
+                    projection_card_ids=sorted(set(old_task_ids + task_ids)) if target_field == 'test_scenarios' else [],
                 ),
                 session=self.db,
             )
@@ -11522,6 +11538,7 @@ class SpecService:
                     actor_id=user_id,
                     spec_id=spec.id,
                     changed_fields=["test_scenarios"],
+                    projection_card_ids=sorted(set(old_task_ids + task_ids)),
                 ),
                 session=self.db,
             )

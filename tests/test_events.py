@@ -354,8 +354,9 @@ def test_registry_includes_authored_learning_after_sprint_retirement():
     events are owned by their dedicated KG-scoring handlers — different
     domain (KG telemetry vs. spec/card lifecycle).
     """
-    assert len(EVENT_TYPES) == 62
+    assert len(EVENT_TYPES) == 63
     assert "learning.capture_admitted.v1" in EVENT_TYPES
+    assert "card.scenario_projection_changed.v1" in EVENT_TYPES
     assert not {"sprint.created", "sprint.moved", "sprint.closed"}.intersection(EVENT_TYPES)
     non_consolidation_events = {
         "learning.capture_admitted.v1",

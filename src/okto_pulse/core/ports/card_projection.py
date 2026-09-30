@@ -11,6 +11,20 @@ CARD_SCENARIO_RULES = frozenset(
 )
 
 
+def scenario_linked_card_ids(*collections):
+    """Bounded identifiers retained from before/after scenario collections.
+
+    This is invalidation metadata, never validation or permission to adopt a
+    link. Domain validators keep authority over malformed references.
+    """
+    return sorted({identity for collection in collections
+                   if isinstance(collection, (list, tuple))
+                   for item in collection if isinstance(item, dict)
+                   if isinstance(item.get('linked_task_ids'), (list, tuple))
+                   for identity in (item.get('linked_task_ids') or [])
+                   if type(identity) is str and identity.strip() == identity and identity})
+
+
 def card_scenario_rule(*, card_reference: bool, spec_reference: bool) -> str:
     if type(card_reference) is not bool or type(spec_reference) is not bool or not (card_reference or spec_reference):
         raise ValueError('card_scenario_origin_invalid')

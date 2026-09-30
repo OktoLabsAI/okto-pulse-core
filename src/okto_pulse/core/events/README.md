@@ -60,6 +60,7 @@ plug in exactly the same way — one decorator, one `handle()` method.
 |-------|-----------|--------------------|
 | `learning.capture_admitted.v1` | authored Learning admission, in the source UOW | `bug_id`, `capture_author_id`, exact capture identity/generation/fingerprint; no narrative or approval |
 | `card.created` | `CardService.create_card` | `card_id`, `spec_id`, `card_type`, `priority` |
+| `card.scenario_projection_changed.v1` | `CardService.update_card` | `card_id`, previous/current Spec IDs, changed scenario-link fields; bounded invalidation metadata |
 | `card.moved` | `CardService.move_card` | `card_id`, `from_status`, `to_status` |
 | `card.cancelled` | `CardService.move_card` (→ cancelled) | `card_id`, `previous_status` |
 | `card.restored` | `CardService.move_card` (from cancelled) | `card_id`, `to_status` |
@@ -87,6 +88,14 @@ materialize Sprint. Historical queue work and archive lifecycle replay fail
 closed until the fenced offline retirement resolves them; they are not reported
 as delivered. Historical fixtures must supply the old payload explicitly instead
 of constructing it from current event DTOs.
+
+Scenario mutations retain `projection_card_ids` from both the previous and
+current references in Spec/structured events. Consolidation checks their Board
+scope and also reads Cards attached to that Spec, so one-sided Card references
+are invalidated after a scenario removal. These are targeted public-port reads,
+not Board scans. Card relinks enqueue both parents and the Card; the worker
+always rereads current authority. The metadata does not grant coverage or graph
+write authority, and old stored event payloads remain unchanged.
 
 Learning admission emits one work notification with the durable capture in the
 same transaction. Exact retries emit no duplicate. Its handler opens one item

@@ -2,6 +2,65 @@
 
 ## Estado para retomada
 
+G14 cenario final94205=0 (oitoZERO, sem findings/drift). Recorder executado
+UMA vez apos terminais: acceptance-k2-card-invalidation.json,76+9+10passados.
+Pronto para commit/push; nenhum processo ativo; inventario inalterado.
+Proximo dentro do plano: fechar G2 referencias removidas/inexistentes com
+classificacao semantica e retirada conhecida (KG4.5/5), preservando falha de
+leitura como indisponibilidade. MissingLinkCandidate atual e destinado a
+fallback cognitivo; NAO reutilizar cegamente para refs quebradas nem fabricar
+cobertura. KG5.2 permite storage interno somente se mecanismos existentes nao
+representarem semantica; investigar antes de criar porta/tabela. KG5.3 integra
+contexto/coverage, sem novas tools de manutencao. Gate/policies historicas
+exigem caracterizacao; nenhuma mudanca de autoridade autorizada neste WIP.
+
+G14 final install15462=0/prova13069=0 antes validacao,854/917+373/458.
+Regressao adicional nos writers estruturados alterados: structured1 Core34043=0,
+10passed; preserva side effects das8familias, migracaoAC/cobertura e envelope
+de changed_fields. F16 final94205 ainda em curso; recorder preparado para
+76+9+10 testes, executar somente depois do terminal. Python produto congelado.
+
+G14 invalidacao de cenarios validada no par invalidation1: Core93294=0,
+76passed/138.12s; focused1 Core11775=0,9passed/5.16s inclui delecao real de
+cenario, cascade de test_scenario_ids e handler reenfileirando fontes Card e
+backlink apos commit. F1622077=1 somenteREADME/findings[], oitoZERO.
+README de eventos documenta metadata/evento fechado; matrizes oficiais
+regeneradas. Par k2-card-invalidation-final builds0; install em andamento.
+Produto Python inalterado desde a prova invalidation1; apenas docs/testes.
+Ainda nao promover G2/G14 completos: demais familias/eventos, remint e
+findings/referencias removidas exigem fechamento previsto no complemento.
+
+k2-card-invalidation1 Core41515=1:7passed/1failed/6.55s. Fixture repetia
+update_card com db.flush (ORM), sem flush da porta de ApplicationRecord;
+segunda leitura via port via estado antigo e gerava dois eventos. Teste
+corrigido para ApplicationPersistencePort.flush e verificacao SQL dos IDs
+salvos; mesmo ajuste no unlink, agora exige colecao salva sem Card removido.
+Nao mudou produto nem oracle (continua um evento e noop sem duplicata).
+k2-card-invalidation2 Core93294 em andamento; prova invalidation1 vigente.
+
+G14 WIP: par k2-card-invalidation1 builds60890/91576=0, install93503=0,
+prova1148=0 (854/917+373/458 identicos), suite Core em curso. Testes novos
+incluem mutadores reais remove_scenario_traceability_task_link e update_card
+com outbox (noop nao deve duplicar), alem handler/Board e metadata old+new.
+Investigacao coalescing: ConsolidationQueueUpsert.coalesce_active=False por
+default; adapter relational_effects invalida claim ativo e deixa pending,
+preserva membership rebuild e live intent diferido. Nao alterar mecanismo.
+update/delete/status de cenarios usam update_spec; delecao ja limpa IDs
+Card em cascata, consumidores consultados apos commit pelo evento Spec.
+
+Par fundacao publicado: Core37afe926/Community432b0b8c, pushes0.
+Novo WIP G14 NAO validado: metadata projection_card_ids antes+depois em
+eventos Spec/structured; writers bulk/structured/link/unlink preservam IDs;
+handler consulta consumidores por Board+Spec e valida IDs explicitos por
+Board+IDs via ApplicationPersistencePort existente. Novo evento fechado
+card.scenario_projection_changed.v1 para update_card de test_scenario_ids,
+spec_id/card_type; targets Spec antiga/nova+Card, sem duplicatas. Registry63.
+test_card_scenario_invalidation.py novo com uniao, serializacao, Board fence
+e transicoes de parent. Ainda sem build/install/prova/testes deste WIP.
+Falta testar mutadores reais (nao somente payload/handler), coalescing,
+demais caminhos de origem/importacao e tratamento de unlink/referencia
+semantica. Ultimo build provado e k2-card-support-final; nao testar WIP contraele.
+
 F16 final62183=0, findings/documentation_findings vazios, oito budgets ZERO.
 Recorder executado UMA vez apos todos os terminais; evidencias em
 acceptance-k2-card-projection-foundation.json. Incremento pronto para commit/push,
