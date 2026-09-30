@@ -2,6 +2,51 @@
 
 ## Estado para retomada
 
+Identidade de filhos normativos da Spec fechada neste incremento: Corefinal
+84153=0,40passed141.74s; compensation83381=0,31passed10.73s; Community10165=0,
+2passed93.44s. Prova final8caa9d=0(859/922+373/458); F1641837=0/oitoZERO e
+nenhum finding documental/arquitetural. Recorder record_spec_owner.py executado
+UMA vez apos terminais, gerando evidence-spec-source-identity.json. Fonte
+publica tipada protege owner mesmo sob hint stale/forcado, sem Cypher novo
+Core; generico cognitivo e historico Decision da mesma fonte preservados.
+Rollback/retry reais e before-images preexistentes verdes. Ruff/diff-check
+verdes. Sem processo pendente; pronto para commit/push. Sem promocao global:
+inventario81/38/127 e entrega integral permanecem abertos. Proxima pendencia
+JA documentada: reproduzir precisamente a recusa da Spec sem links semanticos
+no rebuild; nao inventar coocorrencia nem relaxar connectivity guard.
+
+Owner-final: wheels0/install66910=0/prova8caa9d=0(859/922+373/458 identicos).
+F1641837=0, findings/docs[] e oitoZERO; Community10165=0,2passed93.44s;
+compensation-final83381=0,31passed10.73s. Core84153 ainda em andamento.
+Core2 anterior98693=0:40passed105.33s. Falha compensation1(44265=1) ocorreu
+antes do comportamento: isinstance(GraphTransactionScope) falso porque fake
+InMemory nao implementava find_active_node_ids_by_source_refs. Metodo faltante
+agora implementado com escopo Board/tipo/ref, ativos e maximo2IDs distintos;
+assert de contrato preservado. README oficial regenerado apos terminais.
+Recorder record_spec_owner.py pronto NAO executado; aguarda Corefinal terminal.
+Nenhum fonte alterado durante testes; sem migracao, UI ou gate novo.
+
+Par dependencias publicado4d14ad9e/aed9dc69, pushes0/arvores limpas confirmados.
+Gap de dono entre Specs reproduzido em spec-owner-characterization1(5839=1),
+1failed30.06s. Adapter recusou business_rule_requirements do dono second:
+endpoints efetivos eram spec:spec:business_rule:br_one -> spec:spec:fr:fr_two.
+Causa: reconcile_candidate aplicava similaridade a filhos normativos da Spec;
+somente Entity tinha identidade estrutural protegida. Correcao WIP reutiliza
+vocabulario fechado de familias/sections do port spec_projection; fonte exata
+continua admitida, mas similaridade nao seleciona outro source_ref. Fence pre-
+write para filhos da Spec usa snapshot_node_properties publico, sem novo Cypher
+no Core. Decisions da MESMA fonte conservam SUPERSEDE por mudanca semantica.
+Compensacao agora ignora snapshots posteriores a CREATE dessa sessao: esses
+nos ja desapareceram no rollback transacional ou serao removidos pelo cleanup;
+before-images anteriores ao CREATE e de nos preexistentes continuam restaurados.
+Wheels spec-owner1 ambos0/install9d1530=0/prova0aa5dd=0:859/922+373/458 identicos.
+Community48899=0,2passed74.74s(inclui injecao apos novos nos, rollback e retry).
+Core35517=1 somente erro no teste: Pydantic serializa enum como string, assert
+usava identidade `is`; corrigido SOMENTE teste para igualdade. Core2 session
+98693 e compensation1 session44265 em andamento. F1634922=1 SOMENTE README,
+findings[]/oitoZERO. Aguardar terminais antes de regenerar/empacotar par final;
+nenhuma mudanca de fonte durante campanhas. Gap Spec sem links ainda pendente.
+
 §4.5 dependencias Spec validado no par final2: Core70passed16.59s(51108=0),
 Community47passed179.22s(93747=0), regressao Card22passed95.23s(24906=0).
 Remocao pendente/rollback SQL/replay/conclusao apos prerequisite passaram;

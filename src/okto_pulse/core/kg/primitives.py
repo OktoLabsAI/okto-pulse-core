@@ -1415,6 +1415,36 @@ def _require_no_code_traceability_existing_targets(
             )
 
 
+def _require_spec_source_identity_matches(graph_scope, *, node_candidates, effective_hints, session_id):
+    """Reject stale/overridden cross-source Spec child hints before mutation."""
+    from okto_pulse.core.ports.spec_projection import is_spec_owned_node_identity
+    for candidate_id, candidate in node_candidates.items():
+        node_type = _enum_value(candidate.node_type)
+        source_ref = candidate.source_artifact_ref
+        if not is_spec_owned_node_identity(node_type, source_ref):
+            continue
+        hint = effective_hints.get(candidate_id)
+        if hint is None or _resolve_op(hint, candidate.source_confidence) not in {
+            ReconciliationOperation.UPDATE, ReconciliationOperation.SUPERSEDE,
+        }:
+            continue
+        target_id = getattr(hint, 'target_node_id', None)
+        try:
+            snapshot = (graph_scope.snapshot_node_properties(node_type, target_id, ('source_artifact_ref',))
+                if target_id else None)
+        except Exception as exc:
+            raise KGPrimitiveError('spec_source_identity_unverifiable',
+                'The Spec child target identity could not be read.', session_id=session_id) from exc
+        if snapshot is None or not snapshot.attrs.get('source_artifact_ref'):
+            raise KGPrimitiveError('spec_source_identity_unverifiable',
+                'The Spec child target has no verifiable source identity.', session_id=session_id)
+        if snapshot.attrs['source_artifact_ref'] != source_ref:
+            raise KGPrimitiveError('spec_source_identity_mismatch',
+                'A Spec child cannot update or supersede another source identity.', session_id=session_id,
+                details={'candidate_id': candidate_id, 'candidate_source_artifact_ref': source_ref,
+                    'target_node_id': target_id, 'target_source_artifact_ref': snapshot.attrs['source_artifact_ref']})
+
+
 def _require_entity_source_identity_matches(
     graph_scope,
     *,
@@ -3165,6 +3195,8 @@ def _do_graph_commit(
             effective_hints=effective_hints,
             session_id=session_id,
         )
+        _require_spec_source_identity_matches(graph_scope, node_candidates=node_candidates,
+            effective_hints=effective_hints, session_id=session_id)
         _validate_projection_intent_collection(
             relational_projection_active_set_intents, session_id=session_id,
         )

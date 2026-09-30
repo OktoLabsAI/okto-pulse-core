@@ -60,6 +60,21 @@ _FAMILIES = {
 SPEC_RELATIONSHIP_NAMESPACES = frozenset(_FAMILIES)
 
 
+def is_spec_owned_node_identity(node_type: str, source_ref: str) -> bool:
+    """Normative Spec children retain identity even when their prose matches.
+
+    Use the same closed section/type vocabulary as relationship ownership.
+    This does not classify arbitrary cognitive source references as projections.
+    """
+    if type(source_ref) is not str:
+        return False
+    parts = source_ref.split(':')
+    if len(parts) != 4 or parts[0] != 'spec' or any(not part or part.strip() != part for part in parts):
+        return False
+    return any((node_type == family.source_type and parts[2] in family.source_sections)
+        or (node_type, parts[2]) in family.target_sections for family in _FAMILIES.values())
+
+
 def is_spec_relationship_writer(*, edge_type, source_type, target_type, rule_id, layer, created_by):
     return any(family.edge_type == edge_type and family.source_type == source_type
         and any(kind == target_type for kind, _section in family.target_sections)

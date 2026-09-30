@@ -598,6 +598,12 @@ class InMemoryCypherExecutor:
 
 
 class _InMemoryGraphTransactionScope:
+    def find_active_node_ids_by_source_refs(self, node_type: str, source_refs: tuple[str, ...]) -> tuple[str, ...]:
+        """Mirror the public exact-reference lookup, including ambiguity."""
+        return tuple(sorted({str(node['id']) for node in self.store._board_nodes(self.board_id).values()
+            if node.get('_type') == node_type and node.get('source_artifact_ref') in source_refs
+            and node.get('superseded_by') in (None, '')}))[:2]
+
     def __init__(self, board_id: str, store: InMemoryGraphStore) -> None:
         self.board_id = board_id
         self.store = store

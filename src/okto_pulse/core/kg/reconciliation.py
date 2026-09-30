@@ -20,6 +20,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from okto_pulse.core.kg.node_identity import normalize_text
+from okto_pulse.core.ports.spec_projection import is_spec_owned_node_identity
 from okto_pulse.core.kg.schemas import (
     NodeCandidate,
     ReconciliationHint,
@@ -136,7 +137,8 @@ def reconcile_candidate(
     # above remains valid; without it, materialize the distinct Entity and let
     # explicit graph relationships express semantic affinity.
     if (
-        _same_node_type(candidate.node_type, "Entity")
+        (_same_node_type(candidate.node_type, "Entity") or is_spec_owned_node_identity(
+            str(getattr(candidate.node_type, 'value', candidate.node_type)), candidate.source_artifact_ref))
         and str(candidate.source_artifact_ref or "").strip()
     ):
         return ReconciliationHint(
@@ -145,7 +147,7 @@ def reconcile_candidate(
             target_node_id=None,
             confidence=candidate.source_confidence,
             reason=(
-                "source-backed Entity has no exact source-ref match; "
+                f"source-backed {getattr(candidate.node_type, 'value', candidate.node_type)} has no exact source-ref match; "
                 "semantic similarity cannot redefine structural identity"
             ),
         )

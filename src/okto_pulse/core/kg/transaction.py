@@ -1172,12 +1172,19 @@ class TransactionOrchestrator:
                     )
                 )
 
-        property_records = [
-            record
-            for record in reversed(self.records)
-            if record.property_before_image is not None
-        ]
-        for record in property_records:
+        # A property snapshot taken after this session created the node is
+        # not a pre-session before-image. A transactional rollback may already
+        # have removed that node; an auto-committing backend will remove it in
+        # the session cleanup below. Preserve snapshots BEFORE any create.
+        created_nodes = set()
+        property_records = []
+        for record in self.records:
+            key = (record.entity_type, record.entity_id)
+            if record.kind == 'node':
+                created_nodes.add(key)
+            elif record.property_before_image is not None and key not in created_nodes:
+                property_records.append(record)
+        for record in reversed(property_records):
             try:
                 self.graph_scope.restore_node_properties(
                     record.property_before_image
