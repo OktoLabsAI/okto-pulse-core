@@ -2,6 +2,51 @@
 
 ## Estado para retomada
 
+Par anterior Core03791ec0/Community5bd85c04 publicado, pushes0/limpos.
+Antes de compor fase no checkpoint, em validacao o qualificador Core de delta
+grafico completo: inventarios portaveis limitados100k/500k/64MiB, preservacao de
+nos/arestas alheios, literal selecionado contra fonte validada, usage somente
+relevance_score/last_recomputed_at nos participantes, reuso somente source_content_hash,
+aresta validates para Bug exato e remocao scoped somente com claim historico.
+Sem dialeto/adaptador concreto no Core; Community fornece inventarios existentes.
+Testes nativos de SQL agora tambem comparam grafos antes/depois e adulteram
+conteudo/no/ownership de sessao. Reuso/scoped/debt devem passar ambos verificadores.
+graph-delta1 builds0/Ruff0/install15060=0/prova0 (846/909+366/451) antes dos
+testes. Core46622=0:70passed/7.76s. Community79785=1: primeiro teste falhou
+43.12s porque novo verificador esperava source_session_id na aresta. Leitura
+readonly do grafo retido confirmou created_by_session_id e created_by com a
+sessao real. Corrigida APENAS comparacao/teste, sem alterar writer/historico.
+F1694340=1 somente README, findings=[], oito ZERO. Todos terminais antes da
+correcao. graph-delta2 builds0/install71666=0 sem campanha: leitura do writer
+confirmou envelope da aresta (confidence default EdgeCandidate, layer cognitive,
+rule/fallback vazios, created_by e created_by_session_id da sessao, timestamp).
+Qualificador passou a exigir esse envelope inteiro; quinto ataque altera confidence.
+Writer inalterado. graph-delta3 builds0/install6943=0/prova0 (846/909+366/451)
+ANTES dos testes. Core97674=0:70passed/7.58s; Community40988=1:
+7passed/1failed/168.89s no reuso. Investigacao literal_payload: reuso remove
+source_session_id da fonte e metadata SQL aponta sessao nova, mas no grafico
+preserva birth session. Comparacao passou a exigir igualdade com before-image
+para no existente, ou sessao atual somente em no novo; nunca autoriza reescrita.
+Teste adicional adultera birth session nos tres caminhos. Writer inalterado.
+F1614004=1 somente README, findings=[], oito ZERO. Todos terminais antes da
+correcao. graph-delta4 builds0/install67704=0/prova0 (846/909+366/451) antes
+da campanha. F1612780=0/ok=true,findings/documentation_findings vazios,oito ZERO.
+Community35155=0:10passed/178.85s (native10). record_learning_graph_delta.py
+executado UMA vez apos TODOS terminais gerou acceptance-learning-graph-delta.json.
+Nao rerodar recorder contra fontes futuras. Nenhuma campanha ativa. Ruff0.
+Ainda NAO conectado ao coordenador/checkpoint, nao confundir com K3 completo.
+
+Para compor a fase: preservar SQL intermediario via create_sqlite_recovery_snapshot
+(backup API incluindo WAL, censo/hash, sem copiar SQLite live) e inventarios de
+grafo portaveis pelo codec/adapter existentes logical_graph_file; nao criar outro
+formato de grafo. publish_logical_graph_file substitui destino, portanto a fase
+privada deve exigir nomes novos. Cada execucao precisa guardar antes/depois,
+rederivar SQL e delta grafico e comparar contagens audit/estrutura. Ainda manter
+censo nativo original/final, fontes/evidencias e guards de completion; qualificador
+portavel nao substitui esses contratos. Checkpoint v6 atual e restauracao literal
+leem grafo final e recusam arestas novas: integrar cadeia de fases autenticada,
+sem relaxar formato antigo. Inventario78/33/135 inalterado, entrega integral aberta.
+
 Par publicado anterior Core4eaaf97a/Community90f19b4c, pushes0 e limpos.
 Em andamento KG7.5/K3 verificador retirement_learning_sql_delta de snapshots
 quiescentes completos: delta de todas tabelas, audit ligado a conteudo autoral

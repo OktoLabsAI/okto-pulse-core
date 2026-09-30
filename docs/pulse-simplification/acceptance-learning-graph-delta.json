@@ -1,0 +1,134 @@
+{
+  "scope": "KG7.5/K3 portable graph delta qualification alongside exact SQL effects",
+  "suites": {
+    "graph-delta3-core": {
+      "passed": 70,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "graph-delta4-community": {
+      "passed": 10,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0
+    }
+  },
+  "budgets": [
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "import_boundary_baseline",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every import_boundary_baseline allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "singleton_baseline",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every singleton_baseline allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "dependency_temporary_exceptions",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every dependency_temporary_exceptions allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "graph_runtime_compatibility",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every graph_runtime_compatibility allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "rebuild_artifact_compatibility",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every rebuild_artifact_compatibility allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "community_private_reach_ins",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every community_private_reach_ins allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "community_adapter_bridges",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every community_adapter_bridges allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "af35_relational_residue",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every af35_relational_residue allowance before F16 completion."
+    }
+  ],
+  "verified": [
+    "The Core comparison uses portable graph contracts and public source-history ports, without concrete infrastructure or dialect.",
+    "Complete bounded inventories preserve unrelated nodes and edge multiplicities and refuse orphan endpoints.",
+    "The selected literal must match verified source history; existing node semantics cannot be repaired or rewritten.",
+    "Existing reuse advances only the selected source fingerprint; degree-delta usage changes are limited to two fields on participating nodes.",
+    "New validates edges require the exact Bug, default confidence and full existing writer provenance envelope.",
+    "Scoped edge removal requires the committed historical claim for that successor and selected capture.",
+    "Native first materialization, replay, reuse, scoped replacement and technical-debt paths pass both SQL and graph checks.",
+    "Forged content, removed nodes, edge session/confidence and rewritten node birth sessions are refused.",
+    "Byte-identical installation preceded campaigns; final F16 has no findings or documentation drift and all eight budgets remain zero."
+  ],
+  "investigation": [
+    "Initial graph-delta1 failed on an incorrect verifier assumption: actual edge ownership is created_by_session_id. A read-only retained native census confirmed the existing contract; the writer was not changed.",
+    "Graph-delta3 passed seven cases then failed on reuse birth-session comparison. Existing literal_payload omits that property while SQL records the new append session; the graph preserves its before-image session. The verifier now requires exact preservation for existing nodes and tests against birth-session rewriting."
+  ],
+  "limits": [
+    "This portable delta comparison does not replace native census, source/evidence authentication, current eligibility, offline fences or complete candidate ownership.",
+    "Coordinator/checkpoint composition and final upgrade acceptance remain pending; no completion gate was relaxed.",
+    "Native fixtures substitute unrelated lifecycle gates and graph health. Counts from failed attempts and earlier repetitions are not added to the passing suites.",
+    "No UI change, real-data migration, runtime restart or release occurred.",
+    "Full-plan acceptance is incomplete; inventory remains 78 verified / 33 partial / 135 unaudited."
+  ],
+  "sha256": {
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-graph-delta4-closure.log": "8ffa3334dbec08b09097587e1491cf395fa2a4026ae03b52bf3ad208ded82df7",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-graph-delta1-community.log": "3a07d33662da75fe7a198f2d9e8b1145915c669a86ace53307b6451b7543bb73",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-graph-delta3-community.log": "d1726d072e684b96f1ea66e8aaa284b2f3fe18fb35c0e02a8ca56f04523c5029",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-graph-delta1-closure.log": "d06dabf5a5e360436f407796226de9ad805f8a141e88eb60741dffd65e7e83f2",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-graph-delta3-closure.log": "387c4cadcd37ab489e6c9b4442a049dc4d2ca32104d23d61f0c62c1bf3a99dd2",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-graph-delta3-core.xml": "4217fe33ca91809dbdd9dd6dcd08ee35517437dae4bf9e05f83a7082467fff8a",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-graph-delta3-core.log": "08257366a9b8e5bd552162f0b8671fe8a0ae05f31928fa51366b34dcd763dd86",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-graph-delta4-community.xml": "8367275ca1b9bfb93c4156b07aa303793a0dd93e5a9c48651c061b5897aaf77f",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-graph-delta4-community.log": "a2451e405f2ecb4ccf7fd48b406eb83052241fcb984afea845545534d66c87ab",
+    "PULSE_REFACTOR/.validation-v040/provenance-learning-graph-delta1.json": "645bb7e9082fd63cbe2f23c4664a050e6c4b540c0b86a82253a14787a51b4278",
+    "PULSE_REFACTOR/.validation-v040/provenance-learning-graph-delta3.json": "2a38626bf723a8168b6eb3f8c8201a41212abdb88118e48e23eee4d7c8355b44",
+    "PULSE_REFACTOR/.validation-v040/provenance-learning-graph-delta4.json": "9ce506a8f6c97489ce227cb3a4c7be6245492aa8469f6a8cf2b8101c0de81357",
+    "PULSE_REFACTOR/.validation-v040/run_learning_reconciliation.py": "aadae769aa1adfcf2558eb9bef698e1a7f439d1748970d6dbd3b3b87d4bc93c7",
+    "okto_labs_pulse_core/src/okto_pulse/core/application/learning_reconciliation_graph.py": "70239c404d92a3cbb250cf2a10562cd0b0a557b491a1d98a7ebf4a6c1ec635f2",
+    "okto_labs_pulse_core/src/okto_pulse/core/ports/learning_reconciliation.py": "154cd4c4ab3e8d75cad7007643942930b9d4286a268ee0a6a6408f43ffc774a2",
+    "okto_labs_pulse_community/tests/test_learning_reconciliation_effects.py": "1bf6989251980d03ff808c1435ae991165aef24e73d8baa73de07ec89a8d4045",
+    "okto_labs_pulse_community/tests/test_learning_reconciliation_sql_variants.py": "bff2bef6b972dcadead9f9270b8ed0fd7371b205ea13bedca1b38782c5edc06f",
+    "okto_labs_pulse_core/README.md": "72988628e932c9ba99ba4010b2a099b470103cf841499a425a1ad2e86e717f60",
+    "okto_labs_pulse_community/README.md": "fe55c8c1df7210035c6db6a6943ae249026a49d2e5a72de1e0a12d9e82ca9dc2"
+  }
+}

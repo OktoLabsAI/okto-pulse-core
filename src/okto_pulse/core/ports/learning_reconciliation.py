@@ -38,6 +38,19 @@ async def learning_reconciliation_source_basis(context, store, *, execution):
     return await source_basis(context, store, execution=execution)
 
 
+async def qualify_learning_reconciliation_graph_delta(context, store, *, schema, execution,
+        before_nodes, before_relations, after_nodes, after_relations):
+    """Classify one execution's complete portable graph delta against source history.
+
+    The edition authenticates both inventories and SQL ownership separately.
+    This comparison grants no permission, current applicability or completion.
+    """
+    from okto_pulse.core.application.learning_reconciliation_graph import qualify
+    return await qualify(context, store, schema=schema, execution=execution,
+        before_nodes=before_nodes, before_relations=before_relations,
+        after_nodes=after_nodes, after_relations=after_relations)
+
+
 async def execute_learning_reconciliation(*, board_id, work_ref, relational_scope_factory):
     """Execute exact selected authorship through the existing governed writer.
 
