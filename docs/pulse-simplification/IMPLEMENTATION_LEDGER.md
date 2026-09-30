@@ -2,6 +2,40 @@
 
 ## Estado para retomada
 
+Par publicado Core61e3189d/Community22736480, pushes0/limpos.
+Integracao runtime em andamento: extraida candidate_execution_runtime da
+fase deterministica, mantendo providers/locks/ator; fechamento SQL em finally
+mesmo se drain de health recusar a saida. execute_candidate_learning_phase
+usa essa composicao isolada, SQL/grafo/evidence do stage, valida binding e
+geracao, retém baseline/terminal e cadeia por Board, rederiva boundaries antes
+de selar retirement-learning-phase/v1 retained_not_reconciled. Nao concede
+completion nem esta ligado ao coordenador/checkpoint ainda. Novo teste copia
+somente fixture descartavel, preserva originais SQL/grafo/fontes e verifica
+execucao assinada no candidato + cold replay sem providers. Regressao inclui
+durable-technical-report do coordenador existente. Ruff0; campanha
+candidate-learning-runtime1 a iniciar; produto congelado nas campanhas.
+runtime1 builds0/install23276=0/prova0 (846/909+367/452); F1678900=0.
+Community83915=1: novo teste falhou53.04s no cold replay sobre SQL final:
+relational_snapshot_unexpected_sidecar. Fase privada executou e verificou
+seus snapshots, originais preservados; backup readonly sobre journal WAL
+recriou database.sqlite3-wal(0bytes)/shm(32768). Todos terminais antes de editar.
+Correcao fisica somente no stage: apos fechar engines, sob fence, SQLite faz
+wal_checkpoint(TRUNCATE), recusa busy, journal_mode=DELETE; nunca unlink de
+sidecars nem leitura immutable de WAL pendente. Snapshot final/cold devem
+provar igualdade integral dos dados. Nova campanha runtime2 a iniciar.
+runtime2 builds0/install79091=0/prova0 (846/909+367/452), F1621328=0:
+ok=true sem findings/drift, oito ZERO. Community2640=0:6passed/441.68s,
+incluindo fase isolada Learning, cold replay, originais preservados e regressao
+do coordenador com ativacao descartavel/retomada/admissao pelo wheel instalado.
+Ruff/diff0. record_candidate_learning_runtime.py executado UMA vez apos todos
+terminais; acceptance-candidate-learning-runtime.json com hashes/provas/limites.
+Nao repetir recorder contra fontes posteriores. Nenhuma campanha ativa.
+Proxima acao: ligar fase ao coordenador e cold checkpoint com novo formato,
+reter SQL deterministico e grafo pos-restauracao literal para rederivar seus
+guards antes dos deltas Learning, compor censo nativo e prova de aplicabilidade
+atual. Nao alterar interpretacao v6/v17 nem usar materialized como admissao.
+Core funcional inalterado; nenhuma UI/dado real/restart/release.78/33/135 aberto.
+
 Par publicado Core887d46e7/Community2bd88284, pushes0/limpos.
 Integracao em andamento: verify_candidate_learning_chain liga a sequencia
 de Boards autorizada pelo coordenador ao SQL intermediario e SQL final,
