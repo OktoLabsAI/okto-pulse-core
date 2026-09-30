@@ -45,3 +45,23 @@ def test_snapshot_refuses_scope_drift_and_duplicate_identity(damage):
         second = replace(first, reason_code='target_outside_scope')
     with pytest.raises(ValueError, match='scope_mismatch|identity_duplicate'):
         snapshot((first, second))
+
+
+@pytest.mark.parametrize('findings', [(), (finding(),)])
+def test_durable_roundtrip_preserves_empty_and_identity(findings):
+    import json
+    original = snapshot(findings)
+    assert ProjectionFindingSnapshot.from_payload(json.loads(json.dumps(original.to_payload()))) == original
+
+
+@pytest.mark.parametrize('damage', ['version', 'boolean_version', 'extra', 'identity', 'foreign', 'null'])
+def test_durable_payload_refuses_corruption(damage):
+    payload = snapshot((finding(),)).to_payload()
+    if damage == 'version': payload['schema_version'] = 2
+    if damage == 'boolean_version': payload['schema_version'] = True
+    if damage == 'extra': payload['approved'] = True
+    if damage == 'identity': payload['findings'][0]['finding_id'] = 'b' * 64
+    if damage == 'foreign': payload['board_id'] = 'foreign'
+    if damage == 'null': payload['findings'] = None
+    with pytest.raises(ValueError):
+        ProjectionFindingSnapshot.from_payload(payload)

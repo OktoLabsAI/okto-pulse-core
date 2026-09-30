@@ -2,6 +2,74 @@
 
 ## Estado para retomada
 
+Audit3 Community91535 terminou0:90passed/672.49s,2warnings. Core25passed
+(audit1; fontes Core Python inalterados desde entao). F1634181=0, oitoZERO,
+findings/documentation_findings vazios. record_findings_audit.py executado UMA
+vez apos todos terminais; evidence-reference-findings-audit.json vincula provas
+e preserva falhas audit1/audit2. Storage transacional/migracao/undo/cognitive
+sem shadow/isolamento/corrupcao e recuperacao instalada qualificados neste
+recorte, com fonte v034 congelada e snapshots SQL descartaveis reais. Nenhum
+processo pendente. Pronto para commit/push pareado; plano integral continua
+ativo e inventario81/38/127 sem promocao. Proxima dependencia e integracao
+worker/plano exato/contexto descrita abaixo, sem pedir nova pausa ao usuario.
+
+Mapa de continuidade (investigacao, NAO implementado): WorkerResult em
+application/processors/deterministic_kg.py e ConsolidationSession em
+kg/session_manager.py transportam intents internos; begin_consolidation recebe
+parametros server-only e _commit_audit_records faz stage na UOW do ACK. A futura
+integracao do snapshot deve passar por esses pontos e pelo planner
+application/deterministic_projection._projection_plan, preservando wire antigo
+quando ausente. verify_candidate_sql_delta tem dois callers produtivos:
+retirement_graph_candidate e retirement_candidate_checkpoint; ambos precisam
+qualificar snapshot contra plano/fonte autenticados, nao somente hash do blob.
+Depois habilitar analise de referencias comprovadamente removidas e leitura
+autorizada/currentness no contexto. Preparador atual ainda recusa removidas e
+o novo armazenamento nao e gate nem entrega G2/G12 integral.
+
+Audit3 builds0/install38588=0/prova8ac620=0:856/919+373/458 identicos.
+F1634181=0. Community91535 ainda em execucao; primeiro ensaio native recovery
+que falhou no audit2 ja ultrapassado, aguardar resultado total. Ruff F/E9 e
+diff-check verdes. Nenhum fonte mudou desde build/prova. Recorder
+record_findings_audit.py preparado mas NAO executado; exige terminal verde e
+preserva falhas audit1/audit2. Nao commit/push antes de registrar campanha final.
+
+Audit2 install31880/prova894275=0; Community60488=1:49passed/1failed70.46s.
+F1616738=0. Recuperacao instalada sobre fonte v034 reproduziu incompatibilidade
+da coluna nova: global_outbox_retirement._snapshot exigia nomes iguais ao ORM
+atual antes do bootstrap. Correcao WIP aceita somente dois esquemas fechados,
+atual e predecessor sem reference_findings. Snapshot inicial retém colunas reais;
+replay usa as colunas do original selado e permite adicao somente JSON nullable
+sem default/computed e TODOS valores SQL NULL. Qualquer novo fato recusa replay;
+nenhum historico/default/diagnostico fabricado, nenhuma alteracao ao hash antigo.
+Chamadores materialization/offline carregam original na comparacao. Teste SQL
+positivo NULL/negativo payload e suites offline/outbox acrescidos. Audit3 precisa
+novo build/install/prova antes de validar; evidencias falhas anteriores preservadas.
+
+Audit1 install66547/prova2ce44a=0:856/919+373/458 identicos antes das suites.
+Core22919=0:25passed/8.87s. Community18329=1:19passed/1failed39.83s,
+contagem fixa de migrations76->77; novos testes SQL ja passaram. Apos terminal
+atualizada contagem e incluida funcao nova no registro ordenado de callables
+(catalogo deve corresponder exatamente, sem remover comparacao). F1686178=1
+somente READMEs, findings[]/oitoZERO; regenerados oficialmente. Acrescentada
+adulteracao de snapshot no teste real de cognitive SQL delta, alem do exact
+rebuild. Audit2 requer install/prova/suites/F16; nao reutilizar resultados do
+primeiro par como validacao da correcao do registro de migracao.
+
+G2/G12 audit WIP a partir de Corebdc6d926/Communityc813c1a3, arvores inicialmente
+limpas. Snapshot ganhou payload fechado versionado com verificacao de identidade.
+AuditRepository recebe snapshot opcional na mesma UOW; DTOs historicos inalterados.
+Community persiste JSON nullable dedicado, SQL NULL distinto de findings vazio;
+leitura delimitada por Board/tipo/dono/namespace, exclui undo e nao deixa cognitive
+NULL posterior esconder diagnostico. Consulta limita descoberta a100 snapshots,
+falhando por limite em vez de retornar falso vazio. Migracao idempotente adiciona
+coluna sem preencher historico e recusa coluna incompativel. Memory adapter acompanha.
+Recovery exato/cognitive recusam payload nao nulo enquanto nao houver qualificacao
+contra plano/fonte; nao ampliar allowlist para aceitar blob autoafirmado.
+Worker/contexto/gate ainda NAO alterados. Testes novos de SQL/transacao/undo/
+isolamento/corrupcao/migracao e adulteracao de recovery preparados. Builds audit1
+ambos0, install66547 em andamento; prova byte-a-byte obrigatoria antes das suites.
+Sem frontend alterado neste incremento e sem promocao do inventario global.
+
 findings-final F168866=0, sem findings/drift e oito budgets ZERO. Recorder
 record_reference_findings_contract.py executado UMA vez apos terminal:
 evidence-reference-findings-contract.json vincula17 testes e prova856/919+

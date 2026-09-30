@@ -3,7 +3,7 @@
 Identity excludes the current reason and source fingerprint: reevaluation can
 change or close a finding without inventing a second defect for the same link.
 """
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 import hashlib
 import json
 
@@ -68,3 +68,42 @@ class ProjectionFindingSnapshot:
             if finding.finding_id in observed:
                 raise ValueError('projection_finding_identity_duplicate')
             observed.add(finding.finding_id)
+
+    def to_payload(self) -> dict:
+        """Versioned durable representation, independent of historical audit DTOs."""
+        payload = asdict(self)
+        payload['schema_version'] = 1
+        payload['findings'] = [asdict(item) | {'finding_id': item.finding_id}
+                               for item in self.findings]
+        return payload
+
+    @classmethod
+    def from_payload(cls, payload: object) -> 'ProjectionFindingSnapshot':
+        if (type(payload) is not dict
+                or set(payload) != set(cls.__dataclass_fields__) | {'schema_version'}
+                or type(payload['schema_version']) is not int or payload['schema_version'] != 1
+                or type(payload['findings']) is not list):
+            raise ValueError('projection_finding_payload_invalid')
+        findings = []
+        for item in payload['findings']:
+            if (type(item) is not dict
+                    or set(item) != set(ProjectionReferenceFinding.__dataclass_fields__) | {'finding_id'}):
+                raise ValueError('projection_finding_payload_invalid')
+            finding = ProjectionReferenceFinding(**{key: value for key, value in item.items()
+                                                    if key != 'finding_id'})
+            if item['finding_id'] != finding.finding_id:
+                raise ValueError('projection_finding_identity_mismatch')
+            findings.append(finding)
+        return cls(**{key: value for key, value in payload.items()
+                      if key not in {'schema_version', 'findings'}}, findings=tuple(findings))
+
+
+def validate_audit_finding_snapshot(snapshot, *, board_id, artifact_type, artifact_id, agent_id):
+    """Diagnostics are internal worker facts, never client authority or approval."""
+    if snapshot is None:
+        return
+    if (type(snapshot) is not ProjectionFindingSnapshot
+            or (snapshot.board_id, snapshot.owner_type, snapshot.owner_id)
+            != (board_id, artifact_type, artifact_id)
+            or agent_id != 'system:historical_consolidation'):
+        raise ValueError('projection_finding_audit_scope_invalid')
