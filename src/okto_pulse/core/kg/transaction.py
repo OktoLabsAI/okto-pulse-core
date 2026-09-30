@@ -22,6 +22,8 @@ from typing import Any
 from okto_pulse.core.kg.interfaces.graph_errors import GraphCapabilityUnavailable
 from okto_pulse.core.kg.interfaces.graph_transaction import (
     GraphNodePropertyBeforeImage,
+    LearningBugAssociationReceipt,
+    LearningBugAssociationTransaction,
     ProjectionActiveSetIntent,
     ProjectionActiveSetReceipt,
     ProjectionActiveSetReconciliationError,
@@ -338,6 +340,7 @@ class GraphWriteRecord:
     lineage_progress_preserved: bool = False
     property_before_image: GraphNodePropertyBeforeImage | None = None
     projection_receipt: ProjectionActiveSetReceipt | None = None
+    learning_association_receipt: LearningBugAssociationReceipt | None = None
 
 
 @dataclass
@@ -417,6 +420,30 @@ class TransactionOrchestrator:
         if params is None:
             return self.graph_scope.execute(stmt)
         return self.graph_scope.execute(stmt, params)
+
+    def replace_learning_bug_association(self, previous_learning_id: str,
+        replacement_learning_id: str, bug_id: str) -> LearningBugAssociationReceipt:
+        """Remove an old scoped association only after the new one is present.
+
+        Semantic qualification and the joint source CAS belong to the caller.
+        Record before mutation so even a post-write exception is compensable.
+        """
+        self._guard_fresh()
+        if not isinstance(self.graph_scope, LearningBugAssociationTransaction):
+            raise GraphCapabilityUnavailable('learning_association_replacement_unavailable')
+        receipt = self.graph_scope.snapshot_learning_bug_association(
+            previous_learning_id, replacement_learning_id, bug_id)
+        if (receipt.board_id, receipt.previous_learning_id, receipt.replacement_learning_id, receipt.bug_id) != (
+                self.board_id, previous_learning_id, replacement_learning_id, bug_id):
+            raise ValueError('learning_association_receipt_invalid')
+        # Restoration feeds the existing generic session cleanup with exact
+        # edge before-images; require that capability before removing anything.
+        if receipt.removed_edges:
+            self._resolve_preserving_cleanup([], list(receipt.removed_edges))
+            self.records.append(GraphWriteRecord(kind='learning_association', entity_type='validates',
+                entity_id=previous_learning_id, learning_association_receipt=receipt))
+        self.graph_scope.remove_learning_bug_association(receipt)
+        return receipt
 
     # ------------------------------------------------------------------
     # Graph write phase
@@ -1054,6 +1081,16 @@ class TransactionOrchestrator:
         # session's own effect survive its compensation.  Union first, subtract second --
         # picking one receipt cannot express either half.
         restored_projection_edges: list[ProjectionEdgeBeforeImage] = []
+        for record in reversed(self.records):
+            receipt = record.learning_association_receipt
+            if receipt is None:
+                continue
+            try:
+                self.graph_scope.restore_learning_bug_association(receipt)
+            except Exception as exc:
+                raise CompensationError('Learning association restoration failed before session cleanup',
+                    original_exc=exc, failed_records=[record]) from exc
+            restored_projection_edges.extend(receipt.removed_edges)
         for receipt in projection_receipts:
             try:
                 self.graph_scope.compensate_projection_active_set(receipt)

@@ -2,6 +2,45 @@
 
 ## Estado para retomada
 
+Learning-association validada em 2026-09-29: instalação43016=0 e provenance-r1
+com839/902 Core+363/448 Community byte-identical antes dos testes. Core19pass
+/3.22s. Communityr1=1:1pass/1falha no setup de ownership da fixture (arestas
+não afetadas também estavam carimbadas com a sessão atual, removíveis pelo
+cleanup existente). Corrigida somente proveniência das outras origens para
+prior-session; o par afetado continua com current-session para provar preservação
+das before-images restauradas. begin_consolidation cria session_id UUID novo
+(primitives.py), e nenhum contrato genérico de ownership foi alterado.
+Communityr2 handle20209=0:80pass/133.15s, incluindo9 casos novos Grafx, provider
+e reuso autoral. F1699976=0:ok, sem docdrift, oito budgets ZERO. Produto Python
+permaneceu idêntico entre as campanhas, só fixture corrigida. Recorder exclusivo
+gerou acceptance-learning-association.json; diff-check/Ruff passaram. Nenhum
+processo desta rodada permanece ativo. Pronto para commit/push pareado.
+
+Integração ainda pendente: receipt gráfico mecânico não admite supersedência
+semântica. Preparar projeção com target qualificado, CAS conjunto successor/claim,
+chamar replace_learning_bug_association depois do novo validates e garantir
+compensação tardia da UOW. Recuperação antiga não deve recriar o par substituído.
+get_supersedence_chain hoje segue rows[0] e não expõe escopo; não publicar novos
+supersedes parciais como cadeia global. Qualificar leitura/proveniência antes
+de ativar fluxo e autoria REST/MCP/UI. Inventário global e entrega continuam
+incompletos, sem promoção de F6 ou pausa da iniciativa.
+
+WIP seguinte, learning-association (2026-09-29): pushes do incremento anterior
+Core10fc6db6/Community9ab8f87e confirmados0; árvores limpas antes desta mudança.
+Porta opcional LearningBugAssociationTransaction e receipt delimitado ao Board
+e par Learning/Bug. Snapshot exige nova associação já presente; remoção compara
+multiset completo e preserva outras origens/nós; restauração idempotente recusa
+estado concorrente divergente. Orchestrator registra before-image antes de
+remover e o inclui na preservação do cleanup existente. O tipo de before-image
+compartilhado não dá ownership de namespace relacional: nenhum active-set é
+usado. Toda consulta/mutação concreta nova está no adapter Grafx Community.
+Testes descartáveis preparados: paralelas com propriedades distintas/iguais,
+rollback, compensação em escopo novo após commit, mesmo session_id anterior,
+conflito de snapshot, Board errado e falha após DELETE. Ainda NÃO executados.
+Ruff F/E9 passou; builds r1 ambos0, instalação em andamento. Não alterar produto
+até terminal/install/prova/campanhas. Capability ainda não conectada ao writer
+de supersedência; CAS conjunto, recovery, consultas e autoria pública pendem.
+
 Fechamento do incremento scope-history (2026-09-29): builds r2 ambos0,
 pip68956=0, provenance-r2 comprovou839/902 Core e363/448 Community byte-identical
 antes dos testes. Core59298=0:107pass/6.39s. Community31990=1:10pass/1falha de
@@ -46,7 +85,7 @@ nem inventário global. Sem frontend alterado, sem nova política/autoridade.
 Iniciativa **incompleta; retomada explicitamente autorizada em 2026-09-23**.
 O usuário revogou a pausa e pediu execução até o final, sem parar em milestones.
 Frente atual (2026-09-29): F6/KG §7.6, reuso/supersedência explícitos de Learning.
-Último par enviado: Core12f197fd/Community6a1aaa84. Captura, binding em
+Último par enviado: Core10fc6db6/Community9ab8f87e. Captura, binding em
 task validation, autoria conjunta, REST/MCP/UI/Delivery, policy/preview e
 materialização automática via outbox/worker e proteção de holds mistos foram
 enviados em incrementos delimitados. Recuperação de projeção validada/enviada.

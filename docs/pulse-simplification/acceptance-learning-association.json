@@ -1,0 +1,121 @@
+{
+  "scope": "F6/KG7.6 bounded graph association replacement capability and compensation prerequisite",
+  "suites": {
+    "core": {
+      "passed": 19,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "community": {
+      "passed": 80,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0
+    }
+  },
+  "budgets": [
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "import_boundary_baseline",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every import_boundary_baseline allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "singleton_baseline",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every singleton_baseline allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "dependency_temporary_exceptions",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every dependency_temporary_exceptions allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "graph_runtime_compatibility",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every graph_runtime_compatibility allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "rebuild_artifact_compatibility",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every rebuild_artifact_compatibility allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "community_private_reach_ins",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every community_private_reach_ins allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "community_adapter_bridges",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every community_adapter_bridges allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "af35_relational_residue",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every af35_relational_residue allowance before F16 completion."
+    }
+  ],
+  "verified": [
+    "Optional public Protocol fails closed without support; all new concrete graph queries and mutations live in Community Grafx.",
+    "The replacement association must exist before removing the exact old Learning-to-Bug pair. Complete before-image comparison refuses source-edge drift or disappearance of the replacement.",
+    "Other Bug origins and nodes remain unchanged. No global superseded_by mark or relational active-set ownership is used.",
+    "Disposable Grafx tests prove rollback and exact multiset restoration, including identical parallel edges, differing properties, idempotency and compensation in a new transaction after commit.",
+    "The orchestrator records the receipt before mutation, restores it before session cleanup, and preserves the affected historical before-image even if stamped with that session ID.",
+    "An injected post-DELETE failure discards staged graph effects. Restoration refuses a concurrent property change instead of overwriting it.",
+    "Paired wheels were installed and verified byte-for-byte before behavior tests. Final F16 has all eight budgets at zero and no documentation drift."
+  ],
+  "limits": [
+    "Capability is not yet wired into the authored supersedence materializer. Semantic source/capture qualification, joint source CAS, audit/outbox, recovery and scoped query/rebuild remain integration work.",
+    "The new graph tests use a small disposable physical schema. Existing Grafx provider and authored reuse regressions accompany them; this is not a full installed release or full lifecycle campaign.",
+    "Initial Community failure is preserved: fixture stamped unrelated origins with the current session ID, so existing session-owned cleanup removed them. Corrected fixture uses prior-session ownership for unrelated origins, while retaining same-session affected before-images. Production begin_consolidation mints a new UUID session ID.",
+    "No claim is made that arbitrary reuse of a session ID preserves unrelated edges owned by that session; the existing generic compensation ownership contract is unchanged.",
+    "No public tools, REST/UI, frontend, schema version, real data, release or deployment changed. Overall F6/K3/K4 and plan acceptance remain incomplete."
+  ],
+  "sha256": {
+    "PULSE_REFACTOR/.validation-v040/closure-learning-association-r1.json": "cdb9068c7ea0527f65d1409821c7de9e25935a27d37a9bffd9456c1d504fc797",
+    "PULSE_REFACTOR/.validation-v040/learning-association-r1-core.xml": "3d89dcc52f6435d2796d51127c4ae5cca10b06dbe2d1a24a10fbaf2b7bf98fd8",
+    "PULSE_REFACTOR/.validation-v040/learning-association-r2-community.xml": "7d42e00e365b90cb32a055c56ef6c41de1e5a4481fb9e5645215f71a0766e02e",
+    "PULSE_REFACTOR/.validation-v040/provenance-learning-association-r1.json": "93aadae502857a827013ecf79f554f1598153c3f65fff62b45318bdd44fa08e1",
+    "PULSE_REFACTOR/.validation-v040/learning-association-r1-community.xml": "1e9a958db30e387d9f271125dc5269e8f0e4ad2c000457d5044f563d96474285",
+    "PULSE_REFACTOR/.validation-v040/learning-association-r1-test-community.log": "8d9497c8ac30e02a4039767801e9d465344c78c780b374e98448b9db94fb83a1",
+    "PULSE_REFACTOR/.validation-v040/run_learning_association.py": "f4a65f631c4933ade4cd69e0df4ce47b168e46de0627947f0cca6a3cf830604a",
+    "okto_labs_pulse_core/src/okto_pulse/core/kg/interfaces/graph_transaction.py": "11b8ce718c634b7745af285aaef941b1f7c076dee7d8d11fa7cca95d283f734f",
+    "okto_labs_pulse_core/src/okto_pulse/core/kg/transaction.py": "55762a14b54e1fa6f0dac173b6337e0780ddd1a888f16a5320879b6ccbc66d9f",
+    "okto_labs_pulse_core/tests/test_learning_association_transaction.py": "7874a7a4eb6bc1f43a5d750a25d21fdfb2b57bcd1a1fcbc24a28fca2cf31371a",
+    "okto_labs_pulse_community/src/okto_pulse/community/adapters/grafx_graph_transaction.py": "ffcd2c2f7855f1892a95549b561482fa326979eef05d3266bb3660e10938afcd",
+    "okto_labs_pulse_community/tests/test_learning_association_transaction.py": "adbf71d32bd84ccaa0d74e173bc1c6858a0d436ff435792e17c3966098a3b433"
+  }
+}

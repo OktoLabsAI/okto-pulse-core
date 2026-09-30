@@ -172,7 +172,11 @@ class ProjectionActiveSetIntent:
 
 @dataclass(frozen=True)
 class ProjectionEdgeBeforeImage:
-    """Complete relationship state removed by projection reconciliation."""
+    """Complete relationship state for exact restoration and session cleanup.
+
+    Also used by cognitive association replacement; using the before-image
+    shape does not grant ownership of a relational projection namespace.
+    """
 
     edge_type: str
     from_type: str
@@ -180,6 +184,54 @@ class ProjectionEdgeBeforeImage:
     from_id: str
     to_id: str
     attrs: dict[str, Any]
+
+
+@dataclass(frozen=True)
+class LearningBugAssociationReceipt:
+    """The exact old association removed after its replacement exists.
+
+    This is a mechanical before-image, not a semantic supersedence decision.
+    The governed caller must qualify source, capture, target and CAS separately.
+    """
+
+    board_id: str
+    previous_learning_id: str
+    replacement_learning_id: str
+    bug_id: str
+    removed_edges: tuple[ProjectionEdgeBeforeImage, ...] = ()
+
+    def __post_init__(self) -> None:
+        if (any(type(value) is not str or not value.strip() or len(value) > 4096
+                for value in (self.board_id, self.previous_learning_id, self.replacement_learning_id, self.bug_id))
+                or self.previous_learning_id == self.replacement_learning_id
+                or type(self.removed_edges) is not tuple
+                or any((edge.edge_type, edge.from_type, edge.to_type, edge.from_id, edge.to_id)
+                    != ('validates', 'Learning', 'Bug', self.previous_learning_id, self.bug_id)
+                    for edge in self.removed_edges)):
+            raise ValueError('learning_association_receipt_invalid')
+
+
+@runtime_checkable
+class LearningBugAssociationTransaction(Protocol):
+    """Optional bounded capability; unsupported editions must fail closed."""
+
+    def snapshot_learning_bug_association(self, previous_learning_id: str,
+        replacement_learning_id: str, bug_id: str) -> LearningBugAssociationReceipt:
+        """Require the new association and snapshot every old parallel edge."""
+        ...
+
+    def remove_learning_bug_association(self, receipt: LearningBugAssociationReceipt) -> None:
+        """Compare the complete before-image, then remove only that old pair.
+
+        The replacement association must still exist. Never mark the old node
+        globally superseded or remove any other origin. A failure after staging
+        must discard the scope or leave effects compensable by this receipt.
+        """
+        ...
+
+    def restore_learning_bug_association(self, receipt: LearningBugAssociationReceipt) -> None:
+        """Restore exact properties/multiplicity, idempotently; refuse conflicts."""
+        ...
 
 
 @dataclass(frozen=True)
@@ -430,6 +482,8 @@ class GraphTransaction(Protocol):
 
 
 __all__ = [
+    "LearningBugAssociationReceipt",
+    "LearningBugAssociationTransaction",
     "GraphStatementResult",
     "GraphNodePropertyBeforeImage",
     "GraphTransaction",
