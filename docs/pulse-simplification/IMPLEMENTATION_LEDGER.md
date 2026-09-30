@@ -2,6 +2,31 @@
 
 ## Estado para retomada
 
+BASE T29/T30 verificados pelo suplemento acceptance-retirement-final-replay-rollback.json,
+em conjunto com acceptance-retirement-migration-review.json. Rollback instalado:
+session7492 terminou0, 1passed131.26s; sem skip. Predecessor exato v0.3.4
+20707250/b6dda64 reabriu o snapshot restaurado com policies90/60, histórico
+nativo Grafx, cursor de auditoria e proveniência iguais. Candidato incompleto
+continua recusando startup. Restauração somente em cópia descartável.
+
+Replay final session23839 terminou0, 1passed220.12s: candidate receipt idêntico;
+interrupção antes de publicar ativação
+não deixa instalação; retry ativa e novo processo -I inicia pelos wheels.
+Replay de ativação preserva alterações posteriores do usuário e evidência
+técnica autenticada verifica nos dois roots. Ver execução terminal no relatório.
+Fixture de ativação usa IDs de build sintéticos; rollback usa IDs reais.
+Isso não certifica distribuição/release0.4.0, que permanece no escopo original.
+T30 exige falha antes/durante corte; não criar novo alvo de rollback posterior
+à ativação de produção. Ambiente herda dependências externas, não hermético.
+
+Preflights predecessor56db00=0 e candidatoca7bcf=0: byte-a-byte fonte/site/wheel,
+769/834+311/395 no predecessor;859/922+373/458 no candidato. Produto não mudou.
+Inventário102 verificados/39 parciais/105 não auditados. Ledger e evidências
+atualizados sem criar fase nova. Próxima frente: BASE T32 (eventos mistos e
+projeções compartilhadas) e complementos pendentes. Health T35/T36 e UI
+T37/T38 já constam verificados no inventário; não repetir essa campanha.
+KG-10/T23 aguardam as decisões já solicitadas; entrega completa ainda aberta.
+
 BASE T25/T26/T27/T28/T31 verificados; T29/T30 parciais, com limites
 de finalização explícitos em acceptance-retirement-migration-review.json.
 Campanha retirement-acceptance1 session78961=0,119passed540.37s; suplemento1

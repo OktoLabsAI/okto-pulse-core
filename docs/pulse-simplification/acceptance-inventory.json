@@ -342,10 +342,10 @@
       "line": 608,
       "id": "T29",
       "normative_text": "| T29 | Migração executada duas vezes | Resultado idempotente, sem duplicação de arquivo/overrides/events. |",
-      "review_status": "partial",
+      "review_status": "verified_by_reviewed_execution",
       "test_text_references": [],
       "reviewed_execution": {
-        "artifact": "acceptance-retirement-migration-review.json",
+        "artifact": "acceptance-retirement-final-replay-rollback.json",
         "criterion_key": "BASE:T29"
       }
     },
@@ -355,10 +355,10 @@
       "line": 609,
       "id": "T30",
       "normative_text": "| T30 | Falha depois do snapshot, antes/durante corte | Estado detectável, retomada/rollback ensaiado; não startup parcial saudável. |",
-      "review_status": "partial",
+      "review_status": "verified_by_reviewed_execution",
       "test_text_references": [],
       "reviewed_execution": {
-        "artifact": "acceptance-retirement-migration-review.json",
+        "artifact": "acceptance-retirement-final-replay-rollback.json",
         "criterion_key": "BASE:T30"
       }
     },
