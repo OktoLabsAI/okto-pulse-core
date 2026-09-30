@@ -9,6 +9,30 @@ from okto_pulse.core.ports.kg_cognitive_source import canonical_cognitive_source
 from okto_pulse.core.ports.learning_reconciliation import LearningReconciliationSelection
 
 
+def qualify_debt_change(*, before, after, execution):
+    from datetime import datetime
+    from okto_pulse.core.domain.learning_materialization_work import parse_learning_capture_work_ref
+    from okto_pulse.core.kg.canonical_learning_partition import _canonical_evidence_for, _technical_partition_wait
+    from okto_pulse.core.ports.canonical_debt import CanonicalDebtRecord
+    from okto_pulse.core.ports.learning_reconciliation import LearningReconciliationExecution
+    from okto_pulse.core.services.canonical_debt_service import canonical_debt_evidence_replacement
+
+    if (type(before) is not CanonicalDebtRecord or type(after) is not CanonicalDebtRecord
+            or type(execution) is not LearningReconciliationExecution
+            or not execution.consolidation_session_id or type(after.updated_at) is not datetime):
+        return False
+    work = parse_learning_capture_work_ref(execution.work_ref)
+    if work is None or work.fingerprint is None:
+        return False
+    evidence = _canonical_evidence_for(work.learning_id, 'bug:' + work.bug_id)
+    if (before.board_id != execution.board_id or before.source_ref != evidence['source_ref']
+            or before.content_hash != evidence['content_hash']):
+        return False
+    replacement = canonical_debt_evidence_replacement(before, evidence=evidence,
+        actor_id='cognitive_closeout_worker', now=after.updated_at, eligible_debt=_technical_partition_wait)
+    return replacement is not None and after == replacement
+
+
 async def execute(*, board_id, work_ref, relational_scope_factory):
     from okto_pulse.core.domain.learning_closeout import LearningCaptureSelection
     from okto_pulse.core.domain.learning_materialization_work import parse_learning_capture_work_ref

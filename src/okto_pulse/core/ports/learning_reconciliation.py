@@ -38,6 +38,16 @@ async def execute_learning_reconciliation(*, board_id, work_ref, relational_scop
         relational_scope_factory=relational_scope_factory)
 
 
+def qualify_learning_reconciliation_debt_change(*, before, after, execution):
+    """Recognize only the writer's exact technical-debt transition.
+
+    The edition separately proves that execution/audit/graph/evidence belong to
+    the private candidate. This pure comparison cannot grant or close a hold.
+    """
+    from okto_pulse.core.application.learning_reconciliation import qualify_debt_change
+    return qualify_debt_change(before=before, after=after, execution=execution)
+
+
 def select_learning_reconciliation(*, schema, board_id, records, nodes):
     """Select bounded historical work from an authenticated offline snapshot.
 

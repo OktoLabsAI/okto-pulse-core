@@ -2,6 +2,49 @@
 
 ## Estado para retomada
 
+Validacao da transicao compartilhada concluida em 2026-09-30. debt-transition1:
+builds/install/prova0 ANTES dos testes (Core845Python/908payload,
+Community364/449, byte-identicos). Core31326=0:56passed/215.39s;
+Community65512=0:9passed/274.12s. Relatorio F16 inicial completo: findings=[],
+oito ZERO; somente matrizes README divergentes. Matrizes regeneradas APOS
+terminais; builds finais0/install30553=0/prova0 com mesmas contagens.
+F16 final27606=0, ok=true, findings/documentation_findings vazios, oito ZERO.
+Produto congelado durante campanhas. Rebuild final mudou somente README gerado;
+nao repetida campanha comportamental sem mudanca de produto.
+record_learning_debt_transition.py executado UMA vez depois dos terminais;
+acceptance-learning-debt-transition.json retém hashes, escopo e limites.
+Nao rerodar recorder contra fontes futuras. Sem UI/dados reais/restart/release.
+
+Proximo passo continua a integracao KG7.5/K3 do candidato privado descrita abaixo:
+compor execucao e verificacao exata de deltas SQL/grafo, incluindo revisoes literais
+e quitacao tecnica reconhecida pela mesma policy Core. A porta pura entregue
+NAO autentica sessoes nem substitui prova de ownership/admissao/completion.
+Nenhum bloqueio de autoridade novo; sem ampliar escopo. Entrega integral ainda
+NAO concluida, inventario78/33/135 inalterado.
+
+Par publicado da porta: Core13072f8b/Community050d5e10, pushes0 e limpos ao
+retomar. Turno anterior teve progresso concreto. Integracao SQL do candidato
+requer reconhecer a quitacao tecnica sem duplicar policy no Community.
+Extraida transicao pura canonical_debt_evidence_replacement do writer existente;
+writer e qualificador publico qualify_learning_reconciliation_debt_change usam
+a MESMA regra. Nenhuma ampliacao de estado/versao/autoridade: source_absent,
+authority_denied, blocked, DLQ, erro, source_version desconhecida e outras origens
+continuam inelegiveis. Qualificador exige sessao confirmada, origem/hash/Board
+exatos e igualdade integral de todos campos fora da transicao ja existente.
+Tambem reconhece efeito SQL confirmado quando a confirmacao grafica falhou;
+isso NAO concede completion. Testes da regra e regressao real passaram acima.
+
+Investigacao para o verificador SQL: materializacao altera audit/ref/outbox,
+head/evento/fence e revisao cognitiva; a quitacao tecnica pode alterar canonical_debt.
+Nao basta correlacionar source_session_id: revisao literal precisa de prova de
+linhagem por resolve_learning_capture_projection/read_learning_scope_replacements.
+Estas funcoes existentes so leem portas de fonte; read_learning_scope_replacements
+exige head mais recente da visao. Portanto, varias execucoes sobre a mesma Learning
+exigem visao historica delimitada pela ordem de sessoes, com par scoped-supersede
+aplicado atomicamente, em vez de validar revisao intermediaria contra head final.
+Nao implementada ainda essa composicao/validacao do candidato. Sem mudar guards,
+sem migracao real ou UI. Inventario78/33/135 continua inalterado.
+
 Porta publica de execucao Learning validada (2026-09-30), pronta para commit/push.
 execution-port1: install38779=0/prova0 (845/908+364/449) ANTES dos testes;
 Core90796=0:37passed/4.09s; Community30494=0:17passed/311.28s. F1668519=1

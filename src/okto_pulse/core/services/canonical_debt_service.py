@@ -297,6 +297,29 @@ async def upsert_canonical_debt(
 
 
 
+def canonical_debt_evidence_replacement(
+    row: CanonicalDebtRecord, *, evidence: dict[str, Any], actor_id: str,
+    now: datetime, report_ref: str | None = None,
+    eligible_debt: Callable[[CanonicalDebtRecord], bool] | None = None,
+) -> CanonicalDebtRecord | None:
+    """The same pure transition for the writer and private recovery verification.
+
+    Store capability/CAS and authoritative evidence remain caller obligations.
+    Computing a replacement never authorizes an evidence assertion or a write.
+    """
+    if eligible_debt is not None and not eligible_debt(row):
+        return None
+    evidence_version = evidence.get('source_version')
+    if eligible_debt is not None and row.source_version is not None and (
+            evidence_version is None or str(evidence_version) != str(row.source_version)):
+        return None
+    if evidence_version and row.source_version and str(evidence_version) != str(row.source_version):
+        return None
+    return replace(row, canonical_state='committed',
+        evidence_ref=str(evidence.get('evidence_ref') or evidence.get('node_ref') or '') or report_ref,
+        owner_agent_id=actor_id, updated_at=now)
+
+
 async def reconcile_canonical_debt_with_evidence(
     db: object,
     *,
@@ -322,24 +345,12 @@ async def reconcile_canonical_debt_with_evidence(
             open_states=tuple(OPEN_STATES),
         )
         for row in rows:
-            if eligible_debt is not None and (
-                not isinstance(store, ConditionalCanonicalDebtWriter) or not eligible_debt(row)
-            ):
+            if eligible_debt is not None and not isinstance(store, ConditionalCanonicalDebtWriter):
                 continue
-            evidence_version = evidence.get("source_version")
-            if eligible_debt is not None and row.source_version is not None and (
-                evidence_version is None or str(evidence_version) != str(row.source_version)
-            ):
+            replacement = canonical_debt_evidence_replacement(row, evidence=evidence,
+                actor_id=actor_id, now=now, report_ref=report_ref, eligible_debt=eligible_debt)
+            if replacement is None:
                 continue
-            if (
-                evidence_version
-                and row.source_version
-                and str(evidence_version) != str(row.source_version)
-            ):
-                continue
-            replacement = replace(row, canonical_state="committed",
-                evidence_ref=str(evidence.get("evidence_ref") or evidence.get("node_ref") or "") or report_ref,
-                owner_agent_id=actor_id, updated_at=now)
             if eligible_debt is not None:
                 if not await store.replace_if_current(db, expected=row, replacement=replacement):
                     continue
