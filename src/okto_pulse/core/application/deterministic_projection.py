@@ -131,6 +131,34 @@ class CoreDeterministicProjectionPlanner:
         self.persistence = persistence
         self.dependencies = dependencies
 
+    async def _verify_spec_decision_signals(self, context, board_id, source_rows):
+        """Authenticate derived census signals without making them queue owners.
+
+        Decisions are projected by their Spec, not by a standalone source
+        worker. The generic maturity census deliberately leaves semantic
+        signals unclassified. Only exact rederivation from scoped current
+        Specs can account for them here; arbitrary unknown rows still block.
+        """
+        from okto_pulse.core.kg.board_source_store import decision_sources_from_spec
+
+        reader = _BoardProjectionReader(self.persistence, board_id)
+        expected = []
+        for row in source_rows:
+            if row['artifact_type'] != 'spec':
+                continue
+            artifact = await reader.load_artifact(context, artifact_type='spec', artifact_id=row['id'])
+            if artifact is None:
+                raise ValueError('deterministic_projection_source_unavailable')
+            values = artifact if isinstance(artifact, Mapping) else {
+                field: getattr(artifact, field, None)
+                for field in ('id', 'version', 'title', 'created_at', 'decisions')
+            }
+            expected.extend(decision_sources_from_spec(values))
+        actual = [row for row in source_rows if row['artifact_type'] == 'decision']
+        ordered = lambda rows: sorted(rows, key=lambda row: row['source_ref'])
+        if ordered(actual) != ordered(expected):
+            raise ValueError('deterministic_projection_decision_signal_mismatch')
+
     async def revalidate_board(self, context, document, *, board_id, source_rows, cognitive_rows):
         require_terminal_cleanup(document)
         retained = json.loads(document)
@@ -247,7 +275,9 @@ class CoreDeterministicProjectionPlanner:
             cognitive_digest_provider=lambda _: cognitive_durable_digest_from_rows(captured['cognitive'])).enumerate(board_id=board_id)
         census = replace(census, generated_at=captured_at.isoformat())
         if census.has_non_deterministic_inputs:
-            raise ValueError('deterministic_projection_source_requires_review')
+            if any(row.artifact_type != 'decision' for row in census.legacy_unknown):
+                raise ValueError('deterministic_projection_source_requires_review')
+            await self._verify_spec_decision_signals(context, board_id, captured['sources'])
         sources, closure = self._dependency_sources(census, board_id, captured_at)
         plans = []
         accumulated_bytes = len(raw)

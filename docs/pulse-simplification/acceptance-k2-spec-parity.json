@@ -1,0 +1,145 @@
+{
+  "scope": "Reviewed K2 Spec projection criteria and exact derived Decision signals",
+  "campaigns": {
+    "k2-declared1-core": 78,
+    "k2-declared1-community": 14,
+    "k2-decision-signal1-core": 133,
+    "k2-decision-signal-final-community": 1
+  },
+  "counts_overlap": true,
+  "budgets": [
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "import_boundary_baseline",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every import_boundary_baseline allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "singleton_baseline",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every singleton_baseline allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "dependency_temporary_exceptions",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every dependency_temporary_exceptions allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "graph_runtime_compatibility",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every graph_runtime_compatibility allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "rebuild_artifact_compatibility",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every rebuild_artifact_compatibility allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "community_private_reach_ins",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every community_private_reach_ins allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "community_adapter_bridges",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every community_adapter_bridges allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "af35_relational_residue",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every af35_relational_residue allowance before F16 completion."
+    }
+  ],
+  "criteria": {
+    "KG:KG-01": {
+      "review_status": "verified_by_reviewed_execution",
+      "evidence": "Stable AC IDs project automatically through the ordinary queue; materialized tests relation survives churn and exact rebuild."
+    },
+    "KG:KG-02": {
+      "review_status": "verified_by_reviewed_execution",
+      "evidence": "Duplicate legacy text produces a bounded ambiguous candidate and no arbitrary tests edge; unknown IDs cannot bind colliding text."
+    },
+    "KG:KG-12": {
+      "review_status": "verified_by_reviewed_execution",
+      "evidence": "BR\u2192FR, IR\u2192FR, OR\u2192IR and API\u2192BR declared directions are tested through Core and real Grafx; explicit removal empties the owned set, then rebuild matches."
+    },
+    "KG:KG-03": {
+      "review_status": "partial",
+      "evidence": "AC and declared FR identity/reordering covered; full materialized reorder matrix across every collection remains unaudited."
+    },
+    "KG:KG-16": {
+      "review_status": "partial",
+      "evidence": "Seven Spec relationship families remove and replay exactly; remaining card, amendment and CT family matrix is not covered by this campaign."
+    },
+    "KG:KG-17": {
+      "review_status": "partial",
+      "evidence": "Partial source collections and invalid/missing/foreign source signals fail closed; full provider outage/checkpoint campaign remains separate."
+    },
+    "KG:KG-18": {
+      "review_status": "partial",
+      "evidence": "Grafx tests preserve parallel human facts and foreign/adjacent owners for declared Spec families; CT ownership matrix remains separate."
+    },
+    "KG:KG-24": {
+      "review_status": "partial",
+      "evidence": "Real ordinary queue versus private exact rebuild compares full relationship multisets, logical references, ownership rules, provenance and endpoint maturity for seven Spec families; other artifact families remain pending."
+    }
+  },
+  "investigation": [
+    "The initial materialized fixture reader used node_type instead of the logical port type_name; fixed only the test.",
+    "The seven-family incremental path passed, but exact rebuild refused semantic Decision census signals as unknown. The Spec already owns their projection.",
+    "The planner now rederives every captured Decision signal from current scoped Specs and requires exact equality; unrelated unknowns, altered hashes, missing signals and foreign Boards still fail.",
+    "Signals remain unclassified in the generic census; no canonical promotion, standalone queue owner, historical rewrite or permission change was introduced."
+  ],
+  "limits": [
+    "Physical/session IDs are execution-specific and excluded from logical parity. No history purge or real-data migration was performed.",
+    "These criteria do not establish full K2 or full-package delivery. No frontend flow changed."
+  ],
+  "sha256": {
+    "PULSE_REFACTOR/.validation-v040/record_k2_spec_parity.py": "3c188385b90913b4befccf562657afed1990ff17e34bd5e062ed77c8220e7a92",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-k2-decision-signal-final-closure.log": "838435946f1f0543228796a1cb939f42078860551dfad5644a269f4a7589c1b9",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-k2-declared1-core.xml": "b3cc29b1f284ddf65e0e13b774fd525fd1a1a4a26c87052d57137c4a4ab4f261",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-k2-declared1-core.log": "20674d0d5e08a4a0c7f020e3b519fbcf695522f82f5b542bc7e64961fa76107e",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-k2-declared1-community.xml": "6b7b89e0edb8578189aafce0860f9b2a193f63ccd0c16689ed0d510ef8f4f4b8",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-k2-declared1-community.log": "f04580ab65d548e9e6036267cb27efe1aa9e39b5de044df92ebbc826c4e9cafd",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-k2-decision-signal1-core.xml": "f5810830c56742e8b7964484ac108336cc0222cc72e6d08dad56f3d6a7e90086",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-k2-decision-signal1-core.log": "acd2c48163c8ef91df2f4335e1f8294758c1e55fd9e7c389ce5265e907d903be",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-k2-decision-signal-final-community.xml": "9d4c9b6bf9c64c9d8338b75690374f13505619fc96f9238aa1a3219529c52aae",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-k2-decision-signal-final-community.log": "b1fcda700513d6b9d993fb55201d2093c52e995edcf1496d4c250a02d52b2558",
+    "PULSE_REFACTOR/.validation-v040/provenance-k2-decision-signal1.json": "d4bcdca69c6c3193903f379d5f2b4b0dd43f8eac216337664e5453117a12d101",
+    "PULSE_REFACTOR/.validation-v040/provenance-k2-decision-signal-final.json": "d54b5a49554246c93e97217b7a6fd8e91e3567dab0cf66cf7bace9ab39a91761",
+    "okto_labs_pulse_core/src/okto_pulse/core/application/deterministic_projection.py": "0c96e83f74410d3b5d56302db44f2e7bb11d7f41f6cfc033c3ff90c15288dba2",
+    "okto_labs_pulse_core/tests/test_deterministic_projection_planner.py": "9a7a7137cd5056cf6f37e4f0effc3d037175be42b8a1ac8fc3094b23a562a007",
+    "okto_labs_pulse_community/tests/test_projection_materialized_parity.py": "2cd9a0706c8e65636f72d47f538cafabeaf291bdcaf7f2afa036e83b1b4987cc"
+  }
+}

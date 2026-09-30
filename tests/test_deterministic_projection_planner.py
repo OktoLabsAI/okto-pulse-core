@@ -29,6 +29,45 @@ def persistence(artifact):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize('damage', ['none', 'hash', 'owner', 'missing', 'unknown', 'foreign'])
+async def test_derived_decisions_require_exact_current_spec_signals(damage):
+    from okto_pulse.core.kg.board_source_store import decision_sources_from_spec
+
+    artifact = spec(version=1, created_at=datetime(2026, 9, 21), decisions=[
+        {'id': 'd1', 'title': 'First choice'}, {'id': 'd2', 'title': 'Second choice'},
+    ])
+    rows = [{'artifact_type': 'spec', 'id': 'spec-one', 'status': 'done',
+        'source_ref': 'spec:spec-one', 'source_version': '1', 'content_hash': 'a' * 64,
+        'created_at': '2026-09-21 00:00:00'}]
+    rows += decision_sources_from_spec(vars(artifact))
+    if damage == 'hash':
+        rows[-1]['content_hash'] = 'b' * 64
+    elif damage == 'owner':
+        rows[-1]['id'] = 'another:d2'
+        rows[-1]['source_ref'] = 'decision:another:d2'
+    elif damage == 'missing':
+        rows.pop()
+    elif damage == 'unknown':
+        rows[-1]['artifact_type'] = 'unrecognized'
+    elif damage == 'foreign':
+        artifact.board_id = 'another-board'
+    planner = make_deterministic_projection_planner(persistence(artifact))
+    args = dict(board_id='board', source_rows=tuple(rows), cognitive_rows=(),
+                captured_at=datetime(2026, 9, 22, tzinfo=timezone.utc))
+    if damage != 'none':
+        with pytest.raises(ValueError, match='decision_signal_mismatch|source_requires_review|scope_mismatch'):
+            await planner.prepare_board(None, **args)
+        return
+    document = await planner.prepare_board(None, **args)
+    plan = json.loads(document)
+    assert {item['source']['artifact_type'] for item in plan['plans']} == {'spec'}
+    assert len(plan['census']['legacy_unknown']) == 2  # Signals are not promoted to canonical sources.
+    selected = await planner.prepare_execution(None, document, board_id='board',
+        source_rows=tuple(rows), cognitive_rows=())
+    assert [item['source_ref'] for item in selected] == ['spec:spec-one']
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize('collection,section,rule', [
     ('integration_requirements', 'integration_requirement', 'ir_requirement'),
     ('observability_requirements', 'observability_requirement', 'or_requirement'),

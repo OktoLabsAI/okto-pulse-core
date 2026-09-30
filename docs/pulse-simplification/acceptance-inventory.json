@@ -472,7 +472,7 @@
       "line": 612,
       "id": "KG-01",
       "normative_text": "| KG-01 | Cenário com `linked_criteria=[ac_id]` | Aresta `tests` correta sem matching textual e sem chamada extra do agente. |",
-      "review_status": "not_audited_in_this_inventory",
+      "review_status": "verified_by_reviewed_execution",
       "test_text_references": [
         {
           "path": "okto_labs_pulse_core/tests/sqlalchemy_test_runtime_settings_service.py",
@@ -602,7 +602,11 @@
           "path": "okto_labs_pulse_community/tests/test_kgd01_wal_only_recovery.py",
           "line": 118
         }
-      ]
+      ],
+      "reviewed_execution": {
+        "artifact": "acceptance-k2-spec-parity.json",
+        "criterion_key": "KG:KG-01"
+      }
     },
     {
       "key": "KG:KG-02",
@@ -610,7 +614,7 @@
       "line": 613,
       "id": "KG-02",
       "normative_text": "| KG-02 | Texto legado tem dois ACs iguais | Ambiguidade delimitada; nenhum alvo escolhido arbitrariamente. |",
-      "review_status": "not_audited_in_this_inventory",
+      "review_status": "verified_by_reviewed_execution",
       "test_text_references": [
         {
           "path": "okto_labs_pulse_core/tests/test_kg02_scenarios.py",
@@ -744,7 +748,11 @@
           "path": "okto_labs_pulse_core/tests/test_kg_rest_cognitive_pending.py",
           "line": 175
         }
-      ]
+      ],
+      "reviewed_execution": {
+        "artifact": "acceptance-k2-spec-parity.json",
+        "criterion_key": "KG:KG-02"
+      }
     },
     {
       "key": "KG:KG-03",
@@ -752,7 +760,7 @@
       "line": 614,
       "id": "KG-03",
       "normative_text": "| KG-03 | Reordenar AC/FR/cenário sem mudar ID | Mesma identidade e relação; nenhuma associação por índice passa a outro item. |",
-      "review_status": "not_audited_in_this_inventory",
+      "review_status": "partial",
       "test_text_references": [
         {
           "path": "okto_labs_pulse_core/tests/test_kg_03a_2_badge_decision_eligibility.py",
@@ -846,7 +854,11 @@
           "path": "okto_labs_pulse_community/frontend/src/components/knowledge/__tests__/KGHealthCognitivePendingPanel.test.tsx",
           "line": 2
         }
-      ]
+      ],
+      "reviewed_execution": {
+        "artifact": "acceptance-k2-spec-parity.json",
+        "criterion_key": "KG:KG-03"
+      }
     },
     {
       "key": "KG:KG-04",
@@ -926,8 +938,12 @@
       "line": 623,
       "id": "KG-12",
       "normative_text": "| KG-12 | BR→FR, OR→IR, IR→FR e API→BR | Cada fonte projetada na direção/par corretos; remoção refletida. |",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "verified_by_reviewed_execution",
+      "test_text_references": [],
+      "reviewed_execution": {
+        "artifact": "acceptance-k2-spec-parity.json",
+        "criterion_key": "KG:KG-12"
+      }
     },
     {
       "key": "KG:KG-13",
@@ -984,8 +1000,12 @@
       "line": 627,
       "id": "KG-16",
       "normative_text": "| KG-16 | Remover cada família de relação | Aresta obsoleta ausente; anti-join depois da convergência é correto. |",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "partial",
+      "test_text_references": [],
+      "reviewed_execution": {
+        "artifact": "acceptance-k2-spec-parity.json",
+        "criterion_key": "KG:KG-16"
+      }
     },
     {
       "key": "KG:KG-17",
@@ -993,8 +1013,12 @@
       "line": 628,
       "id": "KG-17",
       "normative_text": "| KG-17 | Fonte incompleta ou provider indisponível durante diff | Não fazer prune como se o conjunto fosse vazio; checkpoint não avança falsamente. |",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "partial",
+      "test_text_references": [],
+      "reviewed_execution": {
+        "artifact": "acceptance-k2-spec-parity.json",
+        "criterion_key": "KG:KG-17"
+      }
     },
     {
       "key": "KG:KG-18",
@@ -1002,8 +1026,12 @@
       "line": 629,
       "id": "KG-18",
       "normative_text": "| KG-18 | Dois donos com arestas próximas/Code Evidence | Limpeza de um não apaga o fato de outro. |",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "partial",
+      "test_text_references": [],
+      "reviewed_execution": {
+        "artifact": "acceptance-k2-spec-parity.json",
+        "criterion_key": "KG:KG-18"
+      }
     },
     {
       "key": "KG:KG-19",
@@ -1056,8 +1084,12 @@
       "line": 635,
       "id": "KG-24",
       "normative_text": "| KG-24 | Incremental e reconstrução do mesmo snapshot | Mesmos conjuntos de relações/proveniência/maturidade, não só mesma contagem. |",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "partial",
+      "test_text_references": [],
+      "reviewed_execution": {
+        "artifact": "acceptance-k2-spec-parity.json",
+        "criterion_key": "KG:KG-24"
+      }
     },
     {
       "key": "KG:KG-25",

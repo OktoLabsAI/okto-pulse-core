@@ -2,6 +2,52 @@
 
 ## Estado para retomada
 
+K2 Spec validado: k2-decision-signal1 install2612/prova33357=0 antes das
+suites; Core18516=0:133passed/13.32s; Community4103=0:1passed/97.41s;
+F1663634=1 APENAS README/findings[]/oitoZERO. Matrizes regeneradas apos
+terminais. Par k2-decision-signal-final builds0/install39098=0/prova0:
+852/915+372/457 identicos. Community66908=0:1passed/79.53s com comparacao
+adicional de proveniencia, confidence, tipos e maturidade dos endpoints;
+F1637725=0 semdrift/findings, oito budgets ZERO. Recorder executado UMA vez
+apos ambos terminais. acceptance-k2-spec-parity.json e inventario atualizados:
+81verificados/38parciais/127nao auditados; KG01/02/12 comprovados,
+KG03/16/17/18/24 explicitamente parciais. Sem alteracao frontend.
+Pronto para commit/push. Nenhum processo ativo.
+
+Proximo K2 original: Cards G2/G3/G5. Leitura confirma process_card ainda nao
+recebe test_scenario_ids em _card_to_dict; nao ha emissao supports/precedes
+card-side no worker; Bug violations ainda usa missing-link cross-artifact.
+Antes de implementar: caracterizar caminho completo incluindo resolver KG,
+ports/source inputs, schema pares existentes e consumidores/eventos. Nao
+inventar permissao, novo tipo, fallback ou autoridade; regras estao KG§4.
+Paridade atual de7familias Spec nao cobre esses Cards/CT/Amendment/RDL.
+
+Ultimo par enviado Core897f57e6/Communityf1e946fc, pushes0.
+K2 materializado novo teste Community/test_projection_materialized_parity.py:
+normal ConsolidationProcessor com add/replace/remove/restore/replay versus
+rebuild exato privado do mesmo snapshot; exportador logico Grafx compara
+Counter de relacoes por referencias de origem e regra, nao apenas contagem.
+k2-materialized1 falhou no leitor de teste(node_type vs type_name); corrigido,
+k2-materialized2=0:1passed/60.18s para scenario_criteria.
+Ampliado as7familias Spec ja previstas, sem novos alvos de produto.
+k2-declared1 Core28701=0:78passed/8.24s; Community15725=0:14passed/17.57s.
+k2-materialized3=1:65.72s: caminho incremental das7familias passou incluindo
+remocao total e replay; rebuild recusou decision derivada como unknown.
+
+Investigacao: board_source_store.decision_sources_from_spec emite sinais
+semanticos derivados, excluidos INTENCIONALMENTE dos allowlists da fila.
+Planner ja ignorava decision nas etapas de planos/execucao, mas antes disso
+recusava census.has_non_deterministic_inputs. WIP limitado ao planner:
+rederivar TODOS os sinais das Specs atuais via porta scoped, comparar linhas
+exatas; permitir apenas os sinais comprovados. Unknowns de outros tipos,
+hash/origem/ausencia/Board divergentes continuam bloqueados. Census/particao,
+identidades, maturidade, historia e allowlists NAO sao reescritos. Specs
+continuam unicos owners e nao ha nova permissao nem excecao F16.
+Testes adversariais adicionados no planner, ainda nao executados.
+k2-decision-signal1 builds0, install2612 em andamento. Depois: coletar
+terminal, prova byte-a-byte, Core/Community/F16; nenhum teste comportamental
+do WIP foi executado contra install stale. Nao commitar como validado ainda.
+
 Par foreground enviado: Coreba671133/Community17f5facc, ambos pushes0.
 K2 oracle de release localizado em scripts/release_runtime_matrix_probe.py.
 Repro instalado k2-release-oracle-repro=1: AttributeError por acesso ao campo
