@@ -2,6 +2,104 @@
 
 ## Estado para retomada
 
+F16 final62183=0, findings/documentation_findings vazios, oito budgets ZERO.
+Recorder executado UMA vez apos todos os terminais; evidencias em
+acceptance-k2-card-projection-foundation.json. Incremento pronto para commit/push,
+G2 explicitamente parcial e inventario inalterado. Nenhum processo ativo.
+Proximo passo do plano: invalidacao old+new. Reusar ApplicationPersistencePort
+list(ApplicationQuery) com filtros Board+Spec e IDs afetados (sem scan Board).
+Eventos SpecSemanticChanged/SpecVersionBumped/StructuredSpecEntityEvent hoje
+nao guardam Card IDs anteriores; writers possuem old_data/old_values/old_task_ids.
+CardService.update_card hoje so publica priority/severity; alteracao direta de
+test_scenario_ids carece sinal de projecao. Registrar essas fontes no evento
+duravel e preservar coalescing existente. Nao introduzir SQL no Core.
+
+G2 fundacao validada (ainda parcial): materialized3 Community51727=0,
+3passed/200.31s, Task/Test/Bug com paridade completa de relacoes/proveniencia/
+maturidade apos add/replace/remove/restore/replay e rebuild Grafx real.
+Core regression2 44264=0:154passed/118.15s (inclui21 Card/preparacao/recusas,
+eventos, planner, limpeza de sessao e dependencias Spec). Frontend83369=0:
+29passed/58.24s, GraphCanvas e CardKnowledgeTab; teste novo preserva navegacao
+e tipo/source_ref/camada dos endpoints supports Entity/Bug->TestScenario.
+Cobertura jsdom/fallback, nao alegar verificacao visual WebGL.
+Matrizes README regeneradas pelo renderer oficial. Par final builds0,
+install62408=0, prova111daa=0:854/917+373/458 identicos. F16 final em curso.
+Sem mudancas de produto entre regression1 e final; apenas README/testes/ledger.
+Recorder record_k2_card_foundation.py preparado, NAO executado ate terminalF16.
+Inventario permanece81verificados/38parciais/127nao auditados.
+
+materialized2 Community18526=1 1failed/70.16s: incremental normal passou
+add/replace/remove/restore/replay; erro do ensaio no rebuild, nao do produto:
+reserve_consolidation cria processor(batch_size=1). Primeiro process_next
+ACK Spec; SQL retido comprovou Card pending sem erro. Teste corrigido para
+dois batches com um ACK cada e fila vazia obrigatoria (sem reduzir total2).
+materialized3 em andamento, produto inalterado e prova regression1 vigente.
+
+G2 integracao em validacao: link/unlink agora re-enfileira Spec+Card, preserva
+Spec antiga do evento unlink. k2-card-support-regression1 builds0/install44907=0/
+prova0 antes testes. Core20489=1 (18passed/1failed/11.42s): teste de registry
+esperava61, mas commit anterior e96c33b9 acrescentou learning.capture_admitted.v1
+com handler dedicado. Teste atualizado para62 e presenca/registro obrigatorios,
+sem mudar registry/produto. F1621398=1 APENAS README; findings[], oitoZERO.
+Novo ensaio nativo Card normal/test/bug em test_projection_materialized_parity:
+add/replace/remove/restore/replay e rebuild real. materialized1 Community63851=1
+1failed/48.33s no PRIMEIRO processamento da Spec: health probe deadline,
+connectivity deferred, nenhuma mutacao Card. Repeticao isolada materialized2
+em andamento. Nao relaxar gate. Prova vigente regression1, produto congelado.
+Gap G2 registrado: unlink_card preserva test_scenario_ids ao limpar spec_id;
+preparador atualmente recusa parent_unavailable. Completar tratamento de
+referencia semantica e retirada conhecida conforme KG4.5/5; nao manter aresta
+stale nem converter falha de leitura em vazio. Eventos old+new de colecoes e
+consumidores Card-side ainda pendentes; nao declarar G2 concluido.
+
+Atualizacao G2: k2-card-support2 builds0/install20140=0/prova0 antes suites;
+Core39343=0 9passed/5.08s, Community14161=0 8passed/10.19s.
+F1671154=1 somente matrizes README, findings[], oito budgets ZERO.
+k2-card-support3 acrescenta cleanup vazio cancelado/arquivado sem remint:
+builds0/install87694=0/prova24667=0 (854/917+373/458); Core57606=0
+15passed/4.97s; Community65095=0 10passed/10.90s. Sem processos ativos.
+Correcao da investigacao anterior: CARD_CONTENT_COLUMNS JA inclui
+test_scenario_ids em board_source_store.py; ambos caminhos do reader usam
+essa constante. Nao alterar hash historico nem bump de manifesto por essa
+suposicao incorreta. Falta provar paridade e invalidacao dos consumidores
+quando Spec muda. Cleanup e compensacao focados passaram; integracao ampla
+e eventos old+new permanecem pendentes. Inventario inalterado.
+
+G2/G4 WIP (nao validado integralmente): preparacao Card-cenario, porta publica
+de ownership/proveniencia observada, admissao active-set e adaptador Grafx
+implementados. k2-card-support1: builds/install45493=0; prova aceita somente
+provenance-k2-card-support1-terminal.json (854/917+373/458); prova anterior
+78116 excluida por preceder coleta do terminal de install. Core35299=0:
+9passed/4.08s. Community=1: compensacao encontrou edge humano paralelo como
+conflito de identidade; remocao havia preservado corretamente os outros edges.
+Correcao em andamento: qualificar identidade pelo writer/regra Card fechado
+da porta publica, conservando comparacao exata do before-image. Necessita
+novo par instalado/provado e nova campanha. Pendentes do mesmo escopo G2:
+cancelamento, eventos old+new, hashes versionados de fonte e paridade real.
+Sem alteracao frontend. Nao declarar G2 concluido nem promover inventario.
+
+K2 Spec enviado Core168ac657/Community974e2c53, pushes0. Inicio G2/G4:
+test_kg_card_scenario_projection.py (novo, NAO commitado) via planner publico
+reproduziu k2-card-support-repro Core32903=1:1failed/3.87s, zero supports para
+Card normal com test_scenario_ids valido. Matriz preparada normal/test/bug e
+fontes card/spec/both; -x parou no primeiro caso. Produto ainda NAO alterado
+nesta frente; ultimo install provado e k2-decision-signal-final.
+
+Cadeia revisada: _card_to_dict omite test_scenario_ids; _prepare_projection
+carrega projection_inputs apenas ideation/refinement/spec; porta atual tem
+quality/RDL/spec_dependencies. Resolver _resolve_missing_link_candidates
+resolve origem Bug em originates_from e testes em covered_by, NAO G2 supports
+nem proxyG5 violates. Schema ja possui supports Entity/Bug→TestScenario e
+violates Bug→Constraint/Requirement/Criterion; precedes ainda Entity→Entity.
+Nao adicionar Bug falso como Entity. KG§4.2(7) exige investigar tipos admitidos
+por dominio antes de delta de pares precedes. Nenhum DDL planejado/aplicado.
+EdgeCandidate/EmittedEdge dispoem layer/rule_id/created_by/fallback_reason,
+sem campo generico de proveniencia multipla. Proximo: fechar contrato G2 de
+origens observadas/owner card, endpoints kgref verificaveis, active sets,
+fingerprint e invalidacao old+new por evento, antes de implementar. Reusar
+portas; nao duplicar autoridade/gate nem usar union como prova de cobertura.
+Nenhum processo ativo; objetivo final continua em andamento.
+
 K2 Spec validado: k2-decision-signal1 install2612/prova33357=0 antes das
 suites; Core18516=0:133passed/13.32s; Community4103=0:1passed/97.41s;
 F1663634=1 APENAS README/findings[]/oitoZERO. Matrizes regeneradas apos

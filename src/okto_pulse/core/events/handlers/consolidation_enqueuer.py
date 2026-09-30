@@ -72,11 +72,8 @@ _IMPLEMENTATION_TARGET_EVENTS = {
     "implementation_target.execution_receipt_submitted",
 }
 
-# Spec eaf78891 (Ideação #2): card.linked_to_spec / card.unlinked_from_spec
-# re-enqueue the SPEC, not the card. The card extractor in
-# deterministic_worker does not reference spec_id, so a card re-enqueue
-# would be wasted work; the spec extractor is the one that reflects the
-# updated cards list.
+# Linking changes both the Spec children and the Card-owned observed links.
+# The removed Spec id stays in the unlink event, while the Card is reread.
 _CARD_TO_SPEC_EVENTS = {"card.linked_to_spec", "card.unlinked_from_spec"}
 
 # Spec 4007e4a3 (Ideação #3): card.moved / card.conclusion_added re-enqueue
@@ -409,11 +406,14 @@ class ConsolidationEnqueuer:
             # the mutation-specific event.
             return targets
 
-        # Dual-target spec-only events (Ideação #2): spec re-enqueue, no card.
+        # Materialize the Spec first, then reconcile the Card's current links.
         if et in _CARD_TO_SPEC_EVENTS:
             spec_id = getattr(event, "spec_id", None)
             if spec_id:
                 targets.append(("spec", spec_id))
+            card_id = getattr(event, "card_id", None)
+            if card_id:
+                targets.append(("card", card_id))
             return targets
 
         # Dual-target card+spec events (Ideação #3): both targets.

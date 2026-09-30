@@ -742,9 +742,7 @@ class ChecklistBindingChanged(DomainEvent):
 class CardLinkedToSpec(DomainEvent):
     """Fired when a card is linked to a spec via link_card_to_spec.
 
-    The handler enqueues a spec consolidation (NOT card) — the card extractor
-    does not reference spec_id, but the spec extractor must reflect the new
-    cards list.
+    The handler enqueues both the Spec children and Card-owned observed links.
     """
 
     event_type: ClassVar[str] = "card.linked_to_spec"

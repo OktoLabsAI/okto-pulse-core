@@ -325,7 +325,7 @@ async def test_clean_tables_preserves_restricted_events_from_other_boards(
 # --- AC12 (spec 4007e4a3 — Ideação #3): registry has all known events ---
 
 
-def test_registry_has_sixty_one_events_after_sprint_retirement():
+def test_registry_includes_authored_learning_after_sprint_retirement():
     """All EVENT_TYPES are registered with at least one handler.
 
     History: 12 MVP + 4 (spec eaf78891, Ideação #2) + 1 (spec 4007e4a3,
@@ -344,7 +344,8 @@ def test_registry_has_sixty_one_events_after_sprint_retirement():
     guideline KG projection outbox envelope brings it to 43. Code
     Traceability now contributes 18 bounded metadata-only events; subsequent
     closed operational additions brought the registry to 64. BASE F3 retires
-    sprint.created/moved/closed, leaving 61 live contracts.
+    sprint.created/moved/closed, leaving 61 live contracts. Durable authored
+    learning adds learning.capture_admitted.v1 with its dedicated handler.
     CardMoved already existed pre-Ideação #3; that cycle only extended its
     payload (spec_id, moved_by).
 
@@ -353,9 +354,11 @@ def test_registry_has_sixty_one_events_after_sprint_retirement():
     events are owned by their dedicated KG-scoring handlers — different
     domain (KG telemetry vs. spec/card lifecycle).
     """
-    assert len(EVENT_TYPES) == 61
+    assert len(EVENT_TYPES) == 62
+    assert "learning.capture_admitted.v1" in EVENT_TYPES
     assert not {"sprint.created", "sprint.moved", "sprint.closed"}.intersection(EVENT_TYPES)
     non_consolidation_events = {
+        "learning.capture_admitted.v1",
         "kg.hit_flushed",
         "card.priority_changed",
         "card.severity_changed",
@@ -1099,13 +1102,8 @@ async def test_refinement_semantic_changed_enqueues_refinement(
 
 
 @pytest.mark.asyncio
-async def test_card_linked_to_spec_enqueues_spec_not_card(db_factory, clean_tables):
-    """CardLinkedToSpec maps to artifact_type='spec' (not 'card').
-
-    Decision (b) in the refinement: card extractor doesn't reference spec_id,
-    so re-enqueueing the card would be wasted work. The spec extractor is
-    the one that reflects the updated cards list.
-    """
+async def test_card_linked_to_spec_enqueues_spec_and_card(db_factory, clean_tables):
+    """Both owners converge after a change of the Card's parent Spec."""
     card_id = "card-linked"
     spec_id = "spec-target"
     async with db_factory() as session:
@@ -1141,11 +1139,12 @@ async def test_card_linked_to_spec_enqueues_spec_not_card(db_factory, clean_tabl
             .scalars()
             .all()
         )
-        # Exactly one row: the SPEC, not the card.
+        # Spec owns its children; Card owns its observed scenario relationships.
         spec_rows = [r for r in rows if r.artifact_type == "spec"]
         card_rows = [r for r in rows if r.artifact_type == "card"]
         assert len(spec_rows) == 1
-        assert len(card_rows) == 0
+        assert len(card_rows) == 1
+        assert card_rows[0].artifact_id == card_id
         assert spec_rows[0].artifact_id == spec_id
         assert spec_rows[0].priority == "normal"
         assert spec_rows[0].source == "event:card.linked_to_spec"
@@ -1192,7 +1191,8 @@ async def test_card_unlinked_from_spec_enqueues_spec(db_factory, clean_tables):
         spec_rows = [r for r in rows if r.artifact_type == "spec"]
         card_rows = [r for r in rows if r.artifact_type == "card"]
         assert len(spec_rows) == 1
-        assert len(card_rows) == 0
+        assert len(card_rows) == 1
+        assert card_rows[0].artifact_id == card_id
         assert spec_rows[0].artifact_id == spec_id
         assert spec_rows[0].source == "event:card.unlinked_from_spec"
 

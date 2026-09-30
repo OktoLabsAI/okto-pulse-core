@@ -3121,12 +3121,22 @@ async def _prepare_deterministic_projection(db, entry, *, persistence=None):
                 "artifact_status": str(artifact_status or ""),
             },
         )
-        if entry.artifact_type != "refinement":
+        if entry.artifact_type not in {"refinement", "card"}:
             return True
         # A cancelled Refinement still owns an RDL projection namespace. Run
         # an empty replacement so its relationally-derived children converge
         # without re-materializing the cancelled root.
-        worker_result = _cancelled_refinement_projection(entry.artifact_id)
+        if entry.artifact_type == "card":
+            # Replace only this Card's observed links; do not revive its root.
+            worker_result = WorkerResult(
+                raw_content=f"relational-projection-cleanup:card:{entry.artifact_id}:cancelled",
+                relational_projection_active_set_intents=(RelationalProjectionActiveSetIntent(
+                    owner_type="card", owner_id=entry.artifact_id,
+                    namespace="card_scenarios", active_refs=(),
+                ),),
+            )
+        else:
+            worker_result = _cancelled_refinement_projection(entry.artifact_id)
     else:
         projection_inputs = None
         if entry.artifact_type in {"ideation", "refinement", "spec"}:
@@ -3142,6 +3152,10 @@ async def _prepare_deterministic_projection(db, entry, *, persistence=None):
             artifact,
             projection_inputs,
         )
+        if entry.artifact_type == 'card':
+            from okto_pulse.core.application.processors.card_scenario_projection import prepare_card_scenario_projection
+            worker_result = await prepare_card_scenario_projection(db, board_id=entry.board_id,
+                card=artifact, result=worker_result, persistence=persistence)
         worker_result = await _materialize_lineage_endpoint_nodes(
             db,
             entry,

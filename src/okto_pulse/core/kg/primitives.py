@@ -611,6 +611,7 @@ async def begin_consolidation(
         supported_scope = (req.artifact_type, owner_type, namespace) in {
             ("refinement", "refinement", "rdl"),
             ("spec", "spec", "dependencies"),
+            ("card", "card", "card_scenarios"),
             *(("spec", "spec", name) for name in SPEC_RELATIONSHIP_NAMESPACES),
         }
         if (
@@ -658,6 +659,24 @@ async def begin_consolidation(
                     "deterministic candidate identity.",
                     session_id=session_id,
                 )
+        if namespace == 'card_scenarios':
+            from okto_pulse.core.ports.card_projection import CARD_SCENARIO_RULES, is_scenario_source_reference
+            roots = [candidate for candidate in deterministic_candidates.values()
+                     if _enum_value(candidate.node_type) in {'Entity', 'Bug'}
+                     and candidate.source_artifact_ref == f'card:{owner_id}']
+            cleanup_only = not deterministic_candidates and not active_edges
+            if (agent_id != 'system:historical_consolidation' or active_refs
+                    or (len(roots) != 1 and not cleanup_only)):
+                raise KGPrimitiveError('relational_projection_scope_invalid',
+                    'Card scenario projection requires its authenticated worker and exact owner root.', session_id=session_id)
+            for edge_ref in active_edges:
+                source = deterministic_candidates.get(edge_ref.from_candidate_id)
+                target = _parse_source_ref_endpoint(edge_ref.to_candidate_id)
+                if (source is not roots[0] or edge_ref.edge_type != 'supports'
+                        or edge_ref.rule_id not in CARD_SCENARIO_RULES or target is None
+                        or target[0] != 'TestScenario' or not is_scenario_source_reference(target[1])):
+                    raise KGPrimitiveError('relational_projection_edge_identity_mismatch',
+                        'Card scenario edge is outside its exact projection scope.', session_id=session_id)
         if namespace in SPEC_RELATIONSHIP_NAMESPACES:
             from okto_pulse.core.ports.spec_projection import spec_relationship_family
             family = spec_relationship_family(namespace)
@@ -4144,7 +4163,9 @@ def _do_graph_commit(
             family = spec_relationship_family(namespace) if namespace in SPEC_RELATIONSHIP_NAMESPACES else None
             emitted_projection_edge_ids = {
                 candidate_id for candidate_id, candidate in edge_candidates.items()
-                if (family.matches_rule_family(str(candidate.rule_id or '')) if family is not None
+                if (str(candidate.rule_id or '').startswith('supports/card_scenario_observed_')
+                    if namespace == 'card_scenarios' else
+                    family.matches_rule_family(str(candidate.rule_id or '')) if family is not None
                     else str(candidate.rule_id or '').startswith('precedes/spec_dependency/'))
             }
             if (
@@ -4225,7 +4246,7 @@ def _do_graph_commit(
             owner_candidate_ids = [
                 candidate_id
                 for candidate_id, candidate in node_candidates.items()
-                if _enum_value(candidate.node_type) == "Entity"
+                if _enum_value(candidate.node_type) in ({'Entity', 'Bug'} if projection_owner_type == 'card' else {'Entity'})
                 and str(candidate.source_artifact_ref or "") == owner_source_ref
             ]
             owner_node_id = None
