@@ -560,6 +560,20 @@ class ImportPresetsUseCase:
             ),
             uow=uow,
         )
+        # Ordinary catalog import is not the bounded retirement migration.
+        # Dropping this subtree would change historical absent-flag semantics;
+        # retaining it would recreate an operational preset from retired data.
+        # Validate the complete batch before staging even its first valid item.
+        for index, item in enumerate(command.items):
+            flags = _item_value(item, "flags")
+            if isinstance(flags, dict) and any(
+                key == "sprint" or key.startswith("sprint.") for key in flags
+            ):
+                raise ImportItemError(index, {
+                    "code": "retired_sprint_permissions",
+                    "message": "Retired Sprint permissions cannot be imported as an active preset. "
+                    "Preserve the original export as history and use the retirement migration for legacy installations.",
+                })
         result = ImportResult()
         for index, item in enumerate(command.items):
             preset_id = _item_value(item, "id")

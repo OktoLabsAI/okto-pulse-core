@@ -519,6 +519,27 @@ def test_presets_import_dry_run_and_invalid_item():
     assert detail["errors"][0]["index"] == 1
 
 
+@pytest.mark.parametrize('dry_run', [False, True])
+@pytest.mark.parametrize('flags', [
+    {'sprint': {'entity': {'read': True}}}, {'sprint': {'entity': {'read': False}}},
+    {'sprint': {}}, {'sprint.entity.read': True},
+])
+def test_legacy_sprint_grants_cannot_return_through_preset_import(dry_run, flags):
+    """BASE T45: ordinary imports cannot restore retired operational authority."""
+    client = _client(_uid('retired-import'))
+    before = {row['id'] for row in client.get(f'{PREFIX}/presets').json()}
+    response = client.post(f'{PREFIX}/presets/import', params={'dry_run': str(dry_run).lower()},
+        json={'schema_version': '1', 'kind': 'presets', 'items': [
+            {'name': _uid('Valid preceding item'), 'flags': {'board': {'read': True}}},
+            {'name': _uid('Retired authority'), 'flags': flags},
+        ]})
+    assert response.status_code == 400, response.text
+    assert response.json()['detail']['created'] == 0
+    error = response.json()['detail']['errors'][0]
+    assert error['index'] == 1 and error['detail']['code'] == 'retired_sprint_permissions'
+    assert {row['id'] for row in client.get(f'{PREFIX}/presets').json()} == before
+
+
 # ===========================================================================
 # Default board configuration
 # ===========================================================================

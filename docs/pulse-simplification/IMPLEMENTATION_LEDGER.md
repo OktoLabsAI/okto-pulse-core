@@ -2,6 +2,35 @@
 
 ## Estado para retomada
 
+BASE F7/T45 concluído. Export capturado pelo par v0.3.4 instalado e
+byte-provado (20707250/b6dda64), sobre SQLite descartável da fixture congelada.
+Renderers atuais preservam QA/avaliação/histórico sem modificar JSON/SQL;
+enum/ORM/registry atuais não reintroduzem Sprint; REST export removido recusa
+antes de materialização. Community24967=0,4passed43.04s.
+
+Reprodução real no import de presets: histórico com subtree sprint era aceito
+como preset comum, HTTP200; Core52106=1,1failed7.82s. F7 item5 proíbe import
+comum reintroduzir contrato operacional antigo. ImportPresetsUseCase agora
+valida o lote inteiro após autorização e antes da primeira escrita, recusando
+subtree/flat path Sprint com retired_sprint_permissions. Não descarta flags,
+não inventa substitutas nem altera resolução histórica de grants. Não é novo
+alvo: correção do import previsto no plano. Conteúdo histórico permanece legível.
+
+Par reconstruído/instalado: dist-learning-reconciliation-historical-export-fix1;
+provenance-historical-export-fix1.json,terminal67133=0,859/922+373/458 arquivos
+byte-idênticos fonte/wheel/site. Suite completa import/export Core8479=0,
+19passed10.38s; frontend42436=0,9passed4.68s, inclui erro de preview sem retry,
+confirmação ou success. 32 casos distintos neste recorte. F16 session17405=0:
+ok=true, findings/documentation[], oito budgets ZERO. Ruff F/E9 e diff verdes.
+SPA produtiva intacta; somente testes de UI adicionados, sem rebuild necessário.
+
+Relatório acceptance-historical-export.json guarda export predecessor, provas,
+logs/hashes, falha inicial e limites. Inventário108 verificados/39 parciais/
+99 não auditados. Último par publicado antes deste recorte Corea626d4f4 /
+Communityfb0f32b5. Próxima frente original: BASE T01–T12 fluxo governado;
+complementos/benchmark/distribuição final ainda pendentes. KG-10/T23 aguardam
+as decisões já solicitadas. Nenhum dado real alterado; nenhum processo pendente.
+
 BASE T41/T42 verificados, sem alteração produtiva. T41: snapshots mantêm
 bytes/revisão após fonte atualizada, marcam stale, refresh explícito conserva
 linhagem e histórico fechado; referências seguem revisão atual. Core74622=0,

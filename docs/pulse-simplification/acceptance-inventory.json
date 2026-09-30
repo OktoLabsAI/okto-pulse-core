@@ -546,8 +546,12 @@
       "line": 624,
       "id": "T45",
       "normative_text": "| T45 | Import/export de histórico anterior | Preserva evidência sem reintroduzir entidade e permissões Sprint. |",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "verified_by_reviewed_execution",
+      "test_text_references": [],
+      "reviewed_execution": {
+        "artifact": "acceptance-historical-export.json",
+        "criterion_key": "BASE:T45"
+      }
     },
     {
       "key": "BASE:T46",
