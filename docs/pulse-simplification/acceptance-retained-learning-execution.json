@@ -1,0 +1,129 @@
+{
+  "scope": "KG7.5/K3 retained private per-Board Learning execution and cold effect rederivation",
+  "suites": {
+    "core": {
+      "passed": 37,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "community": {
+      "passed": 4,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0
+    }
+  },
+  "budgets": [
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "import_boundary_baseline",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every import_boundary_baseline allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "singleton_baseline",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every singleton_baseline allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "dependency_temporary_exceptions",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every dependency_temporary_exceptions allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "graph_runtime_compatibility",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every graph_runtime_compatibility allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "rebuild_artifact_compatibility",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every rebuild_artifact_compatibility allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "community_private_reach_ins",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every community_private_reach_ins allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "community_adapter_bridges",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every community_adapter_bridges allowance before F16 completion."
+    },
+    {
+      "current": 0,
+      "expires_on": null,
+      "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+      "key": "af35_relational_residue",
+      "limit": 0,
+      "ok": true,
+      "removal_criterion": "Remove every af35_relational_residue allowance before F16 completion."
+    }
+  ],
+  "verified": [
+    "The private edition phase executes exact Core-selected work through the governed public writer.",
+    "The Core execution plan preserves historical selection while ordering a pending later reuse before recovery of earlier origins.",
+    "Each step retains standalone SQLite+WAL recovery snapshots and the existing portable graph format before and after the invocation.",
+    "The phase rederives SQL and graph ownership, binds audit/graph counts, and checks continuity between steps.",
+    "Cold verification succeeds without runtime providers and rejects report-proof tampering even with a newly supplied digest.",
+    "Graph artifact tampering and attempts to overwrite an existing recovery directory are refused.",
+    "An absent canonical Bug records an unchanged SQL/schema/graph with no committed session, never fabricated completion.",
+    "Loss of the caller fence after a real commit leaves retained before evidence but never seals a final receipt.",
+    "Two-origin native execution materializes pending reuse first, then recovers the earlier origin without another source append.",
+    "Installed bytes matched source before campaigns; final F16 has no findings or documentation drift and all eight budgets are zero."
+  ],
+  "limits": [
+    "The phase is not yet wired into the full candidate coordinator/checkpoint; its state is retained_not_reconciled.",
+    "The enclosing coordinator still owns original/candidate offline fences, whole-stage cleanup, native census, source/evidence authentication and final completion guards.",
+    "Native fixtures substitute unrelated lifecycle gates and graph health; this does not certify full runtime admission.",
+    "Final rebuild changed only generated README matrices; behavior was validated against the initial byte-proved pair.",
+    "No UI change, real-data migration, active runtime restart or release occurred.",
+    "Full-plan acceptance is incomplete; inventory remains 78 verified / 33 partial / 135 unaudited."
+  ],
+  "sha256": {
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-retained-execution-final-closure.log": "d61d4b407a5b2ba05411c6cdc10f55929ed972c2e50b8008550321356bea2bba",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-retained-execution1-closure.log": "cac3c57ecc058c658fce1b56f67876ebf9729b404a50749a849d38b858031416",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-retained-execution1-core.xml": "43a4ea4c30ae1ae539d39f3e2272897582d68dbc954583f49b8a811f1170ef9b",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-retained-execution1-core.log": "35abb51580c1b490edee1616b164fe9ea63a0a4a3acf201851cf87e112eb6a6a",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-retained-execution1-community.xml": "4d3a906f32fcddbd3c7df12038a66fc2f26fa306fed63e62a335a76fcd6a4f58",
+    "PULSE_REFACTOR/.validation-v040/learning-reconciliation-retained-execution1-community.log": "de8884f5e9b8c37060a63d2f884ddbee84119d32d9f690308e9d890257377397",
+    "PULSE_REFACTOR/.validation-v040/provenance-learning-retained-execution1.json": "4ffcd1d4e80ffa202b1983dce3f95dde9a18957e30be031e4253b68d9205a35e",
+    "PULSE_REFACTOR/.validation-v040/provenance-learning-retained-execution-final.json": "1bfe7db573dfdb1b75be943fcf1cd63a583c1ba142663f0828ac2c5456c0f59f",
+    "PULSE_REFACTOR/.validation-v040/run_learning_reconciliation.py": "6af623cd1a283155e82fd4e41c8125078e48f70adfac3a42e6518642e3619662",
+    "okto_labs_pulse_core/src/okto_pulse/core/application/learning_reconciliation.py": "09eb2e6aa5cc0b88a337ddcea66f025943a55df37b6596aaee3667feaa48c72c",
+    "okto_labs_pulse_core/src/okto_pulse/core/ports/learning_reconciliation.py": "7540dbcd97dfc47f0f4a7f8661acc7a65da22e129bc036c55face9afe985df9f",
+    "okto_labs_pulse_community/src/okto_pulse/community/adapters/retirement_learning_execution.py": "80353df6f41ea5c5b425774561e9a233d9f5b0a95c86c44e0caf0e1f02c65efa",
+    "okto_labs_pulse_community/src/okto_pulse/community/adapters/retirement_learning_sql_delta.py": "90e5fa8e3cac7cd81f49c37d3955d48b7e13331ae0fff93e76a2ad0ed854487c",
+    "okto_labs_pulse_community/tests/test_retirement_learning_execution.py": "999c2388ec53f0e281852b4fcd768062e1f00bc9b01319355a27cd23049fba2a",
+    "okto_labs_pulse_core/README.md": "7dc53cd8b633b20b8210cc2812bee42cba2740ae1c399843dd752b373f5b3caa",
+    "okto_labs_pulse_community/README.md": "50dd94013f1283eaa6b98559771b4baef531157df7ca89e09584c028e1966ce2"
+  }
+}

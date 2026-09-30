@@ -13,6 +13,18 @@ class LearningReconciliationSelection:
 
 
 @dataclass(frozen=True, slots=True)
+class LearningReconciliationExecutionPlan:
+    selections: tuple[LearningReconciliationSelection, ...]
+    work_refs: tuple[str, ...]
+
+
+def plan_learning_reconciliation_execution(*, schema, board_id, records, nodes):
+    """Order pending reuse before older associations without changing selection history."""
+    from okto_pulse.core.application.learning_reconciliation import execution_plan
+    return execution_plan(schema=schema, board_id=board_id, records=records, nodes=nodes)
+
+
+@dataclass(frozen=True, slots=True)
 class LearningReconciliationExecution:
     """One internal execution, not an admission or history-ownership receipt."""
 

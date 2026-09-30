@@ -2,6 +2,41 @@
 
 ## Estado para retomada
 
+Fechamento da validacao retained-execution: instalacao final terminou0;
+prova final byte-a-byte0 (Core846/909 + Community367/452).
+F16 final24142=0; recorder record_retained_learning_execution.py executado
+UMA vez apos todos terminais: acceptance-retained-learning-execution.json.
+Sem findings/drift documental; oito budgets ZERO. Campanhas37+4 passaram.
+Proxima dependencia do plano: integrar fase ao coordenador/checkpoint,
+preservando prova SQL deterministica e restauracao literal intermediarias,
+ligando frames finais ao candidato e censo nativo; nao relaxar formato v6.
+Entrega integral permanece aberta. Nenhuma campanha em execucao.
+
+Par publicado anterior Core5875c98d/Communityc7633f6c, pushes0/limpos.
+Implementada fase privada execute_candidate_learning_board + verificacao cold
+verify_candidate_learning_board, ainda NAO ligada ao coordenador/checkpoint.
+Usa snapshots SQL existentes (backup WAL/censo/hash) e codec logico existente;
+retém antes/depois por trabalho, rederiva SQL/grafo, compara contagens, recusa
+alteracoes entre passos, nao sobrescreve diretorio, nao sela se perde fence.
+Cancelamento drena worker de snapshot/publicacao antes de devolver controle.
+Sem sessao confirmada exige SQL/esquema/grafo identicos; materialized=false
+permanece pendente. SQL audit nodes_updated exige0: reuso usa partial update
+count_candidate=False (confirmado em primitives e snapshot nativo retido).
+
+Plano publico Core separado preserva formato/ordem da selecao historica existente,
+mas agenda captura mais recente antes das origens antigas do mesmo Learning:
+head de reuso pendente impede recuperar captura anterior antes de materializar
+aquele head. Nao altera elegibilidade/gates. Teste real com duas origens deve
+provar essa dependencia, cadeia de snapshots e replay cold sem providers.
+Testes tambem cobrem Bug ausente sem efeitos, digest novo com report adulterado,
+arquivo grafico adulterado, diretorio ja existente e perda de fence apos commit.
+retained-execution1 builds0/Ruff0/install16880=0/prova0 (846/909+367/452)
+ANTES dos testes. Core12139=0:37passed/5.68s; Community5970=0:4passed/115.32s.
+F1656441=1 somente README, findings=[], oito ZERO. Regeneracao das matrizes
+APOS todos terminais. Builds retained-execution-final0/install final iniciado;
+prova byte-a-byte e F16 final ainda obrigatorios. Produto congelado nas campanhas.
+Nenhum dado real/UI/restart/release. Inventario78/33/135, entrega integral aberta.
+
 Par anterior Core03791ec0/Community5bd85c04 publicado, pushes0/limpos.
 Antes de compor fase no checkpoint, em validacao o qualificador Core de delta
 grafico completo: inventarios portaveis limitados100k/500k/64MiB, preservacao de

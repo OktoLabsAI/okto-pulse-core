@@ -137,6 +137,35 @@ async def execute(*, board_id, work_ref, relational_scope_factory):
         result.committed_session_id, result.materialized)
 
 
+def execution_plan(*, schema, board_id, records, nodes):
+    from okto_pulse.core.domain.learning_materialization_work import parse_learning_capture_work_ref
+    from okto_pulse.core.ports.learning_reconciliation import LearningReconciliationExecutionPlan
+    selections = select(schema=schema, board_id=board_id, records=records, nodes=nodes)
+    revisions = {}
+    for row in records:
+        if row['node_type'] != 'Learning':
+            continue
+        payload = json.loads(row['payload']) if type(row['payload']) is str else row['payload']
+        if 'capture_format' not in payload:
+            continue
+        refs = json.loads(row['evidence_refs']) if type(row['evidence_refs']) is str else row['evidence_refs']
+        fingerprint = canonical_cognitive_source_fingerprint(board_id=board_id, node_type='Learning',
+            node_id=row['node_id'], generation=row['generation'], payload=payload, evidence_refs=refs)
+        key = row['node_id'], row['generation'], fingerprint
+        if key in revisions:
+            raise ValueError('learning_reconciliation_capture_ambiguous')
+        revisions[key] = row.get('source_revision', 0)
+    ordered = []
+    for selection in selections:
+        for reference in selection.work_refs:
+            work = parse_learning_capture_work_ref(reference)
+            ordered.append((work.learning_id, -revisions[work.learning_id, work.generation, work.fingerprint],
+                work.bug_id, reference))
+    # A pending later reuse must acquire its literal before earlier origin
+    # recovery can prove that chain. This grants no new eligibility or authority.
+    return LearningReconciliationExecutionPlan(selections, tuple(row[-1] for row in sorted(ordered)))
+
+
 def select(*, schema, board_id, records, nodes):
     # Validate the complete history even if there is no Learning to return.
     latest = validate_cognitive_projection_sources(schema=schema, board_id=board_id, records=records)
