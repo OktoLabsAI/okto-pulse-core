@@ -2,6 +2,22 @@
 
 ## Estado para retomada
 
+Par foreground enviado: Coreba671133/Community17f5facc, ambos pushes0.
+K2 oracle de release localizado em scripts/release_runtime_matrix_probe.py.
+Repro instalado k2-release-oracle-repro=1: AttributeError por acesso ao campo
+singular removido WorkerResult.relational_projection_active_set_intent.
+Corrigido APENAS normalizador para lista completa ordenada de intents.
+k2-release-oracle-fixed=0 contra install byte-verificado query-work-final;
+script externo ao wheel. Teste novo executa as5familias e exige fingerprint
+sensivel a remocao de QUALQUER intent, invariante por ordenacao.
+Primeira fixture tinha fonte parcial (1intent), resultado1passed/1failed;
+corrigida com colecoes explicitamente completas, sem alterar produto.
+k2-release-oracle2 Community=0:2passed. Este oracle compara planos stateless;
+NAO prova convergencia dos conjuntos materializados. Referencias antigas Kuzu
+no relatorio nao sao evidencia atual e nao foram contadas como Grafx.
+Proximo trabalho original: fechar paridade materializada K2, depois auditoria
+integrada e benchmarks. Nenhum processo ativo.
+
 Foreground concluido neste recorte: query-work-fixture2 Community27250=0,
 112passed/250.46s. Builds query-work-final0/install95860=0; prova28723=0
 852Python/915payload Core e372/457 Community identicos. F16final42238=0:
