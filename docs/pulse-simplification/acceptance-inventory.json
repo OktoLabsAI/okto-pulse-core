@@ -290,8 +290,12 @@
       "line": 604,
       "id": "T25",
       "normative_text": "| T25 | Instalação limpa | Nenhuma tabela/campo/modelo/preset operacional de Sprint. |",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "verified_by_reviewed_execution",
+      "test_text_references": [],
+      "reviewed_execution": {
+        "artifact": "acceptance-retirement-migration-review.json",
+        "criterion_key": "BASE:T25"
+      }
     },
     {
       "key": "BASE:T26",
@@ -299,8 +303,12 @@
       "line": 605,
       "id": "T26",
       "normative_text": "| T26 | Upgrade com Sprints ativas, fechadas, canceladas e sem cartões | Estados de artefatos preservados; história reconciliada. |",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "verified_by_reviewed_execution",
+      "test_text_references": [],
+      "reviewed_execution": {
+        "artifact": "acceptance-retirement-migration-review.json",
+        "criterion_key": "BASE:T26"
+      }
     },
     {
       "key": "BASE:T27",
@@ -308,8 +316,12 @@
       "line": 606,
       "id": "T27",
       "normative_text": "| T27 | Policies heterogêneas e `resolved_sources` misto | Paridade por campo; nenhum afrouxamento ou endurecimento oculto. |",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "verified_by_reviewed_execution",
+      "test_text_references": [],
+      "reviewed_execution": {
+        "artifact": "acceptance-retirement-migration-review.json",
+        "criterion_key": "BASE:T27"
+      }
     },
     {
       "key": "BASE:T28",
@@ -317,8 +329,12 @@
       "line": 607,
       "id": "T28",
       "normative_text": "| T28 | Agente apenas com grants removidos | Sem autoridade remanescente inventada; identidade preservada. |",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "verified_by_reviewed_execution",
+      "test_text_references": [],
+      "reviewed_execution": {
+        "artifact": "acceptance-retirement-migration-review.json",
+        "criterion_key": "BASE:T28"
+      }
     },
     {
       "key": "BASE:T29",
@@ -326,8 +342,12 @@
       "line": 608,
       "id": "T29",
       "normative_text": "| T29 | Migração executada duas vezes | Resultado idempotente, sem duplicação de arquivo/overrides/events. |",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "partial",
+      "test_text_references": [],
+      "reviewed_execution": {
+        "artifact": "acceptance-retirement-migration-review.json",
+        "criterion_key": "BASE:T29"
+      }
     },
     {
       "key": "BASE:T30",
@@ -335,8 +355,12 @@
       "line": 609,
       "id": "T30",
       "normative_text": "| T30 | Falha depois do snapshot, antes/durante corte | Estado detectável, retomada/rollback ensaiado; não startup parcial saudável. |",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "partial",
+      "test_text_references": [],
+      "reviewed_execution": {
+        "artifact": "acceptance-retirement-migration-review.json",
+        "criterion_key": "BASE:T30"
+      }
     },
     {
       "key": "BASE:T31",
@@ -344,8 +368,12 @@
       "line": 610,
       "id": "T31",
       "normative_text": "| T31 | FK órfã, corrupção ou cardinalidade não representável | Falha explícita e preservação do original, sem descarte silencioso. |",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "verified_by_reviewed_execution",
+      "test_text_references": [],
+      "reviewed_execution": {
+        "artifact": "acceptance-retirement-migration-review.json",
+        "criterion_key": "BASE:T31"
+      }
     },
     {
       "key": "BASE:T32",

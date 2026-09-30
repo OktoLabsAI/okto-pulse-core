@@ -1,0 +1,2179 @@
+{
+  "format": "pulse-v1.3-reviewed-execution/v1",
+  "scope": "BASE T25-T31 reviewed migration campaign",
+  "provenance": {
+    "file": "provenance-retirement-acceptance1.json",
+    "sha256": "586aa885c7df231b7f26a0805896ade542c779ad6add0136d5c160a94763ef90",
+    "identity": {
+      "checked_at": "2026-09-30T22:01:55.987887+00:00",
+      "python": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Scripts\\python.exe",
+      "packages": {
+        "core": {
+          "python_files": 859,
+          "origin": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages\\okto_pulse\\core\\__init__.py",
+          "repository_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_core",
+          "commit": "e26bab3e6b8cd6b94b177876fef64062f71c477d",
+          "dirty": false,
+          "dirty_entry_count": 0,
+          "distribution": "okto-pulse-core",
+          "version": "0.3.4",
+          "wheel": {
+            "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\dist-learning-reconciliation-k2-spec-owner-final\\okto_pulse_core-0.3.4-py3-none-any.whl",
+            "sha256": "a6f77fab8288ae5a91690a7d2796ea8d19db5b10c8a7c7263629553ebeff0312",
+            "size": 3793229
+          },
+          "source_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_core\\src",
+          "site_packages_root": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages",
+          "package_prefix": "okto_pulse/core/",
+          "byte_identical_member_count": 922,
+          "byte_identical": true,
+          "aggregate_sha256": "acb90eccf7d1f8cacb71280c263b68a5e5dc3c26f49552f9b7b91404280eddb7",
+          "chain_hashes": {
+            "source": "acb90eccf7d1f8cacb71280c263b68a5e5dc3c26f49552f9b7b91404280eddb7",
+            "wheel": "acb90eccf7d1f8cacb71280c263b68a5e5dc3c26f49552f9b7b91404280eddb7",
+            "site_packages": "acb90eccf7d1f8cacb71280c263b68a5e5dc3c26f49552f9b7b91404280eddb7"
+          },
+          "critical_resource_sha256": {
+            "okto_pulse/core/mcp/resources/ska_resource_manifest.json": "87fab2a5ded5f6ee273af8628555c21f7065d32379945784132bb6c300d05865",
+            "okto_pulse/core/mcp/resources/ska_tool_manifest.json": "0c3fa3da1549baec20872eca3f4a289288627e6b9f6b80be10472ac962fa72b9"
+          },
+          "mismatches": []
+        },
+        "community": {
+          "python_files": 373,
+          "origin": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages\\okto_pulse\\community\\__init__.py",
+          "repository_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_community",
+          "commit": "fb77beced56033ed86d9d12ff4329c5aba004a94",
+          "dirty": true,
+          "dirty_entry_count": 1,
+          "distribution": "okto-pulse",
+          "version": "0.3.4",
+          "wheel": {
+            "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\dist-learning-reconciliation-k2-spec-owner-final\\okto_pulse-0.3.4-py3-none-any.whl",
+            "sha256": "3d1eb7b80776aa6ba91a8e0e24d194c6d09769d70a4637a6423e0f57872ecd55",
+            "size": 4535175
+          },
+          "source_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_community\\src",
+          "site_packages_root": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages",
+          "package_prefix": "okto_pulse/community/",
+          "byte_identical_member_count": 458,
+          "byte_identical": true,
+          "aggregate_sha256": "94e3b3e820cf74f6c6d891b03b4aed41523ec3396fa781d7cf180f1da379463b",
+          "chain_hashes": {
+            "source": "94e3b3e820cf74f6c6d891b03b4aed41523ec3396fa781d7cf180f1da379463b",
+            "wheel": "94e3b3e820cf74f6c6d891b03b4aed41523ec3396fa781d7cf180f1da379463b",
+            "site_packages": "94e3b3e820cf74f6c6d891b03b4aed41523ec3396fa781d7cf180f1da379463b"
+          },
+          "critical_resource_sha256": {},
+          "mismatches": []
+        }
+      }
+    }
+  },
+  "runs": [
+    {
+      "xml": "learning-reconciliation-retirement-acceptance1-community.xml",
+      "xml_sha256": "9125eef6977d141ee78cf93e1b397e8bdf7675ded3fded0fce9e374bcd72cece",
+      "log": "learning-reconciliation-retirement-acceptance1-community.log",
+      "log_sha256": "afc8fde66a67a1410c2cdd2876b45b6bc8ea1e5f566592c66904ca4a2cdeb5d8",
+      "suites": [
+        {
+          "name": "pytest",
+          "errors": "0",
+          "failures": "0",
+          "skipped": "0",
+          "tests": "119",
+          "time": "540.278",
+          "timestamp": "2026-09-30T19:02:06.966288-03:00",
+          "hostname": "Alienware_m15"
+        }
+      ],
+      "cases": [
+        {
+          "classname": "tests.test_retirement_acceptance_installation",
+          "name": "test_fresh_full_bootstrap_and_second_start_have_no_operational_sprint",
+          "time": "14.127"
+        },
+        {
+          "classname": "tests.test_retirement_acceptance_installation",
+          "name": "test_retired_only_agent_keeps_identity_without_new_operational_authority[direct]",
+          "time": "1.687"
+        },
+        {
+          "classname": "tests.test_retirement_acceptance_installation",
+          "name": "test_retired_only_agent_keeps_identity_without_new_operational_authority[preset]",
+          "time": "1.160"
+        },
+        {
+          "classname": "tests.test_f3_operational_schema_retirement",
+          "name": "test_historical_fixture_isolated_from_operational_metadata_and_mappers",
+          "time": "0.031"
+        },
+        {
+          "classname": "tests.test_f3_operational_schema_retirement",
+          "name": "test_retired_schema_writers_are_not_in_the_active_migration_plan",
+          "time": "0.030"
+        },
+        {
+          "classname": "tests.test_f3_operational_schema_retirement",
+          "name": "test_fresh_schema_steps_never_recreate_retired_tables_columns_or_indexes",
+          "time": "2.461"
+        },
+        {
+          "classname": "tests.test_f3_operational_schema_retirement",
+          "name": "test_old_schema_is_an_offline_source_never_runtime_admission[legacy]",
+          "time": "2.183"
+        },
+        {
+          "classname": "tests.test_f3_operational_schema_retirement",
+          "name": "test_old_schema_is_an_offline_source_never_runtime_admission[origin_only]",
+          "time": "0.053"
+        },
+        {
+          "classname": "tests.test_retirement_v034_cards",
+          "name": "test_original_card_schema_preserves_distinct_policies_and_unlinked_context[False]",
+          "time": "10.464"
+        },
+        {
+          "classname": "tests.test_retirement_v034_cards",
+          "name": "test_original_card_schema_preserves_distinct_policies_and_unlinked_context[True]",
+          "time": "13.959"
+        },
+        {
+          "classname": "tests.test_retirement_v034_cards",
+          "name": "test_additive_column_and_all_policy_effects_rollback_together[audit]",
+          "time": "22.345"
+        },
+        {
+          "classname": "tests.test_retirement_v034_cards",
+          "name": "test_additive_column_and_all_policy_effects_rollback_together[unlinked]",
+          "time": "24.242"
+        },
+        {
+          "classname": "tests.test_retirement_v034_cards",
+          "name": "test_additive_column_and_all_policy_effects_rollback_together[unlinked-context]",
+          "time": "29.679"
+        },
+        {
+          "classname": "tests.test_retirement_v034_cards",
+          "name": "test_replay_never_recreates_lost_compatibility_storage",
+          "time": "13.737"
+        },
+        {
+          "classname": "tests.test_card_validation_retirement",
+          "name": "test_distinct_policies_are_materialized_without_changing_card_identity_or_history",
+          "time": "6.325"
+        },
+        {
+          "classname": "tests.test_card_validation_retirement",
+          "name": "test_equal_values_remain_inherited_and_new_cards_have_no_compatibility",
+          "time": "5.045"
+        },
+        {
+          "classname": "tests.test_card_validation_retirement",
+          "name": "test_history_and_authority_are_required_before_any_detachment[grants]",
+          "time": "2.266"
+        },
+        {
+          "classname": "tests.test_card_validation_retirement",
+          "name": "test_history_and_authority_are_required_before_any_detachment[archive]",
+          "time": "2.431"
+        },
+        {
+          "classname": "tests.test_card_validation_retirement",
+          "name": "test_history_and_authority_are_required_before_any_detachment[board]",
+          "time": "5.330"
+        },
+        {
+          "classname": "tests.test_card_validation_retirement",
+          "name": "test_history_and_authority_are_required_before_any_detachment[stale]",
+          "time": "4.994"
+        },
+        {
+          "classname": "tests.test_card_validation_retirement",
+          "name": "test_atomic_rollback_includes_prior_cards_and_evidence[journal]",
+          "time": "4.600"
+        },
+        {
+          "classname": "tests.test_card_validation_retirement",
+          "name": "test_atomic_rollback_includes_prior_cards_and_evidence[late-card]",
+          "time": "4.660"
+        },
+        {
+          "classname": "tests.test_card_validation_retirement",
+          "name": "test_atomic_rollback_includes_prior_cards_and_evidence[policy]",
+          "time": "4.736"
+        },
+        {
+          "classname": "tests.test_card_validation_retirement",
+          "name": "test_atomic_rollback_includes_prior_cards_and_evidence[journal-card]",
+          "time": "4.817"
+        },
+        {
+          "classname": "tests.test_card_validation_retirement",
+          "name": "test_replay_rejects_damaged_evidence_without_rebasing[delete]",
+          "time": "5.373"
+        },
+        {
+          "classname": "tests.test_card_validation_retirement",
+          "name": "test_replay_rejects_damaged_evidence_without_rebasing[partial]",
+          "time": "4.930"
+        },
+        {
+          "classname": "tests.test_card_validation_retirement",
+          "name": "test_replay_rejects_damaged_evidence_without_rebasing[policy]",
+          "time": "5.444"
+        },
+        {
+          "classname": "tests.test_card_validation_retirement",
+          "name": "test_replay_preserves_later_board_policy_and_card_edits",
+          "time": "4.997"
+        },
+        {
+          "classname": "tests.test_card_validation_retirement",
+          "name": "test_writer_cannot_race_policy_preservation",
+          "time": "5.613"
+        },
+        {
+          "classname": "tests.test_card_validation_retirement",
+          "name": "test_second_audit_blob_failure_rolls_back_cards_and_discards_uncommitted_first_blob",
+          "time": "5.361"
+        },
+        {
+          "classname": "tests.test_card_validation_retirement",
+          "name": "test_invalid_links_block_without_inventing_provenance[orphan]",
+          "time": "3.342"
+        },
+        {
+          "classname": "tests.test_card_validation_retirement",
+          "name": "test_invalid_links_block_without_inventing_provenance[cross_board]",
+          "time": "3.303"
+        },
+        {
+          "classname": "tests.test_card_validation_retirement",
+          "name": "test_policy_layer_limit_rejects_before_detachment",
+          "time": "4.530"
+        },
+        {
+          "classname": "tests.test_permission_retirement_cleanup",
+          "name": "test_cleanup_preserves_authority_and_retains_exact_before_after_without_credentials",
+          "time": "2.601"
+        },
+        {
+          "classname": "tests.test_permission_retirement_cleanup",
+          "name": "test_completed_replay_preserves_owner_edits_and_new_identities",
+          "time": "2.220"
+        },
+        {
+          "classname": "tests.test_permission_retirement_cleanup",
+          "name": "test_completion_corruption_is_not_repaired[before]",
+          "time": "2.072"
+        },
+        {
+          "classname": "tests.test_permission_retirement_cleanup",
+          "name": "test_completion_corruption_is_not_repaired[after]",
+          "time": "2.243"
+        },
+        {
+          "classname": "tests.test_permission_retirement_cleanup",
+          "name": "test_completion_corruption_is_not_repaired[digest]",
+          "time": "2.345"
+        },
+        {
+          "classname": "tests.test_permission_retirement_cleanup",
+          "name": "test_completion_corruption_is_not_repaired[delete]",
+          "time": "2.335"
+        },
+        {
+          "classname": "tests.test_permission_retirement_cleanup",
+          "name": "test_completion_corruption_is_not_repaired[review-delete]",
+          "time": "2.162"
+        },
+        {
+          "classname": "tests.test_permission_retirement_cleanup",
+          "name": "test_completion_corruption_is_not_repaired[extra]",
+          "time": "2.083"
+        },
+        {
+          "classname": "tests.test_permission_retirement_cleanup",
+          "name": "test_failure_rolls_back_flags_markers_and_all_new_evidence[parity]",
+          "time": "1.729"
+        },
+        {
+          "classname": "tests.test_permission_retirement_cleanup",
+          "name": "test_failure_rolls_back_flags_markers_and_all_new_evidence[insert]",
+          "time": "1.994"
+        },
+        {
+          "classname": "tests.test_permission_retirement_cleanup",
+          "name": "test_failure_rolls_back_flags_markers_and_all_new_evidence[limit]",
+          "time": "1.865"
+        },
+        {
+          "classname": "tests.test_permission_retirement_cleanup",
+          "name": "test_failure_rolls_back_flags_markers_and_all_new_evidence[trigger]",
+          "time": "1.746"
+        },
+        {
+          "classname": "tests.test_permission_retirement_cleanup",
+          "name": "test_first_cleanup_after_review_installation_rechecks_source_and_authority[source]",
+          "time": "1.451"
+        },
+        {
+          "classname": "tests.test_permission_retirement_cleanup",
+          "name": "test_first_cleanup_after_review_installation_rechecks_source_and_authority[review]",
+          "time": "1.817"
+        },
+        {
+          "classname": "tests.test_permission_retirement_cleanup",
+          "name": "test_zero_change_completion_requires_retained_receipt_on_resume",
+          "time": "1.006"
+        },
+        {
+          "classname": "tests.test_permission_retirement_cleanup",
+          "name": "test_competing_writer_is_fenced_until_policy_and_evidence_are_committed",
+          "time": "2.479"
+        },
+        {
+          "classname": "tests.test_permission_retirement_cleanup",
+          "name": "test_malformed_retired_scalar_and_unknown_siblings_preserve_review_and_content",
+          "time": "1.342"
+        },
+        {
+          "classname": "tests.test_sprint_retirement_inventory",
+          "name": "test_inventory_refuses_non_community_backend_before_connection[postgresql]",
+          "time": "0.036"
+        },
+        {
+          "classname": "tests.test_sprint_retirement_inventory",
+          "name": "test_inventory_refuses_non_community_backend_before_connection[mysql]",
+          "time": "0.035"
+        },
+        {
+          "classname": "tests.test_sprint_retirement_inventory",
+          "name": "test_inventory_refuses_non_community_backend_before_connection[unknown]",
+          "time": "0.031"
+        },
+        {
+          "classname": "tests.test_sprint_retirement_inventory",
+          "name": "test_empty_sprint_is_counted_without_fabricating_card_or_history",
+          "time": "4.249"
+        },
+        {
+          "classname": "tests.test_sprint_retirement_inventory",
+          "name": "test_cross_spec_test_and_opaque_historical_baseline_members_are_preserved",
+          "time": "2.248"
+        },
+        {
+          "classname": "tests.test_sprint_retirement_inventory",
+          "name": "test_invalid_card_relations_block_whole_inventory_with_ids[changes0-cards.sprint_id-orphan]",
+          "time": "2.318"
+        },
+        {
+          "classname": "tests.test_sprint_retirement_inventory",
+          "name": "test_invalid_card_relations_block_whole_inventory_with_ids[changes1-cards.sprint_id-cross_board]",
+          "time": "2.272"
+        },
+        {
+          "classname": "tests.test_sprint_retirement_inventory",
+          "name": "test_invalid_card_relations_block_whole_inventory_with_ids[changes2-cards.spec_id-orphan]",
+          "time": "2.098"
+        },
+        {
+          "classname": "tests.test_sprint_retirement_inventory",
+          "name": "test_invalid_card_relations_block_whole_inventory_with_ids[changes3-cards.spec_id-cross_board]",
+          "time": "1.879"
+        },
+        {
+          "classname": "tests.test_sprint_retirement_inventory",
+          "name": "test_invalid_card_relations_block_whole_inventory_with_ids[changes4-cards.board_id-orphan]",
+          "time": "1.936"
+        },
+        {
+          "classname": "tests.test_sprint_retirement_inventory",
+          "name": "test_all_orphan_children_are_reported_beyond_twenty_row_health_sample",
+          "time": "1.518"
+        },
+        {
+          "classname": "tests.test_sprint_retirement_inventory",
+          "name": "test_sprint_ancestry_scope_errors_are_not_silently_repaired[board_id='missing'-sprints.board_id-orphan]",
+          "time": "1.919"
+        },
+        {
+          "classname": "tests.test_sprint_retirement_inventory",
+          "name": "test_sprint_ancestry_scope_errors_are_not_silently_repaired[spec_id='missing'-sprints.spec_id-orphan]",
+          "time": "2.069"
+        },
+        {
+          "classname": "tests.test_sprint_retirement_inventory",
+          "name": "test_sprint_ancestry_scope_errors_are_not_silently_repaired[spec_id='spec-b'-sprints.spec_id-cross_board]",
+          "time": "1.692"
+        },
+        {
+          "classname": "tests.test_sprint_retirement_inventory",
+          "name": "test_sprint_ancestry_scope_errors_are_not_silently_repaired[origin_sprint_id='missing'-sprints.origin_sprint_id-orphan]",
+          "time": "1.807"
+        },
+        {
+          "classname": "tests.test_sprint_retirement_inventory",
+          "name": "test_sprint_ancestry_scope_errors_are_not_silently_repaired[origin_bug_id='missing'-sprints.origin_bug_id-orphan]",
+          "time": "2.129"
+        },
+        {
+          "classname": "tests.test_sprint_retirement_inventory",
+          "name": "test_foreign_origins_and_baseline_scope_block_with_source_ids",
+          "time": "1.777"
+        },
+        {
+          "classname": "tests.test_sprint_retirement_inventory",
+          "name": "test_unclassified_physical_references_refuse_even_an_empty_extension[CREATE TABLE extension (id TEXT PRIMARY KEY, parent TEXT REFERENCES sprints(id))]",
+          "time": "1.001"
+        },
+        {
+          "classname": "tests.test_sprint_retirement_inventory",
+          "name": "test_unclassified_physical_references_refuse_even_an_empty_extension[CREATE TABLE extension (id TEXT PRIMARY KEY, parent TEXT REFERENCES sprint_history(id))]",
+          "time": "0.909"
+        },
+        {
+          "classname": "tests.test_sprint_retirement_inventory",
+          "name": "test_unclassified_physical_references_refuse_even_an_empty_extension[CREATE TABLE extension (id TEXT PRIMARY KEY, origin_sprint_id TEXT)]",
+          "time": "0.907"
+        },
+        {
+          "classname": "tests.test_sprint_retirement_inventory",
+          "name": "test_incomplete_schema_and_budget_exhaustion_are_not_empty_success",
+          "time": "2.147"
+        },
+        {
+          "classname": "tests.test_sprint_retirement_inventory",
+          "name": "test_wal_writer_between_queries_cannot_mix_snapshots",
+          "time": "3.145"
+        },
+        {
+          "classname": "tests.test_retirement_schema_storage",
+          "name": "test_cut_preserves_children_raw_data_views_checks_collation_and_trigger",
+          "time": "0.069"
+        },
+        {
+          "classname": "tests.test_retirement_schema_storage",
+          "name": "test_unclassified_dependencies_or_unpreserved_sources_refuse_before_cut[UPDATE sprints SET opaque=X'00']",
+          "time": "0.049"
+        },
+        {
+          "classname": "tests.test_retirement_schema_storage",
+          "name": "test_unclassified_dependencies_or_unpreserved_sources_refuse_before_cut[UPDATE cards SET sprint_id='origin']",
+          "time": "0.046"
+        },
+        {
+          "classname": "tests.test_retirement_schema_storage",
+          "name": "test_unclassified_dependencies_or_unpreserved_sources_refuse_before_cut[CREATE TABLE extension(id TEXT, origin TEXT REFERENCES sprints(id))]",
+          "time": "0.051"
+        },
+        {
+          "classname": "tests.test_retirement_schema_storage",
+          "name": "test_unclassified_dependencies_or_unpreserved_sources_refuse_before_cut[CREATE VIEW extension AS SELECT id FROM 'sprints']",
+          "time": "0.066"
+        },
+        {
+          "classname": "tests.test_retirement_schema_storage",
+          "name": "test_unclassified_dependencies_or_unpreserved_sources_refuse_before_cut[CREATE INDEX extension ON cards(sprint_id,payload)]",
+          "time": "0.056"
+        },
+        {
+          "classname": "tests.test_retirement_schema_storage",
+          "name": "test_unclassified_dependencies_or_unpreserved_sources_refuse_before_cut[CREATE TRIGGER extension AFTER UPDATE ON cards BEGIN UPDATE sprints SET opaque=X'00'; END]",
+          "time": "0.057"
+        },
+        {
+          "classname": "tests.test_retirement_schema_storage",
+          "name": "test_failure_after_drop_rolls_back_ddl_and_all_rows",
+          "time": "0.076"
+        },
+        {
+          "classname": "tests.test_retirement_schema_storage",
+          "name": "test_trigger_sharing_cards_name_keeps_its_guard",
+          "time": "0.066"
+        },
+        {
+          "classname": "tests.test_retirement_schema_storage",
+          "name": "test_trigger_sharing_cards_name_cannot_hide_retired_dependency",
+          "time": "0.056"
+        },
+        {
+          "classname": "tests.test_retirement_data_journal",
+          "name": "test_restart_after_committed_step_never_recaptures_transformed_sources[context-False]",
+          "time": "17.567"
+        },
+        {
+          "classname": "tests.test_retirement_data_journal",
+          "name": "test_restart_after_committed_step_never_recaptures_transformed_sources[cards-True]",
+          "time": "17.339"
+        },
+        {
+          "classname": "tests.test_retirement_data_journal",
+          "name": "test_restart_after_committed_step_never_recaptures_transformed_sources[work-False]",
+          "time": "17.081"
+        },
+        {
+          "classname": "tests.test_retirement_data_journal",
+          "name": "test_checkpoint_trigger_failure_rolls_back_its_data_step_before_resume[1]",
+          "time": "19.524"
+        },
+        {
+          "classname": "tests.test_retirement_data_journal",
+          "name": "test_checkpoint_trigger_failure_rolls_back_its_data_step_before_resume[2]",
+          "time": "19.234"
+        },
+        {
+          "classname": "tests.test_retirement_data_journal",
+          "name": "test_checkpoint_trigger_failure_rolls_back_its_data_step_before_resume[3]",
+          "time": "14.958"
+        },
+        {
+          "classname": "tests.test_retirement_data_journal",
+          "name": "test_changed_input_and_skipped_dependency_fail_before_effects",
+          "time": "5.091"
+        },
+        {
+          "classname": "tests.test_retirement_data_journal",
+          "name": "test_damaged_journal_is_never_reconstructed_or_trusted_as_domain_evidence[middle]",
+          "time": "14.585"
+        },
+        {
+          "classname": "tests.test_retirement_data_journal",
+          "name": "test_damaged_journal_is_never_reconstructed_or_trusted_as_domain_evidence[last]",
+          "time": "14.227"
+        },
+        {
+          "classname": "tests.test_retirement_data_journal",
+          "name": "test_damaged_journal_is_never_reconstructed_or_trusted_as_domain_evidence[all]",
+          "time": "14.369"
+        },
+        {
+          "classname": "tests.test_retirement_data_journal",
+          "name": "test_damaged_journal_is_never_reconstructed_or_trusted_as_domain_evidence[forged-receipt]",
+          "time": "15.640"
+        },
+        {
+          "classname": "tests.test_retirement_data_journal",
+          "name": "test_journal_is_immutable_and_missing_component_evidence_is_not_repaired",
+          "time": "15.325"
+        },
+        {
+          "classname": "tests.test_retirement_data_journal",
+          "name": "test_preexisting_uncoordinated_effects_cannot_be_adopted_as_a_fresh_run",
+          "time": "8.231"
+        },
+        {
+          "classname": "tests.test_retirement_runtime_admission",
+          "name": "test_absent_or_empty_journal_is_admitted_without_writing[False]",
+          "time": "0.039"
+        },
+        {
+          "classname": "tests.test_retirement_runtime_admission",
+          "name": "test_absent_or_empty_journal_is_admitted_without_writing[True]",
+          "time": "0.056"
+        },
+        {
+          "classname": "tests.test_retirement_runtime_admission",
+          "name": "test_activation_artifact_without_journal_cannot_become_a_fresh_install[False]",
+          "time": "0.034"
+        },
+        {
+          "classname": "tests.test_retirement_runtime_admission",
+          "name": "test_activation_artifact_without_journal_cannot_become_a_fresh_install[True]",
+          "time": "0.062"
+        },
+        {
+          "classname": "tests.test_retirement_runtime_admission",
+          "name": "test_invalid_journal_structure_cannot_appear_as_an_empty_ready_database[view]",
+          "time": "0.044"
+        },
+        {
+          "classname": "tests.test_retirement_runtime_admission",
+          "name": "test_invalid_journal_structure_cannot_appear_as_an_empty_ready_database[wrong_columns]",
+          "time": "0.045"
+        },
+        {
+          "classname": "tests.test_retirement_runtime_admission",
+          "name": "test_invalid_journal_structure_cannot_appear_as_an_empty_ready_database[extra_column]",
+          "time": "0.047"
+        },
+        {
+          "classname": "tests.test_retirement_runtime_admission",
+          "name": "test_retained_effect_receipts_block_when_the_data_journal_is_lost[migration.context_dispositions_committed-False]",
+          "time": "0.054"
+        },
+        {
+          "classname": "tests.test_retirement_runtime_admission",
+          "name": "test_retained_effect_receipts_block_when_the_data_journal_is_lost[migration.context_dispositions_committed-True]",
+          "time": "0.056"
+        },
+        {
+          "classname": "tests.test_retirement_runtime_admission",
+          "name": "test_retained_effect_receipts_block_when_the_data_journal_is_lost[historical_context.bound-False]",
+          "time": "0.049"
+        },
+        {
+          "classname": "tests.test_retirement_runtime_admission",
+          "name": "test_retained_effect_receipts_block_when_the_data_journal_is_lost[historical_context.bound-True]",
+          "time": "0.076"
+        },
+        {
+          "classname": "tests.test_retirement_runtime_admission",
+          "name": "test_retained_effect_receipts_block_when_the_data_journal_is_lost[migration.card_validation_preserved-False]",
+          "time": "0.052"
+        },
+        {
+          "classname": "tests.test_retirement_runtime_admission",
+          "name": "test_retained_effect_receipts_block_when_the_data_journal_is_lost[migration.card_validation_preserved-True]",
+          "time": "0.060"
+        },
+        {
+          "classname": "tests.test_retirement_runtime_admission",
+          "name": "test_retained_effect_receipts_block_when_the_data_journal_is_lost[migration.work_superseded-False]",
+          "time": "0.054"
+        },
+        {
+          "classname": "tests.test_retirement_runtime_admission",
+          "name": "test_retained_effect_receipts_block_when_the_data_journal_is_lost[migration.work_superseded-True]",
+          "time": "0.062"
+        },
+        {
+          "classname": "tests.test_retirement_runtime_admission",
+          "name": "test_retained_effect_receipts_block_when_the_data_journal_is_lost[migration.work_retirement_completed-False]",
+          "time": "0.047"
+        },
+        {
+          "classname": "tests.test_retirement_runtime_admission",
+          "name": "test_retained_effect_receipts_block_when_the_data_journal_is_lost[migration.work_retirement_completed-True]",
+          "time": "0.048"
+        },
+        {
+          "classname": "tests.test_retirement_runtime_admission",
+          "name": "test_original_archive_and_unrelated_history_do_not_imply_a_started_cutover",
+          "time": "0.062"
+        },
+        {
+          "classname": "tests.test_retirement_runtime_admission",
+          "name": "test_all_retained_prefixes_block_every_lifecycle_path_before_plan_or_seeds[0]",
+          "time": "0.077"
+        },
+        {
+          "classname": "tests.test_retirement_runtime_admission",
+          "name": "test_all_retained_prefixes_block_every_lifecycle_path_before_plan_or_seeds[1]",
+          "time": "0.088"
+        },
+        {
+          "classname": "tests.test_retirement_runtime_admission",
+          "name": "test_all_retained_prefixes_block_every_lifecycle_path_before_plan_or_seeds[2]",
+          "time": "0.076"
+        },
+        {
+          "classname": "tests.test_retirement_runtime_admission",
+          "name": "test_all_retained_prefixes_block_every_lifecycle_path_before_plan_or_seeds[3]",
+          "time": "0.092"
+        },
+        {
+          "classname": "tests.test_retirement_runtime_admission",
+          "name": "test_completed_data_preservation_blocks_runtime_and_joint_restore_recovers_original_source",
+          "time": "30.906"
+        },
+        {
+          "classname": "tests.test_retirement_runtime_admission",
+          "name": "test_committed_journal_survives_abrupt_process_exit_and_refuses_startup",
+          "time": "7.342"
+        }
+      ]
+    },
+    {
+      "xml": "learning-reconciliation-retirement-population3-community.xml",
+      "xml_sha256": "022d200c8e6e70f2e3854c86fec6e3b787987047e1210e0f09e050b88c8696f4",
+      "log": "learning-reconciliation-retirement-population3-community.log",
+      "log_sha256": "2d4b5ea728798457229640af67a3a77b4ebe01bd039833dd209dca72f08e46e6",
+      "suites": [
+        {
+          "name": "pytest",
+          "errors": "0",
+          "failures": "0",
+          "skipped": "0",
+          "tests": "4",
+          "time": "139.779",
+          "timestamp": "2026-09-30T19:11:15.148106-03:00",
+          "hostname": "Alienware_m15"
+        }
+      ],
+      "cases": [
+        {
+          "classname": "tests.test_retirement_v034_coordinator",
+          "name": "test_real_predecessor_reaches_schema_retired_with_original_backup_and_cold_replay[False-False]",
+          "time": "30.009"
+        },
+        {
+          "classname": "tests.test_retirement_v034_coordinator",
+          "name": "test_real_predecessor_reaches_schema_retired_with_original_backup_and_cold_replay[False-True]",
+          "time": "31.145"
+        },
+        {
+          "classname": "tests.test_retirement_v034_coordinator",
+          "name": "test_real_predecessor_reaches_schema_retired_with_original_backup_and_cold_replay[True-False]",
+          "time": "33.981"
+        },
+        {
+          "classname": "tests.test_retirement_v034_coordinator",
+          "name": "test_real_predecessor_reaches_schema_retired_with_original_backup_and_cold_replay[True-True]",
+          "time": "34.983"
+        }
+      ]
+    },
+    {
+      "xml": "learning-reconciliation-retirement-acceptance-supplement1-community.xml",
+      "xml_sha256": "76442ae5cf6622676b79af7e6beafbd44bac4b0eaa990109e18dfe6ab502189c",
+      "log": "learning-reconciliation-retirement-acceptance-supplement1-community.log",
+      "log_sha256": "292af7bcad62ff3f26d1be499076cac8cde4d352a24c774dad4f058994023bc8",
+      "suites": [
+        {
+          "name": "pytest",
+          "errors": "0",
+          "failures": "0",
+          "skipped": "0",
+          "tests": "5",
+          "time": "54.332",
+          "timestamp": "2026-09-30T19:07:06.726247-03:00",
+          "hostname": "Alienware_m15"
+        }
+      ],
+      "cases": [
+        {
+          "classname": "tests.test_grafx_global_retirement",
+          "name": "test_preparation_rejects_inconsistent_counter_missing_board_and_ambiguous_source[counter]",
+          "time": "15.515"
+        },
+        {
+          "classname": "tests.test_grafx_global_retirement",
+          "name": "test_preparation_rejects_inconsistent_counter_missing_board_and_ambiguous_source[missing_summary]",
+          "time": "15.601"
+        },
+        {
+          "classname": "tests.test_grafx_global_retirement",
+          "name": "test_preparation_rejects_inconsistent_counter_missing_board_and_ambiguous_source[source_alias]",
+          "time": "15.340"
+        },
+        {
+          "classname": "tests.test_sprint_retirement_archive",
+          "name": "test_empty_sprint_and_two_boards_archive_exact_history_without_new_cards",
+          "time": "3.342"
+        },
+        {
+          "classname": "tests.test_sprint_retirement_archive",
+          "name": "test_archived_sprint_survives_spec_cascade_without_rewriting_history",
+          "time": "1.743"
+        }
+      ]
+    },
+    {
+      "xml": "learning-reconciliation-retirement-position-contract1-community.xml",
+      "xml_sha256": "bb93790f9fbf06606b4c1cc4514bb6468d36e21f157eec18a1b8121562ddbb36",
+      "log": "learning-reconciliation-retirement-position-contract1-community.log",
+      "log_sha256": "894e2b14b856fc896ff940623da0076a9f1e927b515cbdcb2620db369fcddf15",
+      "suites": [
+        {
+          "name": "pytest",
+          "errors": "0",
+          "failures": "0",
+          "skipped": "0",
+          "tests": "1",
+          "time": "5.298",
+          "timestamp": "2026-09-30T19:11:43.429641-03:00",
+          "hostname": "Alienware_m15"
+        }
+      ],
+      "cases": [
+        {
+          "classname": "tests.test_pagination_migration",
+          "name": "test_backfill_normalizes_and_is_idempotent",
+          "time": "3.221"
+        }
+      ]
+    }
+  ],
+  "retained_intermediate_runs": [
+    {
+      "xml": "learning-reconciliation-retirement-population1-community.xml",
+      "xml_sha256": "c636dbe101534c4524b1aa047705278ac312303e9f08350a9fac13abe8805cb1",
+      "log": "learning-reconciliation-retirement-population1-community.log",
+      "log_sha256": "55b4de21e52c1d84a141f1c078fe10927d2a85a3ac6d206636f136a15b77ee0a",
+      "suites": [
+        {
+          "name": "pytest",
+          "errors": "0",
+          "failures": "0",
+          "skipped": "0",
+          "tests": "4",
+          "time": "162.071",
+          "timestamp": "2026-09-30T19:04:06.791307-03:00",
+          "hostname": "Alienware_m15"
+        }
+      ],
+      "cases": [
+        {
+          "classname": "tests.test_retirement_v034_coordinator",
+          "name": "test_real_predecessor_reaches_schema_retired_with_original_backup_and_cold_replay[False-False]",
+          "time": "31.540"
+        },
+        {
+          "classname": "tests.test_retirement_v034_coordinator",
+          "name": "test_real_predecessor_reaches_schema_retired_with_original_backup_and_cold_replay[False-True]",
+          "time": "33.471"
+        },
+        {
+          "classname": "tests.test_retirement_v034_coordinator",
+          "name": "test_real_predecessor_reaches_schema_retired_with_original_backup_and_cold_replay[True-False]",
+          "time": "37.010"
+        },
+        {
+          "classname": "tests.test_retirement_v034_coordinator",
+          "name": "test_real_predecessor_reaches_schema_retired_with_original_backup_and_cold_replay[True-True]",
+          "time": "41.474"
+        }
+      ]
+    },
+    {
+      "xml": "learning-reconciliation-retirement-population2-community.xml",
+      "xml_sha256": "56c2f02f7d1bab7e24523c88fc5c1637cc61fa7388dd2f41ae061e1a9cc17066",
+      "log": "learning-reconciliation-retirement-population2-community.log",
+      "log_sha256": "376c965d113b8138c5861cd2e43471386445f11a582938defc9cb1232e066440",
+      "suites": [
+        {
+          "name": "pytest",
+          "errors": "0",
+          "failures": "1",
+          "skipped": "0",
+          "tests": "1",
+          "time": "41.462",
+          "timestamp": "2026-09-30T19:08:00.849026-03:00",
+          "hostname": "Alienware_m15"
+        }
+      ],
+      "cases": [
+        {
+          "classname": "tests.test_retirement_v034_coordinator",
+          "name": "test_real_predecessor_reaches_schema_retired_with_original_backup_and_cold_replay[False-False]",
+          "time": "29.808"
+        }
+      ]
+    }
+  ],
+  "distinct_final_cases": 129,
+  "criteria": {
+    "BASE:T25": {
+      "status": "verified_by_reviewed_execution",
+      "remaining": null,
+      "covered": "Fresh init_db in two new processes creates no operational Sprint SQL objects or Card sprint_id; seeded permission presets contain no retired leaves and remain identical on second startup. Current ORM metadata/mappers/FKs and migration ledger exclude retired schema writers.",
+      "evidence": [
+        {
+          "repository": "community",
+          "file": "tests/test_retirement_acceptance_installation.py",
+          "source_sha256": "7551e7c2894b718bea8b4155bd809ff3ffbdf71447278bad6ef6713c366328fc",
+          "executions": [
+            {
+              "classname": "tests.test_retirement_acceptance_installation",
+              "name": "test_fresh_full_bootstrap_and_second_start_have_no_operational_sprint",
+              "time": "14.127"
+            },
+            {
+              "classname": "tests.test_retirement_acceptance_installation",
+              "name": "test_retired_only_agent_keeps_identity_without_new_operational_authority[direct]",
+              "time": "1.687"
+            },
+            {
+              "classname": "tests.test_retirement_acceptance_installation",
+              "name": "test_retired_only_agent_keeps_identity_without_new_operational_authority[preset]",
+              "time": "1.160"
+            }
+          ]
+        },
+        {
+          "repository": "community",
+          "file": "tests/test_f3_operational_schema_retirement.py",
+          "source_sha256": "4af5835b685e5bd8cff7a4e08393821b916b13c095f74d67c3d8609794f04cc9",
+          "executions": [
+            {
+              "classname": "tests.test_f3_operational_schema_retirement",
+              "name": "test_historical_fixture_isolated_from_operational_metadata_and_mappers",
+              "time": "0.031"
+            },
+            {
+              "classname": "tests.test_f3_operational_schema_retirement",
+              "name": "test_retired_schema_writers_are_not_in_the_active_migration_plan",
+              "time": "0.030"
+            },
+            {
+              "classname": "tests.test_f3_operational_schema_retirement",
+              "name": "test_fresh_schema_steps_never_recreate_retired_tables_columns_or_indexes",
+              "time": "2.461"
+            },
+            {
+              "classname": "tests.test_f3_operational_schema_retirement",
+              "name": "test_old_schema_is_an_offline_source_never_runtime_admission[legacy]",
+              "time": "2.183"
+            },
+            {
+              "classname": "tests.test_f3_operational_schema_retirement",
+              "name": "test_old_schema_is_an_offline_source_never_runtime_admission[origin_only]",
+              "time": "0.053"
+            }
+          ]
+        }
+      ]
+    },
+    "BASE:T26": {
+      "status": "verified_by_reviewed_execution",
+      "remaining": null,
+      "covered": "Frozen real v0.3.4 schema extended only in disposable copy with active/closed/cancelled/empty Sprints. Physical cut preserves all original Card/Spec/Ideation/Refinement cells except explicit Sprint detach/policy compatibility fields; bootstrap/cold replay preserves the remaining cells and canonical Card order. Original archive preserves exact Q&A/evaluation strings, authors and empty populations.",
+      "evidence": [
+        {
+          "repository": "community",
+          "file": "tests/test_retirement_v034_coordinator.py",
+          "source_sha256": "61e004d488b536de95d310bce6132a6ae88415278b9078652cde18f8e5ece6f7",
+          "executions": [
+            {
+              "classname": "tests.test_retirement_v034_coordinator",
+              "name": "test_real_predecessor_reaches_schema_retired_with_original_backup_and_cold_replay[False-False]",
+              "time": "30.009"
+            },
+            {
+              "classname": "tests.test_retirement_v034_coordinator",
+              "name": "test_real_predecessor_reaches_schema_retired_with_original_backup_and_cold_replay[False-True]",
+              "time": "31.145"
+            },
+            {
+              "classname": "tests.test_retirement_v034_coordinator",
+              "name": "test_real_predecessor_reaches_schema_retired_with_original_backup_and_cold_replay[True-False]",
+              "time": "33.981"
+            },
+            {
+              "classname": "tests.test_retirement_v034_coordinator",
+              "name": "test_real_predecessor_reaches_schema_retired_with_original_backup_and_cold_replay[True-True]",
+              "time": "34.983"
+            }
+          ]
+        },
+        {
+          "repository": "community",
+          "file": "tests/test_sprint_retirement_archive.py",
+          "source_sha256": "e5230e5de8eb9e7a7b0731bf8be60d3fca8465dde4bdf6f7c92b8d7365d24c70",
+          "executions": [
+            {
+              "classname": "tests.test_sprint_retirement_archive",
+              "name": "test_empty_sprint_and_two_boards_archive_exact_history_without_new_cards",
+              "time": "3.342"
+            },
+            {
+              "classname": "tests.test_sprint_retirement_archive",
+              "name": "test_archived_sprint_survives_spec_cascade_without_rewriting_history",
+              "time": "1.743"
+            }
+          ]
+        },
+        {
+          "repository": "community",
+          "file": "tests/test_pagination_migration.py",
+          "source_sha256": "4658db44ed188729753ab73c5f7583fcba31b9f4eff79ab687d512baa85ea79d",
+          "executions": [
+            {
+              "classname": "tests.test_pagination_migration",
+              "name": "test_backfill_normalizes_and_is_idempotent",
+              "time": "3.221"
+            }
+          ]
+        }
+      ]
+    },
+    "BASE:T27": {
+      "status": "verified_by_reviewed_execution",
+      "remaining": null,
+      "covered": "Same-Spec Cards retain distinct 90/60 confidence, false required and zero drift overrides, with spec-inherited completeness and source provenance. Equal inherited values do not create compatibility overrides. Frozen predecessor schema, unlinked Cards, replay and policy-race rollback covered.",
+      "evidence": [
+        {
+          "repository": "community",
+          "file": "tests/test_card_validation_retirement.py",
+          "source_sha256": "39931d4eb0bb449d28e1788aee4726ea9caf8e931edd1fe20d1eb3e4cee1c1d0",
+          "executions": [
+            {
+              "classname": "tests.test_card_validation_retirement",
+              "name": "test_distinct_policies_are_materialized_without_changing_card_identity_or_history",
+              "time": "6.325"
+            },
+            {
+              "classname": "tests.test_card_validation_retirement",
+              "name": "test_equal_values_remain_inherited_and_new_cards_have_no_compatibility",
+              "time": "5.045"
+            },
+            {
+              "classname": "tests.test_card_validation_retirement",
+              "name": "test_history_and_authority_are_required_before_any_detachment[grants]",
+              "time": "2.266"
+            },
+            {
+              "classname": "tests.test_card_validation_retirement",
+              "name": "test_history_and_authority_are_required_before_any_detachment[archive]",
+              "time": "2.431"
+            },
+            {
+              "classname": "tests.test_card_validation_retirement",
+              "name": "test_history_and_authority_are_required_before_any_detachment[board]",
+              "time": "5.330"
+            },
+            {
+              "classname": "tests.test_card_validation_retirement",
+              "name": "test_history_and_authority_are_required_before_any_detachment[stale]",
+              "time": "4.994"
+            },
+            {
+              "classname": "tests.test_card_validation_retirement",
+              "name": "test_atomic_rollback_includes_prior_cards_and_evidence[journal]",
+              "time": "4.600"
+            },
+            {
+              "classname": "tests.test_card_validation_retirement",
+              "name": "test_atomic_rollback_includes_prior_cards_and_evidence[late-card]",
+              "time": "4.660"
+            },
+            {
+              "classname": "tests.test_card_validation_retirement",
+              "name": "test_atomic_rollback_includes_prior_cards_and_evidence[policy]",
+              "time": "4.736"
+            },
+            {
+              "classname": "tests.test_card_validation_retirement",
+              "name": "test_atomic_rollback_includes_prior_cards_and_evidence[journal-card]",
+              "time": "4.817"
+            },
+            {
+              "classname": "tests.test_card_validation_retirement",
+              "name": "test_replay_rejects_damaged_evidence_without_rebasing[delete]",
+              "time": "5.373"
+            },
+            {
+              "classname": "tests.test_card_validation_retirement",
+              "name": "test_replay_rejects_damaged_evidence_without_rebasing[partial]",
+              "time": "4.930"
+            },
+            {
+              "classname": "tests.test_card_validation_retirement",
+              "name": "test_replay_rejects_damaged_evidence_without_rebasing[policy]",
+              "time": "5.444"
+            },
+            {
+              "classname": "tests.test_card_validation_retirement",
+              "name": "test_replay_preserves_later_board_policy_and_card_edits",
+              "time": "4.997"
+            },
+            {
+              "classname": "tests.test_card_validation_retirement",
+              "name": "test_writer_cannot_race_policy_preservation",
+              "time": "5.613"
+            },
+            {
+              "classname": "tests.test_card_validation_retirement",
+              "name": "test_second_audit_blob_failure_rolls_back_cards_and_discards_uncommitted_first_blob",
+              "time": "5.361"
+            },
+            {
+              "classname": "tests.test_card_validation_retirement",
+              "name": "test_invalid_links_block_without_inventing_provenance[orphan]",
+              "time": "3.342"
+            },
+            {
+              "classname": "tests.test_card_validation_retirement",
+              "name": "test_invalid_links_block_without_inventing_provenance[cross_board]",
+              "time": "3.303"
+            },
+            {
+              "classname": "tests.test_card_validation_retirement",
+              "name": "test_policy_layer_limit_rejects_before_detachment",
+              "time": "4.530"
+            }
+          ]
+        },
+        {
+          "repository": "community",
+          "file": "tests/test_retirement_v034_cards.py",
+          "source_sha256": "9b985118671df7d6c3352da4972fdc2b27caeb0312749d74680f027cae58724e",
+          "executions": [
+            {
+              "classname": "tests.test_retirement_v034_cards",
+              "name": "test_original_card_schema_preserves_distinct_policies_and_unlinked_context[False]",
+              "time": "10.464"
+            },
+            {
+              "classname": "tests.test_retirement_v034_cards",
+              "name": "test_original_card_schema_preserves_distinct_policies_and_unlinked_context[True]",
+              "time": "13.959"
+            },
+            {
+              "classname": "tests.test_retirement_v034_cards",
+              "name": "test_additive_column_and_all_policy_effects_rollback_together[audit]",
+              "time": "22.345"
+            },
+            {
+              "classname": "tests.test_retirement_v034_cards",
+              "name": "test_additive_column_and_all_policy_effects_rollback_together[unlinked]",
+              "time": "24.242"
+            },
+            {
+              "classname": "tests.test_retirement_v034_cards",
+              "name": "test_additive_column_and_all_policy_effects_rollback_together[unlinked-context]",
+              "time": "29.679"
+            },
+            {
+              "classname": "tests.test_retirement_v034_cards",
+              "name": "test_replay_never_recreates_lost_compatibility_storage",
+              "time": "13.737"
+            }
+          ]
+        }
+      ]
+    },
+    "BASE:T28": {
+      "status": "verified_by_reviewed_execution",
+      "remaining": null,
+      "covered": "Retired-only grants on direct and preset layers leave agent identity/credential/lifecycle fields unchanged and no current operational permission allowed. Cleanup preserves malformed/review classifications and prior effective authority without exposing credential material in migration evidence.",
+      "evidence": [
+        {
+          "repository": "community",
+          "file": "tests/test_retirement_acceptance_installation.py",
+          "source_sha256": "7551e7c2894b718bea8b4155bd809ff3ffbdf71447278bad6ef6713c366328fc",
+          "executions": [
+            {
+              "classname": "tests.test_retirement_acceptance_installation",
+              "name": "test_fresh_full_bootstrap_and_second_start_have_no_operational_sprint",
+              "time": "14.127"
+            },
+            {
+              "classname": "tests.test_retirement_acceptance_installation",
+              "name": "test_retired_only_agent_keeps_identity_without_new_operational_authority[direct]",
+              "time": "1.687"
+            },
+            {
+              "classname": "tests.test_retirement_acceptance_installation",
+              "name": "test_retired_only_agent_keeps_identity_without_new_operational_authority[preset]",
+              "time": "1.160"
+            }
+          ]
+        },
+        {
+          "repository": "community",
+          "file": "tests/test_permission_retirement_cleanup.py",
+          "source_sha256": "ba2103851560dcb43af5edebd8e2e84a9ba779c8542d366010b8070130150fa7",
+          "executions": [
+            {
+              "classname": "tests.test_permission_retirement_cleanup",
+              "name": "test_cleanup_preserves_authority_and_retains_exact_before_after_without_credentials",
+              "time": "2.601"
+            },
+            {
+              "classname": "tests.test_permission_retirement_cleanup",
+              "name": "test_completed_replay_preserves_owner_edits_and_new_identities",
+              "time": "2.220"
+            },
+            {
+              "classname": "tests.test_permission_retirement_cleanup",
+              "name": "test_completion_corruption_is_not_repaired[before]",
+              "time": "2.072"
+            },
+            {
+              "classname": "tests.test_permission_retirement_cleanup",
+              "name": "test_completion_corruption_is_not_repaired[after]",
+              "time": "2.243"
+            },
+            {
+              "classname": "tests.test_permission_retirement_cleanup",
+              "name": "test_completion_corruption_is_not_repaired[digest]",
+              "time": "2.345"
+            },
+            {
+              "classname": "tests.test_permission_retirement_cleanup",
+              "name": "test_completion_corruption_is_not_repaired[delete]",
+              "time": "2.335"
+            },
+            {
+              "classname": "tests.test_permission_retirement_cleanup",
+              "name": "test_completion_corruption_is_not_repaired[review-delete]",
+              "time": "2.162"
+            },
+            {
+              "classname": "tests.test_permission_retirement_cleanup",
+              "name": "test_completion_corruption_is_not_repaired[extra]",
+              "time": "2.083"
+            },
+            {
+              "classname": "tests.test_permission_retirement_cleanup",
+              "name": "test_failure_rolls_back_flags_markers_and_all_new_evidence[parity]",
+              "time": "1.729"
+            },
+            {
+              "classname": "tests.test_permission_retirement_cleanup",
+              "name": "test_failure_rolls_back_flags_markers_and_all_new_evidence[insert]",
+              "time": "1.994"
+            },
+            {
+              "classname": "tests.test_permission_retirement_cleanup",
+              "name": "test_failure_rolls_back_flags_markers_and_all_new_evidence[limit]",
+              "time": "1.865"
+            },
+            {
+              "classname": "tests.test_permission_retirement_cleanup",
+              "name": "test_failure_rolls_back_flags_markers_and_all_new_evidence[trigger]",
+              "time": "1.746"
+            },
+            {
+              "classname": "tests.test_permission_retirement_cleanup",
+              "name": "test_first_cleanup_after_review_installation_rechecks_source_and_authority[source]",
+              "time": "1.451"
+            },
+            {
+              "classname": "tests.test_permission_retirement_cleanup",
+              "name": "test_first_cleanup_after_review_installation_rechecks_source_and_authority[review]",
+              "time": "1.817"
+            },
+            {
+              "classname": "tests.test_permission_retirement_cleanup",
+              "name": "test_zero_change_completion_requires_retained_receipt_on_resume",
+              "time": "1.006"
+            },
+            {
+              "classname": "tests.test_permission_retirement_cleanup",
+              "name": "test_competing_writer_is_fenced_until_policy_and_evidence_are_committed",
+              "time": "2.479"
+            },
+            {
+              "classname": "tests.test_permission_retirement_cleanup",
+              "name": "test_malformed_retired_scalar_and_unknown_siblings_preserve_review_and_content",
+              "time": "1.342"
+            }
+          ]
+        }
+      ]
+    },
+    "BASE:T29": {
+      "status": "partial",
+      "covered": "Archive, policy, permission documents, data journal and schema-cut cold replays retain exact prior receipts and database dumps; no repeated effects in these stages.",
+      "remaining": "End-to-end replay through final graph reconciliation/activation with the installed candidate pair remains unverified by this campaign. Stage idempotency is not final migration readiness.",
+      "evidence": [
+        {
+          "repository": "community",
+          "file": "tests/test_retirement_v034_coordinator.py",
+          "source_sha256": "61e004d488b536de95d310bce6132a6ae88415278b9078652cde18f8e5ece6f7",
+          "executions": [
+            {
+              "classname": "tests.test_retirement_v034_coordinator",
+              "name": "test_real_predecessor_reaches_schema_retired_with_original_backup_and_cold_replay[False-False]",
+              "time": "30.009"
+            },
+            {
+              "classname": "tests.test_retirement_v034_coordinator",
+              "name": "test_real_predecessor_reaches_schema_retired_with_original_backup_and_cold_replay[False-True]",
+              "time": "31.145"
+            },
+            {
+              "classname": "tests.test_retirement_v034_coordinator",
+              "name": "test_real_predecessor_reaches_schema_retired_with_original_backup_and_cold_replay[True-False]",
+              "time": "33.981"
+            },
+            {
+              "classname": "tests.test_retirement_v034_coordinator",
+              "name": "test_real_predecessor_reaches_schema_retired_with_original_backup_and_cold_replay[True-True]",
+              "time": "34.983"
+            }
+          ]
+        },
+        {
+          "repository": "community",
+          "file": "tests/test_card_validation_retirement.py",
+          "source_sha256": "39931d4eb0bb449d28e1788aee4726ea9caf8e931edd1fe20d1eb3e4cee1c1d0",
+          "executions": [
+            {
+              "classname": "tests.test_card_validation_retirement",
+              "name": "test_distinct_policies_are_materialized_without_changing_card_identity_or_history",
+              "time": "6.325"
+            },
+            {
+              "classname": "tests.test_card_validation_retirement",
+              "name": "test_equal_values_remain_inherited_and_new_cards_have_no_compatibility",
+              "time": "5.045"
+            },
+            {
+              "classname": "tests.test_card_validation_retirement",
+              "name": "test_history_and_authority_are_required_before_any_detachment[grants]",
+              "time": "2.266"
+            },
+            {
+              "classname": "tests.test_card_validation_retirement",
+              "name": "test_history_and_authority_are_required_before_any_detachment[archive]",
+              "time": "2.431"
+            },
+            {
+              "classname": "tests.test_card_validation_retirement",
+              "name": "test_history_and_authority_are_required_before_any_detachment[board]",
+              "time": "5.330"
+            },
+            {
+              "classname": "tests.test_card_validation_retirement",
+              "name": "test_history_and_authority_are_required_before_any_detachment[stale]",
+              "time": "4.994"
+            },
+            {
+              "classname": "tests.test_card_validation_retirement",
+              "name": "test_atomic_rollback_includes_prior_cards_and_evidence[journal]",
+              "time": "4.600"
+            },
+            {
+              "classname": "tests.test_card_validation_retirement",
+              "name": "test_atomic_rollback_includes_prior_cards_and_evidence[late-card]",
+              "time": "4.660"
+            },
+            {
+              "classname": "tests.test_card_validation_retirement",
+              "name": "test_atomic_rollback_includes_prior_cards_and_evidence[policy]",
+              "time": "4.736"
+            },
+            {
+              "classname": "tests.test_card_validation_retirement",
+              "name": "test_atomic_rollback_includes_prior_cards_and_evidence[journal-card]",
+              "time": "4.817"
+            },
+            {
+              "classname": "tests.test_card_validation_retirement",
+              "name": "test_replay_rejects_damaged_evidence_without_rebasing[delete]",
+              "time": "5.373"
+            },
+            {
+              "classname": "tests.test_card_validation_retirement",
+              "name": "test_replay_rejects_damaged_evidence_without_rebasing[partial]",
+              "time": "4.930"
+            },
+            {
+              "classname": "tests.test_card_validation_retirement",
+              "name": "test_replay_rejects_damaged_evidence_without_rebasing[policy]",
+              "time": "5.444"
+            },
+            {
+              "classname": "tests.test_card_validation_retirement",
+              "name": "test_replay_preserves_later_board_policy_and_card_edits",
+              "time": "4.997"
+            },
+            {
+              "classname": "tests.test_card_validation_retirement",
+              "name": "test_writer_cannot_race_policy_preservation",
+              "time": "5.613"
+            },
+            {
+              "classname": "tests.test_card_validation_retirement",
+              "name": "test_second_audit_blob_failure_rolls_back_cards_and_discards_uncommitted_first_blob",
+              "time": "5.361"
+            },
+            {
+              "classname": "tests.test_card_validation_retirement",
+              "name": "test_invalid_links_block_without_inventing_provenance[orphan]",
+              "time": "3.342"
+            },
+            {
+              "classname": "tests.test_card_validation_retirement",
+              "name": "test_invalid_links_block_without_inventing_provenance[cross_board]",
+              "time": "3.303"
+            },
+            {
+              "classname": "tests.test_card_validation_retirement",
+              "name": "test_policy_layer_limit_rejects_before_detachment",
+              "time": "4.530"
+            }
+          ]
+        },
+        {
+          "repository": "community",
+          "file": "tests/test_retirement_data_journal.py",
+          "source_sha256": "268ccfab973aca12c98cd5a4a4be73bf28904def3268c1accc05474b837e9cff",
+          "executions": [
+            {
+              "classname": "tests.test_retirement_data_journal",
+              "name": "test_restart_after_committed_step_never_recaptures_transformed_sources[context-False]",
+              "time": "17.567"
+            },
+            {
+              "classname": "tests.test_retirement_data_journal",
+              "name": "test_restart_after_committed_step_never_recaptures_transformed_sources[cards-True]",
+              "time": "17.339"
+            },
+            {
+              "classname": "tests.test_retirement_data_journal",
+              "name": "test_restart_after_committed_step_never_recaptures_transformed_sources[work-False]",
+              "time": "17.081"
+            },
+            {
+              "classname": "tests.test_retirement_data_journal",
+              "name": "test_checkpoint_trigger_failure_rolls_back_its_data_step_before_resume[1]",
+              "time": "19.524"
+            },
+            {
+              "classname": "tests.test_retirement_data_journal",
+              "name": "test_checkpoint_trigger_failure_rolls_back_its_data_step_before_resume[2]",
+              "time": "19.234"
+            },
+            {
+              "classname": "tests.test_retirement_data_journal",
+              "name": "test_checkpoint_trigger_failure_rolls_back_its_data_step_before_resume[3]",
+              "time": "14.958"
+            },
+            {
+              "classname": "tests.test_retirement_data_journal",
+              "name": "test_changed_input_and_skipped_dependency_fail_before_effects",
+              "time": "5.091"
+            },
+            {
+              "classname": "tests.test_retirement_data_journal",
+              "name": "test_damaged_journal_is_never_reconstructed_or_trusted_as_domain_evidence[middle]",
+              "time": "14.585"
+            },
+            {
+              "classname": "tests.test_retirement_data_journal",
+              "name": "test_damaged_journal_is_never_reconstructed_or_trusted_as_domain_evidence[last]",
+              "time": "14.227"
+            },
+            {
+              "classname": "tests.test_retirement_data_journal",
+              "name": "test_damaged_journal_is_never_reconstructed_or_trusted_as_domain_evidence[all]",
+              "time": "14.369"
+            },
+            {
+              "classname": "tests.test_retirement_data_journal",
+              "name": "test_damaged_journal_is_never_reconstructed_or_trusted_as_domain_evidence[forged-receipt]",
+              "time": "15.640"
+            },
+            {
+              "classname": "tests.test_retirement_data_journal",
+              "name": "test_journal_is_immutable_and_missing_component_evidence_is_not_repaired",
+              "time": "15.325"
+            },
+            {
+              "classname": "tests.test_retirement_data_journal",
+              "name": "test_preexisting_uncoordinated_effects_cannot_be_adopted_as_a_fresh_run",
+              "time": "8.231"
+            }
+          ]
+        },
+        {
+          "repository": "community",
+          "file": "tests/test_permission_retirement_cleanup.py",
+          "source_sha256": "ba2103851560dcb43af5edebd8e2e84a9ba779c8542d366010b8070130150fa7",
+          "executions": [
+            {
+              "classname": "tests.test_permission_retirement_cleanup",
+              "name": "test_cleanup_preserves_authority_and_retains_exact_before_after_without_credentials",
+              "time": "2.601"
+            },
+            {
+              "classname": "tests.test_permission_retirement_cleanup",
+              "name": "test_completed_replay_preserves_owner_edits_and_new_identities",
+              "time": "2.220"
+            },
+            {
+              "classname": "tests.test_permission_retirement_cleanup",
+              "name": "test_completion_corruption_is_not_repaired[before]",
+              "time": "2.072"
+            },
+            {
+              "classname": "tests.test_permission_retirement_cleanup",
+              "name": "test_completion_corruption_is_not_repaired[after]",
+              "time": "2.243"
+            },
+            {
+              "classname": "tests.test_permission_retirement_cleanup",
+              "name": "test_completion_corruption_is_not_repaired[digest]",
+              "time": "2.345"
+            },
+            {
+              "classname": "tests.test_permission_retirement_cleanup",
+              "name": "test_completion_corruption_is_not_repaired[delete]",
+              "time": "2.335"
+            },
+            {
+              "classname": "tests.test_permission_retirement_cleanup",
+              "name": "test_completion_corruption_is_not_repaired[review-delete]",
+              "time": "2.162"
+            },
+            {
+              "classname": "tests.test_permission_retirement_cleanup",
+              "name": "test_completion_corruption_is_not_repaired[extra]",
+              "time": "2.083"
+            },
+            {
+              "classname": "tests.test_permission_retirement_cleanup",
+              "name": "test_failure_rolls_back_flags_markers_and_all_new_evidence[parity]",
+              "time": "1.729"
+            },
+            {
+              "classname": "tests.test_permission_retirement_cleanup",
+              "name": "test_failure_rolls_back_flags_markers_and_all_new_evidence[insert]",
+              "time": "1.994"
+            },
+            {
+              "classname": "tests.test_permission_retirement_cleanup",
+              "name": "test_failure_rolls_back_flags_markers_and_all_new_evidence[limit]",
+              "time": "1.865"
+            },
+            {
+              "classname": "tests.test_permission_retirement_cleanup",
+              "name": "test_failure_rolls_back_flags_markers_and_all_new_evidence[trigger]",
+              "time": "1.746"
+            },
+            {
+              "classname": "tests.test_permission_retirement_cleanup",
+              "name": "test_first_cleanup_after_review_installation_rechecks_source_and_authority[source]",
+              "time": "1.451"
+            },
+            {
+              "classname": "tests.test_permission_retirement_cleanup",
+              "name": "test_first_cleanup_after_review_installation_rechecks_source_and_authority[review]",
+              "time": "1.817"
+            },
+            {
+              "classname": "tests.test_permission_retirement_cleanup",
+              "name": "test_zero_change_completion_requires_retained_receipt_on_resume",
+              "time": "1.006"
+            },
+            {
+              "classname": "tests.test_permission_retirement_cleanup",
+              "name": "test_competing_writer_is_fenced_until_policy_and_evidence_are_committed",
+              "time": "2.479"
+            },
+            {
+              "classname": "tests.test_permission_retirement_cleanup",
+              "name": "test_malformed_retired_scalar_and_unknown_siblings_preserve_review_and_content",
+              "time": "1.342"
+            }
+          ]
+        },
+        {
+          "repository": "community",
+          "file": "tests/test_sprint_retirement_archive.py",
+          "source_sha256": "e5230e5de8eb9e7a7b0731bf8be60d3fca8465dde4bdf6f7c92b8d7365d24c70",
+          "executions": [
+            {
+              "classname": "tests.test_sprint_retirement_archive",
+              "name": "test_empty_sprint_and_two_boards_archive_exact_history_without_new_cards",
+              "time": "3.342"
+            },
+            {
+              "classname": "tests.test_sprint_retirement_archive",
+              "name": "test_archived_sprint_survives_spec_cascade_without_rewriting_history",
+              "time": "1.743"
+            }
+          ]
+        }
+      ]
+    },
+    "BASE:T30": {
+      "status": "partial",
+      "covered": "Interruption after committed data steps resumes from retained proof, checkpoint/data writes rollback together, physical DDL failure restores rows, and fresh-process runtime admission rejects incomplete/lost/forged cutover evidence. Joint relational/storage restoration is exercised.",
+      "remaining": "Current installed predecessor/candidate paired-runtime rollback with native graph history and final activation must be rerun as delivery evidence. Synthetic build identifiers in adapter tests are not a paired-runtime rollback certificate.",
+      "evidence": [
+        {
+          "repository": "community",
+          "file": "tests/test_retirement_data_journal.py",
+          "source_sha256": "268ccfab973aca12c98cd5a4a4be73bf28904def3268c1accc05474b837e9cff",
+          "executions": [
+            {
+              "classname": "tests.test_retirement_data_journal",
+              "name": "test_restart_after_committed_step_never_recaptures_transformed_sources[context-False]",
+              "time": "17.567"
+            },
+            {
+              "classname": "tests.test_retirement_data_journal",
+              "name": "test_restart_after_committed_step_never_recaptures_transformed_sources[cards-True]",
+              "time": "17.339"
+            },
+            {
+              "classname": "tests.test_retirement_data_journal",
+              "name": "test_restart_after_committed_step_never_recaptures_transformed_sources[work-False]",
+              "time": "17.081"
+            },
+            {
+              "classname": "tests.test_retirement_data_journal",
+              "name": "test_checkpoint_trigger_failure_rolls_back_its_data_step_before_resume[1]",
+              "time": "19.524"
+            },
+            {
+              "classname": "tests.test_retirement_data_journal",
+              "name": "test_checkpoint_trigger_failure_rolls_back_its_data_step_before_resume[2]",
+              "time": "19.234"
+            },
+            {
+              "classname": "tests.test_retirement_data_journal",
+              "name": "test_checkpoint_trigger_failure_rolls_back_its_data_step_before_resume[3]",
+              "time": "14.958"
+            },
+            {
+              "classname": "tests.test_retirement_data_journal",
+              "name": "test_changed_input_and_skipped_dependency_fail_before_effects",
+              "time": "5.091"
+            },
+            {
+              "classname": "tests.test_retirement_data_journal",
+              "name": "test_damaged_journal_is_never_reconstructed_or_trusted_as_domain_evidence[middle]",
+              "time": "14.585"
+            },
+            {
+              "classname": "tests.test_retirement_data_journal",
+              "name": "test_damaged_journal_is_never_reconstructed_or_trusted_as_domain_evidence[last]",
+              "time": "14.227"
+            },
+            {
+              "classname": "tests.test_retirement_data_journal",
+              "name": "test_damaged_journal_is_never_reconstructed_or_trusted_as_domain_evidence[all]",
+              "time": "14.369"
+            },
+            {
+              "classname": "tests.test_retirement_data_journal",
+              "name": "test_damaged_journal_is_never_reconstructed_or_trusted_as_domain_evidence[forged-receipt]",
+              "time": "15.640"
+            },
+            {
+              "classname": "tests.test_retirement_data_journal",
+              "name": "test_journal_is_immutable_and_missing_component_evidence_is_not_repaired",
+              "time": "15.325"
+            },
+            {
+              "classname": "tests.test_retirement_data_journal",
+              "name": "test_preexisting_uncoordinated_effects_cannot_be_adopted_as_a_fresh_run",
+              "time": "8.231"
+            }
+          ]
+        },
+        {
+          "repository": "community",
+          "file": "tests/test_retirement_runtime_admission.py",
+          "source_sha256": "16edda5f97642c9cd917c8e17c47fd7a78959a2e90f14337a441783f819bafb6",
+          "executions": [
+            {
+              "classname": "tests.test_retirement_runtime_admission",
+              "name": "test_absent_or_empty_journal_is_admitted_without_writing[False]",
+              "time": "0.039"
+            },
+            {
+              "classname": "tests.test_retirement_runtime_admission",
+              "name": "test_absent_or_empty_journal_is_admitted_without_writing[True]",
+              "time": "0.056"
+            },
+            {
+              "classname": "tests.test_retirement_runtime_admission",
+              "name": "test_activation_artifact_without_journal_cannot_become_a_fresh_install[False]",
+              "time": "0.034"
+            },
+            {
+              "classname": "tests.test_retirement_runtime_admission",
+              "name": "test_activation_artifact_without_journal_cannot_become_a_fresh_install[True]",
+              "time": "0.062"
+            },
+            {
+              "classname": "tests.test_retirement_runtime_admission",
+              "name": "test_invalid_journal_structure_cannot_appear_as_an_empty_ready_database[view]",
+              "time": "0.044"
+            },
+            {
+              "classname": "tests.test_retirement_runtime_admission",
+              "name": "test_invalid_journal_structure_cannot_appear_as_an_empty_ready_database[wrong_columns]",
+              "time": "0.045"
+            },
+            {
+              "classname": "tests.test_retirement_runtime_admission",
+              "name": "test_invalid_journal_structure_cannot_appear_as_an_empty_ready_database[extra_column]",
+              "time": "0.047"
+            },
+            {
+              "classname": "tests.test_retirement_runtime_admission",
+              "name": "test_retained_effect_receipts_block_when_the_data_journal_is_lost[migration.context_dispositions_committed-False]",
+              "time": "0.054"
+            },
+            {
+              "classname": "tests.test_retirement_runtime_admission",
+              "name": "test_retained_effect_receipts_block_when_the_data_journal_is_lost[migration.context_dispositions_committed-True]",
+              "time": "0.056"
+            },
+            {
+              "classname": "tests.test_retirement_runtime_admission",
+              "name": "test_retained_effect_receipts_block_when_the_data_journal_is_lost[historical_context.bound-False]",
+              "time": "0.049"
+            },
+            {
+              "classname": "tests.test_retirement_runtime_admission",
+              "name": "test_retained_effect_receipts_block_when_the_data_journal_is_lost[historical_context.bound-True]",
+              "time": "0.076"
+            },
+            {
+              "classname": "tests.test_retirement_runtime_admission",
+              "name": "test_retained_effect_receipts_block_when_the_data_journal_is_lost[migration.card_validation_preserved-False]",
+              "time": "0.052"
+            },
+            {
+              "classname": "tests.test_retirement_runtime_admission",
+              "name": "test_retained_effect_receipts_block_when_the_data_journal_is_lost[migration.card_validation_preserved-True]",
+              "time": "0.060"
+            },
+            {
+              "classname": "tests.test_retirement_runtime_admission",
+              "name": "test_retained_effect_receipts_block_when_the_data_journal_is_lost[migration.work_superseded-False]",
+              "time": "0.054"
+            },
+            {
+              "classname": "tests.test_retirement_runtime_admission",
+              "name": "test_retained_effect_receipts_block_when_the_data_journal_is_lost[migration.work_superseded-True]",
+              "time": "0.062"
+            },
+            {
+              "classname": "tests.test_retirement_runtime_admission",
+              "name": "test_retained_effect_receipts_block_when_the_data_journal_is_lost[migration.work_retirement_completed-False]",
+              "time": "0.047"
+            },
+            {
+              "classname": "tests.test_retirement_runtime_admission",
+              "name": "test_retained_effect_receipts_block_when_the_data_journal_is_lost[migration.work_retirement_completed-True]",
+              "time": "0.048"
+            },
+            {
+              "classname": "tests.test_retirement_runtime_admission",
+              "name": "test_original_archive_and_unrelated_history_do_not_imply_a_started_cutover",
+              "time": "0.062"
+            },
+            {
+              "classname": "tests.test_retirement_runtime_admission",
+              "name": "test_all_retained_prefixes_block_every_lifecycle_path_before_plan_or_seeds[0]",
+              "time": "0.077"
+            },
+            {
+              "classname": "tests.test_retirement_runtime_admission",
+              "name": "test_all_retained_prefixes_block_every_lifecycle_path_before_plan_or_seeds[1]",
+              "time": "0.088"
+            },
+            {
+              "classname": "tests.test_retirement_runtime_admission",
+              "name": "test_all_retained_prefixes_block_every_lifecycle_path_before_plan_or_seeds[2]",
+              "time": "0.076"
+            },
+            {
+              "classname": "tests.test_retirement_runtime_admission",
+              "name": "test_all_retained_prefixes_block_every_lifecycle_path_before_plan_or_seeds[3]",
+              "time": "0.092"
+            },
+            {
+              "classname": "tests.test_retirement_runtime_admission",
+              "name": "test_completed_data_preservation_blocks_runtime_and_joint_restore_recovers_original_source",
+              "time": "30.906"
+            },
+            {
+              "classname": "tests.test_retirement_runtime_admission",
+              "name": "test_committed_journal_survives_abrupt_process_exit_and_refuses_startup",
+              "time": "7.342"
+            }
+          ]
+        },
+        {
+          "repository": "community",
+          "file": "tests/test_retirement_schema_storage.py",
+          "source_sha256": "a6125fdcedcda3de65d8d561b2763d9d54f2d7ecc9c5878804ecbf066073a0f4",
+          "executions": [
+            {
+              "classname": "tests.test_retirement_schema_storage",
+              "name": "test_cut_preserves_children_raw_data_views_checks_collation_and_trigger",
+              "time": "0.069"
+            },
+            {
+              "classname": "tests.test_retirement_schema_storage",
+              "name": "test_unclassified_dependencies_or_unpreserved_sources_refuse_before_cut[UPDATE sprints SET opaque=X'00']",
+              "time": "0.049"
+            },
+            {
+              "classname": "tests.test_retirement_schema_storage",
+              "name": "test_unclassified_dependencies_or_unpreserved_sources_refuse_before_cut[UPDATE cards SET sprint_id='origin']",
+              "time": "0.046"
+            },
+            {
+              "classname": "tests.test_retirement_schema_storage",
+              "name": "test_unclassified_dependencies_or_unpreserved_sources_refuse_before_cut[CREATE TABLE extension(id TEXT, origin TEXT REFERENCES sprints(id))]",
+              "time": "0.051"
+            },
+            {
+              "classname": "tests.test_retirement_schema_storage",
+              "name": "test_unclassified_dependencies_or_unpreserved_sources_refuse_before_cut[CREATE VIEW extension AS SELECT id FROM 'sprints']",
+              "time": "0.066"
+            },
+            {
+              "classname": "tests.test_retirement_schema_storage",
+              "name": "test_unclassified_dependencies_or_unpreserved_sources_refuse_before_cut[CREATE INDEX extension ON cards(sprint_id,payload)]",
+              "time": "0.056"
+            },
+            {
+              "classname": "tests.test_retirement_schema_storage",
+              "name": "test_unclassified_dependencies_or_unpreserved_sources_refuse_before_cut[CREATE TRIGGER extension AFTER UPDATE ON cards BEGIN UPDATE sprints SET opaque=X'00'; END]",
+              "time": "0.057"
+            },
+            {
+              "classname": "tests.test_retirement_schema_storage",
+              "name": "test_failure_after_drop_rolls_back_ddl_and_all_rows",
+              "time": "0.076"
+            },
+            {
+              "classname": "tests.test_retirement_schema_storage",
+              "name": "test_trigger_sharing_cards_name_keeps_its_guard",
+              "time": "0.066"
+            },
+            {
+              "classname": "tests.test_retirement_schema_storage",
+              "name": "test_trigger_sharing_cards_name_cannot_hide_retired_dependency",
+              "time": "0.056"
+            }
+          ]
+        },
+        {
+          "repository": "community",
+          "file": "tests/test_retirement_v034_coordinator.py",
+          "source_sha256": "61e004d488b536de95d310bce6132a6ae88415278b9078652cde18f8e5ece6f7",
+          "executions": [
+            {
+              "classname": "tests.test_retirement_v034_coordinator",
+              "name": "test_real_predecessor_reaches_schema_retired_with_original_backup_and_cold_replay[False-False]",
+              "time": "30.009"
+            },
+            {
+              "classname": "tests.test_retirement_v034_coordinator",
+              "name": "test_real_predecessor_reaches_schema_retired_with_original_backup_and_cold_replay[False-True]",
+              "time": "31.145"
+            },
+            {
+              "classname": "tests.test_retirement_v034_coordinator",
+              "name": "test_real_predecessor_reaches_schema_retired_with_original_backup_and_cold_replay[True-False]",
+              "time": "33.981"
+            },
+            {
+              "classname": "tests.test_retirement_v034_coordinator",
+              "name": "test_real_predecessor_reaches_schema_retired_with_original_backup_and_cold_replay[True-True]",
+              "time": "34.983"
+            }
+          ]
+        }
+      ]
+    },
+    "BASE:T31": {
+      "status": "verified_by_reviewed_execution",
+      "remaining": null,
+      "covered": "Orphan/cross-Board references, unknown extension dependencies, damaged replay evidence, missing schema and row-bound overflow reject explicitly; source rows are preserved. Native Grafx ambiguous source identity, inconsistent counter and absent Board summary fail preparation with unchanged Board and global fingerprints.",
+      "evidence": [
+        {
+          "repository": "community",
+          "file": "tests/test_sprint_retirement_inventory.py",
+          "source_sha256": "4e1a2eb2202a5a706812b38bb5a1f64ff13436c98419fb103c645a701464233d",
+          "executions": [
+            {
+              "classname": "tests.test_sprint_retirement_inventory",
+              "name": "test_inventory_refuses_non_community_backend_before_connection[postgresql]",
+              "time": "0.036"
+            },
+            {
+              "classname": "tests.test_sprint_retirement_inventory",
+              "name": "test_inventory_refuses_non_community_backend_before_connection[mysql]",
+              "time": "0.035"
+            },
+            {
+              "classname": "tests.test_sprint_retirement_inventory",
+              "name": "test_inventory_refuses_non_community_backend_before_connection[unknown]",
+              "time": "0.031"
+            },
+            {
+              "classname": "tests.test_sprint_retirement_inventory",
+              "name": "test_empty_sprint_is_counted_without_fabricating_card_or_history",
+              "time": "4.249"
+            },
+            {
+              "classname": "tests.test_sprint_retirement_inventory",
+              "name": "test_cross_spec_test_and_opaque_historical_baseline_members_are_preserved",
+              "time": "2.248"
+            },
+            {
+              "classname": "tests.test_sprint_retirement_inventory",
+              "name": "test_invalid_card_relations_block_whole_inventory_with_ids[changes0-cards.sprint_id-orphan]",
+              "time": "2.318"
+            },
+            {
+              "classname": "tests.test_sprint_retirement_inventory",
+              "name": "test_invalid_card_relations_block_whole_inventory_with_ids[changes1-cards.sprint_id-cross_board]",
+              "time": "2.272"
+            },
+            {
+              "classname": "tests.test_sprint_retirement_inventory",
+              "name": "test_invalid_card_relations_block_whole_inventory_with_ids[changes2-cards.spec_id-orphan]",
+              "time": "2.098"
+            },
+            {
+              "classname": "tests.test_sprint_retirement_inventory",
+              "name": "test_invalid_card_relations_block_whole_inventory_with_ids[changes3-cards.spec_id-cross_board]",
+              "time": "1.879"
+            },
+            {
+              "classname": "tests.test_sprint_retirement_inventory",
+              "name": "test_invalid_card_relations_block_whole_inventory_with_ids[changes4-cards.board_id-orphan]",
+              "time": "1.936"
+            },
+            {
+              "classname": "tests.test_sprint_retirement_inventory",
+              "name": "test_all_orphan_children_are_reported_beyond_twenty_row_health_sample",
+              "time": "1.518"
+            },
+            {
+              "classname": "tests.test_sprint_retirement_inventory",
+              "name": "test_sprint_ancestry_scope_errors_are_not_silently_repaired[board_id='missing'-sprints.board_id-orphan]",
+              "time": "1.919"
+            },
+            {
+              "classname": "tests.test_sprint_retirement_inventory",
+              "name": "test_sprint_ancestry_scope_errors_are_not_silently_repaired[spec_id='missing'-sprints.spec_id-orphan]",
+              "time": "2.069"
+            },
+            {
+              "classname": "tests.test_sprint_retirement_inventory",
+              "name": "test_sprint_ancestry_scope_errors_are_not_silently_repaired[spec_id='spec-b'-sprints.spec_id-cross_board]",
+              "time": "1.692"
+            },
+            {
+              "classname": "tests.test_sprint_retirement_inventory",
+              "name": "test_sprint_ancestry_scope_errors_are_not_silently_repaired[origin_sprint_id='missing'-sprints.origin_sprint_id-orphan]",
+              "time": "1.807"
+            },
+            {
+              "classname": "tests.test_sprint_retirement_inventory",
+              "name": "test_sprint_ancestry_scope_errors_are_not_silently_repaired[origin_bug_id='missing'-sprints.origin_bug_id-orphan]",
+              "time": "2.129"
+            },
+            {
+              "classname": "tests.test_sprint_retirement_inventory",
+              "name": "test_foreign_origins_and_baseline_scope_block_with_source_ids",
+              "time": "1.777"
+            },
+            {
+              "classname": "tests.test_sprint_retirement_inventory",
+              "name": "test_unclassified_physical_references_refuse_even_an_empty_extension[CREATE TABLE extension (id TEXT PRIMARY KEY, parent TEXT REFERENCES sprints(id))]",
+              "time": "1.001"
+            },
+            {
+              "classname": "tests.test_sprint_retirement_inventory",
+              "name": "test_unclassified_physical_references_refuse_even_an_empty_extension[CREATE TABLE extension (id TEXT PRIMARY KEY, parent TEXT REFERENCES sprint_history(id))]",
+              "time": "0.909"
+            },
+            {
+              "classname": "tests.test_sprint_retirement_inventory",
+              "name": "test_unclassified_physical_references_refuse_even_an_empty_extension[CREATE TABLE extension (id TEXT PRIMARY KEY, origin_sprint_id TEXT)]",
+              "time": "0.907"
+            },
+            {
+              "classname": "tests.test_sprint_retirement_inventory",
+              "name": "test_incomplete_schema_and_budget_exhaustion_are_not_empty_success",
+              "time": "2.147"
+            },
+            {
+              "classname": "tests.test_sprint_retirement_inventory",
+              "name": "test_wal_writer_between_queries_cannot_mix_snapshots",
+              "time": "3.145"
+            }
+          ]
+        },
+        {
+          "repository": "community",
+          "file": "tests/test_retirement_schema_storage.py",
+          "source_sha256": "a6125fdcedcda3de65d8d561b2763d9d54f2d7ecc9c5878804ecbf066073a0f4",
+          "executions": [
+            {
+              "classname": "tests.test_retirement_schema_storage",
+              "name": "test_cut_preserves_children_raw_data_views_checks_collation_and_trigger",
+              "time": "0.069"
+            },
+            {
+              "classname": "tests.test_retirement_schema_storage",
+              "name": "test_unclassified_dependencies_or_unpreserved_sources_refuse_before_cut[UPDATE sprints SET opaque=X'00']",
+              "time": "0.049"
+            },
+            {
+              "classname": "tests.test_retirement_schema_storage",
+              "name": "test_unclassified_dependencies_or_unpreserved_sources_refuse_before_cut[UPDATE cards SET sprint_id='origin']",
+              "time": "0.046"
+            },
+            {
+              "classname": "tests.test_retirement_schema_storage",
+              "name": "test_unclassified_dependencies_or_unpreserved_sources_refuse_before_cut[CREATE TABLE extension(id TEXT, origin TEXT REFERENCES sprints(id))]",
+              "time": "0.051"
+            },
+            {
+              "classname": "tests.test_retirement_schema_storage",
+              "name": "test_unclassified_dependencies_or_unpreserved_sources_refuse_before_cut[CREATE VIEW extension AS SELECT id FROM 'sprints']",
+              "time": "0.066"
+            },
+            {
+              "classname": "tests.test_retirement_schema_storage",
+              "name": "test_unclassified_dependencies_or_unpreserved_sources_refuse_before_cut[CREATE INDEX extension ON cards(sprint_id,payload)]",
+              "time": "0.056"
+            },
+            {
+              "classname": "tests.test_retirement_schema_storage",
+              "name": "test_unclassified_dependencies_or_unpreserved_sources_refuse_before_cut[CREATE TRIGGER extension AFTER UPDATE ON cards BEGIN UPDATE sprints SET opaque=X'00'; END]",
+              "time": "0.057"
+            },
+            {
+              "classname": "tests.test_retirement_schema_storage",
+              "name": "test_failure_after_drop_rolls_back_ddl_and_all_rows",
+              "time": "0.076"
+            },
+            {
+              "classname": "tests.test_retirement_schema_storage",
+              "name": "test_trigger_sharing_cards_name_keeps_its_guard",
+              "time": "0.066"
+            },
+            {
+              "classname": "tests.test_retirement_schema_storage",
+              "name": "test_trigger_sharing_cards_name_cannot_hide_retired_dependency",
+              "time": "0.056"
+            }
+          ]
+        },
+        {
+          "repository": "community",
+          "file": "tests/test_card_validation_retirement.py",
+          "source_sha256": "39931d4eb0bb449d28e1788aee4726ea9caf8e931edd1fe20d1eb3e4cee1c1d0",
+          "executions": [
+            {
+              "classname": "tests.test_card_validation_retirement",
+              "name": "test_distinct_policies_are_materialized_without_changing_card_identity_or_history",
+              "time": "6.325"
+            },
+            {
+              "classname": "tests.test_card_validation_retirement",
+              "name": "test_equal_values_remain_inherited_and_new_cards_have_no_compatibility",
+              "time": "5.045"
+            },
+            {
+              "classname": "tests.test_card_validation_retirement",
+              "name": "test_history_and_authority_are_required_before_any_detachment[grants]",
+              "time": "2.266"
+            },
+            {
+              "classname": "tests.test_card_validation_retirement",
+              "name": "test_history_and_authority_are_required_before_any_detachment[archive]",
+              "time": "2.431"
+            },
+            {
+              "classname": "tests.test_card_validation_retirement",
+              "name": "test_history_and_authority_are_required_before_any_detachment[board]",
+              "time": "5.330"
+            },
+            {
+              "classname": "tests.test_card_validation_retirement",
+              "name": "test_history_and_authority_are_required_before_any_detachment[stale]",
+              "time": "4.994"
+            },
+            {
+              "classname": "tests.test_card_validation_retirement",
+              "name": "test_atomic_rollback_includes_prior_cards_and_evidence[journal]",
+              "time": "4.600"
+            },
+            {
+              "classname": "tests.test_card_validation_retirement",
+              "name": "test_atomic_rollback_includes_prior_cards_and_evidence[late-card]",
+              "time": "4.660"
+            },
+            {
+              "classname": "tests.test_card_validation_retirement",
+              "name": "test_atomic_rollback_includes_prior_cards_and_evidence[policy]",
+              "time": "4.736"
+            },
+            {
+              "classname": "tests.test_card_validation_retirement",
+              "name": "test_atomic_rollback_includes_prior_cards_and_evidence[journal-card]",
+              "time": "4.817"
+            },
+            {
+              "classname": "tests.test_card_validation_retirement",
+              "name": "test_replay_rejects_damaged_evidence_without_rebasing[delete]",
+              "time": "5.373"
+            },
+            {
+              "classname": "tests.test_card_validation_retirement",
+              "name": "test_replay_rejects_damaged_evidence_without_rebasing[partial]",
+              "time": "4.930"
+            },
+            {
+              "classname": "tests.test_card_validation_retirement",
+              "name": "test_replay_rejects_damaged_evidence_without_rebasing[policy]",
+              "time": "5.444"
+            },
+            {
+              "classname": "tests.test_card_validation_retirement",
+              "name": "test_replay_preserves_later_board_policy_and_card_edits",
+              "time": "4.997"
+            },
+            {
+              "classname": "tests.test_card_validation_retirement",
+              "name": "test_writer_cannot_race_policy_preservation",
+              "time": "5.613"
+            },
+            {
+              "classname": "tests.test_card_validation_retirement",
+              "name": "test_second_audit_blob_failure_rolls_back_cards_and_discards_uncommitted_first_blob",
+              "time": "5.361"
+            },
+            {
+              "classname": "tests.test_card_validation_retirement",
+              "name": "test_invalid_links_block_without_inventing_provenance[orphan]",
+              "time": "3.342"
+            },
+            {
+              "classname": "tests.test_card_validation_retirement",
+              "name": "test_invalid_links_block_without_inventing_provenance[cross_board]",
+              "time": "3.303"
+            },
+            {
+              "classname": "tests.test_card_validation_retirement",
+              "name": "test_policy_layer_limit_rejects_before_detachment",
+              "time": "4.530"
+            }
+          ]
+        },
+        {
+          "repository": "community",
+          "file": "tests/test_grafx_global_retirement.py",
+          "source_sha256": "78894795de13ef7f802c51a98e52f9cb00f80e8f75f8a6b9bc15c11d847c83c1",
+          "executions": [
+            {
+              "classname": "tests.test_grafx_global_retirement",
+              "name": "test_preparation_rejects_inconsistent_counter_missing_board_and_ambiguous_source[counter]",
+              "time": "15.515"
+            },
+            {
+              "classname": "tests.test_grafx_global_retirement",
+              "name": "test_preparation_rejects_inconsistent_counter_missing_board_and_ambiguous_source[missing_summary]",
+              "time": "15.601"
+            },
+            {
+              "classname": "tests.test_grafx_global_retirement",
+              "name": "test_preparation_rejects_inconsistent_counter_missing_board_and_ambiguous_source[source_alias]",
+              "time": "15.340"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "limits": [
+    "All migration data is disposable; no real database, runtime process or release changed.",
+    "Frozen source schema comes from verified v0.3.4 pair. Coordinator integration uses synthetic candidate build IDs and is intentionally not runtime-admitted before graph completion.",
+    "Population2 failed an overly broad byte-equality assertion after bootstrap: only card-a.position changed 0 to 1. Existing pagination migration resolves colliding positions by archived/position/id DESC; final oracle preserves canonical order and every other original cell. Physical-cut oracle still compares positions exactly. Original failed log retained.",
+    "No product/frontend change, no new F16 run. Last validated architectural budgets remain zero; no claim of full plan completion."
+  ]
+}

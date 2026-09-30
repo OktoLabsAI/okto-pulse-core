@@ -2,6 +2,41 @@
 
 ## Estado para retomada
 
+BASE T25/T26/T27/T28/T31 verificados; T29/T30 parciais, com limites
+de finalização explícitos em acceptance-retirement-migration-review.json.
+Campanha retirement-acceptance1 session78961=0,119passed540.37s; suplemento1
+session15053=0,5passed54.34s; position-contract1 session78170=0,1passed5.30s;
+population3 session50596=0,4passed139.79s é a execução final do coordenador.
+129 casos finais distintos, sem somar population1 intermediário4passed162.08s.
+Population2 session23417=1,1failed41.47s: igualdade byte-a-byte de TODAS as
+células após bootstrap era um oráculo excessivo. Comparação do DB com backup
+revelou somente card-a.position0→1; cards a/b tinham posição0 empatada.
+Writer existente _migrate_pagination_indices_and_positions normaliza por
+archived/position/id DESC; a ordem canônica permaneceu b,a. Teste final exige
+essa ordem e igualdade de cada outro campo; o corte físico continua exigindo
+posição original exata. Nenhum ajuste de semântica/gate/histórico foi feito.
+
+Bootstrap completo em dois processos novos prova ausência de objetos Sprint,
+coluna operacional e grants retirados em presets. Grants somente removidos,
+diretos ou de preset, preservam identidade sem autoridade operacional nova.
+Fonte v0.3.4 congelada foi estendida apenas na cópia descartável com Sprints
+ativas/fechadas/canceladas/vazias; corte e bootstrap preservam artefatos, backup,
+policies90/60 e linhagem. Arquivo mantém Q&A/pareceres/autoria e fontes vazias.
+Corrupção/FKs órfãs/extensões desconhecidas falham sem descarte; Grafx recusa
+identidade ambígua/contadores incoerentes sem mudar fingerprints originais.
+T29 não certifica replay da ativação final; T30 não certifica rollback do par
+atual instalado com história nativa. Testes do coordenador usam hashes alvo
+sintéticos e recusam runtime incompleto — não chamá-los de E2E de release.
+
+Preflight9ca9d8=0, provenance-retirement-acceptance1.json: fontes/site/wheels
+859/922+373/458 idênticos antes dos testes. Recorder
+record_retirement_acceptance_review.py executado uma vez após terminais.
+Inventário100 verificados/41 parciais/105 não auditados. Só testes/docs; nenhum
+frontend/produto mudou, nenhum F16 novo alegado. Dados reais intocados.
+Próximo trabalho do plano: evidência final de replay/rollback instalado T29/T30
+e critérios restantes; KG-10/T23 aguardam as decisões já solicitadas.
+Entrega integral continua aberta.
+
 BASE T17 verificado: multiple-spec-derivation1 Community41464=0,
 1passed12.25s; Core93526=0,2passed6.88s. Teste Community existente foi reforçado:
 três chamadas independentes derivam três Specs Draft distintas do mesmo
