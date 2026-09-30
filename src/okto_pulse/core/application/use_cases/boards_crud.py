@@ -347,10 +347,11 @@ class UpdateBoardUseCase:
                     ("skip_cognitive_consolidation", False),
                     ("cognitive_readiness_policy", "advisory"),
                     ("bug_learning_closeout", "advisory"),
+                    ("kg_query_timeout_ms", 15000),
                 )
             ):
                 raise PermissionDeniedError(
-                    "Cognitive policy changes require an authenticated human."
+                    "Cognitive and query policy changes require an authenticated human."
                 )
         board = await service.update_board(
             command.board_id,

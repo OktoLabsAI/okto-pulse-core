@@ -4471,6 +4471,8 @@ class BoardSettings(BaseModel):
     # KG §7.4: human policy for durable capture, independent of graph readiness.
     # Missing legacy values remain advisory; no upgrade activates blocking.
     bug_learning_closeout: Literal["advisory", "blocking"] = "advisory"
+    # KG6.5/D18: human-authored query policy, never a runtime repair control.
+    kg_query_timeout_ms: int = Field(default=15000, ge=1, le=30000, strict=True)
     allow_agent_self_answering: bool = (
         False  # explicit opt-in that permits same-principal Q&A answers
     )

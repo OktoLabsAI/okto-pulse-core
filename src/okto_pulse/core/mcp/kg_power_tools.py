@@ -15,6 +15,7 @@ import re
 from typing import Any
 
 from okto_pulse.core.kg.interfaces.graph_errors import GraphQueryTimeout
+from okto_pulse.core.kg.blocking_io import run_blocking_graph_io
 
 from okto_pulse.core.mcp.kg_authorization import (
     kg_permission_error,
@@ -163,6 +164,19 @@ def _err(code: str, message: str, **extra: Any) -> str:
     return json.dumps(payload, default=str)
 
 
+async def _read_query_policy(board_id: str, board_agent):
+    from okto_pulse.core.application.use_cases.kg_query_policy import ReadKGQueryPolicyUseCase
+    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
+    from okto_pulse.core.runtime_registry import resolve_unit_of_work_factory
+
+    actor = MCPAdapterContract.actor(board_agent, board_id=board_id)
+    try:
+        async with resolve_unit_of_work_factory()(actor=actor) as uow:
+            return await ReadKGQueryPolicyUseCase().execute(board_id, actor=actor, uow=uow)
+    except Exception as exc:
+        raise TierPowerError("query_policy_unavailable", "Board query policy could not be resolved.") from exc
+
+
 def register_kg_power_tools(
     mcp,
     *,
@@ -248,15 +262,15 @@ def register_kg_power_tools(
         cypher: str,
         params: dict | None = None,
         max_rows: int = 0,
-        timeout_ms: int = 5000,
+        timeout_ms: int | None = None,
         include_working: bool = False,
     ) -> str:
         """Execute a read-only Cypher query against a board's graph. Safety rails auto-applied:
 write-keyword whitelist (CREATE/DELETE/SET rejected), comment strip + unicode
-normalize, auto-LIMIT, variable-length paths bounded to *..20, timeout 5s default /
-30s max, rate limit 30/min, embedding/vector columns STRIPPED from the response,
+normalize, auto-LIMIT, variable-length paths bounded to *..20, native timeout from
+Board policy (15s default, 30s ceiling; a call can only reduce it), embedding/vector columns STRIPPED from the response,
 rows bounded to an agent-safe page, numeric scores rounded. max_rows: 0=agent-safe
-default (50), 1..1000 explicit, >1000 rejected. Full args/returns:
+default (200), 1..1000 explicit, >1000 rejected. Full args/returns:
 okto-pulse://reference/tool-docs/kg."""
         agent, board_agent, auth_error = await _authorized_board_agent(
             board_id,
@@ -272,10 +286,12 @@ okto-pulse://reference/tool-docs/kg."""
         )
         if ct_guard_error is not None:
             return ct_guard_error
-        logger.debug("[KG] kg_query_cypher called: board_id=%s cypher_len=%d max_rows=%d timeout_ms=%d",
+        logger.debug("[KG] kg_query_cypher called: board_id=%s cypher_len=%d max_rows=%d timeout_ms=%s",
                      board_id, len(cypher), max_rows, timeout_ms)
         try:
             check_rate_limit(agent.id)
+            policy = await _read_query_policy(board_id, board_agent)
+            timeout_ms = policy.effective_timeout(timeout_ms)
             # FR2/FR9: clamp to an agent-safe page; reject above the hard cap.
             effective_rows, bound_err = resolve_cypher_max_rows(max_rows)
             if bound_err is not None:
@@ -288,12 +304,14 @@ okto-pulse://reference/tool-docs/kg."""
             logger.debug("[KG] kg_query_cypher offloading to thread")
             # The executor enforces the native deadline. Do not abandon a
             # running thread and report completion while it still holds reads.
-            result = await asyncio.to_thread(
-                execute_cypher_read_only,
-                board_id, cypher, params,
-                max_rows=effective_rows,
-                timeout_ms=timeout_ms,
-                include_working=include_working,
+            result = await run_blocking_graph_io(
+                lambda: execute_cypher_read_only(
+                    board_id, cypher, params,
+                    max_rows=effective_rows,
+                    timeout_ms=timeout_ms,
+                    include_working=include_working,
+                ),
+                task_name=f"mcp.kg.cypher:{board_id}",
             )
             logger.debug("[KG] kg_query_cypher thread returned: row_count=%d",
                          result.get("row_count", "unknown"))
@@ -323,6 +341,8 @@ okto-pulse://reference/tool-docs/kg."""
             return json.dumps(result, default=str)
         except GraphQueryTimeout:
             return _err("timeout", "Query exceeded its native execution deadline")
+        except ValueError as exc:
+            return _err("invalid_param", str(exc))
         except TierPowerError as e:
             return _err(e.code, e.message, details=e.details)
 

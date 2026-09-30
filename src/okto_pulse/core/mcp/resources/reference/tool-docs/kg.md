@@ -454,7 +454,9 @@ Safety rails applied automatically:
 - Parser rejects write keywords (CREATE/DELETE/SET/etc) as ``unsafe_cypher``
 - Comment stripping + unicode normalization
 - Auto-inject LIMIT if missing; variable-length paths bounded to *..20
-- Timeout 5s default, 30s max; rate limit 30 queries/min per agent
+- Native timeout follows `board.settings.kg_query_timeout_ms`: 15s default,
+  30s ceiling. Only an authenticated human can change Board/default policy;
+  a call can only reduce the configured timeout.
 - Embedding/vector columns and nested embedding fields are STRIPPED
   from the response (RETURN n / RETURN n.embedding never dump 384-float
   vectors into your context); see response.sanitization.stripped_fields
@@ -464,9 +466,9 @@ Args:
     board_id: Board ID
     cypher: Read-only Cypher query string
     params: Optional parameter dict for parameterized queries
-    max_rows: 0 = agent-safe default (50). Pass 1..1000 for an explicit
+    max_rows: 0 = default (200). Pass 1..1000 for an explicit
         bounded page; >1000 is rejected (max_rows_exceeds_hard_cap).
-    timeout_ms: Timeout in ms (default 5000, max 30000)
+    timeout_ms: Optional timeout in ms, bounded by the current Board policy.
     include_working: Optional boolean. Default false enforces canonical-only
         visibility. Pass true to query working + canonical rows during working
         graph validation, rebuild checks, or E2E ingestion tests. Governed

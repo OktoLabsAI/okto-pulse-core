@@ -110,13 +110,13 @@ class TestSafetyRails:
         assert q.endswith("LIMIT 500")
 
     def test_clamp_timeout(self):
-        assert clamp_timeout(None) == 5000
-        assert clamp_timeout(100) == 1000
+        assert clamp_timeout(None) == 15000
+        assert clamp_timeout(100) == 100
         assert clamp_timeout(50000) == 30000
 
     def test_clamp_max_rows(self):
-        assert clamp_max_rows(None) == 1000
-        assert clamp_max_rows(20000) == 10000
+        assert clamp_max_rows(None) == 200
+        assert clamp_max_rows(20000) == 1000
 
     def test_canonical_projection_omits_working_rows_when_layer_visible(self):
         result = _apply_canonical_projection(
@@ -225,6 +225,7 @@ class TestSafetyRails:
                 params=None,
                 *,
                 max_rows=1000,
+                timeout_ms=None,
             ):
                 assert board_id == "board-x"
                 assert max_rows == 50
@@ -269,7 +270,7 @@ class TestSafetyRails:
         class FakeExecutor:
             seen = ""
 
-            def execute_read_only(self, board_id, cypher, params=None, *, max_rows=1000):
+            def execute_read_only(self, board_id, cypher, params=None, *, max_rows=1000, timeout_ms=None):
                 self.seen = cypher
                 return {"rows": [[{"id": "n1"}]], "row_count": 1}
 
@@ -279,7 +280,7 @@ class TestSafetyRails:
         result = execute_cypher_read_only("board-x", "MATCH (n) RETURN n")
 
         assert fake.seen == (
-            "MATCH (n) WHERE n.graph_layer = 'canonical' RETURN n\nLIMIT 1000"
+            "MATCH (n) WHERE n.graph_layer = 'canonical' RETURN n\nLIMIT 200"
         )
         assert result["canonical_filter_enforced"] is True
         assert result["canonical_filter_mode"] == "cypher_rewrite"
@@ -290,7 +291,7 @@ class TestSafetyRails:
         class FakeExecutor:
             seen = ""
 
-            def execute_read_only(self, board_id, cypher, params=None, *, max_rows=1000):
+            def execute_read_only(self, board_id, cypher, params=None, *, max_rows=1000, timeout_ms=None):
                 self.seen = cypher
                 return {"rows": [], "row_count": 0}
 
@@ -304,7 +305,7 @@ class TestSafetyRails:
 
         assert fake.seen == (
             "MATCH (n) WHERE n.graph_layer = 'canonical' "
-            "AND (n.title = 'x') RETURN n\nLIMIT 1000"
+            "AND (n.title = 'x') RETURN n\nLIMIT 200"
         )
 
     def test_cypher_rewrite_preserves_starts_with_operator(self):
@@ -313,7 +314,7 @@ class TestSafetyRails:
         class FakeExecutor:
             seen = ""
 
-            def execute_read_only(self, board_id, cypher, params=None, *, max_rows=1000):
+            def execute_read_only(self, board_id, cypher, params=None, *, max_rows=1000, timeout_ms=None):
                 self.seen = cypher
                 return {"rows": [], "row_count": 0}
 
@@ -327,7 +328,7 @@ class TestSafetyRails:
 
         assert fake.seen == (
             "MATCH (n) WHERE n.graph_layer = 'canonical' "
-            "AND (n.source_artifact_ref STARTS WITH 'spec:abc') RETURN n\nLIMIT 1000"
+            "AND (n.source_artifact_ref STARTS WITH 'spec:abc') RETURN n\nLIMIT 200"
         )
 
     def test_cypher_rewrite_fails_closed_for_anonymous_nodes(self):
@@ -352,7 +353,7 @@ class TestSafetyRails:
         class FakeExecutor:
             seen = ""
 
-            def execute_read_only(self, board_id, cypher, params=None, *, max_rows=1000):
+            def execute_read_only(self, board_id, cypher, params=None, *, max_rows=1000, timeout_ms=None):
                 self.seen = cypher
                 return {
                     "rows": [{"id": "w1", "graph_layer": "working"}],

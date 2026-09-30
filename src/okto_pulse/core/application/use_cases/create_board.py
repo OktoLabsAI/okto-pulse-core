@@ -110,9 +110,9 @@ class CreateBoardUseCase:
             # transaction. An explicit false is also an override and could
             # replace a true template value; executors cannot author either.
             authored = settings.model_dump(exclude_unset=True)
-            if {"skip_cognitive_consolidation", "bug_learning_closeout"}.intersection(authored):
+            if {"skip_cognitive_consolidation", "bug_learning_closeout", "kg_query_timeout_ms"}.intersection(authored):
                 raise PermissionDeniedError(
-                    "Cognitive policy overrides require an authenticated human."
+                    "Cognitive and query policy overrides require an authenticated human."
                 )
         board = await service.create_board(
             actor.actor_id, command.data, realm_id=actor.realm_id

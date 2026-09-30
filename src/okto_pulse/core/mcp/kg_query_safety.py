@@ -35,7 +35,7 @@ NATURAL_QUERY_MAX_CHARS = 2000
 # needs more may pass max_rows up to the hard cap (FR9 full/legacy access);
 # anything above the hard cap is rejected structurally rather than silently
 # dumping an unbounded result into the context window.
-CYPHER_DEFAULT_ROWS = 50
+CYPHER_DEFAULT_ROWS = 200
 CYPHER_HARD_CAP_ROWS = 1000
 
 # --- FR1: embedding/vector detection ---------------------------------------

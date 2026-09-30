@@ -114,7 +114,7 @@ def test_sanitizer_keeps_short_numeric_lists():
 def test_default_rows_use_agent_safe_limit():
     effective, err = resolve_cypher_max_rows(0)
     assert err is None
-    assert effective == CYPHER_DEFAULT_ROWS == 50
+    assert effective == CYPHER_DEFAULT_ROWS == 200
 
 
 def test_explicit_bounded_request_is_honored():
@@ -330,6 +330,19 @@ def _fresh_mcp(name: str):
     return CoreMcpCatalog(name=name, version="test")
 
 
+@pytest.fixture(autouse=True)
+def query_policy_for_response_boundary_tests(monkeypatch):
+    # These tests isolate payload/auth boundaries. Actual repository policy
+    # resolution and endpoint clamps have their own persistence tests.
+    from okto_pulse.core.ports.kg_query_policy import KGQueryPolicy
+    from okto_pulse.core.mcp import kg_power_tools
+
+    async def read(board_id, board_agent):
+        return KGQueryPolicy()
+
+    monkeypatch.setattr(kg_power_tools, "_read_query_policy", read)
+
+
 @pytest.mark.asyncio
 async def test_natural_handler_rejects_oversize_before_executor():
     """FR0 wired: an oversize query is rejected and the executor (which resolves
@@ -430,11 +443,11 @@ async def test_cypher_handler_sanitizes_bounds_and_rounds():
         raw = await tool.fn(board_id="b1", cypher="MATCH (n) RETURN n.embedding")
 
     payload = _json.loads(raw)
-    assert seen["max_rows"] == CYPHER_DEFAULT_ROWS == 50  # FR2 default reached executor
+    assert seen["max_rows"] == CYPHER_DEFAULT_ROWS == 200  # KG6.5 default reached executor
     assert payload["rows"][0][0] == "dec_1"  # scalar preserved
     assert payload["rows"][0][1] is None  # FR1 bare vector stripped
     assert payload["sanitization"]["stripped_count"] == 1
-    assert payload["row_bounds"]["effective_limit"] == 50  # FR2 metadata
+    assert payload["row_bounds"]["effective_limit"] == 200
 
 
 @pytest.mark.asyncio

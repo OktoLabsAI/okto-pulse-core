@@ -5,8 +5,8 @@ query_natural: hybrid search (embedding + HNSW + 1-hop) with fallback
 schema_info: schema introspection with stable/internal type ACL
 
 Safety rails applied to ALL tier power queries:
-- Timeout: 5s default, 30s max hard ceiling (asyncio.wait_for)
-- Max rows: 1000 default, 10000 max
+- Timeout: 15s default, 30s hard ceiling, enforced by the native executor
+- Max rows: 200 default, 1000 max
 - Rate limit: 30 queries/min per agent (token bucket)
 - Cypher injection mitigation via parser whitelist
 
@@ -388,16 +388,16 @@ def compute_pattern_hash(cypher: str) -> str:
 # Safety defaults (FR-5)
 # ---------------------------------------------------------------------------
 
-DEFAULT_TIMEOUT_MS = 5000
+DEFAULT_TIMEOUT_MS = 15000
 MAX_TIMEOUT_MS = 30000
-DEFAULT_MAX_ROWS = 1000
-MAX_MAX_ROWS = 10000
+DEFAULT_MAX_ROWS = 200
+MAX_MAX_ROWS = 1000
 MAX_TRAVERSAL_DEPTH = 20
 
 
 def clamp_timeout(timeout_ms: int | None) -> int:
     t = timeout_ms or DEFAULT_TIMEOUT_MS
-    return max(1000, min(t, MAX_TIMEOUT_MS))
+    return max(1, min(t, MAX_TIMEOUT_MS))
 
 
 def clamp_max_rows(max_rows: int | None) -> int:

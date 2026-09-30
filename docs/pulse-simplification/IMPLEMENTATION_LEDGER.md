@@ -2,6 +2,60 @@
 
 ## Estado para retomada
 
+Policyfinal F1664735 TERMINAL0,ok=true/findings e docs vazios/oitoZERO.
+record_query_policy.py executado UMA vez, acceptance-query-policy.json registra
+110/66/87/62/3 e28frontend (campanhas sobrepostas), identidade SPA e limites.
+Par850/913+370/455 provado; pronto para commit/push. Nenhuma campanha viva.
+Proxima frente KG6.5: reproconfidence89655 terminal1,1failed/25.28s, defeito
+confirmado em Grafx real: pedido min_confidence0.8 retornou high0.9 E low0.1.
+Novo teste ainda separado do commitpolicy. Implementar source_confidence nos
+caminhos literal/topic/vector sem confundir com similaridade; validar argumento
+antes de acesso. Quota30/min,natural/reflexiva deadline, fanout/arrays/payload
+e restantes aceites do plano seguem pendentes. Nao declarar entrega integral.
+
+query-policy2 install59011/prova75867 terminais0:850/913+370/455 identicos.
+TODAS suites terminais:Core17787=87passed/74.68s;Community67200=62passed/112.36s
+(inclui distribuicao/frontend release);MCPautoridade93858=3passed/8.29s.
+F1668181 terminal1 agora SOMENTE README, findings=[],oitoZERO. Contrato real
+em ports eliminou as2bridges sem relaxar auditoria. Matrizes regeneradas
+oficialmente apos terminais; builds finais/install30067/prova63780 terminais0.
+F16final64735 em andamento. record_query_policy.py preparado, NAO executado.
+Nao editar produto ate terminal. Depois recorder/commit/push (excluir teste
+novo test_kg_natural_query_confidence.py deste commit: pertence frente seguinte).
+Reproducao independente ja prevista KG6.5 min_confidence: novo teste native
+com duas fontes0.1/0.9 e pedido0.8 iniciado89655 contra MESMO par provado;
+nenhuma correcao de produto dessa frente ainda. Registrar resultado antes
+de alterar o filtro; manter fonte de confianca distinta de similaridade.
+
+query-policy1 builds/install53546/prova terminais0:850/913+370/455 byte-identical.
+Core21943=0:110passed/77.88s. Community41259=1:37passed/1failed por fixtureCT
+sem Boardreader; apos terminal corrigida apenas fixture de fronteira CT e
+rerun77678=0:66passed/75.96s. F1626897=1 NAO foi soREADME: funcao query_row_limit
+importada de core.kg.query_policy era privada; import+chamada produziram2bridges.
+Nenhuma excecao/budget alterado. Apos TODOS terminais, contrato tipado e limites
+movidos para core.ports.kg_query_policy; usecase ja era publico, nao era a causa.
+Todos consumers/tests usam porta. Regeneracao de README foi corretamente
+recusada pelo script enquanto havia finding; nao alterou matrizes.
+Builds query-policy2 iniciados; exigir install/prova/F16 e suites apos mudanca.
+Regressao extra query-policy-regression preparada (tier_power doubles/defaults
+atualizados+distribuicao SPA); ainda NAO executada. Nenhum WIPpolicy enviado.
+
+Deadline nativo publicado Corecbae0742/Communityf98e9e4d, pushes0.
+WIP seguinte D18: BoardSettings.kg_query_timeout_ms estrito1..30000/default15000,
+protegido como policy humana na criacao/edicao Board e ciclo defaultconfig
+(inclui preservar omissao). ReadKGQueryPolicyUseCase exige board.read e
+load_accessible_board com realm; MCP Cypher resolve pela UOW registrada e
+falha fechado sem policy. REST Cypher/search/analytics aplicam mesmo clamp.
+Cypher defaults200 linhas/cap1000/15s; MCP usa bridge existente que drena
+execucao nativa em cancelamento. Natural/reflexiva, quota e arrays/fanout
+continuam pendentes, nao anunciar D18 concluido.
+UI Board/default usa formulario compartilhado;72008 terminal0:28 testes.
+Build77798/lint53221 terminais0;331 warnings preexistentes sem aumento.
+verifyfrontend0:79files/78assets treef5618297b0c2e09ed91af9cbecfbd3094d47526e22db70ddd09236d47cdcfdf5;
+SPA staged para gate. Geradores oficiais catalogo/toolmanifest/resourcemanifest
+53971 terminaram0. RuffF/E9 passou. Builds query-policy1 iniciados; nenhuma
+suite Python deste WIP ainda executada. Exigir install/prova antes das suites.
+
 Deadline nativo pronto para envio: regressao routed11808 terminal0,94 passed/
 19.70s. Matrizes regeneradas oficialmente com caminho completo; buildsfinal2,
 install43442/prova10338 terminais0,848/911+370/455 byte-identical. F16final63352

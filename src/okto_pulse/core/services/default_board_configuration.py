@@ -85,6 +85,7 @@ _COGNITIVE_POLICY_DEFAULTS = {
     "skip_cognitive_consolidation": False,
     "cognitive_readiness_policy": "advisory",
     "bug_learning_closeout": "advisory",
+    "kg_query_timeout_ms": 15000,
 }
 _ALLOWED_STATUSES = ("draft", "active", "inactive")
 DEFAULT_SPEC_CHECKLIST_MODE = ChecklistMode.ADVISORY.value
@@ -770,7 +771,7 @@ class DefaultBoardConfigurationService:
                for key, default in _COGNITIVE_POLICY_DEFAULTS.items()):
             raise DefaultBoardConfigurationError(
                 "human_control_required",
-                "Cognitive policy changes require an authenticated human.",
+                "Cognitive and query policy changes require an authenticated human.",
                 403,
             )
 
@@ -793,6 +794,7 @@ class DefaultBoardConfigurationService:
         if actor_kind != "human":
             supplied.setdefault("skip_cognitive_consolidation", previous.get("skip_cognitive_consolidation", False))
             supplied.setdefault("bug_learning_closeout", previous.get("bug_learning_closeout", "advisory"))
+            supplied.setdefault("kg_query_timeout_ms", previous.get("kg_query_timeout_ms", 15000))
         supplied.setdefault("reviewer_separation_mode", "enforce")
         supplied.setdefault("code_traceability", {"mode": "advisory"})
         validated = self._validate_settings(supplied)

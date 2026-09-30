@@ -9,7 +9,7 @@ from okto_pulse.core.kg.tier_power import execute_cypher_read_only
 
 
 @pytest.mark.parametrize("include_working", [False, True])
-@pytest.mark.parametrize("requested,expected", [(None, 5000), (1500, 1500), (99999, 30000)])
+@pytest.mark.parametrize("requested,expected", [(None, 15000), (1500, 1500), (99999, 30000)])
 def test_core_passes_deadline_to_scalar_and_paired_read(monkeypatch, include_working, requested, expected):
     calls = []
     envelope = dict(rows=[], columns=[], row_count=0, truncated=False)
