@@ -2,6 +2,22 @@
 
 ## Estado para retomada
 
+BASE T32 verificado: acceptance-retirement-mixed-projection.json,79 casos
+existentes revisados e executados (Core51, Community28), sem skips/falhas.
+Terminais: Core83724=0,51passed4.37s; Community67770=0,28passed286.21s.
+Eventos Card mistos continuam entregáveis; somente trabalho exclusivo Sprint
+é superseded. Reabertura via fila/reconcile/DLQ é recusada, sem laço de Sprint.
+Grafo Grafx real preserva payload Card/Spec, nós compartilhados, arestas
+paralelas sobreviventes e identidade física; rollback e cold replay conferidos.
+Preflight reutilizado da campanha contígua: provenance-retirement-installed-rollback1.json,
+fonte/site/wheels idênticos; nenhum produto mudou durante a campanha.
+T29/T30 publicados em Corebde1decb, Community69d4b431 continua sem alterações.
+Inventário103 verificados/39 parciais/104 não auditados. Nenhum requisito novo.
+Próximo trabalho: BASE T39/T40 (contradição substantiva e independência da
+projeção operacional), seguido das demais pendências do inventário original.
+Health e UI já verificados não precisam de nova campanha sem mudança/falha.
+KG-10/T23 aguardam respostas às decisões documentadas; entrega ainda aberta.
+
 BASE T29/T30 verificados pelo suplemento acceptance-retirement-final-replay-rollback.json,
 em conjunto com acceptance-retirement-migration-review.json. Rollback instalado:
 session7492 terminou0, 1passed131.26s; sem skip. Predecessor exato v0.3.4
