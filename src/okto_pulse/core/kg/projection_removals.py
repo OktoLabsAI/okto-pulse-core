@@ -6,7 +6,7 @@ from okto_pulse.core.kg.interfaces.graph_transaction import (
     ProjectionLogicalEdgeRef, ProjectionRemovalOnlyIntent,
 )
 from okto_pulse.core.ports.card_projection import (
-    CARD_PARENT_RULE, CARD_SCENARIO_RULES,
+    CARD_PARENT_RULE, CARD_SCENARIO_RULES, is_spec_source_reference,
 )
 
 
@@ -71,3 +71,50 @@ def card_removal_intents(*, intents, nodes, edges, resolve_endpoint):
         plans.append(ProjectionRemovalOnlyIntent(owner_type='card', owner_id=intent.owner_id,
             namespace=intent.namespace, expected_edges=tuple(expected)))
     return tuple(plans) if missing else ()
+
+
+def dependency_removal_intents(*, intents, nodes, edges, resolve_endpoint):
+    """Keep expected prerequisite identities while retracting removed ones."""
+    selected = [intent for intent in intents if intent.owner_type == 'spec' and intent.namespace == 'dependencies']
+    if not selected:
+        return ()
+    if len(selected) != 1 or selected[0].active_refs:
+        raise ValueError('dependency_removal_source_invalid')
+    intent = selected[0]
+    declared = {edge.candidate_id for edge in intent.active_edges}
+    emitted = {key for key, edge in edges.items() if str(edge.rule_id or '').startswith('precedes/spec_dependency/')}
+    if len(declared) != len(intent.active_edges) or declared != emitted:
+        raise ValueError('dependency_removal_edge_set_mismatch')
+    expected, endpoints, missing = [], set(), False
+    for ref in intent.active_edges:
+        edge = edges[ref.candidate_id]
+        if (str(getattr(edge.edge_type, 'value', edge.edge_type)), edge.from_candidate_id,
+                edge.to_candidate_id, edge.rule_id) != (
+                ref.edge_type, ref.from_candidate_id, ref.to_candidate_id, ref.rule_id):
+            raise ValueError('dependency_removal_edge_identity_mismatch')
+        source = edge.from_candidate_id.split(':', 2)
+        target = nodes.get(edge.to_candidate_id)
+        if (ref.edge_type != 'precedes' or len(source) != 3 or source[:2] != ['kgref', 'Entity']
+                or not is_spec_source_reference(source[2]) or source[2] in endpoints
+                or target is None or str(getattr(target.node_type, 'value', target.node_type)) != 'Entity'
+                or target.source_artifact_ref != f'spec:{intent.owner_id}'):
+            raise ValueError('dependency_removal_endpoint_invalid')
+        endpoints.add(source[2])
+        node_id, node_type = resolve_endpoint(edge.from_candidate_id)
+        if node_id is None:
+            missing = True
+        elif node_type != 'Entity':
+            raise ValueError('dependency_removal_endpoint_type_mismatch')
+        expected.append(ProjectionLogicalEdgeRef('precedes', 'Entity', 'Entity',
+            source[2], target.source_artifact_ref, ref.rule_id))
+    if not missing:
+        return ()
+    owner_id, owner_type = resolve_endpoint(f'kgref:Entity:spec:{intent.owner_id}')
+    if owner_id is None:
+        # Nothing was materialized for this owner. The existing read-only
+        # prerequisite barrier handles this wait without a removal commit.
+        return ()
+    if owner_type != 'Entity':
+        raise ValueError('dependency_removal_owner_invalid')
+    return (ProjectionRemovalOnlyIntent('spec', intent.owner_id, 'dependencies',
+        owner_node_id=owner_id, expected_edges=tuple(expected)),)

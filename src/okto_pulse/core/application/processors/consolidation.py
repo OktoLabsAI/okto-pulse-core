@@ -3226,7 +3226,7 @@ async def _process_queue_entry(
     # retained through the caller UOW. Preserve graph-writer -> SQL-writer order.
     # Exact candidate rebuild keeps its immutable membership/ACK protocol.
     allow_known_removals = bool(
-        entry.artifact_type == 'card' and not _queue_source(entry).startswith('rebuild:')
+        entry.artifact_type in {'card', 'spec'} and not _queue_source(entry).startswith('rebuild:')
         and enter_graph_write is not None and deferred_session_ids is not None
         and _claim_token(entry) is not None
     )
@@ -3238,10 +3238,19 @@ async def _process_queue_entry(
     preparation = await _prepare_deterministic_projection(db, entry)
     if isinstance(preparation, bool):
         if allow_known_removals:
+            if preparation:
+                # Preserve the existing cancelled-Spec no-op. The earlier
+                # writer acquisition still requires its normal close/reopen
+                # lifecycle before this queue item can be acknowledged.
+                await _ensure_board_graph_durable(board_id=entry.board_id,
+                    mutation_ref=f'projection-source-noop:{entry.id}', write_lease=source_lease,
+                    blocking_execution=blocking_execution,
+                    failure_timestamp=clock.now() if clock is not None else None)
+                return True
             # No graph mutation started: unwind the guarded scope as a source
             # refusal, rather than completing a writer without its lifecycle.
             raise KGPrimitiveError('relational_projection_source_unavailable',
-                'The fenced Card projection source could not be prepared.')
+                'The fenced relational projection source could not be prepared.')
         return preparation
     worker_result, artifact = preparation
     node_candidates = [_worker_node_to_candidate(n) for n in worker_result.nodes]

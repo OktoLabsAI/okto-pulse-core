@@ -2,6 +2,64 @@
 
 ## Estado para retomada
 
+§4.5 dependencias Spec validado no par final2: Core70passed16.59s(51108=0),
+Community47passed179.22s(93747=0), regressao Card22passed95.23s(24906=0).
+Remocao pendente/rollback SQL/replay/conclusao apos prerequisite passaram;
+adapter preserva aresta humana mesmo par/regra durante remocao-only e sua
+compensacao. Matching distingue layer/writer presentes e recibos antigos
+sem metadados continuam cobertos pela suite existente. F1624880=0/oitoZERO;
+prova0c49e4=0:859/922+373/458 identicos, instalada antes das suites. Recorder
+record_dependency_removal.py executado UMA vez apos terminais: evidencia
+evidence-known-spec-dependency-removal.json preserva todas as falhas e limites.
+Ruff F/E9 e diff-check verdes. Sem processos pendentes; pronto para commit/push.
+Sem promocao automatica de criterio; inventario81/38/127 e entrega integral
+continuam abertos. Proximas verificacoes JA registradas: Spec sem referencias
+semanticas e dono/paridade entre duas Specs com conteudo similar; erro primario
+de dono e compensacao secundaria registrados abaixo. Nao relaxar guard/gate.
+
+Dependency-final2 wheels0/install78411=0/prova0c49e4=0:859/922+373/458 identicos,
+observada terminal ANTES das campanhas. Core51108=0,70passed16.59s; F1624880=0,
+findings/documentacao vazios e oitoZERO. Community93747 ainda em execucao;
+aguardar terminal. Depois regressao Card, pois matching de compensacao e
+primitiva compartilhados mudaram. Recorder record_dependency_removal.py pronto,
+NAO executado: espera terminais incluindo regressao. Nenhuma alteracao de fonte
+durante testes. O round final anterior foi substituido antes de testes/prova
+apenas para retirar blank line EOF detectada por diff-check; logs preservados.
+
+§4.5 Spec/dependencias reproduzido: characterization3(17010=1)1failed31.82s,
+fila pending/relational_projection_endpoint_pending conserva precedes antiga
+spec:old->spec:spec apos tombstone e nova dependencia spec:next nao projetada.
+Implementacao WIP reutiliza progresso/remocao-only e compensacao Card, com
+fonte Spec apos fence, identidades logicas completas e regras publicas Core.
+Spec cancelada conserva no-op com lifecycle normal. Exact rebuild inalterado.
+Wheels dependency1 ambos0/install40408=0/prova88510=0(859/922+373/458 identicos).
+ATENCAO: campanha dependency1(47934=0,1passed31.85s) iniciou antes de observar
+terminal da prova; NAO contar como qualificacao. Dependency2 rodou apos prova:
+Core97327=0,65passed13.25s; Community90360=1,3passed/1failed98.49s. Os dois
+casos live (normal/rollback SQL) e retencao de alvo esperado passaram; falhou
+restore por confundir aresta humana mesmo par/regra com before-image worker.
+Corrigido matching/grouping de compensacao para incluir layer/writer presentes,
+mantendo compatibilidade de recibos antigos sem esses campos. F1643841=1 so
+README, findings[]/oitoZERO; matrizes oficiais regeneradas apos terminais.
+Final wheels ambos0/install em andamento. Aguardar terminal, executar prova
+e SO DEPOIS suites final Core/Community/F16. Testes novos do Core cobrem lookup
+falho/owner ausente/foreign e no-op cancelado; incluir no perfil final (70 casos).
+Ainda NAO fechar evidencia/commit. Nenhuma mudanca frontend ou gate de dominio.
+
+Par Card publicado f9e1d593/2824baa2, pushes0 e arvores limpas confirmadas.
+Proxima reproducao §4.5/dependencias Spec em andamento; produto inalterado
+desde prova final Card(859/922+373/458). Characterization1(46223=1,30.97s) e
+2(81298=1,29.81s) pararam ANTES do caso-alvo, ao materializar prerequisite com
+mesmos payloads semanticos da Spec ja projetada. Captura do erro primario:
+"Projection endpoint belongs to another source."; compensacao subsequente
+tambem falhou em restore_node_properties de Entity inexistente. Nao atribuir
+essas falhas a remocao pendente nem relaxar guard. Characterization3 isola o
+caso usando prerequisites somente com raiz, sem copiar seus payloads; deve
+chegar a troca de dependencia antiga pela nova ainda nao materializada.
+Falha entre Specs com conteudo semantico repetido fica registrada para a
+verificacao de dono/paridade ja exigida pelo complemento KG; ainda sem
+diagnostico de endpoint/regra exatos, sem alteracao de produto ou novo alvo.
+
 §4.5 Card/remocoes conhecidas validado no par final: Core49passed8.83s
 (22457=0), recovery49passed9.87s(32231=0), Community22passed110.60s(80399=0).
 Rollback SQL restaura before-image integral; replay conserva pendencia sem

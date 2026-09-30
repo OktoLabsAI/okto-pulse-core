@@ -93,3 +93,16 @@ def owns_scenario_criterion_edge(*, owner_id: str, source_ref: str, target_ref: 
     return (is_spec_child_reference(source_ref, owner_id=owner_id, section="test_scenario")
             and is_spec_child_reference(target_ref, owner_id=owner_id, section="ac")
             and is_scenario_criterion_writer(rule_id=rule_id, layer=layer, created_by=created_by))
+
+
+def owns_spec_dependency_endpoints(*, owner_id, source_type, target_type, source_ref, target_ref):
+    """Closed incoming prerequisite relation of this exact Spec owner."""
+    from okto_pulse.core.ports.card_projection import is_spec_source_reference
+    return (source_type == target_type == 'Entity' and is_spec_source_reference(source_ref)
+            and target_ref == f'spec:{owner_id}' and source_ref != target_ref)
+
+
+def is_spec_dependency_writer(*, rule_id, layer, created_by):
+    """Only the deterministic dependency writer may retract its projection."""
+    return (isinstance(rule_id, str) and rule_id.startswith('precedes/spec_dependency/')
+            and layer == 'deterministic' and created_by == 'worker_layer1')

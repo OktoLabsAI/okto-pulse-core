@@ -110,7 +110,7 @@ from okto_pulse.core.kg.session_manager import (
 )
 from okto_pulse.core.ports.runtime_workers import BlockingExecutionPort
 from okto_pulse.core.kg.projection_removals import (
-    DeferredProjectionProgress, GraphRemovalProgress, card_removal_intents,
+    DeferredProjectionProgress, GraphRemovalProgress, card_removal_intents, dependency_removal_intents,
 )
 
 logger = logging.getLogger("okto_pulse.kg.primitives")
@@ -3184,6 +3184,11 @@ def _do_graph_commit(
                 nodes=node_candidates, edges=edge_candidates,
                 resolve_endpoint=lambda endpoint: _resolve_endpoint(endpoint, {}, graph_scope=graph_scope),
             )
+            removal_intents += dependency_removal_intents(
+                intents=relational_projection_active_set_intents,
+                nodes=node_candidates, edges=edge_candidates,
+                resolve_endpoint=lambda endpoint: _resolve_endpoint(endpoint, {}, graph_scope=graph_scope),
+            )
             if removal_intents:
                 for removal_intent in removal_intents:
                     orch.reconcile_projection_active_set(removal_intent)
@@ -4551,7 +4556,7 @@ async def commit_consolidation(
         allow_pending_commit=True,
     )
     if allow_known_removals and (
-        agent_id != 'system:historical_consolidation' or session.artifact_type != 'card'
+        agent_id != 'system:historical_consolidation' or session.artifact_type not in {'card', 'spec'}
         or not defer_session_finalization or db is None or req.agent_overrides
     ):
         raise ValueError('known_removal_worker_transaction_required')

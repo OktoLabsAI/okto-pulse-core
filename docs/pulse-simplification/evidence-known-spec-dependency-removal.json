@@ -1,0 +1,239 @@
+{
+  "scope": "KG supplement §4.5: known Spec dependency removals while a prerequisite awaits materialization",
+  "acceptance_promotions": [],
+  "domain_gate_changed": false,
+  "campaigns": [
+    {
+      "file": "learning-reconciliation-k2-dependency-removal-characterization1-community.xml",
+      "counts": {
+        "tests": 1,
+        "failures": 1,
+        "errors": 0,
+        "skipped": 0
+      },
+      "sha256": "785c080b72f562ffaf5b3e9a506072b2b2ed093aafffdd08850de7822fb6cf13"
+    },
+    {
+      "file": "learning-reconciliation-k2-dependency-removal-characterization2-community.xml",
+      "counts": {
+        "tests": 1,
+        "failures": 1,
+        "errors": 0,
+        "skipped": 0
+      },
+      "sha256": "cf5602037ea0ccf83308178ad4682c94eec9f89e5ac8e14aad57cfed22cdb412"
+    },
+    {
+      "file": "learning-reconciliation-k2-dependency-removal-characterization3-community.xml",
+      "counts": {
+        "tests": 1,
+        "failures": 1,
+        "errors": 0,
+        "skipped": 0
+      },
+      "sha256": "9a18fe6e9d6594a250f89a98d61480959dc2a6264db4c188828dcedfd6b2ef56"
+    },
+    {
+      "file": "learning-reconciliation-k2-dependency-removal2-community.xml",
+      "counts": {
+        "tests": 4,
+        "failures": 1,
+        "errors": 0,
+        "skipped": 0
+      },
+      "sha256": "af3d487035338f6e82c7d68f77e4c84087b937f3d3f1b5e8387ac170e71993a4"
+    },
+    {
+      "file": "learning-reconciliation-k2-dependency-removal-final2-core.xml",
+      "counts": {
+        "tests": 70,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      "sha256": "51826b2713bc095ff43ed0b2da3c21a996793c1b5424371cb03a8cd5c4b27403"
+    },
+    {
+      "file": "learning-reconciliation-k2-dependency-removal-final2-community.xml",
+      "counts": {
+        "tests": 47,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      "sha256": "f2b14eea7ffe67242af7f4ec9cfe838fd8fe88739bc06034378d208dd0712bcf"
+    },
+    {
+      "file": "learning-reconciliation-k2-known-removal-dependency-regression-community.xml",
+      "counts": {
+        "tests": 22,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      "sha256": "e7f097a13d45f4026599557c29d25670dfae12a6a0479b4a92df3c8d27ee7e8f"
+    }
+  ],
+  "provenance": {
+    "checked_at": "2026-09-30T20:20:14.733592+00:00",
+    "python": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Scripts\\python.exe",
+    "packages": {
+      "core": {
+        "python_files": 859,
+        "origin": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages\\okto_pulse\\core\\__init__.py",
+        "repository_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_core",
+        "commit": "f9e1d593cf38586442e812b07e60b94301fd98aa",
+        "dirty": true,
+        "dirty_entry_count": 7,
+        "distribution": "okto-pulse-core",
+        "version": "0.3.4",
+        "wheel": {
+          "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\dist-learning-reconciliation-k2-dependency-removal-final2\\okto_pulse_core-0.3.4-py3-none-any.whl",
+          "sha256": "4a755b8a923d698bbe0fbfd69fc8a5ccd225ba3d540ee5089d4add3807a56e46",
+          "size": 3792286
+        },
+        "source_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_core\\src",
+        "site_packages_root": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages",
+        "package_prefix": "okto_pulse/core/",
+        "byte_identical_member_count": 922,
+        "byte_identical": true,
+        "aggregate_sha256": "72d284cfbcaf2531672067c70fb6d6944800dbb3412b6f58e77f097d35bb30cf",
+        "chain_hashes": {
+          "source": "72d284cfbcaf2531672067c70fb6d6944800dbb3412b6f58e77f097d35bb30cf",
+          "wheel": "72d284cfbcaf2531672067c70fb6d6944800dbb3412b6f58e77f097d35bb30cf",
+          "site_packages": "72d284cfbcaf2531672067c70fb6d6944800dbb3412b6f58e77f097d35bb30cf"
+        },
+        "critical_resource_sha256": {
+          "okto_pulse/core/mcp/resources/ska_resource_manifest.json": "87fab2a5ded5f6ee273af8628555c21f7065d32379945784132bb6c300d05865",
+          "okto_pulse/core/mcp/resources/ska_tool_manifest.json": "0c3fa3da1549baec20872eca3f4a289288627e6b9f6b80be10472ac962fa72b9"
+        },
+        "mismatches": []
+      },
+      "community": {
+        "python_files": 373,
+        "origin": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages\\okto_pulse\\community\\__init__.py",
+        "repository_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_community",
+        "commit": "2824baa2a281d40f0dc221a11b9cb7b5eb6db6c9",
+        "dirty": true,
+        "dirty_entry_count": 4,
+        "distribution": "okto-pulse",
+        "version": "0.3.4",
+        "wheel": {
+          "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\dist-learning-reconciliation-k2-dependency-removal-final2\\okto_pulse-0.3.4-py3-none-any.whl",
+          "sha256": "c80df4ece9663a79d5db504e9ac0faa5a62c25b5e4e6ad2b8340fcd09ed656c5",
+          "size": 4535176
+        },
+        "source_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_community\\src",
+        "site_packages_root": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages",
+        "package_prefix": "okto_pulse/community/",
+        "byte_identical_member_count": 458,
+        "byte_identical": true,
+        "aggregate_sha256": "94e3b3e820cf74f6c6d891b03b4aed41523ec3396fa781d7cf180f1da379463b",
+        "chain_hashes": {
+          "source": "94e3b3e820cf74f6c6d891b03b4aed41523ec3396fa781d7cf180f1da379463b",
+          "wheel": "94e3b3e820cf74f6c6d891b03b4aed41523ec3396fa781d7cf180f1da379463b",
+          "site_packages": "94e3b3e820cf74f6c6d891b03b4aed41523ec3396fa781d7cf180f1da379463b"
+        },
+        "critical_resource_sha256": {},
+        "mismatches": []
+      }
+    }
+  },
+  "closure": {
+    "budgets": [
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "import_boundary_baseline",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every import_boundary_baseline allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "singleton_baseline",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every singleton_baseline allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "dependency_temporary_exceptions",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every dependency_temporary_exceptions allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "graph_runtime_compatibility",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every graph_runtime_compatibility allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "rebuild_artifact_compatibility",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every rebuild_artifact_compatibility allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "community_private_reach_ins",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every community_private_reach_ins allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "community_adapter_bridges",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every community_adapter_bridges allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "af35_relational_residue",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every af35_relational_residue allowance before F16 completion."
+      }
+    ],
+    "sha256": "0edb85f1dfa88bc997aefbb76c4f0b9b014351d274e6841d945477c9ab8593dc"
+  },
+  "contracts": [
+    "Complete live Spec source is read after graph writer and SQL claim/source fence, held through caller commit.",
+    "Logical expected prerequisite identities retain valid existing edges without fabricating pending roots.",
+    "Removal-only progress retracts deterministic dependency edges of the exact owner. Same-pair/rule human edges remain through that progress and compensation.",
+    "Before-images distinguish stored layer/writer when present; old metadata-less receipts keep their existing comparison.",
+    "Queue remains pending and no complete audit/ACK is emitted until the whole projection commits.",
+    "Rollback restores the complete prior graph; replay is idempotent and prerequisite projection enables normal completion.",
+    "Cancelled Spec no-op and immutable exact-rebuild protocol retain their existing semantics."
+  ],
+  "failures_preserved": [
+    "Initial rich prerequisite fixture hit foreign-source endpoint refusal and failed property compensation before the target case. This remains a separately recorded ownership/parity gap.",
+    "Root-only characterization reached the target: removed old dependency remained canonical while new prerequisite was pending.",
+    "Campaign2 found restoration confused retained human edge with worker before-image; writer-qualified comparison/grouping corrected it."
+  ],
+  "unqualified_campaign": "dependency-removal1 community passed, but was launched before observing provenance terminal status; excluded from acceptance evidence.",
+  "limits": [
+    "No new gate, authority, migration, public tool or frontend behavior.",
+    "These tests do not close other KG gaps or consolidated acceptance. Inventory remains unpromoted.",
+    "Validation environment inherits site dependencies; no real-data migration or active-server restart."
+  ]
+}
