@@ -2,6 +2,26 @@
 
 ## Estado para retomada
 
+### 2026-10-01 — checkpoint publicado; implementação integral continua
+
+Commits e pushes confirmados em origin/feature/v0.4.0:
+- Core `204be3388ea3bfc80fe4b1bb6db325ad634c5eba`.
+- Community `0c1190db2cb287f70c5a5a9edec42cf316c5995c`.
+
+Working trees limpas após os commits. Nenhum release/tag/deploy. Este checkpoint
+fecha a retirada coordenada da cadeia offline Sprint e do importador de avaliações
+antigas com inicialização SQL nativa; **não fecha C1–C4**. A instrução é continuar
+até a entrega integral. Coleta Community pendente de novas adaptações; não ocultar
+os erros conhecidos nem reintroduzir conversores para fazê-la passar.
+
+Após diff --check, removida só linha vazia final de misc.md; o código Python não
+mudou após quality1. Par recompilado como dist-clean-break-checkpoint1 para atualizar
+também a prova de payload. Próxima frente de produto: grafx_schema_evolution,
+schema manager migrate/candidate, manifests congelados de recovery e backfill
+graph_layer; manter validação/admissão e reconstrução de dados nativos.
+provenance-clean-break-checkpoint1.json terminal0: Core856/Community324 py,
+919/410payload byte-idênticos às fontes publicadas.
+
 ### 2026-10-01 — checkpoint coordenado da retirada offline e inicialização nativa
 
 Incremento pronto para commit/push em feature/v0.4.0 nos dois repos: policy sem
