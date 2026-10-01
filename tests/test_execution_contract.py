@@ -79,13 +79,15 @@ def adopted_snapshot(implementations=None, tests=None):
     )
 
 
-def test_common_evaluator_requires_all_contributions_only_when_contract_is_selected():
+def test_common_evaluator_requires_current_context_and_all_contributions():
     _, implementations, tests = case()
     snapshot = adopted_snapshot(implementations[:1], tests[:1])
     result = evaluate_delivery_coverage(snapshot)
     assert not result.allowed and result.rows[0].missing_card_ids == ("authorization",)
     assert not result.rows[0].implementation_satisfied
-    assert evaluate_delivery_coverage(replace(snapshot, effective_context=None)).allowed
+    absent = evaluate_delivery_coverage(replace(snapshot, effective_context=None))
+    assert not absent.allowed
+    assert absent.blockers == ("delivery_effective_context_unavailable",)
     assert evaluate_delivery_coverage(adopted_snapshot()).allowed
 
 
@@ -117,6 +119,7 @@ def test_adopted_admission_accepts_failed_partial_work_before_done_without_credi
         "stale_scope",
         "unobserved_card",
         "missing_context",
+        "absent_context",
     ],
 )
 def test_admission_rejects_unobserved_or_unattested_contributions(mutation):
@@ -142,5 +145,7 @@ def test_admission_rejects_unobserved_or_unattested_contributions(mutation):
     snapshot = adopted_snapshot((implementation, implementations[1]), (run,))
     if mutation == "missing_context":
         snapshot = replace(snapshot, effective_context=False)
+    elif mutation == "absent_context":
+        snapshot = replace(snapshot, effective_context=None)
     with pytest.raises(ValueError, match="delivery_current_verified"):
         require_test_result_admission(snapshot, run.fact)

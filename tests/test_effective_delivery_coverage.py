@@ -89,12 +89,12 @@ def evaluate(
     )
 
 
-def test_reproduction_one_card_credits_legacy_but_not_adopted_multi_card_requirement():
+def test_one_card_cannot_complete_a_multi_card_requirement_or_bypass_context():
     inventory, implementations, tests = case()
     snapshot = replace(
         SNAPSHOT, implementations=(implementations[0].fact,), tests=(tests[0].fact,)
     )
-    assert evaluate_delivery_coverage(snapshot).allowed
+    assert evaluate_delivery_coverage(snapshot).blockers == ('delivery_effective_context_unavailable',)
     result = evaluate(inventory, implementations[:1], tests[:1], snapshot=snapshot)
     assert not result.allowed
     assert result.rows[0].missing_card_ids == ("authorization",)
@@ -360,7 +360,8 @@ def test_several_runs_cover_distinct_criteria_of_one_implementation():
 def test_persisted_scope_reader_preserves_history_and_exact_binding_identity():
     _, implementations, _ = case()
     fact = implementations[0].fact
-    assert read_scoped_implementation(fact, {}).scopes == ()
+    with pytest.raises(ValueError, match='delivery_contribution_scope_payload_invalid'):
+        read_scoped_implementation(fact, {})
     payload = {
         "scope_contract_version": "card-contribution-scope/v1",
         "contribution_scopes": [

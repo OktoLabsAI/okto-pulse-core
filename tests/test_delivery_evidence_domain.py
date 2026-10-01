@@ -1,3 +1,5 @@
+# Receipt, lifecycle and waiver predicates beneath effective delivery coverage.
+
 from dataclasses import replace
 
 import pytest
@@ -11,7 +13,7 @@ from okto_pulse.core.domain.delivery_evidence import (
     DeliveryWaiverFact,
     ImplementationDeliveryFact,
     TestDeliveryFact as DeliveryTestFact,
-    evaluate_delivery_coverage,
+    _evaluate_delivery_facts,
 )
 from okto_pulse.core.domain.enums import (
     CardStatus,
@@ -57,7 +59,7 @@ SNAPSHOT = DeliveryEvidenceSnapshot(
 
 
 def test_complete_delivery_preserves_distinct_implementation_and_test_receipts():
-    result = evaluate_delivery_coverage(SNAPSHOT)
+    result = _evaluate_delivery_facts(SNAPSHOT)
     assert result.allowed
     assert result.rows[0].implementation_ids == ("impl",)
     assert result.rows[0].test_ids == ("test",)
@@ -65,7 +67,7 @@ def test_complete_delivery_preserves_distinct_implementation_and_test_receipts()
 
 @pytest.mark.parametrize("card_type", [CardType.NORMAL, CardType.BUG])
 def test_task_or_bug_cannot_claim_test_verification(card_type):
-    result = evaluate_delivery_coverage(
+    result = _evaluate_delivery_facts(
         replace(SNAPSHOT, tests=(replace(TEST, card_type=card_type),))
     )
     assert not result.allowed
@@ -73,7 +75,7 @@ def test_task_or_bug_cannot_claim_test_verification(card_type):
 
 
 def test_test_card_cannot_replace_task_implementation():
-    result = evaluate_delivery_coverage(
+    result = _evaluate_delivery_facts(
         replace(
             SNAPSHOT,
             implementations=(replace(IMPLEMENTATION, card_type=CardType.TEST),),
@@ -105,7 +107,7 @@ def test_test_card_cannot_replace_task_implementation():
     ],
 )
 def test_done_alone_stale_or_wrong_scope_test_is_not_proof(overrides):
-    result = evaluate_delivery_coverage(
+    result = _evaluate_delivery_facts(
         replace(SNAPSHOT, tests=(replace(TEST, **overrides),))
     )
     assert not result.allowed
@@ -130,7 +132,7 @@ def test_done_alone_stale_or_wrong_scope_test_is_not_proof(overrides):
     ],
 )
 def test_plans_empty_or_stale_implementation_cannot_satisfy_delivery(overrides):
-    result = evaluate_delivery_coverage(
+    result = _evaluate_delivery_facts(
         replace(SNAPSHOT, implementations=(replace(IMPLEMENTATION, **overrides),))
     )
     assert not result.allowed
@@ -145,9 +147,9 @@ def test_shared_evidence_and_selective_invalidation():
         implementations=(replace(IMPLEMENTATION, bindings=(BINDING, second)),),
         tests=(replace(TEST, bindings=(BINDING, second)),),
     )
-    assert evaluate_delivery_coverage(snapshot).allowed
+    assert _evaluate_delivery_facts(snapshot).allowed
     changed = replace(second, semantic_sha256="d" * 64)
-    result = evaluate_delivery_coverage(
+    result = _evaluate_delivery_facts(
         replace(
             snapshot,
             obligations=(
@@ -180,7 +182,7 @@ def waiver(**overrides):
 
 
 def test_authorized_per_obligation_waiver_is_not_a_passed_test():
-    result = evaluate_delivery_coverage(
+    result = _evaluate_delivery_facts(
         replace(SNAPSHOT, tests=(), waivers=(waiver(),))
     )
     assert result.allowed
@@ -202,7 +204,7 @@ def test_authorized_per_obligation_waiver_is_not_a_passed_test():
     ],
 )
 def test_waiver_cannot_bypass_authority_phase_scope_or_currentness(overrides):
-    result = evaluate_delivery_coverage(
+    result = _evaluate_delivery_facts(
         replace(SNAPSHOT, tests=(), waivers=(waiver(**overrides),))
     )
     assert not result.allowed
@@ -210,12 +212,12 @@ def test_waiver_cannot_bypass_authority_phase_scope_or_currentness(overrides):
 
 
 def test_partial_empty_and_ambiguous_projections_fail_closed():
-    assert not evaluate_delivery_coverage(replace(SNAPSHOT, complete=False)).allowed
-    assert not evaluate_delivery_coverage(replace(SNAPSHOT, obligations=())).allowed
-    assert not evaluate_delivery_coverage(
+    assert not _evaluate_delivery_facts(replace(SNAPSHOT, complete=False)).allowed
+    assert not _evaluate_delivery_facts(replace(SNAPSHOT, obligations=())).allowed
+    assert not _evaluate_delivery_facts(
         replace(SNAPSHOT, obligations=(OBLIGATION, OBLIGATION))
     ).allowed
-    assert not evaluate_delivery_coverage(replace(SNAPSHOT, tests=(TEST, TEST))).allowed
+    assert not _evaluate_delivery_facts(replace(SNAPSHOT, tests=(TEST, TEST))).allowed
 
 
 def test_boundaries_reject_invalid_scope_and_semantic_identity():
@@ -226,7 +228,7 @@ def test_boundaries_reject_invalid_scope_and_semantic_identity():
 
 
 def test_no_status_or_policy_side_effect_and_no_provider_dependency():
-    result = evaluate_delivery_coverage(replace(SNAPSHOT, implementations=(), tests=()))
+    result = _evaluate_delivery_facts(replace(SNAPSHOT, implementations=(), tests=()))
     assert not result.allowed
     # The snapshot has no mutable model/status or Skip/context flags to rewrite.
     assert not hasattr(SNAPSHOT, "spec_status")

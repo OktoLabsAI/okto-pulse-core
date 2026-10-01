@@ -2,6 +2,33 @@
 
 ## Estado para retomada
 
+### 2026-10-01 — C1: retirada do veredito alternativo no domínio
+
+Incremento anterior publicado: Core cb11a2f2 / Community d8e4fddf. Avaliador público
+evaluate_delivery_coverage agora exige EffectiveDeliveryContext; ausência retorna
+delivery_effective_context_unavailable. Admissão de prova não aceita None como
+dispensa de escopo/critério. Reader de escopos recusa payload sem atestações.
+
+Investigação confirmou que o avaliador efetivo reutilizava o antigo avaliador para
+verificar recibos, lifecycle e waivers. Preservadas essas verificações como helper
+interno _evaluate_delivery_facts, chamado explicitamente pelo avaliador atual; removida
+a seleção de veredito antigo por None e a recursão via wrapper público. Não é uma
+segunda modalidade de execução. Testes unitários desses predicados mantidos como
+testes do helper interno; entrada pública coberta pelos testes de contexto/contribuições.
+
+Par dist-clean-break-effective1 construído/instalado. Preflight terminal0
+provenance-clean-break-effective1.json:883/384py,946/469payload byte-idênticos.
+RuffF/E9 verde. Campanhas clean-break-effective1 terminais0:
+Core112passed/10.55s;Community7passed/21.44s. Frontend inalterado
+desde o par anterior, com125testes distintos e build registrados abaixo.
+
+PRÓXIMO de C1: overrides migrados em task_validation_policy.py e Card schemas;
+único consumer Community da porta card_validation_migration é
+adapters/card_validation_retirement.py. Remover também essa dependência na cadeia
+de retirement/C2, sem manter stubs ou mover compatibilidade de lugar. Ainda pendentes
+waiver store/schema, formatos antigos, seleção arquitetural obrigatória, C2–C4 e
+qualificação integral. Objetivo ativo; não pedir nova autorização para continuar.
+
 ### 2026-10-01 — execução autorizada do clean break; C1 em andamento
 
 Nova instrução do usuário: implementar o plano de remoção e o restante do plano

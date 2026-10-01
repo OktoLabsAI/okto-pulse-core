@@ -342,7 +342,7 @@ class DeliveryEvidenceSnapshot:
     tests: tuple[TestDeliveryFact, ...] = ()
     waivers: tuple[DeliveryWaiverFact, ...] = ()
     complete: bool = False
-    # Server-resolved joint contract. None preserves the historical evaluator.
+    # Server-resolved contract. Missing context is incomplete, never a fallback.
     effective_context: object | None = None
 
 
@@ -381,16 +381,17 @@ def _text(*values: str) -> bool:
 def evaluate_delivery_coverage(
     snapshot: DeliveryEvidenceSnapshot,
 ) -> DeliveryCoverageEvaluation:
-    if snapshot.effective_context is not None:
-        from okto_pulse.core.domain.effective_delivery_coverage import evaluate_adopted_snapshot
-        return evaluate_adopted_snapshot(snapshot)
-    return _evaluate_legacy_delivery_coverage(snapshot)
+    from okto_pulse.core.domain.effective_delivery_coverage import evaluate_effective_snapshot
+    return evaluate_effective_snapshot(snapshot)
 
 
-def _evaluate_legacy_delivery_coverage(
+def _evaluate_delivery_facts(
     snapshot: DeliveryEvidenceSnapshot,
 ) -> DeliveryCoverageEvaluation:
-    """Evaluate both obligations without mutating or auto-reopening any Spec.
+    """Internal receipt/lifecycle/waiver checks used by effective coverage.
+
+    This intermediate result is not a complete delivery verdict: the caller
+    must also resolve contributions, scopes and verification criteria.
 
     Spec status, advisory posture, greenfield context and existing Skip flags
     deliberately are not inputs. None can turn missing delivery proof into a

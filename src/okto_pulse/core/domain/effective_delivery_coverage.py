@@ -1,9 +1,4 @@
-"""Coverage for the jointly adopted contract, over server-owned relational facts.
-
-The legacy evaluator stays unchanged. Adoption must select this evaluator and
-the effective inventory together; a historical binding has no authored scope
-attestation and cannot acquire one merely by being read after an upgrade.
-"""
+"""Coverage of current obligations and contributions over server-owned facts."""
 
 from dataclasses import dataclass, replace
 
@@ -15,7 +10,7 @@ from okto_pulse.core.domain.delivery_evidence import (
     DeliveryObligation,
     ImplementationDeliveryFact,
     TestDeliveryFact,
-    evaluate_delivery_coverage,
+    _evaluate_delivery_facts,
     implementation_binding_ready,
 )
 from okto_pulse.core.domain.effective_delivery_inventory import (
@@ -47,9 +42,7 @@ class ScopedImplementationFact:
 def read_scoped_implementation(
     fact: ImplementationDeliveryFact, payload: dict
 ) -> ScopedImplementationFact:
-    """Read immutable server-authored scopes without upgrading historical rows."""
-    if "scope_contract_version" not in payload and "contribution_scopes" not in payload:
-        return ScopedImplementationFact(fact, ())
+    """Require immutable server-authored scope attestations for every binding."""
     rows = payload.get("contribution_scopes")
     if (
         payload.get("scope_contract_version") != "card-contribution-scope/v1"
@@ -145,8 +138,6 @@ class ScopedDeliveryCoverageRow(DeliveryCoverageRow):
 
 def implementation_scope_current(snapshot, fact, binding):
     context = snapshot.effective_context
-    if context is None:
-        return True
     if not isinstance(context, EffectiveDeliveryContext):
         return False
     scoped = [item for item in context.implementations if item.fact == fact]
@@ -161,8 +152,6 @@ def implementation_scope_current(snapshot, fact, binding):
 def test_observes_contribution(snapshot, test, implementation, binding):
     """Admission checks relevance; final coverage separately requires all criteria."""
     context = snapshot.effective_context
-    if context is None:
-        return True
     if not isinstance(context, EffectiveDeliveryContext) or not implementation_scope_current(snapshot, implementation, binding):
         return False
     observed = [item for item in context.tests if item.fact == test]
@@ -190,7 +179,7 @@ def contribution_verification_criteria(obligation, contribution):
     return contribution.criterion_ids
 
 
-def evaluate_adopted_snapshot(snapshot):
+def evaluate_effective_snapshot(snapshot):
     context = snapshot.effective_context
     if not isinstance(context, EffectiveDeliveryContext):
         return DeliveryCoverageEvaluation((), ('delivery_effective_context_unavailable',), ())
@@ -220,7 +209,6 @@ def evaluate_effective_delivery_coverage(
     Several authenticated tests may jointly cover it, but a passing functional
     condition cannot conceal a missing technical/operational condition.
     """
-    snapshot = replace(snapshot, effective_context=None)
     blockers = set()
     if any(row.passing_criterion_ids is not None and type(row.passing_criterion_ids) is not tuple for row in tests):
         return EffectiveDeliveryCoverage((), ('delivery_scoped_population_mismatch',), ())
@@ -280,9 +268,9 @@ def evaluate_effective_delivery_coverage(
             (), ("delivery_scoped_population_mismatch",), ()
         )
 
-    # Reuse source/lifecycle/revocation and waiver verdicts. The adopted
-    # contract adds scope/criterion checks, never a weaker proof predicate.
-    baseline = evaluate_delivery_coverage(snapshot)
+    # Receipt/lifecycle/waiver checks are necessary but not sufficient; the
+    # effective verdict also requires the scopes and criteria resolved below.
+    baseline = _evaluate_delivery_facts(snapshot)
     blockers.update(
         code
         for code in baseline.blockers
@@ -359,7 +347,7 @@ def evaluate_effective_delivery_coverage(
         test_ids = set()
         for test in by_test_binding.get(binding, ()):
             fact = test.fact
-            # The legacy engine proves authentication, current passing result,
+            # The fact checks prove authentication, current passing result,
             # exact implementation IDs and Done. It may withhold its aggregate
             # test_ids if another implementation lacks tests, so evaluate each
             # admitted run against only the IDs that it explicitly names.
@@ -395,7 +383,7 @@ def evaluate_effective_delivery_coverage(
                 checked_fact = replace(fact, result=TestScenarioStatus.PASSED)
             else:
                 checked_fact = fact
-            check = evaluate_delivery_coverage(
+            check = _evaluate_delivery_facts(
                 DeliveryEvidenceSnapshot(
                     snapshot.scope,
                     (DeliveryObligation(binding, binding.obligation_ref),),
