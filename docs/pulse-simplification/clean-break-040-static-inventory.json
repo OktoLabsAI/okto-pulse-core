@@ -1,0 +1,641 @@
+{
+  "format": "pulse-clean-break-static-inventory/v1",
+  "assessed_on": "2026-10-01",
+  "scope": "static sizing for requested 0.4.0 clean break; candidates are not a deletion manifest",
+  "method": {
+    "root": "paths are relative to the parent of the two sibling repositories",
+    "population": "all .py files under src/okto_pulse/core and src/okto_pulse/community, excluding tests and frontend",
+    "groups": "disjoint filename-stem matches in this precedence: retirement; legacy; migration or migrator; backfill; historical_archive",
+    "lines": "len(file_bytes.splitlines()), including blank lines and comments",
+    "hashes": "SHA-256 of raw file bytes",
+    "consumers": "AST Import/ImportFrom, including relative and nested imports; same-edition consumers outside candidate groups only",
+    "initiative_python_diff": "git diff --numstat baseline HEAD, restricted to Python files under the product source tree",
+    "limits": [
+      "Candidates are not approved deletions; mixed current responsibilities require review.",
+      "Embedded compatibility branches in other files are not counted.",
+      "No cross-repository, dynamic-import or call-graph completeness claim.",
+      "No tests, performance improvement or guaranteed line reduction inferred from this census."
+    ]
+  },
+  "repositories": {
+    "core": {
+      "head": "e8009733aee6dc9c45ff554be57ad3c5bac38ebf",
+      "baseline": "207072509a282e8adec1481d05aee2d54c382bde",
+      "python_files": 883,
+      "physical_python_lines": 405001,
+      "initiative_python_diff": {
+        "added_lines": 28340,
+        "removed_lines": 23459
+      },
+      "named_candidate_groups": {
+        "retirement": [
+          {
+            "path": "okto_labs_pulse_core/src/okto_pulse/core/domain/sprint_retirement_embedded.py",
+            "lines": 81,
+            "sha256": "154ea304b5991a9460cfa99ed8aff79d906688b61877f0e7ac6912dd338e3d7a"
+          },
+          {
+            "path": "okto_labs_pulse_core/src/okto_pulse/core/domain/sprint_retirement_events.py",
+            "lines": 144,
+            "sha256": "a17c1351fb98a242ce4093ab19e6fd8d091bbb7d8d00b2621483d29be39eee9b"
+          },
+          {
+            "path": "okto_labs_pulse_core/src/okto_pulse/core/ports/global_retirement_graph.py",
+            "lines": 142,
+            "sha256": "cada834c7a5dd4168b3c43da5429a2088da5aeb7bfe6b065cb7bb764b1866a95"
+          },
+          {
+            "path": "okto_labs_pulse_core/src/okto_pulse/core/ports/outbox_retirement.py",
+            "lines": 73,
+            "sha256": "4e138b788fd571983fda55243562ef9a30b1974fa1e9306777c6750f7600225f"
+          },
+          {
+            "path": "okto_labs_pulse_core/src/okto_pulse/core/ports/permission_retirement.py",
+            "lines": 214,
+            "sha256": "b843357946444f43b650894888572297b3c5faeb2cea0edfc9ff7184eb164f96"
+          },
+          {
+            "path": "okto_labs_pulse_core/src/okto_pulse/core/ports/retirement_context.py",
+            "lines": 54,
+            "sha256": "f3c560349800b62c47a42ee0a0416c8e63f6db6ff3bd437e823aa8d7ca1fea1e"
+          },
+          {
+            "path": "okto_labs_pulse_core/src/okto_pulse/core/ports/retirement_graph.py",
+            "lines": 147,
+            "sha256": "f07c5d46d91966c9af7e4b590e78b278224845d5491ca1afc635b6527f56db0a"
+          },
+          {
+            "path": "okto_labs_pulse_core/src/okto_pulse/core/ports/work_retirement.py",
+            "lines": 19,
+            "sha256": "09c54cb6be246721d9d5f07a6d68921f75dd617aab11f768019517284bc9417a"
+          }
+        ],
+        "legacy_named": [
+          {
+            "path": "okto_labs_pulse_core/src/okto_pulse/core/domain/quality_assessment_legacy_import.py",
+            "lines": 1271,
+            "sha256": "8e7efd8785ac8e017cb66039275263185fb9f73bc4ff5aaaf2b724d9a0f5a7f7"
+          },
+          {
+            "path": "okto_labs_pulse_core/src/okto_pulse/core/ports/architecture_legacy.py",
+            "lines": 63,
+            "sha256": "5a59d303e15d828fda3d79b729e3af4b8efc4d65dfb4273bbf86e4aeab670cc2"
+          },
+          {
+            "path": "okto_labs_pulse_core/src/okto_pulse/core/ports/quality_assessment_legacy_import.py",
+            "lines": 128,
+            "sha256": "e56e66dac730c9939ad606b7e38e3f269d9fd130dfbfc241c7f8625b4b70969b"
+          },
+          {
+            "path": "okto_labs_pulse_core/src/okto_pulse/core/services/architecture_propagation_legacy.py",
+            "lines": 125,
+            "sha256": "20a538e2b8c85f3d5f62befcbf6597df038fb618855254ac4c58d6eb547023e9"
+          },
+          {
+            "path": "okto_labs_pulse_core/src/okto_pulse/core/services/legacy_code_evidence_classification.py",
+            "lines": 277,
+            "sha256": "9028aba54d6413469687e5f2132fc1d32b9d73203c0d74a7a09ca5e29c0ce727"
+          },
+          {
+            "path": "okto_labs_pulse_core/src/okto_pulse/core/services/legacy_knowledge_write_guard.py",
+            "lines": 121,
+            "sha256": "304169318ee278be45257e6c950414bf760b9d913f752209bc29801c9353d422"
+          },
+          {
+            "path": "okto_labs_pulse_core/src/okto_pulse/core/services/quality_assessment_legacy_import.py",
+            "lines": 610,
+            "sha256": "f9c5f30836fe9c933e4bd3c44f0f5b6424d461dac09d856ec96222209708c72a"
+          }
+        ],
+        "migration_named": [
+          {
+            "path": "okto_labs_pulse_core/src/okto_pulse/core/domain/permission_migration_review.py",
+            "lines": 44,
+            "sha256": "5becca9d8b86ee2bdb6af2b122ce163dc06cc0c8c90f49b6a2103f0137184011"
+          },
+          {
+            "path": "okto_labs_pulse_core/src/okto_pulse/core/ports/card_validation_migration.py",
+            "lines": 50,
+            "sha256": "82a51d1029d45f500ce2dfd2001a7e57f25439ffbddeb458e4d9aa3f886437d0"
+          },
+          {
+            "path": "okto_labs_pulse_core/src/okto_pulse/core/ports/relational_schema_migrator.py",
+            "lines": 250,
+            "sha256": "c31778e450df4c16ee33d31e7ebdf02722e1dc468d795785ac3d11b44401505c"
+          }
+        ],
+        "backfill_named": [],
+        "archive_named": [
+          {
+            "path": "okto_labs_pulse_core/src/okto_pulse/core/application/use_cases/historical_archive.py",
+            "lines": 86,
+            "sha256": "c69491f95d612fa912494298eb9159aeaa6d04779d88d1576cb4888b90f876df"
+          },
+          {
+            "path": "okto_labs_pulse_core/src/okto_pulse/core/ports/historical_archive.py",
+            "lines": 207,
+            "sha256": "db4b758194f645ff3c7e34084e473b64dc7f6b0250c9a30758ec771404afa9c3"
+          },
+          {
+            "path": "okto_labs_pulse_core/src/okto_pulse/core/ports/historical_archive_authority.py",
+            "lines": 79,
+            "sha256": "08180aa3173244070800deab2ce7d99a025f00be3886cc84cc9943aeac68e438"
+          },
+          {
+            "path": "okto_labs_pulse_core/src/okto_pulse/core/ports/historical_archive_read.py",
+            "lines": 140,
+            "sha256": "db84696a449a20a46f35686c5ede7e1ae6d2bca92aa4703b728ab2172e6578b4"
+          }
+        ]
+      },
+      "group_totals": {
+        "retirement": {
+          "files": 8,
+          "lines": 874
+        },
+        "legacy_named": {
+          "files": 7,
+          "lines": 2595
+        },
+        "migration_named": {
+          "files": 3,
+          "lines": 344
+        },
+        "backfill_named": {
+          "files": 0,
+          "lines": 0
+        },
+        "archive_named": {
+          "files": 4,
+          "lines": 512
+        }
+      },
+      "non_candidate_consumers": {
+        "okto_labs_pulse_core/src/okto_pulse/core/application/service_catalog.py": [
+          "okto_pulse.core.services.architecture_propagation_legacy"
+        ],
+        "okto_labs_pulse_core/src/okto_pulse/core/application/use_cases/code_traceability.py": [
+          "okto_pulse.core.services.legacy_code_evidence_classification"
+        ],
+        "okto_labs_pulse_core/src/okto_pulse/core/application/use_cases/historical_context.py": [
+          "okto_pulse.core.ports.historical_archive",
+          "okto_pulse.core.ports.historical_archive_read"
+        ],
+        "okto_labs_pulse_core/src/okto_pulse/core/application/use_cases/mcp_card_crud.py": [
+          "okto_pulse.core.services.legacy_knowledge_write_guard"
+        ],
+        "okto_labs_pulse_core/src/okto_pulse/core/domain/permissions.py": [
+          "okto_pulse.core.domain.permission_migration_review"
+        ],
+        "okto_labs_pulse_core/src/okto_pulse/core/mcp/server.py": [
+          "okto_pulse.core.ports.historical_archive_read"
+        ],
+        "okto_labs_pulse_core/src/okto_pulse/core/ports/historical_context.py": [
+          "okto_pulse.core.ports.historical_archive",
+          "okto_pulse.core.ports.historical_archive_read"
+        ],
+        "okto_labs_pulse_core/src/okto_pulse/core/ports/permission_policy.py": [
+          "okto_pulse.core.domain.permission_migration_review"
+        ],
+        "okto_labs_pulse_core/src/okto_pulse/core/repositories/interfaces/unit_of_work.py": [
+          "okto_pulse.core.ports.historical_archive",
+          "okto_pulse.core.ports.historical_archive_read"
+        ],
+        "okto_labs_pulse_core/src/okto_pulse/core/services/main.py": [
+          "okto_pulse.core.services.legacy_knowledge_write_guard"
+        ],
+        "okto_labs_pulse_core/src/okto_pulse/core/services/spec_resource_propagation.py": [
+          "okto_pulse.core.services.legacy_knowledge_write_guard"
+        ]
+      }
+    },
+    "community": {
+      "head": "746a57c6fc6e4096fb81b81f4f8489fd73a39326",
+      "baseline": "b6dda64f512920fa4aaaf9d50c331b1796b87e27",
+      "python_files": 384,
+      "physical_python_lines": 232818,
+      "initiative_python_diff": {
+        "added_lines": 19269,
+        "removed_lines": 25296
+      },
+      "named_candidate_groups": {
+        "retirement": [
+          {
+            "path": "okto_labs_pulse_community/src/okto_pulse/community/adapters/card_validation_retirement.py",
+            "lines": 435,
+            "sha256": "76a7b1323eacb39b03bf742665a475fcd2ef6f81d0ab1e9aa5359bc56058f1e5"
+          },
+          {
+            "path": "okto_labs_pulse_community/src/okto_pulse/community/adapters/context_disposition_retirement.py",
+            "lines": 367,
+            "sha256": "d23894e5f25a0f8a416f6879d2504ff8b6f73ec7a2f4c0a2d566e755c0c4de51"
+          },
+          {
+            "path": "okto_labs_pulse_community/src/okto_pulse/community/adapters/global_outbox_retirement.py",
+            "lines": 221,
+            "sha256": "6e81098771dcd7e30e0c3f2fbf1966700aa50b913e62be945ecd7229e621ae93"
+          },
+          {
+            "path": "okto_labs_pulse_community/src/okto_pulse/community/adapters/grafx_global_retirement.py",
+            "lines": 86,
+            "sha256": "ac3da25f75acb8358cf16b35153fe5d111a54c05e8a54b165859148f55ec7b28"
+          },
+          {
+            "path": "okto_labs_pulse_community/src/okto_pulse/community/adapters/grafx_sprint_retirement.py",
+            "lines": 125,
+            "sha256": "0651e73579554f7046574a4f60012c5f13f8c87f1f0b6b98ad7db83b602d4f6d"
+          },
+          {
+            "path": "okto_labs_pulse_community/src/okto_pulse/community/adapters/permission_retirement_checkpoint.py",
+            "lines": 216,
+            "sha256": "1cce321f46e3828fc9516cb02657fd39fb1dd0878802d870e75004de58f9cb52"
+          },
+          {
+            "path": "okto_labs_pulse_community/src/okto_pulse/community/adapters/permission_retirement_cleanup.py",
+            "lines": 241,
+            "sha256": "0029df1c02804f9aa926c83522ce53d94bd1176e3c56e1d3ac6124e2ba0ef221"
+          },
+          {
+            "path": "okto_labs_pulse_community/src/okto_pulse/community/adapters/permission_retirement_review_installation.py",
+            "lines": 152,
+            "sha256": "f41827023427aa0f8ddb86ef327e3fa963fc06276e8542dd26325e6ddd9d8d70"
+          },
+          {
+            "path": "okto_labs_pulse_community/src/okto_pulse/community/adapters/retirement_activation.py",
+            "lines": 113,
+            "sha256": "ac8f68707ec49263da6ed942f3a9ab28e1f94dd97694973ec25ad38182533c03"
+          },
+          {
+            "path": "okto_labs_pulse_community/src/okto_pulse/community/adapters/retirement_activation_installation.py",
+            "lines": 166,
+            "sha256": "d0c76fa28f281ad0644ff6b23883306eaaf5ee8be20cfc4d35e66b5be4e25200"
+          },
+          {
+            "path": "okto_labs_pulse_community/src/okto_pulse/community/adapters/retirement_bootstrap.py",
+            "lines": 118,
+            "sha256": "20fcdfafee567af75926cfa70c2cf7ffb880b146a0cea9718d026b8f40787d32"
+          },
+          {
+            "path": "okto_labs_pulse_community/src/okto_pulse/community/adapters/retirement_candidate_checkpoint.py",
+            "lines": 237,
+            "sha256": "46fcf9be7e7bd4f614adee4d561bf8b7ef7dedae6643039c35cde0a6cb800282"
+          },
+          {
+            "path": "okto_labs_pulse_community/src/okto_pulse/community/adapters/retirement_candidate_cognitive_restoration.py",
+            "lines": 150,
+            "sha256": "d96ee6e89fa550ec3b627d60052ca57ab761ea833bc90f8543f0cf4850cb2e23"
+          },
+          {
+            "path": "okto_labs_pulse_community/src/okto_pulse/community/adapters/retirement_candidate_completion.py",
+            "lines": 87,
+            "sha256": "54af17e916bd774d53f871e2f9ab155d1b4c87f4c1f9f1e98eed4bb10a45ddfb"
+          },
+          {
+            "path": "okto_labs_pulse_community/src/okto_pulse/community/adapters/retirement_candidate_execution.py",
+            "lines": 158,
+            "sha256": "de92ccdf1ee04527b8b6cdee847824839c6d88cdd2a39eb282c4512b6c7cf8c4"
+          },
+          {
+            "path": "okto_labs_pulse_community/src/okto_pulse/community/adapters/retirement_candidate_global_materialization.py",
+            "lines": 110,
+            "sha256": "6d6c165f2ac69815db050c78866b731828533f15ba6037a9d150fbd5ce0323d0"
+          },
+          {
+            "path": "okto_labs_pulse_community/src/okto_pulse/community/adapters/retirement_candidate_global_reconciliation.py",
+            "lines": 95,
+            "sha256": "6fd531a8c6115f5ab83b0de2c3735142835be3b0bc28d74dc5adb96c84820d52"
+          },
+          {
+            "path": "okto_labs_pulse_community/src/okto_pulse/community/adapters/retirement_candidate_global_sources.py",
+            "lines": 178,
+            "sha256": "fd73aca61ad523db26b05c0526ea299f8181e365cdf3a38db5d4b76580d72dca"
+          },
+          {
+            "path": "okto_labs_pulse_community/src/okto_pulse/community/adapters/retirement_candidate_graph_reconciliation.py",
+            "lines": 492,
+            "sha256": "f46302bc36e03b989e5a810bb4eb46884da3a4a23362235ef92a76b7428a5181"
+          },
+          {
+            "path": "okto_labs_pulse_community/src/okto_pulse/community/adapters/retirement_candidate_history.py",
+            "lines": 184,
+            "sha256": "d3814acadffdecbba4dced5812e097cfbf41248b5c3cd9fdaa97667335fa4edf"
+          },
+          {
+            "path": "okto_labs_pulse_community/src/okto_pulse/community/adapters/retirement_candidate_sql_delta.py",
+            "lines": 268,
+            "sha256": "27b024735a2d616fe2beb4725a619a96cb93e3a4c6689541a57be7278b871fff"
+          },
+          {
+            "path": "okto_labs_pulse_community/src/okto_pulse/community/adapters/retirement_data_journal.py",
+            "lines": 249,
+            "sha256": "d159d2900e8edbba42a1efad993af5ec52a42c6d83cbaa06566abf534e76cdea"
+          },
+          {
+            "path": "okto_labs_pulse_community/src/okto_pulse/community/adapters/retirement_empty_context.py",
+            "lines": 82,
+            "sha256": "78716db4588a6d00b99ad222ef3632b23ae5d25ef21501ac64408eaf752d3e71"
+          },
+          {
+            "path": "okto_labs_pulse_community/src/okto_pulse/community/adapters/retirement_graph_candidate.py",
+            "lines": 569,
+            "sha256": "59788e8fac445d4082024c023edd05682185e16856e448273de7d5aae1f82a05"
+          },
+          {
+            "path": "okto_labs_pulse_community/src/okto_pulse/community/adapters/retirement_historical_graph_census.py",
+            "lines": 163,
+            "sha256": "56a7810add29ec7d2cb5f9f6d877657ba4eb46d60492f8e4cbc6815de23ba5bd"
+          },
+          {
+            "path": "okto_labs_pulse_community/src/okto_pulse/community/adapters/retirement_journal_schema.py",
+            "lines": 58,
+            "sha256": "1ad6d11cccd93fb0e1eae217ec6b0d61fa807c700dd8dd136fd65091863ab6e7"
+          },
+          {
+            "path": "okto_labs_pulse_community/src/okto_pulse/community/adapters/retirement_learning_applicability.py",
+            "lines": 98,
+            "sha256": "8a8416c1a4e7f09307287a9d6eb2c0ac6c1acb36134e4d83c4b78522d90eecf2"
+          },
+          {
+            "path": "okto_labs_pulse_community/src/okto_pulse/community/adapters/retirement_learning_execution.py",
+            "lines": 460,
+            "sha256": "a8aba3c1df1098315f274fb9463f3f49ff458c0b7fe1923b27c1224bca985eb9"
+          },
+          {
+            "path": "okto_labs_pulse_community/src/okto_pulse/community/adapters/retirement_learning_history.py",
+            "lines": 63,
+            "sha256": "960fbff63a1c3530dac7afe2610a4171c6869c1d6400c608bf3b1492f3a38970"
+          },
+          {
+            "path": "okto_labs_pulse_community/src/okto_pulse/community/adapters/retirement_learning_qualification.py",
+            "lines": 49,
+            "sha256": "cdf3b5993c3027b81cbac8aa7aac517353f5935a4800f2ed2fe25a1e0c55f404"
+          },
+          {
+            "path": "okto_labs_pulse_community/src/okto_pulse/community/adapters/retirement_learning_sql_delta.py",
+            "lines": 163,
+            "sha256": "496e46df6a9c3fdbae2d103018a1c87440708b9aa617dbd436adfac602678376"
+          },
+          {
+            "path": "okto_labs_pulse_community/src/okto_pulse/community/adapters/retirement_materialization.py",
+            "lines": 109,
+            "sha256": "b788895247a93eedcabd19088344e420ee6e3a85d5046c4f77a284856a1e792d"
+          },
+          {
+            "path": "okto_labs_pulse_community/src/okto_pulse/community/adapters/retirement_materialization_plan.py",
+            "lines": 167,
+            "sha256": "f399d250bdfccf2cc7830ea0dbe8d10f2245b60be9ccfa2d1521b8118926f027"
+          },
+          {
+            "path": "okto_labs_pulse_community/src/okto_pulse/community/adapters/retirement_offline_run.py",
+            "lines": 411,
+            "sha256": "d5a4efd7b053602012418151da11a782a799e65426b5111511f82b49381b4f4f"
+          },
+          {
+            "path": "okto_labs_pulse_community/src/okto_pulse/community/adapters/retirement_projection_inputs.py",
+            "lines": 208,
+            "sha256": "fdac9a26c7ca5580a7dc97f3fe16c6642556fb67b0a4d0a2bd9105b74a54b386"
+          },
+          {
+            "path": "okto_labs_pulse_community/src/okto_pulse/community/adapters/retirement_runtime_admission.py",
+            "lines": 98,
+            "sha256": "86e770e4e71db62584fdfe2627df469a82dbec68890249f3ac5de47368f6d249"
+          },
+          {
+            "path": "okto_labs_pulse_community/src/okto_pulse/community/adapters/retirement_schema_baseline.py",
+            "lines": 56,
+            "sha256": "f3612f77bd4182bb2845f85a56393de31a357b45824a3981a6c778434d4341ee"
+          },
+          {
+            "path": "okto_labs_pulse_community/src/okto_pulse/community/adapters/retirement_schema_cutover.py",
+            "lines": 88,
+            "sha256": "c0ea389561ed39bbef270dc34914109753404cb2e6af02c00ef32922c2dec410"
+          },
+          {
+            "path": "okto_labs_pulse_community/src/okto_pulse/community/adapters/retirement_schema_evolution.py",
+            "lines": 246,
+            "sha256": "b57589c47749341f47120f505fcab55974b2d70dec1cbe50408268a060892574"
+          },
+          {
+            "path": "okto_labs_pulse_community/src/okto_pulse/community/adapters/retirement_schema_storage.py",
+            "lines": 226,
+            "sha256": "97a4da2c64cf18809d613985b655e3004f1fa5c98defe9db1fcdb3af2bc72e7a"
+          },
+          {
+            "path": "okto_labs_pulse_community/src/okto_pulse/community/adapters/sprint_retirement_access.py",
+            "lines": 120,
+            "sha256": "a1afa0849fcc9ee86b4d77533277daaf10356f48b2b25e2539cd1da49dc92156"
+          },
+          {
+            "path": "okto_labs_pulse_community/src/okto_pulse/community/adapters/sprint_retirement_archive.py",
+            "lines": 381,
+            "sha256": "383b5cc4a9307147287b707faec46b642024fe279f4a3767d113cde777fe7c42"
+          },
+          {
+            "path": "okto_labs_pulse_community/src/okto_pulse/community/adapters/sprint_retirement_embedded.py",
+            "lines": 163,
+            "sha256": "54afba3189e99471889982da8ee250944c22e685e9a7327e39e1b5306931da30"
+          },
+          {
+            "path": "okto_labs_pulse_community/src/okto_pulse/community/adapters/sprint_retirement_inventory.py",
+            "lines": 218,
+            "sha256": "e3f64e411ac42b397e6a9419e46fc9e730ca2b4f5334051ee6611425f1ad08d4"
+          },
+          {
+            "path": "okto_labs_pulse_community/src/okto_pulse/community/adapters/sprint_retirement_preflight.py",
+            "lines": 182,
+            "sha256": "1cc2dc553ea89bb4900964b557c01f7c363470d19c156ccdedcf8ed2c010d6e4"
+          },
+          {
+            "path": "okto_labs_pulse_community/src/okto_pulse/community/adapters/sprint_retirement_references.py",
+            "lines": 222,
+            "sha256": "45a3a6692806eeaff8696272d64eb385c14f84a9e969ce8d9472fce6aa4c5bb6"
+          },
+          {
+            "path": "okto_labs_pulse_community/src/okto_pulse/community/adapters/sprint_retirement_work.py",
+            "lines": 162,
+            "sha256": "f94d771890be7eb275d367b9f4734616dd27f8c1f3419d644fd7e4772386a161"
+          },
+          {
+            "path": "okto_labs_pulse_community/src/okto_pulse/community/adapters/sprint_work_retirement.py",
+            "lines": 261,
+            "sha256": "49f8cab6bb01d7b2f69835a6d4f85eb84f00507f292d2f0579efb5bed0863493"
+          },
+          {
+            "path": "okto_labs_pulse_community/src/okto_pulse/community/adapters/work_retirement_sql.py",
+            "lines": 16,
+            "sha256": "bb2b0e60900c07af0d591dc1585e66cb02947c839e3aee8ae03b1808debf0d64"
+          }
+        ],
+        "legacy_named": [
+          {
+            "path": "okto_labs_pulse_community/src/okto_pulse/community/adapters/legacy_rebuild_reconciliation.py",
+            "lines": 1703,
+            "sha256": "0e83f73acd40c9477f077a7e836ff98c76295102d512d24866f4b95c062c9d5f"
+          },
+          {
+            "path": "okto_labs_pulse_community/src/okto_pulse/community/adapters/legacy_sprint_values.py",
+            "lines": 22,
+            "sha256": "a5619112f7cf21cf8f7b1bd73c7b9952252d15de513e9d9f902ebc724b42344b"
+          },
+          {
+            "path": "okto_labs_pulse_community/src/okto_pulse/community/adapters/sqlalchemy_architecture_legacy.py",
+            "lines": 63,
+            "sha256": "7f76086bb731986a69709205823684029a4203192e8213fa459190ec10ded47f"
+          },
+          {
+            "path": "okto_labs_pulse_community/src/okto_pulse/community/adapters/sqlalchemy_quality_assessment_legacy_import.py",
+            "lines": 1201,
+            "sha256": "e461a1f3b3fe832ae8823b6d126a6636f727238914c5d74a3a9e02a8ff0f9200"
+          }
+        ],
+        "migration_named": [
+          {
+            "path": "okto_labs_pulse_community/src/okto_pulse/community/adapters/delivery_migration.py",
+            "lines": 267,
+            "sha256": "006b9c0afc0c05b318bdf1be626d4f387915bc5efdc4435beca4e10eba974f68"
+          },
+          {
+            "path": "okto_labs_pulse_community/src/okto_pulse/community/adapters/delivery_progress_migration.py",
+            "lines": 101,
+            "sha256": "46c78090321c3de0b61c7cf02b6d5d25a9402437f494350da9514fd19510c3ab"
+          },
+          {
+            "path": "okto_labs_pulse_community/src/okto_pulse/community/adapters/migration_runtime_fence.py",
+            "lines": 79,
+            "sha256": "69107189b573ac04b4ef2b0ac310761634176fb5e4df32710d0b4dd0e24bf76d"
+          },
+          {
+            "path": "okto_labs_pulse_community/src/okto_pulse/community/adapters/realm_migration.py",
+            "lines": 59,
+            "sha256": "d8b3b213bce3288ba222822fc91956938cc965dfcc953e6f034a5f5348a6388a"
+          },
+          {
+            "path": "okto_labs_pulse_community/src/okto_pulse/community/adapters/relational_schema_migrator.py",
+            "lines": 882,
+            "sha256": "3889a119f7c955e6202883a10c450caea14c4648c0551b8b3e4f47bb39fd87aa"
+          }
+        ],
+        "backfill_named": [
+          {
+            "path": "okto_labs_pulse_community/src/okto_pulse/community/adapters/knowledge_propagation_backfill.py",
+            "lines": 361,
+            "sha256": "3b92b8da940dbbe3ee6d8680e07a83ed242f4df9239bb997567853457e300fa2"
+          }
+        ],
+        "archive_named": [
+          {
+            "path": "okto_labs_pulse_community/src/okto_pulse/community/adapters/historical_archive_grant_installation.py",
+            "lines": 141,
+            "sha256": "65da3e9c7933bcdcfc9e78292fbc85c4ed986ca40c809568139caf48612d826e"
+          },
+          {
+            "path": "okto_labs_pulse_community/src/okto_pulse/community/adapters/historical_archive_grants.py",
+            "lines": 130,
+            "sha256": "59482f96891783916a1becdeac7f07376622041ad8cb692b128564d9d3c92e28"
+          },
+          {
+            "path": "okto_labs_pulse_community/src/okto_pulse/community/adapters/historical_archive_projection.py",
+            "lines": 129,
+            "sha256": "ed30ca00b1f00d5445c994a394c81d4064b2a6885232f577768053de609db036"
+          },
+          {
+            "path": "okto_labs_pulse_community/src/okto_pulse/community/adapters/historical_archive_reader.py",
+            "lines": 110,
+            "sha256": "dfc9fdf1ab16cf19cbbfd84c0f91e479f1a8304a87626c1b6aa2f6f2a7a2f265"
+          },
+          {
+            "path": "okto_labs_pulse_community/src/okto_pulse/community/api/historical_archives.py",
+            "lines": 117,
+            "sha256": "6803fe24054a5d5662dff88773739c9d81fb93dc82f9ec59e673237badd410ee"
+          }
+        ]
+      },
+      "group_totals": {
+        "retirement": {
+          "files": 49,
+          "lines": 9487
+        },
+        "legacy_named": {
+          "files": 4,
+          "lines": 2989
+        },
+        "migration_named": {
+          "files": 5,
+          "lines": 1388
+        },
+        "backfill_named": {
+          "files": 1,
+          "lines": 361
+        },
+        "archive_named": {
+          "files": 5,
+          "lines": 627
+        }
+      },
+      "non_candidate_consumers": {
+        "okto_labs_pulse_community/src/okto_pulse/community/adapters/board_rebuild_ingestion.py": [
+          "okto_pulse.community.adapters.legacy_rebuild_reconciliation"
+        ],
+        "okto_labs_pulse_community/src/okto_pulse/community/adapters/composition.py": [
+          "okto_pulse.community.adapters.retirement_activation"
+        ],
+        "okto_labs_pulse_community/src/okto_pulse/community/adapters/data_bootstrap_steps.py": [
+          "okto_pulse.community.adapters.knowledge_propagation_backfill",
+          "okto_pulse.community.adapters.sqlalchemy_quality_assessment_legacy_import"
+        ],
+        "okto_labs_pulse_community/src/okto_pulse/community/adapters/historical_context_reader.py": [
+          "okto_pulse.community.adapters.context_disposition_retirement",
+          "okto_pulse.community.adapters.historical_archive_projection",
+          "okto_pulse.community.adapters.historical_archive_reader",
+          "okto_pulse.community.adapters.sprint_retirement_preflight"
+        ],
+        "okto_labs_pulse_community/src/okto_pulse/community/adapters/joint_recovery_snapshot.py": [
+          "okto_pulse.community.adapters.migration_runtime_fence"
+        ],
+        "okto_labs_pulse_community/src/okto_pulse/community/adapters/kg_operational.py": [
+          "okto_pulse.community.adapters.work_retirement_sql"
+        ],
+        "okto_labs_pulse_community/src/okto_pulse/community/adapters/materialization_health.py": [
+          "okto_pulse.community.adapters.work_retirement_sql"
+        ],
+        "okto_labs_pulse_community/src/okto_pulse/community/adapters/rebuild_effects.py": [
+          "okto_pulse.community.adapters.legacy_rebuild_reconciliation"
+        ],
+        "okto_labs_pulse_community/src/okto_pulse/community/adapters/relational_effects.py": [
+          "okto_pulse.community.adapters.sqlalchemy_architecture_legacy",
+          "okto_pulse.community.adapters.work_retirement_sql"
+        ],
+        "okto_labs_pulse_community/src/okto_pulse/community/adapters/relational_schema_lifecycle.py": [
+          "okto_pulse.community.adapters.relational_schema_migrator",
+          "okto_pulse.community.adapters.retirement_runtime_admission"
+        ],
+        "okto_labs_pulse_community/src/okto_pulse/community/adapters/relational_schema_steps.py": [
+          "okto_pulse.community.adapters.delivery_progress_migration",
+          "okto_pulse.community.adapters.realm_migration"
+        ],
+        "okto_labs_pulse_community/src/okto_pulse/community/adapters/sqlalchemy_consolidation.py": [
+          "okto_pulse.community.adapters.work_retirement_sql"
+        ],
+        "okto_labs_pulse_community/src/okto_pulse/community/adapters/sqlalchemy_database.py": [
+          "okto_pulse.community.adapters.retirement_runtime_admission"
+        ],
+        "okto_labs_pulse_community/src/okto_pulse/community/adapters/sqlalchemy_kg_health.py": [
+          "okto_pulse.community.adapters.work_retirement_sql"
+        ],
+        "okto_labs_pulse_community/src/okto_pulse/community/adapters/sqlalchemy_queue_health.py": [
+          "okto_pulse.community.adapters.work_retirement_sql"
+        ],
+        "okto_labs_pulse_community/src/okto_pulse/community/adapters/sqlalchemy_unit_of_work.py": [
+          "okto_pulse.community.adapters.historical_archive_grants",
+          "okto_pulse.community.adapters.historical_archive_reader"
+        ],
+        "okto_labs_pulse_community/src/okto_pulse/community/api/router.py": [
+          "okto_pulse.community.api.historical_archives"
+        ],
+        "okto_labs_pulse_community/src/okto_pulse/community/main.py": [
+          "okto_pulse.community.adapters.delivery_migration"
+        ]
+      }
+    }
+  }
+}

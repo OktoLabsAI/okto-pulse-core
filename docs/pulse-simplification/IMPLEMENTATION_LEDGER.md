@@ -2,6 +2,67 @@
 
 ## Estado para retomada
 
+### 2026-10-01 — mudança de direção: 0.4.0 sem compatibilidade com legado
+
+**Esta entrada prevalece sobre os próximos passos das entradas anteriores.** O usuário
+solicitou reavaliar plano/implementação e retirar componentes de legado/migração,
+tratando a 0.4.0 como breaking change completa. Avaliação concluída em
+[CLEAN_BREAK_040_REASSESSMENT.md](CLEAN_BREAK_040_REASSESSMENT.md). Nenhum código de
+produto foi alterado ou removido nesta avaliação.
+
+**PARADA SOLICITADA PELO USUÁRIO:** terminar somente assessment/plano, registrar e
+publicar os documentos e parar para sua revisão e definição do nível de reasoning.
+Não iniciar C1 nem continuar implementação/auditoria funcional antes de nova orientação.
+
+Base inspecionada/preservada: Core e8009733 e Community 746a57c6, ambos na branch
+feature/v0.4.0 e sincronizados antes desta entrega documental. O pacote v1.3 foi
+reavaliado conjuntamente com seus complementos; a ideação original não foi procurada.
+O novo mandato substitui a obrigação de preservar/transformar bases anteriores,
+sem cancelar funcionalidades, autoridade ou os oito budgets arquiteturais ZERO.
+
+Direção: armazenamento novo, contrato atual universal, sem import/upgrade de 0.3.x
+nem rollout legado por estado de Spec. Recusar armazenamento incompatível antes de
+escrita, inclusive formatos intermediários desta branch; nunca apagar/reinicializar
+dados existentes automaticamente. Reinício de base final 0.4.0 permanece suportado.
+Preservar governança, waivers/revogações, seleção de Designs, histórico da própria
+0.4.0 e recuperação de operações/projeções atuais. Não criar pacote de compatibilidade.
+
+Inventário estático clean-break-040-static-inventory.json: 22 módulos candidatos
+Core/4.325 linhas +64 Community/14.852 linhas =86/19.177. Classificação por nome,
+hashes e imports AST na própria edição; não é manifesto de exclusão nem estimativa
+de redução garantida. Foram identificados 11/18 consumidores fora dos grupos na
+respectiva edição, além dos caminhos mistos descritos na avaliação. Duas dependências
+críticas: a tabela antiga de Delivery ainda guarda waivers atuais; adoção de arquitetura
+também representa seleção legítima de Designs. Não excluir essas responsabilidades.
+
+As decisões F2B (override migrado por Card, com depreciação) e F2A (ACL de arquivo
+histórico) tornam-se dispensáveis para a instalação nova. Remover seus mecanismos
+durante a implementação; preservar o registro de por que existiram. As decisões de
+Spec Done e avaliações por edição permanecem. T23/Path B e KG-10 continuam pendentes:
+são conflitos atuais de gate/semântica, não problemas resolvidos pela retirada de legado.
+
+Retomada fechada: **C1 contrato único → C2 armazenamento novo → C3 superfícies e
+consumidores → C4 qualificação/entrega**, conforme escopo/aceite do novo documento.
+Após a revisão e instrução para executar, começar por C1; não retomar migrações ou
+ensaios de upgrade das entradas anteriores. Toda pendência restante do plano original
+deve considerar apenas objetos/contratos nativos 0.4.0, sem acrescentar legado.
+Testar frontend nas alterações visuais; manter catálogo gerado e par de distribuição.
+A implementação dessa sequência ainda não começou. Não alterar contagens de aceite
+por uma exclusão de escopo: inventário v1.3 preservado em154/29/63, com disposição
+explícita dos critérios superados/mistos na avaliação. Resultados antigos não provam
+o futuro produto simplificado. Benchmark ainda não demonstrou economia de tokens.
+
+Campanha iniciada antes da nova instrução, encerrada sem alteração de produto:
+provenance-query-acceptance-final1.json terminal0 (883/384py e946/469payload idênticos);
+query-acceptance-final1-core.xml:116passed/18.80s;
+query-acceptance-final1-community.xml:55passed/108.52s, terminal0. Nenhum critério
+promovido por essa campanha. Não repeti-la para continuar o plano substituído.
+
+Entrega desta revisão: proposta, inventário estático e esta entrada no Core; Community
+permanece inalterado. Verificação documental de JSON, hashes/contagens e diff; nenhuma
+nova alegação de testes comportamentais ou F16. Commit/push documental encerra a
+reavaliação, sem marcar a implementação integral como concluída.
+
 ### 2026-10-01 — benchmark pareado de Delivery e custo de handoff
 
 Base publicada Core76d5cc73/Communitya7eab2fd. Sem mudança de produto. Prova
