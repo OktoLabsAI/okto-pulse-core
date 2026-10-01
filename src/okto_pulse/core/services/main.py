@@ -8995,15 +8995,14 @@ class SpecService:
         )
 
     async def require_execution_contract_ready(self, spec: object) -> None:
-        """First-start planning predicate; existing in-flight contracts stay intact."""
+        """Require the current execution contract and complete first-start planning."""
         from okto_pulse.core.domain.execution_contract import execution_contract
         from okto_pulse.core.domain.verification_plan import MAX_PLAN_NODES
         from okto_pulse.core.ports.delivery_inventory import default_delivery_inventory_policy
         from okto_pulse.core.ports.test_evidence import supported_test_verification_methods
         from okto_pulse.core.services.architecture_classification import ArchitectureClassificationService
 
-        if execution_contract(spec) is None:
-            raise ValueError("spec_execution_contract_adoption_required: reopen to Draft and explicitly adopt the execution contract before first start")
+        execution_contract(spec)
         fields = ("id", "board_id", "spec_id", "card_type", "status", "archived",
                   "test_scenario_ids", "title", "description", "details")
         cards = await _application_list(self.db, "card", filters=(
@@ -10568,24 +10567,6 @@ class SpecService:
         await _require_spec_unlocked(self.db, spec_id)
 
         update_data = data.model_dump(exclude_unset=True)
-        adoption_request = update_data.pop("adopt_execution_contract", None)
-        if adoption_request is not None:
-            from okto_pulse.core.domain.execution_contract import SpecExecutionContractAdoption, adopt_execution_contract
-            from okto_pulse.core.domain.delivery_evidence import DeliveryScope
-            from okto_pulse.core.services.delivery_evidence import delivery_store
-            await delivery_store(self.db).lock_scope(DeliveryScope(spec.board_id, spec.id, spec.edition))
-            spec = await _application_refresh(self.db, spec)
-            require_draft_mutation(spec, subject_type="spec")
-            if spec.archived:
-                raise ValueError("This spec is archived. Restore it first before making changes.")
-            await _require_spec_unlocked(self.db, spec_id)
-            contract = adopt_execution_contract(spec, SpecExecutionContractAdoption.model_validate(adoption_request), actor_id=user_id)
-            if contract is not None:
-                update_data["execution_contract"] = contract
-                from okto_pulse.core.domain.delivery_inventory import COLLECTIONS
-                for _, collection in (*COLLECTIONS, ("scenario", "test_scenarios")):
-                    if getattr(spec, collection, None) is None and collection not in update_data:
-                        update_data[collection] = []
         next_ideation_id = (
             update_data["ideation_id"]
             if "ideation_id" in update_data

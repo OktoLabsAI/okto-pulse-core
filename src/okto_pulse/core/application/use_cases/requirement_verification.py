@@ -355,5 +355,5 @@ class GetRequirementVerificationUseCase:
             "spec_edition": spec.edition,
             "spec_status": str(getattr(spec.status, "value", spec.status)),
             "archived": spec.archived,
-            "execution_contract": execution_contract(spec).model_dump(mode="json") if execution_contract(spec) is not None else None,
+            "execution_contract": execution_contract(spec).model_dump(mode="json"),
         }

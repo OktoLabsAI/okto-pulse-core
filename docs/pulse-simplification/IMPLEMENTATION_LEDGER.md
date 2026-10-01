@@ -2,6 +2,55 @@
 
 ## Estado para retomada
 
+### 2026-10-01 — execução autorizada do clean break; C1 em andamento
+
+Nova instrução do usuário: implementar o plano de remoção e o restante do plano
+original até a completude. Revogada a parada documental da entrada anterior. Escopo
+permanece C1→C4, sem preservar legado e sem criar alvos novos. Par de entrada limpo:
+Core fc8ea376 / Community 746a57c6, feature/v0.4.0.
+
+Primeiro incremento C1, ainda não publicado: removidos DTO/operação de adoção de
+execution_contract, parâmetro MCP, tratamento no update e controle/botão do frontend.
+SpecUpdate recusa campos desconhecidos; SpecResponse exige o contrato. Leitor de
+contrato recusa ausência; load_snapshot de Delivery usa o rollup por Card, sem leitor
+alternativo do ledger antigo. Criação normal já emite o contrato e foi preservada.
+Leitura frontend recusa contrato ausente/incompatível antes de apresentar edição.
+Testes positivos de adoção substituídos por recusa de input antigo sem escrita.
+
+Par dist-clean-break-contract1 construído/instalado; preflight
+provenance-clean-break-contract1.json terminal0:883/384py,946/469payload byte-idênticos.
+Core clean-break-contract1-core.xml:18passed/5.16s. Frontend
+RequirementVerificationPanel:29passed; primeira rodada4falhas de expectativa textual
+do teste (UI já sanitiza o erro), corrigidas para a mensagem pública existente,
+mantendo asserções de ausência de edição/conversão e de writes.
+
+Community1:4passed/1failed por teste positivo de leitura após adoção, agora superado;
+substituído por recusa sem contrato e sem escrita. Community2:7passed/27.22s.
+Eliminados também ternários/branches alternativos por ausência de plano no adapter.
+Par final dist-clean-break-contract3 construído/instalado; preflight terminal0
+provenance-clean-break-contract3.json:883/384py e946/469payload byte-idênticos.
+Campanhas finais clean-break-contract3:Core26passed/7.34s (inclui catálogo e manifesto),
+Community7passed/20.35s. Geradores oficiais executados; catálogo/manifesto sem delta
+material. RuffF/E9 e diff-check verdes.
+
+Build frontend passou após atualizar quatro fixtures Spec com contrato obrigatório;
+79 arquivos sincronizados, árvore ffd6e8e88df79806ef927ee8820d8c3370fc06a872ef21a593633d345b032edb.
+Testes SpecModal ampliados:primeira rodada86passed/10failed (9mocks de qualificação
+sem contrato,1expectativa antiga sem aba Coverage já existente); corrigidos somente
+os mocks/expectativa. Reexecução dos dois arquivos afetados75passed; outros dois
+arquivos21passed na rodada anterior. Com painel29passed,125testes frontend distintos
+aprovados. Não houve relaxamento de permissões para passar. Build mantém avisos
+conhecidos de chunks/Browserslist; fixtures avisam canvas jsdom ausente.
+
+C1 NÃO concluído. Próximo: retirar o avaliador legado ainda selecionável por
+effective_context=None no domínio delivery_evidence.py, preservando o avaliador
+efetivo e provas/waivers; depois overrides migrados/policies, formatos antigos e
+interpretação de arquitetura. Adapter já não oferece esse caminho, mas o domínio
+ainda o contém (inclusive teste que demonstra diferença): não declarar contrato
+único integral antes da remoção. C2–C4 pendentes; nenhuma nova alegação de F16 ou
+aceite integral. Incremento preparado para commit/push dos dois repos; continuar
+na sequência autorizada sem solicitar nova permissão.
+
 ### 2026-10-01 — mudança de direção: 0.4.0 sem compatibilidade com legado
 
 **Esta entrada prevalece sobre os próximos passos das entradas anteriores.** O usuário

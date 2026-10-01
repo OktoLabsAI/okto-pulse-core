@@ -528,9 +528,6 @@ def _spec_update_permission_requirements(spec, data: SpecUpdate) -> set[str]:
     )
     required: set[str] = set()
 
-    if getattr(data, "adopt_execution_contract", None) is not None:
-        required.add("spec.entity.edit_fields")
-
     if "integration_requirements" in fields_set:
         required.update(
             _requirement_change_permissions(

@@ -4,8 +4,6 @@ from types import SimpleNamespace
 import pytest
 
 from okto_pulse.core.domain.execution_contract import (
-    SpecExecutionContractAdoption,
-    adopt_execution_contract,
     execution_contract,
     new_execution_contract,
 )
@@ -23,45 +21,27 @@ def spec(**changes):
     return SimpleNamespace(id="spec", board_id="board", version=4, edition=2, **changes)
 
 
-def test_explicit_adoption_preserves_identity_and_actor_without_inventing_content():
-    legacy = spec(execution_contract=None)
-    request = SpecExecutionContractAdoption(
-        expected_spec_version=4, expected_spec_edition=2
-    )
-    result = adopt_execution_contract(legacy, request, actor_id="author")
-    assert result == new_execution_contract(
-        board_id="board",
-        spec_id="spec",
-        edition=2,
-        actor_id="author",
-        origin="explicit_revision",
-    )
-    assert legacy.execution_contract is None
-    legacy.execution_contract = result
-    assert (
-        adopt_execution_contract(legacy, request, actor_id="different-author") is None
-    )
+@pytest.mark.parametrize("missing", [True, False])
+def test_missing_execution_contract_is_rejected_without_conversion(missing):
+    current = spec(**({} if missing else {"execution_contract": None}))
+    before = vars(current).copy()
+    with pytest.raises(ValueError, match="spec_execution_contract_required"):
+        execution_contract(current)
+    assert vars(current) == before
 
 
-@pytest.mark.parametrize("version,edition", [(3, 2), (4, 1), (5, 2)])
-def test_adoption_requires_exact_revision_even_when_already_adopted(version, edition):
-    current = spec(
-        execution_contract=new_execution_contract(
-            board_id="board",
-            spec_id="spec",
-            edition=2,
-            actor_id="author",
-            origin="new_spec",
-        )
-    )
-    with pytest.raises(ValueError, match="version_conflict"):
-        adopt_execution_contract(
-            current,
-            SpecExecutionContractAdoption(
-                expected_spec_version=version, expected_spec_edition=edition
-            ),
-            actor_id="author",
-        )
+def test_current_execution_contract_preserves_creation_provenance_after_reopening():
+    marker = new_execution_contract(board_id="board", spec_id="spec", edition=1,
+                                    actor_id="author", origin="new_spec")
+    current = spec(execution_contract=marker)
+    assert execution_contract(current).model_dump(mode="json") == marker
+
+
+def test_removed_adoption_input_is_rejected_before_any_update():
+    from okto_pulse.core.models.schemas import SpecUpdate
+    with pytest.raises(ValueError, match="extra_forbidden"):
+        SpecUpdate.model_validate({"title": "changed", "adopt_execution_contract": {
+            "expected_spec_version": 4, "expected_spec_edition": 2}})
 
 
 @pytest.mark.parametrize(

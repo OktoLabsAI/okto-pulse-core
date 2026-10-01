@@ -2,8 +2,8 @@
 
 Data: 2026-10-01. Base inspecionada: Core `e8009733` e Community `746a57c6`, ambos
 em `feature/v0.4.0`. Esta entrega é uma avaliação e um plano de retirada; o produto
-ainda contém os componentes descritos abaixo. **A execução aguarda a revisão do
-usuário e sua definição do nível de reasoning. Não iniciar C1 nesta entrega.**
+ainda contém os componentes descritos abaixo. **Após a entrega do assessment, o
+usuário autorizou a execução integral de C1–C4. O estado corrente está no ledger.**
 
 ## Direção
 
@@ -194,8 +194,8 @@ rollouts antigos dos complementos.
 Cada etapa resolve também os consumidores que quebra; os dois repositórios avançam
 como um único produto. Não manter feature flag, fallback temporário ou segunda versão
 para deixar uma etapa “verde”. As etapas organizam commits e não exigem uma pausa
-entre si depois da futura instrução de execução. **A parada atual é ao final deste
-assessment, conforme solicitado, antes de qualquer etapa de implementação.**
+entre si após a instrução de execução, já recebida. A parada solicitada para revisão
+do assessment foi cumprida antes dessa autorização.
 
 ### C1 — tarefas e provas de encerramento
 
@@ -312,10 +312,9 @@ deve vir de menos caminhos de execução, persistências e contratos sustentados
 
 ## Estado desta entrega
 
-Avaliação estática e plano concluídos; implementação C1–C4 ainda não iniciada.
-**Parar após a entrega documental e aguardar a revisão do usuário e a definição do
-nível de reasoning.** Após a orientação para executar, começar por C1, usando o
-inventário como mapa inicial e verificando os consumidores reais antes de cada
-exclusão. Não retomar a auditoria de migração do plano anterior. Os artefatos antigos
+Avaliação estática e plano concluídos; execução C1–C4 autorizada posteriormente pelo
+usuário. Seguir o estado no topo do ledger, usando o inventário como mapa inicial e
+verificando os consumidores reais antes de cada exclusão. Não retomar a auditoria
+de migração do plano anterior. Os artefatos antigos
 permanecem no histórico de engenharia e não precisam ser distribuídos como mecanismos
 executáveis do produto.

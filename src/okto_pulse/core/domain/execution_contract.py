@@ -1,4 +1,4 @@
-"""Explicit Spec contract selection; independent of adopted Architecture Designs."""
+"""Required Spec execution contract; independent of adopted Architecture Designs."""
 
 from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
@@ -16,19 +16,10 @@ class SpecExecutionContract(BaseModel):
     origin: Literal["new_spec", "explicit_revision"]
 
 
-class SpecExecutionContractAdoption(BaseModel):
-    model_config = ConfigDict(extra="forbid", strict=True)
-    contract_version: Literal["spec-execution-contract/v1"] = (
-        "spec-execution-contract/v1"
-    )
-    expected_spec_version: int = Field(ge=1)
-    expected_spec_edition: int = Field(ge=1)
-
-
-def execution_contract(spec: object) -> SpecExecutionContract | None:
+def execution_contract(spec: object) -> SpecExecutionContract:
     raw = getattr(spec, "execution_contract", None)
     if raw is None:
-        return None
+        raise ValueError("spec_execution_contract_required")
     contract = SpecExecutionContract.model_validate(raw)
     if (
         contract.board_id != spec.board_id
@@ -50,23 +41,3 @@ def new_execution_contract(
         actor_id=actor_id,
         origin=origin,
     ).model_dump(mode="json")
-
-
-def adopt_execution_contract(
-    spec: object, request: SpecExecutionContractAdoption, *, actor_id: str
-) -> dict | None:
-    """Caller must hold the write fence and the existing Draft mutation authority."""
-    if (spec.version, spec.edition) != (
-        request.expected_spec_version,
-        request.expected_spec_edition,
-    ):
-        raise ValueError("spec_execution_contract_version_conflict")
-    if execution_contract(spec) is not None:
-        return None  # Exact current adoption is a no-op; no new provenance.
-    return new_execution_contract(
-        board_id=spec.board_id,
-        spec_id=spec.id,
-        edition=spec.edition,
-        actor_id=actor_id,
-        origin="explicit_revision",
-    )

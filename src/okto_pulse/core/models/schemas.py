@@ -26,7 +26,7 @@ from okto_pulse.core.discovery_params_schema import (
 from okto_pulse.core.domain.requirement_verification import VerificationQualifiedModel
 from okto_pulse.core.domain.learning_closeout import LearningCaptureSelection
 from okto_pulse.core.domain.learning_submission import LearningSubmission
-from okto_pulse.core.domain.execution_contract import SpecExecutionContract, SpecExecutionContractAdoption
+from okto_pulse.core.domain.execution_contract import SpecExecutionContract
 from okto_pulse.core.domain.task_validation_policy import MigratedTaskValidationPolicy, ResolvedTaskValidationConfig, reject_migrated_validation_policy_write, read_migrated_validation_policy
 from okto_pulse.core.models.delivery_selection import DeliverySelectionInput, DeliverySelectionManifest
 from okto_pulse.core.models.reference_context import CardScenarioReferenceContext
@@ -2278,8 +2278,7 @@ class SpecCreate(BaseModel):
 class SpecUpdate(BaseModel):
     """Schema for updating a spec."""
 
-    adopt_execution_contract: SpecExecutionContractAdoption | None = Field(default=None,
-        description="Explicitly adopt the joint architecture/verification contract in Draft, with current version and edition. Existing content/review authority applies.")
+    model_config = ConfigDict(extra="forbid")
 
     title: str | None = Field(
         None,
@@ -2823,7 +2822,7 @@ class CardSummaryForSpec(BaseSchema):
 class SpecResponse(BaseSchema):
     """Schema for full spec response."""
 
-    execution_contract: SpecExecutionContract | None = None
+    execution_contract: SpecExecutionContract
 
     id: str
     board_id: str
