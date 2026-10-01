@@ -1,0 +1,355 @@
+{
+  "format": "pulse-v1.3-reviewed-execution/v1",
+  "scope": "BASE governed review/currentness/replay",
+  "criteria": {
+    "BASE:T02": {
+      "status": "verified",
+      "covered": "A reviewer who is creator/assignee/executor is refused under enforce before persisting validation or changing Card status; MCP returns reviewer_separation_required and explicit independent-review remediation. Off/warn/legacy policy modes preserve their declared behavior and recorded reviewer identity; an independent reviewer is allowed by the policy."
+    },
+    "BASE:T08": {
+      "status": "verified",
+      "covered": "Real Community SQL/session/CardService matrix normal|bug x in_progress|validation refuses direct Done when Spec requires task validation. An outer commit cannot change status, subject version, validations or conclusions."
+    },
+    "BASE:T09": {
+      "status": "verified",
+      "covered": "Test Cards refuse normal task-validation submissions with the scenario-status/move-to-Done contract and no fake review. Draft/ready scenarios prevent completion, pending scenarios are identified, and the scenario gate releases only after passing. The separate installed authenticated Test Card closeout is qualified in evidence-completion-authenticated.json."
+    },
+    "BASE:T10": {
+      "status": "verified",
+      "covered": "Authorized Spec reopen advances one edition, marks previous evaluations without rewriting their original scores/identity/content, requires a new review after content changes, and prevents same-edition rejection from being erased by a later approval. Failed reopen rolls back edition/history; content mutation outside allowed draft state has zero writes. Card rejection and validation history remain append-only and only the rework exit is public."
+    },
+    "BASE:T11": {
+      "status": "verified",
+      "covered": "A second real Community semantic SQL session changes Card content through CardService after the reviewer reads its version. Stale approval is refused with task_validation_subject_version_conflict; outer commit adds no assessment, rejection, activity or event and preserves the edited subject. Supplementary lifecycle fence/old-edition tests and concurrent Spec reviews preserve accepted records."
+    },
+    "BASE:T12": {
+      "status": "verified",
+      "covered": "Identical task-validation retries reuse the recorded result after rejected and Done states. A changed payload under the same idempotency key returns 409 task_validation_idempotency_conflict; rejection cause and history are not duplicated. Done replay isolates completion prerequisites; the separate authenticated canonical report replay is qualified by T40."
+    }
+  },
+  "final_distinct_cases": 112,
+  "provenance": {
+    "file": "provenance-governed-lifecycle1.json",
+    "sha256": "ed1f060280e40a18b16c6b25d42d068142ea195b8320185e7f6848be58582e35",
+    "identity": {
+      "checked_at": "2026-09-30T23:53:32.369591+00:00",
+      "python": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Scripts\\python.exe",
+      "packages": {
+        "core": {
+          "python_files": 859,
+          "origin": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages\\okto_pulse\\core\\__init__.py",
+          "repository_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_core",
+          "commit": "4a090ace571b03c1709c4903b3cdfbda0a84d5f9",
+          "dirty": false,
+          "dirty_entry_count": 0,
+          "distribution": "okto-pulse-core",
+          "version": "0.3.4",
+          "wheel": {
+            "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\dist-learning-reconciliation-historical-export-fix1\\okto_pulse_core-0.3.4-py3-none-any.whl",
+            "sha256": "9827b5e139423641c1f759dffecdfa229af83d0e3e10b56110e73f228839f41d",
+            "size": 3792812
+          },
+          "source_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_core\\src",
+          "site_packages_root": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages",
+          "package_prefix": "okto_pulse/core/",
+          "byte_identical_member_count": 922,
+          "byte_identical": true,
+          "aggregate_sha256": "09e4686999607d34f6206b42e38590c27f5ec97d19abec09edf726ba95dfa429",
+          "chain_hashes": {
+            "source": "09e4686999607d34f6206b42e38590c27f5ec97d19abec09edf726ba95dfa429",
+            "wheel": "09e4686999607d34f6206b42e38590c27f5ec97d19abec09edf726ba95dfa429",
+            "site_packages": "09e4686999607d34f6206b42e38590c27f5ec97d19abec09edf726ba95dfa429"
+          },
+          "critical_resource_sha256": {
+            "okto_pulse/core/mcp/resources/ska_resource_manifest.json": "87fab2a5ded5f6ee273af8628555c21f7065d32379945784132bb6c300d05865",
+            "okto_pulse/core/mcp/resources/ska_tool_manifest.json": "0c3fa3da1549baec20872eca3f4a289288627e6b9f6b80be10472ac962fa72b9"
+          },
+          "mismatches": []
+        },
+        "community": {
+          "python_files": 373,
+          "origin": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages\\okto_pulse\\community\\__init__.py",
+          "repository_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_community",
+          "commit": "8c00c1def0c802fc77e35b63edcf7865d1835965",
+          "dirty": false,
+          "dirty_entry_count": 0,
+          "distribution": "okto-pulse",
+          "version": "0.3.4",
+          "wheel": {
+            "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\dist-learning-reconciliation-historical-export-fix1\\okto_pulse-0.3.4-py3-none-any.whl",
+            "sha256": "155b42c37fceb167c7b24006b17feba0afb24860739300c7959880289f9ea19b",
+            "size": 4535060
+          },
+          "source_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_community\\src",
+          "site_packages_root": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages",
+          "package_prefix": "okto_pulse/community/",
+          "byte_identical_member_count": 458,
+          "byte_identical": true,
+          "aggregate_sha256": "1a43c2361a5b389df2c90a4b3d46fae4fabde49eaaa4007b552b2602de632b61",
+          "chain_hashes": {
+            "source": "1a43c2361a5b389df2c90a4b3d46fae4fabde49eaaa4007b552b2602de632b61",
+            "wheel": "1a43c2361a5b389df2c90a4b3d46fae4fabde49eaaa4007b552b2602de632b61",
+            "site_packages": "1a43c2361a5b389df2c90a4b3d46fae4fabde49eaaa4007b552b2602de632b61"
+          },
+          "critical_resource_sha256": {},
+          "mismatches": []
+        }
+      }
+    }
+  },
+  "related_evidence": [
+    "evidence-completion-authenticated.json"
+  ],
+  "runs": [
+    {
+      "file": "learning-reconciliation-governed-lifecycle1-core.xml",
+      "sha256": "c0b79b7c219e6b18e3725eb14b15f1cdf0b45ea452dafe07ae54b8933b317480",
+      "log_sha256": "ce3455cd4513915657bd29d8a7d1bc0e5fa1f5b888fcb552008776efd8b29de4",
+      "terminal_session": 94567,
+      "exit_code": 0,
+      "suites": [
+        {
+          "name": "pytest",
+          "errors": "0",
+          "failures": "0",
+          "skipped": "0",
+          "tests": "88",
+          "time": "18.498",
+          "timestamp": "2026-09-30T20:54:58.555777-03:00",
+          "hostname": "Alienware_m15"
+        }
+      ],
+      "cases": [
+        "tests.test_task_reviewer_separation::test_task_decision_evaluates_creator_assignee_and_executor_conflicts",
+        "tests.test_task_reviewer_separation::test_unrelated_legacy_settings_patch_preserves_absent_compat_source",
+        "tests.test_task_reviewer_separation::test_enforce_allows_an_independent_task_reviewer",
+        "tests.test_task_reviewer_separation::test_off_warn_and_legacy_modes_persist_transparent_decision[None-legacy_absent_compat-False]",
+        "tests.test_task_reviewer_separation::test_off_warn_and_legacy_modes_persist_transparent_decision[off-board_settings-False]",
+        "tests.test_task_reviewer_separation::test_off_warn_and_legacy_modes_persist_transparent_decision[warn-board_settings-True]",
+        "tests.test_task_reviewer_separation::test_enforce_fails_closed_before_validation_or_status_mutation",
+        "tests.test_task_reviewer_separation::test_mcp_enforce_response_projects_action_required_and_remediation",
+        "tests.test_task_reviewer_separation::test_full_task_context_projects_legacy_compat_decision",
+        "tests.test_task_reviewer_separation::test_new_boards_and_default_template_versions_keep_enforce_default",
+        "tests.test_task_reviewer_separation::test_mcp_resources_describe_task_reviewer_separation_contract",
+        "tests.test_spec_evaluation_currentness::test_currentness_uses_server_edition_and_preserves_unscoped_legacy[None-True]",
+        "tests.test_spec_evaluation_currentness::test_currentness_uses_server_edition_and_preserves_unscoped_legacy[2-True]",
+        "tests.test_spec_evaluation_currentness::test_currentness_uses_server_edition_and_preserves_unscoped_legacy[1-False]",
+        "tests.test_spec_evaluation_currentness::test_currentness_uses_server_edition_and_preserves_unscoped_legacy[True-False]",
+        "tests.test_spec_evaluation_currentness::test_currentness_uses_server_edition_and_preserves_unscoped_legacy[2-False]",
+        "tests.test_spec_evaluation_currentness::test_reopen_changes_only_lifecycle_metadata_and_never_invents_legacy_edition",
+        "tests.test_human_validation_cycle_regressions::test_ac02_real_reopen_opens_exactly_one_edition[ideation-review]",
+        "tests.test_human_validation_cycle_regressions::test_ac02_real_reopen_opens_exactly_one_edition[ideation-done]",
+        "tests.test_human_validation_cycle_regressions::test_ac02_real_reopen_opens_exactly_one_edition[ideation-cancelled]",
+        "tests.test_human_validation_cycle_regressions::test_ac02_real_reopen_opens_exactly_one_edition[refinement-review]",
+        "tests.test_human_validation_cycle_regressions::test_ac02_real_reopen_opens_exactly_one_edition[refinement-done]",
+        "tests.test_human_validation_cycle_regressions::test_ac02_real_reopen_opens_exactly_one_edition[refinement-cancelled]",
+        "tests.test_human_validation_cycle_regressions::test_ac02_real_reopen_opens_exactly_one_edition[spec-review]",
+        "tests.test_human_validation_cycle_regressions::test_ac02_real_reopen_opens_exactly_one_edition[spec-done]",
+        "tests.test_human_validation_cycle_regressions::test_ac02_real_reopen_opens_exactly_one_edition[spec-cancelled]",
+        "tests.test_human_validation_cycle_regressions::test_ac03_non_draft_content_rejection_has_zero_writes[ideation]",
+        "tests.test_human_validation_cycle_regressions::test_ac03_non_draft_content_rejection_has_zero_writes[refinement]",
+        "tests.test_human_validation_cycle_regressions::test_ac03_non_draft_content_rejection_has_zero_writes[spec]",
+        "tests.test_human_validation_cycle_regressions::test_lifecycle_move_lost_write_fence_has_zero_writes[ideation]",
+        "tests.test_human_validation_cycle_regressions::test_lifecycle_move_lost_write_fence_has_zero_writes[refinement]",
+        "tests.test_human_validation_cycle_regressions::test_lifecycle_move_lost_write_fence_has_zero_writes[spec]",
+        "tests.test_human_validation_cycle_regressions::test_spec_current_previous_and_legacy_history_follow_real_reopen",
+        "tests.test_human_validation_cycle_regressions::test_ac04_old_ambiguity_edition_is_rejected_before_any_write_uow",
+        "tests.test_human_validation_cycle_regressions::test_spec_validation_requires_lint_for_the_exact_edition",
+        "tests.test_human_validation_cycle_regressions::test_spec_validation_accepts_advisory_lint_with_findings",
+        "tests.test_human_validation_cycle_regressions::test_ac23_resolves_only_the_proven_status_only_done_snapshot",
+        "tests.test_human_validation_cycle_regressions::test_ac23_rejects_missing_or_additional_done_proof[history_rows0]",
+        "tests.test_human_validation_cycle_regressions::test_ac23_rejects_missing_or_additional_done_proof[history_rows1]",
+        "tests.test_human_validation_cycle_regressions::test_ac23_rejects_missing_or_additional_done_proof[history_rows2]",
+        "tests.test_human_validation_cycle_regressions::test_ac23_rejects_missing_or_additional_done_proof[history_rows3]",
+        "tests.test_human_validation_cycle_regressions::test_production_sources_do_not_call_the_compatibility_lint_writer",
+        "tests.test_r01a_cards_lifecycle_uow::test_move_card_200_refetched_body",
+        "tests.test_r01a_cards_lifecycle_uow::test_move_card_404",
+        "tests.test_r01a_cards_lifecycle_uow::test_move_card_409_archived",
+        "tests.test_r01a_cards_lifecycle_uow::test_move_card_valid_selector_variants_reorder_and_return_card_response",
+        "tests.test_r01a_cards_lifecycle_uow::test_move_card_reorders_within_rejected_but_refuses_inbound_transition",
+        "tests.test_r01a_cards_lifecycle_uow::test_move_card_route_maps_missing_cancellation_reason_to_typed_400",
+        "tests.test_r01a_cards_lifecycle_uow::test_move_card_route_maps_cross_column_anchor_to_409",
+        "tests.test_r01a_cards_lifecycle_uow::test_add_dependency_201_then_lists",
+        "tests.test_r01a_cards_lifecycle_uow::test_get_dependencies_empty",
+        "tests.test_r01a_cards_lifecycle_uow::test_add_dependency_409_self_reference",
+        "tests.test_r01a_cards_lifecycle_uow::test_remove_dependency_204_then_404",
+        "tests.test_r01a_cards_lifecycle_uow::test_submit_validation_422_missing_fields",
+        "tests.test_r01a_cards_lifecycle_uow::test_submit_validation_422_bad_recommendation",
+        "tests.test_r01a_cards_lifecycle_uow::test_submit_validation_422_card_not_in_validation",
+        "tests.test_r01a_cards_lifecycle_uow::test_submit_validation_404_missing_card",
+        "tests.test_r01a_cards_lifecycle_uow::test_submit_validation_exact_retry_replays_after_rejected",
+        "tests.test_r01a_cards_lifecycle_uow::test_submit_validation_exact_retry_replays_after_done",
+        "tests.test_r01a_cards_lifecycle_uow::test_list_validations_200_empty",
+        "tests.test_r01a_cards_lifecycle_uow::test_list_validations_404_missing_card",
+        "tests.test_r01a_cards_lifecycle_uow::test_get_validation_200_and_404",
+        "tests.test_r01a_cards_lifecycle_uow::test_get_validation_404_missing_card",
+        "tests.test_r01a_cards_lifecycle_uow::test_delete_validation_is_rejected_as_append_only_history",
+        "tests.test_r01a_cards_lifecycle_uow::test_delete_validation_404_missing_card",
+        "tests.test_r01a_cards_lifecycle_uow::test_move_card_use_case_raises_for_missing_card",
+        "tests.test_r01a_cards_lifecycle_uow::test_fu4_s2_endpoints_take_uow_not_raw_session",
+        "tests.test_task_rejected_lifecycle_core::test_rejection_is_internal_and_only_rework_exit_is_public[normal]",
+        "tests.test_task_rejected_lifecycle_core::test_rejection_is_internal_and_only_rework_exit_is_public[bug]",
+        "tests.test_task_rejected_lifecycle_core::test_test_cards_never_enter_rejected",
+        "tests.test_task_rejected_lifecycle_core::test_completion_decision_keeps_validation_and_completion_outcomes_distinct",
+        "tests.test_task_rejected_lifecycle_core::test_current_cause_requires_a_sealed_record_and_admitted_validation",
+        "tests.test_task_rejected_lifecycle_core::test_rejection_projection_is_bounded_without_rewriting_source_history",
+        "tests.test_task_rejected_lifecycle_core::test_rejected_task_remains_visible_in_working_kg_without_ttl_expiry",
+        "tests.test_task_rejected_lifecycle_core::test_kg_projects_only_generic_rework_signal_not_rejection_cause",
+        "tests.test_task_rejected_lifecycle_core::test_validation_redaction_hides_body_cause_and_aggregate_scores",
+        "tests.test_task_rejected_lifecycle_core::test_operational_freeze_error_does_not_leak_current_cause",
+        "tests.test_task_rejected_lifecycle_core::test_bug_completion_rechecks_missing_regression_evidence",
+        "tests.test_task_rejected_lifecycle_core::test_nested_board_cards_require_validation_read",
+        "tests.test_task_rejected_lifecycle_core::test_board_blockers_redact_rejection_cause_without_validation_read",
+        "tests.test_task_rejected_lifecycle_core::test_validation_analytics_are_leaf_aware_and_strip_ledger_plumbing",
+        "tests.test_task_rejected_lifecycle_core::test_discovery_outputs_only_generic_rework_and_activity_signals",
+        "tests.test_task_rejected_lifecycle_core::test_card_and_board_activity_redact_task_validation_details",
+        "tests.test_task_rejected_lifecycle_core::test_delete_validation_authorizes_read_before_id_lookup",
+        "tests.test_task_rejected_lifecycle_core::test_task_validation_transport_requires_fence_and_idempotency",
+        "tests.test_task_rejected_lifecycle_core::test_rest_move_schema_accepts_rejected_only_for_domain_checked_reorder",
+        "tests.test_task_rejected_lifecycle_core::test_card_create_schema_exposes_only_lifecycle_entry_states",
+        "tests.test_task_rejected_lifecycle_core::test_mcp_create_rejects_consequence_only_initial_status_before_uow"
+      ]
+    },
+    {
+      "file": "learning-reconciliation-governed-lifecycle1-community.xml",
+      "sha256": "b700d518186b732a222ac0ae69e26704911c04ea3d84fb0f61146cf17126c361",
+      "log_sha256": "19af88630aeaac7c1c93dda859feea2c81a56f2065fe65684b74e6d19c6dd32a",
+      "terminal_session": 32000,
+      "exit_code": 0,
+      "suites": [
+        {
+          "name": "pytest",
+          "errors": "0",
+          "failures": "0",
+          "skipped": "0",
+          "tests": "16",
+          "time": "30.714",
+          "timestamp": "2026-09-30T20:54:58.937017-03:00",
+          "hostname": "Alienware_m15"
+        }
+      ],
+      "cases": [
+        "tests.test_spec_evaluation_reopen_characterization::test_reopen_requires_new_review_and_preserves_original_verdict[False-approve]",
+        "tests.test_spec_evaluation_reopen_characterization::test_reopen_requires_new_review_and_preserves_original_verdict[False-reject]",
+        "tests.test_spec_evaluation_reopen_characterization::test_reopen_requires_new_review_and_preserves_original_verdict[True-approve]",
+        "tests.test_spec_evaluation_reopen_characterization::test_reopen_requires_new_review_and_preserves_original_verdict[True-reject]",
+        "tests.test_spec_evaluation_reopen_characterization::test_new_approval_does_not_supersede_same_edition_rejection",
+        "tests.test_spec_evaluation_reopen_characterization::test_failed_reopen_rolls_back_edition_and_evaluation_currentness",
+        "tests.test_spec_evaluation_reopen_characterization::test_concurrent_reviews_do_not_overwrite_an_accepted_verdict",
+        "tests.test_card_rejected_rest_contract::test_submit_validation_exposes_typed_causal_response_and_alias",
+        "tests.test_card_rejected_rest_contract::test_submit_validation_requires_fence_and_idempotency_and_documents_models",
+        "tests.test_card_rejected_rest_contract::test_validation_read_routes_are_typed_and_strip_internal_ledger",
+        "tests.test_card_rejected_rest_contract::test_validation_read_routes_project_shared_permission_denial",
+        "tests.test_card_rejected_rest_contract::test_validation_submit_projects_combined_submit_and_read_denial",
+        "tests.test_card_rejected_rest_contract::test_card_knowledge_freeze_is_a_structured_rest_conflict",
+        "tests.test_card_rejected_rest_contract::test_cross_surface_rejected_freeze_maps_to_structured_409",
+        "tests.test_card_rejected_rest_contract::test_delete_validation_projects_append_only_conflict_as_structured_409",
+        "tests.test_card_rejected_rest_contract::test_delete_validation_real_use_case_projects_append_only_conflict"
+      ]
+    },
+    {
+      "file": "learning-reconciliation-governed-lifecycle-supplement3-community.xml",
+      "sha256": "f0a396a3f1e847e127c66a59d3a2593cc18d57ab853b7f4a10e950eec5922f5e",
+      "log_sha256": "925f75c1a400314587984fe5595a5825e9bbd5a95ad18cb4480344986f41696a",
+      "terminal_session": 10570,
+      "exit_code": 0,
+      "suites": [
+        {
+          "name": "pytest",
+          "errors": "0",
+          "failures": "0",
+          "skipped": "0",
+          "tests": "5",
+          "time": "19.515",
+          "timestamp": "2026-09-30T20:59:22.001314-03:00",
+          "hostname": "Alienware_m15"
+        }
+      ],
+      "cases": [
+        "tests.test_task_review_currentness::test_review_cannot_approve_subject_edited_in_another_semantic_session",
+        "tests.test_task_review_currentness::test_direct_done_preserves_required_task_validation[in_progress-normal]",
+        "tests.test_task_review_currentness::test_direct_done_preserves_required_task_validation[in_progress-bug]",
+        "tests.test_task_review_currentness::test_direct_done_preserves_required_task_validation[validation-normal]",
+        "tests.test_task_review_currentness::test_direct_done_preserves_required_task_validation[validation-bug]"
+      ]
+    },
+    {
+      "file": "learning-reconciliation-governed-lifecycle-test-card1-core.xml",
+      "sha256": "511ae891d3b455345fe6f848d31b65c8da52ca17097e39c16390222783760ada",
+      "log_sha256": "1caef141216c62c1d9c66513b148b4b737f8380ff2d47d6a3e8809db6e87cdfa",
+      "terminal_session": 9887,
+      "exit_code": 0,
+      "suites": [
+        {
+          "name": "pytest",
+          "errors": "0",
+          "failures": "0",
+          "skipped": "0",
+          "tests": "3",
+          "time": "5.805",
+          "timestamp": "2026-09-30T20:59:27.657212-03:00",
+          "hostname": "Alienware_m15"
+        }
+      ],
+      "cases": [
+        "tests.test_r4_test2_test_card_gate_behavior::test_ts_154b86fb_move_card_done_blocked_lists_pending_and_points_to_update",
+        "tests.test_r4_test2_test_card_gate_behavior::test_ts_154b86fb_gate_releases_once_scenarios_passed",
+        "tests.test_r4_test2_test_card_gate_behavior::test_ts_ab364e51_submit_task_validation_on_test_card_redirects_not_normal_gate"
+      ]
+    }
+  ],
+  "retained_intermediates": [
+    {
+      "file": "learning-reconciliation-governed-lifecycle-supplement1-core.xml",
+      "sha256": "c6d6c88e245433362184bd2d21c5af9cf95f56478c2293e31384c3e788dc0add",
+      "log_sha256": "0c9867978867ff1680fb7ddf7a6a8a34d0cc7b1771ec5eb96f7ef42a898411c9",
+      "terminal_session": 31343,
+      "exit_code": 1,
+      "suites": [
+        {
+          "name": "pytest",
+          "errors": "0",
+          "failures": "1",
+          "skipped": "0",
+          "tests": "1",
+          "time": "5.748",
+          "timestamp": "2026-09-30T20:56:09.446103-03:00",
+          "hostname": "Alienware_m15"
+        }
+      ],
+      "cases": [
+        "tests.test_r01a_cards_lifecycle_uow::test_review_read_before_other_session_edit_cannot_approve_new_subject"
+      ]
+    },
+    {
+      "file": "learning-reconciliation-governed-lifecycle-supplement2-community.xml",
+      "sha256": "8835201b3bd73b18036f6e2c93f16883b3fe332450d695547413161b1daee3e0",
+      "log_sha256": "df50f9fabb9ca45c8369122ba2ebb07a17a3504d45976a629d1f91fdbfa3768d",
+      "terminal_session": 56920,
+      "exit_code": 0,
+      "suites": [
+        {
+          "name": "pytest",
+          "errors": "0",
+          "failures": "0",
+          "skipped": "0",
+          "tests": "1",
+          "time": "8.664",
+          "timestamp": "2026-09-30T20:57:55.552978-03:00",
+          "hostname": "Alienware_m15"
+        }
+      ],
+      "cases": [
+        "tests.test_task_review_currentness::test_review_cannot_approve_subject_edited_in_another_semantic_session"
+      ]
+    }
+  ],
+  "limits": [
+    "Product source and frontend are unchanged. F16 historical-export-fix1 remains the last executed architectural gate, with eight zero budgets.",
+    "Core tests use frozen relational fixture mappings in several cases. The new cross-session currentness test explicitly uses actual Community mappings, CommunitySemanticSession and the real content writer.",
+    "The first concurrency probe failed because the frozen Core fixture did not register the productive semantic version listener. It was replaced with the Community test, not a manually incremented version or weakened product fence.",
+    "Spec reopen tests seed admission to validated; they do not qualify the entire Spec Validation pipeline. Full single-agent end-to-end flow remains BASE:T01, unverified here.",
+    "MCP reviewer/Test Card tests inject identity/permission context; no credential transport E2E is claimed. Done validation replay substitutes completion blockers to isolate idempotency, not to prove product evidence admission.",
+    "T03/T04 grant separation across all mutation variants, T05 full resumption, T06 planning and T07 integrated Spec closure remain outstanding; these are not inferred from isolated review tests."
+  ]
+}

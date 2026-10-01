@@ -2,6 +2,35 @@
 
 ## Estado para retomada
 
+BASE T02/T08/T09/T10/T11/T12 verificados por execução revisada. Sem mudança
+produtiva de gate, authority, histórico ou frontend. Separação enforce recusa
+autorrevisão; normal/bug não fecham por move quando revisão é obrigatória;
+Test Card mantém fluxo próprio sem revisão falsa. Reabertura de Spec conserva
+pareceres Previous, exige avaliação da nova edição e preserva rejeição da mesma
+edição. Replay idêntico retorna um efeito; payload alterado conflita.
+
+T11 ganhou teste com DOIS contextos CommunitySemanticSession reais: após leitura
+da versão, outro writer CardService muda conteúdo; aprovação antiga é recusada
+sem gravação mesmo com commit externo. Primeira tentativa Core31343=1 usava
+mapeamento congelado sem listener de versão; não era reprodução produtiva.
+Substituída pela fixture real, sem incrementar versão à mão ou relaxar fence.
+Community56920=0,1passed8.67s foi intermediário, não somar ao conjunto final.
+
+Finais: Core94567=0,88passed18.57s;Community32000=0,16passed30.72s;
+Community10570=0,5passed19.53s;Core9887=0,3passed5.83s. Total112 distintos.
+Preflight9e4576=0, provenance-governed-lifecycle1.json:859/922+373/458
+byte-idênticos ao par instalado historical-export-fix1. Ruff F/E9 aprovado.
+F16 anterior continua último gate arquitetural executado, oito budgets ZERO.
+Relatório acceptance-governed-lifecycle.json explicita limites: identidade
+injetada em MCP, entrada validated como fixture e blockers isolados no replay
+Done; não são prova de fluxo completo T01 nem de autenticação de transporte.
+
+Inventário114 verificados/39 parciais/93 não auditados. Próxima frente original:
+T03/T04 autorização por variantes e handoff; T01/T05/T06/T07 continuam abertos,
+assim como lacunas dos complementos, benchmark e distribuição final. KG-10/T23
+aguardam decisões já solicitadas. Último par publicado antes deste incremento:
+Core4a090ace/Community8c00c1de. Nenhum processo pendente ou dado real alterado.
+
 BASE F7/T45 concluído. Export capturado pelo par v0.3.4 instalado e
 byte-provado (20707250/b6dda64), sobre SQLite descartável da fixture congelada.
 Renderers atuais preservam QA/avaliação/histórico sem modificar JSON/SQL;

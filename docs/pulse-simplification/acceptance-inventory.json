@@ -35,8 +35,12 @@
       "line": 581,
       "id": "T02",
       "normative_text": "| T02 | Um agente e policy exigindo revisão independente | Bloqueio correto, sem skip automático nem identidade fictícia. |",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "verified_by_reviewed_execution",
+      "test_text_references": [],
+      "reviewed_execution": {
+        "artifact": "acceptance-governed-lifecycle.json",
+        "criterion_key": "BASE:T02"
+      }
     },
     {
       "key": "BASE:T03",
@@ -89,8 +93,12 @@
       "line": 587,
       "id": "T08",
       "normative_text": "| T08 | Diretamente mover normal/bug a done sem validação exigida | Recusa preservada. |",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "verified_by_reviewed_execution",
+      "test_text_references": [],
+      "reviewed_execution": {
+        "artifact": "acceptance-governed-lifecycle.json",
+        "criterion_key": "BASE:T08"
+      }
     },
     {
       "key": "BASE:T09",
@@ -98,8 +106,12 @@
       "line": 588,
       "id": "T09",
       "normative_text": "| T09 | Test Card e suas regras próprias | Não assume lifecycle de normal/bug ou revisão falsa. |",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "verified_by_reviewed_execution",
+      "test_text_references": [],
+      "reviewed_execution": {
+        "artifact": "acceptance-governed-lifecycle.json",
+        "criterion_key": "BASE:T09"
+      }
     },
     {
       "key": "BASE:T10",
@@ -107,8 +119,12 @@
       "line": 589,
       "id": "T10",
       "normative_text": "| T10 | Rejeição → retrabalho → nova revisão | Histórico preservado, Current correto e escrita autorizada no estado correto. |",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "verified_by_reviewed_execution",
+      "test_text_references": [],
+      "reviewed_execution": {
+        "artifact": "acceptance-governed-lifecycle.json",
+        "criterion_key": "BASE:T10"
+      }
     },
     {
       "key": "BASE:T11",
@@ -116,8 +132,12 @@
       "line": 590,
       "id": "T11",
       "normative_text": "| T11 | Outra sessão muda versão entre leitura e submissão | Conflito/atualidade tratada, sem aprovação do objeto errado. |",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "verified_by_reviewed_execution",
+      "test_text_references": [],
+      "reviewed_execution": {
+        "artifact": "acceptance-governed-lifecycle.json",
+        "criterion_key": "BASE:T11"
+      }
     },
     {
       "key": "BASE:T12",
@@ -125,8 +145,12 @@
       "line": 591,
       "id": "T12",
       "normative_text": "| T12 | Replay idêntico e replay com payload alterado | Um efeito no primeiro; conflito no segundo. |",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "verified_by_reviewed_execution",
+      "test_text_references": [],
+      "reviewed_execution": {
+        "artifact": "acceptance-governed-lifecycle.json",
+        "criterion_key": "BASE:T12"
+      }
     },
     {
       "key": "BASE:T13",
