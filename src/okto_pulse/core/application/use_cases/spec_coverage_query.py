@@ -27,6 +27,7 @@ class SpecCoverageUseCase:
             raise EntityNotFoundError('board', command.board_id)
         await require_all(actor, *(PermissionRequirement(flag) for flag in (
             'board.read', 'spec.entity.read', 'card.entity.read', 'spec.tests.read',
+            'spec.integration_requirements.read', 'spec.observability_requirements.read',
         )), uow=uow, board_id=command.board_id)
         permissions = await resolve_actor_permissions(actor, uow, command.board_id)
         read_delivery = decide_authorization(actor, PermissionRequirement('code_traceability.evidence.read'),

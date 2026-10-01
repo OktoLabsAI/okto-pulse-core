@@ -1604,8 +1604,12 @@
       "line": 669,
       "id": "KG-58",
       "normative_text": "| KG-58 | Test Card vinculado, mas sem execução passing | Cobertura estrutural não é mostrada como teste aprovado; prova lida na fonte delimitada. |",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "verified_by_reviewed_execution",
+      "test_text_references": [],
+      "reviewed_execution": {
+        "artifact": "acceptance-spec-coverage-public.json",
+        "criterion_key": "KG:KG-58"
+      }
     },
     {
       "key": "KG:KG-59",

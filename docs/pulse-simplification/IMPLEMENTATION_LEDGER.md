@@ -2,6 +2,46 @@
 
 ## Estado para retomada
 
+### 2026-10-01 — superfícies públicas de cobertura qualificadas
+
+Base publicada Corec27dce01 / Community70743887. DTOs fechados de cobertura,
+REST /boards/{board_id}/specs/{spec_id}/coverage e variante query.view=coverage,
+subject_ref=spec:<id> na fachada get_traceability_report existente. Sem toolnova.
+Catálogo/manifesto regenerados oficialmente. Leitura agrega IR/OR, portanto exige
+os grants existentes spec.integration_requirements.read e
+spec.observability_requirements.read, como GetRequirementVerificationUseCase;
+testes de negação precedendo a leitura adicionados. Não inventar permissões.
+
+Aba lazy Spec→Coverage implementada, separando estrutura normativa, prova admitida
+e observações do grafo. Cancelamento/troca de Spec, cursor e falhas limpam páginas;
+contagens globais não são somadas. Navegação abre editores de domínio; atalhos de
+correção só aparecem com grant e em Draft, sem escrita automática/repair.
+Frontend66283=0:69passed;build94548=0 sincronizou79arquivos/78assets, árvore
+ddd04cb9ba872b50c5d45bcfa959c060926af76cafae19bf5c4d6da25682e92a.
+ESLint55215=0 sem warnings nos arquivos novos; testes legados de navegação emitem
+avisos React act e build avisa sobre tamanho de chunks. Sem correções fora do escopo.
+Par public1 instalado86923=0,prova31653=0 ANTES de comportamento:873py/936payload
+Core+381py/466payload Community byte-idênticos. Core22500=0,182passed;
+Community85891=0,40passed; total291 distintos com frontend, sem somar repetições.
+KG-58 reproduzido em SQL real: Test Card vinculado, cenário atual ready sem evidência
+passing atual/registro de Delivery; estrutura100%, verificação comprovada0.
+Resposta real validada pelo DTO público; UI confirma distinção entre vínculo/prova.
+
+F16 public1:1049=1 somente matrizesREADME, findings vazios e oito budgetsZERO.
+READMEs regenerados oficialmente. Par public-qualified instalado31854=0;
+prova68358=0 confirma igualdade byte-a-byte; distribuição75668=0,19passed.
+F16 final72665=0,ok=true,sem findings/drift,oito budgetsZERO. Ruff F/E9 e diff
+verdes. Só README mudou no produto após os testes comportamentais. Recibo
+acceptance-spec-coverage-public.json registra hashes, qualificação e limites.
+KG-58 verificado pelo critério EXATO do plano; inventário150verificados/29parciais/
+67nãoauditados. Transportes usam ator/UOW controlados; não alegar E2E implantado.
+
+PRÓXIMO: concluir as viewsimpact/lineage restantes na mesma fachada e UI contextual
+conforme KG§6/§9, aproveitando contratos existentes. Depois benchmark e fechamento
+pareado previstos no plano integrado. KG-10/T23 continuam nas decisões já
+solicitadas; não repetir perguntas nem abrir novos requisitos. Nenhuma validação
+pendente, dado real/policy ou processo em produção alterado. Objetivo integral ativo.
+
 ### 2026-10-01 — observação gráfica de cobertura validada
 
 Base publicada Core324ba6cc / Communityeedd2ff5. A composição agora prepara as

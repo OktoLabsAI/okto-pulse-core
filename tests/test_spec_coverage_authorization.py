@@ -7,7 +7,8 @@ import pytest
 from okto_pulse.core.application.use_cases.base import ActorContext, EntityNotFoundError, PermissionDeniedError
 from okto_pulse.core.application.use_cases.spec_coverage_query import SpecCoverageCommand, SpecCoverageUseCase
 
-FLAGS = ['board.read', 'spec.entity.read', 'card.entity.read', 'spec.tests.read']
+FLAGS = ['board.read', 'spec.entity.read', 'card.entity.read', 'spec.tests.read',
+    'spec.integration_requirements.read', 'spec.observability_requirements.read']
 COMMAND = SpecCoverageCommand('board', 'spec', timeout_ms=30000)
 
 

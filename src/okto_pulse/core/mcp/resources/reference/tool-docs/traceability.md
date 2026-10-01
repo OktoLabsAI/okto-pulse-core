@@ -27,6 +27,29 @@ are informational and cannot approve a gate. Permissions are rechecked on every
 page: Board/Card read for all groups, Spec read for origin Spec/proxy, existing
 related-context grant for proxy and learning-from-bugs grant for Learning.
 
+For contextual Spec coverage pass
+`query={"view":"coverage","subject_ref":"spec:<id>"}`. Optional `limit`
+(default 200, maximum 1000), `cursor` and `timeout_ms` share the same bounded
+read contract. Keep subject and limit on subsequent pages. Source changes,
+proof visibility changes or graph generation changes invalidate the cursor;
+restart the observation after `spec_coverage_cursor_stale` or
+`spec_coverage_source_changed`. Do not combine this variant with SDLC filters.
+
+`structure.summary` comes from the existing authoritative structural resolver;
+`delivery` comes from the existing admitted-proof rollup. Neither substitutes
+for other gates. A linked Test Card is not a passing run, raw supports is not
+delivery, and an authorized waiver is labelled separately from proven work.
+`items.kind` distinguishes delivery rows, source nodes and structural relations.
+Graph-only and missing observations are diagnostic, never a repair instruction.
+Counts describe the full authorized scope, not the current page. Without a full
+projection checkpoint, matching observations still have unknown freshness.
+
+The combined source scope requires Board, Spec, Card, scenarios, IR and OR read
+grants. Code Traceability evidence and KG related-context grants are independent:
+missing optional grants yield restricted sections without hidden counts or reads.
+Permissions are checked on every page. In the UI, open Spec → Coverage; source
+navigation uses the existing domain editors and does not write graph relations.
+
 okto_pulse_get_traceability_report — return a consolidated SDLC traceability report:
 ideation → refinement → spec → card/test/bug → artifacts.
 
