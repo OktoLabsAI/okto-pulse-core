@@ -4,6 +4,9 @@
 
 ### 2026-10-01 — Milestone Evidence contextual: qualificado para publicação
 
+Publicado em feature/v0.4.0: **Core55c05bc6 / Community45c715bf**;
+ambos os pushes confirmados. O próximo incremento ainda não alterou produto.
+
 Fechada a cadeia de remoção de classificação/recibos pré-contextuais em domínio,
 DTOs, portas, application, persistência, source census, consolidação/rebuild,
 MCP, REST, CLI, frontend e instruções operacionais. Criação/supersession de
