@@ -3200,8 +3200,12 @@
       "line": 738,
       "id": "ADV-14",
       "normative_text": "| ADV-14 | Remover o único Test Card do critério depois de aprovar o plano. | A prontidão perde validade e a alteração segue os locks/revisões aplicáveis. |",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "verified_by_reviewed_execution",
+      "test_text_references": [],
+      "reviewed_execution": {
+        "artifact": "acceptance-test-card-removal.json",
+        "criterion_key": "ARQVER:ADV-14"
+      }
     },
     {
       "key": "ARQVER:ADV-15",

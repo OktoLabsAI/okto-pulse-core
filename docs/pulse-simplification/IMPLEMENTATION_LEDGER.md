@@ -2,6 +2,28 @@
 
 ## Estado para retomada
 
+ARQVER ADV-14 verificado: Spec validated com avaliação aprovada e plano
+completo perde prontidão após DELETE REST autorizado do único Test Card.
+Limpeza canônica remove seu vínculo; cenário permanece ready, sem prova;
+FR/AC/pareceres preservados. Gate de plano passa antes e falha depois; start
+real recusa pelo gate de cobertura precedente, sem nova mutação/histórico.
+
+Community86677=0,7passed,um caso novo e seis regressões. Ruff F/E9 e diff
+verdes. acceptance-test-card-removal.json delimita fixture de avaliação/estado,
+identidade REST de owner e Card not_started mutável. Não é teste de revogação
+de permissão ou de bypass de Card locked. Nenhum gate/semântica alterado.
+Probes32641/75437 corrigiram realm/prefixo da fixture;60948 confirmou bloqueio
+anterior por cobertura. Final verifica esse contrato exato e a prontidão separada.
+
+Código produtivo/UI intactos; provenance-three-criteria1 mantém par byte-idêntico.
+F16 anterior31859=0,oito budgets ZERO; frontend anterior4747=0,34passed.
+Inventário130 verificados/33 parciais/83 não auditados. Próximas pendências
+originais incluem ADV-15 cancelamento de implementador e ADV-17 autoridade em
+request em curso; não confundir revogação entre chamadas com esse último caso.
+Benchmark/distribuição final e demais critérios continuam pendentes. KG-10/T23
+aguardam decisões já solicitadas. Par publicado anterior:
+Core930b5834/Community48c00823. Nenhum processo pendente ou dado real alterado.
+
 ARQVER ADV-18/22 verificados. Executor com grant explícito de revisão é
 recusado pela policy enforce após registrar prova/conclusão com sua identidade.
 A recusa approve/reject não escreve; outro revisor persistido conclui o fluxo.
