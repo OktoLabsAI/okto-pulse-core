@@ -1661,8 +1661,12 @@
       "line": 608,
       "id": "DEI-T01",
       "normative_text": "| DEI-T01 | Um agente com todas as permissões e policy permitindo autoavaliação | Executa, registra progresso/provas e conclui via os gates normais; não exige segundo agente fictício. |",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "verified_by_reviewed_execution",
+      "test_text_references": [],
+      "reviewed_execution": {
+        "artifact": "acceptance-progress-and-review-identities.json",
+        "criterion_key": "DEI:DEI-T01"
+      }
     },
     {
       "key": "DEI:DEI-T02",
@@ -1670,8 +1674,12 @@
       "line": 609,
       "id": "DEI-T02",
       "normative_text": "| DEI-T02 | Um agente e policy exigindo independência | Pode registrar seu trabalho; não aprova a própria entrega nem recebe bypass por estar sozinho. |",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "verified_by_reviewed_execution",
+      "test_text_references": [],
+      "reviewed_execution": {
+        "artifact": "acceptance-progress-and-review-identities.json",
+        "criterion_key": "DEI:DEI-T02"
+      }
     },
     {
       "key": "DEI:DEI-T03",

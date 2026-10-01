@@ -1,0 +1,70 @@
+{
+  "format": "pulse-v1.3-reviewed-execution/v1",
+  "criteria": {
+    "DEI:DEI-T01": {
+      "status": "verified_by_reviewed_execution",
+      "covered": "The one-agent authenticated MCP lifecycle now records a durable progress checkpoint before its implementation receipt/report. Fresh SQL confirms actor, progress kind and unchanged in_progress status with no implementation/test credit. The same identity then records implementation, self-reviews under an explicit off separation policy, executes/adopts signed test evidence and closes the Spec through normal gates. Final SQL contains exactly progress, implementation and test records from solo; original progress and implementation payloads and assessments are preserved. Both original and late-link lifecycle variants pass."
+    },
+    "DEI:DEI-T02": {
+      "status": "verified_by_reviewed_execution",
+      "covered": "Actual authenticated MCP executor records implementation and its conclusion, retaining actor identity. With card.validation.submit explicitly granted and owner-review fallback absent, enforce still returns reviewer_separation_required/action_required for both approve and reject. Fresh SQL snapshots are unchanged. A distinct persisted reviewer can then approve or reject, preserving executor evidence and attribution.",
+      "evidence": "acceptance-independent-review-legacy-read.json"
+    }
+  },
+  "current_execution": {
+    "terminal_session": 34870,
+    "exit_code": 0,
+    "passed": 2,
+    "seconds": 23.63,
+    "cases": [
+      "tests.test_single_agent_spec_execution::test_one_agent_preserves_assessments_and_evidence_through_spec_done[False]",
+      "tests.test_single_agent_spec_execution::test_one_agent_preserves_assessments_and_evidence_through_spec_done[True]"
+    ],
+    "artifacts": [
+      {
+        "file": "learning-reconciliation-single-agent-progress1-community.xml",
+        "sha256": "629246e900ad94a42e8f7016c3db0ec80f1f9a59ae31475a41148b587ce50341"
+      },
+      {
+        "file": "learning-reconciliation-single-agent-progress1-community.log",
+        "sha256": "7d7a80ed4aa0aef442571254de3990518704a7b5bb51d4a91b06604d8693b807"
+      }
+    ]
+  },
+  "retained_execution": {
+    "artifact": "acceptance-independent-review-legacy-read.json",
+    "sha256": "aa6c096b02c5ae9902bd03e6dbe16351c1f9be8886eff41d444e35775b65c955",
+    "execution": {
+      "terminal_session": 7838,
+      "exit_code": 0,
+      "passed": 4,
+      "cases": [
+        "tests.test_executor_reviewer_handoff::test_executor_and_reviewer_handoff_preserves_report_and_grant_boundaries[grant-denied-approve]",
+        "tests.test_executor_reviewer_handoff::test_executor_and_reviewer_handoff_preserves_report_and_grant_boundaries[grant-denied-reject]",
+        "tests.test_executor_reviewer_handoff::test_executor_and_reviewer_handoff_preserves_report_and_grant_boundaries[separation-enforced-approve]",
+        "tests.test_executor_reviewer_handoff::test_executor_and_reviewer_handoff_preserves_report_and_grant_boundaries[separation-enforced-reject]"
+      ],
+      "artifacts": [
+        {
+          "file": "learning-reconciliation-review-handoff-enforce2-community.xml",
+          "sha256": "6cc9aa5f093ed6512dc8a9e0efc0442d26ebfa18247bca7d6fb95aaa10d0ccaa"
+        },
+        {
+          "file": "learning-reconciliation-review-handoff-enforce2-community.log",
+          "sha256": "08aa162ad09182d4276bb743abfd888fce8c353c5e5fb708808ae35fbd22ad46"
+        }
+      ]
+    }
+  },
+  "source_hashes": {
+    "tests/test_single_agent_spec_execution.py": "ef109d2579e81a85cd8501780cdbefef684a0d327a8ad1e3baf74d7319f14fb6",
+    "tests/test_executor_reviewer_handoff.py": "3b7e527741857e470042975cec8309840d766dd77756a09fa7f71672fd6d0c90"
+  },
+  "limits": [
+    "Only two current executions; four retained handoff cases are not counted as new. Their artifact hashes were rechecked and the handoff source has no changes since the verified separation campaign. The later policy-fence campaign also passed the same handoff cases.",
+    "Progress is a bounded observation with material_change=none and unknown external workspace/recoverability. It neither claims recoverable code nor implementation completion. External implementation investigation receipt and initial adopted Draft/context are fixtures.",
+    "MCP host, real Agent/grants/authenticator, SQL/UOW, report/review/lifecycle gates and HTTP issuer/verifier are exercised; credential extraction and observed project use controlled test inputs.",
+    "Self-review is explicitly allowed only in the single-agent fixture. The separate enforce fixture refuses its executor even when granted review and can proceed under another persisted reviewer. No permission/policy changes in product.",
+    "Product and UI unchanged. Source/site/wheel parity remains that proven before execution by provenance-late-link1.json; F16 prior90981 has all eight budgets ZERO. No new frontend run is required for test-only additions."
+  ]
+}

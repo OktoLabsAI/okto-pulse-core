@@ -2,6 +2,26 @@
 
 ## Estado para retomada
 
+DEI-T01/02 verificados. Fluxo contínuo de um agente agora grava progresso
+durável antes da implementação; SQL novo confirma autoria, status in_progress
+e ausência de crédito de implementação/teste nesse checkpoint. Depois registra
+prova/relatório, autorrevisa sob policy permitida, executa teste assinado e fecha
+Spec pelos gates reais. Três registros finais exatos (progress/implementation/
+test), payloads e avaliações preservados. Variantes T01 e vínculo tardio passam.
+
+Community34870=0,2passed23.63s; Ruff F/E9 e diff verdes. DEI-T02 reaproveita
+quatro casos executados de handoff/enforce (7838=0, repetidos na campanha30791),
+com hashes conferidos e fonte inalterada. Executor pode registrar, mas grant de
+review não contorna enforce; somente revisor distinto completa avaliação.
+acceptance-progress-and-review-identities.json explicita fixtures/limites; não
+somar execução anterior como teste novo. Nenhuma alteração produtiva/UI.
+
+Inventário139 verificados/32 parciais/75 não auditados. F16 anterior90981=0,
+oito budgets ZERO;frontend anterior39859=0,8passed. Próximos passos limitados aos
+critérios restantes do plano, benchmark e distribuição final. KG-10/T23 aguardam
+decisões já solicitadas. Par publicado anterior:Corea8ffcaed/Communityb123a1a9.
+Nenhum processo pendente nem dado real alterado.
+
 ARQVER ADV-20 e KG-53 verificados por revisão da evidência de migração já
 executada (BASE T30) e complemento de recusa de par incompatível. Hashes de logs,
 XMLs e fontes dos testes preservados conferidos. Falhas em passos de dados/DDL,
