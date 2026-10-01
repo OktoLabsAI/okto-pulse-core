@@ -2173,17 +2173,17 @@ class SpecCreate(BaseModel):
     context: str | None = Field(
         None, description="Contexto de negocio e tecnico para a spec."
     )
-    functional_requirements: list[str | dict] | None = Field(
+    functional_requirements: list[dict] | None = Field(
         None,
-        description="Lista de requisitos funcionais (FRs) em texto livre ou objetos estruturados {id, text, ...}.",
+        description="Requisitos funcionais em objetos {text, id?, ...}; omitir id cria uma identidade nova.",
     )
-    technical_requirements: list[str | dict] | None = Field(
+    technical_requirements: list[dict] | None = Field(
         None,
-        description="Requisitos tecnicos: string legada ou dict {id, text, linked_task_ids}.",
+        description="Requisitos tecnicos em objetos {text, id?, linked_task_ids?, ...}.",
     )
-    acceptance_criteria: list[str | dict] | None = Field(
+    acceptance_criteria: list[dict] | None = Field(
         None,
-        description="Criterios de aceite em texto livre ou objetos estruturados {id, text, ...}.",
+        description="Criterios de aceite em objetos {text, id?, ...}.",
     )
     test_scenarios: list[TestScenarioWrite] | None = Field(
         None, description="Cenarios de teste vinculados a spec."
@@ -2264,14 +2264,14 @@ class SpecUpdate(BaseModel):
     context: str | None = Field(
         None, description="Novo contexto de negocio e tecnico da spec (opcional)."
     )
-    functional_requirements: list[str | dict] | None = Field(
+    functional_requirements: list[dict] | None = Field(
         None, description="Nova lista de requisitos funcionais (substitui a existente)."
     )
-    technical_requirements: list[str | dict] | None = Field(
+    technical_requirements: list[dict] | None = Field(
         None,
-        description="Novos requisitos tecnicos: string legada ou dict {id, text, linked_task_ids}.",
+        description="Novos requisitos tecnicos em objetos {text, id?, linked_task_ids?, ...}.",
     )
-    acceptance_criteria: list[str | dict] | None = Field(
+    acceptance_criteria: list[dict] | None = Field(
         None, description="Novos criterios de aceite (substitui a lista existente)."
     )
     test_scenarios: list[TestScenarioWrite] | None = Field(
@@ -2801,11 +2801,11 @@ class SpecResponse(BaseSchema):
     title: str
     description: str | None
     context: str | None
-    functional_requirements: list[str | dict] | None
+    functional_requirements: list[dict] | None
     technical_requirements: (
-        list[str | dict] | None
-    )  # str (legacy) or {id, text, linked_task_ids}
-    acceptance_criteria: list[str | dict] | None
+        list[dict] | None
+    )
+    acceptance_criteria: list[dict] | None
     test_scenarios: list[TestScenario] | None = None
     screen_mockups: list[ScreenMockup] | None = None
     business_rules: list[BusinessRule] | None = None

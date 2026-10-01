@@ -1164,6 +1164,18 @@
     {
       "path": "okto_labs_pulse_community/tests/test_requirement_verification_read.py",
       "reason": "Current explicit execution contract in fixtures; preserves REST/MCP parity, body permissions, no-write reads and unqualified native Done history. Removes missing-contract compatibility expectation."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_spec_entity_canonicalization.py",
+      "reason": "Retains native deterministic identity allocation, duplicate collisions, metadata and reorder checks. Replaces string inputs/by-text identity reuse with object authorship and explicit IDs, adds old-shape refusal."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_spec_requirement_canonicalization_ska.py",
+      "reason": "Native object authoring across FR/TR/AC; explicit identities on reorder; preserves global duplicate and collision guards."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_r3a_schema_honesty.py",
+      "reason": "Spec requirement MCP inputs now array-of-objects/null; other domain multi-value inputs unchanged."
     }
   ],
   "removed_cases": [

@@ -1669,7 +1669,7 @@ async def test_incompatible_tr_refused_without_allocating_id(db_factory):
         service = StructuredSpecEntityService(db)
         canonical = canonicalize_spec_children(
             "technical_requirement",
-            ["Legacy TR"],
+            [{"text": "Legacy TR"}],
         )
         assert canonical is not None
         stable_id = canonical[0]["id"]

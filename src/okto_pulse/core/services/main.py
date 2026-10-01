@@ -271,7 +271,6 @@ from okto_pulse.core.services.reviewer_separation import (
     evaluate_task_reviewer_separation,
 )
 from okto_pulse.core.services.spec_entity_canonicalization import (
-    canonicalize_fr_ac as canonicalize_fr_ac,  # noqa: F401 - compatibility
     canonicalize_spec_requirement_fields,
 )
 from okto_pulse.core.services.spec_resource_propagation import (

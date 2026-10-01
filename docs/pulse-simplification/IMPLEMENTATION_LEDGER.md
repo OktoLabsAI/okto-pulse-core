@@ -2,6 +2,42 @@
 
 ## Estado para retomada
 
+### 2026-10-01 — Autoria de FR/TR/AC em objetos: qualificação em curso
+
+**Qualificado:** Core authoring-core1/permission1: 139 casos distintos aprovados;
+Community: 12; frontend: 35. A prova adversarial confirma que limpar FRs junto com
+labels continua exigindo spec.entity.edit_fields antes de qualquer escrita.
+Closure-authoring1 exit0, sem findings, oito budgets ZERO, READMEs validados
+oficialmente (.readmes.json). Ruff/diff passaram. Este marco está pronto para
+commit/push; leitores tolerantes e demais pendências globais permanecem abertos.
+
+
+Par anterior Core **64aa6511** / Community **83fb056b** publicado, pushes confirmados.
+Aplicados close_requirement_authoring.py, adapt_requirement_authoring_tests.py e
+close_requirement_mcp.py uma vez, não reaplicar. Retirado wrapper canonicalize_fr_ac,
+reuso de ID por texto e conversor MCP _trs_to_objects. Schemas REST e MCP recebem
+coleções de objetos; omitir ID representa autoria nova, não recuperação de identidade.
+IDs existentes ficam reservados ao alocar os novos; explícitos preservam identidade.
+MCP update permite lista vazia com a mesma permissão de edição; null omite a coleção.
+Catálogo MCP regenerado oficialmente. Formulário CreateSpec envia objetos e exige
+seleção de delivery_context: gap preexistente confirmado, antes não enviava esse
+campo já obrigatório no backend. Nenhuma opção presumida; teste cobre a recusa local.
+
+Build frontend TypeScript/Vite passou, SPA79 arquivos, hash
+53eba9938d6bb69292d20479f4575f77db27ef3f506bf039e65533719eca856f.
+dist-requirement-authoring1 instalado e provenance-requirement-authoring1.json
+comprova byte-a-byte Core852/915 e Community318/404. Regressões em execução.
+Frontend1/2: 35 casos distintos aprovados após corrigir seletor de placeholder no
+novo teste. Leitores tolerantes/UI de dados persistidos ainda pendentes, assim
+como demais frentes C1–C4. Nenhuma entrega integral declarada.
+
+Investigação adicional sem alteração: services/requirement_lint_writer.py é hook
+explicitamente mantido para callers da versão anterior, sem consumidor de produto;
+comandos/resultados em ports/requirement_lint também alimentam assessment nativo,
+portanto não remover o módulo de contratos inteiro. Seed demo usa SQL direto sem
+contratos obrigatórios: verificar/adaptar na qualificação de instalação nova C4.
+
+
 ### 2026-10-01 — FR/TR/AC persistidos: conversão retirada, qualificação em curso
 
 **Qualificado:** agregado Core2/rest3/bulk1/links1: 85 casos distintos aprovados;

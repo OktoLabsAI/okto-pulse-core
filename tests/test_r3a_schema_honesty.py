@@ -94,9 +94,10 @@ def test_ac1_refinement_fields_anyof_array_string():
 
 
 def test_ac2_expanded_cluster_anyof_array_string():
-    assert _is_anyof_array_string(_field_schema("okto_pulse_create_spec", "functional_requirements"))
-    assert _is_anyof_array_string(_field_schema("okto_pulse_create_spec", "technical_requirements"))
-    assert _is_anyof_array_string(_field_schema("okto_pulse_create_spec", "acceptance_criteria"))
+    for field in ("functional_requirements", "technical_requirements", "acceptance_criteria"):
+        branches = _anyof_branches(_field_schema("okto_pulse_create_spec", field))
+        assert {branch["type"] for branch in branches} == {"array", "null"}
+        assert next(branch for branch in branches if branch["type"] == "array")["items"]["type"] == "object"
     assert _is_anyof_array_string(_field_schema("okto_pulse_add_decision", "alternatives_considered"))
 
 

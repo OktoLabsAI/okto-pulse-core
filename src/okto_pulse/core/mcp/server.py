@@ -257,18 +257,6 @@ SpecDependencyCursorInput = Annotated[
 ]
 
 
-def _trs_to_objects(trs: list[str] | None) -> list | None:
-    """Convert TR strings to objects with IDs for task linkage traceability."""
-    if not trs:
-        return None
-    return [
-        {"id": f"tr_{_uuid.uuid4().hex[:8]}", "text": tr, "linked_task_ids": []}
-        if isinstance(tr, str)
-        else tr
-        for tr in trs
-    ]
-
-
 def _resolve_linked_requirement_tokens_to_fr_or_tr_ids(
     linked_tokens: list | None,
     frs: list,
@@ -10516,9 +10504,9 @@ async def okto_pulse_create_spec(
     title: str,
     description: str = "",
     context: str = "",
-    functional_requirements: list[str] | str = "",
-    technical_requirements: list[str] | str = "",
-    acceptance_criteria: list[str] | str = "",
+    functional_requirements: list[dict[str, Any]] | None = None,
+    technical_requirements: list[dict[str, Any]] | None = None,
+    acceptance_criteria: list[dict[str, Any]] | None = None,
     status: str = "draft",
     assignee_id: str = "",
     labels: list[str] | str = "",
@@ -10575,9 +10563,6 @@ async def okto_pulse_create_spec(
         )
 
     try:
-        frs_list = coerce_to_list_str(functional_requirements) or None
-        trs_list = coerce_to_list_str(technical_requirements) or None
-        acs_list = coerce_to_list_str(acceptance_criteria) or None
         label_list = coerce_to_list_str(labels) or None
     except ValueError as e:
         return json.dumps({"error": "invalid_multi_value_input", "detail": str(e)})
@@ -10599,9 +10584,9 @@ async def okto_pulse_create_spec(
             title=title,
             description=description.replace("\\n", "\n") if description else None,
             context=context.replace("\\n", "\n") if context else None,
-            functional_requirements=frs_list,
-            technical_requirements=_trs_to_objects(trs_list),
-            acceptance_criteria=acs_list,
+            functional_requirements=functional_requirements,
+            technical_requirements=technical_requirements,
+            acceptance_criteria=acceptance_criteria,
             status=spec_status,
             assignee_id=assignee_id or None,
             labels=label_list,
@@ -11148,9 +11133,9 @@ async def okto_pulse_update_spec(
     title: str = "",
     description: str = "",
     context: str = "",
-    functional_requirements: list[str] | str = "",
-    technical_requirements: list[str] | str = "",
-    acceptance_criteria: list[str] | str = "",
+    functional_requirements: list[dict[str, Any]] | None = None,
+    technical_requirements: list[dict[str, Any]] | None = None,
+    acceptance_criteria: list[dict[str, Any]] | None = None,
     delivery_context: str = "",
     delivery_context_override_reason: str = "",
     assignee_id: str = "",
@@ -11158,7 +11143,7 @@ async def okto_pulse_update_spec(
 ) -> str:
     """
     Update a spec's fields. Content changes (description, context, requirements, criteria) bump the version.
-    Only non-empty fields are updated, subject to the existing content edit authority."""
+    Requirement collections are omitted with null; an empty list clears the collection. Other fields use non-empty patches under the existing content edit authority."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -11169,9 +11154,9 @@ async def okto_pulse_update_spec(
             title,
             description,
             context,
-            functional_requirements,
-            technical_requirements,
-            acceptance_criteria,
+            functional_requirements is not None,
+            technical_requirements is not None,
+            acceptance_criteria is not None,
             delivery_context,
             delivery_context_override_reason,
         )
@@ -11202,27 +11187,13 @@ async def okto_pulse_update_spec(
         update_kwargs["description"] = description.replace("\\n", "\n")
     if context:
         update_kwargs["context"] = context.replace("\\n", "\n")
-    if functional_requirements:
-        try:
-            update_kwargs["functional_requirements"] = coerce_to_list_str(
-                functional_requirements
-            )
-        except ValueError as e:
-            return json.dumps({"error": "invalid_multi_value_input", "detail": str(e)})
-    if technical_requirements:
-        try:
-            update_kwargs["technical_requirements"] = _trs_to_objects(
-                coerce_to_list_str(technical_requirements)
-            )
-        except ValueError as e:
-            return json.dumps({"error": "invalid_multi_value_input", "detail": str(e)})
-    if acceptance_criteria:
-        try:
-            update_kwargs["acceptance_criteria"] = coerce_to_list_str(
-                acceptance_criteria
-            )
-        except ValueError as e:
-            return json.dumps({"error": "invalid_multi_value_input", "detail": str(e)})
+    for field_name, values in (
+        ("functional_requirements", functional_requirements),
+        ("technical_requirements", technical_requirements),
+        ("acceptance_criteria", acceptance_criteria),
+    ):
+        if values is not None:
+            update_kwargs[field_name] = values
     if delivery_context_override_reason and not delivery_context:
         return json.dumps(
             {
