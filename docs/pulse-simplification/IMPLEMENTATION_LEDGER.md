@@ -2,6 +2,23 @@
 
 ## Estado para retomada
 
+ARQVER ADV-11 verificado: requisito com três critérios não recebe crédito
+com apenas dois passing. Terceiro ausente ou failed mantém a pendência exata
+em leitura SQL nova e bloqueia o gate real de entrega da Spec. Prova HTTP
+assinada posterior do terceiro libera o mesmo gate, sem reescrever payloads
+anteriores. Community68937=0,11passed45.88s: dois casos novos e nove regressões.
+Ruff F/E9 e diff verdes. acceptance-three-criteria.json registra os limites:
+estado Done dos Cards e recibos de implementação são fixtures; não é fluxo
+REST/MCP nem transição completa Spec Done. Nenhuma mudança produtiva/UI.
+
+Preflight provenance-three-criteria1.json,7a0101=0: fonte/site/wheels
+859/922+373/458 byte-idênticos ao par evaluation-authority-fix1. F16 anterior
+31859=0,oito budgets ZERO; frontend anterior46579=0,54passed.
+Inventário126 verificados/34 parciais/86 não auditados. Continuar somente os
+critérios pendentes do pacote, benchmark e distribuição final. KG-10/T23
+aguardam decisões já solicitadas. Par publicado anterior:
+Coree09674e8/Community94901f6f. Nenhum processo pendente/dado real alterado.
+
 ARQVER AC-ARQ-14 verificado: DELETE REST real da fonte após promoção de
 dois IRs mantém seus JSONs e todo histórico de classificação. Leitura em nova
 sessão mostra candidato retired, contrato atual ausente e contrato analisado,

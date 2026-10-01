@@ -3156,13 +3156,17 @@
       "line": 735,
       "id": "ADV-11",
       "normative_text": "| ADV-11 | Um requisito tem três critérios e somente dois passam. | Não fica satisfeito por média ou presença de links. |",
-      "review_status": "not_audited_in_this_inventory",
+      "review_status": "verified_by_reviewed_execution",
       "test_text_references": [
         {
           "path": "okto_labs_pulse_community/tests/test_multicard_delivery_integration.py",
           "line": 1
         }
-      ]
+      ],
+      "reviewed_execution": {
+        "artifact": "acceptance-three-criteria.json",
+        "criterion_key": "ARQVER:ADV-11"
+      }
     },
     {
       "key": "ARQVER:ADV-12",
