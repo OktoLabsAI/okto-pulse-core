@@ -282,14 +282,11 @@ Semantic guideline protocol:
 
 ## Cards & Tasks
 - `okto_pulse_add_card_dependency` — docs: `okto-pulse://reference/tool-docs/card`
-- `okto_pulse_add_card_knowledge` — docs: `okto-pulse://reference/tool-docs/knowledge`
 - `okto_pulse_copy_architecture_to_card` — docs: `okto-pulse://reference/tool-docs/architecture`
-- `okto_pulse_copy_knowledge_to_card` — docs: `okto-pulse://reference/tool-docs/knowledge`
 - `okto_pulse_copy_mockups_to_card` — docs: `okto-pulse://reference/tool-docs/mockup`
 - `okto_pulse_copy_qa_to_card` — docs: `okto-pulse://reference/tool-docs/card`
 - `okto_pulse_create_card` — docs: `okto-pulse://reference/tool-docs/card`
 - `okto_pulse_delete_card` — docs: `okto-pulse://reference/tool-docs/card`
-- `okto_pulse_delete_card_knowledge` — docs: `okto-pulse://reference/tool-docs/knowledge`
 - `okto_pulse_drop_card_knowledge_assignments` — docs: `okto-pulse://reference/tool-docs/knowledge`
 - `okto_pulse_get_card` — docs: `okto-pulse://reference/tool-docs/card`
 - `okto_pulse_get_card_dependencies` — docs: `okto-pulse://reference/tool-docs/card`
@@ -308,7 +305,6 @@ Semantic guideline protocol:
 - `okto_pulse_replace_card_knowledge_assignments` — docs: `okto-pulse://reference/tool-docs/knowledge`
 - `okto_pulse_submit_task_validation` — docs: `okto-pulse://reference/tool-docs/misc`
 - `okto_pulse_update_card` — docs: `okto-pulse://reference/tool-docs/card`
-- `okto_pulse_update_card_knowledge` — docs: `okto-pulse://reference/tool-docs/knowledge`
 
 ## Amendments
 - `okto_pulse_associate_amendment_revision_artifacts` — docs: `okto-pulse://reference/tool-docs/card`

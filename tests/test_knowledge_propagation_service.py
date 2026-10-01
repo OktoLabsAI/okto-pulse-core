@@ -12,14 +12,12 @@ import pytest
 from okto_pulse.core.domain.knowledge_selection import (
     KnowledgeAssignment,
     KnowledgeAssignmentState,
-    KnowledgeOriginClass,
     KnowledgeRelevanceLink,
     KnowledgeSelection,
     KnowledgeSelectionState,
 )
 from okto_pulse.core.domain.resource_revision import ResourceRevisionStamp
 from okto_pulse.core.ports.knowledge_propagation import (
-    KnowledgeLegacyAttachment,
     KnowledgeLocalAttachment,
     KnowledgeMutationKind,
     KnowledgeMutationLedgerEntry,
@@ -40,9 +38,6 @@ from okto_pulse.core.ports.knowledge_propagation import (
 )
 from okto_pulse.core.services.knowledge_propagation import (
     KnowledgeCreationPreflightCommand,
-    KnowledgeGrandfatherAttachment,
-    KnowledgeGrandfatherCommand,
-    KnowledgeGrandfatherEvidence,
     KnowledgeMutationCommand,
     KnowledgeMutationPreparation,
     KnowledgeMutationResultV2Projector,
@@ -51,7 +46,6 @@ from okto_pulse.core.services.knowledge_propagation import (
     KnowledgeRelinkResetCommand,
     KnowledgeRefreshCommand,
     KnowledgeRefreshByKnowledgeIdsCommand,
-    classify_legacy_origin,
     deterministic_knowledge_target_id,
 )
 from okto_pulse.core.services.knowledge_governance_projection import (
@@ -196,28 +190,22 @@ def _scope(
     *,
     target: KnowledgeTargetKey | None = None,
     revision: int = 0,
-    v2_active: bool = False,
-    state: KnowledgeSelectionState | str | None = None,
+    state: KnowledgeSelectionState | str = KnowledgeSelectionState.OMITTED,
     assignments: tuple[TemporalKnowledgeAssignment, ...] = (),
     tombstones: tuple[KnowledgePropagationTombstone, ...] = (),
     snapshots: tuple[KnowledgePropagationSnapshot, ...] = (),
-    legacy: tuple[KnowledgeLegacyAttachment, ...] = (),
     sources: tuple[KnowledgeSelectableSource, ...] = (),
     local: tuple[KnowledgeLocalAttachment, ...] = (),
-    v2_activated_at: datetime | None = None,
 ) -> KnowledgePropagationScope:
     return KnowledgePropagationScope(
         target=target or _target(),
         scope_revision=revision,
-        v2_active=v2_active,
         selection_state=state,
         assignments=assignments,
         tombstones=tombstones,
         snapshots=snapshots,
-        legacy_attachments=legacy,
         sources=sources,
         local_attachments=local,
-        v2_activated_at=v2_activated_at,
     )
 
 
@@ -337,24 +325,6 @@ def _parent_evidence(
     )
 
 
-def _grandfather_attachment(
-    source_id: str,
-    *,
-    evidence: KnowledgeGrandfatherEvidence | None = None,
-    storage_kind: str = "card_json",
-) -> KnowledgeGrandfatherAttachment:
-    table = "cards" if storage_kind == "card_json" else "spec_knowledge_bases"
-    return KnowledgeGrandfatherAttachment(
-        source_knowledge_id=source_id,
-        revision_stamp=_stamp(f"{source_id}-root"),
-        evidence=evidence or KnowledgeGrandfatherEvidence(),
-        physical_locator={
-            "storage_kind": storage_kind,
-            "table": table,
-            "owner_id": "card-1",
-            "attachment_id": source_id,
-        },
-    )
 
 
 def _ledger_for_replay(
@@ -568,7 +538,6 @@ async def test_omitted_is_persisted_distinct_and_explicit_empty_suppresses_globa
     omitted_port = _FakePort(
         _scope(
             revision=1,
-            v2_active=True,
             state="explicit_ids",
             assignments=(current,),
         )
@@ -589,7 +558,6 @@ async def test_omitted_is_persisted_distinct_and_explicit_empty_suppresses_globa
     empty_port = _FakePort(
         _scope(
             revision=1,
-            v2_active=True,
             state="explicit_ids",
             assignments=(current,),
         )
@@ -618,7 +586,6 @@ async def test_repeated_explicit_empty_supersedes_the_current_global_tombstone()
     port = _FakePort(
         _scope(
             revision=2,
-            v2_active=True,
             state="explicit_empty",
             tombstones=(current_global,),
         )
@@ -654,7 +621,6 @@ async def test_drop_delta_closes_only_selected_root_and_preserves_other_assignme
     port = _FakePort(
         _scope(
             revision=2,
-            v2_active=True,
             state="explicit_ids",
             assignments=(root_a, root_b),
             sources=(_source("kb-a", "root-a"),),
@@ -683,7 +649,6 @@ async def test_drop_delta_closes_a_prior_global_tombstone_before_root_drop() -> 
     port = _FakePort(
         _scope(
             revision=2,
-            v2_active=True,
             state="explicit_empty",
             tombstones=(_tombstone("global-drop", None),),
             sources=(_source("kb-a", "root-a"),),
@@ -773,7 +738,6 @@ async def test_refresh_replaces_only_current_snapshot_and_closes_old_records() -
     port = _FakePort(
         _scope(
             revision=4,
-            v2_active=True,
             state="explicit_ids",
             assignments=(old_assignment,),
             snapshots=(old_snapshot,),
@@ -837,7 +801,6 @@ async def test_refresh_replaces_only_current_snapshot_and_closes_old_records() -
     without_metadata_port = _FakePort(
         _scope(
             revision=4,
-            v2_active=True,
             state="explicit_ids",
             assignments=(old_assignment,),
             snapshots=(old_snapshot,),
@@ -869,7 +832,6 @@ async def test_refresh_rejects_non_snapshot_or_non_current_assignment(
     port = _FakePort(
         _scope(
             revision=1,
-            v2_active=True,
             state="explicit_ids",
             assignments=(assignment,),
             sources=(_source("kb-1", "root-1"),),
@@ -928,7 +890,6 @@ async def test_refresh_rejects_non_selected_missing_or_tombstoned_snapshot(
     port = _FakePort(
         _scope(
             revision=1,
-            v2_active=True,
             state=scope_state,
             assignments=(assignment,),
             tombstones=tombstones,
@@ -953,32 +914,7 @@ async def test_refresh_rejects_non_selected_missing_or_tombstoned_snapshot(
 
 
 @pytest.mark.asyncio
-async def test_dual_read_legacy_and_v2_resolution_preserves_history() -> None:
-    legacy_effective = KnowledgeLegacyAttachment(
-        source_knowledge_id="legacy-effective",
-        revision_stamp=ResourceRevisionStamp(root_id="legacy-root-a"),
-        origin_class="legacy_all",
-        effective=True,
-    )
-    legacy_history = KnowledgeLegacyAttachment(
-        source_knowledge_id="legacy-history",
-        revision_stamp=ResourceRevisionStamp(root_id="legacy-root-b"),
-        origin_class="selected_legacy",
-        effective=False,
-    )
-    legacy_result = await _service(
-        _FakePort(_scope(legacy=(legacy_effective, legacy_history)))
-    ).read(object(), _target())
-
-    assert legacy_result.v2_active is False
-    assert legacy_result.effective_legacy_attachments == (legacy_effective,)
-    assert legacy_result.history_legacy_attachments == (
-        legacy_effective,
-        legacy_history,
-    )
-    assert legacy_result.resolved_assignments == ()
-    assert legacy_result.effective_count == 1
-
+async def test_native_read_resolution_preserves_snapshot_history() -> None:
     old = b"old"
     new = b"new"
     assignments = (
@@ -1043,11 +979,9 @@ async def test_dual_read_legacy_and_v2_resolution_preserves_history() -> None:
         _FakePort(
             _scope(
                 revision=3,
-                v2_active=True,
                 state="explicit_ids",
                 assignments=assignments,
                 snapshots=snapshots,
-                legacy=(legacy_effective,),
                 sources=sources,
             )
         )
@@ -1070,8 +1004,6 @@ async def test_dual_read_legacy_and_v2_resolution_preserves_history() -> None:
         resolved["d-reference-deleted"].state is KnowledgeAssignmentState.SOURCE_DELETED
     )
     assert resolved["d-reference-deleted"].effective is False
-    assert v2_result.effective_legacy_attachments == ()
-    assert v2_result.history_legacy_attachments == (legacy_effective,)
     assert v2_result.effective_count == 2
 
 
@@ -1134,7 +1066,6 @@ async def test_v2_read_falls_back_to_root_and_keeps_reference_snapshot_semantics
         _FakePort(
             _scope(
                 revision=5,
-                v2_active=True,
                 state="explicit_ids",
                 assignments=assignments,
                 snapshots=(snapshot,),
@@ -1202,7 +1133,6 @@ async def test_legacy_snapshot_without_governance_metadata_projects_incomplete()
         _FakePort(
             _scope(
                 revision=1,
-                v2_active=True,
                 state="explicit_ids",
                 assignments=(assignment,),
                 snapshots=(snapshot,),
@@ -1220,9 +1150,8 @@ async def test_legacy_snapshot_without_governance_metadata_projects_incomplete()
 
 
 @pytest.mark.asyncio
-async def test_v2_read_includes_local_post_activation_attachments() -> None:
+async def test_native_read_includes_local_attachments_without_activation() -> None:
     local_content = b"target local knowledge"
-    activation = NOW - timedelta(minutes=10)
     local = KnowledgeLocalAttachment(
         source_knowledge_id="local-kb",
         revision_stamp=_stamp(
@@ -1233,33 +1162,20 @@ async def test_v2_read_includes_local_post_activation_attachments() -> None:
         attached_at=NOW - timedelta(minutes=5),
         content_bytes=local_content,
     )
-    legacy = KnowledgeLegacyAttachment(
-        source_knowledge_id="legacy-kb",
-        revision_stamp=ResourceRevisionStamp(root_id="legacy-root"),
-        origin_class="legacy_all",
-        effective=True,
-    )
-
     result = await _service(
         _FakePort(
             _scope(
                 revision=2,
-                v2_active=True,
                 state="omitted",
-                legacy=(legacy,),
                 local=(local,),
-                v2_activated_at=activation,
             )
         )
     ).read(object(), _target())
 
     assert result.effective_assignments == ()
     assert result.effective_local_attachments == (local,)
-    assert result.effective_legacy_attachments == ()
-    assert result.v2_activated_at == activation
     assert result.effective_count == 1
     payload = result.to_dict()
-    assert payload["v2_activated_at"] == activation.isoformat()
     assert payload["effective_local_attachments"] == [local.to_dict()]
     assert payload["effective_count"] == 1
 
@@ -1287,7 +1203,6 @@ async def test_current_tombstones_are_authoritative_but_preserve_history(
         _FakePort(
             _scope(
                 revision=2,
-                v2_active=True,
                 state="explicit_ids",
                 assignments=assignments,
                 tombstones=tombstones,
@@ -1330,159 +1245,12 @@ async def test_divergent_adapter_receipt_fails_closed_after_single_stage() -> No
     assert len(port.staged) == 1
 
 
-@pytest.mark.parametrize(
-    ("evidence", "expected"),
-    [
-        (KnowledgeGrandfatherEvidence(), KnowledgeOriginClass.LEGACY_ALL),
-        (
-            KnowledgeGrandfatherEvidence(durable_selection_evidence=True),
-            KnowledgeOriginClass.SELECTED_LEGACY,
-        ),
-        (
-            KnowledgeGrandfatherEvidence(
-                durable_selection_evidence=True,
-                origin_missing=True,
-            ),
-            KnowledgeOriginClass.LEGACY_UNRESOLVED,
-        ),
-        (
-            KnowledgeGrandfatherEvidence(origin_cycle=True),
-            KnowledgeOriginClass.LEGACY_UNRESOLVED,
-        ),
-        (
-            KnowledgeGrandfatherEvidence(content_divergent=True),
-            KnowledgeOriginClass.LEGACY_UNRESOLVED,
-        ),
-    ],
-)
-def test_grandfather_classification_is_conservative(
-    evidence: KnowledgeGrandfatherEvidence,
-    expected: KnowledgeOriginClass,
-) -> None:
-    assert classify_legacy_origin(evidence) is expected
 
 
-@pytest.mark.asyncio
-async def test_grandfather_stages_canonical_non_activating_ledger_and_replays() -> None:
-    unresolved = _grandfather_attachment(
-        "kb-unresolved",
-        evidence=KnowledgeGrandfatherEvidence(origin_missing=True),
-    )
-    selected = _grandfather_attachment(
-        "kb-selected",
-        evidence=KnowledgeGrandfatherEvidence(
-            durable_selection_evidence=True,
-        ),
-    )
-    legacy_all = _grandfather_attachment("kb-all")
-    physical = tuple(
-        item.to_legacy_attachment() for item in (legacy_all, selected, unresolved)
-    )
-    port = _FakePort(_scope(legacy=physical))
-    service = _service(port)
-    command = KnowledgeGrandfatherCommand(
-        target=_target(),
-        attachments=(unresolved, legacy_all, selected),
-        actor_id="migration-v2",
-        expected_revision=0,
-        idempotency_key="grandfather:card-1",
-    )
-
-    receipt = await service.grandfather(object(), command)
-
-    assert receipt.outcome is KnowledgeMutationOutcome.GRANDFATHERED
-    assert receipt.previous_revision == 0
-    assert receipt.revision == 1
-    assert len(port.staged) == 1
-    plan = port.staged[0]
-    assert plan.operation_kind is KnowledgeMutationKind.GRANDFATHER
-    assert plan.next_scope_v2_active is False
-    assert plan.next_scope_selection_state is None
-    assert plan.assignments_to_open == ()
-    assert plan.snapshots_to_open == ()
-    details = plan.ledger_entry.receipt.details
-    assert details["legacy_content_preserved"] is True
-    attachments = details["grandfathered_attachments"]
-    assert [item["source_knowledge_id"] for item in attachments] == [
-        "kb-all",
-        "kb-selected",
-        "kb-unresolved",
-    ]
-    assert [item["origin_class"] for item in attachments] == [
-        "legacy_all",
-        "selected_legacy",
-        "legacy_unresolved",
-    ]
-    assert [item["effective"] for item in attachments] == [
-        True,
-        True,
-        False,
-    ]
-
-    port.replay_entry = plan.ledger_entry
-    replay = await service.grandfather(object(), command)
-    assert replay.outcome is KnowledgeMutationOutcome.REPLAYED
-    assert replay.original_outcome is KnowledgeMutationOutcome.GRANDFATHERED
-    assert replay.revision == 1
-    assert len(port.staged) == 1
-    assert len(port.attempts) == 1
 
 
-@pytest.mark.asyncio
-async def test_grandfather_rejects_partial_inventory_with_audit_attempt() -> None:
-    first = _grandfather_attachment("kb-1")
-    second = _grandfather_attachment("kb-2")
-    port = _FakePort(
-        _scope(
-            legacy=(
-                first.to_legacy_attachment(),
-                second.to_legacy_attachment(),
-            )
-        )
-    )
-    command = KnowledgeGrandfatherCommand(
-        target=_target(),
-        attachments=(first,),
-        actor_id="migration-v2",
-        expected_revision=0,
-        idempotency_key="grandfather:partial",
-    )
-
-    with pytest.raises(KnowledgePropagationServiceError) as raised:
-        await _service(port).grandfather(object(), command)
-
-    assert raised.value.code == "knowledge_propagation_grandfather_attachment_mismatch"
-    assert raised.value.details["unclassified"] == ["kb-2"]
-    assert raised.value.ledger_attempt is not None
-    assert raised.value.ledger_attempt.outcome is KnowledgeMutationOutcome.REJECTED
-    assert port.staged == []
 
 
-@pytest.mark.asyncio
-async def test_grandfather_never_replaces_an_active_v2_scope() -> None:
-    attachment = _grandfather_attachment("kb-1")
-    port = _FakePort(
-        _scope(
-            revision=4,
-            v2_active=True,
-            state="omitted",
-            legacy=(attachment.to_legacy_attachment(),),
-        )
-    )
-    command = KnowledgeGrandfatherCommand(
-        target=_target(),
-        attachments=(attachment,),
-        actor_id="migration-v2",
-        expected_revision=4,
-        idempotency_key="grandfather:active",
-    )
-
-    with pytest.raises(KnowledgePropagationServiceError) as raised:
-        await _service(port).grandfather(object(), command)
-
-    assert raised.value.code == "knowledge_propagation_grandfather_v2_active"
-    assert raised.value.ledger_attempt is not None
-    assert port.staged == []
 
 
 @pytest.mark.asyncio
@@ -1507,7 +1275,6 @@ async def test_relink_reset_closes_current_records_without_legacy_fallback() -> 
     port = _FakePort(
         _scope(
             revision=7,
-            v2_active=True,
             state="explicit_ids",
             assignments=(reference, snapshot_assignment),
             snapshots=(snapshot,),
@@ -1530,7 +1297,6 @@ async def test_relink_reset_closes_current_records_without_legacy_fallback() -> 
     assert receipt.previous_revision == 7
     assert receipt.revision == 8
     plan = port.staged[0]
-    assert plan.next_scope_v2_active is True
     assert plan.next_scope_selection_state is KnowledgeSelectionState.OMITTED
     assert plan.parent == command.previous_parent
     assert plan.assignment_ids_to_close == (
@@ -1600,26 +1366,16 @@ async def test_relink_reset_closes_current_records_without_legacy_fallback() -> 
         _FakePort(
             _scope(
                 revision=8,
-                v2_active=True,
                 state="omitted",
                 assignments=(closed_reference, closed_snapshot_assignment),
                 snapshots=(closed_snapshot,),
                 tombstones=(closed_tombstone,),
-                legacy=(
-                    KnowledgeLegacyAttachment(
-                        source_knowledge_id="legacy-json",
-                        revision_stamp=ResourceRevisionStamp(root_id="legacy-root"),
-                        origin_class="legacy_all",
-                    ),
-                ),
             )
         )
     ).read(object(), _target())
-    assert post_reset.v2_active is True
     assert post_reset.selection_state is KnowledgeSelectionState.OMITTED
     assert post_reset.effective_count == 0
     assert post_reset.resolved_assignments == ()
-    assert post_reset.effective_legacy_attachments == ()
 
     port.replay_entry = plan.ledger_entry
     replay = await service.reset_for_relink(object(), command)
@@ -1632,7 +1388,7 @@ async def test_relink_reset_closes_current_records_without_legacy_fallback() -> 
 
 
 @pytest.mark.asyncio
-async def test_relink_reset_rejects_an_inactive_v2_scope_with_audit_attempt() -> None:
+async def test_relink_reset_records_parent_change_for_omitted_selection() -> None:
     port = _FakePort(_scope(revision=2))
     command = KnowledgeRelinkResetCommand(
         target=_target(),
@@ -1640,18 +1396,15 @@ async def test_relink_reset_rejects_an_inactive_v2_scope_with_audit_attempt() ->
         next_parent=KnowledgeParentKey("board-1", "spec", "spec-new"),
         actor_id="agent-1",
         expected_revision=2,
-        idempotency_key="relink:inactive",
+        idempotency_key="relink:omitted",
     )
 
-    with pytest.raises(KnowledgePropagationServiceError) as raised:
-        await _service(port).reset_for_relink(object(), command)
-
-    assert raised.value.code == "knowledge_propagation_relink_v2_inactive"
-    assert raised.value.ledger_attempt is not None
-    assert raised.value.ledger_attempt.operation_kind is (
-        KnowledgeMutationKind.RELINK_RESET
-    )
-    assert port.staged == []
+    receipt = await _service(port).reset_for_relink(object(), command)
+    assert receipt.revision == 3
+    assert receipt.operation_kind is KnowledgeMutationKind.RELINK_RESET
+    assert len(port.staged) == 1
+    assert port.staged[0].next_scope_selection_state is KnowledgeSelectionState.OMITTED
+    assert port.staged[0].assignments_to_open == ()
 
 
 @pytest.mark.asyncio
@@ -1684,7 +1437,6 @@ async def test_relink_reset_supports_unlink_spec_reparent_and_repair(
         _scope(
             target=target,
             revision=4,
-            v2_active=True,
             state="omitted",
         )
     )
@@ -1702,7 +1454,6 @@ async def test_relink_reset_supports_unlink_spec_reparent_and_repair(
     assert receipt.revision == 5
     plan = port.staged[0]
     assert plan.parent == previous_parent
-    assert plan.next_scope_v2_active is True
     assert plan.next_scope_selection_state is KnowledgeSelectionState.OMITTED
     assert receipt.details["relink"] == {
         "previous_parent": (
@@ -1867,7 +1618,6 @@ async def test_public_refresh_resolves_root_and_inherits_assignment_semantics() 
     port = _FakePort(
         _scope(
             revision=3,
-            v2_active=True,
             state="explicit_ids",
             assignments=(old_assignment,),
             snapshots=(
@@ -1941,7 +1691,6 @@ async def test_public_refresh_invalid_resolution_is_zero_effect(
     port = _FakePort(
         _scope(
             revision=2,
-            v2_active=True,
             state="explicit_ids",
             assignments=assignments,
             snapshots=snapshots,

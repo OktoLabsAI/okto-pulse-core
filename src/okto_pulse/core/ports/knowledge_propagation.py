@@ -57,7 +57,6 @@ class KnowledgeMutationKind(str, Enum):
     REPLACE_EMPTY = "replace_empty"
     REFRESH_SNAPSHOT = "refresh_snapshot"
     RELINK_RESET = "relink_reset"
-    GRANDFATHER = "grandfather"
 
 
 class KnowledgeMutationOutcome(str, Enum):
@@ -66,7 +65,6 @@ class KnowledgeMutationOutcome(str, Enum):
     APPLIED = "applied"
     NOOP = "noop"
     REJECTED = "rejected"
-    GRANDFATHERED = "grandfathered"
     REPLAYED = "replayed"
 
 
@@ -462,59 +460,11 @@ class KnowledgePropagationSnapshot:
         }
 
 
-@dataclass(frozen=True, slots=True)
-class KnowledgeLegacyAttachment:
-    """Physical legacy attachment retained for lineage/history projection."""
-
-    source_knowledge_id: str
-    revision_stamp: ResourceRevisionStamp
-    origin_class: KnowledgeOriginClass | str
-    effective: bool = True
-
-    def __post_init__(self) -> None:
-        object.__setattr__(
-            self,
-            "source_knowledge_id",
-            _required_text(self.source_knowledge_id, "source_knowledge_id"),
-        )
-        object.__setattr__(
-            self,
-            "revision_stamp",
-            _canonical_stamp(
-                self.revision_stamp,
-                require_revision_evidence=False,
-            ),
-        )
-        origin_class = _coerce_enum(
-            self.origin_class,
-            KnowledgeOriginClass,
-            "origin_class",
-        )
-        if origin_class is KnowledgeOriginClass.V2:
-            raise ValueError("knowledge_propagation_legacy_origin_class_invalid")
-        if type(self.effective) is not bool:
-            raise ValueError("knowledge_propagation_legacy_effective_invalid")
-        object.__setattr__(self, "origin_class", origin_class)
-        if origin_class is KnowledgeOriginClass.LEGACY_UNRESOLVED:
-            object.__setattr__(self, "effective", False)
-
-    def to_dict(self) -> dict[str, object]:
-        return {
-            "source_knowledge_id": self.source_knowledge_id,
-            "revision_stamp": self.revision_stamp.to_dict(),
-            "origin_class": cast(KnowledgeOriginClass, self.origin_class).value,
-            "effective": self.effective,
-        }
 
 
 @dataclass(frozen=True, slots=True)
 class KnowledgeLocalAttachment:
-    """Physical target-local attachment created under v2 authority.
-
-    ``attached_at`` is durable classification evidence.  Adapters must only
-    project an attachment through this contract only when it was created
-    strictly after the target's immutable ``v2_activated_at`` boundary.
-    """
+    """Native target-local attachment with durable authorship time."""
 
     source_knowledge_id: str
     revision_stamp: ResourceRevisionStamp
@@ -772,15 +722,12 @@ class KnowledgePropagationScope:
 
     target: KnowledgeTargetKey
     scope_revision: int
-    v2_active: bool
-    selection_state: KnowledgeSelectionState | str | None
+    selection_state: KnowledgeSelectionState | str
     assignments: tuple[TemporalKnowledgeAssignment, ...] = ()
     tombstones: tuple[KnowledgePropagationTombstone, ...] = ()
     snapshots: tuple[KnowledgePropagationSnapshot, ...] = ()
-    legacy_attachments: tuple[KnowledgeLegacyAttachment, ...] = ()
     sources: tuple[KnowledgeSelectableSource, ...] = ()
     local_attachments: tuple[KnowledgeLocalAttachment, ...] = ()
-    v2_activated_at: datetime | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.target, KnowledgeTargetKey):
@@ -790,31 +737,7 @@ class KnowledgePropagationScope:
             "scope_revision",
             _non_negative_int(self.scope_revision, "scope_revision"),
         )
-        if type(self.v2_active) is not bool:
-            raise ValueError("knowledge_propagation_scope_v2_active_invalid")
-        state = (
-            None
-            if self.selection_state is None
-            else _coerce_enum(
-                self.selection_state,
-                KnowledgeSelectionState,
-                "selection_state",
-            )
-        )
-        if self.v2_active:
-            if state not in {
-                KnowledgeSelectionState.OMITTED,
-                KnowledgeSelectionState.EXPLICIT_EMPTY,
-                KnowledgeSelectionState.EXPLICIT_IDS,
-            }:
-                raise ValueError("knowledge_propagation_active_scope_state_invalid")
-        elif state is not None:
-            raise ValueError("knowledge_propagation_inactive_scope_state_invalid")
-        v2_activated_at = (
-            None
-            if self.v2_activated_at is None
-            else _utc(self.v2_activated_at, "v2_activated_at")
-        )
+        state = _coerce_enum(self.selection_state, KnowledgeSelectionState, "selection_state")
 
         assignments = _canonical_objects(
             self.assignments,
@@ -855,12 +778,6 @@ class KnowledgePropagationScope:
             field_name="snapshots",
             identity=lambda item: item.snapshot_id,
         )
-        legacy = _canonical_objects(
-            self.legacy_attachments,
-            KnowledgeLegacyAttachment,
-            field_name="legacy_attachments",
-            identity=lambda item: item.source_knowledge_id,
-        )
         sources = _canonical_objects(
             self.sources,
             KnowledgeSelectableSource,
@@ -873,12 +790,6 @@ class KnowledgePropagationScope:
             field_name="local_attachments",
             identity=lambda item: item.source_knowledge_id,
         )
-        if v2_activated_at is not None and any(
-            item.attached_at <= v2_activated_at for item in local
-        ):
-            raise ValueError(
-                "knowledge_propagation_local_attachment_predates_v2_activation"
-            )
         for item in tombstones:
             if item.target != self.target:
                 raise ValueError("knowledge_propagation_tombstone_target_mismatch")
@@ -920,10 +831,8 @@ class KnowledgePropagationScope:
         object.__setattr__(self, "assignments", assignments)
         object.__setattr__(self, "tombstones", tombstones)
         object.__setattr__(self, "snapshots", snapshots)
-        object.__setattr__(self, "legacy_attachments", legacy)
         object.__setattr__(self, "sources", sources)
         object.__setattr__(self, "local_attachments", local)
-        object.__setattr__(self, "v2_activated_at", v2_activated_at)
 
 
 @dataclass(frozen=True, slots=True)
@@ -931,7 +840,7 @@ class KnowledgeMutationReceipt:
     """Immutable canonical result stored in and returned from the ledger.
 
     ``replayed`` and ``applied_at`` remain on the public wire for backwards
-    compatibility.  ``outcome`` is authoritative: applied/grandfathered
+    compatibility.  ``outcome`` is authoritative: applied
     results advance the scope revision, noop/rejected results do not, and a
     replay preserves the revision semantics of its original terminal result.
     """
@@ -1005,7 +914,6 @@ class KnowledgeMutationReceipt:
             KnowledgeMutationOutcome.APPLIED,
             KnowledgeMutationOutcome.NOOP,
             KnowledgeMutationOutcome.REJECTED,
-            KnowledgeMutationOutcome.GRANDFATHERED,
         }
         if outcome is KnowledgeMutationOutcome.REPLAYED:
             if (
@@ -1035,7 +943,6 @@ class KnowledgeMutationReceipt:
             if revision_outcome
             in {
                 KnowledgeMutationOutcome.APPLIED,
-                KnowledgeMutationOutcome.GRANDFATHERED,
             }
             else previous_revision
         )
@@ -1345,7 +1252,6 @@ class KnowledgeMutationPlan:
     idempotency_key: str
     request_hash: str
     next_scope_selection_state: KnowledgeSelectionState | str | None
-    next_scope_v2_active: bool = True
     parent: KnowledgeParentKey | None = None
     parent_evidence: KnowledgeParentEvidence | None = None
     assignments_to_open: tuple[TemporalKnowledgeAssignment, ...] = ()
@@ -1382,8 +1288,6 @@ class KnowledgeMutationPlan:
         request_hash = _required_text(self.request_hash, "request_hash")
         if _SHA256_HEX.fullmatch(request_hash) is None:
             raise ValueError("knowledge_propagation_request_hash_invalid")
-        if type(self.next_scope_v2_active) is not bool:
-            raise ValueError("knowledge_propagation_next_scope_v2_active_invalid")
         if self.parent is not None:
             if not isinstance(self.parent, KnowledgeParentKey):
                 raise ValueError("knowledge_propagation_plan_parent_invalid")
@@ -1407,12 +1311,7 @@ class KnowledgeMutationPlan:
                 "next_scope_selection_state",
             )
         )
-        if kind is KnowledgeMutationKind.GRANDFATHER:
-            if self.next_scope_v2_active or next_state is not None:
-                raise ValueError(
-                    "knowledge_propagation_grandfather_scope_state_invalid"
-                )
-        elif not self.next_scope_v2_active or next_state is None:
+        if next_state is None:
             raise ValueError("knowledge_propagation_next_scope_state_invalid")
         if self.selection is not None and not isinstance(
             self.selection,
@@ -1525,7 +1424,7 @@ class KnowledgeMutationPlan:
         opened_actors_match = all(
             item.actor_id == actor_id for item in assignment_values
         ) and all(item.actor_id == actor_id for item in tombstones)
-        if kind is not KnowledgeMutationKind.GRANDFATHER and not opened_actors_match:
+        if not opened_actors_match:
             raise ValueError("knowledge_propagation_plan_actor_incoherent")
 
         if kind is KnowledgeMutationKind.REPLACE_OMITTED:
@@ -1652,32 +1551,12 @@ class KnowledgeMutationPlan:
                 or snapshots
                 or supersession_links
                 or next_state is not KnowledgeSelectionState.OMITTED
-                or not self.next_scope_v2_active
             ):
                 raise ValueError("knowledge_propagation_relink_reset_plan_invalid")
-        elif kind is KnowledgeMutationKind.GRANDFATHER:
-            if (
-                self.selection is not None
-                or assignments
-                or assignment_ids
-                or tombstones
-                or tombstone_ids
-                or snapshots
-                or snapshot_ids
-                or supersession_links
-                or self.next_scope_v2_active
-                or next_state is not None
-            ):
-                raise ValueError("knowledge_propagation_grandfather_plan_invalid")
-
         if not isinstance(self.ledger_entry, KnowledgeMutationLedgerEntry):
             raise ValueError("knowledge_propagation_ledger_entry_required")
         receipt = self.ledger_entry.receipt
-        expected_outcome = (
-            KnowledgeMutationOutcome.GRANDFATHERED
-            if kind is KnowledgeMutationKind.GRANDFATHER
-            else KnowledgeMutationOutcome.APPLIED
-        )
+        expected_outcome = KnowledgeMutationOutcome.APPLIED
         if (
             self.ledger_entry.target != self.target
             or self.ledger_entry.idempotency_key != idempotency_key
@@ -1702,11 +1581,6 @@ class KnowledgeMutationPlan:
         object.__setattr__(self, "idempotency_key", idempotency_key)
         object.__setattr__(self, "request_hash", request_hash)
         object.__setattr__(self, "next_scope_selection_state", next_state)
-        object.__setattr__(
-            self,
-            "next_scope_v2_active",
-            self.next_scope_v2_active,
-        )
         object.__setattr__(self, "assignments_to_open", assignments)
         object.__setattr__(self, "assignment_ids_to_close", assignment_ids)
         object.__setattr__(self, "tombstones_to_open", tombstones)
@@ -1807,7 +1681,6 @@ def reset_knowledge_mutation_audit_sink_for_tests() -> None:
 
 __all__ = [
     "KnowledgeIdempotencyLookup",
-    "KnowledgeLegacyAttachment",
     "KnowledgeLocalAttachment",
     "KnowledgeParentEvidence",
     "KnowledgeParentKey",

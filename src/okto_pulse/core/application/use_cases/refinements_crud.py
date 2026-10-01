@@ -549,7 +549,12 @@ class DeriveSpecFromRefinementCommand:
         knowledge_propagation: Any = None,
     ) -> None:
         self.refinement_id = refinement_id
-        self.knowledge_propagation = knowledge_propagation
+        from okto_pulse.core.models.knowledge_propagation import new_omitted_knowledge_selection
+
+        self.knowledge_propagation = (
+            new_omitted_knowledge_selection()
+            if knowledge_propagation is None else knowledge_propagation
+        )
 
 
 class DeriveSpecFromRefinementResult:
@@ -570,49 +575,25 @@ class DeriveSpecFromRefinementUseCase:
     async def execute(
         self, command: DeriveSpecFromRefinementCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> DeriveSpecFromRefinementResult:
-        refinement = await _require_accessible_refinement(
+        await _require_accessible_refinement(
             uow, command.refinement_id, actor, write=True
         )
-        if command.knowledge_propagation is not None:
-            from okto_pulse.core.application.use_cases.knowledge_propagation import (
-                DeriveSpecKnowledgeV2Command,
-                DeriveSpecKnowledgeV2UseCase,
-            )
-
-            mutation = await DeriveSpecKnowledgeV2UseCase().execute(
-                DeriveSpecKnowledgeV2Command(
-                    command.refinement_id,
-                    command.knowledge_propagation,
-                ),
-                actor=actor,
-                uow=uow,
-            )
-            return DeriveSpecFromRefinementResult(
-                None,
-                knowledge_mutation=mutation,
-            )
-        spec = await uow.services.refinements.derive_spec(
-            command.refinement_id,
-            actor.actor_id,
-            query_scope=_query_scope_for_actor(
-                actor,
-                board_id=refinement.board_id,
-                board_access_granted=True,
+        from okto_pulse.core.application.use_cases.knowledge_propagation import (
+            DeriveSpecKnowledgeV2Command,
+            DeriveSpecKnowledgeV2UseCase,
+        )
+        mutation = await DeriveSpecKnowledgeV2UseCase().execute(
+            DeriveSpecKnowledgeV2Command(
+                command.refinement_id,
+                command.knowledge_propagation,
             ),
-        )
-        if not spec:
-            raise EntityNotFoundError("refinement", command.refinement_id)
-        from okto_pulse.core.application.use_cases.research_decision_ledger import (
-            bind_research_decisions_to_spec,
-        )
-
-        await bind_research_decisions_to_spec(
-            refinement=refinement,
-            spec=spec,
+            actor=actor,
             uow=uow,
         )
-        await commit(uow)
-        return DeriveSpecFromRefinementResult(await uow.services.specs.get_spec(spec.id))
+        return DeriveSpecFromRefinementResult(
+            None,
+            knowledge_mutation=mutation,
+        )
 
 
 # --- history ----------------------------------------------------------------

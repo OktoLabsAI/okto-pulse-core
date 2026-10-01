@@ -581,7 +581,7 @@ async def test_four_card_assignment_mcp_tools_route_to_v2_use_cases(
     ]
 
 
-async def test_refinement_mcp_rejects_v1_and_v2_before_opening_uow(
+async def test_refinement_mcp_has_no_legacy_parameter_before_opening_uow(
     monkeypatch: Any,
 ) -> None:
     async def _agent_ctx(board_id: str) -> Any:
@@ -605,7 +605,7 @@ async def test_refinement_mcp_rejects_v1_and_v2_before_opening_uow(
         _unexpected_factory,
     )
 
-    payload = json.loads(
+    with pytest.raises(TypeError, match="unexpected keyword argument 'kb_ids'"):
         await server.okto_pulse_derive_spec_from_refinement.fn(
             board_id="board-1",
             refinement_id="refinement-1",
@@ -615,11 +615,6 @@ async def test_refinement_mcp_rejects_v1_and_v2_before_opening_uow(
                 idempotency_key="derive-1",
             ),
         )
-    )
-
-    assert payload["code"] == "conflicting_propagation_parameters"
-    assert payload["details"] == {}
-    assert payload["retryable"] is False
 
 
 async def test_all_assignment_mcp_tools_share_structured_card_not_found(

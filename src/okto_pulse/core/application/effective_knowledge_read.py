@@ -15,26 +15,6 @@ from okto_pulse.core.services.knowledge_propagation import (
 )
 
 
-def _detached_mapping(item: Any) -> dict[str, Any] | None:
-    """Copy one persistence-neutral Knowledge payload into a detached mapping."""
-
-    if isinstance(item, Mapping):
-        return dict(item)
-    values = getattr(item, "values", None)
-    if isinstance(values, Mapping):
-        return dict(values)
-    model_dump = getattr(item, "model_dump", None)
-    if callable(model_dump):
-        payload = model_dump(mode="python")
-        return dict(payload) if isinstance(payload, Mapping) else None
-    raw = getattr(item, "__dict__", None)
-    if isinstance(raw, Mapping):
-        return {
-            str(key): value
-            for key, value in raw.items()
-            if not str(key).startswith("_")
-        }
-    return None
 
 
 async def load_effective_knowledge(
@@ -45,9 +25,8 @@ async def load_effective_knowledge(
 ) -> list[dict[str, Any]]:
     """Return the one authoritative Knowledge projection for a Spec or Card.
 
-    Once v2 is active, every REST/MCP consumer reads the same ResourceLineage
-    projection as Resource Gate.  Historical physical JSON stays available
-    through the technical/history projection and cannot leak into this result.
+    Every REST/MCP consumer reads the same native ResourceLineage projection
+    as Resource Gate. Assignment history cannot leak into the effective result.
     """
 
     resolved_target_type = KnowledgeTargetType(target_type)
@@ -61,17 +40,7 @@ async def load_effective_knowledge(
         target_type=resolved_target_type,
         target_id=str(entity.id),
     )
-    read = await services.knowledge_propagation.read(target)
-    if not read.v2_active:
-        return list(
-            filter(
-                None,
-                (
-                    _detached_mapping(item)
-                    for item in (getattr(entity, "knowledge_bases", None) or ())
-                ),
-            )
-        )
+    await services.knowledge_propagation.read(target)
 
     projection = await services.resource_gate.get_effective_resources(
         str(entity.board_id),

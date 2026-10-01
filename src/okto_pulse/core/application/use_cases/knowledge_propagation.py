@@ -169,7 +169,11 @@ async def _verify_replayed_creation_target(
         parent_matches = bool(
             entity
             and entity.board_id == parent.board_id
-            and getattr(entity, "refinement_id", None) == parent.parent_id
+            and getattr(entity, f"{parent.parent_type.value}_id", None) == parent.parent_id
+            and (
+                parent.parent_type is not KnowledgeParentType.IDEATION
+                or getattr(entity, "refinement_id", None) is None
+            )
         )
     else:
         entity = await uow.services.cards.get_card(target.target_id)
@@ -264,7 +268,9 @@ async def _resolve_card_parent_spec_id(
 
 class DeriveSpecKnowledgeV2Command:
     __slots__ = (
-        "refinement_id",
+        "source_id",
+        "source_type",
+        "delivery_context",
         "envelope",
         "mockup_ids",
         "architecture_design_ids",
@@ -273,14 +279,20 @@ class DeriveSpecKnowledgeV2Command:
 
     def __init__(
         self,
-        refinement_id: str,
+        source_id: str,
         envelope: KnowledgePropagationEnvelopeV2,
         *,
+        source_type: KnowledgeParentType | str = KnowledgeParentType.REFINEMENT,
+        delivery_context: Any = None,
         mockup_ids: list[str] | None = None,
         architecture_design_ids: list[str] | None = None,
         architecture_propagation_mode: str = "copy",
     ) -> None:
-        self.refinement_id = refinement_id
+        self.source_type = KnowledgeParentType(source_type)
+        if self.source_type not in (KnowledgeParentType.IDEATION, KnowledgeParentType.REFINEMENT):
+            raise ValueError("knowledge_derivation_parent_type_invalid")
+        self.delivery_context = delivery_context
+        self.source_id = source_id
         self.envelope = envelope
         self.mockup_ids = mockup_ids
         self.architecture_design_ids = architecture_design_ids
@@ -295,31 +307,39 @@ class DeriveSpecKnowledgeV2UseCase:
         actor: ActorContext,
         uow: PulseUnitOfWork,
     ) -> KnowledgeMutationUseCaseResult:
-        refinement = await uow.services.refinements.get_refinement(
-            command.refinement_id
+        source_service = (
+            uow.services.ideations
+            if command.source_type is KnowledgeParentType.IDEATION
+            else uow.services.refinements
         )
-        if refinement is None or (
-            actor.board_id is not None and refinement.board_id != actor.board_id
+        source = (
+            await source_service.get_ideation(command.source_id)
+            if command.source_type is KnowledgeParentType.IDEATION
+            else await source_service.get_refinement(command.source_id)
+        )
+        if source is None or (
+            actor.board_id is not None and source.board_id != actor.board_id
         ):
-            raise EntityNotFoundError("refinement", command.refinement_id)
+            raise EntityNotFoundError(command.source_type.value, command.source_id)
         if actor.source != "mcp":
             board = await load_accessible_board(
                 uow,
-                refinement.board_id,
+                source.board_id,
                 actor,
                 allowed_share_permissions=_CARD_WRITE_SHARE_PERMISSIONS,
             )
             if board is None:
-                raise EntityNotFoundError("refinement", command.refinement_id)
+                raise EntityNotFoundError(command.source_type.value, command.source_id)
         parent = KnowledgeParentKey(
-            board_id=refinement.board_id,
-            parent_type=KnowledgeParentType.REFINEMENT,
-            parent_id=command.refinement_id,
+            board_id=source.board_id,
+            parent_type=command.source_type,
+            parent_id=command.source_id,
         )
         semantic_hash = _semantic_creation_hash(
             operation="derive_spec",
             parent=parent,
             payload={
+                **({"delivery_context": command.delivery_context} if command.source_type is KnowledgeParentType.IDEATION else {}),
                 "mockup_ids": command.mockup_ids,
                 "architecture_design_ids": command.architecture_design_ids,
                 "architecture_propagation_mode": (
@@ -355,26 +375,25 @@ class DeriveSpecKnowledgeV2UseCase:
 
         await _require_target_absent(uow=uow, target=preflight.command.target)
         try:
-            spec = await uow.services.refinements.derive_spec(
-                command.refinement_id,
+            spec = await source_service.derive_spec(
+                command.source_id,
                 actor.actor_id,
                 # Authorization was completed above for both transports. Avoid a
                 # second owner-only service check that would reject a REST editor
                 # who legitimately reached this application boundary via a share.
                 skip_ownership_check=True,
                 mockup_ids=command.mockup_ids,
-                kb_ids=None,
                 architecture_design_ids=command.architecture_design_ids,
                 architecture_propagation_mode=(
                     command.architecture_propagation_mode
                 ),
                 target_id=preflight.command.target.target_id,
-                knowledge_propagation_v2=True,
+                **({"delivery_context": command.delivery_context} if command.source_type is KnowledgeParentType.IDEATION else {}),
             )
         except ApplicationRecordConflictError as error:
             _raise_creation_record_conflict(error, preflight.command.target)
         if spec is None:
-            raise EntityNotFoundError("refinement", command.refinement_id)
+            raise EntityNotFoundError(command.source_type.value, command.source_id)
         # Surface a deterministic-id uniqueness race before staging the ledger.
         await uow.synchronize(
             conflict_error=KnowledgeCreationRaceError(
@@ -385,11 +404,12 @@ class DeriveSpecKnowledgeV2UseCase:
             bind_research_decisions_to_spec,
         )
 
-        await bind_research_decisions_to_spec(
-            refinement=refinement,
-            spec=spec,
-            uow=uow,
-        )
+        if command.source_type is KnowledgeParentType.REFINEMENT:
+            await bind_research_decisions_to_spec(
+                refinement=source,
+                spec=spec,
+                uow=uow,
+            )
         receipt = await uow.services.knowledge_propagation.mutate(preflight)
         await commit(uow)
         return _mutation_result(uow.services, receipt)
@@ -502,7 +522,6 @@ class CreateCardKnowledgeV2UseCase:
                 command.data,
                 skip_ownership_check=command.skip_ownership_check,
                 target_id=preflight.command.target.target_id,
-                knowledge_propagation_v2=True,
                 actor_type=_activity_actor_type(actor),
                 actor_name=actor.actor_name,
                 activity_details=command.activity_details,

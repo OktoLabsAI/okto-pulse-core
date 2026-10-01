@@ -186,7 +186,6 @@ class McpDeriveSpecCommand:
         "source",
         "source_id",
         "mockup_ids",
-        "kb_ids",
         "architecture_design_ids",
         "architecture_propagation_mode",
         "knowledge_propagation",
@@ -199,7 +198,6 @@ class McpDeriveSpecCommand:
         source_id: str,
         *,
         mockup_ids: Any = None,
-        kb_ids: Any = None,
         architecture_design_ids: Any = None,
         architecture_propagation_mode: str = "copy",
         knowledge_propagation: Any = None,
@@ -208,10 +206,15 @@ class McpDeriveSpecCommand:
         self.source = source
         self.source_id = source_id
         self.mockup_ids = mockup_ids
-        self.kb_ids = kb_ids
         self.architecture_design_ids = architecture_design_ids
         self.architecture_propagation_mode = architecture_propagation_mode
-        self.knowledge_propagation = knowledge_propagation
+        from okto_pulse.core.models.knowledge_propagation import new_omitted_knowledge_selection
+
+        self.knowledge_propagation = (
+            new_omitted_knowledge_selection()
+            if knowledge_propagation is None
+            else knowledge_propagation
+        )
         self.delivery_context = delivery_context
 
 
@@ -252,87 +255,23 @@ class McpDeriveSpecUseCase:
         uow: PulseUnitOfWork,
     ) -> McpDeriveSpecResult:
 
-        if command.knowledge_propagation is not None:
-            if command.source != "refinement":
-                raise ValueError(
-                    "knowledge_propagation v2 is not supported for ideation derive"
-                )
-            if command.kb_ids is not None:
-                from okto_pulse.core.services.knowledge_propagation import (
-                    KnowledgePropagationServiceError,
-                )
-
-                raise KnowledgePropagationServiceError(
-                    "conflicting_propagation_parameters",
-                    "legacy kb_ids and knowledge_propagation v2 are mutually exclusive",
-                )
-            from okto_pulse.core.application.use_cases.knowledge_propagation import (
-                DeriveSpecKnowledgeV2Command,
-                DeriveSpecKnowledgeV2UseCase,
-            )
-
-            mutation = await DeriveSpecKnowledgeV2UseCase().execute(
-                DeriveSpecKnowledgeV2Command(
-                    command.source_id,
-                    command.knowledge_propagation,
-                    mockup_ids=command.mockup_ids,
-                    architecture_design_ids=command.architecture_design_ids,
-                    architecture_propagation_mode=(
-                        command.architecture_propagation_mode
-                    ),
-                ),
-                actor=actor,
-                uow=uow,
-            )
-            return McpDeriveSpecResult(
-                None,
-                knowledge_mutation=mutation,
-            )
-
-        service = (
-            uow.services.ideations
-            if command.source == "ideation"
-            else uow.services.refinements
+        from okto_pulse.core.application.use_cases.knowledge_propagation import (
+            DeriveSpecKnowledgeV2Command, DeriveSpecKnowledgeV2UseCase,
         )
-        parent = (
-            await service.get_ideation(command.source_id)
-            if command.source == "ideation"
-            else await service.get_refinement(command.source_id)
-        )
-        if (
-            parent is None
-            or actor.board_id is None
-            or parent.board_id != actor.board_id
-        ):
+        if actor.board_id is None:
             raise EntityNotFoundError(command.source, command.source_id)
-        derive_kwargs = {
-            "skip_ownership_check": True,
-            "mockup_ids": command.mockup_ids,
-            "kb_ids": command.kb_ids,
-            "architecture_design_ids": command.architecture_design_ids,
-            "architecture_propagation_mode": command.architecture_propagation_mode,
-        }
-        if command.source == "ideation":
-            derive_kwargs["delivery_context"] = command.delivery_context
-        spec = await service.derive_spec(
-            command.source_id,
-            actor.actor_id,
-            **derive_kwargs,
+        mutation = await DeriveSpecKnowledgeV2UseCase().execute(
+            DeriveSpecKnowledgeV2Command(
+                command.source_id, command.knowledge_propagation,
+                source_type=command.source,
+                delivery_context=command.delivery_context,
+                mockup_ids=command.mockup_ids,
+                architecture_design_ids=command.architecture_design_ids,
+                architecture_propagation_mode=command.architecture_propagation_mode,
+            ),
+            actor=actor, uow=uow,
         )
-        if not spec:
-            raise EntityNotFoundError(command.source, command.source_id)
-        if command.source == "refinement":
-            from okto_pulse.core.application.use_cases.research_decision_ledger import (
-                bind_research_decisions_to_spec,
-            )
-
-            await bind_research_decisions_to_spec(
-                refinement=parent,
-                spec=spec,
-                uow=uow,
-            )
-        await commit(uow)
-        return McpDeriveSpecResult(spec)
+        return McpDeriveSpecResult(None, knowledge_mutation=mutation)
 
 
 # --- create (skip_ownership + R3-IMP1 pre-commit resource propagation) -------

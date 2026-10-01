@@ -426,45 +426,38 @@ class EvaluateComplexityUseCase:
 
 
 class DeriveSpecCommand:
-    __slots__ = ("ideation_id",)
+    __slots__ = ("ideation_id", "data")
 
-    def __init__(self, ideation_id: str) -> None:
+    def __init__(self, ideation_id: str, data: Any) -> None:
         self.ideation_id = ideation_id
+        self.data = data
 
 
 class DeriveSpecResult:
-    __slots__ = ("spec",)
+    __slots__ = ("knowledge_mutation",)
 
-    def __init__(self, spec: Any) -> None:
-        self.spec = spec
+    def __init__(self, knowledge_mutation: Any) -> None:
+        self.knowledge_mutation = knowledge_mutation
 
 
 class DeriveSpecUseCase:
-    """Create a spec draft from a done ideation (write). The
-    ``derive_spec`` ``ValueError`` (ideation not 'done' / non-small complexity)
-    propagates for the adapter to map (400); ``None`` →
-    ``EntityNotFoundError("ideation")`` (404); commits, then re-fetches the spec via
-    ``SpecService.get_spec`` exactly as the legacy endpoint."""
+    """Derive a governed Spec from an accessible completed small ideation."""
 
     async def execute(
         self, command: DeriveSpecCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> DeriveSpecResult:
-        ideation = await _require_accessible_ideation(
-            uow, command.ideation_id, actor, write=True
+        await _require_accessible_ideation(uow, command.ideation_id, actor, write=True)
+        from okto_pulse.core.application.use_cases.knowledge_propagation import (
+            DeriveSpecKnowledgeV2Command, DeriveSpecKnowledgeV2UseCase,
         )
-        spec = await uow.services.ideations.derive_spec(
-            command.ideation_id,
-            actor.actor_id,
-            query_scope=_query_scope_for_actor(
-                actor,
-                board_id=ideation.board_id,
-                board_access_granted=True,
+        mutation = await DeriveSpecKnowledgeV2UseCase().execute(
+            DeriveSpecKnowledgeV2Command(
+                command.ideation_id, command.data.knowledge_propagation,
+                source_type="ideation", delivery_context=command.data.delivery_context,
             ),
+            actor=actor, uow=uow,
         )
-        if not spec:
-            raise EntityNotFoundError("ideation", command.ideation_id)
-        await commit(uow)
-        return DeriveSpecResult(await uow.services.specs.get_spec(spec.id))
+        return DeriveSpecResult(mutation)
 
 
 # --- snapshots --------------------------------------------------------------

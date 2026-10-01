@@ -281,9 +281,10 @@ Create a spec draft from a DONE ideation. The ideation must be in 'done' status
 compiled from the ideation but structured fields (requirements, criteria) left empty
 for deliberate analysis.
 
-Artifacts (mockups, KBs, Architecture Designs) from the ideation are
-automatically propagated to the spec. Use mockup_ids/kb_ids/
-architecture_design_ids to select specific ones (default: all).
+Mockups and Architecture Designs use mockup_ids/architecture_design_ids.
+Knowledge uses the governed knowledge_propagation envelope described below;
+omission selects no inherited Knowledge. All derivations return the native
+operation receipt with spec_id, revision and replay status.
 
 An Ideation has no inherited Code Evidence delivery context. Select the
 explicit `delivery_context` for this Spec deliberately; do not infer it from
@@ -293,7 +294,7 @@ Args:
     board_id: Board ID
     ideation_id: Ideation ID (must be in 'done' status)
     mockup_ids: Pipe-separated mockup IDs to propagate (optional, empty = all)
-    kb_ids: Pipe-separated KB IDs to propagate (optional, empty = all)
+    knowledge_propagation: Governed selection envelope (same fields as refinement derivation below).
     architecture_design_ids: Multi-value Architecture Design IDs to propagate (optional, empty = all)
     architecture_propagation_mode: one of copy, derive, reference_only, none.
         "snapshot" is not accepted; copy/derive are the snapshot-copy modes,
@@ -312,25 +313,20 @@ The Spec inherits and pins the exact delivery-context provenance and effective
 source-context manifest from the frozen Refinement snapshot. Later live
 Evidence changes do not silently rewrite this Spec.
 
-Artifacts (mockups, KBs, Architecture Designs) from the refinement are
-automatically propagated to the spec. Use mockup_ids/kb_ids/
-architecture_design_ids to select specific ones (default: all) on the legacy
-v1 path. Supplying `knowledge_propagation` opts only Knowledge propagation into
-contract v2; mockup and Architecture Design parameters remain independent.
+Mockup and Architecture Design parameters remain independent of governed
+Knowledge selection. Omitted Knowledge selects no sources, never all sources.
 
 Args:
     board_id: Board ID
     refinement_id: Refinement ID (must be in 'done' status)
     mockup_ids: Pipe-separated mockup IDs to propagate (optional, empty = all)
-    kb_ids: Pipe-separated KB IDs to propagate on legacy v1 (optional,
-        empty = all). Mutually exclusive with knowledge_propagation.
     architecture_design_ids: Multi-value Architecture Design IDs to propagate (optional, empty = all)
     architecture_propagation_mode: one of copy, derive, reference_only, none.
         "snapshot" is not accepted; copy/derive are the snapshot-copy modes,
         while reference_only/none keep only parent linkage.
-    knowledge_propagation: Optional contract-v2 envelope. Omit it to preserve
-        the complete v1 derivation behavior. Supplying it — even with
-        selection_state=omitted — selects v2. Fields:
+    knowledge_propagation: Governed selection envelope. Omission creates an
+        omitted selection with a new operation key. Supply a stable key for
+        exact request replay. Fields:
         - contract_version: 2 (default)
         - selection_state: omitted | explicit_empty | explicit_ids
         - mode: absent for omitted; drop for explicit_empty; reference,
@@ -341,16 +337,11 @@ Args:
         - idempotency_key: required caller-stable key for exact retries
         - expected_revision: omit or pass 0 for creation
 
-`kb_ids` plus `knowledge_propagation` is rejected with
-`conflicting_propagation_parameters`; choose exactly one contract. The v2
-preflight validates the done refinement, parent, selection, and source roots
+Preflight validates the completed parent, selection, and source roots
 before the deterministic spec is inserted.
 
 Returns:
-    Without knowledge_propagation: the unchanged v1 JSON with created spec
-    details.
-
-    With knowledge_propagation: `{success, contract_version, target_type,
+    Always: `{success, contract_version, target_type,
     target_id, spec_id, operation_id, revision, replayed, selection_state,
     assignments}`. An exact retry with the same idempotency key returns the
     original durable result and `replayed=true`. MCP retries a

@@ -37,7 +37,7 @@ Architecture Design is the first-class place for system structure. See the full 
 | Source of the artifact | Tool | When to use |
 |---|---|---|
 | Mockup / Architecture Design already exists on the parent spec | `okto_pulse_copy_mockups_to_card` / `okto_pulse_copy_architecture_to_card` | Blocking path when applicable. Pass `screen_ids` / `design_ids` to scope a subset; omit to copy all. |
-| Relevant KB already exists on the parent spec | `okto_pulse_copy_knowledge_to_card` | Advisory path. Pass `knowledge_ids` to select only context that materially helps the card; omission never blocks completion. |
+| Relevant KB already exists on the parent spec | `okto_pulse_replace_card_knowledge_assignments` | Advisory path. Pass `knowledge_ids` to select only context that materially helps the card; omission never blocks completion. |
 
 Card resources are read-only governed snapshots. Do not create, edit, annotate,
 import, or delete Knowledge Base, Mockup, or Architecture resources directly on a
@@ -171,10 +171,10 @@ the curated A3 receipt gate. See
    every card.** Use `okto_pulse_copy_mockups_to_card`,
    `okto_pulse_copy_architecture_to_card`, and `okto_pulse_copy_qa_to_card`
    where applicable. For materially relevant Knowledge, either supply the
-   `knowledge_propagation` v2 envelope during card creation or, on the v1 path,
-   use `okto_pulse_copy_knowledge_to_card`. A KB omission is advisory and does
-   not block the card. Do not combine the v2 create envelope with a legacy
-   Knowledge copy for the same intent.
+   `knowledge_propagation` envelope during card creation or use
+   `okto_pulse_replace_card_knowledge_assignments` with mode, justification,
+   expected revision and idempotency key. A KB omission is advisory and does
+   not block the card.
 10. **Write detailed card descriptions** including: what specifically needs to be built, which FRs/TRs/BRs this card addresses, which test scenarios this card should satisfy, which API contracts define the interfaces, and relevant technical constraints.
 
 **Test card naming convention:** Prefix test cards with `[TEST]` to distinguish them.

@@ -30,23 +30,9 @@ class ResourcePropagationCardRecord:
     spec_id: str | None
     status: CardStatus
     card_type: CardType
-    knowledge_bases: list[Any]
     screen_mockups: list[Any]
 
 
-@dataclass(frozen=True, slots=True)
-class ResourcePropagationKnowledgeBaseFact:
-    id: str
-    title: str
-    description: str | None
-    content: str
-    mime_type: str
-    source_version: int | None = None
-    source_kb_id: str | None = None
-    root_source_kb_id: str | None = None
-    immediate_parent_kb_id: str | None = None
-    content_hash: str | None = None
-    governance_metadata: dict[str, Any] | None = None
 
 
 class SpecResourcePropagationStore(Protocol):
@@ -70,9 +56,6 @@ class SpecResourcePropagationStore(Protocol):
         self, context: Any, *, board_id: str
     ) -> tuple[str, ...]: ...
 
-    async def list_spec_knowledge_bases(
-        self, context: Any, *, spec_id: str
-    ) -> tuple[ResourcePropagationKnowledgeBaseFact, ...]: ...
 
     async def save_card(
         self,
@@ -113,7 +96,6 @@ def reset_spec_resource_propagation_store_for_tests() -> None:
 __all__ = [
     "ResourcePropagationBoardFact",
     "ResourcePropagationCardRecord",
-    "ResourcePropagationKnowledgeBaseFact",
     "ResourcePropagationSpecFact",
     "SpecResourcePropagationStore",
     "get_spec_resource_propagation_store",

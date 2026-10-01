@@ -76,6 +76,7 @@ from okto_pulse.core.domain.test_scenarios import (
     VerificationMethod,
 )
 from okto_pulse.core.models.knowledge_propagation import (
+    new_omitted_knowledge_selection,
     CardCreateKnowledgeMutationResponse,
     DeriveSpecKnowledgeMutationResponse,
     KnowledgePropagationEnvelopeV2,
@@ -2916,7 +2917,7 @@ class SpecResponse(BaseSchema):
 
 # Keep the legacy response model untouched while allowing the refinement
 # derive route to declare its authoritative v2 receipt projection.
-DeriveSpecResponse: TypeAlias = SpecResponse | DeriveSpecKnowledgeMutationResponse
+DeriveSpecResponse: TypeAlias = DeriveSpecKnowledgeMutationResponse
 
 
 # ============================================================================
@@ -3021,12 +3022,11 @@ class CardCreate(BaseModel):
     action_plan: str | None = Field(
         None, description="Plano de acao para correcao do bug (apenas bug cards)."
     )
-    knowledge_propagation: KnowledgePropagationEnvelopeV2 | None = Field(
-        None,
+    knowledge_propagation: KnowledgePropagationEnvelopeV2 = Field(
+        default_factory=new_omitted_knowledge_selection,
         description=(
-            "Selective Knowledge propagation v2. Omitted keeps the complete "
-            "legacy card-create behavior; when supplied this envelope is "
-            "authoritative and v1 Knowledge snapshot writes are disabled."
+            "Governed Knowledge selection. Omission starts with no inherited "
+            "Knowledge; supply a stable idempotency key for request replay."
         ),
     )
 
@@ -3082,9 +3082,6 @@ class CardUpdate(BaseModel):
     )
     screen_mockups: list[ScreenMockup] | None = Field(
         None, description="Novos mockups de tela vinculados ao card."
-    )
-    knowledge_bases: list[dict] | None = Field(
-        None, description="Base de conhecimento vinculada ao card (lista de dicts)."
     )
     # Bug card fields (only updatable, not card_type or origin_task_id)
     severity: str | None = Field(
@@ -3705,7 +3702,7 @@ class CardResponse(BaseSchema):
         ]
 
 
-CardCreateResponse: TypeAlias = CardResponse | CardCreateKnowledgeMutationResponse
+CardCreateResponse: TypeAlias = CardCreateKnowledgeMutationResponse
 
 
 class CardSummary(BaseSchema):

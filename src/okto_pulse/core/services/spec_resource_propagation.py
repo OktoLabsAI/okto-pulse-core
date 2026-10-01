@@ -12,7 +12,6 @@ from okto_pulse.core.models.schemas import (
     ArchitectureDesignUpdate,
     ArchitectureWarningAcknowledgementRequest,
 )
-from okto_pulse.core.ports.knowledge_propagation import KnowledgePropagationPort
 from okto_pulse.core.ports.spec_resource_propagation import (
     ResourcePropagationBoardFact,
     ResourcePropagationCardRecord,
@@ -23,13 +22,6 @@ from okto_pulse.core.services.architecture import (
     ArchitectureDesignRepository,
     ArchitecturePropagationService,
 )
-from okto_pulse.core.services.card_knowledge_snapshot import (
-    build_card_knowledge_snapshot,
-    card_knowledge_snapshots_equivalent,
-)
-from okto_pulse.core.services.legacy_knowledge_write_guard import (
-    load_card_knowledge_scope,
-)
 
 
 SUPPORTED_RESOURCE_TYPES = ("knowledge_base", "architecture", "mockup")
@@ -38,14 +30,8 @@ SUPPORTED_RESOURCE_TYPES = ("knowledge_base", "architecture", "mockup")
 class SpecResourcePropagationService:
     """Copy selected Spec resources to a card according to board settings."""
 
-    def __init__(
-        self,
-        db: Any,
-        *,
-        knowledge_propagation_port: KnowledgePropagationPort | None = None,
-    ):
+    def __init__(self, db: Any):
         self.db = db
-        self._knowledge_propagation_port = knowledge_propagation_port
 
     async def propagate_for_card(
         self,
@@ -115,38 +101,15 @@ class SpecResourcePropagationService:
                 "results": {}, "skipped": True,
             }
 
-        # Resolve authority before the first resource mutation.  A port/read
-        # failure aborts the whole propagation attempt, so mockup or architecture
-        # writes cannot precede an indeterminate Knowledge authority decision.
-        knowledge_v2_active = False
-        if "knowledge_base" in resource_types:
-            scope = await load_card_knowledge_scope(
-                self.db,
-                board_id=board_id,
-                card_id=card_id,
-                port=self._knowledge_propagation_port,
-            )
-            knowledge_v2_active = scope.v2_active
-
         results: dict[str, dict[str, Any]] = {}
         for resource_type in resource_types:
             if resource_type == "knowledge_base":
-                if knowledge_v2_active:
-                    results[resource_type] = {
-                        "source_count": 0,
-                        "copied_count": 0,
-                        "ignored_count": 0,
-                        "copied_ids": [],
-                        "removed_count": 0,
-                        "removed_ids": [],
-                        "warnings": [],
-                        "skipped": True,
-                        "reason": "v2_active",
-                    }
-                elif removed_kb_ids:
-                    results[resource_type] = await self._remove_knowledge(spec, card, removed_kb_ids)
-                else:
-                    results[resource_type] = await self._copy_knowledge(spec, card, actor_id)
+                # Knowledge changes use governed assignments, never physical fanout.
+                results[resource_type] = {
+                    "source_count": 0, "copied_count": 0, "ignored_count": 0,
+                    "copied_ids": [], "removed_count": 0, "removed_ids": [],
+                    "warnings": [], "skipped": True, "reason": "native_assignments",
+                }
             elif resource_type == "mockup":
                 results[resource_type] = await self._copy_mockups(spec, card)
             elif resource_type == "architecture":
@@ -277,125 +240,7 @@ class SpecResourcePropagationService:
                 normalized.append(resource_type)
         return normalized
 
-    async def _copy_knowledge(
-        self,
-        spec: ResourcePropagationSpecFact,
-        card: ResourcePropagationCardRecord,
-        actor_id: str,
-    ) -> dict[str, Any]:
-        source_items = list(
-            await get_spec_resource_propagation_store().list_spec_knowledge_bases(
-                self.db,
-                spec_id=spec.id,
-            )
-        )
-        existing = list(card.knowledge_bases or [])
 
-        def _kb_index_by_source() -> dict[str, int]:
-            return {
-                str(item.get("source") or ""): idx
-                for idx, item in enumerate(existing)
-                if isinstance(item, dict)
-            }
-
-        def _kb_index_by_id() -> dict[str, int]:
-            return {
-                str(item.get("id") or ""): idx
-                for idx, item in enumerate(existing)
-                if isinstance(item, dict)
-            }
-
-        source_index = _kb_index_by_source()
-        id_index = _kb_index_by_id()
-
-        copied = 0
-        ignored = 0
-        copied_ids: list[str] = []
-        mutated = False
-        for kb in source_items:
-            source = f"copied_from_spec:{spec.id}:{kb.id}"
-            card_kb_id = f"cardkb_{kb.id}"
-            target_idx = source_index.get(source)
-            if target_idx is None:
-                target_idx = id_index.get(card_kb_id)
-            current = existing[target_idx] if target_idx is not None else None
-            new_payload = build_card_knowledge_snapshot(
-                kb,
-                source_entity_type="spec",
-                source_entity_id=spec.id,
-                actor_id=actor_id,
-                source_version=spec.version,
-                existing=current if isinstance(current, dict) else None,
-            )
-            if target_idx is not None:
-                if card_knowledge_snapshots_equivalent(current, new_payload):
-                    ignored += 1
-                    continue
-                existing[target_idx] = new_payload
-                source_index[source] = target_idx
-                id_index[card_kb_id] = target_idx
-                copied_ids.append(card_kb_id)
-                copied += 1
-                mutated = True
-                continue
-            existing.append(new_payload)
-            new_idx = len(existing) - 1
-            source_index[source] = new_idx
-            id_index[card_kb_id] = new_idx
-            copied_ids.append(card_kb_id)
-            copied += 1
-            mutated = True
-
-        if mutated:
-            card.knowledge_bases = existing
-            await get_spec_resource_propagation_store().save_card(
-                self.db,
-                card,
-                changed_fields=("knowledge_bases",),
-            )
-
-        return {
-            "source_count": len(source_items),
-            "copied_count": copied,
-            "ignored_count": ignored,
-            "copied_ids": copied_ids,
-            "warnings": [],
-        }
-
-    async def _remove_knowledge(
-        self,
-        spec: ResourcePropagationSpecFact,
-        card: ResourcePropagationCardRecord,
-        kb_ids: set[str],
-    ) -> dict[str, Any]:
-        existing = list(card.knowledge_bases or [])
-        sources_to_remove = {f"copied_from_spec:{spec.id}:{kb_id}" for kb_id in kb_ids}
-        ids_to_remove = {f"cardkb_{kb_id}" for kb_id in kb_ids}
-        removed_ids: list[str] = []
-        kept: list[Any] = []
-        for item in existing:
-            if isinstance(item, dict):
-                source = str(item.get("source") or "")
-                item_id = str(item.get("id") or "")
-                if source in sources_to_remove or item_id in ids_to_remove:
-                    removed_ids.append(item_id or source)
-                    continue
-            kept.append(item)
-        if removed_ids:
-            card.knowledge_bases = kept
-            await get_spec_resource_propagation_store().save_card(
-                self.db,
-                card,
-                changed_fields=("knowledge_bases",),
-            )
-        return {
-            "source_count": len(kb_ids),
-            "copied_count": 0,
-            "ignored_count": 0,
-            "removed_count": len(removed_ids),
-            "removed_ids": removed_ids,
-            "warnings": [],
-        }
 
     async def _copy_mockups(
         self,

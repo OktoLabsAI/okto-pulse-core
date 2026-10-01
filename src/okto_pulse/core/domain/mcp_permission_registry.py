@@ -179,7 +179,6 @@ MCP_TOOL_PERMISSION_POLICIES: tuple[McpToolPermissionPolicy, ...] = (
     ),
     _policy("okto_pulse_add_business_rule", "spec.rules.create"),
     _policy("okto_pulse_add_card_dependency", "card.entity.manage_dependencies"),
-    _policy("okto_pulse_add_card_knowledge", "card.copy_from_spec.knowledge"),
     _policy("okto_pulse_add_choice_comment", "card.comments.create_choice"),
     _policy("okto_pulse_add_comment", "card.comments.create"),
     _policy(
@@ -291,7 +290,6 @@ MCP_TOOL_PERMISSION_POLICIES: tuple[McpToolPermissionPolicy, ...] = (
     _policy("okto_pulse_confirm_amendment_coverage", "amendment.coverage.confirm"),
     _policy("okto_pulse_convert_stories_to_ideation", "story.conversion.to_ideation"),
     _policy("okto_pulse_copy_architecture_to_card", "card.copy_from_spec.architecture"),
-    _policy("okto_pulse_copy_knowledge_to_card", "card.copy_from_spec.knowledge"),
     _policy("okto_pulse_copy_mockups_to_card", "card.copy_from_spec.mockups"),
     _policy("okto_pulse_copy_qa_to_card", "card.copy_from_spec.qa"),
     _policy("okto_pulse_create_amendment_revision", "amendment.revision.create"),
@@ -329,7 +327,6 @@ MCP_TOOL_PERMISSION_POLICIES: tuple[McpToolPermissionPolicy, ...] = (
     ),
     _policy("okto_pulse_delete_attachment", "card.attachments.delete"),
     _policy("okto_pulse_delete_card", "card.entity.delete"),
-    _policy("okto_pulse_delete_card_knowledge", "card.copy_from_spec.knowledge"),
     _policy("okto_pulse_delete_comment", "card.comments.delete"),
     _policy("okto_pulse_delete_design_system", "design_system.entity.delete"),
     _policy("okto_pulse_delete_guideline", "guidelines.delete"),
@@ -860,7 +857,6 @@ MCP_TOOL_PERMISSION_POLICIES: tuple[McpToolPermissionPolicy, ...] = (
     _policy("okto_pulse_update_board_guideline_priority", "guidelines.link"),
     _policy("okto_pulse_update_business_rule", "spec.rules.edit"),
     _policy("okto_pulse_update_card", "card.entity.edit_fields"),
-    _policy("okto_pulse_update_card_knowledge", "card.copy_from_spec.knowledge"),
     _policy("okto_pulse_update_comment", "card.comments.edit"),
     _policy(
         "okto_pulse_update_decision",

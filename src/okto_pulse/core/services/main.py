@@ -269,9 +269,6 @@ from okto_pulse.core.services.reference_resolution import (
     compile_ideation_parent_context,
 )
 from okto_pulse.core.services.resource_gate import ResourceGateService
-from okto_pulse.core.services.legacy_knowledge_write_guard import (
-    require_legacy_card_knowledge_write_allowed,
-)
 from okto_pulse.core.services.reviewer_separation import (
     evaluate_task_reviewer_separation,
 )
@@ -1190,7 +1187,7 @@ CARD_RESOURCE_READ_ONLY_MESSAGE = (
     "Mockup, and Architecture resources from the parent spec to refresh card "
     "context, and edit the source ideation, refinement, or spec resource instead."
 )
-CARD_RESOURCE_FIELDS = {"knowledge_bases", "screen_mockups"}
+CARD_RESOURCE_FIELDS = {"screen_mockups"}
 
 
 class CardResourceReadOnlyError(ValueError):
@@ -3259,9 +3256,8 @@ async def _reset_v2_knowledge_for_relink(
 ) -> bool:
     """Reset active v2 selection before changing a governed parent link.
 
-    The persistence authority is mandatory.  Tests or Core-only compositions
-    that intentionally exercise legacy behavior must inject an explicit
-    legacy/null port; absence is not evidence that no durable v2 scope exists.
+    The native persistence authority is mandatory for every target.
+    A changed parent closes the prior selection without copying its resources.
     """
 
     if previous_parent == next_parent:
@@ -3283,8 +3279,6 @@ async def _reset_v2_knowledge_for_relink(
     )
     service = KnowledgePropagationService(port)
     current = await service.read(db, target)
-    if not current.v2_active:
-        return False
 
     def parent_key(value: tuple[str, str] | None) -> KnowledgeParentKey | None:
         if value is None:
@@ -3432,22 +3426,15 @@ class CardService:
         *,
         query_scope: QueryScope | None = None,
         target_id: str | None = None,
-        knowledge_propagation_v2: bool = False,
         actor_type: str = "user",
         actor_name: str | None = None,
         activity_details: Mapping[str, Any] | None = None,
     ) -> ApplicationRecord | None:
         """Create a new card in a board.
 
-        ``target_id`` and ``knowledge_propagation_v2`` are an opt-in pair used
-        by the governed selective-propagation boundary.  Legacy callers omit
-        both and retain the original generated identity plus automatic v1
-        snapshot behavior.
+        The application boundary supplies a deterministic target identity for
+        governed creation. Knowledge is persisted only through assignments.
         """
-        if (target_id is None) != (not knowledge_propagation_v2):
-            raise ValueError(
-                "knowledge_propagation_v2 requires an explicit deterministic target_id"
-            )
         board_query = _board_scope_select(
             board_id=board_id,
             user_id=user_id,
@@ -3508,7 +3495,7 @@ class CardService:
                     "Origin task has no linked spec â€” bug cards require a spec-linked task"
                 )
 
-            if knowledge_propagation_v2 and data.spec_id != origin_task.spec_id:
+            if data.spec_id != origin_task.spec_id:
                 from okto_pulse.core.services.knowledge_propagation import (
                     KnowledgePropagationServiceError,
                 )
@@ -3527,7 +3514,7 @@ class CardService:
             # creation. Direct STARTED creation defers this physical write
             # until after the precedence gate below, so the dependency graph
             # fence remains the first mutation on that execution-start edge.
-            if knowledge_propagation_v2 and not transition_starts_card_execution(
+            if not transition_starts_card_execution(
                 CardStatus.NOT_STARTED,
                 data.status,
             ):
@@ -3626,12 +3613,11 @@ class CardService:
                 scenario_ids=list(data.test_scenario_ids),
             )
 
-        if knowledge_propagation_v2:
-            _validate_card_traceability_targets(spec, data)
-            _validate_card_knowledge_relevance_links(
-                spec,
-                getattr(data, "knowledge_propagation", None),
-            )
+        _validate_card_traceability_targets(spec, data)
+        _validate_card_knowledge_relevance_links(
+            spec,
+            getattr(data, "knowledge_propagation", None),
+        )
 
         await require_normal_card_spec_content_allowed(
             self.db, board_id=board_id, card_type=card_type_val,
@@ -3671,8 +3657,7 @@ class CardService:
         # first physical write while preserving the existing fail-closed
         # parent-change contract in the same transaction.
         if (
-            knowledge_propagation_v2
-            and card_type_val == "bug"
+            card_type_val == "bug"
             and transition_starts_card_execution(
                 CardStatus.NOT_STARTED,
                 data.status,
@@ -3750,11 +3735,7 @@ class CardService:
         await _application_add(
             self.db,
             card,
-            conflict_error=(
-                ApplicationRecordConflictError("card", card.id)
-                if knowledge_propagation_v2
-                else None
-            ),
+            conflict_error=ApplicationRecordConflictError("card", card.id),
         )
 
         traceability_targets = [
@@ -3789,9 +3770,7 @@ class CardService:
             card_id=card.id,
             actor_id=user_id,
             trigger="card_created",
-            excluded_resource_types=(
-                {"knowledge_base"} if knowledge_propagation_v2 else None
-            ),
+            excluded_resource_types={"knowledge_base"},
         )
         card = await _application_refresh(self.db, card)
 
@@ -3961,14 +3940,6 @@ class CardService:
             update_data,
             allow=allow_card_resource_write,
         )
-        if "knowledge_bases" in update_data:
-            await require_legacy_card_knowledge_write_allowed(
-                self.db,
-                board_id=card.board_id,
-                card_id=card.id,
-                port=self._knowledge_propagation_port,
-            )
-
         # Validate the resulting Spec before audit, mutation, or flush. Sprint
         # lineage is historical provenance captured by the offline cutover.
         relation_update = "spec_id" in update_data
@@ -4056,7 +4027,6 @@ class CardService:
             "test_scenario_ids",
             "conclusions",
             "screen_mockups",
-            "knowledge_bases",
         }
         activity_changes = activity_log_changes(
             old_update_data,
@@ -9351,15 +9321,10 @@ class SpecService:
         *,
         query_scope: QueryScope | None = None,
         target_id: str | None = None,
-        knowledge_propagation_v2: bool = False,
         source_refinement_snapshot: object | None = None,
         architecture_design_ids: list[str] | None = None,
     ) -> ApplicationRecord | None:
         """Create a new spec in a board."""
-        if (target_id is None) != (not knowledge_propagation_v2):
-            raise ValueError(
-                "knowledge_propagation_v2 requires an explicit deterministic target_id"
-            )
         require_ownership = (
             query_scope.require_ownership
             if query_scope is not None
@@ -9657,11 +9622,7 @@ class SpecService:
         await _application_add(
             self.db,
             spec,
-            conflict_error=(
-                ApplicationRecordConflictError("spec", spec.id)
-                if knowledge_propagation_v2
-                else None
-            ),
+            conflict_error=ApplicationRecordConflictError("spec", spec.id),
         )
 
         from okto_pulse.core.events import publish as event_publish
@@ -15647,17 +15608,18 @@ class IdeationService:
         user_id: str,
         skip_ownership_check: bool = False,
         mockup_ids: list[str] | None = None,
-        kb_ids: list[str] | None = None,
         architecture_design_ids: list[str] | None = None,
         architecture_propagation_mode: str = "copy",
         query_scope: QueryScope | None = None,
         delivery_context: DeliveryContext | None = None,
+        *,
+        target_id: str | None = None,
     ) -> Spec | None:
         """Create a Spec draft linked to an ideation.
 
         Compiles context from the ideation's problem statement, proposed approach,
-        scope assessment, and Q&A history. Artifacts (mockups, KBs) are automatically
-        propagated. Use mockup_ids/kb_ids to select specific ones.
+        scope assessment, and Q&A history. Mockups and Designs use explicit
+        resource selection; Knowledge is persisted through governed assignments.
 
         Only allowed when ideation status is 'done'.
         """
@@ -15692,13 +15654,12 @@ class IdeationService:
         # Snapshot parent collections before flush: eager-loaded collections can
         # expire after create_spec flushes the new child entity.
         snapshot_qa = list(ideation.qa_items or [])
-        snapshot_kbs = list(ideation.knowledge_bases or [])
 
         validate_artifact_selections(
             source_mockups=list(ideation.screen_mockups or []),
-            source_knowledge_bases=snapshot_kbs,
+            source_knowledge_bases=[],
             mockup_ids=mockup_ids,
-            kb_ids=kb_ids,
+            kb_ids=None,
             source_type="ideation",
             source_id=ideation_id,
         )
@@ -15724,6 +15685,7 @@ class IdeationService:
             spec_data,
             skip_ownership_check=skip_ownership_check,
             query_scope=query_scope,
+            target_id=target_id,
             architecture_design_ids=architecture_design_ids,
         )
         if spec:
@@ -15732,12 +15694,12 @@ class IdeationService:
                 db=self.db,
                 source_mockups=ideation.screen_mockups,
                 source_qa_items=snapshot_qa,
-                source_knowledge_bases=snapshot_kbs,
+                source_knowledge_bases=[],
                 target_entity=spec,
                 target_kb_entity="spec_knowledge_base",
                 user_id=user_id,
                 mockup_ids=mockup_ids,
-                kb_ids=kb_ids,
+                kb_ids=None,
                 source_type="ideation",
                 source_id=ideation.id,
                 source_title=ideation.title,
@@ -17217,27 +17179,20 @@ class RefinementService:
         user_id: str,
         skip_ownership_check: bool = False,
         mockup_ids: list[str] | None = None,
-        kb_ids: list[str] | None = None,
         architecture_design_ids: list[str] | None = None,
         architecture_propagation_mode: str = "copy",
         query_scope: QueryScope | None = None,
         *,
         target_id: str | None = None,
-        knowledge_propagation_v2: bool = False,
     ) -> Spec | None:
         """Create a Spec draft linked to a refinement.
 
-        Artifacts (mockups, KBs) are automatically propagated. Use mockup_ids/kb_ids
-        to select specific ones. Compiles context from the refinement's scope, analysis, decisions,
+        Mockups use explicit selection; Knowledge uses governed assignments. Compiles context from the refinement's scope, analysis, decisions,
         technical_requirements, acceptance_criteria) are left empty â€” they must be
         filled by the agent or human through deliberate analysis.
 
         Only allowed when refinement status is 'done'.
         """
-        if (target_id is None) != (not knowledge_propagation_v2):
-            raise ValueError(
-                "knowledge_propagation_v2 requires an explicit deterministic target_id"
-            )
         refinement = await self.get_refinement(refinement_id)
         if not refinement:
             return None
@@ -17286,30 +17241,11 @@ class RefinementService:
         # expires all session objects, making eagerly-loaded collections inaccessible.
         snapshot_qa = list(source_snapshot.qa_snapshot or [])
         snapshot_mockups = list(refinement.screen_mockups or [])
-        snapshot_kbs = [
-            {
-                "title": kb.title,
-                "description": kb.description,
-                "content": kb.content,
-                "mime_type": getattr(kb, "mime_type", "text/markdown"),
-                "id": kb.id,
-                "source_type": getattr(kb, "source_type", None),
-                "source_id": getattr(kb, "source_id", None),
-                "source_title": getattr(kb, "source_title", None),
-                "source_version": getattr(kb, "source_version", None),
-                "source_kb_id": getattr(kb, "source_kb_id", None),
-                "root_source_kb_id": getattr(kb, "root_source_kb_id", None),
-                "immediate_parent_kb_id": getattr(kb, "immediate_parent_kb_id", None),
-                "governance_metadata": getattr(kb, "governance_metadata", None),
-            }
-            for kb in (refinement.knowledge_bases or [])
-        ]
-
         validate_artifact_selections(
             source_mockups=snapshot_mockups,
-            source_knowledge_bases=([] if knowledge_propagation_v2 else snapshot_kbs),
+            source_knowledge_bases=[],
             mockup_ids=mockup_ids,
-            kb_ids=(None if knowledge_propagation_v2 else kb_ids),
+            kb_ids=None,
             source_type="refinement",
             source_id=refinement_id,
         )
@@ -17336,7 +17272,6 @@ class RefinementService:
             skip_ownership_check=skip_ownership_check,
             query_scope=query_scope,
             target_id=target_id,
-            knowledge_propagation_v2=knowledge_propagation_v2,
             source_refinement_snapshot=source_snapshot,
             architecture_design_ids=architecture_design_ids,
         )
@@ -17346,14 +17281,12 @@ class RefinementService:
                 db=self.db,
                 source_mockups=snapshot_mockups,
                 source_qa_items=snapshot_qa,
-                source_knowledge_bases=(
-                    [] if knowledge_propagation_v2 else snapshot_kbs
-                ),
+                source_knowledge_bases=[],
                 target_entity=spec,
                 target_kb_entity="spec_knowledge_base",
                 user_id=user_id,
                 mockup_ids=mockup_ids,
-                kb_ids=None if knowledge_propagation_v2 else kb_ids,
+                kb_ids=None,
                 source_type="refinement",
                 source_id=refinement.id,
                 source_title=refinement.title,

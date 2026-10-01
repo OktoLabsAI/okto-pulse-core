@@ -24,7 +24,6 @@ from okto_pulse.core.application.use_cases.knowledge_propagation import (
 )
 from okto_pulse.core.application.use_cases.mcp_spec_crud import (
     McpDeriveSpecCommand,
-    McpDeriveSpecUseCase,
 )
 from okto_pulse.core.domain.knowledge_selection import (
     KnowledgeAssignment,
@@ -221,7 +220,6 @@ class _Cards:
         self.events.append("card_create")
         self.created += 1
         self.create_kwargs = kwargs
-        assert kwargs["knowledge_propagation_v2"] is True
         assert kwargs["target_id"] == self.knowledge.target_id
         if self.creation_conflict:
             raise ApplicationRecordConflictError("card", kwargs["target_id"])
@@ -436,22 +434,84 @@ async def test_create_bug_v2_rejects_spec_divergent_from_origin_before_preflight
     assert "card_create" not in uow.events
 
 
-async def test_mcp_refinement_v2_rejects_legacy_kb_ids_before_target() -> None:
-    command = McpDeriveSpecCommand(
-        "refinement",
-        "refinement-1",
-        kb_ids=[],
-        knowledge_propagation=_envelope(idempotency_key="derive-1"),
-    )
-
-    with pytest.raises(KnowledgePropagationServiceError) as caught:
-        await McpDeriveSpecUseCase().execute(
-            command,
-            actor=_actor(),
-            uow=SimpleNamespace(),  # type: ignore[arg-type]
+async def test_mcp_derivation_rejects_removed_selector_before_target() -> None:
+    with pytest.raises(TypeError, match="kb_ids"):
+        McpDeriveSpecCommand(
+            "refinement", "refinement-1", kb_ids=[],
+            knowledge_propagation=_envelope(idempotency_key="derive-1"),
         )
 
-    assert caught.value.code == "conflicting_propagation_parameters"
+
+@pytest.mark.parametrize("replay,refinement_id", [(False, None), (True, None), (True, "new-parent")])
+async def test_ideation_derivation_uses_native_preflight_and_parent_specific_replay(replay, refinement_id) -> None:
+    from okto_pulse.core.application.use_cases.knowledge_propagation import (
+        DeriveSpecKnowledgeV2Command, DeriveSpecKnowledgeV2UseCase,
+    )
+    uow = _Uow(replay=replay)
+    knowledge = uow.services.knowledge_propagation
+
+    class Ideations:
+        async def get_ideation(self, source_id):
+            assert source_id == "ideation-1"
+            return SimpleNamespace(id=source_id, board_id="board-1")
+
+        async def derive_spec(self, source_id, actor_id, **kwargs):
+            uow.events.append("ideation_derive")
+            assert kwargs["target_id"] == knowledge.target_id
+            assert kwargs["delivery_context"] == "greenfield"
+            assert "kb_ids" not in kwargs
+            return SimpleNamespace(id=kwargs["target_id"], ideation_id=source_id)
+
+    async def get_spec(target_id):
+        if replay:
+            return SimpleNamespace(
+                id=target_id, board_id="board-1", ideation_id="ideation-1",
+                refinement_id=refinement_id,
+            )
+        return None
+
+    uow.services.ideations = Ideations()
+    uow.services.specs = SimpleNamespace(get_spec=get_spec)
+    command = DeriveSpecKnowledgeV2Command(
+        "ideation-1", _envelope(idempotency_key="derive-native"),
+        source_type="ideation", delivery_context="greenfield",
+    )
+    if refinement_id:
+        with pytest.raises(KnowledgePropagationServiceError, match="knowledge_creation_replay_target_mismatch"):
+            await DeriveSpecKnowledgeV2UseCase().execute(command, actor=_actor(), uow=uow)
+        assert uow.commits == 0
+        assert uow.events == ["knowledge_preflight"]
+        return
+    result = await DeriveSpecKnowledgeV2UseCase().execute(command, actor=_actor(), uow=uow)
+    assert result.receipt.target.target_type.value == "spec"
+    assert result.receipt.replayed is replay
+    assert uow.commits == 1
+    if replay:
+        assert uow.events == ["knowledge_preflight", "commit"]
+    else:
+        assert uow.events == [
+            "knowledge_preflight", "ideation_derive", "synchronize",
+            "knowledge_mutate", "commit",
+        ]
+
+
+async def test_ideation_derivation_rejects_foreign_board_before_preflight() -> None:
+    from okto_pulse.core.application.use_cases.base import EntityNotFoundError
+    from okto_pulse.core.application.use_cases.knowledge_propagation import (
+        DeriveSpecKnowledgeV2Command, DeriveSpecKnowledgeV2UseCase,
+    )
+    uow = _Uow()
+    async def get_ideation(source_id):
+        return SimpleNamespace(id=source_id, board_id="foreign-board")
+    uow.services.ideations = SimpleNamespace(get_ideation=get_ideation)
+    with pytest.raises(EntityNotFoundError):
+        await DeriveSpecKnowledgeV2UseCase().execute(
+            DeriveSpecKnowledgeV2Command(
+                "ideation-1", _envelope(), source_type="ideation",
+                delivery_context="greenfield",
+            ), actor=_actor(), uow=uow,
+        )
+    assert uow.events == []
 
 
 def test_public_v2_request_models_preserve_tri_state_and_linkage_contract() -> None:
@@ -461,11 +521,14 @@ def test_public_v2_request_models_preserve_tri_state_and_linkage_contract() -> N
     )
     assert omitted.idempotency_key == "omit"
     assert omitted.to_selection().selection_state is KnowledgeSelectionState.OMITTED
-    conflict_probe = DeriveSpecKnowledgeRequest(
-        knowledge_propagation=omitted,
-        kb_ids=["legacy-kb"],
-    )
-    assert conflict_probe.kb_ids == ["legacy-kb"]
+    with pytest.raises(ValueError, match="Extra inputs are not permitted"):
+        DeriveSpecKnowledgeRequest(
+            knowledge_propagation=omitted,
+            kb_ids=["legacy-kb"],
+        )
+    fresh = DeriveSpecKnowledgeRequest()
+    assert fresh.knowledge_propagation.selection_state is KnowledgeSelectionState.OMITTED
+    assert fresh.knowledge_propagation.knowledge_ids == []
 
     drop_all = KnowledgeAssignmentDropRequest(
         knowledge_ids=[],
@@ -646,7 +709,6 @@ async def test_v2_resource_exclusion_preserves_non_knowledge_autocopy(
     card = ResourcePropagationCardRecord(
         id="card-1",
         board_id="board-1",
-        knowledge_bases=[],
         spec_id=None, status=CardStatus.NOT_STARTED, card_type=CardType.NORMAL,
         screen_mockups=[],
     )
@@ -731,6 +793,6 @@ async def test_v2_resource_exclusion_preserves_non_knowledge_autocopy(
 
     assert result["resource_types"] == ["mockup"]
     assert result["results"]["mockup"]["copied_ids"] == ["screen-1"]
-    assert card.knowledge_bases == []
+    assert not hasattr(card, "knowledge_bases")
     assert [item["id"] for item in card.screen_mockups] == ["screen-1"]
     assert store.audits[0]["details"]["resource_types"] == ["mockup"]

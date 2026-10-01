@@ -92,9 +92,8 @@ Args:
     steps_to_reproduce: Steps to reproduce the bug (optional)
     action_plan: Plan for fixing the bug (optional)
     knowledge_propagation: Optional selective Knowledge contract-v2 envelope.
-        Omit the whole field to preserve legacy v1 card creation and automatic
-        Knowledge copy behavior. Supplying it selects v2, including when
-        selection_state="omitted". Fields:
+        Omission starts with no inherited Knowledge and a new operation key.
+        Supply an envelope with a stable key for replay across requests. Fields:
         - contract_version: 2 (default)
         - selection_state: omitted | explicit_empty | explicit_ids
         - mode: absent for omitted; drop for explicit_empty; reference,
@@ -110,10 +109,7 @@ Args:
           every entity must belong to this card's linked spec.
 
 Returns:
-    Without knowledge_propagation: the unchanged v1 JSON with created card
-    details.
-
-    With knowledge_propagation: `{success, contract_version, card,
+    Always: `{success, contract_version, card,
     operation_id, revision, replayed, selection_state, assignments}`. The
     `card` projection and operation result are rebuilt from the durable
     idempotency receipt. Replaying the exact same request/key returns the same

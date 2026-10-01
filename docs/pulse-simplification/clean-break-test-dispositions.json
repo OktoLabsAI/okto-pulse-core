@@ -751,6 +751,111 @@
       "test": "test_legacy_submission_remains_readable_but_explicitly_unclassified",
       "disposition": "superseded",
       "reason": "Pre-context submission/classification input removed; native canonical hash, provenance, materialization and bounded event contracts retained."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_knowledge_propagation_port.py::test_scope_v2_marker_disables_legacy_fallback_without_erasing_history",
+      "disposition": "replaced_with_native_contract",
+      "reason": "Removed imported attachment/activation/grandfather contract; replaced with native tri-state, immutable local evidence or rejection of removed vocabulary. Current uniqueness, history, CAS and ledger tests retained."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_knowledge_propagation_port.py::test_scope_carries_immutable_activation_and_local_attachment_evidence",
+      "disposition": "replaced_with_native_contract",
+      "reason": "Removed imported attachment/activation/grandfather contract; replaced with native tri-state, immutable local evidence or rejection of removed vocabulary. Current uniqueness, history, CAS and ledger tests retained."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_knowledge_propagation_port.py::test_legacy_unresolved_is_always_history_only",
+      "disposition": "replaced_with_native_contract",
+      "reason": "Removed imported attachment/activation/grandfather contract; replaced with native tri-state, immutable local evidence or rejection of removed vocabulary. Current uniqueness, history, CAS and ledger tests retained."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_knowledge_propagation_ledger_outcomes.py::test_grandfathered_is_terminal_and_advances_revision",
+      "disposition": "replaced_with_native_contract",
+      "reason": "Removed imported attachment/activation/grandfather contract; replaced with native tri-state, immutable local evidence or rejection of removed vocabulary. Current uniqueness, history, CAS and ledger tests retained."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_knowledge_propagation_service.py::test_grandfather_never_replaces_an_active_v2_scope",
+      "disposition": "superseded",
+      "reason": "Exclusive grandfather import/classification removed; native selection, replay, CAS, snapshots, relink and history tests retained."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_knowledge_propagation_service.py::test_grandfather_rejects_partial_inventory_with_audit_attempt",
+      "disposition": "superseded",
+      "reason": "Exclusive grandfather import/classification removed; native selection, replay, CAS, snapshots, relink and history tests retained."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_knowledge_propagation_service.py::test_grandfather_stages_canonical_non_activating_ledger_and_replays",
+      "disposition": "superseded",
+      "reason": "Exclusive grandfather import/classification removed; native selection, replay, CAS, snapshots, relink and history tests retained."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_knowledge_propagation_service.py::test_grandfather_classification_is_conservative",
+      "disposition": "superseded",
+      "reason": "Exclusive grandfather import/classification removed; native selection, replay, CAS, snapshots, relink and history tests retained."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_knowledge_propagation_adapter.py::test_card_json_grandfather_inventory_has_exact_locator_and_fails_closed",
+      "disposition": "superseded",
+      "reason": "Exclusive grandfather importer removed. Native persistence/CAS/replay/temporal history retained; physical Card contamination now rejected."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_knowledge_propagation_adapter.py::test_grandfather_uses_highest_revision_and_rejects_conflicting_tie",
+      "disposition": "superseded",
+      "reason": "Exclusive grandfather importer removed. Native persistence/CAS/replay/temporal history retained; physical Card contamination now rejected."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_knowledge_propagation_adapter.py::test_grandfather_inventory_preserves_nullable_stamps_and_classifies",
+      "disposition": "superseded",
+      "reason": "Exclusive grandfather importer removed. Native persistence/CAS/replay/temporal history retained; physical Card contamination now rejected."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_knowledge_propagation_adapter.py::test_grandfather_classification_comes_from_canonical_ledger",
+      "disposition": "superseded",
+      "reason": "Exclusive grandfather importer removed. Native persistence/CAS/replay/temporal history retained; physical Card contamination now rejected."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_knowledge_propagation_service.py::test_relink_reset_rejects_an_inactive_v2_scope_with_audit_attempt",
+      "disposition": "replaced_with_native_contract",
+      "reason": "Activation state removed; replacement verifies omitted selection relink records its revision and operation without adding assignments."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_knowledge_propagation_rest_routes.py::test_refinement_derive_without_body_stays_on_v1",
+      "disposition": "replaced_with_native_contract",
+      "reason": "Route now has one creation path; replacement checks omitted selection through bounded retry, or rejects removed/null fields at schema validation before target creation."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_knowledge_propagation_rest_routes.py::test_refinement_derive_rejects_legacy_and_v2_before_target",
+      "disposition": "replaced_with_native_contract",
+      "reason": "Route now has one creation path; replacement checks omitted selection through bounded retry, or rejects removed/null fields at schema validation before target creation."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_knowledge_propagation_rest_routes.py::test_board_card_create_without_envelope_stays_on_v1",
+      "disposition": "replaced_with_native_contract",
+      "reason": "Route now has one creation path; replacement checks omitted selection through bounded retry, or rejects removed/null fields at schema validation before target creation."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_knowledge_propagation_rest_routes.py::test_board_card_create_rejects_explicit_null_field_before_target",
+      "disposition": "replaced_with_native_contract",
+      "reason": "Route now has one creation path; replacement checks omitted selection through bounded retry, or rejects removed/null fields at schema validation before target creation."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_knowledge_propagation_backfill.py",
+      "disposition": "superseded",
+      "reason": "Exclusive grandfather importer/resume contract removed. Native atomic mutations, replay and append-only history remain in propagation adapter and E2E suites."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_card_knowledge_snapshot_refresh.py",
+      "disposition": "superseded",
+      "reason": "Exclusive physical-copy writer, automatic physical refresh and legacy lineage normalization removed. Native snapshot/reference refresh remains covered by Knowledge service/adapter and E2E tests."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_imp5_legacy_knowledge_write_guard.py",
+      "disposition": "superseded",
+      "reason": "Exclusive dual-format guard and old copy tool removed, including scope read used only to choose format. Native non-Knowledge fanout retained in test_imp4_knowledge_application; native preflight failures and atomicity remain covered there and in propagation service/adapter tests."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_card_knowledge_rest.py",
+      "disposition": "superseded",
+      "reason": "Physical JSON fixtures and retired REST write refusals removed. Native REST list/detail/download verified with real assignments in test_ts_f9c3c8e0_drop_survives_reconcilers_and_source_delete; header safety retained in test_card_knowledge_download_headers."
     }
   ],
   "adapted_suites": [
@@ -842,6 +947,10 @@
         "test_register_helper_sets_the_core_seam"
       ],
       "reason": "Upgrade/bootstrap ledgers and predecessor normalization retired. Native creation/restart, seeds, authored permission preservation, Core boundaries and lifecycle failures retained."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_knowledge_propagation_adapter.py",
+      "reason": "Physical Card JSON contamination case replaced by absence of storage column and constructor rejection. test_current_relational_schema also verifies old column is refused with byte-identical storage and no WAL effects. Native assignment and Spec local-source tests retained."
     }
   ],
   "removed_cases": [

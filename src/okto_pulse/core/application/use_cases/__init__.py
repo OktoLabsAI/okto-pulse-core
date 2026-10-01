@@ -647,9 +647,6 @@ from okto_pulse.core.application.use_cases.mcp_board_crud import (
     McpDeactivateDefaultBoardConfigVersionUseCase,
 )
 from okto_pulse.core.application.use_cases.mcp_card_crud import (
-    McpCopyKnowledgeToCardCommand,
-    McpCopyKnowledgeToCardResult,
-    McpCopyKnowledgeToCardUseCase,
     McpCreateCardCommand,
     McpCreateCardResult,
     McpCreateCardUseCase,
@@ -1467,9 +1464,6 @@ __all__ = [
     "McpActivateDefaultBoardConfigVersionUseCase",
     "McpDeactivateDefaultBoardConfigVersionCommand",
     "McpDeactivateDefaultBoardConfigVersionUseCase",
-    "McpCopyKnowledgeToCardCommand",
-    "McpCopyKnowledgeToCardResult",
-    "McpCopyKnowledgeToCardUseCase",
     "McpCreateCardCommand",
     "McpCreateCardResult",
     "McpCreateCardUseCase",

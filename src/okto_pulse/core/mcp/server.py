@@ -3291,15 +3291,17 @@ async def _mcp_create_card_v2(
     )
 
 
-async def _mcp_derive_spec_from_refinement_v2(
+async def _mcp_derive_spec_with_knowledge(
     *,
     ctx: Any,
     board_id: str,
-    refinement_id: str,
+    source_id: str,
+    source_type: str,
     envelope: KnowledgePropagationEnvelopeV2,
     mockup_ids: list[str] | None,
     architecture_design_ids: list[str] | None,
     architecture_propagation_mode: str,
+    delivery_context: Any = None,
 ) -> str:
     from okto_pulse.core.application.use_cases import (
         EntityNotFoundError,
@@ -3321,10 +3323,10 @@ async def _mcp_derive_spec_from_refinement_v2(
             async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
                 result = await McpDeriveSpecUseCase().execute(
                     McpDeriveSpecCommand(
-                        "refinement",
-                        refinement_id,
+                        source_type,
+                        source_id,
                         mockup_ids=mockup_ids,
-                        kb_ids=None,
+                        delivery_context=delivery_context,
                         architecture_design_ids=architecture_design_ids,
                         architecture_propagation_mode=(architecture_propagation_mode),
                         knowledge_propagation=envelope,
@@ -3347,7 +3349,7 @@ async def _mcp_derive_spec_from_refinement_v2(
             await _append_knowledge_attempt_after_rollback(error)
             return _knowledge_propagation_error(error)
         except EntityNotFoundError:
-            return json.dumps({"error": "Refinement not found"})
+            return json.dumps({"error": f"{source_type.capitalize()} not found"})
         except ArtifactResourceSelectionError as error:
             return json.dumps(error.to_error_dict())
         except ArchitectureDesignSelectionError as error:
@@ -3471,173 +3473,73 @@ async def okto_pulse_create_card(
                 {"error": f"Bug cards require non-empty: {', '.join(missing)}"}
             )
 
-    from okto_pulse.core.application.use_cases import (
-        McpCreateCardCommand,
-        McpCreateCardUseCase,
+
+    from okto_pulse.core.models.knowledge_propagation import new_omitted_knowledge_selection
+
+    if knowledge_propagation is None:
+        knowledge_propagation = new_omitted_knowledge_selection()
+    try:
+        if not isinstance(
+            knowledge_propagation,
+            KnowledgePropagationEnvelopeV2,
+        ):
+            knowledge_propagation = KnowledgePropagationEnvelopeV2.model_validate(
+                knowledge_propagation
+            )
+    except (TypeError, ValueError) as error:
+        # Validation happens before opening the creation UoW.  The parameter
+        # adapter keeps object/null validation and the published envelope
+        # schema at the host, while deferring the exception-bearing domain
+        # validation to this serialisation-safe boundary.
+        return _knowledge_propagation_request_error(error)
+    _desc_v2 = description.replace("\\n", "\n") if description else None
+    _details_v2 = details.replace("\\n", "\n") if details else None
+    try:
+        scenario_ids_v2 = coerce_to_list_str(test_scenario_ids) or None
+        labels_v2 = coerce_to_list_str(labels) or None
+        fr_ids_v2 = coerce_to_list_str(functional_requirement_ids) or None
+        br_ids_v2 = coerce_to_list_str(business_rule_ids) or None
+    except ValueError as error:
+        return json.dumps(
+            {"error": "invalid_multi_value_input", "detail": str(error)}
+        )
+    card_create_v2 = CardCreate(
+        title=title,
+        description=_desc_v2,
+        details=_details_v2,
+        status=card_status,
+        priority=card_priority,
+        assignee_id=assignee_id or None,
+        labels=labels_v2,
+        spec_id=spec_id,
+        test_scenario_ids=scenario_ids_v2,
+        functional_requirement_ids=fr_ids_v2,
+        business_rule_ids=br_ids_v2,
+        card_type=_card_type_value,
+        origin_task_id=origin_task_id or None,
+        severity=(severity.strip().lower() if severity else None),
+        expected_behavior=(
+            expected_behavior.replace("\\n", "\n") if expected_behavior else None
+        ),
+        observed_behavior=(
+            observed_behavior.replace("\\n", "\n") if observed_behavior else None
+        ),
+        steps_to_reproduce=(
+            steps_to_reproduce.replace("\\n", "\n") if steps_to_reproduce else None
+        ),
+        action_plan=(action_plan.replace("\\n", "\n") if action_plan else None),
+        knowledge_propagation=knowledge_propagation,
     )
-    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
-
-    if knowledge_propagation is not None:
-        try:
-            if not isinstance(
-                knowledge_propagation,
-                KnowledgePropagationEnvelopeV2,
-            ):
-                knowledge_propagation = KnowledgePropagationEnvelopeV2.model_validate(
-                    knowledge_propagation
-                )
-        except (TypeError, ValueError) as error:
-            # Validation happens before opening the creation UoW.  The parameter
-            # adapter keeps object/null validation and the published envelope
-            # schema at the host, while deferring the exception-bearing domain
-            # validation to this serialisation-safe boundary.
-            return _knowledge_propagation_request_error(error)
-        _desc_v2 = description.replace("\\n", "\n") if description else None
-        _details_v2 = details.replace("\\n", "\n") if details else None
-        try:
-            scenario_ids_v2 = coerce_to_list_str(test_scenario_ids) or None
-            labels_v2 = coerce_to_list_str(labels) or None
-            fr_ids_v2 = coerce_to_list_str(functional_requirement_ids) or None
-            br_ids_v2 = coerce_to_list_str(business_rule_ids) or None
-        except ValueError as error:
-            return json.dumps(
-                {"error": "invalid_multi_value_input", "detail": str(error)}
-            )
-        card_create_v2 = CardCreate(
-            title=title,
-            description=_desc_v2,
-            details=_details_v2,
-            status=card_status,
-            priority=card_priority,
-            assignee_id=assignee_id or None,
-            labels=labels_v2,
-            spec_id=spec_id,
-            test_scenario_ids=scenario_ids_v2,
-            functional_requirement_ids=fr_ids_v2,
-            business_rule_ids=br_ids_v2,
-            card_type=_card_type_value,
-            origin_task_id=origin_task_id or None,
-            severity=(severity.strip().lower() if severity else None),
-            expected_behavior=(
-                expected_behavior.replace("\\n", "\n") if expected_behavior else None
-            ),
-            observed_behavior=(
-                observed_behavior.replace("\\n", "\n") if observed_behavior else None
-            ),
-            steps_to_reproduce=(
-                steps_to_reproduce.replace("\\n", "\n") if steps_to_reproduce else None
-            ),
-            action_plan=(action_plan.replace("\\n", "\n") if action_plan else None),
-            knowledge_propagation=knowledge_propagation,
-        )
-        return await _mcp_create_card_v2(
-            ctx=ctx,
-            board_id=board_id,
-            spec_id=spec_id,
-            card_create=card_create_v2,
-            scenario_ids_list=scenario_ids_v2,
-            title=title,
-            status=status,
-            priority=priority,
-        )
-
-    # MCP-FU6 strangler: the full create orchestration (create skip_ownership →
-    # commit → scenario backlink → card_created log → commit; 2 commits + flush)
-    # moves into McpCreateCardUseCase over the MCP UoW; the adapter keeps the
-    # coercion + envelope + resp_card. Tool no longer opens get_db_for_mcp nor
-    # builds CardService.
-    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
-    async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
-        # Normalize escaped newlines (MCP clients may send \\n instead of real newlines)
-        _desc = description.replace("\\n", "\n") if description else None
-        _details = details.replace("\\n", "\n") if details else None
-
-        try:
-            scenario_ids_list = coerce_to_list_str(test_scenario_ids) or None
-        except ValueError as e:
-            return json.dumps({"error": "invalid_multi_value_input", "detail": str(e)})
-        try:
-            _labels_list = coerce_to_list_str(labels) or None
-        except ValueError as e:
-            return json.dumps({"error": "invalid_multi_value_input", "detail": str(e)})
-        try:
-            _fr_ids = coerce_to_list_str(functional_requirement_ids) or None
-            _br_ids = coerce_to_list_str(business_rule_ids) or None
-        except ValueError as e:
-            return json.dumps({"error": "invalid_multi_value_input", "detail": str(e)})
-
-        card_create = CardCreate(
-            title=title,
-            description=_desc,
-            details=_details,
-            status=card_status,
-            priority=card_priority,
-            assignee_id=assignee_id or None,
-            labels=_labels_list,
-            spec_id=spec_id,
-            test_scenario_ids=scenario_ids_list,
-            functional_requirement_ids=_fr_ids,
-            business_rule_ids=_br_ids,
-            card_type=_card_type_value,
-            origin_task_id=origin_task_id or None,
-            severity=(severity.strip().lower() if severity else None),
-            expected_behavior=expected_behavior.replace("\\n", "\n")
-            if expected_behavior
-            else None,
-            observed_behavior=observed_behavior.replace("\\n", "\n")
-            if observed_behavior
-            else None,
-            steps_to_reproduce=steps_to_reproduce.replace("\\n", "\n")
-            if steps_to_reproduce
-            else None,
-            action_plan=action_plan.replace("\\n", "\n") if action_plan else None,
-        )
-
-        try:
-            card = (
-                await McpCreateCardUseCase().execute(
-                    McpCreateCardCommand(
-                        board_id,
-                        spec_id,
-                        card_create,
-                        scenario_ids_list,
-                        {"title": title, "status": status, "priority": priority},
-                    ),
-                    actor=actor,
-                    uow=uow,
-                )
-            ).card
-        except CardOperationError as e:
-            # Preserve the legacy MCP envelope for max_scenarios_per_card_exceeded
-            # while CardService remains the canonical enforcement point.
-            return json.dumps({"error": e.code, **e.to_dict(), **e.facts})
-        except ValueError as e:
-            return json.dumps({"error": str(e)})
-
-        if not card:
-            return json.dumps({"error": "Failed to create card"})
-
-        resp_card = {
-            "id": card.id,
-            "title": card.title,
-            "description": card.description,
-            "status": card.status.value,
-            "priority": card.priority.value,
-            "position": card.position,
-            "card_type": getattr(card, "card_type", "normal"),
-        }
-        if getattr(card, "card_type", "normal") == "bug":
-            resp_card.update(
-                {
-                    "origin_task_id": card.origin_task_id,
-                    "severity": getattr(card, "severity", None),
-                    "expected_behavior": card.expected_behavior,
-                    "observed_behavior": card.observed_behavior,
-                    "spec_id": card.spec_id,
-                }
-            )
-
-        return json.dumps({"success": True, "card": resp_card}, default=str)
+    return await _mcp_create_card_v2(
+        ctx=ctx,
+        board_id=board_id,
+        spec_id=spec_id,
+        card_create=card_create_v2,
+        scenario_ids_list=scenario_ids_v2,
+        title=title,
+        status=status,
+        priority=priority,
+    )
 
 
 @mcp.tool()
@@ -7707,13 +7609,13 @@ async def okto_pulse_derive_spec_from_ideation(
     board_id: str,
     ideation_id: str,
     mockup_ids: str = "",
-    kb_ids: str = "",
     architecture_design_ids: list[str] | str = "",
     architecture_propagation_mode: str = "copy",
     delivery_context: str = "",
+    knowledge_propagation: KnowledgePropagationEnvelopeInput = None,  # type: ignore[assignment]
 ) -> str:
     """Derive a draft spec from a DONE ideation; parent context and selected
-    resources propagate (default all).
+    resources propagate. Omitted Knowledge selects no sources.
     Full docs: okto-pulse://reference/tool-docs/spec."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
@@ -7728,7 +7630,6 @@ async def okto_pulse_derive_spec_from_ideation(
         return _perm_error(perm_err)
 
     _mockup_ids = parse_multi_value(mockup_ids) or None
-    _kb_ids = parse_multi_value(kb_ids) or None
     try:
         _architecture_ids = coerce_to_list_str(architecture_design_ids) or None
     except ValueError as e:
@@ -7745,53 +7646,23 @@ async def okto_pulse_derive_spec_from_ideation(
             }
         )
 
-    from okto_pulse.core.application.use_cases import (
-        McpDeriveSpecCommand,
-        McpDeriveSpecUseCase,
-    )
-    from okto_pulse.core.application.use_cases.base import EntityNotFoundError
-    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
+    from okto_pulse.core.models.knowledge_propagation import new_omitted_knowledge_selection
 
-    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
     try:
-        async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
-            _result = await McpDeriveSpecUseCase().execute(
-                McpDeriveSpecCommand(
-                    "ideation",
-                    ideation_id,
-                    mockup_ids=_mockup_ids,
-                    kb_ids=_kb_ids,
-                    architecture_design_ids=_architecture_ids,
-                    architecture_propagation_mode=architecture_propagation_mode,
-                    delivery_context=_delivery_context,
-                ),
-                actor=actor,
-                uow=uow,
-            )
-            spec = _result.spec
-            return json.dumps(
-                {
-                    "success": True,
-                    "ideation_id": ideation_id,
-                    "spec": {
-                        "id": spec.id,
-                        "title": spec.title,
-                        "status": spec.status.value,
-                        "edition": int(getattr(spec, "edition", 1) or 1),
-                        "version": spec.version,
-                    },
-                    "resource_propagation": _result.resource_propagation,
-                },
-                default=str,
-            )
-    except EntityNotFoundError:
-        return json.dumps({"error": "Ideation not found"})
-    except ArtifactResourceSelectionError as e:
-        return json.dumps(e.to_error_dict())
-    except ArchitectureDesignSelectionError as e:
-        return json.dumps(e.to_error_dict())
-    except ValueError as e:
-        return json.dumps({"error": str(e)})
+        envelope = (
+            new_omitted_knowledge_selection()
+            if knowledge_propagation is None
+            else KnowledgePropagationEnvelopeV2.model_validate(knowledge_propagation)
+        )
+    except (TypeError, ValueError) as error:
+        return _knowledge_propagation_request_error(error)
+    return await _mcp_derive_spec_with_knowledge(
+        ctx=ctx, board_id=board_id, source_id=ideation_id, source_type="ideation",
+        envelope=envelope, mockup_ids=_mockup_ids,
+        architecture_design_ids=_architecture_ids,
+        architecture_propagation_mode=architecture_propagation_mode,
+        delivery_context=_delivery_context,
+    )
 
 
 @mcp.tool()
@@ -8944,14 +8815,12 @@ async def okto_pulse_derive_spec_from_refinement(
     board_id: str,
     refinement_id: str,
     mockup_ids: str = "",
-    kb_ids: str | list[str] | None = None,
     architecture_design_ids: list[str] | str = "",
     architecture_propagation_mode: str = "copy",
     knowledge_propagation: KnowledgePropagationEnvelopeInput = None,  # type: ignore[assignment]
 ) -> str:
     """Derive a draft spec from a DONE refinement; analysis, parent context,
-    and selected resources propagate (default all). Knowledge v2 needs a
-    complete envelope. Full docs: okto-pulse://reference/tool-docs/spec."""
+    and selected resources propagate. Omitted Knowledge selects no sources. Full docs: okto-pulse://reference/tool-docs/spec."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -8964,96 +8833,35 @@ async def okto_pulse_derive_spec_from_refinement(
     if perm_err:
         return _perm_error(perm_err)
 
-    if knowledge_propagation is not None:
-        if kb_ids is not None:
-            from okto_pulse.core.services.knowledge_propagation import (
-                KnowledgePropagationServiceError,
-            )
+    from okto_pulse.core.models.knowledge_propagation import new_omitted_knowledge_selection
 
-            return _knowledge_propagation_error(
-                KnowledgePropagationServiceError(
-                    "conflicting_propagation_parameters",
-                    "legacy kb_ids and knowledge_propagation v2 are mutually exclusive",
-                )
-            )
-        try:
-            if not isinstance(
-                knowledge_propagation,
-                KnowledgePropagationEnvelopeV2,
-            ):
-                knowledge_propagation = KnowledgePropagationEnvelopeV2.model_validate(
-                    knowledge_propagation
-                )
-        except (TypeError, ValueError) as error:
-            return _knowledge_propagation_request_error(error)
-        mockup_ids_v2 = parse_multi_value(mockup_ids) or None
-        try:
-            architecture_ids_v2 = coerce_to_list_str(architecture_design_ids) or None
-        except ValueError as error:
-            return json.dumps({"error": f"Invalid architecture_design_ids: {error}"})
-        return await _mcp_derive_spec_from_refinement_v2(
-            ctx=ctx,
-            board_id=board_id,
-            refinement_id=refinement_id,
-            envelope=knowledge_propagation,
-            mockup_ids=mockup_ids_v2,
-            architecture_design_ids=architecture_ids_v2,
-            architecture_propagation_mode=architecture_propagation_mode,
-        )
-
-    _mockup_ids = parse_multi_value(mockup_ids) or None
-    _kb_ids = parse_multi_value(kb_ids) or None
+    if knowledge_propagation is None:
+        knowledge_propagation = new_omitted_knowledge_selection()
     try:
-        _architecture_ids = coerce_to_list_str(architecture_design_ids) or None
-    except ValueError as e:
-        return json.dumps({"error": f"Invalid architecture_design_ids: {e}"})
-
-    from okto_pulse.core.application.use_cases import (
-        McpDeriveSpecCommand,
-        McpDeriveSpecUseCase,
+        if not isinstance(
+            knowledge_propagation,
+            KnowledgePropagationEnvelopeV2,
+        ):
+            knowledge_propagation = KnowledgePropagationEnvelopeV2.model_validate(
+                knowledge_propagation
+            )
+    except (TypeError, ValueError) as error:
+        return _knowledge_propagation_request_error(error)
+    mockup_ids_v2 = parse_multi_value(mockup_ids) or None
+    try:
+        architecture_ids_v2 = coerce_to_list_str(architecture_design_ids) or None
+    except ValueError as error:
+        return json.dumps({"error": f"Invalid architecture_design_ids: {error}"})
+    return await _mcp_derive_spec_with_knowledge(
+        ctx=ctx,
+        board_id=board_id,
+        source_id=refinement_id,
+        source_type="refinement",
+        envelope=knowledge_propagation,
+        mockup_ids=mockup_ids_v2,
+        architecture_design_ids=architecture_ids_v2,
+        architecture_propagation_mode=architecture_propagation_mode,
     )
-    from okto_pulse.core.application.use_cases.base import EntityNotFoundError
-    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
-
-    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
-    try:
-        async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
-            _result = await McpDeriveSpecUseCase().execute(
-                McpDeriveSpecCommand(
-                    "refinement",
-                    refinement_id,
-                    mockup_ids=_mockup_ids,
-                    kb_ids=_kb_ids,
-                    architecture_design_ids=_architecture_ids,
-                    architecture_propagation_mode=architecture_propagation_mode,
-                ),
-                actor=actor,
-                uow=uow,
-            )
-            spec = _result.spec
-            return json.dumps(
-                {
-                    "success": True,
-                    "refinement_id": refinement_id,
-                    "spec": {
-                        "id": spec.id,
-                        "title": spec.title,
-                        "status": spec.status.value,
-                        "edition": int(getattr(spec, "edition", 1) or 1),
-                        "version": spec.version,
-                    },
-                    "resource_propagation": _result.resource_propagation,
-                },
-                default=str,
-            )
-    except EntityNotFoundError:
-        return json.dumps({"error": "Refinement not found"})
-    except ArtifactResourceSelectionError as e:
-        return json.dumps(e.to_error_dict())
-    except ArchitectureDesignSelectionError as e:
-        return json.dumps(e.to_error_dict())
-    except ValueError as e:
-        return json.dumps({"error": str(e)})
 
 
 @mcp.tool()
@@ -13889,90 +13697,10 @@ def _effective_empty_copy_response(resource_type: str, plan: dict) -> str:
     )
 
 
-@mcp.tool()
-async def okto_pulse_copy_knowledge_to_card(
-    board_id: str, spec_id: str, card_id: str, knowledge_ids: list[str] | str = ""
-) -> str:
-    """
-    Copy knowledge base entries from a spec to a card as inline card KEs.
-    Each copied entry is stored in Card.knowledge_bases with stable provenance.
-
-    R3-IMP2: when the spec has no DIRECT knowledge base, falls back to the
-    effective inherited resource (refinement/ideation) so a card linked to a
-    manual/legacy spec still carries the gate-required knowledge with an identity
-    the Resource Gate reads (``source_kb_id``)."""
-    ctx = await _get_agent_ctx(board_id)
-    if not ctx:
-        return _auth_error()
-
-    try:
-        id_filter = coerce_to_list_str(knowledge_ids) if knowledge_ids else None
-    except ValueError as e:
-        return json.dumps({"error": f"Invalid knowledge_ids: {e}"})
-
-    from okto_pulse.core.application.use_cases import (
-        McpCopyKnowledgeToCardCommand,
-        McpCopyKnowledgeToCardUseCase,
-    )
-    from okto_pulse.core.application.use_cases.base import EntityNotFoundError
-    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
-    from okto_pulse.core.services.effective_resource_propagation import (
-        ResourceLineageResolutionError,
-    )
-    from okto_pulse.core.ports.knowledge_propagation import (
-        KnowledgePropagationPortError,
-    )
-    from okto_pulse.core.services.knowledge_propagation import (
-        KnowledgePropagationServiceError,
-    )
-
-    # MCP-FU6 strangler: the spec/card lookup + R3-IMP2 effective fallback + dedup +
-    # update + commit move into McpCopyKnowledgeToCardUseCase over the MCP UoW. The
-    # adapter keeps the exact envelopes: spec/card not-found, the resolver
-    # exc.to_error_dict(), the empty-plan _effective_empty_copy_response, and the
-    # success payload. Tool no longer opens get_db_for_mcp nor builds the services.
-    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
-    try:
-        async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
-            result = await McpCopyKnowledgeToCardUseCase().execute(
-                McpCopyKnowledgeToCardCommand(board_id, spec_id, card_id, id_filter),
-                actor=actor,
-                uow=uow,
-            )
-    except EntityNotFoundError as e:
-        return json.dumps(
-            {
-                "error": (
-                    "Spec not found" if e.entity_type == "spec" else "Card not found"
-                )
-            }
-        )
-    except ArtifactResourceSelectionError as exc:
-        return json.dumps(exc.to_error_dict())
-    except ResourceLineageResolutionError as exc:
-        return json.dumps(exc.to_error_dict())
-    except (
-        KnowledgePropagationPortError,
-        KnowledgePropagationServiceError,
-    ) as exc:
-        return _knowledge_propagation_error(exc)
-
-    if result.empty_plan is not None:
-        return _effective_empty_copy_response("knowledge_base", result.empty_plan)
-
-    return json.dumps(
-        {
-            "success": True,
-            "copied": result.copied,
-            "knowledge_ids": result.copied_ids,
-            "total_on_card": result.total_on_card,
-            "fallback": result.fallback,
-        }
-    )
 
 
 # ============================================================================
-# Card.knowledge_bases — inline JSONB lifecycle (symmetric to spec_knowledge)
+# Card Knowledge — effective native governed assignments
 # ============================================================================
 
 
@@ -14207,23 +13935,6 @@ async def okto_pulse_get_card_knowledge_propagation(
     )
 
 
-@mcp.tool()
-async def okto_pulse_add_card_knowledge(
-    board_id: str,
-    card_id: str,
-    title: str,
-    content: str,
-    description: str = "",
-    mime_type: str = "text/markdown",
-    source: str = "manual",
-) -> str:
-    """
-    Deprecated: card Knowledge Base resources are read-only governed snapshots.
-    Use okto_pulse_copy_knowledge_to_card to refresh card context from the spec."""
-    ctx = await _get_agent_ctx(board_id)
-    if not ctx:
-        return _auth_error()
-    return _card_resource_read_only_error()
 
 
 @mcp.tool()
@@ -14257,32 +13968,8 @@ async def okto_pulse_get_card_knowledge(
     return json.dumps(result.payload, default=str)
 
 
-@mcp.tool()
-async def okto_pulse_update_card_knowledge(
-    board_id: str,
-    card_id: str,
-    knowledge_id: str,
-    title: str = "",
-    description: str = "",
-    content: str = "",
-    mime_type: str = "",
-) -> str:
-    """Deprecated: card Knowledge Base resources are read-only governed snapshots."""
-    ctx = await _get_agent_ctx(board_id)
-    if not ctx:
-        return _auth_error()
-    return _card_resource_read_only_error()
 
 
-@mcp.tool()
-async def okto_pulse_delete_card_knowledge(
-    board_id: str, card_id: str, knowledge_id: str
-) -> str:
-    """Deprecated: card Knowledge Base resources are read-only governed snapshots."""
-    ctx = await _get_agent_ctx(board_id)
-    if not ctx:
-        return _auth_error()
-    return _card_resource_read_only_error()
 
 
 @mcp.tool()
@@ -21576,7 +21263,6 @@ _TOOLS_WITH_LAZY_COMPACT_DESCRIPTION = frozenset(
         "okto_pulse_kg_clear_cognitive_skip",
         "okto_pulse_copy_architecture_to_card",
         "okto_pulse_list_default_guideline_candidates",
-        "okto_pulse_copy_knowledge_to_card",
         "okto_pulse_kg_explain_constraint",
         "okto_pulse_move_ideation",
         "okto_pulse_list_architecture_propagation_legacy",

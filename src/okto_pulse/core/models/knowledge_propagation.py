@@ -1,15 +1,14 @@
-"""Public transport schemas for selective Knowledge Base propagation v2.
+"""Public schemas for the single governed Knowledge selection contract.
 
-The request envelope is intentionally explicit about the three selection
-states.  In particular, an omitted envelope remains the legacy v1 path while
-``selection_state="omitted"`` inside an envelope is an authoritative v2
-choice.  Transport adapters must therefore test whether the envelope itself
-was supplied; they must not infer intent from an empty list.
+Omitted selection and an explicit empty decision remain distinct. Fresh
+creation defaults to omitted and never copies all parent resources.
 """
 
 from __future__ import annotations
 
 from typing import Annotated, Any, Literal
+
+from okto_pulse.core.domain.code_traceability import DeliveryContext
 
 from pydantic import (
     AliasChoices,
@@ -134,16 +133,35 @@ class KnowledgePropagationEnvelopeV2(BaseModel):
         return tuple(link.to_domain() for link in self.relevance_links)
 
 
+def new_omitted_knowledge_selection() -> KnowledgePropagationEnvelopeV2:
+    """Start a fresh operation with no inherited selection.
+
+    This is a creation default, not conversion of an existing target. Callers
+    needing replay across requests supply their own stable idempotency key.
+    """
+    from uuid import uuid4
+
+    return KnowledgePropagationEnvelopeV2(
+        selection_state=KnowledgeSelectionState.OMITTED,
+        idempotency_key=str(uuid4()),
+        expected_revision=0,
+    )
+
+
 class DeriveSpecKnowledgeRequest(BaseModel):
-    """Published v2 body for refinement derive; an absent body remains v1."""
+    """Governed refinement derivation; unknown historical fields are rejected."""
 
     model_config = ConfigDict(extra="forbid")
 
-    knowledge_propagation: KnowledgePropagationEnvelopeV2
-    # Detection-only legacy slot.  The REST boundary rejects this field when
-    # it co-occurs with ``knowledge_propagation`` before opening the target
-    # transaction; v1 itself remains the body-absent path.
-    kb_ids: list[str] | None = None
+    knowledge_propagation: KnowledgePropagationEnvelopeV2 = Field(
+        default_factory=new_omitted_knowledge_selection,
+    )
+
+
+class DeriveIdeationSpecRequest(DeriveSpecKnowledgeRequest):
+    """A fresh Spec requires an explicit delivery context."""
+
+    delivery_context: DeliveryContext
 
 
 class _KnowledgeMutationRequestBase(BaseModel):
@@ -366,7 +384,7 @@ class KnowledgeTechnicalReadResponse(BaseModel):
 
     contract_version: Literal[2] = KNOWLEDGE_PROPAGATION_CONTRACT_VERSION
     revision: int
-    selection_state: KnowledgeSelectionState | None
+    selection_state: KnowledgeSelectionState
     assignments: list[KnowledgeAssignmentTechnicalProjection] = Field(
         default_factory=list
     )

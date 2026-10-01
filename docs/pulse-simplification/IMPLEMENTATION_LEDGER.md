@@ -2,6 +2,190 @@
 
 ## Estado para retomada
 
+### 2026-10-01 — Milestone Knowledge nativo: qualificado para publicação
+
+Fechada a cadeia backfill/grandfather/dual-read/cópia física de Card, incluindo
+portas, persistência, seleção, criação/derivação REST e MCP, frontend e docs.
+Ideation e Refinement derivam pelo mesmo contrato governado, sem retirar Q&A,
+arquitetura, contexto de entrega ou autoridade. Card não possui coluna física
+de Knowledge; atribuições, snapshots, revisões e tombstones nativos permanecem.
+Base contendo a coluna retirada é recusada sem conversão nem alteração de bytes.
+
+Prova final: dist-knowledge-native7 / provenance-knowledge-native7.json,
+source/instalado/wheels byte-idênticos (Core852 .py/915 payloads;
+Community321 .py/407 payloads). Core153, consumidores34, persistência/schema/E2E51
+passaram nas campanhas descritas abaixo; leitura REST nativa adicional passou.
+Frontend49 passou; SPA79 arquivos, hash registrado abaixo. Ruff F/E9 e
+diff --check passaram. closure-knowledge-native7-final.json:exit0, findings
+vazios, oito budgets ZERO, documentação oficial conferida.
+
+Publicar o par em feature/v0.4.0. Próximo incremento: adoção arquitetural sem
+fallback de ausência e seus consumidores, conforme C1–C3 já acordados. Delivery,
+permissões/formato Guideline, recuperação e qualificação integral C4 ainda abertos;
+este milestone não declara encerramento do plano nem da auditoria global de testes.
+
+### 2026-10-01 — Continuação Knowledge: derivação direta unificada; qualificação em curso
+
+Qualificação final native7: knowledge-native-final1 **153 passaram/13.22s**;
+knowledge-native-consumers3 **34 passaram/19.39s**, incluindo metadata-only,
+limites fail-closed, cenário B7, HTTP e rotas. Ruff F/E9 e diff --check passaram.
+Sem mudança de produto após provenance-knowledge-native7.json. Falhas
+intermediárias de consumers1/2 decorreram de fixtures do formato removido e
+composição de teste incompleta; preservados gates, N/A, histórico nativo e
+proteção de leitura sem conteúdo. Closure native7 final em execução.
+
+Atualização posterior: coluna física Card.knowledge_bases e leitores residuais
+removidos; projeção pública efetiva preservada. Nova prova de schema acrescenta
+a coluna antiga a uma base descartável e confirma recusa antes de escrita.
+knowledge-native-storage1:51 passaram (schema, adapters, parent e E2E), com
+três warnings de colisões SQL intencionais. knowledge-native-rest-read2:1
+passou, provando list/detail/download reais após descarte de uma atribuição.
+derive4:18 passaram; e2e3:3 passaram. closure-knowledge-native6-final.json
+passou, findings vazios, oito budgets ZERO; READMEs renderizados oficialmente.
+
+Fixtures mistas de Resource Gate adaptadas: fontes locais com identidade própria,
+remoção de discriminadores de ativação e somente o caso de overflow da coluna
+extinta; demais limites e proibição de carregar conteúdo continuam. Prova B7
+mantém atribuições históricas nativas, tombstones e ausência de criação de N/A;
+retirada apenas expectativa de preservar JSON antigo. Suites exclusivas de
+grandfather/cópia física/dual-format foram aposentadas com justificativas no JSON.
+Leitura/download REST antes em fixture física foi substituída pela prova E2E
+nativa e pela suite de segurança de Content-Disposition.
+
+Após limpeza de campos mortos de update e comentários, wheels native7 instalados
+e comprovados por provenance-knowledge-native7.json (852/321 .py, 915/407
+payloads). Rodadas knowledge-native-final1 e knowledge-native-consumers3 em
+execução neste registro; não há publicação nem conclusão global ainda.
+
+Scripts adicionais aplicados uma vez: remove_card_physical_knowledge_storage,
+adapt_card_storage_tests, retire_knowledge_compatibility_tests,
+adapt_native_knowledge_gate_tests. As pendências de coluna e leitor físico
+citadas mais abaixo estão resolvidas por esta atualização.
+
+Este registro atualiza as pendências da entrada abaixo; ainda não é milestone
+publicado. Derivação direta de Ideation agora passa pelo mesmo preflight,
+seleção, CAS e recibo de Refinement, preservando delivery_context, autorização
+e limitações de domínio. Replay verifica o pai correspondente e recusa Spec
+que ganhou Refinement como pai imediato. REST/MCP/frontend usam o contrato
+único; retirados kb_ids e a resposta alternativa antiga de criação de Card.
+Removida a porta de cópia física de KB sem consumidor e atualizadas docs e
+catálogo pelo gerador oficial.
+
+Frontend: cinco arquivos/49 testes passaram; build e verify:frontend-dist
+passaram, 79 arquivos, SHA
+949b83cedbd95b61770916bb2726840431b23eaa642e14473dd4fea701cecfaa.
+Wheels dist-knowledge-native5 instalados; provenance-knowledge-native5.json
+comprovou byte a byte Core852 .py/915 payloads e Community321 .py/407 payloads.
+Nenhuma mudança de produto após essa prova até este registro.
+
+knowledge-native-derive2 encontrou fixture global importando a porta removida;
+adaptada a fixture. derive3:38 passaram/1 asserção obsoleta, corrigida para
+ausência do campo físico no record. e2e1 encontrou import de classificação
+legada já removida de Evidence; retirado da fixture. e2e2:12 passaram/2 falhas
+por IDs antigos nas fixtures; corrigidos os IDs, e2e3 em execução. Os 11 testes
+de rota incluídos em e2e2 passaram, incluindo derivação direta de Ideation.
+
+Pendências concretas do incremento: concluir E2E/qualificação, investigar e
+retirar coluna física Card.knowledge_bases e leitores residuais do resource
+gate (a projeção pública efetiva deve permanecer); adaptar suites mistas e
+registrar aposentadoria de testes exclusivos dos componentes removidos;
+closure oito budgets ZERO e publicação do par. Restante C1–C4 permanece aberto.
+
+Scripts adicionais já aplicados, não idempotentes: unify_ideation_knowledge_application,
+unify_ideation_knowledge_surfaces, unify_knowledge_frontend_api,
+update_native_knowledge_docs, remove_unused_knowledge_copy_port,
+adapt_native_knowledge_e2e. Não executar novamente.
+
+### 2026-10-01 — C1/C2 Knowledge em implementação, ainda sem milestone publicado
+
+Base publicada: Core3b42a30f / Community45c715bf. Retirados backfill,
+KnowledgeGrandfather*, classificação/importação de anexos antigos, dual-read,
+KnowledgeLegacyAttachment, discriminadores de ativação e enums de grandfather
+no domínio, porta, serviço, adapter, modelos SQL e triggers do schema novo.
+Escopo sem registro representa revisão0/seleção omitted; KB local nativa de Spec
+permanece, sem fence de ativação. Identidade ausente é rejeitada, nunca inventada.
+
+Retirados writers de cópia física Spec→Card, use case MCP/export/policy do tool,
+três tools/rotas de edição já desativadas, CardUpdate.knowledge_bases (extra=forbid),
+legacy_knowledge_write_guard e card_knowledge_snapshot. Fanout de Knowledge
+agora é sempre ignorado em favor das atribuições governadas; permissão atual
+card.copy_from_spec.knowledge e leitores nativos preservados. Frontend removeu
+classes de origem antigas e adaptou fixtures de seleção/estado obsoleto.
+
+Criação de Card REST/MCP passa pelo único fluxo governado. Omissão de seleção
+usa default legítimo de criação nova (omitted, chave UUID da operação), nunca
+herda todas as fontes; chave explícita continua permitindo replay entre pedidos.
+CardCreateResponse agora tem somente a projeção nativa. Catálogo MCP e manifest
+regenerados oficialmente. Ruff F/E9 e diff --check passaram nos dois repos.
+
+Reconstruídos/instalados wheels em dist-knowledge-native1. Prova byte-a-byte:
+provenance-knowledge-native1.json, Core852 .py/915 payloads e Community321 .py/
+407 payloads iguais a source, instalado e wheels. knowledge-native-app1: 35 testes passaram (application, MCP e catálogo).
+Frontend: 43 de 44 passaram; uma asserção ainda esperava rótulo de origem
+antiga. Corrigida para as duas origens nativas; rerun:10/10 passaram em4.39s.
+Total das quatro suites frontend:44 testes passaram.
+
+Depois dessas provas, unificados REST/MCP de derivação Refinement pelo fluxo
+nativo, retirado kb_ids do tool e request e removido knowledge_propagation_v2
+do serviço/main e seus callers nativos. DeriveSpecResponse agora é único.
+Sem envelope, a criação nova recebe seleção omitted e chave própria.
+Catálogo regenerado novamente; wheels dist-knowledge-native2 reconstruídos.
+Par instalado comprovado por provenance-knowledge-native2.json (mesmas
+contagens, byte-idêntico). knowledge-native-schema1:15 testes passaram.
+knowledge-native-app2:30 passaram e cinco falharam em fixtures do switch
+removido e aceitação antiga de kb_ids. Corrigidas as expectativas sem relaxar
+CAS/atomicidade; knowledge-native-app3:35 passaram. Ruff F/E9 e diff --check
+passaram novamente. Não há processos de teste pendentes.
+
+Provas adicionais: knowledge-native-domain1:72 testes passaram; porta, seleção,
+recibos e vocabulário fechado. knowledge-native-service1:41 passaram e um
+esperava estado inativo removido; substituído por prova de relink com seleção
+omitted e registro de revisão. knowledge-native-service2:42 passaram. CAS,
+replay, snapshots, tombstones e histórico nativo foram preservados nas suites.
+Disposições dos casos exclusivamente grandfather registradas no JSON.
+
+McpDeriveSpecUseCase para Refinement também usa o fluxo governado quando o
+chamador omite envelope. Derivação direta de Ideation continua pendente:
+main.IdeationService.derive_spec ainda copia KB físico, enquanto a porta já
+suporta KnowledgeParentType.IDEATION. Ao unificar, preservar delivery_context,
+limite de complexidade, autorização, seleção arquitetural e Q&A; não remover
+a funcionalidade. O replay de criação hoje confere refinement_id fixo e deve
+conferir o vínculo correspondente ao pai explícito.
+
+Coleta adapter/parent/REST/HTTP encontrou import de grandfather no primeiro;
+os demais coletaram41 casos. Adaptada a suite mista do adapter, retirados
+quatro testes exclusivos do importador, substituída ativação por scope nativo,
+preservadas provas de localização direta, drop após restart e recusa de JSON
+físico em Card. knowledge-native-adapter1:23 passaram/9 falharam. Corrigidas fixtures:
+DB dos testes de corrida agora é inicializado pelo lifecycle atual (antes não
+tinha fingerprint), KB local usa identidade própria, fonte não selecionada
+fica no pai e contaminação física de Spec é recusada sem apagar a linha nem
+o tombstone. knowledge-native-adapter2:32 passaram; warnings SQLAlchemy
+correspondem às colisões intencionais. Wheels native3 instalados e comprovados
+byte-a-byte por provenance-knowledge-native3.json; knowledge-native-app4:14
+passaram após a alteração do use case MCP. Nenhuma alteração de produto
+posterior à prova. knowledge-native-http1:24 passaram/4 falharam em expectativas do caminho v1
+ou validação adiada. Substituídas por provas de omitted no fluxo único/retry
+e rejeição antecipada de kb_ids/null. knowledge-native-http2:28 passaram.
+Ruff F/E9 e diff --check passaram. Não há teste/processo pendente.
+
+Pendências do mesmo incremento: concluir derivação direta e consumidores,
+Adaptar suites de domínio/porta/service/SQL (fixtures antigas ainda importam
+contratos removidos), registrar disposições dos testes exclusivamente antigos,
+qualificar instalação nova/reinício/recusa sem escrita, REST e frontend; revisar
+docs, build SPA, closure oito budgets ZERO e publicar par somente coerente.
+Não houve commit deste WIP nem declaração de conclusão de C1–C4.
+
+Scripts descartáveis já aplicados (não idempotentes): remove_knowledge_backfill_entrypoints,
+remove_knowledge_legacy_read, unify_knowledge_scope, unify_knowledge_storage,
+remove_physical_card_knowledge, update_native_knowledge_frontend,
+unify_card_knowledge_creation, unify_refinement_knowledge_creation,
+remove_knowledge_service_switch, adapt_knowledge_contract_tests,
+adapt_knowledge_service_tests, adapt_knowledge_adapter_tests,
+fix_native_knowledge_adapter_fixtures, adapt_knowledge_route_tests, em
+.validation-v040. O script unify_knowledge_scope
+teve execução parcial inicial e retomada excluindo o primeiro bloco já aplicado.
+
 ### 2026-10-01 — Milestone Evidence contextual: qualificado para publicação
 
 Publicado em feature/v0.4.0: **Core55c05bc6 / Community45c715bf**;

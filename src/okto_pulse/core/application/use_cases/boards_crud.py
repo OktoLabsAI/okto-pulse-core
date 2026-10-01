@@ -581,30 +581,16 @@ class CreateCardInBoardUseCase:
             uow=uow,
             board_id=command.board_id,
         )
-        if getattr(command.data, "knowledge_propagation", None) is not None:
-            from okto_pulse.core.application.use_cases.knowledge_propagation import (
-                CreateCardKnowledgeV2Command,
-                CreateCardKnowledgeV2UseCase,
-            )
-
-            mutation = await CreateCardKnowledgeV2UseCase().execute(
-                CreateCardKnowledgeV2Command(command.board_id, command.data),
-                actor=actor,
-                uow=uow,
-            )
-            return CreateCardInBoardResult(None, knowledge_mutation=mutation)
-
-        service = uow.services.cards
-        card = await service.create_card(
-            command.board_id,
-            actor.actor_id,
-            command.data,
-            query_scope=_query_scope_for_actor(actor, board_id=command.board_id),
+        from okto_pulse.core.application.use_cases.knowledge_propagation import (
+            CreateCardKnowledgeV2Command,
+            CreateCardKnowledgeV2UseCase,
         )
-        if not card:
-            raise EntityNotFoundError("board", command.board_id)
-        await commit(uow)
-        return CreateCardInBoardResult(await service.get_card(card.id))
+        mutation = await CreateCardKnowledgeV2UseCase().execute(
+            CreateCardKnowledgeV2Command(command.board_id, command.data),
+            actor=actor,
+            uow=uow,
+        )
+        return CreateCardInBoardResult(None, knowledge_mutation=mutation)
 
 
 # --- board columns (read) ---------------------------------------------------
