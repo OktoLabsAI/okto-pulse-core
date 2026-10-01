@@ -2,6 +2,37 @@
 
 ## Estado para retomada
 
+BASE T01 verificado por percurso contínuo até Spec Done, no mesmo agente,
+Spec e banco. Draft→Review→Approved, lint externo, validação cinco métricas,
+avaliação e início; task iniciada, relatório canônico com quatro obrigações,
+autorrevisão permitida e Done; Test Card iniciado, replay HTTP real assinado,
+evidência de cenário e relatório de teste; Spec Done. Leituras SQL preservam
+avaliações, autoria, IDs e payload de implementação. Existe só um Agent;
+Test Card não recebe validação fictícia. Community23694=0,1passed15.70s.
+
+T07 reforçado NO MESMO percurso: com implementação/task já aprovadas, tentativa
+de fechar Spec antes do teste recusa delivery_test_result_missing, preservando
+estado/revisões/registro. Após prova real e Test Card Done, fechamento passa.
+acceptance-single-agent-completion.json substitui a evidência parcial anterior.
+
+Limites explícitos: conteúdo Draft/contrato/Cards e recibo técnico externo de
+implementação são fixtures; não alegar geração desse recibo. Replay de teste usa
+CommunityHttpManifestExecutor contra endpoint ASGI do projeto de exemplo, issuer
+e verifier reais. Extração da API key em processo. Policy permite autorrevisão,
+skip cognitivo e impacto off; gates de delivery/validação continuam reais.
+
+Probes4..6 omitiram decision:decision e foram corretamente rejeitados;7 inclui
+todas as obrigações;8 fecha o fluxo;9 acrescenta recusa pré-teste e preservação.
+Nenhum código produtivo/gate/semântica alterado. Ruff F/E9 e diff verdes.
+Par fonte/site/wheels859/922+373/458: provenance-single-agent1 antes dos testes,
+provenance-single-agent-full1 depois (1fa6fa=0), byte-idênticos. Últimos gates
+relevantes: F16 31859=0,oito budgets ZERO; frontend46579=0,54passed. Sem impacto UI.
+
+Inventário120 verificados/39 parciais/87 não auditados. Permanecem pendências
+originais de complementos, T33/T46, benchmark T43 e distribuição final.
+KG-10/T23 aguardam decisões já solicitadas. Par publicado anterior:
+Core202ccd6e/Communityc8d5426e. Nenhum processo pendente ou dado real alterado.
+
 BASE T01 em andamento: percurso contínuo de UM agente real, preset válido,
 AgentBoard e autenticação MCP, reviewer_separation_mode=off. Draft→Review→Approved,
 preflight e registro de Requirement Lint, Spec Validation de cinco métricas,

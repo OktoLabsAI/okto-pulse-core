@@ -92,5 +92,6 @@
     "External evaluator result is supplied by this test (zero lint findings and positive scores); the test qualifies authenticated admission and durable evidence, not the correctness of external cognition.",
     "Probe1 passed before receipt assertions. Probe2 expected both lint and Spec Validation in the quality receipt table; source investigation confirmed canonical five-metric validation is stored append-only in Spec.validations, with receipt_id equal to current_validation_id. Final3 asserts both actual persistence contracts. This was an assertion correction, not a product defect or authority change.",
     "Only tests and documentation changed. No frontend impact; prior F16 session31859 with eight ZERO budgets and frontend46579 with54 passes remain relevant. Product pair byte equality freshly checked before behavior tests."
-  ]
+  ],
+  "superseded_by": "acceptance-single-agent-completion.json"
 }

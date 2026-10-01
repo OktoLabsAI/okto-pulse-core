@@ -26,10 +26,10 @@
       "line": 580,
       "id": "T01",
       "normative_text": "| T01 | Um agente com permissões necessárias e separação não exigida | Fluxo completo, avaliações e evidências preservadas. |",
-      "review_status": "partial",
+      "review_status": "verified_by_reviewed_execution",
       "test_text_references": [],
       "reviewed_execution": {
-        "artifact": "evidence-single-agent-admission.json",
+        "artifact": "acceptance-single-agent-completion.json",
         "criterion_key": "BASE:T01"
       }
     },
@@ -108,6 +108,10 @@
       "test_text_references": [],
       "reviewed_execution": {
         "artifact": "acceptance-planning-resume-boundaries.json",
+        "criterion_key": "BASE:T07"
+      },
+      "additional_reviewed_execution": {
+        "artifact": "acceptance-single-agent-completion.json",
         "criterion_key": "BASE:T07"
       }
     },

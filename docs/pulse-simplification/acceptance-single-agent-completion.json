@@ -1,0 +1,99 @@
+{
+  "format": "pulse-v1.3-reviewed-execution/v1",
+  "scope": "BASE:T01 continuous single-agent completion; BASE:T07 reinforcement",
+  "status": "verified",
+  "execution": {
+    "terminal_session": 23694,
+    "exit_code": 0,
+    "passed": 1,
+    "duration_seconds": 15.7,
+    "cases": [
+      "tests.test_single_agent_spec_execution::test_one_agent_preserves_assessments_and_evidence_through_spec_done"
+    ],
+    "xml": {
+      "file": "learning-reconciliation-single-agent9-community.xml",
+      "sha256": "269c08cd42bb42e31f504e465ec9c7b43212443b49d1fe23daf08656e48196d6"
+    },
+    "log": {
+      "file": "learning-reconciliation-single-agent9-community.log",
+      "sha256": "317286dfd7d9b70778178f7196cfbe1131a73b6a7376f8d4c29cf9af7fedf36e"
+    }
+  },
+  "provenance": {
+    "checked_at": "2026-10-01T01:52:11.902984+00:00",
+    "python": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Scripts\\python.exe",
+    "packages": {
+      "core": {
+        "python_files": 859,
+        "origin": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages\\okto_pulse\\core\\__init__.py",
+        "repository_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_core",
+        "commit": "202ccd6e7b0dad02cc845ac003c408316a98da8f",
+        "dirty": false,
+        "dirty_entry_count": 0,
+        "distribution": "okto-pulse-core",
+        "version": "0.3.4",
+        "wheel": {
+          "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\dist-learning-reconciliation-evaluation-authority-fix1\\okto_pulse_core-0.3.4-py3-none-any.whl",
+          "sha256": "97e5312876e55fb8bc2f5d305012516c8c2a196f0ef287a2230277c4f2fd6a09",
+          "size": 3792917
+        },
+        "source_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_core\\src",
+        "site_packages_root": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages",
+        "package_prefix": "okto_pulse/core/",
+        "byte_identical_member_count": 922,
+        "byte_identical": true,
+        "aggregate_sha256": "caf97540d6043b7ea5e156f9d4536b5aa4231b541d9ee2739bf3c0ef0519c482",
+        "chain_hashes": {
+          "source": "caf97540d6043b7ea5e156f9d4536b5aa4231b541d9ee2739bf3c0ef0519c482",
+          "wheel": "caf97540d6043b7ea5e156f9d4536b5aa4231b541d9ee2739bf3c0ef0519c482",
+          "site_packages": "caf97540d6043b7ea5e156f9d4536b5aa4231b541d9ee2739bf3c0ef0519c482"
+        },
+        "critical_resource_sha256": {
+          "okto_pulse/core/mcp/resources/ska_resource_manifest.json": "87fab2a5ded5f6ee273af8628555c21f7065d32379945784132bb6c300d05865",
+          "okto_pulse/core/mcp/resources/ska_tool_manifest.json": "0c3fa3da1549baec20872eca3f4a289288627e6b9f6b80be10472ac962fa72b9"
+        },
+        "mismatches": []
+      },
+      "community": {
+        "python_files": 373,
+        "origin": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages\\okto_pulse\\community\\__init__.py",
+        "repository_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_community",
+        "commit": "c8d5426e909eb837e30f8598ec8c81af7c045810",
+        "dirty": true,
+        "dirty_entry_count": 1,
+        "distribution": "okto-pulse",
+        "version": "0.3.4",
+        "wheel": {
+          "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\dist-learning-reconciliation-evaluation-authority-fix1\\okto_pulse-0.3.4-py3-none-any.whl",
+          "sha256": "5c23034b2f20cd592c1c7b7efb532eea32665882c45b79d39cdb2d50ee091657",
+          "size": 4535075
+        },
+        "source_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_community\\src",
+        "site_packages_root": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages",
+        "package_prefix": "okto_pulse/community/",
+        "byte_identical_member_count": 458,
+        "byte_identical": true,
+        "aggregate_sha256": "8b07ee010036e9c307e22c4a39d43fb3a36e12d78fa15be75168ebe2195cd850",
+        "chain_hashes": {
+          "source": "8b07ee010036e9c307e22c4a39d43fb3a36e12d78fa15be75168ebe2195cd850",
+          "wheel": "8b07ee010036e9c307e22c4a39d43fb3a36e12d78fa15be75168ebe2195cd850",
+          "site_packages": "8b07ee010036e9c307e22c4a39d43fb3a36e12d78fa15be75168ebe2195cd850"
+        },
+        "critical_resource_sha256": {},
+        "mismatches": []
+      }
+    }
+  },
+  "coverage": {
+    "BASE:T01": "One actual Agent/AgentBoard/preset/API key traverses Draft->Review->Approved, records Requirement Lint with its preflight fence, submits five-metric Spec Validation, submits qualitative evaluation and starts the Spec. Same actor starts the normal Card, records one canonical implementation report, self-reviews under reviewer_separation_mode=off and reaches Done. It starts the Test Card, executes a real HTTP GET/assertion replay through the MCP evidence issuer, submits the signed evidence to the scenario writer, records the test report with explicit implementation IDs, closes Test Card and then Spec. Fresh SQL confirms original Spec review ledgers/current pointer, task review and report attribution, exact implementation payload, test evidence, two Card ledger identities and a single Agent row. Test Card has no fabricated validation.",
+    "BASE:T07": "After implementation and task review actually pass, before test execution, the very same Spec Done call fails with delivery_test_result_missing. Spec remains In Progress with identical reviews, and the only Card ledger record remains the implementation. Actual test completion subsequently permits Done."
+  },
+  "limits": [
+    "Initial Draft Spec content, direct context, execution contract and linked normal/Test Cards are fixture input. Their public authoring is outside this lifecycle scenario.",
+    "An accepted external implementation execution receipt and its technical investigation are seeded after task start. This does not prove generation of technical code-investigation receipts; actual Card contribution admission, report selection, review and final rollup consume that fixture through real services.",
+    "Test evidence is actually issued after CommunityHttpManifestExecutor observes an ASGI GET endpoint of the external procedure project fixture. No executor observation or signature verifier is mocked. This is not a production workload benchmark or socket/network transport test.",
+    "MCP credential extraction is injected; authentication, persisted grants, host schema, UOWs, writers and gates are real. External cognitive judgments are test input. Board policy explicitly disables independent review, cognitive consolidation and impact requirements for this permitted scenario; delivery/Spec Validation/task validation remain enforced. No policy is relaxed in product code.",
+    "Probes4-6 correctly rejected task completion because the report omitted decision:decision. Probe7 declares all four allocated obligations and passes task completion;8 passes the complete flow;9 additionally proves the missing-test refusal and exact evidence preservation. No semantic/product change was made.",
+    "Only tests/docs changed. Source/site/wheels remain byte-identical to evaluation-authority-fix1; preflight-single-agent1 preceded behavior runs and full1 confirms unchanged payload after them. Prior F16 session31859 with eight ZERO budgets and frontend46579 with54 passes remain the latest relevant executions. No UI impact."
+  ]
+}
