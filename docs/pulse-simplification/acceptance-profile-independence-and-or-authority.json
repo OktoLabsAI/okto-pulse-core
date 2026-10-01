@@ -1,0 +1,79 @@
+{
+  "format": "pulse-v1.3-reviewed-execution/v1",
+  "criteria": {
+    "ARQVER:AC-VER-12": {
+      "status": "verified_by_reviewed_execution",
+      "covered": "A latency TR and alert OR are authored through the real REST structured writer to inherit only the functional HTTP-200 criterion. Public qualification retains the inherited functional paths and exact missing technical/operational profile blockers. The real execution-contract predicate refuses. Actual start from an approved validated fixture refuses spec_execution_plan_incomplete without writes. A real submitted content evaluation rejects the HTTP-only plan for not observing latency or alert conditions, and the subsequent start remains rejected with the evaluation retained."
+    },
+    "ARQVER:AC-VER-17": {
+      "status": "verified_by_reviewed_execution",
+      "covered": "An actual persisted/authenticated MCP executor with OR edit authority attempts mode=none, null qualification, not_applicable status and verifiable=false against an active OR in an in_progress Spec. Every attempt is refused by subject_edit_requires_draft. The actor lacks the explicit in_progress_to_draft permission and cannot reopen. Fresh SQL snapshots preserve requirements, criteria, scenarios, version, edition, evaluations, history and outbox counts. The public OR diagnostic is byte-equivalent as a data structure before/after and retains its operational qualification; no passing evidence is fabricated."
+    }
+  },
+  "executions": [
+    {
+      "terminal_session": 42788,
+      "exit_code": 0,
+      "passed": 16,
+      "seconds": 46.03,
+      "cases": [
+        "tests.test_verification_start_transition::test_read_only_user_cannot_dispense_active_ir_or_replace_its_cause[not_applicable]",
+        "tests.test_verification_start_transition::test_read_only_user_cannot_dispense_active_ir_or_replace_its_cause[revoked]",
+        "tests.test_verification_start_transition::test_cancelled_sole_ir_implementer_stays_pending_until_authorized_reallocation",
+        "tests.test_verification_start_transition::test_real_start_requires_four_profile_plan_and_valid_inheritance[missing_profile]",
+        "tests.test_verification_start_transition::test_real_start_requires_four_profile_plan_and_valid_inheritance[missing_operational_work]",
+        "tests.test_verification_start_transition::test_real_start_requires_four_profile_plan_and_valid_inheritance[cycle]",
+        "tests.test_verification_start_transition::test_real_start_requires_four_profile_plan_and_valid_inheritance[missing_terminal]",
+        "tests.test_verification_start_transition::test_real_start_requires_four_profile_plan_and_valid_inheritance[orphan_criterion]",
+        "tests.test_verification_start_transition::test_latency_and_alert_cannot_inherit_only_functional_http_success",
+        "tests.test_verification_start_transition::test_semantic_review_is_distinct_from_structural_readiness[review_rejects-vague_condition]",
+        "tests.test_verification_start_transition::test_semantic_review_is_distinct_from_structural_readiness[review_rejects-unrelated_criterion]",
+        "tests.test_verification_start_transition::test_semantic_review_is_distinct_from_structural_readiness[review_rejects-insufficient_inheritance]",
+        "tests.test_verification_start_transition::test_semantic_review_is_distinct_from_structural_readiness[condition_corrected-vague_condition]",
+        "tests.test_verification_start_transition::test_semantic_review_is_distinct_from_structural_readiness[condition_corrected-unrelated_criterion]",
+        "tests.test_verification_start_transition::test_semantic_review_is_distinct_from_structural_readiness[condition_corrected-insufficient_inheritance]",
+        "tests.test_verification_start_transition::test_existing_functional_and_new_technical_criteria_share_authoring_and_history"
+      ],
+      "artifacts": [
+        {
+          "file": "learning-reconciliation-independent-profiles4-community.xml",
+          "sha256": "6475c30ae47ec847ca05087656ae41f22d57ac70b7b11509f1a44029f54638fd"
+        },
+        {
+          "file": "learning-reconciliation-independent-profiles4-community.log",
+          "sha256": "e23df809d00f6d8e74be748a6fc2a45f9ad2fe460fbbfce952485b79bebb2e0b"
+        }
+      ]
+    },
+    {
+      "terminal_session": 86146,
+      "exit_code": 0,
+      "passed": 1,
+      "seconds": 11.72,
+      "cases": [
+        "tests.test_operational_requirement_authority::test_executor_cannot_drop_or_qualification_or_reopen_without_authority"
+      ],
+      "artifacts": [
+        {
+          "file": "learning-reconciliation-or-authority1-community.xml",
+          "sha256": "aa3d8f7a0d5b873c7a1043c1828d08ebd91595b9d5736f2e88d2edc610042480"
+        },
+        {
+          "file": "learning-reconciliation-or-authority1-community.log",
+          "sha256": "e57231c1774ac267c6ff95bc54cf4e98397dc78c2c748d8ea5438a0cf37f53ba"
+        }
+      ]
+    }
+  ],
+  "source_hashes": {
+    "tests/test_verification_start_transition.py": "39690a6226819cd19f7990bf427c403fe71eb89e81b8e3e05cbeccaf4dd6dedf",
+    "tests/test_operational_requirement_authority.py": "bd7de5f927269e10f0b5050cb026a1c01e4730521a1969362db32ec4868de0e3"
+  },
+  "limits": [
+    "Two new criteria-specific tests and fifteen regressions. No productive code, policy, authority or UI changed. Source/site/wheels byte equality was checked before all behavior tests by provenance-independent-profiles1.json: Core859/922 and Community373/458.",
+    "AC-VER-12 is a planning/review test, not an HTTP run or latency measurement. Initial requirements, missing independent criteria and validated/approved state are fixtures. REST identity extraction is supplied as owner; structured writes, qualification, evaluation, SQL, and start gates are real. The semantic rejection is explicitly supplied by the reviewer, never inferred by a backend LLM.",
+    "AC-VER-17 uses actual Agent, AgentBoard, valid preset, grant resolution, MCP host/authenticator and UOW. Credential extraction is injected. Active lifecycle state is seeded; this test does not claim a full execution/Done path. The edit grant does not bypass the Draft boundary and missing reopen authority is independently checked.",
+    "Probe58949 failed on a generic fixture description field not admitted by the TR authoring schema. Probe79715 expected HTTP409 but the existing plan refusal is HTTP400. Probe18065 assumed every fixture approval has an id; the final test searches optional ids while preserving the legacy approval. Only fixture/assertions changed, and the final full file passed16.",
+    "After authority execution only an unused json import was removed; Ruff F/E9 and diff checks passed. Prior F16 session90981 retains eight ZERO budgets; prior frontend39859 passed8. No frontend feature changed."
+  ]
+}

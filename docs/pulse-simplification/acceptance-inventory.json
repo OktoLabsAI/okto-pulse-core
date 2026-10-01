@@ -2821,10 +2821,10 @@
       "line": 432,
       "id": "AC-VER-12",
       "normative_text": "**AC-VER-12 — verifica RF-VER-12.** **Dado** TR exige latência; OR exige alerta; ambos tentam herdar apenas o teste funcional HTTP 200. **Quando** O plano é revisto para execução. **Então** Perfis/condições sem verificação adequada continuam pendentes; não se concedem provas técnica e operacional por transitividade genérica.",
-      "review_status": "partial",
+      "review_status": "verified_by_reviewed_execution",
       "test_text_references": [],
       "reviewed_execution": {
-        "artifact": "acceptance-verification-execution.json",
+        "artifact": "acceptance-profile-independence-and-or-authority.json",
         "criterion_key": "ARQVER:AC-VER-12"
       }
     },
@@ -2886,10 +2886,10 @@
       "line": 462,
       "id": "AC-VER-17",
       "normative_text": "**AC-VER-17 — verifica RF-VER-17.** **Dado** Um executor tenta reclassificar OR ativo como não verificável para fechar seu trabalho. **Quando** A mutação é submetida. **Então** O sistema rejeita o bypass ou exige revisão/autoridade explícitas; o diagnóstico continua verdadeiro e nenhuma obrigação desaparece por falta de metadado.",
-      "review_status": "partial",
+      "review_status": "verified_by_reviewed_execution",
       "test_text_references": [],
       "reviewed_execution": {
-        "artifact": "acceptance-verification-execution.json",
+        "artifact": "acceptance-profile-independence-and-or-authority.json",
         "criterion_key": "ARQVER:AC-VER-17"
       }
     },

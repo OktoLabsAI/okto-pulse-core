@@ -2,6 +2,27 @@
 
 ## Estado para retomada
 
+ARQVER AC-VER-12/17 verificados. TR de latência e OR de alerta recebem
+herança funcional HTTP200 pelo writer REST; diagnóstico mantém pendências
+technical/operational. Gate de plano e start recusam, mesmo com aprovação de
+fixture. Avaliação semântica real rejeita o conteúdo inadequado e é preservada.
+Executor MCP autenticado com grant de editar OR não dispensa o OR ativo por
+mode=none/null/not_applicable/verifiable=false em Spec in_progress; lock exige
+Draft e reabertura sem grant recusa. Diagnóstico/SQL/histórico/outbox inalterados.
+
+Community42788=0,16passed46.03s;86146=0,1passed11.72s. Dois testes novos e quinze
+regressões. Ruff F/E9 e diff verdes. acceptance-profile-independence-and-or-authority.json
+mantém limites de estado inicial/credencial/revisor externo; HTTP200 é plano,
+não execução ou medição de latência. Probes58949/79715/18065 corrigiram fixture
+TR e asserts de HTTP/ID legado; nenhum código produtivo ou gate foi alterado.
+Provenance-independent-profiles1 confirmou859/922+373/458 byte-idênticos antes
+dos testes. F16 anterior90981=0,oito budgets ZERO;frontend anterior39859=0,8passed.
+
+Inventário141 verificados/30 parciais/75 não auditados. Par publicado anterior:
+Core54309e69/Communityd2ba5dc6. Continuar critérios restantes do plano, benchmark
+e distribuição final. KG-10/T23 aguardam decisões já solicitadas. Nenhum processo
+pendente ou dado real alterado; objetivo integral continua ativo.
+
 DEI-T01/02 verificados. Fluxo contínuo de um agente agora grava progresso
 durável antes da implementação; SQL novo confirma autoria, status in_progress
 e ausência de crédito de implementação/teste nesse checkpoint. Depois registra

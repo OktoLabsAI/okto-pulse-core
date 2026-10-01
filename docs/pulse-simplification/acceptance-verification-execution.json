@@ -812,7 +812,8 @@
             }
           ]
         }
-      ]
+      ],
+      "followup_evidence": "acceptance-profile-independence-and-or-authority.json"
     },
     "ARQVER:AC-VER-13": {
       "status": "partial",
@@ -1230,7 +1231,8 @@
             }
           ]
         }
-      ]
+      ],
+      "followup_evidence": "acceptance-profile-independence-and-or-authority.json"
     },
     "ARQVER:AC-VER-18": {
       "status": "partial",
