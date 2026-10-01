@@ -7,7 +7,8 @@ from okto_pulse.core.kg.interfaces.graph_transaction import (
 )
 from okto_pulse.core.ports.card_projection import (
     CARD_PARENT_RULE, CARD_SCENARIO_RULES, is_spec_source_reference,
-    CARD_CHILD_NAMESPACES, card_child_family,
+    CARD_CHILD_NAMESPACES,
+    BUG_ORIGIN_PROXY_NAMESPACES, CARD_EDGE_NAMESPACES, card_edge_family,
     CARD_DEPENDENCY_NAMESPACE, is_card_dependency_writer, owns_card_dependency_endpoints,
 )
 
@@ -39,16 +40,21 @@ def card_removal_intents(*, intents, nodes, edges, resolve_endpoint):
     if not nodes and all(not intent.active_refs and not intent.active_edges for intent in selected):
         # Existing cancelled/archived cleanup is already a complete empty set.
         return ()
-    if {intent.namespace for intent in selected} != ({'card_parent', 'card_scenarios'} | CARD_CHILD_NAMESPACES):
+    namespaces = {intent.namespace for intent in selected}
+    expected_namespaces = {'card_parent', 'card_scenarios'} | CARD_CHILD_NAMESPACES
+    if namespaces & BUG_ORIGIN_PROXY_NAMESPACES:
+        expected_namespaces |= BUG_ORIGIN_PROXY_NAMESPACES
+    if namespaces != expected_namespaces:
         raise ValueError('card_removal_source_incomplete')
     plans, missing = [], False
     for intent in selected:
         if intent.active_refs:
             raise ValueError('card_removal_source_invalid')
-        rules = ({card_child_family(intent.namespace).rule} if intent.namespace in CARD_CHILD_NAMESPACES
-                 else {CARD_PARENT_RULE} if intent.namespace == 'card_parent' else CARD_SCENARIO_RULES)
+        family = card_edge_family(intent.namespace) if intent.namespace in CARD_EDGE_NAMESPACES else None
+        rules = {CARD_PARENT_RULE} if intent.namespace == 'card_parent' else CARD_SCENARIO_RULES
         declared = {edge.candidate_id for edge in intent.active_edges}
-        emitted = {key for key, edge in edges.items() if edge.rule_id in rules}
+        emitted = {key for key, edge in edges.items() if (family.owns_writer(rule_id=edge.rule_id,
+            layer='deterministic', created_by='worker_layer1') if family else edge.rule_id in rules)}
         if len(declared) != len(intent.active_edges) or declared != emitted:
             raise ValueError('card_removal_edge_set_mismatch')
         expected = []

@@ -2,6 +2,40 @@
 
 ## Estado para retomada
 
+G5 concluído: KG-09/22 verificados. Proxy violates limitado aos vínculos explícitos
+do Card de origem nas seis coleções de requisitos/constraints/critérios. Confiança
+0.8, fallback_reason=inferred_origin_proxy:card:<origem> e regra por família/origem
+preservam identificação de inferência. Não é causa confirmada nem prova de entrega.
+Mudanças invalidam os Bugs consumidores por consulta relacional delimitada ao Board.
+Active sets, remoção e compensação reutilizam o mecanismo existente; sem DDL novo.
+
+Core58514=0:70passed;Community31504=0:44passed;integrado52291=0:1passed;
+frontend86521=0:31passed. Total146 distintos. O integrado usa dois Bugs×seis famílias,
+event handler/SQL/fila normais, retry, replay, remoção e restauração. Core cobre troca
+de origem com mesmos endpoints, ausência opcional e indisponibilidade da fonte.
+Ruff F/E9 e diff verdes. Evidência: acceptance-bug-origin-proxy.json.
+
+Reprodução33979=1 confirmou ausência do proxy. Probe83330=1 encontrou teto interno16
+para17 namespaces; limite agora deriva do registry fechado+parent/scenarios/dependencies,
+sem ampliar lote público/permissões. Probe87325=1 exigia progresso em todo batch;
+SQL demonstrou defer correto até projeção do filho da Spec. Fixture final aguarda
+retry normal com deadline, sem modificar prioridade/timestamps/policy. Probe91484=1
+ajustou só expectativa antiga dos namespaces de cleanup. Nenhum teste foi relaxado
+para aceitar fonte incompleta como vazia ou relação fora do dono.
+
+Par dist-learning-reconciliation-bug-origin-proxy-qualified instalado90808=0;
+provenance-bug-origin-proxy-final.json confirma862py/925payload+375py/460payload
+byte-idênticos após install terminal. F16 final6135=0:ok=true,findings e documentação
+vazios,oito budgets ZERO. READMEs regenerados pelo renderer oficial. Par final só
+muda README em relação ao fix4 comportamental; adapter nativo é o mesmo do fix1.
+
+Inventário148 verificados/29 parciais/69 não auditados. Continuar critérios originais,
+benchmark e distribuição final. A API genérica/canvas ainda não transporta/rotula
+esta proveniência; registrar essa limitação nos critérios de leitura/UI restantes,
+especialmente KG-59, sem alegar causa confirmada na apresentação. KG-10/T23 seguem
+decisões já solicitadas. Par publicado anterior: Corea4fb928b/Community5c09f43d.
+Nenhum processo de validação pendente ou dado real alterado.
+
 G3 concluído: KG-07/08 verificados. Reprodução60943 terminou1 (um caso de domínio
 passou; um caso de projeção falhou). CardService persistiu todos os nove pares
 normal/test/bug; a projeção de normal→normal não emitiu nenhum precedes. O caminho

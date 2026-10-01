@@ -1079,8 +1079,12 @@
       "line": 620,
       "id": "KG-09",
       "normative_text": "| KG-09 | Bug ligado a origem que toca só parte da Spec | `violates` restrito ao proxy definido, 0.8 e identificação de inferência. |",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "verified_by_reviewed_execution",
+      "test_text_references": [],
+      "reviewed_execution": {
+        "artifact": "acceptance-bug-origin-proxy.json",
+        "criterion_key": "KG:KG-09"
+      }
     },
     {
       "key": "KG:KG-10",
@@ -1234,8 +1238,12 @@
       "line": 633,
       "id": "KG-22",
       "normative_text": "| KG-22 | Alterar vínculos do card de origem de um bug | Proxies de todos os bugs afetados são recalculados sem sweep do board inteiro. |",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "verified_by_reviewed_execution",
+      "test_text_references": [],
+      "reviewed_execution": {
+        "artifact": "acceptance-bug-origin-proxy.json",
+        "criterion_key": "KG:KG-22"
+      }
     },
     {
       "key": "KG:KG-23",

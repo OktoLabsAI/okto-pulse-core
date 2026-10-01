@@ -15,6 +15,14 @@ class CardChildFamily:
     target_type: str
 
     @property
+    def edge_type(self):
+        return 'supports'
+
+    @property
+    def source_types(self):
+        return ('Entity', 'Bug')
+
+    @property
     def namespace(self):
         return 'card_child_' + self.section
 
@@ -46,6 +54,57 @@ CARD_CHILD_NAMESPACES = frozenset(family.namespace for family in CARD_CHILD_FAMI
 CARD_PROJECTION_FIELDS = frozenset(family.field for family in CARD_CHILD_FAMILIES) | {'test_scenarios'}
 
 
+class BugOriginProxyFamily(CardChildFamily):
+    @property
+    def namespace(self):
+        return 'bug_origin_proxy_' + self.section
+
+    @property
+    def edge_type(self):
+        return 'violates'
+
+    @property
+    def source_types(self):
+        return ('Bug',)
+
+    @property
+    def rule_prefix(self):
+        return 'violates/' + self.namespace + '/'
+
+    def origin_rule(self, origin_id):
+        if (type(origin_id) is not str or not origin_id or origin_id.strip() != origin_id
+                or any(character in origin_id for character in '/@:')):
+            raise ValueError('bug_origin_proxy_identity_invalid')
+        return self.rule_prefix + origin_id + '@v2.1'
+
+    def owns_writer(self, *, rule_id, layer, created_by):
+        if (type(rule_id) is not str or not rule_id.startswith(self.rule_prefix)
+                or not rule_id.endswith('@v2.1')):
+            return False
+        try:
+            return (self.origin_rule(rule_id[len(self.rule_prefix):-len('@v2.1')]) == rule_id
+                and layer == 'deterministic' and created_by == 'worker_layer1')
+        except ValueError:
+            return False
+
+    def owns_endpoints(self, *, owner_id, source_type, target_type, source_ref, target_ref):
+        return source_type == 'Bug' and super().owns_endpoints(owner_id=owner_id,
+            source_type=source_type, target_type=target_type, source_ref=source_ref, target_ref=target_ref)
+
+
+BUG_ORIGIN_PROXY_FAMILIES = tuple(BugOriginProxyFamily(f.field, f.section, f.target_type)
+    for f in CARD_CHILD_FAMILIES if f.target_type in {'Requirement', 'Constraint', 'Criterion'})
+BUG_ORIGIN_PROXY_NAMESPACES = frozenset(f.namespace for f in BUG_ORIGIN_PROXY_FAMILIES)
+CARD_EDGE_NAMESPACES = CARD_CHILD_NAMESPACES | BUG_ORIGIN_PROXY_NAMESPACES
+
+
+def card_edge_family(namespace):
+    for family in (*CARD_CHILD_FAMILIES, *BUG_ORIGIN_PROXY_FAMILIES):
+        if family.namespace == namespace:
+            return family
+    raise ValueError('card_edge_namespace_invalid')
+
+
 def card_child_family(namespace):
     for family in CARD_CHILD_FAMILIES:
         if family.namespace == namespace:
@@ -68,6 +127,9 @@ def is_card_projection_writer(*, edge_type, source_type, target_type, rule_id, l
         return is_card_parent_writer(rule_id=rule_id, layer=layer, created_by=created_by)
     if edge_type == 'supports' and target_type == 'TestScenario':
         return is_card_scenario_writer(rule_id=rule_id, layer=layer, created_by=created_by)
+    if edge_type == 'violates' and source_type == 'Bug':
+        return any(f.target_type == target_type and f.owns_writer(rule_id=rule_id,
+            layer=layer, created_by=created_by) for f in BUG_ORIGIN_PROXY_FAMILIES)
     return is_card_child_writer(edge_type=edge_type, source_type=source_type, target_type=target_type,
         rule_id=rule_id, layer=layer, created_by=created_by)
 

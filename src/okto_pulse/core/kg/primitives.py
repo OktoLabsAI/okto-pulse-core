@@ -611,7 +611,7 @@ async def begin_consolidation(
         )
     from okto_pulse.core.ports.spec_projection import SPEC_RELATIONSHIP_NAMESPACES
     from okto_pulse.core.ports.card_projection import (
-        CARD_CHILD_NAMESPACES, card_child_family, CARD_DEPENDENCY_NAMESPACE,
+        CARD_EDGE_NAMESPACES, card_edge_family, CARD_DEPENDENCY_NAMESPACE,
         is_card_dependency_writer, owns_card_dependency_endpoints,
     )
     for projection_intent in projection_intents:
@@ -626,7 +626,7 @@ async def begin_consolidation(
             ("card", "card", "card_scenarios"),
             ("card", "card", "card_parent"),
             ('card', 'card', CARD_DEPENDENCY_NAMESPACE),
-            *(("card", "card", name) for name in CARD_CHILD_NAMESPACES),
+            *(("card", "card", name) for name in CARD_EDGE_NAMESPACES),
             *(("spec", "spec", name) for name in SPEC_RELATIONSHIP_NAMESPACES),
         }
         if (
@@ -692,8 +692,8 @@ async def begin_consolidation(
                             target_type=_enum_value(target.node_type), source_ref=source[1], target_ref=target.source_artifact_ref)):
                     raise KGPrimitiveError('relational_projection_edge_identity_mismatch',
                         'Card dependency is outside its exact owner.', session_id=session_id)
-        if namespace in CARD_CHILD_NAMESPACES:
-            family = card_child_family(namespace)
+        if namespace in CARD_EDGE_NAMESPACES:
+            family = card_edge_family(namespace)
             roots = [candidate for candidate in deterministic_candidates.values()
                      if _enum_value(candidate.node_type) in {'Entity', 'Bug'}
                      and candidate.source_artifact_ref == f'card:{owner_id}']
@@ -705,8 +705,8 @@ async def begin_consolidation(
             for edge_ref in active_edges:
                 source = deterministic_candidates.get(edge_ref.from_candidate_id)
                 target = _parse_source_ref_endpoint(edge_ref.to_candidate_id)
-                if (source is not roots[0] or edge_ref.edge_type != 'supports'
-                        or edge_ref.rule_id != family.rule or target is None
+                if (source is not roots[0] or edge_ref.edge_type != family.edge_type
+                        or not family.owns_writer(rule_id=edge_ref.rule_id, layer='deterministic', created_by='worker_layer1') or target is None
                         or not family.owns_endpoints(owner_id=owner_id, source_type=_enum_value(source.node_type),
                             target_type=target[0], source_ref=source.source_artifact_ref, target_ref=target[1])):
                     raise KGPrimitiveError('relational_projection_edge_identity_mismatch',
@@ -1769,7 +1769,11 @@ def _validate_graph_connectivity_before_commit(
 
 def _validate_projection_intent_collection(intents, *, session_id):
     """Internal replacement intents have one unambiguous owner per namespace."""
-    if type(intents) is not tuple or len(intents) > 16:
+    from okto_pulse.core.ports.card_projection import CARD_EDGE_NAMESPACES
+    # The closed Card registry also includes parent, scenarios and dependencies.
+    # This is an internal source declaration, not a wider public mutation batch.
+    maximum = max(16, len(CARD_EDGE_NAMESPACES) + 3)
+    if type(intents) is not tuple or len(intents) > maximum:
         raise KGPrimitiveError(
             "relational_projection_active_set_invalid",
             "Projection active sets require a bounded tuple.", session_id=session_id,
@@ -4282,7 +4286,7 @@ def _do_graph_commit(
                 str(getattr(ref, "candidate_id", "")) for ref in active_edge_refs
             }
             from okto_pulse.core.ports.spec_projection import SPEC_RELATIONSHIP_NAMESPACES, spec_relationship_family
-            from okto_pulse.core.ports.card_projection import CARD_CHILD_NAMESPACES, card_child_family
+            from okto_pulse.core.ports.card_projection import CARD_EDGE_NAMESPACES, card_edge_family
             from okto_pulse.core.ports.card_projection import CARD_DEPENDENCY_NAMESPACE, is_card_dependency_writer
             namespace = getattr(projection_intent, 'namespace', '')
             family = spec_relationship_family(namespace) if namespace in SPEC_RELATIONSHIP_NAMESPACES else None
@@ -4292,8 +4296,8 @@ def _do_graph_commit(
                     if namespace == 'card_scenarios' else
                     is_card_dependency_writer(rule_id=candidate.rule_id, layer='deterministic', created_by='worker_layer1')
                     if namespace == CARD_DEPENDENCY_NAMESPACE else
-                    candidate.rule_id == card_child_family(namespace).rule
-                    if namespace in CARD_CHILD_NAMESPACES else
+                    card_edge_family(namespace).owns_writer(rule_id=candidate.rule_id, layer='deterministic', created_by='worker_layer1')
+                    if namespace in CARD_EDGE_NAMESPACES else
                     str(candidate.rule_id or '').startswith('belongs_to/card_to_spec@')
                     if namespace == 'card_parent' else
                     family.matches_rule_family(str(candidate.rule_id or '')) if family is not None

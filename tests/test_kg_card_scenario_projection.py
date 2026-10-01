@@ -60,9 +60,10 @@ async def test_retired_card_plans_empty_owned_set_without_reviving_root(card_typ
     assert source is card
     assert result.nodes == []
     assert result.edges == []
-    from okto_pulse.core.ports.card_projection import CARD_CHILD_NAMESPACES
+    from okto_pulse.core.ports.card_projection import CARD_CHILD_NAMESPACES, BUG_ORIGIN_PROXY_NAMESPACES
     assert {intent.namespace for intent in result.relational_projection_active_set_intents} == (
-        {'card_scenarios', 'card_dependencies'} | CARD_CHILD_NAMESPACES)
+            {'card_scenarios', 'card_dependencies'} | CARD_CHILD_NAMESPACES
+            | BUG_ORIGIN_PROXY_NAMESPACES)
     assert all(intent.active_edges == () and intent.active_refs == ()
                for intent in result.relational_projection_active_set_intents)
     intent = next(item for item in result.relational_projection_active_set_intents if item.namespace == 'card_scenarios')

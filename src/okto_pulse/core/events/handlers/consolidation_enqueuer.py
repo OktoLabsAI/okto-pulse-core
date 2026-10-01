@@ -192,6 +192,17 @@ class ConsolidationEnqueuer:
             scoped_ids = {card.id for card in scoped}
             targets = [target for target in targets
                        if target[0] != 'card' or target[1] not in explicit_ids or target[1] in scoped_ids]
+        origin_ids = tuple(dict.fromkeys(identity for kind, identity in targets if kind == 'card'))
+        if origin_ids:
+            from okto_pulse.core.ports.application_persistence import (
+                ApplicationFilter, ApplicationQuery, get_application_persistence_port,
+            )
+            bugs = await get_application_persistence_port().list(session, ApplicationQuery(
+                entity='card', filters=(ApplicationFilter('board_id', 'eq', event.board_id),
+                    ApplicationFilter('card_type', 'eq', 'bug'), ApplicationFilter('origin_task_id', 'in', origin_ids))))
+            for bug in bugs:
+                if ('card', bug.id) not in targets:
+                    targets.append(('card', bug.id))
         if not targets:
             # Defensive: unknown event_type or missing payload field.
             return

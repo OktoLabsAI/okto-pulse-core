@@ -151,6 +151,9 @@ async def test_prerequisite_change_enqueues_only_scoped_direct_consumers(monkeyp
     async def read(context, query):
         queries.append(query)
         fields = {item.field: item.value for item in query.filters}
+        if 'origin_task_id' in fields:
+            assert fields['board_id'] == 'board' and fields['card_type'] == 'bug'
+            return ()
         if query.entity == 'card_dependency':
             assert fields == {'depends_on_id': 'changed'}
             return (SimpleNamespace(card_id='consumer'), SimpleNamespace(card_id='foreign'))
@@ -164,4 +167,4 @@ async def test_prerequisite_change_enqueues_only_scoped_direct_consumers(monkeyp
         prerequisite_card_id='previous', dependency_id='removed', operation='removed'), None)
     assert [(call.args[1], call.args[2]) for call in handler._enqueue_one.await_args_list] == [
         ('card', 'previous'), ('card', 'changed'), ('card', 'consumer')]
-    assert len(queries) == 2
+    assert len(queries) == 3

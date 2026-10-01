@@ -29,6 +29,10 @@ async def test_spec_change_invalidates_card_side_consumers_and_old_links_with_bo
         assert query.entity == 'card'
         filters = {(f.field, f.operator): f.value for f in query.filters}
         assert filters[('board_id', 'eq')] == 'board'
+        if ('origin_task_id', 'in') in filters:
+            assert set(filters[('origin_task_id', 'in')]) == {'old', 'new', 'card-side-only'}
+            assert filters[('card_type', 'eq')] == 'bug'
+            return (SimpleNamespace(id='bug-of-old'), SimpleNamespace(id='bug-of-new'))
         if ('spec_id', 'eq') in filters:
             assert filters[('spec_id', 'eq')] == 'spec'
             return (SimpleNamespace(id='card-side-only'), SimpleNamespace(id='new'))
@@ -42,8 +46,9 @@ async def test_spec_change_invalidates_card_side_consumers_and_old_links_with_bo
         changed_fields=[field], projection_card_ids=['old', 'new', 'foreign', 'old'])
     await handler.handle(event, None)
     targets = [(call.args[1], call.args[2]) for call in handler._enqueue_one.await_args_list]
-    assert targets == [('spec', 'spec'), ('card', 'old'), ('card', 'new'), ('card', 'card-side-only')]
-    assert len(queries) == 2
+    assert targets == [('spec', 'spec'), ('card', 'old'), ('card', 'new'), ('card', 'card-side-only'),
+                       ('card', 'bug-of-old'), ('card', 'bug-of-new')]
+    assert len(queries) == 3
 
 
 @pytest.mark.parametrize('old,new', [('old', 'new'), ('old', None), (None, 'new'), ('same', 'same')])
