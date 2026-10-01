@@ -2,6 +2,68 @@
 
 ## Estado para retomada
 
+### 2026-10-01 — linhagem pública qualificada (KG§6.4/§9)
+
+Base publicada Coreab13554d / Communityf3be354d. Contrato LineageQuery/snapshot
+na porta pública de traceability; Core percorre relações com direção, visited-set,
+horizonte explícito, caminho curto por alvo, contagens do escopo e cursor preso
+ao ator/fonte/profundidade. Não confundir profundidade3 com cadeia completa.
+Adapter reutiliza build_dependency_graph e _dependency_closure_edge_query da própria
+edição (fechamento transitivo existente), lê
+colunas de origens declaradas e associações AmendmentHotfixRevision, com limites
+2knós/10karestas, snapshot revalidado e deadline. Amendment preserva original,
+revision_spec, origin_task_ids, affected_task_ids e regression_test_task_ids;
+não emite supersedes de Spec. Refs usam amendment_hotfix_revision:<id>, como o
+projector existente. Endpoints fora do
+Board/ausentes não expõem refs nem títulos. Sem Code Evidence/Delivery/grafo nesta
+composição; scope é linhagem de workflow (origens/derivações nos dois sentidos,
+dependências dos trabalhos alcançados e amendments), com limitação explícita e
+frescor gráfico desconhecido. Completude da fonte não certifica projeção ou gate.
+Grants de todas as famílias,
+incluindo amendment.revision.read, precedem leitura. Nenhuma decisão de gate alterada.
+
+Interno lineage-query1 instalado2697=0/prova71698=0;Core22361=0,28passed;
+Community19969=0,17passed;F164794=1 só matrizesREADME,findings vazios,8budgetsZERO.
+Ampliada leitura para derivações descendentes e dependências de Cards encontrados,
+sem ficar limitada a ancestrais. lineage-query2 instalado12929=0/prova5326=0;
+Core28587=0,28passed;Community50080=0,17passed. Não somar campanhas sobrepostas.
+
+Variante tipada query.view=lineage na mesma fachada, REST /boards/{board_id}/lineage,
+e Source paths lazy no modal SDLC existente. Depth3/32, cursor200/1000 e payload512KiB;
+fronteira permite expansão ou nova observação por ref. Frontend59281=0,36passed;
+build96518=0 e build público2 após ajuste de tipos sincronizaram79arquivos/78assets,
+árvore e896d947d515b02389d55496fce3c6f43fd0c95f65a40aed5177fa4c5200e849.
+ESLint novo sem warnings; build avisa chunk-size e testes aviso Browserslist antigo.
+Catálogo/manifesto regenerados oficialmente. Assets já staged antes do gate Git.
+Par lineage-query-public1 instalado43966=0/prova64949=0:883py/946payload Core+
+384py/469payload Community byte-idênticos ANTES dos testes. Campanhas públicas
+Core15432=0,113passed;Community6665=0,54passed. F1624400=1 apenas matrizesREADME,
+sem findings e com oito budgetsZERO. Renderer oficial atualizou ambos. Par
+lineage-query-public-qualified instalado11335=0,prova34044=0;distribuição52811=0,
+19passed;F16final31436=0,ok=true,sem findings/drift,oito budgetsZERO. Somente README
+mudou no produto depois do comportamento. Ruff F/E9 e diff verdes. Total203 testes
+distintos aprovados, sem somar repetições internas/distribuição final.
+
+Recibo acceptance-lineage-query-public.json registra fontes/hashes/limites. KG-61:
+amendment parcial em SQL mantém Spec original Done, não retorna endpoint externo,
+preserva refs de origem/afetados/regressão; projector Core não emite supersedes nem
+recria a Spec original. Suite de rebuild de amendment também passou. KG-62: cadeia
+SQL de cinco hops via fechamento existente e composição Core, depth3 parcial,
+expansão com direção real, DTO público e continuação de frontend. Transportes usam
+ator/UOW controlados; não alegar E2E autenticado implantado. Inventário atualizado
+para153verificados/29parciais/64nãoauditados. Nenhum dado/processo real alterado.
+
+PRÓXIMO ORIGINAL: benchmark completo e revisão dos critérios pendentes, utilizando
+as evidências já produzidas antes de criar novos testes. As quatro variantes de
+consulta estão implementadas na mesma fachada. A captura antiga em inventory.md
+é medição de schemas, não benchmark de fluxo; measure_tick_catalog.py é histórico
+e tem assertions de uma retirada já concluída, não deve ser reexecutado como medida
+atual. Preparar comparação pareada antes/depois com fatos/atores/gates equivalentes,
+incluindo schemas, resources, leituras, retries, autoria/classificação, execução,
+retomada e fechamento conforme os quatro documentos. Não presumir economia nem
+reabrir funcionalidades qualificadas sem problema reproduzido. KG-10/T23 permanecem
+nas decisões já registradas; não repetir perguntas. Objetivo integral ativo.
+
 ### 2026-10-01 — impacto de Decision qualificado (KG§6.4/§9)
 
 Base publicada Core00f66648 / Communityf7ad3cd8. Consulta interna reaproveita a porta

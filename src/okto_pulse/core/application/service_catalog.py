@@ -19,6 +19,13 @@ from okto_pulse.core.ports.traceability import (
 
 
 class CoreAnalyticsOperations:
+    async def lineage(self, query, *, timeout_ms: int):
+        from okto_pulse.core.ports.relational_services import resolve_traceability_adapter
+        from okto_pulse.core.services.lineage_query import project_lineage
+        snapshot = await resolve_traceability_adapter().read_lineage_snapshot(
+            self.__relational_context, query, timeout_ms=timeout_ms)
+        return project_lineage(query, snapshot)
+
     async def decision_impact(self, query, *, timeout_ms: int):
         import time
         from okto_pulse.core.kg.interfaces.graph_errors import GraphQueryTimeout

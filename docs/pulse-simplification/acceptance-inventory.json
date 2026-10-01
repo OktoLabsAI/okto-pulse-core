@@ -1643,8 +1643,12 @@
       "line": 672,
       "id": "KG-61",
       "normative_text": "| KG-61 | Amendment altera apenas parte da Spec | Não superseder a Spec inteira sem declaração normativa. |",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "verified_by_reviewed_execution",
+      "test_text_references": [],
+      "reviewed_execution": {
+        "artifact": "acceptance-lineage-query-public.json",
+        "criterion_key": "KG:KG-61"
+      }
     },
     {
       "key": "KG:KG-62",
@@ -1652,8 +1656,12 @@
       "line": 673,
       "id": "KG-62",
       "normative_text": "| KG-62 | Linhagem/dependência excede três hops | Continuação ou parcial explícito; não declarar completa só por atingir depth=3. |",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "verified_by_reviewed_execution",
+      "test_text_references": [],
+      "reviewed_execution": {
+        "artifact": "acceptance-lineage-query-public.json",
+        "criterion_key": "KG:KG-62"
+      }
     },
     {
       "key": "KG:KG-63",

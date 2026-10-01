@@ -71,6 +71,31 @@ nor matching observations prove complete lineage. In the UI, expand a Decision
 and select Show impact. Paths expand on demand; history navigation never starts
 Cards, writes relationships or changes gates.
 
+For bounded workflow lineage pass
+`query={"view":"lineage","subject_ref":"spec:<id>"}`. Canonical subjects are
+`spec:`, `card:`, `ideation:`, `refinement:`, `story:` and
+`amendment_hotfix_revision:` followed by one domain ID. The response is relational:
+declared origins/derivations, work dependencies (`precedes`) and amendment scope.
+It reads neither code evidence nor graph projections. It does not compute all
+execution blockers or establish delivery proof. Board, Spec, Card, Ideation,
+Refinement, Story and amendment revision read grants are required before aggregation.
+
+`max_depth` defaults to 3, maximum 32. Reaching the horizon returns a partial
+observation and `frontier_refs`. Increase depth within the bound or start a new
+observation from one frontier subject. A visited set bounds cyclic source paths;
+one shortest path per target includes actual direction and declared provenance.
+`limit` defaults to 200, maximum 1000, and pagination preserves global counts.
+Keep subject/depth/limit with the cursor; source or actor changes invalidate it.
+The source reader is bounded by 2000 nodes/10000 relations and the shared query
+deadline; oversized scopes fail explicitly. Serialized response cap is 512 KiB.
+
+Completeness refers only to the supported workflow source scope and explored
+frontier. Graph freshness remains unknown because the projection is not read.
+Missing/foreign source endpoints are omitted and make the observation incomplete;
+their identities are not disclosed. An amendment association never means that the
+original Spec was wholly superseded. In the existing SDLC Lineage modal, Source
+paths loads on demand and offers path details and frontier continuation.
+
 okto_pulse_get_traceability_report — return a consolidated SDLC traceability report:
 ideation → refinement → spec → card/test/bug → artifacts.
 

@@ -22,6 +22,7 @@ from okto_pulse.core.ports.traceability import (
 if TYPE_CHECKING:
     from okto_pulse.core.ports.spec_coverage_query import SpecCoverageQuery
     from okto_pulse.core.ports.decision_impact import DecisionImpactQuery
+    from okto_pulse.core.ports.lineage_query import LineageQuery
     from okto_pulse.core.ports.bug_clusters import BugClustersQuery
     from okto_pulse.core.services.architecture_classification import ArchitectureClassificationService
     from okto_pulse.core.domain.architecture_candidates import ArchitectureCandidatePopulation
@@ -425,6 +426,10 @@ class ApplicationServiceCatalog(Protocol):
 
 
 class AnalyticsOperations(Protocol):
+    async def lineage(self, query: "LineageQuery", *, timeout_ms: int) -> dict:
+        """Read bounded origin/dependency paths with explicit source limitations."""
+        ...
+
     async def spec_coverage(self, query: "SpecCoverageQuery", *, timeout_ms: int) -> dict:
         """Read structural coverage and admitted proof without combining their authority."""
         ...
