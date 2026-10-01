@@ -1,0 +1,121 @@
+{
+  "format": "pulse-benchmark-segments/v1",
+  "status": "partial_measurement_not_full_acceptance",
+  "pair": {
+    "core": "d757dd96",
+    "community": "951444b1"
+  },
+  "baseline_pair": {
+    "core": "207072509a282e8adec1481d05aee2d54c382bde",
+    "community": "b6dda64f512920fa4aaaf9d50c331b1796b87e27"
+  },
+  "artifact": {
+    "file": "benchmark-measurement-segments-2026-10-01.json.gz",
+    "sha256": "8277f73d416b8d8b4e979bc29b1602ce022e9a00afd8d1435a005575e94cedcb",
+    "compressed_bytes": 178819
+  },
+  "registry_before": {
+    "scope": "registry metadata only; no credential filtering, lifespan or flow",
+    "tools": 340,
+    "measurements": {
+      "catalog": {
+        "bytes": 229702,
+        "tokens_cl100k_base": 52627,
+        "sha256": "8a0b8bf631511d7f3fcb72bbde685910d800ad0e0c92bf083fbb95cab7be19cf"
+      },
+      "instructions": {
+        "bytes": 11013,
+        "tokens_cl100k_base": 2646,
+        "sha256": "23bc9c9f637d6c022a0ada4ecc994568980b08c4be396df88bfbf3c3a57b781d"
+      }
+    },
+    "serialization": "UTF-8, sorted keys, compact JSON",
+    "tokenizer": "cl100k_base estimate, not model billing",
+    "versions": {
+      "tiktoken": "0.12.0",
+      "mcp": "1.29.0",
+      "fastmcp": "2.14.7"
+    }
+  },
+  "registry_after": {
+    "scope": "registry metadata only; no credential filtering, lifespan or flow",
+    "tools": 304,
+    "measurements": {
+      "catalog": {
+        "bytes": 242181,
+        "tokens_cl100k_base": 55443,
+        "sha256": "c6845116bf1100154fee5dc97d33b03345c0322d68046dfcfb75fa5f8ad49ae8"
+      },
+      "instructions": {
+        "bytes": 10745,
+        "tokens_cl100k_base": 2570,
+        "sha256": "d6173063f0a4f0a945d71cd17f81f849cca3b9201458381915e3314ec328072f"
+      }
+    },
+    "serialization": "UTF-8, sorted keys, compact JSON",
+    "tokenizer": "cl100k_base estimate, not model billing",
+    "versions": {
+      "tiktoken": "0.12.0",
+      "mcp": "1.29.0",
+      "fastmcp": "2.14.7"
+    }
+  },
+  "sessions": [
+    {
+      "session": 1,
+      "fixture": "tests/test_single_agent_spec_execution.py::test_one_agent_preserves_assessments_and_evidence_through_spec_done[False]",
+      "methods": {
+        "initialize": 1,
+        "tools/list": 1,
+        "tools/call": 23
+      },
+      "expected_error_responses": 1,
+      "input_bytes": 9456,
+      "output_bytes": 319657,
+      "tokens_cl100k_base": 79021,
+      "sql_queries_during_requests": 1313,
+      "sql_elapsed_ms": 722.4382009590045,
+      "request_elapsed_ms": 2147.125800140202
+    },
+    {
+      "session": 2,
+      "fixture": "tests/test_single_agent_spec_execution.py::test_one_agent_preserves_assessments_and_evidence_through_spec_done[True]",
+      "methods": {
+        "initialize": 1,
+        "tools/list": 1,
+        "tools/call": 26
+      },
+      "expected_error_responses": 2,
+      "input_bytes": 11996,
+      "output_bytes": 325750,
+      "tokens_cl100k_base": 81508,
+      "sql_queries_during_requests": 1353,
+      "sql_elapsed_ms": 757.1154012111947,
+      "request_elapsed_ms": 2213.6081003118306
+    }
+  ],
+  "versions": {
+    "tiktoken": "0.12.0",
+    "mcp": "1.29.0",
+    "fastmcp": "2.14.7",
+    "pytest": "8.3.4",
+    "sqlalchemy": "2.0.49"
+  },
+  "limits": [
+    "Fixture setup and seeded facts are not measured authorship.",
+    "Only actually consumed resources are measured.",
+    "SQL counts cover serial MCP request windows, not fixture setup/verification; they do not establish causality for background work.",
+    "External execution is included in request latency but not separately instrumented.",
+    "No baseline equivalence or cost reduction is established by this capture.",
+    "The two sessions are separate scenarios of one agent, not a measured multi-agent handoff.",
+    "Fixture authorship, independent external implementation and baseline equivalent flow remain unmeasured.",
+    "Registry metadata increased; no full-flow gain or 50%/30% target is established.",
+    "No acceptance criterion promoted based on this partial measurement.",
+    "Earlier measurement1/2 are superseded: measurement1 included tokenization in latency; measurement2 missed SQL across MCP task contexts. Measurement3 excludes tokenization and counts SQL during serial request windows."
+  ],
+  "source_sha256": {
+    "okto_labs_pulse_community/scripts/measure_mcp_fixture.py": "443c4c48b2e80190000bbfdcb21270d2f9835ac2f2cfe234768bc2bb8d1c3582",
+    "okto_labs_pulse_community/scripts/measure_mcp_registry.py": "e7f55a642fde776cb56eedd8d50fbb887c6c3aed445f5a0e7bc034d110a8dcd6",
+    "okto_labs_pulse_community/tests/test_single_agent_spec_execution.py": "ef109d2579e81a85cd8501780cdbefef684a0d327a8ad1e3baf74d7319f14fb6"
+  }
+}

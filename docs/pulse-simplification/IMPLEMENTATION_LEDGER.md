@@ -2,6 +2,43 @@
 
 ## Estado para retomada
 
+### 2026-10-01 — publicação da linhagem e medição parcial do benchmark original
+
+Linhagem commit/push concluído: Core d757dd96 / Community 951444b1, ambos
+feature/v0.4.0 limpos/sincronizados após publicação. Sem alteração de produto
+desde a qualificação anterior. Base local de comparação confirmada nos SHAs
+20707250/b6dda64 do pacote; verify_baseline terminal0:769py Core/311py Community
+byte-idênticos. Prova atual provenance-flow-measurement1.json terminal0:
+883py/946payload +384py/469payload byte-idênticos ao par instalado final.
+
+Instrumentação reproduzível em Community/scripts/measure_mcp_fixture.py e
+measure_mcp_registry.py, apenas engenharia sobre fixtures descartáveis. Captura
+MCP initialize/tools-list completo/requests/responses, bytes, cl100k_base0.12.0,
+latência sem tokenização e SQL durante janelas de requests seriais. ContextVar
+do cliente não atravessava tasks MCP: primeiras medições NÃO usadas para SQL;
+campanha flow-measurement3 terminal0,2passed (avisos pytest rewrite anyio).
+Dois cenários existentes de um agente,23/26tool calls +initialize/list por sessão;
+1/2recusas esperadas preservadas, incluindo fechamento sem prova de teste.
+SQL1313/1353; tokens79021/81508 somando entrada/saída, sem caching hipotético.
+Não alegar causalidade SQL de background nem cenário multiagente por haver2sessões.
+
+Censo do MESMO formato/tokenizer na instalação baseline e atual, ambos terminal0:
+340→304tools,schemas52627→55443tokens,instructions2646→2570;total55273→58013
+(+4,96%). Menos tools não demonstrou economia de contexto. Não cortar gates ou
+dados para atingir percentuais. Artefatos completos (payloads sintéticos e provas)
+comprimidos no repo: benchmark-measurement-segments-2026-10-01.json.gz; recibo
+benchmark-measurement-segments.json contém hashes, versões, escopo e limites.
+
+PENDÊNCIA ORIGINAL preservada: benchmark completo antes/depois com autoria,
+classificação/defaults/reuso, execução externa separada, interrupção/retomada e
+multiagentes equivalentes, demais fixtures dos quatro documentos e revisão dos
+critérios remanescentes. A fixture medida inicia planejada e sem alguns custos
+externos; não é prova de economia de fluxo completo. Nenhum critério promovido;
+inventário segue153verificados/29parciais/64nãoauditados. KG-10/T23 mantêm decisões
+pendentes já registradas. Não repetir perguntas, ampliar escopo nem reabrir feature
+qualificada sem gap reproduzido. Próximo: completar segmentos faltantes do benchmark
+nas fixtures existentes, antes de tirar conclusão de redução. Objetivo integral ativo.
+
 ### 2026-10-01 — linhagem pública qualificada (KG§6.4/§9)
 
 Base publicada Coreab13554d / Communityf3be354d. Contrato LineageQuery/snapshot
