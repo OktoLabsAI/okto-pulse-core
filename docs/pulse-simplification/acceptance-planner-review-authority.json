@@ -1,0 +1,119 @@
+{
+  "format": "pulse-v1.3-reviewed-execution/v1",
+  "scope": "BASE:T03 planner review authority",
+  "status": "verified",
+  "coverage": {
+    "submit": "Materialized Community FastMCP host resolves A1 API key, Agent, AgentBoard and persisted permission_flags. Explicit spec.evaluations.submit=false and spec.validation.submit=false refuse their dedicated submit calls even with legacy specs:evaluate present. The test asserts the actual resolved grants.",
+    "move": "The same authenticated planner is granted both relevant move permissions. approved->validated refuses with spec_validation_gate_required; validated->in_progress refuses specifically because no approve evaluation exists. Specs and assessment receipt counts remain unchanged.",
+    "update": "MCP rejects status/evaluations/validations extra arguments before writer; a separate legitimate title update succeeds. REST bulk update accepts the ordinary title and ignores the forged review/status fields, preserving draft status and an empty evaluation ledger.",
+    "batch": "Actual Community structured store and receipt boundary are registered. Project structure batch rejects unsupported approve operation and a permitted create containing extra evaluations field, with the precise extra-field issue. Spec payloads and receipt counts remain unchanged. REST batch rejects approve at its request boundary with HTTP400 and the operation issue path.",
+    "alias": "Live tools/list and installed alias metadata show no evaluation alias. Calling the short name through the actual host fails unknown-tool and does not mutate state. Existing canonical tool remains registered.",
+    "REST": "Existing canonical permission correction is exercised again: explicit denied evaluation grant returns403 and leaves the evaluation list unchanged. Authorized REST evaluation still records its reviewer and enables the separately isolated qualitative move gate."
+  },
+  "execution": {
+    "terminal_session": 44559,
+    "exit_code": 0,
+    "passed": 13,
+    "duration_seconds": 16.08,
+    "xml": {
+      "file": "learning-reconciliation-planner-authority9-core.xml",
+      "sha256": "df7db4f46f8d58b0806625e086728ce7aa7556c97bdc3c46678e023ddd858bb6"
+    },
+    "log": {
+      "file": "learning-reconciliation-planner-authority9-core.log",
+      "sha256": "f3da97edfcf2668b11a6f44e948fff6d03b513ad60af2f9686956751ea227d5d"
+    },
+    "cases": [
+      "tests.test_planner_review_authority::test_authenticated_planner_review_boundary_across_mcp_variants",
+      "tests.test_spec_evaluation_rest_parity::test_submit_and_list_spec_evaluation_via_rest",
+      "tests.test_spec_evaluation_rest_parity::test_planner_without_evaluation_grant_cannot_approve_via_rest",
+      "tests.test_spec_evaluation_rest_parity::test_rest_content_and_move_cannot_forge_evaluation",
+      "tests.test_spec_evaluation_rest_parity::test_rest_evaluation_satisfies_in_progress_gate",
+      "tests.test_spec_evaluation_rest_parity::test_evaluation_rejected_outside_validated_status",
+      "tests.test_spec_evaluation_rest_parity::test_evaluation_validates_scores_and_recommendation",
+      "tests.test_spec_evaluation_rest_parity::test_mcp_tool_shares_service_write_path",
+      "tests.test_spec_evaluation_rest_parity::test_ideation_complexity_invalid_value_is_422_not_500",
+      "tests.test_spec_evaluation_rest_parity::test_ideation_complexity_accepts_enum_values[small]",
+      "tests.test_spec_evaluation_rest_parity::test_ideation_complexity_accepts_enum_values[medium]",
+      "tests.test_spec_evaluation_rest_parity::test_ideation_complexity_accepts_enum_values[large]",
+      "tests.test_spec_evaluation_rest_parity::test_ideation_complexity_description_matches_enum"
+    ]
+  },
+  "provenance": {
+    "checked_at": "2026-10-01T00:22:05.795341+00:00",
+    "python": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Scripts\\python.exe",
+    "packages": {
+      "core": {
+        "python_files": 859,
+        "origin": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages\\okto_pulse\\core\\__init__.py",
+        "repository_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_core",
+        "commit": "a781acab4682e110f7d6ac0f2fe440682cbdcf9d",
+        "dirty": false,
+        "dirty_entry_count": 0,
+        "distribution": "okto-pulse-core",
+        "version": "0.3.4",
+        "wheel": {
+          "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\dist-learning-reconciliation-evaluation-authority-fix1\\okto_pulse_core-0.3.4-py3-none-any.whl",
+          "sha256": "97e5312876e55fb8bc2f5d305012516c8c2a196f0ef287a2230277c4f2fd6a09",
+          "size": 3792917
+        },
+        "source_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_core\\src",
+        "site_packages_root": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages",
+        "package_prefix": "okto_pulse/core/",
+        "byte_identical_member_count": 922,
+        "byte_identical": true,
+        "aggregate_sha256": "caf97540d6043b7ea5e156f9d4536b5aa4231b541d9ee2739bf3c0ef0519c482",
+        "chain_hashes": {
+          "source": "caf97540d6043b7ea5e156f9d4536b5aa4231b541d9ee2739bf3c0ef0519c482",
+          "wheel": "caf97540d6043b7ea5e156f9d4536b5aa4231b541d9ee2739bf3c0ef0519c482",
+          "site_packages": "caf97540d6043b7ea5e156f9d4536b5aa4231b541d9ee2739bf3c0ef0519c482"
+        },
+        "critical_resource_sha256": {
+          "okto_pulse/core/mcp/resources/ska_resource_manifest.json": "87fab2a5ded5f6ee273af8628555c21f7065d32379945784132bb6c300d05865",
+          "okto_pulse/core/mcp/resources/ska_tool_manifest.json": "0c3fa3da1549baec20872eca3f4a289288627e6b9f6b80be10472ac962fa72b9"
+        },
+        "mismatches": []
+      },
+      "community": {
+        "python_files": 373,
+        "origin": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages\\okto_pulse\\community\\__init__.py",
+        "repository_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_community",
+        "commit": "c73c071708969f90d0fed603b2f989ec37052f1c",
+        "dirty": false,
+        "dirty_entry_count": 0,
+        "distribution": "okto-pulse",
+        "version": "0.3.4",
+        "wheel": {
+          "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\dist-learning-reconciliation-evaluation-authority-fix1\\okto_pulse-0.3.4-py3-none-any.whl",
+          "sha256": "5c23034b2f20cd592c1c7b7efb532eea32665882c45b79d39cdb2d50ee091657",
+          "size": 4535075
+        },
+        "source_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_community\\src",
+        "site_packages_root": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages",
+        "package_prefix": "okto_pulse/community/",
+        "byte_identical_member_count": 458,
+        "byte_identical": true,
+        "aggregate_sha256": "8b07ee010036e9c307e22c4a39d43fb3a36e12d78fa15be75168ebe2195cd850",
+        "chain_hashes": {
+          "source": "8b07ee010036e9c307e22c4a39d43fb3a36e12d78fa15be75168ebe2195cd850",
+          "wheel": "8b07ee010036e9c307e22c4a39d43fb3a36e12d78fa15be75168ebe2195cd850",
+          "site_packages": "8b07ee010036e9c307e22c4a39d43fb3a36e12d78fa15be75168ebe2195cd850"
+        },
+        "critical_resource_sha256": {},
+        "mismatches": []
+      }
+    }
+  },
+  "related_evidence": [
+    "evidence-evaluation-rest-authority.json",
+    "acceptance-governed-lifecycle.json"
+  ],
+  "limits": [
+    "MCP credential extraction is supplied for an in-process client, not an HTTP socket. Credential authentication, persisted grants, host schema validation, use cases and Community SQL are actual product implementations. No fake permission resolver or writer is used in the MCP sequence.",
+    "Approved/validated entry states are seeded to isolate authority and bypass attempts. This does not qualify the full initial Spec Validation pipeline, single-agent delivery T01 or multi-actor handoff T04.",
+    "REST uses the existing Core SQL fixture with injected user identity and a resolved permission document at CoreApplicationServiceCatalog. It does not qualify REST login or grant resolution.",
+    "The 13 cases include existing REST parity/schema regressions, not 13 separate authorization variants. Existing REST in_progress positive test isolates its qualitative gate by substituting planning readiness; the new negative scenarios do not substitute a gate.",
+    "Early probes 1-4 were not acceptance: host rejects extras instead of accepting them; the inherited Core structured-store fixture lacks durable receipts. Registering the actual Community store fixed composition. Probe5 passed before extra-field/REST expansion. Probe6 expected the extra-field name in message instead of structured details; probe7 expected422 instead of the existing REST400. Probe8 passed13 before adding direct approved->validated bypass. No productive code or gate was changed to make these probes pass.",
+    "Productive payload unchanged since evaluation-authority-fix1. Its F16 exit0 with all eight budgets zero and prior54 frontend cases remain the latest relevant executions. No frontend/catalog changes in this increment."
+  ]
+}

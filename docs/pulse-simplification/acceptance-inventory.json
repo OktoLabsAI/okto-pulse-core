@@ -48,10 +48,10 @@
       "line": 582,
       "id": "T03",
       "normative_text": "| T03 | Planejador sem permissão de avaliar | Não aprova via submit, move, update, batch, alias ou REST. |",
-      "review_status": "partial",
+      "review_status": "verified_by_reviewed_execution",
       "test_text_references": [],
       "reviewed_execution": {
-        "artifact": "evidence-evaluation-rest-authority.json",
+        "artifact": "acceptance-planner-review-authority.json",
         "criterion_key": "BASE:T03"
       }
     },

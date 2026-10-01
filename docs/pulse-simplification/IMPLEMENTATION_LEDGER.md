@@ -2,6 +2,34 @@
 
 ## Estado para retomada
 
+BASE T03 verificado. Host FastMCP materializado pela Community, API key,
+Agent/AgentBoard e grants persistidos reais: negações granulares de avaliação
+e Spec Validation prevalecem inclusive com specs:evaluate legado presente.
+Permissão de move não libera approved→validated nem validated→in_progress.
+Update MCP rejeita campos de revisão; edição legítima do mesmo ator funciona.
+REST mantém edição de título sem aceitar status/avaliações forjados. Batch
+recusa operação approve e campo evaluations dentro de create permitido, sem
+alterar Spec nem recibos; alias curto ausente é recusado pelo host real.
+
+Core44559=0,13passed16.08s. Inclui regressões existentes de paridade/schema;
+não são13 variantes novas. Ruff F/E9 e diff verdes. Prova
+provenance-planner-authority1.json:859/922+373/458 byte-idênticos ao par
+evaluation-authority-fix1. Código produtivo/UI intactos: F16 anterior31859=0
+continua último gate, oito budgets ZERO; frontend anterior46579=0,54passed.
+
+Probes intermediários preservados nos logs planner-authority1..8: contrato
+de extras MCP, store congelado sem recibos e localização/status dos erros
+exigiram corrigir fixture/asserts. O teste final usa o store Community real;
+nenhum gate alterado/afrouxado. acceptance-planner-review-authority.json
+registra limites: credencial MCP extraída em processo; REST identidade e
+documento de permissões injetados; estados approved/validated são fixtures.
+Não inferir fluxo completo T01 nem handoff multiator T04 desses casos.
+
+Inventário115 verificados/39 parciais/92 não auditados. Próxima frente original:
+T04 executor/revisor e handoff; depois T05/T06/T07/T01 e pendências consolidadas.
+KG-10/T23 aguardam decisões já solicitadas. Par publicado antes deste incremento:
+Corea781acab/Communityc73c0717. Sem processo pendente ou alteração de dados reais.
+
 BASE T03, correção pontual de autorização REST: SubmitSpecEvaluationUseCase
 verificava Board e contexto, mas não spec.evaluations.submit. O guard de contexto
 não é autorização por ação. Agora exige a mesma permissão/compatibilidade já

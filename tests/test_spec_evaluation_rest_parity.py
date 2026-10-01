@@ -172,6 +172,44 @@ def test_planner_without_evaluation_grant_cannot_approve_via_rest(
     assert client.get(f"/api/v1/specs/{spec_id}/evaluations").json() == before
 
 
+def test_rest_content_and_move_cannot_forge_evaluation(spec_eval_client, monkeypatch):
+    from unittest.mock import AsyncMock
+    from okto_pulse.core.application.service_catalog import CoreApplicationServiceCatalog
+    from okto_pulse.core.domain.permissions import PermissionSet
+
+    client, spec_id, draft_id, board_id = spec_eval_client
+    permissions = AsyncMock(return_value=PermissionSet({'spec': {
+        'entity': {'read': True, 'edit_fields': True},
+        'evaluations': {'read': True, 'submit': False},
+        'validation': {'read': True, 'submit': False},
+        'interact_in': {'draft': True, 'validated': True},
+        'move': {'validated_to_in_progress': True},
+    }}))
+    monkeypatch.setattr(CoreApplicationServiceCatalog, 'resolve_user_permissions', permissions)
+    before = client.get(f'/api/v1/specs/{draft_id}').json()
+    updated = client.patch(f'/api/v1/specs/{draft_id}', json={
+        'title': 'Authorized planner content', 'status': 'validated',
+        'evaluations': [_evaluation_payload()], 'validations': [{'recommendation': 'approve'}],
+    })
+    assert updated.status_code == 200, updated.text
+    assert updated.json()['title'] == 'Authorized planner content'
+    assert updated.json()['status'] == before['status'] == 'draft'
+    assert client.get(f'/api/v1/specs/{draft_id}/evaluations').json()['evaluations'] == []
+    blocked = client.post(f'/api/v1/specs/{spec_id}/move', json={'status': 'in_progress'})
+    assert blocked.status_code == 400, blocked.text
+    assert "no evaluation with 'approve'" in blocked.text
+    assert client.get(f'/api/v1/specs/{spec_id}').json()['status'] == 'validated'
+    snapshot = client.get(f'/api/v1/specs/{draft_id}').json()
+    batch = client.patch(f'/api/v1/boards/{board_id}/specs/{draft_id}/project-structure', json={
+        'expected_spec_version': snapshot['version'], 'expected_structure_revision': 0,
+        'idempotency_key': 'forged-review',
+        'operations': [{'operation': 'approve', 'payload': {'evaluations': [_evaluation_payload()]}}],
+    })
+    assert batch.status_code == 400, batch.text
+    assert batch.json()['detail']['details']['issues'][0]['loc'] == ['operations', 0, 'operation']
+    assert client.get(f'/api/v1/specs/{draft_id}').json() == snapshot
+
+
 def test_rest_evaluation_satisfies_in_progress_gate(spec_eval_client, monkeypatch):
     """O cenario exato do finding: usuario so-REST consegue destravar
     validated→in_progress sem MCP."""
