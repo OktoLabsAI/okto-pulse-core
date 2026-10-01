@@ -74,8 +74,12 @@
       "line": 584,
       "id": "T05",
       "normative_text": "| T05 | Novo agente/sessão sem histórico de chat | Consegue obter contexto suficiente e identificar pendências reais. |",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "verified_by_reviewed_execution",
+      "test_text_references": [],
+      "reviewed_execution": {
+        "artifact": "acceptance-planning-resume-boundaries.json",
+        "criterion_key": "BASE:T05"
+      }
     },
     {
       "key": "BASE:T06",
@@ -83,8 +87,12 @@
       "line": 585,
       "id": "T06",
       "normative_text": "| T06 | Avaliação de Spec aprovada, decomposição inadequada | Início bloqueado pelo controle de plano, sem reaproveitar aprovação indevida. |",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "verified_by_reviewed_execution",
+      "test_text_references": [],
+      "reviewed_execution": {
+        "artifact": "acceptance-planning-resume-boundaries.json",
+        "criterion_key": "BASE:T06"
+      }
     },
     {
       "key": "BASE:T07",
@@ -92,8 +100,12 @@
       "line": 586,
       "id": "T07",
       "normative_text": "| T07 | Tasks aprovadas isoladamente, verificação integrada ausente | Spec não vira done indevidamente. |",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "verified_by_reviewed_execution",
+      "test_text_references": [],
+      "reviewed_execution": {
+        "artifact": "acceptance-planning-resume-boundaries.json",
+        "criterion_key": "BASE:T07"
+      }
     },
     {
       "key": "BASE:T08",

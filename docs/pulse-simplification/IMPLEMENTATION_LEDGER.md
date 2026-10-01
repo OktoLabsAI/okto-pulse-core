@@ -2,6 +2,32 @@
 
 ## Estado para retomada
 
+BASE T05/T06/T07 verificados. Retomada com nova sessão/store preserva
+trabalho anterior, autoria, impacto, pendências e limites de recuperação.
+REST start recusa plano sem contribuição FR ou sem alocação de Test Card,
+apesar da avaliação aprovada; corrigir apenas o plano permite iniciar com
+a mesma avaliação. REST Done recusa verificação ausente/não executada apesar
+de tasks Done/aprovadas, sem alterar Spec, avaliações, histórico ou outbox.
+
+Community72695=0,11passed27.36s; Community66709=0,6passed25.45s. Total17
+distintos, incluindo regressões existentes. Ruff F/E9 e diff verdes.
+acceptance-planning-resume-boundaries.json registra evidências e limites.
+T06/T07 usam resultados de avaliação como fixture e identidade REST injetada;
+T07 tem skip cognitivo explícito, delivery blocking, nenhum gate mockado.
+O caso não executado também não possui registros de implementação: não alegar
+isolamento de blocker exclusivamente de teste nem fluxo completo T01.
+
+Probes planning-boundary2/3 recusaram composição KG ausente e cobertura de
+arquiteturas da fixture anterior. Final4 compõe KG Community real com embeddings
+stub e usa fixture sem esses recursos alheios ao caso. Nenhuma mudança produtiva.
+Provenance-review-handoff1 permanece válida para código fonte/site/wheels.
+Últimos F16/ frontend:31859=0,oito budgets ZERO;46579=0,54passed. Sem impacto UI.
+
+Inventário119 verificados/39 parciais/88 não auditados. Próxima frente: T01,
+demais pendências dos complementos, benchmark T43 e distribuição final, todos
+originais do pacote. KG-10/T23 aguardam decisões já solicitadas. Par publicado
+anterior: Coref2dce7d3/Communityd1a61814. Nenhum processo pendente/dado real alterado.
+
 BASE T04 verificado: dois atores persistidos, grants distintos e sessões MCP
 separadas. Revisor não publica prova de executor; executor não valida. Relatório
 entra em validation e revisor aprova para Done ou rejeita para Rejected, com
