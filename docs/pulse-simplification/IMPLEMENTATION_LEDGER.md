@@ -2,6 +2,32 @@
 
 ## Estado para retomada
 
+ARQVER AC-ARQ-09/10/11 e ADV-24 verificados, fechando lacunas já descritas
+em acceptance-architecture-execution.json. Associação mantém IR local pendente
+sem duplicação; IR de outra Spec recusado sem writes. Promoção publicação-only
+resulta em inventário efetivo do Card só com o IR publicado, sem consumidor;
+fonte completa e exclusão explícita preservadas. IR promovido não pode virar
+context_only no escopo em execução, mesmo com grant de interação; continua
+pendente no gate real. Diretiva maliciosa dentro do contrato não altera policy,
+status, revisões, contrato de execução ou skips; gate continua recusando.
+
+Community93423=0,8passed26.13s, incluindo cinco regressões anteriores.
+Ruff F/E9 e diff verdes. acceptance-architecture-delivery-boundaries.json.
+Fixtures: alocação Draft/estado aprovado e documento de permissões; writers,
+SQL, leitura em nova sessão e gates reais. Sem alegar plano completo: ausência
+de prova e qualificações pendentes são mantidas. Probe1 recusou inventário por
+coleções NULL da fixture legada; final explicita as coleções vazias conhecidas.
+Probe2 passou7; final3 acrescenta dispensa de IR aprovado e passa8.
+
+Código produtivo/UI intactos. Par859/922+373/458 permanece byte-idêntico ao
+provenance-single-agent-full1.json. F16 anterior31859=0,oito budgets ZERO;
+frontend anterior46579=0,54passed. Nenhuma nova semântica ou autoridade.
+Inventário124 verificados/35 parciais/87 não auditados. Restam critérios
+originais dos complementos (inclusive retirada de fonte AC-ARQ-14), T33/T46,
+benchmark e distribuição final. KG-10/T23 aguardam decisões já solicitadas.
+Par publicado anterior: Core1ccf95e5/Community327fc39c. Sem processo pendente
+ou dados reais alterados.
+
 BASE T01 verificado por percurso contínuo até Spec Done, no mesmo agente,
 Spec e banco. Draft→Review→Approved, lint externo, validação cinco métricas,
 avaliação e início; task iniciada, relatório canônico com quatro obrigações,

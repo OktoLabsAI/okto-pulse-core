@@ -2557,10 +2557,10 @@
       "line": 316,
       "id": "AC-ARQ-09",
       "normative_text": "**AC-ARQ-09 — verifica RF-ARQ-09.** **Dado** Um IR local ainda não implementado e um IR semelhante em outra Spec. **Quando** O autor associa o candidato ao IR local. **Então** A duplicação é evitada, mas o IR continua pendente de entrega; tentar usar o outro IR como cumprimento local sem contrato de dependência suportado é recusado.",
-      "review_status": "partial",
+      "review_status": "verified_by_reviewed_execution",
       "test_text_references": [],
       "reviewed_execution": {
-        "artifact": "acceptance-architecture-execution.json",
+        "artifact": "acceptance-architecture-delivery-boundaries.json",
         "criterion_key": "ARQVER:AC-ARQ-09"
       }
     },
@@ -2570,10 +2570,10 @@
       "line": 322,
       "id": "AC-ARQ-10",
       "normative_text": "**AC-ARQ-10 — verifica RF-ARQ-10.** **Dado** Um candidato ligado a um IR que já integra o escopo aprovado. **Quando** Alguém tenta classificá-lo como somente contexto para encerrar a Spec. **Então** O IR e suas obrigações não desaparecem. O write que produziria dispensa tácita é recusado ou exige a revisão de escopo autorizada, sem alterar o resultado histórico.",
-      "review_status": "partial",
+      "review_status": "verified_by_reviewed_execution",
       "test_text_references": [],
       "reviewed_execution": {
-        "artifact": "acceptance-architecture-execution.json",
+        "artifact": "acceptance-architecture-delivery-boundaries.json",
         "criterion_key": "ARQVER:AC-ARQ-10"
       }
     },
@@ -2583,10 +2583,10 @@
       "line": 328,
       "id": "AC-ARQ-11",
       "normative_text": "**AC-ARQ-11 — verifica RF-ARQ-11.** **Dado** Uma interface declara publicação e consumo, mas a Spec só implementa publicação. **Quando** O autor promove a parte de publicação e delimita o restante como contexto. **Então** A Spec não assume entrega do consumidor; a origem do IR e a exclusão de escopo são visíveis; o contrato fonte permanece íntegro.",
-      "review_status": "partial",
+      "review_status": "verified_by_reviewed_execution",
       "test_text_references": [],
       "reviewed_execution": {
-        "artifact": "acceptance-architecture-execution.json",
+        "artifact": "acceptance-architecture-delivery-boundaries.json",
         "criterion_key": "ARQVER:AC-ARQ-11"
       }
     },
@@ -3290,10 +3290,10 @@
       "line": 748,
       "id": "ADV-24",
       "normative_text": "| ADV-24 | Contrato arbitrário contém instrução para desativar gates. | Conteúdo é dado; nenhuma mutação de configuração é realizada. |",
-      "review_status": "partial",
+      "review_status": "verified_by_reviewed_execution",
       "test_text_references": [],
       "reviewed_execution": {
-        "artifact": "acceptance-architecture-execution.json",
+        "artifact": "acceptance-architecture-delivery-boundaries.json",
         "criterion_key": "ARQVER:ADV-24"
       }
     }

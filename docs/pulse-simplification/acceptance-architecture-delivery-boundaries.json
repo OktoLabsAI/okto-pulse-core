@@ -1,0 +1,110 @@
+{
+  "format": "pulse-v1.3-reviewed-execution/v1",
+  "scope": "Architecture-to-delivery acceptance gaps",
+  "status": "verified",
+  "coverage": {
+    "ARQVER:AC-ARQ-09": "Actual classification associates the existing local IR without creating a duplicate. Draft allocation persisted under the adopted execution contract is re-read through a fresh Community SQL/store; effective Card inventory contains that IR with no implementation/test proof and disallowed delivery. Attempt to associate a same-title IR belonging to another Spec is rejected before any classification/IR/history/outbox mutation.",
+    "ARQVER:AC-ARQ-10": "Actual promotion creates an IR and durable decision. After allocating the IR and seeding accepted In Progress lifecycle state, a context_only dismissal is rejected by SubjectEditRequiresDraftError despite explicit interact_in.in_progress grant. Complete structured record and receipt/history/outbox counts remain identical; IR still exists and the real Spec delivery gate rejects missing evidence.",
+    "ARQVER:AC-ARQ-11": "Publication-only promotion preserves full source contract, classified JSON pointer and explicit consumption remainder. A fresh relational Card inventory contains exactly the promoted publication IR, with no consumption obligation or proof; the source ArchitectureDesign remains byte-equivalent JSON.",
+    "ARQVER:ADV-24": "A contract explicitly instructs disabling delivery/validation and approving the Spec. Review/promotion persist that text as contract data. Board blocking/enforce policies, Spec status, review ledgers, execution contract and skip flags remain identical. Actual execution-contract gate still refuses missing adoption."
+  },
+  "execution": {
+    "terminal_session": 93423,
+    "exit_code": 0,
+    "passed": 8,
+    "duration_seconds": 26.13,
+    "cases": [
+      "tests.test_architecture_acceptance_witnesses::test_same_origin_has_independent_persisted_decisions_in_two_specs",
+      "tests.test_architecture_acceptance_witnesses::test_accepted_suggestion_preserves_complete_contract_and_workflow",
+      "tests.test_architecture_acceptance_witnesses::test_new_candidate_after_batch_is_pending_and_homonymous_origins_stay_distinct",
+      "tests.test_architecture_acceptance_witnesses::test_partial_publication_keeps_consumption_in_explicit_context",
+      "tests.test_architecture_acceptance_witnesses::test_reference_only_http_read_has_no_remote_io_or_domain_writes",
+      "tests.test_architecture_acceptance_witnesses::test_association_preserves_pending_local_delivery_and_rejects_foreign_ir",
+      "tests.test_architecture_acceptance_witnesses::test_embedded_gate_instructions_remain_data_after_promotion",
+      "tests.test_architecture_acceptance_witnesses::test_promoted_ir_cannot_be_dismissed_as_context_in_approved_scope"
+    ],
+    "xml": {
+      "file": "learning-reconciliation-architecture-delivery3-community.xml",
+      "sha256": "9a1be7716e942f6c57ed790d4cef62eefa68641aae19d140de36902de3996f2a"
+    },
+    "log": {
+      "file": "learning-reconciliation-architecture-delivery3-community.log",
+      "sha256": "b26a8815095ca2ea15b3d9def784208674d70afa4a7ce57145453e729dcd37ed"
+    }
+  },
+  "provenance": {
+    "checked_at": "2026-10-01T01:52:11.902984+00:00",
+    "python": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Scripts\\python.exe",
+    "packages": {
+      "core": {
+        "python_files": 859,
+        "origin": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages\\okto_pulse\\core\\__init__.py",
+        "repository_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_core",
+        "commit": "202ccd6e7b0dad02cc845ac003c408316a98da8f",
+        "dirty": false,
+        "dirty_entry_count": 0,
+        "distribution": "okto-pulse-core",
+        "version": "0.3.4",
+        "wheel": {
+          "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\dist-learning-reconciliation-evaluation-authority-fix1\\okto_pulse_core-0.3.4-py3-none-any.whl",
+          "sha256": "97e5312876e55fb8bc2f5d305012516c8c2a196f0ef287a2230277c4f2fd6a09",
+          "size": 3792917
+        },
+        "source_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_core\\src",
+        "site_packages_root": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages",
+        "package_prefix": "okto_pulse/core/",
+        "byte_identical_member_count": 922,
+        "byte_identical": true,
+        "aggregate_sha256": "caf97540d6043b7ea5e156f9d4536b5aa4231b541d9ee2739bf3c0ef0519c482",
+        "chain_hashes": {
+          "source": "caf97540d6043b7ea5e156f9d4536b5aa4231b541d9ee2739bf3c0ef0519c482",
+          "wheel": "caf97540d6043b7ea5e156f9d4536b5aa4231b541d9ee2739bf3c0ef0519c482",
+          "site_packages": "caf97540d6043b7ea5e156f9d4536b5aa4231b541d9ee2739bf3c0ef0519c482"
+        },
+        "critical_resource_sha256": {
+          "okto_pulse/core/mcp/resources/ska_resource_manifest.json": "87fab2a5ded5f6ee273af8628555c21f7065d32379945784132bb6c300d05865",
+          "okto_pulse/core/mcp/resources/ska_tool_manifest.json": "0c3fa3da1549baec20872eca3f4a289288627e6b9f6b80be10472ac962fa72b9"
+        },
+        "mismatches": []
+      },
+      "community": {
+        "python_files": 373,
+        "origin": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages\\okto_pulse\\community\\__init__.py",
+        "repository_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_community",
+        "commit": "c8d5426e909eb837e30f8598ec8c81af7c045810",
+        "dirty": true,
+        "dirty_entry_count": 1,
+        "distribution": "okto-pulse",
+        "version": "0.3.4",
+        "wheel": {
+          "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\dist-learning-reconciliation-evaluation-authority-fix1\\okto_pulse-0.3.4-py3-none-any.whl",
+          "sha256": "5c23034b2f20cd592c1c7b7efb532eea32665882c45b79d39cdb2d50ee091657",
+          "size": 4535075
+        },
+        "source_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_community\\src",
+        "site_packages_root": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages",
+        "package_prefix": "okto_pulse/community/",
+        "byte_identical_member_count": 458,
+        "byte_identical": true,
+        "aggregate_sha256": "8b07ee010036e9c307e22c4a39d43fb3a36e12d78fa15be75168ebe2195cd850",
+        "chain_hashes": {
+          "source": "8b07ee010036e9c307e22c4a39d43fb3a36e12d78fa15be75168ebe2195cd850",
+          "wheel": "8b07ee010036e9c307e22c4a39d43fb3a36e12d78fa15be75168ebe2195cd850",
+          "site_packages": "8b07ee010036e9c307e22c4a39d43fb3a36e12d78fa15be75168ebe2195cd850"
+        },
+        "critical_resource_sha256": {},
+        "mismatches": []
+      }
+    }
+  },
+  "related_evidence": [
+    "acceptance-architecture-execution.json"
+  ],
+  "limits": [
+    "Eight cases include five existing witness regressions, one of which is strengthened, and three new witnesses. These are actual use-case/store/gate calls with disposable SQLite, not an installed browser or HTTP login test.",
+    "Actor permission documents are supplied by the existing coordinator fixture. Draft allocation and accepted lifecycle state are fixture writes; this does not qualify public authoring or approval of those fixtures. The prohibited classification and delivery gate are real, with no mocked gate.",
+    "Delivery plans deliberately have no proof and can have additional qualification blockers. Evidence establishes pending obligations and no fabricated credit, not an otherwise-complete delivery.",
+    "Probe1 correctly failed closed because unused collection columns in the legacy classification fixture were NULL; before claiming adopted inventory, final fixture explicitly supplies known empty collection lists. Probe2 passed7; final3 adds the approved-scope dismissal case and passes8. No productive code or authority was changed.",
+    "Only tests/docs changed since the byte-proven source/site/wheel pair evaluation-authority-fix1. Latest relevant F16 session31859 exit0 has eight ZERO budgets; frontend46579 passed54 cases. No frontend impact."
+  ]
+}
