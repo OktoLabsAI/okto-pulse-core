@@ -2,6 +2,33 @@
 
 ## Estado para retomada
 
+Analytics→Clusters de Bugs (KG§6/§9) em implementação. Contrato tipado e
+agregação Core adicionados: inventário autorizado anterior aos joins, janela
+default15 dias por source_created_at, agrupamentos proxy/Spec/Learning/severidade,
+validade de Learning separada, resolução pelo último Done verificável, contagens
+distintas antes da paginação. Cursor prende ator/Board/filtros/fontes/geração;
+frescor desconhecido sem checkpoint completo, sem usar fila zero como prova.
+Este passo ainda NÃO está conectado ao leitor concreto, REST/MCP ou frontend.
+Não alterar contagem de aceites nem declarar KG-59 ou a capacidade concluídos.
+Próximo passo continua a integração prevista, testes de contrato/autorização e
+frontend/build oficial, usando esta mesma semântica. Nenhuma nova capability ou
+regra de permissão foi publicada.
+
+Core3474=0:33passed (31 novos casos de agregação e 2 regressões de inferência).
+Semântica validada no par semantics1 após provenance-bug-clusters-semantics1.json
+confirmar864py/927payload+375py/460 byte-idênticos. F16 inicial55616=1 apenas
+por matrizes README desatualizadas; findings vazios e oito budgets ZERO.
+READMEs regenerados oficialmente, par dist-learning-reconciliation-bug-clusters-semantics-qualified
+reconstruído e instalado50517=0. Proveniência final52748=0 confirma igualdade
+byte-a-byte; F16 final95610=0,ok=true,findings/documentation_findings vazios,
+oito budgets ZERO. Somente metadados README mudaram após os testes comportamentais.
+Ruff F/E9 e diff verdes. Recibo acceptance-bug-clusters-semantics.json registra
+hashes/casos e os limites. Inventário permanece148/30/68; nenhuma validação de
+frontend ou execução nativa é alegada por estes testes puros. Nenhum dado real,
+servidor ou política alterado. Base publicada anterior:Core62b0b266/Communityd0a4bb02.
+Nenhuma validação em execução. A próxima ação é integrar o leitor concreto à
+fachada de consulta e Analytics, mantendo a autoridade nos use cases do Core.
+
 Leitura/UI da inferência corrigida e verificada; KG-59 permanece PARCIAL.
 REST preserva proxy separadamente de relação paralela não classificada; a consulta
 curada de Constraint conserva assertion_basis=origin_proxy,

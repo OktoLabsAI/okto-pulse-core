@@ -1,0 +1,122 @@
+{
+  "format": "pulse-v1.3-reviewed-execution/v1",
+  "criteria": [
+    "KG:KG-59"
+  ],
+  "status": "partial",
+  "change": "Typed source/graph observation boundary and shared Core Bug cluster aggregation for KG sections 6 and 9. No public route or tool added in this step.",
+  "coverage": "Source creation window defaults to 15 days. Four grouping modes retain independent validity and provenance. Join fan-out does not inflate distinct counts. Exact cluster counts require whole-scope proof. Missing nodes, unknown checkpoints and unavailable graphs do not become complete. Source-based Spec/severity grouping remains available with graph unavailable. Resolution durations require verified timestamps and current Done status. Cursors bind actor, Board, filters, source content and graph generation. Nested arrays and serialized output are bounded.",
+  "executions": [
+    {
+      "terminal_session": 3474,
+      "exit_code": 0,
+      "cases": [
+        "tests.test_bug_clusters::test_two_different_causes_share_proxy_without_becoming_common_cause",
+        "tests.test_bug_clusters::test_join_fanout_and_multiple_targets_never_inflate_board_denominator",
+        "tests.test_bug_clusters::test_default_window_is_fifteen_days_and_uses_source_creation",
+        "tests.test_bug_clusters::test_no_current_or_exact_cluster_count_without_complete_scope_proof[changes0-unknown]",
+        "tests.test_bug_clusters::test_no_current_or_exact_cluster_count_without_complete_scope_proof[changes1-unknown]",
+        "tests.test_bug_clusters::test_no_current_or_exact_cluster_count_without_complete_scope_proof[changes2-unknown]",
+        "tests.test_bug_clusters::test_no_current_or_exact_cluster_count_without_complete_scope_proof[changes3-lagging]",
+        "tests.test_bug_clusters::test_no_current_or_exact_cluster_count_without_complete_scope_proof[changes4-incomplete]",
+        "tests.test_bug_clusters::test_no_current_or_exact_cluster_count_without_complete_scope_proof[changes5-incomplete]",
+        "tests.test_bug_clusters::test_no_current_or_exact_cluster_count_without_complete_scope_proof[changes6-incomplete]",
+        "tests.test_bug_clusters::test_no_current_or_exact_cluster_count_without_complete_scope_proof[changes7-unavailable]",
+        "tests.test_bug_clusters::test_lost_projection_with_empty_graph_is_incomplete_not_no_bugs",
+        "tests.test_bug_clusters::test_unknown_denominator_is_not_zero_or_page_count",
+        "tests.test_bug_clusters::test_authoritative_grouping_survives_graph_unavailability[spec]",
+        "tests.test_bug_clusters::test_authoritative_grouping_survives_graph_unavailability[severity]",
+        "tests.test_bug_clusters::test_learning_keeps_previous_interpretation_separate_from_current",
+        "tests.test_bug_clusters::test_missing_resolution_is_unknown_and_reopened_is_not_resolved",
+        "tests.test_bug_clusters::test_resolution_duration_uses_source_creation_and_verified_done_time",
+        "tests.test_bug_clusters::test_counts_are_for_whole_scope_and_cursor_binds_generation_sources_filters_actor",
+        "tests.test_bug_clusters::test_cursor_stable_across_read_order_and_checked_at",
+        "tests.test_bug_clusters::test_invalid_cursors_fail_explicitly[junk]",
+        "tests.test_bug_clusters::test_invalid_cursors_fail_explicitly[bug-clusters-v1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:0]",
+        "tests.test_bug_clusters::test_invalid_cursors_fail_explicitly[xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx]",
+        "tests.test_bug_clusters::test_inconsistent_or_foreign_inventory_is_rejected[changes0]",
+        "tests.test_bug_clusters::test_inconsistent_or_foreign_inventory_is_rejected[changes1]",
+        "tests.test_bug_clusters::test_inconsistent_or_foreign_inventory_is_rejected[changes2]",
+        "tests.test_bug_clusters::test_inconsistent_or_foreign_inventory_is_rejected[changes3]",
+        "tests.test_bug_clusters::test_inconsistent_or_foreign_inventory_is_rejected[changes4]",
+        "tests.test_bug_clusters::test_inconsistent_or_foreign_inventory_is_rejected[changes5]",
+        "tests.test_bug_clusters::test_inconsistent_or_foreign_inventory_is_rejected[changes6]",
+        "tests.test_bug_clusters::test_payload_budget_bounds_nested_arrays_not_only_rows",
+        "tests.test_bug_proxy_read_semantics::test_constraint_explanation_keeps_origin_proxy_classification",
+        "tests.test_bug_proxy_read_semantics::test_proxy_label_requires_matching_closed_provenance"
+      ],
+      "suites": [
+        {
+          "name": "pytest",
+          "errors": "0",
+          "failures": "0",
+          "skipped": "0",
+          "tests": "33",
+          "time": "6.090",
+          "timestamp": "2026-10-01T03:33:22.396485-03:00",
+          "hostname": "Alienware_m15"
+        }
+      ]
+    }
+  ],
+  "counts": {
+    "core": 33,
+    "new_cluster_cases": 31,
+    "existing_proxy_cases": 2,
+    "frontend": 0
+  },
+  "artifact_provenance": [
+    {
+      "path": "PULSE_REFACTOR/.validation-v040/provenance-bug-clusters-semantics1.json",
+      "sha256": "ce9bf08232a3a8a6bb47e78e2fa2b15fca8bb86d6dfeefa6e7fc399188795fdf"
+    },
+    {
+      "path": "PULSE_REFACTOR/.validation-v040/provenance-bug-clusters-semantics-qualified.json",
+      "sha256": "64af4285e61b5ad2985c89c10e9bfd7f11cd9a0536464969820631dfc9da3f19"
+    }
+  ],
+  "closure": {
+    "terminal_session": 95610,
+    "exit_code": 0,
+    "ok": true,
+    "budgets": {
+      "import_boundary_baseline": 0,
+      "singleton_baseline": 0,
+      "dependency_temporary_exceptions": 0,
+      "graph_runtime_compatibility": 0,
+      "rebuild_artifact_compatibility": 0,
+      "community_private_reach_ins": 0,
+      "community_adapter_bridges": 0,
+      "af35_relational_residue": 0
+    }
+  },
+  "evidence": [
+    {
+      "path": "okto_labs_pulse_core/src/okto_pulse/core/ports/bug_clusters.py",
+      "sha256": "158e3ca2e7e3da7ec999f72321322b126791ed09fcd1530f328453f6e1cb6eb7"
+    },
+    {
+      "path": "okto_labs_pulse_core/src/okto_pulse/core/services/bug_clusters.py",
+      "sha256": "85f01836f324288e15af3a6bc290893a3e40f6b0bb433379f2123759273eb3a7"
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_bug_clusters.py",
+      "sha256": "8eefebfa03b26eda0576228d3b47d09beab8fb9d1bce3c1df7d515279f0caea4"
+    },
+    {
+      "path": "PULSE_REFACTOR/.validation-v040/learning-reconciliation-bug-clusters-semantics1-core.xml",
+      "sha256": "12dd72eac7dbd675987acb26edbd1d4c722c445a3e8f665fa6c787cf3b8a8dbe"
+    },
+    {
+      "path": "PULSE_REFACTOR/.validation-v040/learning-reconciliation-bug-clusters-semantics-qualified-closure.log",
+      "sha256": "de96b272f93670a099778a5b4acb1c4cbe7839f0e3cfcbae928f9cfd34fb7ca9"
+    }
+  ],
+  "limits": [
+    "This is a pure semantic implementation step, not delivered Analytics or complete KG-59 acceptance.",
+    "Concrete authorized SQL/Grafx inventory, projection proof, use-case authorization, REST/MCP composition and frontend remain to integrate and test.",
+    "No native graph execution, UI test, official UI build or live data change in this step.",
+    "Read DTOs are trusted edition observations, not a grant of authority or independently authenticated checkpoint proof.",
+    "Only generated README metadata changed after the behavioral campaign; the qualified wheel pair was reinstalled and verified byte-for-byte."
+  ]
+}
