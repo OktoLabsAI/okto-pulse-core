@@ -2,6 +2,55 @@
 
 ## Estado para retomada
 
+### 2026-10-01 — Snapshots e recibos: contrato único em implementação
+
+Publicado incremento de checkpoint: Core **6ad0ff3f** / Community **c1a608de**;
+pushes confirmados em feature/v0.4.0. Prossegue a retirada já prevista em C2.
+Snapshot conjunto e custódia KG passam a usar formato único /0.4.0. Seleções
+atuais de participantes (SQL/grafo, routing, uploads, imagem nativa e evidências)
+continuam explícitas; nenhuma versão anterior pode reduzir suas provas. Recusa
+de payload físico de runtime retirado, sem importar, converter ou excluir.
+Ledger de evidência passa a recusar recibo sem digest de cenário inclusive antes
+de append/captura; removida aceitação antiga exclusiva de continuidade de chave.
+Testes de compatibilidade convertidos em recusa sem alterações e disposições
+registradas. dist-recovery-format1 instalado; provenance-recovery-format1.json
+comprova Core 852/915 e Community 319/405 arquivos byte-idênticos.
+recovery-format-evidence2: 41 aprovados/13.41s. A primeira coleta encontrou
+dependência obsoleta via test_verification_report_admission -> test_delivery_evidence_integration
+(code_investigation_observation_sha256 já retirado). Extraído somente o relatório
+de exemplo para verification_report_fixtures.py, reutilizado pelos consumidores;
+a suíte mista Delivery permanece para adaptação em C4, não foi excluída.
+recovery-format-snapshot1 terminou: 83 aprovados/2 falhas em 1222.54s. As duas
+falhas esperavam a antiga identidade sprint-opaque, mas a fixture já grava
+current-history. Round-trip, bytes e fences anteriores à asserção passaram.
+Corrigida só essa expectativa; recovery-format-window2: 2 aprovados/77.19s.
+Resultado agregado: 85 casos distintos de snapshots aprovados e 41 de evidência.
+As nove suítes cobrem round-trip Grafx, histórico nativo, privacidade, exclusão
+de runtime e recusa de armazenamento/formato incompatível. Log/XML em .validation-v040.
+Closure-recovery-format1-final exit 0, sem findings, oito budgets ZERO e READMEs
+conferidos. Ruff F/E9 e diff --check passaram. Incremento qualificado para publicação.
+
+Scripts já aplicados uma vez: simplify_recovery_formats.py,
+adapt_recovery_format_tests.py e extract_report_fixture.py; não reaplicar.
+Próximo item investigado: rebuild_sources.py ainda contém leitor predigest-v3,
+hashes v1/v2, rebaseline/auditoria e defaults de leitura; rebuild_service consome
+esse rebaseline. Community board_source_reader calcula hashes transitórios.
+Preservar hash atual de conteúdo/heads, digest cognitivo, drift e fences;
+SPEC_CONTENT_COLUMNS_V2 também compõe o hash atual (renomear, não apagar campos).
+Conversores normalize/migrate_test_scenario_evidence e seus consumidores REST
+continuam pendentes; não foram retirados neste incremento de formato de recibo.
+
+Preparada, mas **não aplicada**, a retirada seguinte em
+.validation-v040/remove_manifest_compatibility.py e adapt_manifest_contract_tests.py.
+preview_manifest_removal.py simula os dois em overlay de leitura/escrita, valida
+AST e grava manifest-compatibility-preview.patch; 18 arquivos previstos, nenhum
+arquivo de produto alterado por esse preview. Aplicar os dois scripts somente
+após terminar e publicar o incremento de snapshots. Inclui retirada do namespace
+rebaseline_audit, leitores predigest/v1/v2, hashes transitórios e orquestração;
+mantém bytes do hash atual, IR/OR, heads de qualidade/RDL e provas nativas nas
+suítes mistas. Inclui 11 novos casos de recusa sem reescrita. Após aplicação,
+revisar diff/Ruff, rebuild+instalação+prova byte-a-byte antes dos testes.
+
 ### 2026-10-01 — Checkpoints nativos: incremento qualificado
 
 dist-recovery-native1 instalado; provenance-recovery-native1.json comprova

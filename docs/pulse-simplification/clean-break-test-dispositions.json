@@ -861,6 +861,30 @@
       "path": "okto_labs_pulse_community/tests/test_legacy_rebuild_reconciliation.py",
       "disposition": "superseded",
       "reason": "Exclusive offline legacy manual-restore reconciliation and its evidence codecs were removed; native rebuild compensation tests retained."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_joint_recovery_retained_generations.py",
+      "test": "test_retained_v5_snapshot_still_verifies_and_restores",
+      "disposition": "superseded",
+      "reason": "Compatibility acceptance removed. Replaced by test_prior_snapshot_is_refused_without_creating_destination; native round-trip, history and authorization checks retained."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_joint_recovery_retained_generations.py",
+      "test": "test_retired_physical_payloads_are_preserved_without_loading_an_old_runtime",
+      "disposition": "superseded",
+      "reason": "Compatibility acceptance removed. Replaced by test_incompatible_physical_payloads_refuse_capture_without_conversion; native round-trip, history and authorization checks retained."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_kg_retained_custody.py",
+      "test": "test_historical_directory_and_sidecar_do_not_authorize_neighbor_bindings",
+      "disposition": "superseded",
+      "reason": "Compatibility acceptance removed. Replaced by test_incompatible_directory_and_sidecar_are_refused_without_changes; native round-trip, history and authorization checks retained."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_evidence_v2_adapter.py",
+      "test": "test_signed_legacy_receipt_is_continuity_only_and_never_authority",
+      "disposition": "superseded",
+      "reason": "Compatibility acceptance removed. Replaced by test_signed_old_receipt_refuses_authority_and_append_without_conversion; native round-trip, history and authorization checks retained."
     }
   ],
   "adapted_suites": [
