@@ -2,6 +2,35 @@
 
 ## Estado para retomada
 
+### 2026-10-01 — Manifest publicado; próximo contrato de evidência
+
+**Core cde4bedb / Community 804459f6** publicados em feature/v0.4.0; ambos os
+pushes confirmados. Instalado dist-manifest-native2, prova correspondente já
+registrada. Nenhum processo de validação pendente. Continuar C1–C4; a entrega
+global ainda não está declarada concluída.
+
+Próxima cadeia confirmada (não implementada ainda): Community test_evidence.py
+mantém EvidenceMigrationReport/PersistedEvidenceMigrationReport,
+migrate_test_scenario_evidence/migrate_persisted_test_scenario_evidence e
+normalize_test_scenario_evidence, que promove o objeto mcp_replay_manifest
+embutido e preenche evidence_class. Consumidores: adapters/__init__, api/specs
+(linhas aproximadas 815/2285) e verify_community_evidence_v2.
+
+A retirada deve ser coordenada: Core models/schemas.TestScenarioEvidence ainda
+declara mcp_replay_manifest e extra=allow; TestExecutionAttestationV2 mantém
+scenario_sha256 opcional explicitamente para leitura antiga. NÃO simplesmente
+trocar extra=allow por forbid sem tipar os campos atuais verification_report,
+report_sha256/report_author_id e demais metadados realmente emitidos hoje.
+Core services/test_scenario_lifecycle possui inferência/ambiguidade/flag legacy
+para esse alias; preservar a classe atual de evidência chamada
+"mcp_replay_manifest" (o valor da classe não é o campo alias antigo).
+Frontend: types/index.ts, CardModal.tsx e EvidenceBadge.tsx ainda leem o alias;
+retirar junto e testar EvidenceBadge/CardModal/fluxos impactados, reconstruir SPA.
+O aviso de manifest atual sem recibo deve permanecer; somente a leitura antiga
+"legacy unverified" sai. Não alterar permissões, assinatura, freshness ou gates
+de evidência atual. TestScenario também documenta leitura tolerante antiga;
+investigar consumidores nativos antes de unificar taxonomia de leitura/escrita.
+
 ### 2026-10-01 — Manifest sem rebaseline: implementação aplicada (WIP)
 
 Snapshots publicados: **Core 9e50c574 / Community 0ce72aa8**, pushes confirmados.
