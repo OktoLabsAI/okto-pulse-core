@@ -51,6 +51,8 @@ from okto_pulse.core.services.spec_structured_entities import (
 from okto_pulse.core.services.spec_entity_canonicalization import (
     canonicalize_spec_children,
 )
+from okto_pulse.core.models.schemas import SpecUpdate
+from okto_pulse.core.services.main import SpecService
 
 
 @pytest_asyncio.fixture
@@ -269,11 +271,13 @@ async def _seed_spec(db, *, board_id: str, spec_id: str, actor_id: str) -> None:
             id=spec_id,
             board_id=board_id,
             title="Structured Spec",
+            architecture_adoption={"contract_version": "architecture-adoption/v1", "board_id": board_id, "spec_id": spec_id, "adopted_in_edition": 1, "actor_id": actor_id, "inherited_resource_ids": []},
+            execution_contract={"contract_version": "spec-execution-contract/v1", "board_id": board_id, "spec_id": spec_id, "adopted_in_edition": 1, "actor_id": actor_id, "origin": "new_spec"},
             status=SpecStatus.DRAFT,
             edition=6,
             created_by=actor_id,
             # Generic structured-writer tests start from the canonical
-            # post-SK-A shape. Dedicated legacy-materialization tests below
+            # current shape. Dedicated incompatible-storage tests below
             # explicitly replace the collection they exercise with strings.
             functional_requirements=[
                 {
@@ -554,6 +558,7 @@ async def test_successful_structured_mutation_publishes_safe_event_and_handlers(
         assert row.actor_id == actor_id
         assert row.payload_json == {
             "spec_id": spec_id,
+            "projection_card_ids": [],
             "entity_type": "decision",
             "entity_id": "dec_struct",
             "child_ref": f"spec:{spec_id}:decision:dec_struct",
@@ -1260,7 +1265,7 @@ async def test_link_task_prunes_missing_target_and_preserves_live_card(db_factor
 
 
 @pytest.mark.asyncio
-async def test_legacy_fr_update_materializes_ids_and_migrates_requirement_refs(db_factory):
+async def test_incompatible_functional_requirements_refused_without_rewriting_links(db_factory):
     board_id = f"board-{uuid.uuid4()}"
     spec_id = f"spec-{uuid.uuid4()}"
     actor_id = "actor-structured"
@@ -1289,6 +1294,7 @@ async def test_legacy_fr_update_materializes_ids_and_migrates_requirement_refs(d
         await db.flush()
         service = StructuredSpecEntityService(db)
 
+        before = copy.deepcopy((spec.functional_requirements, spec.business_rules, spec.version))
         result = await service.mutate(
             StructuredSpecEntityCommand(
                 spec_id=spec_id,
@@ -1302,22 +1308,16 @@ async def test_legacy_fr_update_materializes_ids_and_migrates_requirement_refs(d
             )
         )
 
-        assert result.success is True
-        assert result.entity_id.startswith("fr_")
-        assert result.child_ref == f"spec:{spec_id}:functional_requirement:{result.entity_id}"
-        spec = await db.get(Spec, spec_id)
-        assert spec.functional_requirements[0] == {
-            "id": result.entity_id,
-            "text": "Updated FR",
-            "status": "active",
-        }
-        assert spec.business_rules[0]["linked_requirements"] == [result.entity_id]
-        assert spec.business_rules[1]["linked_requirements"] == [result.entity_id]
-        assert set(result.changed_fields) == {"functional_requirements", "business_rules"}
+        assert result.success is False
+        assert result.error_code == StructuredSpecEntityErrorCode.VALIDATION_FAILED
+        assert "incompatible_spec_requirement" in result.error_message
+        assert (spec.functional_requirements, spec.business_rules, spec.version) == before
+        assert not db.dirty
+        assert await db.scalar(select(func.count()).select_from(DomainEventRow).where(DomainEventRow.board_id == board_id)) == 0
 
 
 @pytest.mark.asyncio
-async def test_legacy_ac_update_materializes_ids_and_preserves_scenario_coverage(db_factory):
+async def test_incompatible_acceptance_criteria_refused_without_rewriting_links(db_factory):
     board_id = f"board-{uuid.uuid4()}"
     spec_id = f"spec-{uuid.uuid4()}"
     actor_id = "actor-structured"
@@ -1348,6 +1348,7 @@ async def test_legacy_ac_update_materializes_ids_and_preserves_scenario_coverage
         await db.flush()
         service = StructuredSpecEntityService(db)
 
+        before = copy.deepcopy((spec.acceptance_criteria, spec.test_scenarios, spec.version))
         result = await service.mutate(
             StructuredSpecEntityCommand(
                 spec_id=spec_id,
@@ -1361,25 +1362,26 @@ async def test_legacy_ac_update_materializes_ids_and_preserves_scenario_coverage
             )
         )
 
-        assert result.success is True
-        assert result.entity_id.startswith("ac_")
-        spec = await db.get(Spec, spec_id)
-        assert spec.acceptance_criteria[0]["id"] == result.entity_id
-        assert spec.acceptance_criteria[0]["text"] == "Updated AC"
-        assert spec.test_scenarios[0]["linked_criteria"] == [result.entity_id]
-        assert spec.test_scenarios[1]["linked_criteria"] == [result.entity_id]
-        assert set(result.changed_fields) == {"acceptance_criteria", "test_scenarios"}
+        assert result.success is False
+        assert result.error_code == StructuredSpecEntityErrorCode.VALIDATION_FAILED
+        assert "incompatible_spec_requirement" in result.error_message
+        assert (spec.acceptance_criteria, spec.test_scenarios, spec.version) == before
+        assert not db.dirty
+        assert await db.scalar(select(func.count()).select_from(DomainEventRow).where(DomainEventRow.board_id == board_id)) == 0
 
 
 @pytest.mark.asyncio
-async def test_legacy_ac_materialized_ids_survive_reorder_with_scenario_links(db_factory):
+async def test_current_ac_ids_survive_update_and_reorder_with_scenario_links(db_factory):
     board_id = f"board-{uuid.uuid4()}"
     spec_id = f"spec-{uuid.uuid4()}"
     actor_id = "actor-structured"
     async with db_factory() as db:
         await _seed_spec(db, board_id=board_id, spec_id=spec_id, actor_id=actor_id)
         spec = await db.get(Spec, spec_id)
-        spec.acceptance_criteria = ["Existing AC", "Second AC"]
+        spec.acceptance_criteria = [
+            {"id": "ac_first", "text": "Existing AC", "status": "active"},
+            {"id": "ac_second", "text": "Second AC", "status": "active"},
+        ]
         spec.test_scenarios = [
             {
                 "id": "ts_by_index",
@@ -1388,7 +1390,7 @@ async def test_legacy_ac_materialized_ids_survive_reorder_with_scenario_links(db
                 "given": "G",
                 "when": "W",
                 "then": "T",
-                "linked_criteria": ["0"],
+                "linked_criteria": ["ac_first"],
             },
             {
                 "id": "ts_by_text",
@@ -1397,29 +1399,29 @@ async def test_legacy_ac_materialized_ids_survive_reorder_with_scenario_links(db
                 "given": "G",
                 "when": "W",
                 "then": "T",
-                "linked_criteria": ["Existing AC"],
+                "linked_criteria": ["ac_first"],
             },
         ]
         await db.flush()
         service = StructuredSpecEntityService(db)
 
-        materialized = await service.mutate(
+        updated = await service.mutate(
             StructuredSpecEntityCommand(
                 spec_id=spec_id,
                 actor_id=actor_id,
                 entity_type="acceptance_criterion",
                 operation="update",
-                entity_id="0",
+                entity_id="ac_first",
                 payload={"text": "Updated AC"},
                 expected_spec_version=1,
                 permission_set=_permission_set("Spec"),
             )
         )
-        assert materialized.success is True
+        assert updated.success is True
         spec = await db.get(Spec, spec_id)
         first_id = spec.acceptance_criteria[0]["id"]
         second_id = spec.acceptance_criteria[1]["id"]
-        assert materialized.child_ref == f"spec:{spec_id}:acceptance_criterion:{first_id}"
+        assert updated.child_ref == f"spec:{spec_id}:acceptance_criterion:{first_id}"
         assert first_id.startswith("ac_")
         assert second_id.startswith("ac_")
         assert spec.test_scenarios[0]["linked_criteria"] == [first_id]
@@ -1460,7 +1462,7 @@ async def test_legacy_ac_materialized_ids_survive_reorder_with_scenario_links(db
 
 
 @pytest.mark.asyncio
-async def test_reorder_materialized_fr_keeps_stable_ids_and_links(db_factory):
+async def test_reorder_current_fr_keeps_stable_ids_and_links(db_factory):
     board_id = f"board-{uuid.uuid4()}"
     spec_id = f"spec-{uuid.uuid4()}"
     actor_id = "actor-structured"
@@ -1655,7 +1657,7 @@ async def test_revoke_fr_impact_detects_legacy_index_and_text_links(db_factory):
 
 
 @pytest.mark.asyncio
-async def test_update_legacy_technical_requirement_materializes_and_preserves_id(db_factory):
+async def test_incompatible_tr_refused_without_allocating_id(db_factory):
     board_id = f"board-{uuid.uuid4()}"
     spec_id = f"spec-{uuid.uuid4()}"
     actor_id = "actor-structured"
@@ -1687,14 +1689,13 @@ async def test_update_legacy_technical_requirement_materializes_and_preserves_id
         )
 
         spec = await db.get(Spec, spec_id)
-        assert result.success is True
-        assert spec.technical_requirements == [
-            {
-                "id": stable_id,
-                "text": "Edited legacy TR",
-                "status": "active",
-            }
-        ]
+        assert result.success is False
+        assert result.error_code == StructuredSpecEntityErrorCode.VALIDATION_FAILED
+        assert "incompatible_spec_requirement" in result.error_message
+        assert spec.technical_requirements == ["Legacy TR"]
+        assert spec.version == 1
+        assert not db.dirty
+        assert await db.scalar(select(func.count()).select_from(DomainEventRow).where(DomainEventRow.board_id == board_id)) == 0
 
 
 @pytest.mark.asyncio
@@ -2139,3 +2140,72 @@ async def test_mcp_polymorphic_tool_and_api_contract_wrapper_delegate_to_service
     )
     assert "dedicated okto_pulse_update_spec_api_contract wrapper" in blocked
     assert len(apply_calls) == call_count_before_blocked_api_contract
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("entity_type", ["functional_requirement", "acceptance_criterion"])
+async def test_numeric_entity_address_does_not_select_position(db_factory, entity_type):
+    board_id, spec_id = f"board-{uuid.uuid4()}", f"spec-{uuid.uuid4()}"
+    async with db_factory() as db:
+        await _seed_spec(db, board_id=board_id, spec_id=spec_id, actor_id="actor-structured")
+        await db.flush()
+        spec = await db.get(Spec, spec_id)
+        before = copy.deepcopy((spec.functional_requirements, spec.acceptance_criteria, spec.version))
+        result = await StructuredSpecEntityService(db).mutate(StructuredSpecEntityCommand(
+            spec_id=spec_id, actor_id="actor-structured", entity_type=entity_type,
+            operation="update", entity_id="0", payload={"text": "Must not edit first item"},
+            expected_spec_version=1, permission_set=_permission_set("Spec"),
+        ))
+        assert not result.success
+        assert result.error_code == StructuredSpecEntityErrorCode.ENTITY_NOT_FOUND
+        assert (spec.functional_requirements, spec.acceptance_criteria, spec.version) == before
+        assert not db.dirty
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("operation", ["create", "reorder", "revoke"])
+@pytest.mark.parametrize("stored", [["old text"], [{"text": "Missing identity"}]])
+async def test_incompatible_unrelated_collection_refused_before_preview(db_factory, operation, stored):
+    board_id, spec_id = f"board-{uuid.uuid4()}", f"spec-{uuid.uuid4()}"
+    async with db_factory() as db:
+        await _seed_spec(db, board_id=board_id, spec_id=spec_id, actor_id="actor-structured")
+        spec = await db.get(Spec, spec_id)
+        spec.technical_requirements = copy.deepcopy(stored)
+        await db.flush()
+        service = StructuredSpecEntityService(db)
+        result = await service.mutate(StructuredSpecEntityCommand(
+            spec_id=spec_id, actor_id="actor-structured", entity_type="functional_requirement",
+            operation=operation, entity_id="fr_existing",
+            payload={"text": "New FR"} if operation == "create" else {"ordered_entity_ids": ["fr_existing"]} if operation == "reorder" else {},
+            expected_spec_version=1, permission_set=_permission_set("Spec"),
+            preview_only=operation != "create",
+        ))
+        assert not result.success
+        assert result.error_code == StructuredSpecEntityErrorCode.VALIDATION_FAILED
+        assert "incompatible_spec_requirement" in result.error_message
+        assert result.ack_token is None
+        assert spec.technical_requirements == stored
+        assert spec.version == 1
+        assert not db.dirty
+        assert await db.scalar(select(func.count()).select_from(DomainEventRow).where(DomainEventRow.board_id == board_id)) == 0
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("field", ["functional_requirements", "technical_requirements", "acceptance_criteria"])
+@pytest.mark.parametrize("stored", [["Old text"], [{"text": "Missing identity"}]])
+async def test_bulk_requirement_update_refuses_incompatible_stored_identity(db_factory, field, stored):
+    board_id, spec_id = f"board-{uuid.uuid4()}", f"spec-{uuid.uuid4()}"
+    async with db_factory() as db:
+        await _seed_spec(db, board_id=board_id, spec_id=spec_id, actor_id="actor-structured")
+        spec = await db.get(Spec, spec_id)
+        setattr(spec, field, copy.deepcopy(stored))
+        await db.flush()
+        before = await _spec_json_snapshot(db, spec_id)
+        effects = await _side_effect_counts(db, board_id=board_id, spec_id=spec_id)
+        with pytest.raises(ValueError, match="incompatible_spec_requirement"):
+            await SpecService(db).update_spec(spec_id, "actor-structured", SpecUpdate(**{
+                field: [{"id": "new_authored_id", "text": "Current payload"}]
+            }))
+        assert await _spec_json_snapshot(db, spec_id) == before
+        assert await _side_effect_counts(db, board_id=board_id, spec_id=spec_id) == effects
+        assert not db.dirty

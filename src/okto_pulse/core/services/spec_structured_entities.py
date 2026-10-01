@@ -75,6 +75,7 @@ from okto_pulse.core.services.spec_entity_canonicalization import (  # noqa: F40
     canonicalize_spec_requirement_fields,
     spec_child_id,
     spec_child_text,
+    validate_stored_spec_children,
 )
 
 
@@ -142,7 +143,7 @@ _PROJECT_STRUCTURE_RELATION_STATUSES = {
 }
 
 _TEXT_ENTITY_TYPES = {"functional_requirement", "acceptance_criterion"}
-_LEGACY_MATERIALIZED_ENTITY_TYPES = _TEXT_ENTITY_TYPES | {"technical_requirement"}
+_REQUIREMENT_ENTITY_TYPES = _TEXT_ENTITY_TYPES | {"technical_requirement"}
 _STRUCTURED_MODEL_BY_TYPE = {
     "business_rule": BusinessRule,
     "decision": Decision,
@@ -242,146 +243,6 @@ class UnsupportedSpecEntityOperation(ValueError):
     """Raised when an operation is invalid for a specific entity type."""
 
 
-# ---------------------------------------------------------------------------
-# FR5 — lazy ref migration helpers (spec c61569b2, IMPL-4)
-#
-# Called by SpecService.update_spec whenever FR/AC lists are touched (i.e.
-# any call to update_spec that includes functional_requirements or
-# acceptance_criteria). When those lists contain legacy string items (or
-# dict items without an id), canonicalize_fr_ac assigns fresh fr_/ac_ ids.
-# These helpers then rewrite index/text refs in linked_requirements /
-# linked_criteria fields so that downstream analytics and the referential-
-# integrity gate find canonical ids instead of positional indices.
-#
-# Guard: the existing READ resolvers (resolve_linked_fr_indices,
-# resolve_linked_criteria_to_ids) remain untouched — specs not touched by
-# update_spec keep resolving correctly via index/text tolerance.  No batch
-# migration; no one-shot tool; only lazy on-touch.
-# ---------------------------------------------------------------------------
-
-
-def _build_materialization_mappings(
-    old_items: list[Any],
-    new_items: list[Any],
-) -> list[dict[str, str]]:
-    """Build index→fr_id/ac_id mappings for items materialized by canonicalize_fr_ac.
-
-    An item is considered *newly materialized* when the old item at the same
-    position lacked a structured id (was a legacy string or an id-less dict)
-    and the new item carries one.  Only those positions produce mapping
-    entries; items that already had ids are skipped (no migration needed).
-
-    Returns a list of ``{"index": str, "text": str, "id": str}`` dicts, the
-    same shape consumed by ``_legacy_replacement_map`` inside
-    ``StructuredSpecEntityService``.
-    """
-    mappings: list[dict[str, str]] = []
-    for idx, (old, new) in enumerate(zip(old_items, new_items)):
-        old_id = spec_child_id(old)
-        new_id = spec_child_id(new)
-        if old_id is not None or new_id is None:
-            # old already had an id → no migration needed for this slot
-            continue
-        text = spec_child_text(new)
-        mappings.append({"index": str(idx), "text": text, "id": new_id})
-    return mappings
-
-
-def _apply_ref_replacement(
-    collection: list[Any],
-    replacements: dict[str, str],
-    ref_field: str,
-) -> tuple[list[Any], bool]:
-    """Replace legacy refs in *ref_field* of each dict in *collection*.
-
-    Returns the (possibly mutated) collection and a boolean indicating
-    whether any replacement was made.  The input list is deep-copied
-    internally so the caller's original is never mutated.
-    """
-    result = copy.deepcopy(collection)
-    changed = False
-    for item in result:
-        if not isinstance(item, dict):
-            continue
-        refs = item.get(ref_field) or []
-        next_refs: list[str] = []
-        item_changed = False
-        for ref in refs:
-            ref_str = str(ref)
-            replacement = replacements.get(ref_str, ref_str)
-            if replacement != ref_str:
-                item_changed = True
-            if replacement not in next_refs:
-                next_refs.append(replacement)
-        if item_changed:
-            item[ref_field] = next_refs
-            changed = True
-    return result, changed
-
-
-def migrate_legacy_fr_refs(
-    old_frs: list[Any],
-    new_frs: list[Any],
-    collections: dict[str, list[Any]],
-) -> dict[str, list[Any]]:
-    """Rewrite index/text-based linked_requirements refs to canonical fr_ids.
-
-    Called by ``SpecService.update_spec`` after ``canonicalize_fr_ac`` runs on
-    ``functional_requirements``.  Only items that transitioned from legacy
-    (string/id-less dict) to structured (dict-with-fr_id) produce mapping
-    entries; already-structured items are skipped.
-
-    ``collections`` maps field_name → current list for each dependent field
-    (business_rules, api_contracts, integration_requirements,
-    observability_requirements, decisions).  The caller is responsible for
-    merging the returned updates back into update_data.
-
-    Returns a dict of ``{field_name: updated_list}`` for fields that changed.
-    An empty dict means no migration was needed.
-    """
-    mappings = _build_materialization_mappings(old_frs, new_frs)
-    if not mappings:
-        return {}
-    replacements: dict[str, str] = {}
-    for m in mappings:
-        replacements[m["index"]] = m["id"]
-        if m["text"]:
-            replacements[m["text"]] = m["id"]
-    updates: dict[str, list[Any]] = {}
-    for field_name, collection in collections.items():
-        updated, changed = _apply_ref_replacement(
-            collection, replacements, "linked_requirements"
-        )
-        if changed:
-            updates[field_name] = updated
-    return updates
-
-
-def migrate_legacy_ac_refs(
-    old_acs: list[Any],
-    new_acs: list[Any],
-    scenarios: list[Any],
-) -> list[Any] | None:
-    """Rewrite index/text-based linked_criteria refs in test_scenarios to canonical ac_ids.
-
-    Called by ``SpecService.update_spec`` after ``canonicalize_fr_ac`` runs on
-    ``acceptance_criteria``.  Returns the updated scenarios list if any refs
-    were rewritten, or ``None`` if no migration was needed.
-    """
-    mappings = _build_materialization_mappings(old_acs, new_acs)
-    if not mappings:
-        return None
-    replacements: dict[str, str] = {}
-    for m in mappings:
-        replacements[m["index"]] = m["id"]
-        if m["text"]:
-            replacements[m["text"]] = m["id"]
-    updated, changed = _apply_ref_replacement(
-        scenarios, replacements, "linked_criteria"
-    )
-    return updated if changed else None
-
-
 class StructuredSpecEntityNotFound(ValueError):
     """Raised when a requested child entity cannot be found in the spec."""
 
@@ -472,9 +333,7 @@ class StructuredSpecEntityAckRecord:
     expected_spec_version: int
     impact_fingerprint: str
     expires_at: datetime
-    materialized_field_name: str | None = None
-    materialized_items: list[Any] | None = None
-    related_updates: dict[str, Any] = field(default_factory=dict)
+
 
 
 class StructuredSpecEntityAckStore(Protocol):
@@ -748,36 +607,20 @@ class StructuredSpecEntityService:
 
         field_name = STRUCTURED_SPEC_ENTITY_FIELDS[command.entity_type]
         current_items = copy.deepcopy(getattr(spec, field_name, None) or [])
-        related_updates: dict[str, Any] = {}
         ack_record = (
             self.ack_store.peek(command.ack_token) if command.ack_token else None
         )
-        if command.entity_type in _LEGACY_MATERIALIZED_ENTITY_TYPES:
-            if (
-                ack_record is not None
-                and ack_record.materialized_field_name == field_name
-                and ack_record.materialized_items is not None
-            ):
-                current_items = copy.deepcopy(ack_record.materialized_items)
-                related_updates.update(copy.deepcopy(ack_record.related_updates))
-            else:
-                current_items, materialized = self._materialize_legacy_entities(
-                    command.entity_type,
-                    current_items,
-                )
-                related_updates.update(
-                    self._migrate_materialized_legacy_refs(
-                        spec, command.entity_type, materialized
-                    )
-                )
         try:
+            # Validate stored identity before preview, token issuance or mutation.
+            # Newly authored children receive IDs only in the create operation.
+            for requirement_field, _ in SPEC_REQUIREMENT_FIELDS:
+                validate_stored_spec_children(getattr(spec, requirement_field, None))
             if command.operation in _DESTRUCTIVE_LIKE_OPERATIONS:
                 impact_result = self._handle_impact_ack(
                     spec=spec,
                     field_name=field_name,
                     command=command,
                     current_items=current_items,
-                    related_updates=related_updates,
                     ack_record=ack_record,
                 )
                 if impact_result is not None:
@@ -789,7 +632,7 @@ class StructuredSpecEntityService:
                 command=command,
                 current_items=current_items,
             )
-            update_data = {field_name: new_items, **related_updates}
+            update_data = {field_name: new_items}
 
             update_data = await self._prepare_semantic_update(spec, update_data)
             if command.operation == "create" and field_name in dict(SPEC_REQUIREMENT_FIELDS):
@@ -1012,8 +855,8 @@ class StructuredSpecEntityService:
         update_data = copy.deepcopy(updates)
         # Every structured semantic writer crosses the same final-state
         # FR/TR/AC canonicalization boundary as bulk create/update. This
-        # also lazily materializes untouched legacy collections and
         # validates cross-collection ID uniqueness before any mutation.
+        # Persisted collections must already have their current identity.
         requirement_fields_before = {
             requirement_field: copy.deepcopy(getattr(spec, requirement_field, None))
             for requirement_field, _ in SPEC_REQUIREMENT_FIELDS
@@ -1040,49 +883,6 @@ class StructuredSpecEntityService:
             ):
                 update_data[requirement_field] = canonical_value
 
-        old_frs = list(requirement_fields_before["functional_requirements"] or [])
-        new_frs = list(canonical_requirements["functional_requirements"] or [])
-        if old_frs != new_frs:
-            fr_dependencies = {
-                dependent_field: list(
-                    update_data.get(
-                        dependent_field,
-                        getattr(spec, dependent_field, None) or [],
-                    )
-                    or []
-                )
-                for dependent_field in (
-                    "business_rules",
-                    "api_contracts",
-                    "integration_requirements",
-                    "observability_requirements",
-                    "decisions",
-                )
-            }
-            update_data.update(
-                migrate_legacy_fr_refs(
-                    old_frs,
-                    new_frs,
-                    fr_dependencies,
-                )
-            )
-
-        old_acs = list(requirement_fields_before["acceptance_criteria"] or [])
-        new_acs = list(canonical_requirements["acceptance_criteria"] or [])
-        if old_acs != new_acs:
-            migrated_scenarios = migrate_legacy_ac_refs(
-                old_acs,
-                new_acs,
-                list(
-                    update_data.get(
-                        "test_scenarios",
-                        getattr(spec, "test_scenarios", None) or [],
-                    )
-                    or []
-                ),
-            )
-            if migrated_scenarios is not None:
-                update_data["test_scenarios"] = migrated_scenarios
         await _validate_spec_linked_refs(self.db, spec, update_data)
         return update_data
 
@@ -1453,7 +1253,6 @@ class StructuredSpecEntityService:
         field_name: str,
         command: StructuredSpecEntityCommand,
         current_items: list[Any],
-        related_updates: dict[str, Any],
         ack_record: StructuredSpecEntityAckRecord | None,
     ) -> StructuredSpecEntityResult | None:
         entity_id = self._operation_scope_entity_id(command, current_items)
@@ -1462,7 +1261,6 @@ class StructuredSpecEntityService:
             command=command,
             field_name=field_name,
             current_items=current_items,
-            related_updates=related_updates,
             entity_id=entity_id,
         )
         if not impact.impacted_refs:
@@ -1500,13 +1298,6 @@ class StructuredSpecEntityService:
                 expected_spec_version=expected_version,
                 impact_fingerprint=fingerprint,
                 expires_at=expires_at,
-                materialized_field_name=field_name
-                if command.entity_type in _TEXT_ENTITY_TYPES
-                else None,
-                materialized_items=copy.deepcopy(current_items)
-                if command.entity_type in _TEXT_ENTITY_TYPES
-                else None,
-                related_updates=copy.deepcopy(related_updates),
             )
             token = self.ack_store.issue(record)
             impact.ack_token = token
@@ -1589,7 +1380,6 @@ class StructuredSpecEntityService:
         command: StructuredSpecEntityCommand,
         field_name: str,
         current_items: list[Any],
-        related_updates: dict[str, Any],
         entity_id: str,
     ) -> StructuredSpecEntityImpactReport:
         refs: list[StructuredSpecEntityImpactRef] = []
@@ -1644,9 +1434,7 @@ class StructuredSpecEntityService:
             command.entity_type
         ):
             collection = copy.deepcopy(
-                related_updates.get(
-                    target_field, getattr(spec, target_field, None) or []
-                )
+                getattr(spec, target_field, None) or []
             )
             for item in collection:
                 if not isinstance(item, dict):
@@ -1677,7 +1465,7 @@ class StructuredSpecEntityService:
         # The AC is the only owner of these typed links. Derive the reverse
         # impact here without adding another editable link collection.
         if command.entity_type in VERIFICATION_REQUIREMENT_FIELDS:
-            for criterion in related_updates.get("acceptance_criteria", spec.acceptance_criteria or []):
+            for criterion in (spec.acceptance_criteria or []):
                 if not isinstance(criterion, dict):
                     continue
                 if any(
@@ -1699,7 +1487,7 @@ class StructuredSpecEntityService:
         # silently replace a selected source/terminal criterion.
         if command.entity_type in {*VERIFICATION_REQUIREMENT_FIELDS, "acceptance_criterion"}:
             for target_type, target_field in VERIFICATION_REQUIREMENT_FIELDS.items():
-                for item in related_updates.get(target_field, getattr(spec, target_field, None) or []):
+                for item in (getattr(spec, target_field, None) or []):
                     if not isinstance(item, dict):
                         continue
                     qualification = item.get("verification")
@@ -1735,7 +1523,7 @@ class StructuredSpecEntityService:
                 for link in (criterion.get("requirement_links") or []) if isinstance(link, dict)
             }
             for target_type, target_field in VERIFICATION_REQUIREMENT_FIELDS.items():
-                for item in related_updates.get(target_field, getattr(spec, target_field, None) or []):
+                for item in (getattr(spec, target_field, None) or []):
                     if not isinstance(item, dict) or not isinstance(item.get("implementation_plan"), dict):
                         continue
                     target_id = spec_child_id(item)
@@ -1871,7 +1659,7 @@ class StructuredSpecEntityService:
             item = self._validate_payload_for_create(
                 command.entity_type, command.payload
             )
-            if command.entity_type in _LEGACY_MATERIALIZED_ENTITY_TYPES:
+            if command.entity_type in _REQUIREMENT_ENTITY_TYPES:
                 canonical = canonicalize_spec_children(
                     command.entity_type,
                     [*current_items, item],
@@ -2056,10 +1844,6 @@ class StructuredSpecEntityService:
     ) -> int:
         if not entity_id:
             raise ValueError("entity_id is required.")
-        if entity_type in _TEXT_ENTITY_TYPES and entity_id.isdigit():
-            index = int(entity_id)
-            if 0 <= index < len(items):
-                return index
         for index, item in enumerate(items):
             if self._entity_id(entity_type, item) == entity_id:
                 return index
@@ -2069,103 +1853,6 @@ class StructuredSpecEntityService:
         if isinstance(item, dict):
             return spec_child_id(item)
         return getattr(item, "id", None)
-
-    def _materialize_legacy_entities(
-        self,
-        entity_type: str,
-        items: list[Any],
-    ) -> tuple[list[Any], list[dict[str, str]]]:
-        canonical = canonicalize_spec_children(
-            entity_type,
-            items,
-            existing_items=items,
-        )
-        assert canonical is not None
-        return canonical, _build_materialization_mappings(items, canonical)
-
-    def _migrate_materialized_legacy_refs(
-        self,
-        spec: StructuredSpecRecord,
-        entity_type: str,
-        mappings: list[dict[str, str]],
-    ) -> dict[str, Any]:
-        if not mappings:
-            return {}
-        if entity_type == "functional_requirement":
-            return self._migrate_functional_requirement_refs(spec, mappings)
-        if entity_type == "acceptance_criterion":
-            return self._migrate_acceptance_criterion_refs(spec, mappings)
-        return {}
-
-    def _migrate_functional_requirement_refs(
-        self,
-        spec: StructuredSpecRecord,
-        mappings: list[dict[str, str]],
-    ) -> dict[str, Any]:
-        replacements = self._legacy_replacement_map(mappings)
-        updates: dict[str, Any] = {}
-        for field_name in (
-            "business_rules",
-            "api_contracts",
-            "integration_requirements",
-            "observability_requirements",
-            "decisions",
-        ):
-            collection = copy.deepcopy(getattr(spec, field_name, None) or [])
-            changed = False
-            for item in collection:
-                if not isinstance(item, dict):
-                    continue
-                refs, did_change = self._replace_refs(
-                    item.get("linked_requirements") or [], replacements
-                )
-                if did_change:
-                    item["linked_requirements"] = refs
-                    changed = True
-            if changed:
-                updates[field_name] = collection
-        return updates
-
-    def _migrate_acceptance_criterion_refs(
-        self,
-        spec: StructuredSpecRecord,
-        mappings: list[dict[str, str]],
-    ) -> dict[str, Any]:
-        replacements = self._legacy_replacement_map(mappings)
-        scenarios = copy.deepcopy(getattr(spec, "test_scenarios", None) or [])
-        changed = False
-        for item in scenarios:
-            if not isinstance(item, dict):
-                continue
-            refs, did_change = self._replace_refs(
-                item.get("linked_criteria") or [], replacements
-            )
-            if did_change:
-                item["linked_criteria"] = refs
-                changed = True
-        return {"test_scenarios": scenarios} if changed else {}
-
-    def _legacy_replacement_map(self, mappings: list[dict[str, str]]) -> dict[str, str]:
-        replacements: dict[str, str] = {}
-        for item in mappings:
-            replacements[item["index"]] = item["id"]
-            if item["text"]:
-                replacements[item["text"]] = item["id"]
-        return replacements
-
-    def _replace_refs(
-        self, refs: list[Any], replacements: dict[str, str]
-    ) -> tuple[list[str], bool]:
-        changed = False
-        next_refs: list[str] = []
-        for ref in refs:
-            ref_str = str(ref)
-            replacement = replacements.get(ref_str, ref_str)
-            if replacement != ref_str:
-                changed = True
-            if replacement not in next_refs:
-                next_refs.append(replacement)
-        return next_refs, changed
 
     def _reject_duplicate_id(
         self, entity_type: str, items: list[Any], entity_id: str | None

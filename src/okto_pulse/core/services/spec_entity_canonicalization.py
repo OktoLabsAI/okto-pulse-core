@@ -89,6 +89,25 @@ def _stable_child_id(entity_type: str, text: str, used_ids: set[str]) -> str:
     return f"{base}_{n}"
 
 
+def validate_stored_spec_children(items: list | None) -> None:
+    """Refuse incompatible persisted requirements without assigning identity."""
+    if items is None:
+        return
+    if not isinstance(items, list):
+        raise ValueError("incompatible_spec_requirement: expected a collection")
+    for item in items:
+        if (
+            not isinstance(item, dict)
+            or not isinstance(item.get("id"), str)
+            or not item["id"].strip()
+            or not isinstance(item.get("text"), str)
+            or not item["text"].strip()
+        ):
+            raise ValueError(
+                "incompatible_spec_requirement: stored children require id and text"
+            )
+
+
 def canonicalize_spec_children(
     entity_type: str,
     items: list | None,
@@ -115,6 +134,8 @@ def canonicalize_spec_children(
         )
     if items is None:
         return None
+
+    validate_stored_spec_children(existing_items)
 
     # text -> ordered queue of existing ids (only items that already carry one).
     existing_ids_by_text: dict[str, deque] = defaultdict(deque)
@@ -232,4 +253,5 @@ __all__ = [
     "canonicalize_spec_requirement_fields",
     "spec_child_id",
     "spec_child_text",
+    "validate_stored_spec_children",
 ]

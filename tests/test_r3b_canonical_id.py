@@ -74,29 +74,10 @@ def test_ac7_parity_index_vs_fr_id_coverage():
     assert cov_index["fr_uncovered_indices"] == [1], cov_index
 
 
-# ---------------------------------------------------------------------------
-# AC8 (ts_5fe7ff0e) — scope guard: read-resolver kept, no batch, refs migrated lazy
-# ---------------------------------------------------------------------------
-
-
-def test_ac8_scope_guard_resolver_kept_and_no_batch():
-    """AC8 — read-resolver preserved (FR4 permanent), the index-normalizer was
-    cleaned, the lazy ref-migration is wired into update_spec, and NO batch /
-    one-shot bulk refs-migration tool was added (owner rejected)."""
-    analytics = (CORE / "services" / "analytics_service.py").read_text(encoding="utf-8")
-    server = (CORE / "mcp" / "server.py").read_text(encoding="utf-8")
-    sse = (CORE / "services" / "spec_structured_entities.py").read_text(encoding="utf-8")
-    main = (CORE / "services" / "main.py").read_text(encoding="utf-8")
-
-    # FR4 — the tolerant read-resolver is PERMANENT (not removed).
-    assert "def resolve_linked_fr_indices" in analytics
-
-    # IMPL-2 cleanup — the dead index-normalizer is gone from the write surface.
-    assert "_parse_linked_requirements" not in server
-
-    # FR5 — the lazy ref-migration helper exists and is wired into update_spec...
-    assert "def migrate_legacy_fr_refs" in sse
-    assert "migrate_legacy_fr_refs" in main  # the lazy on-touch plug
-
-    # ...and is NOT exposed as a bulk MCP migration tool (no batch / one-shot).
-    assert "migrate_legacy_fr_refs" not in server
+def test_no_requirement_migration_in_write_surfaces():
+    """Clean-break supersedes the former lazy-conversion obligation."""
+    for path in ("services/spec_structured_entities.py", "services/main.py", "mcp/server.py"):
+        source = (CORE / path).read_text(encoding="utf-8")
+        assert "migrate_legacy_fr_refs" not in source
+        assert "migrate_legacy_ac_refs" not in source
+        assert "materialized_items" not in source

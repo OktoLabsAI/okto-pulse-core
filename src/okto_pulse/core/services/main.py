@@ -11027,73 +11027,9 @@ class SpecService:
             for _field_name in _explicit_requirement_fields:
                 update_data[_field_name] = _canonical_requirement_fields[_field_name]
 
-        # FR5 â€” lazy ref migration (spec c61569b2, IMPL-4).
-        # When explicit FR/AC lists are materialised by canonicalization above,
-        # rewrite any index/text refs in downstream fields to the newly
-        # assigned fr_/ac_ ids.  This runs on-touch only: specs not passed
-        # through update_spec keep resolving via the permanent read-tolerant
-        # resolvers (resolve_linked_fr_indices / resolve_linked_criteria_*).
-        # No batch sweep; no one-shot migration tool.
-        if (
-            "functional_requirements" in update_data
-            and update_data["functional_requirements"]
-        ):
-            from okto_pulse.core.services.spec_structured_entities import (  # noqa: PLC0415
-                migrate_legacy_fr_refs,
-            )
-
-            old_frs = list(spec.functional_requirements or [])
-            new_frs = list(update_data["functional_requirements"] or [])
-            _fr_dep_collections = {
-                field: list(
-                    update_data[field]
-                    if field in update_data and update_data[field] is not None
-                    else getattr(spec, field, None) or []
-                )
-                for field in (
-                    "business_rules",
-                    "api_contracts",
-                    "integration_requirements",
-                    "observability_requirements",
-                    "decisions",
-                )
-            }
-            _fr_migration_updates = migrate_legacy_fr_refs(
-                old_frs, new_frs, _fr_dep_collections
-            )
-            # Apply migration results unconditionally: the collections dict was
-            # already built from update_data (if present) or spec, so _updated
-            # already reflects the caller's new data with refs rewritten.
-            for _field, _updated in _fr_migration_updates.items():
-                update_data[_field] = _updated
-
-        if "acceptance_criteria" in update_data and update_data["acceptance_criteria"]:
-            from okto_pulse.core.services.spec_structured_entities import (  # noqa: PLC0415
-                migrate_legacy_ac_refs,
-            )
-
-            old_acs = list(spec.acceptance_criteria or [])
-            new_acs = list(update_data["acceptance_criteria"] or [])
-            _current_scenarios = list(
-                update_data["test_scenarios"]
-                if "test_scenarios" in update_data
-                and update_data["test_scenarios"] is not None
-                else getattr(spec, "test_scenarios", None) or []
-            )
-            _migrated_scenarios = migrate_legacy_ac_refs(
-                old_acs, new_acs, _current_scenarios
-            )
-            if _migrated_scenarios is not None:
-                update_data["test_scenarios"] = _migrated_scenarios
-
-        # Re-evaluate bumps_semantic after FR5 migration may have added
-        # semantic fields (e.g. business_rules) to update_data.
+        # Canonicalization can change authored values; keep event/history deltas
+        # aligned with the final payload without rewriting any dependent links.
         bumps_semantic = bool(_semantic_changed_fields())
-        # Capture old values for any fields added to update_data by FR5 migration
-        # (these were absent from the original update_data so old_data missed them).
-        for _migrated_field in update_data:
-            if _migrated_field not in old_data:
-                old_data[_migrated_field] = getattr(spec, _migrated_field, None)
 
         # Validate referential integrity of all `linked_*` fields BEFORE
         # mutating the spec. The validator computes the final state of each

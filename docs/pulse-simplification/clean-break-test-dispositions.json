@@ -1148,6 +1148,22 @@
     {
       "path": "okto_labs_pulse_community/tests/test_sprint_lineage_retirement.py",
       "reason": "Retains native Spec/Card/bug/test lineage, foreign-board fences and unsupported-root refusal using current schema; removes historical Sprint preservation assertions."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_spec_structured_entities.py",
+      "reason": "Retains native creation, update, reorder, permissions, history and impact acknowledgements; replaces persisted FR/AC/TR materialization with refusal without events or mutation, including incompatible untouched collections."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_impl4_fr4_fr5.py",
+      "reason": "Two positive lazy-conversion cases replaced by raw-link preservation on refusal. Remaining tolerant-reader cases pending coordinated reader removal."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_r3b_canonical_id.py",
+      "reason": "Lazy-conversion presence assertion superseded by absence guard. Reader parity case retained pending reader removal."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_requirement_verification_read.py",
+      "reason": "Current explicit execution contract in fixtures; preserves REST/MCP parity, body permissions, no-write reads and unqualified native Done history. Removes missing-contract compatibility expectation."
     }
   ],
   "removed_cases": [

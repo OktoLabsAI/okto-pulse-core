@@ -2,6 +2,38 @@
 
 ## Estado para retomada
 
+### 2026-10-01 — FR/TR/AC persistidos: conversão retirada, qualificação em curso
+
+**Qualificado:** agregado Core2/rest3/bulk1/links1: 85 casos distintos aprovados;
+Community2: 12 aprovados; frontend1: 33 aprovados. Recusa sem alteração de JSON,
+links, versão, histórico/eventos; criação, ordem e ack nativos preservados.
+closure-requirement-native1 exit 0, findings vazios, oito budgets ZERO; READMEs
+renderizados e validados pela função oficial, prova .readmes.json. Ruff/diff
+passaram. replace_lazy_migration_regressions.py aplicado uma vez, não reaplicar.
+As notas de falha intermediária abaixo são histórico, não pendências deste marco.
+
+
+Aplicados remove_requirement_materialization.py, adapt_requirement_materialization_tests.py
+ e fix_requirement_native_fixtures.py uma vez (não reaplicar). Retirados migradores
+FR/AC dos dois writers, materialização no preview, conteúdo convertido no ack e
+resolução de entity_id por posição. Identidade persistida sem id/text é recusada;
+criação nativa e controles de impacto/fingerprint/TTL/versão/uso único permanecem.
+Dist-requirement-native1 instalado e provenance-requirement-native1.json comprova
+Core 852/915 e Community 318/404 arquivos Python/payload byte-idênticos.
+
+Regressão inicial identificou fixtures sem adoção/contrato atuais, um campo novo
+já existente no evento (projection_card_ids) e contagem global indevida de eventos.
+Corrigidos apenas testes, sem relaxar produto. Core2: 76/77 aprovados, último caso
+REST em reexecução após contrato explícito no seed; bulk1: seis recusas sem escrita
+aprovadas. Community2: 12 aprovados; frontend: 33 aprovados. Closure em execução.
+
+Este incremento ainda NÃO fecha o contrato inteiro de requisitos: entrada nova em
+string/aliases, reutilização de ID por texto, leitores tolerantes e normalizadores
+frontend seguem pendentes na cadeia já identificada. Não confundir a retirada de
+conversão persistida com conclusão de C1–C4. Suítes mistas antigas seguem para
+adaptação sem perder responsabilidades nativas.
+
+
 ### 2026-10-01 — Par publicado e próxima cadeia de remoção
 
 Core **9ce920e8** / Community **c6fff2b5** publicados em feature/v0.4.0,

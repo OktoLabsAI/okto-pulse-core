@@ -243,156 +243,8 @@ async def test_ac5_fr_id_ref_passes_validate_spec_linked_refs_gate(db_factory):
 # ===========================================================================
 
 
-@pytest.mark.asyncio
-async def test_ac6_update_spec_with_frs_migrates_linked_requirements_to_fr_ids(db_factory):
-    """AC6 — when update_spec is called with functional_requirements (even the
-    same list re-passed), legacy index refs in business_rules.linked_requirements
-    are rewritten to canonical fr_ids in the persisted row.
-
-    Proof: read the raw DB column before and after update_spec.
-    """
-    board_id = await _seed_board(db_factory)
-    spec_id = await _seed_legacy_spec(
-        db_factory,
-        board_id,
-        frs=["FR alpha", "FR beta"],           # legacy strings (no ids)
-        acs=["AC one"],
-        business_rules=[
-            {
-                "id": "br_by_index",
-                "title": "Index ref",
-                "rule": "R",
-                "when": "W",
-                "then": "T",
-                "linked_requirements": ["0"],   # index ref
-            },
-            {
-                "id": "br_by_text",
-                "title": "Text ref",
-                "rule": "R",
-                "when": "W",
-                "then": "T",
-                "linked_requirements": ["FR beta"],  # text ref
-            },
-        ],
-    )
-
-    # --- Before update_spec: raw DB has index/text refs ---
-    async with db_factory() as db:
-        before = await db.get(Spec, spec_id)
-        before_br0_refs = list(before.business_rules[0]["linked_requirements"])
-        before_br1_refs = list(before.business_rules[1]["linked_requirements"])
-
-    assert before_br0_refs == ["0"],        "pre-condition: BR0 uses index ref"
-    assert before_br1_refs == ["FR beta"],  "pre-condition: BR1 uses text ref"
-
-    # --- Call update_spec with the same FRs (triggers canonicalization + migration) ---
-    async with db_factory() as db:
-        updated = await SpecService(db).update_spec(
-            spec_id,
-            USER,
-            SpecUpdate(functional_requirements=["FR alpha", "FR beta"]),
-        )
-        await db.commit()
-        spec_id_after = updated.id  # same id
-
-    # --- After update_spec: raw column must have fr_ids ---
-    async with db_factory() as db:
-        after = await db.get(Spec, spec_id_after)
-
-    # FRs are now structured dicts with fr_ ids
-    assert all(isinstance(fr, dict) and fr.get("id", "").startswith("fr_")
-               for fr in after.functional_requirements), (
-        f"FRs not structured after update_spec: {after.functional_requirements}"
-    )
-
-    fr_id_alpha = next(
-        fr["id"] for fr in after.functional_requirements if fr["text"] == "FR alpha"
-    )
-    fr_id_beta = next(
-        fr["id"] for fr in after.functional_requirements if fr["text"] == "FR beta"
-    )
-
-    after_br0_refs = after.business_rules[0]["linked_requirements"]
-    after_br1_refs = after.business_rules[1]["linked_requirements"]
-
-    # Index "0" → fr_id_alpha
-    assert after_br0_refs == [fr_id_alpha], (
-        f"BR0 linked_requirements not migrated: expected [{fr_id_alpha!r}], got {after_br0_refs}"
-    )
-    # Text "FR beta" → fr_id_beta
-    assert after_br1_refs == [fr_id_beta], (
-        f"BR1 linked_requirements not migrated: expected [{fr_id_beta!r}], got {after_br1_refs}"
-    )
 
 
-@pytest.mark.asyncio
-async def test_ac6_update_spec_with_acs_migrates_linked_criteria_to_ac_ids(db_factory):
-    """AC6 (AC variant) — update_spec with acceptance_criteria rewrites
-    index refs in test_scenarios.linked_criteria to canonical ac_ids.
-    """
-    board_id = await _seed_board(db_factory)
-    spec_id = await _seed_legacy_spec(
-        db_factory,
-        board_id,
-        frs=[],
-        acs=["AC zero", "AC one"],              # legacy strings
-        test_scenarios=[
-            {
-                "id": "ts_by_index",
-                "title": "By index",
-                "scenario_type": "unit",
-                "given": "G",
-                "when": "W",
-                "then": "T",
-                "linked_criteria": ["0"],        # index ref
-            },
-            {
-                "id": "ts_by_text",
-                "title": "By text",
-                "scenario_type": "unit",
-                "given": "G",
-                "when": "W",
-                "then": "T",
-                "linked_criteria": ["AC one"],   # text ref
-            },
-        ],
-    )
-
-    # Before: raw index/text refs
-    async with db_factory() as db:
-        before = await db.get(Spec, spec_id)
-    assert before.test_scenarios[0]["linked_criteria"] == ["0"]
-    assert before.test_scenarios[1]["linked_criteria"] == ["AC one"]
-
-    # Touch acceptance_criteria via update_spec
-    async with db_factory() as db:
-        updated = await SpecService(db).update_spec(
-            spec_id,
-            USER,
-            SpecUpdate(acceptance_criteria=["AC zero", "AC one"]),
-        )
-        await db.commit()
-
-    async with db_factory() as db:
-        after = await db.get(Spec, updated.id)
-
-    ac_id_zero = next(
-        ac["id"] for ac in after.acceptance_criteria if ac["text"] == "AC zero"
-    )
-    ac_id_one = next(
-        ac["id"] for ac in after.acceptance_criteria if ac["text"] == "AC one"
-    )
-
-    after_ts0_refs = after.test_scenarios[0]["linked_criteria"]
-    after_ts1_refs = after.test_scenarios[1]["linked_criteria"]
-
-    assert after_ts0_refs == [ac_id_zero], (
-        f"ts[0] linked_criteria not migrated: expected [{ac_id_zero!r}], got {after_ts0_refs}"
-    )
-    assert after_ts1_refs == [ac_id_one], (
-        f"ts[1] linked_criteria not migrated: expected [{ac_id_one!r}], got {after_ts1_refs}"
-    )
 
 
 @pytest.mark.asyncio
@@ -446,3 +298,29 @@ async def test_ac6_untouched_spec_retains_index_refs_in_db(db_factory):
         after.functional_requirements,
     )
     assert resolved == {0}, f"Read-resolver must still handle index refs: {resolved}"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("field,dependent,ref_field", [
+    ("functional_requirements", "business_rules", "linked_requirements"),
+    ("acceptance_criteria", "test_scenarios", "linked_criteria"),
+])
+async def test_incompatible_requirement_refusal_preserves_raw_links(db_factory, field, dependent, ref_field):
+    """Supersedes lazy conversion: no rewritten requirement or dependent reference."""
+    board_id = await _seed_board(db_factory)
+    dependents = [{"id": "dependent", ref_field: ["0", "Old text"]}]
+    spec_id = await _seed_legacy_spec(db_factory, board_id,
+        frs=["Old text"] if field == "functional_requirements" else [],
+        acs=["Old text"] if field == "acceptance_criteria" else [],
+        **{dependent: dependents})
+    async with db_factory() as db:
+        spec = await db.get(Spec, spec_id)
+        version = spec.version
+        with pytest.raises(ValueError, match="incompatible_spec_requirement"):
+            await SpecService(db).update_spec(spec_id, USER, SpecUpdate(**{
+                field: [{"id": "new-authored-id", "text": "New content"}]
+            }))
+        assert getattr(spec, field) == ["Old text"]
+        assert getattr(spec, dependent) == dependents
+        assert spec.version == version
+        assert not db.dirty
