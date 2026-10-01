@@ -1974,6 +1974,17 @@ class SubmitSpecEvaluationUseCase:
         service = uow.services.specs
         spec = await _require_actor_board_spec(uow, command.spec_id, actor, write=True)
 
+        # Board membership/content authority does not grant review authority.
+        # Match the existing MCP evaluation permission before any writer/audit.
+        await require_authorization(
+            actor,
+            PermissionRequirement(
+                "spec.evaluations.submit", legacy_operation="specs:evaluate",
+            ),
+            uow=uow,
+            board_id=spec.board_id,
+        )
+
         try:
             evaluator_name = await uow.services.resolve_actor_name(
                 actor.actor_id,

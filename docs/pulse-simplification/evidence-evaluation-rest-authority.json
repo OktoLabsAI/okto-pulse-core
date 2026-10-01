@@ -1,0 +1,182 @@
+{
+  "format": "pulse-v1.3-reviewed-execution/v1",
+  "scope": "BASE:T03 REST evaluation authority",
+  "status": "partial",
+  "finding": "REST evaluation checked accessible Board and full-context policy but omitted the canonical evaluation grant. FullContextCriticalActionGuard checks context availability, not action permissions. MCP already checks spec.evaluations.submit with specs:evaluate compatibility.",
+  "change": "SubmitSpecEvaluationUseCase requires the existing canonical grant before actor-name lookup, service mutation/audit or commit. REST maps PermissionDeniedError through its existing adapter contract to 403. No new permission, new state rule or history rewrite.",
+  "test": "Injected resolved permission document denies evaluation while allowing content/read and validated interaction. POST returns 403 naming the required permission; persisted evaluation list remains identical. Existing approved REST and transition regression suites pass.",
+  "runs": [
+    {
+      "session": 16305,
+      "exit_code": 0,
+      "passed": 64,
+      "duration_seconds": 16.18,
+      "file": "learning-reconciliation-evaluation-authority-fix2-core.xml",
+      "sha256": "6b2948d4521ff4e3216468f216c07f37c395792eaedbaab85b5756f68615dead",
+      "log": {
+        "file": "learning-reconciliation-evaluation-authority-fix2-core.log",
+        "sha256": "22127a0362c65bbbb26dfb551896b696ca03f444091e63d940a0ab9226ef3c16"
+      }
+    },
+    {
+      "session": 46579,
+      "exit_code": 0,
+      "passed": 54,
+      "duration_seconds": 46.34,
+      "command": "npm exec -- vitest run src/components/specs/__tests__/SpecEvaluationHistory.test.tsx src/components/specs/__tests__/SpecModal.validationTabs.test.tsx",
+      "limit": "Existing history/validation-tab UI regressions. No frontend submitSpecEvaluation API exists; this does not claim browser evaluation submission coverage."
+    }
+  ],
+  "provenance": {
+    "checked_at": "2026-10-01T00:11:47.450320+00:00",
+    "python": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Scripts\\python.exe",
+    "packages": {
+      "core": {
+        "python_files": 859,
+        "origin": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages\\okto_pulse\\core\\__init__.py",
+        "repository_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_core",
+        "commit": "c57f2f9437ccd93062479396362ef8a112cf1b1a",
+        "dirty": true,
+        "dirty_entry_count": 2,
+        "distribution": "okto-pulse-core",
+        "version": "0.3.4",
+        "wheel": {
+          "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\dist-learning-reconciliation-evaluation-authority-fix1\\okto_pulse_core-0.3.4-py3-none-any.whl",
+          "sha256": "97e5312876e55fb8bc2f5d305012516c8c2a196f0ef287a2230277c4f2fd6a09",
+          "size": 3792917
+        },
+        "source_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_core\\src",
+        "site_packages_root": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages",
+        "package_prefix": "okto_pulse/core/",
+        "byte_identical_member_count": 922,
+        "byte_identical": true,
+        "aggregate_sha256": "caf97540d6043b7ea5e156f9d4536b5aa4231b541d9ee2739bf3c0ef0519c482",
+        "chain_hashes": {
+          "source": "caf97540d6043b7ea5e156f9d4536b5aa4231b541d9ee2739bf3c0ef0519c482",
+          "wheel": "caf97540d6043b7ea5e156f9d4536b5aa4231b541d9ee2739bf3c0ef0519c482",
+          "site_packages": "caf97540d6043b7ea5e156f9d4536b5aa4231b541d9ee2739bf3c0ef0519c482"
+        },
+        "critical_resource_sha256": {
+          "okto_pulse/core/mcp/resources/ska_resource_manifest.json": "87fab2a5ded5f6ee273af8628555c21f7065d32379945784132bb6c300d05865",
+          "okto_pulse/core/mcp/resources/ska_tool_manifest.json": "0c3fa3da1549baec20872eca3f4a289288627e6b9f6b80be10472ac962fa72b9"
+        },
+        "mismatches": []
+      },
+      "community": {
+        "python_files": 373,
+        "origin": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages\\okto_pulse\\community\\__init__.py",
+        "repository_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_community",
+        "commit": "4eb9a0c785343b03c64bbf0e9a8142e36ed8f5a9",
+        "dirty": true,
+        "dirty_entry_count": 1,
+        "distribution": "okto-pulse",
+        "version": "0.3.4",
+        "wheel": {
+          "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\dist-learning-reconciliation-evaluation-authority-fix1\\okto_pulse-0.3.4-py3-none-any.whl",
+          "sha256": "5c23034b2f20cd592c1c7b7efb532eea32665882c45b79d39cdb2d50ee091657",
+          "size": 4535075
+        },
+        "source_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_community\\src",
+        "site_packages_root": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages",
+        "package_prefix": "okto_pulse/community/",
+        "byte_identical_member_count": 458,
+        "byte_identical": true,
+        "aggregate_sha256": "8b07ee010036e9c307e22c4a39d43fb3a36e12d78fa15be75168ebe2195cd850",
+        "chain_hashes": {
+          "source": "8b07ee010036e9c307e22c4a39d43fb3a36e12d78fa15be75168ebe2195cd850",
+          "wheel": "8b07ee010036e9c307e22c4a39d43fb3a36e12d78fa15be75168ebe2195cd850",
+          "site_packages": "8b07ee010036e9c307e22c4a39d43fb3a36e12d78fa15be75168ebe2195cd850"
+        },
+        "critical_resource_sha256": {},
+        "mismatches": []
+      }
+    }
+  },
+  "architectural_gate": {
+    "session": 31859,
+    "exit_code": 0,
+    "budgets": [
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "import_boundary_baseline",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every import_boundary_baseline allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "singleton_baseline",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every singleton_baseline allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "dependency_temporary_exceptions",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every dependency_temporary_exceptions allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "graph_runtime_compatibility",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every graph_runtime_compatibility allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "rebuild_artifact_compatibility",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every rebuild_artifact_compatibility allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "community_private_reach_ins",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every community_private_reach_ins allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "community_adapter_bridges",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every community_adapter_bridges allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "af35_relational_residue",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every af35_relational_residue allowance before F16 completion."
+      }
+    ],
+    "file": "learning-reconciliation-evaluation-authority-fix1-closure.log",
+    "sha256": "98c78dda81bb2f2b4615ba2062c38c237c72433eb14578c0a770cf831d09f2a3"
+  },
+  "limits": [
+    "Initial failing probe 36464 and first corrected-product run 87768 patched Community persistence, while this Core relational fixture uses CoreApplicationServiceCatalog. Those runs are retained but are NOT evidence of an effective denied permission being resolved; the corrected test patches the actual public catalog method and asserts it was awaited.",
+    "The omitted pre-change check is established by source-chain review at Core c57f2f94 / Community 4eb9a0c7. No same-fixture pre-change rerun with corrected permission injection is claimed.",
+    "Identity is injected through REST dependency override and resolved permission documents are test inputs. No real credential/grant-resolution E2E is claimed.",
+    "Core SQL fixture mappings are frozen test support. The test traverses the actual REST router, use case and service writer.",
+    "T03 submit/move/update/batch/alias cross-surface matrix and T04 full actor handoff remain open; these are original plan items, not new scope."
+  ]
+}

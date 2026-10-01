@@ -2,6 +2,33 @@
 
 ## Estado para retomada
 
+BASE T03, correção pontual de autorização REST: SubmitSpecEvaluationUseCase
+verificava Board e contexto, mas não spec.evaluations.submit. O guard de contexto
+não é autorização por ação. Agora exige a mesma permissão/compatibilidade já
+usada pelo MCP; Community traduz a recusa para 403. Sem novo grant, mudança de
+estado, alteração de histórico ou frontend. É gap do T03 original.
+
+Core16305=0:64passed16.18s, inclui recusa sem gravar e fluxo autorizado.
+Frontend46579=0:54passed46.34s, histórico e abas de validação. Não existe API
+frontend submitSpecEvaluation; não alegar submissão no browser. Ruff F/E9 e
+diff --check verdes. Par reconstruído/instalado evaluation-authority-fix1;
+provenance-evaluation-authority-fix1.json confirma859/922+373/458 byte-idênticos.
+F16 session31859=0,ok=true,findings[], oito budgets ZERO. Sem novo import:
+matriz gerada continua válida. Nenhum registry alterado.
+
+Limite importante da reprodução: probes36464=1 e87768=1 injetaram permissions
+no adaptador Community, mas a fixture Core usa CoreApplicationServiceCatalog.
+Não são prova de permissão negada efetivamente resolvida. Teste corrigido
+injeta na porta usada e exige await; antes/depois semântico se apoia no caminho
+de código anterior e no teste final, não em um replay anterior qualificado.
+Relatório evidence-evaluation-rest-authority.json preserva esses limites.
+
+Inventário114 verificados/40 parciais/92 não auditados. T03 ainda parcial:
+faltam variantes submit/move/update/batch/alias e T04 handoff completo. Manter
+ordem do plano, sem acrescentar critérios. KG-10/T23 continuam aguardando
+decisões já solicitadas. Último par publicado antes deste ajuste:
+Corec57f2f94/Community4eb9a0c7. Nenhum processo pendente ou dado real alterado.
+
 BASE T02/T08/T09/T10/T11/T12 verificados por execução revisada. Sem mudança
 produtiva de gate, authority, histórico ou frontend. Separação enforce recusa
 autorrevisão; normal/bug não fecham por move quando revisão é obrigatória;

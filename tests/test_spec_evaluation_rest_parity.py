@@ -142,6 +142,36 @@ def test_submit_and_list_spec_evaluation_via_rest(spec_eval_client):
     assert payload["evaluations"][0]["id"] == evaluation["id"]
 
 
+def test_planner_without_evaluation_grant_cannot_approve_via_rest(
+    spec_eval_client, monkeypatch,
+):
+    from unittest.mock import AsyncMock
+    from okto_pulse.core.application.service_catalog import (
+        CoreApplicationServiceCatalog,
+    )
+    from okto_pulse.core.domain.permissions import PermissionSet
+
+    client, spec_id, _draft, _board = spec_eval_client
+    permissions = AsyncMock(return_value=PermissionSet({
+        "spec": {
+            "entity": {"read": True, "edit_fields": True},
+            "evaluations": {"read": True, "submit": False},
+            "interact_in": {"validated": True},
+        },
+    }))
+    monkeypatch.setattr(
+        CoreApplicationServiceCatalog, "resolve_user_permissions", permissions,
+    )
+    before = client.get(f"/api/v1/specs/{spec_id}/evaluations").json()
+    response = client.post(
+        f"/api/v1/specs/{spec_id}/evaluations", json=_evaluation_payload(),
+    )
+    assert response.status_code == 403, response.text
+    assert "spec.evaluations.submit" in response.text
+    permissions.assert_awaited_once_with(USER_ID, _board)
+    assert client.get(f"/api/v1/specs/{spec_id}/evaluations").json() == before
+
+
 def test_rest_evaluation_satisfies_in_progress_gate(spec_eval_client, monkeypatch):
     """O cenario exato do finding: usuario so-REST consegue destravar
     validated→in_progress sem MCP."""
