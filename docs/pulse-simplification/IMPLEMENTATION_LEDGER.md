@@ -2,6 +2,42 @@
 
 ## Estado para retomada
 
+Leitura/UI da inferência corrigida e verificada; KG-59 permanece PARCIAL.
+REST preserva proxy separadamente de relação paralela não classificada; a consulta
+curada de Constraint conserva assertion_basis=origin_proxy,
+causal_conclusion=not_established e origem. Classificação exige regra/layer/autor/
+fallback consistentes, nunca apenas confiança0.8. UI rotula inferência e remove
+nota após retirada das relações; ajuda não chama todo violates de gate/blocker.
+Sem mudança em writers, autorização ou policy. Registry MCP/catálogo intactos.
+
+Core26830=0:49passed;Community2747=1:45 casos de leitura/native/autorizações/
+diagnósticos aprovados antes do gate de assets ainda fora do index. Assets oficiais
+adicionados ao index;Community20129=0:20passed (distribuição/versão/roundtrip port).
+Frontend87262=0:37passed. Total151 distintos, sem contar repetições. Build oficial
+62244=0 sincronizou79 arquivos, árvore ce42d190d31c74116d72bf355ed0f755789b539441874477e370b3f03ba44d51.
+Frontend empacotado e fonte concordam com manifesto. Ruff F/E9 e diff verdes.
+
+Reprodução88629=1 confirmou perda de proveniência e colapso de proxy/aresta paralela.
+Probe44185=1 recusou insert ambíguo da fixture; corrigido com hints Bug→Constraint,
+sem relaxar o guard. Recibo de evidência: acceptance-bug-proxy-read-semantics.json.
+Não alegar que campanha2747 inteira passou nem que houve navegador WebGL/E2E MCP.
+
+Par dist-learning-reconciliation-bug-proxy-read-qualified instalado50390=0;
+provenance-bug-proxy-read-qualified.json,6371=0:862py/925payload+375py/460payload
+byte-idênticos. F16 final80115=0:ok=true,findings/documentation_findings vazios,
+oito budgets ZERO. READMEs oficiais regenerados; só metadados README mudam entre
+fix1 comportamental e qualified. Nenhum dado real/processo de produção alterado.
+
+Inventário148 verificados/30 parciais/68 não auditados. PRÓXIMO TRABALHO ORIGINAL:
+concluir Analytics→Clusters de Bugs (KG§6/§9/§10), com janela padrão15 dias pela
+origem, agrupamento por proxy/Spec/Learning/severidade, bugs distintos e frescor/
+completude/autoridade delimitados. A leitura de Constraint/canvas não substitui
+essa entrega. AnalyticsPage/BoardDashboard já têm métricas de Bugs, mas não foi
+qualificada a capacidade de clusters. Manter as quatro views da fachada previstas,
+benchmark e demais critérios; não criar projetos separados. KG-10/T23 aguardam
+decisões já solicitadas. Par publicado anterior: Corefd609ceb/Community6b5781f2.
+Nenhuma validação pendente.
+
 G5 concluído: KG-09/22 verificados. Proxy violates limitado aos vínculos explícitos
 do Card de origem nas seis coleções de requisitos/constraints/critérios. Confiança
 0.8, fallback_reason=inferred_origin_proxy:card:<origem> e regra por família/origem

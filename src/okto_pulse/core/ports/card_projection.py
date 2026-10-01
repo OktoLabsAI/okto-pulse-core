@@ -105,6 +105,17 @@ def card_edge_family(namespace):
     raise ValueError('card_edge_namespace_invalid')
 
 
+def bug_origin_proxy_read_metadata(*, rule_id, layer, created_by, fallback_reason):
+    """Classify an observed extraction rule, never infer cause from confidence."""
+    for family in BUG_ORIGIN_PROXY_FAMILIES:
+        if family.owns_writer(rule_id=rule_id, layer=layer, created_by=created_by):
+            origin_id = rule_id[len(family.rule_prefix):-len('@v2.1')]
+            if fallback_reason == 'inferred_origin_proxy:card:' + origin_id:
+                return {'assertion_basis': 'origin_proxy', 'causal_conclusion': 'not_established',
+                    'rule_id': rule_id, 'origin_card_ref': 'card:' + origin_id}
+    return {}
+
+
 def card_child_family(namespace):
     for family in CARD_CHILD_FAMILIES:
         if family.namespace == namespace:

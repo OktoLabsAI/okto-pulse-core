@@ -1,0 +1,509 @@
+{
+  "format": "pulse-v1.3-reviewed-execution/v1",
+  "criteria": [
+    "KG:KG-59"
+  ],
+  "status": "partial",
+  "change": "Graph REST and curated Constraint explanation retain closed origin-proxy provenance. A proxy is not collapsed into a parallel unclassified edge. Source metadata, not confidence 0.8, yields assertion_basis=origin_proxy and causal_conclusion=not_established. The graph canvas labels the inference and removes its note when absent; shared help no longer describes every violates relation as a delivery blocker.",
+  "coverage": "Two Bugs with different narratives and the same origin association remain separately identified, without a shared-cause assertion. Native Grafx returns confidence and extraction provenance without committing a graph write. Legacy rows remain unclassified, and forged/mismatched writer or fallback metadata does not obtain the proxy label. Existing Code Traceability authorization, read batching and diagnostics tests pass. Frontend component tests cover inference presentation, removal and non-inference from confidence alone. Official build synchronizes the embedded frontend; distribution tests verify tracked bytes against its manifest.",
+  "executions": [
+    {
+      "terminal_session": 26830,
+      "exit_code": 0,
+      "suites": [
+        {
+          "name": "pytest",
+          "errors": "0",
+          "failures": "0",
+          "skipped": "0",
+          "tests": "49",
+          "time": "41.340",
+          "timestamp": "2026-10-01T03:06:24.278652-03:00",
+          "hostname": "Alienware_m15"
+        }
+      ],
+      "cases": [
+        "tests.test_bug_proxy_read_semantics::test_constraint_explanation_keeps_origin_proxy_classification",
+        "tests.test_bug_proxy_read_semantics::test_proxy_label_requires_matching_closed_provenance",
+        "tests.test_kg_embedded_providers.TestProtocolCompliance::test_memory_graph_store_satisfies_protocol",
+        "tests.test_kg_embedded_providers.TestProtocolCompliance::test_memory_cypher_executor_satisfies_protocol",
+        "tests.test_kg_embedded_providers.TestProtocolCompliance::test_sqlite_outbox_event_bus_satisfies_protocol",
+        "tests.test_kg_embedded_providers.TestInMemoryGraphStoreRelationshipResolution::test_create_edge_ambiguous_relationship_requires_endpoint_hints",
+        "tests.test_kg_embedded_providers.TestInMemoryGraphStoreRelationshipResolution::test_create_edge_implements_constraint_honors_endpoint_hints",
+        "tests.test_kg_embedded_providers.TestRegistryWiring::test_defaults_include_graph_store",
+        "tests.test_kg_embedded_providers.TestRegistryWiring::test_defaults_include_cypher_executor",
+        "tests.test_kg_embedded_providers.TestRegistryWiring::test_test_composition_supplies_event_bus_fake",
+        "tests.test_kg_embedded_providers.TestRegistryWiring::test_test_composition_supplies_audit_repo_fake",
+        "tests.test_kg_embedded_providers.TestRegistryWiring::test_configure_with_session_factory_does_not_auto_wire_data_ports",
+        "tests.test_kg_embedded_providers.TestRegistryWiring::test_override_takes_precedence",
+        "tests.test_kg_embedded_providers.TestRegistryWiring::test_all_onda1_fields_populated",
+        "tests.test_kg_embedded_providers.TestRegistryWiring::test_all_onda2_fields_populated",
+        "tests.test_kg_embedded_providers.TestRegistryWiring::test_full_registry_with_session_factory",
+        "tests.test_kg_embedded_providers.TestInMemoryCypherExecutor::test_is_supported",
+        "tests.test_kg_embedded_providers.TestInMemoryCypherExecutor::test_execute_read_only_records_query",
+        "tests.test_kg_embedded_providers.TestInMemoryEventBusLifecycle::test_start_stop",
+        "tests.test_kg_embedded_providers.TestInMemoryEventBusLifecycle::test_subscribe_and_handle",
+        "tests.test_kg_embedded_providers.TestKGServiceUsesRegistry::test_service_uses_graph_store_for_schema_version",
+        "tests.test_kg_embedded_providers.TestKGServiceUsesRegistry::test_service_decision_history_via_graph_store",
+        "tests.test_kg_embedded_providers.TestKGServiceUsesRegistry::test_service_find_contradictions_via_graph_store",
+        "tests.test_kg_embedded_providers.TestKGServiceUsesRegistry::test_service_explain_constraint_via_graph_store",
+        "tests.test_kg_embedded_providers.TestKGServiceUsesRegistry::test_service_explain_constraint_not_found",
+        "tests.test_kg_embedded_providers.TestKGServiceUsesRegistry::test_service_list_alternatives_via_graph_store",
+        "tests.test_kg_embedded_providers.TestKGServiceUsesRegistry::test_service_find_similar_via_graph_store",
+        "tests.test_kg_embedded_providers.TestKGServiceUsesRegistry::test_find_similar_is_canonical_while_diagnostic_all_preserves_working",
+        "tests.test_kg_tier_primary.TestDefaultFiltersCache::test_default_filters_exclude_unvalidated",
+        "tests.test_kg_tier_primary.TestDefaultFiltersCache::test_default_min_confidence",
+        "tests.test_kg_tier_primary.TestDefaultFiltersCache::test_cache_hit_on_repeated_query",
+        "tests.test_kg_tier_primary.TestDefaultFiltersCache::test_invalidation_clears_board_cache",
+        "tests.test_kg_tier_primary.TestACLDecisionHistory::test_acl_denies_unauthorized_board",
+        "tests.test_kg_tier_primary.TestACLDecisionHistory::test_acl_allows_authorized_board",
+        "tests.test_kg_tier_primary.TestACLDecisionHistory::test_decision_history_returns_matching",
+        "tests.test_kg_tier_primary.TestACLDecisionHistory::test_decision_history_empty_topic",
+        "tests.test_kg_tier_primary.TestACLDecisionHistory::test_supersedence_chain_no_chain",
+        "tests.test_kg_tier_primary.TestRankingContradictions::test_9_response_models_importable",
+        "tests.test_kg_tier_primary.TestRankingContradictions::test_find_contradictions_all",
+        "tests.test_kg_tier_primary.TestRankingContradictions::test_find_contradictions_by_node",
+        "tests.test_kg_tier_primary.TestRankingContradictions::test_ranking_weights_customizable",
+        "tests.test_kg_tier_primary.TestRankingContradictions::test_find_similar_decisions_no_crash",
+        "tests.test_kg_tier_primary.TestContextToolsErrors::test_explain_constraint",
+        "tests.test_kg_tier_primary.TestContextToolsErrors::test_explain_constraint_not_found",
+        "tests.test_kg_tier_primary.TestContextToolsErrors::test_list_alternatives",
+        "tests.test_kg_tier_primary.TestContextToolsErrors::test_get_related_context",
+        "tests.test_kg_tier_primary.TestContextToolsErrors::test_query_global_empty_boards",
+        "tests.test_kg_tier_primary.TestContextToolsErrors::test_query_global_with_board",
+        "tests.test_kg_tier_primary.TestContextToolsErrors::test_schema_drift_detection"
+      ],
+      "artifacts": [
+        {
+          "file": "learning-reconciliation-bug-proxy-read-fix1-core.log",
+          "sha256": "859d546751ba53112cc53cefd04ace616d48b29e5dd4333cc89b8eee7ec461a9"
+        },
+        {
+          "file": "learning-reconciliation-bug-proxy-read-fix1-core.xml",
+          "sha256": "a1c113ba162d5627427fd141e0cffc8bf280e53b8fdc877253fdeb29153d7e0b"
+        }
+      ]
+    },
+    {
+      "terminal_session": 20129,
+      "exit_code": 0,
+      "suites": [
+        {
+          "name": "pytest",
+          "errors": "0",
+          "failures": "0",
+          "skipped": "0",
+          "tests": "20",
+          "time": "60.668",
+          "timestamp": "2026-10-01T03:13:11.058670-03:00",
+          "hostname": "Alienware_m15"
+        }
+      ],
+      "cases": [
+        "tests.test_frontend_distribution::test_windows_checkout_preserves_packaged_asset_bytes",
+        "tests.test_frontend_distribution::test_tracked_frontend_bytes_match_the_distribution_manifest",
+        "tests.test_frontend_distribution::test_incompatible_frontend_refuses_before_runtime_state",
+        "tests.test_frontend_distribution::test_valid_frontend_is_read_only_and_packaged_bundle_is_admitted",
+        "tests.test_frontend_distribution::test_incompatible_artifacts_are_refused_without_repair[release-frontend_release_mismatch]",
+        "tests.test_frontend_distribution::test_incompatible_artifacts_are_refused_without_repair[core-frontend_core_contract_mismatch]",
+        "tests.test_frontend_distribution::test_incompatible_artifacts_are_refused_without_repair[same_size_content-frontend_assets_mismatch]",
+        "tests.test_frontend_distribution::test_incompatible_artifacts_are_refused_without_repair[missing_asset-frontend_assets_mismatch]",
+        "tests.test_frontend_distribution::test_incompatible_artifacts_are_refused_without_repair[extra_asset-frontend_assets_mismatch]",
+        "tests.test_frontend_distribution::test_incompatible_artifacts_are_refused_without_repair[missing_manifest-frontend_contract_missing]",
+        "tests.test_frontend_distribution::test_incompatible_artifacts_are_refused_without_repair[traversal-frontend_contract_invalid]",
+        "tests.test_frontend_distribution::test_incompatible_artifacts_are_refused_without_repair[duplicate-frontend_contract_invalid]",
+        "tests.test_frontend_distribution::test_incompatible_artifacts_are_refused_without_repair[boolean_size-frontend_contract_invalid]",
+        "tests.test_frontend_distribution::test_incompatible_artifacts_are_refused_without_repair[oversized_manifest-frontend_contract_invalid]",
+        "tests.test_frontend_distribution::test_incompatible_artifacts_are_refused_without_repair[oversized_asset-frontend_asset_budget_exceeded]",
+        "tests.test_frontend_release_version::test_frontend_manifest_and_python_distribution_share_release_version",
+        "tests.test_frontend_release_version::test_about_version_is_injected_from_authoritative_pyproject",
+        "tests.test_frontend_release_version::test_packaged_frontend_contains_current_about_version_only",
+        "tests.test_frontend_release_version::test_packaged_frontend_attests_negative_scenario_type_and_help",
+        "tests.test_grafx_graph_store::test_every_port_method_roundtrips_over_one_real_grafx_board"
+      ],
+      "artifacts": [
+        {
+          "file": "learning-reconciliation-bug-proxy-read-distribution-community.log",
+          "sha256": "a77695fc21d9370ae94c6dff7202fd0f3b03821a939852ba74e07b5c96cdd935"
+        },
+        {
+          "file": "learning-reconciliation-bug-proxy-read-distribution-community.xml",
+          "sha256": "e5e3fa7a91fd776416025757a1d6785f72b4b1d6741e42b21438ae5830d9a1ce"
+        }
+      ]
+    },
+    {
+      "terminal_session": 87262,
+      "exit_code": 0,
+      "suites": [
+        {
+          "name": "src/components/kanban/__tests__/CardKnowledgeTab.test.tsx",
+          "timestamp": "2026-10-01T06:02:21.645Z",
+          "hostname": "Alienware_m15",
+          "tests": "17",
+          "failures": "0",
+          "errors": "0",
+          "skipped": "0",
+          "time": "3.4322281"
+        },
+        {
+          "name": "src/components/knowledge/__tests__/GraphCanvas.selection.test.tsx",
+          "timestamp": "2026-10-01T06:02:21.655Z",
+          "hostname": "Alienware_m15",
+          "tests": "16",
+          "failures": "0",
+          "errors": "0",
+          "skipped": "0",
+          "time": "0.6008788"
+        },
+        {
+          "name": "src/components/knowledge/__tests__/KGHelpModal.schema.test.tsx",
+          "timestamp": "2026-10-01T06:02:21.661Z",
+          "hostname": "Alienware_m15",
+          "tests": "4",
+          "failures": "0",
+          "errors": "0",
+          "skipped": "0",
+          "time": "0.2511381"
+        }
+      ],
+      "cases": [
+        "src/components/kanban/__tests__/CardKnowledgeTab.test.tsx::CardKnowledgeTab > keeps existing Knowledge content read-only and expandable",
+        "src/components/kanban/__tests__/CardKnowledgeTab.test.tsx::CardKnowledgeTab > hides governed propagation mutations while a Rejected card is frozen",
+        "src/components/kanban/__tests__/CardKnowledgeTab.test.tsx::CardKnowledgeTab > downloads the existing snapshot as Markdown",
+        "src/components/kanban/__tests__/CardKnowledgeTab.test.tsx::CardKnowledgeTab > renders an honest empty state after both governed reads finish",
+        "src/components/kanban/__tests__/CardKnowledgeTab.test.tsx::CardKnowledgeTab > renders inherited effective Knowledge and deduplicates a copied snapshot",
+        "src/components/kanban/__tests__/CardKnowledgeTab.test.tsx::CardKnowledgeTab > shows revision, mode, stale state and origin metadata from the technical read",
+        "src/components/kanban/__tests__/CardKnowledgeTab.test.tsx::CardKnowledgeTab > builds the selectable source inventory from effective spec roots and ref metadata",
+        "src/components/kanban/__tests__/CardKnowledgeTab.test.tsx::CardKnowledgeTab > paginates the source spec inventory with summary projections only",
+        "src/components/kanban/__tests__/CardKnowledgeTab.test.tsx::CardKnowledgeTab > assigns selected stable roots with the current revision",
+        "src/components/kanban/__tests__/CardKnowledgeTab.test.tsx::CardKnowledgeTab > preserves an explicit-empty DROP separately from Resource Gate N/A",
+        "src/components/kanban/__tests__/CardKnowledgeTab.test.tsx::CardKnowledgeTab > refreshes only a stale snapshot by stable root ID and current revision",
+        "src/components/kanban/__tests__/CardKnowledgeTab.test.tsx::CardKnowledgeTab > reuses the refresh key for an exact retry and rotates it after a successful new revision",
+        "src/components/kanban/__tests__/CardKnowledgeTab.test.tsx::CardKnowledgeTab > reports busy for the complete assign operation lifetime",
+        "src/components/kanban/__tests__/CardKnowledgeTab.test.tsx::CardKnowledgeTab > reports busy for the complete drop operation lifetime",
+        "src/components/kanban/__tests__/CardKnowledgeTab.test.tsx::CardKnowledgeTab > reports busy for the complete refresh operation lifetime",
+        "src/components/kanban/__tests__/CardKnowledgeTab.test.tsx::CardKnowledgeTab > reloads the technical revision after a conflict instead of retrying the stale write",
+        "src/components/kanban/__tests__/CardKnowledgeTab.test.tsx::CardKnowledgeTab > uses typed HTTP 409 metadata to reload the revision and require reconfirmation",
+        "src/components/knowledge/__tests__/GraphCanvas.selection.test.tsx::GraphCanvas — selection wiring (S4.1 / AC-4) > labels origin associations without claiming common cause and clears the note after removal",
+        "src/components/knowledge/__tests__/GraphCanvas.selection.test.tsx::GraphCanvas — selection wiring (S4.1 / AC-4) > does not infer origin provenance from a confidence of 0.8",
+        "src/components/knowledge/__tests__/GraphCanvas.selection.test.tsx::GraphCanvas — selection wiring (S4.1 / AC-4) > keeps the selected Entity navigable after its parent edge is removed",
+        "src/components/knowledge/__tests__/GraphCanvas.selection.test.tsx::GraphCanvas — selection wiring (S4.1 / AC-4) > keeps the selected Bug navigable after its parent edge is removed",
+        "src/components/knowledge/__tests__/GraphCanvas.selection.test.tsx::GraphCanvas — selection wiring (S4.1 / AC-4) > keeps observed Entity-to-scenario endpoints independently navigable",
+        "src/components/knowledge/__tests__/GraphCanvas.selection.test.tsx::GraphCanvas — selection wiring (S4.1 / AC-4) > keeps observed Bug-to-scenario endpoints independently navigable",
+        "src/components/knowledge/__tests__/GraphCanvas.selection.test.tsx::GraphCanvas — selection wiring (S4.1 / AC-4) > starts with no selection when initialSelectedNodeId is null",
+        "src/components/knowledge/__tests__/GraphCanvas.selection.test.tsx::GraphCanvas — selection wiring (S4.1 / AC-4) > reflects initialSelectedNodeId on mount",
+        "src/components/knowledge/__tests__/GraphCanvas.selection.test.tsx::GraphCanvas — selection wiring (S4.1 / AC-4) > updates when initialSelectedNodeId prop changes",
+        "src/components/knowledge/__tests__/GraphCanvas.selection.test.tsx::GraphCanvas — selection wiring (S4.1 / AC-4) > does not invoke onSelect for a single click (single-click is reserved for toggle)",
+        "src/components/knowledge/__tests__/GraphCanvas.selection.test.tsx::GraphCanvas — selection wiring (S4.1 / AC-4) > single-click toggles selection on and off (AC-4)",
+        "src/components/knowledge/__tests__/GraphCanvas.selection.test.tsx::GraphCanvas — selection wiring (S4.1 / AC-4) > double-click fires onSelect with the KG node (AC-4)",
+        "src/components/knowledge/__tests__/GraphCanvas.selection.test.tsx::GraphCanvas — selection wiring (S4.1 / AC-4) > renders the accessible fallback (not a crash) when WebGL is unavailable",
+        "src/components/knowledge/__tests__/GraphCanvas.selection.test.tsx::GraphCanvas — selection wiring (S4.1 / AC-4) > renders the empty-state fallback when filters exclude every node",
+        "src/components/knowledge/__tests__/GraphCanvas.selection.test.tsx::GraphCanvas — selection wiring (S4.1 / AC-4) > filters and styles Code Traceability Entity subtypes by kind_of",
+        "src/components/knowledge/__tests__/GraphCanvas.selection.test.tsx::GraphCanvas — selection wiring (S4.1 / AC-4) > prop-driven selection can be cleared externally by passing null",
+        "src/components/knowledge/__tests__/KGHelpModal.schema.test.tsx::KGHelpModal schema contract > shows the coordinated 0.7.0 graph schema version",
+        "src/components/knowledge/__tests__/KGHelpModal.schema.test.tsx::KGHelpModal schema contract > keeps overview guidance free of retired planning and maintenance workflows",
+        "src/components/knowledge/__tests__/KGHelpModal.schema.test.tsx::KGHelpModal schema contract > keeps consolidation-process guidance free of retired planning and maintenance workflows",
+        "src/components/knowledge/__tests__/KGHelpModal.schema.test.tsx::KGHelpModal schema contract > keeps how-to-explore guidance free of retired planning and maintenance workflows"
+      ],
+      "artifacts": [
+        {
+          "file": "frontend-bug-proxy-read-test.log",
+          "sha256": "b24ee69804d87e522119e061c1813144399941a3c3118c895589399126249219"
+        },
+        {
+          "file": "frontend-bug-proxy-read-test.xml",
+          "sha256": "d895ab864a9c035482bfccf34ab85905d81071e373b3d952cd78e9b3ea164338"
+        }
+      ]
+    },
+    {
+      "terminal_session": 2747,
+      "exit_code": 1,
+      "selection": "Only the forty-five successful read, native, authorization and diagnostics cases are retained. A subsequent distribution test requires the newly generated frontend files in the Git index. The official generated tree was staged, then all distribution/version tests and the changed native port roundtrip passed separately.",
+      "cases": [
+        {
+          "classname": "tests.test_bug_proxy_read_semantics",
+          "name": "test_graph_read_distinguishes_inferred_proxy_from_parallel_unclassified_edge",
+          "time": "0.066"
+        },
+        {
+          "classname": "tests.test_bug_proxy_read_semantics",
+          "name": "test_native_constraint_read_preserves_proxy_provenance",
+          "time": "37.659"
+        },
+        {
+          "classname": "tests.test_kg_routes_grafx_relationship_layout",
+          "name": "test_relation_pairs_keep_order_and_distinct_layouts_without_duplicates",
+          "time": "0.020"
+        },
+        {
+          "classname": "tests.test_kg_routes_grafx_relationship_layout",
+          "name": "test_real_contract_supersedes_layout_is_visited_once",
+          "time": "0.020"
+        },
+        {
+          "classname": "tests.test_kg_routes_grafx_relationship_layout",
+          "name": "test_graph_edges_use_grafx_physical_relationship_table",
+          "time": "0.021"
+        },
+        {
+          "classname": "tests.test_kg_routes_grafx_relationship_layout",
+          "name": "test_graph_edges_use_one_optional_read_batch",
+          "time": "0.025"
+        },
+        {
+          "classname": "tests.test_kg_routes_grafx_relationship_layout",
+          "name": "test_typed_graph_page_probes_only_ids_valid_for_each_endpoint",
+          "time": "0.027"
+        },
+        {
+          "classname": "tests.test_kg_routes_grafx_relationship_layout",
+          "name": "test_typed_graph_page_skips_layouts_with_no_possible_endpoint",
+          "time": "0.029"
+        },
+        {
+          "classname": "tests.test_kg_routes_grafx_relationship_layout",
+          "name": "test_failed_batch_retries_per_table_to_preserve_diagnostics",
+          "time": "0.027"
+        },
+        {
+          "classname": "tests.test_kg_routes_grafx_relationship_layout",
+          "name": "test_edge_counts_sum_physical_endpoint_tables_by_logical_name",
+          "time": "0.026"
+        },
+        {
+          "classname": "tests.test_kg_routes_grafx_relationship_layout",
+          "name": "test_duplicate_schema_layout_does_not_inflate_census[False]",
+          "time": "0.025"
+        },
+        {
+          "classname": "tests.test_kg_routes_grafx_relationship_layout",
+          "name": "test_duplicate_schema_layout_does_not_inflate_census[True]",
+          "time": "0.024"
+        },
+        {
+          "classname": "tests.test_kg_routes_grafx_relationship_layout",
+          "name": "test_edge_counts_use_one_optional_read_batch",
+          "time": "0.025"
+        },
+        {
+          "classname": "tests.test_kg_routes_grafx_relationship_layout",
+          "name": "test_grouped_node_counts_scan_once_and_fill_declared_zeroes",
+          "time": "0.024"
+        },
+        {
+          "classname": "tests.test_kg_routes_grafx_relationship_layout",
+          "name": "test_grouped_node_count_refusal_falls_back_without_weakening_filters",
+          "time": "0.024"
+        },
+        {
+          "classname": "tests.test_kg_routes_grafx_relationship_layout",
+          "name": "test_legacy_executor_without_layout_extension_keeps_logical_name",
+          "time": "0.024"
+        },
+        {
+          "classname": "tests.test_relationship_layout_batching",
+          "name": "test_facade_acquires_once_per_call_and_reacquires_before_query",
+          "time": "0.023"
+        },
+        {
+          "classname": "tests.test_relationship_layout_batching",
+          "name": "test_facade_revalidates_and_refuses_a_retired_route",
+          "time": "0.023"
+        },
+        {
+          "classname": "tests.test_relationship_layout_batching",
+          "name": "test_census_uses_complete_batch_and_preserves_queries",
+          "time": "0.024"
+        },
+        {
+          "classname": "tests.test_relationship_layout_batching",
+          "name": "test_complete_batch_refusal_restores_scalar_diagnostics[raise]",
+          "time": "0.026"
+        },
+        {
+          "classname": "tests.test_relationship_layout_batching",
+          "name": "test_complete_batch_refusal_restores_scalar_diagnostics[short]",
+          "time": "0.028"
+        },
+        {
+          "classname": "tests.test_relationship_layout_batching",
+          "name": "test_complete_batch_refusal_restores_scalar_diagnostics[malformed]",
+          "time": "0.029"
+        },
+        {
+          "classname": "tests.test_relationship_layout_batching",
+          "name": "test_failed_route_never_falls_back_to_logical_query",
+          "time": "0.025"
+        },
+        {
+          "classname": "tests.test_relationship_layout_batching",
+          "name": "test_graph_maps_only_eligible_page_layouts_and_keeps_visibility",
+          "time": "0.022"
+        },
+        {
+          "classname": "tests.test_code_traceability_kg_rest_authorization",
+          "name": "test_nodes_total_and_detail_follow_all_of_ct_permission[False-expected_ids0]",
+          "time": "0.019"
+        },
+        {
+          "classname": "tests.test_code_traceability_kg_rest_authorization",
+          "name": "test_nodes_total_and_detail_follow_all_of_ct_permission[True-expected_ids1]",
+          "time": "0.018"
+        },
+        {
+          "classname": "tests.test_code_traceability_kg_rest_authorization",
+          "name": "test_graph_filters_ct_nodes_and_edge_endpoints_for_explicit_deny",
+          "time": "0.024"
+        },
+        {
+          "classname": "tests.test_code_traceability_kg_rest_authorization",
+          "name": "test_graph_page_runs_native_reads_outside_the_event_loop",
+          "time": "0.024"
+        },
+        {
+          "classname": "tests.test_code_traceability_kg_rest_authorization",
+          "name": "test_cypher_guard_denies_without_complete_ct_authority",
+          "time": "0.025"
+        },
+        {
+          "classname": "tests.test_code_traceability_kg_rest_authorization",
+          "name": "test_cypher_complete_ct_grant_bypasses_materialization_guard",
+          "time": "0.024"
+        },
+        {
+          "classname": "tests.test_code_traceability_kg_rest_authorization",
+          "name": "test_native_query_refusal_is_structured_and_never_bypasses_auth[GrafxParseError-400-graph_invalid_query]",
+          "time": "0.020"
+        },
+        {
+          "classname": "tests.test_code_traceability_kg_rest_authorization",
+          "name": "test_native_query_refusal_is_structured_and_never_bypasses_auth[GrafxPlanError-400-graph_invalid_query]",
+          "time": "0.019"
+        },
+        {
+          "classname": "tests.test_code_traceability_kg_rest_authorization",
+          "name": "test_native_query_refusal_is_structured_and_never_bypasses_auth[GrafxLeaseTimeout-503-graph_lock_contention]",
+          "time": "0.021"
+        },
+        {
+          "classname": "tests.test_code_traceability_kg_rest_authorization",
+          "name": "test_native_query_refusal_is_structured_and_never_bypasses_auth[GrafxCorruptionDetected-503-graph_corruption]",
+          "time": "0.021"
+        },
+        {
+          "classname": "tests.test_code_traceability_kg_rest_authorization",
+          "name": "test_native_query_refusal_is_structured_and_never_bypasses_auth[GrafxUnsupportedOperation-503-graph_capability_unavailable]",
+          "time": "0.025"
+        },
+        {
+          "classname": "tests.test_code_traceability_kg_rest_authorization",
+          "name": "test_native_query_refusal_is_structured_and_never_bypasses_auth[GrafxBufferBudgetExceeded-503-graph_memory_pressure]",
+          "time": "0.028"
+        },
+        {
+          "classname": "tests.test_code_traceability_kg_rest_authorization",
+          "name": "test_native_query_refusal_is_structured_and_never_bypasses_auth[GrafxError-500-graph_error]",
+          "time": "0.032"
+        },
+        {
+          "classname": "tests.test_kg_read_phase_timings",
+          "name": "test_subgraph_phase_timings_do_not_change_results",
+          "time": "0.030"
+        },
+        {
+          "classname": "tests.test_kg_read_phase_timings",
+          "name": "test_authority_failure_does_not_reach_graph_or_log_success",
+          "time": "0.029"
+        },
+        {
+          "classname": "tests.test_kg_read_phase_timings",
+          "name": "test_phase_timer_uses_elapsed_monotonic_time",
+          "time": "0.026"
+        },
+        {
+          "classname": "tests.test_kg_read_phase_timings",
+          "name": "test_only_paged_node_value_errors_are_cursor_failures[cursor]",
+          "time": "0.027"
+        },
+        {
+          "classname": "tests.test_kg_read_phase_timings",
+          "name": "test_only_paged_node_value_errors_are_cursor_failures[center]",
+          "time": "0.026"
+        },
+        {
+          "classname": "tests.test_kg_read_phase_timings",
+          "name": "test_only_paged_node_value_errors_are_cursor_failures[edges]",
+          "time": "0.022"
+        },
+        {
+          "classname": "tests.test_kg_read_phase_timings",
+          "name": "test_only_paged_node_value_errors_are_cursor_failures[authority]",
+          "time": "0.027"
+        },
+        {
+          "classname": "tests.test_kg_read_phase_timings",
+          "name": "test_stats_phases_run_off_loop_and_preserve_visibility",
+          "time": "0.028"
+        }
+      ],
+      "artifacts": [
+        {
+          "file": "learning-reconciliation-bug-proxy-read-qualified-community.log",
+          "sha256": "f2e5c8970f098ab0c748f52a62d7aacd9c51ba58deab0eac956ca313dbf65cc0"
+        },
+        {
+          "file": "learning-reconciliation-bug-proxy-read-qualified-community.xml",
+          "sha256": "422468299886e03284632c0aa1de101902d499812cdcc2548ae17769d93770dc"
+        }
+      ]
+    }
+  ],
+  "frontend_build": {
+    "terminal_session": 62244,
+    "exit_code": 0,
+    "file": "frontend-bug-proxy-read-build.log",
+    "sha256": "aad9e35bc6338d1baa96fac2db7296ddd5f94346802aa86e9d9f228ab58442d3",
+    "packaged_tree_sha256": "ce42d190d31c74116d72bf355ed0f755789b539441874477e370b3f03ba44d51"
+  },
+  "architecture": {
+    "terminal_session": 80115,
+    "exit_code": 0,
+    "file": "learning-reconciliation-bug-proxy-read-qualified-closure.log",
+    "sha256": "99ec29fd77edbb556eeb187cb7261edbd758e8c57b9952f200661b59fb68a7d9",
+    "budgets": {
+      "import_boundary_baseline": 0,
+      "singleton_baseline": 0,
+      "dependency_temporary_exceptions": 0,
+      "graph_runtime_compatibility": 0,
+      "rebuild_artifact_compatibility": 0,
+      "community_private_reach_ins": 0,
+      "community_adapter_bridges": 0,
+      "af35_relational_residue": 0
+    }
+  },
+  "provenance": [
+    {
+      "file": "provenance-bug-origin-proxy-final.json",
+      "sha256": "9bdc6937fc873637078c5fdb5536920c2cd5b06aada4bb20e43c21503aedfd3f"
+    },
+    {
+      "file": "provenance-bug-proxy-read-fix1.json",
+      "sha256": "530c179cae10d9db7e81b2e5b27249a8bb198d8fd030e250ed43ca0a1efca3e0"
+    },
+    {
+      "file": "provenance-bug-proxy-read-qualified.json",
+      "sha256": "27df3c21e6e2c0543588bc9ab38e7738f94c9a280fc85b28b50695cbf2c2a6a0"
+    }
+  ],
+  "remaining": [
+    "KG-59 is not complete: Analytics Bug clusters with the specified source-time window, authorized scoped inventory, distinct Bug grouping by proxy/Spec/Learning/severity and completeness/freshness semantics still require implementation and qualification under KG sections 6, 9 and 10."
+  ],
+  "limits": [
+    "The native read case seeds graph facts through the adapter to test the read path. It does not certify the narrative as true or prove common cause; G5 separately qualifies the deterministic emitter.",
+    "This does not claim an authenticated end-to-end MCP session or browser WebGL screenshot. Core service/serialization shape, native provider, REST read mechanics, authorization regressions, rendered component behavior and packaged distribution are the evidenced layers.",
+    "The first native probe44185 used an ambiguous relationship insert without endpoint hints; the fixture was corrected to Bug→Constraint, preserving the existing refusal. The pre-change read reproduction88629 failed by losing one of the parallel observations.",
+    "Final qualified wheels differ from fix1 only in generated README metadata. All runtime and frontend bytes tested match the final proven installed pair. No production data, policy, permission, gate, release tag or deployment was changed."
+  ]
+}

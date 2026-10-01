@@ -162,6 +162,13 @@ Returns:
 Explain the origin, related constraints, and registered violations for one
 canonical graph Constraint.
 
+Origin-derived Bug associations carry `assertion_basis=origin_proxy`,
+`causal_conclusion=not_established`, their extraction rule and `origin_card_ref`.
+Two Bugs sharing that association do not establish a shared cause. The 0.8
+confidence is an extraction convention, not a calibrated causal probability.
+Historical rows without that provenance remain unclassified. Neither the
+`violations` field name nor an association grants delivery or gate credit.
+
 The live tool description remains canonical for the complete permission and
 response-envelope contract; this reference adds the deterministic discovery recipe.
 

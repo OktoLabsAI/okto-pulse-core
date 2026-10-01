@@ -1421,6 +1421,13 @@ class KGService:
                 message=f"Constraint not found: {constraint_id}",
             )
         r = main[0]
+        from okto_pulse.core.ports.card_projection import bug_origin_proxy_read_metadata
+        violations = []
+        for row in violation_rows:
+            metadata = (bug_origin_proxy_read_metadata(rule_id=row[3], layer=row[4],
+                created_by=row[5], fallback_reason=row[6]) if len(row) >= 7 else {})
+            violations.append({'id': row[0], 'title': row[1], **metadata,
+                **({'confidence': row[2]} if len(row) >= 3 else {})})
         return {
             "id": r[0],
             "title": r[1],
@@ -1429,7 +1436,7 @@ class KGService:
             "source_artifact_ref": r[4],
             "source_confidence": r[5],
             "origins": [{"id": o[0], "title": o[1]} for o in origin_rows],
-            "violations": [{"id": v[0], "title": v[1]} for v in violation_rows],
+            "violations": violations,
         }
 
     # ------------------------------------------------------------------

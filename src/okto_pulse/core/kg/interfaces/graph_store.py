@@ -79,7 +79,14 @@ class SemanticGraphStore(Protocol):
 
     def get_constraint_detail(
         self, board_id: str, constraint_id: str
-    ) -> tuple[list[list], list[list], list[list]]: ...
+    ) -> tuple[list[list], list[list], list[list]]:
+        """Return detail, origins and Bug associations.
+
+        Association rows carry id, title, confidence, rule_id, layer,
+        created_by and fallback_reason. Legacy id/title-only rows remain
+        unclassified; a reader must never derive causality from confidence.
+        """
+        ...
 
     def get_alternatives(
         self, board_id: str, decision_id: str, limit: int
