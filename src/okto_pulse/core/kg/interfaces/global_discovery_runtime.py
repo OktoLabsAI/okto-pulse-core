@@ -24,7 +24,6 @@ class GlobalDiscoveryRuntime(Protocol):
 
     def bootstrap(self) -> GraphHandle: ...
 
-    def ensure_layer_schema(self) -> tuple[str, ...]: ...
 
     def execute(
         self,

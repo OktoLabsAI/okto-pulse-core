@@ -1,4 +1,4 @@
-"""InMemoryGraphStore — satisfies SemanticGraphStore Protocol for tests.
+"""InMemoryGraphStore â€” satisfies SemanticGraphStore Protocol for tests.
 
 Dict-based storage with basic cosine similarity for vector_search.
 No Kuzu dependency.
@@ -1814,16 +1814,6 @@ class InMemoryGraphSchemaManager:
     async def ensure_bootstrapped(self, board_id: str) -> None:
         self.store.bootstrap(board_id)
 
-    async def migrate(self, board_id: str) -> dict[str, Any]:
-        self.store.bootstrap(board_id)
-        return {
-            "board_id": board_id,
-            "migrated": True,
-            "schema_version": SCHEMA_VERSION,
-            "columns_added": {},
-            "errors": [],
-            "duration_ms": 0,
-        }
 
     async def current_version(self, board_id: str) -> str:
         return self._active_store().get_schema_version(board_id) or SCHEMA_VERSION

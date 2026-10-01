@@ -89,7 +89,7 @@ def test_runtime_store_exposes_memory_storage_state(registry, board):
 
 
 @pytest.mark.asyncio
-async def test_schema_manager_bootstrap_migrate_validate(registry, board):
+async def test_schema_manager_bootstrap_validate(registry, board):
     mgr = registry.graph_schema_manager
     # idempotent ensure (board already bootstrapped) — must not raise
     await mgr.ensure_bootstrapped(board)
@@ -102,9 +102,7 @@ async def test_schema_manager_bootstrap_migrate_validate(registry, board):
     assert result.valid is True
     assert result.current_version == SCHEMA_VERSION
     assert result.issues == ()
-    summary = await mgr.migrate(board)
-    assert summary["board_id"] == board
-    assert "columns_added" in summary and "errors" in summary
+    assert not hasattr(mgr, "migrate")
 
 
 # --------------------------------------------------------------------------- #

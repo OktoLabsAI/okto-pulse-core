@@ -2,6 +2,77 @@
 
 ## Estado para retomada
 
+### 2026-10-01 — checkpoint Grafx pronto para commit/push pareado
+
+graph-closure2 terminou0 com verificação dos READMEs, fontes e wheels:
+ok=true/findings=[]/oito budgets ZERO. Core collection3 terminou0:
+13783 testes coletados, sem erro (não equivale a execução). Todas as campanhas
+deste incremento terminaram; não há processo de validação pendente. diff --check
+e Ruff F/E9 passaram. Os resultados funcionais e falhas anteriores estão abaixo.
+
+O incremento encerra a retirada do conversor Grafx/backfill de schema e recupera
+somente o formato atual, preservando índices e recuperação nativa. Não encerra
+C1–C4, nem a qualificação integral. Community ainda possui fixtures antigas:
+última coleta37 erros; duas suites de recovery foram adaptadas e executadas depois
+da coleta, sem inferir um novo total. Continuação imediata: classificação legada
+de CodeEvidence conforme a cadeia descrita abaixo. Sem release/tag/deploy e sem
+alterar dados ou processos reais. Registrar os SHAs após os pushes.
+
+### 2026-10-01 — incremento Grafx qualificado; publicação pendente
+
+graph2 instalado/provado: Core855/Community322py e918/408payload byte-idênticos,
+provenance-clean-break-graph2.json. graph-core2:31passed/106.64s;
+recovery-native4:34passed/51.56s. A prova de cobertura exata dos triggers voltou
+a passar sem reduzir a lista de writers. Campanhas anteriores falhas preservadas.
+graph-closure1 terminal0:findings=[] e oito budgets ZERO; READMEs renderizados
+oficialmente. graph-closure2 (inclui igualdade dos READMEs) e coleta Core3 em curso.
+Nenhuma alteração de frontend nesta frente; não foi necessária nova build da SPA.
+
+Próxima frente C1/C3 já prevista: classificação de CodeEvidence legado (serviço,
+DTO/porta, UoW/SQL, REST/MCP, painel/drawer/client, tabelas/enum/guards e testes).
+Preservar prova atual, rebase, waiver/revoke e histórico nativo. Ao retirar os
+dois writers de classificação, retirar juntos inputs/triggers de revisão; até
+lá a proteção permanece. Depois Knowledge grandfather/backfill, normalizadores
+e resíduos de schema/recovery, fixtures mistas e C4. T23/KG-10 permanecem decisões
+já solicitadas, sem nova interpretação da autorização de clean break.
+
+### 2026-10-01 — recuperação atual aprovada; fechamento do incremento Grafx
+
+graph-recovery2 terminal0:30passed/571.83s, incluindo roundtrip, recusa sem
+mutação persistida, integridade, tamper, falhas parciais e fences. graph-facades1:
+66passed/1failed (expectativa antiga não incluía graph_query_execution);
+graph-facades2:5passed/19.67s após corrigir só a expectativa do provider corrente.
+Coleta Community4:5972collected/37errors, ainda fixtures de schema antigo.
+
+recovery-native3:27passed/1failed/34.08s. A prova de manifesto fechado encontrou
+seis triggers ausentes no JSON nativo para code_evidence_classification_events/
+heads, cujos writers ainda existem até a remoção C1/C3 prevista. Acrescentadas
+as seis definições de revisão idênticas às dos demais inputs, preservando a
+proteção enquanto esses writers permanecem. Não reduzido o conjunto de inputs.
+Removido stub migrate do provider de memória e docstring de reparo automático;
+portas/facades não expõem mais migração. Ruff F/E9 passou. Builds graph2 ambos0;
+aguardar instalação/prova e revalidar as suites afetadas antes de publicar.
+
+### 2026-10-01 — C2: retirada dos conversores Grafx em validação
+
+WIP coordenado: retirados GraphSchemaManager.migrate, facade/composição, motor
+grafx_schema_evolution e manifests predecessores v060/v070. Recuperação aceita
+somente contrato/catálogo atual e BoardMeta com versão corrente; digest estrangeiro
+é recusado antes de criar destino. Validação de índices correntes extraída para
+grafx_index_inventory e executada no bootstrap antes do stamp. Retirados reparo
+automático de schema/backfill na consolidação e ensure_layer_schema do Global;
+bootstrap, retries, rebuild e recuperação nativos permanecem.
+
+dist-clean-break-graph1 instalado/provado antes dos testes: Core855/Community322
+py e918/408payload byte-idênticos. graph-runtime1:25passed/139.30s;
+graph-core1:17passed/195.38s; graph1:101passed/2failed/271.24s. As duas falhas
+foram fixture de recovery sem BoardMeta atual e comparação incluindo lease
+volátil de leitor. Fixtures corrigidas sem relaxar admissão; graph-recovery2 em
+execução. Comparação continua cobrindo todos os demais arquivos persistidos.
+Testes mistos das facades/ports ainda em adaptação; stub de migrate no provider
+de memória deve ser retirado antes do próximo build. Coleta Community4 em curso.
+Nenhum commit/push deste incremento ainda; C1–C4 continuam abertos.
+
 ### 2026-10-01 — checkpoint publicado; implementação integral continua
 
 Commits e pushes confirmados em origin/feature/v0.4.0:

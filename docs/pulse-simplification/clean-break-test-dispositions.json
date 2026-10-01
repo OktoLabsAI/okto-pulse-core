@@ -1,5 +1,5 @@
 {
-  "scope": "Offline Sprint conversion and imported archives only; mixed/current suites retained for adaptation.",
+  "scope": "Legacy conversion, imported archives and predecessor upgrades removed for clean-break 0.4.0; mixed/current suites retained for adaptation.",
   "removed_tests": [
     {
       "path": "okto_labs_pulse_core\\tests\\test_context_disposition.py",
@@ -485,6 +485,36 @@
       "path": "okto_labs_pulse_community\\tests\\test_f3_seen_marker_schema_retirement.py",
       "disposition": "superseded",
       "reason": "Exclusive predecessor export or historical seen-marker backfill; native history and seen scopes remain covered."
+    },
+    {
+      "path": "okto_labs_pulse_community\\tests\\test_grafx_schema_evolution.py",
+      "disposition": "superseded",
+      "reason": "Exclusive predecessor conversion/recovery or automatic missing-schema repair. Current index mutation tests, native bootstrap/recovery and incompatible-format rejection retained."
+    },
+    {
+      "path": "okto_labs_pulse_community\\tests\\test_grafx_predecessor_recovery.py",
+      "disposition": "superseded",
+      "reason": "Exclusive predecessor conversion/recovery or automatic missing-schema repair. Current index mutation tests, native bootstrap/recovery and incompatible-format rejection retained."
+    },
+    {
+      "path": "okto_labs_pulse_community\\tests\\test_grafx_v060_recovery_contract.py",
+      "disposition": "superseded",
+      "reason": "Exclusive predecessor conversion/recovery or automatic missing-schema repair. Current index mutation tests, native bootstrap/recovery and incompatible-format rejection retained."
+    },
+    {
+      "path": "okto_labs_pulse_community\\tests\\test_grafx_v070_predecessor_admission.py",
+      "disposition": "superseded",
+      "reason": "Exclusive predecessor conversion/recovery or automatic missing-schema repair. Current index mutation tests, native bootstrap/recovery and incompatible-format rejection retained."
+    },
+    {
+      "path": "okto_labs_pulse_core\\tests\\test_kg_rebuild_schema_layer_guard.py",
+      "disposition": "superseded",
+      "reason": "Exclusive predecessor conversion/recovery or automatic missing-schema repair. Current index mutation tests, native bootstrap/recovery and incompatible-format rejection retained."
+    },
+    {
+      "path": "okto_labs_pulse_core\\tests\\test_kg_r1_imp3.py",
+      "disposition": "superseded",
+      "reason": "Global schema backfill and positive legacy_unknown semantics; no conversion is admitted in the current contract."
     }
   ],
   "adapted_suites": [
@@ -576,6 +606,32 @@
         "test_register_helper_sets_the_core_seam"
       ],
       "reason": "Upgrade/bootstrap ledgers and predecessor normalization retired. Native creation/restart, seeds, authored permission preservation, Core boundaries and lifecycle failures retained."
+    }
+  ],
+  "removed_cases": [
+    {
+      "path": "okto_labs_pulse_community/tests/test_global_discovery_recovery_r5_schema_slot.py",
+      "test": "test_r5_schema_migration_is_in_the_canonical_lifecycle_ledger",
+      "disposition": "superseded",
+      "reason": "Exclusive schema conversion; current recovery and refusal tests retained."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_global_discovery_recovery_r5_schema_slot.py",
+      "test": "test_recovery_migration_repairs_noncanonical_attempt_defaults",
+      "disposition": "superseded",
+      "reason": "Exclusive schema conversion; current recovery and refusal tests retained."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_global_discovery_recovery_r5_schema_slot.py",
+      "test": "test_recovery_migration_fails_closed_on_partial_slot_contract",
+      "disposition": "superseded",
+      "reason": "Exclusive schema conversion; current recovery and refusal tests retained."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_global_discovery_recovery_runtime_composition.py",
+      "test": "test_source_revision_v4_upgrade_installs_qa_inputs_and_rotates_incarnation",
+      "disposition": "superseded",
+      "reason": "Exclusive schema conversion; current recovery and refusal tests retained."
     }
   ]
 }

@@ -80,7 +80,6 @@ def test_ts_fe24d781_gate_deterministic_blocking_oracle_with_ledger():
         "kg/rebuild_service.py",
         "kg/search.py",
         "kg/canonical_learning_partition.py",
-        "kg/schema_layer_guard.py",
         "kg/stale_canonical_parity.py",
         "kg/workers/consolidation.py",
         "mcp/server.py",

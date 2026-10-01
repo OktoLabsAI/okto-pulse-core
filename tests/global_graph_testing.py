@@ -12,7 +12,6 @@ __all__ = [
     "bootstrap_global_discovery",
     "execute_global_read",
     "execute_global_write",
-    "ensure_global_discovery_layer_schema",
     "global_discovery_graph_path",
     "purge_global_discovery_storage",
     "reset_global_discovery_runtime_for_tests",
@@ -75,12 +74,6 @@ def execute_global_write(
         return _runtime().execute(statement, params)
 
 
-def ensure_global_discovery_layer_schema():
-    _ensure_test_write_lock_port()
-    with global_discovery_writer_scope(
-        operation="test_global_discovery_ensure_layer_schema"
-    ):
-        return _runtime().ensure_layer_schema()
 
 
 def purge_global_discovery_storage(*, reason: str = "manual"):

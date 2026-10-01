@@ -1550,19 +1550,6 @@ class KGService:
             )
 
             with global_discovery_writer_scope(
-                operation="query_global.layer_schema_migrate",
-                owner_id="kg-query-global-layer-schema",
-            ):
-                global_runtime.ensure_layer_schema()
-        except Exception as exc:
-            logger.debug("kg.query_global.layer_schema_migrate_failed err=%s", exc)
-
-        try:
-            from okto_pulse.core.kg.global_discovery_writer import (
-                global_discovery_writer_scope,
-            )
-
-            with global_discovery_writer_scope(
                 operation="query_global.vector_search",
                 owner_id="kg-query-global-vector-search",
             ):

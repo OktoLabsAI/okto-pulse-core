@@ -684,7 +684,6 @@ class GlobalOutboxProcessor:
         require_global_write_token()
 
         global_runtime = _global_discovery_runtime()
-        await self._run_graph_io(global_runtime.ensure_layer_schema)
         session_id = payload.get("session_id", "") or event.session_id
         ts = self._now().strftime("%Y-%m-%dT%H:%M:%S")
 

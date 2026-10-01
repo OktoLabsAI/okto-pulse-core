@@ -83,7 +83,6 @@ __all__ = [
     "close_board_db_cache",
     "ensure_board_graph_bootstrapped",
     "graph_composition",
-    "migrate_schema_for_board",
     "open_board_connection",
     "open_materialized_board_connection",
     "physical_relationship_table",
@@ -224,13 +223,6 @@ def reset_bootstrap_cache_for_tests() -> None:
     _BOOTSTRAPPED.clear()
 
 
-def migrate_schema_for_board(board_id: str) -> dict[str, Any]:
-    """Run the routed Grafx schema migration for one board, synchronously."""
-
-    import asyncio
-
-    composition = graph_composition()
-    return asyncio.run(composition.graph_schema_manager.migrate(board_id))
 
 
 # ---------------------------------------------------------------------------

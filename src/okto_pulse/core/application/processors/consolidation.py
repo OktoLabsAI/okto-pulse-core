@@ -5,7 +5,7 @@ For each pending queue entry the worker:
     2. Runs the pure `DeterministicWorker` (Layer 1) to extract every
        node + edge candidate that can be derived from structured fields,
        with full v0.2.0 provenance metadata (layer/rule_id/created_by).
-    3. Drives the primitives pipeline: begin → propose_reconciliation →
+    3. Drives the primitives pipeline: begin â†’ propose_reconciliation â†’
        commit. The session uses `agent_id="system:historical_consolidation"`
        so the layer-ownership BR allows deterministic edges through.
     4. Runs the embedded graph backend safe-write lifecycle before the queue row is
@@ -99,10 +99,7 @@ from okto_pulse.core.kg.interfaces.graph_transaction import (
     SpecLineageParentIntent,
 )
 from okto_pulse.core.application.processors.dead_letter import route_to_dead_letter
-from okto_pulse.core.kg.schema_layer_guard import (
-    ensure_graph_layer_schema,
-    is_graph_layer_schema_error,
-)
+
 from okto_pulse.core.kg.safe_write_lifecycle import (
     STEP_CHECKPOINT,
     STEP_FLUSH,
@@ -1453,10 +1450,10 @@ class _DirectBlockingExecution:
 
 
 # Spec 3d89c192 (FR-4): o commit incremental do worker usa o subset
-# não-destrutivo do lifecycle — checkpoint real + verificação + fsync, SEM o
+# nÃ£o-destrutivo do lifecycle â€” checkpoint real + verificaÃ§Ã£o + fsync, SEM o
 # close_reopen_probe. O probe fecha o Database compartilhado (use-after-close
-# com leitores concorrentes) e só é necessário nas lanes de rebuild/recovery,
-# que continuam usando DEFAULT_REQUIRED_STEPS (contrato api_1c9d19e1 prevê
+# com leitores concorrentes) e sÃ³ Ã© necessÃ¡rio nas lanes de rebuild/recovery,
+# que continuam usando DEFAULT_REQUIRED_STEPS (contrato api_1c9d19e1 prevÃª
 # subset custom por caller).
 WORKER_COMMIT_LIFECYCLE_STEPS: tuple[str, ...] = (
     STEP_CHECKPOINT,
@@ -1674,7 +1671,7 @@ async def _process_queue_entry_serialized(
 
 
 # ---------------------------------------------------------------------------
-# Adapter: SQLAlchemy artifact → DeterministicWorker dict shape
+# Adapter: SQLAlchemy artifact â†’ DeterministicWorker dict shape
 # ---------------------------------------------------------------------------
 
 
@@ -2008,7 +2005,7 @@ def _append_card_entity_node(result: WorkerResult, card: Any) -> str:
                     for part in (
                         card.description or "",
                         (
-                            "Lifecycle: Rejected — rework required."
+                            "Lifecycle: Rejected â€” rework required."
                             if str(
                                 getattr(
                                     getattr(card, "status", None),
@@ -3070,7 +3067,7 @@ async def _prepare_deterministic_projection(db, entry, *, persistence=None):
             entry.artifact_id,
         )
         # RKG-04 AC3 (ts_317b11ef): a missing source row is a persistent
-        # failure and must stay visible — False routes the entry through
+        # failure and must stay visible â€” False routes the entry through
         # _mark_failed -> backoff -> ConsolidationDeadLetter where diagnose
         # keeps it actionable. True would mask it as success and falsely
         # clear the connectivity class (stale legacy entries included).
@@ -3294,7 +3291,7 @@ async def _process_queue_entry(
     ):
         return True  # nothing to do, but not a failure
 
-    # 1. begin_consolidation (db=None to skip dedup — historical is forced re-processing)
+    # 1. begin_consolidation (db=None to skip dedup â€” historical is forced re-processing)
     begin_resp = await begin_consolidation(
         BeginConsolidationRequest(
             board_id=entry.board_id,
@@ -3363,7 +3360,7 @@ async def _process_queue_entry(
         return commit_resp
 
     logger.info(
-        "consolidated %s:%s → nodes_added=%d edges_added=%d",
+        "consolidated %s:%s â†’ nodes_added=%d edges_added=%d",
         entry.artifact_type,
         entry.artifact_id,
         commit_resp.nodes_added,
@@ -3631,7 +3628,7 @@ class ConsolidationProcessor:
         """Return DLQ auto-drain stats for ``board_id`` (FR6, spec R2c).
 
         Returns ``{last_run_at: ISO-string|None, requeued_count: int}``.
-        Both values come from in-process tracking only — process restart
+        Both values come from in-process tracking only â€” process restart
         resets them. The health endpoint uses this to populate the additive
         ``dlq_auto_drain_*`` fields without touching storage.
         """
@@ -3995,16 +3992,16 @@ class ConsolidationProcessor:
         """Process up to batch_size pending entries. Returns count processed.
 
         Spec bdcda842 (Sprint 2):
-            * **Claim board-aware** — claim at most one item per board and
+            * **Claim board-aware** â€” claim at most one item per board and
               never select a board already claimed by another owner. Distinct
               boards may share a batch; same-board backlog remains pending
               until the current lease is ACKed or re-pended.
-            * **Backoff-aware claim** — skip items where ``next_retry_at``
+            * **Backoff-aware claim** â€” skip items where ``next_retry_at``
               hasn't elapsed yet (BR Dead-letter / exp backoff).
-            * **DELETE-on-ack** — successful processing removes the row from
+            * **DELETE-on-ack** â€” successful processing removes the row from
               ConsolidationQueue (at-least-once semantics: row stays until
               the consolidate+commit pipeline confirmed).
-            * **Failure path** — increment ``attempts``, persist
+            * **Failure path** â€” increment ``attempts``, persist
               ``last_error``, schedule ``next_retry_at = now + min(2^N, 300)s``
               and put the row back to ``pending`` for the next claim. The
               dead-letter routing (after ``kg_queue_max_attempts``) is
@@ -5482,15 +5479,6 @@ class ConsolidationProcessor:
         in the collector ring-buffer so the MemoryPressureCorrelator
         receives a real commit-failure signal.  Non-blocking/non-raising.
 
-        FR6 (spec eaf185c9 / card 81a96a49): a legacy board missing the
-        graph_layer/maturity_status schema raises ``Cannot find property
-        graph_layer for n``. Before that raw string becomes the sole DLQ
-        diagnostic we try the idempotent schema migration+backfill. If it
-        actually repairs the schema we re-pending the entry for an immediate
-        retry instead of counting it toward the dead-letter threshold; if it
-        cannot, we replace the raw error with a structured, actionable
-        diagnostic (or_1f52d4fd) so the dead-letter row names the operational
-        action rather than the opaque binder error.
         """
         claimed_entry = entry
         token = _claim_token(claimed_entry)
@@ -5511,40 +5499,6 @@ class ConsolidationProcessor:
                 retry_after_s=retry_after_s,
             )
             return
-
-        if is_graph_layer_schema_error(error_text):
-            remediation = ensure_graph_layer_schema(
-                entry.board_id, raw_error=error_text
-            )
-            if remediation.recovered:
-                # Schema repaired in place — re-pending for an immediate retry
-                # rather than charging this attempt against the DLQ threshold.
-                entry.last_error = None
-                entry.status = "pending"
-                entry.next_retry_at = self._now()
-                entry.claim_timeout_at = None
-                entry.worker_id = None
-                entry.claimed_at = None
-                entry.claimed_by_session_id = None
-                entry.claim_token = None
-                if db is not None:
-                    await get_consolidation_persistence_port().save_queue_entries(
-                        db,
-                        (entry,),
-                    )
-                logger.info(
-                    "consolidation.schema_layer_recovered artifact=%s:%s "
-                    "board=%s columns_added=%s",
-                    entry.artifact_type,
-                    entry.artifact_id,
-                    entry.board_id,
-                    remediation.columns_added,
-                )
-                return
-            if remediation.needs_structured_error and remediation.structured_message:
-                # Could not migrate — make the DLQ diagnostic actionable so the
-                # raw binder error is never the only thing operators see.
-                error_text = remediation.structured_message
 
         correlation_id = uuid.uuid4().hex
         entry_id = entry.id
@@ -5755,7 +5709,7 @@ class ConsolidationProcessor:
                     )
                     heartbeat.start()
                     heartbeat.ensure_owned()
-                    # Linearize admission with rebuild's reservation→writer
+                    # Linearize admission with rebuild's reservationâ†’writer
                     # order. A rebuild that reserves after this recheck waits
                     # for the complete DLQ transaction; one that reserved
                     # before it makes this worker skip without mutation.

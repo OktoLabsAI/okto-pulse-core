@@ -337,7 +337,6 @@ def test_query_global_all_recovers_working_via_linear_fallback(monkeypatch):
 
     runtime = get_kg_registry().global_discovery_runtime
     monkeypatch.setattr(runtime, "search_decision_digests", _search)
-    monkeypatch.setattr(runtime, "ensure_layer_schema", lambda: [])
 
     rows = get_kg_service().query_global(
         qtext, user_boards=[board_id], graph_layer="all", top_k=10, min_similarity=0.1,

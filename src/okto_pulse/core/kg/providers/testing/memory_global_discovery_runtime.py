@@ -52,8 +52,6 @@ class InMemoryGlobalDiscoveryRuntime:
             quarantined=False,
         )
 
-    def ensure_layer_schema(self) -> tuple[str, ...]:
-        return ()
 
     def execute(self, statement: str, params=None) -> GraphStatementResult:
         if not self._exists:

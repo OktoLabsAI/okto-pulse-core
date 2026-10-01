@@ -23,7 +23,7 @@ VERDICT_NEEDS_MIGRATION = "needs_migration"
 #: (R05-C IMP2) Register-before-remove LEDGER of temporary exceptions: the core
 #: production KG consumers that import a forbidden kg.schema direct-storage
 #: symbol TODAY and are kept as a documented temporary exception until they are
-#: migrated to the #06 ports (or encapsulated) — the embedded Kùzu runtime stays
+#: migrated to the #06 ports (or encapsulated) â€” the embedded KÃ¹zu runtime stays
 #: ledgered until R05-E does the physical move + dependency cleanup. A consumer
 #: in this ledger is NON-blocking (verdict ``migration_allowlisted``); a NEW
 #: consumer NOT in this ledger / allowlist BLOCKS the oracle. Retirement: the
@@ -31,10 +31,10 @@ VERDICT_NEEDS_MIGRATION = "needs_migration"
 #:
 #: R05-C RULING (option 2): surfaces with a DIRECT, behaviour-equivalent #06 port
 #: were MIGRATED off this ledger this wave (not ledgered):
-#:   - ``services/main.py`` board-create bootstrap → GraphSchemaManager.ensure_bootstrapped;
+#:   - ``services/main.py`` board-create bootstrap â†’ GraphSchemaManager.ensure_bootstrapped;
 #:   - the Community CLI/seed bootstrap surfaces (separate package, not scanned here);
 #:   - every ASYNC + simple-linear ``open_board_connection`` Cypher call-site
-#:     (class A) → GraphTransaction (``async with begin(board_id) as scope:
+#:     (class A) â†’ GraphTransaction (``async with begin(board_id) as scope:
 #:     scope.execute(...)``): get_kg_metrics (api/kg_routes.py),
 #:     _reset_last_recomputed_at (api/kg_tick.py), and the three
 #:     canonical_learning_partition maintenance scans. ``api/kg_routes.py``,
@@ -46,40 +46,40 @@ VERDICT_NEEDS_MIGRATION = "needs_migration"
 #: What REMAINS below are REAL exceptions only (class B/C/D), each with an
 #: OBJECTIVE R05-E removal criterion derived from its most-coupled category (see
 #: ``_LEDGER_REASON_BY_CATEGORY`` + ``ledger_detail_for``). NB: the GraphTransaction
-#: port DOES expose ``GraphTransactionScope.execute`` via ``begin(board_id)`` — the
+#: port DOES expose ``GraphTransactionScope.execute`` via ``begin(board_id)`` â€” the
 #: reason the remaining ``open_board_connection`` consumers stay ledgered is NOT a
 #: missing port surface, it is that they live in SYNCHRONOUS functions (class C)
 #: where consuming the async ``begin`` context manager would change the
 #: event-loop boundary, plus sync-context schema/lifecycle ops (async ports), the
 #: ``apply_ladybug_lifecycle_step`` per-step callable injected into the rebuild
-#: orchestrator (no port primitive), and adapter-internal Kùzu primitives that
+#: orchestrator (no port primitive), and adapter-internal KÃ¹zu primitives that
 #: move with the embedded runtime in R05-E (class D).
 LEDGERED_EXCEPTIONS: frozenset[str] = frozenset()
 
-#: R05-C: per-category retirement contract. Each ledgered file is mapped — via its
-#: most-coupled kg.schema category — to an OBJECTIVE R05-E removal criterion plus
+#: R05-C: per-category retirement contract. Each ledgered file is mapped â€” via its
+#: most-coupled kg.schema category â€” to an OBJECTIVE R05-E removal criterion plus
 #: the human-readable reason it could NOT migrate to a #06 port THIS wave. The
 #: target port itself comes from ``_SYMBOL_CLASS`` (per importer). This is how the
-#: ruling's "owner / motivo / porta-alvo / critério objetivo de remoção" is
+#: ruling's "owner / motivo / porta-alvo / critÃ©rio objetivo de remoÃ§Ã£o" is
 #: attached to every exception without a hand-maintained per-file table.
 _LEDGER_REASON_BY_CATEGORY: dict[str, tuple[str, str]] = {
     "transaction": (
-        "class C (sync→async boundary): consumes open_board_connection/"
+        "class C (syncâ†’async boundary): consumes open_board_connection/"
         "BoardConnection from a SYNCHRONOUS function. The GraphTransaction port "
         "DOES expose GraphTransactionScope.execute via begin(board_id), but begin "
-        "is an async context manager — adopting it here would change the "
+        "is an async context manager â€” adopting it here would change the "
         "event-loop boundary of a sync call path. (All ASYNC + simple-execute "
         "call-sites, class A, were already migrated to the port this wave.)",
         "R05-E: make the call-site async (or add a vetted sync bridge) and consume "
         "`async with graph_transaction.begin(board_id) as scope: scope.execute(...)`; "
         "the file then stops importing the symbol and drops off this ledger. "
         "(If a residual site is async but needs inline-query/result-mapping "
-        "refactor — class B — migrate the query shape first.)",
+        "refactor â€” class B â€” migrate the query shape first.)",
     ),
     "ddl_schema": (
-        "class C (sync→async boundary): runs schema DDL migration from a "
+        "class C (syncâ†’async boundary): runs schema DDL migration from a "
         "SYNCHRONOUS recovery/guard path; the GraphSchemaManager.migrate port is "
-        "async and a sync→async bridge in this worker error path would risk "
+        "async and a syncâ†’async bridge in this worker error path would risk "
         "event-loop conflicts (regression risk)",
         "R05-E: make the call-site async (or add a vetted sync bridge) and consume "
         "GraphSchemaManager.migrate; symbol import then disappears",
@@ -88,7 +88,7 @@ _LEDGER_REASON_BY_CATEGORY: dict[str, tuple[str, str]] = {
         "class C/D: performs a lifecycle op (close/bootstrap/purge) from a "
         "SYNCHRONOUS context (async port = boundary change), OR injects the "
         "per-step apply_ladybug_lifecycle_step CALLABLE into the rebuild "
-        "orchestrator — GraphLifecycle exposes open/close/rebuild/purge but no "
+        "orchestrator â€” GraphLifecycle exposes open/close/rebuild/purge but no "
         "per-step adapter primitive (no mature port for that injection)",
         "R05-E: migrate the call-site to async GraphLifecycle (or expose a "
         "lifecycle-step primitive on the port) and drop the symbol",
@@ -100,19 +100,19 @@ _LEDGER_REASON_BY_CATEGORY: dict[str, tuple[str, str]] = {
         "R05-E: migrate to GraphPathResolver + async GraphLifecycle.purge together",
     ),
     "adapter_internal_kuzu": (
-        "adapter-internal Kùzu primitive (_open_kuzu_db/load_vector_extension/"
-        "_is_ladybug_corruption_error) — legitimately moves WITH the embedded "
+        "adapter-internal KÃ¹zu primitive (_open_kuzu_db/load_vector_extension/"
+        "_is_ladybug_corruption_error) â€” legitimately moves WITH the embedded "
         "runtime, exactly like the providers/embedded/ adapters",
-        "R05-E: relocate with the embedded Kùzu runtime to community behind "
+        "R05-E: relocate with the embedded KÃ¹zu runtime to community behind "
         "SemanticGraphStore (physical move + Ladybug/asyncpg dep cleanup)",
     ),
     "schema_metadata": (
         "imports read-only schema metadata/constants (NODE_TYPES/REL_TYPES/"
-        "SCHEMA_VERSION/...) — non-blocking formal schema, not a storage coupling",
+        "SCHEMA_VERSION/...) â€” non-blocking formal schema, not a storage coupling",
         "R05-E (low priority): source the constants from GraphSchemaManager metadata",
     ),
     "read_query": (
-        "imports a read-only query helper (vector_index_name/resolve_*) — "
+        "imports a read-only query helper (vector_index_name/resolve_*) â€” "
         "non-blocking, no storage/transaction coupling",
         "R05-E (low priority): source via the SemanticGraphStore read API",
     ),
@@ -152,12 +152,11 @@ _SYMBOL_CLASS: dict[str, tuple[str, str, bool]] = {
     "apply_ladybug_lifecycle_step": ("lifecycle", "GraphLifecycle", True),
     "board_kuzu_path": ("path_purge", "GraphRuntimeStore/StorageRef", True),
     "purge_board_graph_storage": ("path_purge", "GraphLifecycle", True),
-    "migrate_schema_for_board": ("ddl_schema", "GraphSchemaManager", True),
     "migrate_edge_metadata": ("ddl_schema", "GraphSchemaManager", True),
     "_open_kuzu_db": ("adapter_internal_kuzu", "SemanticGraphStore", True),
     "load_vector_extension": ("adapter_internal_kuzu", "SemanticGraphStore", True),
     "_is_ladybug_corruption_error": ("adapter_internal_kuzu", "SemanticGraphStore", True),
-    # Read-only schema metadata / constants / query helpers — shared, non-blocking
+    # Read-only schema metadata / constants / query helpers â€” shared, non-blocking
     # (migrate to GraphSchemaManager/SemanticGraphStore later, lower priority).
     "NODE_TYPES": ("schema_metadata", "GraphSchemaManager", False),
     "REL_TYPES": ("schema_metadata", "GraphSchemaManager", False),
@@ -172,7 +171,7 @@ _SYMBOL_CLASS: dict[str, tuple[str, str, bool]] = {
     "stable_rel_type_entries": ("read_query", "SemanticGraphStore", False),
 }
 # A bare module import (`import ...kg.schema` / `from ...kg import schema`) exposes
-# every symbol — treated as a wildcard, forbidden outside the allowlist.
+# every symbol â€” treated as a wildcard, forbidden outside the allowlist.
 _MODULE_WILDCARD = ("module_wildcard", "multiple", True)
 
 # Baselines to reconcile (ac_1c413377): the validator reported 45 importer files;
@@ -192,7 +191,7 @@ REF_BASELINE = {
     "purge_board_graph_storage": 0,
 }
 
-# Category precedence when a file imports several symbols — the most coupled wins.
+# Category precedence when a file imports several symbols â€” the most coupled wins.
 _CATEGORY_RANK = {
     "transaction": 6,
     "ddl_schema": 5,
@@ -227,7 +226,7 @@ class KgSchemaClassificationReport:
     counts_by_verdict: dict = field(default_factory=dict)
     allowlist: dict = field(default_factory=dict)
     #: (R05-C) the ledgered temporary-exception files actually present in the
-    #: scan (deterministic, sorted) — the documented register-before-remove debt.
+    #: scan (deterministic, sorted) â€” the documented register-before-remove debt.
     ledgered_exceptions: list = field(default_factory=list)
     #: (R05-C B-PARTIAL) one record per ledgered file: owner / reason / target
     #: port / OBJECTIVE R05-E removal criterion (the ruling's per-exception
@@ -287,7 +286,7 @@ def _is_allowlisted(rel_path: str) -> str | None:
     if rel_path in ALLOWLIST_MIGRATION_FILES or rel_path == ALLOWLIST_MIGRATION_CLI:
         return VERDICT_ALLOWLISTED
     if rel_path in LEDGERED_EXCEPTIONS:
-        # R05-C ledgered temporary exception — non-blocking (migration_allowlisted
+        # R05-C ledgered temporary exception â€” non-blocking (migration_allowlisted
         # verdict so the canonical-verdict contract is preserved).
         return VERDICT_ALLOWLISTED
     return None
@@ -337,18 +336,18 @@ def _classify_file(rel_path: str, symbols: set[str]) -> KgSchemaImporter:
         blocking = False  # allowlisted/adapter/ledgered consumers are not violations
         if allow_verdict == VERDICT_ADAPTER:
             rationale = (
-                "adapter-internal embedded provider — legitimate direct kg.schema use"
+                "adapter-internal embedded provider â€” legitimate direct kg.schema use"
             )
         elif rel_path in LEDGERED_EXCEPTIONS:
             _reason, _criterion = _LEDGER_REASON_BY_CATEGORY.get(
                 category, _LEDGER_REASON_BY_CATEGORY["read_query"]
             )
             rationale = (
-                f"R05-C ledgered REAL exception ({category}) — {_reason}. "
+                f"R05-C ledgered REAL exception ({category}) â€” {_reason}. "
                 f"{_criterion}"
             )
         else:
-            rationale = "allowlisted migration tooling — temporary direct kg.schema use"
+            rationale = "allowlisted migration tooling â€” temporary direct kg.schema use"
     else:
         verdict = VERDICT_NEEDS_MIGRATION
         blocking = any_blocking

@@ -88,14 +88,6 @@ def drain_kg_health_probes(*, timeout_s: float = 30.0) -> int:
     return drain_health_probe_runtime(timeout_s=timeout_s)
 
 
-async def migrate_board_graph_schema(board_id: str) -> dict[str, Any]:
-    """Apply the composed graph schema manager to one board."""
-
-    from okto_pulse.core.kg.interfaces import get_kg_registry
-
-    summary = await get_kg_registry().require_graph_schema_manager().migrate(board_id)
-    summary.setdefault("duration_ms", 0)
-    return summary
 
 
 def get_current_provider_registry() -> Any:
