@@ -1613,15 +1613,12 @@
       "line": 670,
       "id": "KG-59",
       "normative_text": "| KG-59 | Bugs têm mesmo proxy e causas diferentes | Cluster por associação, sem alegação automática de causa comum. |",
-      "review_status": "partial",
+      "review_status": "verified_by_reviewed_execution",
       "test_text_references": [],
       "reviewed_execution": {
-        "artifact": "acceptance-bug-proxy-read-semantics.json",
+        "artifact": "acceptance-bug-clusters-public.json",
         "criterion_key": "KG:KG-59"
-      },
-      "remaining": [
-        "KG-59 is not complete: Analytics Bug clusters with the specified source-time window, authorized scoped inventory, distinct Bug grouping by proxy/Spec/Learning/severity and completeness/freshness semantics still require implementation and qualification under KG sections 6, 9 and 10."
-      ]
+      }
     },
     {
       "key": "KG:KG-60",

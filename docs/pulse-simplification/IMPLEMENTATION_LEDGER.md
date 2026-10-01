@@ -2,6 +2,71 @@
 
 ## Estado para retomada
 
+### 2026-10-01 — clusters REST/MCP/frontend validados, prontos para envio
+
+Concluída a integração de clusters prevista em KG§6/§9: REST tipado, variante
+query.view=bugs na fachada MCP existente e Analytics lazy com15 dias, filtros,
+paginação, cancelamento e estadosunknown/incomplete/denied/error. Sem toolnova.
+Core/MCP public2:74964=0,80passed;Community public1:40368=0,46passed;
+frontend ui2:44008=0,13passed;build65190=0. Primeira rodada Core63823=1,
+45passed/1failed por fixture com wildcard no guard legado; corrigida somente a
+fixture para grants explícitos. Lint completo77898=0 tinha332warnings, incluindo
+um novo aviso de cleanup; removido incremento redundante e ESLint21984=0 sem
+warnings nos arquivos novos. Build final oficial mantém79arquivos/78assets,
+treecc705086b0e2e687de5993adf68da70286d4f488d3f922d7ae5e9b7fb91c9656.
+
+Par dist-learning-reconciliation-bug-clusters-public-qualified instalado35739=0,
+prova8807=0:867py/930payload Core+378py/463 Community byte-idênticos.
+Após prova, distribuição37395=0,19passed;F1622658=0,ok=true,sem findings/drift,
+oito budgets ZERO. READMEs regenerados pelo renderer oficial. Só fixtures/docs e
+artefatos de teste foram alterados após a qualificação do produto.
+
+KG-59 conferido pelo texto EXATO do plano, sem exigir nova etapa:20376=0,1passed,
+SQLite+Grafx reais com dois Bugs, conclusões de causas diferentes e mesmo proxy.
+Resposta pública preserva2Bugs distintos, proveniência, origin_proxy e
+causal_conclusion=not_established, sem expor conclusões nem escrever no grafo.
+TestesUI confirmam rótulo não causal; transportes/autorização são testados
+separadamente, não alegar E2E autenticado implantado. Recibo
+acceptance-bug-clusters-public.json sela hashes/provas e falhas anteriores.
+KG-59 promovido:inventário149verificadas/29parciais/68nãoauditadas.
+
+PRÓXIMO: continuar os critérios ORIGINAIS restantes das viewsimpact/coverage/
+lineage na mesma fachada, UI contextual e seus testes; depois benchmark e
+distribuição final conforme plano integrado. Não reabrir clusters por requisitos
+inventados nem somar campanhas sobrepostas. KG-10/T23 continuam nas decisões já
+solicitadas. Nenhum processo de validação pendente nem dado/policy real alterado.
+Objetivo integral segue ativo, sem pausa de milestone.
+
+### Histórico — implementação das superfícies públicas
+
+Base publicada Core4add4f2b/Communitydddd29b1, limpa ao retomar. Implementados
+DTO fechado, REST /boards/{board_id}/analytics/bug-clusters e variante tipada
+query.view=bugs na fachada MCP EXISTENTE get_traceability_report. Nenhuma tool
+nova; chamada SDLC sem query preservada, combinação ambígua de filtros recusada.
+REST/MCP compartilham janela UTC e use case autorizado; cursor exige janela
+original, falhas de escopo/timeout não viram listas vazias nem expõem detalhes
+nativos. Não promover as outras views por esta variante.
+
+Analytics→Bug clusters é lazy, padrão15 dias UTC, agrupamentosproxy/Spec de origem/
+Learning/severidade e filtrosstatus/severidade. Aborta ao sair/trocarBoard/filtro,
+ignora respostas atrasadas, pagina pela janela devolvida sem somar denominadores
+e limpa páginas após erro. Desconhecido/incompleto é explícito; associação não é
+causa nem risco validado. Testesfrontend ui1:75439=0,13passed. Build74435=0,
+79arquivos/78assets,tree30964c4cec3f4f8d5da1b76f57f7160c431e5553aa78b8abcacd85c65cc9eb93;
+frontend_dist staged para gate de distribuição.
+
+Primeiro par REST transport1:builds21409/93905=0,install12748=0,prova75135=0
+ANTES de comportamento (866py/929payload Core+378py/463 Community byte-idênticos).
+Core93475=0,67passed;Community65201=0,27passed (16HTTP+11SQL/Grafx).
+F1642420=1:findings=[],oito budgets ZERO,somente matrizesREADME. O buildfrontend
+correu durante essa primeira auditoria; não usar como prova do payload final.
+MCP e helper temporal compartilhado foram acrescentados DEPOIS desses terminais.
+Catálogo e manifesto gerados oficialmente. Novo par bug-clusters-public1 já
+buildado, ainda requer install/prova e campanhas Core/MCP,Community/distribuição,
+F16 final. Inventário148/30/68 inalterado; sem commit deste WIP ainda.
+
+### Histórico imediato — leitor interno
+
 Leitor de clusters integrado e verificado internamente, após o par publicado
 Core3b74dac9/Communityaf0039a2. Core ganhou use case com os grants existentes
 por agrupamento e redução do timeout pela policy do Board; Community compõe

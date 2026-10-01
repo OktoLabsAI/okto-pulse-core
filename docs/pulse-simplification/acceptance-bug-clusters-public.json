@@ -1,0 +1,156 @@
+{
+  "recorded_at": "2026-10-01T08:18:28.109168+00:00",
+  "scope": "KG sections 6 and 9: bounded Bug clusters through REST, existing MCP facade and lazy Analytics UI",
+  "status": "partial_plan_delivery",
+  "verified_criterion_keys": [
+    "KG:KG-59"
+  ],
+  "base_pair": {
+    "core": "4add4f2b",
+    "community": "dddd29b1"
+  },
+  "campaigns": [
+    {
+      "junit": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\learning-reconciliation-bug-clusters-public2-core.xml",
+      "sha256": "95226402870b3becc2cd42621b82058697cf506f3c84e2e855da0dddb9b90863",
+      "passed": 80
+    },
+    {
+      "junit": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\learning-reconciliation-bug-clusters-public1-community.xml",
+      "sha256": "db468511d2b7a8e94696337869d49ae4e7ea011241fcb8b8d5fe828528e569a9",
+      "passed": 46
+    },
+    {
+      "junit": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\frontend-bug-clusters-ui2.xml",
+      "sha256": "72b88e7cb6790af64619247a0ba0fd7ae3871cfcbaede5f0c4b4f3aa53d6167f",
+      "passed": 13
+    },
+    {
+      "junit": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\learning-reconciliation-bug-clusters-public-qualified-community.xml",
+      "sha256": "5577d3adc187d3cd4727b60cb4567f774417603ed1e19a2ac67956eb56e3a19d",
+      "passed": 19
+    },
+    {
+      "junit": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\learning-reconciliation-bug-clusters-public-kg59-community.xml",
+      "sha256": "c6b9fcb0c0c081afacd94c63874dca1ccf00120f733ac0c9206810090ae56fda",
+      "passed": 1
+    }
+  ],
+  "campaign_accounting": "Overlapping reruns are not added into a distinct-test total.",
+  "provenance": {
+    "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\provenance-bug-clusters-public-qualified.json",
+    "sha256": "9b9595bb836b040550e4ce3a48879cc017fbdec9cffcadcbf49d79434df59031",
+    "data": {
+      "checked_at": "2026-10-01T08:12:15.803158+00:00",
+      "python": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Scripts\\python.exe",
+      "packages": {
+        "core": {
+          "python_files": 867,
+          "origin": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages\\okto_pulse\\core\\__init__.py",
+          "repository_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_core",
+          "commit": "4add4f2b1133bd9626bd14e998772aed2c452dc4",
+          "dirty": true,
+          "dirty_entry_count": 7,
+          "distribution": "okto-pulse-core",
+          "version": "0.3.4",
+          "wheel": {
+            "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\dist-learning-reconciliation-bug-clusters-public-qualified\\okto_pulse_core-0.3.4-py3-none-any.whl",
+            "sha256": "2037d00dbdb7f2b8c4f2eb9890d6ad0fd77f57129ed45661bc5ab1de0316e352",
+            "size": 3813085
+          },
+          "source_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_core\\src",
+          "site_packages_root": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages",
+          "package_prefix": "okto_pulse/core/",
+          "byte_identical_member_count": 930,
+          "byte_identical": true,
+          "aggregate_sha256": "1742a5d83009b3b0761b2500ca3004955835f68f8bcff83b953ada036475f16e",
+          "chain_hashes": {
+            "source": "1742a5d83009b3b0761b2500ca3004955835f68f8bcff83b953ada036475f16e",
+            "wheel": "1742a5d83009b3b0761b2500ca3004955835f68f8bcff83b953ada036475f16e",
+            "site_packages": "1742a5d83009b3b0761b2500ca3004955835f68f8bcff83b953ada036475f16e"
+          },
+          "critical_resource_sha256": {
+            "okto_pulse/core/mcp/resources/ska_resource_manifest.json": "87fab2a5ded5f6ee273af8628555c21f7065d32379945784132bb6c300d05865",
+            "okto_pulse/core/mcp/resources/ska_tool_manifest.json": "0c3fa3da1549baec20872eca3f4a289288627e6b9f6b80be10472ac962fa72b9"
+          },
+          "mismatches": []
+        },
+        "community": {
+          "python_files": 378,
+          "origin": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages\\okto_pulse\\community\\__init__.py",
+          "repository_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_community",
+          "commit": "dddd29b1d858a3b597e295b9c568bf44857c2e9a",
+          "dirty": true,
+          "dirty_entry_count": 42,
+          "distribution": "okto-pulse",
+          "version": "0.3.4",
+          "wheel": {
+            "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\dist-learning-reconciliation-bug-clusters-public-qualified\\okto_pulse-0.3.4-py3-none-any.whl",
+            "sha256": "13aa92c3aa0cbcaccb9e9e5f666e918bbb65bd8bc8b7ee6b810d429c25aac4d6",
+            "size": 4547363
+          },
+          "source_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_community\\src",
+          "site_packages_root": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages",
+          "package_prefix": "okto_pulse/community/",
+          "byte_identical_member_count": 463,
+          "byte_identical": true,
+          "aggregate_sha256": "bbd76d4e603013d82458327418baba801515e7f87b624735ccff54204d41d2c6",
+          "chain_hashes": {
+            "source": "bbd76d4e603013d82458327418baba801515e7f87b624735ccff54204d41d2c6",
+            "wheel": "bbd76d4e603013d82458327418baba801515e7f87b624735ccff54204d41d2c6",
+            "site_packages": "bbd76d4e603013d82458327418baba801515e7f87b624735ccff54204d41d2c6"
+          },
+          "critical_resource_sha256": {},
+          "mismatches": []
+        }
+      }
+    }
+  },
+  "closure": {
+    "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\learning-reconciliation-bug-clusters-public-qualified-closure.log",
+    "sha256": "37b710a8aba65c533416558281e57d46b1917cbbb91a641d18c4ef035a61940e",
+    "ok": true,
+    "budgets": {
+      "import_boundary_baseline": 0,
+      "singleton_baseline": 0,
+      "dependency_temporary_exceptions": 0,
+      "graph_runtime_compatibility": 0,
+      "rebuild_artifact_compatibility": 0,
+      "community_private_reach_ins": 0,
+      "community_adapter_bridges": 0,
+      "af35_relational_residue": 0
+    }
+  },
+  "source_sha256": {
+    "okto_labs_pulse_core\\src\\okto_pulse\\core\\models\\bug_clusters.py": "9111f7c326ea076d48658153e32a162c3fce158da38cf2d664f2a69dfe49a028",
+    "okto_labs_pulse_core\\src\\okto_pulse\\core\\mcp\\bug_cluster_query.py": "17dd3648ab2de15016953be3108ae001f1f91bc35d68db063e5ec50653aea701",
+    "okto_labs_pulse_core\\src\\okto_pulse\\core\\mcp\\server.py": "95405af92fd0a3b4b8c5803fe1698778d634e0c133fe0394c8530be7f16cfeba",
+    "okto_labs_pulse_core\\src\\okto_pulse\\core\\mcp\\resources\\reference\\tool-docs\\traceability.md": "d0a3c302a0565d3787ecc70e7fd074b3ba6f84e55e23e14f077f1d4efc32f7c0",
+    "okto_labs_pulse_core\\tests\\test_bug_clusters_mcp.py": "c09f80bf7bcfb0cc11b4c035e30c8fd2429d2531716f7c6517c03e705011f8e0",
+    "okto_labs_pulse_community\\src\\okto_pulse\\community\\api\\analytics.py": "50fd41e853890515e9ef04aaabe3a5d653bf33186eae167d628a44e260c44189",
+    "okto_labs_pulse_community\\src\\okto_pulse\\community\\api\\bug_clusters.py": "b0c71e7c44eea293a6cd45f8b6f3eca3aa477390f6fb009ea2b06b26a0340e83",
+    "okto_labs_pulse_community\\tests\\test_bug_clusters_transport.py": "aca02109bf23224debd4d6d4891c44bb1b90aec13f1c5f98e404040fd2ad7089",
+    "okto_labs_pulse_community\\tests\\test_bug_clusters_read.py": "715415c271175af81298dac4ee0e43b75c96b00d5a8bb42dea2a07aba83cfbd7",
+    "okto_labs_pulse_community\\frontend\\src\\components\\analytics\\AnalyticsPage.tsx": "235664a9fcfe330eb6ef9b0feb84cb98802bf25ead4980af8235e9eec541d164",
+    "okto_labs_pulse_community\\frontend\\src\\components\\analytics\\BugClustersView.tsx": "c78c849d570ef20cd3b2d110a3dd9f67eb2a304b6925fd3dfe0496361d05e006",
+    "okto_labs_pulse_community\\frontend\\src\\components\\analytics\\BugClustersView.test.tsx": "975f814289539fdf398d31fbc6f2e3cc99c381ae32704db109afdb94b55a9593",
+    "okto_labs_pulse_community\\frontend\\src\\components\\analytics\\analyticsBugClustersRoute.test.tsx": "e2308d18e2656aa3256bb76ef7fa6637592fed72f0bb1afc9e4c48be1528c7b7",
+    "okto_labs_pulse_community\\frontend\\src\\components\\analytics\\bugClustersTypes.ts": "577ca6ca16327e3206bb0d66eb645d0c65ddec1b89e5c8ae9fea7428d8ba746b",
+    "okto_labs_pulse_community\\frontend\\src\\services\\api.ts": "48929d0165025835c3503f05ffbebc08c7fd36fb9c2c020080406d1541d166ca",
+    "okto_labs_pulse_community\\frontend\\src\\services\\api.bugClusters.test.tsx": "a57a510d60d8bf0adbde79b34e8dcc77db68d8f0200a13041b92fd56394f061c",
+    "okto_labs_pulse_community\\src\\okto_pulse\\community\\frontend_dist\\pulse-frontend-contract.json": "aebc89bbe474c4e62b28a6392e0a22637b80b7682c05aba1c0942743a95b34db"
+  },
+  "frontend_tree_sha256": "cc705086b0e2e687de5993adf68da70286d4f488d3f922d7ae5e9b7fb91c9656",
+  "preserved_failures": [
+    "public1 Core: 45 passed / 1 failed; fixture wildcard was not a legacy board:read grant. Fixed explicit fixture grants; public2 passed.",
+    "transport1 and public1 F16: only README matrix drift; eight budgets zero. Official renderer used; final qualified audit passed.",
+    "First frontend lint passed ratchet but added one cleanup-ref warning. Removed redundant sequence increment; final touched-file ESLint is warning-free."
+  ],
+  "limits": [
+    "HTTP/MCP transport tests use a controlled actor/UOW; SQL and native Grafx read tests are separately real disposable adapters. Not an authenticated deployed E2E.",
+    "Without a full graph checkpoint the graph grouping remains unknown/incomplete, never current because of an empty queue.",
+    "Other planned traceability views, complete benchmark, remaining acceptance inventory and paired final release are not delivered by this increment.",
+    "KG-59 is verified for its exact common-proxy/different-causes criterion; this does not complete other KG views or the overall plan.",
+    "No real data migration, live process restart, deployment, merge, tag or release."
+  ]
+}

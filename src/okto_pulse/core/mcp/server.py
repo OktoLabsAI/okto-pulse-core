@@ -14,6 +14,7 @@ from collections.abc import Mapping
 from contextlib import AsyncExitStack
 from dataclasses import replace as dataclass_replace
 from datetime import datetime
+from okto_pulse.core.models.bug_clusters import BugClustersRequest
 from importlib.resources import files as package_files
 from types import SimpleNamespace
 from typing import Annotated, Any, Callable, Literal
@@ -18081,6 +18082,7 @@ async def okto_pulse_get_traceability_report(
     ideation_id: str = "",
     spec_id: str = "",
     include_artifacts: BoolInput = False,
+    query: BugClustersRequest | None = None,
 ) -> str:
     """
     okto_pulse_get_traceability_report — return a consolidated SDLC traceability report:
@@ -18088,7 +18090,11 @@ async def okto_pulse_get_traceability_report(
 
     Use this at the end of an E2E flow to verify whether the agent can answer
     what was implemented in each flow and whether KBs, mockups, architecture,
-    tests, bugs, cards, and parent references stayed queryable."""
+    tests, bugs, cards, and parent references stayed queryable.
+
+    Optional query.view=bugs reads bounded informational clusters instead of the
+    SDLC report. Do not combine query with SDLC filters. Reuse response.window
+    as date_from/date_to with a cursor; unknown graph freshness is not absence."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -18098,6 +18104,15 @@ async def okto_pulse_get_traceability_report(
         return _perm_error(perm_err)
 
     _include_artifacts = _flag_enabled(include_artifacts)
+
+    if query is not None:
+        if ideation_id or spec_id or _include_artifacts:
+            return json.dumps({'error': 'Do not combine a query variant with SDLC filters',
+                               'code': 'traceability_query_scope_ambiguous'})
+        from okto_pulse.core.mcp.bug_cluster_query import query_bug_clusters
+
+        return await query_bug_clusters(board_id, query, context=ctx,
+            uow_factory=get_unit_of_work_factory_for_mcp())
 
     async with get_unit_of_work_factory_for_mcp()() as uow:
         from okto_pulse.core.ports.traceability import TraceabilityReadError
@@ -21672,8 +21687,8 @@ _LAZY_COMPACT_DESCRIPTION_OVERRIDES.update(
  'okto_pulse_get_task_conclusions': 'Read completed Card conclusions, bug root cause and decisions '
                                     'for later work. Read `okto-pulse://reference/tool-docs/misc` '
                                     'before use.',
- 'okto_pulse_get_traceability_report': 'Read consolidated SDLC traceability from ideation through '
-                                       'Spec/Card/Test/Bug to artifacts. Read '
+ 'okto_pulse_get_traceability_report': 'Read SDLC traceability or typed query.view=bugs clusters. '
+                                       'Clusters are informational, not causal proof. Read '
                                        '`okto-pulse://reference/tool-docs/traceability` before '
                                        'use.',
  'okto_pulse_kg_health_readiness': 'Read non-maskable Board health/readiness aggregates. Summary '

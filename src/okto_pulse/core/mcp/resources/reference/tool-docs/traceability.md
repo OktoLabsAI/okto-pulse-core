@@ -8,6 +8,25 @@ Full long-form documentation (args, returns, examples, enum prose) for `okto_pul
 
 ## `okto_pulse_get_traceability_report`
 
+Without `query`, the existing SDLC report and filters are preserved.
+For Bug clusters pass `query={"view":"bugs","group_by":"proxy"}`. Closed groupings:
+`proxy`, `spec` (origin Card's Spec), `learning`, `severity`. Optional `date_from`,
+`date_to`, `status`, `severity`, `limit` (default 200, maximum 1000), `cursor`,
+`timeout_ms` (cannot exceed the Board policy). Default window: last 15 UTC days.
+Date-only upper bounds include that UTC day. For the next page copy response
+`window.from`/`window.to` into `query.date_from`/`query.date_to`, preserving filters
+and limit. A changed scope returns `bug_clusters_cursor_stale`; restart without
+the cursor. Do not combine `query` with `ideation_id`, `spec_id` or
+`include_artifacts=true`.
+
+Counts cover distinct authorized Bugs, not join rows or the current page.
+Origin associations do not establish a common cause; Learning is a recorded
+interpretation whose validity may be unknown. Missing graph checkpoints remain
+unknown/incomplete; an empty observation is not proof of absence. These reads
+are informational and cannot approve a gate. Permissions are rechecked on every
+page: Board/Card read for all groups, Spec read for origin Spec/proxy, existing
+related-context grant for proxy and learning-from-bugs grant for Learning.
+
 okto_pulse_get_traceability_report — return a consolidated SDLC traceability report:
 ideation → refinement → spec → card/test/bug → artifacts.
 
