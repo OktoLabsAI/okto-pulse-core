@@ -2,6 +2,33 @@
 
 ## Estado para retomada
 
+### 2026-10-01 — composição relacional de cobertura validada (KG§6.4/§9)
+
+Base publicada Core b58e9380 / Community c180ff03. Composição interna reutiliza
+spec_coverage_summary para estrutura e evaluate_delivery_coverage sobre o MESMO
+load_rollup_snapshot do gate para prova. Test Card vinculado não vira teste passing;
+waiver é rotulado separadamente. Porta pública no Core, SQL somente no Community.
+Leitura delimitada por Spec/edição/ator, cursor preso às fontes, timeout e limites;
+sem code_traceability.evidence.read, não consulta registros nem contagens de prova.
+Autoridade efetiva indisponível/incompleta resulta unknown, nunca zero completo.
+
+Core source2:68207=0,121passed; Community source1:15072=0,6passed, incluindo
+recibos autenticados, SQL sem writes, prova restrita sem leitura/contagem e timeout
+com limpeza concluída. Primeira rodada Core31121=1,10passed/1failed por fixture
+com campo complete em vez de population_complete; corrigida somente a fixture.
+Antes de comportamento, install57560=0 e prova44299=0 do par source1. F16 inicial
+70158=1 somente pelas matrizesREADME, findings vazios e oito budgetsZERO.
+Renderer oficial atualizou READMEs. Par spec-coverage-qualified instalado15700=0;
+prova92096=0:870py/933payload Core+379py/464payload Community byte-idênticos.
+F16 final31142=0,ok=true,sem findings/drift e oito budgetsZERO. Ruff F/E9 e
+diff verdes. Somente README mudou no produto após os testes comportamentais.
+Recibo acceptance-spec-coverage-source.json conserva hashes, rodadas e limites.
+
+PRÓXIMO: observação gráfica, transportes e UI contextual da view coverage;
+não promover KG-58 nem declarar a view concluída. Inventário 149/29/68 inalterado.
+Sem processos de validação pendentes ou alteração de dados reais. As demais views
+e etapas originais permanecem conforme entrada anterior, sem novos requisitos.
+
 ### 2026-10-01 — clusters REST/MCP/frontend validados, prontos para envio
 
 Concluída a integração de clusters prevista em KG§6/§9: REST tipado, variante

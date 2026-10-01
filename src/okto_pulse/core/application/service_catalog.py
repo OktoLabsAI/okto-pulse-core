@@ -19,6 +19,12 @@ from okto_pulse.core.ports.traceability import (
 
 
 class CoreAnalyticsOperations:
+    async def spec_coverage(self, query, *, timeout_ms: int):
+        from okto_pulse.core.ports.relational_application import require_relational_application_adapter
+        from okto_pulse.core.services.spec_coverage_query import project_spec_coverage
+        reader = require_relational_application_adapter().spec_coverage_read(self.__relational_context)
+        return project_spec_coverage(query, await reader.read(query, timeout_ms=timeout_ms))
+
     async def bug_clusters(self, query, *, timeout_ms: int):
         from okto_pulse.core.ports.relational_application import require_relational_application_adapter
         from okto_pulse.core.services.bug_clusters import project_bug_clusters

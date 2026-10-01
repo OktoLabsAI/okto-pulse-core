@@ -20,6 +20,7 @@ from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 from .mcp_auth import AgentAuthSession
 
 if TYPE_CHECKING:
+    from .spec_coverage_query import SpecCoverageReadPort
     from .bug_clusters import BugClustersReadPort
     from .checklist import ChecklistPersistencePort
     from .code_investigation import CodeInvestigationStore
@@ -206,6 +207,10 @@ class RelationalApplicationAdapter(Protocol):
 
     def bug_clusters_read(self, session: Any) -> BugClustersReadPort:
         """Return the bounded, read-only Bug cluster source/projection reader."""
+        ...
+
+    def spec_coverage_read(self, session: Any) -> SpecCoverageReadPort:
+        """Return one bounded Spec source and its authorized admitted proof."""
         ...
 
     def guideline_policy(
