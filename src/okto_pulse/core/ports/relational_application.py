@@ -20,6 +20,7 @@ from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 from .mcp_auth import AgentAuthSession
 
 if TYPE_CHECKING:
+    from .bug_clusters import BugClustersReadPort
     from .checklist import ChecklistPersistencePort
     from .code_investigation import CodeInvestigationStore
     from .code_traceability import CodeTraceabilityReadPort, CodeTraceabilityStore
@@ -201,6 +202,10 @@ class RelationalApplicationAdapter(Protocol):
     def board_kg_analytics_read(self, session: Any) -> "BoardKgAnalyticsEvidencePort":
         """Return board-only KG/effectiveness evidence with no mutation surface."""
 
+        ...
+
+    def bug_clusters_read(self, session: Any) -> BugClustersReadPort:
+        """Return the bounded, read-only Bug cluster source/projection reader."""
         ...
 
     def guideline_policy(

@@ -38,6 +38,15 @@ def resolve_graph_query_execution() -> GraphQueryExecution:
     return execution
 
 
+def resolve_bug_clusters_graph_read():
+    """Resolve the optional typed cluster reader without exposing registry internals."""
+    from okto_pulse.core.ports.bug_clusters import BugClustersGraphReadPort
+    reader = _registry().graph_store
+    if not isinstance(reader, BugClustersGraphReadPort):
+        raise GraphCapabilityUnavailable('Bug cluster graph reads are not configured.')
+    return reader
+
+
 def resolve_graph_transaction() -> Any:
     return _registry().graph_transaction
 
@@ -81,6 +90,7 @@ __all__ = [
     "require_rebuild_audit_artifact_store",
     "resolve_cypher_executor",
     "resolve_graph_query_execution",
+    "resolve_bug_clusters_graph_read",
     "resolve_graph_lifecycle",
     "resolve_graph_schema_manager",
     "resolve_graph_transaction",

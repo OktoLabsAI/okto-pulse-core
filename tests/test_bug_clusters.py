@@ -19,7 +19,7 @@ def query(**changes):
 
 def bug(identity="one", **changes):
     return replace(ClusterBugFact(identity, "Different diagnosis " + identity,
-        NOW - timedelta(days=2), "done", "high", "spec:one", "revision-1",
+        NOW - timedelta(days=2), "done", "major", "spec:one", "revision-1",
         NOW - timedelta(days=1)), **changes)
 
 
@@ -64,6 +64,12 @@ def test_default_window_is_fifteen_days_and_uses_source_creation():
     project_bug_clusters(request, snapshot(bugs=(boundary, bug("two"))))
     with pytest.raises(ValueError, match="source_outside_scope"):
         project_bug_clusters(request, snapshot(bugs=(bug(source_created_at=NOW, resolved_at=NOW), bug("two"))))
+
+
+@pytest.mark.parametrize('filters', [{'severity': 'high'}, {'severity': 'low'}, {'status': 'completed'}])
+def test_filters_use_existing_domain_enums(filters):
+    with pytest.raises(ValueError, match='filter_invalid'):
+        query(**filters)
 
 
 @pytest.mark.parametrize(("changes", "state"), [
@@ -145,7 +151,7 @@ def test_counts_are_for_whole_scope_and_cursor_binds_generation_sources_filters_
         with pytest.raises(ValueError, match="cursor_stale"):
             project_bug_clusters(next_query, replace(state, **changes))
     for changed_query, changed_state in (
-        (replace(next_query, severity="high"), state),
+        (replace(next_query, severity="major"), state),
         (replace(next_query, actor_scope_ref="actor-b"), replace(state, actor_scope_ref="actor-b")),
         (replace(next_query, board_id="board-b"), replace(state, board_id="board-b")),
     ):

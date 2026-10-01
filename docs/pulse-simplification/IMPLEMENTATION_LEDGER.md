@@ -2,6 +2,45 @@
 
 ## Estado para retomada
 
+Leitor de clusters integrado e verificado internamente, após o par publicado
+Core3b74dac9/Communityaf0039a2. Core ganhou use case com os grants existentes
+por agrupamento e redução do timeout pela policy do Board; Community compõe
+inventário SQL limitado, última resolução pelo resolver D11 e observações Grafx
+na geração da rota imutável. Leituras relacionais de Spec/severidade não adquirem
+acesso ao grafo. Sem checkpoint integral verificável, a leitura não declara
+projeção current/completa. Learning observado é interpretação de validade unknown.
+Ainda sem REST/MCP/frontend. reader1: Core95661=0,64passed;Community87485=1
+por fixture severity=high inválida. Corrigida para major/minor e filtros passaram
+a validar os enums existentes. reader2:Core24318=0,67passed;Community28687=1
+após5 SQL, por Timestamp nativo ainda não normalizado. Reutilizado o normalizador
+Community existente. reader3:Core23887=0,67passed;Community23462=0,8passed,
+incluindo Grafx real, sem escrita, e recusa de alvo de outro Board.
+Conferência Q06 exigiu corrigir o agrupamento por Spec para Bug→Card de origem→Spec,
+sem usar a Spec de regressão ligada diretamente ao Bug. Digest inclui origem,
+logo reparenting sem mudar Bug/Spec.version invalida a observação. Par
+bug-clusters-reader4 passou: Core35854=0,67passed;Community10945=0,10passed.
+Integração SQL→Grafx29160=0,1passed: Bug ausente da projeção permanece no
+denominador autoritativo, resposta incompleta e nenhum write gráfico. Total78
+distintos. Targetscope65364=0 reforça o mesmo caso com uma Spec existente em
+outro Board, não apenas referência ausente; não somar repetição ao total.
+Não alegar E2E de writer/migração: as fontes e o grafo são fixtures.
+F16 reader4,61161=1, só matrizes README; oito budgets ZERO. Renderer oficial
+atualizou os dois READMEs. Par dist-learning-reconciliation-bug-clusters-reader-qualified
+instalado46053=0,provenance-bug-clusters-reader-qualified.json23444=0:
+865py/928payload+377py/462 byte-idênticos. F16 final12907=0,ok=true,
+findings/documentation_findings vazios,oito budgets ZERO. Ruff F/E9 e diff verdes.
+Somente README mudou depois do produto reader4 testado. Recibo
+acceptance-bug-clusters-reader.json registra casos, hashes, rodadas e limites.
+
+Inventário permanece148/30/68. KG-59 e a capacidade pública continuam PARCIAIS.
+PRÓXIMO: composição REST/MCP da consulta e Analytics→Clusters de Bugs, com tipos,
+cliente, testes frontend e build oficial; preservar a fachada de quatro views
+do plano, sem criar tools isoladas por agrupamento. Os demais critérios originais,
+benchmark e distribuição final permanecem. KG-10/T23 aguardam as decisões já
+solicitadas. Nenhuma validação/processo em execução, dado real ou política alterado.
+
+### Histórico imediato — base da agregação
+
 Analytics→Clusters de Bugs (KG§6/§9) em implementação. Contrato tipado e
 agregação Core adicionados: inventário autorizado anterior aos joins, janela
 default15 dias por source_created_at, agrupamentos proxy/Spec/Learning/severidade,

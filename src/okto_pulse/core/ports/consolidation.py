@@ -1271,6 +1271,12 @@ class CardLifecycleTransition:
     to_status: str | None
 
 
+def card_resolution_timestamp(current_status, transitions):
+    """Public read policy for source-owned Bug resolution metadata (KG D11)."""
+    from okto_pulse.core.kg.source_projection_metadata import latest_resolution_time
+    return latest_resolution_time(current_status, transitions)
+
+
 class ConsolidationPersistencePort(Protocol):
     async def latest_card_transitions(
         self, context: Any, *, board_id: str, card_id: str,

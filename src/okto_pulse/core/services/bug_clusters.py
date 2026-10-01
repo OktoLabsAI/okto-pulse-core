@@ -92,6 +92,11 @@ def _validate(query, snapshot):
 def _freshness(snapshot) -> ProjectionFreshnessState:
     if not snapshot.graph_available:
         return "unavailable"
+    if (snapshot.graph_generation is None and not snapshot.projected_bug_ids
+            and not snapshot.associations and snapshot.source_inventory_complete):
+        # Source-only groupings do not acquire graph query authority or invent
+        # a graph observation merely to display authoritative severity/Spec data.
+        return "unknown"
     if (not snapshot.source_inventory_complete or snapshot.associations_truncated
             or len(snapshot.projected_bug_ids) != len(snapshot.bugs)):
         return "incomplete"
@@ -137,7 +142,7 @@ def project_bug_clusters(query: BugClustersQuery, snapshot: BugClustersSnapshot)
         rows.append({
             "target_ref": ref, "title": group["title"][:240], "validity": validity,
             "assertion_basis": {"proxy": "origin_proxy", "learning": "recorded_learning",
-                                "spec": "source_spec", "severity": "source_severity"}[query.group_by],
+                                "spec": "origin_spec", "severity": "source_severity"}[query.group_by],
             "causal_conclusion": "not_established",
             "distinct_bug_count": len(members) if complete else None,
             "observed_bug_count": len(members),

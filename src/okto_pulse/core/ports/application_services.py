@@ -20,6 +20,7 @@ from okto_pulse.core.ports.traceability import (
 
 
 if TYPE_CHECKING:
+    from okto_pulse.core.ports.bug_clusters import BugClustersQuery
     from okto_pulse.core.services.architecture_classification import ArchitectureClassificationService
     from okto_pulse.core.domain.architecture_candidates import ArchitectureCandidatePopulation
     from okto_pulse.core.application.use_cases.entity_pagination import (
@@ -422,6 +423,10 @@ class ApplicationServiceCatalog(Protocol):
 
 
 class AnalyticsOperations(Protocol):
+    async def bug_clusters(self, query: BugClustersQuery, *, timeout_ms: int) -> dict[str, object]:
+        """Project a previously authorized, bounded Bug cluster query."""
+        ...
+
     async def board_is_owned_by(self, board_id: str, user_id: str) -> bool: ...
 
     async def blockers(

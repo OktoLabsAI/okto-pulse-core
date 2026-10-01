@@ -8,10 +8,11 @@ Queue depth, graph node count and a reconstruction timestamp are not checkpoints
 
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from typing import Literal, Protocol
+from typing import Literal, Protocol, runtime_checkable
 
 from okto_pulse.core.ports.analytics_foundation import AnalyticsUtcWindow, require_utc_datetime
 from okto_pulse.core.ports.kg_query_policy import DEFAULT_QUERY_ROWS, query_row_limit
+from okto_pulse.core.domain.enums import BugSeverity, CardStatus
 
 BugClusterGrouping = Literal["proxy", "spec", "learning", "severity"]
 ProjectionFreshnessState = Literal["current", "lagging", "incomplete", "unavailable", "unknown"]
@@ -42,6 +43,13 @@ class BugClustersQuery:
         for value in (self.status, self.severity):
             if value is not None and (type(value) is not str or not value or len(value) > 64):
                 raise ValueError("bug_clusters_filter_invalid")
+        try:
+            if self.status is not None:
+                CardStatus(self.status)
+            if self.severity is not None:
+                BugSeverity(self.severity)
+        except ValueError as exc:
+            raise ValueError("bug_clusters_filter_invalid") from exc
         object.__setattr__(self, "limit", query_row_limit(self.limit))
         if self.cursor is not None and (type(self.cursor) is not str or len(self.cursor) > 256):
             raise ValueError("bug_clusters_cursor_invalid")
@@ -65,6 +73,8 @@ class ClusterBugFact:
     source_created_at: datetime
     status: str
     severity: str | None
+    # Q06: the Spec of the origin Card (Bug -> Card -> Spec), not an unrelated
+    # Spec attached directly to the Bug for its regression work.
     spec_ref: str | None
     source_revision: str
     resolved_at: datetime | None = None
@@ -113,5 +123,28 @@ class BugClustersReadPort(Protocol):
         page. Reject foreign/denied endpoints before returning facts. Bound source
         rows, joins, payload and native execution; cancellation must not leave
         unaccounted work. No repair, commit, projection or agent invocation.
+        """
+        ...
+
+
+@dataclass(frozen=True, slots=True)
+class BugClusterGraphFacts:
+    projected_bug_ids: tuple[str, ...]
+    associations: tuple[BugClusterAssociation, ...]
+    graph_generation: str | None = None
+    truncated: bool = False
+
+
+@runtime_checkable
+class BugClustersGraphReadPort(Protocol):
+    def read_bug_cluster_graph(
+        self, board_id: str, bugs: tuple[ClusterBugFact, ...], *, group_by: BugClusterGrouping,
+    ) -> BugClusterGraphFacts:
+        """Read within the caller's shared native deadline and immutable route.
+
+        Only requested source Bugs and authorized domain endpoint families may
+        participate. Return a durable route generation, never a wall clock or
+        process identity. Missing or stale source metadata is not a current Bug.
+        This observation does not prove full projection completeness.
         """
         ...

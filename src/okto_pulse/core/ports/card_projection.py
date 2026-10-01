@@ -116,6 +116,16 @@ def bug_origin_proxy_read_metadata(*, rule_id, layer, created_by, fallback_reaso
     return {}
 
 
+def bug_origin_proxy_target_spec(target_ref):
+    """Extract a complete closed child reference before checking Board access."""
+    parts = target_ref.split(':') if type(target_ref) is str else []
+    if (len(parts) != 4 or parts[0] != 'spec'
+            or parts[2] not in {family.section for family in BUG_ORIGIN_PROXY_FAMILIES}
+            or any(not part or part.strip() != part for part in parts)):
+        raise ValueError('bug_origin_proxy_target_reference_invalid')
+    return parts[1]
+
+
 def card_child_family(namespace):
     for family in CARD_CHILD_FAMILIES:
         if family.namespace == namespace:

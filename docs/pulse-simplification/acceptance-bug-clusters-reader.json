@@ -1,0 +1,304 @@
+{
+  "format": "pulse-v1.3-reviewed-execution/v1",
+  "criteria": [
+    "KG:KG-59"
+  ],
+  "status": "partial",
+  "change": "Compose the typed Core aggregation with Board-authorized use cases and Community SQL/Grafx readers. Q06 groups follow Bug to origin Card to Spec; the Bug regression Spec is not substituted. Existing read leaves and query timeout policy are reused.",
+  "coverage": "Source window/type/status/severity filtering, same-statement whole-scope denominator, bounded two-event resolution batch, origin and target Board checks, policy reduction, per-group permission denial, realm isolation, revocation recheck, root metadata currentness, closed origin-proxy ownership, Learning observation with unknown validity, and immutable route generation. A real SQL plus Grafx call preserves a missing projected Bug in the authoritative denominator and reports incomplete without a graph write.",
+  "executions": [
+    {
+      "terminal_session": 35854,
+      "exit_code": 0,
+      "suites": [
+        {
+          "name": "pytest",
+          "errors": "0",
+          "failures": "0",
+          "skipped": "0",
+          "tests": "67",
+          "time": "9.404",
+          "timestamp": "2026-10-01T04:17:45.733843-03:00",
+          "hostname": "Alienware_m15"
+        }
+      ],
+      "cases": [
+        "tests.test_bug_clusters::test_two_different_causes_share_proxy_without_becoming_common_cause",
+        "tests.test_bug_clusters::test_join_fanout_and_multiple_targets_never_inflate_board_denominator",
+        "tests.test_bug_clusters::test_default_window_is_fifteen_days_and_uses_source_creation",
+        "tests.test_bug_clusters::test_filters_use_existing_domain_enums[filters0]",
+        "tests.test_bug_clusters::test_filters_use_existing_domain_enums[filters1]",
+        "tests.test_bug_clusters::test_filters_use_existing_domain_enums[filters2]",
+        "tests.test_bug_clusters::test_no_current_or_exact_cluster_count_without_complete_scope_proof[changes0-unknown]",
+        "tests.test_bug_clusters::test_no_current_or_exact_cluster_count_without_complete_scope_proof[changes1-unknown]",
+        "tests.test_bug_clusters::test_no_current_or_exact_cluster_count_without_complete_scope_proof[changes2-unknown]",
+        "tests.test_bug_clusters::test_no_current_or_exact_cluster_count_without_complete_scope_proof[changes3-lagging]",
+        "tests.test_bug_clusters::test_no_current_or_exact_cluster_count_without_complete_scope_proof[changes4-incomplete]",
+        "tests.test_bug_clusters::test_no_current_or_exact_cluster_count_without_complete_scope_proof[changes5-incomplete]",
+        "tests.test_bug_clusters::test_no_current_or_exact_cluster_count_without_complete_scope_proof[changes6-incomplete]",
+        "tests.test_bug_clusters::test_no_current_or_exact_cluster_count_without_complete_scope_proof[changes7-unavailable]",
+        "tests.test_bug_clusters::test_lost_projection_with_empty_graph_is_incomplete_not_no_bugs",
+        "tests.test_bug_clusters::test_unknown_denominator_is_not_zero_or_page_count",
+        "tests.test_bug_clusters::test_authoritative_grouping_survives_graph_unavailability[spec]",
+        "tests.test_bug_clusters::test_authoritative_grouping_survives_graph_unavailability[severity]",
+        "tests.test_bug_clusters::test_learning_keeps_previous_interpretation_separate_from_current",
+        "tests.test_bug_clusters::test_missing_resolution_is_unknown_and_reopened_is_not_resolved",
+        "tests.test_bug_clusters::test_resolution_duration_uses_source_creation_and_verified_done_time",
+        "tests.test_bug_clusters::test_counts_are_for_whole_scope_and_cursor_binds_generation_sources_filters_actor",
+        "tests.test_bug_clusters::test_cursor_stable_across_read_order_and_checked_at",
+        "tests.test_bug_clusters::test_invalid_cursors_fail_explicitly[junk]",
+        "tests.test_bug_clusters::test_invalid_cursors_fail_explicitly[bug-clusters-v1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:0]",
+        "tests.test_bug_clusters::test_invalid_cursors_fail_explicitly[xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx]",
+        "tests.test_bug_clusters::test_inconsistent_or_foreign_inventory_is_rejected[changes0]",
+        "tests.test_bug_clusters::test_inconsistent_or_foreign_inventory_is_rejected[changes1]",
+        "tests.test_bug_clusters::test_inconsistent_or_foreign_inventory_is_rejected[changes2]",
+        "tests.test_bug_clusters::test_inconsistent_or_foreign_inventory_is_rejected[changes3]",
+        "tests.test_bug_clusters::test_inconsistent_or_foreign_inventory_is_rejected[changes4]",
+        "tests.test_bug_clusters::test_inconsistent_or_foreign_inventory_is_rejected[changes5]",
+        "tests.test_bug_clusters::test_inconsistent_or_foreign_inventory_is_rejected[changes6]",
+        "tests.test_bug_clusters::test_payload_budget_bounds_nested_arrays_not_only_rows",
+        "tests.test_bug_clusters_authorization::test_proxy_requires_each_existing_read_leaf_before_aggregation[board.read]",
+        "tests.test_bug_clusters_authorization::test_proxy_requires_each_existing_read_leaf_before_aggregation[card.entity.read]",
+        "tests.test_bug_clusters_authorization::test_proxy_requires_each_existing_read_leaf_before_aggregation[spec.entity.read]",
+        "tests.test_bug_clusters_authorization::test_proxy_requires_each_existing_read_leaf_before_aggregation[kg.query.related_context]",
+        "tests.test_bug_clusters_authorization::test_learning_does_not_borrow_related_context_grant",
+        "tests.test_bug_clusters_authorization::test_authorized_grouping_binds_actor_and_cannot_raise_board_timeout[severity-extra0]",
+        "tests.test_bug_clusters_authorization::test_authorized_grouping_binds_actor_and_cannot_raise_board_timeout[spec-extra1]",
+        "tests.test_bug_clusters_authorization::test_authorized_grouping_binds_actor_and_cannot_raise_board_timeout[learning-extra2]",
+        "tests.test_bug_clusters_authorization::test_authorized_grouping_binds_actor_and_cannot_raise_board_timeout[proxy-extra3]",
+        "tests.test_bug_clusters_authorization::test_foreign_realm_is_not_enumerable",
+        "tests.test_bug_clusters_authorization::test_revocation_is_checked_again_before_next_page",
+        "tests.test_bug_proxy_read_semantics::test_constraint_explanation_keeps_origin_proxy_classification",
+        "tests.test_bug_proxy_read_semantics::test_proxy_label_requires_matching_closed_provenance",
+        "tests.test_kg_query_policy::test_defaults_and_per_call_reduction",
+        "tests.test_kg_query_policy::test_invalid_stored_policy_is_not_silently_defaulted[True]",
+        "tests.test_kg_query_policy::test_invalid_stored_policy_is_not_silently_defaulted[15000]",
+        "tests.test_kg_query_policy::test_invalid_stored_policy_is_not_silently_defaulted[1.5]",
+        "tests.test_kg_query_policy::test_invalid_stored_policy_is_not_silently_defaulted[None]",
+        "tests.test_kg_query_policy::test_invalid_stored_policy_is_not_silently_defaulted[0]",
+        "tests.test_kg_query_policy::test_invalid_stored_policy_is_not_silently_defaulted[-1]",
+        "tests.test_kg_query_policy::test_invalid_stored_policy_is_not_silently_defaulted[30001]",
+        "tests.test_kg_query_policy::test_invalid_call_timeout[True]",
+        "tests.test_kg_query_policy::test_invalid_call_timeout[10]",
+        "tests.test_kg_query_policy::test_invalid_call_timeout[1.5]",
+        "tests.test_kg_query_policy::test_invalid_call_timeout[0]",
+        "tests.test_kg_query_policy::test_invalid_call_timeout[-1]",
+        "tests.test_kg_query_policy::test_invalid_rows[True]",
+        "tests.test_kg_query_policy::test_invalid_rows[10]",
+        "tests.test_kg_query_policy::test_invalid_rows[1.5]",
+        "tests.test_kg_query_policy::test_invalid_rows[-1]",
+        "tests.test_kg_query_policy::test_invalid_rows[1001]",
+        "tests.test_kg_query_policy::test_policy_read_uses_board_and_realm_scope[local-800]",
+        "tests.test_kg_query_policy::test_policy_read_uses_board_and_realm_scope[another-realm-None]"
+      ]
+    },
+    {
+      "terminal_session": 10945,
+      "exit_code": 0,
+      "suites": [
+        {
+          "name": "pytest",
+          "errors": "0",
+          "failures": "0",
+          "skipped": "0",
+          "tests": "10",
+          "time": "41.557",
+          "timestamp": "2026-10-01T04:17:47.031896-03:00",
+          "hostname": "Alienware_m15"
+        }
+      ],
+      "cases": [
+        "tests.test_bug_clusters_read::test_inventory_uses_source_window_type_status_severity_and_board",
+        "tests.test_bug_clusters_read::test_resolution_uses_latest_two_events_without_per_bug_query",
+        "tests.test_bug_clusters_read::test_global_denominator_not_replaced_by_bounded_inventory",
+        "tests.test_bug_clusters_read::test_spec_grouping_follows_origin_card_not_regression_spec",
+        "tests.test_bug_clusters_read::test_origin_in_another_board_does_not_expand_query_scope",
+        "tests.test_bug_clusters_read::test_unavailable_graph_keeps_authoritative_inventory_but_timeout_is_not_empty",
+        "tests.test_bug_clusters_read::test_invalid_parent_is_not_exposed_as_an_authorized_spec",
+        "tests.test_bug_clusters_read::test_shared_graph_endpoint_does_not_grant_access_to_a_foreign_spec",
+        "tests.test_bug_clusters_read::test_native_clusters_preserve_two_bugs_and_exclude_stale_or_unclassified_facts",
+        "tests.test_bug_clusters_read::test_routed_cluster_read_uses_current_route_generation"
+      ]
+    },
+    {
+      "terminal_session": 29160,
+      "exit_code": 0,
+      "suites": [
+        {
+          "name": "pytest",
+          "errors": "0",
+          "failures": "0",
+          "skipped": "0",
+          "tests": "1",
+          "time": "36.024",
+          "timestamp": "2026-10-01T04:21:37.420345-03:00",
+          "hostname": "Alienware_m15"
+        }
+      ],
+      "cases": [
+        "tests.test_bug_clusters_read::test_sql_and_native_graph_keep_missing_bug_in_denominator"
+      ]
+    },
+    {
+      "terminal_session": 65364,
+      "exit_code": 0,
+      "suites": [
+        {
+          "name": "pytest",
+          "errors": "0",
+          "failures": "0",
+          "skipped": "0",
+          "tests": "1",
+          "time": "3.430",
+          "timestamp": "2026-10-01T04:30:36.562893-03:00",
+          "hostname": "Alienware_m15"
+        }
+      ],
+      "cases": [
+        "tests.test_bug_clusters_read::test_shared_graph_endpoint_does_not_grant_access_to_a_foreign_spec"
+      ]
+    }
+  ],
+  "counts": {
+    "core": 67,
+    "community": 11,
+    "distinct": 78,
+    "frontend": 0
+  },
+  "artifact_provenance": [
+    {
+      "path": "PULSE_REFACTOR/.validation-v040/provenance-bug-clusters-reader4.json",
+      "sha256": "926d734d7b2943cbfa04963295e6743e072871eeb089f158b2481ce0b587bced"
+    },
+    {
+      "path": "PULSE_REFACTOR/.validation-v040/provenance-bug-clusters-reader-qualified.json",
+      "sha256": "a729e49f9cd2e48264c1351c913e89dc0a9a0898b88211859799d086491eb09a"
+    }
+  ],
+  "closure": {
+    "terminal_session": 12907,
+    "exit_code": 0,
+    "ok": true,
+    "budgets": {
+      "import_boundary_baseline": 0,
+      "singleton_baseline": 0,
+      "dependency_temporary_exceptions": 0,
+      "graph_runtime_compatibility": 0,
+      "rebuild_artifact_compatibility": 0,
+      "community_private_reach_ins": 0,
+      "community_adapter_bridges": 0,
+      "af35_relational_residue": 0
+    }
+  },
+  "evidence": [
+    {
+      "path": "okto_labs_pulse_core/src/okto_pulse/core/application/kg_runtime_access.py",
+      "sha256": "7285080eb64b32575fec97c0185c662cb19ba58b67592b74a92600cd9a771cbe"
+    },
+    {
+      "path": "okto_labs_pulse_core/src/okto_pulse/core/application/service_catalog.py",
+      "sha256": "e4d94359205c2200490c9b0d3cdb9b8038cca332e8e7181eccee63ffa58888b3"
+    },
+    {
+      "path": "okto_labs_pulse_core/src/okto_pulse/core/application/use_cases/bug_clusters.py",
+      "sha256": "a3916f3029e617d3bdb00ac9e748624d142fc0d43e42f3b5a31f16158a92dc5a"
+    },
+    {
+      "path": "okto_labs_pulse_core/src/okto_pulse/core/ports/application_services.py",
+      "sha256": "134bec4fdf8954532084dad507972b563748be22b4fa0bdd80a992e7cb4de7a7"
+    },
+    {
+      "path": "okto_labs_pulse_core/src/okto_pulse/core/ports/bug_clusters.py",
+      "sha256": "b21a9d1e08733ccdd108e5918c8965dc0434124eb124a204b114480163343790"
+    },
+    {
+      "path": "okto_labs_pulse_core/src/okto_pulse/core/ports/card_projection.py",
+      "sha256": "5be5cb8e6bfa4a76921f11e08f833a0004011fbcc673f24c4e8315e01cd09338"
+    },
+    {
+      "path": "okto_labs_pulse_core/src/okto_pulse/core/ports/consolidation.py",
+      "sha256": "3792df73ba973ac3c99ae709d1ce9f1fef8c1560e31191b16d7e4b67fc1d4839"
+    },
+    {
+      "path": "okto_labs_pulse_core/src/okto_pulse/core/ports/relational_application.py",
+      "sha256": "6bcd0cb101631070dece54b89b88c7e37bc9feea53d7b5fe4d2b639eee6529a5"
+    },
+    {
+      "path": "okto_labs_pulse_core/src/okto_pulse/core/services/bug_clusters.py",
+      "sha256": "6a2d35877b059726d7260e2057095c9d23e7418dc5b1c643c9d57c418e62784c"
+    },
+    {
+      "path": "okto_labs_pulse_community/src/okto_pulse/community/adapters/grafx_bug_clusters.py",
+      "sha256": "772bab279f8fbc44674512fc39b5d21d893544d8bad67442b49f553bc72104ab"
+    },
+    {
+      "path": "okto_labs_pulse_community/src/okto_pulse/community/adapters/grafx_graph_store.py",
+      "sha256": "d3f7f1dc5e83b729bee5afa2eda4629cfe2f41eedb0a8d541c7c92df58a09361"
+    },
+    {
+      "path": "okto_labs_pulse_community/src/okto_pulse/community/adapters/sqlalchemy_bug_clusters.py",
+      "sha256": "ac6f87fd5cd80f7f036404e371ea9556018af0654dc57ac9e840ffa5684174dd"
+    },
+    {
+      "path": "okto_labs_pulse_community/src/okto_pulse/community/adapters/relational_application.py",
+      "sha256": "2592cb7222f783f77b8ce02b73d736d4f603466b09772dcea70cd32059e6b3cf"
+    },
+    {
+      "path": "okto_labs_pulse_community/src/okto_pulse/community/adapters/routed_board_graph_facades.py",
+      "sha256": "da4d83d40ff8b46729187943ad85d259fddf3f825c3db11b131d60d15ee28532"
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_bug_clusters.py",
+      "sha256": "557ab56298f133c3e7f7e32e40d2e46ac8ac2f8a8b46fd9e4337258cbf9246db"
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_bug_clusters_authorization.py",
+      "sha256": "e153e6c0614d48cd54c9a06b2f6f17c327ff10352f1bc265ef3b7c929c11330e"
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_bug_proxy_read_semantics.py",
+      "sha256": "5453da698e0c4a1b15057c30cfd7c1f10de73891a1ed4c32c7f37c6b717f8fc5"
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_kg_query_policy.py",
+      "sha256": "76cb12f3d7a8a2c1f8d407f8da9bf34e566602348cf643466243686695cf8af4"
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_bug_clusters_read.py",
+      "sha256": "e9b46cc1eb9c6eb8b846f4003246a5eee5b75e86c081ba7e77f65a1f0ca2a9a6"
+    },
+    {
+      "path": "PULSE_REFACTOR/.validation-v040/learning-reconciliation-bug-clusters-reader4-core.xml",
+      "sha256": "5e1e95e50b6eb6b83fdafe857f418dee9ecbf7fe6341c3f6198a7b3246bcc8b0"
+    },
+    {
+      "path": "PULSE_REFACTOR/.validation-v040/learning-reconciliation-bug-clusters-reader4-community.xml",
+      "sha256": "19bb2152ea64a057ab253a79ed3705ffa254aea56a5022bda5c54708720a0edf"
+    },
+    {
+      "path": "PULSE_REFACTOR/.validation-v040/learning-reconciliation-bug-clusters-reader-integrated-community.xml",
+      "sha256": "ac131b246ca77ae1f4cbdeb0cd0e3a22052598f191874af371e5d150c464c411"
+    },
+    {
+      "path": "PULSE_REFACTOR/.validation-v040/learning-reconciliation-bug-clusters-reader-target-scope-community.xml",
+      "sha256": "654c9a4feb7b2f9ea896fd9d970536adc4553bf89526ec9f49ce831fc9b0b8b6"
+    },
+    {
+      "path": "PULSE_REFACTOR/.validation-v040/learning-reconciliation-bug-clusters-reader-qualified-closure.log",
+      "sha256": "4d048588266e8a8a9a3f23334ccb5b24557ce664c6bdd2cd975f2bac762b7f30"
+    }
+  ],
+  "earlier_attempts": [
+    "reader1 Community87485 failed on invalid fixture severity high; fixtures now use the existing major/minor enum, and query filters validate domain enums.",
+    "reader2 Community28687 passed five SQL cases then failed on native Timestamp normalization; the existing Community normalizer is now reused.",
+    "reader3 Core23887 and Community23462 passed; Q06 review then corrected Spec grouping from direct Bug Spec to origin Card Spec before final qualification.",
+    "F16 reader4 session61161 reported only generated README matrix drift, with no findings and all eight budgets zero; official renderer and final paired rebuild/install/proof followed.",
+    "Target scope case65364 was rerun with an existing foreign-Board Spec rather than only a missing foreign reference. It passes; this strengthens the same case and does not increase the distinct count."
+  ],
+  "limits": [
+    "REST/MCP composition and frontend delivery/testing/build remain. KG-59 and the full cluster capability remain partial; acceptance inventory counts are unchanged.",
+    "Graph generation is observed, but no complete source-to-projection checkpoint is fabricated. Complete graph scopes are not claimed; Learning applicability stays unknown.",
+    "SQL histories and graph facts are controlled fixtures. The integrated read does not claim a domain-writer E2E, source materialization/rebuild, or production-data validation.",
+    "Only README metadata changed after the behavior runs; source/site/wheel bytes were proven again for the final pair."
+  ]
+}
