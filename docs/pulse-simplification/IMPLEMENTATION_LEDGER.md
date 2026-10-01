@@ -2,6 +2,30 @@
 
 ## Estado para retomada
 
+BASE T04 verificado: dois atores persistidos, grants distintos e sessões MCP
+separadas. Revisor não publica prova de executor; executor não valida. Relatório
+entra em validation e revisor aprova para Done ou rejeita para Rejected, com
+autoria, manifest e registros preservados. Recusas e leituras não escrevem.
+Community86303=0,2passed15.69s; acceptance-executor-reviewer-handoff.json.
+
+T03 fortalecido: preset válido, documento explícito completo e assert de
+owner_review_required=false eliminam a restrição adicional de revisão legada
+da fixture anterior. Core91938=0,13passed18.52s. Relatório T03 atualizado.
+Probes T04 1..6 corrigiram composição/asserts; agent.entity.read é autoridade
+histórica exigida pelo gate existente. Probe7 passou com observador de erro;
+8 passou sem observador. Nenhum gate ou código produtivo alterado.
+
+Provenance-review-handoff1.json prova859/922+373/458 byte-idênticos ao par
+evaluation-authority-fix1. Ruff F/E9 e diff verdes. F16 anterior31859=0 mantém
+oito budgets ZERO; frontend anterior46579=0,54passed. Nenhum impacto de UI.
+Limites: credencial extraída em processo; estados e recibo externo de fixture;
+Board com skip cognitivo explícito e impacto off. Não alegar fluxo completo T01.
+
+Inventário116 verificados/39 parciais/91 não auditados. Próxima frente original:
+T05/T06/T07/T01 e pendências consolidadas, sem novos critérios. KG-10/T23 aguardam
+decisões já solicitadas. Par publicado anterior: Coredd3963f1/Communityc73c0717.
+Nenhum processo pendente ou dado real alterado.
+
 BASE T03 verificado. Host FastMCP materializado pela Community, API key,
 Agent/AgentBoard e grants persistidos reais: negações granulares de avaliação
 e Spec Validation prevalecem inclusive com specs:evaluate legado presente.

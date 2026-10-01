@@ -9,6 +9,7 @@ from sqlalchemy import func, select, update
 from okto_pulse.community.adapters.mcp_host import CommunityMcpHostProvider
 from okto_pulse.community.adapters.sqlalchemy_models import (
     Agent, Board, Spec, QualityAssessmentReceiptRow, ProjectStructureMutationReceiptRow,
+    PermissionPreset,
 )
 from okto_pulse.community.adapters.sqlalchemy_unit_of_work import CommunityUnitOfWorkFactory
 from okto_pulse.community.adapters.sqlalchemy_structured_spec import CommunitySqlAlchemyStructuredSpecStore
@@ -19,6 +20,10 @@ from okto_pulse.core.mcp.manifest import installed_aliases
 from okto_pulse.core.ports import McpCredential
 from okto_pulse.core.ports.mcp_resources import freeze_mcp_resource_catalog
 from okto_pulse.core.ports.structured_spec import register_structured_spec_store
+from okto_pulse.core.ports.permission_policy import (
+    builtin_permission_presets, flatten_permission_flags, get_permission_flag,
+    registered_permission_flags, set_permission_flag,
+)
 from okto_pulse.core.runtime_registry import register_unit_of_work_factory
 from test_r08d_auth_replay_gates import _harness_env, _seed, _db_mod
 from test_spec_evaluation_rest_parity import _direct_spec_context_fields, _evaluation_payload
@@ -52,7 +57,7 @@ async def test_authenticated_planner_review_boundary_across_mcp_variants(
                                              settings={'require_spec_validation': True}))
         agent = await db.get(Agent, 'A1')
         agent.permissions = ['specs:evaluate']  # Explicit granular denial still wins.
-        agent.permission_flags = {
+        selected = {
             'spec': {
                 'entity': {'read': True, 'edit_fields': True},
                 'evaluations': {'read': True, 'submit': False},
@@ -62,6 +67,15 @@ async def test_authenticated_planner_review_boundary_across_mcp_variants(
                 'structured_entity': {'project_structure_node': {'create': True, 'update': True}},
             },
         }
+        flags = {}
+        for permission in flatten_permission_flags(registered_permission_flags()):
+            set_permission_flag(flags, permission, False)
+        for permission in flatten_permission_flags(selected):
+            set_permission_flag(flags, permission, get_permission_flag(selected, permission))
+        root = next(row for row in builtin_permission_presets() if row['name'] == 'Full Control')
+        db.add(PermissionPreset(id='planner-root', name=root['name'], flags=root['flags'], is_builtin=True))
+        agent.preset_id = 'planner-root'
+        agent.permission_flags = flags
         for spec_id, state in [('draft', SpecStatus.DRAFT), ('approved', SpecStatus.APPROVED),
                                ('validated', SpecStatus.VALIDATED)]:
             db.add(Spec(
@@ -83,6 +97,7 @@ async def test_authenticated_planner_review_boundary_across_mcp_variants(
                         lambda: McpCredential(source='x_api_key_header', value='kA1'))
     resolved = await server._get_agent_ctx('B1')
     assert resolved.agent_id == 'A1'
+    assert not resolved.permissions.owner_review_required
     assert resolved.permissions.flags['spec']['evaluations']['submit'] is False
     assert resolved.permissions.flags['spec']['entity']['edit_fields'] is True
     frozen = freeze_mcp_resource_catalog(server.effective_resource_catalog())

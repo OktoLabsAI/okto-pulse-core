@@ -8,21 +8,13 @@
     "update": "MCP rejects status/evaluations/validations extra arguments before writer; a separate legitimate title update succeeds. REST bulk update accepts the ordinary title and ignores the forged review/status fields, preserving draft status and an empty evaluation ledger.",
     "batch": "Actual Community structured store and receipt boundary are registered. Project structure batch rejects unsupported approve operation and a permitted create containing extra evaluations field, with the precise extra-field issue. Spec payloads and receipt counts remain unchanged. REST batch rejects approve at its request boundary with HTTP400 and the operation issue path.",
     "alias": "Live tools/list and installed alias metadata show no evaluation alias. Calling the short name through the actual host fails unknown-tool and does not mutate state. Existing canonical tool remains registered.",
-    "REST": "Existing canonical permission correction is exercised again: explicit denied evaluation grant returns403 and leaves the evaluation list unchanged. Authorized REST evaluation still records its reviewer and enables the separately isolated qualitative move gate."
+    "REST": "Existing canonical permission correction is exercised again: explicit denied evaluation grant returns403 and leaves the evaluation list unchanged. Authorized REST evaluation still records its reviewer and enables the separately isolated qualitative move gate.",
+    "permission_fixture": "Strengthened with valid built-in preset lineage plus complete explicit grant document and assertion owner_review_required=false. Previous preset-less fixture also activated legacy review restrictions; final test removes that confound while retaining the original denials and allowed content edit."
   },
   "execution": {
-    "terminal_session": 44559,
+    "terminal_session": 91938,
     "exit_code": 0,
     "passed": 13,
-    "duration_seconds": 16.08,
-    "xml": {
-      "file": "learning-reconciliation-planner-authority9-core.xml",
-      "sha256": "df7db4f46f8d58b0806625e086728ce7aa7556c97bdc3c46678e023ddd858bb6"
-    },
-    "log": {
-      "file": "learning-reconciliation-planner-authority9-core.log",
-      "sha256": "f3da97edfcf2668b11a6f44e948fff6d03b513ad60af2f9686956751ea227d5d"
-    },
     "cases": [
       "tests.test_planner_review_authority::test_authenticated_planner_review_boundary_across_mcp_variants",
       "tests.test_spec_evaluation_rest_parity::test_submit_and_list_spec_evaluation_via_rest",
@@ -37,7 +29,15 @@
       "tests.test_spec_evaluation_rest_parity::test_ideation_complexity_accepts_enum_values[medium]",
       "tests.test_spec_evaluation_rest_parity::test_ideation_complexity_accepts_enum_values[large]",
       "tests.test_spec_evaluation_rest_parity::test_ideation_complexity_description_matches_enum"
-    ]
+    ],
+    "xml": {
+      "file": "learning-reconciliation-planner-authority11-core.xml",
+      "sha256": "058e5bd8e5b0a745f40cb86c31cd43429106f646086e7e4f4321557b854608a5"
+    },
+    "log": {
+      "file": "learning-reconciliation-planner-authority11-core.log",
+      "sha256": "d922ddb3693c6a455e1ee48fe7de221e466f8b669a6cdd9a9a6870b7a7ba322a"
+    }
   },
   "provenance": {
     "checked_at": "2026-10-01T00:22:05.795341+00:00",
@@ -114,6 +114,36 @@
     "REST uses the existing Core SQL fixture with injected user identity and a resolved permission document at CoreApplicationServiceCatalog. It does not qualify REST login or grant resolution.",
     "The 13 cases include existing REST parity/schema regressions, not 13 separate authorization variants. Existing REST in_progress positive test isolates its qualitative gate by substituting planning readiness; the new negative scenarios do not substitute a gate.",
     "Early probes 1-4 were not acceptance: host rejects extras instead of accepting them; the inherited Core structured-store fixture lacks durable receipts. Registering the actual Community store fixed composition. Probe5 passed before extra-field/REST expansion. Probe6 expected the extra-field name in message instead of structured details; probe7 expected422 instead of the existing REST400. Probe8 passed13 before adding direct approved->validated bypass. No productive code or gate was changed to make these probes pass.",
-    "Productive payload unchanged since evaluation-authority-fix1. Its F16 exit0 with all eight budgets zero and prior54 frontend cases remain the latest relevant executions. No frontend/catalog changes in this increment."
-  ]
+    "Productive payload unchanged since evaluation-authority-fix1. Its F16 exit0 with all eight budgets zero and prior54 frontend cases remain the latest relevant executions. No frontend/catalog changes in this increment.",
+    "Planner-authority10 failed due to iterating nested registry as leaf paths;11 flattens it and passes13 cases. No product change."
+  ],
+  "previous_execution": {
+    "terminal_session": 44559,
+    "exit_code": 0,
+    "passed": 13,
+    "duration_seconds": 16.08,
+    "xml": {
+      "file": "learning-reconciliation-planner-authority9-core.xml",
+      "sha256": "df7db4f46f8d58b0806625e086728ce7aa7556c97bdc3c46678e023ddd858bb6"
+    },
+    "log": {
+      "file": "learning-reconciliation-planner-authority9-core.log",
+      "sha256": "f3da97edfcf2668b11a6f44e948fff6d03b513ad60af2f9686956751ea227d5d"
+    },
+    "cases": [
+      "tests.test_planner_review_authority::test_authenticated_planner_review_boundary_across_mcp_variants",
+      "tests.test_spec_evaluation_rest_parity::test_submit_and_list_spec_evaluation_via_rest",
+      "tests.test_spec_evaluation_rest_parity::test_planner_without_evaluation_grant_cannot_approve_via_rest",
+      "tests.test_spec_evaluation_rest_parity::test_rest_content_and_move_cannot_forge_evaluation",
+      "tests.test_spec_evaluation_rest_parity::test_rest_evaluation_satisfies_in_progress_gate",
+      "tests.test_spec_evaluation_rest_parity::test_evaluation_rejected_outside_validated_status",
+      "tests.test_spec_evaluation_rest_parity::test_evaluation_validates_scores_and_recommendation",
+      "tests.test_spec_evaluation_rest_parity::test_mcp_tool_shares_service_write_path",
+      "tests.test_spec_evaluation_rest_parity::test_ideation_complexity_invalid_value_is_422_not_500",
+      "tests.test_spec_evaluation_rest_parity::test_ideation_complexity_accepts_enum_values[small]",
+      "tests.test_spec_evaluation_rest_parity::test_ideation_complexity_accepts_enum_values[medium]",
+      "tests.test_spec_evaluation_rest_parity::test_ideation_complexity_accepts_enum_values[large]",
+      "tests.test_spec_evaluation_rest_parity::test_ideation_complexity_description_matches_enum"
+    ]
+  }
 }

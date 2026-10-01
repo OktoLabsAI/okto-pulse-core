@@ -61,8 +61,12 @@
       "line": 583,
       "id": "T04",
       "normative_text": "| T04 | Executor e revisor com grants distintos | Cada um acessa apenas suas ações; handoff de estado e evidência íntegro. |",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "verified_by_reviewed_execution",
+      "test_text_references": [],
+      "reviewed_execution": {
+        "artifact": "acceptance-executor-reviewer-handoff.json",
+        "criterion_key": "BASE:T04"
+      }
     },
     {
       "key": "BASE:T05",
