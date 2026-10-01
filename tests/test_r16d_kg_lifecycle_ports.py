@@ -33,11 +33,8 @@ import asyncio
 import threading
 from pathlib import Path
 
-import pytest
 
 import okto_pulse.community.app as _app_mod
-import okto_pulse.core.infra.startup_schema_sweep as _startup_sweep_mod
-import okto_pulse.core.kg.startup_schema_sweep as _sweep_mod
 from okto_pulse.community.app import shutdown_kg_then_db
 from okto_pulse.core.kg.interfaces import (
     get_kg_registry,
@@ -47,10 +44,8 @@ from kg_registry_testing import configure_test_kg_registry
 from okto_pulse.core.kg.interfaces.graph_lifecycle import GraphLifecycle
 from okto_pulse.core.kg.interfaces.graph_runtime_store import GraphRuntimeStore
 from okto_pulse.core.kg.interfaces.graph_schema_manager import GraphSchemaManager
-from okto_pulse.core.kg.startup_schema_sweep import sweep_board_schemas
 
 APP_PY = Path(_app_mod.__file__)
-SWEEP_PY = Path(_sweep_mod.__file__)
 
 _FORBIDDEN_KG_SCHEMA_SYMBOLS = {
     "board_kuzu_path",
@@ -157,125 +152,20 @@ def test_ts_8077c637_app_py_drops_kg_schema_lifecycle_imports():
 def test_ts_8077c637_app_py_wires_the_06_ports():
     src = APP_PY.read_text(encoding="utf-8")
     assert "resolve_graph_lifecycle" in src
-    assert "run_startup_schema_sweep" in src
-    sweep_wiring_src = Path(_startup_sweep_mod.__file__).read_text(encoding="utf-8")
-    assert "sweep_board_schemas" in sweep_wiring_src
-    assert "graph_runtime_store" in sweep_wiring_src
-    assert "graph_runtime_store=kg_registry.graph_runtime_store" in sweep_wiring_src
-    assert "graph_schema_manager" in sweep_wiring_src
-    assert "get_kg_registry" in sweep_wiring_src
+    assert "run_startup_schema_sweep" not in src
 
 
 # ===========================================================================
 # ts_6ce72610 — Sweep NC-10 via ports.
 # ===========================================================================
-def test_ts_6ce72610_sweep_ensures_existing_skips_missing_and_counts():
-    resolver = _FakeRuntimeStore(existing={"b1", "b3"})
-    manager = _FakeSchemaManager()
-    logger = _RecLogger()
-
-    migrated = asyncio.run(
-        sweep_board_schemas(
-            ["b1", "b2", "b3"],
-            graph_runtime_store=resolver,
-            graph_schema_manager=manager,
-            logger=logger,
-            run_blocking=_direct,
-        )
-    )
-
-    assert migrated == 2
-    assert resolver.checked == ["b1", "b2", "b3"]  # every board probed
-    assert manager.ensured == ["b1", "b3"]  # b2 skipped (missing), order preserved
-    swept = [r for r in logger.records if r[1] == "kg.schema.migration_swept"]
-    assert len(swept) == 1 and swept[0][2]["boards_swept"] == 2
-    assert "kg.schema.migration_failed" not in logger.events()
 
 
-def test_ts_6ce72610_empty_or_all_missing_logs_zero():
-    resolver = _FakeRuntimeStore(existing=set())
-    manager = _FakeSchemaManager()
-    logger = _RecLogger()
-    migrated = asyncio.run(
-        sweep_board_schemas(
-            ["b1", "b2"],
-            graph_runtime_store=resolver,
-            graph_schema_manager=manager,
-            logger=logger,
-            run_blocking=_direct,
-        )
-    )
-    assert migrated == 0
-    assert manager.ensured == []
-    swept = [r for r in logger.records if r[1] == "kg.schema.migration_swept"]
-    assert swept and swept[0][2]["boards_swept"] == 0
 
 
-def test_ts_6ce72610_one_board_fails_logs_and_continues():
-    resolver = _FakeRuntimeStore(existing={"b1", "b2", "b3"})
-    manager = _FakeSchemaManager(fail_on={"b2"})
-    logger = _RecLogger()
-
-    migrated = asyncio.run(
-        sweep_board_schemas(
-            ["b1", "b2", "b3"],
-            graph_runtime_store=resolver,
-            graph_schema_manager=manager,
-            logger=logger,
-            run_blocking=_direct,
-        )
-    )
-
-    # b2 failed but the loop continued to b3; count excludes the failure.
-    assert migrated == 2
-    assert manager.ensured == ["b1", "b2", "b3"]  # b2 attempted, then b3
-    failed = [r for r in logger.records if r[1] == "kg.schema.migration_failed"]
-    assert len(failed) == 1
-    assert failed[0][2]["board_id"] == "b2"
-    assert "ensure_boom:b2" in failed[0][2]["error"]
-    swept = [r for r in logger.records if r[1] == "kg.schema.migration_swept"]
-    assert swept and swept[0][2]["boards_swept"] == 2
 
 
-def test_ts_6ce72610_resolver_error_propagates_to_caller_skipped():
-    # A resolver exception is NOT soft-caught -> it propagates so the app.py
-    # outer guard degrades to kg.schema.migration_skipped (old semantics).
-    resolver = _FakeRuntimeStore(existing={"b1"}, raise_on="b2")
-    manager = _FakeSchemaManager()
-    logger = _RecLogger()
-    with pytest.raises(RuntimeError, match="resolver_boom:b2"):
-        asyncio.run(
-            sweep_board_schemas(
-                ["b1", "b2", "b3"],
-                graph_runtime_store=resolver,
-                graph_schema_manager=manager,
-                logger=logger,
-                run_blocking=_direct,
-            )
-        )
-    # b1 ensured before the resolver blew up on b2; swept log NOT reached.
-    assert manager.ensured == ["b1"]
-    assert "kg.schema.migration_swept" not in logger.events()
 
 
-def test_ts_6ce72610_default_runner_offloads_off_the_event_loop():
-    resolver = _FakeRuntimeStore(existing={"b1"})
-    manager = _FakeSchemaManager()
-    logger = _RecLogger()
-
-    # No run_blocking -> the default _run_off_loop (asyncio.to_thread) is used.
-    migrated = asyncio.run(
-        sweep_board_schemas(
-            ["b1"],
-            graph_runtime_store=resolver,
-            graph_schema_manager=manager,
-            logger=logger,
-        )
-    )
-    assert migrated == 1
-    assert manager.ensured == ["b1"]
-    # ensure_bootstrapped ran in a worker thread, not the main thread.
-    assert manager.threads and manager.threads[0] != threading.get_ident()
 
 
 # ===========================================================================
@@ -386,8 +276,8 @@ def test_ts_a627315d_registry_providers_conform_and_are_memory_fakes():
 # ts_960cc3bf — Regression #06/#03b green + replay without delta.
 # ===========================================================================
 _STARTUP_EVENTS = [
-    "init_db", "seed_community_defaults", "backfill_qa_answered_at",
-    "_afg_backfill_task", "_preload_embedding_model", "event_dispatcher",
+    "init_db", "seed_community_defaults",
+    "_preload_embedding_model", "event_dispatcher",
     "consolidation_worker", "cleanup_worker", "outbox_worker", "settings_service",
     "scheduler", "mcp_runtime", "frontend_served", "_metrics_beacon_loop",
 ]
@@ -397,7 +287,7 @@ def test_ts_960cc3bf_default_only_exclusions_unchanged():
     from okto_pulse.core.application.boundary import DEFAULT_ONLY_EXCLUSIONS
 
     assert set(DEFAULT_ONLY_EXCLUSIONS) == {
-        "kg_migration_sweep", "shutdown_kg_events_hub", "close_all_connections"
+        "shutdown_kg_events_hub", "close_all_connections"
     }
 
 
@@ -434,12 +324,6 @@ def test_ts_960cc3bf_golden_replay_has_no_unexpected_delta():
 # ts_f83ad3db — Scope / register-before-remove.
 # ===========================================================================
 def test_ts_f83ad3db_scope_limited_register_before_remove():
-    # 1) The extracted sweep helper imports NO kg.schema (it uses only the ports).
-    sweep_imports = _module_imports(ast.parse(SWEEP_PY.read_text(encoding="utf-8")))
-    assert not any("kg.schema" in mod for mod in sweep_imports), (
-        f"startup_schema_sweep must not import kg.schema; saw {sorted(sweep_imports)}"
-    )
-
     # 2) The core registry no longer imports the runtime schema/embedded providers.
     from okto_pulse.core.kg.interfaces import registry as _registry_mod
 

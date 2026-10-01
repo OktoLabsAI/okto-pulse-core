@@ -126,15 +126,9 @@ class AssessmentPurgeResource(str, Enum):
     QUALITY_LIFECYCLE_TRANSITIONS = "quality_lifecycle_transitions"
     SUBJECT_HISTORY = "subject_history"
     KG_PROJECTIONS = "kg_projections"
-    LEGACY_IMPORT_RESOLUTIONS = "legacy_import_resolutions"
-    LEGACY_IMPORT_CHECKPOINTS = "legacy_import_checkpoints"
-    LEGACY_IMPORT_COMPLETIONS = "legacy_import_completions"
-    LEGACY_IMPORT_CANDIDATES = "legacy_import_candidates"
-    LEGACY_IMPORT_RUNS = "legacy_import_runs"
 
 
-# Children and pointers precede their immutable parents.  The epoch ledger is
-# intentionally absent: subject purge must not reopen a completed epoch.
+# Children and pointers precede their immutable parents.
 ASSESSMENT_SUBJECT_PURGE_ORDER: tuple[AssessmentPurgeResource, ...] = (
     AssessmentPurgeResource.QUALITY_PROJECTIONS,
     AssessmentPurgeResource.QUALITY_OUTBOX,
@@ -162,16 +156,11 @@ ASSESSMENT_SUBJECT_PURGE_ORDER: tuple[AssessmentPurgeResource, ...] = (
     AssessmentPurgeResource.KG_PROJECTIONS,
 )
 
-# A board erasure is the only operation allowed to delete the durable epoch.
+# Board erasure also removes the board-owned binding configuration.
 ASSESSMENT_BOARD_PURGE_ORDER: tuple[AssessmentPurgeResource, ...] = (
     *ASSESSMENT_SUBJECT_PURGE_ORDER,
     AssessmentPurgeResource.CHECKLIST_BINDING_HEADS,
     AssessmentPurgeResource.CHECKLIST_BINDING_VERSIONS,
-    AssessmentPurgeResource.LEGACY_IMPORT_RESOLUTIONS,
-    AssessmentPurgeResource.LEGACY_IMPORT_CHECKPOINTS,
-    AssessmentPurgeResource.LEGACY_IMPORT_COMPLETIONS,
-    AssessmentPurgeResource.LEGACY_IMPORT_CANDIDATES,
-    AssessmentPurgeResource.LEGACY_IMPORT_RUNS,
 )
 
 
@@ -731,8 +720,7 @@ class AssessmentPurgePostcondition:
 
     Permit ownership intentionally does not appear in this contract.  The
     quality adapter executes while the outer board-erasure permit is still
-    active, so it can prove only its own rows, orphans, projections, outbox,
-    and epoch consistency.  Only the outer board-erasure orchestrator may
+    active, so it can prove only its own rows, orphans, projections and outbox.  Only the outer board-erasure orchestrator may
     attest that every purge finished and the permit was released.
     """
 
@@ -741,7 +729,6 @@ class AssessmentPurgePostcondition:
     zero_orphans: bool
     projections_reconciled: bool
     outbox_reconciled: bool
-    epoch_consistency_preserved: bool
     verified_at: datetime
 
     def __post_init__(self) -> None:
@@ -767,7 +754,6 @@ class AssessmentPurgePostcondition:
             "zero_orphans",
             "projections_reconciled",
             "outbox_reconciled",
-            "epoch_consistency_preserved",
         ):
             if not isinstance(getattr(self, field_name), bool):
                 raise AssessmentLifecycleContractError(

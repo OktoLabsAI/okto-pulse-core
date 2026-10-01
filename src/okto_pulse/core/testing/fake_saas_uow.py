@@ -102,29 +102,8 @@ class _UnsupportedSemanticAssessmentPort:
         )
 
 
-class _UnsupportedHistoricalArchiveGrants:
-    async def has_current_board_access(self, **kwargs: object) -> None:
-        raise NotImplementedError("fake SaaS historical archive reader was not configured")
-
-    async def read_section(self, **kwargs: object) -> None:
-        raise NotImplementedError("fake SaaS historical archive reader was not configured")
-
-    async def get(self, **kwargs: object) -> None:
-        raise NotImplementedError("fake SaaS historical archive grants were not configured")
-
-    async def revoke(self, **kwargs: object) -> None:
-        raise NotImplementedError("fake SaaS historical archive grants were not configured")
 
 
-class _UnsupportedHistoricalContextReader:
-    async def has_current_target_access(self, **kwargs: object) -> None:
-        raise NotImplementedError("fake SaaS historical context reader was not configured")
-
-    async def list_bindings(self, **kwargs: object) -> None:
-        raise NotImplementedError("fake SaaS historical context reader was not configured")
-
-    async def read_binding(self, **kwargs: object) -> None:
-        raise NotImplementedError("fake SaaS historical context reader was not configured")
 
 
 class FakeSaaSUnitOfWork:
@@ -161,9 +140,6 @@ class FakeSaaSUnitOfWork:
         self.semantic_assessment_v2_reader = unsupported_semantic_port
         self.semantic_assessment_v2_capability = unsupported_semantic_port
         self.entity_exports = unsupported_semantic_port
-        self.historical_archive_grants = _UnsupportedHistoricalArchiveGrants()
-        self.historical_archive_reader = self.historical_archive_grants
-        self.historical_context_reader = _UnsupportedHistoricalContextReader()
         self.commit_calls = 0
         self.rollback_calls = 0
         self.close_calls = 0

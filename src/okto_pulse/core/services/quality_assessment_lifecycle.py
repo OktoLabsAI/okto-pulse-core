@@ -359,10 +359,6 @@ class QualityAssessmentLifecycleService:
             raise AssessmentLifecycleExecutionError(
                 "assessment_purge_outbox_reconciliation_failed"
             )
-        if not postcondition.epoch_consistency_preserved:
-            raise AssessmentLifecycleExecutionError(
-                "assessment_purge_epoch_consistency_failed"
-            )
 
     def validate_board_erasure_completion(
         self,

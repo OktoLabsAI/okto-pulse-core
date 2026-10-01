@@ -1452,19 +1452,6 @@ async def _attach_active_direct_spec_counts(
         r.attach("active_spec_count", counts.get(r.id, 0))
 
 
-async def backfill_qa_answered_at(db: Any) -> dict[str, int]:
-    """One-shot self-heal: carimba ``answered_at`` em Q&A respondidas órfãs.
-
-    A herança de Q&A (``propagate_artifacts``) copiava resposta/seleção sem
-    ``answered_at`` — e o badge ``open_qa_count`` define "aberta" como
-    ``answered_at IS NULL``, então toda Q&A respondida herdada virava
-    falso-aberta em refinements/specs derivados (em campo: 100% dos badges
-    do board 0.2.3 eram falsos). Idempotente: só toca linhas com resposta
-    (``answer`` ou ``selected`` preenchidos) e timestamp ausente, usando o
-    ``created_at`` da própria linha como melhor aproximação histórica.
-    Retorna {tabela: linhas_corrigidas} para o log estruturado do boot.
-    """
-    return await get_application_persistence_port().backfill_qa_answered_at(db)
 
 
 async def _authorize_qa_answer_or_raise(
@@ -4384,7 +4371,7 @@ class CardService:
         """
         from okto_pulse.core.domain.task_validation_policy import resolve_task_validation_config
 
-        return resolve_task_validation_config(card, spec, board_settings)
+        return resolve_task_validation_config(spec, board_settings)
 
     async def validation_config_for_card(
         self,
@@ -7928,9 +7915,6 @@ class AgentService:
         if not ab:
             return None
         ab.permission_overrides = permission_overrides
-        # Only this authorized policy edit replaces the Board layer's review;
-        # profile/activation/key edits must leave migration provenance intact.
-        ab.permission_migration_review = None
         return ab
 
     async def list_boards_for_agent(self, agent_id: str) -> list[ApplicationRecord]:
@@ -7983,9 +7967,6 @@ class AgentService:
             agent.mark_dirty("permission_flags")
         elif flags_in_payload:
             agent.mark_dirty("permission_flags")
-
-        if preset_id_in_payload or flags_in_payload:
-            agent.permission_migration_review = None
 
         return agent
 

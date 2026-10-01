@@ -966,7 +966,6 @@ class _CoreTestRelationalApplicationAdapter:
                     zero_orphans=True,
                     projections_reconciled=True,
                     outbox_reconciled=True,
-                    epoch_consistency_preserved=True,
                     verified_at=datetime.now(timezone.utc),
                 )
 

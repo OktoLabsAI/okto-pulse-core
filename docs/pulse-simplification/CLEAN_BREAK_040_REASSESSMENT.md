@@ -1,9 +1,12 @@
 # Reavaliação da 0.4.0 — contrato único, sem migração de legado
 
-Data: 2026-10-01. Base inspecionada: Core `e8009733` e Community `746a57c6`, ambos
-em `feature/v0.4.0`. Esta entrega é uma avaliação e um plano de retirada; o produto
-ainda contém os componentes descritos abaixo. **Após a entrega do assessment, o
-usuário autorizou a execução integral de C1–C4. O estado corrente está no ledger.**
+Data: 2026-10-01. Assessment inicial sobre Core `e8009733` e Community `746a57c6`;
+revisão corrente sobre Core `e7f6a8e6` e Community `d8e4fddf`, ambos em
+`feature/v0.4.0`, com alterações locais de C1/C2 ainda não publicadas.
+**Execução retomada por instrução explícita do usuário: concluir a implementação,
+com commits e pushes nos milestones e ledger atualizado. A parada para revisão
+foi encerrada; seguir C1–C4 sem reintroduzir suporte ao legado.**
+O estado factual, inclusive o trabalho incompleto, está registrado abaixo e no ledger.
 
 ## Direção
 
@@ -42,8 +45,43 @@ automaticamente o produto após a retirada.
 
 ## Onde está a complexidade removível
 
+### Estado confirmado nesta revisão
+
+| Parte | Estado real | Consequência para a execução futura |
+|---|---|---|
+| Contrato de execução obrigatório, retirada de adoção de versão e fallback de Delivery no adapter/UI | Publicados em Core `cb11a2f2` / Community `d8e4fddf` | Preservar e incluir na regressão final; não implementar novamente. |
+| Veredito de Delivery exige contexto efetivo | Publicado em Core `e7f6a8e6` | Preservar os predicados internos de recibos, lifecycle e waivers; eles atendem ao contrato atual. |
+| Remoção da policy migrada por Card | WIP nos dois repos: domínio, schemas, MCP, coluna SQL, etapa DDL, porta/adapter e frontend | Concluir como um incremento coordenado com os consumidores offline de C2. Não publicar o WIP isoladamente. |
+| Conversões de startup | Retiradas no WIP dos dois lifespans; implementações exclusivas de Q&A/achados/sweep também retiradas | Preservar inicialização, seeds e recuperação atuais; qualificar novamente no par final. |
+| Inicialização relacional sem upgrade | WIP com admissão de formato antes de WAL, criação transacional e seeds atuais | Schema ainda contém campos/tabelas/guards mistos; não é o schema final limpo. |
+| Cadeia offline de retirement e arquivo importado | Ainda presentes, inclusive consumidores do adapter já excluído | Retirar em conjunto; substituir proteção de raízes por admissão atual também no grafo. |
+| Waivers, normalizadores antigos e demais superfícies | Retirada/separação ainda pendente | Seguir C1–C3, preservando as responsabilidades atuais explicitadas neste documento. |
+| Qualificação integral do produto simplificado | Não realizada | C4 permanece aberto; resultados parciais não certificam o par final. |
+
+O WIP excluiu `adapters/card_validation_retirement.py`, mas
+`retirement_bootstrap.py`, `retirement_data_journal.py`, `retirement_offline_run.py`
+e `sprint_work_retirement.py` ainda o importam. Essa dependência já existe no estado
+local; não é uma nova frente. A execução deverá retirar a cadeia obsoleta e resolver
+seus consumidores atuais, sem restaurar a compatibilidade ou deixar módulos vazios.
+
+Recibos locais consultados nesta revisão, sem reexecução:
+
+- `clean-break-policy4-core.xml`: 18 aprovados, incluindo os seis casos MCP com
+  adapter atual; a projeção residual de `sprint_id` foi retirada. Não refazer a correção.
+- `clean-break-startup2-core.xml`: 82 aprovados;
+  `clean-break-startup1-community.xml`: 60 aprovados.
+- `clean-break-schema3.xml`: 18 aprovados para criação/admissão/seeds atuais.
+- `clean-break-schema-locks1.xml`: 8 aprovados e 3 falhas. Os três testes acessam
+  `_migrator`, removido do orchestrator. Adaptar sua instrumentação ao inicializador
+  atual e ao seed, mantendo a prova de mutex nos caminhos concrete/Core/Community.
+  Não considerar essa propriedade qualificada enquanto os testes não passarem.
+
+O frontend e o par instalado deverão ser reconstruídos após fechar o incremento.
+Esses resultados parciais não certificam a retirada integral do legado.
+
 O [inventário estático](clean-break-040-static-inventory.json) registra arquivos,
-hashes, contagens e consumidores de imports. Os caminhos abaixo são relativos a
+hashes, contagens e consumidores de imports da base inicial; não representa uma nova
+contagem do WIP corrente. Os caminhos abaixo são relativos a
 `src/okto_pulse/core/` ou `src/okto_pulse/community/`, conforme a coluna.
 
 | Frente | Evidência no código | Alteração planejada |
@@ -193,9 +231,40 @@ rollouts antigos dos complementos.
 
 Cada etapa resolve também os consumidores que quebra; os dois repositórios avançam
 como um único produto. Não manter feature flag, fallback temporário ou segunda versão
-para deixar uma etapa “verde”. As etapas organizam commits e não exigem uma pausa
-entre si após a instrução de execução, já recebida. A parada solicitada para revisão
-do assessment foi cumprida antes dessa autorização.
+para deixar uma etapa “verde”. As etapas organizam a execução autorizada;
+não exigem pausas entre milestones.
+
+### Ordem concreta de retomada após a revisão
+
+1. Preservar os commits publicados e partir do WIP registrado, sem reset/reaplicação.
+   Primeiro adaptar os três testes de lifecycle ao inicializador e seeds atuais,
+   mantendo sua asserção de mutex entre processos. Não restaurar o migrator para passar.
+   Fechar o incremento de policy junto da retirada de sua cadeia offline: portas e
+   adapters de retirement, seus registros no lifecycle/composition e fixtures antigas.
+   A fronteira entre C1 e C2 não justifica manter imports quebrados em um commit.
+2. Antes de retirar o guard antigo, substituir sua função de proteção por verificação
+   do armazenamento final em Community. Auditar `sqlalchemy_database.py`, inclusive
+   o listener `PRAGMA journal_mode=WAL`, para impedir mutação de uma base incompatível
+   antes da recusa. Criar somente o schema final e seeds atuais; manter exclusão mútua
+   de inicialização. Remover conversões de startup e seus jobs/teardown juntos.
+   Parte disso já está implementada no WIP: revisar/completar, não reimplementar.
+   Retirar os resíduos em `Base.metadata` e `current_relational_objects.json` junto
+   dos respectivos writers. O artefato contém 39 índices e 311 triggers suplementares;
+   preserva guards atuais, mas ainda aceita estados como `uncategorized_legacy`.
+   Remover esses ramos também dos modelos/readers; manter os guards do contrato atual.
+3. Concluir o restante de C1: persistência de waiver/revoke, normalizadores e seleção
+   explícita dos Designs. Fechar C2 com schema relacional/Grafx, histórico atual,
+   filas, health, replay e rebuild sem dependência de retirement.
+4. Fechar C3 no mesmo contrato: rotas, DTOs, CLI, MCP, frontend, instruções e fixtures.
+   Regerar catálogo e assets depois de estabilizar essas superfícies.
+5. Fechar C4 usando [acceptance-inventory.json](acceptance-inventory.json) e a tabela
+   de disposição deste assessment: auditar cada critério ainda aplicável, implementar
+   somente lacunas reais e registrar prova ou pendência explícita por ID de origem.
+   Não reiniciar auditorias de migração nem contar exclusões de escopo como testes verdes.
+
+Essa ordem detalha C1–C4 e resolve a dependência encontrada; não acrescenta milestone,
+framework, feature ou campanha autônoma. T23 e KG-10 continuam decisões isoladas,
+descritas abaixo, sem impedir a especificação do restante do plano.
 
 ### C1 — tarefas e provas de encerramento
 
@@ -237,6 +306,22 @@ de uma Spec antiga para tornar esses cenários verdes.
 5. Fixar o schema final do Okto Grafx e seus emissores/consumidores da 0.4.0. Retirar
    conversão/reconciliação de fontes anteriores, preservando reconstrução determinística
    e recuperação de operações atuais onde o runtime depende delas.
+
+Dependências concretas já identificadas, a fechar dentro desses cinco itens:
+
+| Ponto de intervenção Community | Fechamento necessário |
+|---|---|
+| `composition.py` → `require_retirement_activation_roots` | Substituir a proteção de cutover pela admissão de armazenamento atual; não deixar adoção automática de grafo antigo no resolver de rotas. |
+| `retirement_bootstrap`, `retirement_data_journal`, `retirement_offline_run`, `sprint_work_retirement` | Excluir com a cadeia offline e suas exports/portas; resolver os imports do adapter Card já removido, sem stub. |
+| `relational_schema_migrator`, `relational_schema_steps`, `data_bootstrapper`, `data_bootstrap_steps` | Excluir depois de separar todos os guards/seeds atuais; revisar exports de `adapters/__init__.py` e manifests. Não manter o ledger de upgrades nem corrigir a tupla órfã para reativá-lo. |
+| `historical_archive_grant_installation`, `historical_archive_reader`, `historical_context_reader` | Retirar arquivo/contexto originado de Sprint com portas, UoW, ACLs e REST associados; preservar histórico nativo e suas negações. |
+| `kg_operational`, `relational_effects`, `sqlalchemy_consolidation`, `sqlalchemy_domain_event_delivery` | Retirar status/filtros exclusivos de work retirement; preservar entrega, retry e replay de eventos atuais. |
+| `materialization_health`, `sqlalchemy_kg_health`, `sqlalchemy_queue_health` | Retirar filtros `retired_work_origin_exists` com a porta/helper correspondente; testar contagem e visibilidade da fila atual. |
+| `joint_recovery_snapshot`, `legacy_rebuild_reconciliation` e consumidores | Separar helpers necessários à recuperação atual antes da exclusão; não remover recuperação apenas pelo nome do módulo. |
+
+Isso é uma lista de dependências verificadas, não autorização para exclusão por glob.
+Toda referência remanescente deve ser classificada pelo uso: conversão removida,
+responsabilidade atual preservada ou histórico de engenharia fora do runtime.
 
 Provas em armazenamento descartável: criação vazia, reinício com dados 0.4.0 preservados,
 recusa de armazenamento incompatível sem alteração do conteúdo, interrupção/recuperação
@@ -312,9 +397,11 @@ deve vir de menos caminhos de execução, persistências e contratos sustentados
 
 ## Estado desta entrega
 
-Avaliação estática e plano concluídos; execução C1–C4 autorizada posteriormente pelo
-usuário. Seguir o estado no topo do ledger, usando o inventário como mapa inicial e
-verificando os consumidores reais antes de cada exclusão. Não retomar a auditoria
-de migração do plano anterior. Os artefatos antigos
-permanecem no histórico de engenharia e não precisam ser distribuídos como mecanismos
-executáveis do produto.
+Avaliação estática e plano atualizados; execução retomada após a revisão do usuário.
+Na revisão documental foram alterados somente este documento
+e o ledger; nenhum código de produto ou teste foi alterado ou executado, e o WIP
+preexistente foi preservado. Não houve build, commit ou push nesta etapa.
+Na execução, seguir a ordem concreta acima, verificando os
+consumidores reais antes de cada exclusão. Não retomar a auditoria de migração do
+plano anterior. Artefatos antigos permanecem como histórico de engenharia, sem
+sustentar mecanismos executáveis de compatibilidade no produto.

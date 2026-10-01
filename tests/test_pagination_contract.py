@@ -104,8 +104,6 @@ class _InMemoryPort:
     async def rollback(self, context: Any) -> None:
         raise NotImplementedError
 
-    async def backfill_qa_answered_at(self, context: Any) -> dict[str, int]:
-        raise NotImplementedError
 
 
 B1_SCOPE = (ApplicationFilter("board_id", "eq", "b1"),)

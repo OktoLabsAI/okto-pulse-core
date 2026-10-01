@@ -2,6 +2,351 @@
 
 ## Estado para retomada
 
+### 2026-10-01 — checkpoint coordenado da retirada offline e inicialização nativa
+
+Incremento pronto para commit/push em feature/v0.4.0 nos dois repos: policy sem
+overrides migrados, cadeia offline Sprint/arquivo importado removida, inicialização
+SQL nativa, recovery sem arquivo Sprint e importador de avaliações antigas retirado.
+Critérios locais sustentados pelos recibos acima/abaixo, frontend 109 testes/build,
+proveniência byte-idêntica e closure completo sem findings com oito budgets ZERO.
+Este checkpoint não encerra C1–C4 nem é release: a coleta integral ainda exige
+adaptação das suites mistas restantes (última coleta6076/44 erros). Demais duplos
+contratos, schema misto residual, admissão de grafo e qualificação final seguem abertos.
+
+native-semantic-writers1:11passed/1failed porque fixture inseria vínculo global sem
+preview de impacto. Correção usou autoria/vínculo inline pelo adapter corrente,
+mantendo o guard de impacto. native-semantic-writers2:12passed/19.27s. Nenhuma
+relaxação de autorização ou trigger. Registrar hashes e pushes após publicação.
+
+### 2026-10-01 — closure ZERO e fixtures nativas adicionais
+
+clean-break-quality-closure1.json terminal0: sem findings e oito budgets ZERO;
+READMEs atualizados pelos renderers oficiais. clean-break-quality-closure2.json
+terminal0 também com verificação exata dos READMEs, fontes e wheels. Esse gate
+arquitetural não substitui a qualificação funcional ainda aberta.
+
+Suites R16-B/C mistas substituíram planos de upgrade por criação/reinício atual,
+guards de lifecycle, fronteiras do Core e preservação de grants/negações autorados
+durante seeds repetidos. clean-break-r16-native1:6passed/12.72s; funções retiradas
+e atuais discriminadas no JSON de disposições. Coleta Community3:6076/44 erros
+(rodada anterior51); não contar coleta como execução aprovada.
+
+Discovery preserva filtro Board/arquivados; schema F3 verifica ausência de Sprint
+em metadata, relações e criação/reinício. Retirados testes exclusivos de export
+do predecessor e backfill de seen markers. native-sprint-absence1:3passed/5.17s.
+Fixture de concorrência Q&A agora cria schema nativo, sem seed Sprint:
+native-qa-concurrency1:5passed/13.87s. Fixture semantic writer bridge adaptada da
+mesma forma; resultados e correção registrados no checkpoint acima.
+
+Investigação C2 confirmou ainda migrador grafx_schema_evolution, manifests congelados
+v060/v070, schema manager migrate/candidate e backfill graph_layer no Global. Nenhuma
+alteração nesses módulos nesta rodada. Devem ser retirados/resolvidos com admissão
+final e recovery atual, como já previsto no plano; não representam novo escopo.
+
+### 2026-10-01 — importador de avaliações antigas retirado; lifecycle atual preservado
+
+Retirados domínio/porta/serviço quality_assessment_legacy_import e adapter SQL,
+cinco tabelas de runs/candidates/checkpoints/resolutions/completions, referências
+de ownership e branches de purge/residual exclusivos desse importador. Removida
+postcondition de epoch importado; permanecem scope, resíduos, órfãos, projeções,
+outbox e prova externa de liberação do permit. Nenhuma base existente foi alterada.
+
+Teste exclusivo do importador classificado como superado. Suites mistas de lifecycle
+e exclusão governada mantêm asserts atuais e usam formato nativo. Par reconstruído
+e instalado: dist-clean-break-quality1; provenance-clean-break-quality1.json
+terminal0, Core856/Community324 py e919/410payload byte-idênticos. Campanhas:
+clean-break-quality-core1:21passed/5.13s; clean-break-quality-community1:21passed/23.53s,
+incluindo recusa de formato sem mutação e exclusão governada real. Ruff F/E9 passou
+nos arquivos Python modificados; 15 imports ociosos de testes removidos.
+
+Próximo: fechar os imports/fixtures de schema restantes, retirar backfill/dualidade
+de Knowledge e Code Evidence conforme C1–C3, concluir admissão do grafo/recovery e
+qualificação C4. Sem alterações de autoridade T23/KG-10. Milestone coordenado ainda
+aberto; não houve commit/push nesta rodada e não há afirmação de entrega final.
+
+### 2026-10-01 — fixtures correntes e coleta após retirada dos migradores
+
+Core: clean-break-collection-core2 terminal0, 13.824 testes coletados sem erro
+(coleta, não execução). Community: clean-break-collection-community2 terminal1,
+6.057 coletados/51 erros; antes eram 134 erros. Imports transitivos das fixtures
+Delivery/Code Traceability corrigidos. Suites mistas preservam as provas atuais;
+conversões exclusivas removidas estão discriminadas em clean-break-test-dispositions.json.
+
+clean-break-current-fixtures1:19passed/1failed; fixtures2:18passed/1failed. A falha
+era preparação incompleta de Spec (primeiro execution_contract, depois inventário).
+Corrigida com contrato, coleções, requisito e critério nativos, sem enfraquecer gates.
+clean-break-current-fixtures3:10passed/19.40s. Audit findings e ACK tiveram seus
+casos atuais aprovados na fixtures2; apenas os casos offline foram retirados.
+
+Lifecycle misto reescrito para a composição atual: registro/delegação, ausência de
+orchestrator, igualdade criação direta/registrada e falhas de schema/seed.
+clean-break-native-lifecycle1:7passed/11.76s. Fixture de paginação agora cria o
+formato atual com índices/guards, sem backfill de posições; orçamento SQL real,
+concorrência e planos de consulta mantidos. clean-break-native-query1:9passed/13.80s.
+Nesta rodada só testes/documentos foram alterados; produto continua correspondente
+à provenance-clean-break-offline2.json. Sem conclusão C1–C4 ou commit/push ainda.
+
+### 2026-10-01 — C2/C3: cadeia offline e arquivo Sprint retirados; qualificação em curso
+
+Retirada a cadeia de retirement/candidate/cutover Sprint dos dois produtos, com
+portas, arquivo importado, grants, reader/contexto, UoW, REST e tool MCP associados.
+Removidos HistoricalArchiveGrant e RetirementDataCheckpoint do metadata. Retirados
+filtros/status de migração em filas, event delivery, consolidation e health. A
+proteção SQL corrente precede WAL; composition não usa mais prova de ativação de
+migração. Admissão final de grafo e resíduos mistos do schema ainda são pendências C2.
+
+Excluídos migrator/schema_steps/bootstrapper/bootstrap_steps e conversores Delivery,
+com exports/portas. Guards de leitura usados por recovery/capabilities/diagnóstico
+agora vêm de current_schema_guards e do DDL corrente distribuído, sem execução de
+upgrade. Não foram criados wrappers de migração. Removidos marcadores
+permission_migration_review de domínio, porta, writers e três tabelas; negações e
+validação atuais de flags continuam no resolver. Conversores de flags antigos
+ainda precisam ser retirados com seus callers no restante de C1/C3.
+
+Recovery deixou de interpretar arquivo Sprint. Reconcile de storage mantém anexos,
+limites, caminhos, integridade e objetos sem proprietário inferido; formato único
+relational-storage-reconciliation/v2. O mutex antes chamado migration_runtime_fence
+passou ao dono recovery_runtime_fence/offline_recovery_window, mantendo exclusão de
+runtime vivo, caminhos explícitos e nenhuma parada automática. Fixtures de recovery
+com schema completo agora usam criação nativa, sem inventário de Sprint.
+
+UI: retirados Archives do Board e Historical context de Card/Spec, componentes e
+clients exclusivos. Activity nativo mantido. Testes positivos dessas superfícies
+substituídos por ausência da ação removida nos testes mistos; 109 testes frontend
+passaram. Build frontend passou após corrigir duas fixtures de limiar ainda com
+fonte Sprint; 79 arquivos sincronizados, tree
+b332587b5a24c237134ba3df47a305e997458c4f2c46496afacda7d0aceb83ca.
+Catálogo MCP/manifesto regenerados oficialmente; seção do tool retirado excluída.
+
+Disposição dos 80 arquivos de testes exclusivos de migração/arquivo em
+clean-break-test-dispositions.json. Não contar essa retirada como critérios
+aprovados. Suites mistas foram preservadas e sua adaptação ainda está em andamento.
+Fixtures/suites restantes que importavam schema_steps serão convertidas para o
+formato nativo ou terão apenas os testes exclusivos de upgrade retirados.
+
+Provas: offline1 instalado/byte-idêntico,860/325py,923/411payload; campanha
+clean-break-offline1:55passed/1failed. Falha concorrente era fixture Base.create_all
+sem stamp/guards do formato atual; passou a usar initialize_current_schema.
+clean-break-offline2:7passed/15.13s, incluindo concorrência sob WAL. Ruff F/E9 passou
+nos arquivos de produto modificados nessa rodada. Par dist-clean-break-offline2
+reconstruído após markers/recovery/assets; provenance-clean-break-offline2.json
+terminal0:859/325py,922/411payload byte-idênticos. Recovery1 terminal0: 71 passed/94.40s. Coleta integral: Core 13819 coletados/5 erros; Community 5436 coletados/134 erros, principalmente imports de fixtures compartilhadas dos migradores removidos. Coleta não representa testes aprovados. Adaptação das suites mistas em curso, sem restaurar conversores. Nenhum commit/push ainda; não confundir remoção de código com
+qualificação global. C1/C2 mistos, C3 restante, C4, budgets ZERO e entrega final abertos.
+
+### 2026-10-01 — execução integral retomada; mutex atual qualificado
+
+Usuário confirmou contrato único/instalação nova e determinou seguir até a conclusão,
+com commits e pushes nos milestones e rastreabilidade no ledger. Encerrada a pausa
+documental anterior. C1–C4 mantidos, sem suporte a legado e sem alvos adicionais.
+
+Adaptados os três testes de lifecycle para observar initialize_current_schema e
+_seed, preservando a prova de mutex por outro processo e os caminhos concrete,
+Core e Community. Não restaurado o migrator. Prova byte a byte refeita antes dos
+testes: provenance-clean-break-resume1.json,879/384py e942/470payload idênticos.
+clean-break-schema-locks2.xml:11passed/12.51s. Próximo: retirar filtros/status de
+work retirement dos consumidores operacionais e fechar sua cadeia offline junto
+dos modelos/rotas antigos. Sem conclusão global ou publicação do WIP ainda.
+
+### 2026-10-01 — assessment atualizado; PARADA solicitada pelo usuário
+
+**Instrução vigente: somente assessment/plano e PARAR para revisão e escolha do
+reasoning. Esta entrada prevalece sobre as instruções anteriores de execução.**
+Não continuar C1–C4, corrigir testes ou publicar o WIP até nova orientação.
+
+Atualizado [CLEAN_BREAK_040_REASSESSMENT.md](CLEAN_BREAK_040_REASSESSMENT.md):
+contrato único 0.4.0, instalação nova, retirada de migrações/conversores/backfills,
+arquivos importados, aliases e fallbacks. A regra se aplica a todo o restante do
+plano v1.3. Mantidos requisitos funcionais atuais, governança, histórico nativo,
+waivers/revogações, seleção de Designs, recuperação e oito budgets ZERO.
+
+Estado inspecionado: ambos feature/v0.4.0, com WIP C1/C2 preservado. Não confundir
+inicializador corrente com schema final: metadata e guards ainda contêm legado;
+cadeia offline ainda importa card_validation_retirement excluído. Plano atualizado
+com consumidores em composition, filas/health, contexto histórico e recovery, e
+ordem de remoção coordenada. Nenhum novo milestone ou funcionalidade adicionado.
+
+Recibos existentes consultados, sem execução: policy4 Core18passed; startup2
+Core82passed; startup1 Community60passed; schema3 18passed. Campanha
+clean-break-schema-locks1:8passed/3failed; as três falhas são AttributeError em
+orchestrator._migrator, removido. Retomada deve adaptar instrumentação ao
+initialize_current_schema e _seed e preservar a prova de mutex entre processos
+nos caminhos concrete/Core/Community. Não restaurar o migrador nem declarar o gate
+verde antes dessa validação. Depois seguir C1/C2 coordenados, C3 e C4 conforme plano.
+
+T23/Path B e KG-10 continuam pendências semânticas atuais, não resolvidas pela
+retirada de legado. Assets, qualificação integral, commits e pushes do incremento
+continuam pendentes. Não publicar o WIP com imports quebrados.
+
+Esta etapa alterou somente assessment e ledger. Nenhuma mudança de código/teste,
+execução comportamental, instalação, alteração de dados reais, commit ou push.
+Entrega documental concluída; execução parada para revisão do usuário.
+
+### 2026-10-01 — C2: admissão de formato corrente e criação sem upgrade
+
+Novo WIP Community: current_relational_schema.py, current_data_seeds.py e
+current_relational_objects.json. relational_schema_lifecycle agora cria/valida
+somente o formato corrente e executa seeds atuais, mantendo a porta Core e
+_serialized_schema_lifecycle. init_db não chama retirement_runtime_admission.
+SQLAlchemy recusa arquivo incompatível antes de instalar WAL e revalida no listener
+de conexão. application_id OPUL, user_version400 e comparação do DDL completo
+incluem tabelas, índices e triggers; formatos intermediários não são convertidos.
+
+Criação tem BEGIN IMMEDIATE/rollback explícito, stamp somente após DDL completo e
+seed do fence global de revisão. Reinício preserva os dados. Seeds mantêm catálogo
+de presets via use case público Core e Discovery intents; retirados os writes de
+permission_introduction_audit da reconciliação de presets. Não normalizam agentes,
+importam avaliações nem executam backfills. Suas rotinas antigas ainda precisam
+ser excluídas com o conjunto offline; não foram mantidas como caminho de startup.
+
+Problema reproduzido durante a validação: sqlite mode=ro pode criar WAL/SHM no
+original. Leitura sem journal pendente usa immutable; com WAL/journal não vazio,
+inspeciona uma cópia temporária privada dos arquivos, incluindo o WAL, descartada
+automaticamente. Nunca ignora WAL para admitir uma base. Mudança dos arquivos
+durante a cópia causa recusa. Não há conversão, retenção ou nova operação pública.
+Esse custo de leitura em reinício com journal pendente ainda não foi medido.
+
+Outra dependência confirmada: Base.metadata sozinho omitia guards atuais antes
+instalados pelo migrador. Caracterização descartável current-guard-characterization1
+registrou856objetos/365triggers. O ledger antigo tem uma tupla órfã deixada pela
+remoção da etapa Card; somente o script de caracterização excluiu essa tupla em
+memória para obter os guards, sem restaurar o migrador de produto. Separados39índices
+e311triggers suplementares em JSON de DDL concreto; guardas exclusivos de tabelas
+de import legado não foram transportados. Os quatro guards de delete de Research
+são finalizados com a autoridade atual de permits durante a criação vazia.
+
+ATENÇÃO PARA CONTINUAR: o metadata ainda contém tabelas/colunas de migração; há
+expressões mistas de Code Evidence/Guidelines/avaliações no DDL separado. Elas devem
+ser simplificadas junto dos writers/modelos de C1, sem apenas mudar o nome de campos
+que também têm uso atual. O JSON não é alegação de schema final já limpo. Também
+continuam pendentes os imports offline de card_validation_retirement, as chamadas
+require_retirement_activation_roots em composition, os filtros work_retirement_sql
+e os leitores/ACLs de arquivo Sprint. C1/C2 e qualificação integral seguem abertos.
+
+Validação: dist-clean-break-schema3 construído/instalado; prova terminal0
+provenance-clean-break-schema3.json:879/384py,942/470payload byte-idênticos, incluindo
+o JSON distribuído. clean-break-schema3.xml:18passed/25.35s. Cobertura: criação,
+reinício com dados, formatos/colunas/índices/triggers incompatíveis recusados sem
+alteração de arquivos, mudança entre composição/conexão, WAL pendente válido e
+inválido, rollback de DDL interrompido, seeds repetíveis/presets custom preservados,
+fence global avança e não pode ser apagado. RuffF/E9 e diff-check passaram.
+Rodadas anteriores: schema1 12pass/2fail (sidecars e expectativa de audit antigo);
+schema2 15pass/1fail (referência residual ao modelo de audit no teste); corrigidos.
+
+PRÓXIMO: concluir exclusão coordenada de migrator/bootstrapper/retirement/arquivo e
+consumidores, atualizar as suites de lifecycle que exigiam composição do migrador,
+e retirar os campos/branches mistos com provas atuais. Não publicar o WIP isolado
+enquanto houver imports quebrados. Assets de CardModal, catálogo/matrizes, C3/C4,
+budgets ZERO, commits e pushes ainda pendentes deste incremento.
+
+### 2026-10-01 — execução retomada por instrução explícita; C1/C2
+
+O usuário determinou implementar integralmente o plano concreto, com progresso no
+ledger e sem alvos móveis. Revogada a parada documental abaixo. Retomada do WIP
+existente, sem reset e sem considerar C1 concluído.
+
+Corrigida a composição do teste MCP para usar CommunitySqlAlchemyResourceGateAdapter
+pela porta pública. A execução revelou resíduo real: _TASK_GATE_CARD_SELECT_FIELDS
+solicitava sprint_id em schema que já não tem essa coluna. Removida essa projeção.
+Par dist-clean-break-policy4 construído/instalado; prova byte a byte terminal0 em
+provenance-clean-break-policy4.json:882/383py,945/468payload. Campanha
+clean-break-policy4-core.xml:18passed/15.02s, incluindo os seis casos MCP
+summary/all, full/all, full/gate × confiança90/60. Sem recriar coluna antiga.
+
+C2 em andamento: removidas dos dois lifespans Community as chamadas de conversão
+Delivery, backfill Q&A/achados arquiteturais e adoção/sweep de grafo antigo;
+removidos job/teardown de backfill e fallback da assinatura antiga de seed.
+Seeds atuais, settings, workers, scheduler e recuperação atual preservados.
+Estas mudanças de startup são posteriores à prova policy4: ainda não qualificadas.
+Próximo: fechar implementações/contratos/testes exclusivos dessas chamadas e
+substituir guard de retirement por admissão de armazenamento atual antes de WAL/DDL.
+A cadeia offline dependente do adapter Card removido continua pendente; nenhum
+commit/push deste WIP nem conclusão integral é declarado.
+
+Fechada a retirada das implementações de Q&A backfill (porta, fachada, serviço,
+adapter e fakes), architecture finding backfill e startup schema sweep (fachada,
+orquestração e helper), além de startup_graph_routes. Ajustados os manifests de
+API pública/proveniência e o replay de lifecycle:13eventos atuais, sem backfills
+ou exceção kg_migration_sweep. Retirados somente testes exclusivos de conversão;
+mantidos QA badges, gates de findings, hidratação de diagramas, composição e shutdown.
+O teste de Spec Done passa a persistir findings pelo update atual com acknowledgement
+de warnings; não usa migração nem relaxa o gate.
+
+Par dist-clean-break-startup1 construído/instalado, prova terminal0
+provenance-clean-break-startup1.json:879/382py,942/467payload byte-idênticos.
+RuffF/E9 nos arquivos modificados passou. Campanhas terminais:
+clean-break-startup1-community:60passed/27.83s;
+clean-break-startup1-core:81passed/1failed (fixture update sem acknowledgement);
+clean-break-startup2-core:82passed/28.18s após corrigir somente a fixture.
+Nenhum processo de teste pendente. Assets frontend ainda não reconstruídos após
+a remoção da policy; a qualificação global e os oito budgets ainda precisam rodar.
+
+PRÓXIMO CONCRETO: substituir relational_schema_lifecycle/migrator/bootstrapper
+por criação/validação do schema corrente e seeds atuais. sqlalchemy_database instala
+WAL no listener de conexão: a recusa de base incompatível deve preceder esse efeito,
+não apenas create_all. Manter _serialized_schema_lifecycle e sua proteção entre
+processos. Só então retirar retirement_runtime_admission/activation e a cadeia
+offline com seus consumidores reais, sem restaurar card_validation_retirement.
+Não publicar este WIP como entrega coerente enquanto essa dependência ficar aberta.
+
+### 2026-10-01 — assessment revisado; PARADA para revisão do usuário
+
+**Esta entrada prevalece sobre as instruções de continuidade abaixo.** A instrução
+mais recente é concluir somente assessment/plano e PARAR para revisão e definição
+do reasoning. Execução suspensa; não continuar C1–C4, corrigir testes ou publicar
+o WIP como incremento concluído antes da nova orientação.
+
+Plano atualizado em [CLEAN_BREAK_040_REASSESSMENT.md](CLEAN_BREAK_040_REASSESSMENT.md):
+0.4.0 com contrato único e armazenamento novo, sem upgrade, backfill, importador,
+aliases de compatibilidade ou segundo fluxo legado. A regra vale também para todas
+as pendências funcionais do pacote v1.3. Preservados histórico nativo 0.4.0, autoridade,
+waivers/revogações, seleção de Designs, recuperação atual e oito budgets ZERO.
+
+Estado confirmado: Core e7f6a8e6 / Community d8e4fddf, feature/v0.4.0. Commits anteriores
+de contrato obrigatório/contexto efetivo preservados. WIP de policy migrada já existia
+ao iniciar esta revisão e foi mantido sem alteração de código/testes. C1 não concluído;
+C2–C4 pendentes. Nenhum teste comportamental, build, migration ou runtime foi executado
+nesta revisão documental.
+
+Correção do registro de validação do WIP abaixo: recibos locais consultados mostram
+Community13passed (clean-break-policy1-community.xml), Core12passed/1failed
+(clean-break-policy2-core.xml). O teste MCP consulta cards.sprint_id por composição
+antiga de resource gate; seis casos MCP ainda precisam passar com adapter Community
+atual registrado pela porta pública. A prova provenance-clean-break-policy1.json
+é anterior à revisão; não certifica uma entrega integral nem assets frontend finais.
+
+Retomada concreta: fechar WIP de policy junto dos importadores remanescentes
+retirement_bootstrap, retirement_data_journal, retirement_offline_run e
+sprint_work_retirement; substituir a proteção de startup por recusa do formato
+incompatível antes de writes, inclusive WAL; concluir os demais itens C1/C2;
+retirar superfícies/fixtures antigas em C3; qualificar os critérios funcionais
+aplicáveis e o par instalado em C4. Não restaurar adapter nem criar stub para passar.
+T23/Path B e KG-10 permanecem decisões atuais pendentes, sem alteração silenciosa.
+
+Entrega desta revisão: somente os dois documentos acima, sem commits de produto.
+O inventário estático de 86 candidatos/19.177 linhas permanece uma medição da base
+inicial, não uma promessa de exclusão nem uma contagem atualizada do WIP.
+
+### 2026-10-01 — C1 policy corrente; remoção offline dependente em andamento
+
+Base publicada Core e7f6a8e6 / Community d8e4fddf. WIP ainda não publicado:
+task_validation_policy agora resolve somente Spec/Board/defaults, sem parâmetro
+Card nem tipos/planners migrados. CardCreate/Update recusam campos desconhecidos;
+CardResponse e modelo SQL não expõem migrated_validation_policy. Removidos reader
+especial MCP, porta card_validation_migration e adapter card_validation_retirement,
+além da etapa DDL que recriava a coluna. CardModal/tipos mostram só fontes atuais.
+Mantida semântica por campo de false/zero/null/default, sem nova autoridade ao executor.
+
+Testes de conversão dedicados retirados; preparados testes nativos de policy por
+campo, DTO negativo, leitura sem escrita/escopo de Board e MCP summary/full/gate.
+Frontend adapta limiares de Spec/Board. Ainda NÃO testado este WIP.
+
+DEPENDÊNCIA A FECHAR ANTES DE PUBLICAR: retirement_bootstrap, retirement_data_journal,
+retirement_offline_run e sprint_work_retirement ainda importam o adapter excluído.
+São a cadeia offline prevista para retirada C2; não restaurar adapter nem criar stub.
+Concluir eliminação dos consumidores e encadeamento de runtime antes de qualificar
+ou publicar este conjunto. Relational schema lifecycle/startup ainda contém outras
+migrações do plano antigo. F16/aceite integral não declarados.
+
 ### 2026-10-01 — C1: retirada do veredito alternativo no domínio
 
 Incremento anterior publicado: Core cb11a2f2 / Community d8e4fddf. Avaliador público

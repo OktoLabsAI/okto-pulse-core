@@ -193,14 +193,12 @@ class GetCardUseCase:
 
 
 async def _read_card_validation_config(card: Any, *, uow: PulseUnitOfWork) -> ResolvedTaskValidationConfig | None:
-    """Read the live policy after Card access, without historical Sprint queries.
+    """Read the current Spec/Board policy after Card access.
 
     Missing or cross-Board source records must not turn into default thresholds.
     The Card remains readable, but validation input stays unavailable in the UI.
     """
 
-    if getattr(card, "sprint_id", None) is not None:
-        return None
     board = await uow.services.get_application_record(entity="board", record_id=card.board_id, includes=())
     if board is None:
         return None
@@ -210,7 +208,7 @@ async def _read_card_validation_config(card: Any, *, uow: PulseUnitOfWork) -> Re
     if spec_id and (spec is None or spec.board_id != card.board_id):
         return None
     return ResolvedTaskValidationConfig.model_validate(resolve_task_validation_config(
-        card, spec, board.settings or {},
+        spec, board.settings or {},
     ))
 
 

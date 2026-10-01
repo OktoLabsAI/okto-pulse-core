@@ -186,7 +186,6 @@ _POST_ASSEMBLY_SEMANTIC_BLOCKS = (
     "test_card_operational_flow",
     "gate_readiness",
     "code_traceability",
-    "historical_context_read",
 )
 
 _GATE_CARD_KEYS = (
@@ -932,7 +931,7 @@ def _project_task_gate_context(
         # the additive drilldown inventory.
         projected["content_manifest"] = _content_manifest(source)
 
-    protected = {key: source[key] for key in ("historical_context_read", "scenario_reference_context")
+    protected = {key: source[key] for key in ("scenario_reference_context",)
                  if source.get(key) is not None}
     projected.update(protected)
     omitted = max(0, _count_fields(source) - _count_fields(projected))
@@ -1417,7 +1416,7 @@ class MCPContextProjectionService:
         if task_context_budgeted:
             # Keep complete routing identities/offset=0, even under strict fallback.
             # Reserve their actual size instead of truncating a follow-up argument.
-            protected = {key: projected.pop(key) for key in ("historical_context_read", "scenario_reference_context")
+            protected = {key: projected.pop(key) for key in ("scenario_reference_context",)
                          if projected.get(key) is not None}
             reserved = _stable_payload_bytes(protected) if protected else 0
             projected, budget_omitted, truncated = _apply_profile_budget(

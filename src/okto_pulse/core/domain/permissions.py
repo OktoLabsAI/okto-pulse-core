@@ -16,7 +16,6 @@ import json
 from dataclasses import dataclass, field, replace
 from typing import Any, Mapping, TypeAlias
 
-from okto_pulse.core.domain.permission_migration_review import migration_review_reason
 
 from okto_pulse.core.domain.code_traceability_kg import (
     CODE_TRACEABILITY_KG_READ_PERMISSIONS,
@@ -2522,7 +2521,6 @@ class PermissionPresetLineageNode:
     id: str
     flags: Any
     base_preset_id: str | None = None
-    migration_review: object = None
 
     def __post_init__(self) -> None:
         import copy
@@ -2530,7 +2528,6 @@ class PermissionPresetLineageNode:
         if not self.id.strip():
             raise PermissionContractViolation("preset lineage id must not be empty")
         object.__setattr__(self, "flags", copy.deepcopy(self.flags))
-        object.__setattr__(self, "migration_review", copy.deepcopy(self.migration_review))
 
 
 @dataclass(frozen=True)
@@ -2723,12 +2720,11 @@ def resolve_permission_preset_lineage(
                 owner_review_required=True,
                 review_reason=("unknown_preset" if first else "dangling_base_preset"),
             )
-        persisted_review = migration_review_reason(node.migration_review, layer="preset")
-        if persisted_review is not None or not _canonical_permission_shape_is_valid(node.flags):
+        if not _canonical_permission_shape_is_valid(node.flags):
             return PermissionPresetLineageResolution(
                 flags=_fail_closed_permission_flags(),
                 owner_review_required=True,
-                review_reason=persisted_review or "invalid_preset_flags",
+                review_reason="invalid_preset_flags",
             )
         chain.append(node)
         if node.base_preset_id is None:

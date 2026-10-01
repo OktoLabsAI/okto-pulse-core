@@ -1686,10 +1686,8 @@ _TASK_GATE_CARD_SELECT_FIELDS = (
     "linked_test_task_ids",
     "spec_id",
     # Internal cutover guard only; never projected as a live Sprint relation.
-    "sprint_id",
     # Deprecated migration-only policy is required to preserve the effective
     # validation gate in this bounded read; it grants no executor write access.
-    "migrated_validation_policy",
     "current_rejection_kind",
     "current_rejection_id",
     "current_rejection_code",
@@ -4414,15 +4412,9 @@ async def okto_pulse_get_task_context(
             spec_for_gate = await uow.services.get_application_record(
                 entity="spec", record_id=card.spec_id, includes=()
             )
-        from okto_pulse.core.domain.task_validation_policy import TaskValidationMigrationRequired
-
-        try:
-            result["validation_config"] = card_service._resolve_validation_config(
-                card, spec_for_gate, board_settings
-            )
-        except TaskValidationMigrationRequired:
-            # Historical reads remain available; no usable gate is fabricated.
-            result["validation_config"] = None
+        result["validation_config"] = card_service._resolve_validation_config(
+            card, spec_for_gate, board_settings
+        )
         from okto_pulse.core.services.reviewer_separation import (
             evaluate_task_reviewer_separation,
         )
@@ -4513,8 +4505,6 @@ async def okto_pulse_get_task_context(
             from okto_pulse.core.application.use_cases.card_reference_context import GetCardScenarioReferenceContextUseCase
             result["scenario_reference_context"] = (await GetCardScenarioReferenceContextUseCase().execute(
                 board_id=board_id, card_id=card.id, actor=actor, uow=uow)).model_dump(mode='json')
-            from okto_pulse.core.inbound.historical_context import historical_context_follow_up
-            result["historical_context_read"] = historical_context_follow_up(board_id, "card", card.id)
             result["code_traceability"] = await _mcp_code_traceability_projection(
                 uow=uow,
                 actor=actor,
@@ -11328,8 +11318,6 @@ async def okto_pulse_get_spec_context(
             **checklist_readiness,
         )
         if _resolved_profile != "legacy":
-            from okto_pulse.core.inbound.historical_context import historical_context_follow_up
-            result["historical_context_read"] = historical_context_follow_up(board_id, "spec", spec.id)
             result["code_traceability"] = await _mcp_code_traceability_projection(
                 uow=uow,
                 actor=actor,
@@ -12905,48 +12893,6 @@ async def okto_pulse_list_architecture_candidates(
     return json.dumps({"success": True, **result})
 
 
-@mcp.tool()
-@closed_mcp_schema
-async def okto_pulse_get_historical_context(
-    board_id: Annotated[str, Field(min_length=1, max_length=255)],
-    target_kind: Literal["spec", "card"],
-    target_id: Annotated[str, Field(min_length=1, max_length=128)],
-    offset: Annotated[int, Field(strict=True, ge=0, le=100_000)] = 0,
-    limit: Annotated[int, Field(strict=True, ge=1, le=200)] = 50,
-) -> str:
-    """Read linked original historical context, with current target/section access.
-
-    Follow next_offset until null; denied sources are absent before pagination.
-    Records retain original authorship and never count as current approval.
-    Details: okto-pulse://reference/tool-docs/misc
-    """
-    from okto_pulse.core.application.use_cases.base import EntityNotFoundError
-    from okto_pulse.core.application.use_cases.historical_context import ReadHistoricalContextUseCase
-    from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
-    from okto_pulse.core.ports.context_disposition import ContextTarget
-    from okto_pulse.core.ports.historical_archive_read import ArchiveBoardScope, ArchiveReadLimitExceeded, ArchiveReadUnavailable
-    from okto_pulse.core.ports.historical_context import HistoricalContextRequest
-    from okto_pulse.core.repositories.interfaces.unit_of_work import ConsistentReadContractError
-
-    ctx = await _get_agent_ctx(board_id)
-    if not ctx:
-        return _auth_error()
-    actor = MCPAdapterContract.actor(ctx, board_id=board_id)
-    try:
-        request = HistoricalContextRequest(ArchiveBoardScope(actor.require_realm_scope().realm_id, board_id),
-            ContextTarget(kind=target_kind, identity=target_id), offset, limit)
-    except ValueError:
-        return json.dumps({"success": False, "error": "Historical context request invalid", "status_code": 422})
-    try:
-        async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
-            page = await ReadHistoricalContextUseCase().execute(request, actor=actor, uow=uow)
-        return json.dumps({"success": True, **page.to_payload()})
-    except EntityNotFoundError:
-        return json.dumps({"success": False, "error": "Historical context not found", "status_code": 404})
-    except ArchiveReadLimitExceeded:
-        return json.dumps({"success": False, "error": "Historical context reading limit exceeded", "status_code": 413})
-    except (ArchiveReadUnavailable, ConsistentReadContractError):
-        return json.dumps({"success": False, "error": "Historical context unavailable", "status_code": 503})
 
 
 @mcp.tool()

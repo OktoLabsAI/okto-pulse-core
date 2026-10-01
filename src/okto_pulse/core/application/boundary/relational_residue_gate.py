@@ -16,14 +16,11 @@ CORE_TARGET_FILES: tuple[str, ...] = (
     "events/handlers/consolidation_enqueuer.py",
     "events/handlers/kg_decay_tick.py",
     "infra/daily_tick.py",
-    "infra/startup_schema_sweep.py",
     "infra/config.py",
     "application/boundary/relational_adapter_import_gate.py",
 )
 
 COMMUNITY_TARGET_FILES: tuple[str, ...] = (
-    "adapters/data_bootstrapper.py",
-    "adapters/relational_schema_migrator.py",
 )
 
 _PRODUCTIVE_EXCLUDED_PREFIXES: tuple[str, ...] = (

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import logging
 from collections.abc import Callable
 from datetime import datetime
 from typing import Any
@@ -49,25 +48,13 @@ async def apply_persisted_runtime_settings() -> dict[str, int]:
     return await apply_persisted_settings_to_core_settings()
 
 
-async def backfill_qa_answered_at(relational_context: Any) -> dict[str, int]:
-    from okto_pulse.core.services.application_startup import backfill_qa_answered_at
-
-    return await backfill_qa_answered_at(relational_context)
 
 
-async def run_startup_schema_sweep(
-    *, uow_factory: Any | None = None, logger: logging.Logger
-) -> None:
-    from okto_pulse.core.infra.startup_schema_sweep import run_startup_schema_sweep
-
-    await run_startup_schema_sweep(uow_factory=uow_factory, logger=logger)
 
 
 __all__ = [
     "apply_persisted_runtime_settings",
-    "backfill_qa_answered_at",
     "compute_tick_catch_up_next_run",
     "emit_daily_tick",
-    "run_startup_schema_sweep",
     "tick_next_run_from_last",
 ]

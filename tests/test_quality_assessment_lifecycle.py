@@ -323,7 +323,7 @@ def test_invalid_transition_and_cross_subject_receipt_fail_closed() -> None:
         )
 
 
-def test_subject_purge_is_ordered_idempotent_and_preserves_epoch() -> None:
+def test_subject_purge_is_ordered_idempotent_and_scoped() -> None:
     service = QualityAssessmentLifecycleService()
     plan = service.prepare_subject_purge(
         board_id="b1",
@@ -340,13 +340,10 @@ def test_subject_purge_is_ordered_idempotent_and_preserves_epoch() -> None:
         plan.deletion_order.index(AssessmentPurgeResource.QUALITY_HEADS)
         < plan.deletion_order.index(AssessmentPurgeResource.QUALITY_RECEIPTS)
     )
-    assert (
-        AssessmentPurgeResource.LEGACY_IMPORT_CANDIDATES
-        not in plan.deletion_order
-    )
+    assert AssessmentPurgeResource.CHECKLIST_BINDING_VERSIONS not in plan.deletion_order
 
 
-def test_board_purge_requires_permit_and_includes_epoch_last() -> None:
+def test_board_purge_requires_permit_and_removes_board_bindings_last() -> None:
     service = QualityAssessmentLifecycleService()
     plan = service.prepare_board_purge(
         board_id="b1",
@@ -355,17 +352,9 @@ def test_board_purge_requires_permit_and_includes_epoch_last() -> None:
 
     assert plan.target.scope is AssessmentPurgeScope.BOARD
     assert plan.deletion_order == ASSESSMENT_BOARD_PURGE_ORDER
-    assert plan.deletion_order[-3:] == (
-        AssessmentPurgeResource.LEGACY_IMPORT_COMPLETIONS,
-        AssessmentPurgeResource.LEGACY_IMPORT_CANDIDATES,
-        AssessmentPurgeResource.LEGACY_IMPORT_RUNS,
-    )
-    assert plan.deletion_order[-5:] == (
-        AssessmentPurgeResource.LEGACY_IMPORT_RESOLUTIONS,
-        AssessmentPurgeResource.LEGACY_IMPORT_CHECKPOINTS,
-        AssessmentPurgeResource.LEGACY_IMPORT_COMPLETIONS,
-        AssessmentPurgeResource.LEGACY_IMPORT_CANDIDATES,
-        AssessmentPurgeResource.LEGACY_IMPORT_RUNS,
+    assert plan.deletion_order[-2:] == (
+        AssessmentPurgeResource.CHECKLIST_BINDING_HEADS,
+        AssessmentPurgeResource.CHECKLIST_BINDING_VERSIONS,
     )
     assert plan.board_erasure_permit_id == "permit-1"
 
@@ -388,7 +377,6 @@ def test_board_purge_requires_permit_and_includes_epoch_last() -> None:
             zero_orphans=True,
             projections_reconciled=True,
             outbox_reconciled=True,
-            epoch_consistency_preserved=True,
             # Inner purge evidence cannot fabricate the outer permit result.
             board_erasure_permit_released=False,
             verified_at=NOW,
@@ -412,7 +400,6 @@ def _postcondition(plan, *, residual_override=None, **flags):
         "zero_orphans": True,
         "projections_reconciled": True,
         "outbox_reconciled": True,
-        "epoch_consistency_preserved": True,
     }
     values.update(flags)
     return AssessmentPurgePostcondition(
@@ -532,20 +519,12 @@ def test_purge_postcondition_is_complete_zero_orphan_and_retry_safe() -> None:
             lambda plan: _postcondition(plan, outbox_reconciled=False),
             "assessment_purge_outbox_reconciliation_failed",
         ),
-        (
-            lambda plan: _postcondition(
-                plan,
-                epoch_consistency_preserved=False,
-            ),
-            "assessment_purge_epoch_consistency_failed",
-        ),
     ],
     ids=(
         "residual-row",
         "orphan",
         "projection",
         "outbox",
-        "epoch",
     ),
 )
 def test_purge_postcondition_failures_are_closed(
@@ -582,7 +561,6 @@ def test_missing_purge_residual_evidence_fails_closed() -> None:
         zero_orphans=True,
         projections_reconciled=True,
         outbox_reconciled=True,
-        epoch_consistency_preserved=True,
         verified_at=NOW,
     )
 

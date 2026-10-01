@@ -1,6 +1,6 @@
 """Spec #03 (card b4f07ad3) — CommunityLifespanReplay + CompositionBoundaryGate.
 
-Locks the golden lifecycle replay (15 required events, closed 3-exclusion
+Locks the golden lifecycle replay (13 required events, closed 2-exclusion
 allowlist, unexpected_lifecycle_delta / required_lifecycle_event_missing) and the
 deterministic composition boundary classification (baseline / blocking /
 xfail_advisory + register-before-remove).
@@ -32,8 +32,8 @@ from okto_pulse.core.ports.runtime_workers import (
 )
 
 _STARTUP_EVENTS = [
-    "init_db", "seed_community_defaults", "backfill_qa_answered_at",
-    "_afg_backfill_task", "_preload_embedding_model", "event_dispatcher",
+    "init_db", "seed_community_defaults",
+    "_preload_embedding_model", "event_dispatcher",
     "consolidation_worker", "cleanup_worker", "outbox_worker", "settings_service",
     "scheduler", "mcp_runtime", "frontend_served", "_metrics_beacon_loop",
 ]
@@ -56,9 +56,9 @@ def _composition(hooks, **overrides) -> RuntimeComposition:
 
 
 def test_closed_baseline_constants() -> None:
-    assert len(REQUIRED_LIFECYCLE_EVENTS) == 15
+    assert len(REQUIRED_LIFECYCLE_EVENTS) == 13
     assert set(DEFAULT_ONLY_EXCLUSIONS) == {
-        "kg_migration_sweep", "shutdown_kg_events_hub", "close_all_connections"
+        "shutdown_kg_events_hub", "close_all_connections"
     }
 
 
@@ -92,14 +92,14 @@ async def test_replay_missing_required_event_is_flagged() -> None:
 @pytest.mark.asyncio
 async def test_replay_accepted_exclusion_is_not_unexpected_but_rogue_is() -> None:
     extra = (
-        NamedLifecycleHook(startup_event="kg_migration_sweep"),  # accepted exclusion
+        NamedLifecycleHook(startup_event="shutdown_kg_events_hub"),  # accepted exclusion
         NamedLifecycleHook(startup_event="rogue_event"),  # genuine delta
     )
     report = await CommunityLifespanReplay().run(
         CommunityLifespanReplayInput(composition=_composition(_golden_hooks(extra)))
     )
     assert report.status == "unexpected_lifecycle_delta"
-    assert "kg_migration_sweep" in report.default_only_exclusions
+    assert "shutdown_kg_events_hub" in report.default_only_exclusions
     assert [d.event for d in report.unexpected_deltas if d.kind == "unexpected"] == ["rogue_event"]
 
 

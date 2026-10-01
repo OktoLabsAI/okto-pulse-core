@@ -27,7 +27,7 @@ from okto_pulse.core.domain.requirement_verification import VerificationQualifie
 from okto_pulse.core.domain.learning_closeout import LearningCaptureSelection
 from okto_pulse.core.domain.learning_submission import LearningSubmission
 from okto_pulse.core.domain.execution_contract import SpecExecutionContract
-from okto_pulse.core.domain.task_validation_policy import MigratedTaskValidationPolicy, ResolvedTaskValidationConfig, reject_migrated_validation_policy_write, read_migrated_validation_policy
+from okto_pulse.core.domain.task_validation_policy import ResolvedTaskValidationConfig
 from okto_pulse.core.models.delivery_selection import DeliverySelectionInput, DeliverySelectionManifest
 from okto_pulse.core.models.reference_context import CardScenarioReferenceContext
 from okto_pulse.core.domain.card_completion import (
@@ -2940,7 +2940,7 @@ def reject_retired_card_sprint_write(value):
 class CardCreate(BaseModel):
     """Schema for creating a card."""
 
-    _migration_only_policy = model_validator(mode="before")(reject_migrated_validation_policy_write)
+    model_config = ConfigDict(extra="forbid")
     _retired_sprint_link = model_validator(mode="before")(reject_retired_card_sprint_write)
 
     title: str = Field(
@@ -3034,7 +3034,7 @@ class CardCreate(BaseModel):
 class CardUpdate(BaseModel):
     """Schema for updating a card."""
 
-    _migration_only_policy = model_validator(mode="before")(reject_migrated_validation_policy_write)
+    model_config = ConfigDict(extra="forbid")
     _retired_sprint_link = model_validator(mode="before")(reject_retired_card_sprint_write)
 
     title: str | None = Field(
@@ -3603,28 +3603,12 @@ class CardRejectionCauseResponse(BaseModel):
 class CardResponse(BaseSchema):
     """Schema for card response."""
 
-    @model_validator(mode="before")
-    @classmethod
-    def validate_raw_migration_policy_scope(cls, value):
-        # Deprecated migration compatibility: inspect the persisted legacy link
-        # before projection drops it, so a corrupt double source cannot be hidden.
-        read_migrated_validation_policy(value)
-        return value
-
-    @model_validator(mode="after")
-    def validate_migration_policy_scope(self):
-        read_migrated_validation_policy(self)
-        return self
-
     id: str
     board_id: str
     spec_id: str | None = None
     scenario_reference_context: CardScenarioReferenceContext | None = Field(
         default=None, description="Authorized current scenario-reference read; null means not observed.",
         json_schema_extra={"readOnly": True},
-    )
-    migrated_validation_policy: MigratedTaskValidationPolicy | None = Field(
-        default=None, description="Deprecated migration-only policy preservation; read-only historical provenance.",
     )
     validation_config: ResolvedTaskValidationConfig | None = Field(
         default=None,

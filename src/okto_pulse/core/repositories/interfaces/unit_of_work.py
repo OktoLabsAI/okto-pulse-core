@@ -28,9 +28,6 @@ if TYPE_CHECKING:
         SemanticSubjectProjectionPort,
     )
     from okto_pulse.core.ports.entity_export import EntityExportReadPort
-    from okto_pulse.core.ports.historical_archive import HistoricalArchiveGrantPort
-    from okto_pulse.core.ports.historical_archive_read import HistoricalArchiveReadPort
-    from okto_pulse.core.ports.historical_context import HistoricalContextReadPort
 
 
 class ConsistentReadContractError(RuntimeError):
@@ -57,9 +54,6 @@ class PulseUnitOfWork(RepositoryCatalog, Protocol):
     semantic_assessment_v2_reader: "SemanticAssessmentV2ReadPort"
     semantic_assessment_v2_capability: "SemanticAssessmentV2CapabilityPort"
     entity_exports: "EntityExportReadPort"
-    historical_archive_grants: "HistoricalArchiveGrantPort"
-    historical_archive_reader: "HistoricalArchiveReadPort"
-    historical_context_reader: "HistoricalContextReadPort"
 
     async def __aenter__(self) -> "PulseUnitOfWork": ...
 

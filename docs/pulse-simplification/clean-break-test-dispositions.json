@@ -1,0 +1,581 @@
+{
+  "scope": "Offline Sprint conversion and imported archives only; mixed/current suites retained for adaptation.",
+  "removed_tests": [
+    {
+      "path": "okto_labs_pulse_core\\tests\\test_context_disposition.py",
+      "disposition": "superseded",
+      "reason": "Removed offline conversion or imported archive contract; not native 0.4.0 acceptance."
+    },
+    {
+      "path": "okto_labs_pulse_core\\tests\\test_historical_archive_authority.py",
+      "disposition": "superseded",
+      "reason": "Removed offline conversion or imported archive contract; not native 0.4.0 acceptance."
+    },
+    {
+      "path": "okto_labs_pulse_core\\tests\\test_historical_archive_authority_v034.py",
+      "disposition": "superseded",
+      "reason": "Removed offline conversion or imported archive contract; not native 0.4.0 acceptance."
+    },
+    {
+      "path": "okto_labs_pulse_core\\tests\\test_historical_archive_discovery.py",
+      "disposition": "superseded",
+      "reason": "Removed offline conversion or imported archive contract; not native 0.4.0 acceptance."
+    },
+    {
+      "path": "okto_labs_pulse_core\\tests\\test_historical_archive_grants.py",
+      "disposition": "superseded",
+      "reason": "Removed offline conversion or imported archive contract; not native 0.4.0 acceptance."
+    },
+    {
+      "path": "okto_labs_pulse_core\\tests\\test_historical_archive_read.py",
+      "disposition": "superseded",
+      "reason": "Removed offline conversion or imported archive contract; not native 0.4.0 acceptance."
+    },
+    {
+      "path": "okto_labs_pulse_core\\tests\\test_historical_context.py",
+      "disposition": "superseded",
+      "reason": "Removed offline conversion or imported archive contract; not native 0.4.0 acceptance."
+    },
+    {
+      "path": "okto_labs_pulse_core\\tests\\test_historical_context_mcp_projection.py",
+      "disposition": "superseded",
+      "reason": "Removed offline conversion or imported archive contract; not native 0.4.0 acceptance."
+    },
+    {
+      "path": "okto_labs_pulse_core\\tests\\test_permission_migration_review.py",
+      "disposition": "superseded",
+      "reason": "Removed offline conversion or imported archive contract; not native 0.4.0 acceptance."
+    },
+    {
+      "path": "okto_labs_pulse_core\\tests\\test_permission_retirement.py",
+      "disposition": "superseded",
+      "reason": "Removed offline conversion or imported archive contract; not native 0.4.0 acceptance."
+    },
+    {
+      "path": "okto_labs_pulse_core\\tests\\test_retirement_context.py",
+      "disposition": "superseded",
+      "reason": "Removed offline conversion or imported archive contract; not native 0.4.0 acceptance."
+    },
+    {
+      "path": "okto_labs_pulse_core\\tests\\test_sprint_retirement_embedded.py",
+      "disposition": "superseded",
+      "reason": "Removed offline conversion or imported archive contract; not native 0.4.0 acceptance."
+    },
+    {
+      "path": "okto_labs_pulse_core\\tests\\test_sprint_retirement_events.py",
+      "disposition": "superseded",
+      "reason": "Removed offline conversion or imported archive contract; not native 0.4.0 acceptance."
+    },
+    {
+      "path": "okto_labs_pulse_community\\tests\\retirement_learning_activation_support.py",
+      "disposition": "superseded",
+      "reason": "Removed offline conversion or imported archive contract; not native 0.4.0 acceptance."
+    },
+    {
+      "path": "okto_labs_pulse_community\\tests\\retirement_predecessor_probe.py",
+      "disposition": "superseded",
+      "reason": "Removed offline conversion or imported archive contract; not native 0.4.0 acceptance."
+    },
+    {
+      "path": "okto_labs_pulse_community\\tests\\test_card_context_retirement.py",
+      "disposition": "superseded",
+      "reason": "Removed offline conversion or imported archive contract; not native 0.4.0 acceptance."
+    },
+    {
+      "path": "okto_labs_pulse_community\\tests\\test_card_retirement_cutover_sequence.py",
+      "disposition": "superseded",
+      "reason": "Removed offline conversion or imported archive contract; not native 0.4.0 acceptance."
+    },
+    {
+      "path": "okto_labs_pulse_community\\tests\\test_context_disposition_retirement.py",
+      "disposition": "superseded",
+      "reason": "Removed offline conversion or imported archive contract; not native 0.4.0 acceptance."
+    },
+    {
+      "path": "okto_labs_pulse_community\\tests\\test_global_outbox_retirement.py",
+      "disposition": "superseded",
+      "reason": "Removed offline conversion or imported archive contract; not native 0.4.0 acceptance."
+    },
+    {
+      "path": "okto_labs_pulse_community\\tests\\test_grafx_global_retirement.py",
+      "disposition": "superseded",
+      "reason": "Removed offline conversion or imported archive contract; not native 0.4.0 acceptance."
+    },
+    {
+      "path": "okto_labs_pulse_community\\tests\\test_grafx_sprint_retirement.py",
+      "disposition": "superseded",
+      "reason": "Removed offline conversion or imported archive contract; not native 0.4.0 acceptance."
+    },
+    {
+      "path": "okto_labs_pulse_community\\tests\\test_historical_archive_authority_v034.py",
+      "disposition": "superseded",
+      "reason": "Removed offline conversion or imported archive contract; not native 0.4.0 acceptance."
+    },
+    {
+      "path": "okto_labs_pulse_community\\tests\\test_historical_archive_discovery.py",
+      "disposition": "superseded",
+      "reason": "Removed offline conversion or imported archive contract; not native 0.4.0 acceptance."
+    },
+    {
+      "path": "okto_labs_pulse_community\\tests\\test_historical_archive_grants.py",
+      "disposition": "superseded",
+      "reason": "Removed offline conversion or imported archive contract; not native 0.4.0 acceptance."
+    },
+    {
+      "path": "okto_labs_pulse_community\\tests\\test_historical_archive_projection_limits.py",
+      "disposition": "superseded",
+      "reason": "Removed offline conversion or imported archive contract; not native 0.4.0 acceptance."
+    },
+    {
+      "path": "okto_labs_pulse_community\\tests\\test_historical_archive_read.py",
+      "disposition": "superseded",
+      "reason": "Removed offline conversion or imported archive contract; not native 0.4.0 acceptance."
+    },
+    {
+      "path": "okto_labs_pulse_community\\tests\\test_historical_context_api.py",
+      "disposition": "superseded",
+      "reason": "Removed offline conversion or imported archive contract; not native 0.4.0 acceptance."
+    },
+    {
+      "path": "okto_labs_pulse_community\\tests\\test_historical_context_mcp.py",
+      "disposition": "superseded",
+      "reason": "Removed offline conversion or imported archive contract; not native 0.4.0 acceptance."
+    },
+    {
+      "path": "okto_labs_pulse_community\\tests\\test_historical_context_read.py",
+      "disposition": "superseded",
+      "reason": "Removed offline conversion or imported archive contract; not native 0.4.0 acceptance."
+    },
+    {
+      "path": "okto_labs_pulse_community\\tests\\test_permission_retirement_checkpoint.py",
+      "disposition": "superseded",
+      "reason": "Removed offline conversion or imported archive contract; not native 0.4.0 acceptance."
+    },
+    {
+      "path": "okto_labs_pulse_community\\tests\\test_permission_retirement_cleanup.py",
+      "disposition": "superseded",
+      "reason": "Removed offline conversion or imported archive contract; not native 0.4.0 acceptance."
+    },
+    {
+      "path": "okto_labs_pulse_community\\tests\\test_permission_retirement_review_installation.py",
+      "disposition": "superseded",
+      "reason": "Removed offline conversion or imported archive contract; not native 0.4.0 acceptance."
+    },
+    {
+      "path": "okto_labs_pulse_community\\tests\\test_retirement_acceptance_installation.py",
+      "disposition": "superseded",
+      "reason": "Removed offline conversion or imported archive contract; not native 0.4.0 acceptance."
+    },
+    {
+      "path": "okto_labs_pulse_community\\tests\\test_retirement_bootstrap_convergence.py",
+      "disposition": "superseded",
+      "reason": "Removed offline conversion or imported archive contract; not native 0.4.0 acceptance."
+    },
+    {
+      "path": "okto_labs_pulse_community\\tests\\test_retirement_bootstrap_graphs.py",
+      "disposition": "superseded",
+      "reason": "Removed offline conversion or imported archive contract; not native 0.4.0 acceptance."
+    },
+    {
+      "path": "okto_labs_pulse_community\\tests\\test_retirement_bootstrap_learning_bindings.py",
+      "disposition": "superseded",
+      "reason": "Removed offline conversion or imported archive contract; not native 0.4.0 acceptance."
+    },
+    {
+      "path": "okto_labs_pulse_community\\tests\\test_retirement_candidate_execution.py",
+      "disposition": "superseded",
+      "reason": "Removed offline conversion or imported archive contract; not native 0.4.0 acceptance."
+    },
+    {
+      "path": "okto_labs_pulse_community\\tests\\test_retirement_candidate_history.py",
+      "disposition": "superseded",
+      "reason": "Removed offline conversion or imported archive contract; not native 0.4.0 acceptance."
+    },
+    {
+      "path": "okto_labs_pulse_community\\tests\\test_retirement_candidate_history_gates.py",
+      "disposition": "superseded",
+      "reason": "Removed offline conversion or imported archive contract; not native 0.4.0 acceptance."
+    },
+    {
+      "path": "okto_labs_pulse_community\\tests\\test_retirement_cognitive_completion.py",
+      "disposition": "superseded",
+      "reason": "Removed offline conversion or imported archive contract; not native 0.4.0 acceptance."
+    },
+    {
+      "path": "okto_labs_pulse_community\\tests\\test_retirement_cognitive_parity.py",
+      "disposition": "superseded",
+      "reason": "Removed offline conversion or imported archive contract; not native 0.4.0 acceptance."
+    },
+    {
+      "path": "okto_labs_pulse_community\\tests\\test_retirement_cognitive_restoration.py",
+      "disposition": "superseded",
+      "reason": "Removed offline conversion or imported archive contract; not native 0.4.0 acceptance."
+    },
+    {
+      "path": "okto_labs_pulse_community\\tests\\test_retirement_data_journal.py",
+      "disposition": "superseded",
+      "reason": "Removed offline conversion or imported archive contract; not native 0.4.0 acceptance."
+    },
+    {
+      "path": "okto_labs_pulse_community\\tests\\test_retirement_edge_provenance.py",
+      "disposition": "superseded",
+      "reason": "Removed offline conversion or imported archive contract; not native 0.4.0 acceptance."
+    },
+    {
+      "path": "okto_labs_pulse_community\\tests\\test_retirement_empty_population.py",
+      "disposition": "superseded",
+      "reason": "Removed offline conversion or imported archive contract; not native 0.4.0 acceptance."
+    },
+    {
+      "path": "okto_labs_pulse_community\\tests\\test_retirement_evidence_continuity.py",
+      "disposition": "superseded",
+      "reason": "Removed offline conversion or imported archive contract; not native 0.4.0 acceptance."
+    },
+    {
+      "path": "okto_labs_pulse_community\\tests\\test_retirement_exact_projection.py",
+      "disposition": "superseded",
+      "reason": "Removed offline conversion or imported archive contract; not native 0.4.0 acceptance."
+    },
+    {
+      "path": "okto_labs_pulse_community\\tests\\test_retirement_global_projection.py",
+      "disposition": "superseded",
+      "reason": "Removed offline conversion or imported archive contract; not native 0.4.0 acceptance."
+    },
+    {
+      "path": "okto_labs_pulse_community\\tests\\test_retirement_graph_candidate.py",
+      "disposition": "superseded",
+      "reason": "Removed offline conversion or imported archive contract; not native 0.4.0 acceptance."
+    },
+    {
+      "path": "okto_labs_pulse_community\\tests\\test_retirement_historical_graph_census.py",
+      "disposition": "superseded",
+      "reason": "Removed offline conversion or imported archive contract; not native 0.4.0 acceptance."
+    },
+    {
+      "path": "okto_labs_pulse_community\\tests\\test_retirement_journal_schema.py",
+      "disposition": "superseded",
+      "reason": "Removed offline conversion or imported archive contract; not native 0.4.0 acceptance."
+    },
+    {
+      "path": "okto_labs_pulse_community\\tests\\test_retirement_learning_execution.py",
+      "disposition": "superseded",
+      "reason": "Removed offline conversion or imported archive contract; not native 0.4.0 acceptance."
+    },
+    {
+      "path": "okto_labs_pulse_community\\tests\\test_retirement_learning_reconciliation.py",
+      "disposition": "superseded",
+      "reason": "Removed offline conversion or imported archive contract; not native 0.4.0 acceptance."
+    },
+    {
+      "path": "okto_labs_pulse_community\\tests\\test_retirement_materialization_guards.py",
+      "disposition": "superseded",
+      "reason": "Removed offline conversion or imported archive contract; not native 0.4.0 acceptance."
+    },
+    {
+      "path": "okto_labs_pulse_community\\tests\\test_retirement_offline_bootstrap.py",
+      "disposition": "superseded",
+      "reason": "Removed offline conversion or imported archive contract; not native 0.4.0 acceptance."
+    },
+    {
+      "path": "okto_labs_pulse_community\\tests\\test_retirement_offline_materialization.py",
+      "disposition": "superseded",
+      "reason": "Removed offline conversion or imported archive contract; not native 0.4.0 acceptance."
+    },
+    {
+      "path": "okto_labs_pulse_community\\tests\\test_retirement_offline_permissions.py",
+      "disposition": "superseded",
+      "reason": "Removed offline conversion or imported archive contract; not native 0.4.0 acceptance."
+    },
+    {
+      "path": "okto_labs_pulse_community\\tests\\test_retirement_offline_run.py",
+      "disposition": "superseded",
+      "reason": "Removed offline conversion or imported archive contract; not native 0.4.0 acceptance."
+    },
+    {
+      "path": "okto_labs_pulse_community\\tests\\test_retirement_offline_schema.py",
+      "disposition": "superseded",
+      "reason": "Removed offline conversion or imported archive contract; not native 0.4.0 acceptance."
+    },
+    {
+      "path": "okto_labs_pulse_community\\tests\\test_retirement_predecessor_rollback.py",
+      "disposition": "superseded",
+      "reason": "Removed offline conversion or imported archive contract; not native 0.4.0 acceptance."
+    },
+    {
+      "path": "okto_labs_pulse_community\\tests\\test_retirement_projection_inputs.py",
+      "disposition": "superseded",
+      "reason": "Removed offline conversion or imported archive contract; not native 0.4.0 acceptance."
+    },
+    {
+      "path": "okto_labs_pulse_community\\tests\\test_retirement_projection_partitions.py",
+      "disposition": "superseded",
+      "reason": "Removed offline conversion or imported archive contract; not native 0.4.0 acceptance."
+    },
+    {
+      "path": "okto_labs_pulse_community\\tests\\test_retirement_projection_source.py",
+      "disposition": "superseded",
+      "reason": "Removed offline conversion or imported archive contract; not native 0.4.0 acceptance."
+    },
+    {
+      "path": "okto_labs_pulse_community\\tests\\test_retirement_relation_inventory.py",
+      "disposition": "superseded",
+      "reason": "Removed offline conversion or imported archive contract; not native 0.4.0 acceptance."
+    },
+    {
+      "path": "okto_labs_pulse_community\\tests\\test_retirement_reused_history.py",
+      "disposition": "superseded",
+      "reason": "Removed offline conversion or imported archive contract; not native 0.4.0 acceptance."
+    },
+    {
+      "path": "okto_labs_pulse_community\\tests\\test_retirement_runtime_admission.py",
+      "disposition": "superseded",
+      "reason": "Removed offline conversion or imported archive contract; not native 0.4.0 acceptance."
+    },
+    {
+      "path": "okto_labs_pulse_community\\tests\\test_retirement_schema_evolution.py",
+      "disposition": "superseded",
+      "reason": "Removed offline conversion or imported archive contract; not native 0.4.0 acceptance."
+    },
+    {
+      "path": "okto_labs_pulse_community\\tests\\test_retirement_schema_storage.py",
+      "disposition": "superseded",
+      "reason": "Removed offline conversion or imported archive contract; not native 0.4.0 acceptance."
+    },
+    {
+      "path": "okto_labs_pulse_community\\tests\\test_retirement_v034_cards.py",
+      "disposition": "superseded",
+      "reason": "Removed offline conversion or imported archive contract; not native 0.4.0 acceptance."
+    },
+    {
+      "path": "okto_labs_pulse_community\\tests\\test_retirement_v034_coordinator.py",
+      "disposition": "superseded",
+      "reason": "Removed offline conversion or imported archive contract; not native 0.4.0 acceptance."
+    },
+    {
+      "path": "okto_labs_pulse_community\\tests\\test_retirement_v034_permissions.py",
+      "disposition": "superseded",
+      "reason": "Removed offline conversion or imported archive contract; not native 0.4.0 acceptance."
+    },
+    {
+      "path": "okto_labs_pulse_community\\tests\\test_retirement_v034_source.py",
+      "disposition": "superseded",
+      "reason": "Removed offline conversion or imported archive contract; not native 0.4.0 acceptance."
+    },
+    {
+      "path": "okto_labs_pulse_community\\tests\\test_sprint_retirement_access.py",
+      "disposition": "superseded",
+      "reason": "Removed offline conversion or imported archive contract; not native 0.4.0 acceptance."
+    },
+    {
+      "path": "okto_labs_pulse_community\\tests\\test_sprint_retirement_archive.py",
+      "disposition": "superseded",
+      "reason": "Removed offline conversion or imported archive contract; not native 0.4.0 acceptance."
+    },
+    {
+      "path": "okto_labs_pulse_community\\tests\\test_sprint_retirement_embedded.py",
+      "disposition": "superseded",
+      "reason": "Removed offline conversion or imported archive contract; not native 0.4.0 acceptance."
+    },
+    {
+      "path": "okto_labs_pulse_community\\tests\\test_sprint_retirement_inventory.py",
+      "disposition": "superseded",
+      "reason": "Removed offline conversion or imported archive contract; not native 0.4.0 acceptance."
+    },
+    {
+      "path": "okto_labs_pulse_community\\tests\\test_sprint_retirement_preflight.py",
+      "disposition": "superseded",
+      "reason": "Removed offline conversion or imported archive contract; not native 0.4.0 acceptance."
+    },
+    {
+      "path": "okto_labs_pulse_community\\tests\\test_sprint_retirement_references.py",
+      "disposition": "superseded",
+      "reason": "Removed offline conversion or imported archive contract; not native 0.4.0 acceptance."
+    },
+    {
+      "path": "okto_labs_pulse_community\\tests\\test_sprint_retirement_work.py",
+      "disposition": "superseded",
+      "reason": "Removed offline conversion or imported archive contract; not native 0.4.0 acceptance."
+    },
+    {
+      "path": "okto_labs_pulse_community\\tests\\test_sprint_work_retirement.py",
+      "disposition": "superseded",
+      "reason": "Removed offline conversion or imported archive contract; not native 0.4.0 acceptance."
+    },
+    {
+      "path": "okto_labs_pulse_core\\tests\\test_data_bootstrapper_contract.py",
+      "disposition": "superseded",
+      "reason": "Exclusive converter/bootstrapper port or historical policy characterization; native policy and schema refusal suites retained."
+    },
+    {
+      "path": "okto_labs_pulse_core\\tests\\test_r16a_relational_schema_migrator.py",
+      "disposition": "superseded",
+      "reason": "Exclusive converter/bootstrapper port or historical policy characterization; native policy and schema refusal suites retained."
+    },
+    {
+      "path": "okto_labs_pulse_core\\tests\\test_sprint_policy_migration_characterization.py",
+      "disposition": "superseded",
+      "reason": "Exclusive converter/bootstrapper port or historical policy characterization; native policy and schema refusal suites retained."
+    },
+    {
+      "path": "okto_labs_pulse_community\\tests\\test_architecture_adoption_schema.py",
+      "disposition": "superseded",
+      "reason": "Exclusive additive upgrade, legacy repair or predecessor convergence contract. Current schema creation/refusal is tested without conversion."
+    },
+    {
+      "path": "okto_labs_pulse_community\\tests\\test_architecture_classification_schema.py",
+      "disposition": "superseded",
+      "reason": "Exclusive additive upgrade, legacy repair or predecessor convergence contract. Current schema creation/refusal is tested without conversion."
+    },
+    {
+      "path": "okto_labs_pulse_community\\tests\\test_f15_sqlite_migration_compatibility.py",
+      "disposition": "superseded",
+      "reason": "Exclusive additive upgrade, legacy repair or predecessor convergence contract. Current schema creation/refusal is tested without conversion."
+    },
+    {
+      "path": "okto_labs_pulse_community\\tests\\test_fixture_fk_orphan_repair.py",
+      "disposition": "superseded",
+      "reason": "Exclusive additive upgrade, legacy repair or predecessor convergence contract. Current schema creation/refusal is tested without conversion."
+    },
+    {
+      "path": "okto_labs_pulse_community\\tests\\test_card9_takedown_schema_migration.py",
+      "disposition": "superseded",
+      "reason": "Exclusive additive upgrade, legacy repair or predecessor convergence contract. Current schema creation/refusal is tested without conversion."
+    },
+    {
+      "path": "okto_labs_pulse_community\\tests\\test_card_rejected_lifecycle_migration.py",
+      "disposition": "superseded",
+      "reason": "Only predecessor backfill/repair/replay tests. Native lifecycle, validation and paginated SQL tests remain.",
+      "test_functions": [
+        "test_legacy_failed_normal_and_bug_cards_converge_once",
+        "test_legacy_rejected_without_verifiable_cause_is_quarantined_once",
+        "test_existing_rejected_task_cause_uses_record_pointer_and_repairs_direct_pointer",
+        "test_incomplete_completion_gate_current_is_quarantined_with_resolvable_source",
+        "test_rejected_lifecycle_step_is_registered"
+      ]
+    },
+    {
+      "path": "okto_labs_pulse_community\\tests\\test_pagination_migration.py",
+      "disposition": "superseded",
+      "reason": "Only predecessor backfill/repair/replay tests. Native lifecycle, validation and paginated SQL tests remain.",
+      "test_functions": [
+        "test_backfill_normalizes_and_is_idempotent",
+        "test_step_registered_in_ledger_and_callables"
+      ]
+    },
+    {
+      "path": "okto_labs_pulse_community\\tests\\test_spec_validation_pointer_repair_migration.py",
+      "disposition": "superseded",
+      "reason": "Only predecessor backfill/repair/replay tests. Native lifecycle, validation and paginated SQL tests remain.",
+      "test_functions": [
+        "test_repair_restores_only_latest_unambiguous_success_and_replays",
+        "test_repair_audits_ambiguous_evidence_without_pointer_mutation"
+      ]
+    },
+    {
+      "path": "okto_labs_pulse_core\\tests\\test_quality_assessment_legacy_import.py",
+      "disposition": "superseded",
+      "reason": "Exclusive one-shot assessment importer removed; current lifecycle and governed erasure tests retained."
+    },
+    {
+      "path": "okto_labs_pulse_community\\tests\\test_predecessor_history_export.py",
+      "disposition": "superseded",
+      "reason": "Exclusive predecessor export or historical seen-marker backfill; native history and seen scopes remain covered."
+    },
+    {
+      "path": "okto_labs_pulse_community\\tests\\test_f3_seen_marker_schema_retirement.py",
+      "disposition": "superseded",
+      "reason": "Exclusive predecessor export or historical seen-marker backfill; native history and seen scopes remain covered."
+    }
+  ],
+  "adapted_suites": [
+    {
+      "path": "okto_labs_pulse_community\\tests\\test_r16b_relational_schema_migrator.py",
+      "removed_test_functions": [
+        "test_code_traceability_migration_upgrades_only_legacy_policy_values",
+        "test_legacy_default_template_table_gains_nullable_checklist_mode",
+        "test_legacy_specs_gain_backfilled_non_null_edition",
+        "test_lifecycle_edition_migration_converges_nullable_sqlite_schema",
+        "test_postgresql_policy_materialization_trigger_matches_json_column_type",
+        "test_ts_35ad79e3_adapter_module_is_layer_isolated",
+        "test_ts_5283c465_golden_replay_matches_baseline",
+        "test_ts_5283c465_replay_over_baseline_does_not_alter_schema",
+        "test_ts_7aacc71a_destructive_steps_are_explicitly_allowlisted",
+        "test_ts_7aacc71a_ledger_covers_all_migrate_functions",
+        "test_ts_7aacc71a_ledger_order_matches_community_step_registry",
+        "test_ts_7c1fc064_absent_migrator_fail_closed",
+        "test_ts_7c1fc064_agent_permission_migration_rolls_back_and_fails_closed",
+        "test_ts_7c1fc064_failing_step_yields_partial_never_success",
+        "test_ts_7c1fc064_first_step_failure_is_failed_not_partial",
+        "test_ts_7c1fc064_invalid_plan_raises_schema_migration_error",
+        "test_ts_7c1fc064_missing_callable_is_fail_closed",
+        "test_ts_7d52dffc_idempotent_replay_no_drift",
+        "test_ts_83050921_adapter_defines_no_parallel_dtos",
+        "test_ts_83050921_isinstance_of_port_protocol",
+        "test_ts_83050921_plan_and_execute_traffic_canonical_dtos",
+        "test_v030_installed_schema_requires_offline_cutover_without_mutation"
+      ],
+      "current_test_functions": [
+        "test_first_init_is_schema_complete_and_second_init_has_no_object_drift",
+        "test_fresh_create_all_installs_canonical_lifecycle_edition_guards",
+        "test_ts_35ad79e3_core_database_no_lifecycle_sql",
+        "test_ts_35ad79e3_core_does_not_import_community",
+        "test_ts_35ad79e3_core_ports_is_pure_no_sqlalchemy_no_community"
+      ],
+      "reason": "Upgrade/bootstrap ledgers and predecessor normalization retired. Native creation/restart, seeds, authored permission preservation, Core boundaries and lifecycle failures retained."
+    },
+    {
+      "path": "okto_labs_pulse_community\\tests\\test_r16c_data_bootstrapper.py",
+      "removed_test_functions": [
+        "test_c7_legacy_quality_bootstrap_imports_and_replays_without_drift",
+        "test_c7_legacy_quality_bootstrap_replays_after_subject_purge",
+        "test_permission_flag_null_storage_is_backward_compatible_on_replay",
+        "test_permission_flag_reconcile_propagates_database_failure_after_rollback",
+        "test_permission_flag_reconcile_rejects_invalid_canonical_shape_in_database",
+        "test_permission_flag_reconcile_rejects_invalid_documents_and_rolls_back",
+        "test_permission_upgrade_normalizes_full_control_and_preset_snapshots",
+        "test_ts_26bd0c7a_ledger_domains_in_order",
+        "test_ts_26bd0c7a_ledger_matches_community_bootstrap_registry",
+        "test_ts_5154c83c_adapter_defines_no_parallel_dtos",
+        "test_ts_5154c83c_dto_field_sets_exact",
+        "test_ts_5154c83c_isinstance_of_port_protocol",
+        "test_ts_5154c83c_plan_and_execute_traffic_canonical_dtos",
+        "test_ts_533312dd_discovery_intents_preserved_on_rerun",
+        "test_ts_5a7b50e2_data_and_schema_ledgers_are_disjoint",
+        "test_ts_71673acb_idempotent_replay_preserves_presets_and_flags",
+        "test_ts_71673acb_permission_flags_stay_sparse_and_preserve_overrides",
+        "test_ts_8d495739_contract_imports_in_isolation",
+        "test_ts_c2790a33_absent_bootstrapper_fail_closed",
+        "test_ts_c2790a33_execute_in_running_loop_is_fail_closed",
+        "test_ts_c2790a33_failing_step_yields_partial_never_success",
+        "test_ts_c2790a33_first_step_failure_is_failed_not_partial",
+        "test_ts_c2790a33_invalid_plan_raises",
+        "test_ts_c2790a33_missing_callable_is_fail_closed"
+      ],
+      "current_test_functions": [
+        "test_current_seeds_repeat_without_rewriting_authority"
+      ],
+      "reason": "Upgrade/bootstrap ledgers and predecessor normalization retired. Native creation/restart, seeds, authored permission preservation, Core boundaries and lifecycle failures retained."
+    },
+    {
+      "path": "okto_labs_pulse_community\\tests\\test_r01c_imp4_schema_lifecycle_orchestrator.py",
+      "removed_test_functions": [
+        "test_commutativity_migrate_and_seed_yield_identical_state",
+        "test_disjoint_seed_touches_only_presets_migrate_only_agents",
+        "test_legacy_json_null_permissions_replay_matches_sql_null",
+        "test_legacy_replay_preserves_rows_migrates_and_idempotent",
+        "test_migrate_agent_permissions_precedes_reconcile",
+        "test_orchestrator_fail_closed_on_bootstrap_failure",
+        "test_orchestrator_fail_closed_on_schema_failure"
+      ],
+      "current_test_functions": [
+        "test_core_init_db_has_no_inline_lifecycle_order",
+        "test_empty_replay_registered_init_db_matches_direct_orchestrator",
+        "test_init_db_delegates_to_registered_orchestrator",
+        "test_init_db_fails_closed_when_no_orchestrator_registered",
+        "test_orchestrator_propagates_failure_without_running_later_steps",
+        "test_register_helper_sets_the_core_seam"
+      ],
+      "reason": "Upgrade/bootstrap ledgers and predecessor normalization retired. Native creation/restart, seeds, authored permission preservation, Core boundaries and lifecycle failures retained."
+    }
+  ]
+}

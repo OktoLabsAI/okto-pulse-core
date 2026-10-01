@@ -19,9 +19,6 @@ PUBLIC_FACADE_SYMBOLS: dict[str, tuple[str, ...]] = {
         "hash_api_key",
         "list_accessible_board_ids_for_agent",
     ),
-    "okto_pulse.core.services.application_startup": (
-        "backfill_qa_answered_at",
-    ),
     "okto_pulse.core.mcp": (
         "build_mcp_asgi_app",
         "effective_resource_catalog",
@@ -137,7 +134,6 @@ def test_ts_72c34282_public_service_facades_import_internals_lazily_only() -> No
     for rel_path in (
         "src/okto_pulse/core/services/application_kg.py",
         "src/okto_pulse/core/services/application_agents.py",
-        "src/okto_pulse/core/services/application_startup.py",
         "src/okto_pulse/core/mcp/__init__.py",
     ):
         tree = ast.parse((CORE_ROOT / rel_path).read_text(encoding="utf-8"))

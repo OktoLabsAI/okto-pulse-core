@@ -640,35 +640,6 @@ class TestSqlAlchemyApplicationPersistence:
         await context.rollback()
         self._clear_tracking(context)
 
-    async def backfill_qa_answered_at(self, context: Any) -> dict[str, int]:
-        from sqlalchemy import text
-
-        tables = (
-            ("ideation_qa_items", True),
-            ("refinement_qa_items", True),
-            ("spec_qa_items", True),
-            ("qa_items", False),
-        )
-        fixed: dict[str, int] = {}
-        for table, has_selected in tables:
-            answered = "(answer IS NOT NULL AND answer != '')"
-            if has_selected:
-                answered = (
-                    f"({answered} OR (selected IS NOT NULL "
-                    "AND CAST(selected AS TEXT) NOT IN ('', '[]', 'null')))"
-                )
-            result = await context.execute(
-                text(
-                    f"UPDATE {table} "
-                    "SET answered_at = COALESCE(created_at, CURRENT_TIMESTAMP) "
-                    f"WHERE answered_at IS NULL AND {answered}"
-                )
-            )
-            count = result.rowcount if result.rowcount and result.rowcount > 0 else 0
-            if count:
-                fixed[table] = count
-        await context.commit()
-        return fixed
 
 
 __all__ = ["TestSqlAlchemyApplicationPersistence"]
