@@ -300,27 +300,20 @@ repository to establish these facts. An authenticated external agent first
 performs the capability/access preflight and deterministic investigation in its
 own environment, then submits the bounded receipt and Evidence.
 
-Every effective item states its origin explicitly:
-`authored`, `human_legacy_classification`, or `unclassified_legacy`. Never
-infer legacy meaning from a path, evidence type, or claim. Legacy
-classification is an append-only batch guarded by
-`code_traceability.evidence.classify_legacy`: authorized agents use
-`okto_pulse_classify_legacy_code_evidence`, humans may use UI/REST. A V1
-receipt remains V1 after classification and may still require a fresh V2
-investigation for current gate authority.
+Every effective Evidence item has authored context. Read its explicit role and
+baseline provenance; do not infer source meaning from paths or claims.
 
 A derived Spec is intentionally frozen to the exact Refinement snapshot's
 delivery-context and source-context manifest, including receipt context
-versions and per-Evidence classification revision/digest. Later live
-Evidence, receipt, or human-classification changes do not silently rewrite the
+versions and per-Evidence contextual digest. Later live
+Evidence or receipt changes do not silently rewrite the
 Spec. To adopt a newer Refinement snapshot, use the governed rebase preview,
-review the context/classification/link/disposition delta, and apply that exact
+review the context/link/disposition delta, and apply that exact
 `preview_sha256`. Never simulate a rebase by copying Evidence, editing links,
 or rewriting the manifest. If preview/apply is not available over MCP, surface
 the required authorized UI/REST action.
 
-New writes are contextual V2. If the live inbound schema exposes only V1
-`accessible`/unclassified Evidence, stop and report the missing capability;
-do not create ambiguous compatibility history to advance the Spec.
+Only contextual writes with `contract_version=2` are accepted. Earlier formats
+are rejected without conversion.
 
 Canonical protocol: `okto-pulse://reference/code-traceability`.

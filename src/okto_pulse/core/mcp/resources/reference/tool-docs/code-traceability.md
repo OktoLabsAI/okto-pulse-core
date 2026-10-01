@@ -370,10 +370,8 @@ Do not stop after this call when access exists. The accepted receipt is the
 attestation fence for the Code Evidence or Target Resolution that communicates
 the investigation result.
 
-V1 `accessible|partial|unavailable` receipts remain readable only. They do not
-prove contextual applicability. If the live MCP schema does not advertise the
-V2 discriminator/outcomes, stop and surface the missing capability rather than
-using V1 for a new write.
+Receipts require the current contextual contract. The result exposes
+`contextual_outcome`; earlier outcome formats are rejected without conversion.
 
 ## `okto_pulse_get_code_investigation_receipt`
 
@@ -400,8 +398,7 @@ Args:
     claim: Standalone human assertion explaining what was observed. “See file”
         and an ID alone are not useful Evidence.
     source_role: `current_implementation`, `existing_scaffold`,
-        `existing_constraint`, or `reference_pattern`. Never author
-        `uncategorized_legacy`.
+        `existing_constraint`, or `reference_pattern`.
     relevance_summary/scope_relation/source_origin: Required bounded context
         that makes the observation understandable to a clean-context consumer.
     interpretation_limit: Required for `existing_scaffold` and
@@ -450,48 +447,14 @@ okto_pulse_submit_code_evidence(
 )
 ```
 
-These V2-only fields must be present in the live inbound schema. A legacy MCP
-shape is not permission to omit them; stop rather than create ambiguous V1
-Evidence.
+All contextual fields above are required by the current inbound contract.
+Immutable Evidence is projected through `source_context` and
+`source_context_items` with `context_origin=authored` and complete role counts.
+Summary/gate and detail/full projections retain their permission boundaries.
 
-## Effective context and explicit actor classification
-
-`okto_pulse_get_code_evidence` and `okto_pulse_list_code_evidence` expose the
-immutable Evidence record. The entity context's `source_context` and
-`source_context_items` expose effective contextual meaning, including
-`context_origin=authored|human_legacy_classification|unclassified_legacy`,
-complete role counts, and classification state. The middle origin is a
-compatibility label for an actor-authored overlay. Summary/gate projections
-omit classifier identity; detail/full may expose it for authorized audit.
-
-An authorized human may use the UI/REST batch and an authorized agent may use
-`okto_pulse_classify_legacy_code_evidence`. Both are governed by
-`code_traceability.evidence.classify_legacy`; each correction appends a new
-revision over the immutable Evidence payload. Agents must consume the exact
-server-authored classification inputs and must request human input when the
-available context does not support a defensible classification.
-
-A derived Spec keeps the source-context manifest frozen at its exact
-Refinement snapshot. Live Evidence or human-classification changes do not
-rewrite it. Adopt a later snapshot only through the governed preview/apply
-rebase and its exact `preview_sha256`; when that surface is not available over
-MCP, request the authorized UI/REST action.
-
-## `okto_pulse_classify_legacy_code_evidence`
-
-Append one atomic classification batch over legacy Evidence.
-
-Args:
-    board_id: Board owning every Evidence item.
-    items: Complete classification items using the exact projected
-        `expected_evidence_payload_sha256`, `expected_classification_revision`,
-        and `baseline_provenance`, plus explicit source role, relevance, scope,
-        origin, and any required interpretation limit.
-    justification: Plain-language reason supporting the batch decision.
-    idempotency_key: Reuse only for a byte-for-byte retry.
-
-The tool never edits the original Evidence. A stale payload or classification
-revision fails closed; refresh the current Refinement context before retrying.
+A derived Spec pins the source-context manifest of its exact Refinement
+snapshot. Later Evidence does not rewrite that history. Adopt a later snapshot
+only through governed preview/apply rebase with its exact `preview_sha256`.
 
 ## `okto_pulse_get_code_evidence`
 

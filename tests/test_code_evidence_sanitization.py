@@ -43,6 +43,15 @@ def _sha(value: str) -> str:
 
 def _submission(*, receipt_id: str, excerpt: str) -> CodeEvidenceSubmission:
     return CodeEvidenceSubmission(
+        contract_version=2,
+        source_role="current_implementation",
+        relevance_summary="Current implementation behavior.",
+        scope_relation="same delivery scope",
+        source_origin="repository baseline",
+        baseline_provenance={
+            "presence": "committed_snapshot",
+            "workspace_state_id": "workspace-1",
+        },
         board_id="board-1",
         investigation_receipt_id=receipt_id,
         parent_type=CodeTraceabilitySubjectType.REFINEMENT,

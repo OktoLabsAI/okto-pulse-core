@@ -449,6 +449,15 @@ async def test_arbitrary_mcp_query_runs_with_complete_ct_read_grant(
 ) -> None:
     from okto_pulse.core.mcp import kg_power_tools
 
+    async def query_policy(_board_id, _board_agent):
+        return SimpleNamespace(effective_timeout=lambda value: value or 15000)
+
+    async def execute_budgeted(_board_id, _timeout_ms, operation):
+        return operation()
+
+    monkeypatch.setattr(kg_power_tools, "_read_query_policy", query_policy)
+    monkeypatch.setattr(kg_power_tools, "_run_query_with_deadline", execute_budgeted)
+
     async def _agent():
         return SimpleNamespace(id="agent-ct-kg")
 

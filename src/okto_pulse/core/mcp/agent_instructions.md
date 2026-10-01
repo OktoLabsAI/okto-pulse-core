@@ -87,7 +87,7 @@ Before Spec Done, use `okto_pulse_get_delivery_evidence` / `okto_pulse_record_de
 
 - **Validation & move gates**: `okto_pulse_move_{card,ideation,refinement,spec}`, `submit_{task_validation,spec_validation,spec_evaluation}`; coverage check: `okto_pulse_get_traceability_report`.
 - **Quality evidence**: read `okto-pulse://reference/quality-assessments` before recording ambiguity or using a receipt/currentness result in a gate decision.
-- **Code Traceability**: read `okto-pulse://reference/code-traceability` and confirm explicit `delivery_context`. Evidence is contextual V2 and AS-IS only; Greenfield scaffold/base/reference needs a truthful role and `interpretation_limit`; planned TO-BE structure belongs in Spec/Architecture/Target. Authorized agents classify legacy evidence with `okto_pulse_classify_legacy_code_evidence` and `code_traceability.evidence.classify_legacy`; humans may use UI/REST. Never infer provenance or upgrade V1 by classification. A derived Spec remains frozen until explicit preview-fenced rebase.
+- **Code Traceability**: read `okto-pulse://reference/code-traceability` and confirm explicit `delivery_context`. Evidence is contextual V2 and AS-IS only; Greenfield scaffold/base/reference needs a truthful role and `interpretation_limit`; planned TO-BE structure belongs in Spec/Architecture/Target. Earlier Evidence formats are rejected without conversion. A derived Spec remains frozen until explicit preview-fenced rebase.
 
 ### Response projection profiles — summary-first reads
 Use `summary` for exploration, `detail`/drilldowns for bodies, `full` for gate

@@ -355,8 +355,7 @@ When Code Traceability is enabled, use this order before implementation:
 1. Read `okto_pulse_get_task_context(profile="full", context_scope="gate")`.
 2. Review the inherited `delivery_context`, effective `source_context`,
    relevant Code Evidence, and dispositions. Counts describe the complete
-   effective set even when item drilldowns are bounded; never infer a legacy
-   item's meaning.
+   effective set even when item drilldowns are bounded; read each item's explicit authored context.
 3. Start the initial Card preflight request. The authenticated external agent
    checks real access and capabilities and investigates the source in its own
    environment; Pulse Core and Pulse Community never open or search it.
@@ -386,11 +385,8 @@ selector scope predates that Target.
 For Greenfield/Hybrid work, an existing starter/base can be Evidence only as
 `existing_scaffold` with an explicit `interpretation_limit`; source consulted
 only as a pattern is `reference_pattern`. Neither proves the requested behavior
-already exists. `unclassified_legacy` remains visible until an authorized actor
-appends classification: agents use `okto_pulse_classify_legacy_code_evidence`
-with `code_traceability.evidence.classify_legacy`; humans may use UI/REST.
-Use defensible provenance and fresh CAS inputs, never guessed source meaning.
-Classification does not upgrade a V1 receipt or rewrite a frozen Spec snapshot.
+already exists. Every Evidence item requires authored context and defensible
+baseline provenance. Earlier formats are rejected without conversion.
 
 Run a new external preflight, re-evaluate the Targets, and submit a new receipt
 when a dependency finishes, the observed workspace fingerprint changes, a

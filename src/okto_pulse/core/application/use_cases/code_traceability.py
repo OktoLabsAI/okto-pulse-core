@@ -10,7 +10,7 @@ structured attestation to these commands.
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from typing import Any
 
 from okto_pulse.core.application.use_cases.authorization import (
@@ -20,13 +20,11 @@ from okto_pulse.core.application.use_cases.authorization import (
 from okto_pulse.core.application.use_cases.base import (
     ActorContext,
     EntityNotFoundError,
-    PermissionDeniedError,
     commit,
 )
 from okto_pulse.core.domain.code_traceability import (
     CodeDeliveryContextRequired,
     CodeEvidence,
-    CodeEvidenceLegacyClassificationHumanRequired,
     CodeEvidenceLinkInvalid,
     CodeInvestigationAttestorMismatch,
     CodeInvestigationRequestNotFound,
@@ -57,7 +55,6 @@ from okto_pulse.core.events.code_traceability import (
 )
 from okto_pulse.core.events.types import (
     CodeEvidenceCreated,
-    CodeEvidenceLegacyClassified,
     CodeEvidenceDispositionChanged,
     CodeEvidenceLinked,
     CodeEvidenceRevoked,
@@ -86,10 +83,7 @@ from okto_pulse.core.models.code_traceability import (
     CodeEvidenceSubmission,
     CodeEvidenceSupersessionSubmission,
     CodeEvidenceView,
-    LegacyEvidenceClassificationBatchInput,
-    LegacyEvidenceClassificationBatchResult,
     CodeInvestigationReceiptSubmission,
-    CodeInvestigationReceiptSubmissionV2,
     CodeInvestigationReceiptView,
     CodeInvestigationRequestView,
     CodeTraceabilityWaiverClearInput,
@@ -120,9 +114,6 @@ from okto_pulse.core.services.code_evidence import (
     CodeEvidenceRevocationResult,
     CodeEvidenceService,
     CodeEvidenceUnlinkMutationResult,
-)
-from okto_pulse.core.services.legacy_code_evidence_classification import (
-    LegacyCodeEvidenceClassificationService,
 )
 from okto_pulse.core.services.code_evidence_rebase import (
     SpecCodeEvidenceRebasePlan,
@@ -492,17 +483,7 @@ def _code_evidence_event_context(
 
     baseline = evidence.baseline_provenance
     if baseline is None:
-        return {
-            "context_contract_version": evidence.context_contract_version,
-            "source_role": None,
-            "baseline_presence": None,
-            "relevance_summary": None,
-            "scope_relation": None,
-            "source_origin": None,
-            "interpretation_limit": None,
-            "baseline_workspace_state_id": None,
-            "baseline_provenance_note": None,
-        }
+        raise CodeTraceabilityContractError("code_evidence_baseline_provenance_invalid")
     return {
         "context_contract_version": evidence.context_contract_version,
         "source_role": evidence.source_role.value,
@@ -944,7 +925,6 @@ class SubmitCodeInvestigationReceiptUseCase:
         self,
         command: (
             CodeInvestigationReceiptSubmission
-            | CodeInvestigationReceiptSubmissionV2
         ),
         *,
         actor: ActorContext,
@@ -999,18 +979,17 @@ class SubmitCodeInvestigationReceiptUseCase:
                 exc = CodeInvestigationSubjectVersionConflict()
                 _observe_receipt_rejection(exc)
                 raise exc
-            if isinstance(command, CodeInvestigationReceiptSubmissionV2):
-                try:
-                    delivery_context = await _subject_delivery_context(
-                        subject,
-                        board_id=command.board_id,
-                        subject_type=request.subject_type,
-                        uow=uow,
-                    )
-                except CodeTraceabilityContractError as exc:
-                    _observe_receipt_rejection(exc)
-                    raise
-        elif isinstance(command, CodeInvestigationReceiptSubmissionV2):
+            try:
+                delivery_context = await _subject_delivery_context(
+                    subject,
+                    board_id=command.board_id,
+                    subject_type=request.subject_type,
+                    uow=uow,
+                )
+            except CodeTraceabilityContractError as exc:
+                _observe_receipt_rejection(exc)
+                raise
+        else:
             delivery_context = replay.delivery_context
             if delivery_context is None:
                 exc = CodeDeliveryContextRequired()
@@ -1032,7 +1011,7 @@ class SubmitCodeInvestigationReceiptUseCase:
             _observe_receipt_rejection(exc)
             raise
         receipt = submitted.receipt
-        effective_outcome = receipt.effective_outcome.value
+        effective_outcome = receipt.contextual_outcome.value
         await _publish_mutation_event(
             uow,
             CodeInvestigationReceiptSubmitted,
@@ -1042,22 +1021,13 @@ class SubmitCodeInvestigationReceiptUseCase:
             investigation_request_id=receipt.request_id,
             investigation_receipt_id=receipt.id,
             acceptance_status=receipt.acceptance_status.value,
-            outcome=receipt.outcome.value,
             trust_level=receipt.trust_level.value,
             generation=receipt.generation,
             omission_count=receipt.omission_count,
             observation_sha256=receipt.observation_sha256,
             payload_sha256=receipt.payload_sha256,
-            delivery_context=(
-                None
-                if receipt.delivery_context is None
-                else receipt.delivery_context.value
-            ),
-            contextual_outcome=(
-                None
-                if receipt.contextual_outcome is None
-                else receipt.contextual_outcome.value
-            ),
+            delivery_context=receipt.delivery_context.value,
+            contextual_outcome=receipt.contextual_outcome.value,
             context_contract_version=receipt.context_contract_version,
         )
         if not submitted.replayed:
@@ -1166,73 +1136,6 @@ class GetCodeInvestigationReceiptUseCase:
         )
 
 
-class ClassifyLegacyCodeEvidenceUseCase:
-    """Authorized human-or-agent governance over ambiguous pre-V2 Evidence."""
-
-    def __init__(
-        self,
-        service: LegacyCodeEvidenceClassificationService | None = None,
-    ) -> None:
-        self._service = service or LegacyCodeEvidenceClassificationService()
-
-    async def execute(
-        self,
-        command: LegacyEvidenceClassificationBatchInput,
-        *,
-        actor: ActorContext,
-        uow: PulseUnitOfWork,
-    ) -> LegacyEvidenceClassificationBatchResult:
-        # Identity class and transport are authenticated facts. Both the UI
-        # and the agent boundary may classify when the board grants the same
-        # granular permission. Unknown/system callers still fail before any
-        # board, Evidence, replay or permission read, preventing an existence
-        # oracle.
-        authorized_identity = (
-            actor.source == "rest"
-            and actor.actor_kind in {"agent", "human", "user"}
-        ) or (actor.source == "mcp" and actor.actor_kind == "agent")
-        if not authorized_identity:
-            raise CodeEvidenceLegacyClassificationHumanRequired()
-        await _authorize(
-            actor,
-            uow,
-            board_id=command.board_id,
-            operation="code_traceability.evidence.classify_legacy",
-        )
-        await _load_policy(board_id=command.board_id, uow=uow)
-        receipt = await self._service.classify(
-            command,
-            actor_id=actor.actor_id,
-            store=uow.services.code_traceability,
-        )
-        for item in receipt.classifications:
-            await _publish_mutation_event(
-                uow,
-                CodeEvidenceLegacyClassified,
-                actor=actor,
-                board_id=command.board_id,
-                replayed=receipt.replayed,
-                classification_id=item.id,
-                batch_id=item.batch_id,
-                evidence_id=item.evidence_id,
-                evidence_payload_sha256=item.evidence_payload_sha256,
-                classification_revision=item.revision,
-                predecessor_classification_id=(
-                    item.predecessor_classification_id
-                ),
-                classification_sha256=item.classification_sha256,
-                request_sha256=item.request_sha256,
-                justification_sha256=code_traceability_event_digest(
-                    item.justification
-                ),
-                source_role=item.source_role.value,
-                context_contract_version=item.context_contract_version,
-                batch_item_count=item.batch_item_count,
-                batch_item_index=item.batch_item_index,
-            )
-        if not receipt.replayed:
-            await commit(uow)
-        return LegacyEvidenceClassificationBatchResult.project(receipt)
 
 
 class SubmitCodeEvidenceUseCase:
@@ -2570,16 +2473,6 @@ class GetCodeTraceabilityProjectionUseCase:
                 board_id=query.board_id,
                 operation=operation,
             )
-        can_classify_legacy_evidence = True
-        try:
-            await _authorize(
-                actor,
-                uow,
-                board_id=query.board_id,
-                operation="code_traceability.evidence.classify_legacy",
-            )
-        except PermissionDeniedError:
-            can_classify_legacy_evidence = False
         subject = await _load_subject(
             board_id=query.board_id,
             subject_type=query.subject_type,
@@ -2603,11 +2496,6 @@ class GetCodeTraceabilityProjectionUseCase:
             query,
             read_port=uow.services.code_traceability_read,
         )
-        if not can_classify_legacy_evidence:
-            context = replace(
-                context,
-                source_context_classification_inputs=(),
-            )
         card_type = "normal"
         dependency_card_ids: tuple[str, ...] = ()
         blocking_card_ids: tuple[str, ...] = ()
@@ -2686,7 +2574,6 @@ __all__ = [
     "ApplySpecCodeEvidenceRebaseUseCase",
     "ClearCodeEvidenceDispositionUseCase",
     "ClearCodeTraceabilityNotApplicableUseCase",
-    "ClassifyLegacyCodeEvidenceUseCase",
     "CreateImplementationTargetUseCase",
     "GetCodeEvidenceCommand",
     "GetCodeEvidenceUseCase",

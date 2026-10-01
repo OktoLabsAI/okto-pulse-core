@@ -205,17 +205,9 @@ references may still be recorded as AS-IS Evidence under
 Scaffold/reference items require `interpretation_limit`.
 
 Never submit TO-BE files or structures as Evidence. Put them in the Spec,
-Architecture Design, mockup, or Implementation Target. V1 remains readable but
-contextually unclassified and cannot be inferred into V2 authority. If the
-live inbound surface exposes only V1, stop and report the missing V2
-capability.
+Architecture Design, mockup, or Implementation Target. Only the native contextual
+contract is accepted; earlier formats are rejected without conversion.
 
-If `source_context_items` reports `unclassified_legacy`, inspect the exact IDs.
-An authorized agent may append classification with
-`okto_pulse_classify_legacy_code_evidence`; an authorized human may use UI/REST.
-Both require `code_traceability.evidence.classify_legacy`, defensible provenance
-and current CAS inputs. Without authority or evidence, report the blocker.
-The original Evidence remains immutable; classification does not upgrade V1.
 Read the effective `source_context` summary even when item collections are
 bounded. Treat a derived Spec's source-context manifest as frozen until an
 explicit, preview-fenced rebase.

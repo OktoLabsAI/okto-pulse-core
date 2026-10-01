@@ -380,36 +380,29 @@ async def test_refinement_gate_rejects_unrelated_waiver_for_stale_receipt() -> N
         receipts=(committed.receipt,),
         evidence=(evidence,),
     )
-    unclassified = replace(
+    reference_only = replace(
         evidence,
-        source_role=CodeEvidenceSourceRole.UNCATEGORIZED_LEGACY,
-        relevance_summary=None,
-        scope_relation=None,
-        source_origin=None,
-        interpretation_limit=None,
-        baseline_provenance=None,
-        context_contract_version=None,
+        source_role=CodeEvidenceSourceRole.REFERENCE_PATTERN,
+        interpretation_limit="Reference pattern; does not prove current implementation.",
     )
-    legacy_blocked = evaluator.evaluate(
-        replace(context, evidence=(unclassified,)),
+    reference_blocked = evaluator.evaluate(
+        replace(context, evidence=(reference_only,)),
         settings,
         phases=(CodeTraceabilityGatePhase.REFINEMENT_EVIDENCE,),
-        referenced_evidence_ids=(unclassified.id,),
+        referenced_evidence_ids=(reference_only.id,),
     )
-    assert legacy_blocked.allowed is False
-    assert legacy_blocked.blockers[0].code == (
+    assert reference_blocked.allowed is False
+    assert reference_blocked.blockers[0].code == (
         "code_evidence_materiality_link_required"
     )
-    legacy_receipt_blocked = evaluator.evaluate(
+    applicable = evaluator.evaluate(
         context,
         settings,
         phases=(CodeTraceabilityGatePhase.REFINEMENT_EVIDENCE,),
         referenced_evidence_ids=(evidence.id,),
     )
-    assert legacy_receipt_blocked.allowed is False
-    assert legacy_receipt_blocked.blockers[0].code == (
-        "code_evidence_materiality_link_required"
-    )
+    assert applicable.allowed is True
+    assert applicable.blockers == ()
     missing_reference = evaluator.evaluate(
         context,
         settings,
@@ -472,7 +465,7 @@ async def test_refinement_gate_rejects_unrelated_waiver_for_stale_receipt() -> N
 
 
 @pytest.mark.asyncio
-async def test_metadata_only_legacy_receipt_has_no_gate_authority() -> None:
+async def test_native_metadata_only_receipt_requires_applicable_materiality() -> None:
     clock = MutableClock()
     store = FakeInvestigationStore()
     service = CodeInvestigationService(
@@ -531,8 +524,8 @@ async def test_metadata_only_legacy_receipt_has_no_gate_authority() -> None:
         phases=(CodeTraceabilityGatePhase.REFINEMENT_EVIDENCE,),
         referenced_evidence_ids=(evidence.id,),
     )
-    assert evaluation.allowed is False
-    assert evaluation.blockers[0].code == "code_evidence_materiality_link_required"
+    assert evaluation.allowed is True
+    assert evaluation.blockers == ()
     assert evaluation.receipt_currentness[committed.receipt.id] == "current"
 
 

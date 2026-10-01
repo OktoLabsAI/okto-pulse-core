@@ -170,7 +170,7 @@ Get the full immutable snapshot of a refinement at a specific version.
 Includes all fields as they were when the refinement was marked 'done',
 plus a snapshot of all Q&A at that point. For contextual Code Evidence, the
 snapshot also freezes delivery-context provenance, receipt context versions,
-and the effective Evidence context origin/classification revision and digest.
+and the effective Evidence authored context and digest.
 
 Args:
     board_id: Board ID
@@ -286,12 +286,9 @@ tests are TO-BE and belong in the Refinement/Spec, Architecture Design, or Card
 Implementation Target, never Evidence.
 
 Correct authored historical Evidence only through
-`okto_pulse_supersede_code_evidence`; never replace a snapshot in place. V1
-items project fail-closed as `uncategorized_legacy`. Authorized agents may use
-`okto_pulse_classify_legacy_code_evidence` with
-`code_traceability.evidence.classify_legacy`; authorized humans may use UI/REST.
-Classification is append-only and does not upgrade the V1 receipt. Read effective
-`source_context` rather than inferring meaning from raw or bounded item lists.
+`okto_pulse_supersede_code_evidence`; never replace a snapshot in place.
+Only the native contextual contract is accepted. Read effective `source_context`
+rather than inferring meaning from raw or bounded item lists.
 
 Pulse and Community do not open, clone, search, or resolve the repository.
 Full procedure and typed outcomes:

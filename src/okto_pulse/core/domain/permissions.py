@@ -1109,22 +1109,6 @@ CODE_TRACEABILITY_PERMISSION_INTRODUCTION_V1 = PermissionIntroductionManifest(
 )
 
 
-CODE_EVIDENCE_LEGACY_CLASSIFICATION_PERMISSION_INTRODUCTION_V1 = (
-    PermissionIntroductionManifest(
-        version="CODE-EVIDENCE-LEGACY-CLASSIFICATION/v1",
-        leaves=("code_traceability.evidence.classify_legacy",),
-        preset_grants=_explicit_preset_grants(
-            ("code_traceability.evidence.classify_legacy",),
-            {"Spec": ("code_traceability.evidence.classify_legacy",)},
-        ),
-        historical_authorities=(
-            (
-                "code_traceability.evidence.classify_legacy",
-                "spec.entity.edit_fields",
-            ),
-        ),
-    )
-)
 
 
 SKM_PERMISSION_INTRODUCTION_V1 = PermissionIntroductionManifest(
@@ -1179,7 +1163,6 @@ PERMISSION_INTRODUCTION_MANIFESTS: tuple[PermissionIntroductionManifest, ...] = 
     KG_OPERATIONS_PERMISSION_INTRODUCTION_V1,
     SDLC_TRANSITION_PERMISSION_INTRODUCTION_V1,
     CODE_TRACEABILITY_PERMISSION_INTRODUCTION_V1,
-    CODE_EVIDENCE_LEGACY_CLASSIFICATION_PERMISSION_INTRODUCTION_V1,
     SKM_PERMISSION_INTRODUCTION_V1,
     TASK_REJECTED_PERMISSION_INTRODUCTION_V1,
 )
@@ -1218,7 +1201,6 @@ PERMISSION_INTRODUCTION_MANIFESTS = tuple(
     KG_OPERATIONS_PERMISSION_INTRODUCTION_V1,
     SDLC_TRANSITION_PERMISSION_INTRODUCTION_V1,
     CODE_TRACEABILITY_PERMISSION_INTRODUCTION_V1,
-    CODE_EVIDENCE_LEGACY_CLASSIFICATION_PERMISSION_INTRODUCTION_V1,
     SKM_PERMISSION_INTRODUCTION_V1,
     TASK_REJECTED_PERMISSION_INTRODUCTION_V1,
 ) = PERMISSION_INTRODUCTION_MANIFESTS
@@ -1790,9 +1772,9 @@ PERMISSION_REGISTRY: dict[str, dict[str, Any]] = {
         "checklist": {"read": True, "execute": True},
         "knowledge": {"read": True, "create": True, "delete": True},
         "evaluations": {"read": True, "submit": True, "delete": True},
-        # Spec Validation Gate — dedicated flags mirroring card.validation.
+        # Spec Validation Gate â€” dedicated flags mirroring card.validation.
         # Different from spec.evaluations (which is the qualitative gate for
-        # validated→in_progress). This is the approved→validated content gate.
+        # validatedâ†’in_progress). This is the approvedâ†’validated content gate.
         "validation": {"submit": True, "read": True, "delete": True},
         "cards_derive": True,
         "history_read": True,
@@ -1883,7 +1865,6 @@ PERMISSION_REGISTRY: dict[str, dict[str, Any]] = {
             "submit": True,
             "supersede": True,
             "revoke": True,
-            "classify_legacy": True,
         },
         "spec_link": {
             "create": True,
@@ -1996,14 +1977,14 @@ def _set_nested(d: dict[str, Any], path: str, value: Any) -> None:
 
 
 # ---------------------------------------------------------------------------
-# PermissionSet — resolved, board-scoped permissions
+# PermissionSet â€” resolved, board-scoped permissions
 # ---------------------------------------------------------------------------
 
 
 class PermissionSet:
     """Resolved permission flags for an agent on a specific board.
 
-    Encapsulates the merged result of agent_flags ∩ board_overrides.
+    Encapsulates the merged result of agent_flags âˆ© board_overrides.
     Provides typed methods for checking permissions with state awareness.
     """
 
@@ -2123,7 +2104,7 @@ def resolve_permissions(
     owner_review_required: bool = False,
     review_reason: str | None = None,
 ) -> PermissionSet:
-    """Resolve effective permissions: preset → agent customization → board override.
+    """Resolve effective permissions: preset â†’ agent customization â†’ board override.
 
     Ceiling model: board_overrides can only restrict (AND), never expand.
     """
@@ -2163,7 +2144,7 @@ def resolve_permissions(
     if malformed_reason is None and isinstance(agent_flags, Mapping):
         _apply_direct_permission_layer(base, agent_flags)
 
-    # Apply board overrides (AND — can only restrict)
+    # Apply board overrides (AND â€” can only restrict)
     if board_overrides is not None:
         board_overrides_valid = isinstance(
             board_overrides, Mapping
@@ -2181,7 +2162,7 @@ def resolve_permissions(
                 override_value = _get_nested(board_overrides, flag_path)
                 if override_value is False:
                     _set_nested(base, flag_path, False)
-                # True in override does NOT expand — ceiling model
+                # True in override does NOT expand â€” ceiling model
 
             # A materialized board ceiling must explicitly admit every introduced
             # permission.  An absent leaf is a denial, while a True ceiling still
@@ -2204,7 +2185,7 @@ def resolve_permissions(
 
 
 # ---------------------------------------------------------------------------
-# Legacy permission mapping (19 old → ~190 new)
+# Legacy permission mapping (19 old â†’ ~190 new)
 # ---------------------------------------------------------------------------
 
 LEGACY_PERMISSION_MAP: dict[str, list[str]] = {
@@ -2329,7 +2310,7 @@ LEGACY_PERMISSION_MAP: dict[str, list[str]] = {
     "specs:evaluate": [
         "spec.evaluations.submit",
         "spec.evaluations.delete",
-        # Spec Validation Gate — legacy agents with specs:evaluate also get
+        # Spec Validation Gate â€” legacy agents with specs:evaluate also get
         # the new validation gate submit/read permissions automatically.
         "spec.validation.submit",
         "spec.validation.read",
@@ -2382,16 +2363,16 @@ _CANONICAL_TO_LEGACY_TOKENS: dict[str, tuple[str, ...]] = {
 def map_legacy_permissions(old_permissions: list[str]) -> dict[str, Any]:
     """Map legacy flat permissions to new granular flag structure.
 
-    Flags mapped from old permissions → True. All others → False.
-    All interact_in flags → True (backward compat).
-    All read flags → True (backward compat).
+    Flags mapped from old permissions â†’ True. All others â†’ False.
+    All interact_in flags â†’ True (backward compat).
+    All read flags â†’ True (backward compat).
     """
     import copy
 
     # Start with all False
     flags = _set_all_flags(copy.deepcopy(PERMISSION_REGISTRY), False)
 
-    # Enable all interact_in (backward compat — existing agents could interact in all states)
+    # Enable all interact_in (backward compat â€” existing agents could interact in all states)
     for entity in ("story", "ideation", "refinement", "spec", "card"):
         interact_in = flags.get(entity, {}).get("interact_in", {})
         if isinstance(interact_in, dict):
@@ -3113,18 +3094,18 @@ def get_builtin_presets() -> list[dict[str, Any]]:
 
     Role boundaries (see docstring for each preset):
     - Full Control: unrestricted
-    - Spec:       defines WHAT to build — owns ideation/refinement/spec content,
+    - Spec:       defines WHAT to build â€” owns ideation/refinement/spec content,
                   drafts card breakdown. Never submits gates.
-    - Executor:   implements normal cards. Moves not_started→validation and
-                  accepts a Rejected rework handoff via rejected→in_progress.
+    - Executor:   implements normal cards. Moves not_startedâ†’validation and
+                  accepts a Rejected rework handoff via rejectedâ†’in_progress.
                   Never submits gates or assigns Rejected directly.
     - QA:         owns test scenarios and test card lifecycle. Reads specs,
                   asks questions. Never submits any gate.
     - Validator:  exclusive gate-holder. Submits spec_validation, spec_evaluation,
-                  task_validation. Owns approved→validated,
-                  validated→in_progress, in_progress→done (spec) and the backward
+                  task_validation. Owns approvedâ†’validated,
+                  validatedâ†’in_progress, in_progressâ†’done (spec) and the backward
                   unlock transitions. On cards, submits task validation; the
-                  completion decision routes Validation→Done/Rejected
+                  completion decision routes Validationâ†’Done/Rejected
                   internally. Never moves a Rejected card manually.
     """
     import copy
@@ -3132,7 +3113,7 @@ def get_builtin_presets() -> list[dict[str, Any]]:
     full_control = copy.deepcopy(PERMISSION_REGISTRY)  # all True
 
     # ------------------------------------------------------------------
-    # Spec — defines WHAT to build
+    # Spec â€” defines WHAT to build
     # ------------------------------------------------------------------
     # Owns: ideation + refinement + spec content (BRs/TRs/contracts/IRs/ORs/
     # mockups/knowledge/test scenarios)ning, initial card breakdown.
@@ -3147,7 +3128,7 @@ def get_builtin_presets() -> list[dict[str, Any]]:
             "board.mentions_mark_seen",
             "guidelines.read",
             "profile.update",
-            # Stories/Topics — pre-ideation intake and grouping owned by Spec.
+            # Stories/Topics â€” pre-ideation intake and grouping owned by Spec.
             "story.entity.read",
             "story.entity.create",
             "story.entity.edit_fields",
@@ -3171,7 +3152,7 @@ def get_builtin_presets() -> list[dict[str, Any]]:
             "topic.entity.restore",
             "topic.entity.merge",
             "topic.entity.delete",
-            # Ideation — full ownership (create → done), evaluate, derive spec
+            # Ideation â€” full ownership (create â†’ done), evaluate, derive spec
             "ideation.entity.read",
             "ideation.entity.create",
             "ideation.entity.edit_fields",
@@ -3202,7 +3183,7 @@ def get_builtin_presets() -> list[dict[str, Any]]:
             "ideation.specs_derive",
             "ideation.versions_read",
             "ideation.history_read",
-            # Refinement — full ownership (create → done), derive spec
+            # Refinement â€” full ownership (create â†’ done), derive spec
             "refinement.entity.read",
             "refinement.entity.create",
             "refinement.entity.edit_fields",
@@ -3236,7 +3217,7 @@ def get_builtin_presets() -> list[dict[str, Any]]:
             "refinement.specs_derive",
             "refinement.versions_read",
             "refinement.history_read",
-            # Spec — content CRUD up to approved. Gates and beyond are Validator's.
+            # Spec â€” content CRUD up to approved. Gates and beyond are Validator's.
             "spec.entity.read",
             "spec.entity.create",
             "spec.entity.edit_fields",
@@ -3252,10 +3233,10 @@ def get_builtin_presets() -> list[dict[str, Any]]:
             # allowed to reduce the "dance back to draft" friction for cosmetic
             # fixes (knowledge typo, mockup annotation). Convention in
             # agent_instructions.md guides Spec away from structural edits
-            # (BR/TR/contract/rules) in validated/in_progress — those still
-            # require validated_to_draft. Opção A (permissiva) do refinement
-            # de Ideação 3 — Opção B (granularização por flag .edit_in_validated)
-            # fica como evolução se drift materializar.
+            # (BR/TR/contract/rules) in validated/in_progress â€” those still
+            # require validated_to_draft. OpÃ§Ã£o A (permissiva) do refinement
+            # de IdeaÃ§Ã£o 3 â€” OpÃ§Ã£o B (granularizaÃ§Ã£o por flag .edit_in_validated)
+            # fica como evoluÃ§Ã£o se drift materializar.
             "spec.interact_in.draft",
             "spec.interact_in.review",
             "spec.interact_in.approved",
@@ -3306,7 +3287,7 @@ def get_builtin_presets() -> list[dict[str, Any]]:
             "spec.validation.read",
             "spec.cards_derive",
             "spec.history_read",
-            # Card — breakdown only (create, link, configure). Lifecycle is Executor/QA/Validator.
+            # Card â€” breakdown only (create, link, configure). Lifecycle is Executor/QA/Validator.
             "card.entity.read",
             "card.entity.context_read",
             "card.entity.create",
@@ -3343,7 +3324,7 @@ def get_builtin_presets() -> list[dict[str, Any]]:
             "card.validation.read",
             "card.activity_read",
             "card.interact_in.not_started",
-            # KG — spec is the content owner: full power + full session + admin.
+            # KG â€” spec is the content owner: full power + full session + admin.
             # Cypher here because Spec runs deep supersedence/contradiction
             # investigation when closing a refinement. settings_write +
             # historical_consolidation are exclusive to Spec (they tune the
@@ -3366,11 +3347,11 @@ def get_builtin_presets() -> list[dict[str, Any]]:
     )
 
     # ------------------------------------------------------------------
-    # Executor — implements normal cards
+    # Executor â€” implements normal cards
     # ------------------------------------------------------------------
-    # Owns: card lifecycle from not_started → started → in_progress → validation
+    # Owns: card lifecycle from not_started â†’ started â†’ in_progress â†’ validation
     # (and on_hold detours). Reads spec context to implement correctly.
-    # Cannot: create cards, submit validation, promote validation→done,
+    # Cannot: create cards, submit validation, promote validationâ†’done,
     # create/edit spec content, submit gates.
     executor = _build_preset_flags(
         [
@@ -3385,7 +3366,7 @@ def get_builtin_presets() -> list[dict[str, Any]]:
             "topic.entity.read",
             "ideation.architecture.read",
             "refinement.architecture.read",
-            # Spec — read-only, interact while in_progress lifecycle states
+            # Spec â€” read-only, interact while in_progress lifecycle states
             "spec.entity.read",
             "spec.qa.read",
             "spec.qa.ask",
@@ -3405,10 +3386,10 @@ def get_builtin_presets() -> list[dict[str, Any]]:
             "spec.interact_in.validated",
             "spec.interact_in.in_progress",
             "spec.interact_in.done",
-            # Card — implementer: owns everything up to moving into validation.
+            # Card â€” implementer: owns everything up to moving into validation.
             # card.entity.create here unlocks bug/subtask creation when a problem
             # surfaces mid-implementation (convention: only card_type="bug" or a
-            # subtask linked to the in_progress card — NOT fresh normal tasks;
+            # subtask linked to the in_progress card â€” NOT fresh normal tasks;
             # those remain Spec territory as part of the breakdown).
             "card.entity.read",
             "card.entity.context_read",
@@ -3441,11 +3422,11 @@ def get_builtin_presets() -> list[dict[str, Any]]:
             "card.link_to.or",
             "card.conclusion.read",
             "card.conclusion.write",
-            "card.validation.read",  # read-only — cannot submit, cannot delete
+            "card.validation.read",  # read-only â€” cannot submit, cannot delete
             "card.activity_read",
-            # KG — read-only queries for implementation context.
+            # KG â€” read-only queries for implementation context.
             # Natural + schema_info are baseline exploration (zero risk).
-            # Cypher stays gated (expert mode) and session is not exposed —
+            # Cypher stays gated (expert mode) and session is not exposed â€”
             # executor focuses on executing cards, not enriching the KG.
             "kg.query.*",
             "kg.power.natural",
@@ -3455,12 +3436,12 @@ def get_builtin_presets() -> list[dict[str, Any]]:
     )
 
     # ------------------------------------------------------------------
-    # QA — owns test scenarios and test card lifecycle
+    # QA â€” owns test scenarios and test card lifecycle
     # ------------------------------------------------------------------
     # Owns: test_scenarios CRUD on specs, test cards (card_type="test")
     # throughout their lifecycle, test scenario status updates.
     # Cannot: submit any gate (spec_validation, spec_evaluation,
-    # task_validation — all exclusive to Validator),
+    # task_validation â€” all exclusive to Validator),
     # create normal cards, touch implementation cards.
     # NOTE: card_type enforcement is a convention, not hard-blocked by flags.
     # The agent is instructed to only work on test cards.
@@ -3472,7 +3453,7 @@ def get_builtin_presets() -> list[dict[str, Any]]:
             "board.mentions_mark_seen",
             "guidelines.read",
             "profile.update",
-            # Ideation — read + Q&A to raise test-related questions
+            # Ideation â€” read + Q&A to raise test-related questions
             "story.entity.read",
             "story.history_read",
             "topic.entity.read",
@@ -3487,7 +3468,7 @@ def get_builtin_presets() -> list[dict[str, Any]]:
             "ideation.history_read",
             "ideation.interact_in.evaluating",
             "ideation.interact_in.refined",
-            # Refinement — read + Q&A
+            # Refinement â€” read + Q&A
             "refinement.entity.read",
             "refinement.qa.read",
             "refinement.qa.ask",
@@ -3500,7 +3481,7 @@ def get_builtin_presets() -> list[dict[str, Any]]:
             "refinement.history_read",
             "refinement.interact_in.review",
             "refinement.interact_in.approved",
-            # Spec — tests CRUD (QA's core); read everything else, no gate submissions
+            # Spec â€” tests CRUD (QA's core); read everything else, no gate submissions
             "spec.entity.read",
             "spec.qa.read",
             "spec.qa.ask",
@@ -3516,13 +3497,13 @@ def get_builtin_presets() -> list[dict[str, Any]]:
             "spec.observability_requirements.read",
             "spec.architecture.read",
             "spec.knowledge.read",
-            "spec.evaluations.read",  # read-only — Validator submits
-            "spec.validation.read",  # read-only — Validator submits
+            "spec.evaluations.read",  # read-only â€” Validator submits
+            "spec.validation.read",  # read-only â€” Validator submits
             "spec.history_read",
             "spec.interact_in.approved",
             "spec.interact_in.validated",
             "spec.interact_in.in_progress",
-            # Card — test cards lifecycle (create, implement, complete) + read others.
+            # Card â€” test cards lifecycle (create, implement, complete) + read others.
             # card.entity.create added alongside create_test: QA opens bug cards
             # when it spots defects during test execution (convention: QA creates
             # card_type="bug" or "test", never "normal").
@@ -3548,13 +3529,13 @@ def get_builtin_presets() -> list[dict[str, Any]]:
             "card.conclusion.write",
             "card.validation.read",  # read-only
             "card.activity_read",
-            # Test cards don't go through validation gate — QA moves them directly through lifecycle
+            # Test cards don't go through validation gate â€” QA moves them directly through lifecycle
             "card.interact_in.not_started",
             "card.interact_in.started",
             "card.interact_in.in_progress",
             "card.interact_in.on_hold",
             "card.interact_in.done",
-            # KG — QA reads and surfaces gaps. Propose-only session (no commit
+            # KG â€” QA reads and surfaces gaps. Propose-only session (no commit
             # or abort); Spec/Validator commit on review. Natural + schema
             # help QA investigate, cypher stays gated.
             "kg.query.*",
@@ -3570,14 +3551,14 @@ def get_builtin_presets() -> list[dict[str, Any]]:
     )
 
     # ------------------------------------------------------------------
-    # Validator — exclusive gate-holder for every SDLC checkpoint
+    # Validator â€” exclusive gate-holder for every SDLC checkpoint
     # ------------------------------------------------------------------
     # Owns: spec_validation submit, spec_evaluation submit,
-    # submit, task_validation submit, spec promotions (approved→validated,
-    # validated→in_progress, in_progress→done), spec backward unlock
-    # (approved→draft, validated→draft).
+    # submit, task_validation submit, spec promotions (approvedâ†’validated,
+    # validatedâ†’in_progress, in_progressâ†’done), spec backward unlock
+    # (approvedâ†’draft, validatedâ†’draft).
     # Cards: ONLY interact_in validation and submit the completion decision.
-    # The service routes Validation→Done/Rejected internally; Validator never
+    # The service routes Validationâ†’Done/Rejected internally; Validator never
     # assigns or moves a Rejected card manually.
     # Cannot: create/edit anything, touch cards outside validation status,
     # move specs forward without the gate.
@@ -3589,7 +3570,7 @@ def get_builtin_presets() -> list[dict[str, Any]]:
             "board.mentions_mark_seen",
             "guidelines.read",
             "profile.update",
-            # Ideation — read + Q&A (observer, cannot edit or promote)
+            # Ideation â€” read + Q&A (observer, cannot edit or promote)
             "story.entity.read",
             "story.history_read",
             "topic.entity.read",
@@ -3603,7 +3584,7 @@ def get_builtin_presets() -> list[dict[str, Any]]:
             "ideation.history_read",
             "ideation.interact_in.evaluating",
             "ideation.interact_in.refined",
-            # Refinement — read + Q&A
+            # Refinement â€” read + Q&A
             "refinement.entity.read",
             "refinement.qa.read",
             "refinement.qa.ask",
@@ -3615,7 +3596,7 @@ def get_builtin_presets() -> list[dict[str, Any]]:
             "refinement.history_read",
             "refinement.interact_in.review",
             "refinement.interact_in.approved",
-            # Spec — full read + both gates (validation + evaluation) EXCLUSIVE submit
+            # Spec â€” full read + both gates (validation + evaluation) EXCLUSIVE submit
             "spec.entity.read",
             "spec.qa.read",
             "spec.qa.ask",
@@ -3634,13 +3615,13 @@ def get_builtin_presets() -> list[dict[str, Any]]:
             "spec.evaluations.submit",
             "spec.validation.read",
             "spec.validation.submit",
-            # Spec status promotions — only the gate-bound moves
-            # Backward unlock paths (preserved from current preset — enables the
+            # Spec status promotions â€” only the gate-bound moves
+            # Backward unlock paths (preserved from current preset â€” enables the
             # fix-and-revalidate loop after a gate failure).
             "spec.interact_in.approved",
             "spec.interact_in.validated",
             "spec.interact_in.in_progress",
-            # Card — ONLY the validation status, EXCLUSIVE task_validation submit
+            # Card â€” ONLY the validation status, EXCLUSIVE task_validation submit
             "card.entity.read",
             "card.entity.context_read",
             "card.qa.read",
@@ -3656,12 +3637,12 @@ def get_builtin_presets() -> list[dict[str, Any]]:
             "card.validation.read",
             "card.validation.submit",  # exclusive submit
             "card.activity_read",
-            # interact_in ONLY validation — hard user requirement
+            # interact_in ONLY validation â€” hard user requirement
             "card.interact_in.validation",
             # submit_task_validation owns the governed decision and routes the
-            # card internally. The compatibility validation→done edge remains
+            # card internally. The compatibility validationâ†’done edge remains
             # available only when the board disables the task-validation gate.
-            # KG — Validator investigates deeply and consolidates autonomously.
+            # KG â€” Validator investigates deeply and consolidates autonomously.
             # Cypher to trace supersedence/contradictions during spec validation;
             # full session to commit decisions emerged from the gate. Admin stays
             # read-only (thresholds + historical are Spec territory).
@@ -3681,10 +3662,10 @@ def get_builtin_presets() -> list[dict[str, Any]]:
     )
 
     # ------------------------------------------------------------------
-    # Reporter — observer who opens bugs, asks questions, votes on choices
+    # Reporter â€” observer who opens bugs, asks questions, votes on choices
     # ------------------------------------------------------------------
     # Owns: read across every entity/state, opening bug cards, Q&A (ask
-    # only — not answer), responding to choice comments, uploading
+    # only â€” not answer), responding to choice comments, uploading
     # attachments, and KG query + natural + schema_info.
     # Cannot: submit any gate, promote any state, create/edit specs,
     # answer Q&A (observer asks, doesn't answer), consolidate in the KG,
@@ -3701,7 +3682,7 @@ def get_builtin_presets() -> list[dict[str, Any]]:
             "board.mentions_mark_seen",
             "guidelines.read",
             "profile.update",
-            # Ideation — read + Q&A ask
+            # Ideation â€” read + Q&A ask
             "story.entity.read",
             "story.history_read",
             "topic.entity.read",
@@ -3715,7 +3696,7 @@ def get_builtin_presets() -> list[dict[str, Any]]:
             "ideation.interact_in.draft",
             "ideation.interact_in.evaluating",
             "ideation.interact_in.refined",
-            # Refinement — read + Q&A ask
+            # Refinement â€” read + Q&A ask
             "refinement.entity.read",
             "refinement.qa.read",
             "refinement.qa.ask",
@@ -3728,7 +3709,7 @@ def get_builtin_presets() -> list[dict[str, Any]]:
             "refinement.interact_in.in_progress",
             "refinement.interact_in.review",
             "refinement.interact_in.approved",
-            # Spec — full read (all states, all artifacts) + Q&A ask
+            # Spec â€” full read (all states, all artifacts) + Q&A ask
             "spec.entity.read",
             "spec.qa.read",
             "spec.qa.ask",
@@ -3749,7 +3730,7 @@ def get_builtin_presets() -> list[dict[str, Any]]:
             "spec.interact_in.validated",
             "spec.interact_in.in_progress",
             "spec.interact_in.done",
-            # Card — read + bug creation (by convention) + comments + choice voting
+            # Card â€” read + bug creation (by convention) + comments + choice voting
             "card.entity.read",
             "card.entity.context_read",
             "card.entity.create",
@@ -3767,7 +3748,7 @@ def get_builtin_presets() -> list[dict[str, Any]]:
             "card.validation.read",
             "card.activity_read",
             "card.interact_in.not_started",
-            # KG — read-only exploration (zero session, no cypher, no admin write)
+            # KG â€” read-only exploration (zero session, no cypher, no admin write)
             "kg.query.*",
             "kg.power.natural",
             "kg.power.schema_info",
@@ -3778,12 +3759,12 @@ def get_builtin_presets() -> list[dict[str, Any]]:
     definitions = [
         {
             "name": "Full Control",
-            "description": "All permissions active — unrestricted access.",
+            "description": "All permissions active â€” unrestricted access.",
             "flags": full_control,
         },
         {
             "name": "Executor",
-            "description": "Implement normal cards. Moves not_started→validation and accepts Rejected rework via rejected→in_progress. Cannot submit gates or assign Rejected directly.",
+            "description": "Implement normal cards. Moves not_startedâ†’validation and accepts Rejected rework via rejectedâ†’in_progress. Cannot submit gates or assign Rejected directly.",
             "flags": executor,
         },
         {
@@ -3798,12 +3779,12 @@ def get_builtin_presets() -> list[dict[str, Any]]:
         },
         {
             "name": "Reporter",
-            "description": "Observador — lê tudo, abre bug card, pergunta e vota em choice. Zero submit de gate, zero edit, zero consolidação KG. Ideal para PO/stakeholder/onboarding.",
+            "description": "Observador â€” lÃª tudo, abre bug card, pergunta e vota em choice. Zero submit de gate, zero edit, zero consolidaÃ§Ã£o KG. Ideal para PO/stakeholder/onboarding.",
             "flags": reporter,
         },
         {
             "name": "Spec",
-            "description": "Defines the spec (ideation→refinement→spec content, card breakdown). No gate submissions, no card execution.",
+            "description": "Defines the spec (ideationâ†’refinementâ†’spec content, card breakdown). No gate submissions, no card execution.",
             "flags": spec_writer,
         },
     ]
@@ -3841,11 +3822,11 @@ def get_builtin_presets() -> list[dict[str, Any]]:
 
 
 # ---------------------------------------------------------------------------
-# role_summary — self-describing agent role, derived from effective flags
+# role_summary â€” self-describing agent role, derived from effective flags
 # ---------------------------------------------------------------------------
 
 
-# Flag → short label used to build the "Owns" section.
+# Flag â†’ short label used to build the "Owns" section.
 _OWNS_LABELS: list[tuple[str, str]] = [
     ("story.entity.create", "create stories"),
     ("topic.entity.create", "create topics"),
@@ -3863,7 +3844,7 @@ _OWNS_LABELS: list[tuple[str, str]] = [
 ]
 
 
-# Flag → short label for "Cannot" — only when flag is False (to highlight gaps).
+# Flag â†’ short label for "Cannot" â€” only when flag is False (to highlight gaps).
 _CANNOT_LABELS: list[tuple[str, str]] = [
     ("spec.validation.submit", "submit gates"),
     ("card.entity.create", "create cards"),
@@ -3891,18 +3872,18 @@ def generate_role_summary(permissions: Any) -> str:
     """Produce a human-readable, one-line summary of an agent's effective role.
 
     Format: ``Role: <preset> | Owns: <a, b> | Cannot: <x> | KG: <caps>``.
-    Empty sections are omitted. The value is always recomputed — never cached —
+    Empty sections are omitted. The value is always recomputed â€” never cached â€”
     so preset edits and board overrides propagate immediately.
 
     Accepts:
-    - ``None``: legacy agent (permissions column NULL) — grants all by compat.
-    - ``list[str]``: legacy flat permissions — mapped to granular for analysis.
+    - ``None``: legacy agent (permissions column NULL) â€” grants all by compat.
+    - ``list[str]``: legacy flat permissions â€” mapped to granular for analysis.
     - ``dict``: granular flags (the current canonical form).
 
     The returned string always starts with ``Role: `` and never contains
     newlines.
     """
-    # Legacy permissions=null — unrestricted by backward-compat path in
+    # Legacy permissions=null â€” unrestricted by backward-compat path in
     # has_permission/check_permission. Signal it explicitly so the agent
     # understands the source of its access.
     if permissions is None:
@@ -3926,7 +3907,7 @@ def generate_role_summary(permissions: Any) -> str:
         label for flag, label in _CANNOT_LABELS if _get_nested(flags, flag) is False
     ]
     # Dedupe cannot against owns (in case the flag is both True and False
-    # across entities — shouldn't happen but defensive).
+    # across entities â€” shouldn't happen but defensive).
     cannot = [c for c in cannot if c not in owns]
 
     kg = [label for flag, label in _KG_LABELS if _get_nested(flags, flag) is True]
@@ -4135,7 +4116,6 @@ __all__ = [
     "ADMIN_CATALOG_PERMISSION_INTRODUCTION_V1",
     "ALL_FLAGS",
     "CODE_TRACEABILITY_PERMISSION_INTRODUCTION_V1",
-    "CODE_EVIDENCE_LEGACY_CLASSIFICATION_PERMISSION_INTRODUCTION_V1",
     "DefaultPermissionPolicy",
     "HUMAN_ONLY_MCP_TOOL_EXEMPTIONS",
     "GUIDELINE_ADOPTION_MANAGE",

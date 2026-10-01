@@ -40,7 +40,6 @@ from okto_pulse.core.domain.code_traceability import (
     CodeEvidenceDisposition,
     CodeEvidenceDispositionKind,
     CodeEvidenceLinkInvalid,
-    CodeEvidenceLegacyClassification,
     CodeDeliveryContextRequired,
     CodeEvidenceSelectorKind,
     CodeEvidenceSourceRole,
@@ -54,7 +53,6 @@ from okto_pulse.core.domain.code_traceability import (
     CodeInvestigationHeadConflict,
     CodeInvestigationHeadState,
     CodeInvestigationIdempotencyConflict,
-    CodeInvestigationOutcome,
     CodeInvestigationOmissionReason,
     CodeInvestigationReceiptCommitResult,
     CodeInvestigationRequestStatus,
@@ -90,8 +88,6 @@ from okto_pulse.core.domain.code_traceability import (
     TargetOverlapSeverity,
     WorkspaceReproducibilityClaim,
     canonical_code_traceability_sha256,
-    source_context_classification_input_v2,
-    source_context_classification_fence_v2,
     source_context_evidence_item_v2,
     source_context_evidence_payload_v2,
 )
@@ -161,7 +157,7 @@ H1 = "1" * 64
 H2 = "2" * 64
 
 
-def _legacy_evidence_record(
+def _native_evidence_record(
     evidence_id: str,
     *,
     parent_version: int,
@@ -180,7 +176,7 @@ def _legacy_evidence_record(
         parent_id="refinement-1",
         parent_version=parent_version,
         evidence_type=CodeEvidenceType.BEHAVIOR,
-        claim=f"Legacy claim {evidence_id}",
+        claim=f"Current claim {evidence_id}",
         workspace_state=ObservedWorkspaceStateRef(
             declared_revision="abc123",
             workspace_state_id="workspace-1",
@@ -209,7 +205,7 @@ def _legacy_evidence_record(
         lifecycle_status=lifecycle_status,
         supersedes_evidence_id=supersedes_evidence_id,
         revocation_reason=(
-            "Revoked legacy evidence."
+            "Revoked evidence."
             if lifecycle_status is CodeTraceabilityLifecycleStatus.REVOKED
             else None
         ),
@@ -217,33 +213,26 @@ def _legacy_evidence_record(
         received_at=NOW,
         payload_sha256=payload_sha256,
         idempotency_key=f"idem-{evidence_id}",
-        source_role=CodeEvidenceSourceRole.UNCATEGORIZED_LEGACY,
-        relevance_summary=None,
-        scope_relation=None,
-        source_origin=None,
+        source_role=CodeEvidenceSourceRole.EXISTING_CONSTRAINT,
+        relevance_summary="Existing constraint",
+        scope_relation="In delivery scope",
+        source_origin="Accepted baseline",
         interpretation_limit=None,
-        baseline_provenance=None,
-        context_contract_version=None,
+        baseline_provenance=CodeEvidenceBaselineProvenance(
+            presence=CodeEvidenceBaselinePresence.COMMITTED_SNAPSHOT,
+            workspace_state_id="workspace-1",
+        ),
+        context_contract_version=2,
     )
 
 
-def _context_sha256(
-    source_role: str = "uncategorized_legacy",
-    *,
-    relevance_summary: str | None = None,
-    scope_relation: str | None = None,
-    source_origin: str | None = None,
-    interpretation_limit: str | None = None,
-) -> str:
+def _context_sha256() -> str:
     return canonical_code_traceability_sha256(
-        {
-            "source_role": source_role,
-            "relevance_summary": relevance_summary,
-            "scope_relation": scope_relation,
-            "source_origin": source_origin,
-            "interpretation_limit": interpretation_limit,
-            "baseline_provenance": None,
-        }
+        source_context_evidence_payload_v2(
+            source_context_evidence_item_v2(
+                _native_evidence_record("context-fixture", parent_version=3, payload_sha256=H1)
+            )
+        )
     )
 
 
@@ -257,17 +246,13 @@ def _source_context_manifest(
     receipt_sha256: str,
     outcome: ContextualInvestigationOutcomeV2,
     role_counts: dict[str, int] | None = None,
-    classification_revision: int | None = None,
-    classification_sha256: str | None = None,
 ) -> tuple[dict[str, object], str]:
     counts = role_counts or {
         "current_implementation_count": 0,
         "existing_scaffold_count": 0,
-        "existing_constraint_count": 0,
+        "existing_constraint_count": 2,
         "reference_pattern_count": 0,
-        "uncategorized_legacy_count": 2,
     }
-    classified_count = sum(counts.values()) - counts["uncategorized_legacy_count"]
     evidence_applicable = {
         ContextualInvestigationOutcomeV2.EVIDENCE_APPLICABLE: True,
         ContextualInvestigationOutcomeV2.NO_RELEVANT_EXISTING_IMPLEMENTATION: False,
@@ -300,16 +285,6 @@ def _source_context_manifest(
         "investigation_outcome": outcome.value,
         "evidence_applicable": evidence_applicable,
         "role_counts": counts,
-        "classification_state": {
-            "classified_count": classified_count,
-            "uncategorized_legacy_count": counts[
-                "uncategorized_legacy_count"
-            ],
-        },
-        "classification_fence": {
-            "revision": classification_revision,
-            "payload_sha256": classification_sha256,
-        },
         "interpretation_rule": SOURCE_CONTEXT_INTERPRETATION_RULE_V2,
         "items_not_current_implementation_count": (
             sum(counts.values()) - counts["current_implementation_count"]
@@ -514,9 +489,6 @@ class FakeTraceabilityStore:
     def __init__(self, investigations: FakeInvestigationStore) -> None:
         self.investigations = investigations
         self.evidence: dict[str, object] = {}
-        self.evidence_classifications: dict[
-            tuple[str, int], CodeEvidenceLegacyClassification
-        ] = {}
         self.targets: dict[str, ImplementationTarget] = {}
         self.resolutions: dict[str, object] = {}
         self.executions: dict[str, object] = {}
@@ -548,15 +520,6 @@ class FakeTraceabilityStore:
         item = self.evidence.get(evidence_id)
         return item if item is not None and item.board_id == board_id else None
 
-    async def get_evidence_classification(
-        self,
-        *,
-        board_id: str,
-        evidence_id: str,
-        revision: int,
-    ):
-        item = self.evidence_classifications.get((evidence_id, revision))
-        return item if item is not None and item.board_id == board_id else None
 
     async def list_evidence(self, query):
         items = tuple(
@@ -989,10 +952,11 @@ def receipt_submission(
         else WorkspaceReproducibilityClaim.COMMITTED
     )
     return CodeInvestigationReceiptSubmission(
+        contract_version=2,
         board_id=board_id,
         request_id=request_id,
         challenge_token=SecretStr(token),
-        outcome=CodeInvestigationOutcome.ACCESSIBLE,
+        outcome=ContextualInvestigationOutcomeV2.EVIDENCE_APPLICABLE,
         capabilities=capabilities,
         source_identity_digest=H1,
         declared_revision=declared_revision,
@@ -1069,6 +1033,7 @@ async def accepted_receipt(
         actor_kind="agent",
         freshness_seconds=1800,
         store=store,
+                     delivery_context=DeliveryContext.BROWNFIELD,
     )
 
 
@@ -1145,6 +1110,7 @@ async def test_challenge_is_deterministic_single_use_and_replay_safe() -> None:
         actor_kind="agent",
         freshness_seconds=1800,
         store=store,
+                          delivery_context=DeliveryContext.BROWNFIELD,
     )
     receipt_replay = await service.submit_receipt(
         submission,
@@ -1152,6 +1118,7 @@ async def test_challenge_is_deterministic_single_use_and_replay_safe() -> None:
         actor_kind="agent",
         freshness_seconds=1800,
         store=store,
+                               delivery_context=DeliveryContext.BROWNFIELD,
     )
     assert receipt_replay.receipt.id == committed.receipt.id
     assert receipt_replay.replayed is True
@@ -1163,6 +1130,7 @@ async def test_challenge_is_deterministic_single_use_and_replay_safe() -> None:
             actor_kind="user",
             freshness_seconds=1800,
             store=store,
+                  delivery_context=DeliveryContext.BROWNFIELD,
         )
     assert len(store.receipts) == receipt_count
     consumed_start = await service.start(
@@ -1190,6 +1158,7 @@ async def test_challenge_is_deterministic_single_use_and_replay_safe() -> None:
             actor_kind="agent",
             freshness_seconds=1800,
             store=store,
+                  delivery_context=DeliveryContext.BROWNFIELD,
         )
 
 
@@ -1239,7 +1208,7 @@ async def test_partial_receipt_records_missing_capability_but_cannot_authorize_i
         idempotency_key="partial-receipt",
     ).model_dump(mode="python")
     base.update(
-        outcome=CodeInvestigationOutcome.PARTIAL,
+        outcome=ContextualInvestigationOutcomeV2.PARTIAL,
         omission_manifest=(
             CodeInvestigationOmissionInput(
                 reason_code=CodeInvestigationOmissionReason.PATH_POLICY,
@@ -1254,9 +1223,10 @@ async def test_partial_receipt_records_missing_capability_but_cannot_authorize_i
         actor_kind="agent",
         freshness_seconds=1800,
         store=store,
+                          delivery_context=DeliveryContext.BROWNFIELD,
     )
 
-    assert submitted.receipt.outcome is CodeInvestigationOutcome.PARTIAL
+    assert submitted.receipt.contextual_outcome is ContextualInvestigationOutcomeV2.PARTIAL
     assert submitted.receipt.omission_count == 1
     assert store.heads[("board-1", submitted.receipt.source_ref)].state.value == (
         "current"
@@ -1278,7 +1248,7 @@ async def test_partial_receipt_records_missing_capability_but_cannot_authorize_i
 
     unavailable = dict(base)
     unavailable.update(
-        outcome=CodeInvestigationOutcome.UNAVAILABLE,
+        outcome=ContextualInvestigationOutcomeV2.UNAVAILABLE,
         source_identity_digest=H1,
     )
     with pytest.raises(ValidationError) as incoherent:
@@ -1454,6 +1424,7 @@ async def test_receipt_head_cas_failure_has_zero_mutation() -> None:
             actor_kind="agent",
             freshness_seconds=1800,
             store=store,
+                  delivery_context=DeliveryContext.BROWNFIELD,
         )
     assert (
         store.requests[started.request.id].status is CodeInvestigationRequestStatus.OPEN
@@ -1707,6 +1678,15 @@ def evidence_submission(
 ) -> CodeEvidenceSubmission:
     excerpt = "return value\n"
     return CodeEvidenceSubmission(
+        contract_version=2,
+        source_role=CodeEvidenceSourceRole.CURRENT_IMPLEMENTATION,
+        relevance_summary="Existing behavior",
+        scope_relation="In delivery scope",
+        source_origin="Accepted baseline",
+        baseline_provenance=CodeEvidenceBaselineProvenance(
+            presence=CodeEvidenceBaselinePresence.COMMITTED_SNAPSHOT,
+            workspace_state_id="workspace-1",
+        ),
         board_id="board-1",
         investigation_receipt_id=receipt_id,
         parent_type=CodeTraceabilitySubjectType.REFINEMENT,
@@ -2654,6 +2634,7 @@ class FakeRefinementService:
             id="refinement-1",
             board_id="board-1",
             version=3,
+            delivery_context=DeliveryContext.BROWNFIELD,
         )
 
     async def get_snapshot(self, refinement_id: str, version: int):
@@ -2950,82 +2931,6 @@ async def test_aggregate_projection_requires_every_leaf_read_permission() -> Non
     assert projection.calls == 0
 
 
-@pytest.mark.asyncio
-@pytest.mark.parametrize("can_classify_legacy_evidence", (False, True))
-async def test_aggregate_projection_redacts_legacy_classification_inputs_only_when_denied(
-    can_classify_legacy_evidence: bool,
-) -> None:
-    marker = object()
-    legacy = _legacy_evidence_record(
-        "evidence-legacy",
-        parent_version=3,
-        payload_sha256=H2,
-    )
-    classification_input = source_context_classification_input_v2(legacy)
-    loaded_context = CodeTraceabilityContext(
-        board_id="board-1",
-        subject_type=CodeTraceabilitySubjectType.REFINEMENT,
-        subject_id="refinement-1",
-        subject_version=3,
-        profile=CodeTraceabilityProjectionProfile.FULL,
-        context_scope=CodeTraceabilityContextScope.DEFAULT,
-        evidence=(legacy,),
-        source_context_items=(source_context_evidence_item_v2(legacy),),
-        source_context_classification_inputs=(classification_input,),
-    )
-
-    class ProjectionSpy:
-        projected_context: CodeTraceabilityContext | None = None
-
-        async def load_context(self, _query, **_kwargs):
-            return loaded_context
-
-        def project_context(self, context, _settings, **_kwargs):
-            self.projected_context = context
-            return marker
-
-    investigations = FakeInvestigationStore()
-    traceability = FakeTraceabilityStore(investigations)
-    uow = FakeUnitOfWork(investigations, traceability)
-    projection = ProjectionSpy()
-    permissions = [
-        "code_traceability.investigation.read",
-        "code_traceability.evidence.read",
-        "code_traceability.target.read",
-        "code_traceability.overlap.read",
-    ]
-    if can_classify_legacy_evidence:
-        permissions.append("code_traceability.evidence.classify_legacy")
-
-    result = await GetCodeTraceabilityProjectionUseCase(
-        projection,  # type: ignore[arg-type]
-    ).execute(
-        CodeTraceabilityProjectionQuery(
-            board_id="board-1",
-            subject_type=CodeTraceabilitySubjectType.REFINEMENT,
-            subject_id="refinement-1",
-            subject_version=3,
-            profile=CodeTraceabilityProjectionProfile.FULL,
-            context_scope=CodeTraceabilityContextScope.DEFAULT,
-        ),
-        actor=ActorContext(
-            "user-1",
-            "rest",
-            actor_kind="user",
-            board_id="board-1",
-            permissions=tuple(permissions),
-        ),
-        uow=uow,  # type: ignore[arg-type]
-    )
-
-    assert result is marker
-    assert projection.projected_context is not None
-    assert projection.projected_context.source_context_items == (
-        source_context_evidence_item_v2(legacy),
-    )
-    assert projection.projected_context.source_context_classification_inputs == (
-        (classification_input,) if can_classify_legacy_evidence else ()
-    )
 
 
 @pytest.mark.asyncio
@@ -3139,14 +3044,14 @@ async def test_spec_evidence_rebase_preview_apply_cas_and_events_are_atomic() ->
             outcome=ContextualInvestigationOutcomeV2.EVIDENCE_APPLICABLE,
         )
     )
-    replacement = _legacy_evidence_record(
+    replacement = _native_evidence_record(
         "evidence-4",
         parent_version=4,
         payload_sha256=H2,
         supersedes_evidence_id="evidence-3",
     )
     traceability.evidence[replacement.id] = replacement
-    retained = _legacy_evidence_record(
+    retained = _native_evidence_record(
         "evidence-retained",
         parent_version=2,
         payload_sha256=H1,
@@ -3231,16 +3136,16 @@ async def test_spec_evidence_rebase_preview_apply_cas_and_events_are_atomic() ->
             "content_sha256": H1,
             "lifecycle_status": "active",
             "context_sha256": _context_sha256(),
-            "classification_revision": None,
-            "classification_sha256": None,
+            "context_contract_version": 2,
+            "context_origin": "authored",
         },
         {
             "evidence_id": retained.id,
             "content_sha256": H1,
             "lifecycle_status": "active",
             "context_sha256": _context_sha256(),
-            "classification_revision": None,
-            "classification_sha256": None,
+            "context_contract_version": 2,
+            "context_origin": "authored",
         },
     ]
     uow.services.refinements.snapshots[4].code_evidence_manifest = [
@@ -3249,16 +3154,16 @@ async def test_spec_evidence_rebase_preview_apply_cas_and_events_are_atomic() ->
             "content_sha256": H2,
             "lifecycle_status": "active",
             "context_sha256": _context_sha256(),
-            "classification_revision": None,
-            "classification_sha256": None,
+            "context_contract_version": 2,
+            "context_origin": "authored",
         },
         {
             "evidence_id": retained.id,
             "content_sha256": H1,
             "lifecycle_status": "active",
             "context_sha256": _context_sha256(),
-            "classification_revision": None,
-            "classification_sha256": None,
+            "context_contract_version": 2,
+            "context_origin": "authored",
         },
     ]
     actor = ActorContext(
@@ -3318,147 +3223,8 @@ async def test_spec_evidence_rebase_preview_apply_cas_and_events_are_atomic() ->
         == ("evidence-3", "evidence-4")
     )
     assert preview.source_context_delta.evidence.role_counts_changed is False
-    assert preview.source_context_delta.classification.changed is False
     assert uow.commit_count == 0
     assert uow.published_events == []
-
-    target_manifest = uow.services.refinements.snapshots[4].source_context_manifest
-    target_manifest_sha256 = (
-        uow.services.refinements.snapshots[4].source_context_sha256
-    )
-    classification = CodeEvidenceLegacyClassification(
-        id="classification-retained-1",
-        batch_id="classification-batch-1",
-        board_id="board-1",
-        evidence_id=retained.id,
-        evidence_payload_sha256=retained.payload_sha256,
-        revision=1,
-        predecessor_classification_id=None,
-        source_role=CodeEvidenceSourceRole.EXISTING_CONSTRAINT,
-        relevance_summary="The legacy item constrains the planned change.",
-        scope_relation="same bounded delivery scope",
-        source_origin="repository baseline",
-        interpretation_limit=None,
-        baseline_provenance=CodeEvidenceBaselineProvenance(
-            presence=CodeEvidenceBaselinePresence.COMMITTED_SNAPSHOT,
-            workspace_state_id=retained.workspace_state.workspace_state_id,
-        ),
-        classified_by="user-1",
-        classified_at=NOW,
-        justification="Human review resolved the legacy ambiguity.",
-        idempotency_key="classification-retained-1",
-        request_sha256=H1,
-        batch_item_count=1,
-        batch_item_index=1,
-    )
-    traceability.evidence_classifications[(retained.id, 1)] = classification
-    classification_fence = source_context_classification_fence_v2(
-        (classification,)
-    )
-    classified_manifest, classified_manifest_sha256 = _source_context_manifest(
-        refinement_version=4,
-        delivery_context=DeliveryContext.GREENFIELD,
-        receipt_id="receipt-context-4",
-        generation=4,
-        head_revision=4,
-        receipt_sha256=H2,
-        outcome=(
-            ContextualInvestigationOutcomeV2.NO_RELEVANT_EXISTING_IMPLEMENTATION
-        ),
-        role_counts={
-            "current_implementation_count": 0,
-            "existing_scaffold_count": 0,
-            "existing_constraint_count": 1,
-            "reference_pattern_count": 0,
-            "uncategorized_legacy_count": 1,
-        },
-        classification_revision=classification_fence.revision,
-        classification_sha256=classification_fence.payload_sha256,
-    )
-    uow.services.refinements.snapshots[4].source_context_manifest = (
-        classified_manifest
-    )
-    uow.services.refinements.snapshots[4].source_context_sha256 = (
-        classified_manifest_sha256
-    )
-    uow.services.refinements.snapshots[4].code_evidence_manifest[1][
-        "classification_revision"
-    ] = 1
-    uow.services.refinements.snapshots[4].code_evidence_manifest[1][
-        "classification_sha256"
-    ] = classification.classification_sha256
-    uow.services.refinements.snapshots[4].code_evidence_manifest[1][
-        "context_contract_version"
-    ] = 2
-    uow.services.refinements.snapshots[4].code_evidence_manifest[1][
-        "context_origin"
-    ] = "human_legacy_classification"
-    uow.services.refinements.snapshots[4].code_evidence_manifest[1][
-        "context_sha256"
-    ] = canonical_code_traceability_sha256(
-        source_context_evidence_payload_v2(
-            source_context_evidence_item_v2(retained, classification)
-        )
-    )
-    classified_preview = await PreviewSpecCodeEvidenceRebaseUseCase(
-        SpecCodeEvidenceRebaseService(clock=lambda: NOW)
-    ).execute(preview_command, actor=actor, uow=uow)  # type: ignore[arg-type]
-    classification_delta = classified_preview.source_context_delta.classification
-    assert classification_delta.overlay_changed_evidence_ids == (retained.id,)
-    assert classification_delta.revision_changed_evidence_ids == (retained.id,)
-    assert classification_delta.digest_changed_evidence_ids == (retained.id,)
-    assert classification_delta.fence_revision_changed is True
-    assert classification_delta.fence_digest_changed is True
-    assert classified_preview.preview_sha256 != preview.preview_sha256
-    # A later human classification belongs to the target Refinement snapshot.
-    # The pinned Spec and its gate inputs stay frozen until the explicit rebase.
-    assert traceability.spec_rebase_state["spec-1"] == (
-        "snapshot-3",
-        3,
-        7,
-        DeliveryContext.BROWNFIELD,
-        current_provenance,
-        current_source_context,
-        current_source_context_sha256,
-    )
-    assert link.id in traceability.links
-    assert retained_link.id in traceability.links
-    assert added_direct_link.id in traceability.links
-    assert traceability.dispositions[("spec-1", retained.id)].active is True
-    with pytest.raises(CodeEvidenceLinkInvalid) as stale_classification_preview:
-        await ApplySpecCodeEvidenceRebaseUseCase(
-            SpecCodeEvidenceRebaseService(clock=lambda: NOW)
-        ).execute(
-            SpecCodeEvidenceRebaseApplyInput(
-                **preview_command.model_dump(mode="python"),
-                preview_sha256=preview.preview_sha256,
-            ),
-            actor=actor,
-            uow=uow,  # type: ignore[arg-type]
-        )
-    assert stale_classification_preview.value.details == {
-        "reason": "rebase_preview_stale"
-    }
-    assert traceability.rebase_apply_count == 0
-    uow.services.refinements.snapshots[4].source_context_manifest = target_manifest
-    uow.services.refinements.snapshots[4].source_context_sha256 = (
-        target_manifest_sha256
-    )
-    uow.services.refinements.snapshots[4].code_evidence_manifest[1][
-        "classification_revision"
-    ] = None
-    uow.services.refinements.snapshots[4].code_evidence_manifest[1][
-        "classification_sha256"
-    ] = None
-    uow.services.refinements.snapshots[4].code_evidence_manifest[1].pop(
-        "context_contract_version"
-    )
-    uow.services.refinements.snapshots[4].code_evidence_manifest[1].pop(
-        "context_origin"
-    )
-    uow.services.refinements.snapshots[4].code_evidence_manifest[1][
-        "context_sha256"
-    ] = _context_sha256()
 
     with pytest.raises(CodeEvidenceLinkInvalid) as not_newer:
         await PreviewSpecCodeEvidenceRebaseUseCase().execute(
@@ -3496,6 +3262,7 @@ async def test_spec_evidence_rebase_preview_apply_cas_and_events_are_atomic() ->
     }
     uow.services.refinements.snapshots[3].delivery_context = DeliveryContext.BROWNFIELD
 
+    target_manifest = uow.services.refinements.snapshots[4].source_context_manifest
     uow.services.refinements.snapshots[4].source_context_manifest = None
     with pytest.raises(CodeEvidenceLinkInvalid) as legacy_context_missing:
         await PreviewSpecCodeEvidenceRebaseUseCase().execute(
@@ -3648,7 +3415,6 @@ async def test_spec_evidence_rebase_preserves_or_normalizes_context_override(
         "existing_scaffold_count": 0,
         "existing_constraint_count": 0,
         "reference_pattern_count": 0,
-        "uncategorized_legacy_count": 0,
     }
     current_source_context, current_source_context_sha256 = (
         _source_context_manifest(
@@ -3872,14 +3638,14 @@ async def test_receipt_use_case_observes_accepted_age_and_bounded_rejection() ->
             "metric_name": METRIC_CODE_INVESTIGATION_RECEIPT_TOTAL,
             "value": 1,
             "labels": {
-                "outcome": "accessible",
+                "outcome": "evidence_applicable",
                 "trust_level": "single_attestation",
             },
         },
         {
             "metric_name": METRIC_CODE_INVESTIGATION_RECEIPT_AGE_SECONDS,
             "value": 0.0,
-            "labels": {"outcome": "accessible"},
+            "labels": {"outcome": "evidence_applicable"},
         },
     ]
 
@@ -3942,29 +3708,29 @@ async def test_reopened_refinement_snapshot_inherits_prior_active_evidence(
     from okto_pulse.core.services import main as service_main
 
     records = (
-        _legacy_evidence_record(
+        _native_evidence_record(
             "evidence-v3-active",
             parent_version=3,
             payload_sha256=H1,
         ),
-        _legacy_evidence_record(
+        _native_evidence_record(
             "evidence-v4-active",
             parent_version=4,
             payload_sha256=H2,
         ),
-        _legacy_evidence_record(
+        _native_evidence_record(
             "evidence-v3-superseded",
             parent_version=3,
             payload_sha256=H1,
             lifecycle_status=CodeTraceabilityLifecycleStatus.SUPERSEDED,
         ),
-        _legacy_evidence_record(
+        _native_evidence_record(
             "evidence-v3-revoked",
             parent_version=3,
             payload_sha256=H1,
             lifecycle_status=CodeTraceabilityLifecycleStatus.REVOKED,
         ),
-        _legacy_evidence_record(
+        _native_evidence_record(
             "evidence-v5-future",
             parent_version=5,
             payload_sha256=H1,
@@ -3984,18 +3750,6 @@ async def test_reopened_refinement_snapshot_inherits_prior_active_evidence(
                     limit=query.limit,
                 )
 
-        async def list_latest_evidence_classifications(
-            self,
-            *,
-            board_id: str,
-            evidence_ids: tuple[str, ...],
-        ):
-            assert board_id == "board-1"
-            assert evidence_ids == (
-                "evidence-v3-active",
-                "evidence-v4-active",
-            )
-            return ()
 
     class Adapter:
         def code_traceability(self, _session):

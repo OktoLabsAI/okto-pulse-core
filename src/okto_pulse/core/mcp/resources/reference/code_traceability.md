@@ -116,7 +116,6 @@ authored `source_role`:
 | `existing_scaffold` | Existing scaffold, starter/base code, generated shell, or structural baseline; context only, not delivered subject behavior |
 | `existing_constraint` | Existing platform, schema, configuration, dependency, or compatibility constraint |
 | `reference_pattern` | Existing source consulted as a pattern; it is not the subject's implementation |
-| `uncategorized_legacy` | Read-only projection of pre-V2 Evidence; never valid on a new authored write |
 
 `existing_scaffold` and `reference_pattern` always require an explicit
 `interpretation_limit` explaining what the next consumer must not conclude.
@@ -237,22 +236,16 @@ but conflicts with `current_implementation` Evidence for the same effective
 scope. Record absence on the receipt; do not fabricate an Evidence row whose
 claim is merely that a future implementation does not exist.
 
-V1 receipts and Evidence remain readable for compatibility, but they do not
-carry contextual meaning. A V1 receipt cannot be treated as
-`evidence_applicable`, and V1 Evidence projects as `uncategorized_legacy` with
-`context_origin=unclassified_legacy`. New governed work must not author V1.
-If the live inbound schema exposes only the legacy shape, stop and report the
-missing V2 capability; never infer a role, reuse `accessible` as a contextual
-outcome, or create new ambiguous history. A fresh V2 investigation may still
-be required even after a human classifies old Evidence.
+Receipt and Evidence submissions require `contract_version=2` and the authored
+contextual fields. Earlier formats are rejected without conversion.
 
 ## Submitting Code Evidence
 
 Evidence submission is agent-only and must reference an accepted current V2
 receipt, the frozen selector scope, exact parent/version, explicit contextual
 fields, and recomputable digests. Unknown fields, absolute paths, traversal,
-oversized excerpts, stale heads, mismatched actors, V1/V2 mixtures, and
-`uncategorized_legacy` on a new write fail closed. Accepted Evidence is
+oversized excerpts, stale heads, mismatched actors, unsupported contract versions,
+and unknown source roles fail closed. Accepted Evidence is
 immutable. Correction creates a complete contextual successor with
 `okto_pulse_supersede_code_evidence`.
 
@@ -290,80 +283,35 @@ For each distinct, consequential fact:
 8. Use one idempotency key only for byte-for-byte retries. A corrected fact is
    a new immutable record through `okto_pulse_supersede_code_evidence`.
 
-## Legacy classification is explicit actor governance
-
-When an old item projects as `unclassified_legacy`, neither a human nor an
-agent may infer its role from its path, evidence type, claim, or surrounding
-Spec alone. An authorized human may use the UI/REST batch, and an authorized
-agent may use `okto_pulse_classify_legacy_code_evidence`. Both paths require
-the same `code_traceability.evidence.classify_legacy` permission, complete
-context fields, baseline provenance, justification, and current CAS values.
-
-Classification is an append-only overlay: it records the Evidence payload
-digest, expected classification revision, authored contextual fields,
-baseline provenance, justification, actor, time, revision, and classification
-digest. The original Evidence payload is never edited. A batch is all-or-none,
-idempotent, and compare-and-swap fenced. A later correction appends a new
-classification revision; it does not overwrite history. Public activity
-exposes bounded metadata such as a justification digest, not the justification
-text or source content.
-
-Classification gives an old Evidence item explicit contextual meaning;
-it does not turn its V1 investigation receipt into a V2 receipt and does not
-automatically satisfy a current investigation gate. If classification is
-needed, read the server-authored classification inputs and classify only when
-the existing Evidence and investigation context provide a defensible answer.
-If the meaning remains ambiguous, surface the affected IDs for a human
-decision instead of guessing.
-
 ## Effective projection and frozen Specs
 
-Read `source_context`, not raw Evidence fields alone. Its role counts and
-classification state cover the complete effective evidence set even when the
-visible `evidence` or `source_context_items` collections are bounded. Each
-effective item reports `context_origin` as `authored`,
-`human_legacy_classification`, or `unclassified_legacy`; the middle value is a
-compatibility label for an actor-authored legacy overlay and does not imply
-that the current classifier was human. Never infer origin. Summary and gate
-projections omit the classifier identity. Use
-`detail`/`full` only for an authorized bounded audit that actually needs actor
-provenance.
-
-For the **current Refinement only**, `detail` and `full` with the default scope
-also expose `source_context_classification_inputs` for each visible legacy
-Evidence item. This is the server-authoritative classification preflight: consume
-its `expected_evidence_payload_sha256`, `expected_classification_revision`, and
-`baseline_provenance` exactly. A clean frozen workspace reports
-`committed_snapshot`; a dirty frozen workspace reports
-`preexisting_worktree` with `provenance_note_required=true`, and the classifier must
-supply that note before submission. Do not derive these values from paths,
-claims, or UI state. The collection is always empty for `summary`, gate scope,
-Spec, and Card projections. Spec/Card remain historical views and deliberately
-offer no classification CTA; refresh the current Refinement before starting a
-classification.
+Read `source_context`, not raw Evidence fields alone. Its role counts cover the
+complete effective evidence set even when the visible `evidence` or
+`source_context_items` collections are bounded. Each item has immutable
+agent-authored context (`context_origin=authored`). Detail/full projections
+remain permission-controlled and source-blind.
 
 Use `contextual_evidence_coverage` for the human Source Context Matrix; do not
-reinterpret the legacy `coverage` field. Its authoritative `total` includes
+recompute coverage from raw links. Its authoritative `total` includes
 only inherited active `current_implementation` Evidence, while scaffold,
-constraint, and reference-pattern items remain context-only. The
-`unresolved_applicability_count` reports unclassified legacy items. A numeric
+constraint, and reference-pattern items remain context-only. A numeric
 `coverage_pct` exists only when applicability is explicitly true, the
-projection is complete, every legacy item is classified, the investigation is
+projection is complete, the investigation is
 neither partial nor unavailable, and total is non-zero. Otherwise it is null.
 When `projection_complete=false`, `linked`, `dispositioned`, `pending`, and
 `pending_ids` are bounded lower bounds; refresh or narrow the projection rather
 than presenting them as complete coverage.
 
 Completing a Refinement freezes its delivery context, contextual receipt
-versions, effective Evidence context, and classification revision/digest in
+versions and immutable Evidence context/digests in
 the Refinement snapshot. A derived Spec pins that exact source-context manifest
-and SHA-256. Later Evidence, receipt, or human-classification changes may alter
+and SHA-256. Later Evidence or receipt changes may alter
 a live Refinement projection, but they do not silently rewrite an existing
 Spec.
 
 To adopt a later Refinement snapshot, use the governed Spec Evidence rebase:
 preview against the current Spec version and exact target Refinement version,
-review context/classification/link/disposition deltas, then apply the exact
+review context/link/disposition deltas, then apply the exact
 `preview_sha256`. A stale preview fails closed. Do not emulate a rebase by
 editing links, copying Evidence, or rewriting a frozen manifest. If the live
 agent surface does not expose preview/apply, stop and surface the required
@@ -754,22 +702,12 @@ remediation. Common branches:
 - `code_investigation_unavailable`: report the unavailable capability;
 - `code_investigation_head_conflict`: start a fresh preflight on the new head;
 - `code_investigation_subject_version_conflict`: refetch full context;
-- `code_evidence_source_role_required` or
-  `code_evidence_legacy_role_write_forbidden`: submit a V2 authored role;
-  never author `uncategorized_legacy`;
+- `code_evidence_source_role_required`: submit a required authored source role;
 - `code_evidence_interpretation_limit_required`: explain the limit of a
   scaffold/reference observation;
 - `code_evidence_baseline_provenance_invalid` or
   `code_evidence_post_baseline_source_forbidden`: bind only source that was
   present in the accepted baseline, not planned TO-BE work;
-- `code_evidence_legacy_classification_human_required`: legacy compatibility
-  code for a system/unsupported identity; use an authenticated human or agent
-  with `code_traceability.evidence.classify_legacy`;
-- `code_evidence_legacy_classification_payload_conflict`,
-  `code_evidence_legacy_classification_revision_conflict`, or
-  `code_evidence_legacy_classification_idempotency_conflict`: refresh the
-  legacy classification detail and retry the complete batch with fresh
-  fences or a new idempotency key as appropriate;
 - `code_evidence_disposition_required`: link or disposition pending Evidence;
   an authorized human may explicitly skip this one matrix coverage obligation
   in the Code Evidence Matrix tab or for the Board in Menu → Board;
@@ -798,8 +736,8 @@ For new governed work, accepts the authenticated external agent's contextual
 V2 outcome: `evidence_applicable`,
 `no_relevant_existing_implementation`, `partial`, or `unavailable`. Actor,
 delivery context, source scope, subject/version, head and trust are
-server-owned. A live schema that exposes only V1 is compatibility-only and
-must not be used to author new contextual history.
+server-owned. The receipt exposes only `contextual_outcome`; no prior outcome
+format is accepted or inferred.
 
 ## `okto_pulse_get_code_investigation_receipt`
 
@@ -811,13 +749,6 @@ workspace locator or source excerpt.
 Submits one immutable AS-IS factual snapshot bound to an accepted contextual
 agent receipt. New writes require the V2 role, relevance, scope, origin,
 interpretation-limit, and baseline-provenance contract.
-
-## `okto_pulse_classify_legacy_code_evidence`
-
-Appends one atomic, audited contextual overlay over legacy Evidence without
-editing the original payload. Supply the exact server-authored payload digest,
-classification revision and baseline provenance for every item. Classify only
-when the Evidence context supports the decision; otherwise request human input.
 
 ## `okto_pulse_get_code_evidence`
 

@@ -30,7 +30,6 @@ EXPECTED_TOOLS = {
     "okto_pulse_get_delivery_evidence": "code_traceability.evidence.read",
     "okto_pulse_record_delivery_evidence": "board.read",
     "okto_pulse_acknowledge_implementation_overlap": "code_traceability.overlap.acknowledge",
-    "okto_pulse_classify_legacy_code_evidence": "code_traceability.evidence.classify_legacy",
     "okto_pulse_clear_code_traceability_not_applicable": "code_traceability.waiver.clear",
     "okto_pulse_create_implementation_target": "code_traceability.target.suggest",
     "okto_pulse_get_code_evidence": "code_traceability.evidence.read",
@@ -56,7 +55,7 @@ def test_code_traceability_registers_exact_reviewed_inventory() -> None:
     assert server._CODE_TRACEABILITY_TOOL_NAMES == frozenset(EXPECTED_TOOLS)
     live = {tool.name for tool in server.mcp.iter_tools()}
     assert set(EXPECTED_TOOLS).issubset(live)
-    assert len(live) == 301  # Consolidated v1.3 after residual maintenance retirement.
+    assert len(live) == 302  # Current inventory after legacy classification removal.
 
 
 def test_every_code_traceability_tool_has_a_closed_specific_schema() -> None:
@@ -103,7 +102,7 @@ def test_code_traceability_tools_have_one_exact_granular_permission() -> None:
     }
     for tool_name, expected_flag in EXPECTED_TOOLS.items():
         assert policies[tool_name] == (expected_flag,)
-    assert len(MCP_TOOL_PERMISSION_POLICIES) == 298
+    assert len(MCP_TOOL_PERMISSION_POLICIES) == 299
 
 
 def test_code_traceability_lazy_docs_are_canonical_and_complete() -> None:
@@ -263,6 +262,15 @@ async def test_invalid_relative_path_is_a_serializable_error_before_uow() -> Non
         declared_source_content_sha256="a" * 64,
         idempotency_key="evidence-submit-1",
         relative_path="../secret.py",
+        contract_version=2,
+        source_role="current_implementation",
+        relevance_summary="Current implementation evidence.",
+        scope_relation="same delivery scope",
+        source_origin="repository baseline",
+        baseline_provenance={
+            "presence": "committed_snapshot",
+            "workspace_state_id": "workspace-1",
+        },
     )
 
     assert outcome.is_error is True

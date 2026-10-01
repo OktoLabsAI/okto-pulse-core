@@ -1,4 +1,4 @@
-"""ConsolidationEnqueuer — first (and so far only) event handler.
+"""ConsolidationEnqueuer â€” first (and so far only) event handler.
 
 Subscribes to the 12 MVP event types and inserts the matching row in
 ConsolidationQueue so the existing consolidation_worker can pick it up
@@ -6,7 +6,7 @@ and push the artifact into the Knowledge Graph.
 
 Replaces the ad-hoc `db.add(ConsolidationQueue(...))` calls that used to
 live scattered across services/main.py. New handlers (activity log,
-notifications, webhooks) follow the same pattern — subscribe, map, do.
+notifications, webhooks) follow the same pattern â€” subscribe, map, do.
 
 Idempotency is delegated to the registered relational effects port. The
 Community SQLAlchemy adapter owns database-specific conflict mechanics; this
@@ -62,7 +62,6 @@ _CODE_EVIDENCE_EVENTS = {
     "code_evidence.linked",
     "code_evidence.unlinked",
     "code_evidence.disposition_changed",
-    "code_evidence.legacy_classified",
 }
 _IMPLEMENTATION_TARGET_EVENTS = {
     "implementation_target.created",
@@ -76,7 +75,7 @@ _IMPLEMENTATION_TARGET_EVENTS = {
 # The removed Spec id stays in the unlink event, while the Card is reread.
 _CARD_TO_SPEC_EVENTS = {"card.linked_to_spec", "card.unlinked_from_spec"}
 
-# Spec 4007e4a3 (Ideação #3): card.moved / card.conclusion_added re-enqueue
+# Spec 4007e4a3 (IdeaÃ§Ã£o #3): card.moved / card.conclusion_added re-enqueue
 # BOTH the card itself (status/conclusion lives on the card node) AND the
 # parent spec (aggregated children-state on the spec node). Orphan cards
 # (spec_id is None) skip the spec-side enqueue gracefully.
@@ -133,7 +132,6 @@ _HIGH_PRIORITY_EVENTS = {"card.cancelled", "spec.version_bumped"}
     "code_evidence.linked",
     "code_evidence.unlinked",
     "code_evidence.disposition_changed",
-    "code_evidence.legacy_classified",
     "implementation_target.created",
     "implementation_target.updated",
     "implementation_target.revoked",
@@ -233,13 +231,13 @@ class ConsolidationEnqueuer:
         # concurrent events for the same (board_id, artifact_type, artifact_id)
         # without the SELECT-then-INSERT TOCTOU race that the previous v1 path
         # had. Semantics preserved bit-for-bit:
-        #   - row inexistente → INSERT (status=pending, attempts=0)
-        #   - row em pending/claimed → no-op (the WHERE on the conflict_update
-        #     branch filters those out — the existing row keeps its identity)
-        #   - row em terminal (done/failed/paused) → reset to pending so the
+        #   - row inexistente â†’ INSERT (status=pending, attempts=0)
+        #   - row em pending/claimed â†’ no-op (the WHERE on the conflict_update
+        #     branch filters those out â€” the existing row keeps its identity)
+        #   - row em terminal (done/failed/paused) â†’ reset to pending so the
         #     worker re-processes the artifact under the new event
         # Earlier dedup was implemented by the SELECT block at lines 104-129
-        # of the v1 file — see git history before bug 4a430c6d.
+        # of the v1 file â€” see git history before bug 4a430c6d.
 
         # Spec bdcda842 (TR4 + BR1 zero-loss): every non-tombstoned event is
         # admitted regardless of depth; backpressure flows from the consumer
@@ -276,7 +274,7 @@ class ConsolidationEnqueuer:
             )
 
         if alert_threshold is not None and depth_after_insert == alert_threshold:
-            # Crossing edge only — fired exactly once per low→high transition
+            # Crossing edge only â€” fired exactly once per lowâ†’high transition
             # so log volume stays bounded under sustained backlog.
             logger.warning(
                 "consolidation.queue.alert_fired board=%s depth=%d threshold=%d "
@@ -301,7 +299,7 @@ class ConsolidationEnqueuer:
 
             record_alert_fired()
 
-        # Spec 4007e4a3 (Ideação #3, FR5): structured counter for dual-target
+        # Spec 4007e4a3 (IdeaÃ§Ã£o #3, FR5): structured counter for dual-target
         # spec re-enqueue. Emitted only when the spec-side enqueue actually
         # fires (after dedup short-circuit for orphan and duplicate paths).
         if (
@@ -383,7 +381,7 @@ class ConsolidationEnqueuer:
     def _map_targets(self, event: DomainEvent) -> list[tuple[str, str]]:
         """Return one or more (artifact_type, artifact_id) targets per event.
 
-        Most events map to a single target. Spec 4007e4a3 (Ideação #3)
+        Most events map to a single target. Spec 4007e4a3 (IdeaÃ§Ã£o #3)
         introduces dual-target events (card.moved, card.conclusion_added)
         that re-enqueue both the card AND the parent spec. Orphan cards
         (spec_id is None) skip the spec-side target gracefully and emit a
@@ -484,7 +482,7 @@ class ConsolidationEnqueuer:
                 targets.append(("card", card_id))
             return targets
 
-        # Dual-target card+spec events (Ideação #3): both targets.
+        # Dual-target card+spec events (IdeaÃ§Ã£o #3): both targets.
         if et in _CARD_DUAL_TARGET_EVENTS:
             card_id = getattr(event, "card_id", None)
             if card_id:

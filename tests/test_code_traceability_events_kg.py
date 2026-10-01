@@ -12,7 +12,6 @@ from okto_pulse.core.events.types import (
     EVENT_TYPES,
     CodeEvidenceCreated,
     CodeEvidenceDispositionChanged,
-    CodeEvidenceLegacyClassified,
     CodeEvidenceLinked,
     CodeEvidenceRevoked,
     CodeEvidenceSuperseded,
@@ -56,7 +55,6 @@ _TRACEABILITY_EVENT_CLASSES = (
     CodeEvidenceLinked,
     CodeEvidenceUnlinked,
     CodeEvidenceDispositionChanged,
-    CodeEvidenceLegacyClassified,
     ImplementationTargetCreated,
     ImplementationTargetUpdated,
     ImplementationTargetRevoked,
@@ -77,7 +75,6 @@ _TRACEABILITY_EVENT_TYPES = {
     "code_evidence.linked",
     "code_evidence.unlinked",
     "code_evidence.disposition_changed",
-    "code_evidence.legacy_classified",
     "implementation_target.created",
     "implementation_target.updated",
     "implementation_target.revoked",
@@ -99,7 +96,7 @@ def _receipt() -> dict[str, object]:
         "declared_revision": "revision-1",
         "workspace_state_id": "workspace-state-1",
         "trust_level": "single_attestation",
-        "outcome": "accessible",
+        "contextual_outcome": "evidence_applicable",
         "generation": 1,
         "payload_sha256": _SHA_A,
         "content_hash": _SHA_A,
@@ -177,10 +174,10 @@ def _target() -> dict[str, object]:
     }
 
 
-def test_event_registry_adds_exactly_the_eighteen_closed_event_names():
+def test_event_registry_contains_exact_current_traceability_event_names():
     actual = {event.event_type for event in _TRACEABILITY_EVENT_CLASSES}
     assert actual == _TRACEABILITY_EVENT_TYPES
-    assert len(EVENT_TYPES) == 61  # Three retired Sprint lifecycle events.
+    assert len(EVENT_TYPES) == 63  # Current registry without legacy classification.
     assert _TRACEABILITY_EVENT_TYPES.issubset(EVENT_TYPES)
     for event_class in _TRACEABILITY_EVENT_CLASSES:
         assert resolve_event_class(event_class.event_type) is event_class
@@ -239,7 +236,7 @@ def test_event_payload_is_bounded_frozen_and_rejects_unknown_fields():
 
 
 def test_kg_schema_is_additive_semantic_subtyping_only():
-    assert SCHEMA_VERSION == "0.7.0"
+    assert SCHEMA_VERSION == "0.8.0"
     assert len(NODE_TYPES) == 11
     assert not set(CODE_TRACEABILITY_ENTITY_SUBTYPES).intersection(NODE_TYPES)
     assert CODE_TRACEABILITY_ENTITY_SUBTYPES == (
@@ -414,9 +411,9 @@ def test_projection_rejects_malformed_digest_before_graph_staging():
         worker.process_code_investigation_receipt(
             {**_receipt(), "payload_sha256": "not-a-sha"}
         )
-    with pytest.raises(ValueError, match="code_traceability_outcome_invalid"):
+    with pytest.raises(ValueError, match="code_traceability_contextual_outcome_invalid"):
         worker.process_code_investigation_receipt(
-            {**_receipt(), "outcome": "available"}
+            {**_receipt(), "contextual_outcome": "available"}
         )
 
 

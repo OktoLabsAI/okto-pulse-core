@@ -1,4 +1,4 @@
-"""Closed MCP routing for legacy V1 and contextual V2 Code Traceability."""
+"""Closed MCP routing for the sole contextual Code Traceability contract."""
 
 from __future__ import annotations
 
@@ -16,8 +16,6 @@ from okto_pulse.core.domain.code_traceability import (
     CodeTraceabilityContext,
     CodeTraceabilityProjectionProfile,
     CodeTraceabilitySubjectType,
-    SourceContextClassificationBaselineInputV2,
-    SourceContextClassificationInputV2,
     SourceContextEvidenceItemV2,
 )
 from okto_pulse.core.mcp import server
@@ -29,14 +27,9 @@ from okto_pulse.core.mcp.code_traceability_tools import (
 )
 from okto_pulse.core.models.code_traceability import (
     CodeEvidenceSubmission,
-    CodeEvidenceSubmissionV2,
     CodeEvidenceSupersessionSubmission,
-    CodeEvidenceSupersessionSubmissionV2,
     CodeInvestigationReceiptSubmission,
-    CodeInvestigationReceiptSubmissionV2,
     CodeInvestigationToolingInput,
-    LegacyEvidenceClassificationBatchInput,
-    LegacyEvidenceClassificationItemInput,
 )
 from okto_pulse.core.models.schemas import CodeTraceabilitySettings
 from okto_pulse.core.services.code_traceability_gate import (
@@ -94,14 +87,13 @@ def _context_values() -> dict[str, object]:
     }
 
 
-def test_existing_mcp_tools_advertise_explicit_v1_v2_context_contracts() -> None:
+def test_mcp_tools_advertise_only_required_contextual_contract() -> None:
     receipt = server.mcp._tool_manager._tools[
         "okto_pulse_submit_code_investigation_receipt"
     ].parameters
     assert receipt["properties"]["contract_version"] == {
-        "enum": [1, 2],
+        "const": 2,
         "type": "integer",
-        "default": 1,
     }
     assert "evidence_applicable" in receipt["properties"]["outcome"]["pattern"]
     assert (
@@ -125,13 +117,10 @@ def test_existing_mcp_tools_advertise_explicit_v1_v2_context_contracts() -> None
         schema = server.mcp._tool_manager._tools[name].parameters
         assert schema["additionalProperties"] is False
         assert contextual_fields.issubset(schema["properties"])
-        assert schema["properties"]["contract_version"]["default"] == 1
+        assert schema["properties"]["contract_version"]["const"] == 2
+        assert contextual_fields - {"interpretation_limit"} <= set(schema["required"])
         role_schema = schema["properties"]["source_role"]
-        authored_roles = next(
-            variant["enum"]
-            for variant in role_schema["anyOf"]
-            if "enum" in variant
-        )
+        authored_roles = role_schema["enum"]
         assert set(authored_roles) == {
             "current_implementation",
             "existing_scaffold",
@@ -147,7 +136,7 @@ def test_existing_mcp_tools_advertise_explicit_v1_v2_context_contracts() -> None
         }.intersection(schema["properties"])
 
 
-def test_receipt_contract_selection_preserves_v1_and_requires_v2_outcomes() -> None:
+def test_receipt_rejects_prior_contract_and_requires_contextual_outcome() -> None:
     common = {
         "board_id": "board-1",
         "request_id": "request-1",
@@ -158,15 +147,13 @@ def test_receipt_contract_selection_preserves_v1_and_requires_v2_outcomes() -> N
         "idempotency_key": "receipt-1",
     }
 
-    legacy = _investigation_receipt_command(outcome="accessible", **common)
     contextual = _investigation_receipt_command(
         contract_version=2,
         outcome="evidence_applicable",
         **common,
     )
 
-    assert type(legacy) is CodeInvestigationReceiptSubmission
-    assert type(contextual) is CodeInvestigationReceiptSubmissionV2
+    assert type(contextual) is CodeInvestigationReceiptSubmission
     assert contextual.contract_version == 2
 
     with pytest.raises(ValidationError):
@@ -185,16 +172,10 @@ def test_receipt_contract_selection_preserves_v1_and_requires_v2_outcomes() -> N
 
 def test_evidence_contract_selection_is_explicit_for_submit_and_supersede() -> None:
     values = _evidence_values()
-    legacy = _evidence_command(**values)
     contextual = _evidence_command(
         **values,
         **_context_values(),
         contract_version=2,
-    )
-    legacy_supersession = _evidence_command(
-        **values,
-        supersedes_evidence_id="evidence-old",
-        supersession_reason="Correct the prior observation.",
     )
     contextual_supersession = _evidence_command(
         **values,
@@ -204,10 +185,8 @@ def test_evidence_contract_selection_is_explicit_for_submit_and_supersede() -> N
         supersession_reason="Correct the prior contextual observation.",
     )
 
-    assert type(legacy) is CodeEvidenceSubmission
-    assert type(contextual) is CodeEvidenceSubmissionV2
-    assert type(legacy_supersession) is CodeEvidenceSupersessionSubmission
-    assert type(contextual_supersession) is CodeEvidenceSupersessionSubmissionV2
+    assert type(contextual) is CodeEvidenceSubmission
+    assert type(contextual_supersession) is CodeEvidenceSupersessionSubmission
     assert contextual.source_role is CodeEvidenceSourceRole.EXISTING_SCAFFOLD
     assert contextual_supersession.contract_version == 2
 
@@ -218,7 +197,8 @@ def test_evidence_contract_selection_is_explicit_for_submit_and_supersede() -> N
         {"contract_version": 1, **_context_values()},
         {
             "contract_version": 2,
-            "source_role": CodeEvidenceSourceRole.CURRENT_IMPLEMENTATION,
+            **_context_values(),
+            "baseline_provenance": None,
         },
         {"contract_version": 2, **_context_values(), "source_role": "uncategorized_legacy"},
     ],
@@ -263,8 +243,7 @@ async def test_invalid_v1_v2_mix_is_rejected_before_authentication_or_uow() -> N
 @pytest.mark.asyncio
 async def test_existing_mcp_handlers_route_all_three_v2_commands(monkeypatch) -> None:
     from okto_pulse.core.application.use_cases.code_traceability import (
-        ClassifyLegacyCodeEvidenceUseCase,
-        SubmitCodeEvidenceUseCase,
+            SubmitCodeEvidenceUseCase,
         SubmitCodeInvestigationReceiptUseCase,
         SupersedeCodeEvidenceUseCase,
     )
@@ -287,8 +266,7 @@ async def test_existing_mcp_handlers_route_all_three_v2_commands(monkeypatch) ->
         SubmitCodeInvestigationReceiptUseCase,
         SubmitCodeEvidenceUseCase,
         SupersedeCodeEvidenceUseCase,
-        ClassifyLegacyCodeEvidenceUseCase,
-    ):
+        ):
         monkeypatch.setattr(use_case, "execute", capture)
 
     class Scope:
@@ -322,10 +300,6 @@ async def test_existing_mcp_handlers_route_all_three_v2_commands(monkeypatch) ->
     )
     evidence_tool = await catalog.get_tool("okto_pulse_submit_code_evidence")
     supersede_tool = await catalog.get_tool("okto_pulse_supersede_code_evidence")
-    classify_tool = await catalog.get_tool(
-        "okto_pulse_classify_legacy_code_evidence"
-    )
-
     receipt_outcome = await receipt_tool.fn(
         board_id="board-1",
         request_id="request-1",
@@ -349,50 +323,26 @@ async def test_existing_mcp_handlers_route_all_three_v2_commands(monkeypatch) ->
         supersedes_evidence_id="evidence-old",
         supersession_reason="Correct the prior contextual observation.",
     )
-    classify_outcome = await classify_tool.fn(
-        board_id="board-1",
-        items=[
-            LegacyEvidenceClassificationItemInput(
-                evidence_id="legacy-1",
-                expected_evidence_payload_sha256=SHA,
-                expected_classification_revision=0,
-                source_role=CodeEvidenceSourceRole.EXISTING_SCAFFOLD,
-                relevance_summary="Defines the package baseline.",
-                scope_relation="Constrains this delivery.",
-                source_origin="Observed in the accepted workspace.",
-                interpretation_limit="It does not prove requested behavior.",
-                baseline_provenance=CodeEvidenceBaselineProvenance(
-                    presence=CodeEvidenceBaselinePresence.COMMITTED_SNAPSHOT,
-                    workspace_state_id="workspace-1",
-                ),
-            )
-        ],
-        justification="The accepted source context supports this classification.",
-        idempotency_key="legacy-classification-1",
-    )
-
     assert not receipt_outcome.is_error
     assert not evidence_outcome.is_error
     assert not supersede_outcome.is_error
-    assert not classify_outcome.is_error
     assert [type(command) for command in captured] == [
-        CodeInvestigationReceiptSubmissionV2,
-        CodeEvidenceSubmissionV2,
-        CodeEvidenceSupersessionSubmissionV2,
-        LegacyEvidenceClassificationBatchInput,
+        CodeInvestigationReceiptSubmission,
+        CodeEvidenceSubmission,
+        CodeEvidenceSupersessionSubmission,
     ]
 
 
-def test_mcp_inventory_includes_governed_legacy_classification_mutation() -> None:
+def test_mcp_inventory_has_no_legacy_classification_mutation() -> None:
     names = set(server._CODE_TRACEABILITY_TOOL_NAMES)
-    assert len(names) == 22
-    assert "okto_pulse_classify_legacy_code_evidence" in {
+    assert len(names) == 21
+    assert "okto_pulse_classify_legacy_code_evidence" not in {
         tool.name for tool in server.mcp.iter_tools()
     }
 
 
 @pytest.mark.asyncio
-async def test_mcp_projection_serializes_server_owned_classification_input(
+async def test_mcp_projection_serializes_authored_context_without_classification_overlay(
     monkeypatch,
 ) -> None:
     from okto_pulse.core.application.use_cases.code_traceability import (
@@ -400,25 +350,10 @@ async def test_mcp_projection_serializes_server_owned_classification_input(
     )
 
     item = SourceContextEvidenceItemV2(
-        evidence_id="legacy-1",
-        source_role=CodeEvidenceSourceRole.UNCATEGORIZED_LEGACY,
-        relevance_summary=None,
-        scope_relation=None,
-        source_origin=None,
-        interpretation_limit=None,
-        baseline_provenance=None,
-        context_origin=CodeEvidenceContextOrigin.UNCLASSIFIED_LEGACY,
-    )
-    classification_input = SourceContextClassificationInputV2(
-        evidence_id=item.evidence_id,
-        expected_evidence_payload_sha256=SHA,
-        expected_classification_revision=0,
-        baseline_provenance=SourceContextClassificationBaselineInputV2(
-            presence=CodeEvidenceBaselinePresence.PREEXISTING_WORKTREE,
-            workspace_state_id="workspace-dirty",
-            provenance_note=None,
-            provenance_note_required=True,
-        ),
+        evidence_id="evidence-1",
+        **_context_values(),
+        context_origin=CodeEvidenceContextOrigin.AUTHORED,
+        context_contract_version=2,
     )
     projection = CodeTraceabilityGateEvaluator().project(
         CodeTraceabilityContext(
@@ -428,7 +363,6 @@ async def test_mcp_projection_serializes_server_owned_classification_input(
             subject_version=3,
             profile=CodeTraceabilityProjectionProfile.DETAIL,
             source_context_items=(item,),
-            source_context_classification_inputs=(classification_input,),
         ),
         CodeTraceabilitySettings(mode="advisory"),
     )
@@ -449,16 +383,6 @@ async def test_mcp_projection_serializes_server_owned_classification_input(
         profile="detail",
     )
 
-    assert payload["source_context_classification_inputs"] == [
-        {
-            "evidence_id": "legacy-1",
-            "expected_evidence_payload_sha256": SHA,
-            "expected_classification_revision": 0,
-            "baseline_provenance": {
-                "presence": "preexisting_worktree",
-                "workspace_state_id": "workspace-dirty",
-                "provenance_note": None,
-                "provenance_note_required": True,
-            },
-        }
-    ]
+    assert "source_context_classification_inputs" not in payload
+    assert payload["source_context_items"][0]["context_origin"] == "authored"
+    assert payload["source_context_items"][0]["source_role"] == "existing_scaffold"

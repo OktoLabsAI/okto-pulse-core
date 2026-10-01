@@ -310,7 +310,7 @@ Create a spec draft from a DONE refinement. The refinement must be in 'done' sta
 Context is compiled from the refinement's scope, analysis, decisions, and Q&A.
 The Spec inherits and pins the exact delivery-context provenance and effective
 source-context manifest from the frozen Refinement snapshot. Later live
-Evidence or human-classification changes do not silently rewrite this Spec.
+Evidence changes do not silently rewrite this Spec.
 
 Artifacts (mockups, KBs, Architecture Designs) from the refinement are
 automatically propagated to the spec. Use mockup_ids/kb_ids/
@@ -751,14 +751,9 @@ revision; semantic or mixed batches remain Draft-only.
 ## Code Evidence links and dispositions
 
 Read `delivery_context`, effective `source_context`, `source_context_items`,
-and inherited Evidence from full Spec context. Summary role/classification
-counts cover the complete effective set even when item collections are
-bounded. Every item reports `context_origin` as `authored`,
-`human_legacy_classification`, or `unclassified_legacy`; never infer a legacy
-role from its path, type, or claim. Legacy classification is append-only:
-authorized agents use `okto_pulse_classify_legacy_code_evidence` with
-`code_traceability.evidence.classify_legacy`; humans may use UI/REST. A
-classification neither upgrades V1 receipts nor rebases this Spec implicitly.
+and inherited Evidence from full Spec context. Summary role counts cover the
+complete effective set even when item collections are bounded. Every Evidence
+item has `context_origin="authored"` and explicit baseline provenance.
 
 Use
 `okto_pulse_link_code_evidence` and `okto_pulse_unlink_code_evidence` for
@@ -770,7 +765,7 @@ TO-BE path.
 
 A refinement-derived Spec stays bound to its frozen manifest and SHA-256. To
 adopt a later Refinement snapshot, preview the governed Evidence rebase,
-review context/classification/link/disposition deltas, and apply the exact
+review context/link/disposition deltas, and apply the exact
 `preview_sha256`. Do not emulate rebase by copying Evidence or editing the
 manifest. If the agent surface lacks preview/apply, surface the authorized
 UI/REST action.

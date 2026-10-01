@@ -2,6 +2,311 @@
 
 ## Estado para retomada
 
+### 2026-10-01 — Milestone Evidence contextual: qualificado para publicação
+
+Fechada a cadeia de remoção de classificação/recibos pré-contextuais em domínio,
+DTOs, portas, application, persistência, source census, consolidação/rebuild,
+MCP, REST, CLI, frontend e instruções operacionais. Criação/supersession de
+Evidence agora exigem contexto também no evento; removidos evento de
+classificação, erro legado sem consumidor e fallback de evento sem baseline.
+O worker determinístico aceita somente os quatro outcomes contextuais na
+projeção do recibo. Histórico e rebase nativos permanecem verificáveis.
+
+Qualificação adicional ao registro abaixo:
+- native-events3: **98 passed/7.86s**, contratos contextuais, aceitação de
+  resolução, eventos/KG, aplicação, sanitização e efeitos/observabilidade.
+- native-traceability-final1:150 passaram; seis falhas eram instruções/testes
+  de compatibilidade e fixture KG sem policy/budget explícitos. Corrigidos
+  documentos e fixtures; native-traceability-final2:**53 passed/7.38s** nas
+  suites afetadas e catálogo. Não alterada autoridade KG: o teste de grant
+  completo fornece policy e executor falsos; testes de negação permanecem.
+- Community native-transport3:**43 passed/28.88s**, incluindo concorrência,
+  snapshots, roundtrip, revogação e apagamento autorizado de Board.
+- Frontend Code Traceability completo:**14 arquivos/141 testes passed/16.71s**.
+  Há warnings de keys duplicadas em fixtures CardProgress e act em Matrix;
+  nenhum teste falhou. Cadeia Delivery permanece para seu milestone próprio.
+- build SPA e verify:frontend-dist passaram:79 arquivos, hash
+  63cf94c9cd09a65cfafc930fd48ada9ec038b8d352f2dfd8926c87cea20292eb.
+- Ruff F/E9 e diff --check passaram em ambos. Closure final com READMEs
+  renderizados oficialmente:closure-clean-break-native-final1.json, exit0,
+  findings vazios e oito budgets ZERO.
+
+Artefatos finais:dist-clean-break-native-final1; instalado/source/wheels
+byte-idênticos, inclusive após rebuild SPA, conforme
+provenance-clean-break-native-final-after-spa.json (Core854 .py/917 payloads;
+Community322 .py/408 payloads). Publicar este milestone nos dois repositórios.
+
+**Próximo trabalho autorizado, sem pausa:** retomar a matriz C1–C4 no assessment,
+começando pela cadeia Knowledge (grandfather/backfill e caminhos v1/v2 de
+propagação), depois cadeias Architecture, permissões antigas, Guideline,
+Delivery/recovery e qualificação global. Suites transversais ainda precisam
+coleta/qualificação final C4; este milestone não declara a release concluída.
+Versão dos pacotes permanece0.3.4 até o bump coordenado previsto em C4.
+
+### 2026-10-01 — C1/C2: aplicação, materialidade, REST e persistência nativas
+
+Adaptadas as fixtures compartilhadas de aplicação ao único contrato contextual:
+recibos com delivery_context/context_contract_version/contextual_outcome;
+Evidence com papel, proveniência e baseline explícitos; snapshots com manifesto
+nativo e digest contextual. Preservados rebase CAS, conflitos de versão/contexto,
+links/dispositions, atomicidade de eventos, permissões e métricas limitadas.
+Os testes revelaram resíduos reais corrigidos: rebase ainda acessava overlay de
+classificação e contador legado; manifesto board_source_reader e consolidação
+ainda liam outcome removido. Ambos agora projetam contextual_outcome.
+
+Resultados: application-native4 **55 passed/5.57s** (application, contextual
+outcomes, gate); native-coverage3 **18 passed/6.55s** (cobertura contextual,
+MCP e catálogo gerado); native-transport3 **43 passed/28.88s** (REST,
+persistência transacional, superfície atual e schema fresco). As rodadas
+anteriores e falhas estão em .validation-v040/clean-break-*.log/xml.
+Não houve relaxamento de policy: a fixture de recibo metadata_only agora é
+nativa e evidence_applicable; o gate já aceita esse contrato. O teste de
+materialidade usa reference_pattern para demonstrar a recusa de evidência que
+não prova implementação; autorização não depende mais de recibo pré-contextual.
+
+Retiradas suites exclusivamente de classificação/persistência/migração legada,
+com inventário em clean-break-test-dispositions.json. Os três testes atuais de
+cobertura foram preservados em test_native_contextual_evidence_coverage.py;
+DDL PostgreSQL de papéis/campos atuais permanece em test_current_evidence_surface.
+REST conserva envelopes, isolamento de identificadores, roteamento e schemas
+fechados. Inventário MCP atual:302 tools/299 policies, catálogo oficial difere
+do checkpoint somente pela remoção da tool de classificação.
+
+Par instalado byte a byte: dist-clean-break-native-persistence3,
+provenance-clean-break-native-persistence3.json:Core854 .py/917 payloads,
+Community322 .py/408 payloads. SPA não mudou nesta rodada; permanece a prova
+da rodada anterior. **Ainda WIP, não milestone concluído**: restam adaptação
+de contratos contextuais antigos e suites eventos/KG/aceitação, auditoria de
+closure/readmes e qualificação conjunta antes de commit/push do milestone
+Evidence. Permanecem também as demais cadeias C1–C4 documentadas no assessment;
+não houve publicação de versão/tag nem conclusão do objetivo.
+
+### 2026-10-01 — C1/C2: recibos sem resultado/digest legados; contratos/MCP adaptados
+
+Eliminados CodeInvestigationOutcome, mapeamento contextual→legado, digest de
+observação antigo e propriedade effective_outcome. Recibo e sua persistência
+contêm somente contextual_outcome obrigatório, sem coluna outcome duplicada.
+Services, gates, views, evento, filtro REST/porta/SQL, diagnostics/CLI e frontend
+usam esse contrato. Consulta mantém um filtro `outcome` com o enum contextual;
+retirado o segundo filtro sem consumidor. SourceContextCurrentReceiptV2 exige
+contexto/version2, e agregação recusa elementos None (sequência vazia permanece
+legítima quando não há recibos). Guards SQL não conciliam mais dois outcomes.
+
+Adaptada a suite test_code_traceability_contracts.py mantendo imutabilidade,
+digest/omissões, projeção, server-owned fields, budget de envelope e portas.
+Primeiro ciclo:49passed/1falha causada por contexto de Evidence inserido também
+na fixture de resolução; corrigida somente essa fixture. Rerun contracts+
+current_receipt_contract:37passed/5.15s. Current Evidence/SourceContext13 tinham
+passado na mesma primeira rodada. Community current surface/schema:20passed/
+20.46s. Frontend receipt/sourceContext:41passed/11.06s. Não são substitutos das
+suites amplas de service/rebase/persistência ainda pendentes.
+
+Adaptada test_contextual_code_traceability_mcp: preservados schemas, recusa
+antes de autenticação/UoW, roteamento dos três comandos atuais e projeção. A
+classificação removida não é mais chamada. Resources reference/code_traceability
+e tool-docs/code-traceability retiram instructions de V1/overlays/classification;
+partes legadas de Delivery continuam pendentes de sua cadeia própria. Catálogo
+e ska_tool_manifest regenerados pelos módulos oficiais. MCP+catalog drift:
+15passed/4.23s. Ruff F,E9 passou para produto e suites adaptadas.
+
+SPA final desta rodada:79arquivos, árvore
+63cf94c9cd09a65cfafc930fd48ada9ec038b8d352f2dfd8926c87cea20292eb;
+build/verify:frontend-dist passaram. Par final instalado:
+dist-clean-break-receipt-current3, provenance-clean-break-receipt-current3.json,
+854/322py e917/408payload byte-idênticos. CLI instalada `code-traceability
+receipts --help` terminou0 e anuncia somente os quatro outcomes atuais.
+Closure preliminar receipt1 sobre current2 antes do ajuste final de choices
+CLI:ok=true/findings=[], oito budgets ZERO, --no-verify-readmes. Ainda não há
+closure final/README render do milestone, commit ou push desta frente.
+
+Próximo: adaptar fixtures compartilhadas em test_code_traceability_application,
+gate, contextual outcomes, rebase, REST/SQL/eventos, removendo exclusivamente
+casos de conversão/overlay e preservando os atuais. Tests ainda importam
+CodeInvestigationOutcome/SubmissionV2/classification removidos; não restaurar
+aliases. Verificar consumidores auxiliares/de documentos remanescentes, estados
+metadata-only e defaults de eventos de Evidence. Fechar testes integrados,
+closure+README e par final antes do checkpoint publicado. C1–C4 continuam.
+
+Scripts aplicados uma vez: remove_receipt_legacy_outcome.py,
+adapt_traceability_contract_tests.py, update_current_evidence_resources.py,
+adapt_contextual_mcp_tests.py. Assertion de tipos capturados MCP foi restaurada
+explicitamente após remoção textual de imports; seus15 testes passaram depois.
+Nenhum teste/build/processo desta rodada permanece ativo.
+
+### 2026-10-01 — C1/C3: SourceContext sem estados de classificação legada
+
+Retirados UNCATEGORIZED_LEGACY, origens de overlay/unclassified,
+SourceContextClassificationStateV2, classification_state e contador de roles
+legados. Manifestos de Refinement/Spec, parser, SQL e builders seguem a estrutura
+atual; parser recusa explicitamente os campos antigos. Rebase deixou de inventar
+role para Evidence sem contexto. Coverage perdeu unresolved_applicability_count
+e o predicado correspondente, exclusivos da classificação antiga; permanecem
+os gates de completude, partial/unavailable e current_implementation.
+
+UI/types/helpers e testes atualizados juntos. Retirados labels e linha de role
+legado. Ausência de contexto na projeção não é interpretada como base antiga nem
+como prova de cobertura. Dois casos exclusivos e uma asserção de contador foram
+registrados no JSON de disposições; testes atuais de projeção incompleta, leitura,
+permissões e cobertura permanecem. Primeiro ciclo UI:59passed/1falha por seletor
+de texto duplicado; corrigido para heading acessível. Rodada final ui3:60passed
+em5arquivos/13.22s. Build TypeScript/Vite e verify:frontend-dist passaram;79
+arquivos, árvore34ef540a87faf258ac8382308b7cd4397dbbc962c2992c5cc3ae2d7d45c43732.
+
+Par final desta rodada: dist-clean-break-context-state2, prova
+provenance-clean-break-context-state2.json com854/322py e917/408payload
+byte-idênticos, incluindo SPA reconstruída. context-state-core2:13passed/6.07s;
+context-state-community2:20passed/21.92s. Ruff F,E9 passou antes do último corte
+mecânico do contador; repetir no fechamento. Nenhum processo de teste/build ativo.
+Milestone Evidence permanece aberto, sem commit/push ou closure desta frente.
+
+Próximo: retirar outcome técnico/legado e digest antigo de receipts, defaults de
+views/events e aceitação nula de SourceContextCurrentReceiptV2. Adaptar as suites
+Python mistas (ainda imports retirados), preservar gate/replay/rebase/autoridade.
+MCP tests contextual_code_traceability_mcp ainda afirmam V1/V2 e importam types de
+classification: adaptar suas partes atuais, sem exclusão geral. Resources
+reference/code_traceability.md e tool-docs/code-traceability.md ainda documentam
+tool de classificação removida, origins/counters e V1 legados: corrigir e então
+regenerar catálogo/manifesto oficiais. Não chamar o par atual de entrega completa.
+
+Scripts aplicados: remove_source_context_legacy_state.py (primeira tentativa
+falhou antes de escrever, corrigida a remoção de parênteses),
+remove_source_context_legacy_ui.cjs, remove_legacy_applicability_counter.cjs.
+Não reexecutar scripts de corte. CJS exigiu correção de CRLF em tipos/labels;
+compilação e testes finais ocorreram depois das correções. Build intermediário
+c37c8b66 não é o final; usar o hash34ef540a acima.
+
+### 2026-10-01 — C1/C2: submissão contextual única e storage sem default legado
+
+Unificados CodeEvidenceSubmission/CodeEvidenceSupersessionSubmission e
+CodeInvestigationReceiptSubmission no contrato contextual atual. Eliminadas as
+classes V1 alternativas e aliases V2: REST tem um único body por operação, MCP
+não seleciona versões, exige contract_version=2 e campos de contexto. Outcome
+`accessible` deixou de ser aceito na submissão MCP/DTO. Delivery context continua
+resolvido pelo servidor; o agente não pode declará-lo. Services retiraram branches
+V1 e sempre persistem contexto authored; hash, challenge, replay e autoridade
+permanecem sujeitos à qualificação ampla abaixo.
+
+Agregados CodeEvidence/CodeInvestigationReceipt agora exigem versão/contexto;
+retiradas aceitação de contexto nulo, materialização UNCATEGORIZED_LEGACY e
+envelope/digest alternativos do recibo. SQLAlchemy exige colunas contextuais
+não nulas e não tem default de role legado. Constraints e quatro triggers de
+insert/update perderam a alternativa sem contexto. Isto altera somente a DDL de
+instalação nova: não há conversão, backfill ou exclusão de bases existentes.
+
+Build/install final desta rodada: dist-clean-break-evidence-current2; prova
+provenance-clean-break-evidence-current2.json, 854/322py e917/408payload
+byte-idênticos. Suites current-core2:11passed/4.85s; current-community2:
+20passed/18.49s. Cobrem recusa de submissão antiga, preservação de contexto na
+materialização, supersession completa, contexto server-owned, REST, estrutura
+SQL atual e admissão/recusa sem mutação. Ruff F,E9 dos Python modificados passou.
+Busca em ambos src sem classes SubmissionV2/BodyV2 ou seletor de contrato.
+Nenhum processo de teste desta rodada ativo. Não houve commit/push: milestone
+de Evidence ainda aberto e suites antigas mistas ainda precisam de adaptação.
+
+Próximo indispensável: retirar enums/counts/classification_state legados restantes
+de SourceContext e UI; eliminar fallback/outcome técnico legado de recibos com
+seus consumidores (não apenas renomear). Defaults em views/eventos e leitura
+SourceContextCurrentReceipt também precisam seguir contrato único. Adaptar suites
+mistas preservando cobertura de challenge/replay, gates, rebase e permissões;
+test_code_traceability_application.py ainda importa tipos de classification
+removidos e é fixture compartilhada por outcomes/gate. Não interpretar as31
+aprovações focadas como aceite dessas suites. Regenerar catálogo/manifestos, SPA,
+par instalado e closure antes de publicar. C3/C4 e restante do plano continuam.
+
+Scripts desta rodada já aplicados (não reexecutar): unify_evidence_submissions.py,
+require_native_evidence_aggregates.py, remove_native_context_guard_alternatives.py.
+Testes novos: test_current_evidence_submission_contract.py; ampliado
+test_current_evidence_surface.py. Testes frontend19 da rodada anterior continuam
+registrados, mas não substituem a adaptação futura de roles/summary da UI.
+
+### 2026-10-01 — C1/C2: overlays de classificação retirados; contrato de submissão pendente
+
+Removidos tipos de classificação histórica e inputs/fence de SourceContext,
+leitores/writer SQL e suas duas tabelas, evento/consumidores de enfileiramento,
+grant exclusivo e manifesto de introdução. Removidos juntos os dois inputs e seis
+triggers de revisão Global correspondentes. Erasure conserva a limpeza atual;
+não há conversão ou DROP de uma base existente. Snapshot congela contexto authored
+e hash; rebase confere versão/contexto/hash atuais e recusa o envelope anterior.
+Refinement projection não consulta mais heads de classificação nem expõe comandos
+CAS. Frontend/tipos/helpers deixaram de consumir inputs/metadados desse overlay.
+
+Prova após build/install: provenance-clean-break-evidence-overlay1.json,
+854/322py e917/408payload byte-idênticos. overlay-core1:2passed/4.22s;
+overlay-community1:16passed/25.87s (inclui formato SQLite e recusa sem mutação);
+ui-overlay1:19passed/5.76s. TypeScript -b terminou0. Provas são focadas, não
+equivalem à qualificação de rebase/traceability completa, ainda pendente. Nenhum
+processo de teste desta rodada permanece ativo. Não há commit/push desta frente.
+
+Próximo passo indispensável do mesmo milestone: retirar os formatos de submissão
+e receipt V1, defaults UNCATEGORIZED_LEGACY e contadores/estado classificatório
+remanescente. Manter somente o contextual atual em domínio, schemas, REST/MCP,
+service, SQL e UI. As suites Python mistas ainda importam símbolos retirados;
+adaptar somente suas partes atuais, preservando cobertura/gates/autoridade. Em
+particular test_i4_legacy_code_evidence_classification.py contém três testes de
+coverage atual: não excluir o arquivo inteiro sem preservar/adaptar esses casos.
+Testes exclusivos do writer SQL podem ser retirados com disposição explícita.
+Depois regenerar catálogo/manifesto oficiais, SPA, par instalado e closure.
+
+Scripts já aplicados: remove_evidence_overlay_domain.py,
+remove_evidence_overlay_core_consumers.py, remove_evidence_overlay_storage.py,
+remove_evidence_overlay_residue.py, remove_evidence_overlay_frontend.cjs.
+Frontend script foi retomado após diagnóstico sintático, corrigindo a ferramenta
+de corte para não remover PropertyAccessExpression. TypeScript e os19 testes
+passaram somente depois dessa correção. Não reexecutar scripts Python de corte.
+
+### 2026-10-01 — C3: UI de classificação legada retirada; backend restante aberto
+
+Retirados drawer/intent store/sanitizer exclusivos, ação e estado do painel,
+client REST, DTOs de comando/resultado e helpers de draft/retry da classificação
+legada. Hook de autoridade mantém grants atuais de leitura, revoke, targets,
+overlap e waiver; deixa de expor canClassifyLegacyEvidence. Testes mistos mantêm
+negações e leitura; quatro suites exclusivas e três casos de draft/retry estão
+discriminados no JSON de disposições. Não contar exclusões como aceite aprovado.
+
+TypeScript -b terminou0 após retirar constante ociosa de fixture. Par parcial
+entrypoints1 construído/instalado e provado antes dos testes: Core854/Community322
+py e917/408payload byte-idênticos em provenance-clean-break-evidence-entrypoints1.json.
+clean-break-evidence-ui-entrypoints1:19passed em3arquivos/44.68s, cobrindo autoridade,
+leitura e apresentação. SPA distribuída ainda NÃO foi reconstruída; fazê-lo após
+estabilizar o contrato completo. Sem teste Python comportamental ou closure desta
+frente ainda, sem commit/push; catálogo MCP ainda precisa do gerador oficial.
+
+Não declarar cadeia removida: sourceContextPresentation/group e tipos ainda têm
+contadores/inputs legados que desaparecerão com domain/source-context. Próximo:
+remover overlays e fences de SourceContextEvidenceItem/Summary/Manifest/Context,
+queries e métodos classification em services/main, rebase, gate e SQL; eliminar
+tabelas/evento/permissão e corrigir os consumidores de snapshot. Depois exigir
+somente Submission/Receipt contextual atual, sem autores V1 nem default
+UNCATEGORIZED_LEGACY, e adaptar as fixtures atuais. Preservar invariantes de
+baseline, hash, rebase, revogação, revisão e autoridade; nenhuma prova antiga será
+reconstruída. Scripts frontend aplicados uma vez: remove_legacy_evidence_frontend.cjs
+e finish_legacy_frontend_entrypoints.cjs. Nenhum processo desta rodada pendente.
+
+### 2026-10-01 — C1/C3 CodeEvidence: entradas legadas retiradas, WIP não qualificado
+
+Retomada confirmou ambos repos limpos no checkpoint publicado abaixo. Removidos
+LegacyCodeEvidenceClassificationService, ClassifyLegacyCodeEvidenceUseCase,
+DTOs de comando/resultado, rota REST de legacy-classifications e tool MCP com
+seu registro. Removida tradução exclusiva do erro desse writer. Nenhum teste
+comportamental executado ainda; instalado graph2 agora está desatualizado em
+relação ao WIP. Exigir novo build/install/prova antes de comportamento.
+
+Este corte ainda NÃO fecha a cadeia: domain overlays/projection fences, métodos
+SQL, tabelas/inputs/triggers, evento CodeEvidenceLegacyClassified, grants exclusivos,
+UI/client e testes permanecem para retirada coordenada. DTO CodeEvidence ainda
+aceita UNCATEGORIZED_LEGACY; SourceContext contém contadores/fences/inputs antigos.
+REST/MCP também possuem formatos Submission/Receipt v1 e v2: remover alternativas
+com os consumidores, mantendo somente o contextual atual e recusas explícitas.
+Não publicar o WIP como contrato único ou regenerar catálogo antes de estabilizar
+as superfícies. Frontend terá testes e build conforme instrução do usuário.
+
+Script aplicado uma vez: .validation-v040/remove_legacy_evidence_entrypoints.py.
+Ruff encontrou três imports ociosos removidos e uma referência na tradução HTTP,
+já corrigida. Sem build/commit/push nesta frente. Próximo passo: simplificar os
+projetores de domínio para authored, eliminar classificação/fence dos callers
+(services/main, use cases, rebase/gate, SQL), então remover storage e UI; conservar
+prova, baseline, snapshots, waiver/revoke e suas autoridades atuais.
+
 ### 2026-10-01 — checkpoint Grafx publicado; continuar C1–C4
 
 Pushes confirmados em origin/feature/v0.4.0:

@@ -2637,7 +2637,7 @@ class DeterministicWorker:
                     "declared_revision",
                     "workspace_state_id",
                     "trust_level",
-                    "outcome",
+                    "contextual_outcome",
                     "generation",
                     "payload_sha256",
                     "content_hash",
@@ -2662,8 +2662,8 @@ class DeterministicWorker:
         )
         outcome = _required_traceability_choice(
             receipt,
-            "outcome",
-            allowed=frozenset({"accessible", "partial", "unavailable"}),
+            "contextual_outcome",
+            allowed=frozenset({"evidence_applicable", "no_relevant_existing_implementation", "partial", "unavailable"}),
         )
         trust_level = _required_traceability_choice(
             receipt,
@@ -2692,7 +2692,7 @@ class DeterministicWorker:
             "declared_revision": receipt.get("declared_revision"),
             "workspace_state_id": receipt.get("workspace_state_id"),
             "trust_level": trust_level,
-            "outcome": outcome,
+            "contextual_outcome": outcome,
             "generation": generation,
             "payload_sha256": payload_sha256,
         }

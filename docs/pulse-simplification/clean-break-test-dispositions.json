@@ -515,6 +515,242 @@
       "path": "okto_labs_pulse_core\\tests\\test_kg_r1_imp3.py",
       "disposition": "superseded",
       "reason": "Global schema backfill and positive legacy_unknown semantics; no conversion is admitted in the current contract."
+    },
+    {
+      "path": "okto_labs_pulse_community/frontend/src/components/code-traceability/__tests__/CodeEvidencePanel.legacyClassification.test.tsx",
+      "disposition": "superseded",
+      "reason": "Exclusive legacy Evidence classification writer, removed under clean-break C1/C3. Mixed current authority tests retained."
+    },
+    {
+      "path": "okto_labs_pulse_community/frontend/src/components/code-traceability/__tests__/LegacyClassificationIntentStore.test.ts",
+      "disposition": "superseded",
+      "reason": "Exclusive legacy Evidence classification writer, removed under clean-break C1/C3. Mixed current authority tests retained."
+    },
+    {
+      "path": "okto_labs_pulse_community/frontend/src/components/code-traceability/__tests__/LegacyEvidenceClassificationDrawer.test.tsx",
+      "disposition": "superseded",
+      "reason": "Exclusive legacy Evidence classification writer, removed under clean-break C1/C3. Mixed current authority tests retained."
+    },
+    {
+      "path": "okto_labs_pulse_community/frontend/src/services/__tests__/api.legacyEvidenceClassification.test.ts",
+      "disposition": "superseded",
+      "reason": "Exclusive legacy Evidence classification writer, removed under clean-break C1/C3. Mixed current authority tests retained."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_contextual_code_investigation_outcomes.py",
+      "test": "test_legacy_receipt_event_payload_is_byte_shape_compatible",
+      "disposition": "superseded",
+      "reason": "Exclusive legacy receipt acceptance/event shape removed; native multi-source coverage, contextual outcomes, event metadata and authority tests retained."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_contextual_code_investigation_outcomes.py",
+      "test": "test_legitimate_absence_does_not_grandfather_another_legacy_source",
+      "disposition": "superseded",
+      "reason": "Exclusive legacy receipt acceptance/event shape removed; native multi-source coverage, contextual outcomes, event metadata and authority tests retained."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_i4_legacy_code_evidence_classification.py",
+      "test": "test_human_batch_is_append_only_atomic_canonical_and_replayable",
+      "disposition": "superseded",
+      "reason": "Exclusive legacy classification writer, actor, overlay and history contract removed under clean break."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_i4_legacy_code_evidence_classification.py",
+      "test": "test_classification_actor_id_is_bounded_before_persistence",
+      "disposition": "superseded",
+      "reason": "Exclusive legacy classification writer, actor, overlay and history contract removed under clean break."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_i4_legacy_code_evidence_classification.py",
+      "test": "test_invalid_batch_member_and_cas_race_never_partially_advance_heads",
+      "disposition": "superseded",
+      "reason": "Exclusive legacy classification writer, actor, overlay and history contract removed under clean break."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_i4_legacy_code_evidence_classification.py",
+      "test": "test_stale_evidence_payload_is_typed_and_stops_before_any_append",
+      "disposition": "superseded",
+      "reason": "Exclusive legacy classification writer, actor, overlay and history contract removed under clean break."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_i4_legacy_code_evidence_classification.py",
+      "test": "test_unsupported_identity_or_transport_is_rejected_before_any_read",
+      "disposition": "superseded",
+      "reason": "Exclusive legacy classification writer, actor, overlay and history contract removed under clean break."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_i4_legacy_code_evidence_classification.py",
+      "test": "test_rest_human_without_permission_is_denied_before_board_read",
+      "disposition": "superseded",
+      "reason": "Exclusive legacy classification writer, actor, overlay and history contract removed under clean break."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_i4_legacy_code_evidence_classification.py",
+      "test": "test_authorized_actor_stages_metadata_only_events_and_no_replay_duplicates",
+      "disposition": "superseded",
+      "reason": "Exclusive legacy classification writer, actor, overlay and history contract removed under clean break."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_i4_legacy_code_evidence_classification.py",
+      "test": "test_effective_context_projection_is_source_blind_and_profile_redacted",
+      "disposition": "superseded",
+      "reason": "Exclusive legacy classification writer, actor, overlay and history contract removed under clean break."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_i4_legacy_code_evidence_classification.py",
+      "test": "test_contextual_coverage_excludes_context_only_evidence",
+      "disposition": "superseded",
+      "reason": "Native coverage retained in test_native_contextual_evidence_coverage.py, removing only legacy unknown outcome/classification cases."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_i4_legacy_code_evidence_classification.py",
+      "test": "test_contextual_coverage_greenfield_absence_is_not_applicable",
+      "disposition": "superseded",
+      "reason": "Native coverage retained in test_native_contextual_evidence_coverage.py, removing only legacy unknown outcome/classification cases."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_i4_legacy_code_evidence_classification.py",
+      "test": "test_contextual_coverage_unknown_partial_and_incomplete_are_null",
+      "disposition": "superseded",
+      "reason": "Native coverage retained in test_native_contextual_evidence_coverage.py, removing only legacy unknown outcome/classification cases."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_i4_legacy_code_evidence_classification.py",
+      "test": "test_classification_only_rebase_invalidates_only_affected_evidence",
+      "disposition": "superseded",
+      "reason": "Exclusive legacy classification writer, actor, overlay and history contract removed under clean break."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_legacy_code_evidence_classification_persistence.py",
+      "test": "test_contextual_roles_round_trip_every_human_authored_field",
+      "disposition": "superseded",
+      "reason": "Exclusive persistence of retired legacy classification tables and heads."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_legacy_code_evidence_classification_persistence.py",
+      "test": "test_round_trip_history_and_deterministic_latest_reads",
+      "disposition": "superseded",
+      "reason": "Exclusive persistence of retired legacy classification tables and heads."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_legacy_code_evidence_classification_persistence.py",
+      "test": "test_replay_and_idempotency_payload_conflicts",
+      "disposition": "superseded",
+      "reason": "Exclusive persistence of retired legacy classification tables and heads."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_legacy_code_evidence_classification_persistence.py",
+      "test": "test_stale_cas_and_multi_item_failure_roll_back_the_whole_savepoint",
+      "disposition": "superseded",
+      "reason": "Exclusive persistence of retired legacy classification tables and heads."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_legacy_code_evidence_classification_persistence.py",
+      "test": "test_latest_list_chunks_more_than_sqlite_parameter_limit",
+      "disposition": "superseded",
+      "reason": "Exclusive persistence of retired legacy classification tables and heads."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_legacy_code_evidence_classification_persistence.py",
+      "test": "test_sqlite_concurrent_first_revision_has_one_winner_without_busy_error",
+      "disposition": "superseded",
+      "reason": "Exclusive persistence of retired legacy classification tables and heads."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_code_traceability_rest.py",
+      "test": "test_legacy_classification_accepts_agent_principal",
+      "disposition": "superseded",
+      "reason": "Exclusive retired classification REST endpoint/overlay payload; native routing, permissions, envelope and closed-schema cases retained."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_code_traceability_rest.py",
+      "test": "test_legacy_classification_conflicts_are_distinct_typed_409s",
+      "disposition": "superseded",
+      "reason": "Exclusive retired classification REST endpoint/overlay payload; native routing, permissions, envelope and closed-schema cases retained."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_code_traceability_rest.py",
+      "test": "test_legacy_classification_delegates_closed_board_scoped_batch",
+      "disposition": "superseded",
+      "reason": "Exclusive retired classification REST endpoint/overlay payload; native routing, permissions, envelope and closed-schema cases retained."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_code_traceability_rest.py",
+      "test": "test_legacy_classification_rejects_invalid_context_as_422",
+      "disposition": "superseded",
+      "reason": "Exclusive retired classification REST endpoint/overlay payload; native routing, permissions, envelope and closed-schema cases retained."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_code_traceability_rest.py",
+      "test": "test_projection_route_preserves_classification_input_payload",
+      "disposition": "superseded",
+      "reason": "Exclusive retired classification REST endpoint/overlay payload; native routing, permissions, envelope and closed-schema cases retained."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_contextual_code_evidence_schema.py",
+      "test": "test_contextual_migration_is_between_traceability_and_dependencies",
+      "disposition": "superseded",
+      "reason": "Retired classification table/trigger/migration contract. Native contextual Evidence PostgreSQL table fields retained in test_current_evidence_surface; fresh SQLite admission and constraints covered by test_current_relational_schema."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_contextual_code_evidence_schema.py",
+      "test": "test_contextual_metadata_has_only_event_and_head_authority",
+      "disposition": "superseded",
+      "reason": "Retired classification table/trigger/migration contract. Native contextual Evidence PostgreSQL table fields retained in test_current_evidence_surface; fresh SQLite admission and constraints covered by test_current_relational_schema."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_contextual_code_evidence_schema.py",
+      "test": "test_core_request_identifier_limits_fit_the_relational_contract",
+      "disposition": "superseded",
+      "reason": "Retired classification table/trigger/migration contract. Native contextual Evidence PostgreSQL table fields retained in test_current_evidence_surface; fresh SQLite admission and constraints covered by test_current_relational_schema."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_contextual_code_evidence_schema.py",
+      "test": "test_sqlite_classification_guards_are_cas_and_permit_aware",
+      "disposition": "superseded",
+      "reason": "Retired classification table/trigger/migration contract. Native contextual Evidence PostgreSQL table fields retained in test_current_evidence_surface; fresh SQLite admission and constraints covered by test_current_relational_schema."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_contextual_code_evidence_schema.py",
+      "test": "test_populated_legacy_authority_upgrade_preserves_rows_links_and_digests",
+      "disposition": "superseded",
+      "reason": "Retired classification table/trigger/migration contract. Native contextual Evidence PostgreSQL table fields retained in test_current_evidence_surface; fresh SQLite admission and constraints covered by test_current_relational_schema."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_contextual_code_evidence_schema.py",
+      "test": "test_sqlite_contextual_artifact_failure_rolls_back_and_retry_converges",
+      "disposition": "superseded",
+      "reason": "Retired classification table/trigger/migration contract. Native contextual Evidence PostgreSQL table fields retained in test_current_evidence_surface; fresh SQLite admission and constraints covered by test_current_relational_schema."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_contextual_code_evidence_schema.py",
+      "test": "test_postgresql_contextual_artifact_failure_has_no_half_state_and_retries",
+      "disposition": "superseded",
+      "reason": "Retired classification table/trigger/migration contract. Native contextual Evidence PostgreSQL table fields retained in test_current_evidence_surface; fresh SQLite admission and constraints covered by test_current_relational_schema."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_contextual_code_evidence_schema.py",
+      "test": "test_postgresql_guard_ddl_is_source_blind_and_closed",
+      "disposition": "superseded",
+      "reason": "Retired classification table/trigger/migration contract. Native contextual Evidence PostgreSQL table fields retained in test_current_evidence_surface; fresh SQLite admission and constraints covered by test_current_relational_schema."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_contextual_code_evidence_schema.py",
+      "test": "test_postgresql_artifact_is_deterministic_and_carries_every_context_field",
+      "disposition": "superseded",
+      "reason": "Retired classification table/trigger/migration contract. Native contextual Evidence PostgreSQL table fields retained in test_current_evidence_surface; fresh SQLite admission and constraints covered by test_current_relational_schema."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_contextual_code_evidence_contracts.py",
+      "test": "test_legacy_classification_input_derives_clean_and_dirty_baselines",
+      "disposition": "superseded",
+      "reason": "Pre-context submission/classification input removed; native canonical hash, provenance, materialization and bounded event contracts retained."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_contextual_code_evidence_contracts.py",
+      "test": "test_legacy_submission_remains_readable_but_explicitly_unclassified",
+      "disposition": "superseded",
+      "reason": "Pre-context submission/classification input removed; native canonical hash, provenance, materialization and bounded event contracts retained."
     }
   ],
   "adapted_suites": [
@@ -632,6 +868,54 @@
       "test": "test_source_revision_v4_upgrade_installs_qa_inputs_and_rotates_incarnation",
       "disposition": "superseded",
       "reason": "Exclusive schema conversion; current recovery and refusal tests retained."
+    },
+    {
+      "path": "okto_labs_pulse_community/frontend/src/components/code-traceability/__tests__/sourceContextPresentation.test.ts",
+      "test": "TS-UI-EA67-07",
+      "disposition": "superseded",
+      "reason": "Legacy classification draft and retry helpers removed; current source-context presentation tests retained."
+    },
+    {
+      "path": "okto_labs_pulse_community/frontend/src/components/code-traceability/__tests__/sourceContextPresentation.test.ts",
+      "test": "TS-UI-EA67-08",
+      "disposition": "superseded",
+      "reason": "Legacy classification draft and retry helpers removed; current source-context presentation tests retained."
+    },
+    {
+      "path": "okto_labs_pulse_community/frontend/src/components/code-traceability/__tests__/sourceContextPresentation.test.ts",
+      "test": "TS-UI-EA67-09",
+      "disposition": "superseded",
+      "reason": "Legacy classification draft and retry helpers removed; current source-context presentation tests retained."
+    },
+    {
+      "path": "okto_labs_pulse_community/frontend/src/components/code-traceability/__tests__/CodeEvidencePanel.sourceContext.test.tsx",
+      "test": "ts_e6933912 — does not infer role or applicability for unclassified legacy evidence",
+      "disposition": "superseded",
+      "reason": "Exclusive projection of pre-v0.4.0 Evidence removed. Native contextual coverage, partial projections and permission tests retained."
+    },
+    {
+      "path": "okto_labs_pulse_community/frontend/src/components/code-traceability/__tests__/CodeTraceabilityPanels.test.tsx",
+      "test": "does not treat raw legacy links as coverage while applicability is unresolved",
+      "disposition": "superseded",
+      "reason": "Exclusive projection of pre-v0.4.0 Evidence removed. Native contextual coverage, partial projections and permission tests retained."
+    },
+    {
+      "path": "okto_labs_pulse_community/frontend/src/components/code-traceability/__tests__/sourceContextPresentation.test.ts",
+      "test": "unresolved_applicability_count branch in coverage presentation",
+      "disposition": "superseded",
+      "reason": "Removed only assertion for the retired legacy classification counter; current incomplete/partial/unavailable coverage cases remain."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_code_traceability_application.py",
+      "test": "test_aggregate_projection_redacts_legacy_classification_inputs_only_when_denied",
+      "disposition": "superseded",
+      "reason": "Exclusive legacy overlay authority/history removed. Native projection permissions and rebase CAS, version/context conflicts, link/disposition and atomic event checks retained."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_code_traceability_application.py",
+      "test": "classification overlay section of test_spec_evidence_rebase_preview_apply_cas_and_events_are_atomic",
+      "disposition": "superseded",
+      "reason": "Exclusive legacy overlay authority/history removed. Native projection permissions and rebase CAS, version/context conflicts, link/disposition and atomic event checks retained."
     }
   ]
 }

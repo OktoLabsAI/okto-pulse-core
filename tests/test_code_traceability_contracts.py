@@ -14,6 +14,8 @@ from okto_pulse.core.domain.code_traceability import (
     CODE_INVESTIGATION_CANONICALIZATION_PROFILE,
     CODE_INVESTIGATION_LIMITS_PROFILE,
     CodeEvidence,
+    CodeEvidenceBaselineProvenance,
+    DeliveryContext,
     CodeEvidenceAttestationBasis,
     CodeEvidenceAttestationState,
     CodeEvidenceDisposition,
@@ -26,7 +28,7 @@ from okto_pulse.core.domain.code_traceability import (
     CodeInvestigationHeadState,
     CodeInvestigationOmission,
     CodeInvestigationOmissionReason,
-    CodeInvestigationOutcome,
+    ContextualInvestigationOutcomeV2,
     CodeInvestigationPayloadDigestMismatch,
     CodeInvestigationReceipt,
     CodeInvestigationReceiptCommitResult,
@@ -65,7 +67,7 @@ from okto_pulse.core.domain.code_traceability import (
     canonical_code_traceability_json_bytes,
     canonical_code_traceability_sha256,
     classify_implementation_target_overlap,
-    code_investigation_observation_sha256,
+    code_investigation_observation_sha256_v2,
     code_investigation_omission_digest,
     code_investigation_receipt_currentness,
     normalize_code_relative_path,
@@ -151,7 +153,7 @@ def request(
 
 def receipt(
     *,
-    outcome: CodeInvestigationOutcome = CodeInvestigationOutcome.ACCESSIBLE,
+    outcome: ContextualInvestigationOutcomeV2 = ContextualInvestigationOutcomeV2.EVIDENCE_APPLICABLE,
     omissions: tuple[CodeInvestigationOmission, ...] = (),
 ) -> CodeInvestigationReceipt:
     observed_workspace = workspace()
@@ -161,7 +163,8 @@ def receipt(
         CodeInvestigationCapability.SOURCE_IDENTITY,
         CodeInvestigationCapability.WORKSPACE_FINGERPRINT,
     )
-    observation_sha256 = code_investigation_observation_sha256(
+    observation_sha256 = code_investigation_observation_sha256_v2(
+        delivery_context=DeliveryContext.BROWNFIELD,
         source_ref="source-ref-1",
         selector_scope_digest=H,
         outcome=outcome,
@@ -183,7 +186,9 @@ def receipt(
         predecessor_receipt_id=None,
         trust_level=CodeInvestigationTrustLevel.SINGLE_ATTESTATION,
         acceptance_status=CodeInvestigationAcceptanceStatus.ACCEPTED,
-        outcome=outcome,
+        contextual_outcome=outcome,
+        delivery_context=DeliveryContext.BROWNFIELD,
+        context_contract_version=2,
         capabilities=capabilities,
         source_ref="source-ref-1",
         source_identity_digest=H,
@@ -252,6 +257,16 @@ def evidence(
         received_at=NOW + timedelta(seconds=1),
         payload_sha256=H,
         idempotency_key="evidence-idem-1",
+        source_role="current_implementation",
+        context_contract_version=2,
+        relevance_summary="Existing behavior",
+        scope_relation="In delivery scope",
+        source_origin="Accepted baseline",
+        baseline_provenance=CodeEvidenceBaselineProvenance(
+            presence="preexisting_worktree" if dirty else "committed_snapshot",
+            workspace_state_id=workspace(dirty=dirty).workspace_state_id,
+            provenance_note="Observed before implementation" if dirty else None,
+        ),
     )
 
 
@@ -437,12 +452,12 @@ def test_receipt_validates_outcome_omissions_and_server_digest() -> None:
         count=2,
     )
     partial = receipt(
-        outcome=CodeInvestigationOutcome.PARTIAL,
+        outcome=ContextualInvestigationOutcomeV2.PARTIAL,
         omissions=(omission,),
     )
     assert partial.omission_count == 2
     with pytest.raises(CodeTraceabilityContractError):
-        receipt(outcome=CodeInvestigationOutcome.PARTIAL)
+        receipt(outcome=ContextualInvestigationOutcomeV2.PARTIAL)
     with pytest.raises(CodeInvestigationPayloadDigestMismatch):
         replace(partial, omission_digest="b" * 64)
 
@@ -743,7 +758,8 @@ def test_submission_models_forbid_server_owned_fields() -> None:
                 "board_id": "board-1",
                 "request_id": "request-1",
                 "challenge_token": "secret-token",
-                "outcome": "accessible",
+                "outcome": "evidence_applicable",
+                "contract_version": 2,
                 "capabilities": ["file_read"],
                 "workspace_state": None,
                 "omission_manifest": [],
@@ -767,6 +783,15 @@ def test_evidence_submission_forbids_attestation_and_actor_fields() -> None:
     payload = {
         "board_id": "board-1",
         "investigation_receipt_id": "receipt-1",
+        "contract_version": 2,
+        "source_role": "current_implementation",
+        "relevance_summary": "Existing behavior",
+        "scope_relation": "In delivery scope",
+        "source_origin": "Accepted baseline",
+        "baseline_provenance": {
+            "presence": "committed_snapshot",
+            "workspace_state_id": workspace().workspace_state_id,
+        },
         "parent_type": "refinement",
         "parent_id": "refinement-1",
         "evidence_type": "behavior",
@@ -800,6 +825,15 @@ def test_evidence_envelope_limit_rejects_whole_submission() -> None:
             {
                 "board_id": "board-1",
                 "investigation_receipt_id": "receipt-1",
+        "contract_version": 2,
+        "source_role": "current_implementation",
+        "relevance_summary": "Existing behavior",
+        "scope_relation": "In delivery scope",
+        "source_origin": "Accepted baseline",
+        "baseline_provenance": {
+            "presence": "committed_snapshot",
+            "workspace_state_id": workspace().workspace_state_id,
+        },
                 "parent_type": "refinement",
                 "parent_id": "refinement-1",
                 "evidence_type": "behavior",

@@ -78,7 +78,6 @@ from okto_pulse.core.domain.code_traceability import (
     build_source_context_summary_v2,
     canonical_code_traceability_sha256,
     code_investigation_receipt_currentness,
-    source_context_classification_fence_v2,
     source_context_evidence_item_v2,
     source_context_evidence_payload_v2,
 )
@@ -874,8 +873,8 @@ async def _application_count(
 ) -> int:
     """Count rows matching the filters, ignoring any window (offset/limit).
 
-    The paginated read path calls this twice — once for the filtered scope
-    (``total_filtered``) and once for the base scope (``total_overall``) — so
+    The paginated read path calls this twice â€” once for the filtered scope
+    (``total_filtered``) and once for the base scope (``total_overall``) â€” so
     both totals are always server-computed, never inferred from ``len(items)``.
     """
     return await get_application_persistence_port().count(
@@ -1231,7 +1230,7 @@ def _board_skip_cognitive_consolidation(board: ApplicationRecord | None) -> bool
     return bool(settings.get("skip_cognitive_consolidation", False))
 
 
-# S1.3 Cognitive Closure rollout — per-board policy + global feature flag.
+# S1.3 Cognitive Closure rollout â€” per-board policy + global feature flag.
 COGNITIVE_READINESS_POLICY_ADVISORY = "advisory"
 COGNITIVE_READINESS_POLICY_BLOCKING = "blocking"
 
@@ -1253,11 +1252,11 @@ def _board_cognitive_readiness_policy(board: ApplicationRecord | None) -> str:
 
 def _cognitive_readiness_blocking_active(board: ApplicationRecord | None) -> bool:
     """True only when BOTH the global feature flag is enabled AND the board
-    policy is ``blocking`` — the two-key safe rollout (dec_41db6a36, formalised as
+    policy is ``blocking`` â€” the two-key safe rollout (dec_41db6a36, formalised as
     the auditable RKG-06 policy decision dec_98c9a850: advisory default, blocking
     only on board ``cognitive_readiness_policy=blocking`` + global
     ``cognitive_readiness_blocking_enabled``). Default-off / fail-closed: any
-    failure, unset or invalid value resolves to advisory (non-blocking) — a policy
+    failure, unset or invalid value resolves to advisory (non-blocking) â€” a policy
     change never blocks silently and never hides a technical signal."""
     if _board_cognitive_readiness_policy(board) != COGNITIVE_READINESS_POLICY_BLOCKING:
         return False
@@ -1273,7 +1272,7 @@ async def cognitive_enforcement_active(db, board_id: str) -> bool:
     """Whether the board's done-gate is ACTUALLY enforcing cognitive readiness
     (two-key rollout). Transport-free reader extracted from ``mcp/server.py`` for
     spec R01A MCP-FU3 so the cognitive use cases can resolve enforcement without a
-    relational session in their public surface. Never recomputed — delegates to
+    relational session in their public surface. Never recomputed â€” delegates to
     :func:`_cognitive_readiness_blocking_active`."""
     board = await _application_get(db, "board", board_id)
     return _cognitive_readiness_blocking_active(board)
@@ -1284,7 +1283,7 @@ async def resolve_user_permissions(db, user_id: str, board_id: str):
     ``/me/permissions``). Transport-free reader extracted from ``api/specs.py`` for
     spec R01A REST-FU3a so the permission guards no longer issue SQL in the HTTP
     adapter (Clean Core). ``board_id`` selects the per-board
-    ``AgentBoard.permission_overrides`` layer (spec R01A REST-FU6-S2 rework — the
+    ``AgentBoard.permission_overrides`` layer (spec R01A REST-FU6-S2 rework â€” the
     legacy stories/specs adapters resolved the board overrides before
     check_permission; restoring it here keeps board-scoped grants/denies intact)."""
     persistence = get_application_persistence_port()
@@ -1359,7 +1358,7 @@ async def _attach_open_qa_counts(
 ) -> None:
     """Attach an ``open_qa_count`` attribute to each ORM row for summary projection.
 
-    A Q&A item is OPEN (unanswered) when ``answered_at IS NULL`` — the only reliable
+    A Q&A item is OPEN (unanswered) when ``answered_at IS NULL`` â€” the only reliable
     predicate, because choice/multi_choice answers leave ``answer`` NULL and persist
     ``selected`` instead, yet every answer path sets ``answered_at`` once something is
     saved. The list queries don't eager-load qa_items, so a single grouped COUNT keyed
@@ -1816,7 +1815,7 @@ async def _evaluate_cognitive_readiness_or_raise(
     def _unavailable(reason: str) -> CompletionInfrastructureUnavailable:
         return CompletionInfrastructureUnavailable(
             f"cognitive_readiness_unavailable: {target_label} done transition "
-            f"blocked — {reason} (blocking policy active)"
+            f"blocked â€” {reason} (blocking policy active)"
         )
 
     try:
@@ -1878,7 +1877,7 @@ async def _resolve_closeout_graph_state(board_id: str, db: Any) -> str | None:
     pure (no I/O).
 
     Fail-safe (FR6): on ANY failure (e.g. ``BoardNotFoundError``) or a missing
-    ``graph_state`` key, return ``None`` — so the gate's ``resolved_generation``-
+    ``graph_state`` key, return ``None`` â€” so the gate's ``resolved_generation``-
     is-None liveness check still governs and a degraded signal is never swallowed
     into ALLOWED. Reuses ``get_kg_health`` as-is (no new health-composition logic).
     """
@@ -1939,7 +1938,7 @@ async def _evaluate_entity_cognitive_done_or_raise(
 
 
 # ---------------------------------------------------------------------------
-# Spec Validation Gate — exception and lock helper
+# Spec Validation Gate â€” exception and lock helper
 # ---------------------------------------------------------------------------
 
 
@@ -1947,14 +1946,14 @@ def spec_is_content_locked(spec: "Spec | None") -> bool:
     """True iff ``spec`` is under the Spec Validation Gate content lock.
 
     The lock holds when ``current_validation_id`` points to a validation record
-    with ``outcome='success'`` in the spec's validations history — independent of
+    with ``outcome='success'`` in the spec's validations history â€” independent of
     the spec's nominal status (a ``validated`` spec moved to ``in_progress`` for
     execution stays locked).
 
     SINGLE source of truth for "is this spec content-locked", reused by Path B
     amendment eligibility (spec 62cf2d36) so the content-lock gate and Path B can
-    never contradict: a content-locked ``in_progress`` spec — the exact one that
-    cannot be edited directly — is precisely the one Path B must accept.
+    never contradict: a content-locked ``in_progress`` spec â€” the exact one that
+    cannot be edited directly â€” is precisely the one Path B must accept.
     """
     if spec is None:
         return False
@@ -1989,12 +1988,12 @@ def _amendment_regression_test_task_ids(amendment_rows: list) -> list[str]:
     """Regression test task ids contributed by ELIGIBLE Path B amendments.
 
     Spec 62cf2d36 (fr_646e69d2): an AmendmentHotfixRevision formally linked to a
-    bug is an ADDITIVE source of regression test tasks for the bug gate — but only
+    bug is an ADDITIVE source of regression test tasks for the bug gate â€” but only
     when its ``(status, lineage_state)`` eligibility verdict is NOT blocked
     (lineage complete + a non-draft status). The deep coverage/lineage decision
     still runs fail-closed in ``BugRegressionGateValidator`` downstream, so this
     never disables ``require_test_task_for_bug`` nor relaxes validator-only
-    coverage — a blocked/draft amendment contributes nothing. Order-preserving and
+    coverage â€” a blocked/draft amendment contributes nothing. Order-preserving and
     de-duplicated.
     """
     seen: set[str] = set()
@@ -2088,7 +2087,7 @@ _PROPAGATED_KB_PREFIX = "[propagated from parent]"
 
 
 def _legacy_propagated_kb_description(description: str | None) -> str:
-    """R6-IMP1 (FR1/AC1) — apply the propagation marker AT MOST ONCE.
+    """R6-IMP1 (FR1/AC1) â€” apply the propagation marker AT MOST ONCE.
 
     In a multi-hop chain (ideation -> refinement -> spec -> card) the source KB
     already carries the prefix from the previous hop, because every hop copies the
@@ -2096,7 +2095,7 @@ def _legacy_propagated_kb_description(description: str | None) -> str:
     again would stack ``[propagated from parent] [propagated from parent] ...``.
     Idempotent: if the stripped description already starts with the marker, return
     it unchanged; otherwise prepend once. Origin metadata (source_*/source_kb_id)
-    is untouched — only the human-readable marker is normalized."""
+    is untouched â€” only the human-readable marker is normalized."""
     body = (description or "").strip()
     if body.startswith(_PROPAGATED_KB_PREFIX):
         return body
@@ -2131,7 +2130,7 @@ async def _legacy_propagate_artifacts(
         existing = list(target_entity.screen_mockups or [])
         new_set = existing + copied_mockups
         # MockupDesignSystemGate (spec 3a006f65 / card 0192f58d): a propagated/copied
-        # mockup is a NEW entry on the target board — gate it (delta vs the existing set)
+        # mockup is a NEW entry on the target board â€” gate it (delta vs the existing set)
         # BEFORE assigning so a non-compliant mockup can't be laundered onto a blocking
         # board via propagation. Covers create_refinement propagation + copy_mockups_to_card.
         from okto_pulse.core.services.design_system import gate_entity_screen_mockups
@@ -2149,7 +2148,7 @@ async def _legacy_propagate_artifacts(
         )
         target_entity.screen_mockups = new_set
 
-    # Propagate knowledge bases (DB rows) — accepts ORM objects or dicts
+    # Propagate knowledge bases (DB rows) â€” accepts ORM objects or dicts
     if target_kb_entity and source_knowledge_bases:
         kbs = (
             source_knowledge_bases
@@ -2178,7 +2177,7 @@ async def _legacy_propagate_artifacts(
                     "id": target_kb_id,
                     target_id_field: target_entity.id,
                     "title": _get("title"),
-                    # R6-IMP1: idempotent prefix — never stack across multi-hop chains.
+                    # R6-IMP1: idempotent prefix â€” never stack across multi-hop chains.
                     "description": _legacy_propagated_kb_description(
                         _get("description")
                     ),
@@ -2235,7 +2234,7 @@ async def _legacy_propagate_artifacts(
                 )
                 # Only copy ANSWERED Q&A items. Choice questions (choice/
                 # single_choice/multi_choice) store the answer in `selected`
-                # and leave `answer` as None — the original `if not answer`
+                # and leave `answer` as None â€” the original `if not answer`
                 # silently dropped every choice-type response, so derived
                 # entities lost the decisions made on the parent. Treat the
                 # item as answered when EITHER `answer` OR `selected` is set.
@@ -2255,21 +2254,21 @@ async def _legacy_propagate_artifacts(
                     "asked_by": _get("asked_by") or user_id,
                     "answered_by": _get("answered_by"),
                     # `answered_at` DEVE acompanhar a resposta copiada: o badge
-                    # open_qa_count usa `answered_at IS NULL` como definição de
-                    # "aberta" (choice answers deixam `answer` NULL), então uma
-                    # herança sem o timestamp marcava TODA Q&A respondida
+                    # open_qa_count usa `answered_at IS NULL` como definiÃ§Ã£o de
+                    # "aberta" (choice answers deixam `answer` NULL), entÃ£o uma
+                    # heranÃ§a sem o timestamp marcava TODA Q&A respondida
                     # herdada como falso-aberta no refinement/spec derivado.
-                    # Fallback para created_at/now cobre pais antigos que já
-                    # perderam o timestamp em heranças anteriores ao fix —
-                    # este branch só roda para itens RESPONDIDOS.
+                    # Fallback para created_at/now cobre pais antigos que jÃ¡
+                    # perderam o timestamp em heranÃ§as anteriores ao fix â€”
+                    # este branch sÃ³ roda para itens RESPONDIDOS.
                     "answered_at": (
                         _get("answered_at")
                         or _get("created_at")
                         or datetime.now(timezone.utc)
                     ),
                 }
-                # Preserva a data original da pergunta quando disponível
-                # (ordenacão/histórico); ausente, o default do modelo cobre.
+                # Preserva a data original da pergunta quando disponÃ­vel
+                # (ordenacÃ£o/histÃ³rico); ausente, o default do modelo cobre.
                 if _get("created_at") is not None:
                     qa_payload["created_at"] = _get("created_at")
                 await _application_add(
@@ -2388,7 +2387,7 @@ async def compute_card_activity(db: Any, card_id: str, *, limit: int = 50) -> li
     ``created_at`` desc, bounded by ``limit``) and the same presentation via the
     shared ``activity_log_*`` helpers, returning the list of ``ActivityLogResponse``
     rows the REST adapter serializes unchanged. An unknown card id yields an empty
-    list — exactly as the endpoint did (no 404).
+    list â€” exactly as the endpoint did (no 404).
     """
     from okto_pulse.core.models import ActivityLogResponse
     from okto_pulse.core.services.activity_log import (
@@ -2510,7 +2509,7 @@ async def propagate_architecture_designs(
     from okto_pulse.core.services.architecture import ArchitecturePropagationService
 
     # Bug eded2f0e (R3, option B): SDLC artifact propagation is an INTERNAL
-    # snapshot copy of an already-acknowledged source architecture design — not a
+    # snapshot copy of an already-acknowledged source architecture design â€” not a
     # new authoring action. The copy still gets its OWN copy-scoped acknowledgement
     # record (copy_from_parent enforces an explicit ack for warning-bearing copies;
     # the gate is NOT weakened), supplied here by the system on the artifact's
@@ -2723,12 +2722,12 @@ class BoardService:
         # Eagerly bootstrap the per-board graph backend graph. This keeps board
         # creation on the slow path (~1-2s) so subsequent consolidation /
         # MCP query paths stay on the hot path.
-        # Failures are logged but don't abort board creation — the
+        # Failures are logged but don't abort board creation â€” the
         # lazy bootstrap in BoardConnection.__init__ is the safety net.
         try:
             # R05-C: migrated off the direct kg.schema symbol onto the #06
             # GraphSchemaManager port (ensure_bootstrapped wraps the same
-            # ensure_board_graph_bootstrapped — bit-identical, now via the port).
+            # ensure_board_graph_bootstrapped â€” bit-identical, now via the port).
             from okto_pulse.core.kg.interfaces.registry import get_kg_registry
 
             await get_kg_registry().graph_schema_manager.ensure_bootstrapped(board.id)
@@ -2736,7 +2735,7 @@ class BoardService:
             import logging
 
             logging.getLogger("okto_pulse.core.services.main").warning(
-                "board_create.bootstrap_failed board=%s err=%s — lazy path will retry",
+                "board_create.bootstrap_failed board=%s err=%s â€” lazy path will retry",
                 board.id,
                 exc,
             )
@@ -3506,7 +3505,7 @@ class CardService:
             # Validate origin task has a spec
             if not origin_task.spec_id:
                 raise ValueError(
-                    "Origin task has no linked spec — bug cards require a spec-linked task"
+                    "Origin task has no linked spec â€” bug cards require a spec-linked task"
                 )
 
             if knowledge_propagation_v2 and data.spec_id != origin_task.spec_id:
@@ -3997,7 +3996,7 @@ class CardService:
             card_id=card.id,
         )
 
-        # spec 28583299 (Ideação #4, IMPL-C): snapshot priority/severity BEFORE
+        # spec 28583299 (IdeaÃ§Ã£o #4, IMPL-C): snapshot priority/severity BEFORE
         # mutation so the DomainEvent payload carries the actual transition.
         # In-memory mutation may leave enums as raw strings (Pydantic dump);
         # _enum_value handles both shapes uniformly.
@@ -4043,7 +4042,7 @@ class CardService:
                 s.model_dump() if hasattr(s, "model_dump") else s
                 for s in update_data["screen_mockups"]
             ]
-            # MockupDesignSystemGate (spec 3a006f65) — defense in depth pre-persist.
+            # MockupDesignSystemGate (spec 3a006f65) â€” defense in depth pre-persist.
             from okto_pulse.core.services.design_system import (
                 gate_entity_screen_mockups,
             )
@@ -4135,7 +4134,7 @@ class CardService:
             },
         )
 
-        # spec 28583299 (Ideação #4, FR6/FR7 + api_21467ada/api_ff834434):
+        # spec 28583299 (IdeaÃ§Ã£o #4, FR6/FR7 + api_21467ada/api_ff834434):
         # emit a typed event when priority or severity changed so the
         # consolidation worker recomputes priority_boost on the KG node.
         new_priority = _enum_value(card.priority)
@@ -4777,7 +4776,7 @@ class CardService:
             )
 
         # Card-scoped delivery gate (spec 793c43d0 / FR-3). One board setting
-        # (delivery_evidence_gate) governs both card→done and spec→done. In
+        # (delivery_evidence_gate) governs both cardâ†’done and specâ†’done. In
         # blocking mode a normal/bug card cannot complete without accepted
         # implementation proof for every obligation its links derive; test
         # cards are exempt (BR-5) and advisory mode never blocks.
@@ -5091,7 +5090,7 @@ class CardService:
             "id": validation_id,
             "card_id": card_id,
             "board_id": card.board_id,
-            # Reviewer — legacy name + clean alias for frontend
+            # Reviewer â€” legacy name + clean alias for frontend
             "reviewer_id": reviewer_id,
             "reviewer_name": reviewer_display_name,
             "evaluator_id": reviewer_id,
@@ -5099,18 +5098,18 @@ class CardService:
             # Confidence
             "confidence": confidence,
             "confidence_justification": data["confidence_justification"].strip(),
-            # Completeness — legacy estimated_* + clean name
+            # Completeness â€” legacy estimated_* + clean name
             "estimated_completeness": completeness,
             "completeness": completeness,
             "completeness_justification": data["completeness_justification"].strip(),
-            # Drift — legacy estimated_* + clean name
+            # Drift â€” legacy estimated_* + clean name
             "estimated_drift": drift,
             "drift": drift,
             "drift_justification": data["drift_justification"].strip(),
-            # General justification — legacy + frontend "summary" alias
+            # General justification â€” legacy + frontend "summary" alias
             "general_justification": _general,
             "summary": _general,
-            # Recommendation + outcome — legacy "outcome" + frontend "verdict" alias
+            # Recommendation + outcome â€” legacy "outcome" + frontend "verdict" alias
             "recommendation": recommendation,
             "outcome": outcome,
             "verdict": "pass" if outcome == "success" else "fail",
@@ -5200,7 +5199,7 @@ class CardService:
             card.conclusions = conclusions_list
             card.mark_dirty("conclusions")
 
-            # Spec 4007e4a3 (Ideação #3): re-enqueue parent spec via
+            # Spec 4007e4a3 (IdeaÃ§Ã£o #3): re-enqueue parent spec via
             # CardConclusionAdded so the KG reflects the card's narrative
             # outcome alongside its final state. Orphan cards (spec_id=None)
             # are handled gracefully by the enqueuer.
@@ -5518,11 +5517,11 @@ class CardService:
         """Validator-only writer of the Path B coverage attestation (G2 / c9cf9781).
 
         Enforces, fail-closed, BEFORE persisting:
-        * artifact binding — the test task + scenario MUST be declared by THIS
+        * artifact binding â€” the test task + scenario MUST be declared by THIS
           amendment (regression_test_task_ids / regression_scenario_ids);
-        * real validator identity — the same critical-context authorization the
+        * real validator identity â€” the same critical-context authorization the
           task-validation gate uses (not a free-text validator_id);
-        * reexecutable evidence (NECESSARY, not sufficient) — the regression test
+        * reexecutable evidence (NECESSARY, not sufficient) â€” the regression test
           task is DONE and its declared scenario is passed/automated with SPEC3
           reexecutable evidence (test_file_path+test_function or test_run_id).
         Persists the bound attestation via the single reserved-key writer. The bug
@@ -5564,7 +5563,7 @@ class CardService:
                 f"Regression test task '{regression_test_task_id}' not found on this board"
             )
 
-        # 2. real validator identity — same critical-context gate as task validation.
+        # 2. real validator identity â€” same critical-context gate as task validation.
         await _authorize_critical_context_or_raise(
             self.db,
             board_id=amendment.board_id,
@@ -5604,7 +5603,7 @@ class CardService:
 
         # 4. BUG-01 (FR1/FR4): gate-consumability preflight. Binding, validator
         #    authorization and reexecutable evidence are NECESSARY but NOT
-        #    sufficient — a syntactically valid tuple can still be inert for the
+        #    sufficient â€” a syntactically valid tuple can still be inert for the
         #    bug regression gate (e.g. a same-spec unrelated scenario). Fail closed
         #    BEFORE set_coverage_confirmation so success implies the gate will
         #    consume the attestation. Runs AFTER the binding/precondition checks
@@ -5639,7 +5638,7 @@ class CardService:
         Returns ``(evidence_ref, scenario_spec_id)``. ``evidence_ref`` is the
         SPEC3 ref when the scenario is passed/automated with reexecutable
         evidence, else ``''``. ``scenario_spec_id`` is the spec that declares the
-        scenario (``None`` when it is not found on any board spec) — the BUG-01
+        scenario (``None`` when it is not found on any board spec) â€” the BUG-01
         consumability preflight needs it to route same-spec (Path A) vs cross-spec
         (Path B). Searches the test task's spec first, then the board's specs (a
         Path B regression scenario may be cross-spec)."""
@@ -5686,7 +5685,7 @@ class CardService:
         reviewer_id: str,
     ) -> None:
         """BUG-01 (FR1/FR2/FR4): fail closed BEFORE persisting when the candidate
-        coverage confirmation would be INERT — i.e. the bug regression gate would
+        coverage confirmation would be INERT â€” i.e. the bug regression gate would
         never select this ``(amendment, scenario)`` tuple.
 
         Reuses the shared, routing-correct consumability predicate (same-spec is
@@ -5801,10 +5800,10 @@ class CardService:
     ) -> None:
         """Check that every acceptance criterion is covered by at least one test scenario.
 
-        Mirrors the AC→Scenario gate enforced at move_spec→done, but runs at
+        Mirrors the ACâ†’Scenario gate enforced at move_specâ†’done, but runs at
         submit_spec_validation time so the failure surfaces BEFORE the spec is
         locked. Without this pre-check, validation could succeed (locking the
-        spec) and then move→done would fail because uncovered ACs cannot be
+        spec) and then moveâ†’done would fail because uncovered ACs cannot be
         addressed without first unlocking and resubmitting validation.
         """
         skip_global = (
@@ -5834,7 +5833,7 @@ class CardService:
                 f"Cannot validate spec: {len(uncovered)} acceptance criteria lack test scenarios. "
                 f"Uncovered: {'; '.join(uncovered[:5])}"
                 f"{f' (and {len(uncovered) - 5} more)' if len(uncovered) > 5 else ''}. "
-                f"Create test scenarios linked to each AC BEFORE submitting validation — "
+                f"Create test scenarios linked to each AC BEFORE submitting validation â€” "
                 f"once validation passes the spec is locked and scenarios cannot be added. "
                 f"Alternatively, enable 'skip test coverage' on the spec or board."
             )
@@ -5916,7 +5915,7 @@ class CardService:
         brs = list(spec.business_rules or [])
         if not frs:
             return
-        # Check FR → BR coverage. Structured-FR aware: resolve linked_requirements
+        # Check FR â†’ BR coverage. Structured-FR aware: resolve linked_requirements
         # (0-based index, exact/substring FR text, or fr_ id) to FR indices via the
         # shared resolver, so the gate works whether FRs are structured dicts
         # {id,text,status} or legacy strings (the old inline loop did `ref in fr`
@@ -5946,7 +5945,7 @@ class CardService:
                 f"for each uncovered FR. "
                 f"Alternatively, enable 'skip rules coverage' on the spec or board."
             )
-        # Check BR → Task coverage
+        # Check BR â†’ Task coverage
         unlinked_rules = [
             br for br in brs if isinstance(br, dict) and not br.get("linked_task_ids")
         ]
@@ -6243,7 +6242,7 @@ class CardService:
         """Check that every active Decision has a linked task unless skipped.
 
         New and legacy specs default to enforcing this gate. Only `active`
-        decisions are checked — `superseded` and `revoked` are historical and
+        decisions are checked â€” `superseded` and `revoked` are historical and
         do not need linkage.
         """
         skip_global = (
@@ -6289,7 +6288,7 @@ class CardService:
         """Atomically place cards and rewrite the affected columns densely.
 
         Thin domain facade over :data:`CardRepositoryPort.resequence_columns`
-        (``okto_pulse.core.ports.card_repository``) — the architecture's batch
+        (``okto_pulse.core.ports.card_repository``) â€” the architecture's batch
         contract (refinement v17 item 7 + matriz v13 item 5) lives behind the
         port; the Core default implementation is :class:`CoreCardResequencer`.
         See the port module for the full pre-validation and determinism rules.
@@ -6314,7 +6313,7 @@ class CardService:
         requested_position = data.position
         if requested_position is not None and requested_position < -1:
             # Authorized contract narrowing (QA 6afdc547): reject the legacy
-            # negative sentinels BEFORE any read, mutation or event — the REST
+            # negative sentinels BEFORE any read, mutation or event â€” the REST
             # boundary 422s first; this is service-level defense in depth.
             raise ValueError(
                 "position_out_of_range: position must be None, -1 (end of column) or >= 0"
@@ -6522,7 +6521,7 @@ class CardService:
                 card, spec_for_requirement_gate, board
             )
 
-        # --- Task Validation Gate: block in_progress→done when gate active ---
+        # --- Task Validation Gate: block in_progressâ†’done when gate active ---
         if (
             data.status == CardStatus.DONE
             and old_status
@@ -6556,7 +6555,7 @@ class CardService:
 
         # Test-card completion is fail-closed over the persisted reference set.
         # An empty set, a missing spec, or a dangling scenario id is an
-        # inconsistency — never evidence that all linked scenarios passed.
+        # inconsistency â€” never evidence that all linked scenarios passed.
         if (
             data.status == CardStatus.DONE
             and getattr(card, "card_type", CardType.NORMAL) == CardType.TEST
@@ -6657,10 +6656,10 @@ class CardService:
         # (in_progress, validation, on_hold, done) from a status before in_progress.
         # Once in_progress is reached, the gate was already passed.
         # NC-6 fix: gate is now conditional on board settings:
-        #   - require_test_task_for_bug=False → gate desligado (qualquer bug avança)
+        #   - require_test_task_for_bug=False â†’ gate desligado (qualquer bug avanÃ§a)
         #   - bug_test_gate_min_severity controla qual severity entra no gate
-        #     ("minor"=default, sempre exige; "major"=pula minor; "critical"=só critical)
-        # Severity ordering (lower → higher): minor < major < critical
+        #     ("minor"=default, sempre exige; "major"=pula minor; "critical"=sÃ³ critical)
+        # Severity ordering (lower â†’ higher): minor < major < critical
         _board_settings = (board.settings or {}) if board else {}
         _bug_gate_enabled = _board_settings.get("require_test_task_for_bug", True)
         _bug_gate_min_sev = _board_settings.get("bug_test_gate_min_severity", "minor")
@@ -6685,7 +6684,7 @@ class CardService:
             # contributes its regression test tasks as an ADDITIVE fallback source.
             # They are validated below EXACTLY like directly-linked tasks and the
             # deep coverage/lineage decision stays in BugRegressionGateValidator
-            # (fail-closed) — this never disables require_test_task_for_bug nor
+            # (fail-closed) â€” this never disables require_test_task_for_bug nor
             # relaxes validator-only coverage. Loaded once here and reused below.
             amendment_rows = (
                 await AmendmentRevisionService(self.db).list_for_bug(
@@ -6780,7 +6779,7 @@ class CardService:
             # eligible Path B amendment, computed above). Amendments formally linked
             # to THIS bug+spec feed the shared Path A/B predicate so a cross-spec
             # regression artifact is admissible ONLY with valid amendment lineage;
-            # coverage stays validator-only/fail-closed — no production path confirms
+            # coverage stays validator-only/fail-closed â€” no production path confirms
             # coverage before card c9cf9781 (ADJ-B/ADJ-C).
             bug_created = card.created_at
             all_scenarios = (
@@ -6888,7 +6887,7 @@ class CardService:
                         if other_spec_id:
                             # TR1: cross-spec evidence is admissible ONLY via Path
                             # B. Always defer to the shared predicate
-                            # (validate_linked_test_tasks below) — it fail-closes
+                            # (validate_linked_test_tasks below) â€” it fail-closes
                             # with a stable Path B reason (missing_amendment_revision
                             # when no formal amendment links this bug), replacing
                             # the old direct same-spec equality reject.
@@ -6979,7 +6978,7 @@ class CardService:
                 # G2 (c9cf9781): coverage is NOT passed in (a bool would be
                 # forgeable). It is derived from the persisted, artifact-bound
                 # validator attestation carried on each amendment fact
-                # (validation_metadata.coverage_confirmation) — fail-closed.
+                # (validation_metadata.coverage_confirmation) â€” fail-closed.
                 amendment_facts=amendment_facts,
             )
             eligibility = gate_result.eligibility
@@ -7138,7 +7137,7 @@ class CardService:
                 raise ValueError(
                     f"A conclusion is required when moving a card to {report_target}. "
                     "The conclusion must be the executor's detailed claim including: "
-                    "(1) what was done — specific changes and files modified, "
+                    "(1) what was done â€” specific changes and files modified, "
                     "(2) technical decisions and reasoning, "
                     "(3) what was tested and results, "
                     "(4) any side effects or follow-ups. "
@@ -7457,7 +7456,7 @@ class CardService:
             records={card.id: card},
         )
 
-        # Auto-rollback: if card cancelled and spec is validated → revert to approved
+        # Auto-rollback: if card cancelled and spec is validated â†’ revert to approved
         if spec_for_auto_rollback is not None:
             spec_for_auto_rollback.status = SpecStatus.APPROVED
             if spec_for_auto_rollback.evaluations:
@@ -7474,7 +7473,7 @@ class CardService:
                 actor_id=user_id,
                 actor_name=rollback_name,
                 changes=[{"field": "status", "old": "validated", "new": "approved"}],
-                summary=f"Auto-rollback: card '{card.title}' cancelled — spec reverted for revalidation",
+                summary=f"Auto-rollback: card '{card.title}' cancelled â€” spec reverted for revalidation",
                 version=spec_for_auto_rollback.version,
             )
 
@@ -7584,10 +7583,10 @@ class CardService:
         Cascade-cleans orphan references before the row delete so the next
         update_spec/create_card on the same spec doesn't trip
         _validate_spec_linked_refs. Cleans every JSON container on the parent
-        spec that carries linked_task_ids — including functional_requirements
+        spec that carries linked_task_ids â€” including functional_requirements
         and acceptance_criteria (audit finding on board E2E, 2026-09-17: FR/AC
         links were missing from the cleanup, deadlocking every later spec edit
-        behind the fail-closed orphan gate) — and the linked_test_task_ids
+        behind the fail-closed orphan gate) â€” and the linked_test_task_ids
         column on any bug card that pointed at this one. Same transaction as
         the delete.
         """
@@ -7654,7 +7653,7 @@ class CardService:
                         spec.mark_dirty(container_name)
 
         # Cascade cleanup: bug cards on the same board may reference this
-        # card via their columnar linked_test_task_ids. Non-bug cards only —
+        # card via their columnar linked_test_task_ids. Non-bug cards only â€”
         # deleting a bug card doesn't leave references elsewhere.
         for bug in referencing_bugs:
             linked = bug.linked_test_task_ids or []
@@ -7944,7 +7943,7 @@ class AgentService:
         - If `preset_id` is set (and `permission_flags` is NOT in the same
           payload), agent.permission_flags becomes an empty direct delta.
         - If `preset_id` is explicitly cleared, permission_flags becomes
-          ``None`` — the trusted Full Control sentinel.
+          ``None`` â€” the trusted Full Control sentinel.
         """
         agent = await self.get_agent(agent_id)
         if not agent:
@@ -8297,30 +8296,30 @@ async def _validate_spec_linked_refs(
     and validates that every `linked_*` reference points to an existing
     target:
 
-    - linked_criteria (test_scenarios → AC):
+    - linked_criteria (test_scenarios â†’ AC):
         Must be a 0-based string index "0".."N-1" OR the exact AC text.
-        AC labels like "AC1" are rejected — the SpecModal coverage widget
+        AC labels like "AC1" are rejected â€” the SpecModal coverage widget
         does not recognise them and they would silently appear uncovered.
 
     - linked_requirements:
-        business_rules → FR; api_contracts + IR + OR → FR/TR.
-        Same rule — index "0".."N-1" OR exact requirement text/id.
+        business_rules â†’ FR; api_contracts + IR + OR â†’ FR/TR.
+        Same rule â€” index "0".."N-1" OR exact requirement text/id.
         Labels like "FR1" are rejected.
 
-    - linked_rules (api_contracts → BR):
+    - linked_rules (api_contracts â†’ BR):
         Must match an existing business_rule.id in the same spec.
 
-    - linked_api_contracts (IR → API contract):
+    - linked_api_contracts (IR â†’ API contract):
         Must match an existing api_contract.id in the same spec.
 
-    - linked_integration_requirements (OR → IR):
+    - linked_integration_requirements (OR â†’ IR):
         Must match an existing integration_requirement.id in the same spec.
 
     - linked_task_ids (functional_requirements + test_scenarios +
-      business_rules + api_contracts + IR + OR + structured_trs → Card):
+      business_rules + api_contracts + IR + OR + structured_trs â†’ Card):
         Each id must resolve to an existing Card row in the DB. Ids of
         hard-deleted cards are pruned instead of rejected (irrecoverable
-        legacy garbage — delete_card cascade-cleans these containers since
+        legacy garbage â€” delete_card cascade-cleans these containers since
         0.3.4).
 
     Raises ValueError with all offenders enumerated so the caller can fix
@@ -8455,7 +8454,7 @@ async def _validate_spec_linked_refs(
                 f"(0..{max_idx}), existing {target} text, or structured {target} id."
             )
 
-    # business_rules.linked_requirements → FR
+    # business_rules.linked_requirements â†’ FR
     for br in final_brs:
         owner = f"BR '{br.get('id') or br.get('title') or '?'}'"
         _check_index_text_or_id(
@@ -8467,8 +8466,8 @@ async def _validate_spec_linked_refs(
             owner,
         )
 
-    # api_contracts.linked_requirements → FR
-    # api_contracts.linked_rules → BR.id
+    # api_contracts.linked_requirements â†’ FR
+    # api_contracts.linked_rules â†’ BR.id
     for ct in final_contracts:
         owner = f"Contract '{ct.get('id') or (ct.get('method', '?') + ' ' + ct.get('path', '?'))}'"
         _check_index_text_or_id(
@@ -8487,8 +8486,8 @@ async def _validate_spec_linked_refs(
                     f"in the spec (valid: {sorted(valid_br_ids) or 'none'})."
                 )
 
-    # integration_requirements.linked_requirements → FR/TR
-    # integration_requirements.linked_api_contracts → api_contract.id
+    # integration_requirements.linked_requirements â†’ FR/TR
+    # integration_requirements.linked_api_contracts â†’ api_contract.id
     for ir in final_irs:
         owner = f"IR '{ir.get('id') or ir.get('title') or '?'}'"
         _check_index_text_or_id(
@@ -8507,8 +8506,8 @@ async def _validate_spec_linked_refs(
                     f"in the spec (valid: {sorted(valid_contract_ids) or 'none'})."
                 )
 
-    # observability_requirements.linked_requirements → FR/TR
-    # observability_requirements.linked_integration_requirements → IR.id
+    # observability_requirements.linked_requirements â†’ FR/TR
+    # observability_requirements.linked_integration_requirements â†’ IR.id
     for req in final_ors:
         owner = f"OR '{req.get('id') or req.get('title') or '?'}'"
         _check_index_text_or_id(
@@ -8527,7 +8526,7 @@ async def _validate_spec_linked_refs(
                     f"in the spec (valid: {sorted(valid_ir_ids) or 'none'})."
                 )
 
-    # test_scenarios.linked_criteria → AC
+    # test_scenarios.linked_criteria â†’ AC
     for sc in final_scenarios:
         owner = f"Scenario '{sc.get('id') or sc.get('title') or '?'}'"
         _check_index_text_or_id(
@@ -8539,7 +8538,7 @@ async def _validate_spec_linked_refs(
             owner,
         )
 
-    # decisions.linked_requirements → FR/TR  +  supersedes_decision_id → Decision.id
+    # decisions.linked_requirements â†’ FR/TR  +  supersedes_decision_id â†’ Decision.id
     valid_decision_ids = {d.get("id") for d in final_decisions if d.get("id")}
     for dec in final_decisions:
         owner = f"Decision '{dec.get('id') or dec.get('title') or '?'}'"
@@ -8559,7 +8558,7 @@ async def _validate_spec_linked_refs(
                 f"in the spec (valid: {sorted(valid_decision_ids) or 'none'})."
             )
 
-    # linked_task_ids → Card.id (DB existence check). Collect all in one batch.
+    # linked_task_ids â†’ Card.id (DB existence check). Collect all in one batch.
     all_task_ids: set[str] = set()
     task_owners: dict[str, list[str]] = {}
     for sc in final_scenarios:
@@ -8619,7 +8618,7 @@ async def _validate_spec_linked_refs(
             # legacy garbage: delete_card has cascade-cleaned every container
             # since 0.3.4, so a dead id can only predate that fix. Prune it
             # instead of deadlocking the spec behind the fail-closed orphan
-            # gate (audit finding, board E2E 2026-09-17) — every other orphan
+            # gate (audit finding, board E2E 2026-09-17) â€” every other orphan
             # class below still rejects the update.
             for collection in (
                 final_scenarios,
@@ -8883,15 +8882,6 @@ def _direct_spec_source_context_manifest(
             "existing_scaffold_count": 0,
             "existing_constraint_count": 0,
             "reference_pattern_count": 0,
-            "uncategorized_legacy_count": 0,
-        },
-        "classification_state": {
-            "classified_count": 0,
-            "uncategorized_legacy_count": 0,
-        },
-        "classification_fence": {
-            "revision": None,
-            "payload_sha256": None,
         },
         "interpretation_rule": summary.interpretation_rule,
         "items_not_current_implementation_count": 0,
@@ -9507,7 +9497,7 @@ class SpecService:
             )
 
         # Fail-closed scenario_type (spec ac16b3c9): every scenario in a NEW spec
-        # is a new write — reject an unsupported type before insert/flush, never
+        # is a new write â€” reject an unsupported type before insert/flush, never
         # normalize.
         if data.test_scenarios:
             initial_scenarios = [s.model_dump() for s in data.test_scenarios]
@@ -9620,7 +9610,7 @@ class SpecService:
             if getattr(spec, collection, None) is None:
                 setattr(spec, collection, [])
         # MockupDesignSystemGate (spec 3a006f65 / card 0192f58d): gate mockups submitted
-        # at creation BEFORE persistence — the create twin of the update_spec gate. The
+        # at creation BEFORE persistence â€” the create twin of the update_spec gate. The
         # baseline is the entity's (empty) mockups, so every submitted screen is
         # evaluated; assign only if the gate does not raise.
         _submitted_mockups = (
@@ -9876,11 +9866,11 @@ class SpecService:
 
         ``None`` means "leave unchanged"; a non-None value sets the field.
         ``clear`` lists field names (``notes``/``linked_criteria``) to reset to
-        empty — this is how a caller distinguishes "omitted" from "cleared".
+        empty â€” this is how a caller distinguishes "omitted" from "cleared".
         ``status`` is NOT accepted (that stays exclusive to the status path so no
         second NC-9 bypass is created). Editing any SEMANTIC field
         (given/when/then/scenario_type/linked_criteria) of a scenario that holds
-        evidence invalidates it (status→ready, evidence dropped); cosmetic edits
+        evidence invalidates it (statusâ†’ready, evidence dropped); cosmetic edits
         (title/notes) preserve status and evidence. Respects the content-lock.
         """
         await _require_spec_unlocked(self.db, spec_id)
@@ -9909,7 +9899,7 @@ class SpecService:
             raise ValueError(f"scenario_not_found: {scenario_id}")
 
         # Fail-closed scenario_type (spec ac16b3c9): an explicit new value on the
-        # body-edit path must be a supported type — reject before mutation, never
+        # body-edit path must be a supported type â€” reject before mutation, never
         # normalize. ``None`` means "leave unchanged" and is not validated.
         if scenario_type is not None:
             validate_scenario_type(scenario_type)
@@ -9963,7 +9953,7 @@ class SpecService:
 
         # Evidence invalidation on semantic edit (spec FR5/BR6): if a SEMANTIC
         # field changed and the scenario currently holds evidence, the old
-        # evidence no longer proves the new behaviour — reset to ready + drop it.
+        # evidence no longer proves the new behaviour â€” reset to ready + drop it.
         evidence_invalidated = False
         if evidence_invalidated_by_semantic_edit(changed_fields) and (
             target.get("evidence") or target.get("latest_evidence")
@@ -10043,7 +10033,7 @@ class SpecService:
 
         Atomic: the spec's ``test_scenarios`` and every referencing card are
         mutated in a single transaction (all-or-nothing). Does not block on
-        existing links — the cascade removes them. Respects the content-lock.
+        existing links â€” the cascade removes them. Respects the content-lock.
         """
         await _require_spec_unlocked(self.db, spec_id)
         spec = await _application_get(self.db, "spec", spec_id)
@@ -10084,7 +10074,7 @@ class SpecService:
         spec = updated_spec
 
         # Cascade: drop the scenario id from every card that references it, in
-        # the SAME transaction → all-or-nothing, no orphan in Card.test_scenario_ids.
+        # the SAME transaction â†’ all-or-nothing, no orphan in Card.test_scenario_ids.
         cards_unlinked: list[str] = []
         for card in referencing_cards:
             ids = list(card.test_scenario_ids or [])
@@ -10135,7 +10125,7 @@ class SpecService:
         evidence: dict | None = None,
     ) -> dict:
         """Scoped operational status mutation for ONE test scenario (spec
-        6f1e75bf, FR4/FR6) — the single helper shared by the MCP status tool and
+        6f1e75bf, FR4/FR6) â€” the single helper shared by the MCP status tool and
         the REST status endpoint.
 
         - Guards by spec STATUS (require_test_scenario_status_mutable): blocks
@@ -10147,7 +10137,7 @@ class SpecService:
         - Applies the NC-9 evidence gate (validate_test_scenario_evidence) unless
           ``skip_test_evidence_global`` is set (then allows + emits a forensic log).
         - Mutates ONLY the target scenario (status + inline evidence) and persists
-          narrow — it does NOT go through update_spec, does NOT bump version and
+          narrow â€” it does NOT go through update_spec, does NOT bump version and
           does NOT replace the full list, so every other scenario is preserved.
 
         Returns ``{scenario_id, old_status, new_status, evidence_provided,
@@ -10198,7 +10188,7 @@ class SpecService:
             )
 
         # Guard by STATUS (NOT the content-lock): blocks validated/done, allows
-        # in_progress — the execution phase where scenarios become passed.
+        # in_progress â€” the execution phase where scenarios become passed.
         # Post-lock exception: a done/validated spec may still receive
         # operational test evidence when the target scenario is already tied to
         # a real test card in an execution state. This preserves content lock
@@ -10221,7 +10211,7 @@ class SpecService:
         )
         if not skip:
             # for_write: a NEW gated write must satisfy the re-executable
-            # evidence contract (spec 9e0bf979) — explicit evidence_class is
+            # evidence contract (spec 9e0bf979) â€” explicit evidence_class is
             # strict, and an unclassed run-log-like payload is rejected before
             # persisting (only a direct test pointer is grandfathered).
             ok, missing = validate_test_scenario_evidence(
@@ -10497,7 +10487,7 @@ class SpecService:
                 "structured evidence. Provide evidence via the status tool or "
                 "endpoint, or enable skip_test_evidence_global on the board."
             )
-        # skip ON — allow but emit a forensic audit record (spec OR or_536eca62).
+        # skip ON â€” allow but emit a forensic audit record (spec OR or_536eca62).
         for sid in offenders:
             logger.info(
                 "test_scenario.evidence_gate_skipped scenario=%s board=%s spec=%s",
@@ -10868,7 +10858,7 @@ class SpecService:
             "source_context_manifest",
             "source_context_sha256",
         }
-        # Spec eaf78891 (Ideação #2): semantic_fields are KG-relevant fields.
+        # Spec eaf78891 (IdeaÃ§Ã£o #2): semantic_fields are KG-relevant fields.
         # Some also bump version through content_fields so bulk and structured
         # writers share one CAS boundary; all still emit SpecSemanticChanged
         # so ConsolidationEnqueuer re-extracts the spec into the KG. Parent
@@ -11087,7 +11077,7 @@ class SpecService:
             for _field_name in _explicit_requirement_fields:
                 update_data[_field_name] = _canonical_requirement_fields[_field_name]
 
-        # FR5 — lazy ref migration (spec c61569b2, IMPL-4).
+        # FR5 â€” lazy ref migration (spec c61569b2, IMPL-4).
         # When explicit FR/AC lists are materialised by canonicalization above,
         # rewrite any index/text refs in downstream fields to the newly
         # assigned fr_/ac_ ids.  This runs on-touch only: specs not passed
@@ -11161,7 +11151,7 @@ class SpecService:
         # rejects orphan references with a precise error message.
         await _validate_spec_linked_refs(self.db, spec, update_data)
 
-        # Fail-closed scenario_type service gate — defense in depth (spec
+        # Fail-closed scenario_type service gate â€” defense in depth (spec
         # ac16b3c9, FR2/IR). Closes the same whole-list bypass for scenario_type:
         # any caller (UI full-list, REST PUT or MCP) replacing test_scenarios must
         # not introduce a new/changed invalid scenario_type. Grandfathers unchanged
@@ -11172,7 +11162,7 @@ class SpecService:
                 update_data["test_scenarios"], spec.test_scenarios
             )
 
-        # NC-9 (test-theater) service gate — defense in depth (spec 6f1e75bf,
+        # NC-9 (test-theater) service gate â€” defense in depth (spec 6f1e75bf,
         # FR1/BR2). Closes the bypass where any caller (UI full-list, REST or
         # MCP) could replace test_scenarios with a gated status and no evidence;
         # the evidence rule previously ran only in the MCP status tool. Runs on
@@ -11189,7 +11179,7 @@ class SpecService:
                 ),
             )
 
-        # MockupDesignSystemGate (spec 3a006f65, card 0192f58d) — defense in depth:
+        # MockupDesignSystemGate (spec 3a006f65, card 0192f58d) â€” defense in depth:
         # gate the bulk screen_mockups write (UI full-list / REST) the same way the MCP
         # tool does, BEFORE persistence. Delta-only: only new/changed mockups; legacy
         # untouched mockups are skipped; screens already gated by the MCP tool in this
@@ -11265,7 +11255,7 @@ class SpecService:
                 session=self.db,
             )
 
-        # Spec eaf78891 (Ideação #2): emit SpecSemanticChanged whenever
+        # Spec eaf78891 (IdeaÃ§Ã£o #2): emit SpecSemanticChanged whenever
         # KG-relevant non-content fields are mutated, INDEPENDENTLY of whether
         # SpecVersionBumped also fired. Both events are recorded in the
         # outbox for audit completeness; ConsolidationEnqueuer's dedup
@@ -11562,7 +11552,7 @@ class SpecService:
         return spec, changed, task_ids
 
     # ---- Spec state machine ----
-    # Direct non-Draft→Draft transitions open one new human lifecycle edition.
+    # Direct non-Draftâ†’Draft transitions open one new human lifecycle edition.
     # Draft is the sole editable status; the same UoW clears current projections
     # while immutable validation history remains available as Previous.
     _SPEC_TRANSITIONS = transition_map("spec")
@@ -11709,8 +11699,8 @@ class SpecService:
     ) -> Spec | None:
         """Move a spec to a different status.
 
-        Enforces a strict state machine. Coverage gates run on approved→validated.
-        Qualitative validation runs on validated→in_progress.
+        Enforces a strict state machine. Coverage gates run on approvedâ†’validated.
+        Qualitative validation runs on validatedâ†’in_progress.
         Moving to 'done' requires full test coverage and task completion.
         """
         await _application_flush(self.db)
@@ -11836,7 +11826,7 @@ class SpecService:
 
             # Spec Validation Gate: when enabled, the only path to validated is via
             # submit_spec_validation (which runs the semantic gate). Direct move_spec
-            # from approved→validated is blocked so users/agents cannot bypass the
+            # from approvedâ†’validated is blocked so users/agents cannot bypass the
             # quality check. Reopening a validated/in_progress/done Spec to Draft
             # starts the next editable validation edition.
             board_settings = (board.settings or {}) if board else {}
@@ -11844,7 +11834,7 @@ class SpecService:
                 "require_spec_validation", True
             ):
                 # R4-IMP1: same block, normalized operational contract (GateContractError
-                # subclasses ValueError — no state-machine change, no auto-promotion).
+                # subclasses ValueError â€” no state-machine change, no auto-promotion).
                 from okto_pulse.core.services.gate_contracts import (
                     spec_validation_gate_error,
                 )
@@ -11988,7 +11978,7 @@ class SpecService:
             await self._validate_delivery_done(spec)
 
         # Every Spec lifecycle write shares the board dependency-graph fence.
-        # This prevents a prerequisite Done→Draft transition from racing a
+        # This prevents a prerequisite Doneâ†’Draft transition from racing a
         # dependent's readiness check. The caller-owned transaction keeps the
         # fence held through the row fence, status write and commit.
         from okto_pulse.core.ports.relational_application import (
@@ -12193,7 +12183,7 @@ class SpecService:
             actor_id=user_id,
             actor_name=resolved_name,
             changes=history_changes,
-            summary=f"Status: {old_status.value} → {data.status.value}",
+            summary=f"Status: {old_status.value} â†’ {data.status.value}",
             version=spec.version,
         )
         return spec
@@ -12300,8 +12290,8 @@ class SpecService:
     ) -> bool:
         """Link an existing card to a spec. Spec must be in 'approved', 'in_progress', or 'done' status.
 
-        Spec eaf78891 (Ideação #2): emits CardLinkedToSpec on success so the
-        ConsolidationEnqueuer re-enqueues the SPEC (not the card) — the spec
+        Spec eaf78891 (IdeaÃ§Ã£o #2): emits CardLinkedToSpec on success so the
+        ConsolidationEnqueuer re-enqueues the SPEC (not the card) â€” the spec
         extractor reflects the updated cards list while the card extractor
         does not reference spec_id.
         """
@@ -12368,7 +12358,7 @@ class SpecService:
     async def unlink_card(self, card_id: str, user_id: str | None = None) -> bool:
         """Unlink a card from its spec.
 
-        Spec eaf78891 (Ideação #2): emits CardUnlinkedFromSpec so the
+        Spec eaf78891 (IdeaÃ§Ã£o #2): emits CardUnlinkedFromSpec so the
         ConsolidationEnqueuer re-enqueues the (now-orphaned) spec for
         re-extraction.
         """
@@ -12545,9 +12535,9 @@ class SpecService:
         # is mandatory for the exact human lifecycle edition.
         await self._enforce_spec_requirement_lint_gate(spec)
 
-        # Run coverage gates as pre-requisite — reuses existing CardService checks.
-        # AC→Scenario coverage must run FIRST so uncovered ACs are caught before
-        # the spec gets locked by a successful validation (the move→done gate
+        # Run coverage gates as pre-requisite â€” reuses existing CardService checks.
+        # ACâ†’Scenario coverage must run FIRST so uncovered ACs are caught before
+        # the spec gets locked by a successful validation (the moveâ†’done gate
         # checks the same thing, but by then the spec is already locked).
         try:
             card_service = CardService(self.db)
@@ -12960,7 +12950,7 @@ class SpecService:
         spec.mark_dirty("validations")
         spec.current_validation_id = validation_id
 
-        # Atomic state transition on success — same transaction as the persist.
+        # Atomic state transition on success â€” same transaction as the persist.
         old_status = spec.status
         if outcome == "success":
             spec.status = SpecStatus.VALIDATED
@@ -13180,7 +13170,7 @@ class SpecService:
             "validations": result_list,
         }
 
-    # Dimensões qualitativas da spec evaluation — fonte única compartilhada
+    # DimensÃµes qualitativas da spec evaluation â€” fonte Ãºnica compartilhada
     # entre o endpoint REST e o MCP tool okto_pulse_submit_spec_evaluation.
     SPEC_EVALUATION_DIMENSIONS: tuple[tuple[str, str], ...] = (
         ("breakdown_completeness", "breakdown_justification"),
@@ -13206,11 +13196,11 @@ class SpecService:
     ) -> dict:
         """Submit a qualitative evaluation for a spec in 'validated' status.
 
-        Caminho de escrita ÚNICO da spec evaluation — consumido pelo endpoint
+        Caminho de escrita ÃšNICO da spec evaluation â€” consumido pelo endpoint
         REST ``POST /specs/{id}/evaluations`` e pelo MCP tool
         ``okto_pulse_submit_spec_evaluation`` (paridade REST/MCP; antes o
-        tool era o único caminho e usuários UI/REST ficavam presos no gate
-        validated→in_progress sem como satisfazê-lo).
+        tool era o Ãºnico caminho e usuÃ¡rios UI/REST ficavam presos no gate
+        validatedâ†’in_progress sem como satisfazÃª-lo).
 
         Multiple evaluators can submit independent evaluations (append-only).
         Caller owns the commit. Raises ValueError on status/input problems.
@@ -13376,7 +13366,7 @@ class SpecQAService:
         surface: str = "service",
     ) -> ApplicationRecord | None:
         """Answer a spec Q&A question (text or choice selection).
-        Mirrors IdeationQAService.answer_question — accepts `single_choice`
+        Mirrors IdeationQAService.answer_question â€” accepts `single_choice`
         as alias of `choice`, and only commits when something was persisted.
         """
         qa = await _application_get(self.db, "spec_qa_item", qa_id)
@@ -13900,7 +13890,7 @@ class StoryService:
         """Transport-free PK load of a Topic (spec R01A REST-FU6-S2 rework): the
         update/delete/merge use cases resolve the topic's ``board_id`` for the
         ownership + permission gate here instead of the adapter issuing a
-        ``db.get(Topic, …)`` (keeps the REST adapter free of direct ORM)."""
+        ``db.get(Topic, â€¦)`` (keeps the REST adapter free of direct ORM)."""
         return await _application_get(self.db, "topic", topic_id)
 
     async def _log_activity(self, **kwargs: Any) -> None:
@@ -14371,7 +14361,7 @@ class StoryService:
                 item.model_dump() if hasattr(item, "model_dump") else item
                 for item in update_data["screen_mockups"]
             ]
-            # MockupDesignSystemGate (spec 3a006f65) — defense in depth pre-persist.
+            # MockupDesignSystemGate (spec 3a006f65) â€” defense in depth pre-persist.
             from okto_pulse.core.services.design_system import (
                 gate_entity_screen_mockups,
             )
@@ -14657,7 +14647,7 @@ class StoryService:
         if propagated:
             ideation.mark_dirty("screen_mockups")
             # MockupDesignSystemGate (spec 3a006f65 / card 0192f58d): convert_stories
-            # rewrites story mockups with FRESH ids onto the ideation — gate the new
+            # rewrites story mockups with FRESH ids onto the ideation â€” gate the new
             # entries (delta vs the pre-propagation set) BEFORE flush so a non-compliant
             # legacy mockup can't be laundered onto a blocking board.
             from okto_pulse.core.services.design_system import MockupDesignSystemGate
@@ -14957,7 +14947,7 @@ class IdeationService:
     ) -> Ideation | None:
         """Update an ideation. Bumps version on content changes. Records field-level diffs.
 
-        Only allowed in Draft status — all other statuses are read-only.
+        Only allowed in Draft status â€” all other statuses are read-only.
         """
         ideation = await self.get_ideation(ideation_id)
         if not ideation:
@@ -14991,7 +14981,7 @@ class IdeationService:
                 s.model_dump() if hasattr(s, "model_dump") else s
                 for s in update_data["screen_mockups"]
             ]
-            # MockupDesignSystemGate (spec 3a006f65) — defense in depth pre-persist.
+            # MockupDesignSystemGate (spec 3a006f65) â€” defense in depth pre-persist.
             from okto_pulse.core.services.design_system import (
                 gate_entity_screen_mockups,
             )
@@ -15041,11 +15031,11 @@ class IdeationService:
         return ideation
 
     # Allowed ideation transitions:
-    # Draft → Review, Cancelled
-    # Review → Draft, Approved, Cancelled
-    # Approved → Review, Evaluating, Cancelled
-    # Evaluating → Approved, Done, Cancelled
-    # Done → Draft (new version)
+    # Draft â†’ Review, Cancelled
+    # Review â†’ Draft, Approved, Cancelled
+    # Approved â†’ Review, Evaluating, Cancelled
+    # Evaluating â†’ Approved, Done, Cancelled
+    # Done â†’ Draft (new version)
     _IDEATION_TRANSITIONS: dict[IdeationStatus, list[IdeationStatus]] = transition_map(
         "ideation"
     )
@@ -15086,7 +15076,7 @@ class IdeationService:
 
         Works while the ideation is in evaluating status (or any non-draft
         status) WITHOUT routing through the generic update_ideation draft-only
-        guard — so it cannot be used to smuggle other non-draft edits past that
+        guard â€” so it cannot be used to smuggle other non-draft edits past that
         guard. Rejects archived ideations. Emits an auditable activity entry
         (ideation.ambiguity_gate_skip_updated) carrying actor, source path and
         the old -> new skip value. Both the REST endpoint and the MCP mirror
@@ -15196,9 +15186,9 @@ class IdeationService:
         """Move an ideation to a different status.
 
         Enforces transition rules:
-        - Draft → Review → Approved → Evaluating → Done
-        - Done → Draft (creates new version)
-        - Any (except Done) → Cancelled
+        - Draft â†’ Review â†’ Approved â†’ Evaluating â†’ Done
+        - Done â†’ Draft (creates new version)
+        - Any (except Done) â†’ Cancelled
         - Evaluation can only happen in Evaluating status
         - Editing only allowed in Draft
         """
@@ -15384,7 +15374,7 @@ class IdeationService:
                 "edition": int(ideation.edition),
             },
         )
-        summary = f"Status: {old_status.value} → {data.status.value}"
+        summary = f"Status: {old_status.value} â†’ {data.status.value}"
         if data.status == IdeationStatus.DONE:
             summary += f" (snapshot v{ideation.version} created)"
         elif data.status == IdeationStatus.DRAFT and old_status in (
@@ -15860,7 +15850,7 @@ class IdeationQAService:
         """Answer an ideation Q&A question (text or choice selection).
 
         Accepts `question_type in {"choice","single_choice","multi_choice"}`
-        — `single_choice` is treated as an alias of `choice`. Only commits
+        â€” `single_choice` is treated as an alias of `choice`. Only commits
         `answered_at`/`answered_by` when something was actually persisted,
         otherwise returns None so the route surfaces a 404 instead of a
         false-positive 200 (which caused the "toast says saved but the
@@ -16114,7 +16104,7 @@ class RefinementService:
         """Create a new refinement for a done ideation.
 
         The ideation must be in 'done' status (snapshotted) before refinements
-        can be created from it — same governance as spec derivation.
+        can be created from it â€” same governance as spec derivation.
 
         Always preserves the parent ideation's structured context as a
         derivation snapshot. If a custom description is provided, the inherited
@@ -16359,7 +16349,7 @@ class RefinementService:
     ) -> Refinement | None:
         """Update a refinement. Bumps version on content changes. Records field-level diffs.
 
-        Only allowed in Draft status — all other statuses are read-only.
+        Only allowed in Draft status â€” all other statuses are read-only.
         """
         refinement = await self.get_refinement(refinement_id)
         if not refinement:
@@ -16411,7 +16401,7 @@ class RefinementService:
                 s.model_dump() if hasattr(s, "model_dump") else s
                 for s in update_data["screen_mockups"]
             ]
-            # MockupDesignSystemGate (spec 3a006f65) — defense in depth pre-persist.
+            # MockupDesignSystemGate (spec 3a006f65) â€” defense in depth pre-persist.
             from okto_pulse.core.services.design_system import (
                 gate_entity_screen_mockups,
             )
@@ -16563,10 +16553,10 @@ class RefinementService:
         )
 
     # Allowed refinement transitions:
-    # Draft → Review, Cancelled
-    # Review → Draft, Approved, Cancelled
-    # Approved → Review, Done, Cancelled
-    # Done → Draft (new version)
+    # Draft â†’ Review, Cancelled
+    # Review â†’ Draft, Approved, Cancelled
+    # Approved â†’ Review, Done, Cancelled
+    # Done â†’ Draft (new version)
     _REFINEMENT_TRANSITIONS: dict[RefinementStatus, list[RefinementStatus]] = (
         transition_map("refinement")
     )
@@ -16581,9 +16571,9 @@ class RefinementService:
         """Move a refinement to a different status.
 
         Enforces transition rules:
-        - Draft → Review → Approved → Done
-        - Done → Draft (creates new version)
-        - Any (except Done) → Cancelled
+        - Draft â†’ Review â†’ Approved â†’ Done
+        - Done â†’ Draft (creates new version)
+        - Any (except Done) â†’ Cancelled
         - Editing only allowed in Draft
         """
         await _application_flush(self.db)
@@ -16622,7 +16612,7 @@ class RefinementService:
                 }
             )
 
-        # Content gate — draft→review requires at least one non-empty in_scope
+        # Content gate â€” draftâ†’review requires at least one non-empty in_scope
         # entry. Prevents stub refinements (no design intent captured) from
         # leaking into review / approved / done where downstream tools
         # (derive_spec, get_refinement_context) would operate on them.
@@ -16877,7 +16867,6 @@ class RefinementService:
 
         code_evidence_manifest: list[dict[str, object]] = []
         active_evidence = []
-        latest_classifications = []
         current_receipts: list[SourceContextCurrentReceiptV2] = []
         try:
             from okto_pulse.core.ports.relational_application import (
@@ -16932,23 +16921,6 @@ class RefinementService:
                 cursor = page.next_cursor
                 if cursor is None:
                     break
-
-            classification_reader = getattr(
-                traceability_store,
-                "list_latest_evidence_classifications",
-                None,
-            )
-            if active_evidence and not callable(classification_reader):
-                raise CodeInvestigationCurrentnessUnknown(
-                    details={"reason": "snapshot_classification_reader_unavailable"}
-                )
-            if active_evidence:
-                latest_classifications = list(
-                    await classification_reader(
-                        board_id=refinement.board_id,
-                        evidence_ids=tuple(sorted(item.id for item in active_evidence)),
-                    )
-                )
 
             receipt_cursor = None
             receipt_count = 0
@@ -17019,18 +16991,9 @@ class RefinementService:
             raise CodeInvestigationCurrentnessUnknown(
                 details={"reason": "snapshot_traceability_adapter_unavailable"}
             ) from exc
-        classifications_by_evidence = {
-            item.evidence_id: item for item in latest_classifications
-        }
-        if len(classifications_by_evidence) != len(latest_classifications):
-            raise CodeInvestigationCurrentnessUnknown(
-                details={"reason": "snapshot_classification_heads_invalid"}
-            )
         for evidence in active_evidence:
-            classification = classifications_by_evidence.get(evidence.id)
             effective_context = source_context_evidence_item_v2(
                 evidence,
-                classification,
             )
             contextual_payload = source_context_evidence_payload_v2(effective_context)
             code_evidence_manifest.append(
@@ -17045,10 +17008,6 @@ class RefinementService:
                     "context_sha256": canonical_code_traceability_sha256(
                         contextual_payload
                     ),
-                    "classification_revision": (
-                        effective_context.classification_revision
-                    ),
-                    "classification_sha256": (effective_context.classification_sha256),
                 }
             )
         code_evidence_manifest.sort(key=lambda item: item["evidence_id"])
@@ -17070,16 +17029,12 @@ class RefinementService:
                 item.contextual_outcome for item in current_receipts
             ),
             evidence=tuple(active_evidence),
-            classifications=tuple(latest_classifications),
         )
         source_context_manifest = RefinementSourceContextManifestV2(
             refinement_id=refinement.id,
             refinement_version=refinement.version,
             summary=source_context_summary,
             current_receipts=tuple(current_receipts),
-            classification_fence=source_context_classification_fence_v2(
-                tuple(latest_classifications)
-            ),
         )
         source_context_manifest_payload = source_context_manifest.as_dict()
 
@@ -17274,7 +17229,7 @@ class RefinementService:
 
         Artifacts (mockups, KBs) are automatically propagated. Use mockup_ids/kb_ids
         to select specific ones. Compiles context from the refinement's scope, analysis, decisions,
-        technical_requirements, acceptance_criteria) are left empty — they must be
+        technical_requirements, acceptance_criteria) are left empty â€” they must be
         filled by the agent or human through deliberate analysis.
 
         Only allowed when refinement status is 'done'.
@@ -17327,7 +17282,7 @@ class RefinementService:
             "\n\n".join(context_parts) if context_parts else source_snapshot.description
         )
 
-        # Snapshot artifact data BEFORE create_spec — flush() in create_spec
+        # Snapshot artifact data BEFORE create_spec â€” flush() in create_spec
         # expires all session objects, making eagerly-loaded collections inaccessible.
         snapshot_qa = list(source_snapshot.qa_snapshot or [])
         snapshot_mockups = list(refinement.screen_mockups or [])
@@ -17509,7 +17464,7 @@ class RefinementQAService:
         surface: str = "service",
     ) -> RefinementQAItem | None:
         """Answer a refinement Q&A question (text or choice selection).
-        Mirrors IdeationQAService.answer_question — accepts `single_choice`
+        Mirrors IdeationQAService.answer_question â€” accepts `single_choice`
         as alias of `choice`, and only commits when something was persisted.
         """
         qa = await _application_get(self.db, "refinement_qa_item", qa_id)
@@ -18524,7 +18479,7 @@ class GuidelineService:
                 current_head=head,
                 retirement_id=retirement_id,
                 status=GuidelineLifecycleStatus.RETIRED,
-                reason="Retired through the legacy guideline façade.",
+                reason="Retired through the legacy guideline faÃ§ade.",
                 actor_id=scoped_owner_id,
                 occurred_at=self._next_event_time(head.updated_at),
                 idempotency_key=f"legacy:retire:{retirement_id}",
@@ -18974,10 +18929,10 @@ class GuidelineService:
 def _tree_cards_structural_preorder(cards: list[Any]) -> list[Any]:
     """Deterministic STRUCTURAL preorder for tree card ops (matriz v13).
 
-    True DFS PREORDER (FR11): roots in canonical lane order — (status,
-    position ASC, id DESC) — and each card is IMMEDIATELY followed by its
+    True DFS PREORDER (FR11): roots in canonical lane order â€” (status,
+    position ASC, id DESC) â€” and each card is IMMEDIATELY followed by its
     whole bug subtree (``origin_task_id`` children in lane order, then their
-    own bugs, depth-first). ``A, A1(→A), A2(→A1), B, B1(→B)`` — never the
+    own bugs, depth-first). ``A, A1(â†’A), A2(â†’A1), B, B1(â†’B)`` â€” never the
     breadth-first ``A, B, A1, B1, A2``. Bug-of-bug chains are product-legal
     and traversed. Cycle-safe: an origin loop's residue is emitted in lane
     order via the trailing sweep.
@@ -19231,7 +19186,7 @@ class ArchiveService:
         card_ops: dict[str, list[ColumnResequenceOp]] = {}
         card_records: dict[str, dict[str, ApplicationRecord]] = {}
         # _resolve_tree lists without order_by (DB order): apply the
-        # deterministic STRUCTURAL preorder — canonical column order
+        # deterministic STRUCTURAL preorder â€” canonical column order
         # (position ASC, id DESC) plus parent-before-bug topology.
         tree_cards = _tree_cards_structural_preorder(tree["cards"])
         for card in tree_cards:
@@ -19445,12 +19400,12 @@ class ArchiveService:
 
         # Cards are restored as resequence OPS with placement="end" (matriz
         # v13, item 5): the landing at the END of the active range is EXPLICIT
-        # — never inferred from the stored position, which legacy data may
+        # â€” never inferred from the stored position, which legacy data may
         # hold as -1 or any other corrupt value (ts_b2e972e7).
         card_ops: dict[str, list[ColumnResequenceOp]] = {}
         card_records: dict[str, dict[str, ApplicationRecord]] = {}
         # Deterministic STRUCTURAL preorder (see archive_tree): canonical
-        # column order plus parent-before-bug topology — restored cards land
+        # column order plus parent-before-bug topology â€” restored cards land
         # at the end of the active range in this stable order.
         tree_cards = _tree_cards_structural_preorder(tree["cards"])
         for card in tree_cards:

@@ -36,7 +36,6 @@ from okto_pulse.core.domain.code_traceability import (
     CodeInvestigationIdempotencyConflict,
     CodeInvestigationNoRelevantExistingImplementationInvalid,
     CodeInvestigationOmission,
-    CodeInvestigationOutcome,
     CodeInvestigationPayloadDigestMismatch,
     CodeInvestigationProfileMismatch,
     CodeInvestigationReceipt,
@@ -63,16 +62,13 @@ from okto_pulse.core.domain.code_traceability import (
     ObservedWorkspaceStateRef,
     canonical_code_traceability_json_bytes,
     canonical_code_traceability_sha256,
-    code_investigation_observation_sha256,
     code_investigation_observation_sha256_v2,
     code_investigation_omission_digest,
     code_investigation_receipt_currentness,
-    legacy_code_investigation_outcome,
     normalize_code_source_ref,
 )
 from okto_pulse.core.models.code_traceability import (
     CodeInvestigationReceiptSubmission,
-    CodeInvestigationReceiptSubmissionV2,
     StartCodeInvestigationInput,
 )
 from okto_pulse.core.ports.code_investigation import CodeInvestigationStore
@@ -627,10 +623,7 @@ class CodeInvestigationService:
 
     @staticmethod
     def _receipt_payload_sha256(
-        submission: (
-            CodeInvestigationReceiptSubmission
-            | CodeInvestigationReceiptSubmissionV2
-        ),
+        submission: CodeInvestigationReceiptSubmission,
         *,
         request: CodeInvestigationRequest,
         actor_id: str,
@@ -640,33 +633,11 @@ class CodeInvestigationService:
             mode="python",
             exclude={"challenge_token"},
         )
-        if isinstance(submission, CodeInvestigationReceiptSubmissionV2):
-            if delivery_context is None:
-                raise CodeDeliveryContextRequired()
-            return canonical_code_traceability_sha256(
-                {
-                    "operation": "submit_code_investigation_receipt_v2",
-                    "actor_id": actor_id,
-                    "request_id": request.id,
-                    "board_id": request.board_id,
-                    "source_ref": request.source_ref,
-                    "subject_type": request.subject_type,
-                    "subject_id": request.subject_id,
-                    "subject_version": request.subject_version,
-                    "generation": request.expected_head_generation + 1,
-                    "predecessor_receipt_id": (
-                        request.expected_predecessor_receipt_id
-                    ),
-                    "selector_scope_digest": request.selector_scope_digest,
-                    "canonicalization_profile": request.canonicalization_profile,
-                    "limits_profile": request.limits_profile,
-                    "delivery_context": delivery_context,
-                    "agent_payload": agent_payload,
-                }
-            )
+        if delivery_context is None:
+            raise CodeDeliveryContextRequired()
         return canonical_code_traceability_sha256(
             {
-                "operation": "submit_code_investigation_receipt",
+                "operation": "submit_code_investigation_receipt_v2",
                 "actor_id": actor_id,
                 "request_id": request.id,
                 "board_id": request.board_id,
@@ -675,20 +646,20 @@ class CodeInvestigationService:
                 "subject_id": request.subject_id,
                 "subject_version": request.subject_version,
                 "generation": request.expected_head_generation + 1,
-                "predecessor_receipt_id": (request.expected_predecessor_receipt_id),
+                "predecessor_receipt_id": (
+                    request.expected_predecessor_receipt_id
+                ),
                 "selector_scope_digest": request.selector_scope_digest,
                 "canonicalization_profile": request.canonicalization_profile,
                 "limits_profile": request.limits_profile,
+                "delivery_context": delivery_context,
                 "agent_payload": agent_payload,
             }
         )
 
     async def submit_receipt(
         self,
-        submission: (
-            CodeInvestigationReceiptSubmission
-            | CodeInvestigationReceiptSubmissionV2
-        ),
+        submission: CodeInvestigationReceiptSubmission,
         *,
         actor_id: str,
         actor_kind: str,
@@ -699,34 +670,25 @@ class CodeInvestigationService:
         actor = require_code_attestor(actor_id, actor_kind)
         if not isinstance(
             submission,
-            (
-                CodeInvestigationReceiptSubmission,
-                CodeInvestigationReceiptSubmissionV2,
-            ),
+            CodeInvestigationReceiptSubmission,
         ):
             raise CodeTraceabilityContractError(
                 "code_investigation_receipt_submission_invalid"
             )
-        contextual_submission = isinstance(
-            submission,
-            CodeInvestigationReceiptSubmissionV2,
-        )
-        resolved_delivery_context: DeliveryContext | None = None
-        if contextual_submission:
-            try:
-                resolved_delivery_context = DeliveryContext(delivery_context)
-            except (TypeError, ValueError) as exc:
-                raise CodeDeliveryContextRequired() from exc
-            if (
-                submission.outcome
-                is ContextualInvestigationOutcomeV2.NO_RELEVANT_EXISTING_IMPLEMENTATION
-                and resolved_delivery_context is not DeliveryContext.GREENFIELD
-            ):
-                raise CodeInvestigationNoRelevantExistingImplementationInvalid(
-                    details={
-                        "delivery_context": resolved_delivery_context.value,
-                    }
-                )
+        try:
+            resolved_delivery_context = DeliveryContext(delivery_context)
+        except (TypeError, ValueError) as exc:
+            raise CodeDeliveryContextRequired() from exc
+        if (
+            submission.outcome
+            is ContextualInvestigationOutcomeV2.NO_RELEVANT_EXISTING_IMPLEMENTATION
+            and resolved_delivery_context is not DeliveryContext.GREENFIELD
+        ):
+            raise CodeInvestigationNoRelevantExistingImplementationInvalid(
+                details={
+                    "delivery_context": resolved_delivery_context.value,
+                }
+            )
         if type(freshness_seconds) is not int or not 60 <= freshness_seconds <= 86_400:
             raise CodeInvestigationProfileMismatch(
                 details={"field": "preflight_freshness_seconds"}
@@ -780,9 +742,7 @@ class CodeInvestigationService:
         submitted_capabilities = set(submission.capabilities)
         missing = set(request.required_capabilities) - submitted_capabilities
         complete_outcome = (
-            submission.outcome is CodeInvestigationOutcome.ACCESSIBLE
-            if not contextual_submission
-            else submission.outcome
+            submission.outcome
             in {
                 ContextualInvestigationOutcomeV2.EVIDENCE_APPLICABLE,
                 ContextualInvestigationOutcomeV2.NO_RELEVANT_EXISTING_IMPLEMENTATION,
@@ -835,33 +795,18 @@ class CodeInvestigationService:
             )
             for item in submission.omission_manifest
         )
-        if contextual_submission:
-            observation_sha256 = code_investigation_observation_sha256_v2(
-                source_ref=request.source_ref,
-                selector_scope_digest=request.selector_scope_digest,
-                delivery_context=resolved_delivery_context,
-                outcome=submission.outcome,
-                capabilities=submission.capabilities,
-                source_identity_digest=submission.source_identity_digest,
-                declared_revision=submission.declared_revision,
-                workspace_state=workspace_state,
-                omission_manifest=omissions,
-            )
-            legacy_outcome = legacy_code_investigation_outcome(submission.outcome)
-            contextual_outcome = submission.outcome
-        else:
-            observation_sha256 = code_investigation_observation_sha256(
-                source_ref=request.source_ref,
-                selector_scope_digest=request.selector_scope_digest,
-                outcome=submission.outcome,
-                capabilities=submission.capabilities,
-                source_identity_digest=submission.source_identity_digest,
-                declared_revision=submission.declared_revision,
-                workspace_state=workspace_state,
-                omission_manifest=omissions,
-            )
-            legacy_outcome = submission.outcome
-            contextual_outcome = None
+        observation_sha256 = code_investigation_observation_sha256_v2(
+            source_ref=request.source_ref,
+            selector_scope_digest=request.selector_scope_digest,
+            delivery_context=resolved_delivery_context,
+            outcome=submission.outcome,
+            capabilities=submission.capabilities,
+            source_identity_digest=submission.source_identity_digest,
+            declared_revision=submission.declared_revision,
+            workspace_state=workspace_state,
+            omission_manifest=omissions,
+        )
+        contextual_outcome = submission.outcome
         predecessor = (
             None
             if actual_predecessor is None
@@ -921,7 +866,6 @@ class CodeInvestigationService:
             predecessor_receipt_id=actual_predecessor,
             trust_level=trust_level,
             acceptance_status="accepted",
-            outcome=legacy_outcome,
             capabilities=submission.capabilities,
             source_ref=request.source_ref,
             source_identity_digest=submission.source_identity_digest,
@@ -946,7 +890,7 @@ class CodeInvestigationService:
             idempotency_key=submission.idempotency_key,
             delivery_context=resolved_delivery_context,
             contextual_outcome=contextual_outcome,
-            context_contract_version=(2 if contextual_submission else None),
+            context_contract_version=2,
         )
         consumed_request = replace(
             request,
@@ -1048,7 +992,7 @@ class CodeInvestigationService:
             )
         if head is None:  # narrowed by CURRENT, kept fail-closed for adapters
             raise CodeInvestigationCurrentnessUnknown()
-        if receipt.outcome is CodeInvestigationOutcome.UNAVAILABLE:
+        if receipt.contextual_outcome is ContextualInvestigationOutcomeV2.UNAVAILABLE:
             raise CodeInvestigationUnavailable()
         if receipt.trust_level is CodeInvestigationTrustLevel.CONFLICTED:
             raise CodeInvestigationReceiptConflicted()

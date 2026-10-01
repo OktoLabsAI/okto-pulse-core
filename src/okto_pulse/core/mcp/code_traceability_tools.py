@@ -56,12 +56,9 @@ from okto_pulse.core.models.code_traceability import (
     CodeEvidenceSpecLinkInput,
     CodeEvidenceSpecUnlinkInput,
     CodeEvidenceSubmission,
-    CodeEvidenceSubmissionV2,
     CodeEvidenceSupersessionSubmission,
-    CodeEvidenceSupersessionSubmissionV2,
     CodeInvestigationOmissionInput,
     CodeInvestigationReceiptSubmission,
-    CodeInvestigationReceiptSubmissionV2,
     CodeInvestigationToolingInput,
     CodeTraceabilityWaiverClearInput,
     CodeTraceabilityWaiverInput,
@@ -71,8 +68,6 @@ from okto_pulse.core.models.code_traceability import (
     ImplementationTargetResolutionSubmission,
     ImplementationTargetSpecLinkInput,
     ImplementationTargetUpdateInput,
-    LegacyEvidenceClassificationBatchInput,
-    LegacyEvidenceClassificationItemInput,
     ObservedWorkspaceStateSubmission,
     ResolutionCandidateInput,
     StartCodeInvestigationInput,
@@ -103,7 +98,7 @@ Digest = Annotated[str, Field(pattern=r"^[0-9a-fA-F]{64}$")]
 OptionalDigest = Annotated[str | None, Field(default=None, pattern=r"^[0-9a-fA-F]{64}$")]
 PageLimit = Annotated[int, Field(ge=1, le=200)]
 CursorToken = Annotated[str, Field(min_length=1, max_length=4096)]
-ContractVersion = Literal[1, 2]
+ContractVersion = Literal[2]
 AuthoredEvidenceSourceRole = Literal[
     "current_implementation",
     "existing_scaffold",
@@ -114,7 +109,7 @@ InvestigationOutcome = Annotated[
     str,
     Field(
         pattern=(
-            "^(accessible|evidence_applicable|"
+            "^(evidence_applicable|"
             "no_relevant_existing_implementation|partial|unavailable)$"
         )
     ),
@@ -323,24 +318,6 @@ def _closed_input(model: type, values: Mapping[str, object]) -> object:
     return model.model_validate(payload)
 
 
-def _selected_contract_model(
-    contract_version: object,
-    *,
-    legacy: type,
-    contextual: type,
-) -> type:
-    """Select an inbound contract without inferring V2 from optional fields."""
-
-    if type(contract_version) is int and contract_version == 1:
-        return legacy
-    if type(contract_version) is int and contract_version == 2:
-        return contextual
-    raise CodeTraceabilityContractError(
-        "code_traceability_contract_version_invalid",
-        details={"contract_version": contract_version},
-    )
-
-
 def _investigation_receipt_command(
     *,
     board_id: str,
@@ -355,10 +332,10 @@ def _investigation_receipt_command(
     declared_revision: str | None = None,
     workspace_state: ObservedWorkspaceStateSubmission | None = None,
     omission_manifest: list[CodeInvestigationOmissionInput] | None = None,
-    contract_version: ContractVersion = 1,
+    contract_version: ContractVersion,
     **_ignored: object,
-) -> CodeInvestigationReceiptSubmission | CodeInvestigationReceiptSubmissionV2:
-    """Build exactly the selected receipt version from source-blind fields."""
+) -> CodeInvestigationReceiptSubmission:
+    """Build the current contextual receipt from source-blind fields."""
 
     payload: dict[str, object] = {
         "board_id": board_id,
@@ -374,14 +351,8 @@ def _investigation_receipt_command(
         "observed_at": observed_at,
         "idempotency_key": idempotency_key,
     }
-    model = _selected_contract_model(
-        contract_version,
-        legacy=CodeInvestigationReceiptSubmission,
-        contextual=CodeInvestigationReceiptSubmissionV2,
-    )
-    if model is CodeInvestigationReceiptSubmissionV2:
-        payload["contract_version"] = 2
-    return model.model_validate(payload)
+    payload["contract_version"] = contract_version
+    return CodeInvestigationReceiptSubmission.model_validate(payload)
 
 
 def _evidence_command(
@@ -407,21 +378,19 @@ def _evidence_command(
     idempotency_key: str,
     supersedes_evidence_id: str | None = None,
     supersession_reason: str | None = None,
-    contract_version: ContractVersion = 1,
-    source_role: CodeEvidenceSourceRole | None = None,
-    relevance_summary: str | None = None,
-    scope_relation: str | None = None,
-    source_origin: str | None = None,
+    contract_version: ContractVersion,
+    source_role: CodeEvidenceSourceRole,
+    relevance_summary: str,
+    scope_relation: str,
+    source_origin: str,
     interpretation_limit: str | None = None,
-    baseline_provenance: CodeEvidenceBaselineProvenance | None = None,
+    baseline_provenance: CodeEvidenceBaselineProvenance,
     **_ignored: object,
 ) -> (
     CodeEvidenceSubmission
-    | CodeEvidenceSubmissionV2
     | CodeEvidenceSupersessionSubmission
-    | CodeEvidenceSupersessionSubmissionV2
 ):
-    """Build exactly the selected Evidence version from source-blind fields."""
+    """Build the current contextual Evidence from source-blind fields."""
 
     payload: dict[str, object] = {
         "board_id": board_id,
@@ -454,33 +423,13 @@ def _evidence_command(
         "interpretation_limit": interpretation_limit,
         "baseline_provenance": baseline_provenance,
     }
-    model = _selected_contract_model(
-        contract_version,
-        legacy=(
-            CodeEvidenceSupersessionSubmission
-            if supersedes_evidence_id is not None
-            else CodeEvidenceSubmission
-        ),
-        contextual=(
-            CodeEvidenceSupersessionSubmissionV2
-            if supersedes_evidence_id is not None
-            else CodeEvidenceSubmissionV2
-        ),
+    model = (
+        CodeEvidenceSupersessionSubmission
+        if supersedes_evidence_id is not None
+        else CodeEvidenceSubmission
     )
-    if contract_version == 2:
-        payload["contract_version"] = 2
-        payload.update(contextual_values)
-    else:
-        # Passing any V2 meaning while selecting V1 is an incoherent mix.
-        # Feed those authored values to the closed legacy model so the
-        # attempt fails before authentication or persistence.
-        payload.update(
-            {
-                name: value
-                for name, value in contextual_values.items()
-                if value is not None
-            }
-        )
+    payload["contract_version"] = contract_version
+    payload.update(contextual_values)
     if supersedes_evidence_id is not None:
         payload["supersedes_evidence_id"] = supersedes_evidence_id
         payload["supersession_reason"] = supersession_reason
@@ -560,7 +509,7 @@ def register_code_traceability_tools(
         tooling: CodeInvestigationToolingInput,
         observed_at: datetime,
         idempotency_key: BoundedId,
-        contract_version: ContractVersion = 1,
+        contract_version: ContractVersion,
         source_identity_digest: OptionalDigest = None,
         declared_revision: OptionalBoundedText = None,
         workspace_state: ObservedWorkspaceStateSubmission | None = None,
@@ -597,13 +546,13 @@ def register_code_traceability_tools(
         selector_kind: CodeEvidenceSelectorKind,
         declared_source_content_sha256: Digest,
         idempotency_key: BoundedId,
-        contract_version: ContractVersion = 1,
-        source_role: AuthoredEvidenceSourceRole | None = None,
-        relevance_summary: OptionalBoundedText = None,
-        scope_relation: OptionalBoundedText = None,
-        source_origin: OptionalBoundedText = None,
+        contract_version: ContractVersion,
+        source_role: AuthoredEvidenceSourceRole,
+        relevance_summary: BoundedText,
+        scope_relation: BoundedText,
+        source_origin: BoundedText,
+        baseline_provenance: CodeEvidenceBaselineProvenance,
         interpretation_limit: OptionalBoundedText = None,
-        baseline_provenance: CodeEvidenceBaselineProvenance | None = None,
         relative_path: OptionalBoundedText = None,
         language: OptionalBoundedText = None,
         symbol_kind: OptionalBoundedText = None,
@@ -622,26 +571,6 @@ def register_code_traceability_tools(
         investigation, evidence, _ = _services()
         return await _execute(board_id, command, SubmitCodeEvidenceUseCase(investigation, evidence))
 
-    async def okto_pulse_classify_legacy_code_evidence(
-        board_id: BoundedId,
-        items: list[LegacyEvidenceClassificationItemInput],
-        justification: BoundedText,
-        idempotency_key: BoundedId,
-    ) -> McpToolOutcome:
-        """Classify legacy Evidence atomically with explicit source meaning and audit provenance."""
-        from okto_pulse.core.application.use_cases.code_traceability import ClassifyLegacyCodeEvidenceUseCase
-
-        command = LegacyEvidenceClassificationBatchInput(
-            board_id=board_id,
-            items=tuple(items),
-            justification=justification,
-            idempotency_key=idempotency_key,
-        )
-        return await _execute(
-            board_id,
-            command,
-            ClassifyLegacyCodeEvidenceUseCase(),
-        )
 
     async def okto_pulse_get_code_evidence(
         board_id: BoundedId,
@@ -689,13 +618,13 @@ def register_code_traceability_tools(
         selector_kind: CodeEvidenceSelectorKind,
         declared_source_content_sha256: Digest,
         idempotency_key: BoundedId,
-        contract_version: ContractVersion = 1,
-        source_role: AuthoredEvidenceSourceRole | None = None,
-        relevance_summary: OptionalBoundedText = None,
-        scope_relation: OptionalBoundedText = None,
-        source_origin: OptionalBoundedText = None,
+        contract_version: ContractVersion,
+        source_role: AuthoredEvidenceSourceRole,
+        relevance_summary: BoundedText,
+        scope_relation: BoundedText,
+        source_origin: BoundedText,
+        baseline_provenance: CodeEvidenceBaselineProvenance,
         interpretation_limit: OptionalBoundedText = None,
-        baseline_provenance: CodeEvidenceBaselineProvenance | None = None,
         relative_path: OptionalBoundedText = None,
         language: OptionalBoundedText = None,
         symbol_kind: OptionalBoundedText = None,
@@ -1004,7 +933,6 @@ def register_code_traceability_tools(
         okto_pulse_submit_code_investigation_receipt,
         okto_pulse_get_code_investigation_receipt,
         okto_pulse_submit_code_evidence,
-        okto_pulse_classify_legacy_code_evidence,
         okto_pulse_get_code_evidence,
         okto_pulse_list_code_evidence,
         okto_pulse_supersede_code_evidence,

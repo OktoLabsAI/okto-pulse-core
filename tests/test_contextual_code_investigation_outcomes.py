@@ -18,7 +18,6 @@ from okto_pulse.core.domain.code_traceability import (
     CodeInvestigationCapabilityMissing,
     CodeInvestigationNoRelevantExistingImplementationInvalid,
     CodeInvestigationOmissionReason,
-    CodeInvestigationOutcome,
     CodeInvestigationSubjectVersionConflict,
     CodeTraceabilityContext,
     CodeTraceabilityContextScope,
@@ -33,13 +32,12 @@ from okto_pulse.core.domain.code_traceability import (
 )
 from okto_pulse.core.models.code_traceability import (
     CodeInvestigationOmissionInput,
-    CodeInvestigationReceiptSubmissionV2,
+    CodeInvestigationReceiptSubmission,
     CodeInvestigationToolingInput,
     ObservedWorkspaceStateSubmission,
     StartCodeInvestigationInput,
 )
 from okto_pulse.core.models.schemas import CodeTraceabilitySettings
-from okto_pulse.core.events.types import CodeInvestigationReceiptSubmitted
 from okto_pulse.core.ports.code_investigation import CodeInvestigationReceiptQuery
 from okto_pulse.core.services.code_investigation import (
     CodeInvestigationService,
@@ -59,7 +57,6 @@ from test_code_traceability_application import (
     FakeUnitOfWork,
     MutableClock,
     StableIds,
-    accepted_receipt,
     challenge_policy,
 )
 from test_code_traceability_gate import _evidence
@@ -108,7 +105,7 @@ async def _submit_contextual_receipt(
         store=resolved_store,
     )
     unavailable = outcome is ContextualInvestigationOutcomeV2.UNAVAILABLE
-    submission = CodeInvestigationReceiptSubmissionV2(
+    submission = CodeInvestigationReceiptSubmission(
         contract_version=2,
         board_id="board-1",
         request_id=started.request.id,
@@ -192,7 +189,7 @@ def _access_waiver(reason: CodeTraceabilityWaiverReason) -> CodeTraceabilityWaiv
 
 
 def test_v2_submission_is_unambiguous_and_keeps_context_server_owned() -> None:
-    assert CodeInvestigationReceiptSubmissionV2.model_fields[
+    assert CodeInvestigationReceiptSubmission.model_fields[
         "contract_version"
     ].is_required()
     payload = {
@@ -213,7 +210,7 @@ def test_v2_submission_is_unambiguous_and_keeps_context_server_owned() -> None:
         "delivery_context": "greenfield",
     }
     with pytest.raises(ValidationError) as invalid:
-        CodeInvestigationReceiptSubmissionV2.model_validate(payload)
+        CodeInvestigationReceiptSubmission.model_validate(payload)
     errors = invalid.value.errors()
     assert any(item["loc"] == ("outcome",) for item in errors)
     assert any(item["loc"] == ("delivery_context",) for item in errors)
@@ -262,7 +259,6 @@ async def test_greenfield_complete_absence_is_accepted_and_passes_without_eviden
         delivery_context=DeliveryContext.GREENFIELD,
     )
     receipt = submitted.receipt
-    assert receipt.outcome is CodeInvestigationOutcome.ACCESSIBLE
     assert (
         receipt.contextual_outcome
         is ContextualInvestigationOutcomeV2.NO_RELEVANT_EXISTING_IMPLEMENTATION
@@ -497,68 +493,6 @@ async def test_multi_source_absence_and_waiver_do_not_hide_applicable_mapping() 
     assert mapped.passed is True
 
 
-@pytest.mark.asyncio
-async def test_legitimate_absence_does_not_grandfather_another_legacy_source() -> (
-    None
-):
-    clock = MutableClock()
-    store = FakeInvestigationStore()
-    service = CodeInvestigationService(
-        challenge_policy=challenge_policy(),
-        clock=clock,
-        id_factory=StableIds(),
-    )
-    absence, _, _, _ = await _submit_contextual_receipt(
-        outcome=(
-            ContextualInvestigationOutcomeV2.NO_RELEVANT_EXISTING_IMPLEMENTATION
-        ),
-        delivery_context=DeliveryContext.GREENFIELD,
-        service=service,
-        store=store,
-        clock=clock,
-        key="absence-with-legacy",
-    )
-    legacy = await accepted_receipt(
-        service=service,
-        store=store,
-        clock=clock,
-        actor_id="agent-1",
-        subject_type=CodeTraceabilitySubjectType.REFINEMENT,
-        subject_id="refinement-1",
-        subject_version=3,
-        source_ref=None,
-        selector_scope_digest=selector_scope_digest_for_subject(
-            board_id="board-1",
-            subject_type=CodeTraceabilitySubjectType.REFINEMENT,
-            subject_id="refinement-1",
-            subject_version=3,
-        ),
-        capabilities=required_capabilities_for_subject(
-            CodeTraceabilitySubjectType.REFINEMENT
-        ),
-        request_key="legacy-source-start",
-        receipt_key="legacy-source-receipt",
-    )
-    context = CodeTraceabilityContext(
-        board_id="board-1",
-        subject_type=CodeTraceabilitySubjectType.REFINEMENT,
-        subject_id="refinement-1",
-        subject_version=3,
-        profile=CodeTraceabilityProjectionProfile.FULL,
-        context_scope=CodeTraceabilityContextScope.GATE,
-        heads=tuple(store.heads.values()),
-        receipts=(absence.receipt, legacy.receipt),
-    )
-    evaluation = CodeTraceabilityGateEvaluator(clock=clock).evaluate(
-        context,
-        CodeTraceabilitySettings(mode="blocking", evidence_attestation="required"),
-        phases=(CodeTraceabilityGatePhase.REFINEMENT_EVIDENCE,),
-    )
-    assert evaluation.allowed is False
-    assert evaluation.blockers[0].code == "code_evidence_materiality_link_required"
-    assert evaluation.blockers[0].details["legacy_receipt_ids"] == [
-        legacy.receipt.id
-    ]
 
 
 @pytest.mark.asyncio
@@ -634,40 +568,19 @@ async def test_v2_evidence_requires_current_implementation_materiality() -> None
     assert passed.passed is True
 
 
-def test_receipt_query_exposes_distinct_contextual_outcome_filter() -> None:
+def test_receipt_query_filters_native_contextual_outcome() -> None:
     query = CodeInvestigationReceiptQuery(
         board_id="board-1",
-        outcome=CodeInvestigationOutcome.ACCESSIBLE,
-        contextual_outcome=(
+        outcome=(
             ContextualInvestigationOutcomeV2.NO_RELEVANT_EXISTING_IMPLEMENTATION
         ),
     )
-    assert query.outcome is CodeInvestigationOutcome.ACCESSIBLE
     assert (
-        query.contextual_outcome
+        query.outcome
         is ContextualInvestigationOutcomeV2.NO_RELEVANT_EXISTING_IMPLEMENTATION
     )
 
 
-def test_legacy_receipt_event_payload_is_byte_shape_compatible() -> None:
-    event = CodeInvestigationReceiptSubmitted(
-        board_id="board-1",
-        actor_id="agent-1",
-        actor_type="agent",
-        investigation_request_id="request-1",
-        investigation_receipt_id="receipt-1",
-        acceptance_status="accepted",
-        outcome="accessible",
-        trust_level="single_attestation",
-        generation=1,
-        omission_count=0,
-        observation_sha256=H1,
-        payload_sha256=H2,
-    )
-    payload = event.payload_for_storage()
-    assert payload["outcome"] == "accessible"
-    assert "delivery_context" not in payload
-    assert "contextual_outcome" not in payload
 
 
 @pytest.mark.asyncio
@@ -721,7 +634,7 @@ async def test_receipt_use_case_binds_v2_to_server_context_and_exact_version() -
     required = required_capabilities_for_subject(
         CodeTraceabilitySubjectType.REFINEMENT
     )
-    command = CodeInvestigationReceiptSubmissionV2(
+    command = CodeInvestigationReceiptSubmission(
         contract_version=2,
         board_id="board-1",
         request_id=started.request.id,
@@ -770,6 +683,6 @@ async def test_receipt_use_case_binds_v2_to_server_context_and_exact_version() -
         is ContextualInvestigationOutcomeV2.NO_RELEVANT_EXISTING_IMPLEMENTATION
     )
     event = uow.published_events[-1]
-    assert event.outcome == "accessible"
+    assert "outcome" not in event.payload_for_storage()
     assert event.delivery_context == "greenfield"
     assert event.contextual_outcome == "no_relevant_existing_implementation"
