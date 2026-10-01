@@ -2,6 +2,25 @@
 
 ## Estado para retomada
 
+ARQVER ADV-13 verificado no fluxo contínuo T01. Run HTTP assinado em Draft
+antecede vínculo BR→critério pelo writer MCP autorizado. Mesma edição, digest
+novo: recibo antigo continua autêntico na base original, mas admissão atual
+recusa sem escrita. Após implementação/revisão reais, Spec Done recusa falta
+de prova de teste; nova execução assinada e relatório Test Card permitem Done.
+Avaliações e payload de implementação permanecem preservados.
+
+Community33238=0,2passed17.42s (regressão T01 e variante com vínculo tardio).
+Ruff F/E9 e diff verdes. acceptance-post-run-requirement-link.json registra
+prova e limites de fixtures. Probe82833=1 corrigiu somente acesso incorreto do
+teste ao digest do recibo automatizado; nenhuma mudança produtiva. Prova prévia
+provenance-late-link1.json confirmou859/922+373/458 fonte/site/wheels iguais.
+F16 anterior90981=0,oito budgets ZERO;frontend anterior39859=0,8passed. Sem UI.
+
+Inventário135 verificados/32 parciais/79 não auditados. Próximo trabalho limitado
+aos critérios restantes, benchmark e distribuição final do pacote. KG-10/T23
+aguardam decisões já solicitadas. Par publicado anterior:b4564266/8a24cc65.
+Nenhum processo pendente nem dado real alterado.
+
 ARQVER ADV-16 verificado: IR exige shape e timeout, com implementação
 completa para ambos. HTTP real observa array steps e emite prova passing só de
 shape. Leitura SQL nova identifica ac-timeout sem observação; IR e gate de entrega

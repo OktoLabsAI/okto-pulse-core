@@ -3191,10 +3191,10 @@
       "line": 737,
       "id": "ADV-13",
       "normative_text": "| ADV-13 | Adicionar vínculo requisito→critério após o run. | Exige validar a aplicabilidade; não torna o run retroativamente suficiente só pelo novo link. |",
-      "review_status": "partial",
+      "review_status": "verified_by_reviewed_execution",
       "test_text_references": [],
       "reviewed_execution": {
-        "artifact": "acceptance-verification-execution.json",
+        "artifact": "acceptance-post-run-requirement-link.json",
         "criterion_key": "ARQVER:ADV-13"
       }
     },
