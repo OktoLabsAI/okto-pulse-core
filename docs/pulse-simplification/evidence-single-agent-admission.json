@@ -1,0 +1,96 @@
+{
+  "format": "pulse-v1.3-reviewed-execution/v1",
+  "scope": "BASE:T01 single-agent flow",
+  "status": "partial",
+  "verified_segment": "One persisted agent with valid Full Control preset and actual AgentBoard grant authenticates against materialized Community MCP. With reviewer separation off, it moves Draft->Review->Approved, reads exact lint preflight, records external Requirement Lint, submits five-metric Spec Validation, submits qualitative Spec evaluation and starts the Spec. Fresh SQL reads prove exact preservation of validations/evaluations/current validation pointer, actor solo, lint receipt identity and edition, and only one Agent row. No transition or assessment gate is mocked.",
+  "execution": {
+    "terminal_session": 87970,
+    "exit_code": 0,
+    "passed": 1,
+    "duration_seconds": 13.59,
+    "xml": {
+      "file": "learning-reconciliation-single-agent3-community.xml",
+      "sha256": "bc306a64f453fa34502c2d8e63eeae9e4178433182e7615fd7cf8895d0c07de9"
+    },
+    "log": {
+      "file": "learning-reconciliation-single-agent3-community.log",
+      "sha256": "4b5e2824e6541be8a181249ac7ca4636a6c56c5132a79e9c520f0a48c9841b53"
+    }
+  },
+  "provenance": {
+    "checked_at": "2026-10-01T01:36:10.595869+00:00",
+    "python": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Scripts\\python.exe",
+    "packages": {
+      "core": {
+        "python_files": 859,
+        "origin": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages\\okto_pulse\\core\\__init__.py",
+        "repository_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_core",
+        "commit": "69fa8a6cab71dd9f46560baf9918f6f5db5ff5a4",
+        "dirty": false,
+        "dirty_entry_count": 0,
+        "distribution": "okto-pulse-core",
+        "version": "0.3.4",
+        "wheel": {
+          "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\dist-learning-reconciliation-evaluation-authority-fix1\\okto_pulse_core-0.3.4-py3-none-any.whl",
+          "sha256": "97e5312876e55fb8bc2f5d305012516c8c2a196f0ef287a2230277c4f2fd6a09",
+          "size": 3792917
+        },
+        "source_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_core\\src",
+        "site_packages_root": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages",
+        "package_prefix": "okto_pulse/core/",
+        "byte_identical_member_count": 922,
+        "byte_identical": true,
+        "aggregate_sha256": "caf97540d6043b7ea5e156f9d4536b5aa4231b541d9ee2739bf3c0ef0519c482",
+        "chain_hashes": {
+          "source": "caf97540d6043b7ea5e156f9d4536b5aa4231b541d9ee2739bf3c0ef0519c482",
+          "wheel": "caf97540d6043b7ea5e156f9d4536b5aa4231b541d9ee2739bf3c0ef0519c482",
+          "site_packages": "caf97540d6043b7ea5e156f9d4536b5aa4231b541d9ee2739bf3c0ef0519c482"
+        },
+        "critical_resource_sha256": {
+          "okto_pulse/core/mcp/resources/ska_resource_manifest.json": "87fab2a5ded5f6ee273af8628555c21f7065d32379945784132bb6c300d05865",
+          "okto_pulse/core/mcp/resources/ska_tool_manifest.json": "0c3fa3da1549baec20872eca3f4a289288627e6b9f6b80be10472ac962fa72b9"
+        },
+        "mismatches": []
+      },
+      "community": {
+        "python_files": 373,
+        "origin": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages\\okto_pulse\\community\\__init__.py",
+        "repository_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_community",
+        "commit": "6e49a1178823b39d491c262f629438eecad3145f",
+        "dirty": false,
+        "dirty_entry_count": 0,
+        "distribution": "okto-pulse",
+        "version": "0.3.4",
+        "wheel": {
+          "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\dist-learning-reconciliation-evaluation-authority-fix1\\okto_pulse-0.3.4-py3-none-any.whl",
+          "sha256": "5c23034b2f20cd592c1c7b7efb532eea32665882c45b79d39cdb2d50ee091657",
+          "size": 4535075
+        },
+        "source_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_community\\src",
+        "site_packages_root": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages",
+        "package_prefix": "okto_pulse/community/",
+        "byte_identical_member_count": 458,
+        "byte_identical": true,
+        "aggregate_sha256": "8b07ee010036e9c307e22c4a39d43fb3a36e12d78fa15be75168ebe2195cd850",
+        "chain_hashes": {
+          "source": "8b07ee010036e9c307e22c4a39d43fb3a36e12d78fa15be75168ebe2195cd850",
+          "wheel": "8b07ee010036e9c307e22c4a39d43fb3a36e12d78fa15be75168ebe2195cd850",
+          "site_packages": "8b07ee010036e9c307e22c4a39d43fb3a36e12d78fa15be75168ebe2195cd850"
+        },
+        "critical_resource_sha256": {},
+        "mismatches": []
+      }
+    }
+  },
+  "remaining": [
+    "Continue the same Spec/agent through task execution, report, self-review under allowed policy, actual test evidence and Test Card completion, then Spec Done; preserve all preceding evaluations and proof identities.",
+    "Do not qualify T01 as verified from separate component tests or from admission alone."
+  ],
+  "limits": [
+    "Draft Spec content, direct delivery-context provenance, complete execution contract and linked normal/Test Cards are fixture input; no claim to public authoring of that initial content.",
+    "API-key extraction is injected for in-process MCP Client; actual authenticator, grants, host validation, UOWs, quality preflight/writer, services and Community SQL are used. No HTTP socket login is exercised.",
+    "External evaluator result is supplied by this test (zero lint findings and positive scores); the test qualifies authenticated admission and durable evidence, not the correctness of external cognition.",
+    "Probe1 passed before receipt assertions. Probe2 expected both lint and Spec Validation in the quality receipt table; source investigation confirmed canonical five-metric validation is stored append-only in Spec.validations, with receipt_id equal to current_validation_id. Final3 asserts both actual persistence contracts. This was an assertion correction, not a product defect or authority change.",
+    "Only tests and documentation changed. No frontend impact; prior F16 session31859 with eight ZERO budgets and frontend46579 with54 passes remain relevant. Product pair byte equality freshly checked before behavior tests."
+  ]
+}

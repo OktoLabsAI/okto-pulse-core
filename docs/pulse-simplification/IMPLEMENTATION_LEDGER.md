@@ -2,6 +2,34 @@
 
 ## Estado para retomada
 
+BASE T01 em andamento: percurso contínuo de UM agente real, preset válido,
+AgentBoard e autenticação MCP, reviewer_separation_mode=off. Draft→Review→Approved,
+preflight e registro de Requirement Lint, Spec Validation de cinco métricas,
+avaliação qualitativa e start passaram pelos writers/gates reais. Leitura SQL
+nova preserva validações/avaliações/current_validation_id, autoria solo e recibo
+lint da edição; só existe um Agent. Sem gate mockado ou nova identidade.
+
+Community87970=0,1passed13.59s. Probe1 passou antes das verificações de recibo;
+probe2 tinha assert incorreto sobre armazenamento de Spec Validation. Investigação
+em SpecService.submit_spec_validation confirmou registro append-only em
+Spec.validations (receipt_id=current_validation_id); Requirement Lint usa a tabela
+de quality receipts. Final3 confere ambos. Não houve alteração produtiva.
+evidence-single-agent-admission.json contém evidência e limites explícitos.
+
+T01 continua PARCIAL: próximo passo é estender ESTE percurso com execução da
+task, relatório, autorrevisão permitida, prova de teste/Test Card e Spec Done,
+preservando as avaliações e identidades de prova. Não substituir por união de
+testes isolados nem declarar fluxo completo só pelo start. Conteúdo Draft,
+contrato e Cards são fixture; extração de credencial em processo; resultado
+de lint/avaliação é input do avaliador externo do teste.
+
+Preflight a60900=0,provenance-single-agent1.json:859/922+373/458 byte-idênticos
+ao par evaluation-authority-fix1. Ruff F/E9 e diff verdes; código/UI intactos.
+Últimos gates relevantes: F16 31859=0,oito budgets ZERO; frontend46579=0,54passed.
+Inventário119 verificados/40 parciais/87 não auditados. KG-10/T23 seguem decisões
+pendentes já solicitadas. Par publicado anterior: Core69fa8a6c/Community6e49a117.
+Nenhum processo pendente ou dado real alterado.
+
 BASE T05/T06/T07 verificados. Retomada com nova sessão/store preserva
 trabalho anterior, autoria, impacto, pendências e limites de recuperação.
 REST start recusa plano sem contribuição FR ou sem alocação de Test Card,
