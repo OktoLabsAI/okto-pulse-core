@@ -2,6 +2,36 @@
 
 ## Estado para retomada
 
+### 2026-10-01 — Autoria publicada; leitores de referências são a próxima cadeia
+
+Core **d82f178b** / Community **8361c3db**, pushes confirmados em feature/v0.4.0.
+Worktrees limpos após publicação, nenhum teste/build pendente. Instalado/provado
+**dist-requirement-authoring1**, sem alteração posterior de produto. C1–C4 ativos;
+este checkpoint não interrompe a autorização para seguir até a entrega.
+
+Próxima cadeia investigada, ainda não alterada: analytics_service resolve_linked_criteria_to_indices,
+resolve_linked_criteria_to_ids, resolve_linked_requirements_to_ids,
+resolve_linked_fr_indices e resolve_linked_requirement_tokens_to_fr_or_tr_ids
+aceitam posição/texto; core/main._validate_spec_linked_refs também calcula
+_child_text/_child_id e tolera formatos antigos. StructuredSpecEntityService
+_target_ref_aliases inclui índice e texto no impacto. Fechar juntos em IDs atuais,
+preservando vínculos, cobertura e gates nativos. Não apagar representações de
+índice usadas somente para apresentação/ordem do resultado.
+
+Frontend acceptanceCriteriaCoverage.ts normaliza strings, inventa identidade por
+posição/label e resolve prefixos; SpecModal.normalizeTextEntity inventa ID de índice,
+as três ramificações TR criam tr_legacy_N. Spec nos types/index.ts ainda declara
+FR/AC string[] e TR união; CreateSpecRequest/UpdateSpecRequest já recebem objetos.
+Atualizar contratos de leitura/consumidores e testes conjuntamente, sem esconder
+incompatibilidade ou habilitar edição de item sem identidade. Preservar IDs novos
+na autoria e os metadados tipados de verificação. SpecResponse já recusa strings,
+mas dict arbitrário ainda exige fechamento/validação de identidade de leitura.
+
+Testes mistos pendentes incluem test_impl4_fr4_fr5 e test_r3b_canonical_id para
+leitores antigos; duas antigas conversões de escrita já foram substituídas por
+recusas sem escrita, não refazer. Outros itens globais seguem no assessment.
+
+
 ### 2026-10-01 — Autoria de FR/TR/AC em objetos: qualificação em curso
 
 **Qualificado:** Core authoring-core1/permission1: 139 casos distintos aprovados;
