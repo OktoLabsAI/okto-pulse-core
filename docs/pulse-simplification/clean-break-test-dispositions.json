@@ -1132,6 +1132,10 @@
     {
       "path": "okto_labs_pulse_core/tests/test_scenario_verification_method.py",
       "reason": "Unknown stored method no longer accepted on reads or unchanged writes; current omitted method preservation retained."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_evidence_class_contract.py",
+      "reason": "Weak persisted read acceptance replaced by one structural admission contract; current pointers, classified evidence, logs, replay and authentication retained."
     }
   ],
   "removed_cases": [

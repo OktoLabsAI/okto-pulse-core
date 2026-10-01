@@ -8,9 +8,8 @@ Unit regressions over the single-source evidence gate
   every class except the direct automated_test_pointer; run_log /
   non_replayable_justified additionally require non_replayable_justification
   (fr_0937529f);
-* write vs read composition: a NEW gated write without evidence_class accepts
-  ONLY the direct test pointer, while run-log-like must be replayable-grade;
-  already-persisted legacy evidence stays valid on READ (ac_8212cdbb);
+* read and write composition uses one contract: direct pointers or logs with
+  replayable-grade detail, regardless of when the proof was persisted;
 * cheap/existing enforcement (fr_958f0c9c / br_078725cc): an explicit run_log /
   non_replayable_justified fails when replay_should_exist=True OR a cheap/
   existing replay signal (test_file_path / replay_command / mcp_replay_manifest)
@@ -225,24 +224,25 @@ def test_replayable_helpers():
 # ---------------------------------------------------------------------------
 
 
-def test_write_unclassed_pointer_grandfathered_but_runlog_rejected():
+def test_current_pointer_passes_and_weak_run_log_is_refused():
     pointer = {"test_file_path": "tests/test_x.py", "test_function": "test_y"}
-    assert _ok("passed", pointer, for_write=True) == (True, [])
+    assert _ok("passed", pointer) == (True, [])
     # run-log-like on a NEW write without a class → rejected, with a hint to
     # declare a replayable class.
     runlog = {"last_run_at": "t", "output_snippet": "1 passed"}
-    ok, missing = _ok("passed", runlog, for_write=True)
+    ok, missing = _ok("passed", runlog)
     assert ok is False
     assert "expected_output_snapshot" in missing
     assert "non_replayable_justification" in missing
     assert any("evidence_class" in m for m in missing)
 
 
-def test_read_legacy_evidence_stays_valid():
-    # legacy run-log-shaped passed evidence (no evidence_class) remains valid on
-    # READ so previously persisted scenarios are not retroactively rejected.
+def test_read_refuses_weak_run_log_without_converting_it():
+    # Persisting a weak log cannot make it admissible on a later read.
     legacy = {"last_run_at": "t", "output_snippet": "1 passed"}
-    assert _ok("passed", legacy) == (True, [])  # for_write=False (default)
+    before = dict(legacy)
+    assert _ok("passed", legacy)[0] is False
+    assert legacy == before
     legacy_pointer = {"test_file_path": "tests/x.py", "test_function": "test_y"}
     assert _ok("automated", legacy_pointer) == (True, [])
 

@@ -205,15 +205,7 @@ EVIDENCE_REQUIRED_KEYS: dict[str, tuple[tuple[str, ...], ...]] = {
         ("test_file_path",),
         ("test_function",),
     ),
-    # passed/failed: last_run_at required + (output_snippet OR test_run_id)
-    "passed": (
-        ("last_run_at",),
-        ("output_snippet", "test_run_id"),  # one-of
-    ),
-    "failed": (
-        ("last_run_at",),
-        ("output_snippet", "test_run_id"),  # one-of
-    ),
+
 }
 
 # --------------------------------------------------------------------------
@@ -773,24 +765,17 @@ _DECLARE_CLASS_HINT = (
 )
 
 
-def _validate_unclassed_gated_write(
+def _validate_pointer_or_run_log(
     status: str, evidence: dict | None
 ) -> tuple[bool, list[str]]:
-    """Write-side gate for a NEW gated write that omits evidence_class
-    (spec 9e0bf979).
+    """Current pointer or replayable-grade log shape when no class is supplied.
 
-    Only the legacy direct automated-test-pointer shape (``test_file_path`` +
-    ``test_function``) is grandfathered without an explicit class. Any other
-    shape — notably run-log-like (``last_run_at`` + ``output_snippet``/
-    ``test_run_id``) — must carry replayable-quality fields
-    (``expected_output_snapshot`` + ``non_replayable_justification``),
-    equivalent to declaring ``run_log``/``non_replayable_justified``, so a weak
-    run-log payload can no longer pass a new validation silently (fr_0937529f,
-    br_078725cc). Already-persisted legacy evidence is unaffected: this runs
-    only when ``for_write=True``."""
+    These are the same structural requirements on every read and write.
+    Installation authentication and method binding remain separate gates.
+    """
     ev = evidence or {}
     if ev.get("test_file_path") and ev.get("test_function"):
-        return True, []  # legacy automated_test_pointer flow
+        return True, []
     if status == "automated":
         # automated has no run-log substitute — it needs the test pointer.
         return _apply_evidence_rules(EVIDENCE_REQUIRED_KEYS["automated"], ev)
@@ -813,7 +798,6 @@ def validate_test_scenario_evidence(
     status: str,
     evidence: dict | None,
     *,
-    for_write: bool = False,
     scenario_id: str | None = None,
 ) -> tuple[bool, list[str]]:
     """Return ``(ok, missing_keys)``; empty ``missing_keys`` means valid.
@@ -825,11 +809,9 @@ def validate_test_scenario_evidence(
       is rejected;
     * every other EXPLICIT, valid ``evidence_class`` is validated against that
       class's minimum fields in BOTH read and write contexts;
-    * without an explicit class, ``for_write=True`` applies the write-side gate
-      (:func:`_validate_unclassed_gated_write`: only a direct test pointer is
-      grandfathered, run-log-like must be replayable-grade), while the default
-      read context keeps the legacy per-status rules so previously persisted
-      evidence stays valid and readable (ac_8212cdbb).
+    * without an explicit class, a direct test pointer or replayable-grade
+      run log must satisfy the same current structural requirements.
+
 
     An invalid ``evidence_class`` value always fails closed (never normalized).
     Each rule group is AND; a multi-key group is one-of (OR).
@@ -892,13 +874,11 @@ def validate_test_scenario_evidence(
         return _apply_evidence_rules(
             EVIDENCE_CLASS_REQUIRED_KEYS[explicit_class], evidence
         )
-    if for_write:
-        return _validate_unclassed_gated_write(status, evidence)
-    return _apply_evidence_rules(EVIDENCE_REQUIRED_KEYS.get(status) or (), evidence)
+    return _validate_pointer_or_run_log(status, evidence)
 
 
 def scenario_has_required_evidence(
-    scenario: dict[str, Any], *, for_write: bool = False
+    scenario: dict[str, Any]
 ) -> bool:
     """Whether a scenario carries the evidence its status requires.
 
@@ -912,9 +892,8 @@ def scenario_has_required_evidence(
     if not isinstance(evidence, dict):
         return False
     ok, _missing = validate_test_scenario_evidence(
-        str(status),
+        status.value if isinstance(status, TestScenarioStatus) else str(status),
         evidence,
-        for_write=for_write,
         scenario_id=str(scenario.get("id")) if scenario.get("id") is not None else None,
     )
     return ok
@@ -927,7 +906,7 @@ def scenario_has_authenticated_required_evidence(
     scenario: dict[str, Any],
     acceptance_criteria: list[object],
 ) -> bool:
-    """Authenticate Evidence V2 while preserving structural legacy evidence.
+    """Authenticate current execution evidence after structural validation.
 
     Evidence V2 must resolve through the registered edition verifier and bind
     the scenario's current semantic digest.  The verifier deliberately receives

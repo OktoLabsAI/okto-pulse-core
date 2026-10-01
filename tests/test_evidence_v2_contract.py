@@ -75,7 +75,7 @@ def test_valid_v2_is_typed_and_semantically_verified():
     )
     assert verdict.verified is True
     assert validate_test_scenario_evidence(
-        "passed", evidence, for_write=True, scenario_id="ts_v2"
+        "passed", evidence, scenario_id="ts_v2"
     ) == (True, [])
     reference = reexecutable_evidence_reference(
         {"id": "ts_v2", "status": "passed", "evidence": evidence}
@@ -181,7 +181,7 @@ def test_old_manifest_alias_is_refused_without_conversion(old_value):
         ScenarioEvidenceModel.model_validate(raw)
     with pytest.raises(ValueError, match="mcp_replay_manifest"):
         SpecUpdate(test_scenarios=[{"id": "ts", "title": "Scenario", "status": "passed", "evidence": raw}])
-    ok, reasons = validate_test_scenario_evidence("passed", raw, for_write=True, scenario_id="ts")
+    ok, reasons = validate_test_scenario_evidence("passed", raw, scenario_id="ts")
     assert not ok
     assert "evidence_v2.unsupported_evidence_fields:mcp_replay_manifest" in reasons
     assert raw == before

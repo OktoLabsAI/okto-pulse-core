@@ -10173,7 +10173,7 @@ class SpecService:
             # strict, and an unclassed run-log-like payload is rejected before
             # persisting (only a direct test pointer is grandfathered).
             ok, missing = validate_test_scenario_evidence(
-                status, evidence, for_write=True, scenario_id=scenario_id
+                status, evidence, scenario_id=scenario_id
             )
             if not ok:
                 raise ValueError(f"evidence_required: {', '.join(missing)}")
@@ -10339,8 +10339,8 @@ class SpecService:
 
         Reject any test scenario whose FINAL status is gated
         (passed/automated/failed) without valid structured evidence when the
-        scenario is NEW, its status CHANGED, or its previously-valid evidence was
-        removed/invalidated. Old vs new are matched by scenario id. Respects
+        scenario is new or already persisted. Old vs new are matched by scenario
+        id to bind newly submitted proof to its actor and semantic scope. Respects
         ``skip_test_evidence_global`` (allows but emits a forensic audit log so
         reactivation analytics can flag boards that bypass the gate).
         """
@@ -10394,9 +10394,8 @@ class SpecService:
                 except (TypeError, ValueError):
                     # A malformed semantic shape cannot inherit old evidence.
                     semantic_changed = True
-            # Whole-spec writes are allowed to round-trip untouched historical
-            # rows. A new/changed V2 claim, however, must carry an authentic
-            # receipt bound to this exact board/spec/scenario/status.
+            # Unchanged current proof retains its issuing actor. A new/changed
+            # claim must authenticate this writer and the exact semantic scope.
             if is_new or status_changed or evidence_changed or semantic_changed:
                 scenario_sha256 = compute_test_scenario_semantic_sha256(
                     board_id=spec.board_id,
@@ -10413,24 +10412,19 @@ class SpecService:
                     spec_id=spec.id,
                     scenario_id=str(sid or ""),
                     scenario_sha256=scenario_sha256,
-                    status=str(status),
+                    status=str(getattr(status, "value", status)),
                     actor_id=user_id,
                     evidence=evidence,
                     verification_method=s.get("verification_method"),
                 )
-            if scenario_has_required_evidence(s, for_write=True) or (
+            if scenario_has_required_evidence(s) or (
                 report_claim and status == "ready"
-                and validate_test_scenario_evidence(status, evidence, for_write=True, scenario_id=sid)[0]
+                and validate_test_scenario_evidence(status, evidence, scenario_id=sid)[0]
             ):
                 continue
-            old_had_evidence = scenario_has_required_evidence(old) if old else False
-            # Enforce on: new scenario already gated, status transition into a
-            # gated state, or evidence removed/altered from a previously-valid
-            # scenario. A pre-existing gated scenario that was always evidenceless
-            # and is left unchanged is NOT newly rejected (legacy data, not
-            # introduced by this write).
-            if is_new or status_changed or old_had_evidence or evidence_changed:
-                offenders.append(str(sid) if sid else "(new)")
+            # Persisted proof follows the same contract as a new write.
+            # An unchanged old invalid/evidenceless row cannot bypass this gate.
+            offenders.append(str(sid) if sid else "(new)")
 
         if not offenders:
             return
@@ -11110,8 +11104,7 @@ class SpecService:
         # Fail-closed scenario_type service gate â€” defense in depth (spec
         # ac16b3c9, FR2/IR). Closes the same whole-list bypass for scenario_type:
         # any caller (UI full-list, REST PUT or MCP) replacing test_scenarios must
-        # not introduce a new/changed invalid scenario_type. Grandfathers unchanged
-        # historical values (matched by id) so legacy data keeps re-serializing;
+        # not carry any invalid scenario_type, including unchanged stored values;
         # runs BEFORE any mutation/flush and never normalizes.
         if update_data.get("test_scenarios") is not None:
             validate_scenario_types_for_write(

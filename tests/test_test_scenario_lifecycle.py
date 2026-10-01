@@ -341,6 +341,18 @@ async def test_update_spec_skip_flag_does_not_bypass_scoped_status_writer(
     assert not any("evidence_gate_skipped" in r.getMessage() for r in caplog.records)
 
 
+@pytest.mark.parametrize("evidence", [None, {"last_run_at": "2026-10-01T12:00:00Z", "output_snippet": "passed"}])
+async def test_unchanged_persisted_invalid_evidence_cannot_bypass_current_gate(db_factory, evidence):
+    original = {"id": "ts_a", "title": "A", "status": "passed", "scenario_type": "integration", "evidence": evidence}
+    _, spec_id, _ = await _seed_spec(db_factory, scenarios=[original])
+    async with db_factory() as db:
+        with pytest.raises(ValueError, match="evidence_required"):
+            await SpecService(db).update_spec(spec_id, USER, SpecUpdate(test_scenarios=[original]))
+        await db.commit()
+    async with db_factory() as db:
+        assert (await SpecService(db).get_spec(spec_id)).test_scenarios == [original]
+
+
 # ====================================================================
 # TC-3 — update_test_scenario (body / clear / no-status / invalidation)
 # ====================================================================

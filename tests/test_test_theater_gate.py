@@ -87,7 +87,7 @@ async def test_ts4_passed_accepts_output_snippet_or_test_run_id():
         validate_test_scenario_evidence as _validate_evidence,
     )
 
-    base = {"last_run_at": "2026-04-27T20:00:00"}
+    base = {"last_run_at": "2026-04-27T20:00:00", "expected_output_snapshot": "1 passed", "non_replayable_justification": "Observed externally without a deterministic replay harness"}
 
     # output_snippet only
     ok, _ = _validate_evidence("passed", {**base, "output_snippet": "1 passed"})
@@ -119,7 +119,7 @@ async def test_ts4b_failed_same_as_passed():
 
     ok, _ = _validate_evidence(
         "failed",
-        {"last_run_at": "2026-04-27T20:00:00", "output_snippet": "1 failed"},
+        {"last_run_at": "2026-04-27T20:00:00", "output_snippet": "1 failed", "expected_output_snapshot": "1 passed", "non_replayable_justification": "Observed externally without a deterministic replay harness"},
     )
     assert ok
 

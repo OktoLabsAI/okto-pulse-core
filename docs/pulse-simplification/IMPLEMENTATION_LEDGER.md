@@ -2,6 +2,36 @@
 
 ## Estado para retomada
 
+### 2026-10-01 — Cenário publicado; admissão de evidência única em WIP
+
+**Qualificação concluída:** dist-evidence-admission2 instalado; prova
+provenance-evidence-admission2.json byte-idêntica (Core 852/915, Community 319/405).
+evidence-admission-core2: 105 aprovados, incluindo o gap do enum, recusa de
+evidência antiga persistida sem mutação, invalidação semântica e gates de Card.
+Community 43 aprovados e frontend 27 aprovados; nenhuma alteração no frontend
+neste incremento. closure-evidence-admission2 exit 0, findings vazios, oito
+budgets ZERO; READMEs regenerados/validados pela função oficial, prova .readmes.json.
+Ruff/diff passaram. O plano global C1–C4 permanece aberto.
+
+Primeira regressão: Core 102 aprovados/3 falhas; Community 43 aprovados;
+frontend 27 aprovados. Dois testes ainda aceitavam logs sem snapshot/justificativa,
+atualizados para o contrato corrente. O novo teste persistido revelou gap real:
+str(TestScenarioStatus.PASSED) chegava ao verificador como nome do enum, fora
+dos estados gated, dispensando validação estrutural. Corrigida a passagem do
+valor canônico do enum tanto ao predicado quanto à autenticação da escrita.
+Não é novo gate: impede contornar o gate existente por diferença de representação.
+dist-evidence-admission2 preparado; requalificação após prova instalada pendente.
+
+Core **7603ed38** / Community **aeea594d** publicados, pushes confirmados.
+Aplicado unify_evidence_admission.py uma vez; não reaplicar. Eliminada distinção
+for_write que validava leitura de logs antigos com regra mais fraca. Todas as
+leituras usam os requisitos estruturais já aplicáveis à escrita atual. Também
+retirada a exceção para cenário gated já armazenado, inalterado e sem prova
+válida. Mantidas autenticação, vínculo semântico, atribuição do ator, métodos,
+ponteiros/logs admitidos na escrita atual e policy explícita de skip já existente.
+Incluída recusa de prova inválida persistida sem mutação. Ruff passou;
+dist-evidence-admission1 em preparação, ainda sem certificação deste WIP.
+
 ### 2026-10-01 — Evidência publicada; cenário com contrato único em WIP
 
 **Qualificado para publicação:** agregado scenario-native3/4/5: 107 casos

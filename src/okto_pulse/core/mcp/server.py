@@ -11879,7 +11879,7 @@ async def okto_pulse_update_test_scenario_status(
         msg = str(exc)
         if msg.startswith("evidence_required"):
             _ok, missing = validate_test_scenario_evidence(
-                status, evidence_dict, for_write=True
+                status, evidence_dict
             )
             return json.dumps(
                 {
