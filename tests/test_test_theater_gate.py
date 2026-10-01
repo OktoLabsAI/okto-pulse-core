@@ -161,10 +161,7 @@ async def test_ts7_response_schema_preserves_scenario_evidence():
             "test_function": "test_contract",
             "last_run_at": "2026-05-09T12:00:00Z",
             "output_snippet": "1 passed",
-            "command": "python -m pytest tests/test_api.py -q",
-        },
-        "latest_evidence": {
-            "last_run_at": "2026-05-09T12:05:00Z",
+            "replay_command": "python -m pytest tests/test_api.py -q",
             "test_run_id": "ci-123",
         },
     })
@@ -175,5 +172,5 @@ async def test_ts7_response_schema_preserves_scenario_evidence():
     assert dumped["evidence"]["test_function"] == "test_contract"
     assert dumped["evidence"]["last_run_at"] == "2026-05-09T12:00:00Z"
     assert dumped["evidence"]["output_snippet"] == "1 passed"
-    assert dumped["evidence"]["command"] == "python -m pytest tests/test_api.py -q"
-    assert dumped["latest_evidence"]["test_run_id"] == "ci-123"
+    assert dumped["evidence"]["replay_command"] == "python -m pytest tests/test_api.py -q"
+    assert dumped["evidence"]["test_run_id"] == "ci-123"

@@ -143,7 +143,6 @@ _VOLATILE_STRUCTURED_CHILD_KEYS_V1: Final[frozenset[str]] = frozenset(
         "execution_attestation",
         "execution_receipt",
         "labels",
-        "latest_evidence",
         "linked_task_ids",
         "pre_archive_status",
         "status",

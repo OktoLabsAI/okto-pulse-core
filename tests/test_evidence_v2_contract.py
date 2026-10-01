@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from copy import deepcopy
 
+import pytest
+
 from okto_pulse.core.models.schemas import (
     SpecUpdate,
     TestScenarioEvidence as ScenarioEvidenceModel,
@@ -171,39 +173,28 @@ def test_failed_status_requires_a_real_failed_assertion():
     ).verified
 
 
-def test_legacy_manifest_string_and_object_round_trip_but_are_unverified():
-    for legacy in (
-        "manifests/legacy.json",
-        {
-            "product_runtime_exercised": False,
-            "observed_output": "v0.2.5",
-            "expected_output_snapshot": "v0.3.0",
-        },
-    ):
-        raw = {
-            "evidence_class": "mcp_replay_manifest",
-            "mcp_replay_manifest": legacy,
-        }
-        parsed = ScenarioEvidenceModel.model_validate(raw)
-        assert parsed.model_dump(exclude_none=True)["mcp_replay_manifest"] == legacy
-        ok, reasons = validate_test_scenario_evidence(
-            "passed", raw, for_write=True, scenario_id="ts_v2"
-        )
-        assert ok is False
-        assert "evidence_v2.legacy_mcp_replay_manifest_unverified" in reasons
+@pytest.mark.parametrize("old_value", ["old.json", {"product_runtime_exercised": True}])
+def test_old_manifest_alias_is_refused_without_conversion(old_value):
+    raw = {"evidence_class": "mcp_replay_manifest", "mcp_replay_manifest": old_value}
+    before = deepcopy(raw)
+    with pytest.raises(ValueError, match="mcp_replay_manifest"):
+        ScenarioEvidenceModel.model_validate(raw)
+    with pytest.raises(ValueError, match="mcp_replay_manifest"):
+        SpecUpdate(test_scenarios=[{"id": "ts", "title": "Scenario", "status": "passed", "evidence": raw}])
+    ok, reasons = validate_test_scenario_evidence("passed", raw, for_write=True, scenario_id="ts")
+    assert not ok
+    assert "evidence_v2.unsupported_evidence_fields:mcp_replay_manifest" in reasons
+    assert raw == before
 
-        update = SpecUpdate(
-            test_scenarios=[
-                {
-                    "id": "ts_v2",
-                    "title": "legacy",
-                    "status": "passed",
-                    "evidence": raw,
-                }
-            ]
-        )
-        dumped = update.model_dump(mode="python", exclude_none=True)
-        assert dumped["test_scenarios"][0]["evidence"]["mcp_replay_manifest"] == legacy
+
+def test_current_attestation_requires_scenario_digest_and_old_scenario_alias_is_refused():
+    raw = _evidence()
+    raw["execution_attestation"].pop("scenario_sha256")
+    with pytest.raises(ValueError, match="scenario_sha256"):
+        ScenarioEvidenceModel.model_validate(raw)
+    with pytest.raises(ValueError, match="latest_evidence"):
+        SpecUpdate(test_scenarios=[{"id": "ts", "title": "Scenario", "latest_evidence": _evidence()}])
+
 
 
 def test_scenario_gate_uses_same_verifier_for_card_and_sprint_consumers():

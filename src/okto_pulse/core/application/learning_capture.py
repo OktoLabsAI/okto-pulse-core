@@ -26,7 +26,7 @@ from okto_pulse.core.domain.learning_materialization import CapturedLearningProj
 
 
 def _authenticated_scenario(source, scenario):
-    evidence = (scenario.get('evidence') or scenario.get('latest_evidence')) if scenario else None
+    evidence = (scenario.get('evidence')) if scenario else None
     return bool(source.spec_id and isinstance(evidence, dict) and evidence.get('execution_receipt')
         and scenario_has_authenticated_required_evidence(board_id=source.board_id,
             spec_id=source.spec_id, scenario=scenario, acceptance_criteria=list(source.acceptance_criteria)))

@@ -408,7 +408,7 @@ def _scenario_evidence_present(
                 if scenario.get(field)
             }
             candidate = {**scenario, "evidence": legacy_top_level or None}
-        evidence = candidate.get("evidence") or candidate.get("latest_evidence")
+        evidence = candidate.get("evidence")
         claims_v2 = bool(
             isinstance(evidence, dict)
             and (

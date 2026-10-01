@@ -69,6 +69,7 @@ from okto_pulse.core.domain.quality_assessment import (
     AssessmentScaleKind,
     ScoreDirection,
 )
+from okto_pulse.core.domain.verification_report import VerificationReport
 from okto_pulse.core.domain.test_scenarios import (
     DEFAULT_SCENARIO_TYPE,
     SCENARIO_TYPE_DESCRIPTION,
@@ -398,9 +399,7 @@ class TestExecutionAttestationV2(BaseModel):
     run_id: str = Field(..., min_length=1)
     executed_at: str = Field(..., min_length=1)
     scenario_id: str = Field(..., min_length=1)
-    # Optional only for lossless reads of pre-hardening V2 rows. Every new
-    # gated write requires a valid digest in the semantic verifier.
-    scenario_sha256: str | None = None
+    scenario_sha256: str = Field(..., pattern=r"^sha256:[0-9a-f]{64}$")
     outcome: Literal["passed", "failed"]
     product_runtime_exercised: bool
     manifest_sha256: str = Field(..., min_length=1)
@@ -410,20 +409,14 @@ class TestExecutionAttestationV2(BaseModel):
 
 
 class TestScenarioEvidence(BaseModel):
-    """Structured proof that a test scenario exists or was executed.
+    """Current execution or observation evidence; admission remains governed."""
 
-    Spec 9e0bf979 — re-executable validation evidence contract. ``evidence_class``
-    classifies the KIND of proof (see ``test_scenario_lifecycle.EVIDENCE_CLASSES``)
-    so a validator can rerun or inspect the artifact instead of trusting a raw
-    run log. All new fields are additive and optional. Legacy evidence stays
-    readable for backward compatibility; specifically, historical free-form
-    MCP manifests are reader-only/unverified until a V2 execution attestation
-    is produced.
-    """
+    model_config = ConfigDict(extra="forbid")
 
-    model_config = ConfigDict(extra="allow")
-
-    # Minimal/legacy fields (NC-9). Preserved verbatim for backward compatibility.
+    verification_report: VerificationReport | None = None
+    report_author_id: str | None = None
+    scenario_sha256: str | None = None
+    # Current file pointers and execution logs.
     test_file_path: str | None = None
     test_function: str | None = None
     last_run_at: str | None = None
@@ -432,13 +425,7 @@ class TestScenarioEvidence(BaseModel):
     # Re-executable evidence contract (spec 9e0bf979, tr_61dabab8).
     evidence_class: str | None = None
     replay_command: str | None = None
-    # Deprecated reader-only alias. Historical rows may contain either a string
-    # or the free-form object accepted by the old status endpoint. Both remain
-    # serializable so a GET -> SpecUpdate round-trip never loses data, but the
-    # Evidence V2 gate treats them as ``legacy_unverified``.
-    mcp_replay_manifest: str | dict[str, Any] | None = None
-    # Evidence V2 canonical contract. New MCP replay writes use these two
-    # fields; ``manifest_ref`` is always a reference, never an embedded object.
+    # Canonical replay reference, attestation and installation receipt.
     manifest_ref: str | None = None
     execution_attestation: TestExecutionAttestationV2 | None = None
     # Opaque installation-issued receipt. CORE never derives or trusts this
@@ -473,7 +460,6 @@ class TestScenario(BaseModel):
         None  # card IDs that implement/automate this test
     )
     evidence: TestScenarioEvidence | None = None
-    latest_evidence: TestScenarioEvidence | None = None
 
     @model_serializer(mode="wrap")
     def preserve_unset_verification_method(self, handler):

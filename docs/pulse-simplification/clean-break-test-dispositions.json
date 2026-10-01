@@ -999,6 +999,24 @@
       "test": "test_legacy_board_rebaselines_without_dlq",
       "disposition": "superseded",
       "reason": "Exclusive old-manifest decoder or rebaseline conversion removed; current integrity, source drift, fences and native recovery remain covered."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_evidence_v2_adapter.py",
+      "test": "test_legacy_normalization_never_fabricates_attestation_or_receipt",
+      "disposition": "superseded",
+      "reason": "Old alias/conversion acceptance replaced by current-contract refusal; native signed evidence remains covered."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_evidence_v2_adapter.py",
+      "test": "test_complete_embedded_signed_v2_is_promoted_losslessly",
+      "disposition": "superseded",
+      "reason": "Old alias/conversion acceptance replaced by current-contract refusal; native signed evidence remains covered."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_evidence_v2_contract.py",
+      "test": "test_legacy_manifest_string_and_object_round_trip_but_are_unverified",
+      "disposition": "superseded",
+      "reason": "Old alias/conversion acceptance replaced by current-contract refusal; native signed evidence remains covered."
     }
   ],
   "adapted_suites": [
@@ -1094,6 +1112,14 @@
     {
       "path": "okto_labs_pulse_community/tests/test_knowledge_propagation_adapter.py",
       "reason": "Physical Card JSON contamination case replaced by absence of storage column and constructor rejection. test_current_relational_schema also verifies old column is refused with byte-identical storage and no WAL effects. Native assignment and Spec local-source tests retained."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_sprint_evidence_source.py",
+      "reason": "Retired latest_evidence acceptance replaced by refusal; current evidence predicates retained."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_test_theater_gate.py",
+      "reason": "Response round-trip retains current evidence and replay_command only; removed latest_evidence/command compatibility assertions."
     }
   ],
   "removed_cases": [

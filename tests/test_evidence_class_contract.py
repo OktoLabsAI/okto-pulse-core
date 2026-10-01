@@ -88,7 +88,7 @@ def test_automated_test_pointer_valid():  # ts_f89dcf2c
     assert ok is False and "test_function" in missing
 
 
-def test_replay_command_accepted_but_legacy_manifest_is_unverified():  # ts_bf3a5210
+def test_replay_command_accepted_but_old_manifest_alias_is_refused():  # ts_bf3a5210
     cmd = {
         "evidence_class": "replay_command",
         "replay_command": "pytest tests/test_x.py::test_y",
@@ -102,7 +102,7 @@ def test_replay_command_accepted_but_legacy_manifest_is_unverified():  # ts_bf3a
     }
     ok, missing = _ok("passed", manifest)
     assert ok is False
-    assert "evidence_v2.legacy_mcp_replay_manifest_unverified" in missing
+    assert "evidence_v2.unsupported_evidence_fields:mcp_replay_manifest" in missing
     # replay_command without expected_output_snapshot → rejected
     ok, missing = _ok(
         "passed", {"evidence_class": "replay_command", "replay_command": "pytest x"}
@@ -213,7 +213,7 @@ def test_run_log_passes_without_any_cheap_signal():
 def test_replayable_helpers():
     assert replay_is_cheap_or_existing({"test_file_path": "x"}) is True
     assert replay_is_cheap_or_existing({"replay_command": "x"}) is True
-    assert replay_is_cheap_or_existing({"mcp_replay_manifest": "x"}) is True
+    assert replay_is_cheap_or_existing({"manifest_ref": "x"}) is True
     assert replay_is_cheap_or_existing({"output_snippet": "x"}) is False
     assert replayable_evidence_required({"replay_should_exist": True}) is True
     assert replayable_evidence_required({"replay_command": "x"}) is True

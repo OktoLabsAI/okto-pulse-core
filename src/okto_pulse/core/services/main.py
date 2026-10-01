@@ -9917,11 +9917,10 @@ class SpecService:
         # evidence no longer proves the new behaviour â€” reset to ready + drop it.
         evidence_invalidated = False
         if evidence_invalidated_by_semantic_edit(changed_fields) and (
-            target.get("evidence") or target.get("latest_evidence")
+            target.get("evidence")
         ):
             target["status"] = "ready"
             target["evidence"] = None
-            target.pop("latest_evidence", None)
             evidence_invalidated = True
 
         if not changed_fields:
@@ -10362,7 +10361,7 @@ class SpecService:
             if not isinstance(s, dict):
                 continue
             status = s.get("status")
-            evidence = s.get("evidence") or s.get("latest_evidence")
+            evidence = s.get("evidence")
             report_claim = isinstance(evidence, dict) and (evidence.get("evidence_class") == "verification_report"
                 or evidence.get("verification_report") is not None)
             if status not in GATED_STATUSES and not report_claim:
@@ -10371,10 +10370,8 @@ class SpecService:
             old = old_by_id.get(sid)
             is_new = old is None
             status_changed = (old or {}).get("status") != status
-            evidence = s.get("evidence") or s.get("latest_evidence")
-            old_evidence = (old or {}).get("evidence") or (old or {}).get(
-                "latest_evidence"
-            )
+            evidence = s.get("evidence")
+            old_evidence = (old or {}).get("evidence")
             evidence_changed = bool(old and old_evidence != evidence)
             semantic_changed = False
             if old is not None:

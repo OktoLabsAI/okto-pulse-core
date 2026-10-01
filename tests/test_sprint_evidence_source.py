@@ -1,4 +1,4 @@
-"""Unit coverage for the sprint/spec shared test evidence predicate."""
+"""Unit coverage for the scenario evidence predicate."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from okto_pulse.core.services.test_scenario_lifecycle import (
 )
 
 
-def test_passed_scenario_accepts_latest_evidence():
+def test_passed_scenario_refuses_retired_latest_evidence():
     scenario = {
         "status": "passed",
         "latest_evidence": {
@@ -16,7 +16,7 @@ def test_passed_scenario_accepts_latest_evidence():
         },
     }
 
-    assert _test_scenario_has_required_evidence(scenario) is True
+    assert _test_scenario_has_required_evidence(scenario) is False
 
 
 def test_failed_scenario_requires_run_evidence():

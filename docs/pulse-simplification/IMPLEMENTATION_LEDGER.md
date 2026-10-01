@@ -2,6 +2,39 @@
 
 ## Estado para retomada
 
+### 2026-10-01 — Evidência: retirada coordenada de aliases em validação
+
+**Qualificação concluída:** dist-evidence-alias3 instalado e
+provenance-evidence-alias3.json comprova Core 852/915 e Community 319/405
+arquivos Python/payload byte-idênticos. evidence-alias-core3: 67 aprovados
+(inclui drift do catálogo MCP). evidence-alias-community1: 43 aprovados,
+inclusive relatório assinado após transporte tipado e recuperação sem escrita;
+alterações posteriores nesse adapter foram apenas remoção de linhas em branco.
+Frontend: 165 casos distintos aprovados nas campanhas frontend1/2/3. A única
+falha foi uma asserção ainda Sprint para fixture já Spec; corrigida e reexecutada.
+Build TypeScript/Vite passou; SPA sincronizada com 79 arquivos, árvore
+f5644e6bf903f990787e9b268b211dc7687f1dd811ebfebc68d24a783a4c9d38.
+closure-evidence-alias3 exit 0, findings vazios, oito budgets ZERO; READMEs
+conferidos pelo validador oficial, prova closure-evidence-alias3.readmes.json.
+Nenhuma execução do runtime do usuário; testes usam processos novos descartáveis.
+
+Base publicada Core 4a23173c / Community 804459f6. Aplicados uma vez
+remove_evidence_aliases.py e adapt_evidence_alias_tests.py; não reaplicar.
+Retirados migradores/normalizador de evidência, promoção de manifest embutido,
+campo mcp_replay_manifest e leitura latest_evidence nos dois produtos e frontend.
+A classe atual de evidência mcp_replay_manifest permanece. Transporte agora
+fecha campos e declara explicitamente relatório atual, autoria e digest;
+attestation exige digest de cenário. Relatórios/recibos nativos e seus gates
+devem permanecer válidos. Incluído teste de round-trip do relatório assinado.
+
+Ruff F/E9 e diff --check passaram. Primeiro build frontend apontou duas
+referências residuais (chave removida e propriedade duplicada na fixture),
+ambas corrigidas; build seguinte em execução. dist-evidence-alias1 instalado;
+prova byte-a-byte pendente, portanto ainda sem certificação comportamental.
+Este incremento NÃO conclui C1–C4: permissividade histórica na leitura/escrita
+de cenários permanece para investigação coordenada, além dos itens globais
+registrados anteriormente. Nenhuma alteração em runtime ou base do usuário.
+
 ### 2026-10-01 — Manifest publicado; próximo contrato de evidência
 
 **Core cde4bedb / Community 804459f6** publicados em feature/v0.4.0; ambos os

@@ -322,14 +322,13 @@ def validate_evidence_class(value: object) -> str:
 #: Fields whose presence proves a deterministic replay already exists or is
 #: cheap to produce (tr_1fd44294): an existing test (``test_file_path``), an
 #: existing command/script (``replay_command``) or a deterministic MCP replay
-#: manifest writable under bounded setup (``mcp_replay_manifest``). When one is
+#: manifest reference (``manifest_ref``). When one is
 #: present, a run-log-only payload is NOT acceptable because the replayable
 #: artifact is already at hand.
 _CHEAP_OR_EXISTING_REPLAY_FIELDS: tuple[str, ...] = (
     "test_file_path",
     "replay_command",
     "manifest_ref",
-    "mcp_replay_manifest",
 )
 
 
@@ -358,10 +357,7 @@ def replayable_evidence_required(evidence: dict | None) -> bool:
 
 
 def infer_evidence_class(evidence: dict | None) -> str | None:
-    """Best-effort classification of evidence for DISPLAY / upgrade ONLY
-    (ac_8212cdbb). Never used to retroactively reject already-persisted legacy
-    evidence — that path stays on the lenient per-status rules. Returns the
-    explicit class when set, else infers from the present fields, else None."""
+    """Display classification of current fields; never grants evidence authority."""
     if not evidence:
         return None
     explicit = evidence.get("evidence_class")
@@ -371,7 +367,7 @@ def infer_evidence_class(evidence: dict | None) -> str | None:
         return "automated_test_pointer"
     if evidence.get("replay_command"):
         return "replay_command"
-    if evidence.get("manifest_ref") or evidence.get("mcp_replay_manifest"):
+    if evidence.get("manifest_ref"):
         return "mcp_replay_manifest"
     if evidence.get("manual_checklist_ref"):
         return "manual_checklist"
@@ -417,7 +413,6 @@ class EvidenceVerificationResult:
     verified: bool
     reason_codes: tuple[str, ...] = ()
     contract_version: int | None = None
-    legacy: bool = False
 
 
 def _as_plain_mapping(value: object) -> dict[str, Any] | None:
@@ -593,9 +588,7 @@ def verify_mcp_replay_evidence_v2(
     string or a caller-supplied boolean is insufficient: the product runtime
     must have been exercised, the outcome must match the scenario status, each
     assertion must be internally coherent, and both manifest/attestation
-    digests plus producer provenance must be present. Historical
-    ``mcp_replay_manifest`` values remain readable but return
-    ``legacy_mcp_replay_manifest_unverified``.
+    digests plus producer provenance must be present. Unsupported fields fail closed.
     """
 
     ev = _as_plain_mapping(evidence) if evidence is not None else None
@@ -607,21 +600,20 @@ def verify_mcp_replay_evidence_v2(
     manifest_ref = ev.get("manifest_ref")
     attestation = _as_plain_mapping(ev.get("execution_attestation"))
     execution_receipt = ev.get("execution_receipt")
-    legacy_value = ev.get("mcp_replay_manifest")
-    has_legacy = legacy_value not in (None, "", {})
+    if "mcp_replay_manifest" in ev:
+        return EvidenceVerificationResult(
+            False, ("evidence_v2.unsupported_evidence_fields:mcp_replay_manifest",), EVIDENCE_V2_SCHEMA_VERSION
+        )
     if not _non_empty_string(manifest_ref) or attestation is None:
         reasons: list[str] = []
         if not _non_empty_string(manifest_ref):
             reasons.append("evidence_v2.manifest_ref_required")
         if attestation is None:
             reasons.append("evidence_v2.execution_attestation_required")
-        if has_legacy:
-            reasons.append("evidence_v2.legacy_mcp_replay_manifest_unverified")
         return EvidenceVerificationResult(
             False,
             tuple(reasons),
             EVIDENCE_V2_SCHEMA_VERSION,
-            legacy=has_legacy,
         )
 
     reasons = []
@@ -630,13 +622,6 @@ def verify_mcp_replay_evidence_v2(
     # any write.  A public SHA over caller-controlled fields is not authority.
     if not _non_empty_string(execution_receipt):
         reasons.append("evidence_v2.execution_receipt_required")
-    if has_legacy:
-        if (
-            not isinstance(legacy_value, str)
-            or legacy_value.strip() != manifest_ref.strip()
-        ):
-            reasons.append("evidence_v2.ambiguous_legacy_manifest")
-
     unexpected = sorted(set(attestation) - _ATTESTATION_V2_KEYS)
     if unexpected:
         reasons.append(
@@ -757,7 +742,6 @@ def verify_mcp_replay_evidence_v2(
         verified=not reasons,
         reason_codes=tuple(reasons),
         contract_version=EVIDENCE_V2_SCHEMA_VERSION,
-        legacy=False,
     )
 
 
@@ -861,8 +845,8 @@ def validate_test_scenario_evidence(
     Composition (spec 9e0bf979):
 
     * MCP replay evidence is always verified against the semantic V2 contract
-      (runtime, assertions, binding, digests and provenance); its legacy alias
-      remains readable but unverified;
+      (runtime, assertions, binding, digests and provenance); the retired alias
+      is rejected;
     * every other EXPLICIT, valid ``evidence_class`` is validated against that
       class's minimum fields in BOTH read and write contexts;
     * without an explicit class, ``for_write=True`` applies the write-side gate
@@ -874,6 +858,8 @@ def validate_test_scenario_evidence(
     An invalid ``evidence_class`` value always fails closed (never normalized).
     Each rule group is AND; a multi-key group is one-of (OR).
     """
+    if isinstance(evidence, dict) and "mcp_replay_manifest" in evidence:
+        return False, ["evidence_v2.unsupported_evidence_fields:mcp_replay_manifest"]
     report_claim = isinstance(evidence, dict) and (evidence.get("evidence_class") == "verification_report"
         or evidence.get("verification_report") is not None)
     if status not in GATED_STATUSES and not report_claim:
@@ -905,7 +891,6 @@ def validate_test_scenario_evidence(
             explicit_class == "mcp_replay_manifest"
             or evidence.get("manifest_ref") is not None
             or evidence.get("execution_attestation") is not None
-            or evidence.get("mcp_replay_manifest") is not None
         )
     )
     if claims_mcp_replay:
@@ -941,14 +926,13 @@ def scenario_has_required_evidence(
 ) -> bool:
     """Whether a scenario carries the evidence its status requires.
 
-    Reads ``evidence`` (or the legacy ``latest_evidence`` key). Re-expressed on
-    top of :func:`validate_test_scenario_evidence` so the rule has one source.
+    Reads the current ``evidence`` field. Re-expressed on top of :func:`validate_test_scenario_evidence` so the rule has one source.
     A non-gated status always passes.
     """
     status = scenario.get("status")
     if status not in GATED_STATUSES:
         return True
-    evidence = scenario.get("evidence") or scenario.get("latest_evidence")
+    evidence = scenario.get("evidence")
     if not isinstance(evidence, dict):
         return False
     ok, _missing = validate_test_scenario_evidence(
@@ -979,7 +963,7 @@ def scenario_has_authenticated_required_evidence(
         return False
     from okto_pulse.core.domain.verification_report import require_evidence_method_binding
     try:
-        require_evidence_method_binding(scenario.get("verification_method"), scenario.get("evidence") or scenario.get("latest_evidence"))
+        require_evidence_method_binding(scenario.get("verification_method"), scenario.get("evidence"))
     except (TypeError, ValueError):
         return False
     if scenario.get("verification_method") is not None and scenario.get("status") in GATED_STATUSES:
@@ -988,7 +972,7 @@ def scenario_has_authenticated_required_evidence(
             require_supported_test_verification_method(scenario["verification_method"])
         except (TypeError, ValueError):
             return False
-    evidence = scenario.get("evidence") or scenario.get("latest_evidence")
+    evidence = scenario.get("evidence")
     claims_v2 = bool(
         isinstance(evidence, dict)
         and (
@@ -1042,7 +1026,7 @@ def reexecutable_evidence_reference(scenario: dict[str, Any]) -> str:
         return ""
     if not scenario_has_required_evidence(scenario):
         return ""
-    evidence = scenario.get("evidence") or scenario.get("latest_evidence")
+    evidence = scenario.get("evidence")
     if not isinstance(evidence, dict):
         return ""
 

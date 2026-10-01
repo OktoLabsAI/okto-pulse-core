@@ -101,7 +101,6 @@ SEMANTIC_NESTED_EXCLUDED_KEYS_V1: frozenset[str] = frozenset(
         "execution_attestation",
         "execution_receipt",
         "labels",
-        "latest_evidence",
         "linked_task_ids",
         "pre_archive_status",
         "status",
