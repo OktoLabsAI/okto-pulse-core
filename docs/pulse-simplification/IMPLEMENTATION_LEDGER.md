@@ -4,6 +4,10 @@
 
 ### 2026-10-01 — Milestone adoção arquitetural obrigatória: qualificado
 
+Publicado: **Core631b0c83 / Community11ee931d**, pushes confirmados em
+feature/v0.4.0. Sem processos de validação pendentes. Próxima retomada parte
+desse par; o objetivo global permanece aberto.
+
 Scope arquitetural ausente não permite herança; é rejeitado para Spec e Card.
 Schema novo exige o registro e recusa ausência/None. Seleção explícita vazia,
 designs locais, snapshots, proveniência, candidatos, cobertura e gates de início
