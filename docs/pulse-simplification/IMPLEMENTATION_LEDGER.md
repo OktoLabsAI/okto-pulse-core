@@ -2,6 +2,23 @@
 
 ## Estado para retomada
 
+ARQVER ADV-09 verificado: usuário com BoardShare viewer real lê IR ativo,
+mas tentativas REST de status not_applicable/revoked não chegam a modificá-lo.
+Preflight de escrita retorna404 mascarado; leituras antes/depois retornam200.
+IR/causa originais, snapshot estruturado, classificação, histórico e outbox
+permanecem iguais. Community17079=0,2passed13.85s; Ruff F/E9 e diff verdes.
+acceptance-ir-disposition-authority.json delimita identidade REST injetada e
+conteúdo inicial de fixture; não é matriz de todas as permissões nem teste MCP.
+
+Probe87043=1 esperava403; investigação confirmou contrato existente de ocultação
+na escrita. Apenas assert corrigido, sem alterar autorização/semântica/produto.
+Fonte/site/wheels iguais ao provenance-policy-race-final.json. F16 anterior
+90981=0,oito budgets ZERO;frontend anterior39859=0,8passed. Sem mudança UI.
+Inventário133 verificados/33 parciais/80 não auditados. Continuar critérios
+originais restantes, benchmark e distribuição final. KG-10/T23 aguardam decisões
+já solicitadas. Par publicado anterior: Corebe63dbc0/Community57521c4b.
+Nenhum processo pendente ou dado real alterado.
+
 ARQVER ADV-17 corrigido/verificado. Reprodução60868=1: autorrevisão leu
 policy off, outro BoardService/session do owner gravou enforce, e a requisição
 aceitou rejeição usando o snapshot antigo. O teste falhou antes do commit externo;

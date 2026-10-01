@@ -3134,8 +3134,12 @@
       "line": 733,
       "id": "ADV-09",
       "normative_text": "| ADV-09 | IR ativo está not_applicable/dispensado por alteração não autorizada. | A camada de autorização impede o bypass; histórico e causa permanecem. |",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "verified_by_reviewed_execution",
+      "test_text_references": [],
+      "reviewed_execution": {
+        "artifact": "acceptance-ir-disposition-authority.json",
+        "criterion_key": "ARQVER:ADV-09"
+      }
     },
     {
       "key": "ARQVER:ADV-10",
