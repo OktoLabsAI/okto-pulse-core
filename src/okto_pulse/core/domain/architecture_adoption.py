@@ -1,6 +1,6 @@
 """Prospective architecture selection; existing Design snapshots own content.
 
-Absence means legacy inheritance, never an inferred empty/exclusive selection.
+Every Spec has an explicit scope, including an explicitly empty selection.
 Only an authorized creation/revision writes this scope. Readers do not repair it.
 """
 

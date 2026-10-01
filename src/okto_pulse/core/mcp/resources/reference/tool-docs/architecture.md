@@ -340,10 +340,9 @@ References retain their existing current-source behavior. Unknown selection IDs
 are rejected before the Spec is created. Sources added to an ancestor later are
 not silently adopted. Directly authored or attached Spec Designs remain effective.
 
-An upgraded legacy Spec without persisted adoption retains its previous lineage.
-The upgrade does not infer exclusive adoption from old copies or rewrite its
-history. Changing a legacy normative scope must use authorized revision/locks;
-this reader does not perform adoption. Candidate reads consult architecture
+Every Spec requires persisted adoption. Missing or invalid selection is rejected;
+the reader neither infers inheritance nor repairs the stored scope. Changing a
+normative scope must use authorized revision/locks. Candidate reads consult architecture
 metadata only, so unrelated KB/mockup availability is not a candidate gate.
 
 Args:

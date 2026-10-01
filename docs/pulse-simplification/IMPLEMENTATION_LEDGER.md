@@ -2,7 +2,82 @@
 
 ## Estado para retomada
 
+### 2026-10-01 — Milestone adoção arquitetural obrigatória: qualificado
+
+Scope arquitetural ausente não permite herança; é rejeitado para Spec e Card.
+Schema novo exige o registro e recusa ausência/None. Seleção explícita vazia,
+designs locais, snapshots, proveniência, candidatos, cobertura e gates de início
+permanecem. Não há reparo automático. Docs alinhadas ao contrato único.
+
+Provas:41 casos distintos das suites candidates/adoption/start cobertos por
+architecture-native1 e native3; schema1:16 passaram/25.78s; frontend:4 arquivos/
+78 testes passaram/15.79s. Ruff F/E9 e diff --check passaram. Par final
+dist-architecture-native2 instalado e byte-idêntico conforme provenance homônima
+(Core852 .py/915 payloads; Community321 .py/407 payloads). Closure
+closure-architecture-native2.json:exit0, findings vazios e oito budgets ZERO.
+
+Publicar par. Restam no escopo já acordado a limpeza das superfícies antigas
+de diagnóstico arquitetural (preservando diagnóstico nativo), remanescentes de
+realm/Sprint, Guideline, Delivery/waivers, recuperação e C4. A coluna obrigatória
+exige fixtures nativas explícitas nas demais suites mistas; a auditoria global
+continua aberta, sem declarar testes antigos aprovados por inferência.
+
+### 2026-10-01 — Adoção arquitetural nativa em qualificação (WIP)
+
+native3:12 passaram/33.51s. Em conjunto com os32 de native1, candidatos,
+criação/derivação e start estão qualificados nas três suites; os casos repetidos
+não representam novos critérios. Wheels dist-architecture-native2 incluem doc
+atual; instalados e comprovados por provenance-architecture-native2.json,
+mesmas contagens byte-idênticas. architecture-native-schema1 e
+closure-architecture-native2 em execução. Não há mudança posterior de produto.
+
+Investigação para sequência C1–C3: architecture_propagation_legacy.py/porta/adapter
+não convertem formatos: diagnosticam snapshots atuais cuja fonte foi removida,
+ficou bloqueada ou perdeu veredito. A condição pode ocorrer inteiramente na0.4.0;
+preservar a responsabilidade atual ao retirar nomenclatura/contratos antigos,
+sem apagar diagnóstico por busca textual. Permissões migration_review já não
+possui módulo nem coluna no estado atual; reavaliar consumidores reais antes de
+reimplementar remoção feita. Ainda encontrados realm_migration,
+legacy_sprint_values e legacy_rebuild_reconciliation para a cadeia de recuperação.
+
+Resultado architecture-native1:32 passaram/9 falharam; falhas eram acesso ao
+antigo result.spec em testes de derivação que agora retorna recibo nativo.
+Adaptados para receipt.target.target_id e result_v2.creation_result, mantendo
+verificações reais de cópias SQL, candidatos, cobertura e Card. native2:4
+passaram/8 falharam por acesso à projeção no nível errado do recibo; corrigido,
+native3 em execução. Nenhuma alteração de produto além do doc após native1.
+
+Base publicada: Core e26b8701 / Community 13c54da1. Removida interpretação de
+scope ausente como herança permissiva; architecture_adoption agora obrigatório
+na persistência, com JSON None tratado como SQL NULL rejeitado. Writer normal
+já produz seleção explícita. Fixtures de candidatos usam seleção explícita;
+acrescentadas provas de recusa de ausência em Spec/Card sem modificar refs e
+de recusa física de campo ausente/None. Nenhuma conversão ou preenchimento antigo.
+
+dist-architecture-native1 instalado e comprovado byte-a-byte por
+provenance-architecture-native1.json (852/321 .py, 915/407 payloads).
+architecture-native1 está executando candidatos, derivação real e start; já
+há falhas na suite de derivação, aguardando relatório completo para diagnóstico.
+Frontend arquitetural:4 arquivos/78 testes passaram em15.79s (API candidates,
+CandidatesPanel, ClassificationsPanel, ClassificationAuthoring). Ruff passou.
+Doc MCP architecture.md atualizado depois da prova de payload; exige novo wheel
+antes da qualificação final. Não houve commit deste WIP.
+
+Próximos passos: diagnosticar relatório architecture-native1; adaptar somente
+fixtures e contratos consumidores comprovadamente obsoletos, preservar semântica
+de seleção/proveniência e gates; qualificar efeitos do campo obrigatório nos
+testes com Spec criada diretamente e atual schema. Fechar closure/par e publicar.
+
 ### 2026-10-01 — Milestone Knowledge nativo: qualificado para publicação
+
+Publicado: **Core e26b8701 / Community 13c54da1**, pushes confirmados em
+feature/v0.4.0. Iniciado o incremento seguinte: retirada do retorno permissivo
+quando architecture_adoption está ausente e coluna obrigatória no schema novo.
+Esse WIP arquitetural ainda não foi reconstruído nem testado; native7 certifica
+o milestone Knowledge anterior, não o novo WIP. Writer normal de Spec já grava
+seleção explícita via initial_spec_architecture_adoption; adaptar fixtures de
+candidatos e testar ausência/corrupção sem escrita, seleção vazia, fontes locais,
+proveniência e criação/derivação antes da próxima publicação.
 
 Fechada a cadeia backfill/grandfather/dual-read/cópia física de Card, incluindo
 portas, persistência, seleção, criação/derivação REST e MCP, frontend e docs.

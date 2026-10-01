@@ -723,7 +723,6 @@ class ResolvedResourceLineageService:
 
         # Prospective Spec adoption is shared by context, coverage, propagation
         # and candidate readers. Unselected ancestors remain visible as history.
-        # Legacy Specs have no scope and retain their existing inheritance.
         if "architecture" in resource_types:
             self._apply_architecture_adoption(board_id, owner, parents, direct_refs, inherited_refs)
 
@@ -865,8 +864,6 @@ class ResolvedResourceLineageService:
         if subject is None:
             return
         raw = getattr(subject.entity, "architecture_adoption", None)
-        if raw is None:
-            return
         try:
             if not isinstance(raw, dict) or raw.get("contract_version") != "architecture-adoption/v1":
                 raise ValueError("architecture_adoption_version_required")
