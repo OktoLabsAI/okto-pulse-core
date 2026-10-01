@@ -2,6 +2,62 @@
 
 ## Estado para retomada
 
+### 2026-10-01 — Realm sem backfill: qualificado para publicação
+
+Removido conversor de realm; schema novo exige identificação explícita do
+realm do Board.19 testes atuais aprovados (isolamento, criação local, recusa,
+schema, WAL e reinício); fixtures antigas foram corrigidas sem relaxar os gates.
+dist-realm-native1/provenance-realm-native1.json comprovam par instalado e
+wheels byte-idênticos. Closure-realm-native1-final:exit0, findings vazios,
+oito budgets ZERO, READMEs oficiais atualizados. Ruff F/E9 e diff --check passaram.
+Frontend não alterado neste incremento. Publicar par e seguir cadeia de
+recuperação abaixo, sem considerar o plano global encerrado.
+
+### 2026-10-01 — Realm nativo e investigação da recuperação (WIP)
+
+realm-native2:16 passaram/18.91s; junto aos3 de realm isolation da primeira
+rodada,19 casos atuais aprovados. Ruff F/E9 e diff --check passaram. Corrigido
+helper descartável check_changed_python para não executar Ruff sem argumentos
+quando um repo não tem .py alterado; a execução ampla anterior foi encerrada
+somente no PID Ruff identificado27560. Nenhum runtime do usuário foi tocado.
+Closure sem README passou; READMEs atualizados pelo renderer oficial, closure
+completa closure-realm-native1-final em execução.
+
+Detalhe adicional de recuperação: board_rebuild_ingestion contém
+_checkpoint_source_upgrade_allowed e atualização persistida de source_rows
+pré-v4 (linhas~1960); retirar conversão mantendo recusa de drift e recuperação
+do checkpoint nativo. rebuild_effects.load_checkpoint aceita campos ausentes
+por defaults e não possui versão fechada do payload; save/load devem compartilhar
+um contrato atual explícito antes de remover guards exclusivos do formato antigo.
+
+Partida limpa Core d4c7947e / Community11ee931d. Removido realm_migration.py,
+sem consumidor no runtime; Board.realm_id obrigatório no schema novo. Criação
+normal continua vinculando o realm autorizado, sem inferência a partir de base
+antiga. Substituída somente prova exclusiva de backfill; isolamento entre
+tenants e negação de escrita cruzada preservados. Novo teste recusa Board sem
+realm e comprova rollback. Docs retiram referência ao módulo excluído.
+
+dist-realm-native1 instalado; provenance-realm-native1.json confirma Core852
+.py/915 payloads e Community320 .py/406 payloads iguais a source/instalado/wheels.
+realm-native1:17 passaram/2 falharam por INSERTs de fixture sem realm. Corrigidos
+com realm local explícito; realm-native2 e closure-realm-native1 em execução.
+Sem alterações posteriores de produto até este registro. Nenhum frontend alterado.
+
+Investigação, ainda sem alteração: legacy_sprint_values só alimenta fixtures
+antigas (legacy_sprint_schema e suites mistas). Retirar decodificador e adaptar
+as partes nativas dessas suites, registrando disposição das exclusivamente de
+conversão; não apagar testes atuais de export/linhagem/policy por nome.
+realm_migration não tinha outro caller fora do teste substituído.
+
+A recuperação antiga queue-only forma cadeia Core rebuild_processor/rebuild_service
+→ Community board_rebuild_ingestion/rebuild_effects/legacy_rebuild_reconciliation.
+Não basta excluir o módulo: retirar entry point, callback, intent/receipt e
+compensação exclusivos junto com admissão fechada do checkpoint atual. Há guards
+que hoje impedem checkpoint antigo de entrar na execução normal; preservar essa
+recusa por contrato atual fechado, sem manter interpretação dos formatos velhos.
+Normal compensation, leases, enqueue/drain, quarentena e recuperação nativa ficam.
+Nada nessa cadeia foi removido neste incremento ainda.
+
 ### 2026-10-01 — Milestone adoção arquitetural obrigatória: qualificado
 
 Publicado: **Core631b0c83 / Community11ee931d**, pushes confirmados em

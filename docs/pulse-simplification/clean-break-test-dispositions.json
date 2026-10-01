@@ -1025,6 +1025,12 @@
       "test": "classification overlay section of test_spec_evidence_rebase_preview_apply_cas_and_events_are_atomic",
       "disposition": "superseded",
       "reason": "Exclusive legacy overlay authority/history removed. Native projection permissions and rebase CAS, version/context conflicts, link/disposition and atomic event checks retained."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_f03_realm_isolation.py",
+      "test": "test_f03_local_backfill_is_idempotent_and_preserves_legacy_boards",
+      "disposition": "superseded",
+      "reason": "Realm backfill removed; replaced by fresh local-board/index and absent-realm refusal tests. Tenant isolation and cross-realm write denial retained."
     }
   ]
 }
