@@ -2,6 +2,35 @@
 
 ## Estado para retomada
 
+### 2026-10-01 — Par publicado e próxima cadeia de remoção
+
+Core **9ce920e8** / Community **c6fff2b5** publicados em feature/v0.4.0,
+pushes confirmados. dist-sprint-decoder1 instalado e byte-idêntico; nenhuma
+validação/processo pendente. C1–C4 continuam ativos, sem pausa de aprovação.
+
+Próxima cadeia investigada, **ainda não alterada**: materialização/migração de
+FR/TR/AC em services/spec_structured_entities.py e services/main.py. Existem
+migrate_legacy_fr_refs/migrate_legacy_ac_refs, _build_materialization_mappings,
+_materialize_legacy_entities e quatro métodos de reescrita de referências.
+StructuredSpecEntityAckRecord carrega materialized_field_name/materialized_items
+e related_updates para conservar IDs gerados durante preview antigo. Remover
+a conversão de itens já persistidos, preservando o ack/fingerprint/TTL/version
+fence das operações atuais e a geração de identidade para criação nova.
+O mesmo arquivo ainda resolve entity_id numérico como índice para FR/AC.
+SpecCreate/Update/Response aceitam list[str | dict] para FR/TR/AC; fechar a
+forma atual em conjunto com os writers, leitores e frontend, sem mudar
+qualificação, vínculos, herança ou aprovação. A canonicalização corrente também
+é usada na criação nativa e verifica colisões entre coleções: não apagar esse
+papel ao retirar conversão. canonicalize_fr_ac é wrapper de compatibilidade;
+seus consumidores restantes estão em testes. A alocação de ID novo não é backfill.
+
+Suítes pertinentes: test_spec_entity_canonicalization,
+test_spec_requirement_canonicalization_ska, test_spec_structured_entities,
+test_r3b_canonical_id, test_ska_structured_spec_snapshot e UI de Spec. Não
+substituir verificações nativas por simples remoções de testes. Demais pendências
+globais do assessment/inventário continuam abertas; os marcos acima não
+certificam a entrega integral nem o bump coordenado para 0.4.0 (ainda pendente).
+
 ### 2026-10-01 — Admissão publicada; decoder Sprint retirado em WIP
 
 **Qualificado:** dist-sprint-decoder1 instalado; provenance-sprint-decoder1.json
