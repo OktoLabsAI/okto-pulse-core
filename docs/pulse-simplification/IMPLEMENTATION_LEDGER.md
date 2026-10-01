@@ -2,6 +2,25 @@
 
 ## Estado para retomada
 
+ARQVER ADV-16 verificado: IR exige shape e timeout, com implementação
+completa para ambos. HTTP real observa array steps e emite prova passing só de
+shape. Leitura SQL nova identifica ac-timeout sem observação; IR e gate de entrega
+permanecem incompletos. Binding da mesma prova como timeout recusa sem writes;
+cenário timeout continua ready sem evidência. Não houve medição de timeout:
+essa ausência deliberada é precisamente o oráculo, não prova de sua execução.
+
+Community75785=0,13passed40.26s (um novo,doze regressões); Ruff F/E9 e diff verdes.
+acceptance-contract-observation-dimensions.json registra executor/assinatura/
+persistência reais, ASGI controlado e limites de fixture inicial/recibo externo.
+Sem afirmar fluxo completo Spec Done ou correção semântica universal de contratos.
+Código produtivo/UI intactos; provenance-policy-race-final.json ainda prova o par.
+F16 anterior90981=0,oito budgets ZERO;frontend anterior39859=0,8passed.
+
+Inventário134 verificados/33 parciais/79 não auditados. Continuar somente os
+critérios restantes do pacote, benchmark e distribuição final. KG-10/T23 aguardam
+decisões já solicitadas. Par publicado anterior: Core4a9bb9d8/Community0bd40c19.
+Nenhum processo pendente ou dado real alterado.
+
 ARQVER ADV-09 verificado: usuário com BoardShare viewer real lê IR ativo,
 mas tentativas REST de status not_applicable/revoked não chegam a modificá-lo.
 Preflight de escrita retorna404 mascarado; leituras antes/depois retornam200.

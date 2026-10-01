@@ -3230,8 +3230,12 @@
       "line": 740,
       "id": "ADV-16",
       "normative_text": "| ADV-16 | Teste de contrato aprova shape, mas a condição exige também timeout. | A dimensão sem observação mantém o requisito incompleto. |",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "verified_by_reviewed_execution",
+      "test_text_references": [],
+      "reviewed_execution": {
+        "artifact": "acceptance-contract-observation-dimensions.json",
+        "criterion_key": "ARQVER:ADV-16"
+      }
     },
     {
       "key": "ARQVER:ADV-17",
