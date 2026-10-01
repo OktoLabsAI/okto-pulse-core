@@ -2,6 +2,25 @@
 
 ## Estado para retomada
 
+ARQVER ADV-10 verificado: diamante persistido mantém duas proveniências
+para o mesmo critério, seis obrigações distintas e apenas um run/registro de
+autorização para os três BRs. Leitura em nova sessão e gate real de entrega
+passam. Ciclo injetado no banco descartável é detectado apesar dos digests
+stale; rollup/gate bloqueiam sem reescrever os registros. Não é teste de
+admissão do ciclo pelo writer nem transição completa Spec Done.
+
+Community83800=0,12passed42.49s; Ruff F/E9 e diff verdes. Probe35563=1 recusou
+BR-top sem alocação; fixture corrigida com linked_requirements canônico.
+Nenhum código produtivo, autoridade ou histórico alterado. Evidência e limites:
+acceptance-inheritance-diamond.json. Par produtivo permanece byte-idêntico
+ao provenance-three-criteria1.json; F16 anterior31859=0,oito budgets ZERO;
+frontend anterior46579=0,54passed. Sem impacto UI.
+
+Inventário127 verificados/33 parciais/86 não auditados. Continuar os critérios
+restantes do pacote, benchmark e distribuição final; KG-10/T23 aguardam decisões
+já solicitadas. Par publicado anterior: Core550f55b5/Community63e9d8d3.
+Nenhum processo pendente nem dado real alterado.
+
 ARQVER ADV-11 verificado: requisito com três critérios não recebe crédito
 com apenas dois passing. Terceiro ausente ou failed mantém a pendência exata
 em leitura SQL nova e bloqueia o gate real de entrega da Spec. Prova HTTP

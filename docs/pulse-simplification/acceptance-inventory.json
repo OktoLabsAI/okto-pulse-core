@@ -3143,10 +3143,10 @@
       "line": 734,
       "id": "ADV-10",
       "normative_text": "| ADV-10 | Corrente de herança com diamante e dois caminhos ao mesmo critério. | Não há duplicação de obrigação/prova; ciclo continua detectado. |",
-      "review_status": "partial",
+      "review_status": "verified_by_reviewed_execution",
       "test_text_references": [],
       "reviewed_execution": {
-        "artifact": "acceptance-verification-execution.json",
+        "artifact": "acceptance-inheritance-diamond.json",
         "criterion_key": "ARQVER:ADV-10"
       }
     },

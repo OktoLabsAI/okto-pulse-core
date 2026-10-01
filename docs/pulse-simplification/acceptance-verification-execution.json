@@ -1367,7 +1367,8 @@
             }
           ]
         }
-      ]
+      ],
+      "followup_evidence": "acceptance-inheritance-diamond.json"
     },
     "ARQVER:ADV-12": {
       "status": "verified_by_reviewed_execution",
