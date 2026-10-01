@@ -2,6 +2,35 @@
 
 ## Estado para retomada
 
+ARQVER ADV-17 corrigido/verificado. Reprodução60868=1: autorrevisão leu
+policy off, outro BoardService/session do owner gravou enforce, e a requisição
+aceitou rejeição usando o snapshot antigo. O teste falhou antes do commit externo;
+não alegar gravação durável errada. CardService agora cerca o Board pela porta
+pública existente e recarrega policy sob o fence antes dos thresholds/separação,
+mantendo serialização até commit. Mudança atual para enforce recusa pela regra
+existente; indisponibilidade do fence retorna task_validation_policy_conflict,
+documentado em reference/errors.md. Sem adaptador concreto/import novo no Core.
+
+Core53740=0,57passed17.49s; Community30791=0,11passed65.78s (inclui T01 completo
+e handoff independente); frontend39859=0,8passed5.72s. Total76 distintos.
+Ruff F/E9 e diff verdes. acceptance-inflight-review-policy.json registra provas,
+limites e interleaving real. Outer commit após recusa não altera Card/pareceres/
+conclusões; policy humana e seus eventos são preservados. Nenhum skip relaxado.
+
+Par reconstruído/instalado: dist-learning-reconciliation-policy-race-fix-final.
+provenance-policy-race-final.json,72390=0:859/922+373/458 byte-idênticos.
+F16 final90981=0,ok=true,findings[],oito budgets ZERO. Registry/catálogo intactos.
+Primeiro byte-check16239 coincidiu com install e falhou; prova69951 após término
+do install91458 passou ANTES dos testes. RunnerCore24132 apontou arquivo Community;
+não rodou testes;53740 é execução válida. Documentação de erro foi o único delta
+no rebuild final depois dos testes; Python testado permanece idêntico.
+
+Inventário132 verificados/33 parciais/81 não auditados. Continuar critérios
+originais, benchmark e distribuição final; KG-10/T23 aguardam decisões já
+solicitadas. Par publicado anterior: Coree2736cc7/Community3e44e38b.
+Nenhum processo pendente nem dado real alterado. Fence pode fazer writer humano
+concorrente aguardar o término da revisão; nenhuma política nova foi criada.
+
 ARQVER ADV-15 verificado: cancelamento REST do único implementador do IR
 mantém requisito/critério, ator e causa; aplica rollback já existente de
 validated para approved e marca parecer stale. Leitura pública mostra IR

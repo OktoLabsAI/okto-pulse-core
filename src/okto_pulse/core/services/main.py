@@ -4946,6 +4946,21 @@ class CardService:
 
         # Resolve thresholds from hierarchy
         board = await _application_get(self.db, "board", card.board_id)
+        if board is not None:
+            # Policy may change after the first read, while this request is in
+            # flight. Serialize with Board writers and reload under that fence;
+            # keep it through commit so independence/thresholds cannot be based
+            # on a superseded human policy. The persistence port owns the lock.
+            if not await _application_fence(
+                self.db, "board", board.id, expected_values={}
+            ):
+                raise CardOperationError(
+                    "task_validation_policy_conflict",
+                    "Board policy changed or became unavailable during validation.",
+                    remediation="reload_card_and_retry_validation",
+                    facts={"board_id": card.board_id, "card_id": card.id},
+                )
+            board = await _application_refresh(self.db, board)
         board_settings = board.settings or {} if board else {}
         spec = (
             await _application_get(self.db, "spec", card.spec_id)
