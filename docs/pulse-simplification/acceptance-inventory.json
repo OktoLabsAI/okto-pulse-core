@@ -3213,8 +3213,12 @@
       "line": 739,
       "id": "ADV-15",
       "normative_text": "| ADV-15 | Cancelar o único card implementador de um IR. | O IR permanece obrigação pendente até realocação/revisão autorizada. |",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "verified_by_reviewed_execution",
+      "test_text_references": [],
+      "reviewed_execution": {
+        "artifact": "acceptance-ir-implementer-cancellation.json",
+        "criterion_key": "ARQVER:ADV-15"
+      }
     },
     {
       "key": "ARQVER:ADV-16",

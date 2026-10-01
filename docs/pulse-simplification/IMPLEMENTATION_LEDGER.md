@@ -2,6 +2,29 @@
 
 ## Estado para retomada
 
+ARQVER ADV-15 verificado: cancelamento REST do único implementador do IR
+mantém requisito/critério, ator e causa; aplica rollback já existente de
+validated para approved e marca parecer stale. Leitura pública mostra IR
+qualificado sem contribuição, com implementation_contribution_card_unavailable.
+Gate de plano recusa; start recusa a aresta approved→in_progress sem writes.
+Reabertura autorizada e realocação por writers estruturados restauram prontidão
+do plano. Spec permanece Draft; IR ativo e Card original cancelled, sem prova
+fabricada nem dispensa automática.
+
+Community42967=0,13passed (um novo,doze regressões); Ruff F/E9 e diff verdes.
+acceptance-ir-implementer-cancellation.json explicita avaliação/estado/alocação
+de fixture e identidade REST injetada. Probes52383/36179 corrigiram assert sobre
+rollback existente;6937 corrigiu comparação de defaults tipados após o writer.
+Nenhum comportamento produtivo, autoridade ou histórico alterado.
+
+Par fonte/site/wheels permanece igual ao provenance-three-criteria1.json.
+F16 anterior31859=0,oito budgets ZERO;frontend anterior4747=0,34passed. Sem UI.
+Inventário131 verificados/33 parciais/82 não auditados. Continuar critérios
+originais restantes, benchmark e distribuição final. ADV-17 ainda requer
+autoridade durante request, não mera revogação entre chamadas. KG-10/T23
+aguardam decisões já solicitadas. Par publicado anterior:
+Coree1a2ddc2/Communityf1ba26dd. Nenhum processo pendente/dado real alterado.
+
 ARQVER ADV-14 verificado: Spec validated com avaliação aprovada e plano
 completo perde prontidão após DELETE REST autorizado do único Test Card.
 Limpeza canônica remove seu vínculo; cenário permanece ready, sem prova;
