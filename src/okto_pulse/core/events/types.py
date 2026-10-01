@@ -568,6 +568,14 @@ class SpecVersionBumped(DomainEvent):
     projection_card_ids: list[str] = Field(default_factory=list)
 
 
+class CardDependencyChanged(DomainEvent):
+    event_type: ClassVar[str] = 'card.dependency_changed.v1'
+    card_id: str
+    prerequisite_card_id: str
+    dependency_id: str
+    operation: Literal['added', 'removed']
+
+
 class SpecDependencyAdded(DomainEvent):
     event_type: ClassVar[str] = "spec.dependency_added"
     spec_id: str
@@ -1302,6 +1310,7 @@ EVENT_TYPES: list[str] = [
     CardLinkedToSpec.event_type,
     CardUnlinkedFromSpec.event_type,
     CardScenarioProjectionChanged.event_type,
+    CardDependencyChanged.event_type,
     SpecCreated.event_type,
     SpecMoved.event_type,
     SpecVersionBumped.event_type,
@@ -1369,6 +1378,7 @@ _EVENT_CLASS_BY_TYPE: dict[str, type[DomainEvent]] = {
     CardLinkedToSpec.event_type: CardLinkedToSpec,
     CardUnlinkedFromSpec.event_type: CardUnlinkedFromSpec,
     CardScenarioProjectionChanged.event_type: CardScenarioProjectionChanged,
+    CardDependencyChanged.event_type: CardDependencyChanged,
     SpecCreated.event_type: SpecCreated,
     SpecMoved.event_type: SpecMoved,
     SpecVersionBumped.event_type: SpecVersionBumped,

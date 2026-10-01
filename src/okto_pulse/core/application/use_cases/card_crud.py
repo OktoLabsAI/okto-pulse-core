@@ -577,7 +577,7 @@ class AddCardDependencyUseCase:
             board_id=card.board_id,
         )
 
-        dep = await service.add_dependency(command.card_id, command.depends_on_id)
+        dep = await service.add_dependency(command.card_id, command.depends_on_id, actor_id=actor.actor_id)
         dependency_id = dep.id
         await commit(uow)
         return AddCardDependencyResult(dependency_id)
@@ -636,7 +636,7 @@ class RemoveCardDependencyUseCase:
             board_id=source.board_id,
         )
         removed = await service.remove_dependency(
-            command.card_id, command.depends_on_id
+            command.card_id, command.depends_on_id, actor_id=actor.actor_id,
         )
         if not removed:
             raise EntityNotFoundError("dependency", command.card_id)

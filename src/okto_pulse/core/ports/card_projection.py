@@ -62,6 +62,8 @@ def is_card_child_writer(*, edge_type, source_type, target_type, rule_id, layer,
 def is_card_projection_writer(*, edge_type, source_type, target_type, rule_id, layer, created_by):
     if source_type not in {'Entity', 'Bug'}:
         return False
+    if edge_type == 'precedes' and target_type in {'Entity', 'Bug'}:
+        return is_card_dependency_writer(rule_id=rule_id, layer=layer, created_by=created_by)
     if edge_type == 'belongs_to' and target_type == 'Entity':
         return is_card_parent_writer(rule_id=rule_id, layer=layer, created_by=created_by)
     if edge_type == 'supports' and target_type == 'TestScenario':
@@ -79,6 +81,34 @@ def spec_linked_card_ids(before, after):
 CARD_SCENARIO_NAMESPACE = 'card_scenarios'
 CARD_PARENT_NAMESPACE = 'card_parent'
 CARD_PARENT_RULE = 'belongs_to/card_to_spec@v2.0'
+CARD_DEPENDENCY_NAMESPACE = 'card_dependencies'
+CARD_DEPENDENCY_RULE_PREFIX = 'precedes/card_dependency/'
+
+
+def card_dependency_rule(dependency_id):
+    if (type(dependency_id) is not str or not dependency_id or dependency_id.strip() != dependency_id
+            or any(character in dependency_id for character in '/@:')):
+        raise ValueError('card_dependency_identity_invalid')
+    return CARD_DEPENDENCY_RULE_PREFIX + dependency_id + '@v2.1'
+
+
+def is_card_dependency_writer(*, rule_id, layer, created_by):
+    if type(rule_id) is not str or not rule_id.startswith(CARD_DEPENDENCY_RULE_PREFIX) or not rule_id.endswith('@v2.1'):
+        return False
+    identity = rule_id[len(CARD_DEPENDENCY_RULE_PREFIX):-len('@v2.1')]
+    try:
+        return card_dependency_rule(identity) == rule_id and layer == 'deterministic' and created_by == 'worker_layer1'
+    except ValueError:
+        return False
+
+
+def owns_card_dependency_endpoints(*, owner_id, source_type, target_type, source_ref, target_ref):
+    parts = source_ref.split(':') if type(source_ref) is str else ()
+    return (source_type in {'Entity', 'Bug'} and target_type in {'Entity', 'Bug'}
+        and target_ref == f'card:{owner_id}' and len(parts) == 2 and parts[0] == 'card'
+        and bool(parts[1]) and parts[1].strip() == parts[1] and parts[1] != owner_id)
+
+
 CARD_SCENARIO_RULE_PREFIX = 'supports/card_scenario_observed_'
 CARD_SCENARIO_RULES = frozenset(
     CARD_SCENARIO_RULE_PREFIX + origin + '@v2.1'

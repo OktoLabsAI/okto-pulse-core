@@ -3130,7 +3130,7 @@ async def _prepare_deterministic_projection(db, entry, *, persistence=None):
         # an empty replacement so its relationally-derived children converge
         # without re-materializing the cancelled root.
         if entry.artifact_type == "card":
-            from okto_pulse.core.ports.card_projection import CARD_CHILD_FAMILIES
+            from okto_pulse.core.ports.card_projection import CARD_CHILD_FAMILIES, CARD_DEPENDENCY_NAMESPACE
             # Replace only this Card's observed links; do not revive its root.
             worker_result = WorkerResult(
                 raw_content=f"relational-projection-cleanup:card:{entry.artifact_id}:cancelled",
@@ -3140,13 +3140,15 @@ async def _prepare_deterministic_projection(db, entry, *, persistence=None):
                 ), *(RelationalProjectionActiveSetIntent(
                     owner_type='card', owner_id=entry.artifact_id,
                     namespace=family.namespace, active_refs=(),
-                ) for family in CARD_CHILD_FAMILIES)),
+                ) for family in CARD_CHILD_FAMILIES), RelationalProjectionActiveSetIntent(
+                    owner_type='card', owner_id=entry.artifact_id,
+                    namespace=CARD_DEPENDENCY_NAMESPACE, active_refs=())),
             )
         else:
             worker_result = _cancelled_refinement_projection(entry.artifact_id)
     else:
         projection_inputs = None
-        if entry.artifact_type in {"ideation", "refinement", "spec"}:
+        if entry.artifact_type in {"ideation", "refinement", "spec", "card"}:
             projection_inputs = await persistence.load_projection_inputs(
                 db,
                 board_id=entry.board_id,
@@ -3163,6 +3165,9 @@ async def _prepare_deterministic_projection(db, entry, *, persistence=None):
             from okto_pulse.core.application.processors.card_scenario_projection import prepare_card_scenario_projection
             worker_result = await prepare_card_scenario_projection(db, board_id=entry.board_id,
                 card=artifact, result=worker_result, persistence=persistence)
+            from okto_pulse.core.application.processors.card_dependency_projection import prepare_card_dependency_projection
+            worker_result = prepare_card_dependency_projection(board_id=entry.board_id,
+                card=artifact, inputs=projection_inputs, result=worker_result)
         worker_result = await _materialize_lineage_endpoint_nodes(
             db,
             entry,

@@ -1243,12 +1243,24 @@ class CurrentSpecDependencyProjection:
 
 
 @dataclass(frozen=True, slots=True)
+class CurrentCardDependencyProjection:
+    """One persisted dependency; its dependent Card owns the projected fact."""
+
+    dependency_id: str
+    board_id: str
+    dependent_card_id: str
+    prerequisite_card_id: str
+    prerequisite_card_type: str
+
+
+@dataclass(frozen=True, slots=True)
 class ConsolidationProjectionInputs:
     """Bounded relational projections loaded alongside one source artifact."""
 
     quality_assessments: tuple[CurrentQualityAssessmentSummary, ...] = ()
     research_decisions: tuple[CurrentResearchDecisionSummary, ...] = ()
     spec_dependencies: tuple[CurrentSpecDependencyProjection, ...] = ()
+    card_dependencies: tuple[CurrentCardDependencyProjection, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -1613,6 +1625,7 @@ __all__ = [
     "CurrentQualityAssessmentSummary",
     "CurrentResearchDecisionSummary",
     "CurrentSpecDependencyProjection",
+    "CurrentCardDependencyProjection",
     "ExactConsolidationBatchResult",
     "ExactConsolidationAckReceipt",
     "ExactConsolidationAckIntegrityError",

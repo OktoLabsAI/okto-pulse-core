@@ -2,6 +2,44 @@
 
 ## Estado para retomada
 
+G3 concluído: KG-07/08 verificados. Reprodução60943 terminou1 (um caso de domínio
+passou; um caso de projeção falhou). CardService persistiu todos os nove pares
+normal/test/bug; a projeção de normal→normal não emitiu nenhum precedes. O caminho
+atual não lê card_dependencies nem emite evento de invalidação nas mutações.
+Schema0.7.0 admite precedes somente Entity→Entity; os três pares adicionais com
+Bug são necessários conforme KG§4.2.7, sem representar Bug como Entity.
+Antes de testes, provenance-card-dependencies-before.json confirmou o par
+f7317b1d/2e1f98b3 byte-idêntico ao install/wheels (860/923+373/458).
+Implementados porta de leitura tipada, emitter, active-set compensável, eventos,
+fence relacional e invalidação dos consumidores diretos. Delta versionado0.8.0
+adiciona só três pares precedes; censos85/595 e contratos0.5/0.6/0.7 congelados.
+Fingerprint0.8.0:97a5ed31dfaf4d479b8d7810638ad3f07f3955894168a03b437a5533352b618b.
+Fix1b48786=0: dez casos (domínio aceita nove pares e planner os emite tipados).
+Fix1Community60749=0: quatro pares nativos, ownership/removal/compensação.
+Fix2Core12530=0:150passed;frontend71208=0:31passed. Community83068=1 encontrou
+constante de mapa físico82 não atualizada para85; ajustada sem tocar censos antigos.
+F1649072=1 somente README drift; oito budgets ZERO. Nova rodadafix3 reconstruída,
+inclui corrida entre writers, recusa cross-Board, fan-out direto e evolução0.8.
+Core90668=0:153passed, incluindo corrida/ciclo e recusa cross-Board. Candidate47306=0:
+retomada privada após falha preserva providers originais. Community94841=1:12passed
+(quatro pares nativos, fila integrada e sete evoluções) antes de assert do censo atual
+ainda esperar82. Ajustados somente testes de censo/bootstrap para0.8, preservando
+hashes/contratos históricos. Probes43066/65671 detectaram que o renderer legado
+também precisava excluir o novo grupo precedes vazio; digest antigo não alterado.
+Bootstrap/censo final94013=0:53passed (card-dependencies-schema3-community).
+F16 final11044=0:ok=true,findings/documentation_findings vazios,oito budgets ZERO.
+READMEs regenerados oficialmente; par dist-learning-reconciliation-card-dependencies-qualified
+instalado9900=0 e provado51151=0 (861py/924payload+375py/460payload).
+Somente README e fixtures de teste mudaram após o par produtivo fix3 testado.
+Evidência: acceptance-card-dependency-projection.json; recorder executado.
+Total250 casos distintos:153Core+12Community selecionados da rodada94841+53schema
++1candidate+31frontend. A rodada94841 não é descrita como verde; o relatório
+preserva sua falha posterior e a seleção exata dos casos aprovados. Ruff F/E9 e
+diff verdes. Inventário146 verificados/29 parciais/71 não auditados.
+Último par publicado anterior: f7317b1d/2e1f98b3. Próximo: G5 e demais critérios
+originais, benchmark e distribuição, sem novo escopo. KG-10/T23 continuam decisões
+já solicitadas. Nenhum processo de validação pendente nem dado real alterado.
+
 KG-04/05 implementados e verificados. O emitter Card-side agora projeta as nove
 coleções autoritativas, com Entity para Task/Test e Bug para Bug. Cada família
 possui namespace/regra fechados; remover/restaurar/replay converge sem duplicar

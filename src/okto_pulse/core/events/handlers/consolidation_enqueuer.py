@@ -100,6 +100,7 @@ _HIGH_PRIORITY_EVENTS = {"card.cancelled", "spec.version_bumped"}
     "card.linked_to_spec",
     "card.unlinked_from_spec",
     "card.scenario_projection_changed.v1",
+    "card.dependency_changed.v1",
     "spec.created",
     "spec.dependency_added",
     "spec.dependency_removed",
@@ -147,6 +148,23 @@ class ConsolidationEnqueuer:
 
     async def handle(self, event: DomainEvent, session: object) -> None:
         targets = self._map_targets(event)
+        dependency_source = (getattr(event, 'card_id', None) if event.event_type.startswith('card.')
+            else getattr(event, 'artifact_id', None) if event.event_type == 'artifact.archive_changed'
+                and getattr(event, 'artifact_type', None) == 'card' else None)
+        if dependency_source:
+            from okto_pulse.core.ports.application_persistence import (
+                ApplicationFilter, ApplicationQuery, get_application_persistence_port,
+            )
+            persistence = get_application_persistence_port()
+            dependencies = await persistence.list(session, ApplicationQuery(entity='card_dependency',
+                filters=(ApplicationFilter('depends_on_id', 'eq', dependency_source),)))
+            owners = tuple(dict.fromkeys(row.card_id for row in dependencies))
+            if owners:
+                scoped = await persistence.list(session, ApplicationQuery(entity='card', filters=(
+                    ApplicationFilter('board_id', 'eq', event.board_id), ApplicationFilter('id', 'in', owners))))
+                for card in scoped:
+                    if ('card', card.id) not in targets:
+                        targets.append(('card', card.id))
         from okto_pulse.core.ports.card_projection import CARD_PROJECTION_FIELDS
         if (event.event_type in {'spec.semantic_changed', 'spec.version_bumped'}
                 and CARD_PROJECTION_FIELDS.intersection(getattr(event, 'changed_fields', ()))):
@@ -362,6 +380,10 @@ class ConsolidationEnqueuer:
         """
         et = event.event_type
         targets: list[tuple[str, str]] = []
+
+        if et == 'card.dependency_changed.v1':
+            return [('card', identity) for identity in dict.fromkeys(
+                (event.prerequisite_card_id, event.card_id))]
 
         if et == 'card.scenario_projection_changed.v1':
             for identity in dict.fromkeys((event.old_spec_id, event.new_spec_id)):

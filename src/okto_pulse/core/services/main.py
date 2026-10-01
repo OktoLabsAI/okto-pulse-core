@@ -4209,7 +4209,7 @@ class CardService:
         )
 
     async def add_dependency(
-        self, card_id: str, depends_on_id: str
+        self, card_id: str, depends_on_id: str, *, actor_id: str | None = None,
     ) -> ApplicationRecord:
         """Add a dependency with idempotent duplicate handling.
 
@@ -4224,6 +4224,12 @@ class CardService:
                 remediation="choose_a_different_dependency",
                 facts={"card_id": card_id, "depends_on_id": depends_on_id},
             )
+        card = await self.get_card(card_id)
+        if card is None:
+            raise ValueError('Card not found')
+        if not await _application_fence(self.db, 'board', card.board_id, expected_values={}):
+            raise CardOperationError('card_dependency_conflict', 'Dependency source became unavailable.')
+        card = await _application_refresh(self.db, card)
         existing = await _application_list(
             self.db,
             "card_dependency",
@@ -4253,9 +4259,20 @@ class CardService:
             depends_on_id=depends_on_id,
         )
         await _application_add(self.db, dep)
+        from okto_pulse.core.events import publish as event_publish
+        from okto_pulse.core.events.types import CardDependencyChanged
+        await _application_flush(self.db)
+        await event_publish(CardDependencyChanged(board_id=card.board_id, actor_id=actor_id,
+            card_id=card_id, prerequisite_card_id=depends_on_id, dependency_id=dep.id,
+            operation='added'), session=self.db)
         return dep
 
-    async def remove_dependency(self, card_id: str, depends_on_id: str) -> bool:
+    async def remove_dependency(self, card_id: str, depends_on_id: str, *, actor_id: str | None = None) -> bool:
+        card = await self.get_card(card_id)
+        if card is not None:
+            if not await _application_fence(self.db, 'board', card.board_id, expected_values={}):
+                raise CardOperationError('card_dependency_conflict', 'Dependency source became unavailable.')
+            card = await _application_refresh(self.db, card)
         rows = await _application_list(
             self.db,
             "card_dependency",
@@ -4271,6 +4288,11 @@ class CardService:
             await self.require_content_mutation_allowed(card, operation="remove_dependency")
         for row in rows:
             await _application_delete(self.db, row)
+            from okto_pulse.core.events import publish as event_publish
+            from okto_pulse.core.events.types import CardDependencyChanged
+            await event_publish(CardDependencyChanged(board_id=card.board_id, actor_id=actor_id,
+                card_id=card_id, prerequisite_card_id=depends_on_id, dependency_id=row.id,
+                operation='removed'), session=self.db)
         return bool(rows)
 
     async def get_dependencies(self, card_id: str) -> list[ApplicationRecord]:
