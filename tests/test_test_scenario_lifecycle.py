@@ -80,7 +80,8 @@ async def _seed_spec(
             acceptance_criteria=acs
             if acs is not None
             else [{"id": "ac_one", "text": "AC one", "status": "active"}],
-            test_scenarios=scenarios or [],
+            test_scenarios=[{"scenario_type": "integration", **item} for item in (scenarios or [])],
+            architecture_adoption={"contract_version": "architecture-adoption/v1", "board_id": board_id, "spec_id": spec_id, "adopted_in_edition": 1, "actor_id": USER, "inherited_resource_ids": []},
         )
         if locked:
             spec_kwargs["validations"] = [{"id": "val_x", "outcome": "success"}]
@@ -465,6 +466,7 @@ async def test_ambiguous_criteria_edit_preserves_persisted_scenario_and_evidence
 
     original = {
         "id": "ts_a", "title": "Original", "status": "passed",
+        "scenario_type": "integration",
         "linked_criteria": ["ac_one"], "evidence": dict(_VALID_EVIDENCE),
     }
     _b, spec_id, _c = await _seed_spec(
@@ -780,6 +782,7 @@ async def test_status_path_preserves_non_target_scenarios(db_factory):
     # ts_144b47eb — non-target scenarios stay semantically identical.
     other = {
         "id": "ts_y",
+        "scenario_type": "integration",
         "title": "Y",
         "status": "ready",
         "given": "g",

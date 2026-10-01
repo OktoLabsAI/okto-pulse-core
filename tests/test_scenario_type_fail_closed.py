@@ -11,9 +11,8 @@ create/update persistence gates — and proves:
 * supported values persist EXACTLY;
 * an omitted value still defaults to ``integration`` (a default, not a coercion
   of an invalid value);
-* unchanged legacy/invalid values are GRANDFATHERED so the whole-list update
-  path (UI full-list / REST PUT) keeps re-serializing historical data, while a
-  new or changed invalid value on that same path still fails closed.
+* unchanged invalid values are refused without mutation, including internal
+  read-modify-write paths and omitted fields resolved from storage.
 
 Validator can reproduce with:
   .venv/Scripts/python -m pytest -p no:logging -q tests/test_scenario_type_fail_closed.py
@@ -38,9 +37,6 @@ from okto_pulse.core.models.schemas import (
     SpecUpdate,
     TestScenario as ScenarioRead,
     TestScenarioWrite as ScenarioWrite,
-)
-from okto_pulse.core.services.application_schemas import (
-    PersistedTestScenarioSpecUpdate,
 )
 from okto_pulse.core.services.main import SpecService
 from okto_pulse.core.services.test_scenario_lifecycle import (
@@ -165,38 +161,15 @@ async def test_add_omitted_scenario_type_defaults_integration(db_factory):
     assert payload["scenario"]["scenario_type"] == "integration"
 
 
-async def test_add_preserves_an_existing_unknown_legacy_type(db_factory):
-    board_id, spec_id = await _seed(
-        db_factory,
-        scenarios=[
-            {
-                "id": "ts_legacy",
-                "title": "historical",
-                "scenario_type": "regression",
-                "status": "draft",
-            }
-        ],
-    )
-    payload = await _call_tool(
-        db_factory,
-        "okto_pulse_add_test_scenario",
-        board_id=board_id,
-        spec_id=spec_id,
-        title="New negative path",
-        given="invalid input",
-        when="the request is submitted",
-        then="it is rejected",
-        scenario_type="negative",
-    )
-    assert payload.get("success") is True, payload
-    stored = {
-        scenario["id"]: scenario["scenario_type"]
-        for scenario in await _stored(db_factory, spec_id)
-    }
-    assert stored == {
-        "ts_legacy": "regression",
-        payload["scenario"]["id"]: "negative",
-    }
+async def test_add_refuses_invalid_existing_type_without_mutation(db_factory):
+    original = {"id": "ts_invalid", "title": "original", "scenario_type": "regression", "status": "draft"}
+    board_id, spec_id = await _seed(db_factory, scenarios=[original])
+    with pytest.raises(ValidationError):
+        await _call_tool(db_factory, "okto_pulse_add_test_scenario",
+            board_id=board_id, spec_id=spec_id, title="New", given="g", when="w", then="t", scenario_type="negative")
+    assert await _stored(db_factory, spec_id) == [original]
+
+
 
 
 # ---------------------------------------------------------------------------
@@ -232,45 +205,16 @@ async def test_update_valid_scenario_type_persists(db_factory):
     assert (await _stored(db_factory, spec_id))[0]["scenario_type"] == "manual"
 
 
-@pytest.mark.parametrize(
-    ("field", "value"),
-    (
-        ("title", "cosmetic rename"),
-        ("given", "semantic body edit"),
-    ),
-)
-async def test_update_body_without_type_preserves_unknown_legacy_type(
-    db_factory,
-    field,
-    value,
-):
-    board_id, spec_id = await _seed(
-        db_factory,
-        scenarios=[
-            {
-                "id": "ts_legacy",
-                "title": "historical",
-                "scenario_type": "regression",
-                "given": "old given",
-                "when": "old when",
-                "then": "old then",
-                "status": "draft",
-            }
-        ],
-    )
-    payload = await _call_tool(
-        db_factory,
-        "okto_pulse_update_test_scenario",
-        board_id=board_id,
-        spec_id=spec_id,
-        scenario_id="ts_legacy",
-        **{field: value},
-    )
-    assert payload.get("success") is True, payload
-    assert payload["updated_fields"] == [field]
-    stored = (await _stored(db_factory, spec_id))[0]
-    assert stored[field] == value
-    assert stored["scenario_type"] == "regression"
+@pytest.mark.parametrize("field,value", [("title", "renamed"), ("given", "changed")])
+async def test_update_body_refuses_invalid_existing_type(db_factory, field, value):
+    original = {"id": "ts_invalid", "title": "original", "scenario_type": "regression", "status": "draft"}
+    board_id, spec_id = await _seed(db_factory, scenarios=[original])
+    payload = await _call_tool(db_factory, "okto_pulse_update_test_scenario",
+        board_id=board_id, spec_id=spec_id, scenario_id="ts_invalid", **{field: value})
+    assert payload.get("success") is not True, payload
+    assert await _stored(db_factory, spec_id) == [original]
+
+
 
 
 # ---------------------------------------------------------------------------
@@ -286,14 +230,14 @@ async def test_update_spec_new_invalid_scenario_rejected(db_factory):
             await svc.update_spec(
                 spec_id,
                 USER_ID,
-                PersistedTestScenarioSpecUpdate.from_iterable(
+                SpecUpdate.model_construct(test_scenarios=
                     [
-                        {
+                        ScenarioWrite.model_construct(**{
                             "id": "ts_new",
                             "title": "new",
                             "scenario_type": "bogus",
                             "status": "draft",
-                        }
+                        })
                     ]
                 ),
             )
@@ -336,72 +280,28 @@ async def test_update_spec_omitted_type_preserves_existing_and_defaults_new(
     assert stored == {"ts_keep": "unit", "ts_new": "integration"}
 
 
-async def test_update_spec_omitted_type_preserves_unknown_legacy_value(db_factory):
-    board_id, spec_id = await _seed(
-        db_factory,
-        scenarios=[
-            {
-                "id": "ts_legacy",
-                "title": "legacy",
-                "scenario_type": "regression",
-                "status": "draft",
-            }
-        ],
-    )
+async def test_update_spec_omitted_type_refuses_unknown_stored_value(db_factory):
+    original = {"id": "ts_invalid", "title": "original", "scenario_type": "regression", "status": "draft"}
+    _, spec_id = await _seed(db_factory, scenarios=[original])
     async with db_factory() as db:
-        await SpecService(db).update_spec(
-            spec_id,
-            USER_ID,
-            SpecUpdate.model_validate(
-                {
-                    "test_scenarios": [
-                        {
-                            "id": "ts_legacy",
-                            "title": "legacy renamed",
-                            "status": "draft",
-                        }
-                    ]
-                }
-            ),
-        )
-        await db.commit()
-
-    assert (await _stored(db_factory, spec_id))[0]["scenario_type"] == "regression"
+        with pytest.raises(InvalidScenarioTypeError):
+            await SpecService(db).update_spec(spec_id, USER_ID,
+                SpecUpdate(test_scenarios=[{"id": "ts_invalid", "title": "changed"}]))
+    assert await _stored(db_factory, spec_id) == [original]
 
 
-async def test_update_spec_grandfathers_unchanged_legacy(db_factory):
-    # legacy invalid value inserted out-of-band (as historical data would be).
-    board_id, spec_id = await _seed(
-        db_factory,
-        scenarios=[{"id": "ts_legacy", "title": "legacy", "scenario_type": "regression", "status": "draft"}],
-    )
+
+
+async def test_update_spec_refuses_unchanged_invalid_type(db_factory):
+    original = {"id": "ts_invalid", "title": "original", "scenario_type": "regression", "status": "draft"}
+    _, spec_id = await _seed(db_factory, scenarios=[original])
     async with db_factory() as db:
-        svc = SpecService(db)
-        # Internal read-modify-write flows use the narrow persisted carrier;
-        # public API/MCP request DTOs remain closed to historical values.
-        await svc.update_spec(
-            spec_id,
-            USER_ID,
-            PersistedTestScenarioSpecUpdate.from_iterable(
-                [
-                    {
-                        "id": "ts_legacy",
-                        "title": "legacy",
-                        "scenario_type": "regression",
-                        "status": "draft",
-                    },
-                    ScenarioWrite(
-                        id="ts_ok",
-                        title="ok",
-                        scenario_type="unit",
-                        status="draft",
-                    ),
-                ]
-            ),
-        )
-        await db.commit()
-    stored = {s["id"]: s["scenario_type"] for s in await _stored(db_factory, spec_id)}
-    assert stored == {"ts_legacy": "regression", "ts_ok": "unit"}
+        with pytest.raises(InvalidScenarioTypeError):
+            await SpecService(db).update_spec(spec_id, USER_ID,
+                SpecUpdate.model_construct(test_scenarios=[ScenarioWrite.model_construct(**original)]))
+    assert await _stored(db_factory, spec_id) == [original]
+
+
 
 
 async def test_update_spec_changing_legacy_to_invalid_rejected(db_factory):
@@ -415,14 +315,14 @@ async def test_update_spec_changing_legacy_to_invalid_rejected(db_factory):
             await svc.update_spec(
                 spec_id,
                 USER_ID,
-                PersistedTestScenarioSpecUpdate.from_iterable(
+                SpecUpdate.model_construct(test_scenarios=
                     [
-                        {
+                        ScenarioWrite.model_construct(**{
                             "id": "ts_legacy",
                             "title": "legacy",
                             "scenario_type": "still_bad",
                             "status": "draft",
-                        }
+                        })
                     ]
                 ),
             )
@@ -505,7 +405,7 @@ async def test_create_spec_valid_scenario_type_ok(db_factory):
         assert spec.test_scenarios[0]["scenario_type"] == "manual"
 
 
-async def test_write_schemas_publish_exact_enum_while_response_reads_legacy():
+async def test_read_and_write_schemas_publish_the_same_closed_taxonomy():
     schema = SpecUpdate.model_json_schema()
     write_schema = schema["$defs"]["TestScenarioWrite"]
     scenario_schema = write_schema["properties"]["scenario_type"]
@@ -518,16 +418,9 @@ async def test_write_schemas_publish_exact_enum_while_response_reads_legacy():
         "properties"
     ]["scenario_type"]
     assert response_field["type"] == "string"
-    assert "enum" not in response_field
-
-    legacy = ScenarioRead.model_validate(
-        {
-            "id": "ts_legacy",
-            "title": "historical",
-            "scenario_type": "regression",
-        }
-    )
-    assert legacy.scenario_type == "regression"
+    assert response_field["enum"] == list(VALID_SCENARIO_TYPES)
+    with pytest.raises(ValidationError):
+        ScenarioRead.model_validate({"id": "ts_invalid", "title": "invalid", "scenario_type": "regression"})
 
 
 async def test_write_schema_rejects_legacy_type_alias_field():
@@ -561,7 +454,7 @@ def _schema_enum(schema: dict) -> list[str] | None:
     return None
 
 
-async def test_mcp_write_tools_publish_closed_enum_but_list_filter_stays_raw():
+async def test_mcp_authoring_and_list_filter_publish_closed_enum():
     add_tool = await mcp_server.mcp.get_tool("okto_pulse_add_test_scenario")
     update_tool = await mcp_server.mcp.get_tool("okto_pulse_update_test_scenario")
     list_tool = await mcp_server.mcp.get_tool("okto_pulse_list_test_scenarios")
@@ -581,7 +474,7 @@ async def test_mcp_write_tools_publish_closed_enum_but_list_filter_stays_raw():
     )
     assert (
         _schema_enum(list_tool.parameters["properties"]["scenario_type"])
-        is None
+        == list(VALID_SCENARIO_TYPES)
     )
 
 

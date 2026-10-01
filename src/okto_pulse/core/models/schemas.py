@@ -438,24 +438,20 @@ class TestScenarioEvidence(BaseModel):
 
 
 class TestScenario(BaseModel):
-    """Read-tolerant test scenario projection.
+    """Current scenario projection and authored payload vocabulary."""
 
-    ``scenario_type`` intentionally remains ``str`` here so persisted values
-    from older releases can still be returned explicitly. Write requests use
-    :class:`TestScenarioWrite`, whose JSON schema is the closed five-value
-    taxonomy.
-    """
+    model_config = ConfigDict(extra="forbid")
 
     id: str
     title: str
     linked_criteria: list[str] | None = None  # indices or text of acceptance criteria
-    scenario_type: str = DEFAULT_SCENARIO_TYPE
-    verification_method: str | None = None
+    scenario_type: ScenarioType = Field(DEFAULT_SCENARIO_TYPE, description=SCENARIO_TYPE_DESCRIPTION)
+    verification_method: VerificationMethod | None = None
     given: str = ""  # precondition
     when: str = ""  # action
     then: str = ""  # expected result
     notes: str | None = None
-    status: str = "draft"  # draft | ready | automated | passed | failed
+    status: TestScenarioStatus = Field(TestScenarioStatus.DRAFT, validate_default=True)
     linked_task_ids: list[str] | None = (
         None  # card IDs that implement/automate this test
     )
@@ -477,17 +473,6 @@ class TestScenarioWrite(TestScenario):
     that distinction to default new scenarios and preserve existing scenarios.
     """
 
-    model_config = ConfigDict(extra="forbid")
-
-    verification_method: VerificationMethod | None = None
-    scenario_type: ScenarioType = Field(
-        DEFAULT_SCENARIO_TYPE,
-        description=SCENARIO_TYPE_DESCRIPTION,
-    )
-    status: TestScenarioStatus = Field(
-        TestScenarioStatus.DRAFT,
-        validate_default=True,
-    )
 
 
 # ============================================================================

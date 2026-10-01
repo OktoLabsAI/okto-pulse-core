@@ -11536,7 +11536,7 @@ async def okto_pulse_list_test_scenarios(
     board_id: str,
     spec_id: str,
     status: str = "",
-    scenario_type: str = "",
+    scenario_type: ScenarioType | None = None,
     linked: str = "",
     offset: PageWindowInput = 0,
     limit: PageWindowInput = 50,
@@ -11636,24 +11636,6 @@ async def okto_pulse_list_test_scenarios(
                         for t in VALID_SCENARIO_TYPES
                         if any(s.get("scenario_type") == t for s in all_scenarios)
                     },
-                    # Historical/invalid persisted scenario_types are surfaced
-                    # EXPLICITLY (spec ac16b3c9 FR5/AC5) rather than silently
-                    # folded into a supported bucket or dropped — so a stale value
-                    # like 'regression'/'exploratory' is visible for deliberate
-                    # remediation. New writes already fail closed (card 58844a26).
-                    "unsupported_types": {
-                        st: sum(
-                            1 for s in all_scenarios if s.get("scenario_type") == st
-                        )
-                        for st in sorted(
-                            {
-                                s.get("scenario_type")
-                                for s in all_scenarios
-                                if isinstance(s.get("scenario_type"), str)
-                                and not is_valid_scenario_type(s.get("scenario_type"))
-                            }
-                        )
-                    },
                     "linked": sum(1 for s in all_scenarios if s.get("linked_task_ids")),
                     "unlinked": sum(
                         1 for s in all_scenarios if not s.get("linked_task_ids")
@@ -11681,7 +11663,6 @@ from okto_pulse.core.services.test_scenario_lifecycle import (  # noqa: E402
     InvalidScenarioTypeError,
     StatusNotMutableError,
     VALID_SCENARIO_STATUSES,
-    is_valid_scenario_type,
     validate_test_scenario_evidence,
 )
 

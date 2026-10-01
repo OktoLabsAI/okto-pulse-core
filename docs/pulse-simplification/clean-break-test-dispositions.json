@@ -1120,6 +1120,18 @@
     {
       "path": "okto_labs_pulse_core/tests/test_test_theater_gate.py",
       "reason": "Response round-trip retains current evidence and replay_command only; removed latest_evidence/command compatibility assertions."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_scenario_type_fail_closed.py",
+      "reason": "Historical type acceptance replaced by refusal without writes; native default, field omission, CRUD and transport cases retained."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_scenario_type_reporting.py",
+      "reason": "Raw historical list/filter support replaced by closed taxonomy and refusal; native filter and summary retained."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_scenario_verification_method.py",
+      "reason": "Unknown stored method no longer accepted on reads or unchanged writes; current omitted method preservation retained."
     }
   ],
   "removed_cases": [

@@ -1941,12 +1941,12 @@ def _coordination_test_fakes():
 
 
 @pytest.fixture(autouse=True)
-def _knowledge_propagation_legacy_test_port(request: pytest.FixtureRequest):
-    """Make legacy Knowledge reads explicit in Core-only test compositions.
+def _knowledge_propagation_empty_test_port(request: pytest.FixtureRequest):
+    """Provide an explicitly empty native Knowledge scope for Core-only tests.
 
     Production composition remains fail-closed when the edition-owned port is
     absent.  Tests that exercise the port registry itself own that registry and
-    therefore intentionally opt out of this compatibility fake.
+    therefore intentionally opt out of this empty-scope fake.
     """
 
     from okto_pulse.core.ports.knowledge_propagation import (
@@ -1962,19 +1962,16 @@ def _knowledge_propagation_legacy_test_port(request: pytest.FixtureRequest):
         yield
         return
 
-    class _ExplicitLegacyKnowledgePropagationPort:
+    class _EmptyKnowledgePropagationPort:
         async def load_scope(self, _context, lookup):
             return KnowledgePropagationScope(
                 target=lookup.target,
                 scope_revision=0,
-                v2_active=False,
-                selection_state=None,
+                selection_state="omitted",
             )
 
         async def get_idempotency_entry(self, _context, _lookup):
-            raise AssertionError(
-                "legacy Knowledge test port does not support mutations"
-            )
+            return None
 
         async def load_parent_evidence(self, _context, _lookup):
             raise AssertionError(
@@ -1982,9 +1979,12 @@ def _knowledge_propagation_legacy_test_port(request: pytest.FixtureRequest):
             )
 
         async def stage_mutation(self, _context, _plan):
-            raise AssertionError(
-                "legacy Knowledge test port does not support mutations"
-            )
+            # No data is persisted by this empty-scope unit-test double.
+            assert _plan.operation_kind == "relink_reset"
+            assert not _plan.assignments_to_open
+            assert not _plan.assignment_ids_to_close
+            assert not _plan.snapshots_to_open
+            return _plan.ledger_entry.receipt
 
         async def stage_attempt(self, _context, _attempt):
             raise AssertionError(
@@ -1992,7 +1992,7 @@ def _knowledge_propagation_legacy_test_port(request: pytest.FixtureRequest):
             )
 
     reset_knowledge_propagation_port_for_tests()
-    register_knowledge_propagation_port(_ExplicitLegacyKnowledgePropagationPort())
+    register_knowledge_propagation_port(_EmptyKnowledgePropagationPort())
     try:
         yield
     finally:

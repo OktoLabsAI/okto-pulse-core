@@ -8,9 +8,8 @@ directly while the DTO migration is completed.
 
 from __future__ import annotations
 
-from copy import deepcopy
-from dataclasses import dataclass
-from typing import Any, Iterable
+from pydantic import BaseModel, ConfigDict
+
 
 from okto_pulse.core.models.schemas import (
     ApiContract,
@@ -19,32 +18,19 @@ from okto_pulse.core.models.schemas import (
     CardUpdate,
     GuidelineCreate,
     SpecUpdate,
+    TestScenarioWrite,
 )
 
 
-@dataclass(frozen=True, slots=True)
-class PersistedTestScenarioSpecUpdate:
-    """Internal read-modify-write carrier for persisted scenario projections.
+class ScenarioContentUpdate(BaseModel):
+    """Internal content edit with the same closed scenario payload contract.
 
-    Public REST/MCP writes continue to use ``SpecUpdate`` and its closed
-    scenario-type enum.  Internal workflows that necessarily carry the current
-    raw list use this narrow carrier; ``SpecService.update_spec`` still applies
-    the delta-aware scenario validator before mutation, so only an unchanged
-    legacy type is grandfathered.
+    The service uses this for evidence invalidation after a semantic edit.
+    Public SpecUpdate cannot act as an alternate operational-status writer.
     """
 
-    test_scenarios: tuple[Any, ...]
-
-    @classmethod
-    def from_iterable(
-        cls,
-        scenarios: Iterable[Any],
-    ) -> "PersistedTestScenarioSpecUpdate":
-        return cls(tuple(deepcopy(list(scenarios))))
-
-    def model_dump(self, *, exclude_unset: bool = False) -> dict[str, Any]:
-        del exclude_unset
-        return {"test_scenarios": deepcopy(list(self.test_scenarios))}
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    test_scenarios: list[TestScenarioWrite]
 
 
 __all__ = [
@@ -53,6 +39,6 @@ __all__ = [
     "ArchitectureDiagramPayloadResponse",
     "CardUpdate",
     "GuidelineCreate",
-    "PersistedTestScenarioSpecUpdate",
     "SpecUpdate",
+    "ScenarioContentUpdate",
 ]

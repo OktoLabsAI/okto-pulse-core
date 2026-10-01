@@ -48,6 +48,8 @@ async def _build_rest_spec(db_factory, *, scenarios: list[dict]):
             status=SpecStatus.DRAFT, created_by=USER_ID,
             functional_requirements=[], acceptance_criteria=[],
             test_scenarios=scenarios, business_rules=[], api_contracts=[],
+            architecture_adoption={"contract_version": "architecture-adoption/v1", "board_id": board_id, "spec_id": spec_id, "adopted_in_edition": 1, "actor_id": USER_ID, "inherited_resource_ids": []},
+            execution_contract={"contract_version": "spec-execution-contract/v1", "board_id": board_id, "spec_id": spec_id, "adopted_in_edition": 1, "actor_id": USER_ID, "origin": "new_spec"},
         ))
         await db.commit()
 
@@ -224,7 +226,7 @@ def test_rest_patch_omitted_type_preserves_existing_and_defaults_new(rest_spec):
     }
 
 
-def test_rest_patch_omitted_type_preserves_unknown_legacy_and_defaults_new(
+def test_rest_patch_omitted_type_refuses_unknown_stored_type(
     rest_legacy_spec,
 ):
     client, _board, spec_id = rest_legacy_spec
@@ -241,11 +243,5 @@ def test_rest_patch_omitted_type_preserves_unknown_legacy_and_defaults_new(
             ]
         },
     )
-    assert response.status_code == 200, response.text
-    assert {
-        scenario["id"]: scenario["scenario_type"]
-        for scenario in response.json()["test_scenarios"]
-    } == {
-        "ts_legacy": "regression",
-        "ts_new": "integration",
-    }
+    assert response.status_code == 422, response.text
+    assert "regression" in response.text

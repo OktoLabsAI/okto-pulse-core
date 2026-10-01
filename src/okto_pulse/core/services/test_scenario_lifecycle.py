@@ -149,34 +149,14 @@ def validate_scenario_type(value: object) -> str:
     return value  # type: ignore[return-value]
 
 
-def validate_scenario_types_for_write(
-    new_scenarios: object, old_scenarios: object
-) -> None:
-    """Whole-list write guard for the spec create/update persistence paths.
-
-    Validates the scenario_type of every scenario that is NEW or whose
-    scenario_type CHANGED relative to ``old_scenarios`` (matched by ``id``).
-    Scenarios whose scenario_type is unchanged are GRANDFATHERED so historical
-    or legacy values keep reading, listing and re-serializing without breaking
-    (spec ac16b3c9 FR5/AC5; the rule only forbids accepting an invalid value on
-    a *new* write). Raises :class:`InvalidScenarioTypeError` on the first
-    new/changed invalid value BEFORE any mutation; never normalizes.
-    """
-    old_by_id: dict[Any, Any] = {
-        s.get("id"): s for s in (old_scenarios or []) if isinstance(s, dict)
-    }
-    for s in new_scenarios or []:
-        if not isinstance(s, dict):
-            continue
-        prev = old_by_id.get(s.get("id"))
-        if "verification_method" in s and (prev is None or prev.get("verification_method") != s["verification_method"]):
-            validate_verification_method(s["verification_method"])
-        if "scenario_type" not in s:
-            continue
-        new_type = s.get("scenario_type")
-        prev = old_by_id.get(s.get("id"))
-        if prev is None or prev.get("scenario_type") != new_type:
-            validate_scenario_type(new_type)
+def validate_scenario_types_for_write(new_scenarios: object, old_scenarios: object) -> None:
+    """Validate every resolved scenario; unchanged invalid values are refused."""
+    del old_scenarios
+    for scenario in new_scenarios or []:
+        if not isinstance(scenario, dict):
+            raise ValueError("test_scenario_object_required")
+        validate_scenario_type(scenario.get("scenario_type"))
+        validate_verification_method(scenario.get("verification_method"))
 
 
 def resolve_scenario_types_for_whole_list_write(
@@ -189,14 +169,11 @@ def resolve_scenario_types_for_whole_list_write(
     ``model_dump(exclude_unset=True)``.  Before replacing the persisted JSON
     list we therefore resolve omission by identity:
 
-    * existing item -> preserve its exact stored value, including an unknown
-      historical value;
+    * existing item -> preserve its current stored value, then validate it;
     * new item -> use the canonical ``integration`` default;
     * explicit item -> preserve it for fail-closed validation.
 
-    The input objects are copied and never mutated. Non-dict legacy values are
-    returned unchanged so the surrounding write validation can retain its
-    existing compatibility behavior.
+    The input objects are copied and never mutated. Malformed items are refused.
     """
 
     old_by_id: dict[Any, dict[str, Any]] = {
@@ -205,8 +182,7 @@ def resolve_scenario_types_for_whole_list_write(
     resolved: list[object] = []
     for item in new_scenarios or []:
         if not isinstance(item, dict):
-            resolved.append(item)
-            continue
+            raise ValueError("test_scenario_object_required")
         candidate = dict(item)
         previous = old_by_id.get(candidate.get("id"))
         if "verification_method" not in candidate and previous is not None and "verification_method" in previous:

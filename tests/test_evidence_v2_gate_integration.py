@@ -121,12 +121,14 @@ async def _seed(db_factory, *, scenario_status: str = "ready", evidence=None):
                 title="Evidence V2",
                 status=SpecStatus.IN_PROGRESS,
                 created_by=ACTOR,
+                architecture_adoption={"contract_version": "architecture-adoption/v1", "board_id": board_id, "spec_id": spec_id, "adopted_in_edition": 1, "actor_id": ACTOR, "inherited_resource_ids": []},
                 functional_requirements=["FR1"],
                 acceptance_criteria=[{"id": "ac1", "text": "runtime is real"}],
                 test_scenarios=[
                     {
                         "id": scenario_id,
                         "title": "runtime evidence",
+                        "scenario_type": "integration",
                         "status": scenario_status,
                         "linked_criteria": ["ac1"],
                         **({"evidence": evidence} if evidence is not None else {}),

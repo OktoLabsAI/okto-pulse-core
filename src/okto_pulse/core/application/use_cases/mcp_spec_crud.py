@@ -34,9 +34,7 @@ from okto_pulse.core.application.use_cases.mutation_permissions import (
 )
 from okto_pulse.core.domain.test_scenarios import ScenarioType, VerificationMethod, validate_verification_method
 from okto_pulse.core.repositories.interfaces.unit_of_work import PulseUnitOfWork
-from okto_pulse.core.services.application_schemas import (
-    PersistedTestScenarioSpecUpdate,
-)
+from okto_pulse.core.services.application_schemas import SpecUpdate
 
 
 async def _require_actor_board_spec(
@@ -2002,7 +2000,7 @@ class McpAddTestScenarioUseCase:
         await service.update_spec(
             command.spec_id,
             actor.actor_id,
-            PersistedTestScenarioSpecUpdate.from_iterable(scenarios),
+            SpecUpdate(test_scenarios=scenarios),
         )
         await commit(uow)
         return McpAddTestScenarioResult(
@@ -2041,6 +2039,9 @@ class McpListTestScenariosUseCase:
         spec = await _require_actor_board_spec(
             uow.services.specs, command.spec_id, actor
         )
+        from okto_pulse.core.services.test_scenario_lifecycle import validate_scenario_types_for_write
+
+        validate_scenario_types_for_write(spec.test_scenarios, None)
         return McpListTestScenariosResult(
             spec.test_scenarios or [], spec.acceptance_criteria or []
         )

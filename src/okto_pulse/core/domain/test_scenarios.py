@@ -1,10 +1,7 @@
 """Canonical test-scenario type vocabulary.
 
-The write-facing API and MCP schemas import :data:`ScenarioType`, while
-read-facing projections intentionally keep accepting arbitrary strings so
-historical values remain inspectable.  Keeping both the static type and the
-runtime tuple here prevents the transport schemas and service validation from
-drifting.
+API, MCP and stored projections share :data:`ScenarioType`. The runtime
+tuple and static type keep transport and service validation aligned.
 """
 
 from __future__ import annotations

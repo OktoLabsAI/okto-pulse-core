@@ -1,14 +1,4 @@
-"""Historical-invalid scenario_type reporting (spec ac16b3c9, IMP card bf52c32f).
-
-okto_pulse_list_test_scenarios must surface persisted scenario_types that are
-OUTSIDE the supported enum EXPLICITLY (FR5/AC5) — a stale value like
-``regression``/``exploratory`` is reported in ``summary.unsupported_types`` instead
-of being silently folded into a supported bucket or dropped. Supported counts
-stay in ``summary.by_type``. Reads stay tolerant (the list never rejects).
-
-Reproduce:
-  .venv/Scripts/python -m pytest -p no:logging -q tests/test_scenario_type_reporting.py
-"""
+"""Current scenario listing refuses unsupported stored taxonomy."""
 
 from __future__ import annotations
 
@@ -21,6 +11,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from okto_pulse.core.mcp import server as mcp_server
+from okto_pulse.core.services.test_scenario_lifecycle import InvalidScenarioTypeError
 from sqlalchemy_test_models import Board, Spec, SpecStatus
 
 pytestmark = pytest.mark.asyncio
@@ -68,18 +59,15 @@ async def _list(db_factory, board_id, spec_id, *, scenario_type=None):
         )
 
 
-async def test_list_summary_reports_unsupported_historical_types(db_factory):
+async def test_list_refuses_unsupported_stored_types(db_factory):
     board_id, spec_id = await _seed(db_factory, [
         {"id": "ts_a", "title": "a", "scenario_type": "unit", "status": "draft"},
         {"id": "ts_b", "title": "b", "scenario_type": "integration", "status": "draft"},
         {"id": "ts_c", "title": "c", "scenario_type": "regression", "status": "draft"},
         {"id": "ts_d", "title": "d", "scenario_type": "exploratory", "status": "draft"},
     ])
-    summary = (await _list(db_factory, board_id, spec_id))["summary"]
-    # supported types counted normally; invalid NOT folded into a supported bucket.
-    assert summary["by_type"] == {"unit": 1, "integration": 1}
-    # historical/invalid persisted types surfaced explicitly (sorted keys).
-    assert summary["unsupported_types"] == {"exploratory": 1, "regression": 1}
+    with pytest.raises(InvalidScenarioTypeError):
+        await _list(db_factory, board_id, spec_id)
 
 
 async def test_list_summary_no_unsupported_when_all_valid(db_factory):
@@ -88,34 +76,30 @@ async def test_list_summary_no_unsupported_when_all_valid(db_factory):
         {"id": "ts_b", "title": "b", "scenario_type": "manual", "status": "draft"},
     ])
     summary = (await _list(db_factory, board_id, spec_id))["summary"]
-    assert summary["unsupported_types"] == {}
+    assert "unsupported_types" not in summary
     assert summary["by_type"] == {"e2e": 1, "manual": 1}
 
 
-async def test_list_omitted_filter_returns_raw_historical_type(db_factory):
-    # read-tolerant: a spec full of invalid types still lists without error.
+async def test_list_omitted_filter_refuses_invalid_type(db_factory):
+    # An omitted filter cannot hide invalid stored values.
     board_id, spec_id = await _seed(db_factory, [
         {"id": "ts_a", "title": "a", "scenario_type": "regression", "status": "draft"},
     ])
-    listed = await _list(db_factory, board_id, spec_id)
-    assert "error" not in listed
-    assert listed["total_scenarios"] == 1
-    assert listed["filtered_count"] == 1
-    assert listed["scenarios"][0]["scenario_type"] == "regression"
-    assert listed["summary"]["unsupported_types"] == {"regression": 1}
+    with pytest.raises(InvalidScenarioTypeError):
+        await _list(db_factory, board_id, spec_id)
 
 
-async def test_list_exact_raw_filter_can_enumerate_legacy_type(db_factory):
+async def test_list_exact_filter_enumerates_current_type(db_factory):
     board_id, spec_id = await _seed(db_factory, [
         {"id": "ts_a", "title": "a", "scenario_type": "negative", "status": "draft"},
-        {"id": "ts_b", "title": "b", "scenario_type": "regression", "status": "draft"},
+        {"id": "ts_b", "title": "b", "scenario_type": "manual", "status": "draft"},
     ])
     listed = await _list(
         db_factory,
         board_id,
         spec_id,
-        scenario_type="regression",
+        scenario_type="manual",
     )
     assert listed["filtered_count"] == 1
     assert [item["id"] for item in listed["scenarios"]] == ["ts_b"]
-    assert listed["scenarios"][0]["scenario_type"] == "regression"
+    assert listed["scenarios"][0]["scenario_type"] == "manual"

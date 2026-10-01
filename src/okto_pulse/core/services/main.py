@@ -177,9 +177,7 @@ from okto_pulse.core.models.schemas import (
     TopicUpdate,
     project_task_validation_public,
 )
-from okto_pulse.core.services.application_schemas import (
-    PersistedTestScenarioSpecUpdate,
-)
+from okto_pulse.core.services.application_schemas import ScenarioContentUpdate
 from okto_pulse.core.services.ambiguity_assessment import (
     AmbiguityGateError as AmbiguityGateError,
     AmbiguityGateService,
@@ -9934,7 +9932,7 @@ class SpecService:
         updated = await self.update_spec(
             spec_id,
             user_id,
-            PersistedTestScenarioSpecUpdate.from_iterable(scenarios),
+            ScenarioContentUpdate(test_scenarios=scenarios),
         )
         new_target = next(
             (
@@ -10027,7 +10025,7 @@ class SpecService:
         updated_spec = await self.update_spec(
             spec_id,
             user_id,
-            PersistedTestScenarioSpecUpdate.from_iterable(remaining),
+            ScenarioContentUpdate(test_scenarios=remaining),
         )
         if updated_spec is None:  # defensive: the Spec was resolved above
             raise ValueError("scenario_not_found: spec not found")
@@ -10467,7 +10465,7 @@ class SpecService:
         self,
         spec_id: str,
         user_id: str,
-        data: SpecUpdate | PersistedTestScenarioSpecUpdate,
+        data: SpecUpdate | ScenarioContentUpdate,
     ) -> Spec | None:
         """Update a spec. Bumps version on content changes. Records field-level diffs.
 
@@ -10477,7 +10475,7 @@ class SpecService:
         lock remains a defense-in-depth compatibility check and may still raise
         ``SpecLockedError``. All content tools (business rules, contracts,
         scenarios, mockups, knowledge) flow through this method via the public
-        ``SpecUpdate`` or the narrow internal persisted-scenario carrier, so the
+        ``SpecUpdate`` or the typed internal content edit, so the
         shared checks cover the whole surface in one place.
 
         Also enforces referential integrity for `linked_*` fields: any

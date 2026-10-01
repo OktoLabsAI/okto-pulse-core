@@ -63,23 +63,19 @@ def test_unsupported_values_are_not_ignored_by_model_or_direct_writer(method):
         validate_scenario_types_for_write([scenario(verification_method=method)], [])
 
 
-def test_legacy_omission_is_not_defaulted_or_rewritten():
+def test_omission_preserves_current_method_and_invalid_values_are_refused():
     assert "verification_method" not in Scenario.model_validate(scenario()).model_dump()
+    current = scenario(verification_method="inspection")
+    resolved = resolve_scenario_types_for_whole_list_write([scenario()], [current])
+    assert resolved[0]["verification_method"] == "inspection"
+    validate_scenario_types_for_write(resolved, [current])
     unknown = scenario(verification_method="old-observation")
-    assert Scenario.model_validate(unknown).verification_method == "old-observation"
-    assert (
-        resolve_scenario_types_for_whole_list_write([scenario()], [unknown])[0][
-            "verification_method"
-        ]
-        == "old-observation"
-    )
-    validate_scenario_types_for_write([unknown], [unknown])
-    assert (
-        resolve_scenario_types_for_whole_list_write([scenario()], [])[0].get(
-            "verification_method"
-        )
-        is None
-    )
+    with pytest.raises(ValidationError):
+        Scenario.model_validate(unknown)
+    with pytest.raises(ValueError, match="verification_method_invalid"):
+        validate_scenario_types_for_write([unknown], [unknown])
+
+
 
 
 def test_method_changes_receipt_binding_but_absence_and_editorial_changes_do_not():

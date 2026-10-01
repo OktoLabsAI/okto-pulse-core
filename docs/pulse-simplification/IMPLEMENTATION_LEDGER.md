@@ -2,6 +2,43 @@
 
 ## Estado para retomada
 
+### 2026-10-01 — Evidência publicada; cenário com contrato único em WIP
+
+**Qualificado para publicação:** agregado scenario-native3/4/5: 107 casos
+distintos Core aprovados; scenario-native-community1: 43 aprovados; frontend1/2:
+39 casos distintos aprovados. Falhas intermediárias eram seeds sem contratos
+atuais e expectativas de fixtures, corrigidas sem afrouxar produto. A primeira
+retirada do carrier expôs sua responsabilidade de invalidação semântica,
+preservada em comando interno tipado conforme descrito abaixo. O fake de
+Knowledge dos testes Core usa escopo atual vazio e só admite relink_reset sem
+conteúdo; não certifica persistência de Knowledge (suítes próprias a cobrem).
+Catálogo MCP regenerado pelo gerador oficial, sem alteração no conteúdo gerado;
+drift passou. closure-scenario-native3 exit 0, sem findings, oito budgets ZERO;
+READMEs validados oficialmente e prova .readmes.json registrada. Ruff/diff passaram.
+
+Investigação adicional: o carrier retirado também separava a invalidação nativa
+de evidência das mudanças públicas de status. Preservada essa responsabilidade
+em ScenarioContentUpdate, usando TestScenarioWrite fechado, sem JSON arbitrário
+nem tolerância a tipos antigos. O caminho público continua sem alterar status.
+MCP listagem/filtro também fechado; removido agrupamento de tipos antigos.
+Frontend recusa payload inválido em vez de omitir o tipo antigo; 39 casos distintos
+aprovados e SPA reconstruída (79 arquivos, hash fced940b9dbcb1a5e19138f85e16f896e8008d9e191a54c4b75b1a9ff48a56eb).
+dist-scenario-native3 instalado, prova byte-a-byte registrada. Primeira regressão
+expôs fixtures antigas de Knowledge e adoção arquitetural; atualizadas sem relaxar
+o produto. scenario-native3: 96 aprovados/6 falhas de fixture; reexecução em curso.
+
+
+Core **f4eb71d3** / Community **6d057dda** publicados, pushes confirmados.
+Iniciado incremento de cenários de C1: aplicado unify_scenario_contract.py
+e adapt_scenario_contract_tests.py uma vez; não reaplicar. Leitura e escrita
+usam a mesma taxonomia fechada. Removido PersistedTestScenarioSpecUpdate,
+carrier que permitia preservar tipo antigo inválido; operações internas usam
+SpecUpdate. Tipos e métodos preservados por omissão passam pela validação;
+continua legítima a omissão de campos para preservar valores atuais em patches.
+Testes de aceitação antiga substituídos por recusa sem mutação. Ruff passou;
+build/instalação/prova e testes deste incremento ainda pendentes.
+Não alterados nesta etapa os demais gates de evidência ou permissões.
+
 ### 2026-10-01 — Evidência: retirada coordenada de aliases em validação
 
 **Qualificação concluída:** dist-evidence-alias3 instalado e
