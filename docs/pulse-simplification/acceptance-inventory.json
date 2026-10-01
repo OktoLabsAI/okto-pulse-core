@@ -3236,8 +3236,12 @@
       "line": 742,
       "id": "ADV-18",
       "normative_text": "| ADV-18 | Mesmo agente autor/executor tenta revisão independente em enforce. | Recusa preservada; classificação/captura não simulam outro avaliador. |",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "verified_by_reviewed_execution",
+      "test_text_references": [],
+      "reviewed_execution": {
+        "artifact": "acceptance-independent-review-legacy-read.json",
+        "criterion_key": "ARQVER:ADV-18"
+      }
     },
     {
       "key": "ARQVER:ADV-19",
@@ -3276,8 +3280,12 @@
       "line": 746,
       "id": "ADV-22",
       "normative_text": "| ADV-22 | Metadado verification ausente em documento histórico Done. | Leitura diz legado/não avaliado pelo novo contrato, sem reabrir nem inventar perfil aprovado. |",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "verified_by_reviewed_execution",
+      "test_text_references": [],
+      "reviewed_execution": {
+        "artifact": "acceptance-independent-review-legacy-read.json",
+        "criterion_key": "ARQVER:ADV-22"
+      }
     },
     {
       "key": "ARQVER:ADV-23",

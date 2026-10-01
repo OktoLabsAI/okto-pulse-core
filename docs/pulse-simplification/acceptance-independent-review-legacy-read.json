@@ -1,0 +1,132 @@
+{
+  "format": "pulse-v1.3-reviewed-execution/v1",
+  "criteria": {
+    "ARQVER:ADV-18": {
+      "status": "verified",
+      "covered": "Actual authenticated MCP executor records implementation and its conclusion, retaining actor identity. With card.validation.submit explicitly granted and owner-review fallback absent, enforce still returns reviewer_separation_required/action_required for both approve and reject. Fresh SQL snapshots are unchanged. A distinct persisted reviewer can then approve or reject, preserving executor evidence and attribution."
+    },
+    "ARQVER:ADV-22": {
+      "status": "verified",
+      "covered": "REST reads a persisted historical Done Spec without verification metadata or adopted contract. It reports Done, null execution contract, unresolved/absent qualification, no paths and no evaluated delivery/semantic approval. Defaults remain proposals requiring author acceptance. Structured state, history/outbox counts, status and original FR JSON are unchanged. Actual update writers refuse adoption outside Draft. Frontend displays Legacy execution contract for Done and other locked states, offers no adoption action and makes no update calls."
+    }
+  },
+  "executions": [
+    {
+      "terminal_session": 7838,
+      "exit_code": 0,
+      "passed": 4,
+      "cases": [
+        "tests.test_executor_reviewer_handoff::test_executor_and_reviewer_handoff_preserves_report_and_grant_boundaries[grant-denied-approve]",
+        "tests.test_executor_reviewer_handoff::test_executor_and_reviewer_handoff_preserves_report_and_grant_boundaries[grant-denied-reject]",
+        "tests.test_executor_reviewer_handoff::test_executor_and_reviewer_handoff_preserves_report_and_grant_boundaries[separation-enforced-approve]",
+        "tests.test_executor_reviewer_handoff::test_executor_and_reviewer_handoff_preserves_report_and_grant_boundaries[separation-enforced-reject]"
+      ],
+      "artifacts": [
+        {
+          "file": "learning-reconciliation-review-handoff-enforce2-community.xml",
+          "sha256": "6cc9aa5f093ed6512dc8a9e0efc0442d26ebfa18247bca7d6fb95aaa10d0ccaa"
+        },
+        {
+          "file": "learning-reconciliation-review-handoff-enforce2-community.log",
+          "sha256": "08aa162ad09182d4276bb743abfd888fce8c353c5e5fb708808ae35fbd22ad46"
+        }
+      ]
+    },
+    {
+      "terminal_session": 66751,
+      "exit_code": 0,
+      "passed": 21,
+      "cases": [
+        "tests.test_requirement_verification_read::test_historical_done_without_metadata_is_read_without_adoption_or_reopening",
+        "tests.test_requirement_verification_read::test_all_body_read_permissions_are_required_before_query[spec.entity.read]",
+        "tests.test_requirement_verification_read::test_all_body_read_permissions_are_required_before_query[spec.integration_requirements.read]",
+        "tests.test_requirement_verification_read::test_all_body_read_permissions_are_required_before_query[spec.observability_requirements.read]",
+        "tests.test_requirement_verification_read::test_full_inventory_includes_supplemental_obligations_and_unlinked_cards",
+        "tests.test_requirement_verification_read::test_cross_board_scope_cannot_return_another_specs_body",
+        "tests.test_requirement_verification_read::test_native_transport_parity_global_pending_and_no_read_writes[False]",
+        "tests.test_requirement_verification_read::test_native_transport_parity_global_pending_and_no_read_writes[True]",
+        "tests.test_requirement_verification_read::test_planning_permissions_are_checked_before_loading_scenarios_or_cards[spec.tests.read]",
+        "tests.test_requirement_verification_read::test_planning_permissions_are_checked_before_loading_scenarios_or_cards[card.entity.read]",
+        "tests.test_requirement_verification_read::test_public_denial_does_not_expose_profiles_or_default_proposals",
+        "tests.test_execution_contract_adoption::test_adoption_persists_provenance_and_cas_through_update[rest]",
+        "tests.test_execution_contract_adoption::test_adoption_persists_provenance_and_cas_through_update[mcp]",
+        "tests.test_execution_contract_adoption::test_adoption_cannot_mutate_non_draft_history[approved]",
+        "tests.test_execution_contract_adoption::test_adoption_cannot_mutate_non_draft_history[validated]",
+        "tests.test_execution_contract_adoption::test_adoption_cannot_mutate_non_draft_history[in_progress]",
+        "tests.test_execution_contract_adoption::test_adoption_cannot_mutate_non_draft_history[done]",
+        "tests.test_execution_contract_adoption::test_mcp_adoption_cannot_use_assignment_permission_as_content_authority",
+        "tests.test_execution_contract_adoption::test_concurrent_adoption_has_one_revision_and_one_history_entry",
+        "tests.test_execution_contract_adoption::test_active_content_lock_survives_explicit_adoption_request",
+        "tests.test_execution_contract_adoption::test_rejected_companion_content_rolls_back_adoption"
+      ],
+      "artifacts": [
+        {
+          "file": "learning-reconciliation-legacy-verification1-community.xml",
+          "sha256": "7843271bea5f353df6e4a9e4a938e23762c1994cdac3ad414ffbd56033d2b0d6"
+        },
+        {
+          "file": "learning-reconciliation-legacy-verification1-community.log",
+          "sha256": "82aae608bb3c0bcb517504f8f71b7431f9149bea9f4610b426cca0dc83cf694b"
+        }
+      ]
+    },
+    {
+      "terminal_session": 4747,
+      "exit_code": 0,
+      "passed": 34,
+      "cases": [
+        "src/components/specs/__tests__/RequirementVerificationPanel.test.tsx::execution contract adoption > adopts explicitly with the displayed version and edition, once",
+        "src/components/specs/__tests__/RequirementVerificationPanel.test.tsx::execution contract adoption > preserves approved contracts without offering a mutation",
+        "src/components/specs/__tests__/RequirementVerificationPanel.test.tsx::execution contract adoption > preserves validated contracts without offering a mutation",
+        "src/components/specs/__tests__/RequirementVerificationPanel.test.tsx::execution contract adoption > preserves in_progress contracts without offering a mutation",
+        "src/components/specs/__tests__/RequirementVerificationPanel.test.tsx::execution contract adoption > preserves done contracts without offering a mutation",
+        "src/components/specs/__tests__/RequirementVerificationPanel.test.tsx::execution contract adoption > requires live content edit authority: {\"canAdoptContract\":false}",
+        "src/components/specs/__tests__/RequirementVerificationPanel.test.tsx::execution contract adoption > requires live content edit authority: {\"archived\":true}",
+        "src/components/specs/__tests__/RequirementVerificationPanel.test.tsx::execution contract adoption > reports revision rejection without claiming adoption",
+        "src/components/specs/__tests__/RequirementVerificationPanel.test.tsx::execution contract adoption > keeps committed adoption when refresh fails and retries only the read",
+        "src/components/specs/__tests__/RequirementVerificationPanel.test.tsx::requirement qualification > loads only when requested and materializes a default only after deliberate versioned save",
+        "src/components/specs/__tests__/RequirementVerificationPanel.test.tsx::requirement qualification > does not fetch without all read permissions",
+        "src/components/specs/__tests__/RequirementVerificationPanel.test.tsx::requirement qualification > keeps read access without authoring authority",
+        "src/components/specs/__tests__/RequirementVerificationPanel.test.tsx::requirement qualification > discards the editor when authoring permission is lost",
+        "src/components/specs/__tests__/RequirementVerificationPanel.test.tsx::requirement qualification > rejects a response from another scope or revision: {\"spec_version\":9}",
+        "src/components/specs/__tests__/RequirementVerificationPanel.test.tsx::requirement qualification > rejects a response from another scope or revision: {\"spec_edition\":3}",
+        "src/components/specs/__tests__/RequirementVerificationPanel.test.tsx::requirement qualification > rejects a response from another scope or revision: {\"board_id\":\"other\"}",
+        "src/components/specs/__tests__/RequirementVerificationPanel.test.tsx::requirement qualification > rejects a response from another scope or revision: {\"spec_id\":\"other\"}",
+        "src/components/specs/__tests__/RequirementVerificationPanel.test.tsx::requirement qualification > preserves global pending counts while paging and marks incomplete populations",
+        "src/components/specs/__tests__/RequirementVerificationPanel.test.tsx::requirement qualification > sends the selected terminal criterion, source digest and covered aspect only",
+        "src/components/specs/__tests__/RequirementVerificationPanel.test.tsx::requirement qualification > rejects a source snapshot that changed before selection",
+        "src/components/specs/__tests__/RequirementVerificationPanel.test.tsx::requirement qualification > refuses incomplete drafts locally without manufacturing criterion selections",
+        "src/components/specs/__tests__/RequirementVerificationPanel.test.tsx::requirement qualification > keeps a refused edit and never calls refresh",
+        "src/components/specs/__tests__/RequirementVerificationPanel.test.tsx::requirement qualification > offers only reload after a confirmed save whose refresh failed",
+        "src/components/specs/__tests__/RequirementVerificationPanel.test.tsx::requirement qualification > guards double click and ignores a confirmed response after unmount",
+        "src/components/specs/__tests__/RequirementVerificationPanel.test.tsx::requirement qualification > shows the global planning verdict without inferring proof (true)",
+        "src/components/specs/__tests__/RequirementVerificationPanel.test.tsx::requirement qualification > shows the global planning verdict without inferring proof (false)",
+        "src/components/specs/__tests__/RequirementVerificationPanel.test.tsx::requirement qualification > keeps authorized qualification visible when planning reads are restricted",
+        "src/components/specs/__tests__/RequirementVerificationPanel.test.tsx::requirement qualification > shows unsupported methods, missing Test Cards and bounded scenario details",
+        "src/components/specs/__tests__/RequirementVerificationPanel.test.tsx::requirement qualification > discards loaded planning on loss of scenario or Card authority",
+        "src/components/specs/__tests__/RequirementVerificationPanel.test.tsx::requirement qualification > shows inherited responsibility only for its declared Card and preserves provenance",
+        "src/components/specs/__tests__/RequirementVerificationPanel.test.tsx::requirement qualification > reports ambiguous responsibility and summary truncation without a complete verdict",
+        "src/components/specs/__tests__/RequirementVerificationPanel.test.tsx::requirement qualification > does not expose implementation facts without planning authority",
+        "src/components/specs/__tests__/RequirementVerificationPanel.test.tsx::requirement qualification > shows full inventory pending even when qualified requirements are allocated",
+        "src/components/specs/__tests__/RequirementVerificationPanel.test.tsx::requirement qualification > does not report zero obligations for an unavailable inventory and hides it after permission loss"
+      ],
+      "artifacts": [
+        {
+          "file": "legacy-verification1-frontend.xml",
+          "sha256": "cf64c788a61c27621d02f99eb085d329b01261ab2f492e61e8022c8c17bed2b4"
+        },
+        {
+          "file": "legacy-verification1-frontend.log",
+          "sha256": "7841a9624a4fc5d9491d3111665c07988d4c43853b8a086e672dfb1fd6f61375"
+        }
+      ]
+    }
+  ],
+  "limits": [
+    "Review test uses real Agent/AgentBoard/preset grants, MCP authentication adapter, host, UOW, SQL and report/review writers. Credential extraction is supplied in process. Accepted external implementation receipt and lifecycle/context setup are fixtures; cognitive skip is explicit and impact policy off, as documented in the original BASE T04 evidence.",
+    "Legacy REST identity is injected as authorized through the existing disposable fixture. The historical Done state/content are seeded, not a predecessor database upgrade. The assertions qualify read preservation; no claim of rollout/rollback migration is made.",
+    "Frontend uses API mocks while exercising the actual component. Default proposals are not authored profiles or approvals. The backend represents legacy through null execution_contract plus unresolved qualification; the UI renders the legacy label.",
+    "Probe review-handoff-enforce1 session16823 exit1 expected MCP is_error. The existing contract instead returns action_required for reviewer separation. Corrected assertions verify the explicit error_code, remediation and unchanged SQL; no product behavior changed.",
+    "Productive source, installed payload and wheels remain byte-identical to provenance-three-criteria1.json. No product/UI implementation, authority, history semantics, registry or generated catalog changed. Last relevant F16 session31859 exit0 has eight ZERO budgets."
+  ]
+}

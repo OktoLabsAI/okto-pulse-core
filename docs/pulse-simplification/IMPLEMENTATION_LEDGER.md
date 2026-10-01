@@ -2,6 +2,28 @@
 
 ## Estado para retomada
 
+ARQVER ADV-18/22 verificados. Executor com grant explícito de revisão é
+recusado pela policy enforce após registrar prova/conclusão com sua identidade.
+A recusa approve/reject não escreve; outro revisor persistido conclui o fluxo.
+Spec histórica Done sem metadados é lida por REST como contrato não adotado,
+qualificação ausente/não resolvida, sem fabricar aprovação, perfil ou reabrir.
+SQL/histórico/outbox e FR original preservados; UI mostra Legacy e não escreve.
+
+Execuções: Community7838=0,4passed; Community66751=0,21passed;
+frontend4747=0,34passed. Ruff F/E9 e diff verdes. Evidências/limites em
+acceptance-independent-review-legacy-read.json. Probe16823 corrigiu somente o
+assert de transporte: reviewer separation usa action_required, não is_error.
+Fixture histórica Done não constitui prova de upgrade; frontend usa API mock.
+Autenticação MCP/identidades/grants e writers reais; extração da credencial
+injetada, recibo externo de implementação e contexto inicial de fixture.
+
+Nenhum código produtivo/autoridade alterado. Fonte/site/wheels continuam iguais
+ao provenance-three-criteria1.json. F16 anterior31859=0,oito budgets ZERO.
+Inventário129 verificados/33 parciais/84 não auditados. Continuar pendências
+originais, benchmark e distribuição final. KG-10/T23 aguardam decisões já
+solicitadas. Par publicado anterior: Core3e0031e8/Community2fee6e2c.
+Nenhum processo pendente nem dado real alterado.
+
 ARQVER ADV-10 verificado: diamante persistido mantém duas proveniências
 para o mesmo critério, seis obrigações distintas e apenas um run/registro de
 autorização para os três BRs. Leitura em nova sessão e gate real de entrega
