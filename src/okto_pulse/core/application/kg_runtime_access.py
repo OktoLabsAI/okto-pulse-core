@@ -47,6 +47,15 @@ def resolve_bug_clusters_graph_read():
     return reader
 
 
+def resolve_spec_coverage_graph_read():
+    """Resolve the optional typed coverage observer through its public port."""
+    from okto_pulse.core.ports.spec_coverage_query import SpecCoverageGraphReadPort
+    reader = _registry().graph_store
+    if not isinstance(reader, SpecCoverageGraphReadPort):
+        raise GraphCapabilityUnavailable('Spec coverage graph reads are not configured.')
+    return reader
+
+
 def resolve_graph_transaction() -> Any:
     return _registry().graph_transaction
 
@@ -91,6 +100,7 @@ __all__ = [
     "resolve_cypher_executor",
     "resolve_graph_query_execution",
     "resolve_bug_clusters_graph_read",
+    "resolve_spec_coverage_graph_read",
     "resolve_graph_lifecycle",
     "resolve_graph_schema_manager",
     "resolve_graph_transaction",

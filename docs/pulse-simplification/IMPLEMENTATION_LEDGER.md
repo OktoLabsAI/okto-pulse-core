@@ -2,6 +2,38 @@
 
 ## Estado para retomada
 
+### 2026-10-01 — observação gráfica de cobertura validada
+
+Base publicada Core324ba6cc / Communityeedd2ff5. A composição agora prepara as
+identidades/relações pelo DeterministicWorker existente e lê somente endpoints
+autorizados, por porta pública e transação Grafx sem writes. Comparação distingue
+observado, ausente na projeção e graph_only; não converte coincidência em checkpoint
+integral nem prova de Delivery. Revalida revisão relacional antes/depois do grafo;
+cursor prende geração e observações. Grant gráfico é independente da prova.
+Core graph1:65062=0,132passed. Community graph3:56035=0,12passed, incluindo
+SQL+Grafx reais, fonte ausente da projeção no inventário, ausência de crédito de
+teste por aresta, recusa de identidade ambígua, endpoints externos excluídos e
+nenhum write gráfico. Total144 distintos; não somar campanhas sobrepostas.
+Community graph1:3582=1,7passed/1failed porque a fixture esperava ValueError,
+enquanto o adapter mapeia para GraphError. Corrigida expectativa com causa exata;
+graph2:27260=0,11passed. Reprodução adicional58048=1 demonstrou aresta residual
+oculta quando o último vínculo esperado desaparecia. Consulta agora percorre os
+layouts estruturais fechados entre endpoints autorizados; regressão passa graph3.
+
+Par graph1 instalado11284=0,prova31943=0 ANTES dos testes. F16 graph1:46972=1
+somente por matrizesREADME; findings vazios, oito budgetsZERO. Renderer oficial
+atualizou READMEs. Par graph3 instalado45656=0;prova41423=0 confirma871py/934payload
+Core+380py/465payload Community byte-idênticos. F16 final18315=0,ok=true,sem
+findings/drift,oito budgetsZERO. Core produtivo não mudou desde graph1; Community
+foi retestado após a correção. Ruff F/E9 e diff verdes. Recibo
+acceptance-spec-coverage-graph.json preserva hashes, falhas e provas.
+
+PRÓXIMO: REST/MCP na fachada existente e UI contextual Spec→Cobertura, com testes
+frontend/build oficial. Sem essas superfícies, não promover KG-58 nem declarar
+view concluída. Inventário149/29/68 inalterado. Nenhum processo pendente ou dado
+real alterado. As viewsimpact/lineage, benchmark e distribuição final permanecem
+no escopo original; não reabrir fundações por requisitos novos.
+
 ### 2026-10-01 — composição relacional de cobertura validada (KG§6.4/§9)
 
 Base publicada Core b58e9380 / Community c180ff03. Composição interna reutiliza

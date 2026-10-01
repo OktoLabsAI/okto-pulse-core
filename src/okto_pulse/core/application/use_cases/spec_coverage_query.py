@@ -31,9 +31,11 @@ class SpecCoverageUseCase:
         permissions = await resolve_actor_permissions(actor, uow, command.board_id)
         read_delivery = decide_authorization(actor, PermissionRequirement('code_traceability.evidence.read'),
             permissions=permissions).allowed
+        read_graph = decide_authorization(actor, PermissionRequirement('kg.query.related_context'),
+            permissions=permissions).allowed
         query = SpecCoverageQuery(command.board_id, command.spec_id,
             f'{actor.realm_id or LOCAL_REALM_ID}:{actor.actor_kind}:{actor.source}:{actor.actor_id}',
-            command.limit, command.cursor, read_delivery)
+            command.limit, command.cursor, read_delivery, read_graph)
         policy = KGQueryPolicy.from_settings(getattr(board, 'settings', None))
         return await uow.services.analytics.spec_coverage(query,
             timeout_ms=policy.effective_timeout(command.timeout_ms))

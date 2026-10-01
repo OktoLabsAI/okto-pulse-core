@@ -16,6 +16,7 @@ from okto_pulse.core.ports.spec_coverage_query import (
     SpecCoverageQuery, SpecCoverageSnapshot,
 )
 from okto_pulse.core.services.analytics_service import spec_coverage_summary
+from okto_pulse.core.services.spec_coverage_graph import project_spec_coverage_graph
 
 
 def _encoded(value):
@@ -93,6 +94,7 @@ def project_spec_coverage(query: SpecCoverageQuery, snapshot: SpecCoverageSnapsh
         })
         for row in evaluation.rows:
             rows.append({
+                'kind': 'delivery',
                 'obligation_ref': row.obligation.binding.obligation_ref,
                 'semantic_sha256': row.obligation.binding.semantic_sha256,
                 'title': row.obligation.title[:240],
@@ -114,16 +116,18 @@ def project_spec_coverage(query: SpecCoverageQuery, snapshot: SpecCoverageSnapsh
         'verification_proven': sum(row['verification'] == 'proven' for row in rows) if proof_complete else None,
         'observed_obligations': len(rows) if snapshot.delivery is not None else None,
     }
+    graph_summary, graph_rows, graph_state, generation = project_spec_coverage_graph(query, snapshot)
+    rows += graph_rows
     response = {
         'view': 'coverage', 'subject_ref': f'spec:{query.spec_id}', 'authority': 'informational',
-        'data_source': 'relational', 'edition': scope.edition,
-        'projection_freshness': {'state': 'unknown', 'graph_generation': None,
+        'data_source': 'composed' if snapshot.graph is not None and snapshot.graph.state == 'observed' else 'relational', 'edition': scope.edition,
+        'projection_freshness': {'state': graph_state, 'graph_generation': generation,
             'source_checkpoint': snapshot.source_revision, 'projection_checkpoint': None, 'checked_at': checked},
-        'completeness': {'complete_for_scope': snapshot.source_complete and proof_complete,
-            'truncated': not snapshot.source_complete,
-            'limitations': ['graph_observation_not_supplied'] + ([] if snapshot.source_complete else ['source_inventory_incomplete'])},
+        'completeness': {'complete_for_scope': False,
+            'truncated': not snapshot.source_complete or bool(snapshot.graph and snapshot.graph.truncated),
+            'limitations': ['full_projection_checkpoint_unavailable'] + ([] if snapshot.source_complete else ['source_inventory_incomplete'])},
         'structure': {'authority': 'spec_coverage_summary', 'interpretation': 'planning_links_not_delivery_proof',
-            'complete_for_scope': snapshot.source_complete, 'summary': structure},
+            'complete_for_scope': snapshot.source_complete, 'summary': structure, 'graph': graph_summary},
         'delivery': {'state': snapshot.delivery_state, 'authority': 'evaluate_delivery_coverage',
             'complete_for_scope': proof_complete, 'counts': counts, 'blockers': blockers,
             'rejected_record_refs': rejected,

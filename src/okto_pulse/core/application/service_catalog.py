@@ -20,10 +20,23 @@ from okto_pulse.core.ports.traceability import (
 
 class CoreAnalyticsOperations:
     async def spec_coverage(self, query, *, timeout_ms: int):
+        from dataclasses import replace
+        import time
+        from okto_pulse.core.kg.interfaces.graph_errors import GraphQueryTimeout
         from okto_pulse.core.ports.relational_application import require_relational_application_adapter
         from okto_pulse.core.services.spec_coverage_query import project_spec_coverage
+        from okto_pulse.core.services.spec_coverage_graph import build_spec_coverage_graph_scope
+        deadline = time.monotonic() + timeout_ms / 1000
         reader = require_relational_application_adapter().spec_coverage_read(self.__relational_context)
-        return project_spec_coverage(query, await reader.read(query, timeout_ms=timeout_ms))
+        snapshot = await reader.read(query, timeout_ms=timeout_ms)
+        if query.read_graph:
+            scope = build_spec_coverage_graph_scope(snapshot)
+            remaining = int((deadline - time.monotonic()) * 1000)
+            if remaining <= 0:
+                raise GraphQueryTimeout('Spec coverage read deadline exceeded.')
+            observed = await reader.read_graph(query, scope, snapshot.source_revision, timeout_ms=remaining)
+            snapshot = replace(snapshot, graph=observed, graph_scope=scope)
+        return project_spec_coverage(query, snapshot)
 
     async def bug_clusters(self, query, *, timeout_ms: int):
         from okto_pulse.core.ports.relational_application import require_relational_application_adapter

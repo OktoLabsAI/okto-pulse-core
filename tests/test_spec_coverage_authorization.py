@@ -36,6 +36,7 @@ async def test_code_proof_is_explicitly_scoped_without_borrowing_other_grants(pr
     await SpecCoverageUseCase().execute(COMMAND, actor=actor, uow=uow)
     query = operation.call_args.args[0]
     assert query.read_delivery is proof
+    assert query.read_graph is (not proof)
     assert query.actor_scope_ref == 'local:agent:mcp:agent'
     assert operation.call_args.kwargs == {'timeout_ms': 700}
 
