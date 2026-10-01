@@ -2,6 +2,59 @@
 
 ## Estado para retomada
 
+### 2026-10-01 — Checkpoints nativos: incremento qualificado
+
+dist-recovery-native1 instalado; provenance-recovery-native1.json comprova
+igualdade byte-a-byte dos dois src, instalação e payloads dos wheels:
+Core 852 Python/915 arquivos; Community 319 Python/405 arquivos.
+recovery-native-core1: 118 aprovados; recovery-native-community1: 25 aprovados.
+recovery-native-drift1: prova adicional aprovada de fontes alteradas na retomada,
+sem reescrever checkpoint/fila ou repetir projeção de policy. Ruff F/E9 passou.
+Closure-recovery-native1-final exit 0, sem findings, oito budgets ZERO;
+READMEs conferidos após renderer oficial. Nenhuma superfície frontend alterada.
+
+Retirada a cadeia queue-only antiga e upgrades de comandos/recibos. Recuperação,
+compensação, leases, fences e replay do formato atual permanecem. O ledger de
+disposições identifica cada teste exclusivamente legado aposentado.
+Pendências já previstas: manifests/rebaseline antigos, formatos de snapshots
+e recibos de evidência, demais itens C1–C3 e qualificação integral C4. Este
+incremento não declara a entrega global concluída. Notas WIP abaixo são histórico.
+
+### 2026-10-01 — Recuperação: iniciado contrato atual de checkpoint/recibo (WIP)
+
+Continuação: removida cadeia queue-only antiga em Core rebuild_processor e
+rebuild_service, Community board_rebuild_ingestion/rebuild_effects e módulo
+legacy_rebuild_reconciliation. Compensação, leases e recuperação atuais mantidos.
+Substituído guard específico por recusa de contratos de recibo desconhecidos ou
+vinculados a outro run. Retirado upgrade de source_rows pré-v4; drift mantém
+resultado bloqueado sem reescrever checkpoint. Enqueue aceita somente ordem
+atual, baseline explícita e estado de admissão tipado; nunca fabrica recibo antigo.
+Restauração de recibo nativo do checkpoint permanece disponível.
+
+Checkpoint persistido exige versão/campos atuais e identidade do run/Board;
+defaults de leitura antigos removidos. Testes mistos preservados, casos exclusivos
+queue-only/upgrade aposentados e registrados; novas provas verificam recusa sem
+escrita de payload ausente/antigo/incompleto e ausência de efeitos no Core.
+Ruff F/E9 e diff --check passaram. dist-recovery-native1 construído; instalação
+em curso, ainda sem nova prova byte-a-byte ou testes comportamentais.
+
+Scripts descartáveis já aplicados (não idempotentes): remove_legacy_rebuild_lane,
+remove_rebuild_checkpoint_upgrade, adapt_native_rebuild_tests. Não repetir.
+Ainda pendentes outros formatos de recuperação/rebaseline e artefatos, testes,
+docs e closure; este WIP não fecha a frente de recuperação.
+
+Realm publicado: **Core5623342d / Communityb0eb1275**, pushes confirmados.
+Iniciada admissão em rebuild_effects: writer grava schema_version explícito
+rebuild-checkpoint/0.4.0 e rebuild-effect-receipt/0.4.0; leitores recusam versão
+ausente/diferente antes de reconstruir objetos. Recibo exige campos exatos e
+bool real, sem defaults antigos. Ainda falta fechar campos do checkpoint e
+retirar a cadeia queue-only e upgrade pré-v4 investigados abaixo.
+
+WIP NÃO reconstruído, instalado nem testado. Última prova instalada é realm-native1
+e não certifica esta alteração. Não há processo pendente. Continuar coordenado
+Core/Community, preservar recuperação nativa e escrever provas de recusa sem
+escrita e retomada do formato atual antes de publicação.
+
 ### 2026-10-01 — Realm sem backfill: qualificado para publicação
 
 Removido conversor de realm; schema novo exige identificação explícita do

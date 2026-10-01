@@ -856,6 +856,11 @@
       "path": "okto_labs_pulse_core/tests/test_card_knowledge_rest.py",
       "disposition": "superseded",
       "reason": "Physical JSON fixtures and retired REST write refusals removed. Native REST list/detail/download verified with real assignments in test_ts_f9c3c8e0_drop_survives_reconcilers_and_source_delete; header safety retained in test_card_knowledge_download_headers."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_legacy_rebuild_reconciliation.py",
+      "disposition": "superseded",
+      "reason": "Exclusive offline legacy manual-restore reconciliation and its evidence codecs were removed; native rebuild compensation tests retained."
     }
   ],
   "adapted_suites": [
@@ -1031,6 +1036,162 @@
       "test": "test_f03_local_backfill_is_idempotent_and_preserves_legacy_boards",
       "disposition": "superseded",
       "reason": "Realm backfill removed; replaced by fresh local-board/index and absent-realm refusal tests. Tenant isolation and cross-realm write denial retained."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_f06_rebuild_processor.py",
+      "test": "test_f06_legacy_queue_only_fence_loss_preserves_resumable_phase",
+      "disposition": "superseded",
+      "reason": "Exclusive queue-only legacy recovery or pre-v4 checkpoint conversion removed; native recovery/compensation remains in this mixed suite and incompatible format is refused without writes."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_f06_rebuild_processor.py",
+      "test": "test_f06_legacy_queue_only_state_and_terminal_receipt_are_bijective",
+      "disposition": "superseded",
+      "reason": "Exclusive queue-only legacy recovery or pre-v4 checkpoint conversion removed; native recovery/compensation remains in this mixed suite and incompatible format is refused without writes."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_f06_rebuild_processor.py",
+      "test": "test_f06_legacy_queue_only_initial_fence_loss_writes_no_generic_audit",
+      "disposition": "superseded",
+      "reason": "Exclusive queue-only legacy recovery or pre-v4 checkpoint conversion removed; native recovery/compensation remains in this mixed suite and incompatible format is refused without writes."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_f06_rebuild_processor.py",
+      "test": "test_f06_legacy_queue_only_post_effect_fence_loss_preserves_terminal_replay",
+      "disposition": "superseded",
+      "reason": "Exclusive queue-only legacy recovery or pre-v4 checkpoint conversion removed; native recovery/compensation remains in this mixed suite and incompatible format is refused without writes."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_f06_rebuild_processor.py",
+      "test": "test_f06_legacy_queue_only_rejects_mutated_probe_payload_and_checkpoint",
+      "disposition": "superseded",
+      "reason": "Exclusive queue-only legacy recovery or pre-v4 checkpoint conversion removed; native recovery/compensation remains in this mixed suite and incompatible format is refused without writes."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_f06_rebuild_processor.py",
+      "test": "test_f06_legacy_queue_only_terminal_replay_reproves_physical_intent",
+      "disposition": "superseded",
+      "reason": "Exclusive queue-only legacy recovery or pre-v4 checkpoint conversion removed; native recovery/compensation remains in this mixed suite and incompatible format is refused without writes."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_f06_rebuild_processor.py",
+      "test": "test_f06_legacy_queue_only_rejects_blocked_intent_without_durable_context",
+      "disposition": "superseded",
+      "reason": "Exclusive queue-only legacy recovery or pre-v4 checkpoint conversion removed; native recovery/compensation remains in this mixed suite and incompatible format is refused without writes."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_f06_rebuild_processor.py",
+      "test": "test_f06_legacy_queue_only_invalid_effect_receipt_cannot_emit_nominal_audit",
+      "disposition": "superseded",
+      "reason": "Exclusive queue-only legacy recovery or pre-v4 checkpoint conversion removed; native recovery/compensation remains in this mixed suite and incompatible format is refused without writes."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_f06_rebuild_processor.py",
+      "test": "test_f06_legacy_queue_only_terminal_replay_requires_exact_receipt",
+      "disposition": "superseded",
+      "reason": "Exclusive queue-only legacy recovery or pre-v4 checkpoint conversion removed; native recovery/compensation remains in this mixed suite and incompatible format is refused without writes."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_f06_rebuild_processor.py",
+      "test": "test_f06_legacy_queue_only_first_admission_rejects_compensation_metadata",
+      "disposition": "superseded",
+      "reason": "Exclusive queue-only legacy recovery or pre-v4 checkpoint conversion removed; native recovery/compensation remains in this mixed suite and incompatible format is refused without writes."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_f06_rebuild_processor.py",
+      "test": "test_f06_legacy_queue_only_retry_crash_persists_resumable_intent",
+      "disposition": "superseded",
+      "reason": "Exclusive queue-only legacy recovery or pre-v4 checkpoint conversion removed; native recovery/compensation remains in this mixed suite and incompatible format is refused without writes."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_f06_rebuild_processor.py",
+      "test": "test_f06_legacy_queue_only_retry_reuses_same_durable_intent",
+      "disposition": "superseded",
+      "reason": "Exclusive queue-only legacy recovery or pre-v4 checkpoint conversion removed; native recovery/compensation remains in this mixed suite and incompatible format is refused without writes."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_f06_rebuild_processor.py",
+      "test": "test_f06_generic_execute_never_resumes_legacy_queue_only_intent",
+      "disposition": "superseded",
+      "reason": "Exclusive queue-only legacy recovery or pre-v4 checkpoint conversion removed; native recovery/compensation remains in this mixed suite and incompatible format is refused without writes."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_f06_rebuild_processor.py",
+      "test": "test_f06_legacy_blocked_intent_requires_exact_prefix_and_live_authority",
+      "disposition": "superseded",
+      "reason": "Exclusive queue-only legacy recovery or pre-v4 checkpoint conversion removed; native recovery/compensation remains in this mixed suite and incompatible format is refused without writes."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_f06_rebuild_processor.py",
+      "test": "test_f06_legacy_manually_restored_blocked_enqueue_cancels_queue_only",
+      "disposition": "superseded",
+      "reason": "Exclusive queue-only legacy recovery or pre-v4 checkpoint conversion removed; native recovery/compensation remains in this mixed suite and incompatible format is refused without writes."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_kg_rebuild_service.py",
+      "test": "test_legacy_manual_restore_queue_only_revalidates_binding_after_writer_wait",
+      "disposition": "superseded",
+      "reason": "Exclusive queue-only legacy recovery or pre-v4 checkpoint conversion removed; native recovery/compensation remains in this mixed suite and incompatible format is refused without writes."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_kg_rebuild_service.py",
+      "test": "test_legacy_manual_restore_queue_only_rejects_non_nominal_adapter_outcome",
+      "disposition": "superseded",
+      "reason": "Exclusive queue-only legacy recovery or pre-v4 checkpoint conversion removed; native recovery/compensation remains in this mixed suite and incompatible format is refused without writes."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_kg_rebuild_service.py",
+      "test": "test_legacy_cleanup_failure_is_chained_without_replacing_base_exception",
+      "disposition": "superseded",
+      "reason": "Exclusive queue-only legacy recovery or pre-v4 checkpoint conversion removed; native recovery/compensation remains in this mixed suite and incompatible format is refused without writes."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_kg_rebuild_service.py",
+      "test": "test_legacy_terminal_outcome_is_not_returned_when_release_returns_false",
+      "disposition": "superseded",
+      "reason": "Exclusive queue-only legacy recovery or pre-v4 checkpoint conversion removed; native recovery/compensation remains in this mixed suite and incompatible format is refused without writes."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_kg_rebuild_service.py",
+      "test": "test_legacy_manual_restore_queue_only_releases_both_fences_on_base_exception",
+      "disposition": "superseded",
+      "reason": "Exclusive queue-only legacy recovery or pre-v4 checkpoint conversion removed; native recovery/compensation remains in this mixed suite and incompatible format is refused without writes."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_kg_rebuild_service.py",
+      "test": "test_legacy_manual_restore_queue_only_rejects_forged_authority_before_adapter",
+      "disposition": "superseded",
+      "reason": "Exclusive queue-only legacy recovery or pre-v4 checkpoint conversion removed; native recovery/compensation remains in this mixed suite and incompatible format is refused without writes."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_kg_rebuild_service.py",
+      "test": "test_legacy_manual_restore_queue_only_is_adapter_only_and_fenced",
+      "disposition": "superseded",
+      "reason": "Exclusive queue-only legacy recovery or pre-v4 checkpoint conversion removed; native recovery/compensation remains in this mixed suite and incompatible format is refused without writes."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_f06_community_rebuild_effects.py",
+      "test": "test_f06_v3_upgrade_crash_before_enqueue_replays_v4_without_resnapshot",
+      "disposition": "superseded",
+      "reason": "Exclusive queue-only legacy recovery or pre-v4 checkpoint conversion removed; native recovery/compensation remains in this mixed suite and incompatible format is refused without writes."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_f06_community_rebuild_effects.py",
+      "test": "test_f06_v4_checkpoint_upgrade_rejects_unbounded_drift",
+      "disposition": "superseded",
+      "reason": "Exclusive queue-only legacy recovery or pre-v4 checkpoint conversion removed; native recovery/compensation remains in this mixed suite and incompatible format is refused without writes."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_f06_community_rebuild_effects.py",
+      "test": "test_f06_v3_checkpoint_strictly_upgrades_and_replays_v4_enqueue_once",
+      "disposition": "superseded",
+      "reason": "Exclusive queue-only legacy recovery or pre-v4 checkpoint conversion removed; native recovery/compensation remains in this mixed suite and incompatible format is refused without writes."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_f06_community_rebuild_effects.py",
+      "test": "test_f06_legacy_resume_without_enqueue_receipt_uses_empty_dlq_cut",
+      "disposition": "superseded",
+      "reason": "Exclusive queue-only legacy recovery or pre-v4 checkpoint conversion removed; native recovery/compensation remains in this mixed suite and incompatible format is refused without writes."
     }
   ]
 }

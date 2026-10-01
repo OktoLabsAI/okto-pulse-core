@@ -13,24 +13,6 @@ from pathlib import Path
 
 import pytest
 
-from okto_pulse.core.application.rebuild_processor import (
-    CompensationAction as F06CompensationAction,
-)
-from okto_pulse.core.application.rebuild_processor import (
-    RebuildCommand as F06RebuildCommand,
-)
-from okto_pulse.core.application.rebuild_processor import (
-    RebuildEffectReceipt as F06RebuildEffectReceipt,
-)
-from okto_pulse.core.application.rebuild_processor import (
-    RebuildOutcome as F06RebuildOutcome,
-)
-from okto_pulse.core.application.rebuild_processor import (
-    RebuildOutcomeCode as F06RebuildOutcomeCode,
-)
-from okto_pulse.core.application.rebuild_processor import (
-    RebuildState as F06RebuildState,
-)
 from okto_pulse.core.kg.recovery_execution import (
     issue_recovery_execution_capability,
 )
@@ -39,7 +21,6 @@ from okto_pulse.core.kg.rebuild_confirmation import (
 )
 from okto_pulse.core.kg.rebuild_service import (
     KGRebuildService,
-    LegacyManualRestoreQueueOnlyInput,
     RebuildBlockReason,
     RebuildLeaseCleanupError,
     RebuildOutcome,
@@ -219,216 +200,14 @@ def _issue_confirmation(
     return token.confirmation_id, manifest.manifest_ref, preflight_hash
 
 
-def _legacy_queue_only_service(
-    tmp_path: Path,
-    *,
-    adapter,
-):
-    class _Poison:
-        def __getattr__(self, name):  # noqa: ANN001, ANN204
-            raise AssertionError(
-                f"legacy queue-only touched forbidden dependency:{name}"
-            )
-
-    port = FakeWriteLockPort()
-    lock = KGSingleWriterLock(write_lock_port=port)
-    reservation = KGAdministrativeOperationReservation(write_lock_port=port)
-    digest = "a" * 64
-    command = F06RebuildCommand(
-        run_id="f06:legacy-manifest",
-        board_id="b1",
-        manifest_ref="legacy-manifest",
-        operation="rebuild",
-        actor_id="legacy-actor",
-        reason="legacy interrupted rebuild",
-    )
-    intent_receipt = F06RebuildEffectReceipt(
-        effect_key=(
-            "f06:legacy-manifest:legacy_manually_restored_blocked_after_enqueue_intent"
-        ),
-        effect="legacy_manually_restored_blocked_after_enqueue_intent",
-        ok=True,
-        code="legacy_manual_restore_queue_only_authorized",
-        details={
-            "intent_digest": digest,
-            "queue": {
-                "source": "rebuild:legacy-manifest",
-                "rows": [{"id": "queue-1"}, {"id": "queue-2"}],
-            },
-        },
-    )
-    service = KGRebuildService(
-        base_dir=tmp_path,
-        single_writer_lock=lock,
-        safe_write_lifecycle=_Poison(),
-        quarantine_service=_Poison(),
-        confirmation_store=_Poison(),
-        manifest_store=_Poison(),
-        source_enumerator=_Poison(),
-        generation_repository=_Poison(),
-        promotion_guard=_Poison(),
-        report_store=_Poison(),
-        terminal_state_guard=_Poison(),
-        event_emitter=_Poison(),
-        orphan_scan_provider=_Poison(),
-        operation_reservation=reservation,
-        legacy_manual_restore_queue_only_adapter=adapter,
-        lock_ttl_seconds=60,
-    )
-    return service, lock, reservation, command, intent_receipt, digest
 
 
-def _legacy_queue_only_outcome(
-    req: LegacyManualRestoreQueueOnlyInput,
-) -> F06RebuildOutcome:
-    intent_details = dict(req.intent_receipt.details)
-    digest = intent_details["intent_digest"]
-    queue = dict(intent_details["queue"])
-    receipts = tuple(
-        F06RebuildEffectReceipt(
-            f"{req.command.run_id}:{effect}",
-            effect,
-            True,
-        )
-        for effect in ("snapshot", "quarantine", "enqueue")
-    ) + (
-        req.intent_receipt,
-        F06RebuildEffectReceipt(
-            f"{req.command.run_id}:compensate",
-            "compensate",
-            True,
-            code="legacy_manual_restore_queue_only_reconciled",
-            details={
-                "actions": ["cancel_enqueued_sources"],
-                "reconciliation_kind": "legacy_manual_restore_queue_only",
-                "intent_digest": digest,
-                "queue": {
-                    "source": queue["source"],
-                    "expected_row_count": len(queue["rows"]),
-                    "terminal_fingerprint": "b" * 64,
-                    "pending_compensated": 1,
-                    "claimed_compensated": 1,
-                    "already_compensated": 0,
-                    "active_remaining": 0,
-                    "live_intents_restored": 0,
-                    "total_compensated": 2,
-                    "evidence_digest": digest,
-                },
-            },
-        ),
-    )
-    return F06RebuildOutcome(
-        run_id=req.command.run_id,
-        board_id=req.board_id,
-        state=F06RebuildState.FAILED,
-        code=F06RebuildOutcomeCode.LEGACY_MANUAL_RESTORE_QUEUE_RECONCILED,
-        promotion_allowed=False,
-        compensation_actions=(F06CompensationAction.CANCEL_ENQUEUED_SOURCES,),
-        receipts=receipts,
-        detail="legacy_blocked_after_enqueue_predecessor_already_restored",
-    )
 
 
-def test_legacy_manual_restore_queue_only_is_adapter_only_and_fenced(
-    tmp_path: Path,
-) -> None:
-    from okto_pulse.core.kg.write_barrier import require_write_token
-
-    calls: list[LegacyManualRestoreQueueOnlyInput] = []
-
-    def _adapter(req: LegacyManualRestoreQueueOnlyInput):
-        guard = require_write_token(
-            req.board_id,
-            expected_owner_token=req.owner_token,
-        )
-        assert guard is not None
-        assert req.lease_renew()
-        assert req.orchestration_renew()
-        assert req.mutation_guard()
-        calls.append(req)
-        return _legacy_queue_only_outcome(req)
-
-    service, lock, reservation, command, intent, digest = _legacy_queue_only_service(
-        tmp_path, adapter=_adapter
-    )
-    with issue_recovery_execution_capability(
-        board_id="b1",
-        lifetime_probe=lambda: True,
-    ) as capability:
-        result = service.legacy_manual_restore_queue_only(
-            board_id="b1",
-            intent_id=digest,
-            actor_id="offline-operator",
-            reason="adopt exact manual restore and cancel legacy queue",
-            command=command,
-            intent_receipt=intent,
-            recovery_capability=capability,
-        )
-
-    assert result.code is F06RebuildOutcomeCode.LEGACY_MANUAL_RESTORE_QUEUE_RECONCILED
-    assert len(calls) == 1
-    assert calls[0].intent_id == digest
-    assert lock.inspect(board_id="b1") is None
-    assert reservation.inspect(board_id="b1") is None
 
 
-@pytest.mark.parametrize("capability", [None, object(), True, "offline"])
-def test_legacy_manual_restore_queue_only_rejects_forged_authority_before_adapter(
-    tmp_path: Path,
-    capability: object,
-) -> None:
-    calls: list[object] = []
-    service, lock, reservation, command, intent, digest = _legacy_queue_only_service(
-        tmp_path,
-        adapter=lambda req: calls.append(req),
-    )
-
-    with pytest.raises(
-        RuntimeError,
-        match="legacy_manual_restore_queue_only_authority_required",
-    ):
-        service.legacy_manual_restore_queue_only(
-            board_id="b1",
-            intent_id=digest,
-            actor_id="offline-operator",
-            reason="adopt exact manual restore and cancel legacy queue",
-            command=command,
-            intent_receipt=intent,
-            recovery_capability=capability,
-        )
-    assert calls == []
-    assert lock.inspect(board_id="b1") is None
-    assert reservation.inspect(board_id="b1") is None
 
 
-def test_legacy_manual_restore_queue_only_releases_both_fences_on_base_exception(
-    tmp_path: Path,
-) -> None:
-    class _Fatal(BaseException):
-        pass
-
-    def _adapter(_req):  # noqa: ANN001, ANN202
-        raise _Fatal("simulated process interruption")
-
-    service, lock, reservation, command, intent, digest = _legacy_queue_only_service(
-        tmp_path, adapter=_adapter
-    )
-    with issue_recovery_execution_capability(
-        board_id="b1",
-        lifetime_probe=lambda: True,
-    ) as capability:
-        with pytest.raises(_Fatal, match="simulated process interruption"):
-            service.legacy_manual_restore_queue_only(
-                board_id="b1",
-                intent_id=digest,
-                actor_id="offline-operator",
-                reason="adopt exact manual restore and cancel legacy queue",
-                command=command,
-                intent_receipt=intent,
-                recovery_capability=capability,
-            )
-    assert lock.inspect(board_id="b1") is None
-    assert reservation.inspect(board_id="b1") is None
 
 
 def test_cleanup_waits_for_both_heartbeat_threads_before_ordered_release() -> None:
@@ -584,125 +363,8 @@ def test_writer_release_false_rejects_exact_token_still_present(tmp_path: Path) 
     assert lock.release(board_id="b1", owner_token=acquired.owner_token)
 
 
-@pytest.mark.parametrize(
-    ("failed_step", "expected_failed_steps"),
-    (
-        ("writer", ("writer_release",)),
-        ("reservation", ("reservation_release",)),
-    ),
-)
-def test_legacy_terminal_outcome_is_not_returned_when_release_returns_false(
-    tmp_path: Path,
-    failed_step: str,
-    expected_failed_steps: tuple[str, ...],
-) -> None:
-    from dataclasses import replace
-
-    durable_terminal_effect = {"written": False}
-
-    def _adapter(req: LegacyManualRestoreQueueOnlyInput) -> F06RebuildOutcome:
-        durable_terminal_effect["written"] = True
-        return _legacy_queue_only_outcome(req)
-
-    service, lock, reservation, command, intent, digest = _legacy_queue_only_service(
-        tmp_path,
-        adapter=_adapter,
-    )
-
-    class _WriterReleaseResult:
-        def __getattr__(self, name):  # noqa: ANN001, ANN204
-            return getattr(lock, name)
-
-        def release(self, **kwargs):  # noqa: ANN003, ANN201
-            if failed_step == "writer":
-                return False
-            return lock.release(**kwargs)
-
-    class _ReservationReleaseResult:
-        def __getattr__(self, name):  # noqa: ANN001, ANN204
-            return getattr(reservation, name)
-
-        def release(self, **kwargs):  # noqa: ANN003, ANN201
-            released = reservation.release(**kwargs)
-            return False if failed_step == "reservation" else released
-
-    service = replace(
-        service,
-        single_writer_lock=_WriterReleaseResult(),
-        operation_reservation=_ReservationReleaseResult(),
-    )
-    with issue_recovery_execution_capability(
-        board_id="b1",
-        lifetime_probe=lambda: True,
-    ) as capability:
-        with pytest.raises(RebuildLeaseCleanupError) as caught:
-            service.legacy_manual_restore_queue_only(
-                board_id="b1",
-                intent_id=digest,
-                actor_id="offline-operator",
-                reason="adopt exact manual restore and cancel legacy queue",
-                command=command,
-                intent_receipt=intent,
-                recovery_capability=capability,
-            )
-
-    assert durable_terminal_effect["written"] is True
-    assert caught.value.failed_steps == expected_failed_steps
-    writer_manifest = lock.inspect(board_id="b1")
-    if failed_step == "writer":
-        assert writer_manifest is not None
-        assert lock.release(board_id="b1", owner_token=writer_manifest.owner_token)
-    else:
-        assert writer_manifest is None
-    assert reservation.inspect(board_id="b1") is None
 
 
-def test_legacy_cleanup_failure_is_chained_without_replacing_base_exception(
-    tmp_path: Path,
-) -> None:
-    from dataclasses import replace
-
-    class _Fatal(BaseException):
-        pass
-
-    def _adapter(_req):  # noqa: ANN001, ANN202
-        raise _Fatal("primary interruption")
-
-    service, lock, reservation, command, intent, digest = _legacy_queue_only_service(
-        tmp_path,
-        adapter=_adapter,
-    )
-
-    class _FalseWithoutWriterRelease:
-        def __getattr__(self, name):  # noqa: ANN001, ANN204
-            return getattr(lock, name)
-
-        def release(self, **kwargs):  # noqa: ANN003, ANN201
-            del kwargs
-            return False
-
-    service = replace(service, single_writer_lock=_FalseWithoutWriterRelease())
-    with issue_recovery_execution_capability(
-        board_id="b1",
-        lifetime_probe=lambda: True,
-    ) as capability:
-        with pytest.raises(_Fatal, match="primary interruption") as caught:
-            service.legacy_manual_restore_queue_only(
-                board_id="b1",
-                intent_id=digest,
-                actor_id="offline-operator",
-                reason="adopt exact manual restore and cancel legacy queue",
-                command=command,
-                intent_receipt=intent,
-                recovery_capability=capability,
-            )
-
-    assert isinstance(caught.value.__cause__, RebuildLeaseCleanupError)
-    assert caught.value.__cause__.failed_steps == ("writer_release",)
-    writer_manifest = lock.inspect(board_id="b1")
-    assert writer_manifest is not None
-    assert lock.release(board_id="b1", owner_token=writer_manifest.owner_token)
-    assert reservation.inspect(board_id="b1") is None
 
 
 def test_run_releases_writer_and_reservation_after_base_exception(
@@ -815,93 +477,8 @@ def test_run_terminal_cleanup_failure_is_not_reinterpreted_or_released_twice(
     assert reservation.inspect(board_id="b1") is None
 
 
-def test_legacy_manual_restore_queue_only_rejects_non_nominal_adapter_outcome(
-    tmp_path: Path,
-) -> None:
-    service, lock, reservation, command, intent, digest = _legacy_queue_only_service(
-        tmp_path,
-        adapter=lambda _req: F06RebuildOutcome(
-            run_id=command.run_id,
-            board_id="b1",
-            state=F06RebuildState.FAILED,
-            code=F06RebuildOutcomeCode.LEGACY_MANUAL_RESTORE_QUEUE_RECONCILED,
-            promotion_allowed=False,
-            compensation_actions=(F06CompensationAction.CANCEL_ENQUEUED_SOURCES,),
-            receipts=(),
-            detail="legacy_manual_restore_queue_only_reconciled",
-        ),
-    )
-    with issue_recovery_execution_capability(
-        board_id="b1",
-        lifetime_probe=lambda: True,
-    ) as capability:
-        with pytest.raises(
-            RuntimeError,
-            match="legacy_manual_restore_queue_only_outcome_invalid",
-        ):
-            service.legacy_manual_restore_queue_only(
-                board_id="b1",
-                intent_id=digest,
-                actor_id="offline-operator",
-                reason="adopt exact manual restore and cancel legacy queue",
-                command=command,
-                intent_receipt=intent,
-                recovery_capability=capability,
-            )
-    assert lock.inspect(board_id="b1") is None
-    assert reservation.inspect(board_id="b1") is None
 
 
-def test_legacy_manual_restore_queue_only_revalidates_binding_after_writer_wait(
-    tmp_path: Path,
-) -> None:
-    from dataclasses import replace
-
-    calls: list[object] = []
-    service, lock, reservation, command, intent, digest = _legacy_queue_only_service(
-        tmp_path,
-        adapter=lambda req: calls.append(req),
-    )
-
-    class _MutatingWriter:
-        def bind_write_lock_port(self):  # noqa: ANN201
-            return lock.bind_write_lock_port()
-
-        def acquire(self, **kwargs):  # noqa: ANN003, ANN201
-            details = dict(intent.details)
-            dict(details["queue"])["rows"].append({"id": "late-row"})
-            return lock.acquire(**kwargs)
-
-        def renew(self, **kwargs):  # noqa: ANN003, ANN201
-            return lock.renew(**kwargs)
-
-        def release(self, **kwargs):  # noqa: ANN003, ANN201
-            return lock.release(**kwargs)
-
-        def inspect(self, **kwargs):  # noqa: ANN003, ANN201
-            return lock.inspect(**kwargs)
-
-    service = replace(service, single_writer_lock=_MutatingWriter())
-    with issue_recovery_execution_capability(
-        board_id="b1",
-        lifetime_probe=lambda: True,
-    ) as capability:
-        with pytest.raises(
-            RuntimeError,
-            match="legacy_manual_restore_queue_only_binding_changed",
-        ):
-            service.legacy_manual_restore_queue_only(
-                board_id="b1",
-                intent_id=digest,
-                actor_id="offline-operator",
-                reason="adopt exact manual restore and cancel legacy queue",
-                command=command,
-                intent_receipt=intent,
-                recovery_capability=capability,
-            )
-    assert calls == []
-    assert lock.inspect(board_id="b1") is None
-    assert reservation.inspect(board_id="b1") is None
 
 
 # --- Happy path -------------------------------------------------------------
