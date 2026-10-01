@@ -2,6 +2,30 @@
 
 ## Estado para retomada
 
+### 2026-10-01 — Manifest sem rebaseline: implementação aplicada (WIP)
+
+Snapshots publicados: **Core 9e50c574 / Community 0ce72aa8**, pushes confirmados.
+Aplicados remove_manifest_compatibility.py e adapt_manifest_contract_tests.py;
+**não reaplicar**. Também removidos helpers mortos do decoder e o projetor de
+hash alternativo; Ruff F/E9 passou. A nota de preview abaixo é histórico.
+Manifest admite somente versão/campos atuais, tipos exatos e contadores coerentes,
+sem defaults antigos. Retirados decoder predigest, rebaseline, hashes v1/v2
+transitórios e namespace correspondente. Hash atual de IR/OR/qualidade/RDL e
+digest cognitivo preservados. Suítes mistas mantêm os testes nativos; 11 novos
+casos cobrem formato inválido/antigo e recusa sem reescrita.
+dist-manifest-native1/provenance-manifest-native1.json comprovam byte-a-byte;
+Community 47 aprovados. Core 164 aprovados/1 falha: revalidate também possuía a
+responsabilidade atual de emitir métrica de drift. Mantida essa instrumentação
+sem qualquer conversão ou escrita de manifest; classify_revalidation continua
+puro. Teste verifica classificação sem métrica e revalidação com métrica.
+dist-manifest-native2 instalado e provenance-manifest-native2.json byte-idêntico.
+manifest-native-core2: 12 aprovados/3.78s, incluindo a métrica e as recusas;
+agregado: 165 casos distintos Core e 47 Community aprovados.
+Closure-manifest-native2 exit 0, findings vazios, oito budgets ZERO. READMEs
+regenerados e conferidos pela mesma função oficial usada no CLI
+(validate_saas_closure_readmes); prova em closure-manifest-native2.readmes.json.
+Ruff F/E9 passou; nenhum frontend alterado. Incremento pronto para publicação.
+
 ### 2026-10-01 — Snapshots e recibos: contrato único em implementação
 
 Publicado incremento de checkpoint: Core **6ad0ff3f** / Community **c1a608de**;

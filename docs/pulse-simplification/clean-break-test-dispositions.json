@@ -885,6 +885,120 @@
       "test": "test_signed_legacy_receipt_is_continuity_only_and_never_authority",
       "disposition": "superseded",
       "reason": "Compatibility acceptance removed. Replaced by test_signed_old_receipt_refuses_authority_and_append_without_conversion; native round-trip, history and authorization checks retained."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_kg_rebuild_sources.py",
+      "test": "test_load_verified_legacy_predigest_v3_rejects_current_manifest",
+      "disposition": "superseded",
+      "reason": "Exclusive old-manifest decoder or rebaseline conversion removed; current integrity, source drift, fences and native recovery remain covered."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_kg_rebuild_sources.py",
+      "test": "test_load_verified_legacy_predigest_v3_rejects_wrong_identity",
+      "disposition": "superseded",
+      "reason": "Exclusive old-manifest decoder or rebaseline conversion removed; current integrity, source drift, fences and native recovery remain covered."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_kg_rebuild_sources.py",
+      "test": "test_load_verified_legacy_predigest_v3_has_typed_missing_error",
+      "disposition": "superseded",
+      "reason": "Exclusive old-manifest decoder or rebaseline conversion removed; current integrity, source drift, fences and native recovery remain covered."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_kg_rebuild_sources.py",
+      "test": "test_load_verified_legacy_predigest_v3_rejects_wrong_canonical_binding",
+      "disposition": "superseded",
+      "reason": "Exclusive old-manifest decoder or rebaseline conversion removed; current integrity, source drift, fences and native recovery remain covered."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_kg_rebuild_sources.py",
+      "test": "test_load_verified_legacy_predigest_v3_rejects_tamper_and_noncanonical_shape",
+      "disposition": "superseded",
+      "reason": "Exclusive old-manifest decoder or rebaseline conversion removed; current integrity, source drift, fences and native recovery remain covered."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_kg_rebuild_sources.py",
+      "test": "test_load_verified_legacy_predigest_v3_requires_exact_cognitive_digest",
+      "disposition": "superseded",
+      "reason": "Exclusive old-manifest decoder or rebaseline conversion removed; current integrity, source drift, fences and native recovery remain covered."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_kg_rebuild_sources.py",
+      "test": "test_load_verified_legacy_predigest_v3_accepts_real_like_fixture",
+      "disposition": "superseded",
+      "reason": "Exclusive old-manifest decoder or rebaseline conversion removed; current integrity, source drift, fences and native recovery remain covered."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_kg_rebuild_service.py",
+      "test": "test_legacy_rebaseline_event_binds_live_v3_projection",
+      "disposition": "superseded",
+      "reason": "Exclusive old-manifest decoder or rebaseline conversion removed; current integrity, source drift, fences and native recovery remain covered."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_kg_rebuild_service.py",
+      "test": "test_legacy_rebaseline_blocks_v3_only_drift_after_pre_step",
+      "disposition": "superseded",
+      "reason": "Exclusive old-manifest decoder or rebaseline conversion removed; current integrity, source drift, fences and native recovery remain covered."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_kg_rebuild_service.py",
+      "test": "test_nonterminal_legacy_rebaseline_completes_and_records_once",
+      "disposition": "superseded",
+      "reason": "Exclusive old-manifest decoder or rebaseline conversion removed; current integrity, source drift, fences and native recovery remain covered."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_kg_spec_source_manifest_v2.py",
+      "test": "test_v1_and_v2_source_set_hashes_keep_the_legacy_json_composition",
+      "disposition": "superseded",
+      "reason": "Exclusive old-manifest decoder or rebaseline conversion removed; current integrity, source drift, fences and native recovery remain covered."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_kg_spec_source_manifest_v2.py",
+      "test": "test_v2_manifest_rebaselines_to_v3_from_exact_compatibility_hash",
+      "disposition": "superseded",
+      "reason": "Exclusive old-manifest decoder or rebaseline conversion removed; current integrity, source drift, fences and native recovery remain covered."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_kg_spec_source_manifest_v2.py",
+      "test": "test_legacy_with_real_v1_content_change_is_drift_not_rebaseline",
+      "disposition": "superseded",
+      "reason": "Exclusive old-manifest decoder or rebaseline conversion removed; current integrity, source drift, fences and native recovery remain covered."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_kg_spec_source_manifest_v2.py",
+      "test": "test_governed_rebaseline_reproves_fence_inside_artifact_transaction",
+      "disposition": "superseded",
+      "reason": "Exclusive old-manifest decoder or rebaseline conversion removed; current integrity, source drift, fences and native recovery remain covered."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_kg_spec_source_manifest_v2.py",
+      "test": "test_governed_rebaseline_evidence_is_run_bound_exactly_once",
+      "disposition": "superseded",
+      "reason": "Exclusive old-manifest decoder or rebaseline conversion removed; current integrity, source drift, fences and native recovery remain covered."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_kg_spec_source_manifest_v2.py",
+      "test": "test_load_verified_rejects_legacy_partition_hash_tamper",
+      "disposition": "superseded",
+      "reason": "Exclusive old-manifest decoder or rebaseline conversion removed; current integrity, source drift, fences and native recovery remain covered."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_kg_spec_source_manifest_v2.py",
+      "test": "test_load_verified_accepts_hash_bound_legacy_manifest_for_pure_rebaseline",
+      "disposition": "superseded",
+      "reason": "Exclusive old-manifest decoder or rebaseline conversion removed; current integrity, source drift, fences and native recovery remain covered."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_kg_spec_source_manifest_v2.py",
+      "test": "test_pure_revalidation_classifies_legacy_without_artifact_or_counter",
+      "disposition": "superseded",
+      "reason": "Exclusive old-manifest decoder or rebaseline conversion removed; current integrity, source drift, fences and native recovery remain covered."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_kg_spec_source_manifest_v2.py",
+      "test": "test_legacy_board_rebaselines_without_dlq",
+      "disposition": "superseded",
+      "reason": "Exclusive old-manifest decoder or rebaseline conversion removed; current integrity, source drift, fences and native recovery remain covered."
     }
   ],
   "adapted_suites": [

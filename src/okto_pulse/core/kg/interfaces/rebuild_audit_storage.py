@@ -26,7 +26,6 @@ RebuildAuditNamespace = Literal[
     "confirmation_token",
     "rebuild_report",
     "candidate_decision",
-    "rebaseline_audit",
     "global_discovery_reindex",
     "global_discovery_recovery",
     "contingency",

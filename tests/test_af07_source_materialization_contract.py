@@ -7,8 +7,7 @@ from okto_pulse.core.kg.board_source_store import (
     CARD_CONTENT_COLUMNS,
     IDEATION_CONTENT_COLUMNS,
     REFINEMENT_CONTENT_COLUMNS,
-    SPEC_CONTENT_COLUMNS_V1,
-    SPEC_CONTENT_COLUMNS_V2,
+    SPEC_CONTENT_COLUMNS,
     STORY_CONTENT_COLUMNS,
     _canonical_content_hash,
 )
@@ -113,12 +112,7 @@ def test_content_hashes_match_pinned_core_and_historical_contracts() -> None:
             "b408edb6bae8d164ce9a627e1915a97e62839c3e06492b80aabaa988a5491876",
         ),
         (
-            SPEC_CONTENT_COLUMNS_V1,
-            _spec_row(),
-            "782f82fda3d62288c89347a71815c6a378b53ebc3ae230bbf47aa59cb0f84556",
-        ),
-        (
-            SPEC_CONTENT_COLUMNS_V2,
+            SPEC_CONTENT_COLUMNS,
             _spec_row(),
             "97f6bbcac06974bcc93807e1b83dc01a11cc81f03e00a2ff029cc629f4d839bd",
         ),
@@ -162,7 +156,7 @@ def test_derived_source_fields_stay_outside_hash_contracts() -> None:
         STORY_CONTENT_COLUMNS,
         IDEATION_CONTENT_COLUMNS,
         REFINEMENT_CONTENT_COLUMNS,
-        SPEC_CONTENT_COLUMNS_V2,
+        SPEC_CONTENT_COLUMNS,
         CARD_CONTENT_COLUMNS,
         AMENDMENT_CONTENT_COLUMNS,
     )

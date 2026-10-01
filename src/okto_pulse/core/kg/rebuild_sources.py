@@ -40,6 +40,7 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Callable, Iterable, Mapping
 
+from okto_pulse.core.kg.board_source_store import SPEC_SOURCE_MANIFEST_VERSION
 from okto_pulse.core.kg.source_maturity import (
     CANONICAL_ARTIFACT_TYPES,
     DEFAULT_WORKING_TTL_DAYS,
@@ -70,52 +71,6 @@ REBUILD_DIRNAME = "rebuild"
 MANIFEST_DIRNAME = "manifests"
 MANIFEST_REF_PREFIX = "rebuild_manifest_"
 
-_LEGACY_PREDIGEST_V3_MANIFEST_KEYS = frozenset(
-    {
-        "board_id",
-        "canonical_source_count",
-        "created_at",
-        "has_non_deterministic_inputs",
-        "legacy_unknown",
-        "legacy_unknown_count",
-        "manifest_ref",
-        "manifest_schema_version",
-        "preflight_hash",
-        "skipped_by_maturity",
-        "skipped_by_maturity_count",
-        "skipped_cancelled_count",
-        "skipped_expired_working",
-        "skipped_expired_working_count",
-        "source_set_hash",
-        "sources",
-        "working_source_count",
-        "working_sources",
-    }
-)
-_LEGACY_PREDIGEST_V3_ROW_KEYS = frozenset(
-    {
-        "artifact_type",
-        "content_hash",
-        "created_at",
-        "disposition",
-        "expires_at",
-        "graph_layer",
-        "id",
-        "maturity_status",
-        "reason_code",
-        "source_artifact_status",
-        "source_ref",
-        "source_version",
-    }
-)
-_LEGACY_PREDIGEST_V3_PARTITIONS = (
-    "sources",
-    "working_sources",
-    "skipped_by_maturity",
-    "skipped_expired_working",
-    "legacy_unknown",
-)
-
 
 class RebuildSourceManifestVerificationError(RuntimeError):
     """Base error for fail-closed recovery manifest loading."""
@@ -127,18 +82,6 @@ class RebuildSourceManifestNotFoundError(RebuildSourceManifestVerificationError)
 
 class RebuildSourceManifestIntegrityError(RebuildSourceManifestVerificationError):
     """A durable manifest exists but its identity or payload is invalid."""
-
-
-class RebaselineEvidenceError(RuntimeError):
-    """Base error for governed, run-bound rebaseline evidence."""
-
-
-class RebaselineEvidenceFenceLostError(RebaselineEvidenceError):
-    """Administrative authority expired inside the durable transaction."""
-
-
-class RebaselineEvidenceConflictError(RebaselineEvidenceError):
-    """A deterministic evidence id is already bound to different content."""
 
 
 # val_d0da4a75 rework: preflight_hash MUST be lowercase SHA256 hex
@@ -214,12 +157,6 @@ class RebuildSourceRow:
     disposition: str = DISPOSITION_CANONICAL
     reason_code: str = ""
     expires_at: str | None = None
-    # Manifest compatibility hashes are TRANSIENT live-read evidence. They are
-    # intentionally absent from ``to_dict`` and persisted manifests. V1 differs
-    # from V2 only for specs; V3 additionally binds current quality/RDL heads
-    # into their owning roots, so ideation/refinement/spec rows carry V2.
-    content_hash_v1: str = ""
-    content_hash_v2: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -236,24 +173,6 @@ class RebuildSourceRow:
             "reason_code": self.reason_code,
             "expires_at": self.expires_at,
         }
-
-    def to_dict_v1(self) -> dict[str, Any]:
-        """Manifest-v1-compatible projection: identical shape to ``to_dict``
-        but carrying the v1 content hash for spec rows, so a freshly
-        enumerated source set can reproduce a legacy board's stored
-        ``source_set_hash`` byte-for-byte (card 5ec8c75c)."""
-        d = self.to_dict()
-        if self.content_hash_v1:
-            d["content_hash"] = self.content_hash_v1
-        return d
-
-    def to_dict_v2(self) -> dict[str, Any]:
-        """Manifest-v2-compatible projection without persisting compat data."""
-
-        d = self.to_dict()
-        if self.content_hash_v2:
-            d["content_hash"] = self.content_hash_v2
-        return d
 
 
 @dataclass(frozen=True, slots=True)
@@ -275,9 +194,8 @@ class RebuildSourceSet:
     skipped_expired_working: tuple[RebuildSourceRow, ...] = field(default_factory=tuple)
     legacy_unknown: tuple[RebuildSourceRow, ...] = field(default_factory=tuple)
     # Spec MKG-A-S1 (FR5/TR5): deterministic digest of the durable cognitive
-    # source class ('cognitive_durable'). {} when the store is absent or has
-    # no records for this board — in that case the source_set_hash payload is
-    # byte-identical to the pre-feature composition (no rebaseline storm).
+    # source class ('cognitive_durable'). An empty store contributes no records
+    # to the source-set hash.
     # These records are replay-only: they NEVER enter sources/
     # materializable_sources (the consolidation enqueue path), the rebuild
     # restores them literally via replay_durable_cognitive.
@@ -380,10 +298,8 @@ class RebuildSourceManifest:
     skipped_cancelled_count: int
     has_non_deterministic_inputs: bool
     created_at: str
-    # Source manifest schema version. 1 = legacy spec hash; 2 = IR/OR-aware
-    # spec hash; 3 = current quality/RDL head fingerprints bound into roots.
-    # Old manifests load as 1 and are revalidated against that exact schema.
-    manifest_schema_version: int = 1
+    # Current content/quality/RDL projection; unsupported versions are refused.
+    manifest_schema_version: int = SPEC_SOURCE_MANIFEST_VERSION
     working_sources: tuple[RebuildSourceRow, ...] = field(default_factory=tuple)
     skipped_by_maturity: tuple[RebuildSourceRow, ...] = field(default_factory=tuple)
     skipped_expired_working: tuple[RebuildSourceRow, ...] = field(default_factory=tuple)
@@ -433,130 +349,6 @@ def _manifest_payload_digest(payload: Mapping[str, Any]) -> str:
             ensure_ascii=False,
         ).encode("utf-8")
     ).hexdigest()
-
-
-def _canonical_json_snapshot(payload: object, *, code: str) -> tuple[Any, bytes]:
-    """Deep-copy one JSON value and return its canonical encoded form."""
-
-    try:
-        encoded = json.dumps(
-            payload,
-            sort_keys=True,
-            separators=(",", ":"),
-            ensure_ascii=False,
-            allow_nan=False,
-        ).encode("utf-8")
-        return json.loads(encoded), encoded
-    except (TypeError, ValueError, json.JSONDecodeError) as exc:
-        raise RebuildSourceManifestIntegrityError(code) from exc
-
-
-def _require_sha256(value: object, *, code: str) -> str:
-    if (
-        type(value) is not str
-        or len(value) != 64
-        or any(character not in _PREFLIGHT_HASH_PATTERN for character in value)
-    ):
-        raise RebuildSourceManifestIntegrityError(code)
-    return value
-
-
-def _legacy_predigest_v3_cognitive_digest(
-    value: object,
-) -> dict[str, Any]:
-    """Validate the exact optional cognitive hash member of a v3 source set."""
-
-    if type(value) is not dict:
-        raise RebuildSourceManifestIntegrityError(
-            "rebuild_source_manifest_legacy_predigest_cognitive_digest_invalid"
-        )
-    if not value:
-        return {}
-    if set(value) != {"count", "digest"}:
-        raise RebuildSourceManifestIntegrityError(
-            "rebuild_source_manifest_legacy_predigest_cognitive_digest_invalid"
-        )
-    count = value.get("count")
-    if type(count) is not int or count <= 0:
-        raise RebuildSourceManifestIntegrityError(
-            "rebuild_source_manifest_legacy_predigest_cognitive_digest_invalid"
-        )
-    digest = _require_sha256(
-        value.get("digest"),
-        code="rebuild_source_manifest_legacy_predigest_cognitive_digest_invalid",
-    )
-    return {"count": count, "digest": digest}
-
-
-def _legacy_predigest_v3_row(payload: object) -> RebuildSourceRow:
-    if type(payload) is not dict or set(payload) != _LEGACY_PREDIGEST_V3_ROW_KEYS:
-        raise RebuildSourceManifestIntegrityError(
-            "rebuild_source_manifest_legacy_predigest_row_shape_invalid"
-        )
-    string_fields = _LEGACY_PREDIGEST_V3_ROW_KEYS - {"expires_at"}
-    if any(type(payload.get(field)) is not str for field in string_fields):
-        raise RebuildSourceManifestIntegrityError(
-            "rebuild_source_manifest_legacy_predigest_row_type_invalid"
-        )
-    expires_at = payload.get("expires_at")
-    if expires_at is not None and type(expires_at) is not str:
-        raise RebuildSourceManifestIntegrityError(
-            "rebuild_source_manifest_legacy_predigest_row_type_invalid"
-        )
-    required_nonempty = {
-        "artifact_type",
-        "created_at",
-        "disposition",
-        "graph_layer",
-        "id",
-        "maturity_status",
-        "source_ref",
-        "source_version",
-    }
-    if any(not payload[field] for field in required_nonempty):
-        raise RebuildSourceManifestIntegrityError(
-            "rebuild_source_manifest_legacy_predigest_row_value_invalid"
-        )
-    try:
-        datetime.fromisoformat(payload["created_at"])
-        if expires_at is not None:
-            datetime.fromisoformat(expires_at)
-    except ValueError as exc:
-        raise RebuildSourceManifestIntegrityError(
-            "rebuild_source_manifest_legacy_predigest_row_timestamp_invalid"
-        ) from exc
-    return RebuildSourceRow(**payload)
-
-
-def _legacy_predigest_v3_payload(
-    manifest: RebuildSourceManifest,
-) -> dict[str, Any]:
-    """Serialize exactly as the pre-envelope v3 writer did."""
-
-    return {
-        "manifest_ref": manifest.manifest_ref,
-        "board_id": manifest.board_id,
-        "source_set_hash": manifest.source_set_hash,
-        "preflight_hash": manifest.preflight_hash,
-        "sources": [source.to_dict() for source in manifest.sources],
-        "working_sources": [source.to_dict() for source in manifest.working_sources],
-        "skipped_by_maturity": [
-            source.to_dict() for source in manifest.skipped_by_maturity
-        ],
-        "skipped_expired_working": [
-            source.to_dict() for source in manifest.skipped_expired_working
-        ],
-        "legacy_unknown": [source.to_dict() for source in manifest.legacy_unknown],
-        "skipped_cancelled_count": manifest.skipped_cancelled_count,
-        "has_non_deterministic_inputs": manifest.has_non_deterministic_inputs,
-        "created_at": manifest.created_at,
-        "manifest_schema_version": manifest.manifest_schema_version,
-        "canonical_source_count": len(manifest.sources),
-        "working_source_count": len(manifest.working_sources),
-        "skipped_by_maturity_count": len(manifest.skipped_by_maturity),
-        "skipped_expired_working_count": len(manifest.skipped_expired_working),
-        "legacy_unknown_count": len(manifest.legacy_unknown),
-    }
 
 
 # --- Counter (OR or_2d295e26 / or_01279a1c) -----------------------------------
@@ -630,8 +422,6 @@ def _row_from_raw(
         disposition=classification.disposition,
         reason_code=classification.reason_code,
         expires_at=classification.expires_at,
-        content_hash_v1=str(row.get("content_hash_v1") or ""),
-        content_hash_v2=str(row.get("content_hash_v2") or ""),
     )
 
 
@@ -957,43 +747,18 @@ def _compose_source_set_hash(source_set: RebuildSourceSet) -> str:
     from working->canonical changes the manifest binding even if the
     content_hash stayed stable.
     """
-    return _compose_source_set_hash_with(source_set, lambda r: r.to_dict())
-
-
-def _compose_source_set_hash_v1(source_set: RebuildSourceSet) -> str:
-    """v1-compatible source_set_hash (card 5ec8c75c): identical composition to
-    :func:`_compose_source_set_hash` but projecting each row through
-    ``to_dict_v1`` so spec rows use the v1 content hash. Reproduces a legacy
-    board's stored hash byte-for-byte, which is how a schema-rebaseline is
-    PROVEN distinct from real content drift."""
-    return _compose_source_set_hash_with(source_set, lambda r: r.to_dict_v1())
-
-
-def _compose_source_set_hash_v2(source_set: RebuildSourceSet) -> str:
-    """Reproduce the exact manifest-v2 source-set hash.
-
-    Compatibility fields never enter persisted JSON; they are consumed only
-    from the fresh, transactionally captured source set.
-    """
-
-    return _compose_source_set_hash_with(source_set, lambda r: r.to_dict_v2())
-
-
-def _compose_source_set_hash_with(source_set: RebuildSourceSet, project) -> str:
     payload_dict = {
-        "sources": [project(s) for s in source_set.sources],
-        "working_sources": [project(s) for s in source_set.working_sources],
-        "skipped_by_maturity": [project(s) for s in source_set.skipped_by_maturity],
+        "sources": [s.to_dict() for s in source_set.sources],
+        "working_sources": [s.to_dict() for s in source_set.working_sources],
+        "skipped_by_maturity": [s.to_dict() for s in source_set.skipped_by_maturity],
         "skipped_expired_working": [
-            project(s) for s in source_set.skipped_expired_working
+            s.to_dict() for s in source_set.skipped_expired_working
         ],
-        "legacy_unknown": [project(s) for s in source_set.legacy_unknown],
+        "legacy_unknown": [s.to_dict() for s in source_set.legacy_unknown],
         "skipped_cancelled_count": source_set.skipped_cancelled_count,
         "source_partition_counts": source_set.source_partition_counts,
     }
-    # Spec MKG-A-S1 (TR5): the durable cognitive class binds into the hash
-    # ONLY when records exist — boards without durable records keep their
-    # pre-feature hash byte-for-byte (v1 reproduction contract preserved).
+    # Durable cognitive records participate in the same current source binding.
     if source_set.cognitive_durable_digest.get("count"):
         payload_dict["cognitive_durable"] = dict(source_set.cognitive_durable_digest)
     payload = json.dumps(
@@ -1009,187 +774,19 @@ class SourceSetRevalidation(str, Enum):
     manifest (card 5ec8c75c / dec_c8e418e7)."""
 
     EQUIVALENT = "equivalent"
-    REBASELINE = "rebaseline"
     MANIFEST_DRIFT = "manifest_drift"
 
 
 @dataclass(frozen=True, slots=True)
 class RevalidationResult:
     outcome: SourceSetRevalidation
-    rebaselined_source_refs: tuple[str, ...] = ()
-    from_manifest_schema_version: int = 0
-    to_manifest_schema_version: int = 0
-    to_source_set_hash: str = ""
-    hash_fields_v1: tuple[str, ...] = ()
-    hash_fields_v2: tuple[str, ...] = ()
-    hash_fields_v3: tuple[str, ...] = ()
 
     @property
     def is_drift(self) -> bool:
         return self.outcome is SourceSetRevalidation.MANIFEST_DRIFT
 
     def to_dict(self) -> dict[str, Any]:
-        return {
-            "outcome": self.outcome.value,
-            "rebaselined_source_refs": list(self.rebaselined_source_refs),
-            "from_manifest_schema_version": self.from_manifest_schema_version,
-            "to_manifest_schema_version": self.to_manifest_schema_version,
-            "to_source_set_hash": self.to_source_set_hash,
-            "hash_fields_v1": list(self.hash_fields_v1),
-            "hash_fields_v2": list(self.hash_fields_v2),
-            "hash_fields_v3": list(self.hash_fields_v3),
-        }
-
-
-# Counter OR or_b9c33b77 — kg_spec_source_manifest_rebaseline_total. Bounded
-# labels (board_id, outcome); one sample per spec-manifest rebaseline event.
-_REBASELINE_LABELS = ("board_id", "outcome")
-_rebaseline_counter = runtime_state("kg.rebuild_sources.rebaseline_counter", dict)
-_rebaseline_lock = runtime_lock("kg.rebuild_sources.rebaseline_counter")
-
-
-def _bump_rebaseline(*, board_id: str, outcome: str = "rebaseline") -> None:
-    with _rebaseline_lock:
-        key = (board_id, outcome)
-        _rebaseline_counter[key] = _rebaseline_counter.get(key, 0) + 1
-
-
-def get_spec_manifest_rebaseline_count(
-    board_id: str, *, outcome: str = "rebaseline"
-) -> int:
-    with _rebaseline_lock:
-        return _rebaseline_counter.get((board_id, outcome), 0)
-
-
-def get_spec_manifest_rebaseline_labels() -> tuple[str, ...]:
-    return _REBASELINE_LABELS
-
-
-def reset_spec_manifest_rebaseline_counter() -> None:
-    with _rebaseline_lock:
-        _rebaseline_counter.clear()
-
-
-# FR7 (card 5ec8c75c): a FORMAL, persisted, queryable rebaseline audit record
-# (not just a textual log) — per board, append-only JSONL under the rebuild
-# dir. Each record carries from/to manifest schema version, the spec hash
-# fields considered, and the rebaselined source_refs.
-REBASELINE_AUDIT_DIRNAME = "rebaseline_audit"
-REBASELINE_AUDIT_ARTIFACT_ID = "records"
-
-
-def _rebaseline_audit_key(board_id: str) -> RebuildAuditKey:
-    return RebuildAuditKey(
-        namespace="rebaseline_audit",
-        board_id=board_id,
-        artifact_id=REBASELINE_AUDIT_ARTIFACT_ID,
-    )
-
-
-def _append_spec_manifest_rebaseline_audit(
-    base_dir: object | None,
-    *,
-    board_id: str,
-    manifest_ref: str,
-    result: "RevalidationResult",
-    recorded_at: str,
-    artifact_store: RebuildAuditArtifactStore | None = None,
-    evidence_id: str | None = None,
-    fence_valid: Callable[[], bool] | None = None,
-) -> bool:
-    """Append one rebaseline record and report whether it was newly durable.
-
-    ``evidence_id`` enables the recovery service's exactly-once, run-bound
-    evidence path.  Its fence predicate is deliberately evaluated *inside*
-    the artifact store's serialized transformer: a writer that waited behind
-    board erasure cannot recreate this board-scoped audit after its
-    reservation or graph-writer lease expired.
-
-    The optional arguments preserve the historical helper contract used by
-    non-recovery callers: without an evidence id each invocation appends one
-    independent record.
-    """
-    record = {
-        "board_id": board_id,
-        "manifest_ref": manifest_ref,
-        "recorded_at": recorded_at,
-        **result.to_dict(),
-    }
-    if evidence_id is not None:
-        if not isinstance(evidence_id, str) or not evidence_id:
-            raise ValueError("rebaseline evidence_id must be non-empty")
-        record["evidence_id"] = evidence_id
-    resolved_store = resolve_rebuild_audit_artifact_store(
-        base_dir=base_dir,
-        artifact_store=artifact_store,
-    )
-    key = _rebaseline_audit_key(board_id)
-    appended = False
-
-    def _append(current: dict[str, Any] | None) -> dict[str, Any]:
-        nonlocal appended
-        if fence_valid is not None and not fence_valid():
-            raise RebaselineEvidenceFenceLostError("rebaseline_audit_fence_lost")
-        records = []
-        if current and isinstance(current.get("records"), list):
-            records = list(current["records"])
-        if evidence_id is not None:
-            existing = [
-                item
-                for item in records
-                if isinstance(item, Mapping) and item.get("evidence_id") == evidence_id
-            ]
-            if existing:
-                expected = {
-                    key: value for key, value in record.items() if key != "recorded_at"
-                }
-                observed = {
-                    key: value
-                    for key, value in dict(existing[0]).items()
-                    if key != "recorded_at"
-                }
-                if len(existing) != 1 or observed != expected:
-                    raise RebaselineEvidenceConflictError(
-                        "rebaseline_audit_evidence_conflict"
-                    )
-                return current or {
-                    "board_id": board_id,
-                    "artifact_id": REBASELINE_AUDIT_ARTIFACT_ID,
-                    "updated_at": str(existing[0].get("recorded_at") or recorded_at),
-                    "records": records,
-                }
-        records.append(record)
-        appended = True
-        return {
-            "board_id": board_id,
-            "artifact_id": REBASELINE_AUDIT_ARTIFACT_ID,
-            "updated_at": recorded_at,
-            "records": records,
-        }
-
-    resolved_store.replace_json(key, _append)
-    return appended
-
-
-def read_spec_manifest_rebaseline_audit(
-    base_dir: object | None,
-    board_id: str,
-    *,
-    artifact_store: RebuildAuditArtifactStore | None = None,
-) -> list[dict[str, Any]]:
-    """Read back the persisted spec-manifest rebaseline records for a board
-    (FR7 audit evidence — queryable from the rebuild artifacts)."""
-    resolved_store = resolve_rebuild_audit_artifact_store(
-        base_dir=base_dir,
-        artifact_store=artifact_store,
-    )
-    payload = resolved_store.read_json(_rebaseline_audit_key(board_id))
-    if not payload:
-        return []
-    records = payload.get("records")
-    if not isinstance(records, list):
-        return []
-    return [dict(record) for record in records if isinstance(record, dict)]
+        return {"outcome": self.outcome.value}
 
 
 @dataclass(frozen=True, slots=True)
@@ -1302,24 +899,13 @@ class KGRebuildSourceManifest:
             return False
         if manifest.preflight_hash != expected_preflight_hash:
             return False
-        if manifest.manifest_schema_version not in (
-            1,
-            2,
-            SPEC_SOURCE_MANIFEST_VERSION,
-        ):
-            return False
-        # Current manifests require the canonical envelope digest. Legacy v1
-        # and v2 artifacts predate it; when present it is still verified, and
-        # when absent their exact persisted partitions remain bound by the
-        # historical source_set_hash below. The live compatibility projection
-        # is independently proved by ``classify_revalidation`` before use.
-        if manifest.payload_digest and not secrets.compare_digest(
-            manifest.payload_digest, _manifest_payload_digest(manifest.to_dict())
-        ):
-            return False
         if (
-            manifest.manifest_schema_version == SPEC_SOURCE_MANIFEST_VERSION
-            and not manifest.payload_digest
+            type(manifest.manifest_schema_version) is not int
+            or manifest.manifest_schema_version != SPEC_SOURCE_MANIFEST_VERSION
+        ):
+            return False
+        if not manifest.payload_digest or not secrets.compare_digest(
+            manifest.payload_digest, _manifest_payload_digest(manifest.to_dict())
         ):
             return False
         try:
@@ -1340,11 +926,7 @@ class KGRebuildSourceManifest:
             skipped_by_maturity=manifest.skipped_by_maturity,
             skipped_expired_working=manifest.skipped_expired_working,
             legacy_unknown=manifest.legacy_unknown,
-            cognitive_durable_digest=(
-                dict(cognitive_durable_digest or {})
-                if manifest.manifest_schema_version == SPEC_SOURCE_MANIFEST_VERSION
-                else {}
-            ),
+            cognitive_durable_digest=dict(cognitive_durable_digest or {}),
         )
         return _compose_source_set_hash(reconstructed) == manifest.source_set_hash
 
@@ -1358,73 +940,77 @@ class KGRebuildSourceManifest:
         if data is None:
             return None
         try:
-
-            def _rows(key: str) -> tuple[RebuildSourceRow, ...]:
-                return tuple(
-                    RebuildSourceRow(
-                        artifact_type=str(s["artifact_type"]),
-                        source_ref=str(s["source_ref"]),
-                        source_version=str(s["source_version"]),
-                        content_hash=str(s["content_hash"]),
-                        created_at=str(s["created_at"]),
-                        id=str(s["id"]),
-                        source_artifact_status=str(s.get("source_artifact_status", "")),
-                        graph_layer=str(s.get("graph_layer", GRAPH_LAYER_CANONICAL)),
-                        maturity_status=str(
-                            s.get("maturity_status", MATURITY_CANONICAL_ELIGIBLE)
-                        ),
-                        disposition=str(s.get("disposition", DISPOSITION_CANONICAL)),
-                        reason_code=str(s.get("reason_code", "")),
-                        expires_at=(
-                            str(s["expires_at"])
-                            if s.get("expires_at") is not None
-                            else None
-                        ),
-                    )
-                    for s in data.get(key, [])
-                )
-
-            sources = tuple(
-                RebuildSourceRow(
-                    artifact_type=str(s["artifact_type"]),
-                    source_ref=str(s["source_ref"]),
-                    source_version=str(s["source_version"]),
-                    content_hash=str(s["content_hash"]),
-                    created_at=str(s["created_at"]),
-                    id=str(s["id"]),
-                    source_artifact_status=str(s.get("source_artifact_status", "")),
-                    graph_layer=str(s.get("graph_layer", GRAPH_LAYER_CANONICAL)),
-                    maturity_status=str(
-                        s.get("maturity_status", MATURITY_CANONICAL_ELIGIBLE)
-                    ),
-                    disposition=str(s.get("disposition", DISPOSITION_CANONICAL)),
-                    reason_code=str(s.get("reason_code", "")),
-                    expires_at=(
-                        str(s["expires_at"])
-                        if s.get("expires_at") is not None
-                        else None
-                    ),
-                )
-                for s in data["sources"]
+            if (
+                type(data) is not dict
+                or type(data["manifest_schema_version"]) is not int
+                or data["manifest_schema_version"] != SPEC_SOURCE_MANIFEST_VERSION
+            ):
+                return None
+            partitions = (
+                "sources",
+                "working_sources",
+                "skipped_by_maturity",
+                "skipped_expired_working",
+                "legacy_unknown",
             )
-            return RebuildSourceManifest(
-                manifest_ref=str(data["manifest_ref"]),
-                board_id=str(data["board_id"]),
-                source_set_hash=str(data["source_set_hash"]),
-                preflight_hash=str(data["preflight_hash"]),
-                sources=sources,
-                skipped_cancelled_count=int(data.get("skipped_cancelled_count", 0)),
-                has_non_deterministic_inputs=bool(
-                    data.get("has_non_deterministic_inputs", False)
-                ),
-                created_at=str(data["created_at"]),
-                manifest_schema_version=int(data.get("manifest_schema_version", 1)),
-                working_sources=_rows("working_sources"),
-                skipped_by_maturity=_rows("skipped_by_maturity"),
-                skipped_expired_working=_rows("skipped_expired_working"),
-                legacy_unknown=_rows("legacy_unknown"),
-                payload_digest=str(data.get("payload_digest") or ""),
+            rows = {}
+            for partition in partitions:
+                if type(data[partition]) is not list:
+                    return None
+                parsed = []
+                for raw in data[partition]:
+                    if type(raw) is not dict:
+                        return None
+                    row = RebuildSourceRow(**raw)
+                    if (
+                        set(raw) != set(row.to_dict())
+                        or any(
+                            type(value) is not str
+                            for key, value in raw.items()
+                            if key != "expires_at"
+                        )
+                        or raw["expires_at"] is not None
+                        and type(raw["expires_at"]) is not str
+                    ):
+                        return None
+                    parsed.append(row)
+                rows[partition] = tuple(parsed)
+            for key in (
+                "skipped_cancelled_count",
+                "canonical_source_count",
+                "working_source_count",
+                "skipped_by_maturity_count",
+                "skipped_expired_working_count",
+                "legacy_unknown_count",
+            ):
+                if type(data[key]) is not int or data[key] < 0:
+                    return None
+            if type(data["has_non_deterministic_inputs"]) is not bool:
+                return None
+            for key in (
+                "manifest_ref",
+                "board_id",
+                "source_set_hash",
+                "preflight_hash",
+                "created_at",
+                "payload_digest",
+            ):
+                if type(data[key]) is not str or not data[key]:
+                    return None
+            manifest = RebuildSourceManifest(
+                manifest_ref=data["manifest_ref"],
+                board_id=data["board_id"],
+                source_set_hash=data["source_set_hash"],
+                preflight_hash=data["preflight_hash"],
+                skipped_cancelled_count=data["skipped_cancelled_count"],
+                has_non_deterministic_inputs=data["has_non_deterministic_inputs"],
+                created_at=data["created_at"],
+                manifest_schema_version=data["manifest_schema_version"],
+                payload_digest=data["payload_digest"],
+                **rows,
             )
+            # Reject omitted/extra fields and inconsistent partition counters.
+            return manifest if manifest.to_dict() == data else None
         except (KeyError, TypeError, ValueError):
             return None
 
@@ -1473,303 +1059,20 @@ class KGRebuildSourceManifest:
             )
         return manifest
 
-    def load_verified_legacy_predigest_v3(
-        self,
-        manifest_ref: str,
-        *,
-        expected_board_id: str,
-        expected_preflight_hash: str,
-        expected_canonical_payload_sha256: str,
-        cognitive_digest: dict[str, Any],
-    ) -> RebuildSourceManifest:
-        """Verify the exact v3 serializer emitted before envelope digests.
-
-        This is a recovery-only compatibility seam.  It deliberately does not
-        relax :meth:`load_verified`: current v3 manifests must still carry
-        ``payload_digest``.  The caller must bind the canonical JSON snapshot
-        it inspected and supply the durable cognitive digest from the original
-        manifest cut; both are required to reproduce ``source_set_hash``.
-        """
-
-        try:
-            validate_manifest_ref(manifest_ref)
-            validate_preflight_hash(expected_preflight_hash)
-        except ValueError as exc:
-            raise RebuildSourceManifestIntegrityError(
-                "rebuild_source_manifest_legacy_predigest_identity_invalid"
-            ) from exc
-        if type(expected_board_id) is not str or not expected_board_id:
-            raise RebuildSourceManifestIntegrityError(
-                "rebuild_source_manifest_legacy_predigest_identity_invalid"
-            )
-        expected_canonical_payload_sha256 = _require_sha256(
-            expected_canonical_payload_sha256,
-            code=("rebuild_source_manifest_legacy_predigest_canonical_digest_invalid"),
-        )
-        normalized_cognitive_digest = _legacy_predigest_v3_cognitive_digest(
-            cognitive_digest
-        )
-        key = self._manifest_key(manifest_ref)
-        try:
-            exists = self.artifact_store.exists(key)
-        except Exception as exc:
-            raise RebuildSourceManifestIntegrityError(
-                "rebuild_source_manifest_legacy_predigest_storage_unverifiable"
-            ) from exc
-        if not exists:
-            raise RebuildSourceManifestNotFoundError(
-                "rebuild_source_manifest_legacy_predigest_not_found"
-            )
-        try:
-            raw_payload = self.artifact_store.read_json(key)
-        except Exception as exc:
-            raise RebuildSourceManifestIntegrityError(
-                "rebuild_source_manifest_legacy_predigest_storage_unverifiable"
-            ) from exc
-        payload, canonical_payload = _canonical_json_snapshot(
-            raw_payload,
-            code="rebuild_source_manifest_legacy_predigest_payload_invalid",
-        )
-        if type(payload) is not dict or set(payload) != (
-            _LEGACY_PREDIGEST_V3_MANIFEST_KEYS
-        ):
-            raise RebuildSourceManifestIntegrityError(
-                "rebuild_source_manifest_legacy_predigest_shape_invalid"
-            )
-        if not secrets.compare_digest(
-            hashlib.sha256(canonical_payload).hexdigest(),
-            expected_canonical_payload_sha256,
-        ):
-            raise RebuildSourceManifestIntegrityError(
-                "rebuild_source_manifest_legacy_predigest_canonical_digest_mismatch"
-            )
-        if (
-            type(payload.get("manifest_ref")) is not str
-            or payload["manifest_ref"] != manifest_ref
-            or type(payload.get("board_id")) is not str
-            or payload["board_id"] != expected_board_id
-            or type(payload.get("preflight_hash")) is not str
-            or payload["preflight_hash"] != expected_preflight_hash
-            or type(payload.get("manifest_schema_version")) is not int
-            or payload["manifest_schema_version"] != 3
-            or type(payload.get("created_at")) is not str
-            or type(payload.get("has_non_deterministic_inputs")) is not bool
-            or type(payload.get("skipped_cancelled_count")) is not int
-            or payload["skipped_cancelled_count"] < 0
-        ):
-            raise RebuildSourceManifestIntegrityError(
-                "rebuild_source_manifest_legacy_predigest_identity_invalid"
-            )
-        _require_sha256(
-            payload.get("source_set_hash"),
-            code="rebuild_source_manifest_legacy_predigest_source_hash_invalid",
-        )
-        try:
-            created_at = datetime.fromisoformat(payload["created_at"])
-        except ValueError as exc:
-            raise RebuildSourceManifestIntegrityError(
-                "rebuild_source_manifest_legacy_predigest_timestamp_invalid"
-            ) from exc
-        if created_at.tzinfo is None:
-            raise RebuildSourceManifestIntegrityError(
-                "rebuild_source_manifest_legacy_predigest_timestamp_invalid"
-            )
-
-        partitions: dict[str, tuple[RebuildSourceRow, ...]] = {}
-        for partition in _LEGACY_PREDIGEST_V3_PARTITIONS:
-            raw_rows = payload.get(partition)
-            if type(raw_rows) is not list:
-                raise RebuildSourceManifestIntegrityError(
-                    "rebuild_source_manifest_legacy_predigest_partition_invalid"
-                )
-            partitions[partition] = tuple(
-                _legacy_predigest_v3_row(row) for row in raw_rows
-            )
-        count_bindings = {
-            "canonical_source_count": "sources",
-            "working_source_count": "working_sources",
-            "skipped_by_maturity_count": "skipped_by_maturity",
-            "skipped_expired_working_count": "skipped_expired_working",
-            "legacy_unknown_count": "legacy_unknown",
-        }
-        for count_field, partition in count_bindings.items():
-            if type(payload.get(count_field)) is not int or payload[count_field] != len(
-                partitions[partition]
-            ):
-                raise RebuildSourceManifestIntegrityError(
-                    "rebuild_source_manifest_legacy_predigest_count_invalid"
-                )
-        if payload["has_non_deterministic_inputs"] != bool(
-            partitions["legacy_unknown"]
-        ):
-            raise RebuildSourceManifestIntegrityError(
-                "rebuild_source_manifest_legacy_predigest_nondeterministic_invalid"
-            )
-
-        manifest = RebuildSourceManifest(
-            manifest_ref=payload["manifest_ref"],
-            board_id=payload["board_id"],
-            source_set_hash=payload["source_set_hash"],
-            preflight_hash=payload["preflight_hash"],
-            sources=partitions["sources"],
-            skipped_cancelled_count=payload["skipped_cancelled_count"],
-            has_non_deterministic_inputs=payload["has_non_deterministic_inputs"],
-            created_at=payload["created_at"],
-            manifest_schema_version=payload["manifest_schema_version"],
-            working_sources=partitions["working_sources"],
-            skipped_by_maturity=partitions["skipped_by_maturity"],
-            skipped_expired_working=partitions["skipped_expired_working"],
-            legacy_unknown=partitions["legacy_unknown"],
-        )
-        reserialized, canonical_reserialized = _canonical_json_snapshot(
-            _legacy_predigest_v3_payload(manifest),
-            code="rebuild_source_manifest_legacy_predigest_reserialization_invalid",
-        )
-        if reserialized != payload or canonical_reserialized != canonical_payload:
-            raise RebuildSourceManifestIntegrityError(
-                "rebuild_source_manifest_legacy_predigest_reserialization_mismatch"
-            )
-        reconstructed = RebuildSourceSet(
-            board_id=manifest.board_id,
-            sources=manifest.sources,
-            skipped_cancelled_count=manifest.skipped_cancelled_count,
-            has_non_deterministic_inputs=manifest.has_non_deterministic_inputs,
-            generated_at=manifest.created_at,
-            working_sources=manifest.working_sources,
-            skipped_by_maturity=manifest.skipped_by_maturity,
-            skipped_expired_working=manifest.skipped_expired_working,
-            legacy_unknown=manifest.legacy_unknown,
-            cognitive_durable_digest=normalized_cognitive_digest,
-        )
-        if not secrets.compare_digest(
-            _compose_source_set_hash(reconstructed), manifest.source_set_hash
-        ):
-            raise RebuildSourceManifestIntegrityError(
-                "rebuild_source_manifest_legacy_predigest_source_hash_mismatch"
-            )
-        return manifest
-
     def classify_revalidation(
         self,
         *,
         manifest: RebuildSourceManifest,
         current_source_set: RebuildSourceSet,
     ) -> RevalidationResult:
-        """Purely classify a live source set against a stored manifest.
-
-        This method never writes an artifact and never increments a counter.
-        Recovery discovery and terminal-receipt reconciliation must use this
-        seam because they run before (or intentionally avoid) governed board
-        mutation authority.
-
-        The classification has exact manifest-v1/v2/v3 compatibility:
-
-        * EQUIVALENT — a v3 manifest matches the current v3 hash.
-        * REBASELINE — a v1 or v2 manifest matches the corresponding transient
-          compatibility projection byte-for-byte. The only difference is the
-          governed schema upgrade to v3.
-        * MANIFEST_DRIFT — the hash for the manifest's exact schema differs, or
-          the schema version is unsupported. This always blocks.
-        """
-        from okto_pulse.core.kg.board_source_store import (
-            SOURCE_PROJECTION_HASH_FIELDS_V3,
-            SPEC_SOURCE_MANIFEST_VERSION,
-        )
-
-        schema_version = manifest.manifest_schema_version
-        if schema_version == SPEC_SOURCE_MANIFEST_VERSION:
-            if _compose_source_set_hash(current_source_set) == manifest.source_set_hash:
-                return RevalidationResult(SourceSetRevalidation.EQUIVALENT)
-        elif schema_version in (1, 2):
-            compatibility_hash = (
-                _compose_source_set_hash_v1(current_source_set)
-                if schema_version == 1
-                else _compose_source_set_hash_v2(current_source_set)
-            )
-            if compatibility_hash == manifest.source_set_hash:
-                compatibility_field = (
-                    "content_hash_v1" if schema_version == 1 else "content_hash_v2"
-                )
-                rebaselined = tuple(
-                    row.source_ref
-                    for partition in (
-                        current_source_set.sources,
-                        current_source_set.working_sources,
-                        current_source_set.skipped_by_maturity,
-                        current_source_set.skipped_expired_working,
-                        current_source_set.legacy_unknown,
-                    )
-                    for row in partition
-                    if (
-                        getattr(row, compatibility_field)
-                        and row.content_hash != getattr(row, compatibility_field)
-                    )
-                )
-                from okto_pulse.core.kg.board_source_store import (
-                    SPEC_CONTENT_COLUMNS_V1,
-                    SPEC_CONTENT_COLUMNS_V2,
-                )
-
-                return RevalidationResult(
-                    SourceSetRevalidation.REBASELINE,
-                    rebaselined_source_refs=rebaselined,
-                    from_manifest_schema_version=schema_version,
-                    to_manifest_schema_version=SPEC_SOURCE_MANIFEST_VERSION,
-                    to_source_set_hash=_compose_source_set_hash(current_source_set),
-                    hash_fields_v1=SPEC_CONTENT_COLUMNS_V1,
-                    hash_fields_v2=SPEC_CONTENT_COLUMNS_V2,
-                    hash_fields_v3=SOURCE_PROJECTION_HASH_FIELDS_V3,
-                )
-        return RevalidationResult(SourceSetRevalidation.MANIFEST_DRIFT)
-
-    def record_rebaseline(
-        self,
-        *,
-        manifest: RebuildSourceManifest,
-        result: RevalidationResult,
-        evidence_id: str,
-        fence_valid: Callable[[], bool],
-        recorded_at: str | None = None,
-    ) -> bool:
-        """Persist exactly-once governed evidence for one recovery run.
-
-        ``evidence_id`` is supplied by the service as a deterministic
-        run+manifest binding.  An exact durable retry is a no-op; a conflicting
-        record fails closed.  The counter increments only after the first
-        append has become durable.
-        """
-
-        if result.outcome is not SourceSetRevalidation.REBASELINE:
-            raise ValueError("only REBASELINE results may be recorded")
-        if result.from_manifest_schema_version != manifest.manifest_schema_version:
-            raise ValueError("rebaseline result manifest schema mismatch")
-        if len(result.to_source_set_hash) != 64 or any(
-            character not in "0123456789abcdef"
-            for character in result.to_source_set_hash
+        """Compare the current source projection without mutation or conversion."""
+        if (
+            type(manifest.manifest_schema_version) is int
+            and manifest.manifest_schema_version == SPEC_SOURCE_MANIFEST_VERSION
+            and _compose_source_set_hash(current_source_set) == manifest.source_set_hash
         ):
-            raise ValueError("rebaseline target source_set_hash invalid")
-        appended = _append_spec_manifest_rebaseline_audit(
-            self.base_dir,
-            board_id=manifest.board_id,
-            manifest_ref=manifest.manifest_ref,
-            result=result,
-            recorded_at=recorded_at or datetime.now(timezone.utc).isoformat(),
-            artifact_store=self.artifact_store,
-            evidence_id=evidence_id,
-            fence_valid=fence_valid,
-        )
-        if appended:
-            _bump_rebaseline(board_id=manifest.board_id)
-            logger.info(
-                "kg.rebuild_sources.spec_manifest_rebaseline board=%s "
-                "from_version=%d to_version=%d rebaselined=%d evidence=%s",
-                manifest.board_id,
-                result.from_manifest_schema_version,
-                result.to_manifest_schema_version,
-                len(result.rebaselined_source_refs),
-                evidence_id,
-            )
-        return appended
+            return RevalidationResult(SourceSetRevalidation.EQUIVALENT)
+        return RevalidationResult(SourceSetRevalidation.MANIFEST_DRIFT)
 
     def revalidate(
         self,
@@ -1777,56 +1080,27 @@ class KGRebuildSourceManifest:
         manifest: RebuildSourceManifest,
         current_source_set: RebuildSourceSet,
     ) -> RevalidationResult:
-        """Compatibility API that classifies and records legacy rebaseline.
+        """Apply the current comparison and record its bounded drift metric.
 
-        Recovery discovery and the governed rebuild service use
-        :meth:`classify_revalidation` plus :meth:`record_rebaseline` instead.
-        This method retains the pre-existing observable behavior for callers
-        outside that lane.
+        Discovery uses classify_revalidation when observation must be pure.
+        Neither entry point converts or writes a manifest.
         """
-
         result = self.classify_revalidation(
-            manifest=manifest,
-            current_source_set=current_source_set,
+            manifest=manifest, current_source_set=current_source_set
         )
-        if result.outcome is SourceSetRevalidation.REBASELINE:
-            appended = _append_spec_manifest_rebaseline_audit(
-                self.base_dir,
-                board_id=manifest.board_id,
-                manifest_ref=manifest.manifest_ref,
-                result=result,
-                recorded_at=datetime.now(timezone.utc).isoformat(),
-                artifact_store=self.artifact_store,
+        if result.is_drift:
+            supported = (
+                type(manifest.manifest_schema_version) is int
+                and manifest.manifest_schema_version == SPEC_SOURCE_MANIFEST_VERSION
             )
-            if appended:
-                _bump_rebaseline(board_id=manifest.board_id)
-                logger.info(
-                    "kg.rebuild_sources.spec_manifest_rebaseline board=%s "
-                    "from_version=%d to_version=%d rebaselined=%d",
-                    manifest.board_id,
-                    result.from_manifest_schema_version,
-                    result.to_manifest_schema_version,
-                    len(result.rebaselined_source_refs),
-                )
-        elif result.outcome is SourceSetRevalidation.MANIFEST_DRIFT:
-            from okto_pulse.core.kg.board_source_store import (
-                SPEC_SOURCE_MANIFEST_VERSION,
-            )
-
-            supported_versions = (1, 2, SPEC_SOURCE_MANIFEST_VERSION)
-            schema_version = manifest.manifest_schema_version
             _bump_enum(
                 board_id=manifest.board_id,
                 outcome=(
                     EnumerationOutcome.SOURCE_SET_HASH_MISMATCH.value
-                    if schema_version in supported_versions
+                    if supported
                     else EnumerationOutcome.UNSUPPORTED_SCHEMA_VERSION.value
                 ),
-                reason=(
-                    "manifest_drift"
-                    if schema_version in supported_versions
-                    else "unsupported_manifest_schema"
-                ),
+                reason="manifest_drift" if supported else "unsupported_manifest_schema",
             )
         return result
 
@@ -1839,9 +1113,6 @@ __all__ = [
     "MANIFEST_REF_PREFIX",
     "REBUILD_DIRNAME",
     "REBUILD_ARTIFACT_TYPES",
-    "RebaselineEvidenceConflictError",
-    "RebaselineEvidenceError",
-    "RebaselineEvidenceFenceLostError",
     "RebuildSourceEnumerator",
     "RebuildSourceManifest",
     "RebuildSourceManifestIntegrityError",
@@ -1856,11 +1127,7 @@ __all__ = [
     "get_enumeration_count",
     "get_enumeration_counter_labels",
     "get_enumeration_samples",
-    "get_spec_manifest_rebaseline_count",
-    "get_spec_manifest_rebaseline_labels",
-    "read_spec_manifest_rebaseline_audit",
     "reset_enumeration_counter",
-    "reset_spec_manifest_rebaseline_counter",
     "validate_manifest_ref",
     "validate_preflight_hash",
 ]

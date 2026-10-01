@@ -14,11 +14,7 @@ from datetime import datetime, timezone
 from typing import Any, Final
 
 
-# Source manifest versioning. V2 added integration_requirements and
-# observability_requirements to the spec content hash. V3 binds only the
-# current quality/RDL heads into their owning root hashes; historical,
-# non-current rows deliberately do not participate. V1/V2 projections remain
-# byte-for-byte reproducible during revalidation.
+# Current source projection binds content and current quality/RDL heads.
 SPEC_SOURCE_MANIFEST_VERSION = 3
 # Historical root hashes are an immutable wire contract. Keep this version
 # independent from ``SPEC_SOURCE_MANIFEST_VERSION`` so a future manifest bump
@@ -37,8 +33,7 @@ _SPEC_CONTENT_COLUMNS_BASE: tuple[str, ...] = (
     "api_contracts",
     "decisions",
 )
-SPEC_CONTENT_COLUMNS_V1: tuple[str, ...] = _SPEC_CONTENT_COLUMNS_BASE
-SPEC_CONTENT_COLUMNS_V2: tuple[str, ...] = _SPEC_CONTENT_COLUMNS_BASE + (
+SPEC_CONTENT_COLUMNS: tuple[str, ...] = _SPEC_CONTENT_COLUMNS_BASE + (
     "integration_requirements",
     "observability_requirements",
 )
@@ -314,7 +309,7 @@ def research_decision_current_head_fingerprint(
 
 
 def projected_root_content_hash(
-    content_hash_v2: str,
+    base_content_hash: str,
     *,
     quality_head_fingerprints: Iterable[str] = (),
     research_decision_head_fingerprints: Iterable[str] = (),
@@ -322,13 +317,12 @@ def projected_root_content_hash(
     """Return the manifest-v3 hash for an ideation/refinement/spec root.
 
     The ordered inputs are fingerprints, not pseudo source rows. Empty current
-    sets are still bound so the v2→v3 schema transition is explicit and can be
-    proven through the transient v2 compatibility hash.
+    head sets participate in the same hash contract as populated sets.
     """
 
     return _canonical_payload_hash(
         {
-            "base_content_hash": str(content_hash_v2),
+            "base_content_hash": str(base_content_hash),
             "projection_schema_version": (
                 _PROJECTED_ROOT_CONTENT_HASH_SCHEMA_VERSION_V3
             ),
@@ -487,8 +481,7 @@ __all__ = [
     "QUALITY_CURRENT_HEAD_FINGERPRINT_FIELDS",
     "REFINEMENT_CONTENT_COLUMNS",
     "RESEARCH_DECISION_CURRENT_HEAD_FINGERPRINT_FIELDS",
-    "SPEC_CONTENT_COLUMNS_V1",
-    "SPEC_CONTENT_COLUMNS_V2",
+    "SPEC_CONTENT_COLUMNS",
     "SPEC_SOURCE_MANIFEST_VERSION",
     "SOURCE_PROJECTION_HASH_FIELDS_V3",
     "STORY_CONTENT_COLUMNS",

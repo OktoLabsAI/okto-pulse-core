@@ -200,16 +200,6 @@ def _issue_confirmation(
     return token.confirmation_id, manifest.manifest_ref, preflight_hash
 
 
-
-
-
-
-
-
-
-
-
-
 def test_cleanup_waits_for_both_heartbeat_threads_before_ordered_release() -> None:
     writer_entered = threading.Event()
     reservation_entered = threading.Event()
@@ -363,10 +353,6 @@ def test_writer_release_false_rejects_exact_token_still_present(tmp_path: Path) 
     assert lock.release(board_id="b1", owner_token=acquired.owner_token)
 
 
-
-
-
-
 def test_run_releases_writer_and_reservation_after_base_exception(
     tmp_path: Path,
 ) -> None:
@@ -475,10 +461,6 @@ def test_run_terminal_cleanup_failure_is_not_reinterpreted_or_released_twice(
     assert writer_manifest is not None
     assert lock.release(board_id="b1", owner_token=writer_manifest.owner_token)
     assert reservation.inspect(board_id="b1") is None
-
-
-
-
 
 
 # --- Happy path -------------------------------------------------------------
@@ -1286,246 +1268,6 @@ def test_run_completes_when_confirmation_lock_lifecycle_all_succeed(tmp_path: Pa
     assert lock.inspect(board_id="b1") is None
     # Counter bumped.
     assert get_rebuild_run_count("b1", RebuildOutcome.COMPLETED.value) == 1
-
-
-def test_nonterminal_legacy_rebaseline_completes_and_records_once(tmp_path: Path):
-    from dataclasses import replace
-
-    from okto_pulse.core.kg.rebuild_sources import (
-        _compose_source_set_hash_v2,
-        get_spec_manifest_rebaseline_count,
-        read_spec_manifest_rebaseline_audit,
-        reset_spec_manifest_rebaseline_counter,
-    )
-
-    board_id = "b-legacy-service"
-    source_rows = [
-        {
-            "artifact_type": "spec",
-            "id": "legacy-spec",
-            "source_ref": "spec:legacy-spec",
-            "source_version": "1",
-            "content_hash": "hash-v3",
-            "content_hash_v1": "hash-v1",
-            "content_hash_v2": "hash-v2",
-            "created_at": "2026-05-01T00:00:00+00:00",
-            "status": "done",
-        }
-    ]
-    step_calls = 0
-    step_requests = []
-
-    def _step(request):
-        nonlocal step_calls
-        step_calls += 1
-        step_requests.append(request)
-        return RebuildStepResult(ok=True)
-
-    service, manifest_store, confirmation_store, lock = _build_service(
-        tmp_path,
-        source_rows=source_rows,
-        step_adapter=_step,
-    )
-    source_set = service.source_enumerator.enumerate(board_id=board_id)
-    current = manifest_store.build(
-        source_set=source_set,
-        preflight_hash="a" * 64,
-    )
-
-    def _legacy_rows(rows):
-        return tuple(
-            replace(
-                row,
-                content_hash=(row.content_hash_v2 or row.content_hash),
-                content_hash_v1="",
-                content_hash_v2="",
-            )
-            for row in rows
-        )
-
-    legacy = replace(
-        current,
-        manifest_schema_version=2,
-        source_set_hash=_compose_source_set_hash_v2(source_set),
-        sources=_legacy_rows(current.sources),
-        working_sources=_legacy_rows(current.working_sources),
-        skipped_by_maturity=_legacy_rows(current.skipped_by_maturity),
-        skipped_expired_working=_legacy_rows(current.skipped_expired_working),
-        legacy_unknown=_legacy_rows(current.legacy_unknown),
-        payload_digest="",
-    )
-    manifest_store.artifact_store.write_json_atomic(
-        manifest_store._manifest_key(legacy.manifest_ref),
-        legacy.to_dict(),
-    )
-    token = confirmation_store.issue(
-        board_id=board_id,
-        actor_id="user-1",
-        operation="rebuild",
-        preflight_hash=legacy.preflight_hash,
-        manifest_ref=legacy.manifest_ref,
-    )
-    reset_spec_manifest_rebaseline_counter()
-
-    result = service.run(
-        confirmation_id=token.confirmation_id,
-        board_id=board_id,
-        actor_id="user-1",
-        operation="rebuild",
-        preflight_hash=legacy.preflight_hash,
-        manifest_ref=legacy.manifest_ref,
-        reason="governed legacy rebaseline",
-    )
-
-    assert result.outcome == RebuildOutcome.COMPLETED.value
-    assert step_calls == 1
-    assert len(step_requests) == 1
-    projected = step_requests[0].rebaseline_source_rows
-    assert projected is not None
-    assert projected[0]["content_hash"] == "hash-v3"
-    assert projected[0]["_rebuild_rebaseline_evidence_id"] == (
-        step_requests[0].rebaseline_evidence_id
-    )
-    assert step_requests[0].rebaseline_target_source_set_hash
-    assert len(step_requests[0].rebaseline_target_source_set_hash) == 64
-    records = read_spec_manifest_rebaseline_audit(tmp_path, board_id)
-    assert len(records) == 1
-    assert records[0]["manifest_ref"] == legacy.manifest_ref
-    assert records[0]["evidence_id"] == f"{result.run_id}:{legacy.manifest_ref}"
-    assert get_spec_manifest_rebaseline_count(board_id) == 1
-    assert lock.inspect(board_id=board_id) is None
-
-    # A terminal replay classifies the legacy manifest purely and returns the
-    # frozen/closed decision before the governed evidence writer or rebuild
-    # step can run again.
-    with issue_recovery_execution_capability(
-        board_id=board_id,
-        lifetime_probe=lambda: True,
-    ) as capability:
-        replay = KGRebuildService.run(
-            service,
-            confirmation_id="receipt_authorized_resume",
-            _resume_run_id=result.run_id,
-            recovery_capability=capability,
-            board_id=board_id,
-            actor_id="user-1",
-            operation="rebuild",
-            preflight_hash=legacy.preflight_hash,
-            manifest_ref=legacy.manifest_ref,
-            reason="governed legacy rebaseline",
-        )
-    assert replay.outcome == result.outcome
-    assert step_calls == 1
-    assert len(read_spec_manifest_rebaseline_audit(tmp_path, board_id)) == 1
-    assert get_spec_manifest_rebaseline_count(board_id) == 1
-
-
-def test_legacy_rebaseline_blocks_v3_only_drift_after_pre_step(tmp_path: Path):
-    from dataclasses import replace
-
-    from okto_pulse.core.kg.rebuild_sources import _compose_source_set_hash_v2
-
-    board_id = "b-legacy-v3-drift"
-
-    def _source(content_hash: str):
-        return {
-            "artifact_type": "spec",
-            "id": "legacy-spec",
-            "source_ref": "spec:legacy-spec",
-            "source_version": "1",
-            "content_hash": content_hash,
-            # The v2 projection is unchanged: only a v3-bound field moved.
-            "content_hash_v1": "hash-v1",
-            "content_hash_v2": "hash-v2-stable",
-            "created_at": "2026-05-01T00:00:00+00:00",
-            "status": "done",
-        }
-
-    initial_rows = [_source("hash-v3-before")]
-    changed_rows = [_source("hash-v3-after")]
-    inner_revalidations: list[bool] = []
-
-    def _step(request):
-        assert request.source_revalidate is not None
-        unchanged = request.source_revalidate()
-        inner_revalidations.append(unchanged)
-        return RebuildStepResult(
-            ok=unchanged,
-            detail=None if unchanged else "v3 projection drift",
-        )
-
-    service, manifest_store, confirmation_store, _lock = _build_service(
-        tmp_path,
-        source_rows=initial_rows,
-        step_adapter=_step,
-    )
-    initial_set = service.source_enumerator.enumerate(board_id=board_id)
-    changed_set = RebuildSourceEnumerator(
-        source_store=lambda _board: changed_rows
-    ).enumerate(board_id=board_id)
-    current = manifest_store.build(
-        source_set=initial_set,
-        preflight_hash="b" * 64,
-    )
-
-    def _legacy_rows(rows):
-        return tuple(
-            replace(
-                row,
-                content_hash=(row.content_hash_v2 or row.content_hash),
-                content_hash_v1="",
-                content_hash_v2="",
-            )
-            for row in rows
-        )
-
-    legacy = replace(
-        current,
-        manifest_schema_version=2,
-        source_set_hash=_compose_source_set_hash_v2(initial_set),
-        sources=_legacy_rows(current.sources),
-        working_sources=_legacy_rows(current.working_sources),
-        skipped_by_maturity=_legacy_rows(current.skipped_by_maturity),
-        skipped_expired_working=_legacy_rows(current.skipped_expired_working),
-        legacy_unknown=_legacy_rows(current.legacy_unknown),
-        payload_digest="",
-    )
-    manifest_store.artifact_store.write_json_atomic(
-        manifest_store._manifest_key(legacy.manifest_ref),
-        legacy.to_dict(),
-    )
-
-    class _SequencedEnumerator:
-        def __init__(self):
-            self.calls = 0
-
-        def enumerate(self, *, board_id: str):
-            assert board_id == "b-legacy-v3-drift"
-            self.calls += 1
-            return initial_set if self.calls <= 2 else changed_set
-
-    service = replace(service, source_enumerator=_SequencedEnumerator())
-    token = confirmation_store.issue(
-        board_id=board_id,
-        actor_id="user-1",
-        operation="rebuild",
-        preflight_hash=legacy.preflight_hash,
-        manifest_ref=legacy.manifest_ref,
-    )
-
-    result = service.run(
-        confirmation_id=token.confirmation_id,
-        board_id=board_id,
-        actor_id="user-1",
-        operation="rebuild",
-        preflight_hash=legacy.preflight_hash,
-        manifest_ref=legacy.manifest_ref,
-        reason="prove v3 target cut",
-    )
-
-    assert inner_revalidations == [False]
-    assert result.outcome != RebuildOutcome.COMPLETED.value
-    assert result.current_kg_generation_id is None
 
 
 def test_audit_trail_has_TR12_required_fields(tmp_path: Path):
@@ -2866,105 +2608,6 @@ def test_completed_run_persists_report_and_promotes_generation(tmp_path: Path):
     assert event["triggered_by"] == "user-1"
 
 
-def test_legacy_rebaseline_event_binds_live_v3_projection(tmp_path: Path) -> None:
-    from dataclasses import replace
-
-    from okto_pulse.core.kg.rebuild_sources import _compose_source_set_hash_v2
-
-    board_id = "b-legacy-event"
-    source_rows = [
-        {
-            "artifact_type": "spec",
-            "id": "legacy-event-spec",
-            "source_ref": "spec:legacy-event-spec",
-            "source_version": "1",
-            "content_hash": "hash-v3",
-            "content_hash_v1": "hash-v1",
-            "content_hash_v2": "hash-v2",
-            "created_at": "2026-05-01T00:00:00+00:00",
-            "status": "done",
-        }
-    ]
-
-    def _step(request: RebuildStepInput) -> RebuildStepResult:
-        return RebuildStepResult(
-            ok=True,
-            current_kg_generation_id=request.candidate_kg_generation_id,
-            structural_hash="c" * 64,
-            source_hash="d" * 64,
-        )
-
-    (
-        service,
-        manifest_store,
-        confirmation_store,
-        _lock,
-        _generation_repo,
-        _report_store,
-        events,
-    ) = _build_service_with_kg024(
-        tmp_path,
-        step_adapter=_step,
-        source_rows=source_rows,
-    )
-    source_set = service.source_enumerator.enumerate(board_id=board_id)
-    current = manifest_store.build(
-        source_set=source_set,
-        preflight_hash="a" * 64,
-    )
-
-    def _legacy_rows(rows):
-        return tuple(
-            replace(
-                row,
-                content_hash=(row.content_hash_v2 or row.content_hash),
-                content_hash_v1="",
-                content_hash_v2="",
-            )
-            for row in rows
-        )
-
-    legacy = replace(
-        current,
-        manifest_schema_version=2,
-        source_set_hash=_compose_source_set_hash_v2(source_set),
-        sources=_legacy_rows(current.sources),
-        working_sources=_legacy_rows(current.working_sources),
-        skipped_by_maturity=_legacy_rows(current.skipped_by_maturity),
-        skipped_expired_working=_legacy_rows(current.skipped_expired_working),
-        legacy_unknown=_legacy_rows(current.legacy_unknown),
-        payload_digest="",
-    )
-    manifest_store.artifact_store.write_json_atomic(
-        manifest_store._manifest_key(legacy.manifest_ref),
-        legacy.to_dict(),
-    )
-    token = confirmation_store.issue(
-        board_id=board_id,
-        actor_id="user-1",
-        operation="rebuild",
-        preflight_hash=legacy.preflight_hash,
-        manifest_ref=legacy.manifest_ref,
-    )
-
-    result = service.run(
-        confirmation_id=token.confirmation_id,
-        board_id=board_id,
-        actor_id="user-1",
-        operation="rebuild",
-        preflight_hash=legacy.preflight_hash,
-        manifest_ref=legacy.manifest_ref,
-        reason="legacy event projection binding",
-    )
-
-    assert result.outcome == RebuildOutcome.COMPLETED.value
-    assert len(events) == 1
-    event = events[0]
-    assert event["rebaseline_evidence_id"] == (f"{result.run_id}:{legacy.manifest_ref}")
-    assert len(event["rebaseline_target_source_set_hash"]) == 64
-    assert event["rebaseline_target_source_set_hash"] != legacy.source_set_hash
-
-
 def test_completed_terminal_replay_fails_closed_when_current_pointer_drifted(
     tmp_path: Path,
 ) -> None:
@@ -4275,8 +3918,6 @@ def test_completed_run_with_remaining_orphans_blocks_clean_success(tmp_path: Pat
         "reason",
         "correlation_id",
     }
-
-
 
 
 def test_report_persist_failure_blocks_promotion_and_preserves_previous(

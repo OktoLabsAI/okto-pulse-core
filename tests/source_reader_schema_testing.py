@@ -9,7 +9,7 @@ from okto_pulse.core.kg.board_source_store import (
     CARD_CONTENT_COLUMNS,
     IDEATION_CONTENT_COLUMNS,
     REFINEMENT_CONTENT_COLUMNS,
-    SPEC_CONTENT_COLUMNS_V2,
+    SPEC_CONTENT_COLUMNS,
     STORY_CONTENT_COLUMNS,
 )
 
@@ -60,7 +60,7 @@ _SOURCE_TABLE_COLUMNS: dict[str, set[str]] = {
         "archived",
         "status",
         "edition",
-        *SPEC_CONTENT_COLUMNS_V2,
+        *SPEC_CONTENT_COLUMNS,
     },
     "refinements": {
         "id",

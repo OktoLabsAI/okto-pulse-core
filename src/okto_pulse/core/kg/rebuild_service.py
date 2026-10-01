@@ -55,7 +55,7 @@ import sys
 import threading
 import time
 from contextlib import ExitStack
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Callable, Mapping, Sequence
@@ -77,8 +77,6 @@ REBUILD_DIRNAME = "rebuild"
 AUDIT_DIRNAME = "audit"
 MAX_REBUILD_CONFIRMATION_RECEIPT_BYTES = 128 * 1024
 REBUILD_CONFIRMATION_RECEIPT_SCHEMA = "kg_rebuild_confirmation_receipt.v1"
-
-
 
 
 class RebuildConfirmationReceiptIntegrityError(RuntimeError):
@@ -775,17 +773,6 @@ class RebuildStepInput:
     # resolving live sources or starting any fresh rebuild effect.
     recovery_failure_code: str | None = None
     recovery_failure_detail: str | None = None
-    # A proved v1/v2 -> current-schema rebaseline must materialize the fresh
-    # live projection whose compatibility hash was checked, never the legacy
-    # rows persisted in the old manifest. Both fields are set together only
-    # after the run-bound rebaseline evidence is durably recorded under R+A.
-    rebaseline_source_rows: tuple[Mapping[str, Any], ...] | None = field(
-        default=None,
-        repr=False,
-        compare=False,
-    )
-    rebaseline_evidence_id: str | None = None
-    rebaseline_target_source_set_hash: str | None = None
     # Canonical non-secret fingerprint of the confirmation that authorized
     # this run. Keep new fields at the tail to preserve positional consumers.
     # Exact queue reservation lineage includes it so a later run for the same
@@ -809,15 +796,9 @@ class RebuildStepResult:
     counts: dict[str, int] = field(default_factory=dict)
     reconciliation_decisions: tuple[dict[str, Any], ...] = field(default_factory=tuple)
     drilldown: dict[str, Any] = field(default_factory=dict)
-    rebaseline_evidence_id: str | None = None
-    rebaseline_target_source_set_hash: str | None = None
 
 
 RebuildStepAdapter = Callable[[RebuildStepInput], RebuildStepResult]
-
-
-
-
 
 
 def _default_step_adapter(req: RebuildStepInput) -> RebuildStepResult:
@@ -1120,7 +1101,6 @@ class KGRebuildService:
         )
 
     # --- public API --------------------------------------------------------
-
 
     def resume_authorized_run(
         self,
@@ -2316,11 +2296,6 @@ class KGRebuildService:
                 **kwargs,
             )
 
-        rebaseline_evidence_proved = False
-        rebaseline_source_rows: tuple[Mapping[str, Any], ...] | None = None
-        rebaseline_evidence_id: str | None = None
-        rebaseline_target_source_set_hash: str | None = None
-
         def _revalidate_current_manifest(*, phase: str):
             """Re-enumerate only while both administrative fences are held.
 
@@ -2331,9 +2306,6 @@ class KGRebuildService:
             """
 
             nonlocal recovery_failure_code, recovery_failure_detail
-            nonlocal rebaseline_evidence_proved
-            nonlocal rebaseline_evidence_id, rebaseline_source_rows
-            nonlocal rebaseline_target_source_set_hash
             if recovery_failure_code is not None:
                 # This invocation is authorized only to compensate the
                 # persisted checkpoint. Never consult mutable live sources or
@@ -2357,82 +2329,6 @@ class KGRebuildService:
                     f"manifest_revalidation_exception:{phase}:{type(exc).__name__}"
                 )
                 return None
-            from okto_pulse.core.kg.rebuild_sources import SourceSetRevalidation
-
-            if revalidation.outcome is SourceSetRevalidation.REBASELINE:
-                if (
-                    rebaseline_target_source_set_hash is not None
-                    and revalidation.to_source_set_hash
-                    != rebaseline_target_source_set_hash
-                ):
-                    from okto_pulse.core.kg.rebuild_sources import (
-                        RevalidationResult,
-                    )
-
-                    logger.warning(
-                        "kg.rebuild_service.spec_manifest_rebaseline_target_drift "
-                        "board=%s run=%s phase=%s expected=%s observed=%s",
-                        board_id,
-                        run_id,
-                        phase,
-                        rebaseline_target_source_set_hash,
-                        revalidation.to_source_set_hash,
-                    )
-                    return RevalidationResult(SourceSetRevalidation.MANIFEST_DRIFT)
-                # The compatibility hash proves semantic equivalence; this is
-                # a schema migration, not content drift.  Keep the phase in the
-                # audit log because a post-drain rebaseline is independently
-                # fenced and intentional.
-                logger.info(
-                    "kg.rebuild_service.spec_manifest_rebaseline board=%s "
-                    "run=%s phase=%s from_manifest_version=%d "
-                    "rebaselined_count=%d rebaselined_source_refs=%s",
-                    board_id,
-                    run_id,
-                    phase,
-                    manifest.manifest_schema_version,
-                    len(revalidation.rebaselined_source_refs),
-                    list(revalidation.rebaselined_source_refs)[:50],
-                )
-                if phase == "pre_step" and not rebaseline_evidence_proved:
-                    evidence_id = f"{run_id}:{manifest_ref}"
-                    self.manifest_store.record_rebaseline(
-                        manifest=manifest,
-                        result=revalidation,
-                        evidence_id=evidence_id,
-                        # This callback runs inside the artifact-store
-                        # transaction.  It therefore linearizes the evidence
-                        # append against erasure instead of trusting the
-                        # pre-call heartbeat observation.
-                        fence_valid=lambda: bool(
-                            lease_active
-                            and _renew_operation_reservation()
-                            and _renew_current_lease()
-                        ),
-                    )
-                    rows: list[Mapping[str, Any]] = []
-                    for row in current_source_set.materializable_sources:
-                        payload = row.to_dict()
-                        payload["_rebuild_manifest_created_at"] = manifest.created_at
-                        payload["_rebuild_rebaseline_evidence_id"] = evidence_id
-                        rows.append(payload)
-                    for row in current_source_set.skipped_expired_working:
-                        if (
-                            row.artifact_type != "code_evidence"
-                            or row.source_artifact_status != "superseded"
-                        ):
-                            continue
-                        payload = row.to_dict()
-                        payload["_rebuild_manifest_created_at"] = manifest.created_at
-                        payload["_rebuild_dependency_closure_candidate"] = (
-                            "code_evidence_supersedence"
-                        )
-                        payload["_rebuild_rebaseline_evidence_id"] = evidence_id
-                        rows.append(payload)
-                    rebaseline_source_rows = tuple(rows)
-                    rebaseline_evidence_id = evidence_id
-                    rebaseline_target_source_set_hash = revalidation.to_source_set_hash
-                    rebaseline_evidence_proved = True
             return revalidation
 
         # 5. Run inside admin guard + safe lifecycle.
@@ -2811,36 +2707,6 @@ class KGRebuildService:
                         phase="pre_step"
                     )
                 except Exception as exc:
-                    from okto_pulse.core.kg.rebuild_sources import (
-                        RebaselineEvidenceFenceLostError,
-                    )
-
-                    if isinstance(exc, RebaselineEvidenceFenceLostError):
-                        return _finalise_with_release(
-                            run_id=run_id,
-                            outcome=RebuildOutcome.REBUILD_FAILED,
-                            reason=RebuildBlockReason.LEASE_LOST,
-                            board_id=board_id,
-                            actor_id=actor_id,
-                            operation=operation,
-                            confirmation_id=confirmation_id,
-                            manifest_ref=manifest_ref,
-                            user_reason=reason,
-                            started_at=started_at,
-                            owner_token=owner_token,
-                            affected_files=(),
-                            previous_kg_generation_id=previous_generation,
-                            current_kg_generation_id=None,
-                            detail="rebaseline evidence fence lost",
-                            triggered_by=actor_id,
-                            step_result=None,
-                            candidate_kg_generation_id=candidate_generation_id,
-                            lease_heartbeat=lease_heartbeat,
-                            operation_reservation=operation_reservation,
-                            reservation_token=reservation_token,
-                            reservation_heartbeat=reservation_heartbeat,
-                            writer_fenced=False,
-                        )
                     logger.exception(
                         "kg.rebuild.manifest_revalidation_failed board=%s "
                         "run=%s phase=pre_step",
@@ -2942,37 +2808,9 @@ class KGRebuildService:
                     source_revalidate=_inner_source_revalidate,
                     recovery_failure_code=recovery_failure_code,
                     recovery_failure_detail=recovery_failure_detail,
-                    rebaseline_source_rows=rebaseline_source_rows,
-                    rebaseline_evidence_id=rebaseline_evidence_id,
-                    rebaseline_target_source_set_hash=(
-                        rebaseline_target_source_set_hash
-                    ),
                 )
                 try:
                     step_result = self.rebuild_step_adapter(step_input)
-                    if rebaseline_evidence_id is not None:
-                        if step_result.rebaseline_evidence_id not in (
-                            None,
-                            rebaseline_evidence_id,
-                        ) or step_result.rebaseline_target_source_set_hash not in (
-                            None,
-                            rebaseline_target_source_set_hash,
-                        ):
-                            raise RuntimeError(
-                                "rebuild_step_rebaseline_binding_mismatch"
-                            )
-                        step_result = replace(
-                            step_result,
-                            rebaseline_evidence_id=rebaseline_evidence_id,
-                            rebaseline_target_source_set_hash=(
-                                rebaseline_target_source_set_hash
-                            ),
-                        )
-                    elif (
-                        step_result.rebaseline_evidence_id is not None
-                        or step_result.rebaseline_target_source_set_hash is not None
-                    ):
-                        raise RuntimeError("rebuild_step_unproved_rebaseline_binding")
                 except Exception as exc:
                     logger.exception(
                         "kg.rebuild.step_adapter_failed board=%s run=%s",
@@ -3909,15 +3747,6 @@ class KGRebuildService:
                 "manifest_ref": manifest_ref,
                 "run_id": run_id,
             }
-            if step_result and step_result.rebaseline_evidence_id is not None:
-                event_payload.update(
-                    {
-                        "rebaseline_evidence_id": (step_result.rebaseline_evidence_id),
-                        "rebaseline_target_source_set_hash": (
-                            step_result.rebaseline_target_source_set_hash
-                        ),
-                    }
-                )
             _require_terminal_fence("terminal_event")
             try:
                 emit_result = self.event_emitter(event_payload)

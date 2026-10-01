@@ -18,8 +18,7 @@ from okto_pulse.core.application.boundary.source_read_consumer_gate import (
 )
 from okto_pulse.core.kg.board_source_store import (
     REFINEMENT_CONTENT_COLUMNS,
-    SPEC_CONTENT_COLUMNS_V1,
-    SPEC_CONTENT_COLUMNS_V2,
+    SPEC_CONTENT_COLUMNS,
     SPEC_SOURCE_MANIFEST_VERSION,
     _canonical_content_hash,
     projected_root_content_hash,
@@ -151,14 +150,9 @@ def test_community_reader_preserves_source_contract_fields(tmp_path: Path) -> No
     assert spec["source_artifact_status"] == "done"
     assert spec["source_manifest_version"] == SPEC_SOURCE_MANIFEST_VERSION
     assert spec["working_ttl_days"] == 7
-    assert spec["content_hash_v1"] == _canonical_content_hash(
-        _spec_hash_row(), SPEC_CONTENT_COLUMNS_V1
-    )
-    content_hash_v2 = _canonical_content_hash(
-        _spec_hash_row(), SPEC_CONTENT_COLUMNS_V2
-    )
-    assert spec["content_hash_v2"] == content_hash_v2
-    assert spec["content_hash"] == projected_root_content_hash(content_hash_v2)
+    base_hash = _canonical_content_hash(_spec_hash_row(), SPEC_CONTENT_COLUMNS)
+    assert spec["content_hash"] == projected_root_content_hash(base_hash)
+    assert "content_hash_v1" not in spec and "content_hash_v2" not in spec
 
     decision = next(row for row in rows if row["artifact_type"] == "decision")
     assert decision["source_ref"] == "decision:s1:dec1"
