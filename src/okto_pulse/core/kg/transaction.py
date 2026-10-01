@@ -35,6 +35,7 @@ from okto_pulse.core.kg.interfaces.graph_transaction import (
 )
 from okto_pulse.core.kg.schema_contract import resolve_relationship_endpoint_pair
 from okto_pulse.core.ports.projection_effects import ProjectionPropertyEffects
+from okto_pulse.core.ports.card_projection import is_card_projection_writer
 
 _SPEC_DEPENDENCY_RULE_PREFIX = "precedes/spec_dependency/"
 
@@ -53,8 +54,9 @@ def _projection_edge_identity(
     prerequisite may precede one owner under more than one rule.  Leaving the rule out would
     let a dependency the session just wrote cancel a completely different one that merely
     shares endpoints -- and the one cancelled would be the one the before-image vouches for.
-    Every other relationship is identified by its endpoints, and demanding a rule it may not
-    declare would split identities that are actually the same.
+    Closed Card projections also carry their rule: changing observed provenance must not
+    cancel the prior relation restored by compensation. Other relationships keep their
+    existing endpoint identity.
     """
 
     dependency = (
@@ -69,7 +71,9 @@ def _projection_edge_identity(
         to_type,
         from_id,
         to_id,
-        rule_id if dependency else "",
+        rule_id if dependency or is_card_projection_writer(edge_type=edge_type,
+            source_type=from_type, target_type=to_type, rule_id=rule_id,
+            layer='deterministic', created_by='worker_layer1') else "",
     )
 
 
@@ -742,14 +746,19 @@ class TransactionOrchestrator:
             and rule_id.startswith("precedes/spec_dependency/")
             else None
         )
-        if self._edge_exists(
+        card_projection = is_card_projection_writer(edge_type=edge_type,
+            source_type=from_type, target_type=to_type, rule_id=rule_id,
+            layer=edge_attrs.get('layer'), created_by=edge_attrs.get('created_by'))
+        exists = (self.graph_scope.edge_exists(edge_type, from_type, to_type, from_id, to_id,
+            rule_id, layer='deterministic', created_by='worker_layer1') if card_projection else self._edge_exists(
             edge_type,
             from_type,
             to_type,
             from_id,
             to_id,
             rule_id=dependency_rule_id,
-        ):
+        ))
+        if exists:
             logger.info(
                 "kg.transaction.edge_exists session=%s edge=%s from=%s(%s) to=%s(%s)",
                 self.session_id, edge_type, from_type, from_id, to_type, to_id,

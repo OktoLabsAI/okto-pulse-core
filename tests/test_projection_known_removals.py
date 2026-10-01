@@ -7,7 +7,7 @@ from okto_pulse.core.application.processors.deterministic_kg import (
     RelationalProjectionActiveEdgeRef, RelationalProjectionActiveSetIntent,
 )
 from okto_pulse.core.kg.projection_removals import card_removal_intents
-from okto_pulse.core.ports.card_projection import CARD_SCENARIO_RULES
+from okto_pulse.core.ports.card_projection import CARD_SCENARIO_RULES, CARD_CHILD_FAMILIES
 
 
 def declaration():
@@ -17,7 +17,9 @@ def declaration():
     ref = RelationalProjectionActiveEdgeRef('edge', edge.edge_type, edge.from_candidate_id,
         edge.to_candidate_id, rule)
     intents = (RelationalProjectionActiveSetIntent('card', 'c', 'card_parent', ()),
-        RelationalProjectionActiveSetIntent('card', 'c', 'card_scenarios', (), (ref,)))
+        RelationalProjectionActiveSetIntent('card', 'c', 'card_scenarios', (), (ref,))) + tuple(
+            RelationalProjectionActiveSetIntent('card', 'c', family.namespace, ())
+            for family in CARD_CHILD_FAMILIES)
     return dict(intents=intents, nodes={'root': SimpleNamespace(node_type='Entity', source_artifact_ref='card:c')},
         edges={'edge': edge})
 
@@ -31,7 +33,7 @@ def test_lookup_failure_is_not_permission_to_remove():
 
 def test_pending_target_keeps_its_logical_identity_and_complete_source_set():
     plans = card_removal_intents(**declaration(), resolve_endpoint=lambda _: (None, None))
-    assert len(plans) == 2
+    assert len(plans) == 2 + len(CARD_CHILD_FAMILIES)
     assert plans[1].expected_edges[0].target_ref == 'spec:s:test_scenario:new'
     assert all(not item.active_edges and not item.active_nodes for item in plans)
     assert card_removal_intents(**declaration(), resolve_endpoint=lambda _: ('physical', 'TestScenario')) == ()

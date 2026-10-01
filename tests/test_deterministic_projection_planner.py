@@ -19,7 +19,8 @@ def spec(**values):
         'description': 'Retain structured requirements.', 'context': '', 'status': 'done',
         'functional_requirements': [{'id': 'fr-one', 'title': 'Retain the source'}],
         'technical_requirements': [], 'acceptance_criteria': [], 'business_rules': [],
-        'test_scenarios': [], 'api_contracts': [], 'decisions': [], 'architecture_designs': []} | values))
+        'test_scenarios': [], 'api_contracts': [], 'decisions': [], 'architecture_designs': [],
+        'integration_requirements': [], 'observability_requirements': []} | values))
 
 
 def persistence(artifact):

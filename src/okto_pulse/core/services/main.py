@@ -11265,7 +11265,7 @@ class SpecService:
         if bumps_version:
             from okto_pulse.core.events import publish as event_publish
             from okto_pulse.core.events.types import SpecVersionBumped
-            from okto_pulse.core.ports.card_projection import scenario_linked_card_ids
+            from okto_pulse.core.ports.card_projection import spec_linked_card_ids
 
             changed_struct_fields = sorted(content_fields & update_data.keys())
             await event_publish(
@@ -11276,8 +11276,7 @@ class SpecService:
                     old_version=old_version,
                     new_version=spec.version,
                     changed_fields=changed_struct_fields,
-                    projection_card_ids=scenario_linked_card_ids(
-                        old_data.get('test_scenarios'), update_data.get('test_scenarios')),
+                    projection_card_ids=spec_linked_card_ids(old_data, update_data),
                 ),
                 session=self.db,
             )
@@ -11290,7 +11289,7 @@ class SpecService:
         if bumps_semantic:
             from okto_pulse.core.events import publish as event_publish
             from okto_pulse.core.events.types import SpecSemanticChanged
-            from okto_pulse.core.ports.card_projection import scenario_linked_card_ids
+            from okto_pulse.core.ports.card_projection import spec_linked_card_ids
 
             changed_semantic = sorted(_semantic_changed_fields())
             await event_publish(
@@ -11299,8 +11298,7 @@ class SpecService:
                     actor_id=user_id,
                     spec_id=spec.id,
                     changed_fields=changed_semantic,
-                    projection_card_ids=scenario_linked_card_ids(
-                        old_data.get('test_scenarios'), update_data.get('test_scenarios')),
+                    projection_card_ids=spec_linked_card_ids(old_data, update_data),
                 ),
                 session=self.db,
             )

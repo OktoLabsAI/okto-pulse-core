@@ -845,6 +845,9 @@ class _InMemoryGraphTransactionScope:
         from_id: str,
         to_id: str,
         rule_id: str | None = None,
+        *,
+        layer: str | None = None,
+        created_by: str | None = None,
     ) -> bool:
         return any(
             edge.get("_type") == edge_type
@@ -856,6 +859,8 @@ class _InMemoryGraphTransactionScope:
                 rule_id is None
                 or str(edge.get("rule_id") or "") == rule_id
             )
+            and (layer is None or edge.get('layer') == layer)
+            and (created_by is None or edge.get('created_by') == created_by)
             for edge in self.store._board_edges(self.board_id)
         )
 

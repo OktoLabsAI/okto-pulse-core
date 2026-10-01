@@ -59,4 +59,5 @@ async def prepare_card_scenario_projection(context, *, board_id, card, result, p
     result.content_hash = hashlib.sha256(json.dumps(
         ['card-scenarios/v2', result.content_hash, analysis.snapshot.source_fingerprint, sorted(selected)],
         separators=(',', ':'), ensure_ascii=True).encode()).hexdigest()
-    return result
+    from okto_pulse.core.application.processors.card_child_projection import prepare_card_child_projection
+    return prepare_card_child_projection(card=card, parent=parent, result=result)

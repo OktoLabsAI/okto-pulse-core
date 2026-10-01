@@ -147,8 +147,9 @@ class ConsolidationEnqueuer:
 
     async def handle(self, event: DomainEvent, session: object) -> None:
         targets = self._map_targets(event)
+        from okto_pulse.core.ports.card_projection import CARD_PROJECTION_FIELDS
         if (event.event_type in {'spec.semantic_changed', 'spec.version_bumped'}
-                and 'test_scenarios' in getattr(event, 'changed_fields', ())):
+                and CARD_PROJECTION_FIELDS.intersection(getattr(event, 'changed_fields', ()))):
             # A Card-side reference can exist without a reciprocal linked_task_id.
             # Read consumers of this Spec through the public relational port,
             # never by scanning the Board or consulting the derived graph.

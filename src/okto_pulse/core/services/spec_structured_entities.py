@@ -822,9 +822,8 @@ class StructuredSpecEntityService:
         spec.version = old_version + 1
 
         changed_fields = list(update_data.keys())
-        from okto_pulse.core.ports.card_projection import scenario_linked_card_ids
-        projection_card_ids = scenario_linked_card_ids(
-            old_values.get('test_scenarios'), update_data.get('test_scenarios'))
+        from okto_pulse.core.ports.card_projection import spec_linked_card_ids
+        projection_card_ids = spec_linked_card_ids(old_values, update_data)
         await event_publish(
             SpecVersionBumped(
                 board_id=spec.board_id,

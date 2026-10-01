@@ -457,6 +457,9 @@ class GraphTransactionScope(Protocol):
         from_id: str,
         to_id: str,
         rule_id: str | None = None,
+        *,
+        layer: str | None = None,
+        created_by: str | None = None,
     ) -> bool: ...
 
     def create_edge(

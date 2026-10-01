@@ -1018,8 +1018,12 @@
       "line": 615,
       "id": "KG-04",
       "normative_text": "| KG-04 | Task, Test e Bug vinculados a filhos | Tipos corretos e todas as relações previstas, sem Bug falso como Entity. |",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "verified_by_reviewed_execution",
+      "test_text_references": [],
+      "reviewed_execution": {
+        "artifact": "acceptance-card-child-projection.json",
+        "criterion_key": "KG:KG-04"
+      }
     },
     {
       "key": "KG:KG-05",
@@ -1027,8 +1031,12 @@
       "line": 616,
       "id": "KG-05",
       "normative_text": "| KG-05 | Duas fontes declaram o mesmo card→cenário | Uma relação lógica, múltipla proveniência quando necessária, sem dupla contagem. |",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "verified_by_reviewed_execution",
+      "test_text_references": [],
+      "reviewed_execution": {
+        "artifact": "acceptance-card-child-projection.json",
+        "criterion_key": "KG:KG-05"
+      }
     },
     {
       "key": "KG:KG-06",

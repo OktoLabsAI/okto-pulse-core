@@ -2,6 +2,46 @@
 
 ## Estado para retomada
 
+KG-04/05 implementados e verificados. O emitter Card-side agora projeta as nove
+coleções autoritativas, com Entity para Task/Test e Bug para Bug. Cada família
+possui namespace/regra fechados; remover/restaurar/replay converge sem duplicar
+nem apagar fatos de outro dono/autor. Mudanças estruturadas e gerais de Spec
+invalidam consumidores antigos e novos; o último vínculo removido fica no outbox.
+Deduplicação no port GraphTransaction distingue regra/layer/autor: uma relação
+humana paralela ou proveniência anterior não substitui o fato atual do worker.
+Nenhum layout físico, gate, autoridade ou crédito de entrega alterado.
+
+Validação final: Core4586=0,123passed; Community17784=0,38passed; frontend26257=0,
+31passed. Três testes integrados de schema completo (normal/test/bug) passaram
+na campanha43921; essa campanha terminou1 em uma fixture nativa posterior com
+DDL incompleto. Fixtures corrigidas e qualificadas na campanha final. Probe70893
+também confirmou recusa de restaurar before-image sobre uma nova escrita; o teste
+passou a compensar a escrita intermediária antes de restaurar, sem relaxar o guard.
+São195 casos distintos, sem somar repetições. Evidência e limites:
+acceptance-card-child-projection.json. Ruff F/E9 e diff verdes.
+
+Par final dist-learning-reconciliation-card-children-qualified reconstruído,
+instalado e provado byte-a-byte (84878=0): Core860py/923payload,Community373/458.
+F16 final84561=0,ok=true,findings/documentation_findings vazios,oito budgets ZERO.
+READMEs regenerados pelo renderer oficial. Após os três testes integrados houve
+somente ajuste de docstrings e do fake de teste para o contrato público ampliado;
+Core/compensação nativa foram executados novamente no par final, em processos novos.
+
+Inventário144 verificados/29 parciais/73 não auditados. G3/G5, critérios restantes,
+benchmark e distribuição final continuam no plano original. KG-10/T23 permanecem
+decisões já solicitadas. Base publicada anterior: Core5189e569/Community1920f513.
+Nenhum processo de validação pendente nem dado real alterado.
+
+G2/G4 em implementação: reprodução card-children-before-core (sessão34193,
+exit1) confirmou que Card normal recebe apenas cenário, faltando os oito outros
+filhos com linked_task_ids. Provenance-card-children-before.json confirmou o par
+instalado antes da reprodução. Implementação reutiliza layouts físicos existentes,
+com namespaces/proveniência fechados por coleção e invalidação dos consumidores
+antigos/novos. Não altera gates, autoridade ou crédito de entrega. Alterações ainda
+não qualificadas neste checkpoint; reconstruir/instalar/provar o par antes dos testes.
+Inventário permanece142/29/75; G3/G5 e decisões KG-10/T23 não resolvidos por esta
+correção. Último par publicado Core5189e569/Community1920f513.
+
 KG-03 verificado: FR/AC/cenários reordenados independentemente no SQL
 descartável passam pela fila e worker normais. Os seis IDs nativos Grafx ficam
 iguais, assim como o multiconjunto completo de relações lógicas/proveniência/

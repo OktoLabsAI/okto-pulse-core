@@ -6,7 +6,7 @@ import pytest
 
 from okto_pulse.core.events.handlers.consolidation_enqueuer import ConsolidationEnqueuer
 from okto_pulse.core.events.types import SpecSemanticChanged, CardScenarioProjectionChanged
-from okto_pulse.core.ports.card_projection import scenario_linked_card_ids
+from okto_pulse.core.ports.card_projection import scenario_linked_card_ids, CARD_PROJECTION_FIELDS
 
 
 def test_removed_and_added_references_survive_as_bounded_event_metadata():
@@ -20,7 +20,8 @@ def test_removed_and_added_references_survive_as_bounded_event_metadata():
 
 
 @pytest.mark.asyncio
-async def test_spec_change_invalidates_card_side_consumers_and_old_links_with_board_fence(monkeypatch):
+@pytest.mark.parametrize('field', sorted(CARD_PROJECTION_FIELDS))
+async def test_spec_change_invalidates_card_side_consumers_and_old_links_with_board_fence(monkeypatch, field):
     from okto_pulse.core.ports import application_persistence
     queries = []
     async def read(context, query):
@@ -38,7 +39,7 @@ async def test_spec_change_invalidates_card_side_consumers_and_old_links_with_bo
     handler = ConsolidationEnqueuer()
     handler._enqueue_one = AsyncMock()
     event = SpecSemanticChanged(board_id='board', actor_id='owner', spec_id='spec',
-        changed_fields=['test_scenarios'], projection_card_ids=['old', 'new', 'foreign', 'old'])
+        changed_fields=[field], projection_card_ids=['old', 'new', 'foreign', 'old'])
     await handler.handle(event, None)
     targets = [(call.args[1], call.args[2]) for call in handler._enqueue_one.await_args_list]
     assert targets == [('spec', 'spec'), ('card', 'old'), ('card', 'new'), ('card', 'card-side-only')]
@@ -78,6 +79,35 @@ async def test_real_scenario_unlink_retains_removed_card_in_outbox(db_factory):
             DomainEventRow.board_id == 'board-invalidation',
             DomainEventRow.event_type == 'spec.semantic_changed'))).scalar_one()
         assert event.payload_json['projection_card_ids'] == ['kept-invalidation', 'old-invalidation']
+
+
+@pytest.mark.asyncio
+async def test_real_structured_child_unlink_retains_last_consumer(db_factory):
+    from sqlalchemy import select
+    from sqlalchemy_test_models import Card, Spec, DomainEventRow
+    from test_spec_structured_entities import _seed_spec, _payload_for, _permission_set
+    from okto_pulse.core.services.spec_structured_entities import (
+        StructuredSpecEntityService, StructuredSpecEntityCommand,
+    )
+    async with db_factory() as db:
+        await _seed_spec(db, board_id='child-board', spec_id='child-spec', actor_id='owner')
+        spec = await db.get(Spec, 'child-spec')
+        spec.decisions = [{**_payload_for('decision'), 'linked_task_ids': ['child-card']}]
+        db.add(Card(id='child-card', board_id='child-board', spec_id='child-spec', title='Card',
+            status='not_started', card_type='normal', created_by='owner'))
+        await db.commit()
+        result = await StructuredSpecEntityService(db).mutate(StructuredSpecEntityCommand(
+            spec_id='child-spec', actor_id='owner', entity_type='decision', operation='unlink_task',
+            entity_id='dec_struct', task_id='child-card', permission_set=_permission_set('Spec')))
+        assert result.success
+        await db.commit()
+    async with db_factory() as db:
+        assert (await db.get(Spec, 'child-spec')).decisions[0]['linked_task_ids'] == []
+        rows = list(await db.scalars(select(DomainEventRow).where(
+            DomainEventRow.board_id == 'child-board',
+            DomainEventRow.event_type.in_(['spec.semantic_changed', 'spec.version_bumped']))))
+        assert len(rows) == 2
+        assert all(row.payload_json['projection_card_ids'] == ['child-card'] for row in rows)
 
 
 @pytest.mark.asyncio

@@ -3130,13 +3130,17 @@ async def _prepare_deterministic_projection(db, entry, *, persistence=None):
         # an empty replacement so its relationally-derived children converge
         # without re-materializing the cancelled root.
         if entry.artifact_type == "card":
+            from okto_pulse.core.ports.card_projection import CARD_CHILD_FAMILIES
             # Replace only this Card's observed links; do not revive its root.
             worker_result = WorkerResult(
                 raw_content=f"relational-projection-cleanup:card:{entry.artifact_id}:cancelled",
                 relational_projection_active_set_intents=(RelationalProjectionActiveSetIntent(
                     owner_type="card", owner_id=entry.artifact_id,
                     namespace="card_scenarios", active_refs=(),
-                ),),
+                ), *(RelationalProjectionActiveSetIntent(
+                    owner_type='card', owner_id=entry.artifact_id,
+                    namespace=family.namespace, active_refs=(),
+                ) for family in CARD_CHILD_FAMILIES)),
             )
         else:
             worker_result = _cancelled_refinement_projection(entry.artifact_id)
