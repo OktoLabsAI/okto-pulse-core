@@ -2,6 +2,23 @@
 
 ## Estado para retomada
 
+KG-03 verificado: FR/AC/cenários reordenados independentemente no SQL
+descartável passam pela fila e worker normais. Os seis IDs nativos Grafx ficam
+iguais, assim como o multiconjunto completo de relações lógicas/proveniência/
+tipos/maturidade. Cenário um continua ligado ao critério dois e cenário dois ao
+critério um após cada reorder e replay; nenhuma associação por posição.
+
+Community16064 terminou0: um teste materializado. Ruff F/E9 e diff verdes.
+acceptance-kg-reordered-identities.json registra tempo/hash/XML e limites: SQL
+é entrada controlada para testar projeção, não teste de permissão de reorder.
+Nenhum produto/UI/schema/gate alterado. Fonte/site/wheels permanecem iguais à
+provenance-independent-profiles1; F16 anterior90981=0,oito budgets ZERO.
+
+Inventário142 verificados/29 parciais/75 não auditados. Par publicado anterior:
+Core36b1bb63/Communitybaf51eef. Continuar critérios originais restantes, benchmark
+e distribuição final. KG-10/T23 aguardam decisões já solicitadas. Nenhum processo
+pendente ou dado real alterado; objetivo integral continua ativo.
+
 ARQVER AC-VER-12/17 verificados. TR de latência e OR de alerta recebem
 herança funcional HTTP200 pelo writer REST; diagnóstico mantém pendências
 technical/operational. Gate de plano e start recusam, mesmo com aprovação de

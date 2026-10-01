@@ -92,11 +92,12 @@
     },
     "KG:KG-12": {
       "review_status": "verified_by_reviewed_execution",
-      "evidence": "BR\u2192FR, IR\u2192FR, OR\u2192IR and API\u2192BR declared directions are tested through Core and real Grafx; explicit removal empties the owned set, then rebuild matches."
+      "evidence": "BR→FR, IR→FR, OR→IR and API→BR declared directions are tested through Core and real Grafx; explicit removal empties the owned set, then rebuild matches."
     },
     "KG:KG-03": {
       "review_status": "partial",
-      "evidence": "AC and declared FR identity/reordering covered; full materialized reorder matrix across every collection remains unaudited."
+      "evidence": "AC and declared FR identity/reordering covered; full materialized reorder matrix across every collection remains unaudited.",
+      "followup_evidence": "acceptance-kg-reordered-identities.json"
     },
     "KG:KG-16": {
       "review_status": "partial",

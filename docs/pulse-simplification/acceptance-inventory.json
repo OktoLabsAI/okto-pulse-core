@@ -912,7 +912,7 @@
       "line": 614,
       "id": "KG-03",
       "normative_text": "| KG-03 | Reordenar AC/FR/cenário sem mudar ID | Mesma identidade e relação; nenhuma associação por índice passa a outro item. |",
-      "review_status": "partial",
+      "review_status": "verified_by_reviewed_execution",
       "test_text_references": [
         {
           "path": "okto_labs_pulse_core/tests/test_kg_03a_2_badge_decision_eligibility.py",
@@ -1008,7 +1008,7 @@
         }
       ],
       "reviewed_execution": {
-        "artifact": "acceptance-k2-spec-parity.json",
+        "artifact": "acceptance-kg-reordered-identities.json",
         "criterion_key": "KG:KG-03"
       }
     },
