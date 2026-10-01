@@ -1,0 +1,121 @@
+{
+  "format": "pulse-benchmark-delivery-comparison/v1",
+  "status": "partial_integrated_benchmark",
+  "verified_criterion_keys": [
+    "ARQVER:ADV-23"
+  ],
+  "base_pair": {
+    "core": "20707250",
+    "community": "b6dda64"
+  },
+  "current_product_pair": {
+    "core": "76d5cc73",
+    "community": "a7eab2fd"
+  },
+  "artifact": {
+    "file": "benchmark-delivery-comparison-2026-10-01.json.gz",
+    "sha256": "d7c6a0c5fcff7ed902fc1889a09ad08fd4cd061fe5caf7b2e93daef6f76979b0",
+    "bytes": 1002831
+  },
+  "summary": {
+    "baseline": {
+      "tests_passed": 1,
+      "sessions": 2,
+      "methods": {
+        "initialize": 2,
+        "tools/list": 2,
+        "resources/read": 2,
+        "tools/call": 6
+      },
+      "payload_bytes": 612003,
+      "tokens_cl100k_base": 143892,
+      "sql_queries_during_serial_requests": 137,
+      "request_elapsed_ms": 266.51549991220236,
+      "sql_elapsed_ms": 68.57399956788868,
+      "tools_list_counts": [
+        340
+      ],
+      "log_sha256": "3545d51d424151ab9c69e66f27bfe214faadce1999b34109f5b81e8a3df67487"
+    },
+    "current": {
+      "tests_passed": 1,
+      "sessions": 2,
+      "methods": {
+        "initialize": 2,
+        "tools/list": 2,
+        "resources/read": 2,
+        "tools/call": 6
+      },
+      "payload_bytes": 643136,
+      "tokens_cl100k_base": 150765,
+      "sql_queries_during_serial_requests": 202,
+      "request_elapsed_ms": 351.3728000689298,
+      "sql_elapsed_ms": 101.45630047190934,
+      "tools_list_counts": [
+        304
+      ],
+      "log_sha256": "1124f869c8f19594e15d8c1c3c0ae8c9db9af4f8ece4fe304e760ee6385124c9"
+    },
+    "handoff": {
+      "tests_passed": 4,
+      "sessions": 20,
+      "methods": {
+        "initialize": 20,
+        "tools/list": 20,
+        "tools/call": 28
+      },
+      "payload_bytes": 5277970,
+      "tokens_cl100k_base": 1247102,
+      "sql_queries_during_serial_requests": 944,
+      "request_elapsed_ms": 2483.397900359705,
+      "sql_elapsed_ms": 474.96389818843454,
+      "tools_list_counts": [
+        304
+      ],
+      "log_sha256": "5186b8e412941b9dcbcb1ea31c36a479ef3e0473036c86623bbad15f2c7e155f"
+    }
+  },
+  "fixture_equivalence": {
+    "test_code_traceability_persistence.py": {
+      "byte_identical": true,
+      "sha256": "d7541e9126cf3c97d2567f4eb22acf56159a25ed4ec682662436a0180080b2c1"
+    },
+    "test_evidence_v2_adapter.py": {
+      "byte_identical": true,
+      "sha256": "eeac45f93a956864541944052f650fa6cccc7a46956fc04ead2e4f0d2c8a10fd"
+    },
+    "test_delivery_evidence_integration.py::ledger": {
+      "text_identical": true,
+      "sha256": "cc8d265d514dcbc2748396340b21e2eed2894e9f3c00f26eaf4062904c626bae"
+    },
+    "test_delivery_evidence_integration.py::command": {
+      "text_identical": true,
+      "sha256": "88309b71ac8a0fd0fcba956ff93859ae2b3a7ab6e9cd006a254c778fbbcd3468"
+    }
+  },
+  "measurement_contract": "UTF-8, sorted keys, compact JSON, aliases, omit None",
+  "versions": {
+    "tiktoken": "0.12.0",
+    "mcp": "1.29.0",
+    "fastmcp": "2.14.7",
+    "pytest": "8.3.4",
+    "sqlalchemy": "2.0.49"
+  },
+  "limits": [
+    "ADV-23 is verified only as measurement of actual payload bytes, estimated tokens and calls rather than tool count. No full-flow acceptance or cost target is claimed.",
+    "Baseline/current use the same signed-test and accepted-implementation fixtures, Full Control for all remaining operations, no Sprint, and real authentication/authorization. Preserved legacy in-progress contract; not new Spec authorship.",
+    "Two sessions each read the actual reference resource, observe missing proof, register implementation with exact replay, recover it in a new session and register authenticated test proof. Three reads and three writes/replay; two durable records. Spec status remains in_progress: this segment does not measure lifecycle closeout.",
+    "The handoff campaign is current-only: four approval/rejection and grant/separation scenarios, five sessions each. Sum includes all 20 catalogs, not only a convenient session.",
+    "Handoff discovery returned the complete 304-tool catalog even for narrow grants. Operation denial/separation is verified; permission-filtered discovery is not claimed.",
+    "Context acquisition, useful proof operations and exact retry are separately visible in raw captures. No tests/review or necessary reads are counted as avoided administration.",
+    "Fixture setup/authorship and external implementation are excluded. Signed test issuance occurs in setup; the measured write authenticates it. No separate external execution cost or interruption before binding is claimed.",
+    "Single local observations, including dynamic receipt IDs/signatures and timestamps; latency is not a statistically established performance improvement.",
+    "Rounds1/2 failed because the isolated harness lacked relational authentication composition; round3 reached final assertions but used wrong enum string casing. Round4 passed both; no product edits or gate relaxation.",
+    "The full benchmark scenarios and remaining acceptance review stay pending. No new product requirement introduced."
+  ],
+  "source_sha256": {
+    "okto_labs_pulse_community/scripts/measure_mcp_fixture.py": "43f3899949939713987b9d903097836154d0862fcf719a6d10884c0cce2105a3",
+    "okto_labs_pulse_community/scripts/benchmarks/test_delivery_comparison.py": "e96a593e69020368a974b57d2f0022e78f58e450ccec2f3aba0cd04b0c0432f4",
+    "okto_labs_pulse_community/tests/test_executor_reviewer_handoff.py": "3b7e527741857e470042975cec8309840d766dd77756a09fa7f71672fd6d0c90"
+  }
+}

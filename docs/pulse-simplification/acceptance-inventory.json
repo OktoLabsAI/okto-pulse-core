@@ -3373,8 +3373,12 @@
       "line": 747,
       "id": "ADV-23",
       "normative_text": "| ADV-23 | Nova tool é menor em quantidade, mas seu schema ficou maior. | Benchmark considera bytes/tokens reais e chamadas, não só contagem. |",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "verified_by_reviewed_execution",
+      "test_text_references": [],
+      "reviewed_execution": {
+        "artifact": "benchmark-delivery-comparison.json",
+        "criterion_key": "ARQVER:ADV-23"
+      }
     },
     {
       "key": "ARQVER:ADV-24",

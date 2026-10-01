@@ -2,6 +2,42 @@
 
 ## Estado para retomada
 
+### 2026-10-01 — benchmark pareado de Delivery e custo de handoff
+
+Base publicada Core76d5cc73/Communitya7eab2fd. Sem mudança de produto. Prova
+provenance-flow-handoff1.json terminal0:883/384py byte-idênticos,946/469payload;
+baseline novamente confirmado769/311py byte-idênticos nos SHAs20707250/b6dda64.
+Instrumentador ganhou origem dos módulos efetivamente importados. Benchmark
+comum em Community/scripts/benchmarks/test_delivery_comparison.py; execução
+isolada --confcutdir e PYTHONPATH pareado, sem alterar worktrees baseline.
+Funções ledger/command idênticas e dois helpers de prova byte-idênticos nos pares.
+
+delivery-comparison-baseline4/current4:37786=0/18194=0,1passed cada. Autenticação
+real Full Control, contrato legado in_progress sem Sprint, resource consumido
+em cada sessão, implementação aceita+replay, segunda sessão recupera binding e
+associa resultado autenticado de teste; rollup false→true,2registros sem duplicata.
+Rounds1/2 falharam por composição ausente no harness;3 só asserção de casing do
+enum.4 corrigiu a fixture, nenhum gate/produto alterado. Antes/depois:2sessões,
+12requests (2initialize+2tools/list+2resources/read+6tools/call);612003→643136bytes,
+143892→150765tokens estimados (+4,78%),SQL137→202. Não há redução de chamadas
+neste segmento. Latências são observações locais únicas, não ganho estatístico.
+
+flow-handoff1:63145=0,4passed;20sessões/28toolcalls,1247102tokens/5277970bytes,
+SQL944; aprovar/rejeitar e grants/separação preservados. Mesmo para grants estreitos,
+tools/list contém304tools; não alegar descoberta filtrada. Recusas efetivas são
+verificadas pelo teste existente. Recibo benchmark-delivery-comparison.json e
+arquivo compactado homônimo datado preservam payloads/provas/hashes. Ruff F/E9
+verde. Somente ADV-23 promovido: custo considera bytes/tokens e chamadas reais,
+não só quantidade menor de tools. Inventário154verificados/29parciais/63nãoauditados.
+
+PENDÊNCIAS ORIGINAIS: autoria/classificação/defaults/reuso, execução externa
+separada, progresso dirty/antes de binding, sem acesso ao worktree, muitos Targets,
+cenários/histórico longo, múltiplas Specs/bug/retrabalho e demais cenários completos
+antes/depois; revisar critérios remanescentes. O segmento preserva contrato legado
+em andamento e não mede encerramento de lifecycle. Não promover BASE:T43/KG:KG-64
+ou AC-INT-12 com essa evidência parcial. KG-10/T23 mantêm decisões já registradas.
+Objetivo integral ativo, sem ampliar escopo nem relaxar requisitos para percentuais.
+
 ### 2026-10-01 — publicação da linhagem e medição parcial do benchmark original
 
 Linhagem commit/push concluído: Core d757dd96 / Community 951444b1, ambos
