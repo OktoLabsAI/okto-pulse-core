@@ -2,6 +2,31 @@
 
 ## Estado para retomada
 
+ARQVER AC-ARQ-14 verificado: DELETE REST real da fonte após promoção de
+dois IRs mantém seus JSONs e todo histórico de classificação. Leitura em nova
+sessão mostra candidato retired, contrato atual ausente e contrato analisado,
+origem/revisão1 e referências dos dois IRs preservados. Evento novo registra
+ator e mudança de architecture_designs na Spec. Gates reais de planejamento
+e entrega continuam recusando obrigações pendentes.
+
+Community59169=0,9passed35.25s;76234=0,1passed13.06s final dirigido com asserts
+de revisão/evento. São9 casos distintos. Ruff F/E9 e diff verdes.
+acceptance-architecture-source-withdrawal.json explicita limites: identidade
+REST de fixture; alocação Draft e plano/prova incompletos. Não afirmar que o
+plano era executável antes. Retired deriva da população completa + histórico
+imutável; evento de retirada é parent-scoped, sem inventar tombstone novo.
+
+Probe4 carecia da porta de propagação de recursos; final5 compõe os efeitos
+relacionais Community reais. Um trecho de teste deslocado foi restaurado antes
+do final5. Nenhum código produtivo, gate ou semântica histórica alterado.
+Par fonte/site/wheels permanece byte-idêntico ao provenance-single-agent-full1.
+F16 anterior31859=0,oito budgets ZERO;frontend anterior46579=0,54passed. Sem UI.
+
+Inventário125 verificados/34 parciais/87 não auditados. Seguir critérios restantes
+dos complementos, T33/T46, benchmark e distribuição final originais. KG-10/T23
+aguardam decisões já solicitadas. Par publicado anterior:
+Core00945523/Community92efb028. Sem processo pendente ou dados reais alterados.
+
 ARQVER AC-ARQ-09/10/11 e ADV-24 verificados, fechando lacunas já descritas
 em acceptance-architecture-execution.json. Associação mantém IR local pendente
 sem duplicação; IR de outra Spec recusado sem writes. Promoção publicação-only

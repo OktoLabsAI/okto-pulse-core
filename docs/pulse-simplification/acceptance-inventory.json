@@ -2622,10 +2622,10 @@
       "line": 346,
       "id": "AC-ARQ-14",
       "normative_text": "**AC-ARQ-14 — verifica RF-ARQ-14.** **Dado** Uma fonte adotada é removida após a promoção de um IR. **Quando** O contexto/gate é reavaliado. **Então** A retirada e sua versão ficam auditadas, o IR permanece no escopo até revisão autorizada e a cobertura não se torna 100% por esconder a fonte indisponível.",
-      "review_status": "partial",
+      "review_status": "verified_by_reviewed_execution",
       "test_text_references": [],
       "reviewed_execution": {
-        "artifact": "acceptance-architecture-execution.json",
+        "artifact": "acceptance-architecture-source-withdrawal.json",
         "criterion_key": "ARQVER:AC-ARQ-14"
       }
     },

@@ -925,7 +925,8 @@
             }
           ]
         }
-      ]
+      ],
+      "followup_evidence": "acceptance-architecture-source-withdrawal.json"
     },
     "ARQVER:AC-ARQ-16": {
       "status": "verified_by_reviewed_execution",
