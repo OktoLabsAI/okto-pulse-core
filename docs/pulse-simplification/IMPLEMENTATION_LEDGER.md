@@ -2,6 +2,20 @@
 
 ## Estado para retomada
 
+### 2026-10-01 — checkpoint Grafx publicado; continuar C1–C4
+
+Pushes confirmados em origin/feature/v0.4.0:
+- Core `2591d9575bce9bc5c7e8655e7ac34c0182af4430`.
+- Community `6d77cc1753583ae4747de9dd1492acf6664029c8`.
+
+Ambas as working trees limpas após o commit de produto. O ledger recebe este
+registro em commit documental posterior. Prova instalada graph2, suites e closure
+final permanecem válidos; nenhum fonte mudou após essa prova. A implementação
+integral continua, sem pausa solicitada e sem afirmar conclusão de C1–C4.
+Próxima ação: retirar a classificação legada de CodeEvidence de ponta a ponta,
+incluindo frontend/testes, mantendo prova e exceções atuais. Pendências restantes
+e decisões T23/KG-10 permanecem delimitadas abaixo e no assessment.
+
 ### 2026-10-01 — checkpoint Grafx pronto para commit/push pareado
 
 graph-closure2 terminou0 com verificação dos READMEs, fontes e wheels:
