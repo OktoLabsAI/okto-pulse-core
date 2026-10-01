@@ -1531,8 +1531,12 @@
       "line": 664,
       "id": "KG-53",
       "normative_text": "| KG-53 | Upgrade combinado falha em diferentes etapas | Retomada/rollback preservam dados e par de binários compatível; sem downgrade isolado falso. |",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "verified_by_reviewed_execution",
+      "test_text_references": [],
+      "reviewed_execution": {
+        "artifact": "acceptance-combined-upgrade-recovery.json",
+        "criterion_key": "KG:KG-53"
+      }
     },
     {
       "key": "KG:KG-54",
@@ -3282,8 +3286,12 @@
       "line": 744,
       "id": "ADV-20",
       "normative_text": "| ADV-20 | Upgrade parcial seguido de rollback em cópia. | Schema/versões pareados recuperáveis; não se instala binário antigo cegamente sobre dados incompatíveis. |",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "verified_by_reviewed_execution",
+      "test_text_references": [],
+      "reviewed_execution": {
+        "artifact": "acceptance-combined-upgrade-recovery.json",
+        "criterion_key": "ARQVER:ADV-20"
+      }
     },
     {
       "key": "ARQVER:ADV-21",

@@ -2,6 +2,26 @@
 
 ## Estado para retomada
 
+ARQVER ADV-20 e KG-53 verificados por revisão da evidência de migração já
+executada (BASE T30) e complemento de recusa de par incompatível. Hashes de logs,
+XMLs e fontes dos testes preservados conferidos. Falhas em passos de dados/DDL,
+retomada fria, recusa de cutover incompleto e restauração conjunta SQL/storage/
+Grafx já cobertas. Predecessor instalado reabre a cópia restaurada com políticas,
+história e proveniência originais. Nenhuma alteração em adapters Community desde
+o par do ensaio preservado; não repetir migração como se fosse requisito novo.
+
+Complemento Community73026 terminou0: dois casos recusam revisão Core distinta
+no restore e wheel Core distinta no resume antes de publicação/transformação.
+acceptance-combined-upgrade-recovery.json mantém limites e campanhas originais,
+sem somar testes antigos como execuções novas ou alegar rollback em produção.
+Sem produto/UI alterados; proveniência-late-link1 byte-idêntica antes da rodada.
+F16 anterior90981=0,oito budgets ZERO;frontend anterior39859=0,8passed.
+
+Inventário137 verificados/32 parciais/77 não auditados. Par publicado anterior:
+Core98860d02/Communityb123a1a9. Continuar critérios originais pendentes, benchmark
+e distribuição final. KG-10/T23 aguardam decisões já solicitadas. Nenhum processo
+pendente ou dado real alterado.
+
 ARQVER ADV-13 verificado no fluxo contínuo T01. Run HTTP assinado em Draft
 antecede vínculo BR→critério pelo writer MCP autorizado. Mesma edição, digest
 novo: recibo antigo continua autêntico na base original, mas admissão atual
