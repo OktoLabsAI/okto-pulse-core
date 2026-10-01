@@ -50,6 +50,27 @@ missing optional grants yield restricted sections without hidden counts or reads
 Permissions are checked on every page. In the UI, open Spec → Coverage; source
 navigation uses the existing domain editors and does not write graph relations.
 
+For Decision impact pass
+`query={"view":"impact","subject_ref":"spec:<id>:decision:<id>"}`. Optional
+`max_depth` defaults to 3 (maximum 8); `limit` defaults to 200 (maximum 1000).
+Keep the subject, depth and limit with a pagination cursor. Source, actor or graph
+generation changes invalidate it. `timeout_ms` remains capped by Board policy.
+The combined scope requires Board, Spec, Card, scenarios, IR, OR and KG
+related-context read grants; it does not read Delivery or Code Traceability proof.
+
+Each target includes direction, a bounded representative path and per-edge
+source/graph provenance. `confirmed_link` confirms declared linkage, not a proven
+change or delivery. Reach through a shared Card into its scenarios is `potential`:
+it does not establish that those scenarios test the Decision's requirements.
+Legacy co-occurrence does not establish the initial Decision scope. Superseded
+and revoked Decisions remain navigable history, not current impact.
+
+Counts cover the exploration scope, independently of pagination. A reached
+horizon is partial and can be expanded within the depth bound; neither depth 3
+nor matching observations prove complete lineage. In the UI, expand a Decision
+and select Show impact. Paths expand on demand; history navigation never starts
+Cards, writes relationships or changes gates.
+
 okto_pulse_get_traceability_report — return a consolidated SDLC traceability report:
 ideation → refinement → spec → card/test/bug → artifacts.
 

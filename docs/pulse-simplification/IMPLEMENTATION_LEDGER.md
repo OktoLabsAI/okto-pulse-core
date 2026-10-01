@@ -2,6 +2,64 @@
 
 ## Estado para retomada
 
+### 2026-10-01 — impacto de Decision qualificado (KG§6.4/§9)
+
+Base publicada Core00f66648 / Communityf7ad3cd8. Consulta interna reaproveita a porta
+de snapshot Spec/observação Grafx e os projectors existentes de Decision, filhos e
+Card/cenários. Extraída variante pura do preparo de cenários, preservando o mesmo
+resolver e a recusa de fonte inválida. Nenhum dialeto ou mecanismo novo no Core.
+Fonte não lê Delivery/code evidence. Vínculos explícitos delimitam a origem;
+coocorrência antiga não gera fan-out. Caminho via Card compartilhado até cenário
+é potencial, mesmo que todas as arestas existam. História de supersedência vem
+dos campos declarados, com status e sem tratar predecessor como Decision atual.
+Profundidade/horizonte, visited-set, limites e cursor presos a fonte/ator/geração.
+
+Integrada variante tipada query.view=impact, subject_ref=spec:<id>:decision:<id>,
+na fachada existente get_traceability_report, sem tool nova. REST específico
+/boards/{board_id}/specs/{spec_id}/decisions/{decision_id}/impact. Grants existentes
+Board/Spec/Card/cenários/IR/OR/KG checados antes da leitura e em cada página;
+Code Traceability não é lido. DTO fechado, erros sanitizados, timeout limitado
+pela policy, depth3 default/8 máximo, limite200/1000 e payload512KiB.
+DecisionsTab→Show impact lazy, caminhos sob demanda, estado/tipo/proveniência,
+supersedência navegável e horizonte ampliável, sem execução/escrita automática.
+Paginação não soma totais; troca de Board/Spec/Decision aborta e descarta resposta
+antiga; erro/revisão limpa observações anteriores. Catálogo/manifesto regenerados
+oficialmente, sem drift gerado.
+
+Par interno instalado54340=0,prova1851=0 antes de comportamento. Core80761=0,
+106passed;Community47712=0,7passed. F16 interno70437=1 somente matrizes README,
+sem findings e oito budgetsZERO. Par público instalado56857=0,prova13395=0:
+878py/941payload Core +382py/467payload Community byte-idênticos. Core52183=0,
+166passed. Community92818=1:42passed e um gate de distribuição falhou porque os
+novos assets ainda não estavam no índice Git; comportamento/transportes passaram.
+Assets incluídos no índice, sem alterar produto para contornar o teste.
+Frontend18902=0,22passed;build58318=0 sincronizou79arquivos/78assets, árvore
+993125f8549ced51508e1140c8c6afbe4ecb8f90932c73952bdee329523a86be.
+ESLint13789=0 sem warnings nos arquivos novos; Ruff F/E9 e diff verdes.
+Testes legados SpecModal emitem avisos React act e build avisa tamanho de chunks;
+sem mudanças fora do escopo. F16 público48103=1 só matrizes README; renderer oficial
+atualizou ambas. Par final decision-impact-public-qualified instalado5461=0,
+prova9552=0;distribuição84442=0,19passed;F16 final48464=0,ok=true,sem findings/drift,
+oito budgetsZERO. Só README mudou no produto após comportamento.
+
+Recibo acceptance-decision-impact-public.json:248 testes distintos aprovados,
+sem somar campanhas sobrepostas. KG-57 verificado pelo critério exato com SQL e
+Grafx reais: cenário não relacionado alcançado via Card permanece potencial com
+caminho real; resposta passa DTO público. HTTP/MCP usam ator/UOW controlados;
+não alegar E2E implantado. Inventário151verificados/29parciais/66nãoauditados.
+KG-11 não promovido apenas por leitura histórica: mutação/reabertura/replay têm
+critério próprio; KG-10 não promovido apenas por excluir coocorrência da consulta.
+Decisões KG-10/T23 permanecem como já registradas; não repetir perguntas.
+
+PRÓXIMO ORIGINAL: completar view lineage na mesma fachada, reaproveitando o que
+já existe em ports/traceability.py, GetLineageGraphUseCase e adapter
+sqlalchemy_traceability_read_model.py. A view dependency já tem fechamento
+transitivo com limites10karestas/2knós e testes SQL; não reimplementar. A linhagem
+SDLC existente resolve raiz e monta relatório; ainda precisa contrato delimitado
+da nova view, permissões, continuação/frescor e associação de amendment conforme
+KG§6.4. Depois benchmark e revisão final dos critérios pendentes do inventário,
+sem criar novos requisitos. Nenhum processo/dado real alterado. Objetivo ativo.
+
 ### 2026-10-01 — superfícies públicas de cobertura qualificadas
 
 Base publicada Corec27dce01 / Community70743887. DTOs fechados de cobertura,

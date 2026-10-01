@@ -13,14 +13,21 @@ async def prepare_card_scenario_projection(context, *, board_id, card, result, p
     if getattr(card, 'board_id', None) != board_id or not hasattr(card, 'test_scenario_ids'):
         raise ValueError('card_scenario_source_scope_invalid')
     spec_id = getattr(card, 'spec_id', None)
-    scenarios, parent = None, None
+    parent = None
     if spec_id:
         parent = await persistence.load_artifact(context, artifact_type='spec', artifact_id=spec_id)
-        if parent is not None and (getattr(parent, 'id', None) != spec_id
-                or getattr(parent, 'board_id', None) != board_id or not hasattr(parent, 'test_scenarios')):
-            raise ValueError('card_scenario_parent_unavailable')
-        if parent is not None:
-            scenarios = parent.test_scenarios if parent.test_scenarios is not None else []
+    return prepare_card_scenario_projection_from_source(board_id=board_id, card=card, parent=parent, result=result)
+
+
+def prepare_card_scenario_projection_from_source(*, board_id, card, parent, result):
+    """Same projection rules over an already scoped, complete source snapshot."""
+    if getattr(card, 'board_id', None) != board_id or not hasattr(card, 'test_scenario_ids'):
+        raise ValueError('card_scenario_source_scope_invalid')
+    spec_id = getattr(card, 'spec_id', None)
+    if parent is not None and (getattr(parent, 'id', None) != spec_id
+            or getattr(parent, 'board_id', None) != board_id or not hasattr(parent, 'test_scenarios')):
+        raise ValueError('card_scenario_parent_unavailable')
+    scenarios = (parent.test_scenarios if parent.test_scenarios is not None else []) if parent is not None else None
     analysis = analyze_card_scenario_references(board_id=board_id, card_id=card.id,
         spec_id=spec_id, card_links=card.test_scenario_ids, parent_exists=parent is not None,
         scenarios=scenarios)

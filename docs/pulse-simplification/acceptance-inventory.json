@@ -1595,8 +1595,12 @@
       "line": 668,
       "id": "KG-57",
       "normative_text": "| KG-57 | Impacto alcança cenário não relacionado via mesmo card | Rotular potencial ou excluir da lista confirmada; mostrar caminho real. |",
-      "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "review_status": "verified_by_reviewed_execution",
+      "test_text_references": [],
+      "reviewed_execution": {
+        "artifact": "acceptance-decision-impact-public.json",
+        "criterion_key": "KG:KG-57"
+      }
     },
     {
       "key": "KG:KG-58",

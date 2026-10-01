@@ -19,6 +19,22 @@ from okto_pulse.core.ports.traceability import (
 
 
 class CoreAnalyticsOperations:
+    async def decision_impact(self, query, *, timeout_ms: int):
+        import time
+        from okto_pulse.core.kg.interfaces.graph_errors import GraphQueryTimeout
+        from okto_pulse.core.ports.relational_application import require_relational_application_adapter
+        from okto_pulse.core.services.decision_impact import build_decision_impact_scope, project_decision_impact
+        deadline = time.monotonic() + timeout_ms / 1000
+        reader = require_relational_application_adapter().spec_coverage_read(self.__relational_context)
+        source_query = query.source_query()
+        snapshot = await reader.read(source_query, timeout_ms=timeout_ms)
+        scope = build_decision_impact_scope(snapshot)
+        remaining = int((deadline - time.monotonic()) * 1000)
+        if remaining <= 0:
+            raise GraphQueryTimeout('Decision impact read deadline exceeded.')
+        graph = await reader.read_graph(source_query, scope, snapshot.source_revision, timeout_ms=remaining)
+        return project_decision_impact(query, snapshot, scope, graph)
+
     async def spec_coverage(self, query, *, timeout_ms: int):
         from dataclasses import replace
         import time

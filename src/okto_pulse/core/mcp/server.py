@@ -16,6 +16,7 @@ from dataclasses import replace as dataclass_replace
 from datetime import datetime
 from okto_pulse.core.models.bug_clusters import BugClustersRequest
 from okto_pulse.core.models.spec_coverage_query import SpecCoverageRequest
+from okto_pulse.core.models.decision_impact import DecisionImpactRequest
 from importlib.resources import files as package_files
 from types import SimpleNamespace
 from typing import Annotated, Any, Callable, Literal
@@ -18083,7 +18084,7 @@ async def okto_pulse_get_traceability_report(
     ideation_id: str = "",
     spec_id: str = "",
     include_artifacts: BoolInput = False,
-    query: Annotated[BugClustersRequest | SpecCoverageRequest, Field(discriminator='view')] | None = None,
+    query: Annotated[BugClustersRequest | SpecCoverageRequest | DecisionImpactRequest, Field(discriminator='view')] | None = None,
 ) -> str:
     """
     okto_pulse_get_traceability_report — return a consolidated SDLC traceability report:
@@ -18097,7 +18098,9 @@ async def okto_pulse_get_traceability_report(
     SDLC report. Do not combine query with SDLC filters. Reuse response.window
     as date_from/date_to with a cursor; unknown graph freshness is not absence.
     query.view=coverage with subject_ref=spec:<id> separates structural links,
-    graph observations and admitted delivery proof. It never approves a gate."""
+    graph observations and admitted delivery proof. It never approves a gate.
+    query.view=impact with subject_ref=spec:<id>:decision:<id> returns bounded
+    explicit paths, potential reach and supersedence history; no execution."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -18112,6 +18115,10 @@ async def okto_pulse_get_traceability_report(
         if ideation_id or spec_id or _include_artifacts:
             return json.dumps({'error': 'Do not combine a query variant with SDLC filters',
                                'code': 'traceability_query_scope_ambiguous'})
+        if isinstance(query, DecisionImpactRequest) or isinstance(query, dict) and query.get('view') == 'impact':
+            from okto_pulse.core.mcp.decision_impact import query_decision_impact
+            return await query_decision_impact(board_id, query, context=ctx,
+                uow_factory=get_unit_of_work_factory_for_mcp())
         if isinstance(query, SpecCoverageRequest) or isinstance(query, dict) and query.get('view') == 'coverage':
             from okto_pulse.core.mcp.spec_coverage_query import query_spec_coverage
             return await query_spec_coverage(board_id, query, context=ctx,
