@@ -1017,6 +1017,14 @@
       "test": "test_legacy_manifest_string_and_object_round_trip_but_are_unverified",
       "disposition": "superseded",
       "reason": "Old alias/conversion acceptance replaced by current-contract refusal; native signed evidence remains covered."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_f3_legacy_sprint_values.py",
+      "reason": "Exclusive positive acceptance of removed runtime Sprint decoder; incompatible storage refusal remains in current relational admission suites."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_f3_kg_sprint_inventory_retirement.py",
+      "reason": "Exclusive mixed Sprint DLQ cutover/skipping behavior removed with migration; native queue recovery is retained in operational suites."
     }
   ],
   "adapted_suites": [
@@ -1136,6 +1144,10 @@
     {
       "path": "okto_labs_pulse_core/tests/test_evidence_class_contract.py",
       "reason": "Weak persisted read acceptance replaced by one structural admission contract; current pointers, classified evidence, logs, replay and authentication retained."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_sprint_lineage_retirement.py",
+      "reason": "Retains native Spec/Card/bug/test lineage, foreign-board fences and unsupported-root refusal using current schema; removes historical Sprint preservation assertions."
     }
   ],
   "removed_cases": [

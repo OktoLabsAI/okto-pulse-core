@@ -2,6 +2,29 @@
 
 ## Estado para retomada
 
+### 2026-10-01 — Admissão publicada; decoder Sprint retirado em WIP
+
+**Qualificado:** dist-sprint-decoder1 instalado; provenance-sprint-decoder1.json
+comprova Core 852/915 e Community 318/404 arquivos Python/payload byte-idênticos,
+inclusive ausência do módulo retirado no install/wheel. sprint-decoder-community1/2:
+24 casos distintos aprovados (linhagem nativa, schema/admissão/restart, isolamento
+da fila). Duas fixtures da fila precisaram realm_id explícito; produto intacto.
+closure-sprint-decoder1 exit 0, sem findings, oito budgets ZERO; prova oficial
+de READMEs em closure-sprint-decoder1.readmes.json. Ruff/diff passaram.
+
+Core **ea1a0237** publicado; Community continua **aeea594d**, sem mudança de
+produto no incremento de admissão. Ambos os remotes confirmados atualizados.
+Removido adapters/legacy_sprint_values.py, sem consumidores de produto: somente
+fixtures e testes antigos o importavam. Removidos dois testes exclusivamente
+positivos de decoder/cutover Sprint, com disposição registrada. A suíte de
+linhagem agora usa schema nativo, mantendo graphs de Spec/Card/test/bug e fences.
+O fixture de dados incompatíveis deixou de importar/implementar codecs; usa
+strings SQL brutas. Não foi criado pacote ou caminho alternativo de legado.
+Demais suítes mistas que ainda usam esse fixture continuam pendentes de C4,
+sem certificação: não apagar suas responsabilidades nativas em bloco.
+remove_sprint_decoder_fixtures.py aplicado uma vez, não reaplicar.
+dist-sprint-decoder1 preparado; instalação/prova/testes ainda em curso.
+
 ### 2026-10-01 — Cenário publicado; admissão de evidência única em WIP
 
 **Qualificação concluída:** dist-evidence-admission2 instalado; prova
