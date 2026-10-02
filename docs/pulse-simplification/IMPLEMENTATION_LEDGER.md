@@ -2,6 +2,37 @@
 
 ## Estado para retomada
 
+### 2026-10-01 — Knowledge Workspace: cursor único tipado
+
+Marco MCP publicado: Corea460203f / Communitye19da6f3. Retirado suporte ao
+cursor de página v1 do Knowledge Workspace; writer/reader agora usam v2 com
+kind=page, assim como detail já usava v2/kind=detail. Cursor antigo recusado,
+sem tradução. Mantidas paginação, limites, budget, identidade e recusa de troca
+page/detail. Não confundir contratos v1 atuais de outros domínios com legado.
+
+dist-workspace-cursor1 instalado; provenance-workspace-cursor1.json comprova
+Core851/914 e Community318/404 Python/payload byte-idênticos. workspace-cursor1.xml:
+9 Core aprovados; workspace-cursor-backend1.xml:7 Community aprovados;
+workspace-cursor-front1.xml:12 frontend aprovados (client, paginação, detalhe e
+erros de KnowledgeWorkspace). Sem alteração de assets frontend: cursores continuam
+opacos para o cliente. closure-workspace-cursor1.json exit0, findings vazios,
+oito budgets ZERO, READMEs oficiais validados; Ruff/diff-check aprovados.
+
+Investigação do restante confirmou dependência real: o perfil REST legacy retorna
+resources.architecture/mockup/knowledge_base hidratados. O projetor paginado atual
+é deliberadamente KB-only. CreateCardModal ainda lê resources.knowledge_base;
+MockupsTab lê resources.mockup; ArchitectureTab lê architecture e mockup.
+CardKnowledgeTab já pagina summary, mas conserva fallback para resources.
+KnowledgeWorkspace e outros consumidores também precisam de retirada coordenada.
+Não remover o mapa nem simplesmente trocar o default para summary antes de adaptar
+os consumidores: isso ocultaria recursos herdados atuais. Próximo incremento deve
+preservar as experiências dedicadas de arquitetura/mockup e paginação de Knowledge
+com um único contrato, sem um normalizador que recrie a resposta antiga.
+
+C1–C4 permanecem abertos; esta evidência qualifica apenas a retirada do cursor
+antigo. REST legacy, fallback para doubles/edições no GetEffectiveResourcesUseCase,
+identidade @legacy/grandfathered e UI consumidora ainda não foram alterados.
+
 ### 2026-10-01 — MCP: retirada do perfil e da resposta textual legacy
 
 Marco anterior publicado: Core4e2ec4e2 / Community4170f14b. Retirados o perfil

@@ -1220,6 +1220,10 @@
     {
       "path": "okto_labs_pulse_community/tests/test_mcp_host_adapter.py",
       "reason": "Removed positive legacy-profile/text-only variants; retained current projection, domain-error, authorization, metadata, budget and schema checks. Removed profile is refused before handler execution; native fixtures declare architecture scope."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_knowledge_workspace_projection.py",
+      "reason": "Positive v1-page compatibility replaced by current typed v2-page round-trip and old-cursor rejection. Detail identity, kind separation, pagination, lazy hydration and budgets preserved."
     }
   ],
   "removed_cases": [

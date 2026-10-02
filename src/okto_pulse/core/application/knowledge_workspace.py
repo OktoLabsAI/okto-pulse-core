@@ -32,7 +32,7 @@ CONTRACT_VERSION = 2
 SUPPORTED_PROFILES: tuple[str, ...] = ("summary", "detail", "full")
 LEGACY_VERSION_TOKEN = "legacy"
 _WORKSPACE_RESOURCE_TYPE = "knowledge_base"
-_DETAIL_CURSOR_VERSION = 2
+_CURSOR_VERSION = 2
 _DETAIL_CURSOR_KIND = "detail"
 
 
@@ -121,10 +121,10 @@ def _json_bytes(value: Any) -> int:
 
 
 def _encode_cursor(offset: int) -> str:
-    """Encode the stable v1 page-cursor contract."""
+    """Encode the current typed page cursor."""
 
     raw = json.dumps(
-        {"v": 1, "offset": offset},
+        {"v": _CURSOR_VERSION, "kind": "page", "offset": offset},
         separators=(",", ":"),
         sort_keys=True,
     ).encode("utf-8")
@@ -164,7 +164,7 @@ def _encode_detail_cursor(
                 versioned_projection_id,
             ),
             "kind": _DETAIL_CURSOR_KIND,
-            "v": _DETAIL_CURSOR_VERSION,
+            "v": _CURSOR_VERSION,
             "versioned_projection_id": versioned_projection_id,
         },
         separators=(",", ":"),
@@ -181,13 +181,17 @@ def _decode_cursor(cursor: str | None) -> _DecodedCursor | None:
         payload = json.loads(base64.urlsafe_b64decode(padded).decode("utf-8"))
         if not isinstance(payload, Mapping):
             raise ValueError("unsupported cursor envelope")
-        if payload.get("v") == 1 and set(payload) == {"v", "offset"}:
+        if (
+            payload.get("v") == _CURSOR_VERSION
+            and payload.get("kind") == "page"
+            and set(payload) == {"v", "kind", "offset"}
+        ):
             offset = payload["offset"]
             if isinstance(offset, bool) or not isinstance(offset, int) or offset < 0:
                 raise ValueError("invalid cursor offset")
             return _PageCursor(offset=offset)
         if (
-            payload.get("v") == _DETAIL_CURSOR_VERSION
+            payload.get("v") == _CURSOR_VERSION
             and payload.get("kind") == _DETAIL_CURSOR_KIND
             and set(payload)
             == {

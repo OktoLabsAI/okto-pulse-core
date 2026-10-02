@@ -460,7 +460,7 @@ def test_detail_cursor_rejects_scope_mismatch_and_unknown_target_stably() -> Non
     assert missing.value.code == "knowledge_workspace_cursor_target_not_found"
 
 
-def test_v1_page_cursor_remains_compatible_but_is_not_a_detail_identity() -> None:
+def test_current_page_cursor_is_not_a_detail_identity() -> None:
     projection = _projection(
         [
             _attachment(
@@ -489,7 +489,8 @@ def test_v1_page_cursor_remains_compatible_but_is_not_a_detail_identity() -> Non
     padded = page_cursor + "=" * (-len(page_cursor) % 4)
     assert json.loads(base64.urlsafe_b64decode(padded).decode("utf-8")) == {
         "offset": 1,
-        "v": 1,
+        "v": 2,
+        "kind": "page",
     }
 
     second = KnowledgeWorkspaceProjector.project(
@@ -515,6 +516,13 @@ def test_v1_page_cursor_remains_compatible_but_is_not_a_detail_identity() -> Non
             cursor=first["items"][0]["detail_cursor"],
         )
     assert detail_for_page.value.code == "knowledge_workspace_cursor_kind_mismatch"
+
+    old_cursor = base64.urlsafe_b64encode(b'{"v":1,"offset":1}').decode("ascii")
+    with pytest.raises(KnowledgeWorkspaceProjectionError) as old_page:
+        KnowledgeWorkspaceProjector.project(
+            projection, profile="summary", cursor=old_cursor, limit=1,
+        )
+    assert old_page.value.code == "knowledge_workspace_invalid_cursor"
 
 
 @pytest.mark.asyncio
