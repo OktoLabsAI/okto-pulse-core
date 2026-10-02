@@ -2,6 +2,42 @@
 
 ## Estado para retomada
 
+### 2026-10-02 — C3: prova nativa da policy de impacto na conclusão
+
+Base publicada: Core 484025a9 / Community 062791c3. Os três casos
+test_completion_impact_policy_is_independent_of_advisory_delivery foram
+reescritos em Community e retirados da fixture relacional antiga do Core;
+disposição e destino registrados no JSON. Não foi removida a exigência de
+independência entre impacto e Delivery advisory.
+
+A prova atual grava o relatório por CardService, altera a revisão da fonte
+com um recibo coerente e percorre _task_completion_gate_failures real em nova
+sessão. Em off/advisory não há impact_evidence_required; em require há. Nenhum
+modo reescreve conclusões ou muda status. O reader de impacto não é simulado.
+Preparação usa plano/verifier atuais, adapters reais de recursos/Knowledge e
+CommunityUnitOfWork para materializar a autoridade semântica. O gate cognitivo
+real é injetado com store filesystem descartável; nenhum veredito é simulado.
+
+native-impact-policy1–8 identificaram preparação incompleta: digest do recibo
+após trocar revisão, provider cognitivo/recursos ausentes e commit direto sem
+materialização semântica. Corrigidos somente nos testes. A observação agora
+recalcula seu digest conforme o domínio, preservando coerência do workspace.
+Rodada9 identificou plano/capability ausentes na suite compartilhada. Rodada10:
+dez aprovados e duas falhas de composição Knowledge, corrigidas; rodada11:
+três modos aprovados, total13 Community distintos. native-impact-core1:
+11 aprovados. As três falhas pendentes do marco anterior estão resolvidas.
+
+Somente testes e documentação alterados. provenance-native-impact-policy1.json
+reconfirma o par dist-progress-current1 byte a byte antes dos testes. Mantida
+a prova closure-progress-current1 (oito budgets ZERO), pois nenhum byte de
+produto/wheel/SPA mudou. Ruff F/E9 e diff aprovados. Sem release/tag/deploy.
+
+Próximo resíduo C1 confirmado: delivery_selection.py/modelo ainda selam v1 sem
+impact_basis e v2 com impact_basis; report_reuses_impact decide pelo formato.
+Unificar a representação preservando relatório manual e reuso autenticado,
+sem equivaler ausência de base a prova de impacto. Normalizadores inventariados,
+auditoria integral C4 e decisões T23/KG-10 continuam abertos.
+
 ### 2026-10-02 — C1: checkpoint atual único, sem inferência v1
 
 Base publicada: Core 233a1479 / Community 28d23982. DeliveryProgress aceita

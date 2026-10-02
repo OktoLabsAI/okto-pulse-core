@@ -103,37 +103,3 @@ async def test_real_report_writer_reuses_port_result_under_require_without_retyp
             moved = await writer.move_card(card_id, USER_ID, request)
             assert moved.conclusions[-1]["impact_evidence"] == impact
             assert store.seal_selection.await_args.kwargs["impact_basis"] == [basis()]
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize("mode", ["off", "advisory", "require"])
-async def test_completion_impact_policy_is_independent_of_advisory_delivery(db_factory, monkeypatch, mode):
-    from test_impact_evidence_enforcement import _card_in_progress, _VALID_BLOCK
-    from sqlalchemy_test_models import Board, Card
-    from okto_pulse.core.domain.enums import CardStatus
-    from okto_pulse.core.services.main import CardService
-    from okto_pulse.core.services import delivery_evidence as service
-    card_id = await _card_in_progress(db_factory, mode=mode)
-    async with db_factory() as session:
-        writer = CardService(session)
-        stored = await session.get(Card, card_id)
-        board = await session.get(Board, stored.board_id)
-        original_settings = dict(board.settings)
-        board.settings = {**board.settings, "delivery_evidence_gate": "advisory"}
-        stored.status = CardStatus.VALIDATION
-        stored.conclusions = [dict(source="move_to_validation", impact_evidence=_VALID_BLOCK,
-            delivery_manifest=dict(contract_version="card-delivery-selection/v2"))]
-        await session.commit()
-        card = await writer.get_card(card_id)
-        store = SimpleNamespace(report_impact_status=AsyncMock(return_value=dict(current=False, reason="known_source_changed")))
-        monkeypatch.setattr(service, "card_delivery_store", lambda _: store)
-        try:
-            failures = await writer._task_completion_gate_failures(card=card, board=board)
-            assert any(row.code == "impact_evidence_required" for row in failures) == (mode == "require")
-            assert store.report_impact_status.await_count == int(mode == "require")
-            if mode == "require":
-                assert store.report_impact_status.await_args.kwargs == {"for_update": True}
-        finally:
-            # The module-scoped board is shared with the existing gate tests.
-            board.settings = original_settings
-            await session.commit()

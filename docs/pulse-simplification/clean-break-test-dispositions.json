@@ -1706,6 +1706,10 @@
     {
       "path": "okto_labs_pulse_community/tests/test_delivery_resume_proofs.py",
       "reason": "Explicit execution proofs and native verification capability; selection/history, checkpoint currentness and authority predicates retained."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_delivery_reused_impact.py",
+      "reason": "Explicit current verification scope/capability, coherent observation digest, and native semantic UoW for completion policy. Cognitive gate runs unchanged with a disposable filesystem store."
     }
   ],
   "removed_cases": [
@@ -2776,6 +2780,12 @@
       "test": "test_base_is_optional_for_history_but_never_invented_and_absence_preserves_digest",
       "disposition": "superseded",
       "reason": "Removed old digest preservation assertion; current optional base scope and no invented base remain covered."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_delivery_reused_impact.py",
+      "test": "test_completion_impact_policy_is_independent_of_advisory_delivery",
+      "disposition": "rewritten",
+      "reason": "Three SQL fixture cases moved to Community native receipt/report/UoW/gate path with the same test name and off/advisory/require modes. Actual changed source revision replaces mocked report_impact_status; report and lifecycle preserved."
     }
   ]
 }
