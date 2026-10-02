@@ -2,6 +2,34 @@
 
 ## Estado para retomada
 
+### 2026-10-01 — Editores de requisitos: retirada dos consumidores de posição/texto
+
+RulesTab, DecisionsTab, IntegrationRequirementsTab e ObservabilityRequirementsTab
+agora usam objetos atuais e escrevem referências FR por ID; RulesTab calcula cobertura
+por identidade exata, sem posição, prefixo ou texto. Decisions/Rules mostram o texto
+somente após resolver o ID. TechnicalRequirementsTab e o segundo callback de TR no
+SpecModal deixam de produzir tr_legacy_N; TR textual/sem identidade é recusado.
+Edição de TR conserva vínculos e itens inativos; SpecModal compara a coleção completa
+para não confundir histórico preservado com criação. Sem alteração de governança.
+
+Build frontend aprovado, SPA79 arquivos hash
+cc17055667c188e2e91a152d72b4c192eeef19bcf97c9d72ddefcd4394ca15b8.
+Requirement-tabs-front1/front2:65 testes distintos aprovados (nove específicos de
+identidade/autoria/recusa, edição/navegação SpecModal e badge cognitivo). Duas falhas
+iniciais eram fixtures sem descrição obrigatória; corrigidas sem alteração de produto.
+Dist-requirement-tabs1 instalado; provenance-requirement-tabs1.json comprova Core851/914
+e Community318/404 Python/payload byte-idênticos. Closure-requirement-tabs1 exit0,
+findings vazios, oito budgets ZERO; READMEs oficiais validados. Diff-check aprovado.
+
+Marco seed publicado: Core074a10cb / Community6800a222. C1–C4 permanecem abertos.
+Próximo trecho da sequência fechada: C3 aliases/formatos antigos de transportes e
+leitores remanescentes, seguido de C4 por critério. Há resíduos concretos já encontrados:
+SpecChecklistPanel presentationMode legacy; SpecValidationHistoryPanel legacyDimensions
+(classificar frente ao writer atual antes de retirar histórico); EvidenceBadge formato
+sem evidence_class; aliases MCP de projeção/coverage e writers deprecatados. Módulos
+architecture_*legacy ainda contêm diagnósticos atuais e exigem separar a responsabilidade,
+não excluir por nome. Não reabrir frentes qualificadas sem nova falha/gap.
+
 ### 2026-10-01 — Seed da instalação nova corrigido e qualificado
 
 Marco API publicado: Core ae61914e / Community 5634f902. Investigação do gap já
