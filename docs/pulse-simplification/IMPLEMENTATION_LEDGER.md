@@ -2,6 +2,39 @@
 
 ## Estado para retomada
 
+### 2026-10-02 — C3: impacto B08 exclusivamente nativo
+
+Marco anterior publicado: Core26d55788 / Community50645501. B08 persistence e
+listing usam o esquema completo atual e a composição Community, com guards
+de impacto ativos. Criação, preview, adoção, unlink e retirement são nativos;
+reinício fecha conexões e reabre o mesmo banco sem conversão. Preservados replay,
+revisão histórica explicitamente selecionada, digests/configuração, paginação,
+isolamento, imutabilidade e apagamento autorizado por Board.
+
+Retirados auditores de conversão que instalavam guards enfraquecidos para
+reexaminar linhas antigas, convergência de manifestos predecessores e compilação
+de catálogo PostgreSQL. Rejeição nativa de payload adulterado permanece. Quatro
+novos casos de admissão recusam ausência dos guards de binding/adoption/unlink/
+retirement sem modificar arquivos. F3 policy inventory mantém todos os sujeitos
+atuais e isolamento por Board; retirados quatro casos que reconstruíam Sprint
+e desativavam publicação nativa para reproduzir recibos anteriores. Cada retirada
+está discriminada em clean-break-test-dispositions.json.
+
+b08-native1:9 aprovados; b08-native-listing1:14; b08-native-guards2:44 aprovados
+incluindo30 casos de schema. b08-policy-retirement1 registra a reprodução da
+fixture incompatível anterior. Produto/SPA sem mudanças, portanto nenhum build
+de frontend adicional. Proveniência anterior b03-native1 válida durante os testes,
+reconfirmada em provenance-b08-native1.json: dist-native-delivery-ledger1 instalado,
+Core851/914 e Community318/404 Python/payload byte-idênticos. closure-b08-native1
+exit0, oito budgets ZERO, documentação validada; Ruff F/E9 e diff checks aprovados.
+
+Coleta community7:6071 casos enumerados/20 erros, ante6053/23; não é execução.
+
+Este marco não conclui C3/C4. Continuar semantic persistence/B14, code evidence,
+recovery e demais bloqueios de coleta; concluir C1 e auditoria C4 integral sem
+confundir coleta ou aprovação destas suites com entrega final. Decisões T23/KG-10
+continuam registradas como pendentes; nenhuma autoridade foi alterada neste marco.
+
 ### 2026-10-02 — C3: persistência nativa de políticas B03/B04/B09
 
 Marco anterior publicado: Core207eb3f7 / Community46756ebc. B03 substitui backfill

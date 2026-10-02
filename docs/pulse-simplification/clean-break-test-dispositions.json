@@ -1480,6 +1480,22 @@
     {
       "path": "okto_labs_pulse_community/tests/test_current_relational_schema.py",
       "reason": "Added refusal of PostgreSQL before engine/storage access, matching the current Community SQLite-only deliverable. Replaces obsolete PostgreSQL upgrade/DDL-normalization expectations without restoring another backend."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_skb_b08_guideline_impact_persistence.py",
+      "reason": "Complete current schema, native governed creation/adoption, real connection reopen. Preserves exact historical revision targeting, immutable evidence, digest tamper rejection, replay and Board erasure; no weakened trigger fixture or converter."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_skb_b08_guideline_impact_listing.py",
+      "reason": "Complete current schema and explicit Spec architecture/execution contracts; retains projection, filter-bound keyset pagination and adoption fencing."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_f3_policy_inventory_retirement.py",
+      "reason": "Retained native Card/Ideation/Refinement/Spec/test-scenario inventory and cross-Board isolation. Removed old Sprint reconstruction only."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_current_relational_schema.py",
+      "reason": "Added byte-inert refusal when current binding/adoption/unlink/retirement impact insertion guards are absent. No regeneration or automatic conversion."
     }
   ],
   "removed_cases": [
@@ -2124,6 +2140,96 @@
       "test": "test_retired_policy_v1_schema_converges_without_runtime_evaluator",
       "disposition": "superseded",
       "reason": "Exclusive schema converter for retired policy/v1; native exception lifecycles retained."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_skb_b08_guideline_impact_persistence.py",
+      "test": "test_b08_row_audit_recomputes_adoption_digests",
+      "disposition": "superseded",
+      "reason": "Removed converter-only row audit that installed weakened predecessor guards. Native insertion/tamper/immutability tests remain; missing current guards are refused byte-inertly."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_skb_b08_guideline_impact_persistence.py",
+      "test": "test_b08_row_audit_recomputes_unlink_digests",
+      "disposition": "superseded",
+      "reason": "Removed converter-only row audit that installed weakened predecessor guards. Native insertion/tamper/immutability tests remain; missing current guards are refused byte-inertly."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_skb_b08_guideline_impact_persistence.py",
+      "test": "test_b08_row_audit_recomputes_retirement_digests",
+      "disposition": "superseded",
+      "reason": "Removed converter-only row audit that installed weakened predecessor guards. Native insertion/tamper/immutability tests remain; missing current guards are refused byte-inertly."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_skb_b08_guideline_impact_persistence.py",
+      "test": "test_b08_sqlite_manifest_converges_recognized_predecessors",
+      "disposition": "superseded",
+      "reason": "Removed exclusive predecessor schema convergence. Missing current impact guards now cause refusal without conversion or file changes."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_skb_b08_guideline_impact_persistence.py",
+      "test": "test_b08_postgresql_contract_rejects_receipt_default_drift",
+      "disposition": "superseded",
+      "reason": "Removed PostgreSQL converter metadata normalization. Current Community explicitly refuses this backend before storage access; executable SQLite contracts remain."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_skb_b08_guideline_impact_persistence.py",
+      "test": "test_b08_postgresql_contract_normalizes_boolean_defaults",
+      "disposition": "superseded",
+      "reason": "Removed PostgreSQL converter metadata normalization. Current Community explicitly refuses this backend before storage access; executable SQLite contracts remain."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_skb_b08_guideline_impact_persistence.py",
+      "test": "test_b08_postgresql_contract_normalizes_json_catalog_defaults",
+      "disposition": "superseded",
+      "reason": "Removed PostgreSQL converter metadata normalization. Current Community explicitly refuses this backend before storage access; executable SQLite contracts remain."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_skb_b08_guideline_impact_persistence.py",
+      "test": "test_b08_postgresql_contract_normalizes_catalog_check_rewrites",
+      "disposition": "superseded",
+      "reason": "Removed PostgreSQL converter metadata normalization. Current Community explicitly refuses this backend before storage access; executable SQLite contracts remain."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_skb_b08_guideline_impact_persistence.py",
+      "test": "test_b08_postgresql_contract_normalizes_real_semantic_catalog_rewrites",
+      "disposition": "superseded",
+      "reason": "Removed PostgreSQL converter metadata normalization. Current Community explicitly refuses this backend before storage access; executable SQLite contracts remain."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_skb_b08_guideline_impact_persistence.py",
+      "test": "test_b08_postgresql_contract_normalizes_driver_generated_fk_names",
+      "disposition": "superseded",
+      "reason": "Removed PostgreSQL converter metadata normalization. Current Community explicitly refuses this backend before storage access; executable SQLite contracts remain."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_skb_b08_guideline_impact_persistence.py",
+      "test": "test_b08_postgresql_contract_normalizes_compound_check_rewrites",
+      "disposition": "superseded",
+      "reason": "Removed PostgreSQL converter metadata normalization. Current Community explicitly refuses this backend before storage access; executable SQLite contracts remain."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_skb_b08_guideline_impact_persistence.py",
+      "test": "test_b08_postgresql_contract_normalizes_function_predicate_wrappers",
+      "disposition": "superseded",
+      "reason": "Removed PostgreSQL converter metadata normalization. Current Community explicitly refuses this backend before storage access; executable SQLite contracts remain."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_skb_b08_guideline_impact_persistence.py",
+      "test": "test_b08_postgresql_contract_normalizes_arithmetic_rhs_wrappers",
+      "disposition": "superseded",
+      "reason": "Removed PostgreSQL converter metadata normalization. Current Community explicitly refuses this backend before storage access; executable SQLite contracts remain."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_skb_b08_guideline_impact_persistence.py",
+      "test": "test_b08_postgresql_contract_rejects_check_body_drift",
+      "disposition": "superseded",
+      "reason": "Removed PostgreSQL converter metadata normalization. Current Community explicitly refuses this backend before storage access; executable SQLite contracts remain."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_f3_policy_inventory_retirement.py",
+      "test": "test_sealed_sprint_history_survives_live_inventory_retirement",
+      "disposition": "superseded",
+      "reason": "Four cases reconstructed old Sprint storage and disabled the native publication guard to replay pre-retirement receipts. No imported history in fresh-install contract. Native Board-scoped policy inventory and B08 receipt/adoption/unlink/retirement history remain tested."
     }
   ]
 }
