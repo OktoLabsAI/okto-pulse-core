@@ -2,6 +2,37 @@
 
 ## Estado para retomada
 
+### 2026-10-02 — C3: schemas nativos de dependências e propagação
+
+Marco anterior publicado: Core28dc594c / Community9d50b670. Suites de schema
+renomeadas para test_skm_spec_dependency_schema.py e
+test_knowledge_propagation_schema.py. Retirados conversores/checkpoints/DDL
+predecessor/backfills/ativação transitória; os casos individuais estão no JSON.
+Spec dependency mantém schema completo, reinício, guard monotônico de edição,
+censo e recusa de triggers adulterados sem mudar bytes. A prova PostgreSQL de
+conversão sai; a prova opcional de UoW repeatable-read permanece separada.
+
+Propagação mantém constraints atuais, conteúdo temporal imutável/fechamento,
+sucessores, tombstones exclusivos/duráveis, hashes/CAS/idempotência e tentativas
+append-only. Exclusão comum do Board conserva o cluster de auditoria. Fixture
+parent usa sessões compostas e contratos explícitos de Spec, inclusive no teste
+de colisão de PK. B4/B5 mantêm seleção inválida atômica, replay, conflito de
+revisão e tentativas após rollback; ataques SQL atingem registros realmente
+produzidos pelo serviço nativo. B6 exclusivo de grandfathering foi retirado.
+
+dependency-schema-native1:5 aprovados/1 skip PostgreSQL por DSN ausente;
+dependency-restart-native1:1 aprovado após tornar o reinício explícito.
+knowledge-schema-native2:5 aprovados/2 erros na fixture parent antiga.
+knowledge-parent-native1:12 aprovados/3 falhas de fixture;
+knowledge-parent-correction1:4 aprovados, incluindo as três correções.
+Total25 casos nativos distintos qualificados; PostgreSQL não foi qualificado.
+Ruff F/E9 aprovado. Produto/SPA sem alterações: provenance-semantic-native1
+continua válida e closure anterior continua com oito budgets ZERO.
+
+Próximo: Learning reconciliation e benchmark; depois C1 residual e C4 integral.
+T23/KG-10 permanecem decisões pendentes; não há claim de entrega final.
+
+
 ### 2026-10-02 — C3: contexto de evidência e fila sem conversão
 
 Marco anterior publicado: Core0d7ef485 / Community69774a52. Projeção de Source

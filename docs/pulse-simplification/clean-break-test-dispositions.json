@@ -1592,6 +1592,24 @@
     {
       "path": "okto_labs_pulse_community/tests/test_code_evidence_coverage_gate_persistence.py",
       "reason": "REST response fixture explicitly includes native execution contract; five native coverage skip checks retained."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_skm_spec_dependency_schema.py",
+      "reason": "Full schema/restart, edition monotonicity and global revision census retained. Trigger corruption is refused byte-for-byte without repair.",
+      "previous_path": "okto_labs_pulse_community/tests/test_skm_spec_dependency_migration.py"
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_knowledge_propagation_schema.py",
+      "reason": "Full schema replaces predecessor builders; retains current model constraints, temporal closure/successors, tombstones, ledger/attempt immutability and ordinary Board deletion preserving audit cluster.",
+      "previous_path": "okto_labs_pulse_community/tests/test_knowledge_propagation_schema_migration.py"
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_knowledge_propagation_parent_adapter.py",
+      "reason": "Composed sessions and explicit Spec architecture/execution contracts preserve native parent boundaries, conflict normalization, and creation race checks."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_spec_b_scenarios_b4_b6.py",
+      "reason": "B4/B5 retain atomic invalid selections, replay, CAS and post-rollback attempts. Obsolete kb_ids rejected at transport admission. Removed migration checkpoint loop; immutable-ledger attacks now target actual native mutation/replay records."
     }
   ],
   "removed_cases": [
@@ -2518,6 +2536,102 @@
       "test": "test_legacy_spec_migration_is_idempotent_and_preserves_rows",
       "disposition": "superseded",
       "reason": "Exclusive predecessor Spec-column backfill; ORM fail-closed default, discovery projection and current REST forwarding remain."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_skm_spec_dependency_migration.py",
+      "test": "test_legacy_dependency_table_adds_sealed_snapshot_columns_before_audit",
+      "disposition": "superseded",
+      "reason": "Predecessor conversion, upgrade-only audit, backfill or activation compatibility. Current native schema, drift refusal, edition/temporal guards and immutable history remain separately qualified."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_skm_spec_dependency_migration.py",
+      "test": "test_legacy_schema_adds_marker_backfills_started_editions_and_converges",
+      "disposition": "superseded",
+      "reason": "Predecessor conversion, upgrade-only audit, backfill or activation compatibility. Current native schema, drift refusal, edition/temporal guards and immutable history remain separately qualified."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_skm_spec_dependency_migration.py",
+      "test": "test_started_edition_trigger_predecessor_is_upgraded_exactly_once",
+      "disposition": "superseded",
+      "reason": "Predecessor conversion, upgrade-only audit, backfill or activation compatibility. Current native schema, drift refusal, edition/temporal guards and immutable history remain separately qualified."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_skm_spec_dependency_migration.py",
+      "test": "test_legacy_cross_board_edge_is_rejected_fail_closed",
+      "disposition": "superseded",
+      "reason": "Predecessor conversion, upgrade-only audit, backfill or activation compatibility. Current native schema, drift refusal, edition/temporal guards and immutable history remain separately qualified."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_skm_spec_dependency_migration.py",
+      "test": "test_started_edition_legacy_data_drift_is_rejected_fail_closed",
+      "disposition": "superseded",
+      "reason": "Predecessor conversion, upgrade-only audit, backfill or activation compatibility. Current native schema, drift refusal, edition/temporal guards and immutable history remain separately qualified."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_skm_spec_dependency_migration.py",
+      "test": "test_postgresql_started_edition_constraint_normalization_rejects_weakening",
+      "disposition": "superseded",
+      "reason": "Predecessor conversion, upgrade-only audit, backfill or activation compatibility. Current native schema, drift refusal, edition/temporal guards and immutable history remain separately qualified."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_knowledge_propagation_schema_migration.py",
+      "test": "test_migration_is_additive_replayable_and_preserves_legacy_json",
+      "disposition": "superseded",
+      "reason": "Predecessor conversion, upgrade-only audit, backfill or activation compatibility. Current native schema, drift refusal, edition/temporal guards and immutable history remain separately qualified."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_knowledge_propagation_schema_migration.py",
+      "test": "test_migration_upgrades_exact_pre_erasure_delete_guards",
+      "disposition": "superseded",
+      "reason": "Predecessor conversion, upgrade-only audit, backfill or activation compatibility. Current native schema, drift refusal, edition/temporal guards and immutable history remain separately qualified."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_knowledge_propagation_schema_migration.py",
+      "test": "test_snapshot_metadata_upgrades_exact_predecessor_without_rewriting_rows",
+      "disposition": "superseded",
+      "reason": "Predecessor conversion, upgrade-only audit, backfill or activation compatibility. Current native schema, drift refusal, edition/temporal guards and immutable history remain separately qualified."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_knowledge_propagation_schema_migration.py",
+      "test": "test_snapshot_metadata_upgrade_rejects_noncanonical_predecessor_trigger",
+      "disposition": "superseded",
+      "reason": "Predecessor conversion, upgrade-only audit, backfill or activation compatibility. Current native schema, drift refusal, edition/temporal guards and immutable history remain separately qualified."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_knowledge_propagation_schema_migration.py",
+      "test": "test_fault_at_checkpoint_rolls_back_and_replay_converges",
+      "disposition": "superseded",
+      "reason": "Predecessor conversion, upgrade-only audit, backfill or activation compatibility. Current native schema, drift refusal, edition/temporal guards and immutable history remain separately qualified."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_knowledge_propagation_schema_migration.py",
+      "test": "test_migration_rejects_owned_trigger_drift",
+      "disposition": "superseded",
+      "reason": "Predecessor conversion, upgrade-only audit, backfill or activation compatibility. Current native schema, drift refusal, edition/temporal guards and immutable history remain separately qualified."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_knowledge_propagation_schema_migration.py",
+      "test": "test_upgrade_backfills_activation_and_rebuilds_relink_checks_once",
+      "disposition": "superseded",
+      "reason": "Predecessor conversion, upgrade-only audit, backfill or activation compatibility. Current native schema, drift refusal, edition/temporal guards and immutable history remain separately qualified."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_knowledge_propagation_schema_migration.py",
+      "test": "test_activation_boundary_is_first_activation_only_and_immutable",
+      "disposition": "superseded",
+      "reason": "Predecessor conversion, upgrade-only audit, backfill or activation compatibility. Current native schema, drift refusal, edition/temporal guards and immutable history remain separately qualified."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_skm_spec_dependency_postgresql.py",
+      "test": "test_skm_postgresql_fresh_upgrade_rerun_and_drift",
+      "disposition": "superseded",
+      "reason": "Removed PostgreSQL converter and predecessor lifecycle; opt-in native UoW repeatable-read proof remains."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_spec_b_scenarios_b4_b6.py",
+      "test": "test_ts_2db9d6c3_grandfathering_to_explicit_empty_is_conservative",
+      "disposition": "superseded",
+      "reason": "Grandfathering and imported legacy Knowledge Base bytes are outside clean-break scope. Native explicit selection and temporal audit remain covered."
     }
   ]
 }
