@@ -31,6 +31,7 @@ from okto_pulse.core.mcp import server as mcp_server
 from sqlalchemy_test_models import Board, Spec, SpecStatus
 from okto_pulse.core.services.analytics_service import resolve_linked_fr_indices
 from okto_pulse.core.services.main import SpecService
+from okto_pulse.core.domain.permissions import get_builtin_presets, resolve_permissions
 
 pytestmark = pytest.mark.asyncio
 
@@ -59,7 +60,9 @@ def _stub_ctx(board_id: str):
             "agent_id": USER_ID,
             "agent_name": USER_ID,
             "board_id": board_id,
-            "permissions": ["board:read", "specs:update"],
+            "permissions": resolve_permissions(
+                None, next(p['flags'] for p in get_builtin_presets() if p['name'] == 'Spec'), None
+            ),
         },
     )()
 
@@ -259,7 +262,7 @@ async def test_add_api_contract_tr_id_structured_requirement(db_factory):
     ]
 
 
-async def test_update_api_contract_tr_text_structured_requirement(db_factory):
+async def test_update_api_contract_tr_id_structured_requirement(db_factory):
     board_id, spec_id = await _seed(db_factory)
     created = await _call(
         "okto_pulse_add_api_contract",
@@ -272,11 +275,11 @@ async def test_update_api_contract_tr_text_structured_requirement(db_factory):
     contract_id = created["api_contract"]["id"]
 
     payload = await _call(
-        "okto_pulse_update_api_contract",
+        "okto_pulse_update_spec_api_contract",
         board_id,
         spec_id=spec_id,
         contract_id=contract_id,
-        linked_requirements="Session timeout must be configurable",
+        payload_json={"linked_requirements": ["tr_4444dddd"]},
     )
     assert payload.get("success") is True, payload
     spec = await _read_spec(spec_id)
@@ -371,7 +374,7 @@ async def test_add_decision_tr_id_structured_requirement(db_factory):
     assert linked == ["tr_3333cccc"], linked
 
 
-async def test_update_decision_tr_text_structured_requirement(db_factory):
+async def test_update_decision_tr_id_structured_requirement(db_factory):
     board_id, spec_id = await _seed(db_factory)
     created = await _call(
         "okto_pulse_add_decision",
@@ -384,11 +387,11 @@ async def test_update_decision_tr_text_structured_requirement(db_factory):
     decision_id = created["decision"]["id"]
 
     payload = await _call(
-        "okto_pulse_update_decision",
+        "okto_pulse_update_spec_entity",
         board_id,
         spec_id=spec_id,
-        decision_id=decision_id,
-        linked_requirements="Session timeout must be configurable",
+        entity_type="decision", operation="update", entity_id=decision_id,
+        payload_json={"linked_requirements": ["tr_4444dddd"]},
     )
     assert payload.get("success") is True, payload
     spec = await _read_spec(spec_id)

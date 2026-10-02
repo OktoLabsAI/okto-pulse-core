@@ -84,16 +84,10 @@ _SPEC_TOOLS = (
     "derive_spec_from_ideation",
     "derive_spec_from_refinement",
     "add_business_rule",
-    "update_business_rule",
-    "remove_business_rule",
     "list_business_rules",
     "add_api_contract",
-    "update_api_contract",
-    "remove_api_contract",
     "list_api_contracts",
     "add_decision",
-    "update_decision",
-    "remove_decision",
     "add_integration_requirement",
     "list_integration_requirements",
     "add_observability_requirement",
@@ -105,7 +99,6 @@ _SPEC_TOOLS = (
     "update_spec_entity",
     "update_spec_api_contract",
     "remove_spec_entity",
-    "migrate_spec_decisions",
 )
 
 
@@ -289,10 +282,14 @@ def test_api_contract_f9_f10_canonical_no_pydantic_url():
 
 
 def _stub_ctx():
+    from okto_pulse.core.domain.permissions import get_builtin_presets, resolve_permissions
+    permissions = resolve_permissions(
+        None, next(p['flags'] for p in get_builtin_presets() if p['name'] == 'Spec'), None
+    )
     return type(
         "Ctx",
         (),
-        {"agent_id": USER_ID, "agent_name": "mcp-spec-test", "permissions": ["*"]},
+        {"agent_id": USER_ID, "agent_name": "mcp-spec-test", "permissions": permissions},
     )()
 
 
@@ -702,13 +699,13 @@ _CROSS_BOARD_JSON_SPEC_CASES = (
         "okto_pulse_add_business_rule",
         {"title": "BR", "rule": "MUST", "when": "x", "then": "y"},
     ),
-    ("okto_pulse_update_business_rule", {"rule_id": "br_missing", "title": "x"}),
+    ("okto_pulse_update_spec_entity", {"entity_type": "business_rule", "operation": "update", "entity_id": "br_missing", "payload_json": {"title": "x"}}),
     ("okto_pulse_remove_spec_entity", {"target_type": "business_rule", "entity_id": "br_missing"}),
     ("okto_pulse_list_business_rules", {}),
     ("okto_pulse_add_api_contract", {"method": "GET", "path": "/cross"}),
     (
-        "okto_pulse_update_api_contract",
-        {"contract_id": "api_missing", "path": "/cross"},
+        "okto_pulse_update_spec_api_contract",
+        {"contract_id": "api_missing", "payload_json": {"path": "/cross"}},
     ),
     ("okto_pulse_remove_spec_entity", {"target_type": "api_contract", "entity_id": "api_missing"}),
     ("okto_pulse_list_api_contracts", {}),
@@ -717,11 +714,10 @@ _CROSS_BOARD_JSON_SPEC_CASES = (
         {"title": "Decision", "rationale": "cross-board"},
     ),
     (
-        "okto_pulse_update_decision",
-        {"decision_id": "dec_missing", "title": "cross-board"},
+        "okto_pulse_update_spec_entity",
+        {"entity_type": "decision", "operation": "update", "entity_id": "dec_missing", "payload_json": {"title": "cross-board"}},
     ),
     ("okto_pulse_remove_spec_entity", {"target_type": "decision", "entity_id": "dec_missing"}),
-    ("okto_pulse_migrate_spec_decisions", {}),
     (
         "okto_pulse_add_test_scenario",
         {"title": "Scenario", "given": "g", "when": "w", "then": "t"},
@@ -757,8 +753,12 @@ async def test_json_spec_operations_fail_closed_cross_board_without_audit(
         **tool_args,
     )
 
-    assert "error" in result, result
-    assert result["error"] in {"Spec not found", "scenario_not_found"}, result
+    if tool in {'okto_pulse_update_spec_entity', 'okto_pulse_update_spec_api_contract'}:
+        assert result['success'] is False, result
+        assert result['error_code'] == 'validation_failed', result
+        assert result['error_message'] == 'Spec does not belong to the requested board.', result
+    else:
+        assert result["error"] in {"Spec not found", "scenario_not_found"}, result
     assert await _spec_mutation_state(_seed) == before
 
 
@@ -1248,38 +1248,6 @@ async def test_get_spec_history_accepts_explicit_limit(_seed):
     assert isinstance(out["history"], list)
 
 
-@pytest.mark.asyncio
-async def test_migrate_decisions_preserves_prose_after_contiguous_bullets(_seed):
-    updated = await _call(
-        "okto_pulse_update_spec",
-        board_id=BOARD_ID,
-        spec_id=_seed,
-        context=(
-            "Intro.\r\n\r\n## decisions\r\n"
-            "- Keep writes local\r\n"
-            "* Require idempotency\r\n\r\n"
-            "Trailing prose must survive."
-        ),
-    )
-    assert updated["success"] is True
-    assert updated["spec"]["edition"] == 4
-    assert updated["spec"]["version"] == 2
-
-    migrated = await _call(
-        "okto_pulse_migrate_spec_decisions", board_id=BOARD_ID, spec_id=_seed
-    )
-    assert migrated["decisions_added"] == 2
-    assert migrated["context_modified"] is True
-
-    spec = await _call("okto_pulse_get_spec", board_id=BOARD_ID, spec_id=_seed)
-    assert "## decisions" not in spec["context"].lower()
-    assert "Trailing prose must survive." in spec["context"]
-
-    second = await _call(
-        "okto_pulse_migrate_spec_decisions", board_id=BOARD_ID, spec_id=_seed
-    )
-    assert second["decisions_added"] == 0
-    assert second["context_modified"] is False
 
 
 @pytest.mark.parametrize("kind", ["in_process", "grpc", "event"])
@@ -1294,7 +1262,9 @@ async def test_add_api_contract_explicit_non_http(_seed, kind):
 @pytest.mark.parametrize("token", ["TOOL", "COMPONENT", "EVENT"])
 async def test_update_api_contract_old_method_refused_without_effects(_seed, token):
     before = await _spec_mutation_state(_seed)
-    out = await _call("okto_pulse_update_api_contract", board_id=BOARD_ID,
-                      spec_id=_seed, contract_id=CONTRACT_ID, method=token)
-    assert out["error"] == "invalid_api_contract"
+    out = await _call("okto_pulse_update_spec_api_contract", board_id=BOARD_ID,
+                      spec_id=_seed, contract_id=CONTRACT_ID, payload_json={"method": token})
+    assert out['success'] is False, out
+    assert out['error_code'] == 'validation_failed', out
+    assert out['error_message'].startswith('invalid_api_contract:'), out
     assert await _spec_mutation_state(_seed) == before

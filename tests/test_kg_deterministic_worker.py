@@ -6,7 +6,7 @@ Covers:
 - `tests` edges fire on test_scenarios[].linked_criteria matches; missing
   linked_criteria produces a missing_link_candidate (fallback trigger).
 - `implements` edges for api_contracts → FR via linked_requirements.
-- `derives_from` low-confidence co-occurrence edges from `## Decisions`.
+- Structured decisions require declared requirement links.
 - `mentions` via tech_entities.yml whitelist.
 - Content hash deterministic across runs on identical input.
 - `layer=deterministic` + `rule_id` populated on every edge.
@@ -21,7 +21,6 @@ from okto_pulse.core.application.processors.deterministic_kg import (
     DeterministicWorker,
     WORKER_ID,
     WorkerResult,
-    _extract_decisions_from_context,
     _extract_tech_mentions,
     reset_tech_whitelist_cache,
 )
@@ -39,6 +38,11 @@ def _spec_fixture() -> dict:
             "- Cache streaks in Redis with 5min TTL\n"
             "- Badge rules as JSON in DB\n"
         ),
+        "decisions": [
+            {"id": "dec_pg", "title": "Use PostgreSQL for leaderboard", "rationale": "PostgreSQL provides durable ranking", "status": "active"},
+            {"id": "dec_redis", "title": "Cache streaks in Redis with 5min TTL", "rationale": "Redis reduces read latency", "status": "active"},
+            {"id": "dec_badge", "title": "Badge rules as JSON in DB", "rationale": "Rule storage", "status": "active"},
+        ],
         "functional_requirements": [
             "User earns XP for eco-actions",
             "User level increases based on XP threshold",
@@ -94,18 +98,10 @@ def _spec_fixture() -> dict:
     }
 
 
-def test_extract_decisions_from_context_tolerates_case():
-    ctx = "# Header\n## DECISIONS\n- Use PG\n- Use Redis\n## Out"
-    assert _extract_decisions_from_context(ctx) == ["Use PG", "Use Redis"]
 
 
-def test_extract_decisions_from_context_supports_star_bullets():
-    ctx = "## Decisions\n* First\n* Second"
-    assert _extract_decisions_from_context(ctx) == ["First", "Second"]
 
 
-def test_extract_decisions_returns_empty_when_header_missing():
-    assert _extract_decisions_from_context("## Other\n- x") == []
 
 
 def test_tech_mentions_matches_canonical_and_alias():
@@ -354,9 +350,9 @@ def test_process_spec_child_source_refs_are_granular():
         f"spec:{spec['id']}:test_scenario:ts_2",
         f"spec:{spec['id']}:api_contract:0",
         f"spec:{spec['id']}:api_contract:1",
-        f"spec:{spec['id']}:decision_legacy:0",
-        f"spec:{spec['id']}:decision_legacy:1",
-        f"spec:{spec['id']}:decision_legacy:2",
+        f"spec:{spec['id']}:decision:dec_pg",
+        f"spec:{spec['id']}:decision:dec_redis",
+        f"spec:{spec['id']}:decision:dec_badge",
     }.issubset(set(child_refs))
 
 
@@ -410,7 +406,7 @@ def test_process_spec_missing_linked_requirements_generates_candidate():
     assert missing_impl[0].reason == "no_requirement_match"
 
 
-def test_process_spec_legacy_decisions_do_not_invent_requirement_links():
+def test_process_spec_unlinked_decisions_do_not_invent_requirement_links():
     worker = DeterministicWorker()
     result = worker.process_spec(_spec_fixture())
     derives = [e for e in result.edges if e.edge_type == "derives_from"]

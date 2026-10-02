@@ -240,7 +240,6 @@ Semantic guideline protocol:
 - `okto_pulse_get_spec_knowledge` — docs: `okto-pulse://reference/tool-docs/knowledge`
 - `okto_pulse_list_spec_evaluations` — docs: `okto-pulse://reference/tool-docs/spec`
 - `okto_pulse_list_spec_validations` — docs: `okto-pulse://reference/tool-docs/spec`
-- `okto_pulse_migrate_spec_decisions` — docs: `okto-pulse://reference/tool-docs/decision`
 - `okto_pulse_move_spec` — docs: `okto-pulse://reference/tool-docs/spec`
 - `okto_pulse_remove_spec_entity` — docs: `okto-pulse://reference/tool-docs/spec`
 - `okto_pulse_start_checklist_execution` — docs: `okto-pulse://reference/tool-docs/spec`
@@ -261,9 +260,6 @@ Semantic guideline protocol:
 - `okto_pulse_list_business_rules` — docs: `okto-pulse://reference/tool-docs/business-rule`
 - `okto_pulse_list_integration_requirements` — docs: `okto-pulse://reference/tool-docs/integration-requirement`
 - `okto_pulse_list_observability_requirements` — docs: `okto-pulse://reference/tool-docs/observability-requirement`
-- `okto_pulse_update_api_contract` — docs: `okto-pulse://reference/tool-docs/api-contract`
-- `okto_pulse_update_business_rule` — docs: `okto-pulse://reference/tool-docs/business-rule`
-- `okto_pulse_update_decision` — docs: `okto-pulse://reference/tool-docs/decision`
 
 ## Test Scenarios
 - `okto_pulse_add_test_scenario` — docs: `okto-pulse://reference/tool-docs/test-scenario`

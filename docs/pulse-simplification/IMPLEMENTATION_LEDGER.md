@@ -2,6 +2,45 @@
 
 ## Estado para retomada
 
+### 2026-10-01 — Decisões estruturadas e mutações MCP sem writers depreciados
+
+Marco anterior publicado: Core425347c9 / Community7659c6d7. Removidos os handlers,
+policies e doze tipos Command/Result/UseCase exclusivos de update_business_rule,
+update_decision, update_api_contract e migrate_spec_decisions. Permanecem
+update_spec_entity e update_spec_api_contract com permissões, versão, atomicidade,
+escopo Board e operações explícitas de restore/revoke/supersede existentes.
+Retirados parser Markdown e fallback de context para Decision no KG, identidade
+decision_legacy e reconhecimento de regras antigas de coocorrência/reconciliação.
+Decisões estruturadas e vínculos declarados atuais não tiveram semântica alterada.
+Texto Markdown permanece texto, sem conversão nem exclusão. A recuperação Grafx
+foi testada com relações obsoletas produzidas pelo contrato atual, preservando
+relações humanas/de outra origem e compensação exata após falha.
+
+Documentação Core e override Community atualizados; catálogo gerado oficialmente:
+287 tools,0 aliases; inventário SHA256
+fcf78e73a2e9d8fe616616da87a80bd05bc63a6f86484367e3793cb2762d97f3.
+Expectativas de release/installed E2E atualizadas, sem afirmar execução integral
+dessas campanhas. dist-deprecated-spec-writers1 instalado e prova
+provenance-deprecated-spec-writers1.json: Core851/914 e Community318/404
+Python/payload byte-idênticos antes dos testes. Nenhum frontend alterado.
+
+deprecated-writers-core1.xml:166 aprovados/4 falhas de fixtures; correções e
+casos cross-Board em core-fixes1:43 aprovados/6 falhas de envelope/fixture,
+cross-fixes2:1 aprovado/6 falhas de nomes de campos nas asserções, cross-fixes3:
+7 aprovados. União final:212 casos Core distintos aprovados, sem falha pendente
+nessas campanhas. Inclui suíte completa de mutações estruturadas, permissões,
+histórico/eventos, concorrência/versão, negações sem escrita, projeção e catálogo.
+deprecated-writers-community1.xml:18 aprovados (Grafx durável e host/inventário).
+Nenhum gate de produto foi relaxado para adaptar testes. Disposições de remoções
+exclusivas e adaptação de suites mistas registradas no JSON próprio.
+closure-deprecated-spec-writers1.json exit0, oito budgets ZERO; READMEs renderizados
+e validados oficialmente. Ruff/diff-check aprovados.
+
+C1–C4 permanecem abertos. Próximo bloco C3: aliases de guideline e respectivos
+consumidores REST/MCP, seguido das superfícies/normalizadores pendentes já previstos.
+Qualificação integral C4, versão coordenada0.4.0 e decisões T23/KG-10 continuam
+pendentes; este incremento não declara entrega integral nem introduz novo escopo.
+
 ### 2026-10-01 — MCP: retirada dos sete aliases de pergunta/remoção
 
 Marco anterior publicado: Core73999c43 / Communityb1dfe525. Removidos handlers

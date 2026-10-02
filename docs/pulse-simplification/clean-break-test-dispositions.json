@@ -1224,6 +1224,30 @@
     {
       "path": "okto_labs_pulse_core/tests/test_knowledge_workspace_projection.py",
       "reason": "Positive v1-page compatibility replaced by current typed v2-page round-trip and old-cursor rejection. Detail identity, kind separation, pagination, lazy hydration and budgets preserved."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_kg_decisions.py",
+      "reason": "Canonical structured mutations/native Decision projection replace retired writers, Markdown conversion and decision_legacy parameters. Current scope, permissions and declared links retained."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_kg_deterministic_worker.py",
+      "reason": "Canonical structured mutations/native Decision projection replace retired writers, Markdown conversion and decision_legacy parameters. Current scope, permissions and declared links retained."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_spec_projection_source_identity.py",
+      "reason": "Canonical structured mutations/native Decision projection replace retired writers, Markdown conversion and decision_legacy parameters. Current scope, permissions and declared links retained."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_projection_intent_collection.py",
+      "reason": "Canonical structured mutations/native Decision projection replace retired writers, Markdown conversion and decision_legacy parameters. Current scope, permissions and declared links retained."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_r01a_mcp_spec_uow.py",
+      "reason": "Canonical structured mutations/native Decision projection replace retired writers, Markdown conversion and decision_legacy parameters. Current scope, permissions and declared links retained."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_add_business_rule_structured_fr.py",
+      "reason": "Canonical structured mutations/native Decision projection replace retired writers, Markdown conversion and decision_legacy parameters. Current scope, permissions and declared links retained."
     }
   ],
   "removed_cases": [
@@ -1580,6 +1604,54 @@
       "test": "test_copy_knowledge_rejects_actor_command_board_mismatch",
       "disposition": "superseded",
       "reason": "Exclusive removed copy_knowledge_to_card command/use-case cases blocked collection of current collaboration scope tests. Current governed Knowledge propagation authority tests remain in their dedicated suites; no old copy writer restored."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_kg_decisions.py",
+      "test": "test_ts7_migration_extracts_bullets_and_removes_block",
+      "disposition": "superseded",
+      "reason": "Exclusive migration regex tests removed with the Markdown converter; negative non-conversion now covered."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_kg_decisions.py",
+      "test": "test_ts7_migration_with_star_bullets",
+      "disposition": "superseded",
+      "reason": "Exclusive migration regex tests removed with the Markdown converter; negative non-conversion now covered."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_kg_decisions.py",
+      "test": "test_ts8_migration_no_block_is_noop",
+      "disposition": "superseded",
+      "reason": "Exclusive migration regex tests removed with the Markdown converter; negative non-conversion now covered."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_kg_decisions.py",
+      "test": "test_ts8_migration_twice_is_idempotent",
+      "disposition": "superseded",
+      "reason": "Exclusive migration regex tests removed with the Markdown converter; negative non-conversion now covered."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_kg_deterministic_worker.py",
+      "test": "test_extract_decisions_from_context_tolerates_case",
+      "disposition": "superseded",
+      "reason": "Exclusive Markdown decision migration/parser removed. Native structured decisions and negative non-conversion tests remain."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_kg_deterministic_worker.py",
+      "test": "test_extract_decisions_from_context_supports_star_bullets",
+      "disposition": "superseded",
+      "reason": "Exclusive Markdown decision migration/parser removed. Native structured decisions and negative non-conversion tests remain."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_kg_deterministic_worker.py",
+      "test": "test_extract_decisions_returns_empty_when_header_missing",
+      "disposition": "superseded",
+      "reason": "Exclusive Markdown decision migration/parser removed. Native structured decisions and negative non-conversion tests remain."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_r01a_mcp_spec_uow.py",
+      "test": "test_migrate_decisions_preserves_prose_after_contiguous_bullets",
+      "disposition": "superseded",
+      "reason": "Exclusive Markdown decision migration/parser removed. Native structured decisions and negative non-conversion tests remain."
     }
   ]
 }

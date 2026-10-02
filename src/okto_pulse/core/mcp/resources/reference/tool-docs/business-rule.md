@@ -43,22 +43,6 @@ Returns:
 Use `okto_pulse_remove_spec_entity` with `target_type="business_rule"` and `entity_id` naming the target.
 See `okto-pulse://reference/tool-families/spec_entity_remove` for parameters, authorization and results.
 
-## `okto_pulse_update_business_rule`
+## `okto_pulse_update_spec_entity` — business_rule
 
-Update an existing business rule on a spec.
-
-Args:
-    board_id: Board ID
-    spec_id: Spec ID
-    rule_id: Business rule ID (e.g. "br_abc12345")
-    title: New title (optional, empty = no change)
-    rule: New rule statement (optional)
-    when: New condition (optional)
-    then: New outcome (optional)
-    linked_requirements: Pipe-separated functional requirement refs. Accepted forms:
-        0-based indices, canonical fr_... ids, or exact FR text. Labels such
-        as "FR-1" are not accepted. Pass "CLEAR" to remove all links. Empty = no change.
-    notes: New notes (optional, "CLEAR" to remove)
-
-Returns:
-    JSON with the updated business rule
+Use `entity_type="business_rule", entity_id`, `operation="update"` and an object `payload_json` containing the fields to change. Omit unchanged fields; use JSON null to clear optional fields. Use exact same-Spec IDs for links.

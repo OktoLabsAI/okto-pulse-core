@@ -701,10 +701,6 @@ MCP_TOOL_PERMISSION_POLICIES: tuple[McpToolPermissionPolicy, ...] = (
         "card.entity.edit_fields",
     ),
     _policy("okto_pulse_merge_topics", "topic.entity.merge"),
-    _policy(
-        "okto_pulse_migrate_spec_decisions",
-        "spec.structured_entity.decision.create",
-    ),
     _policy("okto_pulse_move_card", *transition_permission_flags("card")),
     _policy("okto_pulse_move_ideation", *transition_permission_flags("ideation")),
     _policy("okto_pulse_move_refinement", *transition_permission_flags("refinement")),
@@ -830,7 +826,6 @@ MCP_TOOL_PERMISSION_POLICIES: tuple[McpToolPermissionPolicy, ...] = (
         "code_traceability.spec_link.delete",
     ),
     _policy("okto_pulse_unlink_guideline_from_board", "guidelines.unlink"),
-    _policy("okto_pulse_update_api_contract", "spec.contracts.edit"),
     _policy(
         "okto_pulse_update_architecture_design",
         "ideation.architecture.edit",
@@ -839,16 +834,8 @@ MCP_TOOL_PERMISSION_POLICIES: tuple[McpToolPermissionPolicy, ...] = (
         "card.architecture.edit",
     ),
     _policy("okto_pulse_update_board_guideline_priority", "guidelines.link"),
-    _policy("okto_pulse_update_business_rule", "spec.rules.edit"),
     _policy("okto_pulse_update_card", "card.entity.edit_fields"),
     _policy("okto_pulse_update_comment", "card.comments.edit"),
-    _policy(
-        "okto_pulse_update_decision",
-        "spec.structured_entity.decision.update",
-        "spec.structured_entity.decision.revoke",
-        "spec.structured_entity.decision.supersede",
-        "spec.structured_entity.decision.restore",
-    ),
     _policy(
         "okto_pulse_update_default_guideline_refs",
         "default_board_config.guidelines.edit",

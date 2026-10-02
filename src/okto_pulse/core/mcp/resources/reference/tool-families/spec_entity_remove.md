@@ -23,7 +23,7 @@ closed `target_type` enum. One of the two assertiveness-gate-eligible families
 |---|---|
 | `business_rule` | HARD remove (filtered out of the list). Returns `{success, removed, remaining, …coverage}`. |
 | `api_contract` | HARD remove. Returns `{success, removed, remaining, …coverage}`. |
-| `decision` | **SOFT-delete** — `status` becomes `revoked` (restorable via `okto_pulse_update_decision` with `status=active`); KG history is preserved. Returns `{success, revoked, decision}`. |
+| `decision` | **SOFT-delete** — `status` becomes `revoked` (restorable via `okto_pulse_update_spec_entity` with `entity_type="decision", operation="restore"`); KG history is preserved. Returns `{success, revoked, decision}`. |
 
 ## Telemetry
 

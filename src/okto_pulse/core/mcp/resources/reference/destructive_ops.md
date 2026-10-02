@@ -36,7 +36,7 @@ For versioned guidelines prefer retirement/unlink as defined in
 
 | Tool | Effect |
 |---|---|
-| `okto_pulse_remove_spec_entity` (`target_type="decision"`) | Sets `status="revoked"`. Decision stays in `spec.decisions[]` for audit. Reversible via `okto_pulse_update_decision(status="active")`. |
+| `okto_pulse_remove_spec_entity` (`target_type="decision"`) | Sets `status="revoked"`. Decision stays in `spec.decisions[]` for audit. Reversible via `okto_pulse_update_spec_entity(entity_type="decision", operation="restore")`. |
 | `okto_pulse_archive_tree` | Sets `archived=true` on the whole sub-tree. Fully reversible via `okto_pulse_restore_tree`. |
 | `okto_pulse_archive_story` / `okto_pulse_archive_topic` | Archives the story/topic. Reversible via `okto_pulse_restore_story` / `okto_pulse_restore_topic`. |
 

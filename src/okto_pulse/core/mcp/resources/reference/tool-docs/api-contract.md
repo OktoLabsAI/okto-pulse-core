@@ -61,28 +61,9 @@ Returns:
 Use `okto_pulse_remove_spec_entity` with `target_type="api_contract"` and `entity_id` naming the target.
 See `okto-pulse://reference/tool-families/spec_entity_remove` for parameters, authorization and results.
 
-## `okto_pulse_update_api_contract`
+## `okto_pulse_update_spec_api_contract` — api_contract
 
-Update an existing API contract on a spec.
-
-Args:
-    board_id: Board ID
-    spec_id: Spec ID
-    contract_id: API contract ID (e.g. "api_abc12345")
-    contract_type: New explicit interaction type (optional, omitted = no change)
-    method: New HTTP verb (optional, empty = no change)
-    path: New path (optional)
-    description: New description (optional, "CLEAR" to remove)
-    request_body_json: New request body JSON (optional, "CLEAR" to remove)
-    response_success_json: New success response JSON (optional, "CLEAR" to remove)
-    response_errors_json: New error responses JSON (optional, "CLEAR" to remove)
-    linked_requirements: Pipe-separated exact FR/TR IDs.
-        "CLEAR" to remove all. Empty = no change.
-    linked_rules: Pipe-separated rule IDs. "CLEAR" to remove all. Empty = no change.
-    notes: New notes (optional, "CLEAR" to remove)
-
-Returns:
-    JSON with the updated API contract
+Use `contract_id`, `operation="update"` and an object `payload_json` containing the fields to change. Omit unchanged fields; use JSON null to clear optional fields. Use exact same-Spec IDs for links.
 
 ## `okto_pulse_update_spec_api_contract`
 

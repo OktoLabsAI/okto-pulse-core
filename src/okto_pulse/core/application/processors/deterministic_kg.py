@@ -426,55 +426,6 @@ def _extract_tech_mentions(text: str) -> list[str]:
 
 
 # =====================================================================
-# Markdown parsing — spec.context "## Decisions" section
-# =====================================================================
-
-
-_DECISIONS_HEADER = re.compile(r"^\s*##\s*decisions\s*$", re.IGNORECASE | re.MULTILINE)
-_NEXT_HEADER = re.compile(r"^\s*##\s+", re.MULTILINE)
-_BULLET_LINE = re.compile(r"^\s*[-*]\s+(.+?)\s*$", re.MULTILINE)
-
-
-def _extract_decisions_from_context(context: str) -> list[str]:
-    """Pull the bulleted items under a `## Decisions` header of spec.context.
-
-    Tolerates markdown irregularities per TR `tr_1b5646c0`:
-    - Header case-insensitive ("Decisions", "decisions", "DECISIONS")
-    - Bullet character may be `-` or `*`
-    - Leading/trailing whitespace ignored
-    - Wrapped lines NOT joined (keeps each bullet atomic)
-    """
-    if not context:
-        return []
-    m = _DECISIONS_HEADER.search(context)
-    if not m:
-        return []
-    start = m.end()
-    after = context[start:]
-    next_m = _NEXT_HEADER.search(after)
-    section = after[: next_m.start()] if next_m else after
-    return [b.group(1).strip() for b in _BULLET_LINE.finditer(section)]
-
-
-def _inherits_refinement_decision_context(spec: dict[str, Any]) -> bool:
-    """Return whether ``context`` contains refinement-owned decisions.
-
-    ``RefinementService.derive_spec`` deliberately copies the refinement's
-    ``decisions`` into the child context under a ``## Decisions`` heading.  The
-    refinement is independently materialized in the KG, so parsing that heading
-    as legacy *spec* decisions duplicates ownership and can create ungrounded
-    Decision nodes before (or after) the spec is populated.
-
-    A spec derived directly from an ideation does not receive such a heading;
-    direct/legacy and ideation-derived specs therefore retain the compatibility
-    parser.  A refinement-derived spec expresses its own decisions through the
-    structured ``spec.decisions`` collection, which is handled separately.
-    """
-
-    return bool(spec.get("refinement_id"))
-
-
-# =====================================================================
 # Core extractor
 # =====================================================================
 
@@ -1770,7 +1721,6 @@ class DeterministicWorker:
             and d.get("title")
         ]
         tech_whitelist_version = _load_tech_whitelist()[1]
-        formal_titles: set[str] = {d["title"].strip() for d in formal_decisions}
         for i, dec in enumerate(formal_decisions):
             dec_title = dec["title"]
             dec_text = dec.get("rationale") or dec_title
@@ -1800,7 +1750,7 @@ class DeterministicWorker:
                     to_candidate_id=target_cid, confidence=1.0,
                     rule_id="derives_from/explicit_link@v2.1",
                 ))
-            # mentions via tech whitelist — same as legacy path.
+            # mentions via the technology whitelist.
             for canonical in _extract_tech_mentions(dec_text):
                 ent_cid = f"ent_{_canonical_slug(canonical)}"
                 if not any(n.candidate_id == ent_cid for n in result.nodes):
@@ -1817,64 +1767,6 @@ class DeterministicWorker:
                 result.edges.append(
                     EmittedEdge(
                         candidate_id=f"{prefix}_edge_fdec{i}_mentions_{ent_cid}",
-                        edge_type="mentions",
-                        from_candidate_id=dec_cid,
-                        to_candidate_id=ent_cid,
-                        confidence=1.0,
-                        rule_id=f"mentions/tech_whitelist@v{tech_whitelist_version}",
-                    )
-                )
-
-        # 8. Legacy fallback: "## Decisions" bullets in context → Decision nodes
-        #    (backward-compat until the spec is migrated via
-        #    okto_pulse_migrate_spec_decisions). Skips titles already emitted
-        #    from the formalized path above to avoid duplicate candidates in
-        #    the same session.
-        decisions_text = (
-            []
-            if _inherits_refinement_decision_context(spec)
-            else _extract_decisions_from_context(spec.get("context") or "")
-        )
-        decisions_text = [t for t in decisions_text if t.strip() not in formal_titles]
-        for i, dec_text in enumerate(decisions_text):
-            raw_parts.append(dec_text)
-            dec_cid = f"{prefix}_dec_{i}"
-            result.nodes.append(
-                EmittedNode(
-                    candidate_id=dec_cid,
-                    node_type="Decision",
-                    title=dec_text[:120],
-                    content=dec_text,
-                    source_artifact_ref=_spec_child_ref(
-                        spec_id, "decision_legacy", dec_text, i
-                    ),
-                    source_confidence=1.0,
-                )
-            )
-            _add_belongs_to(dec_cid, "dec", i)
-            # Legacy narrative preserves its Decision node, without invented FR links.
-            # mentions via tech whitelist. confidence=1.0 for exact canonical/
-            # alias hit; we don't enable stemming for any entity yet so the
-            # 0.85 stem path is unused (guarded for future extensions).
-            for canonical in _extract_tech_mentions(dec_text):
-                ent_cid = f"ent_{_canonical_slug(canonical)}"
-                # Entity nodes for canonical techs are emitted once per spec
-                # run; dedup happens at the commit layer, but we still guard
-                # here so the session_count stays accurate.
-                if not any(n.candidate_id == ent_cid for n in result.nodes):
-                    result.nodes.append(
-                        EmittedNode(
-                            candidate_id=ent_cid,
-                            node_type="Entity",
-                            title=canonical,
-                            content=canonical,
-                            source_artifact_ref="tech_entities.yml",
-                            source_confidence=1.0,
-                        )
-                    )
-                result.edges.append(
-                    EmittedEdge(
-                        candidate_id=f"{prefix}_edge_dec{i}_mentions_{ent_cid}",
                         edge_type="mentions",
                         from_candidate_id=dec_cid,
                         to_candidate_id=ent_cid,

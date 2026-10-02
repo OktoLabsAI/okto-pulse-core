@@ -105,7 +105,7 @@ ELIGIBLE_FAMILIES: tuple[ToolFamily, ...] = (
             "Homogeneous (board_id, spec_id, <id>) signatures — zero per-type field "
             "schema to lose. DEDICATED ROUTING preserves the behavioral asymmetry: "
             "decision is a SOFT-delete (status=revoked, restorable via "
-            "okto_pulse_update_decision), while business_rule/api_contract are hard "
+            "okto_pulse_update_spec_entity operation=restore), while business_rule/api_contract are hard "
             "removals. The closed enum is SAFER than separate tools (fail-fast on a "
             "wrong target_type vs a silent 'not found' from the wrong legacy tool)."
         ),

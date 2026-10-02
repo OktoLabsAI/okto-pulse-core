@@ -794,7 +794,6 @@ _SOURCE_CHILD_MARKERS = frozenset(
         "integration_requirement",
         "observability_requirement",
         "decision",
-        "decision_legacy",
         "learning",
         "alternative",
         "assumption",

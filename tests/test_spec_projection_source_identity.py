@@ -10,7 +10,7 @@ from okto_pulse.core.kg.schemas import NodeCandidate, ReconciliationHint, Reconc
 KINDS = [('Requirement', 'fr'), ('Constraint', 'tr'), ('Criterion', 'ac'),
     ('Constraint', 'business_rule'), ('TestScenario', 'test_scenario'),
     ('Requirement', 'integration_requirement'), ('Constraint', 'observability_requirement'),
-    ('APIContract', 'api_contract'), ('Decision', 'decision'), ('Decision', 'decision_legacy')]
+    ('APIContract', 'api_contract'), ('Decision', 'decision')]
 
 
 def candidate(kind, section):

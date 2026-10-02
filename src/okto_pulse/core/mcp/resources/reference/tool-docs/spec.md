@@ -148,7 +148,7 @@ Args:
 Returns:
     For `business_rule`/`api_contract` (HARD remove): `{success, removed, remaining, …}`.
     For `decision` (SOFT-delete): `{success, revoked, decision}` — `status` becomes
-    `revoked`, restorable via `okto_pulse_update_decision` with `status=active`.
+    `revoked`, restorable via `okto_pulse_update_spec_entity` with `entity_type="decision", operation="restore"`.
     Unsupported `target_type` returns `{error:"unsupported_target_type", allowed:[…]}`
     (no mutation).
 
