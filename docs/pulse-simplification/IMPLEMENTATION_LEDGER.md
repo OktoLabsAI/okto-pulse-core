@@ -2,6 +2,11 @@
 
 ## Estado para retomada
 
+Publicado o lote abaixo: Core 459795c6 / Community 08a3691d. Inspeção do diff
+publicado encontrou somente uma linha vazia excedente no EOF do helper de teste;
+corrigida em seguida. A menção a diff aprovado abaixo refere-se à checagem
+anterior à inclusão desse helper; sem alteração de produto ou resultados.
+
 ### 2026-10-02 — C1/C3: validação nativa completa e cobertura por IDs
 
 Base publicada: Core beb5b404 / Community 12f369f8. TaskValidationResponse

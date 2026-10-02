@@ -15,4 +15,3 @@ def native_entry():
         expected_subject_version=1, subject_version=2,
         request_digest='private', idempotency_key='private',
     )
-
