@@ -130,8 +130,8 @@ class ChecklistPersistencePort(Protocol):
     audit facts on executions and receipts, but a governance-only mode/version
     revision is not an executable-identity conflict. A native matching key plus
     request digest returns the original commit result; a different digest raises
-    :class:`ChecklistIdempotencyConflict`. Legacy manual references carry no
-    idempotency key and must never replay.
+    :class:`ChecklistIdempotencyConflict`. Every receipt is native and has
+    an idempotency key.
 
     The method stages the append-only receipt and head update but never commits
     or creates a unit of work.  Every conflict is expressed as one of the

@@ -85,7 +85,7 @@ def _failed_items() -> tuple[ChecklistItemResult, ...]:
     )
 
 
-def _legacy_receipt() -> ChecklistReceipt:
+def _incomplete_native_receipt() -> ChecklistReceipt:
     return ChecklistReceipt(
         id="receipt-legacy",
         board_id="board-1",
@@ -99,18 +99,18 @@ def _legacy_receipt() -> ChecklistReceipt:
         binding_digest="b" * 64,
         binding_mode=ChecklistMode.BLOCKING,
         items=(),
-        source=ChecklistReceiptSource.LEGACY_UNVERIFIED,
+        source=ChecklistReceiptSource.NATIVE,
         request_digest="f" * 64,
         created_by="legacy-import",
         created_at=datetime(2026, 7, 27, tzinfo=timezone.utc),
         head_revision=1,
-        manual_checklist_ref="legacy://manual-checklist",
+        idempotency_key="native-incomplete",
     )
 
 
-def test_legacy_unverified_receipt_never_projects_a_vacuous_pass() -> None:
-    assert _legacy_receipt().blocking_satisfied is False
-    assert server._checklist_receipt_outcome(_legacy_receipt()) == "fail"
+def test_incomplete_native_receipt_is_rejected_before_projection() -> None:
+    with pytest.raises(ValueError, match="checklist_items_incomplete"):
+        _incomplete_native_receipt()
 
 
 @pytest.mark.asyncio

@@ -1916,6 +1916,22 @@
     {
       "path": "okto_labs_pulse_community/frontend/src/components/specs/__tests__/SpecChecklistPanel.test.tsx",
       "reason": "Single edition-based UI: required host/start edition, native history instead of imported positive fixture, refusal of editionless/legacy-origin history. Preserved ten ordered items, anchors/rationale, authoring and gate assertions. Added pagination/page-size and permission/stage revocation checks; 14 cases pass."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_checklist.py",
+      "reason": "Removed positive imported-manual fixtures and legacy replay branch; replaced with rejection of manual_checklist_ref and legacy_unverified. Native receipt completeness, failed items, modes, CAS and replay tests retained."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_checklist_mcp_surface.py",
+      "reason": "Positive imported receipt projection replaced by native incomplete-receipt rejection before projection. Native MCP acknowledgements and scopes retained."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_checklist_routes_contract.py",
+      "reason": "Positive imported receipt projection replaced by rejection of removed receipt source. Native REST payload/authority/pagination tests retained."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_current_relational_schema.py",
+      "reason": "Fresh/restart checks prove imported Checklist column absent and source constraint native-only. Reintroduced old column must be refused before WAL/content changes, without conversion."
     }
   ],
   "removed_cases": [

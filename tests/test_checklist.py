@@ -59,7 +59,6 @@ from okto_pulse.core.ports.checklist import (
 )
 from okto_pulse.core.services.checklist import (
     ChecklistConflictError,
-    ChecklistPortContractError,
     ChecklistService,
     ChecklistValidationError,
 )
@@ -156,11 +155,9 @@ def make_submission(
     subject: ChecklistSpecSnapshot | None = None,
     items: tuple[ChecklistItemResult, ...] | None = None,
     head_revision: int = 0,
-    manual_checklist_ref: str | None = None,
 ) -> ChecklistSubmission:
     binding = binding or make_binding()
     subject = subject or make_subject()
-    is_manual = manual_checklist_ref is not None
     return ChecklistSubmission(
         board_id=subject.board_id,
         spec_id=subject.spec_id,
@@ -172,9 +169,8 @@ def make_submission(
         binding_version=binding.version,
         binding_digest=binding.digest or "",
         expected_head_revision=head_revision,
-        items=() if is_manual else (items if items is not None else make_items()),
-        idempotency_key=None if is_manual else "idem-1",
-        manual_checklist_ref=manual_checklist_ref,
+        items=items if items is not None else make_items(),
+        idempotency_key="idem-1",
     )
 
 
@@ -190,7 +186,6 @@ def prepare_receipt(
     binding: ChecklistBinding | None = None,
     subject: ChecklistSpecSnapshot | None = None,
     items: tuple[ChecklistItemResult, ...] | None = None,
-    manual_checklist_ref: str | None = None,
 ) -> ChecklistReceipt:
     binding = binding or make_binding()
     subject = subject or make_subject()
@@ -199,7 +194,6 @@ def prepare_receipt(
             binding=binding,
             subject=subject,
             items=items,
-            manual_checklist_ref=manual_checklist_ref,
         ),
         actor_id="agent-1",
         preflight=make_preflight(binding=binding, subject=subject),
@@ -678,7 +672,7 @@ def test_template_repin_still_makes_existing_receipt_stale() -> None:
     )
 
 
-def test_gate_modes_are_explicit_and_legacy_never_satisfies_blocking() -> None:
+def test_gate_modes_are_explicit_and_native_failure_blocks() -> None:
     subject = make_subject()
     blocking = make_binding(mode=ChecklistMode.BLOCKING)
     passing = prepare_receipt(binding=blocking, subject=subject)
@@ -700,23 +694,6 @@ def test_gate_modes_are_explicit_and_legacy_never_satisfies_blocking() -> None:
     )
     assert failed_gate.allowed is False
     assert failed_gate.reason == "checklist_item_failed"
-
-    legacy = prepare_receipt(
-        binding=blocking,
-        subject=subject,
-        manual_checklist_ref="legacy/checklist.md",
-    )
-    assert legacy.source is ChecklistReceiptSource.LEGACY_UNVERIFIED
-    assert legacy.verified is False
-    assert legacy.replayable is False
-    assert legacy.blocking_satisfied is False
-    legacy_gate = evaluate_checklist_gate(
-        binding=blocking,
-        current_subject=subject,
-        receipt=legacy,
-    )
-    assert legacy_gate.allowed is False
-    assert legacy_gate.reason == "manual_checklist_legacy_unverified"
 
     advisory = make_binding(mode=ChecklistMode.ADVISORY)
     off = make_binding(mode=ChecklistMode.OFF)
@@ -782,32 +759,11 @@ async def test_allowed_transition_preview_uses_the_same_blocking_predicate() -> 
     )
 
 
-def test_manual_reference_is_structurally_non_replayable() -> None:
-    binding = make_binding()
-    subject = make_subject()
-    submission = make_submission(
-        binding=binding,
-        subject=subject,
-        manual_checklist_ref="legacy/checklist.md",
-    )
-    with pytest.raises(ChecklistValidationError) as exc:
-        make_service().resolve_replay(
-            submission,
-            actor_id="agent-1",
-            result=ChecklistCommitResult(
-                board_id="board-1",
-                spec_id="spec-1",
-                spec_version=3,
-                receipt_id="old",
-                request_digest="f" * 64,
-                head_revision=1,
-                replayed=True,
-            ),
-        )
-    assert exc.value.code == "manual_checklist_non_replayable"
-    with pytest.raises(ChecklistContractError) as exc:
-        replace(submission, idempotency_key="not-allowed")
-    assert exc.value.code == "manual_checklist_non_replayable"
+def test_imported_manual_reference_is_rejected() -> None:
+    with pytest.raises(TypeError, match="manual_checklist_ref"):
+        replace(make_submission(), manual_checklist_ref="legacy/checklist.md")
+    with pytest.raises(ValueError):
+        ChecklistReceiptSource("legacy_unverified")
 
 
 def test_native_replay_validates_same_request_digest() -> None:
@@ -911,7 +867,7 @@ async def test_apply_translates_every_cas_conflict(
 
 
 @pytest.mark.asyncio
-async def test_apply_accepts_valid_result_and_rejects_legacy_replay() -> None:
+async def test_apply_accepts_valid_native_result() -> None:
     service = make_service()
     bundle = service.prepare_execution(
         make_submission(),
@@ -926,28 +882,6 @@ async def test_apply_accepts_valid_result_and_rejects_legacy_replay() -> None:
     assert result.receipt_id == bundle.receipt.id
     assert persistence.applied_bundle is bundle
 
-    manual_bundle = service.prepare_execution(
-        make_submission(manual_checklist_ref="legacy/checklist.md"),
-        actor_id="agent-1",
-        preflight=make_preflight(),
-    )
-    replay = ChecklistCommitResult(
-        board_id="board-1",
-        spec_id="spec-1",
-        spec_version=3,
-        receipt_id="old",
-        request_digest=manual_bundle.request_digest,
-        head_revision=1,
-        replayed=True,
-    )
-    with pytest.raises(ChecklistPortContractError) as exc:
-        await service.apply_prepared(
-            manual_bundle,
-            persistence=FakeChecklistPersistence(  # type: ignore[arg-type]
-                result=replay
-            ),
-        )
-    assert exc.value.code == "manual_checklist_replay_forbidden"
 
 
 @pytest.mark.asyncio
@@ -1099,7 +1033,6 @@ def test_enum_values_are_exactly_the_persisted_contract() -> None:
     )
     assert tuple(item.value for item in ChecklistReceiptSource) == (
         "native",
-        "legacy_unverified",
     )
     assert tuple(item.value for item in ChecklistStaleReason) == tuple(
         item.value for item in CHECKLIST_STALE_REASON_ORDER

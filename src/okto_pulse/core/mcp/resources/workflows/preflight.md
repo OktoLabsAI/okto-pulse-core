@@ -100,7 +100,8 @@ evidence. For an ambiguity write:
 Before executing the Spec checklist, read the full Spec context and
 `okto_pulse_get_checklist_binding`; freeze the current Spec version and binding
 identity when starting the execution. Submit every immutable item exactly once.
-`manual_checklist_ref` is legacy evidence only and never satisfies A3.
+Only a complete native Checklist result satisfies A3; imported manual references
+are not accepted by the Checklist contract.
 
 ### Resource Gate pre-flight — mandatory before completion
 

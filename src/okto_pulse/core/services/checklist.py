@@ -478,8 +478,6 @@ class ChecklistService:
     def _canonical_native_items(
         submission: ChecklistSubmission,
     ) -> tuple[ChecklistItemResult, ...]:
-        if submission.is_legacy_manual:
-            return ()
         actual_ids = tuple(item.item_id for item in submission.items)
         actual_set = set(actual_ids)
         duplicate_ids = sorted(
@@ -602,11 +600,6 @@ class ChecklistService:
                 submission,
                 actor_id=actor,
             )
-            source = (
-                ChecklistReceiptSource.LEGACY_UNVERIFIED
-                if submission.is_legacy_manual
-                else ChecklistReceiptSource.NATIVE
-            )
             receipt = ChecklistReceipt(
                 id=self._id_factory("clr"),
                 board_id=preflight.subject.board_id,
@@ -620,13 +613,12 @@ class ChecklistService:
                 binding_digest=preflight.binding.digest or "",
                 binding_mode=preflight.binding.mode,
                 items=ordered_items,
-                source=source,
+                source=ChecklistReceiptSource.NATIVE,
                 request_digest=request_digest,
                 created_by=actor,
                 created_at=now,
                 head_revision=submission.expected_head_revision + 1,
                 idempotency_key=submission.idempotency_key,
-                manual_checklist_ref=submission.manual_checklist_ref,
                 predecessor_receipt_id=preflight.current_head_receipt_id,
                 spec_edition=preflight.subject.spec_edition,
             )
@@ -672,8 +664,6 @@ class ChecklistService:
 
         if not isinstance(submission, ChecklistSubmission):
             raise ChecklistValidationError("checklist_submission_invalid")
-        if submission.is_legacy_manual:
-            raise ChecklistValidationError("manual_checklist_non_replayable")
         if not isinstance(result, ChecklistCommitResult):
             raise ChecklistPortContractError("checklist_commit_result_invalid")
         if not result.replayed:
@@ -940,11 +930,6 @@ class ChecklistService:
         ):
             raise ChecklistPortContractError("checklist_commit_identity_mismatch")
         if bundle is not None:
-            if (
-                bundle.receipt.source is ChecklistReceiptSource.LEGACY_UNVERIFIED
-                and result.replayed
-            ):
-                raise ChecklistPortContractError("manual_checklist_replay_forbidden")
             if not result.replayed and result.receipt_id != bundle.receipt.id:
                 raise ChecklistPortContractError("checklist_commit_receipt_mismatch")
 

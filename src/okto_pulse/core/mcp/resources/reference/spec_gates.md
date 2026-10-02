@@ -429,9 +429,9 @@ The same pure readiness predicate drives
 `okto_pulse_get_allowed_transitions`, `okto_pulse_move_spec`,
 `okto_pulse_submit_spec_validation`, full Spec context, and REST/UI state.
 Canonical blocking codes are `spec_checklist_gate_required` plus technical
-compatibility reason codes such as `checklist_receipt_required`,
-`checklist_receipt_stale`, `checklist_item_failed`, or
-`manual_checklist_legacy_unverified`. The `receipt`/`stale` vocabulary in those
+reason codes such as `checklist_receipt_required`,
+`checklist_receipt_stale`, or `checklist_item_failed`.
+Imported manual Checklist receipts are not accepted. The `receipt`/`stale` vocabulary in those
 stable codes does not define the human UI state, which is Current or Previous.
 
 MCP read/execution tools:

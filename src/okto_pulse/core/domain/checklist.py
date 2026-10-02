@@ -112,7 +112,6 @@ class ChecklistItemOutcome(str, Enum):
 
 class ChecklistReceiptSource(str, Enum):
     NATIVE = "native"
-    LEGACY_UNVERIFIED = "legacy_unverified"
 
 
 class ChecklistExecutionStatus(str, Enum):
@@ -767,7 +766,6 @@ class ChecklistSubmission:
     expected_head_revision: int
     items: tuple[ChecklistItemResult, ...] = ()
     idempotency_key: str | None = None
-    manual_checklist_ref: str | None = None
     spec_edition: int | None = None
 
     def __post_init__(self) -> None:
@@ -836,23 +834,9 @@ class ChecklistSubmission:
             self.idempotency_key,
             "checklist_idempotency_key_invalid",
         )
-        manual_ref = _optional_text(
-            self.manual_checklist_ref,
-            "manual_checklist_ref_invalid",
-        )
-        if manual_ref is None and idempotency_key is None:
+        if idempotency_key is None:
             raise ChecklistContractError("checklist_idempotency_key_required")
-        if manual_ref is not None:
-            if idempotency_key is not None:
-                raise ChecklistContractError("manual_checklist_non_replayable")
-            if items:
-                raise ChecklistContractError("manual_checklist_items_forbidden")
         object.__setattr__(self, "idempotency_key", idempotency_key)
-        object.__setattr__(self, "manual_checklist_ref", manual_ref)
-
-    @property
-    def is_legacy_manual(self) -> bool:
-        return self.manual_checklist_ref is not None
 
 
 @dataclass(frozen=True, slots=True)
@@ -875,7 +859,6 @@ class ChecklistReceipt:
     created_at: datetime
     head_revision: int
     idempotency_key: str | None = None
-    manual_checklist_ref: str | None = None
     predecessor_receipt_id: str | None = None
     spec_edition: int | None = None
 
@@ -955,38 +938,23 @@ class ChecklistReceipt:
             self.idempotency_key,
             "checklist_idempotency_key_invalid",
         )
-        manual_ref = _optional_text(
-            self.manual_checklist_ref,
-            "manual_checklist_ref_invalid",
-        )
         predecessor = _optional_text(
             self.predecessor_receipt_id,
             "checklist_predecessor_receipt_id_invalid",
         )
-        if self.source is ChecklistReceiptSource.NATIVE:
-            if tuple(item.item_id for item in items) != SPECIFY_CHECKLIST_ITEM_IDS:
-                raise ChecklistContractError("checklist_items_incomplete")
-            for result in items:
-                template_item = require_specify_checklist_item(result.item_id)
-                if (
-                    result.outcome is ChecklistItemOutcome.NOT_APPLICABLE
-                    and not template_item.allow_na
-                ):
-                    raise ChecklistContractError("checklist_item_na_not_allowed")
-            if idempotency_key is None:
-                raise ChecklistContractError("checklist_idempotency_key_required")
-            if manual_ref is not None:
-                raise ChecklistContractError("native_checklist_manual_ref_forbidden")
-        else:
-            if items:
-                raise ChecklistContractError("manual_checklist_items_forbidden")
-            if manual_ref is None:
-                raise ChecklistContractError("manual_checklist_ref_required")
-            if idempotency_key is not None:
-                raise ChecklistContractError("manual_checklist_non_replayable")
+        if tuple(item.item_id for item in items) != SPECIFY_CHECKLIST_ITEM_IDS:
+            raise ChecklistContractError("checklist_items_incomplete")
+        for result in items:
+            template_item = require_specify_checklist_item(result.item_id)
+            if (
+                result.outcome is ChecklistItemOutcome.NOT_APPLICABLE
+                and not template_item.allow_na
+            ):
+                raise ChecklistContractError("checklist_item_na_not_allowed")
+        if idempotency_key is None:
+            raise ChecklistContractError("checklist_idempotency_key_required")
         object.__setattr__(self, "items", items)
         object.__setattr__(self, "idempotency_key", idempotency_key)
-        object.__setattr__(self, "manual_checklist_ref", manual_ref)
         object.__setattr__(self, "predecessor_receipt_id", predecessor)
         object.__setattr__(
             self,
@@ -1400,7 +1368,6 @@ def checklist_submission_digest_v1(
                 )
             ),
             "idempotency_key": submission.idempotency_key,
-            "manual_checklist_ref": submission.manual_checklist_ref,
         }
     )
 
@@ -1580,13 +1547,6 @@ def evaluate_checklist_gate(
                 if current_subject.spec_edition is not None
                 else "checklist_receipt_stale"
             ),
-            currentness=currentness,
-        )
-    if not receipt.verified:
-        return ChecklistGateDecision(
-            mode=binding.mode,
-            allowed=False,
-            reason="manual_checklist_legacy_unverified",
             currentness=currentness,
         )
     if not receipt.blocking_satisfied:

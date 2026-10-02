@@ -2,17 +2,48 @@
 
 ## Estado para retomada
 
-### 2026-10-02 — requisito adicional: Connections configura o host local
+### 2026-10-02 — C1/C2/C3: Checklist sem recibo importado
 
-Usuário esclareceu: configuração e integração com harnesses disponíveis deve ser
-inteiramente realizável em Agents → Connections no host local. Remoto usa connector.
-Confirmação posterior: local salva/aplica diretamente no host; remoto fornece na
-interface os comandos de configuração do connector com opção de copiar e colar.
-Assessment atualizado com escopo, fronteira arquitetural e provas necessárias.
-AgentsModal.tsx atual apenas gera snippets para seis formatos MCP, não possui aba
-Connections nem aplicação local completa. Requisito ainda NÃO implementado; preservar
-segredos/grants, separar local/remoto e testar frontend e mecanismo descartável.
-Nenhuma configuração real de harness foi alterada.
+Base publicada Core 3928f85d / Community cedf784f. Retirados source
+legacy_unverified, manual_checklist_ref dos DTOs de submission/receipt, branches
+de preparação/replay/projeção importados e a coluna SQL correspondente. Todo recibo
+Checklist exige os dez itens e idempotência nativa; source SQL aceita somente native.
+Digest canônico não carrega mais o campo importado vazio. Não há conversor ou DROP
+de base existente: o contrato físico novo recusa a forma antiga antes de efeitos.
+
+O manual_checklist_ref do método de evidência de Test Scenario é funcionalidade
+atual distinta e permanece. Resources explicam a separação, deixam de instruir o
+uso de recibo importado e não anunciam mais seu código de gate. Manifest regenerado
+oficialmente; inventário de tools inalterado. Testes positivos exclusivos de recibo
+importado viraram recusa de campo/origem removidos e de recibo nativo incompleto;
+disposição registrada em clean-break-test-dispositions.json.
+
+Provas: checklist-native-receipts-core1, 70 aprovados; community1, 87 aprovados
+(SQL real, REST e schema). Incluem criação/restart, ausência física da coluna,
+constraint native-only e recusa de base com a coluna reintroduzida, mantendo bytes
+e sem WAL/conversão. Front1, 14 aprovados. Após atualizar resources, resources2
+aprovou 25 casos de regressão MCP/manifests/catálogo. Sem falhas nestas campanhas.
+
+Par final dist-checklist-native-receipts2 instalado/conferido em provenance2:
+Core 845 Python/908 payload, Community 319/405, igualdade src/install/wheel.
+SHA256 Core de7493f5172b517f5b9b9f75a971000f7e93eb694a01219ef6d82005f697ae2b;
+Community 25494459c152bd1e5105ba184ade34d2515c9da063a206c0986156a892edc5ff.
+Closure1 e closure2 aprovadas com oito budgets ZERO, sem findings. Todos os
+processos terminaram. SPA não mudou. Sem release/tag/deploy/dados reais.
+
+Próximo: retirar edição nullable e currentness sem edição do Checklist, estados
+history_only e seus filtros/colunas/testes. Conservar edição atual/anterior, fences
+de escrita, CAS/replay e histórico nativo. Divergência binding vivo versus snapshot
+no gate permanece registrada e não foi alterada silenciosamente neste incremento.
+C4 integral e decisões T23/KG-10 permanecem abertos.
+
+### 2026-10-02 — correção de escopo: Connections pertence somente ao Nexus
+
+O usuário confirmou que enviou por engano a solicitação Agents → Connections:
+ela pertence exclusivamente ao Nexus. Retirada a seção adicionada ao assessment
+do Pulse. Nenhum código de Connections ou repositório Nexus foi alterado. O escopo
+continua C1–C4 de simplificação/removal de legado e migração, sem essa extensão.
+O registro inicial publicado em Core 3928f85d fica superado por esta correção.
 
 ### 2026-10-02 — C1/C3: snapshot Checklist criado somente na entrada nativa
 
@@ -44,7 +75,7 @@ importados ainda presentes. evaluate_spec_gate no serviço ainda consulta bindin
 vivo, enquanto execução/preflight e validation-cycle usam snapshot; caracterizar
 a divergência antes de alterar o efeito do gate. synthetic_off ainda cobre Board
 sem binding e precisa ser conciliado com a criação nativa que já instala binding.
-Demais itens de C1–C4 e Connections local permanecem abertos. Não é entrega integral.
+Demais itens de C1–C4 permanecem abertos. Não é entrega integral.
 
 ### 2026-10-02 — C1/C3: comandos Checklist sem aliases ou leitura sem edição
 

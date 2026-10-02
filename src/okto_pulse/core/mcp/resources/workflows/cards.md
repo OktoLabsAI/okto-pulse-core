@@ -152,9 +152,9 @@ The parent Spec's opt-in PageEnvelope may expose only lean
 receipt or page findings through the dedicated Quality tools and inspect
 currentness; never treat a parent summary or newest head as a complete body.
 The card executes linked test scenarios and implementation work—it does not
-author a separate assessment or checklist template. A legacy
-`manual_checklist_ref` may be reported as historical context but cannot satisfy
-the curated A3 receipt gate. See
+author a separate assessment or checklist template. A Test Scenario's
+`manual_checklist_ref` belongs to its test-evidence method; it is not a curated
+A3 result. Checklist accepts only its complete native result. See
 `okto-pulse://reference/quality-assessments`.
 
 ### When Creating Cards from a Spec (MANDATORY ORDER)
