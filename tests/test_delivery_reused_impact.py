@@ -54,10 +54,14 @@ def test_observation_must_match_identity_revision_and_all_material_checkpoints()
     assert progress_affects_impact_source(progress, "source", {})
 
 
-def test_v2_seals_basis_without_changing_v1_digest_shape():
-    legacy = seal_delivery_selection(scope=SCOPE, card_version=1, revision=1, records=[RECORD], obligations=SNAPSHOT.obligations, impact=None)
-    assert "impact_basis" not in legacy
+def test_current_manifest_explicitly_distinguishes_manual_impact_from_reused_basis():
+    from okto_pulse.core.domain.delivery_selection import report_reuses_impact
+    manual = seal_delivery_selection(scope=SCOPE, card_version=1, revision=1, records=[RECORD], obligations=SNAPSHOT.obligations, impact=None)
+    assert manual["contract_version"] == "card-delivery-selection/v2"
+    assert manual["impact_basis"] is None
+    assert not report_reuses_impact(dict(delivery_manifest=manual))
     manifest = seal_delivery_selection(scope=SCOPE, card_version=1, revision=1, records=[RECORD], obligations=SNAPSHOT.obligations, impact=None, impact_basis=[basis()])
+    assert report_reuses_impact(dict(delivery_manifest=manifest))
     card = SimpleNamespace(status="validation", conclusions=[dict(source="move_to_validation", delivery_manifest=manifest)])
     assert current_delivery_selection(card, SCOPE, obligations=SNAPSHOT.obligations, record_hashes={"record": "a" * 64}) == {"record"}
     manifest["impact_basis"][0]["result_revision"] = A

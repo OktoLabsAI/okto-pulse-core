@@ -2,6 +2,37 @@
 
 ## Estado para retomada
 
+### 2026-10-02 — C1: manifesto único de seleção e impacto
+
+Base publicada: Core 925fe982 / Community f22798c4. Writer e modelo aceitam
+somente card-delivery-selection/v2; contract_version e impact_basis são campos
+obrigatórios do manifesto persistido. Relatório manual tem impact_basis=null;
+reuso tem uma lista não vazia de bases autenticadas. Removidos serializer
+preserve_v1_hash e escolha do comportamento pelo número de versão. A escolha
+de reuso usa o campo tipado depois de validar o manifesto atual. Não há conversão
+nem preservação de hash v1. Relatórios manuais e reuso continuam funcionais.
+
+Testes recusam v1, versão ausente, base ausente/vazia e confirmam que o conteúdo
+não é alterado. Preservadas integridade dos hashes, seleção de registros, escopo,
+histórico congelado/reabertura, replay, falha atômica e impacto atual na conclusão.
+Tipos frontend agora exprimem versão única e base explicitamente nullable.
+
+selection-current-core1: 45 aprovados; selection-current-community1: 33 aprovados;
+selection-current-front1: 12 aprovados. Build TypeScript/Vite aprovado, SPA
+byte-idêntica à anterior (30364020dee41450fa757d33c940a2f28fd8922ffcd1f492f1f410f711716877).
+Catálogo MCP regenerado oficialmente sem diff e gate de drift aprovado.
+dist-selection-current1 instalado; provenance-selection-current1 confirma
+847 Python/910 payload Core e319/405 Community byte-idênticos antes dos testes.
+closure-selection-current1 aprovado, oito budgets ZERO; READMEs renderizados
+e validados oficialmente. Ruff F/E9 e diff aprovados. Sem release/tag/deploy.
+
+Próximo resíduo C1 confirmado em schemas.py: SpecValidationPinpointResponse
+fabrica anchor_snapshot com availability_at_seal=legacy_unavailable quando
+ausente. Investigar writer/reader e retirar somente suporte a linhas antigas,
+preservando pinpoint e snapshot imutável das validações nativas. Os demais
+normalizadores inventariados e a auditoria integral C4 permanecem abertos,
+assim como as decisões T23/KG-10. Não representa conclusão da iniciativa.
+
 ### 2026-10-02 — C3: prova nativa da policy de impacto na conclusão
 
 Base publicada: Core 484025a9 / Community 062791c3. Os três casos

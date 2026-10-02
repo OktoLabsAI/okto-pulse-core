@@ -72,6 +72,27 @@ def test_record_or_impact_change_is_not_the_sealed_submission():
         selected(data)
 
 
+@pytest.mark.parametrize("mutation", ["old_version", "missing_version", "missing_basis", "empty_basis"])
+def test_previous_or_incomplete_manifest_is_rejected_without_conversion(mutation):
+    from okto_pulse.core.domain.delivery_selection import report_reuses_impact
+    data = report()
+    manifest = data["delivery_manifest"]
+    if mutation == "old_version":
+        manifest["contract_version"] = "card-delivery-selection/v1"
+    elif mutation == "missing_version":
+        manifest.pop("contract_version")
+    elif mutation == "missing_basis":
+        manifest.pop("impact_basis")
+    else:
+        manifest["impact_basis"] = []
+    before = deepcopy(data)
+    with pytest.raises(ValueError, match="manifest_invalid"):
+        selected(data)
+    with pytest.raises(ValidationError):
+        report_reuses_impact(data)
+    assert data == before
+
+
 @pytest.mark.parametrize("patch", [
     {"record_ids": ["same", "same"]}, {"record_ids": [str(i) for i in range(201)]},
     {"sha256": "a" * 64}, {"expected_delivery_revision": True},

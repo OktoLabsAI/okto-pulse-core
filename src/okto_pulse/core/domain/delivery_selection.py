@@ -16,14 +16,12 @@ def delivery_scope_digest(obligations) -> str:
 def seal_delivery_selection(*, scope: CardDeliveryScope, card_version: int,
                             revision: int, records: list[dict], obligations,
                             impact: dict | None, impact_basis: list[dict] | None = None) -> dict:
-    payload = dict(contract_version="card-delivery-selection/v1",
+    payload = dict(contract_version="card-delivery-selection/v2",
                    board_id=scope.board_id, card_id=scope.card_id, spec_id=scope.spec_id,
                    spec_edition=scope.spec_edition, card_version=card_version,
                    delivery_revision=revision, records=records,
                    scope_sha256=delivery_scope_digest(obligations),
-                   impact_sha256=delivery_digest(impact))
-    if impact_basis is not None:
-        payload.update(contract_version="card-delivery-selection/v2", impact_basis=impact_basis)
+                   impact_sha256=delivery_digest(impact), impact_basis=impact_basis)
     return DeliverySelectionManifest(**payload, sha256=delivery_digest(payload)).model_dump(mode="json")
 
 
@@ -38,9 +36,7 @@ def current_delivery_report(card: object) -> Mapping | None:
 
 def report_reuses_impact(report: Mapping) -> bool:
     manifest = report.get("delivery_manifest")
-    return isinstance(manifest, Mapping) and (
-        manifest.get("contract_version") != "card-delivery-selection/v1" or "impact_basis" in manifest
-    )
+    return isinstance(manifest, Mapping) and DeliverySelectionManifest.model_validate(manifest).impact_basis is not None
 
 
 def submitted_report_receipt(card: object, scope: CardDeliveryScope, record_ids: set[str], target_status: str) -> dict:
