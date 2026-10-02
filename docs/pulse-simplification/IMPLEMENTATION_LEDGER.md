@@ -2,6 +2,46 @@
 
 ## Estado para retomada
 
+### 2026-10-02 — C3: persistência nativa de políticas B03/B04/B09
+
+Marco anterior publicado: Core207eb3f7 / Community46756ebc. B03 substitui backfill
+por criação nativa de agregados. Mantidos guards SQLite de revisão/head/binding,
+escopo, sequência, digest, apagamento por Board, CAS, replay e rollback do chamador.
+B04 troca reinício com conversão por reabertura real de conexão e pins completos
+explicitamente autorados. Não há preenchimento de referências antigas. Removidos
+testes exclusivos de upgrade B03→B04 e convergência policy/v1 de B09; ciclos
+atuais de waiver métrico e skip humano permanecem. Disposições constam no JSON.
+
+Fachada B04 não usa GuidelineUpdate/update/delete/link/priority antigos: planejamento
+e persistência atuais de revisão/noop/retirement alimentam leituras do serviço,
+impacto governado, adoção/unlink/relink e defaults exatos. Pins incompletos, alias
+guideline_version, números/prioridades inválidos, digest divergente e inline em
+default global são recusados sem vínculo. Projeção compara head/default_revision,
+sem campos duplicados retirados. Retirement impede nova revisão sem apagar o
+histórico. Testes PostgreSQL dos conversores foram substituídos pela recusa
+executável do backend antes de engine/acesso; Community atual suporta SQLite.
+
+Limite de escopo da evidência: B03/B04 são testes da persistência de políticas
+e interoperabilidade do serviço. Fixture instala DDL atual de política/noop em
+schema isolado com FKs/sessão composta; não representa admissão completa do
+runtime nem substitui autoridade de impacto/adoption das suites full-schema.
+Não foi retirado/relaxado gate do produto. B08 e suites semânticas completas
+continuam pendentes e serão adaptadas, não consideradas aprovadas por estes testes.
+
+b03-b04-b09-native4:39 aprovados (13 de políticas/ciclos,26 de schema). Rodadas
+b03-native1/2, b03-b04-native1/2/3 e b04-default-diagnosis1 preservam investigação
+e correções de fixtures. Produto/SPA sem mudanças; provenance-b03-native1.json
+comprova dist-native-delivery-ledger1 instalado, Core851/914 e Community318/404
+Python/payload byte-idênticos antes dos testes. closure-b03-b04-native1 exit0,
+oito budgets ZERO e READMEs validados. Ruff F/E9 e diff checks aprovados.
+
+Coleta community5:6051/24 erros; community6:6053/23 erros, ante6039/26. Core segue
+com coleta anterior13760/0. Coleta não é execução. Próximo C3: B08 impacto e
+seus consumidores F3/B14, semantic persistence, code evidence e recovery;
+remover conversores/auditores de upgrade sem perder CAS, provas, isolamento e
+imutabilidade atuais. C1 normalizadores/serializers e C4 integral, além das
+decisões T23/KG-10, permanecem abertos. Não declarar entrega integral.
+
 ### 2026-10-02 — Ledger de entrega exclusivamente nativo
 
 Marco anterior publicado: Core3b6b17ca / Community31389499. Removida coluna

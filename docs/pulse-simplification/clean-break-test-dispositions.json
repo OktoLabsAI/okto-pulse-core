@@ -1464,6 +1464,22 @@
     {
       "path": "okto_labs_pulse_community/tests/test_current_relational_schema.py",
       "reason": "Spec ledger accepts only native human waivers/revocations; database rejects implementation/test proof rows. Removed migrated_from column and old Spec-proof reader. Native test outcome is required, never borrowed from live scenario. Added storage/refusal tests; native history, signed proof, replay and frontend retained."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_skb_b03_guideline_policy_persistence.py",
+      "reason": "Replaced legacy backfill seeds with native aggregate creation. Retained actual SQLite policy immutability, identity/scope/sequence guards, digest rejection, Board erasure, head/binding CAS, exact replay and caller rollback. Isolated persistence fixture installs current policy/noop DDL; impact/adoption authorization remains a separate full-schema qualification."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_skb_b04_guideline_lifecycle_persistence.py",
+      "reason": "Removed converter startup and mutable CRUD DTO references. Native connection reopen preserves explicitly authored default pins, never pins missing history. Current revision planner/persistence and service projections retain noop, race, terminal retirement, immutable history, governed impact adoption/unlink/relink, exact defaults and rejection without writes. Service interoperability test does not claim transport authorization coverage."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_skb_b09_policy_waiver_persistence.py",
+      "reason": "Removed only policy/v1 schema convergence. Native metric-waiver and human-skip lifecycle contracts retained; full exception persistence remains in semantic suites."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_current_relational_schema.py",
+      "reason": "Added refusal of PostgreSQL before engine/storage access, matching the current Community SQLite-only deliverable. Replaces obsolete PostgreSQL upgrade/DDL-normalization expectations without restoring another backend."
     }
   ],
   "removed_cases": [
@@ -2072,6 +2088,42 @@
       "test": "test_sqlite_migration_preserves_legacy_null_and_replays",
       "disposition": "superseded",
       "reason": "Exclusive incremental conversion/legacy-null upgrade. Native CAS/replay/reference coverage retained; full schema refusal/rollback covered by current schema tests."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_skb_b03_guideline_policy_persistence.py",
+      "test": "test_b03_active_dangling_default_fails_and_rolls_back",
+      "disposition": "superseded",
+      "reason": "Exclusive conversion/backfill of old default references; current complete-pin validation and no-write failure are retained in B04."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_skb_b03_guideline_policy_persistence.py",
+      "test": "test_b03_inline_default_active_rolls_back_and_inactive_stays_unpinned",
+      "disposition": "superseded",
+      "reason": "Exclusive conversion/backfill and historical pin invention. Native global-only complete-pin default guards retained in B04."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_skb_b03_guideline_policy_persistence.py",
+      "test": "test_b03_postgresql_guards_fail_closed",
+      "disposition": "superseded",
+      "reason": "Removed PostgreSQL converter/DDL auditor; current Community refuses that backend before access. Native SQLite policy guards are executed, not inferred from SQL strings."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_skb_b04_guideline_lifecycle_persistence.py",
+      "test": "test_b04_substrate_upgrades_exact_b03_sqlite_table_before_strict_audit",
+      "disposition": "superseded",
+      "reason": "Exclusive predecessor table/trigger upgrade. Native lifecycle/history/replay retained; incompatible schema is refused unchanged."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_skb_b04_guideline_lifecycle_persistence.py",
+      "test": "test_b04_postgresql_trigger_contract_has_exact_lifecycle_upgrade",
+      "disposition": "superseded",
+      "reason": "Exclusive PostgreSQL trigger-upgrade normalization; current Community backend refusal and executable SQLite guards retained."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_skb_b09_policy_waiver_persistence.py",
+      "test": "test_retired_policy_v1_schema_converges_without_runtime_evaluator",
+      "disposition": "superseded",
+      "reason": "Exclusive schema converter for retired policy/v1; native exception lifecycles retained."
     }
   ]
 }
