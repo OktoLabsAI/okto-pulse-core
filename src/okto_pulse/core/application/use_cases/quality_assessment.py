@@ -640,7 +640,6 @@ class QualityAssessmentReadUseCases:
                 subject_id=command.subject_id,
                 assessment_kind=command.assessment_kind,
                 current_subject=context.subject,
-                currentness_inputs=context.currentness_inputs,
                 gate_inputs=context.gate_inputs,
                 persistence=uow.services.quality_assessments,
             )

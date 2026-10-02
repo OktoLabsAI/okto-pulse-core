@@ -406,24 +406,13 @@ class AmbiguityGateService:
             raise AmbiguityGateError(
                 "ambiguity_gate_subject_invalid",
             )
-        try:
-            resolved = await self._persistence.get_current(
-                board_id=board_id,
-                subject_type=resolved_type,
-                subject_id=subject_id,
-                assessment_kind=AssessmentKind.AMBIGUITY,
-                subject_edition=subject_edition,
-            )
-        except TypeError:
-            # Temporary compatibility for third-party adapters while the
-            # edition-aware port is rolled out.  The defensive check below
-            # keeps a legacy head history-only.
-            resolved = await self._persistence.get_current(
-                board_id=board_id,
-                subject_type=resolved_type,
-                subject_id=subject_id,
-                assessment_kind=AssessmentKind.AMBIGUITY,
-            )
+        resolved = await self._persistence.get_current(
+            board_id=board_id,
+            subject_type=resolved_type,
+            subject_id=subject_id,
+            assessment_kind=AssessmentKind.AMBIGUITY,
+            subject_edition=subject_edition,
+        )
         if resolved is None:
             raise AmbiguityGateError(
                 AmbiguityGateReason.ASSESSMENT_MISSING,

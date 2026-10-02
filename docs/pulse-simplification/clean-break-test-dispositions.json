@@ -1848,6 +1848,14 @@
         "test_native_projection_and_rebuild_share_edition_selector_and_immutable_history",
         "test_projection_refuses_editionless_receipt_without_repair_or_silent_omission"
       ]
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_quality_assessment_service.py",
+      "reason": "Current preview fixture authors native edition from preflight; same-edition technical version change remains current. Added refusal before persistence and no TypeError compatibility retry. Other editionless service fixtures remain pending."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_sqlalchemy_quality_assessment.py",
+      "reason": "Current reads require edition; invalid selectors refuse before SQL, other edition has no current while receipt history remains intact."
     }
   ],
   "removed_cases": [

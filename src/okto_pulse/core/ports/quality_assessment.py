@@ -283,7 +283,7 @@ class QualityAssessmentPersistencePort(Protocol):
         subject_type: AssessmentSubjectType,
         subject_id: str,
         assessment_kind: AssessmentKind,
-        subject_edition: int | None = None,
+        subject_edition: int,
     ) -> tuple[AssessmentReceipt, AssessmentSubjectHead] | None:
         ...
 

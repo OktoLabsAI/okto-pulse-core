@@ -938,30 +938,18 @@ class QualityAssessmentService:
         subject_id: str,
         assessment_kind: AssessmentKind,
         current_subject: AssessmentSubjectRef,
-        current_digests: AssessmentDigestSet | None = None,
-        currentness_inputs: tuple[AssessmentCurrentnessInput, ...] = (),
         gate_inputs: tuple[QualityGateInput, ...] = (),
         persistence: QualityAssessmentPersistencePort,
     ) -> CurrentAssessmentView:
-        try:
-            resolved = await persistence.get_current(
-                board_id=board_id,
-                subject_type=subject_type,
-                subject_id=subject_id,
-                assessment_kind=assessment_kind,
-                subject_edition=current_subject.subject_edition,
-            )
-        except TypeError as exc:
-            # Transitional compatibility for third-party adapters compiled
-            # against the pre-edition optional keyword.
-            if "subject_edition" not in str(exc):
-                raise
-            resolved = await persistence.get_current(
-                board_id=board_id,
-                subject_type=subject_type,
-                subject_id=subject_id,
-                assessment_kind=assessment_kind,
-            )
+        if type(current_subject.subject_edition) is not int or current_subject.subject_edition < 1:
+            raise QualityAssessmentPortContractError("assessment_subject_edition_invalid")
+        resolved = await persistence.get_current(
+            board_id=board_id,
+            subject_type=subject_type,
+            subject_id=subject_id,
+            assessment_kind=assessment_kind,
+            subject_edition=current_subject.subject_edition,
+        )
         if resolved is None:
             raise QualityAssessmentNotFoundError(
                 "assessment_current_not_found"
@@ -977,8 +965,7 @@ class QualityAssessmentService:
             )
         receipt, head = resolved
         if receipt.subject.subject_edition != current_subject.subject_edition:
-            # Adapters predating the optional selector may still return a global
-            # head. It is history, never current for this lifecycle edition.
+            # A receipt from another edition is history, never current.
             raise QualityAssessmentNotFoundError(
                 "assessment_current_not_found"
             )
@@ -999,15 +986,7 @@ class QualityAssessmentService:
         currentness = evaluate_assessment_currentness(
             receipt,
             current_subject=current_subject,
-            current_digests=(
-                receipt.digests
-                if current_subject.subject_edition is not None
-                else _current_digests_for_receipt(
-                    receipt,
-                    inputs=currentness_inputs,
-                    fallback=current_digests,
-                )
-            ),
+            current_digests=receipt.digests,
         )
         return CurrentAssessmentView(
             receipt=receipt,

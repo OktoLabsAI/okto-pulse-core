@@ -254,7 +254,7 @@ class _Persistence:
         (True, True, 3, 7, True, "ambiguity_gate_skipped"),
         (True, False, 1, 7, False, "ambiguity_score_exceeds_threshold"),
         (True, False, 3, 7, True, "ambiguity_gate_ready"),
-        (True, False, 3, 8, False, "ambiguity_assessment_stale"),
+        (True, False, 3, 8, True, "ambiguity_gate_ready"),
     ),
 )
 async def test_current_assessment_projects_the_canonical_gate_preview(
@@ -266,10 +266,13 @@ async def test_current_assessment_projects_the_canonical_gate_preview(
     expected_reason: str,
 ) -> None:
     service = QualityAssessmentService(id_factory=_Ids(), clock=lambda: NOW)
+    preflight = _preflight()
     bundle = service.prepare_submission(
-        _submission(),
+        replace(_submission(), expected_subject_edition=1),
         actor_id="agent-1",
-        preflight=_preflight(),
+        preflight=replace(
+            preflight, subject=replace(preflight.subject, subject_edition=1)
+        ),
     )
     head = AssessmentSubjectHead(
         board_id="b1",
@@ -293,8 +296,8 @@ async def test_current_assessment_projects_the_canonical_gate_preview(
         current_subject=replace(
             _preflight().subject,
             subject_version=subject_version,
+            subject_edition=1,
         ),
-        current_digests=_digests(),
         gate_inputs=(
             QualityGateInput(
                 assessment_kind=AssessmentKind.AMBIGUITY,
@@ -1332,8 +1335,7 @@ async def test_invalid_current_and_receipt_port_results_fail_closed() -> None:
             subject_type=AssessmentSubjectType.REFINEMENT,
             subject_id="r1",
             assessment_kind=AssessmentKind.AMBIGUITY,
-            current_subject=_preflight().subject,
-            current_digests=_digests(),
+            current_subject=replace(_preflight().subject, subject_edition=1),
             persistence=persistence,
         )
     assert current_error.value.code == "assessment_current_port_invalid"
@@ -1345,6 +1347,46 @@ async def test_invalid_current_and_receipt_port_results_fail_closed() -> None:
             persistence=persistence,
         )
     assert receipt_error.value.code == "assessment_receipt_port_invalid"
+
+
+@pytest.mark.asyncio
+async def test_current_requires_edition_before_calling_persistence() -> None:
+    class _UnexpectedRead(_Persistence):
+        async def get_current(self, **kwargs):
+            pytest.fail("Editionless reads must not reach persistence")
+
+    with pytest.raises(QualityAssessmentPortContractError) as error:
+        await QualityAssessmentService().get_current(
+            board_id="b1",
+            subject_type=AssessmentSubjectType.REFINEMENT,
+            subject_id="r1",
+            assessment_kind=AssessmentKind.AMBIGUITY,
+            current_subject=_preflight().subject,
+            persistence=_UnexpectedRead(),
+        )
+    assert error.value.code == "assessment_subject_edition_invalid"
+
+
+@pytest.mark.asyncio
+async def test_current_does_not_retry_adapter_type_errors() -> None:
+    calls = []
+
+    class _BrokenRead(_Persistence):
+        async def get_current(self, **kwargs):
+            calls.append(kwargs)
+            raise TypeError("subject_edition adapter failure")
+
+    with pytest.raises(TypeError, match="subject_edition adapter failure"):
+        await QualityAssessmentService().get_current(
+            board_id="b1",
+            subject_type=AssessmentSubjectType.REFINEMENT,
+            subject_id="r1",
+            assessment_kind=AssessmentKind.AMBIGUITY,
+            current_subject=replace(_preflight().subject, subject_edition=1),
+            persistence=_BrokenRead(),
+        )
+    assert len(calls) == 1
+    assert calls[0]["subject_edition"] == 1
 
 
 @pytest.mark.asyncio

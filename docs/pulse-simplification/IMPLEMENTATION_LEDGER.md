@@ -2,6 +2,44 @@
 
 ## Estado para retomada
 
+### 2026-10-02 — C1/C3: leitura Current exige edição no contrato público
+
+Base publicada Core 00f89bf9 / Community d1b39cb4. A porta get_current e o adapter
+SQL agora exigem subject_edition. Edição ausente/inválida é recusada antes de I/O;
+a consulta sempre filtra a edição. Removidas as duas repetições por TypeError que
+chamavam adapters pelo contrato anterior, no serviço Quality e no gate Ambiguity.
+O serviço de leitura Current deixa de aceitar digests/inputs de fallback; usa
+exclusivamente a edição nativa, conservando checagens de identidade/Board/head.
+Listagem, detalhe e lifecycle ainda têm caminhos a investigar/retirar separadamente.
+Não se declara concluída a exigência de edição em todo o domínio.
+
+Testes demonstram ausência de retry, recusa antes de persistência, seis tipos de
+edição SQL inválida sem query, ausência de Current em outra edição e recibo
+histórico preservado. Preview mantém avaliação quando muda só a versão técnica
+na mesma edição. A primeira adaptação da fixture alterava somente o recibo e foi
+corretamente rejeitada pelo vínculo de auditoria: corrigida para submissão nativa
+com edição explícita desde o preflight, sem alterar o validador do produto.
+
+Evidência: current-edition-core1 teve 128 aprovados/5 falhas dessa fixture;
+core2 133 aprovados. Community2 27 aprovados; routes1 46, total Community 73.
+MCP1 teve 18 aprovados/2 pendências anteriores: contagem fixa 301 versus inventário
+283 já registrado, e manifesto de recursos desatualizado. Conferido inventário,
+atualizada expectativa e regenerado ska_resource_manifest pelo módulo oficial
+(hashes e dois cross-links já existentes). MCP2 + catálogo drift: 25 aprovados;
+total Core distinto 158. Sem mudança de tools e sem edição manual do catálogo.
+Ruff F/E9 aprovado. Nenhuma mudança de frontend neste incremento.
+
+dist-current-edition2 instalado; provenance-current-edition2 comprova bytes iguais
+entre src/install/wheel: Core 845 Python/908 payload, Community 319/405.
+SHA256 Core e247bd64bc935c7999b25697aafc3ad0327d93756f739dbbb62c68d80010e2d2;
+Community 420915e12616bffcba56dd223ab6fd8e3c47c472000599b0b1060420eb87f67d.
+Closure-current-edition1 e 2 aprovados (oito budgets ZERO), incluindo o par com
+manifesto atualizado. Sem release/tag/deploy/dados reais.
+
+Próximo: retirar ausência de edição no domínio/listagem e compatibilidade na UI;
+investigar lifecycle recovery antes de eliminar STALE, pois ainda participa de
+seleção interna. C4 e decisões T23/KG-10 permanecem abertos. Entrega não certificada.
+
 ### 2026-10-02 — C1/C3: retirada da cadeia de lint automático
 
 Base publicada: Core f4441bc6 / Community 1f1d6c18, ambos com push confirmado.
