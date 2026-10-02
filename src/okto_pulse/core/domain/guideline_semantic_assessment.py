@@ -58,7 +58,6 @@ SEMANTIC_ASSESSMENT_RECEIPT_DIGEST_VERSION = (
 )
 SEMANTIC_BINDING_HEAD_DIGEST_VERSION = "semantic-binding-head/v1"
 SEMANTIC_POLICY_SET_DIGEST_VERSION = "semantic-policy-set/v1"
-LEGACY_UNKNOWN_SEMANTIC_EDITOR_ID = "legacy_unknown"
 
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 
@@ -1284,10 +1283,7 @@ def _validate_assessment_admissibility(
     last_editor_id = context.subject_snapshot.last_semantic_editor_id
     if (
         context.binding.enforcement is GuidelineEnforcement.BLOCKING
-        and (
-            last_editor_id == LEGACY_UNKNOWN_SEMANTIC_EDITOR_ID
-            or submission.assessor.agent_id == last_editor_id
-        )
+        and submission.assessor.agent_id == last_editor_id
     ):
         # Separation failures are a closed structural cause of
         # inadmissibility, not an additional persisted state or public
@@ -1444,7 +1440,6 @@ def record_semantic_guideline_assessment(
 
 
 __all__ = [
-    "LEGACY_UNKNOWN_SEMANTIC_EDITOR_ID",
     "SEMANTIC_ASSESSMENT_INPUT_DIGEST_VERSION",
     "SEMANTIC_ASSESSMENT_REQUEST_DIGEST_VERSION",
     "SEMANTIC_ASSESSMENT_RECEIPT_DIGEST_VERSION",

@@ -2,6 +2,41 @@
 
 ## Estado para retomada
 
+### 2026-10-02 — Autoria semântica sem bootstrap de legado
+
+Marco anterior publicado: Core034c4a49 / Community3e847537. Removidos sentinel
+LEGACY_UNKNOWN_SEMANTIC_EDITOR_ID, editor_source das duas tabelas de autoria e
+evento legacy_bootstrap. Eventos atuais exigem semantic_mutation e editor não
+vazio; relacionamento head/event, predecessor, versão, digest e imutabilidade
+permanecem. Leitor exige head com versão e digest iguais ao conteúdo atual;
+ausência/divergência gera semantic_subject_authority_missing_or_stale, sem
+fabricar editor, converter registros ou criar eventos durante leitura. Autor
+e avaliador continuam distintos em binding bloqueante. Advisory mantém sua
+semântica atual para autores reais. O caso antigo de sentinel foi substituído
+pela prova da recusa no adapter antes da avaliação; não se preserva sua admissão.
+
+semantic-authority-core1:59 aprovados; community2:39 aprovados, incluindo
+escritores autenticados para cinco sujeitos, assessments bloqueantes, rollback,
+savepoints, autoria REST/MCP, concorrência de oito respostas Q&A, optimistic
+fence, criação/restart/refusal de schema e recusa sem writes de head ausente/stale.
+Fixtures Spec explicitam ArchitectureAdoptionScope e contrato de execução.
+semantic-authority-front1:19 aprovados, submissão de Q&A e ValidationCycle.
+community1 não coletou por import de CodeEvidenceClassificationEventRow já
+retirado em test_board_code_evidence_erasure.py. A suite mista ainda deve trocar
+o setup legado pelo fluxo nativo, preservando erasure/supersession/rollback;
+não foi apagada nem declarada verde. Seu campo editor_source foi atualizado.
+
+dist-semantic-authority1 instalado; provenance-semantic-authority1.json comprova
+Core851/914 e Community318/404 Python/payload byte-idênticos antes dos testes.
+SPA sem alterações. closure-semantic-authority1 exit0, oito budgets ZERO,
+READMEs oficiais validados. Ruff F/E9 e diff checks passaram. Busca nos módulos
+alterados não encontra sentinel/bootstrap/editor_source retirados.
+
+Próximo C1/C3: concluir adaptação da suite mista de erasure acima e retirar os
+demais componentes de legado já inventariados (rules, modelos de migração,
+normalizadores e suites mistas). C4 integral e decisões T23/KG-10 seguem abertos.
+Este marco não certifica a entrega integral.
+
 ### 2026-10-02 — Revisão semântica exclusivamente nativa
 
 Marco anterior publicado: Core02742198 / Community935f7ffd. Removidos os campos

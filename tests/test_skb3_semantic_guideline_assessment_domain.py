@@ -26,7 +26,6 @@ from okto_pulse.core.domain.guideline_policy import (
     guideline_revision_digest_v2,
 )
 from okto_pulse.core.domain.guideline_semantic_assessment import (
-    LEGACY_UNKNOWN_SEMANTIC_EDITOR_ID,
     SEMANTIC_GUIDELINE_ASSESSMENT_CONTRACT_VERSION,
     SemanticAssessmentAssessor,
     SemanticAssessmentContractError,
@@ -599,7 +598,7 @@ def test_low_confidence_is_rejected_before_any_result_or_receipt(
 
 @pytest.mark.parametrize(
     "last_semantic_editor_id",
-    ("assessor-1", LEGACY_UNKNOWN_SEMANTIC_EDITOR_ID),
+    ("assessor-1",),
 )
 def test_blocking_assessor_separation_rejects_before_any_result_or_receipt(
     last_semantic_editor_id: str,
@@ -643,10 +642,10 @@ def test_blocking_assessor_separation_rejects_before_any_result_or_receipt(
     ("last_semantic_editor_id", "expected_independent"),
     (
         ("assessor-1", False),
-        (LEGACY_UNKNOWN_SEMANTIC_EDITOR_ID, True),
+        ("editor-2", True),
     ),
 )
-def test_advisory_binding_allows_self_or_legacy_unknown_assessment(
+def test_advisory_binding_allows_self_or_independent_assessment(
     last_semantic_editor_id: str,
     expected_independent: bool,
 ) -> None:

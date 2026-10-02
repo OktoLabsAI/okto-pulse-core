@@ -1360,6 +1360,22 @@
     {
       "path": "okto_labs_pulse_community/tests/semantic_schema_assertions.py",
       "reason": "Native semantic revision removes migration state/digest/table. Fixtures use explicit realm, architecture adoption and execution contract; propagation uses current selection without activation flags. Schema refusal, native policy summaries, board erasure isolation and projection assertions preserved. Legacy-null-edition cases remain pending C3 disposition and are not included in this milestone coverage."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_skb3_semantic_guideline_assessment_domain.py",
+      "reason": "Removed semantic bootstrap/sentinel/source fields. Current subject reads reject missing/stale authoritative head without writes. Native assessor separation retained; fixtures declare current architecture/execution contracts. Schema refuses retired columns without conversion."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_skb3_semantic_subject_writer_bridge.py",
+      "reason": "Removed semantic bootstrap/sentinel/source fields. Current subject reads reject missing/stale authoritative head without writes. Native assessor separation retained; fixtures declare current architecture/execution contracts. Schema refuses retired columns without conversion."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_semantic_subject_concurrent_qa_answers.py",
+      "reason": "Removed semantic bootstrap/sentinel/source fields. Current subject reads reject missing/stale authoritative head without writes. Native assessor separation retained; fixtures declare current architecture/execution contracts. Schema refuses retired columns without conversion."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_current_relational_schema.py",
+      "reason": "Removed semantic bootstrap/sentinel/source fields. Current subject reads reject missing/stale authoritative head without writes. Native assessor separation retained; fixtures declare current architecture/execution contracts. Schema refuses retired columns without conversion."
     }
   ],
   "removed_cases": [
@@ -1890,6 +1906,12 @@
       "test": "test_legacy_version_text_and_integer_projection_match_durable_bounds",
       "disposition": "superseded",
       "reason": "Removed textual/integer legacy revision projection; current revision contract refuses these fields. Native revision evidence retained."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_skb3_semantic_guideline_assessment_domain.py",
+      "test": "legacy_unknown parametrizations of blocking/advisory assessor admission",
+      "disposition": "superseded",
+      "reason": "No sentinel subject exists in the current contract; adapter now rejects missing/stale authority before assessment, covered by test_subject_snapshot_refuses_missing_or_stale_authority_without_writes. Real self/independent assessor cases retained."
     }
   ]
 }
