@@ -2,6 +2,41 @@
 
 ## Estado para retomada
 
+### 2026-10-02 — Revisão semântica exclusivamente nativa
+
+Marco anterior publicado: Core02742198 / Community935f7ffd. Removidos os campos
+authority_state e legacy_rules_digest de SemanticGuidelineRevisionRow, estados
+legacy_context_only/legacy_incompatible, branches associados nos readers de
+policy/assessment/validation cycle e projeção KG. Removida a tabela/modelo
+SemanticGuidelineLegacyMigrationRow e seus consumidores de schema e erasure.
+Dois triggers perderam apenas predicados exclusivos desses estados; validações
+de métricas, configuração, recibos e digests atuais permanecem. O digest de
+origem ainda liga os dois snapshots nativos e foi mantido com comentário correto.
+Nenhum caminho de conversão ou exclusão automática foi acrescentado.
+
+Campanha semantic-native-community1:49 aprovados,5 falhas,32 erros de fixtures;
+fixtures2:15 aprovados,2 falhas,32 erros. Causas: realm_id ausente, Spec sem
+adoption/contrato atual e flags v2_active/v2_activated_at retiradas da propagação.
+Fixtures atualizadas com realm local, ArchitectureAdoptionScope e contrato de
+execução nativos; seleção do segundo Board é explicitamente omitted. fixtures3:
+49 aprovados. União XML:86 casos backend distintos aprovados. Inclui fresh schema,
+restart, recusa byte-preservada de duas colunas e tabela removidas, export,
+materialização, atomicidade, erasure sob permit, isolamento de outro Board,
+projeção/outbox, escopos de policy, waivers atuais e permissões de leitura.
+Dois testes exclusivos de legacy_null_edition foram desselecionados; continuam
+pendentes de disposição C3, não contam como cobertura atual. A suite mista
+SK-B3 antiga ainda requer adaptação conjunta; não foi declarada qualificada.
+
+semantic-native-front1:4 aprovados para ValidationCyclePrimitives. UI/payload
+nativo não mudou, SPA anterior mantida. dist-semantic-native1 instalado e
+provenance-semantic-native1.json comprova Core851/914 e Community318/404
+Python/payload byte-idênticos antes dos testes. closure-semantic-native1 exit0,
+oito budgets ZERO e READMEs oficiais validados. Ruff F/E9 passou.
+
+Próximo C1/C3: editor_source/event_type de bootstrap antigo, rules e demais
+resíduos já inventariados; adaptar suites mistas preservando provas nativas.
+C4 integral e decisões T23/KG-10 continuam abertos. Não declarar entrega final.
+
 ### 2026-10-02 — Export com histórico completo e contrato explícito
 
 Marco anterior publicado: Core dfb19317 / Community cba8f9f7. Retirados
