@@ -5013,9 +5013,8 @@ class CardService:
             if learning_selection is not None:
                 from okto_pulse.core.application.learning_capture import revalidate_learning_capture_for_closeout
 
-                # Legacy fallback would append a new conclusion from this
-                # review. It cannot silently become the basis of an older
-                # Learning. Require an actual report/capture handoff first.
+                # A reviewer verdict is not an executor report. Binding a
+                # capture requires the explicit execution-report handoff.
                 if not any(isinstance(entry, dict) and entry.get("source") == "move_to_validation"
                         for entry in (card.conclusions or [])):
                     raise ValueError("learning_closeout_requires_current_execution_report")
@@ -5140,52 +5139,6 @@ class CardService:
         validations.append(validation)
         card.validations = validations
         card.mark_dirty("validations")
-
-        # Auto-populate conclusion only for legacy cards that reached validation
-        # before execution reports were required on the validation handoff.
-        conclusions_list = list(card.conclusions or [])
-        has_executor_report = any(
-            isinstance(entry, dict) and entry.get("source") == "move_to_validation"
-            for entry in conclusions_list
-        )
-        if outcome == "success" and not has_executor_report:
-            conclusions_list.append(
-                {
-                    "text": _general,
-                    "author_id": reviewer_id,
-                    "created_at": datetime.now(timezone.utc).isoformat(),
-                    "completeness": completeness,
-                    "completeness_justification": data[
-                        "completeness_justification"
-                    ].strip(),
-                    "drift": drift,
-                    "drift_justification": data["drift_justification"].strip(),
-                    "source": "task_validation",
-                    "validation_id": validation_id,
-                }
-            )
-            card.conclusions = conclusions_list
-            card.mark_dirty("conclusions")
-
-            # Spec 4007e4a3 (IdeaÃ§Ã£o #3): re-enqueue parent spec via
-            # CardConclusionAdded so the KG reflects the card's narrative
-            # outcome alongside its final state. Orphan cards (spec_id=None)
-            # are handled gracefully by the enqueuer.
-            if _general:
-                from okto_pulse.core.events import publish as event_publish
-                from okto_pulse.core.events.types import CardConclusionAdded
-
-                await event_publish(
-                    CardConclusionAdded(
-                        board_id=card.board_id,
-                        actor_id=reviewer_id,
-                        card_id=card_id,
-                        spec_id=card.spec_id,
-                        conclusion_excerpt=_general[:280],
-                        added_by=reviewer_id,
-                    ),
-                    session=self.db,
-                )
 
         target_status = (
             CardStatus.DONE

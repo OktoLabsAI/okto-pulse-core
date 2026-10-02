@@ -2,6 +2,35 @@
 
 ## Estado para retomada
 
+### 2026-10-02 — C1: parecer não fabrica conclusão do executor
+
+Base publicada: Core 6c1f02cb / Community f717b1c1. CardService deixou de criar
+conclusão source=task_validation quando não encontra move_to_validation e de
+publicar CardConclusionAdded por esse fallback. O parecer permanece no ledger
+de validações; relatório do executor não é inferido da justificativa do revisor.
+Preservada a exigência existente de relatório atual para vincular captura Learning.
+Nenhum gate de conclusão/permissão foi alterado neste incremento.
+
+review-conclusion-core1: 47 aprovados; Community: 31 aprovados; frontend: 11
+aprovados. Fixture legacy=True substituída por missing_report=True com ausência
+real de relatório, mantendo recusa/rollback. Teste novo isola escrita com gates
+independentes admitidos por fixture, sem seleção Learning: aprovação não grava
+conclusão nem evento de conclusão, inclusive em nova sessão. Não é evidência de
+que um handoff incompleto passe os gates reais; limita-se à não fabricação pelo
+writer. Demais casos preservam binding, retry, rejeição independente e rollback.
+
+dist-review-conclusion1 instalado e provenance-review-conclusion1 comprovou
+847/910 Core e 319/405 Community byte-idênticos antes de comportamento.
+closure-review-conclusion1: apenas drift README pelos imports removidos, oito
+budgets ZERO. Matrizes renderizadas oficialmente; closure-review-conclusion2
+aprovado. Ruff F/E9 e diff aprovados. Registry/SPA sem alteração. Sem release,
+tag, deploy ou modificação de dados de usuário.
+
+Próximo: unificar os aliases duplicados de TaskValidationResponse e do writer
+junto aos consumidores atuais, sem eliminar o snapshot response necessário ao
+replay. O modelo ainda permite scores/autor esparsos; não declarar essa frente
+completa. Normalizadores remanescentes, C3/C4 e decisões T23/KG-10 seguem abertos.
+
 ### 2026-10-02 — C1: resposta de validação sem bypass de DTO inválido
 
 Base publicada: Core f9964819 / Community f717b1c1. project_task_validation_public
