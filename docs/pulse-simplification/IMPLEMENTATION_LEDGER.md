@@ -2,6 +2,33 @@
 
 ## Estado para retomada
 
+### 2026-10-02 — C3: persistência semântica no schema nativo completo
+
+Marco anterior publicado: Coref9980cc8 / Community2b3c954a. Suite semântica
+adaptada ao contrato único: schema completo, sessões compostas, realm e contratos
+explícitos da Spec. Fixtures criam Guidelines/bindings por preview e adoção reais,
+verificam replay e fazem unlink nativo. Edições e conteúdo registram a mutação
+semântica, sem bootstrap em leitura. Nenhum guard de produto foi relaxado.
+
+Retirados 11 casos exclusivos de conversão, convergência de schema anterior e
+manifestos PostgreSQL removidos; disposições individuais no JSON. Mantidas provas
+de lifecycle/CAS, configuração semântica, edição, transições, agente, digest de
+Q&A/KB/arquitetura/mockup, paginação acima de 200, currentness, waivers, skips e
+erasure. O teste de findings observa a transação nativa antes do selo e prova a
+recusa de desfazê-lo; não desativa trigger para fabricar estado impossível.
+
+semantic-native1/2 registram fixtures ainda antigas. semantic-native3: 29 aprovados
+e uma fixture que tentava desfazer selo; semantic-seal-native1: caso corrigido
+aprovado. Total de 30 casos distintos qualificados, sem claim de suite global.
+Produto e frontend sem alteração neste marco; provenance-semantic-native1 renova
+a igualdade Core851/914 e Community319/405 com dist-native-cognitive-reader1.
+A prova anterior já estava vigente antes dos testes; ambos src no PYTHONPATH.
+Ruff F/E9 aprovado. Closure do produto permanece no marco anterior, oito ZERO.
+
+Próximo: consumidores pinpoint/F3 e demais bloqueios de coleta C3. Restantes de
+C1 e qualificação integral C4 continuam abertos; T23/KG-10 continuam pendentes.
+
+
 ### 2026-10-02 — C1/C3: reader cognitivo sem revisão-zero de compatibilidade
 
 Marco anterior publicado: Corec4b6ea70 / Community524f04a2. Reader por realm exige

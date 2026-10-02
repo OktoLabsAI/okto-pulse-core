@@ -1554,6 +1554,14 @@
     {
       "path": "okto_labs_pulse_community/tests/test_kg_cognitive_source_revision_schema.py",
       "reason": "Exact native model/current initialization, immutable fingerprint and global source fence retained. Raw reader fixtures test missing/invalid fingerprints and corruption in unselected history; missing revision table refuses without writes. Epoch permits and receipts are absent from current schema."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_skb3_semantic_guideline_persistence.py",
+      "reason": "Full current schema and composed sessions; native governed preview/adoption/unlink and recorded semantic mutations replace predecessor fixtures. Retains 30 parametrized cases; verifies findings are hidden before native seal and rejects unsealing. PostgreSQL fragment assertions removed from metric JSON guard test; executable SQLite closed-shape guard retained.",
+      "validation": [
+        "semantic-native3: 29 passed; one old unseal fixture rejected by current guard",
+        "semantic-seal-native1: corrected seal visibility and immutability test passed"
+      ]
     }
   ],
   "removed_cases": [
@@ -2390,6 +2398,72 @@
       "test": "test_reader_falls_back_to_revision_zero_without_child_table",
       "disposition": "superseded",
       "reason": "Removed fingerprint-epoch conversion/permit/receipt, predecessor guard upgrade or revision-zero compatibility expectation. Native guards, scope, complete history audit and incompatible-storage refusal retained."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_skb3_semantic_guideline_persistence.py",
+      "test": "test_postgresql_semantic_guards_cover_every_authority_table",
+      "disposition": "superseded",
+      "reason": "Exclusive predecessor conversion, upgrade convergence or removed PostgreSQL DDL manifest audit. Native semantic lifecycle, guards, assessments, waivers, skips and history retained under full current schema."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_skb3_semantic_guideline_persistence.py",
+      "test": "test_postgresql_semantic_table_manifest_covers_full_orm_contract",
+      "disposition": "superseded",
+      "reason": "Exclusive predecessor conversion, upgrade convergence or removed PostgreSQL DDL manifest audit. Native semantic lifecycle, guards, assessments, waivers, skips and history retained under full current schema."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_skb3_semantic_guideline_persistence.py",
+      "test": "test_semantic_waiver_upgrade_columns_are_canonical_append_only_suffixes",
+      "disposition": "superseded",
+      "reason": "Exclusive predecessor conversion, upgrade convergence or removed PostgreSQL DDL manifest audit. Native semantic lifecycle, guards, assessments, waivers, skips and history retained under full current schema."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_skb3_semantic_guideline_persistence.py",
+      "test": "test_postgresql_semantic_trigger_audit_rejects_disabled_trigger",
+      "disposition": "superseded",
+      "reason": "Exclusive predecessor conversion, upgrade convergence or removed PostgreSQL DDL manifest audit. Native semantic lifecycle, guards, assessments, waivers, skips and history retained under full current schema."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_skb3_semantic_guideline_persistence.py",
+      "test": "test_postgresql_semantic_trigger_audit_rejects_duplicate_name",
+      "disposition": "superseded",
+      "reason": "Exclusive predecessor conversion, upgrade convergence or removed PostgreSQL DDL manifest audit. Native semantic lifecycle, guards, assessments, waivers, skips and history retained under full current schema."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_skb3_semantic_guideline_persistence.py",
+      "test": "test_postgresql_semantic_trigger_audit_rejects_inexact_catalog_identity",
+      "disposition": "superseded",
+      "reason": "Exclusive predecessor conversion, upgrade convergence or removed PostgreSQL DDL manifest audit. Native semantic lifecycle, guards, assessments, waivers, skips and history retained under full current schema."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_skb3_semantic_guideline_persistence.py",
+      "test": "test_semantic_waiver_predecessor_schema_converges_losslessly",
+      "disposition": "superseded",
+      "reason": "Exclusive predecessor conversion, upgrade convergence or removed PostgreSQL DDL manifest audit. Native semantic lifecycle, guards, assessments, waivers, skips and history retained under full current schema."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_skb3_semantic_guideline_persistence.py",
+      "test": "test_semantic_waiver_convergence_rejects_unknown_drift_without_mutation",
+      "disposition": "superseded",
+      "reason": "Exclusive predecessor conversion, upgrade convergence or removed PostgreSQL DDL manifest audit. Native semantic lifecycle, guards, assessments, waivers, skips and history retained under full current schema."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_skb3_semantic_guideline_persistence.py",
+      "test": "test_semantic_waiver_convergence_rejects_corrupted_event_lineage_atomically",
+      "disposition": "superseded",
+      "reason": "Exclusive predecessor conversion, upgrade convergence or removed PostgreSQL DDL manifest audit. Native semantic lifecycle, guards, assessments, waivers, skips and history retained under full current schema."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_skb3_semantic_guideline_persistence.py",
+      "test": "test_semantic_waiver_convergence_rejects_incomplete_legacy_revalidation",
+      "disposition": "superseded",
+      "reason": "Exclusive predecessor conversion, upgrade convergence or removed PostgreSQL DDL manifest audit. Native semantic lifecycle, guards, assessments, waivers, skips and history retained under full current schema."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_skb3_semantic_guideline_persistence.py",
+      "test": "test_legacy_policy_rows_migrate_inert_without_metric_synthesis",
+      "disposition": "superseded",
+      "reason": "Exclusive predecessor conversion, upgrade convergence or removed PostgreSQL DDL manifest audit. Native semantic lifecycle, guards, assessments, waivers, skips and history retained under full current schema."
     }
   ]
 }
