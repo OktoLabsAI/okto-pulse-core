@@ -127,7 +127,7 @@ def _aggregate(
                     minimum_confidence=70,
                     metric_threshold_overrides={"policy.clarity": 85},
                 ),
-                physical_source_kind="guideline_policy_v1",
+                physical_source_kind="native",
                 binding_origin="native",
                 materialization=GuidelineBindingMaterialization.LIVE,
             ),

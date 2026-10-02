@@ -2,6 +2,51 @@
 
 ## Estado para retomada
 
+### 2026-10-02 — Proveniência nativa de materialização, sem campos de bridge
+
+Marco anterior publicado: Core d9328d74 / Community1684d59e. Retirados
+legacy_source_id e legacy_version_unresolvable dos bindings, incluindo coluna,
+constraint, codec, DTO e UI. Os três campos que também armazenavam prova NATIVA
+foram substituídos por materialized_template_id, materialized_template_version e
+materialized_revision_number. Números são inteiros positivos estritos; removida
+coerção textual. O writer/export/replay, schema, dois guards SQL de adoção/unlink,
+REST e frontend usam os mesmos nomes. Identidade, versão, prioridade, digest e
+evidência continuam comparados; não houve ampliação de autoridade. A origem física
+aceita apenas native, que é o valor produzido pelo adapter atual; origens dos
+bridges antigos e aliases de tabela são recusados. Removida constante de limite
+exclusiva da versão legada, sem consumidores atuais.
+
+Suite B11 passou a usar schema COMPLETO. Materialização mantém pin histórico,
+exporta a prova preenchida com inteiros e mantém rollback de lote parcial.
+Inserção SQL de binding com materialized_revision_number adulterado é recusada
+por guideline_impact_preview_required e não cria binding. Roundtrip puro também
+preserva a prova preenchida. Import continua inerte até adoção governada.
+
+binding-metadata-core1:112 aprovados/27 falhas de fixture cujo physical_source_kind
+era nome de tabela; domain-fix2:41 aprovados (inclui três novos casos de origem
+inválida); roundtrip1:1 aprovado. União XML:143 casos Core distintos aprovados.
+binding-metadata-community1:75 aprovados/5 falhas da mesma fixture; community-fix2:
+9 aprovados; materialization2:1 aprovado com export/prova preenchida. União:80
+Community distintos aprovados. binding-metadata-front1:30 aprovados. Falhas
+intermediárias preservadas, nenhuma pendência nessas campanhas. Disposições e
+fixtures alinhadas à saída REAL do adapter; nenhum gate relaxado.
+
+dist-binding-metadata1 instalado; provenance-binding-metadata1.json prova
+Core851/914 e Community318/404 Python/payload byte-idênticos antes dos testes.
+TypeScript/Vite passou; SPA
+5c3f82dd3eafe2c537afa6c3810c96ea515f5b73727295b87f1f60540b011e3e.
+closure-binding-metadata1 exit0, oito budgets ZERO; READMEs oficiais validados.
+Ruff F/E9 e diff checks passaram. Busca src Python não encontra os cinco campos
+antigos nem a constante retirada. Isso não certifica ausência de outros legados.
+
+Próximo trabalho C1/C3: investigar/remover remaining semantic guideline states
+legacy_incompatible/legacy_unknown/legacy_bootstrap, campos rules e provenance
+exclusivos, sem alterar governança atual; alias __getattr__ de export binding e
+include_binding_history ignorado também requerem fechamento com consumidores.
+As suites mistas B03/B04/B08 continuam com fixtures/imports antigos a classificar;
+preservar garantias nativas ao adaptá-las. C1–C4 e decisões T23/KG-10 seguem
+abertos; não afirmar qualificação integral nem mudar versão final antes de C4.
+
 ### 2026-10-02 — Revisões de guidelines sem baseline e metadados antigos
 
 Marco anterior publicado: Core1d3a8aa0 / Community1bedd371. Retirados de revisão

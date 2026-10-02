@@ -1304,6 +1304,22 @@
     {
       "path": "okto_labs_pulse_community/tests/test_skb_b13_policy_governance_rest.py",
       "reason": "Current import diagnostics renamed import_notes; retired revision provenance removed. Existing native authoring, permissions, atomicity and roundtrip assertions retained."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_skb_b12_guideline_import_export_domain.py",
+      "reason": "Native binding provenance replaces bridge fields; physical source matches current adapter output. Typed materialization, complete history, inert import, replay and rollback retained. B11 exercises complete schema and forged SQL proof rejection."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_skb_b12_guideline_import_export_use_case.py",
+      "reason": "Native binding provenance replaces bridge fields; physical source matches current adapter output. Typed materialization, complete history, inert import, replay and rollback retained. B11 exercises complete schema and forged SQL proof rejection."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_skb_b11_default_guideline_community.py",
+      "reason": "Native binding provenance replaces bridge fields; physical source matches current adapter output. Typed materialization, complete history, inert import, replay and rollback retained. B11 exercises complete schema and forged SQL proof rejection."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_skb_b12_guideline_import_export_persistence.py",
+      "reason": "Native binding provenance replaces bridge fields; physical source matches current adapter output. Typed materialization, complete history, inert import, replay and rollback retained. B11 exercises complete schema and forged SQL proof rejection."
     }
   ],
   "removed_cases": [

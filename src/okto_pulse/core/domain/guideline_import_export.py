@@ -23,7 +23,6 @@ from okto_pulse.core.domain.guideline_policy import (
     GUIDELINE_BINDING_ORIGIN_MAX_LENGTH,
     GUIDELINE_BINDING_SOURCE_KIND_MAX_LENGTH,
     GUIDELINE_ID_MAX_LENGTH,
-    GUIDELINE_LEGACY_VERSION_MAX_LENGTH,
     GUIDELINE_REVISION_ID_MAX_LENGTH,
     BoardGuidelineBinding,
     Guideline,
@@ -347,11 +346,9 @@ class GuidelineExportBinding:
     physical_source_kind: str
     binding_origin: str
     materialization: GuidelineBindingMaterialization
-    legacy_source_id: str | None = None
-    legacy_guideline_version: str | None = None
-    legacy_template_id: str | None = None
-    legacy_template_version: str | None = None
-    legacy_version_unresolvable: bool = False
+    materialized_revision_number: int | None = None
+    materialized_template_id: str | None = None
+    materialized_template_version: int | None = None
     evidence_refs: tuple[tuple[str, str], ...] = ()
     binding_digest: str | None = None
 
@@ -374,33 +371,21 @@ class GuidelineExportBinding:
                     max_length=max_length,
                 ),
             )
+        if self.physical_source_kind != "native":
+            raise GuidelineImportExportError("guideline_export_binding_source_kind_invalid")
         if not isinstance(self.materialization, GuidelineBindingMaterialization):
             raise GuidelineImportExportError(
                 "guideline_export_binding_materialization_invalid"
             )
-        for field_name, max_length in (
-            ("legacy_source_id", GUIDELINE_ID_MAX_LENGTH),
-            ("legacy_guideline_version", GUIDELINE_LEGACY_VERSION_MAX_LENGTH),
-            ("legacy_template_id", GUIDELINE_ID_MAX_LENGTH),
-            ("legacy_template_version", GUIDELINE_LEGACY_VERSION_MAX_LENGTH),
-        ):
+        object.__setattr__(self, "materialized_template_id", _optional_bounded_text(
+            self.materialized_template_id, "guideline_export_binding_template_id_invalid",
+            "$.materialized_template_id", max_length=GUIDELINE_ID_MAX_LENGTH,
+        ))
+        for field_name in ("materialized_revision_number", "materialized_template_version"):
             value = getattr(self, field_name)
-            if value is not None and not isinstance(value, str):
-                value = str(value)
-            object.__setattr__(
-                self,
-                field_name,
-                _optional_bounded_text(
-                    value,
-                    f"guideline_export_binding_{field_name}_invalid",
-                    f"$.{field_name}",
-                    max_length=max_length,
-                ),
-            )
-        if not isinstance(self.legacy_version_unresolvable, bool):
-            raise GuidelineImportExportError(
-                "guideline_export_binding_legacy_resolution_invalid"
-            )
+            if value is not None:
+                _strict_int(value, "guideline_export_binding_materialization_invalid",
+                            f"$.{field_name}", minimum=1)
         if not isinstance(self.evidence_refs, tuple | list):
             raise GuidelineImportExportError(
                 "guideline_export_binding_evidence_refs_invalid"
@@ -470,11 +455,9 @@ class GuidelineExportBinding:
             "physical_source_kind": self.physical_source_kind,
             "binding_origin": self.binding_origin,
             "materialization": self.materialization.value,
-            "legacy_source_id": self.legacy_source_id,
-            "legacy_guideline_version": self.legacy_guideline_version,
-            "legacy_template_id": self.legacy_template_id,
-            "legacy_template_version": self.legacy_template_version,
-            "legacy_version_unresolvable": self.legacy_version_unresolvable,
+            "materialized_revision_number": self.materialized_revision_number,
+            "materialized_template_id": self.materialized_template_id,
+            "materialized_template_version": self.materialized_template_version,
             "evidence_refs": [list(item) for item in self.evidence_refs],
         }
         if include_digest:
@@ -2062,11 +2045,9 @@ def _parse_binding(raw: object, path: str) -> GuidelineExportBinding:
                 "physical_source_kind",
                 "binding_origin",
                 "materialization",
-                "legacy_source_id",
-                "legacy_guideline_version",
-                "legacy_template_id",
-                "legacy_template_version",
-                "legacy_version_unresolvable",
+                "materialized_revision_number",
+                "materialized_template_id",
+                "materialized_template_version",
                 "evidence_refs",
                 "binding_digest",
             }
@@ -2110,31 +2091,13 @@ def _parse_binding(raw: object, path: str) -> GuidelineExportBinding:
             "guideline_export_binding_materialization_invalid",
             f"{path}.materialization",
         ),
-        legacy_source_id=_optional_text(
-            value["legacy_source_id"],
-            "guideline_export_binding_legacy_source_id_invalid",
-            f"{path}.legacy_source_id",
+        materialized_revision_number=value["materialized_revision_number"],
+        materialized_template_id=_optional_text(
+            value["materialized_template_id"],
+            "guideline_export_binding_materialized_template_id_invalid",
+            f"{path}.materialized_template_id",
         ),
-        legacy_guideline_version=_optional_text(
-            value["legacy_guideline_version"],
-            "guideline_export_binding_legacy_guideline_version_invalid",
-            f"{path}.legacy_guideline_version",
-        ),
-        legacy_template_id=_optional_text(
-            value["legacy_template_id"],
-            "guideline_export_binding_legacy_template_id_invalid",
-            f"{path}.legacy_template_id",
-        ),
-        legacy_template_version=_optional_text(
-            value["legacy_template_version"],
-            "guideline_export_binding_legacy_template_version_invalid",
-            f"{path}.legacy_template_version",
-        ),
-        legacy_version_unresolvable=_strict_bool(
-            value["legacy_version_unresolvable"],
-            "guideline_export_binding_legacy_resolution_invalid",
-            f"{path}.legacy_version_unresolvable",
-        ),
+        materialized_template_version=value["materialized_template_version"],
         evidence_refs=evidence_refs,
         binding_digest=_required_text(
             value["binding_digest"],

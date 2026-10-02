@@ -130,7 +130,7 @@ def _exported_binding(
             state=state,
             source_kind=GuidelineBindingProvenance.NATIVE,
         ),
-        physical_source_kind="guideline_board_bindings",
+        physical_source_kind="native",
         binding_origin="native",
         materialization=materialization,
         evidence_refs=(
@@ -238,7 +238,7 @@ def test_v3_round_trip_is_closed_complete_and_canonical() -> None:
         aggregate.bindings[1].binding_digest
     )
     assert parsed.guidelines[0].bindings[1].physical_source_kind == (
-        "guideline_board_bindings"
+        "native"
     )
     assert parsed.guidelines[0].revisions[1].published_head_revision == 2
     parsed_revision = parsed.guidelines[0].revisions[1].revision
@@ -272,6 +272,44 @@ def test_revision_rejects_removed_metadata(field):
     with pytest.raises(GuidelineImportExportError) as caught:
         parse_guideline_export(payload)
     assert "unknown" in caught.value.code
+
+
+@pytest.mark.parametrize("field", ["legacy_source_id", "legacy_guideline_version",
+                                  "legacy_template_id", "legacy_template_version",
+                                  "legacy_version_unresolvable"])
+def test_binding_rejects_removed_metadata(field):
+    payload = guideline_export_payload(_envelope(_aggregate()))
+    payload["guidelines"][0]["bindings"][0][field] = None
+    with pytest.raises(GuidelineImportExportError) as caught:
+        parse_guideline_export(payload)
+    assert caught.value.code == "guideline_export_unknown_field"
+
+
+@pytest.mark.parametrize("field", ["materialized_revision_number", "materialized_template_version"])
+@pytest.mark.parametrize("value", ["1", True, 0, -1])
+def test_binding_materialization_versions_are_strict_positive_integers(field, value):
+    binding = _aggregate().bindings[0]
+    with pytest.raises(GuidelineImportExportError):
+        replace(binding, **{field: value}, binding_digest=None)
+
+
+@pytest.mark.parametrize("origin", ["legacy_board_guideline", "legacy_inline_guideline", "guideline_board_bindings"])
+def test_binding_refuses_non_native_physical_origin(origin):
+    with pytest.raises(GuidelineImportExportError, match="guideline_export_binding_source_kind_invalid"):
+        replace(_aggregate().bindings[0], physical_source_kind=origin, binding_digest=None)
+
+
+def test_binding_materialization_proof_roundtrip_preserves_typed_values():
+    aggregate = _aggregate()
+    binding = replace(aggregate.bindings[0], materialized_template_id="template-1",
+                      materialized_template_version=7, materialized_revision_number=1,
+                      binding_digest=None)
+    envelope = _envelope(replace(aggregate, bindings=(binding,)))
+    parsed = parse_guideline_export(guideline_export_payload(envelope))
+    restored = parsed.guidelines[0].bindings[0]
+    assert restored == binding
+    assert type(restored.materialized_template_version) is int
+    assert type(restored.materialized_revision_number) is int
 
 
 def test_digest_and_bytes_ignore_object_key_order_but_reject_unknown_fields() -> None:
