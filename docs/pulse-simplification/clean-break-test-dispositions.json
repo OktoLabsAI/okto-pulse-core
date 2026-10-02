@@ -1192,6 +1192,10 @@
     {
       "path": "okto_labs_pulse_core/tests/test_delete_card_cascade.py",
       "reason": "Automatic orphan-pruning expectation replaced by refusal with unchanged payload; all native delete cleanup tests retained."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_api_contract_data_model.py",
+      "reason": "HTTP/non-HTTP and justification contracts retained. Positive method-token inference and tolerant malformed reads replaced by refusal without input mutation; native explicit projection remains covered."
     }
   ],
   "removed_cases": [

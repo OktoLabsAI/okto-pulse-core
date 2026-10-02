@@ -329,7 +329,7 @@ async def _seed():
             status=SpecStatus.DRAFT,
             edition=4,
             created_by=USER_ID,
-            functional_requirements=["the system logs in"],
+            functional_requirements=[{"id": "fr-login", "text": "the system logs in"}],
             technical_requirements=[
                 {
                     "id": TECHNICAL_REQUIREMENT_ID,
@@ -337,10 +337,11 @@ async def _seed():
                     "linked_task_ids": [],
                 }
             ],
-            acceptance_criteria=["login returns a token"],
+            acceptance_criteria=[{"id": "ac-login", "text": "login returns a token"}],
             api_contracts=[
                 {
                     "id": CONTRACT_ID,
+                    "contract_type": "http",
                     "method": "GET",
                     "path": "/scope",
                     "linked_task_ids": [],
@@ -1281,3 +1282,21 @@ async def test_migrate_decisions_preserves_prose_after_contiguous_bullets(_seed)
     )
     assert second["decisions_added"] == 0
     assert second["context_modified"] is False
+
+
+@pytest.mark.parametrize("kind", ["in_process", "grpc", "event"])
+async def test_add_api_contract_explicit_non_http(_seed, kind):
+    out = await _call("okto_pulse_add_api_contract", board_id=BOARD_ID,
+                      spec_id=_seed, contract_type=kind, description="Current interaction")
+    assert out["success"] is True
+    assert out["api_contract"]["contract_type"] == kind
+    assert out["api_contract"]["method"] is None
+
+
+@pytest.mark.parametrize("token", ["TOOL", "COMPONENT", "EVENT"])
+async def test_update_api_contract_old_method_refused_without_effects(_seed, token):
+    before = await _spec_mutation_state(_seed)
+    out = await _call("okto_pulse_update_api_contract", board_id=BOARD_ID,
+                      spec_id=_seed, contract_id=CONTRACT_ID, method=token)
+    assert out["error"] == "invalid_api_contract"
+    assert await _spec_mutation_state(_seed) == before

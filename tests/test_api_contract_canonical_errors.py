@@ -72,8 +72,9 @@ def test_add_update_guard_rejects_non_list_response_errors_canonically() -> None
 def test_add_update_guard_accepts_valid_contract() -> None:
     # negative-wiring: a well-formed contract passes (guard is not always-fail)
     assert _validate_api_contract_write(_good_http()) is None
-    # a legacy token infers a non-http type and is accepted
-    assert _validate_api_contract_write({"id": "api_x", "method": "TOOL"}) is None
+    # Non-HTTP interaction type is explicit; no method-token conversion.
+    assert _validate_api_contract_write({"id": "api_x", "contract_type": "in_process"}) is None
+    assert _validate_api_contract_write({"id": "api_x", "method": "TOOL"}) is not None
 
 
 # ---------------------------------------------------------------------------

@@ -809,6 +809,7 @@ class McpAddApiContractCommand:
         "spec_id",
         "contract_id",
         "method",
+        "contract_type",
         "path",
         "description",
         "request_body",
@@ -827,6 +828,7 @@ class McpAddApiContractCommand:
         path: str,
         description: str,
         *,
+        contract_type: str = "http",
         request_body: Any,
         response_success: Any,
         response_errors: Any,
@@ -836,6 +838,7 @@ class McpAddApiContractCommand:
     ) -> None:
         self.spec_id = spec_id
         self.contract_id = contract_id
+        self.contract_type = contract_type
         self.method = method
         self.path = path
         self.description = description
@@ -944,7 +947,8 @@ class McpAddApiContractUseCase:
 
         contract = {
             "id": command.contract_id,
-            "method": command.method.upper(),
+            "contract_type": command.contract_type,
+            "method": command.method.upper() or None,
             "path": command.path,
             "description": command.description,
             "request_body": command.request_body,
@@ -963,8 +967,7 @@ class McpAddApiContractUseCase:
 
         contracts = list(spec.api_contracts or [])
         contracts.append(contract)
-        # F10: the bulk SpecUpdate re-validates tolerantly (read-back, no on_write);
-        # a leak here would surface the raw pydantic URL, so canonicalize it too.
+        # Validate the complete current collection and canonicalize errors.
         try:
             contract_update = SpecUpdate(api_contracts=contracts)
         except ValidationError as exc:
@@ -1069,6 +1072,7 @@ class McpUpdateApiContractUseCase:
         actor: ActorContext,
         uow: PulseUnitOfWork,
     ) -> McpUpdateApiContractResult:
+        from copy import deepcopy
         from pydantic import ValidationError
 
         from okto_pulse.core.services.application_schemas import ApiContract, SpecUpdate
@@ -1080,7 +1084,7 @@ class McpUpdateApiContractUseCase:
         service = uow.services.specs
         spec = await _require_actor_board_spec(service, command.spec_id, actor)
 
-        contracts = list(spec.api_contracts or [])
+        contracts = deepcopy(spec.api_contracts or [])
         target = next(
             (c for c in contracts if c.get("id") == command.contract_id), None
         )

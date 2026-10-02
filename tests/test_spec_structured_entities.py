@@ -136,7 +136,8 @@ def _payload_for(entity_type: str) -> dict:
         },
         "api_contract": {
             "id": "api_struct",
-            "method": "COMPONENT",
+            "contract_type": "in_process",
+            "method": None,
             "path": "StructuredSpecEntityService.mutate",
             "description": "Structured mutation boundary",
         },
@@ -2067,7 +2068,8 @@ async def test_mcp_polymorphic_tool_and_api_contract_wrapper_delegate_to_service
         operation="create",
         payload_json=json.dumps({
             "id": "api_mcp",
-            "method": "COMPONENT",
+            "contract_type": "in_process",
+            "method": None,
             "path": "StructuredSpecEntityService.apply",
             "description": "Wrapper delegates to the service",
         }),

@@ -1423,26 +1423,18 @@ def _validate_api_contract_write(contract: dict) -> str | None:
 
 
 def _project_api_contract(contract: dict[str, Any]) -> dict[str, Any]:
-    """Normalize the discriminator for tolerant legacy contract reads."""
+    """Validate current stored contracts without inferring an interaction type."""
+    from okto_pulse.core.models.schemas import ApiContract
 
-    projected = dict(contract)
-    if not projected.get("contract_type"):
-        method = str(projected.get("method") or "").strip().upper()
-        projected["contract_type"] = {
-            "TOOL": "in_process",
-            "COMPONENT": "in_process",
-            "EVENT": "event",
-        }.get(method, "http")
-    return projected
+    return ApiContract.model_validate(contract).model_dump(mode="json")
 
 
-def _project_api_contracts(contracts: Any) -> list[Any]:
-    """Project every mapping while keeping malformed legacy rows readable."""
-
-    return [
-        _project_api_contract(contract) if isinstance(contract, dict) else contract
-        for contract in (contracts or [])
-    ]
+def _project_api_contracts(contracts: Any) -> list[dict[str, Any]]:
+    if contracts is None:
+        return []
+    if not isinstance(contracts, list):
+        raise ValueError("invalid_api_contract_collection")
+    return [_project_api_contract(contract) for contract in contracts]
 
 
 def _auth_error() -> str:
@@ -15574,8 +15566,8 @@ async def okto_pulse_list_business_rules(
 async def okto_pulse_add_api_contract(
     board_id: str,
     spec_id: str,
-    method: str,
-    path: str,
+    method: str = "",
+    path: str = "",
     description: str = "",
     request_body_json: dict | str = "",
     response_success_json: dict | str = "",
@@ -15583,12 +15575,12 @@ async def okto_pulse_add_api_contract(
     linked_requirements: str = "",
     linked_rules: list[str] | str = "",
     notes: str = "",
+    contract_type: Literal["http", "in_process", "grpc", "event"] = "http",
 ) -> str:
     """Add an API contract to a spec. API contracts define endpoints,
     request/response shapes, and link to FR/TR requirements and business
     rules. method must be an HTTP verb (GET/POST/..., upper-cased); for
-    non-HTTP contracts pass method=TOOL/COMPONENT/EVENT, which infers
-    contract_type. Docs: okto-pulse://reference/tool-docs/api-contract.
+    non-HTTP contracts select contract_type explicitly. Docs: okto-pulse://reference/tool-docs/api-contract.
     """
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
@@ -15664,6 +15656,7 @@ async def okto_pulse_add_api_contract(
                     method,
                     path,
                     description.replace("\\n", "\n") if description else "",
+                    contract_type=contract_type,
                     request_body=request_body,
                     response_success=response_success,
                     response_errors=response_errors,
@@ -15690,7 +15683,6 @@ async def okto_pulse_add_api_contract(
             {
                 "error": (
                     f"Unresolved linked_requirements token(s): {_r.unresolved_tokens}. "
-                    f"Valid FR indices: 0..{max(0, _r.fr_count - 1)}. "
                     f"Available fr_ids: {_r.available_fr_ids}. "
                     f"Available tr_ids: {_r.available_tr_ids}. "
                     f"No API contract was appended."
@@ -15728,10 +15720,11 @@ async def okto_pulse_update_api_contract(
     linked_requirements: str = "",
     linked_rules: list[str] | str = "",
     notes: str = "",
+    contract_type: Literal["http", "in_process", "grpc", "event"] | None = None,
 ) -> str:
     """
     Update an existing API contract on a spec. linked_requirements accepts
-    FR index/fr_id/text and structured TR id/text."""
+    exact FR/TR IDs. Set contract_type explicitly for non-HTTP interactions."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -15756,6 +15749,8 @@ async def okto_pulse_update_api_contract(
     # F9 on-write validation and persist live in McpUpdateApiContractUseCase. The
     # adapter pre-parses JSON / CLEAR sentinels into field_updates and canonicalizes.
     field_updates: dict = {}
+    if contract_type is not None:
+        field_updates["contract_type"] = contract_type
     if description == "CLEAR":
         field_updates["description"] = ""
     elif description:
@@ -15840,7 +15835,6 @@ async def okto_pulse_update_api_contract(
             {
                 "error": (
                     f"Unresolved linked_requirements token(s): {_r.unresolved_tokens}. "
-                    f"Valid FR indices: 0..{max(0, _r.fr_count - 1)}. "
                     f"Available fr_ids: {_r.available_fr_ids}. "
                     f"Available tr_ids: {_r.available_tr_ids}. "
                     f"No API contract was updated."

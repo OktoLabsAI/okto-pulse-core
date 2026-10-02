@@ -2,6 +2,33 @@
 
 ## Estado para retomada
 
+### 2026-10-01 — Contratos de API sem inferência de formato antigo
+
+Retirados conversor TOOL/COMPONENT/EVENT e leitura tolerante de contratos inválidos.
+ApiContract valida HTTP em leitura e escrita; interações in_process/grpc/event usam
+discriminador explícito. HTTP continua default de autoria previsto, sem inferência
+por tokens. MCP add/update transportam contract_type; projeções validam o objeto
+atual sem conservar linhas malformadas. Update trabalha em cópia defensiva: recusa
+não modifica o JSON carregado. Autorização permanece a das operações existentes.
+
+ContractsTab usa tipos explícitos, verbos HTTP reais e links FR por ID. Autoria
+não-HTTP dispensa caminho HTTP. Edição preserva vínculos de Cards e objetos inativos
+na coleção, evitando perda do histórico atual. Atualizados tipo TS, documentação de
+uso e catálogo pelo gerador oficial (sem delta de catálogo). SPA reconstruída:79
+arquivos, hash e10acc089589cdd0ea018593e273e4159c66ade7c02c2cc7ac05680a704d8d5b.
+
+Provas: dist-api-contract3 instalado, provenance-api-contract3.json Core851/914 e
+Community318/404 byte-idênticos. Final2:42 testes de modelo/erros/docs/catálogo;
+structured2:74; mcp2/mcp3:13 distintos, incluindo três interações explícitas e três
+recusas sem efeitos. Total Core129. Front1:6, Front2:58 (SpecModal e transporte
+estruturado), total64. Final3 requalifica os42 após remoção de comentário obsoleto.
+Closure-api-contract2 exit0, findings vazios, oito budgets ZERO, READMEs oficiais
+validados. Falhas intermediárias vieram das fixtures de métodos e requisitos antigos;
+substituídas por objetos atuais sem relaxar gates. Disposição dos testes registrada.
+
+Marco anterior publicado: Core db6e02e9 / Community e72ae9db (lint).
+C1–C4 ainda abertos; esse marco não certifica todos os contratos/superfícies do produto.
+
 ### 2026-10-01 — Hook de compatibilidade de Requirement Lint retirado
 
 Removido services/requirement_lint_writer.py, registro dinâmico da callback,

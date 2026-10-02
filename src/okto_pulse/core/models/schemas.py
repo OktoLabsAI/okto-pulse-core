@@ -12,7 +12,6 @@ from pydantic import (
     ConfigDict,
     Field,
     RootModel,
-    ValidationInfo,
     computed_field,
     field_validator,
     model_validator,
@@ -913,29 +912,12 @@ class BusinessRule(VerificationQualifiedModel):
 _HTTP_METHODS = frozenset(
     {"GET", "HEAD", "POST", "PUT", "DELETE", "CONNECT", "OPTIONS", "TRACE", "PATCH"}
 )
-# Legacy non-HTTP method tokens that historically encoded the contract kind in
-# the `method` slot. They migrate to the contract_type discriminator on read so
-# the http verb enum can stay verb-only.
-_LEGACY_METHOD_TO_CONTRACT_TYPE = {
-    "TOOL": "in_process",
-    "COMPONENT": "in_process",
-    "EVENT": "event",
-}
-
 
 class ApiContract(BaseModel):
-    """An API contract describing an endpoint or interaction.
+    """Current API interaction contract, validated equally on read and write.
 
-    The ``contract_type`` discriminator (default ``"http"``) lets a contract
-    model a non-HTTP interaction (in-process call, gRPC, event) without inventing
-    a fake HTTP method/path. For ``contract_type == "http"`` the ``method`` is
-    constrained to a real HTTP verb and ``path`` is required — but that
-    strictness is enforced only on WRITE (the four api-contract entry points pass
-    ``context={"on_write": True}``). Read-back/deserialization stays tolerant so a
-    pre-existing stored contract with an invalid method (e.g. "CALL") still loads
-    and ``list``/``get`` never crash. JSON-field shapes are asymmetric by design:
-    ``response_errors`` is a LIST while ``request_body``/``response_success`` are
-    OBJECTs.
+    Non-HTTP interactions select their contract_type explicitly. HTTP requires
+    a real verb and path. Request/success are objects; errors are a list.
     """
 
     id: str
@@ -954,34 +936,10 @@ class ApiContract(BaseModel):
     status: Literal["active", "superseded", "revoked", "not_applicable"] = "active"
     notes: str | None = None
 
-    @model_validator(mode="before")
-    @classmethod
-    def _infer_contract_type_from_legacy_method(cls, data: Any) -> Any:
-        """Migrate a legacy non-HTTP method token to the contract_type discriminator.
-
-        Runs on every construction (read + write) and is idempotent. Fires only
-        when ``contract_type`` is absent from the input, so an explicit value
-        always wins; the legacy ``method`` value is preserved (being non-http it
-        escapes the verb enum).
-        """
-        if isinstance(data, dict) and not data.get("contract_type"):
-            method = data.get("method")
-            if isinstance(method, str):
-                inferred = _LEGACY_METHOD_TO_CONTRACT_TYPE.get(method.strip().upper())
-                if inferred is not None:
-                    data["contract_type"] = inferred
-        return data
-
     @model_validator(mode="after")
-    def _validate_http_shape(self, info: ValidationInfo) -> "ApiContract":
-        """Enforce real-verb method + required path for http contracts ON WRITE only.
-
-        Gated on the ``on_write`` validation-context flag (the four api-contract
-        write entry points pass it). Read-back/deserialization constructs without
-        the flag and stays tolerant of pre-existing invalid contracts so list/get
-        never crash; a legacy-invalid contract is corrected on its next write.
-        """
-        if self.contract_type == "http" and (info.context or {}).get("on_write"):
+    def _validate_http_shape(self) -> "ApiContract":
+        """Reject invalid HTTP shapes at every boundary without conversion."""
+        if self.contract_type == "http":
             if not self.method:
                 raise ValueError(
                     f"contract_type='http' requires a method (one of {sorted(_HTTP_METHODS)})"
