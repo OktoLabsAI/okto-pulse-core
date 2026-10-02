@@ -2,6 +2,53 @@
 
 ## Estado para retomada
 
+### 2026-10-02 — Conversores de envelopes de guidelines retirados
+
+Marco anterior publicado: Core a28bfa5f / Community e3ee89b4. Retirados os
+conversores de envelopes schema1/schema2, geração sintética de identidades,
+downgrade de regras antigas, fallback de timestamp e alias build_guideline_export_v2.
+O dispatcher aceita apenas a string de versão atual, sem coerção de número ou
+trim. Source schema também deve ser o atual. Quatorze combinações de versão
+inválida/dry-run comprovam recusa antes do adapter, snapshot de persistência ou
+commit. Roundtrip, conflitos, histórico e adoção explícita atuais preservados.
+
+A adaptação da suíte Community revelou gap crítico: os guards UPDATE/DELETE de
+guideline_import_binding_candidates não estavam no JSON de instalação nova.
+Incluídas as duas definições nativas, equivalentes à proteção atual previamente
+co-localizada no migrador. Não foi restaurado código de upgrade/reparo. Delete
+continua permitido apenas com BoardErasurePermit do Board de destino; update é
+sempre negado. Schema completo comprova import atual/replay sem autoridade viva,
+imutabilidade, exclusão permitida e recusa de startup diante de trigger ausente,
+sem alteração de bytes. Fixtures de export com binding histórico direto continuam
+isoladas em metadata+guards de candidatos; não são apresentadas como prova de
+adoção governada. Esses gates têm suas suítes próprias. Realm local explícito
+nas fixtures; nenhuma permissão de produto relaxada.
+
+Evidências: guideline-converters-core1 101 aprovados (dist-guideline-converters2).
+community1 falhou na coleta por import do migrador retirado; community2 teve
+46 REST aprovados/9 fixtures falhas. Diagnostic1 e persistence3 reproduziram
+realm ausente e a exigência de evidência para criar binding vivo no schema pleno.
+persistence4: 23 aprovados/2 erros de adaptação de fixture (Base incluído em lista
+de tabelas); persistence-fix5: ambos aprovados. União final Community: 71 casos
+distintos aprovados (46 REST,9 persistência,16 schema). Falhas intermediárias
+preservadas nos logs/XML; nenhuma pendência nessas campanhas.
+
+dist-guideline-converters3 instalado: provenance-guideline-converters3.json
+comprova Core851/914 e Community318/404 Python/payload byte-idênticos antes dos
+testes finais. Core Python idêntico ao dist2; única alteração posterior de produto
+foi o JSON de guards Community. closure-guideline-converters3 exit0, oito budgets
+ZERO; READMEs oficiais validados. Ruff F/E9 e diff checks passaram. Nenhuma
+alteração de frontend neste bloco; SPA do marco anterior permanece.
+
+Ainda pendente no mesmo escopo C1/C3: metadados legacy_version/legacy_tags,
+baseline_only e migration_notes no contrato atual de export; campos SQL e branches
+de leitura correspondentes, e provenance dos bindings. Os campos legacy_template_*
+e legacy_guideline_version também armazenam prova de materialização NATIVA atual:
+substituir por nomes/contrato atuais preservando comparação de replay, não apagar
+a garantia. Tratar domínio, REST, adapter, schema JSON, frontend e testes juntos.
+Suíte mista B04 ainda requer adaptação. C1–C4 e aceite integral permanecem abertos;
+decisões de autoridade T23/KG-10 continuam pendentes, sem alteração silenciosa.
+
 ### 2026-10-02 — Templates de guidelines com referência única de revisão
 
 Marco anterior publicado: Core cf5add23 / Community d289748d. Removidos

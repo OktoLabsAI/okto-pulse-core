@@ -26,6 +26,7 @@ from okto_pulse.core.domain.guideline_import_export import (
     GuidelineExportBinding,
     GuidelineExportRevision,
     GuidelineExportSnapshot,
+    GuidelineImportExportError,
     GuidelineImportTransactionStatus,
     build_guideline_export_v3,
     canonical_guideline_sha256,
@@ -684,89 +685,29 @@ async def test_commit_failure_rolls_back_and_cannot_report_committed() -> None:
     assert uow.rollback_count == 1
 
 
+
+
+
+
 @pytest.mark.asyncio
-async def test_legacy_v1_dispatch_is_contextual_unadopted_and_dry_run() -> None:
+@pytest.mark.parametrize("version", ["1", "2", 1, 2, 3, " 3 ", None])
+@pytest.mark.parametrize("dry_run", [True, False])
+async def test_incompatible_envelope_is_refused_before_persistence(version, dry_run):
     port = _Port(snapshot=GuidelineExportSnapshot(aggregates=()))
     uow = _Uow(port)
-    payload = {
-        "schema_version": "1",
-        "kind": "guidelines",
-        "exported_at": "2026-07-29T20:00:00Z",
-        "items": [
-            {
-                "title": "Legacy policy",
-                "content": "Legacy body",
-                "tags": ["legacy"],
-                "scope": "global",
-                "legacy_version": "17",
-                "blocking": True,
-                "rules": [
-                    {
-                        "enforcement": "blocking",
-                        "legacy_expression": "coverage < 100",
-                    }
-                ],
-            }
-        ],
-    }
-
-    output = await ImportGuidelinePolicyUseCase(clock=lambda: NOW).execute(
-        ImportGuidelinePolicyCommand(envelope=payload, dry_run=True),
-        actor=REVISION_ONLY_ACTOR,
-        uow=uow,
-    )
-
-    aggregate = output.plan.entries[0].aggregate
-    assert aggregate.identity.owner_id == REVISION_ONLY_ACTOR.actor_id
-    assert aggregate.revisions[0].semantic_version == "1.0.0"
-    assert aggregate.revisions[0].legacy_version == "17"
-    assert aggregate.revisions[0].revision.metrics == ()
-    assert aggregate.bindings == ()
-    assert output.plan.live_binding_writes == ()
-    assert "legacy_blocking_downgraded_to_advisory" in aggregate.migration_notes
-    assert "legacy_rules_dropped_contextual_baseline" in aggregate.migration_notes
-    assert port.apply_calls == []
-
-
-@pytest.mark.asyncio
-async def test_legacy_v1_without_timestamp_replays_with_deterministic_baseline() -> (
-    None
-):
-    payload = {
-        "schema_version": "1",
-        "kind": "guidelines",
-        "items": [
-            {
-                "title": "Legacy replay",
-                "content": "Stable legacy body",
-                "scope": "global",
-            }
-        ],
-    }
-    outputs = []
-    for clock_value in (
-        NOW,
-        datetime(2027, 1, 1, tzinfo=timezone.utc),
-    ):
-        port = _Port(snapshot=GuidelineExportSnapshot(aggregates=()))
-        output = await ImportGuidelinePolicyUseCase(
-            clock=lambda value=clock_value: value
-        ).execute(
-            ImportGuidelinePolicyCommand(envelope=payload, dry_run=True),
-            actor=ACTOR,
-            uow=_Uow(port),
+    payload = {"schema_version": version, "kind": "guidelines", "items": [
+        {"title": "Old", "content": "Do not convert", "rules": []},
+    ]}
+    with pytest.raises(GuidelineImportExportError) as caught:
+        await ImportGuidelinePolicyUseCase(clock=lambda: NOW).execute(
+            ImportGuidelinePolicyCommand(envelope=payload, dry_run=dry_run),
+            actor=ACTOR, uow=uow,
         )
-        outputs.append(output)
-
-    first, replay = outputs
-    assert first.plan.entries[0].aggregate == replay.plan.entries[0].aggregate
-    assert first.plan.import_digest == replay.plan.import_digest
-    assert first.plan.entries[0].aggregate.identity.created_at == datetime(
-        1970,
-        1,
-        1,
-        tzinfo=timezone.utc,
-    )
+    assert caught.value.code == "guideline_export_schema_version_unsupported"
+    assert uow.guidelines.policy_persistence_calls == 0
+    assert port.import_snapshot_calls == port.apply_calls == []
+    assert uow.commit_count == 0
+    assert payload["items"][0]["content"] == "Do not convert"
 
 
 def test_application_module_is_transport_and_persistence_implementation_free() -> None:

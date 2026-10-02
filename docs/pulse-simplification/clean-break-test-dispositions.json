@@ -1288,6 +1288,10 @@
     {
       "path": "okto_labs_pulse_core/tests/test_skb_b22_default_config_authorization.py",
       "reason": "Spy now implements current settings preparation preflight; all denial-before-write assertions retained."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_skb_b12_guideline_import_export_persistence.py",
+      "reason": "Fresh current schema initializer replaces removed migrator; missing trigger must refuse startup without repair or byte changes. Native transaction, candidate immutability, erasure, roundtrip and history cases retained."
     }
   ],
   "removed_cases": [
@@ -1764,6 +1768,54 @@
       "test": "test_manual_link_requires_impact_preview_and_persists_nothing",
       "disposition": "superseded",
       "reason": "Exclusive compatibility alias/import or removed direct link shim. Current exact pin, no-write rejection, materialization, history and rollback remain tested."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_skb_b12_guideline_import_export_domain.py",
+      "test": "test_legacy_v2_rule_empty_import_is_context_only_and_drops_bindings",
+      "disposition": "superseded",
+      "reason": "Old envelope conversion removed. Replaced by explicit version refusal before persistence; current roundtrip, history, authority and atomicity coverage retained."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_skb_b12_guideline_import_export_domain.py",
+      "test": "test_legacy_v2_executable_rules_fail_with_actionable_remediation",
+      "disposition": "superseded",
+      "reason": "Old envelope conversion removed. Replaced by explicit version refusal before persistence; current roundtrip, history, authority and atomicity coverage retained."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_skb_b12_guideline_import_export_domain.py",
+      "test": "test_legacy_v1_becomes_contextual_baseline_and_drops_blocking_rules",
+      "disposition": "superseded",
+      "reason": "Old envelope conversion removed. Replaced by explicit version refusal before persistence; current roundtrip, history, authority and atomicity coverage retained."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_skb_b12_guideline_import_export_domain.py",
+      "test": "test_legacy_rule_hints_are_validated_not_executed",
+      "disposition": "superseded",
+      "reason": "Old envelope conversion removed. Replaced by explicit version refusal before persistence; current roundtrip, history, authority and atomicity coverage retained."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_skb_b12_guideline_import_export_use_case.py",
+      "test": "test_legacy_v1_dispatch_is_contextual_unadopted_and_dry_run",
+      "disposition": "superseded",
+      "reason": "Old envelope conversion removed. Replaced by explicit version refusal before persistence; current roundtrip, history, authority and atomicity coverage retained."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_skb_b12_guideline_import_export_use_case.py",
+      "test": "test_legacy_v1_without_timestamp_replays_with_deterministic_baseline",
+      "disposition": "superseded",
+      "reason": "Old envelope conversion removed. Replaced by explicit version refusal before persistence; current roundtrip, history, authority and atomicity coverage retained."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_skb_b12_guideline_import_export_persistence.py",
+      "test": "test_v1_contextual_baseline_preserves_textual_legacy_version",
+      "disposition": "superseded",
+      "reason": "Old envelope conversion removed. Replaced by explicit version refusal before persistence; current roundtrip, history, authority and atomicity coverage retained."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_skb_b12_guideline_import_export_persistence.py",
+      "test": "test_postgresql_candidate_guard_covers_update_and_delete",
+      "disposition": "superseded",
+      "reason": "Retired PostgreSQL migration DDL generator is outside fresh-install Community SQLite contract; live native SQLite immutability and erasure-permit tests retained."
     }
   ]
 }

@@ -11,9 +11,8 @@ REST and MCP adapters:
 * roll back conflicts and persistence failures without exposing a transport
   framework or a concrete database type.
 
-Legacy ``schema_version=1`` dispatch remains a domain concern.  The existing
-v1 routes intentionally continue to use their compatibility use cases until
-the inbound surfaces migrate in SK-B B13/B14.
+All inbound surfaces use the current closed contract. Older envelopes are
+refused by the codec before persistence access.
 """
 
 from __future__ import annotations
