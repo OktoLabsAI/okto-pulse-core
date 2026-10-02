@@ -7,6 +7,7 @@ import pytest
 
 from okto_pulse.core.domain.quality_assessment import (
     AssessmentKind,
+    QualityAssessmentContractError,
     AssessmentSubjectRef,
     AssessmentSubjectType,
 )
@@ -254,18 +255,10 @@ def test_restore_uses_edition_without_reactivating_previous_history(receipt_edit
 
 
 def test_lifecycle_refuses_missing_edition_instead_of_version_fallback():
-    snapshot = _snapshot()
-    subject = replace(snapshot.subject, subject_edition=None)
     with pytest.raises(
-        AssessmentLifecycleContractError,
-        match="assessment_lifecycle_subject_edition_invalid",
+        QualityAssessmentContractError, match="assessment_subject_edition_invalid"
     ):
-        replace(snapshot, subject=subject)
-    with pytest.raises(
-        AssessmentLifecycleContractError,
-        match="assessment_lifecycle_subject_edition_invalid",
-    ):
-        replace(_receipt("missing-edition"), subject=subject)
+        replace(_snapshot().subject, subject_edition=None)
 
 
 def test_reopen_clears_current_head_and_preserves_previous_receipt_identity() -> None:

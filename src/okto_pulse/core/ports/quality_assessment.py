@@ -7,9 +7,7 @@ from typing import Any, Protocol, runtime_checkable
 
 from okto_pulse.core.domain.quality_assessment import (
     AssessmentCommitResult,
-    AssessmentDigestSet,
     AssessmentKind,
-    AssessmentOrigin,
     AssessmentPreflight,
     AssessmentPreflightRequest,
     AssessmentReceipt,
@@ -20,7 +18,6 @@ from okto_pulse.core.domain.quality_assessment import (
     AssessmentSubjectIdentity,
     AssessmentSubjectRef,
     AssessmentSubjectType,
-    AssessmentSource,
     AssessmentSubmission,
     AssessmentWriteBundle,
     FindingSeverity,
@@ -109,12 +106,10 @@ class AssessmentListQuery:
     subject: AssessmentSubjectIdentity
     offset: int
     limit: int
+    current_subject_version: int
+    current_subject_edition: int
     assessment_kind: AssessmentKind | None = None
     state: AssessmentReceiptState | None = None
-    current_subject_version: int | None = None
-    current_subject_edition: int | None = None
-    current_digests: AssessmentDigestSet | None = None
-    currentness_inputs: tuple["AssessmentCurrentnessInput", ...] = ()
     cursor: QualityPageCursor | None = None
 
 
@@ -130,16 +125,6 @@ class FindingListQuery:
     category_code: str | None = None
     severity: FindingSeverity | None = None
     cursor: QualityPageCursor | None = None
-
-
-@dataclass(frozen=True, slots=True)
-class AssessmentCurrentnessInput:
-    """Normative current digest selected by kind/origin/source identity."""
-
-    assessment_kind: AssessmentKind
-    origin: AssessmentOrigin
-    source: AssessmentSource
-    digests: AssessmentDigestSet
 
 
 @dataclass(frozen=True, slots=True)
@@ -167,10 +152,9 @@ class QualityGateInput:
 
 @dataclass(frozen=True, slots=True)
 class QualityAssessmentReadContext:
-    """Authorized current subject plus all supported digest identities."""
+    """Authorized current subject and edition-resolved gate settings."""
 
     subject: AssessmentSubjectRef
-    currentness_inputs: tuple[AssessmentCurrentnessInput, ...]
     gate_inputs: tuple[QualityGateInput, ...] = ()
 
 
@@ -343,7 +327,6 @@ __all__ = [
     "AssessmentIdempotencyConflict",
     "AssessmentInputDigestConflict",
     "AssessmentListQuery",
-    "AssessmentCurrentnessInput",
     "AssessmentReadAccessDenied",
     "AssessmentReceiptNotFound",
     "AssessmentSubjectVersionConflict",

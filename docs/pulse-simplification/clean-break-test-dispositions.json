@@ -1868,6 +1868,22 @@
     {
       "path": "okto_labs_pulse_community/tests/test_sqlalchemy_validation_cycle.py",
       "reason": "Added real-SQL lifecycle restore for current/prior native editions, immutable receipts, audit and idempotent retry."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_quality_assessment_currentness.py",
+      "reason": "Authored native receipt editions; replaced pre-edition technical drift expectations with same-edition continuity and Current/Previous. Added invalid edition refusal. Projection invalid identity and invalid edition cases remain."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_quality_assessment_service.py",
+      "reason": "Required edition in submission/commit fixtures and query selectors. Adapter drift test now forges another edition rather than a technical digest. Added invalid submission editions."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_sqlalchemy_quality_assessment.py",
+      "reason": "Read query fixtures no longer pass fallback digests; replay read verifies edition and actor isolation. Editionless storage fixture replaced with NOT NULL/positive-edition refusal and zero side effects."
+    },
+    {
+      "path": "okto_labs_pulse_community/frontend/src/components/quality/__tests__/QualityPanel.test.tsx",
+      "reason": "Native receipt fixture includes required subject_edition; corresponding Ideation/Refinement typed receipt fixtures also updated."
     }
   ],
   "removed_cases": [

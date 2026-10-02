@@ -273,9 +273,7 @@ class AssessmentSubjectRef:
     subject_type: AssessmentSubjectType
     subject_id: str
     subject_version: int
-    # ``None`` is accepted only to deserialize evidence created before lifecycle
-    # editions existed. Live subject snapshots and all new writes carry >= 1.
-    subject_edition: int | None = None
+    subject_edition: int
 
     def __post_init__(self) -> None:
         _enum_instance(
@@ -301,15 +299,14 @@ class AssessmentSubjectRef:
                 "assessment_subject_version_invalid",
             ),
         )
-        if self.subject_edition is not None:
-            object.__setattr__(
-                self,
-                "subject_edition",
-                _strict_positive_int(
-                    self.subject_edition,
-                    "assessment_subject_edition_invalid",
-                ),
-            )
+        object.__setattr__(
+            self,
+            "subject_edition",
+            _strict_positive_int(
+                self.subject_edition,
+                "assessment_subject_edition_invalid",
+            ),
+        )
 
     @property
     def identity(self) -> AssessmentSubjectIdentity:
@@ -336,9 +333,7 @@ class AssessmentPreflightRequest:
     expected_subject_version: int
     expected_head_revision: int
     channel: str
-    # Optional at the pure-domain boundary for old integrations; application
-    # commands for lifecycle-managed subjects require and validate it.
-    expected_subject_edition: int | None = None
+    expected_subject_edition: int
     evaluated_rule_count: int | None = None
 
     def __post_init__(self) -> None:
@@ -370,15 +365,14 @@ class AssessmentPreflightRequest:
                 "assessment_subject_version_invalid",
             ),
         )
-        if self.expected_subject_edition is not None:
-            object.__setattr__(
-                self,
-                "expected_subject_edition",
-                _strict_positive_int(
-                    self.expected_subject_edition,
-                    "assessment_subject_edition_invalid",
-                ),
-            )
+        object.__setattr__(
+            self,
+            "expected_subject_edition",
+            _strict_positive_int(
+                self.expected_subject_edition,
+                "assessment_subject_edition_invalid",
+            ),
+        )
         if (
             self.assessment_kind is AssessmentKind.REQUIREMENT_LINT
             and self.evaluated_rule_count is not None
@@ -1433,20 +1427,10 @@ class AssessmentReceiptView:
             "assessment_receipt_state_invalid",
         )
         expected = (
-            AssessmentReceiptState.SUPERSEDED
-            if not self.is_head
-            else (
-                AssessmentReceiptState.CURRENT
-                if self.freshness.current
-                else AssessmentReceiptState.STALE
-            )
+            AssessmentReceiptState.CURRENT
+            if self.is_head and self.freshness.current
+            else AssessmentReceiptState.PREVIOUS
         )
-        if self.receipt.subject.subject_edition is not None:
-            expected = (
-                AssessmentReceiptState.CURRENT
-                if self.is_head and self.freshness.current
-                else AssessmentReceiptState.PREVIOUS
-            )
         if self.state is not expected:
             raise QualityAssessmentContractError(
                 "assessment_receipt_state_mismatch"
@@ -1641,9 +1625,9 @@ class AssessmentSubmission:
     score: float
     justification: str
     scale: AssessmentScale
+    expected_subject_edition: int
     findings: tuple[QualityFindingDraft, ...] = ()
     proposed_questions: tuple[ProposedQuestionDraft, ...] = ()
-    expected_subject_edition: int | None = None
 
     def __post_init__(self) -> None:
         _instance(self.scale, AssessmentScale, "assessment_scale_invalid")
@@ -1675,15 +1659,14 @@ class AssessmentSubmission:
                 "assessment_idempotency_key_required",
             ),
         )
-        if self.expected_subject_edition is not None:
-            object.__setattr__(
-                self,
-                "expected_subject_edition",
-                _strict_positive_int(
-                    self.expected_subject_edition,
-                    "assessment_subject_edition_invalid",
-                ),
-            )
+        object.__setattr__(
+            self,
+            "expected_subject_edition",
+            _strict_positive_int(
+                self.expected_subject_edition,
+                "assessment_subject_edition_invalid",
+            ),
+        )
         object.__setattr__(
             self,
             "expected_subject_version",
@@ -1746,7 +1729,7 @@ class AssessmentWriteBundle:
     finding_qa_links: tuple[FindingQaLink, ...]
     next_head: AssessmentSubjectHead
     audit_intent: AssessmentAuditIntent
-    expected_subject_edition: int | None = None
+    expected_subject_edition: int
 
     def __post_init__(self) -> None:
         _instance(
@@ -1784,17 +1767,10 @@ class AssessmentWriteBundle:
             self.expected_subject_version,
             "assessment_subject_version_invalid",
         )
-        expected_subject_edition = self.expected_subject_edition
-        if expected_subject_edition is not None:
-            expected_subject_edition = _strict_positive_int(
-                expected_subject_edition,
-                "assessment_subject_edition_invalid",
-            )
-            object.__setattr__(
-                self,
-                "expected_subject_edition",
-                expected_subject_edition,
-            )
+        expected_subject_edition = _strict_positive_int(
+            self.expected_subject_edition,
+            "assessment_subject_edition_invalid",
+        )
         expected_head_revision = _strict_non_negative_int(
             self.expected_head_revision,
             "assessment_head_revision_invalid",
@@ -1888,8 +1864,7 @@ class AssessmentWriteBundle:
                 "assessment_bundle_subject_version_mismatch"
             )
         if (
-            expected_subject_edition is not None
-            and subject.subject_edition != expected_subject_edition
+            subject.subject_edition != expected_subject_edition
         ):
             raise QualityAssessmentContractError(
                 "assessment_bundle_subject_edition_mismatch"
@@ -2005,8 +1980,8 @@ class AssessmentCommitResult:
     history_id: str
     outbox_id: str
     qa_id_map: tuple[tuple[str, str], ...]
+    subject_edition: int
     replayed: bool = False
-    subject_edition: int | None = None
 
     def __post_init__(self) -> None:
         _enum_instance(
@@ -2037,15 +2012,14 @@ class AssessmentCommitResult:
                 "assessment_subject_version_invalid",
             ),
         )
-        if self.subject_edition is not None:
-            object.__setattr__(
-                self,
-                "subject_edition",
-                _strict_positive_int(
-                    self.subject_edition,
-                    "assessment_subject_edition_invalid",
-                ),
-            )
+        object.__setattr__(
+            self,
+            "subject_edition",
+            _strict_positive_int(
+                self.subject_edition,
+                "assessment_subject_edition_invalid",
+            ),
+        )
         object.__setattr__(
             self,
             "request_fingerprint",
@@ -2205,7 +2179,7 @@ def evaluate_assessment_input_currentness(
     Relational projections and rebuild readers intentionally use this smaller
     contract: they need to decide whether a head is current without loading
     unrelated receipt audit fields. The complete receipt helper below
-    delegates here so both paths retain the same frozen six-reason order.
+    delegates here so both paths use the same lifecycle edition.
     """
 
     if (
@@ -2215,51 +2189,13 @@ def evaluate_assessment_input_currentness(
     ):
         raise QualityAssessmentContractError("assessment_subject_mismatch")
 
-    # Human currentness is lifecycle-edition scoped. Once a live edition is
-    # available, technical version and digest drift remain audit/CAS evidence
-    # and cannot turn an accepted result into a human-facing stale result.
-    if current_subject.subject_edition is not None:
-        if assessed_subject.subject_edition == current_subject.subject_edition:
-            return AssessmentCurrentness(current=True, stale_reasons=())
-        return AssessmentCurrentness(
-            current=False,
-            stale_reasons=(AssessmentStaleReason.SUBJECT_EDITION_CHANGED,),
-        )
-
-    # Compatibility for callers not yet upgraded to lifecycle editions.
-    reasons: list[AssessmentStaleReason] = []
-    if assessed_subject.subject_version != current_subject.subject_version:
-        reasons.append(AssessmentStaleReason.SUBJECT_VERSION_CHANGED)
-    comparisons = (
-        (
-            assessed_digests.content_digest,
-            current_digests.content_digest,
-            AssessmentStaleReason.CONTENT_CHANGED,
-        ),
-        (
-            assessed_digests.clarification_digest,
-            current_digests.clarification_digest,
-            AssessmentStaleReason.CLARIFICATION_CHANGED,
-        ),
-        (
-            assessed_digests.ruleset_digest,
-            current_digests.ruleset_digest,
-            AssessmentStaleReason.RULESET_CHANGED,
-        ),
-        (
-            assessed_digests.taxonomy_digest,
-            current_digests.taxonomy_digest,
-            AssessmentStaleReason.TAXONOMY_CHANGED,
-        ),
-        (
-            assessed_digests.policy_digest,
-            current_digests.policy_digest,
-            AssessmentStaleReason.POLICY_CHANGED,
-        ),
+    # Technical version/digest drift is audit/CAS evidence, not human currentness.
+    if assessed_subject.subject_edition == current_subject.subject_edition:
+        return AssessmentCurrentness(current=True, stale_reasons=())
+    return AssessmentCurrentness(
+        current=False,
+        stale_reasons=(AssessmentStaleReason.SUBJECT_EDITION_CHANGED,),
     )
-    reasons.extend(reason for previous, current, reason in comparisons if previous != current)
-    ordered = tuple(reason for reason in ASSESSMENT_STALE_REASON_ORDER if reason in reasons)
-    return AssessmentCurrentness(current=not ordered, stale_reasons=ordered)
 
 
 def evaluate_assessment_currentness(
@@ -2268,7 +2204,7 @@ def evaluate_assessment_currentness(
     current_subject: AssessmentSubjectRef,
     current_digests: AssessmentDigestSet,
 ) -> AssessmentCurrentness:
-    """Evaluate version-bound currentness using the frozen six-reason set."""
+    """Evaluate human currentness within the lifecycle edition."""
 
     return evaluate_assessment_input_currentness(
         receipt.subject,
@@ -2294,20 +2230,10 @@ def project_assessment_receipt_view(
     )
     is_head = receipt.id == head_receipt_id
     state = (
-        AssessmentReceiptState.SUPERSEDED
-        if not is_head
-        else (
-            AssessmentReceiptState.CURRENT
-            if freshness.current
-            else AssessmentReceiptState.STALE
-        )
+        AssessmentReceiptState.CURRENT
+        if is_head and freshness.current
+        else AssessmentReceiptState.PREVIOUS
     )
-    if receipt.subject.subject_edition is not None:
-        state = (
-            AssessmentReceiptState.CURRENT
-            if is_head and freshness.current
-            else AssessmentReceiptState.PREVIOUS
-        )
     return AssessmentReceiptView(
         receipt=receipt,
         is_head=is_head,

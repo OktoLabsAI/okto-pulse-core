@@ -95,6 +95,7 @@ def _preflight(
 ) -> AssessmentPreflight:
     return AssessmentPreflight(
         subject=AssessmentSubjectRef(
+            subject_edition=1,
             board_id="b1",
             subject_type=AssessmentSubjectType.REFINEMENT,
             subject_id="r1",
@@ -166,6 +167,7 @@ def _submission(
     expected_head_revision: int = 3,
 ) -> AssessmentSubmission:
     return AssessmentSubmission(
+        expected_subject_edition=1,
         board_id="b1",
         subject_type=AssessmentSubjectType.REFINEMENT,
         subject_id="r1",
@@ -206,6 +208,7 @@ class _Persistence:
         if self.error:
             raise self.error
         return self.result or AssessmentCommitResult(
+            subject_edition=1,
             board_id=bundle.receipt.subject.board_id,
             subject_type=bundle.receipt.subject.subject_type,
             subject_id=bundle.receipt.subject.subject_id,
@@ -1073,6 +1076,7 @@ async def test_replay_returns_original_ids_after_subject_and_head_drift() -> Non
     service = QualityAssessmentService(id_factory=_Ids(), clock=lambda: NOW)
     submission = _submission()
     result = AssessmentCommitResult(
+        subject_edition=1,
         board_id="b1",
         subject_type=AssessmentSubjectType.REFINEMENT,
         subject_id="r1",
@@ -1127,6 +1131,7 @@ def test_same_idempotency_key_with_different_payload_is_non_retryable_conflict()
     service = QualityAssessmentService()
     submission = _submission()
     result = AssessmentCommitResult(
+        subject_edition=1,
         board_id="b1",
         subject_type=AssessmentSubjectType.REFINEMENT,
         subject_id="r1",
@@ -1155,6 +1160,7 @@ def test_replay_lookup_result_must_be_marked_replayed() -> None:
     service = QualityAssessmentService()
     submission = _submission()
     result = AssessmentCommitResult(
+        subject_edition=1,
         board_id="b1",
         subject_type=AssessmentSubjectType.REFINEMENT,
         subject_id="r1",
@@ -1272,6 +1278,7 @@ async def test_divergent_adapter_result_fails_closed() -> None:
     )
     persistence = _Persistence()
     persistence.result = AssessmentCommitResult(
+        subject_edition=1,
         board_id="other",
         subject_type=AssessmentSubjectType.REFINEMENT,
         subject_id="r1",
@@ -1300,6 +1307,7 @@ async def test_commit_result_must_echo_atomic_audit_identities() -> None:
     )
     persistence = _Persistence()
     persistence.result = AssessmentCommitResult(
+        subject_edition=1,
         board_id="b1",
         subject_type=AssessmentSubjectType.REFINEMENT,
         subject_id="r1",
@@ -1349,22 +1357,10 @@ async def test_invalid_current_and_receipt_port_results_fail_closed() -> None:
     assert receipt_error.value.code == "assessment_receipt_port_invalid"
 
 
-@pytest.mark.asyncio
-async def test_current_requires_edition_before_calling_persistence() -> None:
-    class _UnexpectedRead(_Persistence):
-        async def get_current(self, **kwargs):
-            pytest.fail("Editionless reads must not reach persistence")
-
-    with pytest.raises(QualityAssessmentPortContractError) as error:
-        await QualityAssessmentService().get_current(
-            board_id="b1",
-            subject_type=AssessmentSubjectType.REFINEMENT,
-            subject_id="r1",
-            assessment_kind=AssessmentKind.AMBIGUITY,
-            current_subject=_preflight().subject,
-            persistence=_UnexpectedRead(),
-        )
-    assert error.value.code == "assessment_subject_edition_invalid"
+@pytest.mark.parametrize("edition", [None, 0, -1, True, "1", 1.0])
+def test_submission_requires_native_edition(edition):
+    with pytest.raises(QualityAssessmentContractError, match="assessment_subject_edition_invalid"):
+        replace(_submission(), expected_subject_edition=edition)
 
 
 @pytest.mark.asyncio
@@ -1480,6 +1476,8 @@ def test_transaction_service_catalog_exposes_registered_assessment_port() -> Non
 async def test_page_contract_rejects_invalid_windows(offset, limit) -> None:
     service = QualityAssessmentService()
     query = AssessmentListQuery(
+        current_subject_version=7,
+        current_subject_edition=1,
         subject=_preflight().subject.identity,
         offset=offset,
         limit=limit,
@@ -1526,7 +1524,7 @@ async def test_assessment_list_recomputes_currentness_and_rejects_adapter_drift(
     wrong_view = project_assessment_receipt_view(
         bundle.receipt,
         head_receipt_id=bundle.receipt.id,
-        current_subject=bundle.receipt.subject,
+        current_subject=replace(bundle.receipt.subject, subject_edition=2),
         current_digests=wrong_digests,
     )
 
@@ -1541,7 +1539,7 @@ async def test_assessment_list_recomputes_currentness_and_rejects_adapter_drift(
                 offset=0,
                 limit=25,
                 current_subject_version=bundle.receipt.subject.subject_version,
-                current_digests=bundle.receipt.digests,
+                current_subject_edition=1,
             ),
             persistence=_Paged(),
         )
@@ -1561,7 +1559,7 @@ async def test_assessment_list_rejects_untyped_items_before_sorting() -> None:
                 offset=0,
                 limit=25,
                 current_subject_version=7,
-                current_digests=_digests(),
+                current_subject_edition=1,
             ),
             persistence=_Paged(),
         )

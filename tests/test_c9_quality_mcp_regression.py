@@ -112,6 +112,7 @@ def _receipt(
     return AssessmentReceipt(
         id=receipt_id,
         subject=AssessmentSubjectRef(
+            subject_edition=1,
             board_id="board-1",
             subject_type=AssessmentSubjectType.REFINEMENT,
             subject_id="refinement-1",
@@ -369,7 +370,7 @@ def test_keyset_projection_preserves_page_envelope_and_real_boundary() -> None:
             state=(
                 AssessmentReceiptState.CURRENT
                 if index == 0
-                else AssessmentReceiptState.SUPERSEDED
+                else AssessmentReceiptState.PREVIOUS
             ),
         )
         for index, receipt in enumerate(receipts)
@@ -434,7 +435,6 @@ async def test_receipt_findings_command_derives_scope_with_one_preflight() -> No
     calls: list[tuple[str, object]] = []
     context = QualityAssessmentReadContext(
         subject=_receipt().subject,
-        currentness_inputs=(),
     )
 
     class _Reader:

@@ -2,6 +2,61 @@
 
 ## Estado para retomada
 
+### 2026-10-02 — C1/C3: Quality Assessment exige edição em domínio, consulta e storage
+
+Base publicada Core 6dc95a61 / Community c1bae4bd. AssessmentSubjectRef,
+PreflightRequest, Submission, WriteBundle e CommitResult exigem edição inteira
+positiva; retirada a aceitação de None e a validação condicional de identidade.
+AssessmentListQuery exige versão/edição explícitas. Current/Previous é determinado
+por edição e head; removido o fallback que invalidava o resultado humano por
+versão/digests. Digests persistidos e fences de escrita permanecem para auditoria/CAS.
+
+Retirados AssessmentCurrentnessInput, campos currentness_inputs/current_digests
+da consulta/contexto, seletor privado de fallback e consumidores no caso de uso.
+SQL da listagem usa somente edição/head, preservando paginação, totais e ordenação.
+Filtros técnicos antigos são recusados; enums e resíduos de stale transition ainda
+aguardam retirada coordenada com UI/contratos restantes. Não foi reintroduzido alias.
+
+Gap concreto corrigido: lookup_assessment_replay retornava CommitResult sem copiar
+a edição persistida. Teste real agora verifica edição/recibo e isolamento por ator.
+Schema QualityReceipt exige NOT NULL + edição >=1, sem coluna reservada para
+evidência anterior. Base com definição incompatível continua sujeita ao gate físico,
+sem conversão/reparo. Teste de projeção com NULL anteriormente inserível foi
+substituído por recusa da gravação no schema atual e zero efeitos para None/0/-1;
+recusa de edição inválida no seletor de projeção continua coberta no Core.
+
+Fixtures de domínio foram escritas com edição explícita. Testes de drift técnico
+agora demonstram continuidade na mesma edição; nova edição torna o recibo Previous,
+mantendo seu conteúdo. Busca AST de construtores em src/tests dos dois repos não
+encontrou omissões dos campos exigidos. Tipos frontend do recibo e resposta de
+ambiguidade exigem edição; três fixtures de Quality/Ideation/Refinement atualizadas.
+Demais resultados Policy/Checklist/ciclo com nullable e modos legacy não estão
+declarados concluídos por essa mudança.
+
+Evidência: required-edition-core2 167 aprovados; Community2 117. Após endurecer SQL,
+Community3 executou 160 casos: 158 aprovados e dois erros de expectativa da mensagem
+(trigger validation_edition_invalid ocorreu antes do CHECK). Corrigida somente a
+expectativa específica; refusal4 aprovou None/0/-1 no par final, total distinto
+Community 160 aprovados.
+Front2 45 aprovados + Front3 11 = 56 distintos. TypeScript/Vite passou após localizar
+as três fixtures sem edição. Ruff F/E9 aprovado. Sem alteração do catálogo de tools.
+
+dist-required-edition4 instalado; provenance-required-edition4 confirmou bytes
+src/install/wheel iguais: Core 845 Python/908 payload; Community 319/405.
+SHA256 Core 163ca2d2b6d2eeacab34854635372fd284fe1b47bd6dbfb81da51b8d4ce9cbfd;
+Community 0ebc5da5d65e1ecd0421de5ca0d285aa5a102affb3f3b1d8678fec5791e8d405.
+SPA reconstruída/sincronizada: 79 arquivos, árvore
+91976ccb5347f7e15db282a91c8b43504d71d5ac48b845e392e30d7399817ba8.
+Closure1/2/3 aprovados, oito budgets ZERO, incluindo o par final empacotado.
+Sem release/tag/deploy ou acesso a dados reais.
+
+Próximo C1/C3: remover estados/reasons técnicos sem consumidores atuais, campos e
+tabela de stale transition, nullable/compatibilidade de Policy/Checklist/ciclo e
+modos legacy na UI; investigar lint_languages remanescente antes de retirar setting.
+Args de digest do projetor puro ainda existem, embora não selecionem currentness;
+retirar junto aos consumidores, preservando digests de escrita/auditoria.
+C4 integral e decisões T23/KG-10 continuam abertos; entrega não certificada.
+
 ### 2026-10-02 — C1/C3: restauração usa a edição nativa
 
 Base publicada Core 1f411b88 / Community 4a6603a0. Reprodução

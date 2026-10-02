@@ -665,7 +665,6 @@ class QualityAssessmentReadUseCases:
             currentness=self._service.currentness_for_receipt(
                 receipt,
                 current_subject=context.subject,
-                currentness_inputs=context.currentness_inputs,
             ),
         )
 
@@ -694,7 +693,6 @@ class QualityAssessmentReadUseCases:
             state=command.state,
             current_subject_version=context.subject.subject_version,
             current_subject_edition=context.subject.subject_edition,
-            currentness_inputs=context.currentness_inputs,
             cursor=command.cursor,
         )
         async with self._uow_factory(

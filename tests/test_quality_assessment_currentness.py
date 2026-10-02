@@ -41,6 +41,7 @@ def _digests(seed: str = "base") -> AssessmentDigestSet:
 
 def _receipt() -> AssessmentReceipt:
     subject = AssessmentSubjectRef(
+        subject_edition=1,
         board_id="b1",
         subject_type=AssessmentSubjectType.REFINEMENT,
         subject_id="r1",
@@ -214,7 +215,7 @@ def test_receipt_rejects_invalid_immutable_provenance(
         replace(_receipt(), **{field_name: value})
 
 
-def test_receipt_is_current_only_when_version_and_all_digests_match() -> None:
+def test_receipt_is_current_in_its_edition() -> None:
     receipt = _receipt()
     result = evaluate_assessment_currentness(
         receipt,
@@ -248,7 +249,7 @@ def test_explicit_input_digest_is_normalized_to_lowercase() -> None:
         ("policy_digest", AssessmentStaleReason.POLICY_CHANGED),
     ],
 )
-def test_currentness_uses_the_closed_digest_reason_set(field_name, reason) -> None:
+def test_technical_digest_changes_do_not_invalidate_same_edition(field_name, reason) -> None:
     receipt = _receipt()
     changed = replace(
         receipt.digests,
@@ -260,11 +261,11 @@ def test_currentness_uses_the_closed_digest_reason_set(field_name, reason) -> No
         current_subject=receipt.subject,
         current_digests=changed,
     )
-    assert result.current is False
-    assert result.stale_reasons == (reason,)
+    assert result.current is True
+    assert result.stale_reasons == ()
 
 
-def test_version_binding_wins_even_when_text_and_digests_are_identical() -> None:
+def test_technical_version_change_preserves_current_edition() -> None:
     receipt = _receipt()
     current_subject = replace(receipt.subject, subject_version=8)
     result = evaluate_assessment_currentness(
@@ -272,22 +273,22 @@ def test_version_binding_wins_even_when_text_and_digests_are_identical() -> None
         current_subject=current_subject,
         current_digests=receipt.digests,
     )
-    assert result.stale_reasons == (
-        AssessmentStaleReason.SUBJECT_VERSION_CHANGED,
-    )
+    assert result.current is True
+    assert result.stale_reasons == ()
 
 
-def test_done_to_draft_spec_reopen_makes_the_previous_receipt_stale() -> None:
+def test_new_edition_makes_the_previous_receipt_non_current() -> None:
     receipt = replace(
         _receipt(),
         subject=AssessmentSubjectRef(
+            subject_edition=1,
             board_id="b1",
             subject_type=AssessmentSubjectType.SPEC,
             subject_id="spec-reopened",
             subject_version=7,
         ),
     )
-    reopened_subject = replace(receipt.subject, subject_version=8)
+    reopened_subject = replace(receipt.subject, subject_version=8, subject_edition=2)
 
     result = evaluate_assessment_currentness(
         receipt,
@@ -297,11 +298,11 @@ def test_done_to_draft_spec_reopen_makes_the_previous_receipt_stale() -> None:
 
     assert result.current is False
     assert result.stale_reasons == (
-        AssessmentStaleReason.SUBJECT_VERSION_CHANGED,
+        AssessmentStaleReason.SUBJECT_EDITION_CHANGED,
     )
 
 
-def test_multiple_stale_reasons_are_deterministically_ordered() -> None:
+def test_combined_technical_changes_preserve_current_edition() -> None:
     receipt = _receipt()
     current_subject = replace(receipt.subject, subject_version=8)
     changed = replace(
@@ -315,11 +316,8 @@ def test_multiple_stale_reasons_are_deterministically_ordered() -> None:
         current_subject=current_subject,
         current_digests=changed,
     )
-    assert result.stale_reasons == (
-        AssessmentStaleReason.SUBJECT_VERSION_CHANGED,
-        AssessmentStaleReason.CONTENT_CHANGED,
-        AssessmentStaleReason.POLICY_CHANGED,
-    )
+    assert result.current is True
+    assert result.stale_reasons == ()
 
 
 def test_threshold_enable_architecture_and_mockup_are_not_digest_inputs() -> None:
@@ -345,7 +343,7 @@ def test_currentness_rejects_a_different_subject() -> None:
         )
 
 
-def test_fresh_but_non_head_receipt_is_superseded_not_current() -> None:
+def test_non_head_receipt_is_previous() -> None:
     receipt = _receipt()
     view = project_assessment_receipt_view(
         receipt,
@@ -355,10 +353,10 @@ def test_fresh_but_non_head_receipt_is_superseded_not_current() -> None:
     )
     assert view.freshness.current is True
     assert view.is_head is False
-    assert view.state is AssessmentReceiptState.SUPERSEDED
+    assert view.state is AssessmentReceiptState.PREVIOUS
 
 
-def test_head_with_changed_input_is_stale() -> None:
+def test_head_with_changed_technical_input_remains_current() -> None:
     receipt = _receipt()
     changed = replace(
         receipt.digests,
@@ -371,10 +369,8 @@ def test_head_with_changed_input_is_stale() -> None:
         current_subject=receipt.subject,
         current_digests=changed,
     )
-    assert view.state is AssessmentReceiptState.STALE
-    assert view.freshness.stale_reasons == (
-        AssessmentStaleReason.CLARIFICATION_CHANGED,
-    )
+    assert view.state is AssessmentReceiptState.CURRENT
+    assert view.freshness.stale_reasons == ()
 
 
 def test_quality_page_rejects_more_items_than_limit() -> None:
@@ -404,3 +400,9 @@ def test_quality_page_rejects_underfilled_server_page() -> None:
 def test_quality_page_allows_empty_page_beyond_end() -> None:
     page = QualityPage((), total_filtered=3, total_overall=5, offset=10, limit=2)
     assert page.items == ()
+
+
+@pytest.mark.parametrize("edition", [None, 0, -1, True, "1", 1.0])
+def test_subject_ref_refuses_non_native_edition(edition):
+    with pytest.raises(QualityAssessmentContractError, match="assessment_subject_edition_invalid"):
+        replace(_receipt().subject, subject_edition=edition)
