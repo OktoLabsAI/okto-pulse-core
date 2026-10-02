@@ -2,6 +2,44 @@
 
 ## Estado para retomada
 
+### 2026-10-02 — C3: delivery/recovery nativos de Global Discovery
+
+Marco anterior publicado: Core913f3427 / Community60a59d22. Suite Card6 de schema
+renomeada para test_card6_native_delivery_storage.py. Removidos três fluxos
+exclusivos de conversão (outbox anterior, retry de cópia e tabela dividida).
+Preservados checkpoints de redrive/watchdog, agora com reabertura e comparação
+exata; constraints de ledger, FK/cascade e seis mutações de contrato físico.
+Estas são recusadas sem alterar arquivos, não corrigidas pelo runtime.
+
+Fixtures de atomic transfer, Card7 ledger e outbox integration agora usam schema
+completo, sessões compostas e Board.realm_id explícito. Rollback por falha real
+SQLite em cada fase continua: remove-se somente o trigger injetado pelo teste
+antes de reconectar, mantendo intactos os guards do produto. Autoridade, CAS,
+outbox, checkpoints, reinício e continuidade do caller permanecem exercitados.
+
+discovery-native1:8 aprovados; discovery-native2:8 casos de storage e4 de lifecycle
+passaram,61 erros de fixture e2 falhas anteriores preservados para diagnóstico.
+discovery-native3 registrou três falhas porque o próprio trigger de teste causava
+recusa de formato na reabertura. discovery-native4:67 aprovados, incluindo
+atomic transfer, watchdog/redrive/outbox e lifecycle de recovery. As oito provas
+de storage, incluindo reinício, passaram em discovery-native2/3. Produto/SPA sem
+mudança; provenance-b08-native1 mantém src/install/wheels byte-idênticos.
+closure-discovery-native1:exit0, oito budgets ZERO e documentação validada.
+Ruff F/E9 e diff checks aprovados. Coleta community9:6084 casos enumerados/17
+erros, ante6076/18; não confundir coleta com execução integral.
+
+Limite explícito: Card7 ainda testa três fallbacks de identidade histórica.
+Investigação confirmou read_circuit_snapshot em sqlalchemy_delivery_ledger.py
+aceitando delivery_key OU delete_event_id OU prefixo físico quando payload é
+incompleto/corrompido. Remover esse caminho em C1, com identidade atual completa,
+preservando reconhecimento de tentativas anteriores NATIVAS já entregues e
+falha fechada para identidade inválida; não contar estes testes de fallback como
+aceite clean-break. Isto está dentro da retirada de compatibilidade autorizada.
+
+Próximo: C1 desse fallback ou restantes bloqueios C3 (semantic persistence,
+code evidence, knowledge/schema), seguido de C4 integral. Decisões T23/KG-10
+continuam pendentes. Não há declaração de entrega completa neste marco.
+
 ### 2026-10-02 — C3: materialização B14 e schema nativo de validação
 
 Marco anterior publicado: Coree12c24a4 / Community31e116b7. B14 usa a fixture

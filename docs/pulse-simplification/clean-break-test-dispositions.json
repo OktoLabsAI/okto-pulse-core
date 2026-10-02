@@ -1508,6 +1508,22 @@
     {
       "path": "okto_labs_pulse_community/tests/test_current_relational_schema.py",
       "reason": "Added byte-inert refusal of lifecycle transition legacy column and missing before/after edition guards; never restores guards or converts data."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_card6_native_delivery_storage.py",
+      "reason": "Renamed from test_card6_delivery_ledger_schema_migration.py. Full current schema preserves redrive/watchdog checkpoints across reopen, enforces ledger/FK/check constraints, and refuses six physical schema mutations without file changes. No automatic convergence."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_card6_delivery_ledger_atomic_transfer.py",
+      "reason": "Native full schema, explicit Board realms and composed sessions replace Base-only fixture. Existing functional/CAS/rollback checks preserved. Card6 removes only its own injected failure trigger before format admission on reopen. Historical identity fallback expectations in Card7 remain a known C1 removal dependency, not clean-break acceptance."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_card7_delivery_ledger.py",
+      "reason": "Native full schema, explicit Board realms and composed sessions replace Base-only fixture. Existing functional/CAS/rollback checks preserved. Card6 removes only its own injected failure trigger before format admission on reopen. Historical identity fallback expectations in Card7 remain a known C1 removal dependency, not clean-break acceptance."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_card7_delivery_outbox_integration.py",
+      "reason": "Native full schema, explicit Board realms and composed sessions replace Base-only fixture. Existing functional/CAS/rollback checks preserved. Card6 removes only its own injected failure trigger before format admission on reopen. Historical identity fallback expectations in Card7 remain a known C1 removal dependency, not clean-break acceptance."
     }
   ],
   "removed_cases": [
@@ -2272,6 +2288,24 @@
       "test": "test_mixed_validation_edition_cohort_fails_closed",
       "disposition": "superseded",
       "reason": "Removed predecessor/converter lifecycle-edition contract. Full current-schema admission/restart and native validation-cycle persistence retained; incompatible current schema is refused byte-inertly, never converged."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_card6_delivery_ledger_schema_migration.py",
+      "test": "test_card6_delivery_schema_migrates_without_data_loss_and_replays",
+      "disposition": "superseded",
+      "reason": "Exclusive conversion of predecessor outbox, converter-copy rollback/retry or resumed split-table migration. Native delivery constraints, checkpoints/restart, transactional ownership rollback and immutable current-schema refusal remain covered."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_card6_delivery_ledger_schema_migration.py",
+      "test": "test_card6_copy_failure_rolls_back_and_retry_converges_without_loss",
+      "disposition": "superseded",
+      "reason": "Exclusive conversion of predecessor outbox, converter-copy rollback/retry or resumed split-table migration. Native delivery constraints, checkpoints/restart, transactional ownership rollback and immutable current-schema refusal remain covered."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_card6_delivery_ledger_schema_migration.py",
+      "test": "test_card6_resumes_legacy_split_table_state_without_loss",
+      "disposition": "superseded",
+      "reason": "Exclusive conversion of predecessor outbox, converter-copy rollback/retry or resumed split-table migration. Native delivery constraints, checkpoints/restart, transactional ownership rollback and immutable current-schema refusal remain covered."
     }
   ]
 }
