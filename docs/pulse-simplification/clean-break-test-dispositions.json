@@ -1035,6 +1035,11 @@
       "path": "okto_labs_pulse_community/tests/test_skb3_postgresql_trigger_proof_v1.py",
       "disposition": "superseded",
       "reason": "Exclusive DDL/converter catalog proof for a removed PostgreSQL migration implementation, including obsolete semantic migration audit table. Native current-schema SQLite guards and edition refusal remain required."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_f3_semantic_exception_retirement.py",
+      "disposition": "superseded",
+      "reason": "Exclusive archived Sprint waiver/skip replay and predecessor authority refusal. Native waiver/skip lifecycle and immutable history qualified in test_skb3_semantic_guideline_persistence.py."
     }
   ],
   "adapted_suites": [
@@ -1562,6 +1567,18 @@
         "semantic-native3: 29 passed; one old unseal fixture rejected by current guard",
         "semantic-seal-native1: corrected seal visibility and immutability test passed"
       ]
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_skb31_semantic_pinpoint_v2_persistence.py",
+      "reason": "Current schema/composed sessions replace partial predecessor fixtures. Native read/write ports, runtime readiness, projection permission denial, SQLite manifests, roundtrip/replay, immutable rows, permit erasure and edition isolation retained. Removed PostgreSQL manifest fragments and predecessor-column assertion."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_f3_semantic_sprint_retirement.py",
+      "reason": "Seven native Card listener and unsupported queue target cases now use fresh schema, no archived database. Card listener no longer asserts preservation of imported Sprint rows."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_f3_guideline_authoring_retirement.py",
+      "reason": "Native schema and current envelope replace archived Sprint fixture; initial/revision write and forged import-plan refusal retain authority-row equality."
     }
   ],
   "removed_cases": [
@@ -2464,6 +2481,24 @@
       "test": "test_legacy_policy_rows_migrate_inert_without_metric_synthesis",
       "disposition": "superseded",
       "reason": "Exclusive predecessor conversion, upgrade convergence or removed PostgreSQL DDL manifest audit. Native semantic lifecycle, guards, assessments, waivers, skips and history retained under full current schema."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_skb31_semantic_pinpoint_v2_persistence.py",
+      "test": "test_v2_migration_is_idempotent_and_preserves_v1_shape",
+      "disposition": "superseded",
+      "reason": "Removed predecessor schema conversion. Full current schema, native pinpoint lifecycle and guards retained."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_f3_semantic_sprint_retirement.py",
+      "test": "test_historical_semantic_receipt_and_mutation_replay_survive_retirement",
+      "disposition": "superseded",
+      "reason": "Archived Sprint compatibility is outside clean-break scope; native Card listener and explicit invalid-target queue refusal retained."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_f3_guideline_authoring_retirement.py",
+      "test": "test_explicit_successor_preserves_historical_revision_and_exact_replay",
+      "disposition": "superseded",
+      "reason": "Successor from archived Sprint revision is removed. Native revision append and exact replay retained in semantic lifecycle suite."
     }
   ]
 }

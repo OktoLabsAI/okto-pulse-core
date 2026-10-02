@@ -2,6 +2,36 @@
 
 ## Estado para retomada
 
+### 2026-10-02 — C3: pinpoint e consumidores F3 sem bases Sprint antigas
+
+Marco anterior publicado: Core6bdea8a8 / Community67dfe093. Pinpoint usa schema
+completo/sessões compostas e a fixture de autoridade nativa já qualificada. Foram
+preservadas portas públicas, readiness, projeção/permissão, replay, findings,
+imutabilidade, erasure com permit e isolamento por edição. Retirada conversão
+v1/v2 e fragmentos de manifesto PostgreSQL, sem remover funcionalidades atuais
+apenas por terem versão no nome. Reabertura da edição registra mutação semântica.
+
+F3 passa a criar bases novas: cinco operações Card não consultam Sprint e mantêm
+editor semântico; dois casos recusam explicitamente fila Sprint sem alterar info
+da sessão. Writers de Guideline recusam alvo inválido em create/append e plano de
+importação atual adulterado, com igualdade de todas as linhas de autoridade.
+Retirados replay de receipt/exceções Sprint arquivadas e sucessor de revisão
+importada; quatro fixtures JSON/ZIP antigas removidas. Histórico nativo de waiver,
+skip e revisões permanece na suite semântica. Disposições registradas no JSON.
+
+pinpoint-native3:8 aprovados,3 erros de fixture por timestamp expirado; corrigidos
+em pinpoint-edition-native1:3 aprovados. f3-native-listeners1:7 aprovados,2 erros
+de digest da fixture; f3-native-authoring2:2 aprovados. Total20 casos distintos
+qualificados neste incremento. Ruff F/E9 e diff checks aprovados. Produto/SPA
+sem alteração; provenance-semantic-native1 permanece válida, oito budgets do
+último closure sem mudança de produto.
+
+Coleta community14:6154 casos enumerados/9 erros; coleta não é execução.
+Próximo: code evidence, knowledge propagation, learning reconciliation, Spec
+dependency/scenarios, governed queue e configuração de benchmark. C1 residual
+e C4 integral continuam; T23/KG-10 pendentes. Não há claim de entrega final.
+
+
 ### 2026-10-02 — C3: persistência semântica no schema nativo completo
 
 Marco anterior publicado: Coref9980cc8 / Community2b3c954a. Suite semântica
