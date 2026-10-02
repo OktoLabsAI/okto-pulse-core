@@ -122,6 +122,49 @@ def _serialized_bytes(value: object) -> int:
     )
 
 
+@pytest.mark.parametrize("resource_type", ["architecture", "mockup"])
+def test_artifact_pages_preserve_complete_native_bodies(resource_type: str) -> None:
+    attachments = []
+    for index in range(2):
+        attachment = _attachment(
+            root_id=f"root-{index}", resource_id=f"artifact-{index}",
+            version="1", kind="inherited_reference", inherited=True,
+        )
+        attachment["resource_type"] = resource_type
+        attachment["unique_resource_id"] = f"{resource_type}:root-{index}"
+        attachments.append(attachment)
+    # A different resource kind must not consume this page's hydration/count budget.
+    attachments.append(_attachment(
+        root_id="kb", resource_id="kb", version="1", kind="direct", inherited=False,
+    ))
+    projection = _projection(attachments)
+    projection["resource_type"] = resource_type
+    requests = KnowledgeWorkspaceProjector.hydration_requests(projection, profile="full")
+    assert len(requests) == 1
+    assert requests[0]["resource_type"] == resource_type
+    large_body = {"html_content": "x" * (300 * 1024)}
+    projection["resources"][resource_type] = [
+        {"id": request["resource_id"], "resource": large_body} for request in requests
+    ]
+    page = KnowledgeWorkspaceProjector.project(projection, profile="full")
+    assert page["resource_type"] == resource_type
+    assert page["count"] == 1
+    assert page["total_count"] == page["raw_attachment_count"] == 2
+    assert page["items"][0]["body"] == large_body
+    assert page["next_cursor"] is not None
+    next_requests = KnowledgeWorkspaceProjector.hydration_requests(
+        projection, profile="full", cursor=page["next_cursor"],
+    )
+    assert len(next_requests) == 1
+    assert next_requests[0]["resource_id"] != requests[0]["resource_id"]
+    other_kind = dict(projection, resource_type="knowledge_base")
+    with pytest.raises(KnowledgeWorkspaceProjectionError) as error:
+        KnowledgeWorkspaceProjector.project(
+            other_kind, profile="detail", cursor=page["items"][0]["detail_cursor"],
+        )
+    assert error.value.code == "knowledge_workspace_cursor_identity_mismatch"
+
+
 def test_ts_fab5c273_groups_only_same_root_version_and_keeps_canonical_identity() -> (
     None
 ):

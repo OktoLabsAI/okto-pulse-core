@@ -31,7 +31,7 @@ KnowledgeWorkspaceProfile = Literal["summary", "detail", "full"]
 CONTRACT_VERSION = 2
 SUPPORTED_PROFILES: tuple[str, ...] = ("summary", "detail", "full")
 LEGACY_VERSION_TOKEN = "legacy"
-_WORKSPACE_RESOURCE_TYPE = "knowledge_base"
+_RESOURCE_TYPES = frozenset({"knowledge_base", "architecture", "mockup"})
 _CURSOR_VERSION = 2
 _DETAIL_CURSOR_KIND = "detail"
 
@@ -40,7 +40,7 @@ _DETAIL_CURSOR_KIND = "detail"
 class _ProfilePolicy:
     default_limit: int
     max_limit: int
-    response_budget_bytes: int
+    response_budget_bytes: int | None
     body_budget_bytes: int | None
 
 
@@ -108,6 +108,15 @@ class KnowledgeWorkspaceProjectionError(ValueError):
         }
 
 
+def _resource_type(projection: Mapping[str, Any]) -> str:
+    value = projection.get("resource_type", "knowledge_base")
+    if not isinstance(value, str) or value not in _RESOURCE_TYPES:
+        raise KnowledgeWorkspaceProjectionError(
+            "knowledge_workspace_invalid_resource_type", "Unknown resource type.",
+        )
+    return value
+
+
 def _json_bytes(value: Any) -> int:
     return len(
         json.dumps(
@@ -142,6 +151,7 @@ def _detail_cursor_fingerprint(
         "contract_version": CONTRACT_VERSION,
         "entity_id": str(projection.get("entity_id") or ""),
         "entity_type": str(projection.get("entity_type") or ""),
+        "resource_type": _resource_type(projection),
         "versioned_projection_id": versioned_projection_id,
     }
     raw = json.dumps(
@@ -486,6 +496,10 @@ class KnowledgeWorkspaceProjector:
                     "supported_profiles": list(SUPPORTED_PROFILES),
                 },
             )
+        if _resource_type(projection) != "knowledge_base" and normalized_profile != "summary":
+            # Dedicated architecture/mockup readers already expose complete bodies.
+            # Preserve that contract one resource at a time; KB byte budgets remain.
+            policy = _ProfilePolicy(1, 1, None, None)
         resolved_limit = cls._resolve_limit(
             profile=normalized_profile,
             policy=policy,
@@ -542,6 +556,8 @@ class KnowledgeWorkspaceProjector:
                     "supported_profiles": list(SUPPORTED_PROFILES),
                 },
             )
+        if _resource_type(projection) != "knowledge_base" and normalized_profile != "summary":
+            policy = _ProfilePolicy(1, 1, None, None)
         resolved_limit = cls._resolve_limit(
             profile=normalized_profile,
             policy=policy,
@@ -579,7 +595,7 @@ class KnowledgeWorkspaceProjector:
                 end_offset=index + 1,
             )
             candidate_size = _fixed_response_bytes(candidate)
-            if candidate_size <= policy.response_budget_bytes:
+            if policy.response_budget_bytes is None or candidate_size <= policy.response_budget_bytes:
                 page = proposed
                 continue
 
@@ -600,7 +616,7 @@ class KnowledgeWorkspaceProjector:
                     end_offset=index + 1,
                 )
                 candidate_size = _fixed_response_bytes(candidate)
-                if candidate_size <= policy.response_budget_bytes:
+                if policy.response_budget_bytes is None or candidate_size <= policy.response_budget_bytes:
                     page = proposed
                     continue
 
@@ -624,7 +640,7 @@ class KnowledgeWorkspaceProjector:
             end_offset=offset + len(page),
         )
         response_size = _fixed_response_bytes(response)
-        if response_size > policy.response_budget_bytes:
+        if policy.response_budget_bytes is not None and response_size > policy.response_budget_bytes:
             raise KnowledgeWorkspaceProjectionError(
                 "knowledge_workspace_response_exceeds_budget",
                 "Knowledge Workspace metadata exceeds the profile response budget.",
@@ -764,11 +780,9 @@ class KnowledgeWorkspaceProjector:
                     "knowledge_workspace_lineage_identity_missing",
                     "A ResourceLineage attachment has no resource type.",
                 )
-            # Knowledge Workspace is intentionally a KB-only projection.
-            # Architecture and mockup lineage remain available through their
-            # dedicated experiences and must not consume a workspace cursor,
-            # page slot, response budget, or count.
-            if resource_type != _WORKSPACE_RESOURCE_TYPE:
+            # Each dedicated experience pages one resource kind. Other kinds
+            # must not consume its cursor, response budget, or count.
+            if resource_type != _resource_type(projection):
                 continue
             canonical_id = _optional_text(
                 attachment.get("canonical_unique_resource_id")
@@ -938,7 +952,7 @@ class KnowledgeWorkspaceProjector:
                 1
                 for value in attachments
                 if _optional_text(_mapping(value).get("resource_type"))
-                == _WORKSPACE_RESOURCE_TYPE
+                == _resource_type(projection)
             )
             if isinstance(attachments, Sequence)
             and not isinstance(attachments, (str, bytes))
@@ -947,6 +961,7 @@ class KnowledgeWorkspaceProjector:
         truncated = end_offset < total_count
         return {
             "contract_version": CONTRACT_VERSION,
+            "resource_type": _resource_type(projection),
             "board_id": projection.get("board_id"),
             "entity_type": projection.get("entity_type"),
             "entity_id": projection.get("entity_id"),

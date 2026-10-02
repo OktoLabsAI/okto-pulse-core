@@ -5,6 +5,8 @@ import uuid
 
 import pytest
 
+from okto_pulse.core.domain.architecture_adoption import ArchitectureAdoptionScope
+
 from okto_pulse.core.services import architecture as architecture_module
 from okto_pulse.core.services import resource_gate as resource_gate_module
 from sqlalchemy_test_models import (
@@ -821,6 +823,10 @@ async def test_resource_gate_summary_uses_resolver_payload_not_local_recompute(
         db.add(Board(id=board_id, name="Resource Gate", owner_id=actor_id))
         db.add(
             Spec(
+                architecture_adoption=ArchitectureAdoptionScope(
+                    board_id=board_id, spec_id=spec_id, adopted_in_edition=1,
+                    actor_id=actor_id, inherited_resource_ids=(),
+                ).model_dump(mode="json"),
                 id=spec_id,
                 board_id=board_id,
                 title="Spec without stored resources",
@@ -911,6 +917,10 @@ async def test_resource_gate_clear_na_reveals_missing_state(db_factory):
         db.add(Board(id=board_id, name="Resource Gate", owner_id=actor_id))
         db.add(
             Spec(
+                architecture_adoption=ArchitectureAdoptionScope(
+                    board_id=board_id, spec_id=spec_id, adopted_in_edition=1,
+                    actor_id=actor_id, inherited_resource_ids=(),
+                ).model_dump(mode="json"),
                 id=spec_id,
                 board_id=board_id,
                 title="Spec without KB",
@@ -965,6 +975,10 @@ async def test_resource_gate_validates_spec_resources_are_covered_by_non_cancell
     async with db_factory() as db:
         db.add(Board(id=board_id, name="Resource Gate", owner_id=actor_id))
         spec = Spec(
+                architecture_adoption=ArchitectureAdoptionScope(
+                    board_id=board_id, spec_id=spec_id, adopted_in_edition=1,
+                    actor_id=actor_id, inherited_resource_ids=(),
+                ).model_dump(mode="json"),
             id=spec_id,
             board_id=board_id,
             title="Spec with resources",
@@ -1100,6 +1114,10 @@ async def test_resource_gate_not_applicable_rows_are_not_coverage_obligations(db
         db.add(Board(id=board_id, name="Resource Gate N/A obligations", owner_id=actor_id))
         db.add(
             Spec(
+                architecture_adoption=ArchitectureAdoptionScope(
+                    board_id=board_id, spec_id=spec_id, adopted_in_edition=1,
+                    actor_id=actor_id, inherited_resource_ids=(),
+                ).model_dump(mode="json"),
                 id=spec_id,
                 board_id=board_id,
                 title="Spec with N/A resources only",
@@ -1154,6 +1172,10 @@ async def test_resource_gate_copied_card_kb_source_covers_spec_kb_by_origin(db_f
     async with db_factory() as db:
         db.add(Board(id=board_id, name="Resource Gate KB origin", owner_id=actor_id))
         spec = Spec(
+                architecture_adoption=ArchitectureAdoptionScope(
+                    board_id=board_id, spec_id=spec_id, adopted_in_edition=1,
+                    actor_id=actor_id, inherited_resource_ids=(),
+                ).model_dump(mode="json"),
             id=spec_id,
             board_id=board_id,
             title="Spec with copied KB coverage",
@@ -1241,6 +1263,10 @@ async def test_resource_gate_coverage_delegates_to_resolver_obligations(
         db.add(Board(id=board_id, name="Resource Gate", owner_id=actor_id))
         db.add(
             Spec(
+                architecture_adoption=ArchitectureAdoptionScope(
+                    board_id=board_id, spec_id=spec_id, adopted_in_edition=1,
+                    actor_id=actor_id, inherited_resource_ids=(),
+                ).model_dump(mode="json"),
                 id=spec_id,
                 board_id=board_id,
                 title="Coverage via resolver obligations",
@@ -1464,6 +1490,10 @@ async def test_resource_gate_summary_projects_architecture_findings_matrix(db_fa
         db.add(Board(id=board_id, name="Architecture finding projection", owner_id=actor_id))
         db.add(
             Spec(
+                architecture_adoption=ArchitectureAdoptionScope(
+                    board_id=board_id, spec_id=spec_id, adopted_in_edition=1,
+                    actor_id=actor_id, inherited_resource_ids=(),
+                ).model_dump(mode="json"),
                 id=spec_id,
                 board_id=board_id,
                 title="Projection spec",
@@ -1635,6 +1665,10 @@ async def test_architecture_finding_gate_blocks_all_level1_owner_types_with_same
         )
         db.add(
             Spec(
+                architecture_adoption=ArchitectureAdoptionScope(
+                    board_id=board_id, spec_id=spec_id, adopted_in_edition=1,
+                    actor_id=actor_id, inherited_resource_ids=(),
+                ).model_dump(mode="json"),
                 id=spec_id,
                 board_id=board_id,
                 refinement_id=refinement_id,
@@ -1741,6 +1775,10 @@ async def test_architecture_finding_gate_visible_on_spec_validation_but_blocks_s
     async with db_factory() as db:
         db.add(Board(id=board_id, name="Architecture finding gate", owner_id=actor_id))
         spec = Spec(
+                architecture_adoption=ArchitectureAdoptionScope(
+                    board_id=board_id, spec_id=spec_id, adopted_in_edition=1,
+                    actor_id=actor_id, inherited_resource_ids=(),
+                ).model_dump(mode="json"),
             id=spec_id,
             board_id=board_id,
             title="Spec with active architecture finding",

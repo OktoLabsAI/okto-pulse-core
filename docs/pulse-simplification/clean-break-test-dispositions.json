@@ -1520,6 +1520,18 @@
       "test": "test_spec_context_does_not_read_or_publish_retired_sprints",
       "disposition": "superseded",
       "reason": "Four old-storage profile cases require removed Sprint model/columns. Current task and Spec projections remain tested; incompatible storage rejection is covered by admission suites."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_spec_c_knowledge_workspace_backend.py",
+      "test": "test_omitted_profile_preserves_legacy_rolling_compatibility",
+      "disposition": "superseded",
+      "reason": "Replaced old positive rolling compatibility with current summary contract and real HTTP rejection of legacy before use-case dispatch."
+    },
+    {
+      "path": "okto_labs_pulse_community/frontend/src/components/resources/__tests__/KnowledgeWorkspace.test.tsx",
+      "test": "normalizes the explicit legacy envelope during rolling upgrades",
+      "disposition": "superseded",
+      "reason": "Replaced with rejection of resources-map response; current native pagination/detail/inheritance tests retained."
     }
   ]
 }

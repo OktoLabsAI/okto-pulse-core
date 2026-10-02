@@ -2,6 +2,48 @@
 
 ## Estado para retomada
 
+### 2026-10-01 — REST e frontend: recursos efetivos em contrato único
+
+Marco anterior publicado: Core8057705c / Communitye19da6f3. effective-resources
+agora retorna somente páginas atuais (summary por padrão), com resource_type
+explícito: knowledge_base, architecture ou mockup. Removidos perfil legacy,
+resposta eager alternativa e fallback de use case para doubles/edições antigos.
+O client exige contrato2, identidade e tipo corretos; telas consomem items,
+sem reconstruir resources nem usar conteúdo físico como fallback de servidor.
+
+ArchitectureTab e MockupsTab coletam todas as páginas do tipo escolhido e mantêm
+proveniência e leitura somente dos herdados. Detail/full desses artefatos levam
+um corpo completo por página, preservando a capacidade dos leitores dedicados;
+os limites de bytes e quantidade do Knowledge Workspace KB ficam intactos.
+Seleção para Card/derivação de Spec usa raízes atuais e paginação completa.
+KnowledgeWorkspace perde normalizador antigo, fallbackItems e loadFallbackDetail;
+cursor repetido/escopo trocado são recusados pelo coletor.
+
+Recibos: effective-native-core2.xml:11 aprovados (inclui artefatos acima de256KiB,
+hidratação somente da página e recusa de cursor de outro tipo);
+effective-native-community2.xml:8 aprovados (HTTP default atual; legacy/tipo
+inválido recusados antes do use case); effective-native-front3.xml:140 aprovados
+(arquitetura/mockup herdados, paginação, Knowledge, seleção, revisões, conflitos,
+retries e telas Ideation/Refinement/Spec). TypeScript sem erros.
+effective-native-gates2.xml:29 aprovados; a primeira rodada encontrou dez
+fixtures sem ArchitectureAdoptionScope obrigatório. Fixtures atualizadas para
+escopo explícito nativo; não houve relaxamento de gate nem nova autoridade.
+A suíte de dependências também recebeu realm e adoção explícitos nas fixtures,
+obrigatórios no schema atual; consulta e limites de produção não foram alterados.
+effective-native-lineage3.xml:15 aprovados. Total deste marco:63 backend e140
+frontend aprovados; Ruff e diff-check aprovados.
+
+SPA buildada:1b7f2a98fc27ecddd2b04c482d496197799ce2d2d670e879edc122b3a98e87ea.
+dist-effective-native1 instalado; provenance-effective-native1.json prova
+Core851/914 e Community318/404 Python/payload byte-idênticos antes dos testes.
+closure-effective-native1.json exit0, oito budgets ZERO; READMEs gerados/validados
+pelo renderer oficial. Nenhum processo de usuário ou base existente alterado.
+
+Este incremento não encerra C1–C4. Ainda pendem identidade @legacy/grandfathered,
+parsers/aliases restantes, documentação de produto e auditoria global C4 com bump
+coordenado0.4.0. Histórico deste ledger mantém os fatos anteriores, sem prometer
+compatibilidade do produto. Decisões T23/KG-10 continuam conforme seção própria.
+
 ### 2026-10-01 — Knowledge Workspace: cursor único tipado
 
 Marco MCP publicado: Corea460203f / Communitye19da6f3. Retirado suporte ao
