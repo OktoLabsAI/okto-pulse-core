@@ -36,12 +36,7 @@ from okto_pulse.core.domain.quality_canonicalization import (
     semantic_content_digest_v1,
 )
 from okto_pulse.core.infra.database import get_db, get_session_factory
-from okto_pulse.core.ports.requirement_lint import (
-    register_requirement_lint_writer_hook,
-)
-from okto_pulse.core.services.requirement_lint_writer import (
-    spec_requirement_lint_payload,
-)
+from semantic_spec_testing import semantic_spec_payload
 from sqlalchemy_test_models import Board, Card, Spec, SpecStatus
 
 USER = "r01a-fu3c-s2-user"
@@ -412,17 +407,9 @@ async def test_unlink_task_from_scenario_200_bidirectional(client) -> None:
     before_version = before.version
     before_content_digest = semantic_content_digest_v1(
         "spec",
-        spec_requirement_lint_payload(before),
+        semantic_spec_payload(before),
     )
 
-    class _ForbiddenRequirementLintHook:
-        async def stage_requirement_lint(self, context, command):
-            del context, command
-            raise AssertionError(
-                "traceability-only unlink must not stage a requirement-lint receipt"
-            )
-
-    register_requirement_lint_writer_hook(_ForbiddenRequirementLintHook())
     resp = client.post(f"{PREFIX}/specs/{sid}/scenarios/sc1/unlink-task/{cid}")
     assert resp.status_code == 200, resp.text
     assert resp.json() == {
@@ -437,7 +424,7 @@ async def test_unlink_task_from_scenario_200_bidirectional(client) -> None:
     assert spec.version == before_version
     assert semantic_content_digest_v1(
         "spec",
-        spec_requirement_lint_payload(spec),
+        semantic_spec_payload(spec),
     ) == before_content_digest
     card = await _get_card(cid)
     assert "sc1" not in (card.test_scenario_ids or [])

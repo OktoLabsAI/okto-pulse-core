@@ -1440,6 +1440,42 @@
     {
       "path": "okto_labs_pulse_core/tests/test_impl4_fr4_fr5.py::test_ac6_untouched_spec_retains_index_refs_in_db",
       "reason": "Old compatibility-only guarantee superseded by exact-ID coverage and no-write refusal in test_requirement_reference_contract, test_spec_structured_entities and retained native-ID tests."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_requirement_lint_writer.py",
+      "test": "test_stage_invokes_the_hook_once_and_preserves_writer_identity",
+      "disposition": "superseded",
+      "reason": "Retired unused compatibility callback and payload converter. Native command validation, assessment calculation, transaction effects and no automatic receipts remain covered."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_requirement_lint_writer.py",
+      "test": "test_hook_failure_is_normalized_to_the_single_writer_error",
+      "disposition": "superseded",
+      "reason": "Retired unused compatibility callback and payload converter. Native command validation, assessment calculation, transaction effects and no automatic receipts remain covered."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_requirement_lint_writer.py",
+      "test": "test_invalid_hook_result_is_fail_closed_and_normalized",
+      "disposition": "superseded",
+      "reason": "Retired unused compatibility callback and payload converter. Native command validation, assessment calculation, transaction effects and no automatic receipts remain covered."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_requirement_lint_writer.py",
+      "test": "test_payload_is_a_defensive_snapshot_of_nested_semantic_state",
+      "disposition": "superseded",
+      "reason": "Retired unused compatibility callback and payload converter. Native command validation, assessment calculation, transaction effects and no automatic receipts remain covered."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_requirement_lint_writer.py",
+      "test": "test_payload_canonicalizes_legacy_requirements_without_mutating_source",
+      "disposition": "superseded",
+      "reason": "Retired unused compatibility callback and payload converter. Native command validation, assessment calculation, transaction effects and no automatic receipts remain covered."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_requirement_lint_writer_matrix.py",
+      "test": "test_legacy_hook_stage_faults_do_not_participate_in_mutation_uow",
+      "disposition": "superseded",
+      "reason": "Four callback fault variants exercised only the retired compatibility hook; native commit failure rollback and explicit assessment atomicity remain covered."
     }
   ]
 }

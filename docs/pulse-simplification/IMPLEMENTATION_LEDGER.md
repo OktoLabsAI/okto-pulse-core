@@ -2,6 +2,33 @@
 
 ## Estado para retomada
 
+### 2026-10-01 — Hook de compatibilidade de Requirement Lint retirado
+
+Removido services/requirement_lint_writer.py, registro dinâmico da callback,
+RequirementLintExecutionFailed e canal LEGACY_MATERIALIZER. Não havia consumidor
+de produto: o módulo se declarava exclusivamente de compatibilidade. Preservados
+comandos/resultados tipados, cálculo explícito de assessment e persistência atual.
+Testes mistos mantêm autoria/derivação/CRUD/rollback e agora verificam zero recibos
+automáticos persistidos, em vez de registrarem uma callback obsoleta.
+
+Encontrado gap concreto na validação de recuperação: CARD_CONTENT_COLUMNS ainda
+exigia cards.knowledge_bases, já retirado do schema. Removida essa coluna do manifesto;
+fontes cognitivas atuais continuam no seu leitor/contrato próprios. Corrigida também
+a codificação da mensagem REST de Card inexistente (três operações).
+
+Fixtures de qualidade Community usam inicializador oficial, realm local e contratos
+atuais explícitos de Spec, sem defaults de produto ou conversão. dist-lint-hook3
+instalado e provenance-lint-hook3.json prova Core851/914 e Community318/404 arquivos
+Python/payload byte-idênticos. Core lint-hook-core1:78 passaram, uma falha de mensagem
+REST corrigida e suíte inteira lint-hook-links2:31 passou (79 distintos no agregado).
+Community3:16 passaram; duas falhas reproduziram a coluna retirada do manifesto.
+Validação final: hashes1:2 passaram; Community4:25 passaram, e os dois casos
+de hash restantes passaram em stale5 após substituir a tentativa inválida de
+reescrever recibo imutável por prova do hash sem head atual e recusa da mutação.
+Total distinto: Core81 e Community27. Closure3 exit0, findings vazios e oito
+budgets ZERO; READMEs atualizados/validados pelo renderer oficial. Ruff/diff verdes.
+Sem alteração de frontend neste marco. C1–C4 continuam abertos.
+
 ### 2026-10-01 — Referências FR/TR/AC: IDs atuais, sem poda automática
 
 Retirada a resolução de referências por posição, texto e prefixo nos resolvers

@@ -752,12 +752,11 @@ async def test_ac23_rejects_missing_or_additional_done_proof(
     assert raised.value.code == "spec_refinement_snapshot_required"
 
 
-def test_production_sources_do_not_call_the_compatibility_lint_writer() -> None:
+def test_retired_lint_writer_is_absent_from_product() -> None:
     root = Path(__file__).parents[1] / "src" / "okto_pulse" / "core"
+    assert not (root / "services/requirement_lint_writer.py").exists()
     callers = []
     for path in root.rglob("*.py"):
-        if path.name == "requirement_lint_writer.py":
-            continue
         if "stage_spec_requirement_lint" in path.read_text(encoding="utf-8"):
             callers.append(path.relative_to(root).as_posix())
     assert callers == []

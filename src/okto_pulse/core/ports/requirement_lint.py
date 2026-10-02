@@ -1,23 +1,12 @@
-"""Transaction-bound writer hook for SK-A automatic requirement lint.
-
-Semantic Spec writers call this port after staging the post-mutation Spec,
-history and events, but before the caller commits its unit of work. Concrete
-editions must persist the advisory receipt/head/findings through the *same*
-transaction context and must never commit internally.
-"""
+"""Edition-neutral commands and results for explicit requirement-lint assessments."""
 
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Protocol, runtime_checkable
+from typing import Any
 
-from okto_pulse.core.runtime_context import (
-    register_runtime_value,
-    require_runtime_value,
-    reset_runtime_values,
-)
 from okto_pulse.core.services.spec_entity_canonicalization import (
     SPEC_REQUIREMENT_FIELDS,
     spec_child_id,
@@ -32,7 +21,6 @@ class RequirementLintWriter(str, Enum):
     STRUCTURED_CRUD = "structured_crud"
     SCENARIO_BODY_UPDATE = "scenario_body_update"
     SCENARIO_DELETE = "scenario_delete"
-    LEGACY_MATERIALIZER = "legacy_materializer"
     SEED = "seed"
 
 
@@ -44,23 +32,9 @@ class RequirementLintWriterContractError(ValueError):
         super().__init__(message or code)
 
 
-class RequirementLintExecutionFailed(RuntimeError):
-    """Canonical fail-closed error propagated by every governed writer."""
-
-    code = "requirement_lint_execution_failed"
-
-    def __init__(self, *, stage: str, detail: str | None = None) -> None:
-        self.stage = stage
-        self.detail = detail
-        message = f"{self.code}: stage={stage}"
-        if detail:
-            message += f"; {detail}"
-        super().__init__(message)
-
-
 @dataclass(frozen=True, slots=True)
 class RequirementLintWriteCommand:
-    """Complete post-mutation input passed to the transaction-bound hook."""
+    """Complete semantic input for an explicitly prepared lint assessment."""
 
     board_id: str
     spec_id: str
@@ -211,43 +185,9 @@ class RequirementLintWriteResult:
             )
 
 
-@runtime_checkable
-class RequirementLintWriterHook(Protocol):
-    """Stage exactly one automatic lint aggregate without committing."""
-
-    async def stage_requirement_lint(
-        self,
-        context: object,
-        command: RequirementLintWriteCommand,
-    ) -> RequirementLintWriteResult: ...
-
-
-_RUNTIME_KEY = "ports.requirement_lint.writer_hook"
-
-
-def register_requirement_lint_writer_hook(hook: RequirementLintWriterHook) -> None:
-    register_runtime_value(_RUNTIME_KEY, hook)
-
-
-def get_requirement_lint_writer_hook() -> RequirementLintWriterHook:
-    return require_runtime_value(
-        _RUNTIME_KEY,
-        "requirement_lint_writer_hook_not_configured",
-    )
-
-
-def reset_requirement_lint_writer_hook_for_tests() -> None:
-    reset_runtime_values(_RUNTIME_KEY)
-
-
 __all__ = [
-    "RequirementLintExecutionFailed",
     "RequirementLintWriteCommand",
     "RequirementLintWriteResult",
     "RequirementLintWriter",
     "RequirementLintWriterContractError",
-    "RequirementLintWriterHook",
-    "get_requirement_lint_writer_hook",
-    "register_requirement_lint_writer_hook",
-    "reset_requirement_lint_writer_hook_for_tests",
 ]

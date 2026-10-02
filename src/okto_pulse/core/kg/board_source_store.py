@@ -143,7 +143,6 @@ CARD_CONTENT_COLUMNS: tuple[str, ...] = (
     "test_scenario_ids",
     "conclusions",
     "screen_mockups",
-    "knowledge_bases",
     "validations",
     "origin_task_id",
     "severity",

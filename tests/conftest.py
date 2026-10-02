@@ -2194,30 +2194,6 @@ def _structured_spec_test_store():
     reset_structured_spec_store_for_tests()
 
 
-@pytest.fixture(autouse=True)
-def _requirement_lint_writer_hook():
-    from okto_pulse.core.ports.requirement_lint import (
-        RequirementLintWriteResult,
-        register_requirement_lint_writer_hook,
-        reset_requirement_lint_writer_hook_for_tests,
-    )
-
-    class _ContractTestRequirementLintHook:
-        async def stage_requirement_lint(self, context, command):  # noqa: ANN001
-            del context
-            return RequirementLintWriteResult(
-                receipt_id=(
-                    f"qar_test_{command.spec_id}_{command.spec_version}_"
-                    f"{command.writer.value}"
-                ),
-                head_revision=command.spec_version,
-                evaluated_rule_count=1,
-                finding_count=0,
-            )
-
-    register_requirement_lint_writer_hook(_ContractTestRequirementLintHook())
-    yield
-    reset_requirement_lint_writer_hook_for_tests()
 
 
 @pytest.fixture(autouse=True)

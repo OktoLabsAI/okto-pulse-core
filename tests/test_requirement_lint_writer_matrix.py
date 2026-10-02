@@ -1,4 +1,4 @@
-"""Explicit lint compatibility contracts and mutation-decoupling matrix."""
+"""Explicit assessment contracts and independent native mutation transactions."""
 
 from __future__ import annotations
 
@@ -18,11 +18,8 @@ from okto_pulse.core.domain.quality_assessment import AssessmentOrigin
 from okto_pulse.core.infra.permissions import get_builtin_presets, resolve_permissions
 from okto_pulse.core.models.schemas import SpecCreate, SpecUpdate
 from okto_pulse.core.ports.requirement_lint import (
-    RequirementLintExecutionFailed,
     RequirementLintWriteCommand,
-    RequirementLintWriteResult,
     RequirementLintWriter,
-    register_requirement_lint_writer_hook,
 )
 from okto_pulse.core.services.main import (
     IdeationService,
@@ -48,6 +45,7 @@ from sqlalchemy_test_models import (
     Refinement,
     Spec,
     SpecHistory,
+    QualityAssessmentReceiptFixture,
 )
 
 ACTOR_ID = "ska-writer-matrix-agent"
@@ -112,8 +110,8 @@ def _command(writer: RequirementLintWriter) -> RequirementLintWriteCommand:
     )
 
 
-def test_explicit_compatibility_channels_build_an_equivalent_semantic_snapshot() -> None:
-    """The dormant compatibility builder remains deterministic when called directly."""
+def test_explicit_assessment_channels_build_an_equivalent_semantic_snapshot() -> None:
+    """Explicit assessment channels use the same semantic calculation."""
     bundles = {}
     for writer in RequirementLintWriter:
         command = _command(writer)
@@ -157,35 +155,13 @@ def test_explicit_compatibility_channels_build_an_equivalent_semantic_snapshot()
         for bundle in bundles.values()
     )
     # Authority remains channel-bound even though semantic calculation is
-    # byte-equivalent. This explicitly covers the Core-permitted
-    # legacy-materializer and seed channels as well.
+    # byte-equivalent across the supported current channels.
     assert len(
         {
             bundle.expected_authority_digest
             for bundle in bundles.values()
         }
     ) == len(RequirementLintWriter)
-
-
-class _RecordingHook:
-    def __init__(self, failure: BaseException | None = None) -> None:
-        self.failure = failure
-        self.calls: list[tuple[object, RequirementLintWriteCommand]] = []
-
-    async def stage_requirement_lint(
-        self,
-        context: object,
-        command: RequirementLintWriteCommand,
-    ) -> RequirementLintWriteResult:
-        self.calls.append((context, command))
-        if self.failure is not None:
-            raise self.failure
-        return RequirementLintWriteResult(
-            receipt_id=f"qar_{command.spec_id}_{command.spec_version}",
-            head_revision=command.spec_version,
-            evaluated_rule_count=8,
-            finding_count=0,
-        )
 
 
 async def _seed_board(db_factory, *, suffix: str) -> str:
@@ -200,15 +176,17 @@ async def _seed_board(db_factory, *, suffix: str) -> str:
             )
         )
         await db.commit()
+        assert await db.scalar(
+            select(func.count()).select_from(QualityAssessmentReceiptFixture)
+            .where(QualityAssessmentReceiptFixture.board_id == board_id)
+        ) == 0
     return board_id
 
 
-async def test_bulk_create_and_update_never_execute_legacy_lint_hook(
+async def test_bulk_create_and_update_remain_independent_of_automatic_lint(
     db_factory,
 ) -> None:
     board_id = await _seed_board(db_factory, suffix="bulk")
-    hook = _RecordingHook(failure=AssertionError("legacy hook must stay detached"))
-    register_requirement_lint_writer_hook(hook)
 
     async with db_factory() as db:
         service = SpecService(db)
@@ -218,30 +196,36 @@ async def test_bulk_create_and_update_never_execute_legacy_lint_hook(
             SpecCreate(
                 title="Bulk create",
                 delivery_context="brownfield",
-                functional_requirements=["FR bulk"],
-                technical_requirements=["TR bulk"],
-                acceptance_criteria=["AC bulk"],
+                functional_requirements=[{"text": "FR bulk"}],
+                technical_requirements=[{"text": "TR bulk"}],
+                acceptance_criteria=[{"text": "AC bulk"}],
             ),
         )
         assert created is not None
-        assert hook.calls == []
         await db.commit()
+        assert await db.scalar(
+            select(func.count()).select_from(QualityAssessmentReceiptFixture)
+            .where(QualityAssessmentReceiptFixture.board_id == board_id)
+        ) == 0
 
         updated = await service.update_spec(
             created.id,
             ACTOR_ID,
             SpecUpdate(
                 title="Bulk update",
-                technical_requirements=["TR bulk updated"],
+                technical_requirements=[{"text": "TR bulk updated"}],
             ),
         )
         assert updated is not None
         assert updated.title == "Bulk update"
-        assert hook.calls == []
         await db.commit()
+        assert await db.scalar(
+            select(func.count()).select_from(QualityAssessmentReceiptFixture)
+            .where(QualityAssessmentReceiptFixture.board_id == board_id)
+        ) == 0
 
 
-async def test_ideation_and_refinement_derivation_never_execute_legacy_lint_hook(
+async def test_ideation_and_refinement_derivation_remain_independent_of_automatic_lint(
     db_factory,
 ) -> None:
     board_id = await _seed_board(db_factory, suffix="derivation")
@@ -277,11 +261,13 @@ async def test_ideation_and_refinement_derivation_never_execute_legacy_lint_hook
         await db.flush()
         await freeze_refinement_completion_fixture(db, refinement)
         await db.commit()
+        assert await db.scalar(
+            select(func.count()).select_from(QualityAssessmentReceiptFixture)
+            .where(QualityAssessmentReceiptFixture.board_id == board_id)
+        ) == 0
         direct_id = ideation_direct.id
         refinement_id = refinement.id
 
-    hook = _RecordingHook(failure=AssertionError("legacy hook must stay detached"))
-    register_requirement_lint_writer_hook(hook)
     async with db_factory() as db:
         direct_spec = await IdeationService(db).derive_spec(
             direct_id,
@@ -290,8 +276,11 @@ async def test_ideation_and_refinement_derivation_never_execute_legacy_lint_hook
             delivery_context="brownfield",
         )
         assert direct_spec is not None
-        assert hook.calls == []
         await db.commit()
+        assert await db.scalar(
+            select(func.count()).select_from(QualityAssessmentReceiptFixture)
+            .where(QualityAssessmentReceiptFixture.board_id == board_id)
+        ) == 0
 
     async with db_factory() as db:
         refined_spec = await RefinementService(db).derive_spec(
@@ -300,8 +289,11 @@ async def test_ideation_and_refinement_derivation_never_execute_legacy_lint_hook
             skip_ownership_check=True,
         )
         assert refined_spec is not None
-        assert hook.calls == []
         await db.commit()
+        assert await db.scalar(
+            select(func.count()).select_from(QualityAssessmentReceiptFixture)
+            .where(QualityAssessmentReceiptFixture.board_id == board_id)
+        ) == 0
 
 
 def _spec_writer_permissions():
@@ -311,10 +303,8 @@ def _spec_writer_permissions():
     return resolve_permissions(None, preset["flags"], None)
 
 
-async def test_structured_crud_never_executes_legacy_lint_hook(db_factory) -> None:
+async def test_structured_crud_remains_independent_of_automatic_lint(db_factory) -> None:
     board_id = await _seed_board(db_factory, suffix="structured")
-    hook = _RecordingHook(failure=AssertionError("legacy hook must stay detached"))
-    register_requirement_lint_writer_hook(hook)
     async with db_factory() as db:
         spec = await SpecService(db).create_spec(
             board_id,
@@ -326,6 +316,10 @@ async def test_structured_crud_never_executes_legacy_lint_hook(db_factory) -> No
         )
         assert spec is not None
         await db.commit()
+        assert await db.scalar(
+            select(func.count()).select_from(QualityAssessmentReceiptFixture)
+            .where(QualityAssessmentReceiptFixture.board_id == board_id)
+        ) == 0
 
         result = await StructuredSpecEntityService(db).mutate(
             StructuredSpecEntityCommand(
@@ -349,16 +343,17 @@ async def test_structured_crud_never_executes_legacy_lint_hook(db_factory) -> No
             requirement.get("id") == "tr_writer_matrix"
             for requirement in persisted.technical_requirements
         )
-        assert hook.calls == []
         await db.commit()
+        assert await db.scalar(
+            select(func.count()).select_from(QualityAssessmentReceiptFixture)
+            .where(QualityAssessmentReceiptFixture.board_id == board_id)
+        ) == 0
 
 
-async def test_scenario_body_update_and_delete_never_execute_legacy_lint_hook(
+async def test_scenario_body_update_and_delete_remain_independent_of_automatic_lint(
     db_factory,
 ) -> None:
     board_id = await _seed_board(db_factory, suffix="scenario")
-    hook = _RecordingHook(failure=AssertionError("legacy hook must stay detached"))
-    register_requirement_lint_writer_hook(hook)
     async with db_factory() as db:
         service = SpecService(db)
         spec = await service.create_spec(
@@ -381,6 +376,10 @@ async def test_scenario_body_update_and_delete_never_execute_legacy_lint_hook(
         )
         assert spec is not None
         await db.commit()
+        assert await db.scalar(
+            select(func.count()).select_from(QualityAssessmentReceiptFixture)
+            .where(QualityAssessmentReceiptFixture.board_id == board_id)
+        ) == 0
 
         await service.update_test_scenario(
             spec.id,
@@ -391,8 +390,11 @@ async def test_scenario_body_update_and_delete_never_execute_legacy_lint_hook(
         updated = await service.get_spec(spec.id)
         assert updated is not None
         assert updated.test_scenarios[0]["given"] == "an updated draft spec"
-        assert hook.calls == []
         await db.commit()
+        assert await db.scalar(
+            select(func.count()).select_from(QualityAssessmentReceiptFixture)
+            .where(QualityAssessmentReceiptFixture.board_id == board_id)
+        ) == 0
 
         await service.delete_test_scenario(
             spec.id,
@@ -402,8 +404,11 @@ async def test_scenario_body_update_and_delete_never_execute_legacy_lint_hook(
         deleted = await service.get_spec(spec.id)
         assert deleted is not None
         assert deleted.test_scenarios == []
-        assert hook.calls == []
         await db.commit()
+        assert await db.scalar(
+            select(func.count()).select_from(QualityAssessmentReceiptFixture)
+            .where(QualityAssessmentReceiptFixture.board_id == board_id)
+        ) == 0
 
 
 async def _assert_no_spec_side_effects(
@@ -444,49 +449,10 @@ async def _assert_no_spec_side_effects(
         )
 
 
-@pytest.mark.parametrize(
-    "failure_stage",
-    ("analyzer", "persistence", "head_cas", "outbox"),
-)
-async def test_legacy_hook_stage_faults_do_not_participate_in_mutation_uow(
-    db_factory,
-    failure_stage: str,
-) -> None:
-    board_id = await _seed_board(db_factory, suffix=f"fault-{failure_stage}")
-    failure = RequirementLintExecutionFailed(
-        stage=failure_stage,
-        detail="fault_injected",
-    )
-    hook = _RecordingHook(failure=failure)
-    register_requirement_lint_writer_hook(hook)
-
-    async with db_factory() as db:
-        spec = await SpecService(db).create_spec(
-            board_id,
-            ACTOR_ID,
-            SpecCreate(
-                title=f"External lint {failure_stage}",
-                delivery_context="brownfield",
-                functional_requirements=["The entity mutation must survive."],
-            ),
-        )
-        assert spec is not None
-        spec_id = spec.id
-        assert hook.calls == []
-        await db.commit()
-
-    async with db_factory() as db:
-        persisted = await db.get(Spec, spec_id)
-        assert persisted is not None
-        assert persisted.title == f"External lint {failure_stage}"
-
-
-async def test_outer_commit_fault_rolls_back_without_executing_legacy_lint_hook(
+async def test_outer_commit_fault_rolls_back_native_writer_effects(
     db_factory,
 ) -> None:
     board_id = await _seed_board(db_factory, suffix="fault-commit")
-    hook = _RecordingHook()
-    register_requirement_lint_writer_hook(hook)
 
     class CommitFailure(RuntimeError):
         pass
@@ -498,12 +464,11 @@ async def test_outer_commit_fault_rolls_back_without_executing_legacy_lint_hook(
             SpecCreate(
                 title="Commit must fail",
                 delivery_context="brownfield",
-                functional_requirements=["No partial commit."],
+                functional_requirements=[{"text": "No partial commit."}],
             ),
         )
         assert spec is not None
         spec_id = spec.id
-        assert hook.calls == []
 
         def _fail_commit(_session) -> None:
             raise CommitFailure("fault_injected")
@@ -516,7 +481,6 @@ async def test_outer_commit_fault_rolls_back_without_executing_legacy_lint_hook(
             event.remove(db.sync_session, "before_commit", _fail_commit)
             await db.rollback()
 
-    assert hook.calls == []
     await _assert_no_spec_side_effects(
         db_factory,
         board_id,
