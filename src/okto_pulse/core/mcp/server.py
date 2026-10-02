@@ -1971,23 +1971,12 @@ def _mcp_spec_coverage_summary(spec: Any) -> dict[str, Any]:
     }
 
 
-def _legacy_coverage_default() -> bool:
-    return bool(getattr(get_settings(), "mcp_legacy_coverage", False))
-
-
-def _saturation_or_coverage(coverage_dict: dict[str, Any]) -> dict[str, Any]:
-    """Pack the minimal saturation envelope (Ideação token-optimization Story 1).
-
-    Returns {"saturation": {"pct", "blocking"}} by default — ~60 bytes vs ~1.5KB
-    of the full coverage block. When OKTO_PULSE_LEGACY_COVERAGE=1, also
-    includes the verbose "coverage" block for backwards compatibility.
-    """
+def _saturation_response(coverage_dict: dict[str, Any]) -> dict[str, Any]:
+    """Expose the current saturation contract for mutation responses."""
     from okto_pulse.core.services.analytics_service import spec_saturation_envelope
 
-    out: dict[str, Any] = {"saturation": spec_saturation_envelope(coverage_dict)}
-    if _legacy_coverage_default():
-        out["coverage"] = coverage_dict
-    return out
+    return {"saturation": spec_saturation_envelope(coverage_dict)}
+
 
 
 def _parse_json_arg(value: Any, default: Any) -> tuple[Any, str | None]:
@@ -11488,7 +11477,7 @@ async def okto_pulse_add_test_scenario(
         {
             "success": True,
             "scenario": _r.scenario,
-            **_saturation_or_coverage(_r.coverage),
+            **_saturation_response(_r.coverage),
         },
         default=str,
     )
@@ -12171,7 +12160,7 @@ async def _link_task_to_scenario_internal(
             "success": True,
             "scenario_id": result.scenario_id,
             "card_id": result.card_id,
-            **_saturation_or_coverage(result.coverage),
+            **_saturation_response(result.coverage),
         }
     )
 
@@ -12227,7 +12216,7 @@ async def _link_task_to_rule_internal(
             "card_id": card_id,
             "link_changed": bool(result.link.changed),
             "idempotent": result.link.idempotent,
-            **_saturation_or_coverage(cov),
+            **_saturation_response(cov),
         }
     )
 
@@ -12291,7 +12280,7 @@ async def _link_task_to_fr_internal(
                 "Direct FR task link persisted. The FR coverage gate is still "
                 "computed from business_rules[].linked_requirements."
             ),
-            **_saturation_or_coverage(cov),
+            **_saturation_response(cov),
         }
     )
 
@@ -12383,7 +12372,7 @@ async def _link_task_to_contract_internal(
                 "success": True,
                 "contract_id": contract_id,
                 "card_id": card_id,
-                **_saturation_or_coverage(cov),
+                **_saturation_response(cov),
             }
         )
 
@@ -12482,7 +12471,7 @@ async def _link_task_to_tr_internal(
                 "card_id": card_id,
                 "traceability_only": traceability_only,
                 "link_changed": link_changed,
-                **_saturation_or_coverage(cov),
+                **_saturation_response(cov),
             }
         )
 
@@ -14323,7 +14312,7 @@ async def okto_pulse_add_business_rule(
     # MCP-FU6 strangler (spec sub-entity, Codex-corrected): the fetch + fail-closed FR
     # token resolution + JSON-list build/persist live in McpAddBusinessRuleUseCase
     # (domain). The adapter keeps ONLY parse/coercion, the unresolved-token message
-    # (via the api-layer _structured_ref_id) and the _saturation_or_coverage envelope.
+    # (via the api-layer _structured_ref_id) and the _saturation_response envelope.
     actor = MCPAdapterContract.actor(ctx, board_id=board_id)
     try:
         async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
@@ -14370,7 +14359,7 @@ async def okto_pulse_add_business_rule(
         {
             "success": True,
             "business_rule": _r.business_rule,
-            **_saturation_or_coverage(_r.coverage),
+            **_saturation_response(_r.coverage),
         },
         default=str,
     )
@@ -14472,7 +14461,7 @@ async def okto_pulse_update_business_rule(
             "success": True,
             "business_rule": _r.business_rule,
             "deprecation_warning": _STRUCTURED_SPEC_ENTITY_LEGACY_WARNING,
-            **_saturation_or_coverage(_r.coverage),
+            **_saturation_response(_r.coverage),
         },
         default=str,
     )
@@ -14683,7 +14672,7 @@ async def okto_pulse_add_integration_requirement(
         {
             "success": True,
             "integration_requirement": _r.requirement,
-            **_saturation_or_coverage(_r.coverage),
+            **_saturation_response(_r.coverage),
         },
         default=str,
     )
@@ -14758,7 +14747,7 @@ async def _link_task_to_integration_requirement_internal(
                 "requirement_id": requirement_id,
                 "card_id": card_id,
                 "linked_tasks": task_ids,
-                **_saturation_or_coverage(coverage),
+                **_saturation_response(coverage),
             },
             default=str,
         )
@@ -14920,7 +14909,7 @@ async def okto_pulse_add_observability_requirement(
         {
             "success": True,
             "observability_requirement": _r.requirement,
-            **_saturation_or_coverage(_r.coverage),
+            **_saturation_response(_r.coverage),
         },
         default=str,
     )
@@ -14995,7 +14984,7 @@ async def _link_task_to_observability_requirement_internal(
                 "requirement_id": requirement_id,
                 "card_id": card_id,
                 "linked_tasks": task_ids,
-                **_saturation_or_coverage(coverage),
+                **_saturation_response(coverage),
             },
             default=str,
         )
@@ -15402,7 +15391,7 @@ async def _link_task_to_decision_internal(
                 "linked_tasks": task_ids,
                 "traceability_only": traceability_only,
                 "link_changed": link_changed,
-                **_saturation_or_coverage(cov),
+                **_saturation_response(cov),
             }
         )
 
@@ -15700,7 +15689,7 @@ async def okto_pulse_add_api_contract(
         {
             "success": True,
             "api_contract": _project_api_contract(_r.contract),
-            **_saturation_or_coverage(_r.coverage),
+            **_saturation_response(_r.coverage),
         },
         default=str,
     )
@@ -16008,7 +15997,7 @@ async def _remove_spec_entity_impl(
             "success": True,
             "removed": entity_id,
             "remaining": _r.remaining,
-            **_saturation_or_coverage(_r.coverage),
+            **_saturation_response(_r.coverage),
         }
     )
 

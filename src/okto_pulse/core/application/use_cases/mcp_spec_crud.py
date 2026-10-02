@@ -420,7 +420,7 @@ class McpGetSpecContextUseCase:
 # Pattern: the use case fetches the spec, applies the not-found/board-scope domain
 # check, resolves tokens via the CORE resolvers (analytics_service), builds the new
 # JSON list and persists via SpecService.update_spec. The adapter keeps only parse/
-# coercion (parse_multi_value), the MCP envelopes, _saturation_or_coverage / the
+# coercion (parse_multi_value), the MCP envelopes, _saturation_response / the
 # unresolved-token message text (server helpers), and telemetry. Unresolved tokens
 # are returned in the result (no persist) so the adapter renders the exact string.
 
@@ -461,7 +461,7 @@ class McpAddBusinessRuleCommand:
 class McpAddBusinessRuleResult:
     """``unresolved_tokens`` set (with ``frs`` for the adapter's available-id list) →
     fail-closed, NOT persisted. Otherwise ``business_rule`` + ``coverage`` (core
-    ``_spec_coverage``) for the adapter to wrap with ``_saturation_or_coverage``."""
+    ``_spec_coverage``) for the adapter to wrap with ``_saturation_response``."""
 
     __slots__ = ("business_rule", "coverage", "unresolved_tokens", "frs")
 

@@ -2,6 +2,27 @@
 
 ## Estado para retomada
 
+### 2026-10-01 — MCP: resposta de saturação sem seletor de compatibilidade
+
+Retirados mcp_legacy_coverage, mcp_legacy_offset e o ramo que devolvia coverage
+por OKTO_PULSE_LEGACY_COVERAGE. Offset já não tinha consumidor. Writers e links
+usam _saturation_response, com o mesmo cálculo atual de percentual/bloqueios.
+Sem alteração de autorização, persistência ou componente frontend.
+
+dist-mcp-saturation1 instalado; provenance-mcp-saturation1.json comprova Core851/914
+e Community318/404 Python/payload byte-idênticos. mcp-saturation1.xml:72 testes
+Core aprovados (dispatcher, saturação, cobertura e catálogo gerado); inclui recusa
+de ativação do formato antigo por variável de ambiente. mcp-saturation-config1.xml:
+2 testes Community aprovados. closure-mcp-saturation1.json exit0, findings vazios,
+oito budgets ZERO; READMEs oficiais regenerados/validados. Ruff e diff-check verdes.
+
+Marco anterior publicado: Core b0c377c0 / Community 3c2f8726. C1–C4 continuam abertos.
+Próxima remoção coordenada de C3: perfil legacy nos projetores e transporte MCP,
+incluindo outcome, copy/context/KG, consumidores, documentação e fixtures mistas.
+Inspeção confirmou caminhos próprios de preservação do formato antigo; ainda não
+alterados neste marco. Preservar perfis atuais summary/detail/full e semântica de
+erro/negação, evitando tratar falha como sucesso. Sem nova frente de produto.
+
 ### 2026-10-01 — Editores de requisitos: retirada dos consumidores de posição/texto
 
 RulesTab, DecisionsTab, IntegrationRequirementsTab e ObservabilityRequirementsTab

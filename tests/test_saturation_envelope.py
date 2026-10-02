@@ -7,6 +7,8 @@ skip-flagged, empty).
 
 from __future__ import annotations
 
+import pytest
+
 from okto_pulse.core.services.analytics_service import spec_saturation_envelope
 
 
@@ -94,3 +96,14 @@ def test_pct_rounded_to_one_decimal():
     )
     assert env["pct"] == round(env["pct"], 1)
     assert isinstance(env["pct"], float)
+
+
+@pytest.mark.parametrize("old_switch", ["0", "1"])
+def test_mcp_mutation_contract_is_independent_of_retired_switch(monkeypatch, old_switch):
+    from okto_pulse.core.mcp import server
+
+    monkeypatch.setenv("OKTO_PULSE_LEGACY_COVERAGE", old_switch)
+    result = server._saturation_response(_coverage(ac_coverage_pct=0.0))
+    assert set(result) == {"saturation"}
+    assert result["saturation"]["pct"] < 100
+    assert result["saturation"]["blocking"] == ["acceptance_criteria"]
