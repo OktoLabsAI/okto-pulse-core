@@ -56,17 +56,10 @@ Args:
 Returns:
     JSON array of API contracts with resolved linked rules and requirements
 
-## `okto_pulse_remove_api_contract`
+## `okto_pulse_remove_spec_entity` (`target_type="api_contract"`)
 
-Remove an API contract from a spec.
-
-Args:
-    board_id: Board ID
-    spec_id: Spec ID
-    contract_id: API contract ID to remove
-
-Returns:
-    JSON confirmation
+Use `okto_pulse_remove_spec_entity` with `target_type="api_contract"` and `entity_id` naming the target.
+See `okto-pulse://reference/tool-families/spec_entity_remove` for parameters, authorization and results.
 
 ## `okto_pulse_update_api_contract`
 

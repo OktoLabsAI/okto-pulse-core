@@ -41,7 +41,7 @@ async def test_removed_names_have_no_handler_registry_policy_or_alias(suffix, mo
         await server.mcp.get_tool(name)
     assert name not in {policy.tool_name for policy in MCP_TOOL_PERMISSION_POLICIES}
     for family in (*REGISTRY.eligible(), *REGISTRY.excluded()):
-        assert name not in family.legacy_aliases
+        assert name not in family.dedicated_tools
         assert "sprint" not in family.target_types
 
 
@@ -81,7 +81,8 @@ async def test_retired_resources_absent_and_surviving_work_remains_discoverable(
     assert "okto-pulse://workflows/sprints" not in uris
     assert "okto-pulse://reference/tool-docs/sprint" not in uris
     tools = await server.mcp.get_tools()
-    assert {"okto_pulse_get_historical_context", "okto_pulse_move_card",
+    assert "okto_pulse_get_historical_context" not in tools
+    assert {"okto_pulse_move_card",
         "okto_pulse_submit_task_validation", "okto_pulse_submit_spec_evaluation",
         "okto_pulse_delete_spec_question", "okto_pulse_delete_ideation_question",
         "okto_pulse_delete_refinement_question"} <= tools.keys()

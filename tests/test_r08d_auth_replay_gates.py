@@ -112,6 +112,7 @@ async def _seed(tmp: str) -> None:
     from sqlalchemy_test_models import Agent, AgentBoard, Board
     from sqlalchemy_test_unit_of_work import SQLAlchemyUnitOfWorkFactory
     from okto_pulse.core.runtime_registry import register_unit_of_work_factory
+    from okto_pulse.core.domain.realm import LOCAL_REALM_ID
 
     _db_mod.configure_community_database(
         f"sqlite+aiosqlite:///{Path(tmp) / 'r08d.db'}"
@@ -131,8 +132,8 @@ async def _seed(tmp: str) -> None:
 
     now = datetime.now(timezone.utc)
     async with _db_mod.get_session_factory()() as s:
-        s.add(Board(id="B1", name="Board 1", owner_id="A1", created_at=now, updated_at=now))
-        s.add(Board(id="B2", name="Board 2", owner_id="A2", created_at=now, updated_at=now))
+        s.add(Board(id="B1", realm_id=LOCAL_REALM_ID, name="Board 1", owner_id="A1", created_at=now, updated_at=now))
+        s.add(Board(id="B2", realm_id=LOCAL_REALM_ID, name="Board 2", owner_id="A2", created_at=now, updated_at=now))
         for aid, key, active in (("A1", "kA1", True), ("A2", "kA2", True), ("IN", "kInact", False)):
             s.add(Agent(
                 id=aid, name=aid, api_key=key, api_key_hash=_HASH(key),

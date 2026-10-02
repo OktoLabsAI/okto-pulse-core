@@ -69,7 +69,7 @@ allowed transitions before moving; workflow tables are not permission grants.
 
 ## Destructive Operations
 
-Prefer soft-delete (`okto_pulse_archive_tree`, `okto_pulse_remove_decision`). Before any hard delete, post a comment with rationale and @mention the user. Never delete to fix a validation error. Full rules and tool list: `okto-pulse://reference/destructive_ops`.
+Prefer soft-delete (`okto_pulse_archive_tree`, `okto_pulse_remove_spec_entity(target_type=decision)`). Before any hard delete, post a comment with rationale and @mention the user. Never delete to fix a validation error. Full rules and tool list: `okto-pulse://reference/destructive_ops`.
 
 ---
 

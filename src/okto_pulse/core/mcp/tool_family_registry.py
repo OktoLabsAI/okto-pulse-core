@@ -22,8 +22,7 @@ already spec non-goals (fr_d16572df) and are confirmed here.
 
 Established codebase precedent for the dedicated-routing pattern:
 ``okto_pulse_link_task`` (server.py) — a closed target_type tuple + dispatch to
-un-decorated internal helpers. R4 mirrors it but in ADDITIVE-ALIAS mode: the
-legacy per-type tools are preserved as aliases (fr_af4b5c6e), not removed.
+un-decorated internal helpers. The current contract exposes only the canonical entrypoint for each eligible family.
 """
 
 from __future__ import annotations
@@ -51,9 +50,8 @@ SAFE_VIOLATION_LABEL_KEYS = frozenset({"family_id", "reason", "tool_name", "targ
 class AliasKind(str, Enum):
     """How a dispatched call entered the consolidated implementation."""
 
-    LEGACY = "legacy"            # a preserved per-type legacy tool name
+    DEDICATED = "dedicated"      # a current tool in a non-consolidated family
     CONSOLIDATED = "consolidated"  # the new polymorphic target_type entrypoint
-    SHORT = "short"             # an additive short-name alias (no okto_pulse_ prefix)
 
 
 class ConsolidationMode(str, Enum):
@@ -78,10 +76,9 @@ class ToolFamily:
     eligible: bool
     target_types: tuple[str, ...]
     operations: tuple[str, ...]
-    legacy_aliases: tuple[str, ...]
+    dedicated_tools: tuple[str, ...]
     # Eligible-only fields:
     consolidated_tool: str | None = None
-    short_aliases: tuple[str, ...] = ()
     mode: ConsolidationMode | None = None
     routing_notes: str = ""
     # Excluded-only field:
@@ -102,12 +99,7 @@ ELIGIBLE_FAMILIES: tuple[ToolFamily, ...] = (
         consolidated_tool="okto_pulse_remove_spec_entity",
         target_types=("business_rule", "api_contract", "decision"),
         operations=("remove",),
-        legacy_aliases=(
-            "okto_pulse_remove_business_rule",
-            "okto_pulse_remove_api_contract",
-            "okto_pulse_remove_decision",
-        ),
-        short_aliases=("remove_spec_entity",),
+        dedicated_tools=(),
         mode=ConsolidationMode.DEDICATED_ROUTING,
         routing_notes=(
             "Homogeneous (board_id, spec_id, <id>) signatures — zero per-type field "
@@ -124,13 +116,7 @@ ELIGIBLE_FAMILIES: tuple[ToolFamily, ...] = (
         consolidated_tool="okto_pulse_ask",
         target_types=("card", "ideation", "refinement", "spec"),
         operations=("ask",),
-        legacy_aliases=(
-            "okto_pulse_ask_question",
-            "okto_pulse_ask_ideation_question",
-            "okto_pulse_ask_refinement_question",
-            "okto_pulse_ask_spec_question",
-        ),
-        short_aliases=("ask",),
+        dedicated_tools=(),
         mode=ConsolidationMode.DEDICATED_ROUTING,
         routing_notes=(
             "Identical (board_id, parent_id, question) signatures — only the parent-id "
@@ -158,7 +144,7 @@ EXCLUDED_FAMILIES: tuple[ToolFamily, ...] = (
             "decision",
         ),
         operations=("add",),
-        legacy_aliases=(
+        dedicated_tools=(
             "okto_pulse_add_business_rule",
             "okto_pulse_add_api_contract",
             "okto_pulse_add_integration_requirement",
@@ -182,7 +168,7 @@ EXCLUDED_FAMILIES: tuple[ToolFamily, ...] = (
         eligible=False,
         target_types=("test_scenario",),
         operations=("add", "execute_evidence", "update_status", "list"),
-        legacy_aliases=(
+        dedicated_tools=(
             "okto_pulse_add_test_scenario",
             "okto_pulse_execute_test_scenario_evidence",
             "okto_pulse_update_test_scenario_status",
@@ -207,7 +193,7 @@ EXCLUDED_FAMILIES: tuple[ToolFamily, ...] = (
         eligible=False,
         target_types=("card", "ideation", "refinement", "spec"),
         operations=("answer",),
-        legacy_aliases=(
+        dedicated_tools=(
             "okto_pulse_answer_question",
             "okto_pulse_answer_ideation_question",
             "okto_pulse_answer_refinement_question",
@@ -227,7 +213,7 @@ EXCLUDED_FAMILIES: tuple[ToolFamily, ...] = (
         eligible=False,
         target_types=("ideation", "refinement", "spec", "story"),
         operations=("move",),
-        legacy_aliases=(
+        dedicated_tools=(
             "okto_pulse_move_ideation",
             "okto_pulse_move_refinement",
             "okto_pulse_move_spec",
@@ -247,7 +233,7 @@ EXCLUDED_FAMILIES: tuple[ToolFamily, ...] = (
         eligible=False,
         target_types=("natural", "cypher", "global", "reflective"),
         operations=("query",),
-        legacy_aliases=(
+        dedicated_tools=(
             "okto_pulse_kg_query_natural",
             "okto_pulse_kg_query_cypher",
             "okto_pulse_kg_query_global",
@@ -269,7 +255,7 @@ EXCLUDED_FAMILIES: tuple[ToolFamily, ...] = (
         eligible=False,
         target_types=("card",),
         operations=("move",),
-        legacy_aliases=("okto_pulse_move_card",),
+        dedicated_tools=("okto_pulse_move_card",),
         rejected_reason=(
             "Spec non-goal, confirmed: move_card carries a STATUS-CONDITIONAL 6-field "
             "execution-report payload (conclusion, completeness 0-100, "
@@ -293,16 +279,14 @@ class ToolFamilyRegistry:
     def __init__(self, families: tuple[ToolFamily, ...] = ALL_FAMILIES) -> None:
         self._families = families
         self._by_id = {f.family_id: f for f in families}
-        # Map every legacy/short/consolidated name -> (family, alias_kind).
+        # Map every current dedicated/consolidated name -> (family, alias_kind).
         self._by_name: dict[str, tuple[ToolFamily, AliasKind]] = {}
         for f in families:
-            for name in f.legacy_aliases:
-                self._by_name[name] = (f, AliasKind.LEGACY)
+            for name in f.dedicated_tools:
+                self._by_name[name] = (f, AliasKind.DEDICATED)
             if f.eligible:
                 if f.consolidated_tool:
                     self._by_name[f.consolidated_tool] = (f, AliasKind.CONSOLIDATED)
-                for name in f.short_aliases:
-                    self._by_name[name] = (f, AliasKind.SHORT)
 
     def families(self) -> tuple[ToolFamily, ...]:
         return self._families
@@ -316,8 +300,8 @@ class ToolFamilyRegistry:
     def get(self, family_id: str) -> ToolFamily | None:
         return self._by_id.get(family_id)
 
-    def resolve_alias(self, tool_name: str) -> tuple[ToolFamily, AliasKind] | None:
-        """Return (family, alias_kind) for a legacy/short/consolidated tool name."""
+    def resolve_tool(self, tool_name: str) -> tuple[ToolFamily, AliasKind] | None:
+        """Return (family, alias_kind) for a current tool name."""
         return self._by_name.get(tool_name)
 
     def is_excluded(self, family_id: str) -> bool:
@@ -333,7 +317,7 @@ class ToolFamilyRegistry:
         if not f.eligible:
             return (
                 f"Tool family '{family_id}' is not consolidated (kept separate by the "
-                f"assertiveness gate). Use its dedicated tools: {', '.join(f.legacy_aliases)}"
+                f"assertiveness gate). Use its dedicated tools: {', '.join(f.dedicated_tools)}"
             )
         if target_type not in f.target_types:
             return (
@@ -341,17 +325,6 @@ class ToolFamilyRegistry:
                 f"Allowed: {', '.join(f.target_types)}"
             )
         return None
-
-    def short_alias_collisions(self, existing_names: frozenset[str]) -> tuple[str, ...]:
-        """Return short aliases that collide with an existing tool/namespace name
-        (tr_524ea8d3). Short aliases must be additive and collision-free."""
-        out: list[str] = []
-        for f in self.eligible():
-            for short in f.short_aliases:
-                if short in existing_names:
-                    out.append(short)
-        return tuple(out)
-
 
 # Module-level default registry.
 REGISTRY = ToolFamilyRegistry()

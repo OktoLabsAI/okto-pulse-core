@@ -46,17 +46,10 @@ Args:
 Returns:
     JSON with Q&A item including choices
 
-## `okto_pulse_ask_refinement_question`
+## `okto_pulse_ask` (`target_type="refinement"`)
 
-Ask a question on a refinement's Q&A board. Use @Name to direct the question.
-
-Args:
-    board_id: Board ID
-    refinement_id: Refinement ID
-    question: Question text (use @Name to mention someone)
-
-Returns:
-    JSON with Q&A item details
+Use `okto_pulse_ask` with `target_type="refinement"` and `parent_id` naming the target.
+See `okto-pulse://reference/tool-families/qa_ask` for parameters, authorization and results.
 
 ## `okto_pulse_create_refinement`
 

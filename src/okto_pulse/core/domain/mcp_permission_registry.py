@@ -251,21 +251,11 @@ MCP_TOOL_PERMISSION_POLICIES: tuple[McpToolPermissionPolicy, ...] = (
         "card.qa.ask",
     ),
     _policy("okto_pulse_ask_ideation_choice_question", "ideation.qa.ask_choice"),
-    _policy("okto_pulse_ask_ideation_question", "ideation.qa.ask"),
-    _policy(
-        "okto_pulse_ask_question",
-        "ideation.qa.ask",
-        "refinement.qa.ask",
-        "spec.qa.ask",
-        "card.qa.ask",
-    ),
     _policy(
         "okto_pulse_ask_refinement_choice_question",
         "refinement.qa.ask_choice",
     ),
-    _policy("okto_pulse_ask_refinement_question", "refinement.qa.ask"),
     _policy("okto_pulse_ask_spec_choice_question", "spec.qa.ask_choice"),
-    _policy("okto_pulse_ask_spec_question", "spec.qa.ask"),
     _policy(
         "okto_pulse_associate_amendment_revision_artifacts",
         "amendment.revision.associate",
@@ -744,13 +734,7 @@ MCP_TOOL_PERMISSION_POLICIES: tuple[McpToolPermissionPolicy, ...] = (
         "okto_pulse_refresh_card_knowledge_assignments",
         "card.copy_from_spec.knowledge",
     ),
-    _policy("okto_pulse_remove_api_contract", "spec.contracts.delete"),
-    _policy("okto_pulse_remove_business_rule", "spec.rules.delete"),
     _policy("okto_pulse_remove_card_dependency", "card.entity.manage_dependencies"),
-    _policy(
-        "okto_pulse_remove_decision",
-        "spec.structured_entity.decision.revoke",
-    ),
     _policy(
         "okto_pulse_remove_spec_dependency",
         "spec.entity.manage_dependencies",

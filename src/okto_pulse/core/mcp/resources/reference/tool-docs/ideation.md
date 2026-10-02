@@ -43,17 +43,10 @@ Args:
 Returns:
     JSON with Q&A item including choices
 
-## `okto_pulse_ask_ideation_question`
+## `okto_pulse_ask` (`target_type="ideation"`)
 
-Ask a question on an ideation's Q&A board. Use @Name to direct the question.
-
-Args:
-    board_id: Board ID
-    ideation_id: Ideation ID
-    question: Question text (use @Name to mention someone)
-
-Returns:
-    JSON with Q&A item details
+Use `okto_pulse_ask` with `target_type="ideation"` and `parent_id` naming the target.
+See `okto-pulse://reference/tool-families/qa_ask` for parameters, authorization and results.
 
 ## `okto_pulse_convert_stories_to_ideation`
 

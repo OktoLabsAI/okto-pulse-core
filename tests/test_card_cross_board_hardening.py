@@ -28,8 +28,6 @@ from okto_pulse.core.application.use_cases.card_crud import (
     GetCardSeenStatusUseCase,
 )
 from okto_pulse.core.application.use_cases.mcp_card_crud import (
-    McpCopyKnowledgeToCardCommand,
-    McpCopyKnowledgeToCardUseCase,
     McpCreateCardCommand,
     McpCreateCardUseCase,
     McpDeleteCardCommand,
@@ -79,7 +77,6 @@ from sqlalchemy_test_models import (
     SpecKnowledgeBase,
     SpecStatus,
 )
-from sqlalchemy_test_unit_of_work import SQLAlchemyUnitOfWorkFactory
 
 
 class _LegacyKnowledgeScopePort:
@@ -442,93 +439,10 @@ async def test_remove_dependency_contains_source_and_target_without_enumeration(
     assert await _edge_ids(db_factory, ids["source_a"]) == {ids["foreign_edge"]}
 
 
-@pytest.mark.asyncio
-async def test_copy_knowledge_requires_source_and_target_on_command_board(
-    db_factory, _graph
-):
-    ids = _graph
-    matrix = (
-        (
-            ids["board_a"],
-            f"missing-{uuid.uuid4().hex}",
-            ids["source_a"],
-            "Spec not found",
-        ),
-        (
-            ids["board_a"],
-            ids["spec_a"],
-            f"missing-{uuid.uuid4().hex}",
-            "Card not found",
-        ),
-        (ids["board_b"], ids["spec_a"], ids["target_b"], "Spec not found"),
-        (ids["board_a"], ids["spec_b"], ids["source_a"], "Spec not found"),
-        (ids["board_a"], ids["spec_a"], ids["target_b"], "Card not found"),
-    )
-    for board_id, spec_id, card_id, error in matrix:
-        result = await _call(
-            db_factory,
-            "okto_pulse_copy_knowledge_to_card",
-            board_id=board_id,
-            spec_id=spec_id,
-            card_id=card_id,
-        )
-        assert result == {"error": error}
-
-    async with db_factory() as db:
-        assert (await db.get(Card, ids["source_a"])).knowledge_bases is None
-        assert (await db.get(Card, ids["target_b"])).knowledge_bases is None
-
-    same_board = await _call(
-        db_factory,
-        "okto_pulse_copy_knowledge_to_card",
-        board_id=ids["board_a"],
-        spec_id=ids["spec_a"],
-        card_id=ids["source_a"],
-    )
-    assert same_board["success"] is True
-    assert same_board["copied"] == 1
 
 
-@pytest.mark.asyncio
-async def test_copy_knowledge_returns_stable_v2_legacy_write_error(
-    db_factory,
-    _graph,
-):
-    ids = _graph
-    register_knowledge_propagation_port(_LegacyKnowledgeScopePort(v2_active=True))
-
-    result = await _call(
-        db_factory,
-        "okto_pulse_copy_knowledge_to_card",
-        board_id=ids["board_a"],
-        spec_id=ids["spec_a"],
-        card_id=ids["source_a"],
-    )
-
-    assert result["error"] == "knowledge_propagation_legacy_write_forbidden"
-    assert result["code"] == "knowledge_propagation_legacy_write_forbidden"
-    assert result["retryable"] is False
-    async with db_factory() as db:
-        assert (await db.get(Card, ids["source_a"])).knowledge_bases is None
 
 
-@pytest.mark.asyncio
-async def test_copy_knowledge_rejects_actor_command_board_mismatch(db_factory, _graph):
-    ids = _graph
-    actor = ActorContext(USER_ID, "mcp", board_id=ids["board_b"])
-    uow_factory = SQLAlchemyUnitOfWorkFactory(db_factory)
-    with pytest.raises(EntityNotFoundError) as exc_info:
-        async with uow_factory(actor=actor) as uow:
-            await McpCopyKnowledgeToCardUseCase().execute(
-                McpCopyKnowledgeToCardCommand(
-                    ids["board_a"], ids["spec_a"], ids["source_a"], None
-                ),
-                actor=actor,
-                uow=uow,
-            )
-    assert exc_info.value.entity_type == "spec"
-    async with db_factory() as db:
-        assert (await db.get(Card, ids["source_a"])).knowledge_bases is None
 
 
 @pytest.mark.asyncio
@@ -602,9 +516,10 @@ async def test_card_children_cross_board_are_not_read_written_or_audited(
 
     ask = await _call(
         db_factory,
-        "okto_pulse_ask_question",
+        "okto_pulse_ask",
         board_id=ids["board_b"],
-        card_id=ids["source_a"],
+        target_type="card",
+        parent_id=ids["source_a"],
         question="foreign question",
     )
     add_comment = await _call(
@@ -1072,9 +987,10 @@ async def test_same_board_card_children_keep_legacy_success_envelopes(
     ids = _graph
     ask = await _call(
         db_factory,
-        "okto_pulse_ask_question",
+        "okto_pulse_ask",
         board_id=ids["board_a"],
-        card_id=ids["source_a"],
+        target_type="card",
+        parent_id=ids["source_a"],
         question="same-board question",
     )
     add_comment = await _call(

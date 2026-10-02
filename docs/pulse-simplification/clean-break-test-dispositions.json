@@ -1532,6 +1532,54 @@
       "test": "normalizes the explicit legacy envelope during rolling upgrades",
       "disposition": "superseded",
       "reason": "Replaced with rejection of resources-map response; current native pagination/detail/inheritance tests retained."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_r4_tool_family_consolidation.py",
+      "test": "test_short_alias_collision_detection",
+      "disposition": "superseded",
+      "reason": "Registry-only short aliases removed; current lookup and negative removed-name assertions replace collision checks."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_r4_tool_family_consolidation.py",
+      "test": "test_resolve_alias_maps_legacy_consolidated_short",
+      "disposition": "superseded",
+      "reason": "Replaced with current dedicated/consolidated lookup and absence of legacy/short aliases."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_r4_tool_family_consolidation.py",
+      "test": "test_remove_legacy_and_consolidated_parity",
+      "disposition": "superseded",
+      "reason": "Removed positive alias calls; canonical hard deletion and decision revocation remain tested."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_r4_tool_family_consolidation.py",
+      "test": "test_ask_legacy_and_consolidated_parity",
+      "disposition": "superseded",
+      "reason": "Removed positive alias call; canonical Card/Spec questions, unknown target and Board/permission denials remain tested."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_mcp_spec_locked_error_contract.py",
+      "test": "test_locked_spec_remove_aliases_share_canonical_envelope",
+      "disposition": "superseded",
+      "reason": "Retired three old-name parameter cases; retained the three equivalent canonical targets with unchanged locked-Spec denial assertions."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_card_cross_board_hardening.py",
+      "test": "test_copy_knowledge_requires_source_and_target_on_command_board",
+      "disposition": "superseded",
+      "reason": "Exclusive removed copy_knowledge_to_card command/use-case cases blocked collection of current collaboration scope tests. Current governed Knowledge propagation authority tests remain in their dedicated suites; no old copy writer restored."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_card_cross_board_hardening.py",
+      "test": "test_copy_knowledge_returns_stable_v2_legacy_write_error",
+      "disposition": "superseded",
+      "reason": "Exclusive removed copy_knowledge_to_card command/use-case cases blocked collection of current collaboration scope tests. Current governed Knowledge propagation authority tests remain in their dedicated suites; no old copy writer restored."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_card_cross_board_hardening.py",
+      "test": "test_copy_knowledge_rejects_actor_command_board_mismatch",
+      "disposition": "superseded",
+      "reason": "Exclusive removed copy_knowledge_to_card command/use-case cases blocked collection of current collaboration scope tests. Current governed Knowledge propagation authority tests remain in their dedicated suites; no old copy writer restored."
     }
   ]
 }

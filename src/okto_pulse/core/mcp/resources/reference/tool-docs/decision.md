@@ -49,21 +49,10 @@ Args:
 Returns:
     JSON with migration summary (decisions_added, context_modified)
 
-## `okto_pulse_remove_decision`
+## `okto_pulse_remove_spec_entity` (`target_type="decision"`)
 
-Remove a Decision (soft-delete: status becomes "revoked").
-
-Preserves history so the KG still surfaces the decision with its
-revocation reason. Use okto_pulse_update_decision with status=active to
-restore.
-
-Args:
-    board_id: Board ID
-    spec_id: Spec ID
-    decision_id: Decision ID ("dec_...")
-
-Returns:
-    JSON confirmation
+Use `okto_pulse_remove_spec_entity` with `target_type="decision"` and `entity_id` naming the target.
+See `okto-pulse://reference/tool-families/spec_entity_remove` for parameters, authorization and results.
 
 ## `okto_pulse_update_decision`
 

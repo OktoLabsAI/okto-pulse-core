@@ -15,8 +15,9 @@ from okto_pulse.community.adapters.sqlalchemy_unit_of_work import CommunityUnitO
 from okto_pulse.community.adapters.sqlalchemy_structured_spec import CommunitySqlAlchemyStructuredSpecStore
 from okto_pulse.core.domain.enums import SpecStatus
 from okto_pulse.core.domain.realm import LOCAL_REALM_ID
+from okto_pulse.core.domain.architecture_adoption import ArchitectureAdoptionScope
 from okto_pulse.core.mcp import server
-from okto_pulse.core.mcp.manifest import installed_aliases
+from okto_pulse.core.mcp.manifest import tool_inventory_document
 from okto_pulse.core.ports import McpCredential
 from okto_pulse.core.ports.mcp_resources import freeze_mcp_resource_catalog
 from okto_pulse.core.ports.structured_spec import register_structured_spec_store
@@ -79,6 +80,10 @@ async def test_authenticated_planner_review_boundary_across_mcp_variants(
         for spec_id, state in [('draft', SpecStatus.DRAFT), ('approved', SpecStatus.APPROVED),
                                ('validated', SpecStatus.VALIDATED)]:
             db.add(Spec(
+                architecture_adoption=ArchitectureAdoptionScope(
+                    board_id='B1', spec_id=spec_id, adopted_in_edition=1,
+                    actor_id='A1', inherited_resource_ids=(),
+                ).model_dump(mode='json'),
                 id=spec_id, board_id='B1', title=spec_id, status=state, created_by='A1',
                 functional_requirements=[], acceptance_criteria=[], test_scenarios=[],
                 business_rules=[], api_contracts=[], evaluations=[],
@@ -108,7 +113,7 @@ async def test_authenticated_planner_review_boundary_across_mcp_variants(
         names = tuple(tool.name for tool in await client.list_tools())
         assert 'okto_pulse_submit_spec_evaluation' in names
         assert 'submit_spec_evaluation' not in names
-        assert 'okto_pulse_submit_spec_evaluation' not in installed_aliases(names).values()
+        assert 'okto_pulse_submit_spec_evaluation' not in tool_inventory_document(server.mcp)["aliases"].values()
         before = await _snapshot(factory)
         denied = await client.call_tool('okto_pulse_submit_spec_evaluation', {
             'board_id': 'B1', 'spec_id': 'validated', **_evaluation_payload(),

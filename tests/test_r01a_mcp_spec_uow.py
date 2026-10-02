@@ -703,14 +703,14 @@ _CROSS_BOARD_JSON_SPEC_CASES = (
         {"title": "BR", "rule": "MUST", "when": "x", "then": "y"},
     ),
     ("okto_pulse_update_business_rule", {"rule_id": "br_missing", "title": "x"}),
-    ("okto_pulse_remove_business_rule", {"rule_id": "br_missing"}),
+    ("okto_pulse_remove_spec_entity", {"target_type": "business_rule", "entity_id": "br_missing"}),
     ("okto_pulse_list_business_rules", {}),
     ("okto_pulse_add_api_contract", {"method": "GET", "path": "/cross"}),
     (
         "okto_pulse_update_api_contract",
         {"contract_id": "api_missing", "path": "/cross"},
     ),
-    ("okto_pulse_remove_api_contract", {"contract_id": "api_missing"}),
+    ("okto_pulse_remove_spec_entity", {"target_type": "api_contract", "entity_id": "api_missing"}),
     ("okto_pulse_list_api_contracts", {}),
     (
         "okto_pulse_add_decision",
@@ -720,7 +720,7 @@ _CROSS_BOARD_JSON_SPEC_CASES = (
         "okto_pulse_update_decision",
         {"decision_id": "dec_missing", "title": "cross-board"},
     ),
-    ("okto_pulse_remove_decision", {"decision_id": "dec_missing"}),
+    ("okto_pulse_remove_spec_entity", {"target_type": "decision", "entity_id": "dec_missing"}),
     ("okto_pulse_migrate_spec_decisions", {}),
     (
         "okto_pulse_add_test_scenario",

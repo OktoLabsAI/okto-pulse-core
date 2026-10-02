@@ -21,7 +21,7 @@ For versioned guidelines prefer retirement/unlink as defined in
 | `okto_pulse_delete_guideline` | The guideline (globally, if it's a global guideline). |
 | `okto_pulse_delete_spec_knowledge` | The attached knowledge base content. |
 | `okto_pulse_delete_screen_mockup` | The mockup HTML. |
-| `okto_pulse_remove_business_rule` / `okto_pulse_remove_api_contract` | The BR / contract. Linked tasks remain but the coverage gate may now fail. |
+| `okto_pulse_remove_spec_entity` (`target_type="business_rule"`) / `okto_pulse_remove_spec_entity` (`target_type="api_contract"`) | The BR / contract. Linked tasks remain but the coverage gate may now fail. |
 | `okto_pulse_remove_spec_entity` | Consolidated removal for `business_rule` / `api_contract` / `decision`. **Asymmetry:** `business_rule` and `api_contract` are HARD removals; `decision` is a soft-delete (`status="revoked"`, restorable). See `okto-pulse://reference/tool-families/spec_entity_remove`. |
 | `okto_pulse_delete_spec_evaluation` | The evaluation entry (audit trail is lost). |
 | `okto_pulse_delete_topic` | The Topic. Only allowed when it has NO associated Stories, including archived ones (`topic_not_empty` otherwise). |
@@ -36,7 +36,7 @@ For versioned guidelines prefer retirement/unlink as defined in
 
 | Tool | Effect |
 |---|---|
-| `okto_pulse_remove_decision` | Sets `status="revoked"`. Decision stays in `spec.decisions[]` for audit. Reversible via `okto_pulse_update_decision(status="active")`. |
+| `okto_pulse_remove_spec_entity` (`target_type="decision"`) | Sets `status="revoked"`. Decision stays in `spec.decisions[]` for audit. Reversible via `okto_pulse_update_decision(status="active")`. |
 | `okto_pulse_archive_tree` | Sets `archived=true` on the whole sub-tree. Fully reversible via `okto_pulse_restore_tree`. |
 | `okto_pulse_archive_story` / `okto_pulse_archive_topic` | Archives the story/topic. Reversible via `okto_pulse_restore_story` / `okto_pulse_restore_topic`. |
 
@@ -54,14 +54,14 @@ For versioned guidelines prefer retirement/unlink as defined in
 
 ## Rules of Engagement
 
-1. **Prefer soft-delete** (`okto_pulse_archive_tree`, `okto_pulse_remove_decision`) whenever the intent is "hide this from normal views". Only use hard delete when the entity must not exist at all (e.g. GDPR erasure, deleting truly broken test cards).
+1. **Prefer soft-delete** (`okto_pulse_archive_tree`, `okto_pulse_remove_spec_entity` (`target_type="decision"`)) whenever the intent is "hide this from normal views". Only use hard delete when the entity must not exist at all (e.g. GDPR erasure, deleting truly broken test cards).
 2. **Before any hard delete, post a one-line rationale with an @mention.** When
    the target or its parent supports comments, post it there. When that artifact
    family has no comment surface, post it on a board-scoped audit card and name
    the exact target type + id. The audit card is the governed fallback; never
    invent an unsupported comment call or skip the rationale silently.
 3. **Never delete as a shortcut to fix a validation error.** If the system is rejecting a move because an entity exists, fix the entity, don't delete it.
-4. **`okto_pulse_remove_business_rule` / `okto_pulse_remove_api_contract` break coverage** — the spec that depended on them will now fail `okto_pulse_submit_spec_validation`. Use them only when you're replacing the BR/contract with another one in the same action.
+4. **`okto_pulse_remove_spec_entity` (`target_type="business_rule"`) / `okto_pulse_remove_spec_entity` (`target_type="api_contract"`) break coverage** — the spec that depended on them will now fail `okto_pulse_submit_spec_validation`. Use them only when you're replacing the BR/contract with another one in the same action.
 5. **`okto_pulse_delete_ideation` / `okto_pulse_delete_refinement` cascade.** You're deleting the entire sub-tree, not just the ideation. Confirm the blast radius.
 6. **Retain every takedown handle.** Governed entity deletes return a root
    `takedown` receipt. Cascade responses additionally expose recursive

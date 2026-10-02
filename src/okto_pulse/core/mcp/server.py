@@ -5572,28 +5572,14 @@ async def okto_pulse_list_cards_by_status(
 # ============================================================================
 
 
-@mcp.tool()
-async def okto_pulse_ask_question(board_id: str, card_id: str, question: str) -> str:
-    """
-    Add a question to a card's Q&A board."""
-    return await _ask_question_impl(
-        board_id,
-        "card",
-        card_id,
-        question,
-        alias_kind="legacy",
-        tool_name="okto_pulse_ask_question",
-    )
 
 
 # ============================================================================
 # R4 — consolidated Q&A ASK (spec 452cb4d5, card R4.1)
 #
-# qa_ask is the second assertiveness-gate-eligible family: the five legacy ask_*
-# tools have IDENTICAL (board_id, parent_id, question) signatures — only the
+# qa_ask is the second assertiveness-gate-eligible family: supported question targets have identical (board_id, parent_id, question) signatures — only the
 # parent-id param NAME differed, which the closed target_type enum restores. The
-# legacy tools are PRESERVED as additive aliases that delegate here (fr_af4b5c6e /
-# tr_b25890c4). Each supported target retains its authorization and activity log.
+# Each supported target retains its authorization and activity log.
 async def _ask_question_impl(
     board_id: str,
     target_type: str,
@@ -5603,10 +5589,7 @@ async def _ask_question_impl(
     alias_kind: str,
     tool_name: str,
 ) -> str:
-    """Shared implementation behind okto_pulse_ask and the five legacy ask_*
-    aliases. Replicates each legacy tool's behavior (per-type service/schema,
-    activity-log action and error message) and emits safe
-    alias-usage telemetry (or_4e57890f)."""
+    """Dispatch the canonical question tool with target-specific authorization."""
     from okto_pulse.core.mcp.tool_family_registry import (
         REGISTRY,
         VIOLATION_UNKNOWN_TARGET_TYPE,
@@ -5680,10 +5663,7 @@ async def okto_pulse_ask(
 ) -> str:
     """
     Consolidated Q&A ask (R4). `target_type` is one of: `card`, `ideation`,
-    `refinement`, `spec`; `parent_id` is that work item's id. Equivalent
-    to the per-type tools (`okto_pulse_ask_question`/`_ideation_question`/
-    `_refinement_question`/`_spec_question`), which remain as
-    aliases. Use `@Name` to direct the question. An unsupported `target_type`
+    `refinement`, `spec`; `parent_id` is that work item's id. Use `@Name` to direct the question. An unsupported `target_type`
     returns a structured error listing the allowed values (no mutation).
     See `okto-pulse://reference/tool-families/qa_ask`."""
     return await _ask_question_impl(
@@ -7913,20 +7893,6 @@ async def okto_pulse_delete_ideation_knowledge(
 # ============================================================================
 
 
-@mcp.tool()
-async def okto_pulse_ask_ideation_question(
-    board_id: str, ideation_id: str, question: str
-) -> str:
-    """
-    Ask a question on an ideation's Q&A board. Use @Name to direct the question."""
-    return await _ask_question_impl(
-        board_id,
-        "ideation",
-        ideation_id,
-        question,
-        alias_kind="legacy",
-        tool_name="okto_pulse_ask_ideation_question",
-    )
 
 
 @mcp.tool()
@@ -10258,20 +10224,6 @@ async def okto_pulse_list_research_decisions(
 # ============================================================================
 
 
-@mcp.tool()
-async def okto_pulse_ask_refinement_question(
-    board_id: str, refinement_id: str, question: str
-) -> str:
-    """
-    Ask a question on a refinement's Q&A board. Use @Name to direct the question."""
-    return await _ask_question_impl(
-        board_id,
-        "refinement",
-        refinement_id,
-        question,
-        alias_kind="legacy",
-        tool_name="okto_pulse_ask_refinement_question",
-    )
 
 
 @mcp.tool()
@@ -14460,24 +14412,6 @@ async def okto_pulse_update_business_rule(
     )
 
 
-@mcp.tool()
-async def okto_pulse_remove_business_rule(
-    board_id: str,
-    spec_id: str,
-    rule_id: str,
-) -> str:
-    """Remove a business rule from a spec. Permanent, no undo — FR->BR coverage
-    provided by this rule is lost.
-    Docs: okto-pulse://reference/destructive_ops
-    """
-    return await _remove_spec_entity_impl(
-        board_id,
-        spec_id,
-        "business_rule",
-        rule_id,
-        alias_kind="legacy",
-        tool_name="okto_pulse_remove_business_rule",
-    )
 
 
 # ============================================================================
@@ -15271,26 +15205,6 @@ async def okto_pulse_update_decision(
     )
 
 
-@mcp.tool()
-async def okto_pulse_remove_decision(
-    board_id: str,
-    spec_id: str,
-    decision_id: str,
-) -> str:
-    """
-    Remove a Decision (soft-delete: status becomes "revoked").
-
-    Preserves history so the KG still surfaces the decision with its
-    revocation reason. Use okto_pulse_update_decision with status=active to
-    restore."""
-    return await _remove_spec_entity_impl(
-        board_id,
-        spec_id,
-        "decision",
-        decision_id,
-        alias_kind="legacy",
-        tool_name="okto_pulse_remove_decision",
-    )
 
 
 async def _link_task_to_decision_internal(
@@ -15840,34 +15754,14 @@ async def okto_pulse_update_api_contract(
     )
 
 
-@mcp.tool()
-async def okto_pulse_remove_api_contract(
-    board_id: str,
-    spec_id: str,
-    contract_id: str,
-) -> str:
-    """Remove an API contract from a spec. Permanent, no undo — contract
-    coverage links are lost. Docs: okto-pulse://reference/destructive_ops
-    """
-    return await _remove_spec_entity_impl(
-        board_id,
-        spec_id,
-        "api_contract",
-        contract_id,
-        alias_kind="legacy",
-        tool_name="okto_pulse_remove_api_contract",
-    )
 
 
 # ============================================================================
 # R4 — consolidated spec-entity REMOVE (spec 452cb4d5, card R4.1)
 #
 # spec_entity_remove is one of the two assertiveness-gate-eligible families
-# (owner decision after the R4 audit): the three legacy remove_* tools have
-# IDENTICAL (board_id, spec_id, <id>) signatures, so consolidation loses ZERO
-# per-type field schema. The legacy tools are PRESERVED as additive aliases that
-# delegate here (fr_af4b5c6e / tr_b25890c4 — one shared impl, no duplicated
-# logic). DEDICATED ROUTING preserves the per-type behavioral asymmetry: decision
+# (owner decision after the R4 audit): all three targets use the same identifier
+# parameters. DEDICATED ROUTING preserves the behavioral asymmetry: decision
 # is a SOFT-delete (status=revoked, restorable) while business_rule/api_contract
 # are hard removals.
 # ============================================================================
@@ -15882,9 +15776,7 @@ async def _remove_spec_entity_impl(
     alias_kind: str,
     tool_name: str,
 ) -> str:
-    """Shared implementation behind okto_pulse_remove_spec_entity and the three
-    legacy remove_* aliases. Replicates each legacy tool's exact behavior and
-    response shape (parity), and emits safe alias-usage telemetry (or_4e57890f)."""
+    """Dispatch canonical removal, preserving per-type deletion semantics."""
     from okto_pulse.core.mcp.tool_family_registry import (
         REGISTRY,
         VIOLATION_UNKNOWN_TARGET_TYPE,
@@ -16004,9 +15896,7 @@ async def okto_pulse_remove_spec_entity(
 ) -> str:
     """
     Consolidated spec-entity removal (R4). `target_type` is one of: `business_rule`,
-    `api_contract`, `decision`. Equivalent to the per-type tools
-    (`okto_pulse_remove_business_rule`/`_api_contract`/`_decision`), which remain as
-    aliases. Note the asymmetry: `decision` is a SOFT-delete (status becomes
+    `api_contract`, `decision`. Note the asymmetry: `decision` is a SOFT-delete (status becomes
     `revoked`, restorable via `okto_pulse_update_decision`), while `business_rule`
     and `api_contract` are hard removals. An unsupported `target_type` returns a
     structured error listing the allowed values (no mutation).
@@ -17381,22 +17271,6 @@ async def okto_pulse_get_spec_history(
 # ============================================================================
 
 
-@mcp.tool()
-async def okto_pulse_ask_spec_question(
-    board_id: str, spec_id: str, question: str
-) -> str:
-    """
-    Ask a question on a spec's Q&A board. Use @Name to direct the question.
-    Both humans and agents can ask questions — this is for clarifying spec requirements
-    BEFORE work begins on tasks."""
-    return await _ask_question_impl(
-        board_id,
-        "spec",
-        spec_id,
-        question,
-        alias_kind="legacy",
-        tool_name="okto_pulse_ask_spec_question",
-    )
 
 
 @mcp.tool()

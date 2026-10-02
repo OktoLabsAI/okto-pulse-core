@@ -187,7 +187,6 @@ Semantic guideline protocol:
 - `okto_pulse_add_ideation_knowledge` — docs: `okto-pulse://reference/tool-docs/knowledge`
 - `okto_pulse_answer_ideation_question` — docs: `okto-pulse://reference/tool-docs/ideation`
 - `okto_pulse_ask_ideation_choice_question` — docs: `okto-pulse://reference/tool-docs/ideation`
-- `okto_pulse_ask_ideation_question` — docs: `okto-pulse://reference/tool-docs/ideation`
 - `okto_pulse_create_ideation` — docs: `okto-pulse://reference/tool-docs/ideation`
 - `okto_pulse_delete_ideation` — docs: `okto-pulse://reference/tool-docs/ideation`
 - `okto_pulse_delete_ideation_knowledge` — docs: `okto-pulse://reference/tool-docs/knowledge`
@@ -208,7 +207,6 @@ Semantic guideline protocol:
 - `okto_pulse_answer_refinement_question` — docs: `okto-pulse://reference/tool-docs/refinement`
 - `okto_pulse_append_research_decision` — docs: `okto-pulse://reference/tool-docs/refinement`
 - `okto_pulse_ask_refinement_choice_question` — docs: `okto-pulse://reference/tool-docs/refinement`
-- `okto_pulse_ask_refinement_question` — docs: `okto-pulse://reference/tool-docs/refinement`
 - `okto_pulse_create_refinement` — docs: `okto-pulse://reference/tool-docs/refinement`
 - `okto_pulse_delete_refinement` — docs: `okto-pulse://reference/tool-docs/refinement`
 - `okto_pulse_delete_refinement_knowledge` — docs: `okto-pulse://reference/tool-docs/knowledge`
@@ -263,9 +261,6 @@ Semantic guideline protocol:
 - `okto_pulse_list_business_rules` — docs: `okto-pulse://reference/tool-docs/business-rule`
 - `okto_pulse_list_integration_requirements` — docs: `okto-pulse://reference/tool-docs/integration-requirement`
 - `okto_pulse_list_observability_requirements` — docs: `okto-pulse://reference/tool-docs/observability-requirement`
-- `okto_pulse_remove_api_contract` — docs: `okto-pulse://reference/tool-docs/api-contract`
-- `okto_pulse_remove_business_rule` — docs: `okto-pulse://reference/tool-docs/business-rule`
-- `okto_pulse_remove_decision` — docs: `okto-pulse://reference/tool-docs/decision`
 - `okto_pulse_update_api_contract` — docs: `okto-pulse://reference/tool-docs/api-contract`
 - `okto_pulse_update_business_rule` — docs: `okto-pulse://reference/tool-docs/business-rule`
 - `okto_pulse_update_decision` — docs: `okto-pulse://reference/tool-docs/decision`
@@ -319,9 +314,7 @@ Semantic guideline protocol:
 - `okto_pulse_answer_question` — docs: `okto-pulse://reference/tool-docs/qa`
 - `okto_pulse_answer_spec_question` — docs: `okto-pulse://reference/tool-docs/spec`
 - `okto_pulse_ask` — docs: `okto-pulse://reference/tool-docs/qa`
-- `okto_pulse_ask_question` — docs: `okto-pulse://reference/tool-docs/qa`
 - `okto_pulse_ask_spec_choice_question` — docs: `okto-pulse://reference/tool-docs/spec`
-- `okto_pulse_ask_spec_question` — docs: `okto-pulse://reference/tool-docs/spec`
 - `okto_pulse_delete_question` — docs: `okto-pulse://reference/tool-docs/qa`
 - `okto_pulse_delete_spec_question` — docs: `okto-pulse://reference/tool-docs/spec`
 - `okto_pulse_get_choice_responses` — docs: `okto-pulse://reference/tool-docs/qa`

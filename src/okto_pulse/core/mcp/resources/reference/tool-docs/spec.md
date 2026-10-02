@@ -152,10 +152,8 @@ Returns:
     Unsupported `target_type` returns `{error:"unsupported_target_type", allowed:[…]}`
     (no mutation).
 
-The legacy tools (`okto_pulse_remove_business_rule`, `okto_pulse_remove_api_contract`,
-`okto_pulse_remove_decision`) remain as aliases and delegate to the same
-implementation. Full family contract:
-`okto-pulse://reference/tool-families/spec_entity_remove`.
+Use the canonical tool with an explicit target_type.
+See `okto-pulse://reference/tool-families/spec_entity_remove`.
 
 ## `okto_pulse_answer_spec_question`
 
@@ -195,19 +193,10 @@ Args:
 Returns:
     JSON with Q&A item including choices
 
-## `okto_pulse_ask_spec_question`
+## `okto_pulse_ask` (`target_type="spec"`)
 
-Ask a question on a spec's Q&A board. Use @Name to direct the question.
-Both humans and agents can ask questions — this is for clarifying spec requirements
-BEFORE work begins on tasks.
-
-Args:
-    board_id: Board ID
-    spec_id: Spec ID
-    question: Question text (use @Name to mention someone)
-
-Returns:
-    JSON with Q&A item details
+Use `okto_pulse_ask` with `target_type="spec"` and `parent_id` naming the target.
+See `okto-pulse://reference/tool-families/qa_ask` for parameters, authorization and results.
 
 ## `okto_pulse_create_spec`
 

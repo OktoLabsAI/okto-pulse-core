@@ -38,17 +38,10 @@ Args:
 Returns:
     JSON array of business rules with resolved linked requirements
 
-## `okto_pulse_remove_business_rule`
+## `okto_pulse_remove_spec_entity` (`target_type="business_rule"`)
 
-Remove a business rule from a spec.
-
-Args:
-    board_id: Board ID
-    spec_id: Spec ID
-    rule_id: Business rule ID to remove
-
-Returns:
-    JSON confirmation
+Use `okto_pulse_remove_spec_entity` with `target_type="business_rule"` and `entity_id` naming the target.
+See `okto-pulse://reference/tool-families/spec_entity_remove` for parameters, authorization and results.
 
 ## `okto_pulse_update_business_rule`
 

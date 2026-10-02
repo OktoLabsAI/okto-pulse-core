@@ -8,7 +8,6 @@ import os
 from collections.abc import Mapping
 from typing import Any
 
-from okto_pulse.core.mcp.tool_family_registry import ELIGIBLE_FAMILIES
 from okto_pulse.core.ports.mcp_resources import (
     FrozenMcpResourceCatalog,
     McpResourceCatalogError,
@@ -26,26 +25,11 @@ def installed_tool_names(catalog: Any) -> tuple[str, ...]:
     return tuple(sorted(tool.name for tool in tools if getattr(tool, "enabled", True)))
 
 
-def installed_aliases(tool_names: tuple[str, ...]) -> dict[str, str]:
-    """Map only aliases that are actually installed to their canonical tool."""
-
-    installed = frozenset(tool_names)
-    aliases: dict[str, str] = {}
-    for family in ELIGIBLE_FAMILIES:
-        canonical = family.consolidated_tool
-        if canonical is None or canonical not in installed:
-            continue
-        for alias in family.legacy_aliases:
-            if alias in installed:
-                aliases[alias] = canonical
-    return dict(sorted(aliases.items()))
-
-
 def tool_inventory_document(catalog: Any) -> dict[str, Any]:
     names = installed_tool_names(catalog)
     return {
         "tools": list(names),
-        "aliases": installed_aliases(names),
+        "aliases": {},
     }
 
 
@@ -140,7 +124,6 @@ __all__ = [
     "TOOL_INVENTORY_CANONICALIZATION",
     "build_server_manifest",
     "build_resource_manifest",
-    "installed_aliases",
     "installed_tool_names",
     "render_server_manifest",
     "render_resource_manifest",

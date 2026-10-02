@@ -2,6 +2,51 @@
 
 ## Estado para retomada
 
+### 2026-10-01 — MCP: retirada dos sete aliases de pergunta/remoção
+
+Marco anterior publicado: Core73999c43 / Communityb1dfe525. Removidos handlers
+e policies de ask_question/ask_ideation_question/ask_refinement_question/
+ask_spec_question e remove_business_rule/remove_api_contract/remove_decision.
+Permanecem somente ask(target_type,parent_id) e
+remove_spec_entity(target_type,entity_id) para essas operações. Dispatchers
+canônicos preservam permissões por alvo, escopo Board, logs e diferença entre
+remoção física de BR/contrato e revogação de Decision. Não houve nova autoridade.
+
+Registry perdeu nomes antigos e short aliases não publicados; os nomes das
+famílias não consolidadas agora ficam em dedicated_tools. Manifest publica
+aliases vazio, sem resolvedor de nomes antigos. Atualizados instructions,
+workflows, documentação lazy Core e override Community. Catálogo regenerado
+pelo módulo oficial:291 tools,0 aliases, SHA256 do inventário
+38cdb6a9aa2aebfa1e6780a230b47d1758d954b1e103405952ddee0e40636aa9.
+Busca nas árvores src de ambos os repos não encontra os sete nomes retirados.
+Release gate e expectativas do E2E instalado refletem esse inventário; isso não
+equivale à execução da campanha global de release, ainda pendente em C4.
+
+dist-family-aliases5 instalado; provenance-family-aliases5.json comprova
+Core851/914 e Community318/404 Python/payload byte-idênticos. Sem mudança frontend
+neste incremento; permanece a SPA qualificada no marco anterior.
+family-aliases-core3.xml:50 aprovados e uma fixture de planner rejeitada por
+realm ausente; corrigida para realm/adoção arquitetural explícitos e qualificada
+em family-aliases-planner2.xml:1 aprovado. family-aliases-crossboard.xml:3 aprovados.
+Total Core:54 casos distintos aprovados, incluindo registry, nomes removidos sem
+handler/policy, catálogo byte-idêntico, manifest, revogação, negações de permissão,
+Spec bloqueada, colaboração entre Boards e planner sem autoridade de aprovação.
+family-aliases-community2.xml:15 aprovados (host real, initialize/list/manifest).
+closure-family-aliases5.json exit0, findings vazios, oito budgets ZERO; READMEs
+oficiais regenerados/validados. Ruff/diff-check aprovados.
+
+Disposições de testes registradas: paridade positiva com aliases substituída
+pelas operações canônicas/negações; removidos três casos exclusivos do já
+retirado copy_knowledge_to_card que impediam coletar testes atuais de colaboração.
+Não restaurado writer antigo. O teste Sprint ainda exigia get_historical_context,
+já retirado anteriormente: agora verifica sua ausência.
+
+C1–C4 continuam abertos. Próximo bloco C3: writers update_business_rule e
+update_decision depreciados, aliases de guidelines e normalizadores restantes;
+instruções de produto ainda contêm descrições de migração fora destas famílias.
+Depois, executar a auditoria por critério e qualificação final C4, sem considerar
+o gate de release inteiro validado por este smoke. Decisões T23/KG-10 mantidas.
+
 ### 2026-10-01 — Knowledge Workspace sem classificação de legado
 
 Marco anterior publicado: Corec15ecbb1 / Communityca9d7543. Retirados

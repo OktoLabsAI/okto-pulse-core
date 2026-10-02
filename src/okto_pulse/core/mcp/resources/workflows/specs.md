@@ -125,7 +125,7 @@ the summary above is not sufficient to choose a number.
    - Add BRs to capture invariants you've been assuming implicitly
    - Add TRs for architectural constraints you derived from codebase analysis
    - Add API contracts with concrete request/response shapes
-6. **Ask, don't assume.** When you hit a genuine ambiguity, **use `okto_pulse_ask_spec_question` to ask the user**.
+6. **Ask, don't assume.** When you hit a genuine ambiguity, **use `okto_pulse_ask` (`target_type="spec"`) to ask the user**.
 7. **Re-read and re-score.** Repeat until all five dimensions clear the
    configured bar and no blocker remains.
 8. **On a retry after failed validation**, first read the Current result and

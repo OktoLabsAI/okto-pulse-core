@@ -20,10 +20,8 @@ Returns:
     JSON `{success, qa:{id, question, asked_by}}`. Unsupported `target_type`
     returns `{error:"unsupported_target_type", allowed:[…]}` (no mutation).
 
-The per-type tools (`okto_pulse_ask_question`, `…_ask_ideation_question`,
-`…_ask_refinement_question`, `…_ask_spec_question`) delegate to the same
-implementation, preserving each target's authorization and scope checks.
-Full family contract: `okto-pulse://reference/tool-families/qa_ask`.
+Each target retains its own authorization and activity log.
+See `okto-pulse://reference/tool-families/qa_ask`.
 
 ## `okto_pulse_answer_question`
 
@@ -37,17 +35,10 @@ Args:
 Returns:
     JSON with updated Q&A details
 
-## `okto_pulse_ask_question`
+## `okto_pulse_ask` (`target_type="card"`)
 
-Add a question to a card's Q&A board.
-
-Args:
-    board_id: Board ID
-    card_id: Card ID
-    question: Question text
-
-Returns:
-    JSON with Q&A item details
+Use `okto_pulse_ask` with `target_type="card"` and `parent_id` naming the target.
+See `okto-pulse://reference/tool-families/qa_ask` for parameters, authorization and results.
 
 ## `okto_pulse_delete_question`
 

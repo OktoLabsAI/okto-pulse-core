@@ -6,9 +6,7 @@ version: "1.0"
 
 Consolidated "ask a question on a work item's Q&A board" through one tool with a
 closed `target_type` enum. One of the two assertiveness-gate-eligible families:
-all four legacy ask tools have identical `(board_id, <parent_id>, question)`
-signatures, so consolidation loses no typed guidance — only the parent-id param
-*name*, which the closed enum restores.
+all four targets use `(board_id, parent_id, question)` with target-specific routing.
 
 ## Consolidated tool
 
@@ -25,18 +23,6 @@ and activity log. A permission on one target grants no access to another.
 
 The sibling `*_choice_question` tools (which add `options`/`question_type`) are
 **not** part of this family and remain separate.
-
-## Legacy aliases (preserved, additive — not removed)
-
-- `okto_pulse_ask_question(board_id, card_id, question)`
-- `okto_pulse_ask_ideation_question(board_id, ideation_id, question)`
-- `okto_pulse_ask_refinement_question(board_id, refinement_id, question)`
-- `okto_pulse_ask_spec_question(board_id, spec_id, question)`
-
-Registry-only short name: `ask`. It exists for internal family resolution,
-collision checks, and bounded telemetry labels; it is **not** an MCP tool token,
-does not appear in `tools/list`, and cannot be invoked remotely. The four
-`okto_pulse_*` entries above are the live additive MCP aliases.
 
 ## Telemetry
 

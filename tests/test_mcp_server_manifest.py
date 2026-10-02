@@ -27,13 +27,9 @@ def test_manifest_count_hash_and_aliases_match_live_catalog():
     assert inventory["tools"] == document["tools"]
     assert "okto_pulse_execute_test_scenario_evidence" in inventory["tools"]
     assert inventory["sha256"] == tool_inventory_sha256(document)
-    assert inventory["aliases"]["okto_pulse_ask_question"] == "okto_pulse_ask"
-    assert (
-        inventory["aliases"]["okto_pulse_remove_business_rule"]
-        == "okto_pulse_remove_spec_entity"
-    )
-    assert "ask" not in inventory["aliases"]
-    assert "remove_spec_entity" not in inventory["aliases"]
+    assert inventory["aliases"] == {}
+    assert "okto_pulse_ask_question" not in inventory["tools"]
+    assert "okto_pulse_remove_business_rule" not in inventory["tools"]
 
 
 def test_server_manifest_resource_is_compact_and_dynamic():
