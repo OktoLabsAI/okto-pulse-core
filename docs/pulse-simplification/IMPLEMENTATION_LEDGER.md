@@ -2,6 +2,33 @@
 
 ## Estado para retomada
 
+### 2026-10-02 — C3: armazenamento nativo de KB e Learning
+
+Marco anterior publicado: Core1d3a2ba3 / Community61be5b04. Três suites deixaram
+de importar relational_schema_steps. Substituídos upgrades/backfills/ALTERs por
+inicialização completa do schema atual e pais nativos em sessão composta.
+Metadados de governança, fingerprint e linhagem têm roundtrip e reinício sem
+alteração de conteúdo. Card novo permanece sem vínculo Learning inventado.
+Variantes incompatíveis de arquivos são recusadas com comparação byte-a-byte,
+sem reparo/conversão. Null em campos opcionais novos representa ausência de
+autoria; não é dado importado nem autorização/prova inferida. Não alterada a
+semântica dos writers. Disposições e substituições registradas no JSON.
+
+native-kb-storage1:8 aprovados; native-kb-storage2:36 aprovados (12 dessas suites
+mais 24 de schema atual, incluindo rollback de DDL/versão e retry, WAL, fencing,
+reinício e recusa antes de seed). Core sem mudanças executáveis. Produto e SPA
+iguais ao par dist-native-policy-projection1, já provado antes dos testes por
+provenance-delivery-fixtures1 e reconfirmado por provenance-native-kb-storage1:
+Core851/914 e Community318/404 byte-idênticos. closure-native-kb-storage1 exit0,
+oito budgets ZERO e READMEs validados. Ruff F/E9 e diff checks aprovados.
+
+c3-collection-refresh-community3:6032 coletados,27 erros, ante6021/30. Os erros
+restantes continuam explícitos, inclusive harness de benchmark que exige seu
+ambiente próprio. Coleta não qualifica execução. Próximo C3: suites mistas de
+Project structure, policies e recovery; preservar CAS, recibos, autoridade,
+atomicidade e recuperação atuais ao retirar apenas contratos de conversão.
+C1/C4 integral e decisões T23/KG-10 permanecem abertos. Sem mudança de frontend.
+
 ### 2026-10-02 — C3: fixtures nativas de entrega e coleta do Core
 
 Marco anterior publicado: Core c3fe07a9 / Community e3fb4824. Alterações somente

@@ -1440,6 +1440,18 @@
     {
       "path": "okto_labs_pulse_community/tests/test_single_agent_spec_execution.py",
       "reason": "Receipt seed uses current contextual hash. Full T01 runtime qualification remains pending; collection alone does not qualify the scenario."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_kb_governance_metadata_storage.py",
+      "reason": "Replaced incremental schema conversion with complete current schema, composed native parents, storage roundtrip/restart and byte-preserving incompatible-file refusal. Native null means no authored metadata/fingerprint/binding, never invented proof. Current schema atomic-create rollback remains tested separately."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_kb_lineage_content_hash_storage.py",
+      "reason": "Replaced incremental schema conversion with complete current schema, composed native parents, storage roundtrip/restart and byte-preserving incompatible-file refusal. Native null means no authored metadata/fingerprint/binding, never invented proof. Current schema atomic-create rollback remains tested separately."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_learning_closeout_binding_storage.py",
+      "reason": "Replaced incremental schema conversion with complete current schema, composed native parents, storage roundtrip/restart and byte-preserving incompatible-file refusal. Native null means no authored metadata/fingerprint/binding, never invented proof. Current schema atomic-create rollback remains tested separately."
     }
   ],
   "removed_cases": [
@@ -2000,6 +2012,42 @@
       "test": "test_copy_to_card_looks_up_source_before_permission_denial: copy_knowledge / copy_qa parameters",
       "disposition": "superseded",
       "reason": "Retired duplicate-copy MCP tools; current mockup tool parameter retained."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_kb_governance_metadata_storage.py",
+      "test": "test_migration_adds_columns_preserves_legacy_rows_and_replays",
+      "disposition": "superseded",
+      "reason": "Exclusive predecessor ALTER/backfill/migrator contract. Native storage and restart retained in replacement tests; incompatible bases are refused unchanged, and current creation rollback is covered by test_current_relational_schema.py."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_kb_governance_metadata_storage.py",
+      "test": "test_migration_rolls_back_every_column_when_second_alter_fails",
+      "disposition": "superseded",
+      "reason": "Exclusive predecessor ALTER/backfill/migrator contract. Native storage and restart retained in replacement tests; incompatible bases are refused unchanged, and current creation rollback is covered by test_current_relational_schema.py."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_kb_governance_metadata_storage.py",
+      "test": "test_migration_rolls_back_when_postcondition_audit_detects_drift",
+      "disposition": "superseded",
+      "reason": "Exclusive predecessor ALTER/backfill/migrator contract. Native storage and restart retained in replacement tests; incompatible bases are refused unchanged, and current creation rollback is covered by test_current_relational_schema.py."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_kb_lineage_content_hash_storage.py",
+      "test": "test_lineage_migration_adds_hash_preserves_legacy_rows_and_replays",
+      "disposition": "superseded",
+      "reason": "Exclusive predecessor ALTER/backfill/migrator contract. Native storage and restart retained in replacement tests; incompatible bases are refused unchanged, and current creation rollback is covered by test_current_relational_schema.py."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_learning_closeout_binding_storage.py",
+      "test": "test_schema_upgrade_is_idempotent_preserves_history_and_starts_unbound",
+      "disposition": "superseded",
+      "reason": "Exclusive predecessor ALTER/backfill/migrator contract. Native storage and restart retained in replacement tests; incompatible bases are refused unchanged, and current creation rollback is covered by test_current_relational_schema.py."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_learning_closeout_binding_storage.py",
+      "test": "test_model_and_migrator_declare_the_same_additive_contract",
+      "disposition": "superseded",
+      "reason": "Exclusive predecessor ALTER/backfill/migrator contract. Native storage and restart retained in replacement tests; incompatible bases are refused unchanged, and current creation rollback is covered by test_current_relational_schema.py."
     }
   ]
 }
