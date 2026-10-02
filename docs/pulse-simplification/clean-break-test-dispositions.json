@@ -1579,6 +1579,19 @@
     {
       "path": "okto_labs_pulse_community/tests/test_f3_guideline_authoring_retirement.py",
       "reason": "Native schema and current envelope replace archived Sprint fixture; initial/revision write and forged import-plan refusal retain authority-row equality."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_contextual_code_evidence_projection.py",
+      "reason": "Native authored evidence/observation context replaces removed legacy classification helper and batch API. Full current schema and explicit Spec contracts; live Refinement sees three items, frozen Spec/Card retain one adopted item. Summary/gate and missing/tampered manifest/hash checks retained."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_governed_queue_schema.py",
+      "previous_path": "okto_labs_pulse_community/tests/test_ts_c6c7aa78_governed_queue_migration.py",
+      "reason": "Removed legacy DDL/backfill. Native complete schema and restart preserve pending/claimed/done rows; consolidate, stale-generation, Board sweep and invalid work-kind constraints remain exercised."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_code_evidence_coverage_gate_persistence.py",
+      "reason": "REST response fixture explicitly includes native execution contract; five native coverage skip checks retained."
     }
   ],
   "removed_cases": [
@@ -2499,6 +2512,12 @@
       "test": "test_explicit_successor_preserves_historical_revision_and_exact_replay",
       "disposition": "superseded",
       "reason": "Successor from archived Sprint revision is removed. Native revision append and exact replay retained in semantic lifecycle suite."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_code_evidence_coverage_gate_persistence.py",
+      "test": "test_legacy_spec_migration_is_idempotent_and_preserves_rows",
+      "disposition": "superseded",
+      "reason": "Exclusive predecessor Spec-column backfill; ORM fail-closed default, discovery projection and current REST forwarding remain."
     }
   ]
 }

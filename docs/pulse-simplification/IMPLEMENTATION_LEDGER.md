@@ -2,6 +2,32 @@
 
 ## Estado para retomada
 
+### 2026-10-02 — C3: contexto de evidência e fila sem conversão
+
+Marco anterior publicado: Core0d7ef485 / Community69774a52. Projeção de Source
+Context substitui fixtures/API de classificação legada removidas por evidências
+nativas authored, incluindo baseline e nota de proveniência do worktree. Usa
+schema completo, sessões compostas e contratos explícitos da Spec. Refinement
+atual enxerga três itens; Spec/Card conservam um item do snapshot adotado. Mantidos
+SUMMARY/GATE, ausência de manifesto e recusa de manifesto/hash adulterados.
+
+Suite do skip de cobertura retira apenas backfill de coluna antiga; mantém ORM,
+projeção discovery e forwarding/response REST com contrato explícito. Suite da
+fila renomeada para test_governed_queue_schema.py: schema novo e reinício real
+substituem migração, preservando pending/claimed/done, índices, unicidade por
+artefato/geração/Board e recusa de work_kind desconhecido.
+
+coverage-gate-native2:5 aprovados. contextual-projection-native4:1 aprovado após
+atualizar fixtures para contexto, limite de interpretação e proveniência nativos.
+governed-queue-native1:1 aprovado. Rodadas anteriores registram incompatibilidades
+das fixtures; nenhuma alteração de semântica do produto. Ruff F/E9 e diff checks
+aprovados. Produto/SPA inalterados; provenance-semantic-native1 permanece válida,
+último closure do produto com oito budgets ZERO. Disposições no JSON.
+
+Próximo: knowledge propagation, learning reconciliation, Spec dependency/scenarios
+e benchmark. C1 residual, C4 integral e decisões T23/KG-10 continuam abertos.
+
+
 ### 2026-10-02 — C3: pinpoint e consumidores F3 sem bases Sprint antigas
 
 Marco anterior publicado: Core6bdea8a8 / Community67dfe093. Pinpoint usa schema
