@@ -1912,6 +1912,10 @@
     {
       "path": "okto_labs_pulse_community/frontend/src/components/quality/__tests__/QualityPanel.test.tsx",
       "reason": "All rendering tests use the single edition-based UI. Preserved authoring, questions/permissions, archive, retry/idempotency, filters, paging and head refresh. Added native lint history/pagination, editionless history refusal and permission-reload tests. Closed DOM assertions now check visibility of native hidden sections."
+    },
+    {
+      "path": "okto_labs_pulse_community/frontend/src/components/specs/__tests__/SpecChecklistPanel.test.tsx",
+      "reason": "Single edition-based UI: required host/start edition, native history instead of imported positive fixture, refusal of editionless/legacy-origin history. Preserved ten ordered items, anchors/rationale, authoring and gate assertions. Added pagination/page-size and permission/stage revocation checks; 14 cases pass."
     }
   ],
   "removed_cases": [

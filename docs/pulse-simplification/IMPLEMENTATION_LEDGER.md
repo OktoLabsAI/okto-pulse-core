@@ -2,6 +2,54 @@
 
 ## Estado para retomada
 
+### 2026-10-02 — C3: Checklist UI exige edição nativa, sem modo alternativo
+
+Base publicada Core 32c02e70 / Community cb270fd3. SpecChecklistPanel não possui
+mais presentationMode/lifecycleMode nem histórico técnico alternativo. Retirado
+o fallback expectedSpecEdition → state → 1: o host fornece edição obrigatória,
+usada explicitamente em start/submit. Estado, recibo e resposta de início têm
+edição obrigatória nos tipos frontend; a origem do recibo é somente native.
+
+Leitura da UI recusa identidade/edição incompatível e histórico sem edição ou de
+origem legacy_unverified, sem renderização Legacy. Sem edição positiva do host,
+nenhuma consulta/início é disparado. Resultado de start de outra edição não abre
+o formulário. Troca de Board/Spec/edição limpa o draft local; não converte execução.
+Mantidos itens ordenados, dez resultados completos, anchors, justificativas,
+histórico sob demanda, cache de reabertura e paginação. Controle de tamanho da
+página foi movido para o único histórico. Submit também respeita revogação de
+canExecute ou do estágio de validação enquanto o formulário está aberto; o gate
+do servidor permanece inalterado. O consumidor de produção já selecionava o modo
+nativo e agora não possui essa opção.
+
+Provas: checklist-native-ui-front1, sete testes existentes aprovados após adaptar
+expectativas/fixtures nativas. Front2, 87 aprovados: Checklist 14, SpecValidationPanel
+14, SpecModal qualityTab 9 e validationTabs 50. Casos novos cobrem recusa de histórico
+sem edição/origem antiga, paginação/page size, edição inválida do host, execução
+de outra edição e revogação de permissão/estágio antes do envio. O teste positivo
+de histórico importado virou histórico nativo + dois testes de recusa; nenhuma
+funcionalidade atual foi retirada para obter verde. TypeScript/Vite/diff check
+aprovados. Não houve alteração Python nem inventário MCP neste incremento.
+
+SPA sincronizada: 79 arquivos, árvore
+d5238942ead0006ac630967bfd0fe19cb8b91a7e9cbd35354bb8178fc8fca4ed.
+dist-checklist-native-ui1 instalado e provenance-checklist-native-ui1 confirmou
+igualdade src/install/wheel: Core 845 Python/908 payload; Community 319/405.
+SHA256 Core e5ab83bab1ffc0e3853819e222e3171d1f956eadc7704743a05e00b78ab1cd1b;
+Community 535b5ffb660c12b7bc1dd2195c12f922726a6cf2a2d687b47a23479e8b812437.
+closure-checklist-native-ui1 aprovado, oito budgets ZERO. Sem release/tag/deploy,
+conversão, descarte automático ou acesso a dados reais.
+
+Próximo C1/C3 com dependências confirmadas: backend Checklist ainda aceita
+LEGACY_UNVERIFIED/HISTORY_ONLY em domain/checklist.py; DTOs têm spec_edition nullable,
+SQL ainda possui colunas nullable e ramo de filtro None. StartChecklistExecutionCommand
+tem aliases expected_spec_edition/idempotency_key/binding_digest e binding_version
+opcional; REST/MCP já fornecem o contrato canônico. Retirar esses caminhos junto
+aos consumidores/testes, preservando CAS/replay/autoridade. A UI foi fechada, mas
+essa observação não certifica fechamento do contrato Checklist no backend.
+PolicyCompliancePanel ainda tem modo legacy e caminhos de evidência v1/v2; investigar
+o contrato canônico antes de eliminar consumers. Demais itens do ledger e C4 integral,
+incluindo decisões T23/KG-10, continuam abertos. Entrega final não certificada.
+
 ### 2026-10-02 — C3: QualityPanel tem uma única apresentação nativa
 
 Base publicada Core 7798584b / Community a7c72dc5. Removidos presentationMode,
