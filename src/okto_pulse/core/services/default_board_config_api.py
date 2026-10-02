@@ -100,12 +100,10 @@ class DefaultBoardConfigApiService:
         *,
         scope: str,
         guideline_default_refs: list[Any] | None,
-        compatibility_import: bool = False,
     ) -> dict[str, list[str]]:
         return await self._svc.preview_create_guideline_ref_diff(
             scope=scope,
             guideline_default_refs=guideline_default_refs,
-            compatibility_import=compatibility_import,
         )
 
     async def preview_activate_guideline_ref_diff(
@@ -214,7 +212,6 @@ class DefaultBoardConfigApiService:
         spec_checklist_mode: str | None = None,
         activate: bool = False,
         query_scope: QueryScope | None = None,
-        compatibility_import: bool = False,
     ) -> dict[str, Any]:
         template = await self._svc.create_version(
             settings_payload=settings_payload,
@@ -226,7 +223,6 @@ class DefaultBoardConfigApiService:
             spec_checklist_mode=spec_checklist_mode,
             activate=activate,
             query_scope=query_scope,
-            compatibility_import=compatibility_import,
         )
         return self._serialize(template)
 

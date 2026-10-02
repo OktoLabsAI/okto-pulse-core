@@ -736,7 +736,6 @@ class ImportBoardConfigUseCase:
             diff = await service.preview_create_guideline_ref_diff(
                 scope=str(item.get("scope") or "global"),
                 guideline_default_refs=item.get("guideline_default_refs") or None,
-                compatibility_import=True,
             )
             if guideline_ref_diff_has_changes(diff):
                 await require_authorization(
@@ -760,7 +759,6 @@ class ImportBoardConfigUseCase:
                     spec_checklist_mode=item.get("spec_checklist_mode"),
                     activate=bool(item.get("activate")),
                     query_scope=query_scope,
-                    compatibility_import=True,
                 )
             except DefaultBoardConfigurationError as exc:
                 raise ImportItemError(index, exc.to_dict()) from exc

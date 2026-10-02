@@ -74,6 +74,9 @@ def _actor(*, granted: bool = False, source: str = "rest") -> ActorContext:
 
 
 class _DefaultConfigSpy:
+    async def prepare_version_settings(self, **kwargs: Any) -> dict[str, Any]:
+        return dict(kwargs.get("settings_payload") or {})
+
     def __init__(
         self,
         *,

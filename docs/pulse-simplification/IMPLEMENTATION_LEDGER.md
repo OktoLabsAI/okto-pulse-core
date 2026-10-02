@@ -2,6 +2,42 @@
 
 ## Estado para retomada
 
+### 2026-10-02 — Templates de guidelines com referência única de revisão
+
+Marco anterior publicado: Core cf5add23 / Community d289748d. Removidos
+compatibility_import e seus flags, resolução implícita pelo head ou versão
+numérica, preservação de aliases e deduplicação first-wins. Criação, ativação,
+materialização e import atual exigem o mesmo pin completo de revisão imutável;
+referências incompletas, duplicadas ou com campos antigos são recusadas.
+Não há importador alternativo de templates antigos. O import/export do contrato
+atual permanece, com permissões e atomicidade existentes.
+
+Projeção de candidatos oferece apenas head_revision/default_revision, sem cinco
+aliases escalares. Frontend e fixtures usam esses campos; canonicalização no
+cliente recusa campos extras. Histórico, copy-on-write, retirement, rollback e
+idempotência atuais preservados. Docstrings MCP atualizadas; gerador oficial
+executado, sem mudança no inventário (283 tools, zero aliases).
+
+dist-default-pins1 instalado; provenance-default-pins1.json comprova Core
+851 Python/914 payload e Community 318/404 byte-idênticos antes dos testes.
+default-pins-core1: 13 aprovados e uma asserção antiga sobre alias removido;
+default-pins-core-fix1: esse caso aprovado com contrato fechado.
+default-pins-authority1: 11 aprovados e uma spy sem prepare_version_settings;
+default-pins-authority-fix1: caso aprovado após completar a fixture atual.
+União final: 26 casos Core distintos aprovados. Community: default-pins-community1
+9 aprovados; frontend: default-pins-front1 53 aprovados. TypeScript/Vite passou.
+SPA cd3784ff6629c2bb92af6615d5b72fdd97b369b223a72caf9ed693000303abb4.
+closure-default-pins1 exit0, oito budgets ZERO; READMEs oficiais validados.
+Ruff F/E9 e diff checks passaram. Nenhum gate de autoridade relaxado.
+
+Próximo bloco C1/C3 já previsto: proveniência exclusiva de legado em bindings
+de guidelines (legacy_guideline_version e campos associados), domínio de
+import/export, adapter SQL, schema, REST e UI devem ser tratados juntos.
+Preservar proveniência de materialização atual e seu histórico. A suíte mista
+test_skb_b04_guideline_lifecycle_persistence.py ainda requer adaptação sem
+restaurar migradores; outros testes de templates ainda não estão qualificados.
+C1–C4 seguem abertos; versão final/aceite integral e decisões T23/KG-10 pendentes.
+
 ### 2026-10-02 — Guidelines: mutações canônicas e criação inline fechada
 
 Marco anterior publicado: Core05b89f00 / Community758f7dc6. Retirados quatro

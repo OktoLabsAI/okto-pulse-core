@@ -18088,8 +18088,8 @@ async def okto_pulse_create_default_board_config_version(
     REST twin: POST /default-board-config/versions. Validated as BoardSettings;
     guideline defaults must be global and each native ref must include the exact
     revision_id, revision_number, semantic_version, and revision_digest (priority
-    defaults to zero). This native tool rejects guideline_version/legacy_*; those
-    aliases are reserved for versioned import/migration, not head selection.
+    defaults to zero). All writes and imports reject guideline_version/legacy_* aliases;
+    revisions must be selected explicitly.
     design_system gate_mode must be valid. activate=True activates it
     (single-active enforced). Pin changes also need guidelines.adoption.manage."""
     ctx = await _get_agent_ctx(board_id)
@@ -18285,8 +18285,8 @@ async def okto_pulse_update_default_guideline_refs(
     Native refs use the closed shape ``{guideline_id, priority, revision_id,
     revision_number, semantic_version, revision_digest}``; priority may be omitted
     and defaults to zero, while all four revision fields are required. The
-    native tool rejects guideline_version/legacy_*; those aliases are reserved
-    for versioned import/migration. Returns the EFFECTIVE template. Requires
+    tool and versioned import reject guideline_version/legacy_* aliases.
+    Returns the EFFECTIVE template. Requires
     SPECS_UPDATE and guidelines.adoption.manage."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:

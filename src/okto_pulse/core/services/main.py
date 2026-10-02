@@ -18314,7 +18314,7 @@ class GuidelineService:
         """Materialize exact immutable pins from a default template.
 
         The caller owns the transaction. Existing binding lineages are left
-        untouched and intra-template duplicates remain first-wins.
+        untouched. Incompatible and duplicate references are refused.
         """
         from okto_pulse.core.domain.guideline_lifecycle import (
             GuidelineBindingApplied,
@@ -18330,9 +18330,7 @@ class GuidelineService:
         from okto_pulse.core.ports.guideline_policy import (
             GuidelineDefaultMaterializationProof,
         )
-        from okto_pulse.core.ports.guideline_policy import (
-            GuidelineRevisionListQuery,
-        )
+        from okto_pulse.core.services.default_board_configuration import _guideline_ref_payloads
 
         if query_scope is not None and not await self._board_visible(
             board_id,
@@ -18340,17 +18338,14 @@ class GuidelineService:
             query_scope,
         ):
             return []
+        payloads = _guideline_ref_payloads(refs)
         policy = self._policy()
         created: list[BoardGuideline] = []
-        seen: set[str] = set()
-        for ref in refs or []:
+        for ref in payloads:
             guideline_id = ref["guideline_id"]
             priority = ref.get("priority", 0)
             if type(priority) is not int or priority < 0:
                 raise ValueError("default_guideline_priority_invalid")
-            if guideline_id in seen:
-                continue
-            seen.add(guideline_id)
             current = await policy.get_binding(
                 board_id=board_id,
                 guideline_id=guideline_id,
@@ -18368,101 +18363,13 @@ class GuidelineService:
                 or identity.board_id is not None
             ):
                 raise ValueError("default_guideline_not_global")
-            revision_id = ref.get("revision_id")
-            requested_number = ref.get("revision_number")
-            if requested_number is None and revision_id is None:
-                requested_number = ref.get("guideline_version")
-            if revision_id:
-                revision = await policy.get_revision(
-                    guideline_id=guideline_id,
-                    revision_id=revision_id,
-                )
-            else:
-                revision = None
-                cursor = None
-                if requested_number is not None:
-                    if type(requested_number) is not int:
-                        raise ValueError("default_guideline_revision_invalid")
-                    if requested_number < 1:
-                        raise ValueError("default_guideline_revision_invalid")
-                while requested_number is not None:
-                    page = await policy.list_revisions(
-                        GuidelineRevisionListQuery(
-                            guideline_id=guideline_id,
-                            limit=200,
-                            cursor=cursor,
-                        )
-                    )
-                    revision = next(
-                        (
-                            candidate
-                            for candidate in page.items
-                            if candidate.revision_number == int(requested_number)
-                        ),
-                        None,
-                    )
-                    if revision is not None or not page.has_more:
-                        break
-                    cursor = page.next_cursor
-                if revision is None and requested_number is None:
-                    head = await policy.get_head(guideline_id=guideline_id)
-                    revision = (
-                        await policy.get_revision(
-                            guideline_id=guideline_id,
-                            revision_id=head.revision_id,
-                        )
-                        if head is not None
-                        else None
-                    )
+            revision = await policy.get_revision(
+                guideline_id=guideline_id, revision_id=ref["revision_id"],
+            )
             if revision is None:
                 raise ValueError("default_guideline_revision_not_found")
-            declared_semver = ref.get("semantic_version")
-            declared_digest = ref.get("revision_digest")
-            declared_number = ref.get("revision_number")
-            legacy_number = ref.get("guideline_version")
-            legacy_unresolvable = ref.get("legacy_version_unresolvable", False)
-            if not isinstance(legacy_unresolvable, bool):
-                raise ValueError("default_guideline_revision_invalid")
-            if (
-                isinstance(declared_number, bool)
-                or isinstance(legacy_number, bool)
-                or (declared_number is not None and type(declared_number) is not int)
-                or (legacy_number is not None and type(legacy_number) is not int)
-            ):
-                raise ValueError("default_guideline_revision_invalid")
-            normalized_declared_number = declared_number
-            normalized_legacy_number = legacy_number
-            complete_legacy_pin = bool(
-                legacy_unresolvable
-                and revision_id
-                and declared_semver
-                and declared_digest
-                and legacy_number is not None
-                and ref.get("legacy_version") is not None
-            )
-            legacy_number_exempt = bool(
-                complete_legacy_pin and ref.get("legacy_version") == legacy_number
-            )
-            if (
-                (
-                    declared_semver is not None
-                    and declared_semver != revision.semantic_version
-                )
-                or (
-                    declared_digest is not None
-                    and declared_digest != revision.revision_digest
-                )
-                or (
-                    normalized_declared_number is not None
-                    and normalized_declared_number != revision.revision_number
-                )
-                or (
-                    normalized_legacy_number is not None
-                    and normalized_legacy_number != revision.revision_number
-                    and not legacy_number_exempt
-                )
-                or (legacy_unresolvable and not complete_legacy_pin)
-            ):
+            if any(ref[field] != getattr(revision, field) for field in
+                   ("revision_id", "revision_number", "semantic_version", "revision_digest")):
                 raise ValueError("default_guideline_pin_mismatch")
             event_id = str(uuid.uuid4())
             plan = plan_guideline_binding_transition(

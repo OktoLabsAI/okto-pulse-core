@@ -1272,6 +1272,22 @@
     {
       "path": "okto_labs_pulse_core/tests/test_r01a_mcp_board_uow.py",
       "reason": "AST inventory excludes two removed guideline shims; all current delegation checks retained."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_skb_b11_default_exact_revision.py",
+      "reason": "Native domain revision fixture replaces retired GuidelineUpdate; exact pins replace aliases. Current provenance, rollback, retirement, no-drift materialization and idempotence retained."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_default_board_config_materialization.py",
+      "reason": "Native domain revision fixture replaces retired GuidelineUpdate; exact pins replace aliases. Current provenance, rollback, retirement, no-drift materialization and idempotence retained."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_skb_b11_default_guideline_community.py",
+      "reason": "Import uses the same closed exact pin as create; old aliases rejected before use case. Native history, immutable pin materialization and rollback remain exercised; candidate projections expose only explicit head/default revisions."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_skb_b22_default_config_authorization.py",
+      "reason": "Spy now implements current settings preparation preflight; all denial-before-write assertions retained."
     }
   ],
   "removed_cases": [
@@ -1724,6 +1740,30 @@
       "test": "test_legacy_patch_delete_gate_then_delegate_append_retire",
       "disposition": "superseded",
       "reason": "Exclusive retired guideline alias path. Native governed revision/retirement/adoption, permission and scope suites remain; removed calls are covered by negative surface tests."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_skb_b11_default_exact_revision.py",
+      "test": "test_compatibility_alias_is_explicit_and_retained_only_when_supplied",
+      "disposition": "superseded",
+      "reason": "Exclusive compatibility alias/import or removed direct link shim. Current exact pin, no-write rejection, materialization, history and rollback remain tested."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_skb_b11_default_exact_revision.py",
+      "test": "test_compatibility_preview_normalizes_alias_before_diffing_exact_pin",
+      "disposition": "superseded",
+      "reason": "Exclusive compatibility alias/import or removed direct link shim. Current exact pin, no-write rejection, materialization, history and rollback remain tested."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_skb_b11_default_exact_revision.py",
+      "test": "test_board_config_import_is_the_only_explicit_compatibility_seam",
+      "disposition": "superseded",
+      "reason": "Exclusive compatibility alias/import or removed direct link shim. Current exact pin, no-write rejection, materialization, history and rollback remain tested."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_default_board_config_materialization.py",
+      "test": "test_manual_link_requires_impact_preview_and_persists_nothing",
+      "disposition": "superseded",
+      "reason": "Exclusive compatibility alias/import or removed direct link shim. Current exact pin, no-write rejection, materialization, history and rollback remain tested."
     }
   ]
 }

@@ -42,8 +42,6 @@ from okto_pulse.core.domain.checklist import (
 from okto_pulse.core.models.schemas import BoardSettings
 from okto_pulse.core.ports.authentication import PrincipalKind
 from okto_pulse.core.ports.default_board_configuration import (
-    DEFAULT_GUIDELINE_REF_ALLOWED_FIELDS,
-    DEFAULT_GUIDELINE_REF_COMPATIBILITY_FIELDS,
     DEFAULT_GUIDELINE_REF_NATIVE_FIELDS,
     DefaultBoardTemplateAudit,
     DefaultBoardTemplateRecord,
@@ -140,18 +138,8 @@ def _ref_id(ref: Any) -> str | None:
 
 def _guideline_ref_payloads(
     refs: list[Any] | None,
-    *,
-    allow_compatibility_aliases: bool,
-    allow_legacy_incomplete: bool,
-    allow_legacy_unknown_fields: bool,
-    reject_duplicates: bool,
 ) -> list[dict[str, Any]]:
-    """Validate the closed ref envelope before any persistence lookup/write.
-
-    Historical rows are allowed to carry unknown fields only while they are
-    being read, activated, or materialized. Normalization strips those fields.
-    New create/update writes are closed and reject duplicates deterministically.
-    """
+    """Validate complete current pins before persistence lookup or mutation."""
     if refs is None:
         return []
     if not isinstance(refs, list):
@@ -184,8 +172,8 @@ def _guideline_ref_payloads(
                 {"position": position, "guideline_id": guideline_id},
             )
 
-        unknown_fields = sorted(set(raw_ref) - DEFAULT_GUIDELINE_REF_ALLOWED_FIELDS)
-        if unknown_fields and not allow_legacy_unknown_fields:
+        unknown_fields = sorted(set(raw_ref) - DEFAULT_GUIDELINE_REF_NATIVE_FIELDS)
+        if unknown_fields:
             raise DefaultBoardConfigurationError(
                 "default_guideline_ref_invalid",
                 "Guideline default reference contains unsupported fields.",
@@ -194,27 +182,11 @@ def _guideline_ref_payloads(
                     "position": position,
                     "guideline_id": guideline_id,
                     "unknown_fields": unknown_fields,
-                    "allowed_fields": sorted(DEFAULT_GUIDELINE_REF_ALLOWED_FIELDS),
+                    "allowed_fields": sorted(DEFAULT_GUIDELINE_REF_NATIVE_FIELDS),
                 },
             )
 
         guideline_id = guideline_id.strip()
-        compatibility_fields = sorted(
-            set(raw_ref) & DEFAULT_GUIDELINE_REF_COMPATIBILITY_FIELDS
-        )
-        if compatibility_fields and not allow_compatibility_aliases:
-            raise DefaultBoardConfigurationError(
-                "default_guideline_ref_invalid",
-                "Compatibility guideline revision aliases are accepted only by "
-                "the board-configuration import path.",
-                422,
-                {
-                    "position": position,
-                    "guideline_id": guideline_id,
-                    "compatibility_fields": compatibility_fields,
-                    "native_fields": sorted(DEFAULT_GUIDELINE_REF_NATIVE_FIELDS),
-                },
-            )
         missing_pin_fields = sorted(
             field_name
             for field_name in (
@@ -225,7 +197,7 @@ def _guideline_ref_payloads(
             )
             if raw_ref.get(field_name) is None
         )
-        if missing_pin_fields and not allow_legacy_incomplete:
+        if missing_pin_fields:
             raise DefaultBoardConfigurationError(
                 "default_guideline_pin_incomplete",
                 "A native guideline default write must pin one complete immutable "
@@ -243,7 +215,18 @@ def _guideline_ref_payloads(
                     ],
                 },
             )
-        if reject_duplicates and guideline_id in first_position_by_id:
+        priority = raw_ref.get("priority", 0)
+        if type(priority) is not int or priority < 0:
+            raise DefaultBoardConfigurationError("default_guideline_priority_invalid",
+                "Guideline priority must be a non-negative integer.", 422, {"guideline_id": guideline_id})
+        if type(raw_ref["revision_number"]) is not int or raw_ref["revision_number"] < 1:
+            raise DefaultBoardConfigurationError("default_guideline_revision_invalid",
+                "Revision number must be a positive integer.", 422, {"guideline_id": guideline_id})
+        if any(not isinstance(raw_ref[field], str) or not raw_ref[field].strip()
+               for field in ("revision_id", "semantic_version", "revision_digest")):
+            raise DefaultBoardConfigurationError("default_guideline_revision_invalid",
+                "Revision identity, semantic version and digest are required.", 422, {"guideline_id": guideline_id})
+        if guideline_id in first_position_by_id:
             raise DefaultBoardConfigurationError(
                 "default_guideline_duplicate",
                 f"Guideline '{guideline_id}' appears more than once in the "
@@ -586,10 +569,6 @@ class DefaultBoardConfigurationService:
             return []
         await self._validate_guideline_default_refs(
             refs,
-            allow_compatibility_aliases=True,
-            allow_legacy_incomplete=True,
-            allow_legacy_unknown_fields=True,
-            reject_duplicates=False,
         )
 
         # Local import avoids the main <-> default_board_configuration import cycle.
@@ -815,12 +794,10 @@ class DefaultBoardConfigurationService:
         spec_checklist_mode: str | None = None,
         activate: bool = False,
         query_scope: QueryScope | None = None,
-        compatibility_import: bool = False,
     ) -> DefaultBoardTemplateRecord:
         """Create a new draft template version (validated as BoardSettings, TR1).
         ``activate=True`` immediately activates it (single-active enforced).
-        ``compatibility_import=True`` is reserved for the versioned import use
-        case; native callers must provide the closed complete revision pin.
+        All callers provide a closed complete immutable revision pin.
 
         New template versions default reviewer separation to ``enforce``. This
         is forward-only: legacy templates/boards are never backfilled and their
@@ -833,15 +810,9 @@ class DefaultBoardConfigurationService:
             guideline_default_refs,
             actor=actor,
             query_scope=query_scope,
-            allow_compatibility_aliases=compatibility_import,
-            allow_legacy_incomplete=compatibility_import,
-            allow_legacy_unknown_fields=compatibility_import,
         )
         normalized_guideline_refs = await self._normalize_guideline_refs(
             guideline_default_refs,
-            allow_compatibility_aliases=compatibility_import,
-            allow_legacy_incomplete=compatibility_import,
-            allow_legacy_unknown_fields=compatibility_import,
         )
         active = await self.resolve_active(scope)
         resolved_checklist_mode = self._validate_spec_checklist_mode(
@@ -905,17 +876,9 @@ class DefaultBoardConfigurationService:
             template.guideline_default_refs,
             actor=actor,
             query_scope=query_scope,
-            allow_compatibility_aliases=True,
-            allow_legacy_incomplete=True,
-            allow_legacy_unknown_fields=True,
-            reject_duplicates=False,
         )
         normalized_guideline_refs = await self._normalize_guideline_refs(
             template.guideline_default_refs,
-            allow_compatibility_aliases=True,
-            allow_legacy_incomplete=True,
-            allow_legacy_unknown_fields=True,
-            reject_duplicates=False,
         )
         # FR6: the Design System default ref (if any) must satisfy the minimal contract.
         await self._validate_design_system_default_ref(
@@ -988,21 +951,13 @@ class DefaultBoardConfigurationService:
         *,
         scope: str,
         guideline_default_refs: list[Any] | None,
-        compatibility_import: bool = False,
     ) -> dict[str, list[str]]:
         """Compare a proposed version with the authoritative active baseline."""
 
         active = await self.resolve_active(scope)
         old_refs = list(active.guideline_default_refs or []) if active else []
-        if compatibility_import and guideline_default_refs:
-            new_refs = await self._normalize_guideline_refs(
-                guideline_default_refs,
-                allow_compatibility_aliases=True,
-                allow_legacy_incomplete=True,
-                allow_legacy_unknown_fields=True,
-            )
-        else:
-            new_refs = list(guideline_default_refs or [])
+        _guideline_ref_payloads(old_refs)
+        new_refs = await self._normalize_guideline_refs(guideline_default_refs)
         return _diff_guideline_refs(old_refs, new_refs)
 
     async def preview_activate_guideline_ref_diff(
@@ -1117,18 +1072,7 @@ class DefaultBoardConfigurationService:
         else:
             template = await self.resolve_active(scope)
         refs = (template.guideline_default_refs or []) if template else []
-        # Historical templates could contain duplicate identities. Keep the
-        # materializer's deterministic first-wins compatibility rule on reads;
-        # every new write rejects duplicates before persistence.
-        ref_by_id: dict[str, dict[str, Any]] = {}
-        for candidate_ref in refs:
-            guideline_id = _ref_id(candidate_ref)
-            if (
-                guideline_id
-                and guideline_id not in ref_by_id
-                and isinstance(candidate_ref, dict)
-            ):
-                ref_by_id[guideline_id] = candidate_ref
+        ref_by_id = {ref["guideline_id"]: ref for ref in _guideline_ref_payloads(refs)}
         owner_id = _scoped_guideline_owner_id(actor, query_scope)
         guidelines = (
             await get_default_board_configuration_store().list_global_guidelines(
@@ -1141,22 +1085,14 @@ class DefaultBoardConfigurationService:
             ref = ref_by_id.get(g.id)
             head_revision = {
                 "revision_id": g.revision_id,
-                "revision_number": (
-                    g.revision_number
-                    if g.revision_number is not None
-                    else g.version
-                ),
+                "revision_number": g.revision_number,
                 "semantic_version": g.semantic_version,
                 "revision_digest": g.revision_digest,
             }
             default_revision = (
                 {
                     "revision_id": ref.get("revision_id"),
-                    "revision_number": (
-                        ref.get("revision_number")
-                        if ref.get("revision_number") is not None
-                        else ref.get("guideline_version")
-                    ),
+                    "revision_number": ref["revision_number"],
                     "semantic_version": ref.get("semantic_version"),
                     "revision_digest": ref.get("revision_digest"),
                 }
@@ -1169,15 +1105,6 @@ class DefaultBoardConfigurationService:
                     "guideline_id": g.id,
                     "title": g.title,
                     "scope": g.scope,
-                    # Compatibility aliases continue to project the current
-                    # head. New consumers should use head_revision and
-                    # default_revision to avoid confusing a newer catalog head
-                    # with the immutable template pin.
-                    "guideline_version": g.version,
-                    "revision_id": g.revision_id,
-                    "revision_number": head_revision["revision_number"],
-                    "semantic_version": g.semantic_version,
-                    "revision_digest": g.revision_digest,
                     "head_revision": head_revision,
                     "default_revision": default_revision,
                     "retired": retired,
@@ -1196,233 +1123,30 @@ class DefaultBoardConfigurationService:
             "candidates": candidates,
         }
 
-    async def _normalize_guideline_refs(
-        self,
-        refs: list[Any] | None,
-        *,
-        allow_compatibility_aliases: bool = False,
-        allow_legacy_incomplete: bool = False,
-        allow_legacy_unknown_fields: bool = False,
-        reject_duplicates: bool = True,
-    ) -> list[dict[str, Any]]:
-        """Freeze each validated default to one exact immutable revision.
-
-        Existing exact or compatibility numeric selectors are resolved and
-        preserved. Identity-only head resolution is available solely while
-        normalizing a historical persisted row; native writes are rejected
-        unless they provide the complete immutable pin. This distinction keeps
-        imports and copy-on-write template versions reproducible. The writer
-        emits a closed native payload; only explicitly supplied, named
-        compatibility aliases survive normalization.
-        """
+    async def _normalize_guideline_refs(self, refs: list[Any] | None) -> list[dict[str, Any]]:
+        """Verify every explicit immutable pin; never resolve an old selector."""
+        payloads = _guideline_ref_payloads(refs)
         normalized: list[dict[str, Any]] = []
-        payloads = _guideline_ref_payloads(
-            refs,
-            allow_compatibility_aliases=allow_compatibility_aliases,
-            allow_legacy_incomplete=allow_legacy_incomplete,
-            allow_legacy_unknown_fields=allow_legacy_unknown_fields,
-            reject_duplicates=reject_duplicates,
-        )
+        store = get_default_board_configuration_store()
+        fields = ("revision_id", "revision_number", "semantic_version", "revision_digest")
         for ref in payloads:
             guideline_id = ref["guideline_id"]
-            priority = ref.get("priority", 0)
-            compatibility_ref = any(
-                field_name in ref
-                for field_name in DEFAULT_GUIDELINE_REF_COMPATIBILITY_FIELDS
+            guideline = await store.get_guideline_revision(
+                self.db, guideline_id=guideline_id, revision_id=ref["revision_id"],
             )
-            if type(priority) is not int or priority < 0:
-                raise DefaultBoardConfigurationError(
-                    "default_guideline_priority_invalid",
-                    "Guideline default priority must be a non-negative integer.",
-                    422,
-                    {
-                        "guideline_id": guideline_id,
-                        "priority": priority,
-                    },
-                )
-            store = get_default_board_configuration_store()
-            revision_id = ref.get("revision_id")
-            declared_number = ref.get("revision_number")
-            legacy_number = ref.get("guideline_version")
-            legacy_unresolvable = ref.get("legacy_version_unresolvable", False)
-            if not isinstance(legacy_unresolvable, bool):
-                raise DefaultBoardConfigurationError(
-                    "default_guideline_revision_invalid",
-                    "legacy_version_unresolvable must be a boolean.",
-                    422,
-                    {"guideline_id": guideline_id},
-                )
-            if (declared_number is not None and type(declared_number) is not int) or (
-                legacy_number is not None and type(legacy_number) is not int
-            ):
-                raise DefaultBoardConfigurationError(
-                    "default_guideline_revision_invalid",
-                    "Guideline revision selectors must be positive integers.",
-                    422,
-                    {
-                        "guideline_id": guideline_id,
-                        "revision_number": declared_number,
-                        "guideline_version": legacy_number,
-                    },
-                )
-            selector_number = (
-                declared_number
-                if declared_number is not None
-                else (
-                    legacy_number
-                    if legacy_number is not None and revision_id is None
-                    else None
-                )
-            )
-            parsed_number = selector_number
-            parsed_legacy_number = legacy_number
-            if parsed_number is not None and parsed_number < 1:
-                raise DefaultBoardConfigurationError(
-                    "default_guideline_revision_invalid",
-                    "Guideline revision selectors must be positive integers.",
-                    422,
-                    {
-                        "guideline_id": guideline_id,
-                        "revision_number": selector_number,
-                    },
-                )
-            if revision_id is not None:
-                if not isinstance(revision_id, str) or not revision_id.strip():
-                    raise DefaultBoardConfigurationError(
-                        "default_guideline_revision_invalid",
-                        "revision_id must be a non-empty string.",
-                        422,
-                        {"guideline_id": guideline_id},
-                    )
-                guideline = await store.get_guideline_revision(
-                    self.db,
-                    guideline_id=guideline_id,
-                    revision_id=revision_id.strip(),
-                )
-            elif parsed_number is not None:
-                guideline = await store.get_guideline_revision(
-                    self.db,
-                    guideline_id=guideline_id,
-                    revision_number=parsed_number,
-                )
-            else:
-                guideline = await store.get_guideline(
-                    self.db,
-                    guideline_id=guideline_id,
-                )
             if guideline is None:
-                raise DefaultBoardConfigurationError(
-                    "default_guideline_revision_not_found",
-                    f"Guideline '{guideline_id}' has no matching revision.",
-                    422,
-                    {
-                        "guideline_id": guideline_id,
-                        "revision_id": revision_id,
-                        "revision_number": parsed_number,
-                    },
-                )
-            declared_values = {
-                "revision_id": revision_id,
-                "semantic_version": ref.get("semantic_version"),
-                "revision_digest": ref.get("revision_digest"),
-                "revision_number": declared_number,
-            }
-            actual_values = {
-                "revision_id": guideline.revision_id,
-                "semantic_version": guideline.semantic_version,
-                "revision_digest": guideline.revision_digest,
-                "revision_number": guideline.revision_number,
-            }
-            mismatches = [
-                field_name
-                for field_name, declared_value in declared_values.items()
-                if declared_value is not None
-                and declared_value != actual_values[field_name]
-            ]
-            complete_legacy_pin = bool(
-                legacy_unresolvable
-                and revision_id
-                and ref.get("semantic_version")
-                and ref.get("revision_digest")
-                and legacy_number is not None
-                and ref.get("legacy_version") is not None
-            )
-            legacy_number_exempt = bool(
-                complete_legacy_pin and ref.get("legacy_version") == legacy_number
-            )
-            if legacy_unresolvable and not complete_legacy_pin:
-                mismatches.append("legacy_version_unresolvable")
-            if (
-                parsed_legacy_number is not None
-                and parsed_legacy_number
-                != (
-                    guideline.revision_number
-                    if guideline.revision_number is not None
-                    else guideline.version
-                )
-                and not legacy_number_exempt
-            ):
-                mismatches.append("guideline_version")
+                raise DefaultBoardConfigurationError("default_guideline_revision_not_found",
+                    f"Guideline '{guideline_id}' has no matching revision.", 422,
+                    {"guideline_id": guideline_id, "revision_id": ref["revision_id"]})
+            mismatches = [field for field in fields if ref[field] != getattr(guideline, field)]
             if mismatches:
-                raise DefaultBoardConfigurationError(
-                    "default_guideline_pin_mismatch",
-                    f"Guideline '{guideline_id}' revision metadata does not "
-                    "match the selected immutable revision.",
-                    422,
-                    {
-                        "guideline_id": guideline_id,
-                        "mismatched_fields": sorted(set(mismatches)),
-                    },
-                )
-            resolved_revision_number = (
-                guideline.revision_number
-                if guideline.revision_number is not None
-                else guideline.version
-            )
-            if (
-                isinstance(guideline.revision_id, str)
-                and guideline.revision_id
-                and type(resolved_revision_number) is int
-                and resolved_revision_number > 0
-                and isinstance(guideline.semantic_version, str)
-                and guideline.semantic_version
-                and isinstance(guideline.revision_digest, str)
-                and guideline.revision_digest
-            ):
-                canonical: dict[str, Any] = DefaultGuidelineRevisionRef(
-                    guideline_id=guideline_id,
-                    priority=priority,
-                    revision_id=guideline.revision_id,
-                    revision_number=resolved_revision_number,
-                    semantic_version=guideline.semantic_version,
-                    revision_digest=guideline.revision_digest,
-                ).to_dict()
-            else:
-                # Historical mutable guideline rows can lack immutable
-                # revision evidence. They remain readable/materializable only
-                # through the explicit compatibility path.
-                canonical = {
-                    "guideline_id": guideline_id,
-                    "priority": priority,
-                    "revision_id": guideline.revision_id,
-                    "revision_number": resolved_revision_number,
-                    "semantic_version": guideline.semantic_version,
-                    "revision_digest": guideline.revision_digest,
-                }
-            # ``guideline_version`` remains a read/migration alias. A complete
-            # unresolved legacy pin keeps its source version; every native ref
-            # aliases the exact immutable revision number.
-            if compatibility_ref:
-                canonical["guideline_version"] = (
-                    legacy_number
-                    if legacy_number_exempt
-                    else resolved_revision_number
-                )
-                if "legacy_version" in ref:
-                    canonical["legacy_version"] = ref["legacy_version"]
-                if "legacy_version_unresolvable" in ref:
-                    canonical["legacy_version_unresolvable"] = legacy_unresolvable
-            normalized.append(canonical)
+                raise DefaultBoardConfigurationError("default_guideline_pin_mismatch",
+                    "Metadata does not match the selected immutable revision.", 422,
+                    {"guideline_id": guideline_id, "mismatched_fields": sorted(mismatches)})
+            normalized.append(DefaultGuidelineRevisionRef(
+                guideline_id=guideline_id, priority=ref.get("priority", 0),
+                **{field: ref[field] for field in fields},
+            ).to_dict())
         return normalized
 
     def _audit_guideline_diff(
@@ -1569,20 +1293,12 @@ class DefaultBoardConfigurationService:
         *,
         actor: str | None = None,
         query_scope: QueryScope | None = None,
-        allow_compatibility_aliases: bool = False,
-        allow_legacy_incomplete: bool = False,
-        allow_legacy_unknown_fields: bool = False,
-        reject_duplicates: bool = True,
     ) -> None:
         """FR5/TR6/BR br_512d374b: every guideline default MUST reference an EXISTING
         GLOBAL catalog guideline. Inline (no guideline_id), missing, or
         board-scoped/non-global refs are rejected fail-closed BEFORE activate/apply."""
         payloads = _guideline_ref_payloads(
             refs,
-            allow_compatibility_aliases=allow_compatibility_aliases,
-            allow_legacy_incomplete=allow_legacy_incomplete,
-            allow_legacy_unknown_fields=allow_legacy_unknown_fields,
-            reject_duplicates=reject_duplicates,
         )
         for ref in payloads:
             guideline_id = ref["guideline_id"]

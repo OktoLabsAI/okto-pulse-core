@@ -1,14 +1,14 @@
 """SK-B / B11 — exact guideline revisions in default board templates.
 
 The suite exercises the Core contract independently from Community transport:
-native closed writes, compatibility aliases, dual head/default projection,
+native closed writes, exact head/default projection,
 copy-on-write template upgrades, no-drift board materialization, and retirement.
 """
 
 from __future__ import annotations
 
 import uuid
-from types import SimpleNamespace
+from guideline_native_fixtures import append_revision, retire_guideline
 
 import pytest
 
@@ -16,7 +16,6 @@ from okto_pulse.core.models.schemas import (
     BoardCreate,
     BoardSettings,
     GuidelineCreate,
-    GuidelineUpdate,
 )
 from okto_pulse.core.ports.default_board_configuration import (
     DEFAULT_GUIDELINE_REF_NATIVE_FIELDS,
@@ -55,11 +54,7 @@ async def _guideline(db, title: str):
 
 
 async def _next_revision(db, guideline, content: str):
-    updated = await GuidelineService(db).update_guideline(
-        guideline.id,
-        USER_ID,
-        GuidelineUpdate(content=content),
-    )
+    updated = await append_revision(db, guideline.id, USER_ID, content=content)
     assert updated is not None
     return updated
 
@@ -138,145 +133,10 @@ async def test_native_incomplete_unknown_and_duplicate_refs_write_nothing():
         assert [item.id for item in await service.list_versions(scope)] == [draft.id]
 
 
-async def test_compatibility_alias_is_explicit_and_retained_only_when_supplied():
-    from okto_pulse.core.infra.database import get_session_factory
-
-    async with get_session_factory()() as db:
-        guideline = await _guideline(db, "Legacy import")
-        template = await DefaultBoardConfigurationService(db).create_version(
-            settings_payload=BoardSettings(),
-            actor=USER_ID,
-            scope=_scope(),
-            guideline_default_refs=[
-                {
-                    "guideline_id": guideline.id,
-                    "priority": 3,
-                    "guideline_version": guideline.version,
-                }
-            ],
-            compatibility_import=True,
-        )
-
-        assert template.guideline_default_refs is not None
-        persisted = template.guideline_default_refs[0]
-        assert set(persisted) == {
-            *DEFAULT_GUIDELINE_REF_NATIVE_FIELDS,
-            "guideline_version",
-        }
-        assert all(value is not None for value in persisted.values())
-        assert persisted["guideline_version"] == guideline.version
-        assert persisted["revision_id"] == guideline.revision_id
-        assert persisted["semantic_version"] == guideline.semantic_version
-        assert persisted["revision_digest"] == guideline.revision_digest
 
 
-async def test_compatibility_preview_normalizes_alias_before_diffing_exact_pin():
-    from okto_pulse.core.infra.database import get_session_factory
-    from okto_pulse.core.services.default_board_configuration import (
-        guideline_ref_diff_has_changes,
-    )
-
-    async with get_session_factory()() as db:
-        scope = _scope()
-        guideline = await _guideline(db, "Equivalent compatibility preview")
-        service = DefaultBoardConfigurationService(db)
-        await service.create_version(
-            settings_payload=BoardSettings(),
-            actor=USER_ID,
-            scope=scope,
-            guideline_default_refs=[_native_ref(guideline, priority=3)],
-            activate=True,
-        )
-
-        diff = await service.preview_create_guideline_ref_diff(
-            scope=scope,
-            guideline_default_refs=[
-                {
-                    "guideline_id": guideline.id,
-                    "priority": 3,
-                    "guideline_version": guideline.version,
-                }
-            ],
-            compatibility_import=True,
-        )
-
-        assert guideline_ref_diff_has_changes(diff) is False
-        assert diff == {"added": [], "removed": [], "reordered": []}
 
 
-async def test_board_config_import_is_the_only_explicit_compatibility_seam():
-    from okto_pulse.core.application.use_cases.base import ActorContext
-    from okto_pulse.core.application.use_cases.import_export import (
-        ImportBoardConfigCommand,
-        ImportBoardConfigUseCase,
-    )
-    from okto_pulse.core.domain.realm import LOCAL_REALM_ID
-
-    class _DefaultConfigSpy:
-        def __init__(self) -> None:
-            self.calls: list[dict] = []
-
-        async def preview_create_guideline_ref_diff(self, **kwargs):
-            assert kwargs["compatibility_import"] is True
-            return {
-                "added": ["legacy-guideline"],
-                "removed": [],
-                "reordered": [],
-            }
-
-        async def create_version(self, **kwargs):
-            self.calls.append(kwargs)
-            return {}
-
-    class _Uow:
-        def __init__(self, service) -> None:
-            self.services = SimpleNamespace(default_board_config=service)
-            self.committed = False
-
-        async def commit(self) -> None:
-            self.committed = True
-
-    service = _DefaultConfigSpy()
-    uow = _Uow(service)
-    actor = ActorContext(
-        USER_ID,
-        "rest",
-        realm_id=LOCAL_REALM_ID,
-        roles=("admin",),
-        permissions=[
-            "spec.entity.edit_fields",
-            "guidelines.adoption.manage",
-        ],
-    )
-    result = await ImportBoardConfigUseCase().execute(
-        ImportBoardConfigCommand(
-            items=[
-                {
-                    "scope": "global",
-                    "guideline_default_refs": [
-                        {
-                            "guideline_id": "legacy-guideline",
-                            "guideline_version": 7,
-                        }
-                    ],
-                }
-            ]
-        ),
-        actor=actor,
-        uow=uow,  # type: ignore[arg-type]
-    )
-
-    assert result.created == 1
-    assert uow.committed is True
-    assert len(service.calls) == 1
-    call = service.calls[0]
-    assert call["compatibility_import"] is True
-    assert call["guideline_default_refs"] == [
-        {
-            "guideline_id": "legacy-guideline",
-            "guideline_version": 7,
-        }
-    ]
 
 
 async def test_candidates_separate_current_head_from_template_default_pin():
@@ -316,7 +176,8 @@ async def test_candidates_separate_current_head_from_template_default_pin():
             "semantic_version": guideline_v1.semantic_version,
             "revision_digest": guideline_v1.revision_digest,
         }
-        assert candidate["revision_id"] == guideline_v2.revision_id
+        assert not {"revision_id", "revision_number", "semantic_version",
+                    "revision_digest", "guideline_version"} & candidate.keys()
         assert candidate["is_default"] is True
         assert candidate["priority"] == 4
         assert candidate["retired"] is False
@@ -409,10 +270,7 @@ async def test_retired_candidate_keeps_historical_default_pin_visible():
             guideline_default_refs=[_native_ref(guideline, priority=1)],
             activate=True,
         )
-        assert await GuidelineService(db).delete_guideline(
-            guideline.id,
-            USER_ID,
-        )
+        await retire_guideline(db, guideline.id, USER_ID)
 
         payload = await service.list_default_candidates(
             scope=scope,
