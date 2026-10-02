@@ -1396,6 +1396,10 @@
     {
       "path": "okto_labs_pulse_community/tests/test_sqlalchemy_validation_cycle.py",
       "reason": "Removed retired rules column from revision fixtures and added byte-preserving schema refusal. Ordered semantic metrics, full native history, exact materialization, atomicity and current policy/waiver assertions retained."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_skb_b14_policy_constraint_projection.py",
+      "reason": "Removed automatic retirement of legacy rule Constraints. Native semantic projection/replay/rebuild/lineage/repair retained; foreign Constraint payload stays unchanged. Removed fake support for retired Constraint scan/mutation queries. Current graph schema admission separately verifies byte-inert refusal."
     }
   ],
   "removed_cases": [

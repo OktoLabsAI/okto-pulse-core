@@ -2,6 +2,36 @@
 
 ## Estado para retomada
 
+### 2026-10-02 — Projeção sem conversão automática de Constraints antigas
+
+Marco anterior publicado: Corea364c9a5 / Community5659fd20. Retirados
+_LegacyRuleNode, _legacy_rule_nodes, constante de retirement antigo e loop que
+alterava automaticamente Constraints de guidelines. Projetor reconcilia somente
+seus Entity semânticos nativos. A raiz possui ator próprio policy-board-root-projector;
+seu ID e localização por source_artifact_ref permanecem. Encerramento por remoção
+de origem NATIVA, rebuild, linhagem, replay e correção de proveniência nativa
+foram mantidos. Não há leitura/conversão/escrita de Constraints nesse adapter.
+
+Suite B14 deixou de exigir a migração antiga. Em seu lugar, prova que Constraint
+de outro produtor permanece integralmente igual durante sync, replay, remoção
+de fontes nativas e rebuild. Fake rejeita as consultas de conversão retiradas.
+native-policy-projection1:14 aprovados, incluindo outbox atômico/idempotente,
+cancelamento e transações, linhagem/reparo, bootstrap Grafx real, reinício estável,
+recusa de BoardMeta com versão divergente e catálogo inesperado sem alteração
+de catálogo/transações/WAL. Rejeição da base permanece na admissão de schema;
+o projetor não tenta converter dados históricos nem substituir essa admissão.
+
+dist-native-policy-projection1 instalado; provenance-native-policy-projection1.json
+comprova Core851/914 e Community318/404 Python/payload byte-idênticos antes dos
+testes. closure-native-policy-projection1 exit0, oito budgets ZERO e READMEs
+oficiais validados. Ruff F/E9 e diff checks passaram. Sem alteração de frontend.
+
+Próximo C1/C3: renovar a coleta das suites para localizar imports/fixtures ainda
+dependentes dos componentes retirados e fechar suas disposições/adaptações,
+preservando garantias nativas. Normalizadores e demais resíduos do inventário
+também permanecem; C4 integral e decisões T23/KG-10 continuam abertos.
+Não declarar entrega integral.
+
 ### 2026-10-02 — Revisões sem coluna rules de legado
 
 Marco anterior publicado: Coref83852b1 / Communityb5462e0c. Removida rules de
