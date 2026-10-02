@@ -58,17 +58,6 @@ def _aware_utc(value: object, code: str) -> datetime:
     return value.astimezone(timezone.utc)
 
 
-def _sha256(value: object, code: str) -> str:
-    normalized = _required_text(value, code).lower()
-    if len(normalized) != 64:
-        raise AssessmentLifecycleContractError(code)
-    try:
-        int(normalized, 16)
-    except ValueError as exc:
-        raise AssessmentLifecycleContractError(code) from exc
-    return normalized
-
-
 class AssessmentLifecycleAction(str, Enum):
     ADMIT_VALIDATION = "admit_validation"
     ARCHIVE = "archive"
@@ -120,9 +109,6 @@ class AssessmentPurgeResource(str, Enum):
     RESEARCH_HEADS = "research_heads"
     RESEARCH_ENTRIES = "research_entries"
     QUALITY_RECEIPTS = "quality_receipts"
-    QUALITY_LIFECYCLE_STALE_TRANSITIONS = (
-        "quality_lifecycle_stale_transitions"
-    )
     QUALITY_LIFECYCLE_TRANSITIONS = "quality_lifecycle_transitions"
     SUBJECT_HISTORY = "subject_history"
     KG_PROJECTIONS = "kg_projections"
@@ -150,7 +136,6 @@ ASSESSMENT_SUBJECT_PURGE_ORDER: tuple[AssessmentPurgeResource, ...] = (
     AssessmentPurgeResource.RESEARCH_HEADS,
     AssessmentPurgeResource.RESEARCH_ENTRIES,
     AssessmentPurgeResource.QUALITY_RECEIPTS,
-    AssessmentPurgeResource.QUALITY_LIFECYCLE_STALE_TRANSITIONS,
     AssessmentPurgeResource.QUALITY_LIFECYCLE_TRANSITIONS,
     AssessmentPurgeResource.SUBJECT_HISTORY,
     AssessmentPurgeResource.KG_PROJECTIONS,
@@ -165,31 +150,10 @@ ASSESSMENT_BOARD_PURGE_ORDER: tuple[AssessmentPurgeResource, ...] = (
 
 
 @dataclass(frozen=True, slots=True)
-class AssessmentLifecycleCurrentInput:
-    assessment_kind: AssessmentKind
-    input_digest: str
-
-    def __post_init__(self) -> None:
-        if not isinstance(self.assessment_kind, AssessmentKind):
-            raise AssessmentLifecycleContractError(
-                "assessment_lifecycle_kind_invalid"
-            )
-        object.__setattr__(
-            self,
-            "input_digest",
-            _sha256(
-                self.input_digest,
-                "assessment_lifecycle_input_digest_invalid",
-            ),
-        )
-
-
-@dataclass(frozen=True, slots=True)
 class AssessmentLifecycleSubjectSnapshot:
     subject: AssessmentSubjectRef
     status: str
     archived: bool
-    current_inputs: tuple[AssessmentLifecycleCurrentInput, ...] = ()
 
     def __post_init__(self) -> None:
         if not isinstance(self.subject, AssessmentSubjectRef):
@@ -211,20 +175,6 @@ class AssessmentLifecycleSubjectSnapshot:
         if not isinstance(self.archived, bool):
             raise AssessmentLifecycleContractError(
                 "assessment_lifecycle_archived_invalid"
-            )
-        inputs = tuple(self.current_inputs)
-        object.__setattr__(self, "current_inputs", inputs)
-        if any(
-            not isinstance(item, AssessmentLifecycleCurrentInput)
-            for item in inputs
-        ):
-            raise AssessmentLifecycleContractError(
-                "assessment_lifecycle_current_input_invalid"
-            )
-        kinds = [item.assessment_kind for item in inputs]
-        if len(set(kinds)) != len(kinds):
-            raise AssessmentLifecycleContractError(
-                "assessment_lifecycle_current_input_duplicate"
             )
 
     @property
@@ -381,7 +331,6 @@ class AssessmentLifecycleReceipt:
     receipt_id: str
     subject: AssessmentSubjectRef
     assessment_kind: AssessmentKind
-    input_digest: str
     created_at: datetime
 
     def __post_init__(self) -> None:
@@ -407,14 +356,6 @@ class AssessmentLifecycleReceipt:
             )
         object.__setattr__(
             self,
-            "input_digest",
-            _sha256(
-                self.input_digest,
-                "assessment_lifecycle_receipt_input_digest_invalid",
-            ),
-        )
-        object.__setattr__(
-            self,
             "created_at",
             _aware_utc(
                 self.created_at,
@@ -431,8 +372,6 @@ class AssessmentHeadRebuild:
     selected_receipt_id: str | None
     selected_state: AssessmentReceiptState | None
     resulting_revision: int
-    stale_transition_required: bool
-    stale_transition_key: str | None
 
     def __post_init__(self) -> None:
         if not isinstance(self.assessment_kind, AssessmentKind):
@@ -472,41 +411,14 @@ class AssessmentHeadRebuild:
             raise AssessmentLifecycleContractError(
                 "assessment_head_rebuild_revision_mismatch"
             )
-        if not isinstance(self.stale_transition_required, bool):
-            raise AssessmentLifecycleContractError(
-                "assessment_head_rebuild_stale_flag_invalid"
-            )
         if self.selected_receipt_id is None:
             if self.selected_state is not None:
                 raise AssessmentLifecycleContractError(
                     "assessment_head_rebuild_selected_state_invalid"
                 )
-        elif self.selected_state not in {
-            AssessmentReceiptState.CURRENT,
-            AssessmentReceiptState.STALE,
-        }:
+        elif self.selected_state is not AssessmentReceiptState.CURRENT:
             raise AssessmentLifecycleContractError(
                 "assessment_head_rebuild_selected_state_invalid"
-            )
-        if self.stale_transition_required:
-            object.__setattr__(
-                self,
-                "stale_transition_key",
-                _sha256(
-                    self.stale_transition_key,
-                    "assessment_head_rebuild_stale_key_invalid",
-                ),
-            )
-            if (
-                self.previous_receipt_id is None
-                or self.selected_state is not AssessmentReceiptState.STALE
-            ):
-                raise AssessmentLifecycleContractError(
-                    "assessment_head_rebuild_stale_flag_mismatch"
-                )
-        elif self.stale_transition_key is not None:
-            raise AssessmentLifecycleContractError(
-                "assessment_head_rebuild_stale_key_unexpected"
             )
 
 

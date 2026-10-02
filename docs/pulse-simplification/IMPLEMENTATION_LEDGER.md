@@ -2,6 +2,50 @@
 
 ## Estado para retomada
 
+### 2026-10-02 — C1/C3: retirada da cadeia técnica de stale no lifecycle Quality
+
+Base publicada Core 6fd0f436 / Community c5a31c6d. Removidos DTO de current inputs,
+digest sem consumidor no recibo de seleção de lifecycle, campos de stale transition
+no plano, tabela/modelo SQL, triggers dessa tabela, etapa de purge e campo de
+auditoria correspondente. A transição nativa, sua idempotência, CAS, auditoria,
+histórico imutável e permissões de erasure permanecem. Head reconstruído só pode
+apontar para Current da edição atual; não há conversor ou reparo de base antiga.
+
+AssessmentReceiptState agora contém somente Current/Previous; reasons técnicos de
+versão/digest foram retirados, ficando subject_edition_changed. Digests do recibo
+imutável e da escrita permanecem para evidência e CAS. Filtros stale, superseded e
+history_only são recusados antes de chegar ao caso de uso. Tipos e seletor frontend
+foram alinhados e testados. O modo de apresentação legacy ainda será retirado em
+incremento próprio: este marco não declara a UI inteira limpa.
+
+Teste físico verifica que instalação nova/restart não cria a tabela removida e
+que sua presença torna a base incompatível, sem alteração de arquivos ou criação
+de WAL. Ensaios de restauração, histórico, replay e exclusão autorizada preservados.
+Fixtures e expectativas adaptadas ao contrato nativo; não se relaxaram gates.
+
+Evidência: lifecycle-clean-core1 165 aprovados; lifecycle-clean-community2 158;
+frontend1 36 + frontend2 11 = 47. TypeScript/Vite passou após corrigir uma fixture
+com reason removido. Primeira campanha Community: 95 aprovados, 1 falha e 62 erros
+por duas definições de trigger que ainda referiam a tabela retirada. Removidas
+essas definições; par reconstruído/reinstalado/conferido antes de repetir a suíte.
+Catálogos gerados oficialmente, sem alteração de conteúdo. Ruff F/E9 e diff check
+aprovados. Closure1 e closure2 aprovados, oito budgets ZERO.
+
+Par final dist-lifecycle-clean3, provenance-lifecycle-clean3: igualdade byte a byte
+src/install/wheel, Core 845 Python/908 payload; Community 319/405.
+SHA256 Core e5ab83bab1ffc0e3853819e222e3171d1f956eadc7704743a05e00b78ab1cd1b;
+Community e3c29b2193e8a094fa22726f87481d7700b67fff36757f7dd78dad9e3ce12d04.
+SPA sincronizada: 79 arquivos, árvore
+c38e57e5fa4bcf91467296a36d23bcfe3f1f578ac393343cbf98699fa4d9c147.
+Sem release/tag/deploy, conversão ou acesso a dados reais.
+
+Próximo C1/C3: retirar modos legacy de Quality/Policy/Checklist, exigir edição nos
+contratos restantes, remover argumentos sem uso do projetor puro e investigar
+lint_languages. Ao retirar Quality legacy, preservar filtros/paginação e corrigir
+a ligação do histórico nativo de lint: a renderização atual usa lifecycleHistory,
+mas o ramo Spec carrega history. C4 integral e decisões T23/KG-10 permanecem abertas;
+entrega final não certificada. Trabalho segue no escopo do reassessment aprovado.
+
 ### 2026-10-02 — C1/C3: Quality Assessment exige edição em domínio, consulta e storage
 
 Base publicada Core 6dc95a61 / Community c1bae4bd. AssessmentSubjectRef,

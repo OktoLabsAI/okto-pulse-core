@@ -165,30 +165,15 @@ class FindingAnchorType(str, Enum):
 
 class AssessmentStaleReason(str, Enum):
     SUBJECT_EDITION_CHANGED = "subject_edition_changed"
-    CONTENT_CHANGED = "content_changed"
-    CLARIFICATION_CHANGED = "clarification_changed"
-    RULESET_CHANGED = "ruleset_changed"
-    TAXONOMY_CHANGED = "taxonomy_changed"
-    POLICY_CHANGED = "policy_changed"
-    SUBJECT_VERSION_CHANGED = "subject_version_changed"
 
 
 class AssessmentReceiptState(str, Enum):
     CURRENT = "current"
     PREVIOUS = "previous"
-    # Technical compatibility only. Human lifecycle projections use PREVIOUS.
-    STALE = "stale"
-    SUPERSEDED = "superseded"
 
 
 ASSESSMENT_STALE_REASON_ORDER: tuple[AssessmentStaleReason, ...] = (
     AssessmentStaleReason.SUBJECT_EDITION_CHANGED,
-    AssessmentStaleReason.SUBJECT_VERSION_CHANGED,
-    AssessmentStaleReason.CONTENT_CHANGED,
-    AssessmentStaleReason.CLARIFICATION_CHANGED,
-    AssessmentStaleReason.RULESET_CHANGED,
-    AssessmentStaleReason.TAXONOMY_CHANGED,
-    AssessmentStaleReason.POLICY_CHANGED,
 )
 
 

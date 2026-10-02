@@ -133,8 +133,6 @@ class QualityAssessmentLifecycleService:
                     selected_receipt_id=None,
                     selected_state=None,
                     resulting_revision=head.revision + 1,
-                    stale_transition_required=False,
-                    stale_transition_key=None,
                 )
                 for kind, head in sorted(
                     heads_by_kind.items(),
@@ -195,8 +193,6 @@ class QualityAssessmentLifecycleService:
                     resulting_revision=expected_revision + int(
                         previous_receipt_id != selected_receipt_id
                     ),
-                    stale_transition_required=False,
-                    stale_transition_key=None,
                 )
             )
         return AssessmentLifecyclePlan(

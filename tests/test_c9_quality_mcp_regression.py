@@ -271,13 +271,13 @@ def test_shared_current_and_receipt_projectors_are_flat_closed_envelopes() -> No
 
     stale = AssessmentCurrentness(
         current=False,
-        stale_reasons=(AssessmentStaleReason.CONTENT_CHANGED,),
+        stale_reasons=(AssessmentStaleReason.SUBJECT_EDITION_CHANGED,),
     )
     receipt = project_quality_receipt_currentness(view.receipt, stale)
     assert set(receipt) == {"receipt", "currentness", "stale_reasons"}
     assert receipt["receipt"]["id"] == "qar-1"
     assert receipt["currentness"] == "previous"
-    assert receipt["stale_reasons"] == ["content_changed"]
+    assert receipt["stale_reasons"] == ["subject_edition_changed"]
 
 
 @pytest.mark.asyncio

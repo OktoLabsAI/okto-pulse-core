@@ -355,7 +355,6 @@ async def _apply_quality_assessment_lifecycle_transition(
     )
     from okto_pulse.core.domain.quality_assessment_lifecycle import (
         AssessmentLifecycleAction,
-        AssessmentLifecycleCurrentInput,
         AssessmentLifecycleSubjectSnapshot,
         AssessmentLifecycleTransition,
     )
@@ -377,27 +376,6 @@ async def _apply_quality_assessment_lifecycle_transition(
         board_id=board_id,
         subject_type=resolved_subject_type.value,
         subject_id=subject_id,
-    )
-    latest_by_kind = {}
-    for receipt in receipts:
-        current = latest_by_kind.get(receipt.assessment_kind)
-        if current is None or (
-            receipt.created_at,
-            receipt.receipt_id,
-        ) > (
-            current.created_at,
-            current.receipt_id,
-        ):
-            latest_by_kind[receipt.assessment_kind] = receipt
-    current_inputs = tuple(
-        AssessmentLifecycleCurrentInput(
-            assessment_kind=kind,
-            input_digest=receipt.input_digest,
-        )
-        for kind, receipt in sorted(
-            latest_by_kind.items(),
-            key=lambda item: item[0].value,
-        )
     )
     before_subject = AssessmentSubjectRef(
         board_id=board_id,
@@ -442,13 +420,11 @@ async def _apply_quality_assessment_lifecycle_transition(
             subject=before_subject,
             status=before_status,
             archived=before_archived,
-            current_inputs=current_inputs,
         ),
         after=AssessmentLifecycleSubjectSnapshot(
             subject=after_subject,
             status=after_status,
             archived=after_archived,
-            current_inputs=current_inputs,
         ),
         idempotency_key=f"quality-lifecycle:{idempotency_digest}",
         actor_id=actor_id,

@@ -106,7 +106,10 @@ def test_native_receipt_view_preserves_current_and_previous(head, edition, expec
     assert view.state is expected
     assert view.receipt == receipt
     with pytest.raises(QualityAssessmentContractError, match="assessment_receipt_state_mismatch"):
-        replace(view, state=AssessmentReceiptState.SUPERSEDED)
+        replace(view, state=(
+            AssessmentReceiptState.PREVIOUS if expected is AssessmentReceiptState.CURRENT
+            else AssessmentReceiptState.CURRENT
+        ))
 
 
 @pytest.mark.parametrize("origin,source", [("legacy_import", "native"), ("semantic_writer", "native"), ("human_or_agent", "legacy_migration")])
@@ -240,16 +243,13 @@ def test_explicit_input_digest_is_normalized_to_lowercase() -> None:
 
 
 @pytest.mark.parametrize(
-    ("field_name", "reason"),
+    "field_name",
     [
-        ("content_digest", AssessmentStaleReason.CONTENT_CHANGED),
-        ("clarification_digest", AssessmentStaleReason.CLARIFICATION_CHANGED),
-        ("ruleset_digest", AssessmentStaleReason.RULESET_CHANGED),
-        ("taxonomy_digest", AssessmentStaleReason.TAXONOMY_CHANGED),
-        ("policy_digest", AssessmentStaleReason.POLICY_CHANGED),
+        "content_digest", "clarification_digest", "ruleset_digest",
+        "taxonomy_digest", "policy_digest",
     ],
 )
-def test_technical_digest_changes_do_not_invalidate_same_edition(field_name, reason) -> None:
+def test_technical_digest_changes_do_not_invalidate_same_edition(field_name) -> None:
     receipt = _receipt()
     changed = replace(
         receipt.digests,

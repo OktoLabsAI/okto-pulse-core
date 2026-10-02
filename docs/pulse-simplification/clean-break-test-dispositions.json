@@ -1884,6 +1884,30 @@
     {
       "path": "okto_labs_pulse_community/frontend/src/components/quality/__tests__/QualityPanel.test.tsx",
       "reason": "Native receipt fixture includes required subject_edition; corresponding Ideation/Refinement typed receipt fixtures also updated."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_quality_assessment_lifecycle.py",
+      "reason": "Removed dead technical digest/current-input and stale-event fields. Native edition head selection, replay, archive/restore and erasure assertions retained."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_quality_assessment_currentness.py",
+      "reason": "Technical drift cases retain their field changes without removed reason enums. Invalid ReceiptView state uses the opposite valid native state."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_c7_rdl_erasure_contract.py",
+      "reason": "Removed obsolete stale table count/import; asserts table is absent. Native archive/restore and permitted erasure remain exercised."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_current_relational_schema.py",
+      "reason": "Fresh/restart excludes stale transition table; incompatible old table is refused before disk/WAL mutation."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_quality_assessment_routes_contract.py",
+      "reason": "Three removed receipt-state filters return 422 before the read use case."
+    },
+    {
+      "path": "okto_labs_pulse_community/frontend/src/components/quality/__tests__/QualityPanel.test.tsx",
+      "reason": "Closed Current/Previous history options and actual previous filter request verified. Edition reason fixtures updated with API and Refinement suites."
     }
   ],
   "removed_cases": [

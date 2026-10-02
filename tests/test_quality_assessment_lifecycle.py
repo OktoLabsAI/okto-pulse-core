@@ -19,7 +19,6 @@ from okto_pulse.core.domain.quality_assessment_lifecycle import (
     AssessmentKgAction,
     AssessmentLifecycleAction,
     AssessmentLifecycleContractError,
-    AssessmentLifecycleCurrentInput,
     AssessmentLifecycleHead,
     AssessmentLifecycleReceipt,
     AssessmentLifecycleSubjectSnapshot,
@@ -30,15 +29,12 @@ from okto_pulse.core.domain.quality_assessment_lifecycle import (
     AssessmentPurgeResource,
     AssessmentPurgeScope,
 )
-from okto_pulse.core.domain.quality_canonicalization import canonical_sha256
 from okto_pulse.core.services.quality_assessment_lifecycle import (
     AssessmentLifecycleExecutionError,
     QualityAssessmentLifecycleService,
 )
 
 NOW = datetime(2026, 7, 27, 19, 0, tzinfo=timezone.utc)
-INPUT_DIGEST = canonical_sha256("current-input")
-OTHER_DIGEST = canonical_sha256("stale-input")
 
 
 def _snapshot(
@@ -47,7 +43,6 @@ def _snapshot(
     edition: int = 1,
     status: str = "done",
     archived: bool = False,
-    include_input: bool = True,
 ) -> AssessmentLifecycleSubjectSnapshot:
     return AssessmentLifecycleSubjectSnapshot(
         subject=AssessmentSubjectRef(
@@ -59,16 +54,7 @@ def _snapshot(
         ),
         status=status,
         archived=archived,
-        current_inputs=(
-            (
-                AssessmentLifecycleCurrentInput(
-                    assessment_kind=AssessmentKind.SPEC_VALIDATION,
-                    input_digest=INPUT_DIGEST,
-                ),
-            )
-            if include_input
-            else ()
-        ),
+
     )
 
 
@@ -89,7 +75,6 @@ def _receipt(
     *,
     version: int = 4,
     edition: int = 1,
-    digest: str = INPUT_DIGEST,
     created_at: datetime = NOW,
 ) -> AssessmentLifecycleReceipt:
     return AssessmentLifecycleReceipt(
@@ -102,7 +87,6 @@ def _receipt(
             subject_edition=edition,
         ),
         assessment_kind=AssessmentKind.SPEC_VALIDATION,
-        input_digest=digest,
         created_at=created_at,
     )
 
@@ -174,7 +158,6 @@ def test_restore_recomputes_head_from_latest_current_edition_receipt() -> None:
         _receipt(
             "receipt-previous-edition",
             edition=2,
-            digest=OTHER_DIGEST,
             created_at=NOW + timedelta(minutes=3),
         ),
         _receipt(
@@ -205,8 +188,6 @@ def test_restore_recomputes_head_from_latest_current_edition_receipt() -> None:
     assert rebuild.selected_state.value == "current"
     assert rebuild.expected_revision == 7
     assert rebuild.resulting_revision == 8
-    assert rebuild.stale_transition_required is False
-    assert rebuild.stale_transition_key is None
 
 
 def test_restore_keeps_already_correct_head_without_revision_bump() -> None:
@@ -224,7 +205,6 @@ def test_restore_keeps_already_correct_head_without_revision_bump() -> None:
     rebuild = plan.head_rebuilds[0]
     assert rebuild.selected_receipt_id == "receipt-current"
     assert rebuild.resulting_revision == 8
-    assert rebuild.stale_transition_required is False
 
 
 @pytest.mark.parametrize("receipt_edition", [1, 2])
@@ -233,7 +213,7 @@ def test_restore_uses_edition_without_reactivating_previous_history(receipt_edit
     after = _snapshot(version=8, archived=False)
     before = replace(before, subject=replace(before.subject, subject_edition=2))
     after = replace(after, subject=replace(after.subject, subject_edition=2))
-    receipt = _receipt("native-result", version=4, digest=OTHER_DIGEST)
+    receipt = _receipt("native-result", version=4)
     receipt = replace(
         receipt, subject=replace(receipt.subject, subject_edition=receipt_edition)
     )
@@ -250,7 +230,6 @@ def test_restore_uses_edition_without_reactivating_previous_history(receipt_edit
     assert (rebuilt.selected_state.value if rebuilt.selected_state else None) == (
         "current" if receipt_edition == 2 else None
     )
-    assert rebuilt.stale_transition_required is False
     assert plan.preserve_immutable_history is True
 
 
@@ -279,8 +258,6 @@ def test_reopen_clears_current_head_and_preserves_previous_receipt_identity() ->
     assert first_rebuild.selected_receipt_id is None
     assert first_rebuild.selected_state is None
     assert first_rebuild.resulting_revision == 5
-    assert first_rebuild.stale_transition_required is False
-    assert first_rebuild.stale_transition_key is None
 
     # Replaying the same lifecycle operation deterministically yields the same
     # clear-head plan. Immutable receipt history remains addressable as Previous.
@@ -322,8 +299,6 @@ def test_orphan_head_is_invalidated_but_not_misreported_as_stale() -> None:
     assert rebuild.selected_receipt_id is None
     assert rebuild.selected_state is None
     assert rebuild.resulting_revision == 10
-    assert rebuild.stale_transition_required is False
-    assert rebuild.stale_transition_key is None
 
 
 def test_invalid_transition_and_cross_subject_receipt_fail_closed() -> None:
@@ -352,7 +327,6 @@ def test_invalid_transition_and_cross_subject_receipt_fail_closed() -> None:
             subject_edition=1,
         ),
         assessment_kind=AssessmentKind.SPEC_VALIDATION,
-        input_digest=INPUT_DIGEST,
         created_at=NOW,
     )
     with pytest.raises(
