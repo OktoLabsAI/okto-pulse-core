@@ -18874,7 +18874,7 @@ async def okto_pulse_list_spec_validations(
     spec_id: str,
     limit: int = 50,
     offset: int = 0,
-    lifecycle_state: Literal["all", "current", "previous", "history_only"] = "all",
+    lifecycle_state: Literal["all", "current", "previous"] = "all",
 ) -> str:
     """List Spec validations. Docs: okto-pulse://reference/tool-docs/spec."""
     ctx = await _get_agent_ctx(board_id)

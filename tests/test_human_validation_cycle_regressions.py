@@ -464,16 +464,15 @@ async def test_lifecycle_move_lost_write_fence_has_zero_writes(
 
 
 @pytest.mark.asyncio
-async def test_spec_current_previous_and_legacy_history_follow_real_reopen(
+async def test_spec_current_previous_and_native_history_follow_real_reopen(
     db_factory,
 ) -> None:
     board_id = _id("board")
     spec_id = _id("spec")
     validations = [
-        {"id": "legacy", "outcome": "success"},
-        {"id": "prior-edition", "edition": 3, "outcome": "success"},
-        {"id": "attempt-1", "edition": 4, "outcome": "failed"},
-        {"id": "attempt-2", "edition": 4, "outcome": "success"},
+        {"id": "prior-edition", "edition": 3, "validation_edition": 3, "outcome": "success"},
+        {"id": "attempt-1", "edition": 4, "validation_edition": 4, "outcome": "failed"},
+        {"id": "attempt-2", "edition": 4, "validation_edition": 4, "outcome": "success"},
     ]
     async with db_factory() as db:
         db.add(Board(id=board_id, name="History", owner_id=_ACTOR, settings={}))
@@ -501,29 +500,13 @@ async def test_spec_current_previous_and_legacy_history_follow_real_reopen(
             spec_id,
             lifecycle_state="previous",
         )
-        legacy = await service.list_spec_validations(
-            spec_id,
-            lifecycle_state="history_only",
-        )
-
         assert [item["id"] for item in current["validations"]] == ["attempt-2"]
         assert current["validations"][0]["is_current"] is True
         assert [item["id"] for item in previous["validations"]] == [
             "attempt-1",
             "prior-edition",
-            "legacy",
         ]
-        assert previous["previous_count"] == 3
-        assert legacy["validations"] == [
-            {
-                "id": "legacy",
-                "outcome": "success",
-                "is_current": False,
-                "active": False,
-                "lifecycle_state": "history_only",
-            }
-        ]
-
+        assert previous["previous_count"] == 2
         moved = await service.move_spec(
             spec_id,
             _ACTOR,
@@ -539,12 +522,11 @@ async def test_spec_current_previous_and_legacy_history_follow_real_reopen(
         assert moved.edition == 5
         assert moved.current_validation_id is None
         assert after_reopen["current_validation"] is None
-        assert after_reopen["previous_count"] == 4
+        assert after_reopen["previous_count"] == 3
         assert [item["id"] for item in after_reopen["validations"]] == [
             "attempt-2",
             "attempt-1",
             "prior-edition",
-            "legacy",
         ]
 
 

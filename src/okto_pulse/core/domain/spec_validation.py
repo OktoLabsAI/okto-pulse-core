@@ -18,6 +18,18 @@ SPEC_VALIDATION_PINPOINT_SNAPSHOT_VERSION = (
 )
 
 
+def require_spec_validation_edition(record: Mapping[str, Any]) -> int:
+    """Refuse incompatible history without assigning or converting an edition."""
+    edition = record.get("edition")
+    reported = record.get("validation_edition")
+    if (
+        type(edition) is not int or edition < 1
+        or type(reported) is not int or reported != edition
+    ):
+        raise ValueError("spec_validation_edition_required")
+    return edition
+
+
 class SpecValidationMetric(str, Enum):
     """Closed quality dimensions for a canonical Spec validation."""
 

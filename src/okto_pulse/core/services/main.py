@@ -12692,12 +12692,15 @@ class SpecService:
             raise ValueError("limit must be between 1 and 100")
         if not isinstance(offset, int) or isinstance(offset, bool) or offset < 0:
             raise ValueError("offset must be greater than or equal to 0")
-        if lifecycle_state not in {"all", "current", "previous", "history_only"}:
+        if lifecycle_state not in {"all", "current", "previous"}:
             raise ValueError(
-                "lifecycle_state must be one of: all, current, previous, history_only"
+                "lifecycle_state must be one of: all, current, previous"
             )
 
         validations = list(spec.validations or [])
+        from okto_pulse.core.domain.spec_validation import require_spec_validation_edition
+        for validation in validations:
+            require_spec_validation_edition(validation)
         pointer_id = getattr(spec, "current_validation_id", None)
         pointer = next((v for v in validations if v.get("id") == pointer_id), None)
         current_id = (
@@ -12707,16 +12710,11 @@ class SpecService:
             else None
         )
 
-        # Reverse chronological order; legacy NULL editions are intentionally
-        # visible only as history and can never become the current validation.
+        # Reverse chronological order over native edition-bound attempts.
         projected = []
         for v in reversed(validations):
             active = v.get("id") == current_id
-            item_lifecycle_state = (
-                "history_only"
-                if v.get("edition") is None
-                else ("current" if active else "previous")
-            )
+            item_lifecycle_state = "current" if active else "previous"
             projected.append(
                 {
                     **v,
@@ -12734,14 +12732,6 @@ class SpecService:
         )
         if lifecycle_state == "all":
             filtered = projected
-        elif lifecycle_state == "previous":
-            # Legacy NULL-edition rows are immutable history and belong to the
-            # human-facing previous-results collection.
-            filtered = [
-                item
-                for item in projected
-                if item["lifecycle_state"] in {"previous", "history_only"}
-            ]
         else:
             filtered = [
                 item for item in projected if item["lifecycle_state"] == lifecycle_state

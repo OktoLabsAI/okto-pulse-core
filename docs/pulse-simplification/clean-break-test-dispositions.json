@@ -2920,6 +2920,30 @@
       "test": "TestCanonicalFiveMetricGate",
       "disposition": "rewritten",
       "reason": "Both five-metric persistence cases moved to Community/tests/test_spec_validation_native_gate.py with current schema, native semantic authority and actual UoW commits. Policy gate retained; durable results read in another session. Remaining old Core cases are not qualified by this move."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_validation_cycle_contract.py",
+      "test": "test_spec_validation_history_response_preserves_legacy_null_edition",
+      "disposition": "rewritten",
+      "reason": "Positive editionless history replaced by explicit refusal. Native response, snapshots and lifecycle remain covered."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_human_validation_cycle_regressions.py",
+      "test": "test_spec_current_previous_and_legacy_history_follow_real_reopen",
+      "disposition": "rewritten",
+      "reason": "Removed only editionless legacy attempt; native previous edition, same-edition superseded attempts and real reopen retained."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_sqlalchemy_validation_cycle.py",
+      "test": "test_legacy_null_edition_spec_validation_is_previous_only_and_auditable",
+      "disposition": "rewritten",
+      "reason": "Rewritten as refusal on individual/current-only/batch/audit reads with immutable bytes/pointer verification."
+    },
+    {
+      "path": "okto_labs_pulse_community/frontend/src/components/specs/__tests__/SpecValidationHistoryPanel.test.tsx",
+      "test": "keeps a null-edition legacy validation in Previous and never promotes it to Current",
+      "disposition": "rewritten",
+      "reason": "Positive legacy display replaced by server-refusal feedback; native edition changes/current/previous and pagination remain covered."
     }
   ]
 }

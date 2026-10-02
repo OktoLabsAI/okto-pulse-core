@@ -2,6 +2,47 @@
 
 ## Estado para retomada
 
+### 2026-10-02 — C1/C3: histórico de Spec Validation exige edição nativa
+
+Base publicada: Core 1ac15583 / Community f3bea628 (ambos com push confirmado).
+Removido history_only da listagem Spec Validation, REST/MCP e DTO; edição e
+validation_edition exigem inteiros positivos coerentes. Regra pública de domínio
+require_spec_validation_edition reutilizada pela listagem e adaptador do ciclo
+Community. Leitura individual, batch e auditoria técnica recusam registros
+incompatíveis sem converter, atribuir edição ou alterar histórico/pointer.
+Listagem valida antes de filtro/paginação: página Current não oculta registro
+incompatível em Previous. Histórico nativo conserva edição, ordem, paginação e
+reabertura; autorização e visibility checks permanecem anteriores à exposição.
+Frontend exige edição e retira rótulo Legacy/ramo de edição desconhecida;
+teste antigo de aceitação foi substituído por tratamento da recusa do servidor.
+
+Evidência: spec-history-core2 79 aprovados (inclui 27 novos casos de contrato,
+paginação/recusa, reabertura, snapshots e drift). spec-history-community2 47
+aprovados; spec-history-transport3 12, incluindo três novos testes REST, total
+Community distinto 50. spec-history-front1 23 aprovados; build TypeScript/Vite
+aprovado. As execuções core1/community1 também passaram, repetidas após confirmar
+o término do preflight de proveniência, não somadas como casos novos.
+Mantido o mapeamento REST existente ValueError→404 com diagnóstico específico;
+filtro history_only é 422 antes do use case. Nenhum dado é reparado ou apagado.
+
+dist-spec-history1 instalado, provenance-spec-history1 confirma byte a byte
+847 Python/910 payload Core e 319/405 Community. Wheels SHA256:
+Core 69a878515b50abec67ce2935b3104d399b80804c4865a555f96e6d977f3b9aec;
+Community 145a36c8128b888649cc9d7d3cab5c3c0731c9fb82458f4c3ff8d05599bf7538.
+SPA embarcada d0cdbc79ed2f851eff9646280a26f541da050533df4c6541e95c81d3052d83f1.
+Catálogo/manifesto MCP regenerados pelo gerador oficial sem diff. Closure1:
+oito budgets ZERO e apenas matriz README desatualizada; READMEs regenerados,
+closure-spec-history2 aprovado. Ruff F/E9 aprovado após retirar import órfão.
+Sem release, tag, deploy, alteração de runtime ativo ou dados de usuário.
+
+Escopo restante explícito: DTO/projeção do ciclo/frontend ainda contêm campos
+score/summary/completeness/general_justification de Spec Validation; removê-los
+em conjunto com fixtures e min_spec_completeness. Isso não foi qualificado como
+contrato único completo neste marco. Demais superfícies de quality assessment
+possuem seu próprio history_only e exigem investigação C1/C3, não substituição
+global pelo nome. A suíte antiga test_spec_validation_gate.py ainda exige
+adaptação funcional. C4 e decisões T23/KG-10 seguem abertos, sem resposta nova.
+
 ### 2026-10-02 — C3: Spec Validation qualificada com autoridade nativa
 
 Base publicada: Core 4ccfabcd / Community 3e2865d6. Resolvida a falha de

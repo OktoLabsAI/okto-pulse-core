@@ -3993,11 +3993,11 @@ class SpecValidationSubmit(BaseModel):
 
 
 class SpecValidationResponse(BaseModel):
-    """History record; legacy evidence may predate lifecycle editions."""
+    """History record bound to its recorded native Spec edition."""
 
     id: str | None = None
     validation_id: str | None = None
-    validation_edition: int | None = Field(default=None, ge=1)
+    validation_edition: int = Field(ge=1, strict=True)
     is_current: bool = False
     spec_id: str | None = None
     board_id: str | None = None
@@ -4030,20 +4030,15 @@ class SpecValidationResponse(BaseModel):
     created_at: str | None = None
     spec_status: str | None = None
     active: bool | None = None
-    edition: int | None = Field(default=None, ge=1)
-    lifecycle_state: Literal["current", "previous", "history_only"] | None = None
+    edition: int = Field(ge=1, strict=True)
+    lifecycle_state: Literal["current", "previous"] | None = None
 
     @model_validator(mode="after")
     def require_compatible_identity(self) -> "SpecValidationResponse":
         if not self.id and not self.validation_id:
             raise ValueError("spec_validation_identity_required")
-        if self.lifecycle_state == "current" and self.validation_edition is None:
-            raise ValueError("spec_validation_current_edition_required")
-        if (
-            self.lifecycle_state == "history_only"
-            and self.validation_edition is not None
-        ):
-            raise ValueError("spec_validation_history_only_edition_forbidden")
+        if self.edition != self.validation_edition:
+            raise ValueError("spec_validation_edition_mismatch")
         return self
 
 

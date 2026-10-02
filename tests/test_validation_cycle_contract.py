@@ -180,28 +180,12 @@ def test_spec_validation_threshold_defaults_cover_five_canonical_metrics() -> No
         BoardSettings(min_spec_decidability=101)
 
 
-def test_spec_validation_history_response_preserves_legacy_null_edition() -> None:
-    legacy = SpecValidationResponse.model_validate(
-        {
-            "id": "legacy-validation",
-            "validation_edition": None,
-            "is_current": False,
-            "score": 88,
-            "summary": "Historical score and summary remain readable.",
+def test_spec_validation_history_response_refuses_null_edition() -> None:
+    with pytest.raises(ValueError):
+        SpecValidationResponse.model_validate({
+            "id": "incompatible", "edition": None, "validation_edition": None,
             "lifecycle_state": "history_only",
-        }
-    )
-    assert legacy.validation_edition is None
-    assert legacy.lifecycle_state == "history_only"
-
-    with pytest.raises(ValueError, match="current_edition_required"):
-        SpecValidationResponse.model_validate(
-            {
-                "id": "invalid-current",
-                "validation_edition": None,
-                "lifecycle_state": "current",
-            }
-        )
+        })
 
 
 def _fence(*, edition: int = 3) -> ValidationSubmissionFence:
