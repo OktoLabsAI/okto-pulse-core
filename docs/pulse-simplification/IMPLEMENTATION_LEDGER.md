@@ -2,6 +2,38 @@
 
 ## Estado para retomada
 
+### 2026-10-02 — Erasure nativo e retirada de tabelas órfãs de migração
+
+Marco anterior publicado: Corebfc2abea / Community356914c1. Suite
+test_board_code_evidence_erasure.py agora usa schema COMPLETO, fábrica de sessão
+Community e APIs nativas de investigação, recibo, evidência e autoria semântica.
+Retirados imports/setup de classificação legada. Preservadas as provas de duas
+gerações de recibo, duas evidências mais sucessora, dois eventos semânticos,
+imutabilidade fora do permit, exclusão sob permit e rollback. Acrescentada
+evidência nativa em outro Board, comparada integralmente após a operação.
+foreign_key_check fica vazio e nenhum permit residual permanece.
+
+Retirados CardRejectedLifecycleMigrationRow e SpecValidationPointerRepairRow,
+tabelas card_rejected_lifecycle_migrations/spec_validation_pointer_repairs e
+entradas no contrato de schema. Busca de consumidores confirmou que só restavam
+modelo/manifest, sem writer/reader atual. Os migradores correspondentes já haviam
+sido retirados. Não são histórico nem recuperação da v0.4.0. Bases que contenham
+essas tabelas são recusadas sem conversão, exclusão ou alteração dos arquivos.
+
+native-erasure1:2 falhas da fixture com AsyncSession não composta; corrigida para
+build_community_session_factory. native-erasure2:2 aprovados. Após remover as
+tabelas, native-erasure-final1:29 aprovados, incluindo a suite reescrita,
+erasure relacional e criação/restart/refusal de schema. A pendência de coleta
+CodeEvidenceClassificationEventRow do marco anterior está resolvida nesta suite.
+Não houve alteração de frontend; suas provas anteriores não são recontadas.
+
+dist-native-erasure1 instalado; provenance-native-erasure-final1.json comprova
+Core851/914 e Community318/404 Python/payload byte-idênticos antes dos testes.
+closure-native-erasure1 exit0, oito budgets ZERO; READMEs oficiais validados.
+Ruff F/E9 passou. Próximo C1/C3: retirar rules sem consumidores atuais em
+GuidelineRevisionRow e seguir os demais resíduos/suites já inventariados.
+C4 integral e decisões T23/KG-10 continuam abertos. Não é a entrega final.
+
 ### 2026-10-02 — Autoria semântica sem bootstrap de legado
 
 Marco anterior publicado: Core034c4a49 / Community3e847537. Removidos sentinel

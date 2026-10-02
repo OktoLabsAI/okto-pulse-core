@@ -1376,6 +1376,14 @@
     {
       "path": "okto_labs_pulse_community/tests/test_current_relational_schema.py",
       "reason": "Removed semantic bootstrap/sentinel/source fields. Current subject reads reject missing/stale authoritative head without writes. Native assessor separation retained; fixtures declare current architecture/execution contracts. Schema refuses retired columns without conversion."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_board_code_evidence_erasure.py",
+      "reason": "Replaced removed legacy classification fixture with complete current schema and native receipt/evidence/semantic-history APIs. Supersession, board-scoped permit, rollback, foreign-key consistency and foreign Board isolation retained; added full native evidence equality in preserved Board."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_current_relational_schema.py",
+      "reason": "Added byte-preserving refusal for orphan Card rejection migration and Spec validation pointer repair tables removed from the fresh schema."
     }
   ],
   "removed_cases": [
