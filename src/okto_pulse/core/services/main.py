@@ -344,8 +344,8 @@ async def _apply_quality_assessment_lifecycle_transition(
     after_archived: bool,
     action: str,
     actor_id: str,
-    before_edition: int | None = None,
-    after_edition: int | None = None,
+    before_edition: int,
+    after_edition: int,
 ) -> None:
     """Reconcile assessment heads and audit one subject lifecycle change."""
 
@@ -18535,6 +18535,8 @@ class ArchiveService:
                 after_archived=True,
                 action="archive",
                 actor_id="system:archive-tree",
+                before_edition=artifact.edition,
+                after_edition=artifact.edition,
             )
         from okto_pulse.core.events import publish as event_publish
         from okto_pulse.core.events.types import ArtifactArchiveChanged
@@ -18758,6 +18760,8 @@ class ArchiveService:
                 after_archived=False,
                 action="restore",
                 actor_id="system:restore-tree",
+                before_edition=artifact.edition,
+                after_edition=artifact.edition,
             )
         from okto_pulse.core.events import publish as event_publish
         from okto_pulse.core.events.types import ArtifactArchiveChanged

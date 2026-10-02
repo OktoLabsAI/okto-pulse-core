@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -42,6 +43,7 @@ OTHER_DIGEST = canonical_sha256("stale-input")
 def _snapshot(
     *,
     version: int = 4,
+    edition: int = 1,
     status: str = "done",
     archived: bool = False,
     include_input: bool = True,
@@ -52,6 +54,7 @@ def _snapshot(
             subject_type=AssessmentSubjectType.SPEC,
             subject_id="s1",
             subject_version=version,
+            subject_edition=edition,
         ),
         status=status,
         archived=archived,
@@ -84,6 +87,7 @@ def _receipt(
     receipt_id: str,
     *,
     version: int = 4,
+    edition: int = 1,
     digest: str = INPUT_DIGEST,
     created_at: datetime = NOW,
 ) -> AssessmentLifecycleReceipt:
@@ -94,6 +98,7 @@ def _receipt(
             subject_type=AssessmentSubjectType.SPEC,
             subject_id="s1",
             subject_version=version,
+            subject_edition=edition,
         ),
         assessment_kind=AssessmentKind.SPEC_VALIDATION,
         input_digest=digest,
@@ -158,7 +163,7 @@ def test_archive_and_cancel_preserve_history_and_hide_current_projection(
     assert plan.event_and_outbox_same_uow is True
 
 
-def test_restore_recomputes_head_from_latest_exact_current_receipt() -> None:
+def test_restore_recomputes_head_from_latest_current_edition_receipt() -> None:
     transition = _transition(
         AssessmentLifecycleAction.RESTORE,
         before=_snapshot(archived=True),
@@ -166,7 +171,8 @@ def test_restore_recomputes_head_from_latest_exact_current_receipt() -> None:
     )
     receipts = (
         _receipt(
-            "receipt-stale-input",
+            "receipt-previous-edition",
+            edition=2,
             digest=OTHER_DIGEST,
             created_at=NOW + timedelta(minutes=3),
         ),
@@ -194,7 +200,7 @@ def test_restore_recomputes_head_from_latest_exact_current_receipt() -> None:
     assert len(plan.head_rebuilds) == 1
     rebuild = plan.head_rebuilds[0]
     assert rebuild.previous_receipt_id == "orphan-head"
-    assert rebuild.selected_receipt_id == "receipt-current-b"
+    assert rebuild.selected_receipt_id == "receipt-old-version"
     assert rebuild.selected_state.value == "current"
     assert rebuild.expected_revision == 7
     assert rebuild.resulting_revision == 8
@@ -220,11 +226,53 @@ def test_restore_keeps_already_correct_head_without_revision_bump() -> None:
     assert rebuild.stale_transition_required is False
 
 
+@pytest.mark.parametrize("receipt_edition", [1, 2])
+def test_restore_uses_edition_without_reactivating_previous_history(receipt_edition):
+    before = _snapshot(version=8, archived=True)
+    after = _snapshot(version=8, archived=False)
+    before = replace(before, subject=replace(before.subject, subject_edition=2))
+    after = replace(after, subject=replace(after.subject, subject_edition=2))
+    receipt = _receipt("native-result", version=4, digest=OTHER_DIGEST)
+    receipt = replace(
+        receipt, subject=replace(receipt.subject, subject_edition=receipt_edition)
+    )
+    transition = _transition(
+        AssessmentLifecycleAction.RESTORE, before=before, after=after
+    )
+    plan = QualityAssessmentLifecycleService().prepare_transition(
+        transition, heads=(_head("native-result"),), receipts=(receipt,)
+    )
+    rebuilt = plan.head_rebuilds[0]
+    assert rebuilt.selected_receipt_id == (
+        "native-result" if receipt_edition == 2 else None
+    )
+    assert (rebuilt.selected_state.value if rebuilt.selected_state else None) == (
+        "current" if receipt_edition == 2 else None
+    )
+    assert rebuilt.stale_transition_required is False
+    assert plan.preserve_immutable_history is True
+
+
+def test_lifecycle_refuses_missing_edition_instead_of_version_fallback():
+    snapshot = _snapshot()
+    subject = replace(snapshot.subject, subject_edition=None)
+    with pytest.raises(
+        AssessmentLifecycleContractError,
+        match="assessment_lifecycle_subject_edition_invalid",
+    ):
+        replace(snapshot, subject=subject)
+    with pytest.raises(
+        AssessmentLifecycleContractError,
+        match="assessment_lifecycle_subject_edition_invalid",
+    ):
+        replace(_receipt("missing-edition"), subject=subject)
+
+
 def test_reopen_clears_current_head_and_preserves_previous_receipt_identity() -> None:
     transition = _transition(
         AssessmentLifecycleAction.REOPEN,
         before=_snapshot(version=4, status="done"),
-        after=_snapshot(version=5, status="draft"),
+        after=_snapshot(version=5, edition=2, status="draft"),
     )
     service = QualityAssessmentLifecycleService()
     first = service.prepare_transition(
@@ -255,7 +303,7 @@ def test_reopen_clears_current_head_and_preserves_previous_receipt_identity() ->
         _transition(
             AssessmentLifecycleAction.REOPEN,
             before=_snapshot(version=4, status="done"),
-            after=_snapshot(version=5, status="draft"),
+            after=_snapshot(version=5, edition=2, status="draft"),
             idempotency_key="lifecycle-op-2",
         ),
         heads=(_head("receipt-v4", revision=4),),
@@ -308,6 +356,7 @@ def test_invalid_transition_and_cross_subject_receipt_fail_closed() -> None:
             subject_type=AssessmentSubjectType.SPEC,
             subject_id="s1",
             subject_version=4,
+            subject_edition=1,
         ),
         assessment_kind=AssessmentKind.SPEC_VALIDATION,
         input_digest=INPUT_DIGEST,

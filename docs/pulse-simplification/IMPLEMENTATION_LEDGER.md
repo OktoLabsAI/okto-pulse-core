@@ -2,6 +2,50 @@
 
 ## Estado para retomada
 
+### 2026-10-02 — C1/C3: restauração usa a edição nativa
+
+Base publicada Core 1f411b88 / Community 4a6603a0. Reprodução
+restore-edition-repro1 confirmou dois erros: restauração recolocava recibo de edição
+anterior no head e classificava recibo da própria edição como Stale quando versão/
+digest técnico diferiam. Corrigido conforme delimitação por edição já autorizada,
+mantida explicitamente pelo reassessment. Restore seleciona o último recibo da
+edição atual; sem recibo dessa edição limpa a associação mutável. Não altera recibos,
+não cria nova avaliação e mantém CAS de head, auditoria e idempotência.
+
+Snapshots e recibos de lifecycle exigem edição positiva; retirada a reabertura
+alternativa por incremento de versão sem edição. Hook interno exige ambas edições.
+Auditoria AST dos cinco consumidores encontrou archive_tree/restore_tree omitindo-as;
+agora ambos passam a edição do objeto, que arquivamento/restauração não incrementam.
+Demais três consumidores já as passavam. Campos/tabela de stale transition ainda
+existem no contrato/adapter/schema, mas este seletor deixou de produzi-los; retirar
+esse resíduo conjuntamente com estados/listagem no próximo incremento, sem presumir
+que desapareceu neste marco. Digests continuam sendo evidência/CAS de escrita.
+
+Testes nativos cobrem edição anterior versus atual, versão/digest técnico diferente,
+falta de edição, reabertura, seleção determinística, head órfão e preservação de
+histórico. SQLite novo cobre aplicação do plano, replay e auditoria. Teste de serviço
+ArchiveService cobre árvore de Refinement/Spec, edições registradas e recibo/head
+preservados. Fixtures de erasure passaram a declarar architecture_adoption,
+execution_contract e edições Quality/Checklist; não foi relaxado o schema atual.
+
+Evidência: lifecycle-edition-core1 129 aprovados. Community1 38 aprovados/6 falhas
+anteriores da fixture Spec sem architecture_adoption; Community2 seis aprovados
+após correção. Community3 aprovou os 44 casos finais (ciclo + erasure). Front1 30
+aprovados nos painéis Quality/ValidationCycle. Nenhum código frontend mudou.
+Ruff F/E9 aprovado. Reprodução anterior tinha dois casos falhos, preservada.
+
+dist-lifecycle-edition2 instalado e provenance-lifecycle-edition2 comprova bytes
+src/install/wheel iguais: Core 845 Python/908 payload; Community 319/405.
+SHA256 Core 18d12c43535b8946556e15e1e8c154740fb9b1cdf434838b0e19c34525e215e1;
+Community 420915e12616bffcba56dd223ab6fd8e3c47c472000599b0b1060420eb87f67d.
+Closure1 teve somente matrizes README divergentes; regeneradas oficialmente.
+closure-lifecycle-edition2 passou, oito budgets ZERO. Sem release/tag/deploy.
+
+Próximo C1/C3 permanece a edição obrigatória em AssessmentSubjectRef e demais
+contratos de leitura/submissão, retirada de fallback por digests e estados técnicos,
+modos legacy de UI Quality/Policy/Checklist e lint_languages sem consumidor atual.
+C4 integral, T23 e KG-10 permanecem pendentes; estes testes não certificam entrega.
+
 ### 2026-10-02 — C1/C3: leitura Current exige edição no contrato público
 
 Base publicada Core 00f89bf9 / Community d1b39cb4. A porta get_current e o adapter

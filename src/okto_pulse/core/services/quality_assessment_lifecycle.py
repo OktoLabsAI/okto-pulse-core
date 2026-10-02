@@ -25,7 +25,6 @@ from okto_pulse.core.domain.quality_assessment_lifecycle import (
     AssessmentPurgeScope,
     AssessmentPurgeTarget,
 )
-from okto_pulse.core.domain.quality_canonicalization import canonical_sha256
 
 
 class AssessmentLifecycleExecutionError(RuntimeError):
@@ -155,112 +154,49 @@ class QualityAssessmentLifecycleService:
                 ),
             )
 
-        inputs = {
-            item.assessment_kind: item.input_digest
-            for item in transition.after.current_inputs
-        }
+        # Restore only the current edition's head. Technical versions and input
+        # digests remain audit evidence, not human-result currentness selectors.
         heads_by_kind = {
             item.assessment_kind: item for item in resolved_heads
         }
         kinds = sorted(
-            set(inputs) | set(heads_by_kind),
+            {item.assessment_kind for item in resolved_receipts} | set(heads_by_kind),
             key=lambda item: item.value,
         )
         rebuilds: list[AssessmentHeadRebuild] = []
         for kind in kinds:
-            current_input = inputs.get(kind)
-            kind_receipts = [
+            current_receipts = [
                 receipt
                 for receipt in resolved_receipts
                 if receipt.assessment_kind is kind
+                and receipt.subject.subject_edition
+                == transition.after.subject.subject_edition
             ]
-            current_receipts = [
-                receipt
-                for receipt in kind_receipts
-                if (
-                    receipt.subject.subject_version
-                    == transition.after.subject.subject_version
-                    and current_input is not None
-                    and receipt.input_digest == current_input
-                )
-            ]
-            selection_pool = current_receipts or kind_receipts
-            selected = (
-                max(
-                    selection_pool,
-                    key=lambda item: (item.created_at, item.receipt_id),
-                )
-                if selection_pool
-                else None
-            )
-            selected_state = (
-                (
-                    AssessmentReceiptState.CURRENT
-                    if selected in current_receipts
-                    else AssessmentReceiptState.STALE
-                )
-                if selected is not None
-                else None
+            selected = max(
+                current_receipts,
+                key=lambda item: (item.created_at, item.receipt_id),
+                default=None,
             )
             previous_head = heads_by_kind.get(kind)
             previous_receipt_id = (
-                previous_head.receipt_id
-                if previous_head is not None
-                else None
+                previous_head.receipt_id if previous_head is not None else None
             )
-            selected_receipt_id = (
-                selected.receipt_id if selected is not None else None
-            )
-            expected_revision = (
-                previous_head.revision if previous_head is not None else 0
-            )
-            changed = previous_receipt_id != selected_receipt_id
-            previous_receipt = next(
-                (
-                    receipt
-                    for receipt in kind_receipts
-                    if receipt.receipt_id == previous_receipt_id
-                ),
-                None,
-            )
-            before_inputs = {
-                item.assessment_kind: item.input_digest
-                for item in transition.before.current_inputs
-            }
-            previous_was_current = (
-                previous_receipt is not None
-                and previous_receipt.subject.subject_version
-                == transition.before.subject.subject_version
-                and previous_receipt.input_digest
-                == before_inputs.get(kind)
-            )
-            stale_transition_required = (
-                previous_was_current
-                and selected_state is AssessmentReceiptState.STALE
-            )
+            selected_receipt_id = selected.receipt_id if selected is not None else None
+            expected_revision = previous_head.revision if previous_head is not None else 0
             rebuilds.append(
                 AssessmentHeadRebuild(
                     assessment_kind=kind,
                     expected_revision=expected_revision,
                     previous_receipt_id=previous_receipt_id,
                     selected_receipt_id=selected_receipt_id,
-                    selected_state=selected_state,
-                    resulting_revision=expected_revision + int(changed),
-                    stale_transition_required=stale_transition_required,
-                    stale_transition_key=(
-                        canonical_sha256(
-                            {
-                                "transition_digest": (
-                                    transition.transition_digest
-                                ),
-                                "assessment_kind": kind.value,
-                                "receipt_id": previous_receipt_id,
-                                "state": "stale",
-                            }
-                        )
-                        if stale_transition_required
-                        else None
+                    selected_state=(
+                        AssessmentReceiptState.CURRENT if selected is not None else None
                     ),
+                    resulting_revision=expected_revision + int(
+                        previous_receipt_id != selected_receipt_id
+                    ),
+                    stale_transition_required=False,
+                    stale_transition_key=None,
                 )
             )
         return AssessmentLifecyclePlan(

@@ -196,6 +196,10 @@ class AssessmentLifecycleSubjectSnapshot:
             raise AssessmentLifecycleContractError(
                 "assessment_lifecycle_subject_invalid"
             )
+        _strict_positive_int(
+            self.subject.subject_edition,
+            "assessment_lifecycle_subject_edition_invalid",
+        )
         object.__setattr__(
             self,
             "status",
@@ -311,23 +315,12 @@ class AssessmentLifecycleTransition:
         else:
             before_edition = self.before.subject.subject_edition
             after_edition = self.after.subject.subject_edition
-            if before_edition is not None or after_edition is not None:
-                valid = (
-                    self.after.status == "draft"
-                    and self.before.status != "draft"
-                    and before_edition is not None
-                    and after_edition == before_edition + 1
-                    and not self.after.archived
-                )
-            else:
-                # Compatibility for pre-edition lifecycle events.
-                valid = (
-                    self.after.status == "draft"
-                    and self.before.status in {"done", "cancelled"}
-                    and self.after.subject.subject_version
-                    == self.before.subject.subject_version + 1
-                    and not self.after.archived
-                )
+            valid = (
+                self.after.status == "draft"
+                and self.before.status != "draft"
+                and after_edition == before_edition + 1
+                and not self.after.archived
+            )
         if not valid:
             raise AssessmentLifecycleContractError(
                 "assessment_lifecycle_transition_invalid"
@@ -404,6 +397,10 @@ class AssessmentLifecycleReceipt:
             raise AssessmentLifecycleContractError(
                 "assessment_lifecycle_receipt_subject_invalid"
             )
+        _strict_positive_int(
+            self.subject.subject_edition,
+            "assessment_lifecycle_subject_edition_invalid",
+        )
         if not isinstance(self.assessment_kind, AssessmentKind):
             raise AssessmentLifecycleContractError(
                 "assessment_lifecycle_receipt_kind_invalid"

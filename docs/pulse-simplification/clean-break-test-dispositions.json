@@ -1856,6 +1856,18 @@
     {
       "path": "okto_labs_pulse_community/tests/test_sqlalchemy_quality_assessment.py",
       "reason": "Current reads require edition; invalid selectors refuse before SQL, other edition has no current while receipt history remains intact."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_quality_assessment_lifecycle.py",
+      "reason": "Lifecycle fixtures now carry native editions; restore selects by edition, not technical version/digests. Added prior-edition refusal and editionless snapshot/receipt refusal. Reopen requires next edition."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_c7_rdl_erasure_contract.py",
+      "reason": "Erasure fixtures declare native Spec architecture/execution contracts and Quality/Checklist editions. Real archive/restore asserts explicit editions and immutable receipt/head preservation; purge/authorization assertions retained."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_sqlalchemy_validation_cycle.py",
+      "reason": "Added real-SQL lifecycle restore for current/prior native editions, immutable receipts, audit and idempotent retry."
     }
   ],
   "removed_cases": [
