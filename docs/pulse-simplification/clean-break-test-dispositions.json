@@ -1452,6 +1452,18 @@
     {
       "path": "okto_labs_pulse_community/tests/test_learning_closeout_binding_storage.py",
       "reason": "Replaced incremental schema conversion with complete current schema, composed native parents, storage roundtrip/restart and byte-preserving incompatible-file refusal. Native null means no authored metadata/fingerprint/binding, never invented proof. Current schema atomic-create rollback remains tested separately."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_project_structure_community_persistence.py",
+      "reason": "Removed two exclusive migration/ledger tests. Retained isolated native ORM/storage, exact idempotent replay, Spec/revision CAS, receipt rollback on conflict and task/test/evidence reference fences. Initial structure revision explicitly zero; does not qualify the full end-to-end feature."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_delivery_evidence_integration.py",
+      "reason": "Spec ledger accepts only native human waivers/revocations; database rejects implementation/test proof rows. Removed migrated_from column and old Spec-proof reader. Native test outcome is required, never borrowed from live scenario. Added storage/refusal tests; native history, signed proof, replay and frontend retained."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_current_relational_schema.py",
+      "reason": "Spec ledger accepts only native human waivers/revocations; database rejects implementation/test proof rows. Removed migrated_from column and old Spec-proof reader. Native test outcome is required, never borrowed from live scenario. Added storage/refusal tests; native history, signed proof, replay and frontend retained."
     }
   ],
   "removed_cases": [
@@ -2048,6 +2060,18 @@
       "test": "test_model_and_migrator_declare_the_same_additive_contract",
       "disposition": "superseded",
       "reason": "Exclusive predecessor ALTER/backfill/migrator contract. Native storage and restart retained in replacement tests; incompatible bases are refused unchanged, and current creation rollback is covered by test_current_relational_schema.py."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_project_structure_community_persistence.py",
+      "test": "test_project_structure_migration_has_one_idempotent_ledger_step",
+      "disposition": "superseded",
+      "reason": "Exclusive incremental conversion/legacy-null upgrade. Native CAS/replay/reference coverage retained; full schema refusal/rollback covered by current schema tests."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_project_structure_community_persistence.py",
+      "test": "test_sqlite_migration_preserves_legacy_null_and_replays",
+      "disposition": "superseded",
+      "reason": "Exclusive incremental conversion/legacy-null upgrade. Native CAS/replay/reference coverage retained; full schema refusal/rollback covered by current schema tests."
     }
   ]
 }

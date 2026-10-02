@@ -2,6 +2,41 @@
 
 ## Estado para retomada
 
+### 2026-10-02 — Ledger de entrega exclusivamente nativo
+
+Marco anterior publicado: Core3b6b17ca / Community31389499. Removida coluna
+CardDeliveryEvidenceRecordRow.migrated_from e o leitor alternativo de provas do
+ledger antigo da Spec. O CHECK do ledger da Spec admite somente waiver/revoke;
+implementação/teste/progresso pertencem ao Card. Dispensas humanas e suas
+revogações nativas continuam; nenhuma autoridade foi ampliada. O resultado de
+teste é o resultado gravado no próprio registro, sem fallback para o cenário
+atual. Candidatos de projeção usam CardRecord com resultado explícito. Guards
+imutáveis, CAS e escopo permanecem. Base contendo migrated_from é recusada
+sem conversão; nenhuma base de usuário foi aberta ou alterada.
+
+Adicionados testes de recusa de prova Spec diretamente no banco e de registro
+sem resultado não tomar emprestado o resultado atual do cenário. Removidos dois
+testes exclusivos de upgrade de Project structure; preservados seus testes
+isolados de armazenamento, CAS/replay exato, rollback do recibo em conflito e
+referências de tarefa/teste/evidência. Revisão inicial da fixture é zero explícito.
+Não se afirma qualificação E2E de Project structure por esses testes isolados.
+
+dist-native-delivery-ledger1 construído e instalado; provenance-native-delivery-
+ledger1.json comprova Core851/914 e Community318/404 Python/payload byte-idênticos
+antes da execução. native-delivery-ledger1:92 aprovados; native-project-storage1:
+3 aprovados (também incluídos na rodada conjunta). Frontend native-delivery-ledger-
+front1:39 aprovados em DeliveryEvidencePanel/CardDeliveryDoDPanel. SPA sem alteração.
+closure-native-delivery-ledger1 exit0, oito budgets ZERO; README renderizado pelo
+gerador oficial e validado. Ruff F/E9 e diff checks aprovados.
+
+c3-collection-refresh-community4:6039 coletados,26 erros (antes6032/27); Core
+permanece com coleta anterior13760/0. Erros de suites mistas ainda dependentes
+de migradores/modelos removidos não foram escondidos. Próximo: políticas B03/B04/
+B08/B09 e recovery, além de normalizadores/serializadores remanescentes do C1.
+Exemplo já identificado para revisão seguinte: serializers/documentação de
+compatibilidade em core/models/delivery_evidence.py. C4 integral e decisões
+T23/KG-10 permanecem pendentes. Não declarar entrega integral.
+
 ### 2026-10-02 — C3: armazenamento nativo de KB e Learning
 
 Marco anterior publicado: Core1d3a2ba3 / Community61be5b04. Três suites deixaram
