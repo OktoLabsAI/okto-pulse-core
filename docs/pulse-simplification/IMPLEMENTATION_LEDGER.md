@@ -2,6 +2,49 @@
 
 ## Estado para retomada
 
+### 2026-10-02 — C2/C3: Learning nativo sem reconciliação de upgrade
+
+Marco anterior publicado: Core6772938a / Community8805305a. Removidos os quatro
+módulos órfãos learning_reconciliation (porta, aplicação, grafo e qualificação)
+e seis suites exclusivas do wrapper offline/delta de conversão retirado. Nenhum
+consumidor runtime externo ao grupo foi encontrado. A disposição KG-02/KG-38
+do assessment autoriza retirar a dívida importada; captura, materialização,
+reuso, substituição por origem e recuperação nativos permanecem. Os recibos
+acceptance-learning-* que citam esses módulos são histórico de engenharia;
+suas alegações de reconciliação não qualificam o produto clean-break.
+
+Benchmark usa test_native_delivery.py, fixtures do checkout atual e sessões
+compostas, sem seletor de implementação antiga. authenticated-delivery-native2:
+1 aprovado, com autenticação MCP, escrita, replay e leitura em nova sessão.
+Não foi executada medição de performance neste incremento. Contexto cognitivo
+usa schema completo, realm e contratos explícitos de Spec; bug-context-native-
+correction1:22 aprovados. Rodada anterior tinha21 aprovados/1 fixture inválida.
+
+native-learning-without-upgrade2:22 aprovados/1 expectativa antiga. Diagnóstico
+native-learning-working-diagnostic1 reproduziu a recusa de duas identidades
+ativas do mesmo Bug, uma working e uma canonical, durante a proveniência.
+GraphTransactionScope já exige identidade ativa única independentemente de
+camada (Core47447a32); o teste anterior esperava contornar esse guard. Teste
+agora mantém a seleção do reader canônico e exige recusa/compensação sem mudar
+Learning, fontes ou Bugs. Nenhum gate de produto foi alterado.
+
+native-learning-identity-current1:6 aprovados (quatro cenários de materialização
+e duas provas transacionais Grafx). native-learning-identity-core1:16 aprovados.
+Total64 casos distintos qualificados neste incremento, incluindo os23 de
+Learning,22 de contexto,1 Delivery e18 de identidade. Ruff F/E9 e diff aprovados.
+
+dist-native-learning-no-reconciliation1 instalado antes dos testes. Prova
+provenance-native-learning-no-reconciliation1:847 Python/910 payload Core e
+319/405 Community idênticos byte a byte entre fonte, wheel e instalação.
+closure-native-learning-no-reconciliation1 aprovado; matrizes README geradas
+oficialmente, oito budgets ZERO. SPA/MCP sem alterações neste incremento.
+Coleta Core13.671 e Community6.168 sem erros; coleta não é execução integral.
+Disposições detalhadas no JSON. C1 residual, C4 e decisões T23/KG-10 seguem
+abertos; não há claim de entrega final nem publicação de release.
+
+Próximo: retirar fallbacks e preservação de digest legado de Delivery, mantendo
+provas, bindings explícitos, exceções humanas e execução simples/composta atuais.
+
 ### 2026-10-02 — C3: schemas nativos de dependências e propagação
 
 Marco anterior publicado: Core28dc594c / Community9d50b670. Suites de schema

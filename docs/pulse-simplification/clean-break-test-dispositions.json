@@ -1040,6 +1040,36 @@
       "path": "okto_labs_pulse_community/tests/test_f3_semantic_exception_retirement.py",
       "disposition": "superseded",
       "reason": "Exclusive archived Sprint waiver/skip replay and predecessor authority refusal. Native waiver/skip lifecycle and immutable history qualified in test_skb3_semantic_guideline_persistence.py."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_learning_reconciliation.py",
+      "disposition": "superseded",
+      "reason": "Exclusive offline historical Learning reconciliation/upgrade wrapper and retired SQL delta contract. Native capture, materialization, reuse, scoped replacement and recovery remain. Historical acceptance receipts are retained as engineering history, not clean-break qualification."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_learning_reconciliation_debt_transition.py",
+      "disposition": "superseded",
+      "reason": "Exclusive offline historical Learning reconciliation/upgrade wrapper and retired SQL delta contract. Native capture, materialization, reuse, scoped replacement and recovery remain. Historical acceptance receipts are retained as engineering history, not clean-break qualification."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_learning_reconciliation_qualification.py",
+      "disposition": "superseded",
+      "reason": "Exclusive offline historical Learning reconciliation/upgrade wrapper and retired SQL delta contract. Native capture, materialization, reuse, scoped replacement and recovery remain. Historical acceptance receipts are retained as engineering history, not clean-break qualification."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_learning_reconciliation_source_append.py",
+      "disposition": "superseded",
+      "reason": "Exclusive offline historical Learning reconciliation/upgrade wrapper and retired SQL delta contract. Native capture, materialization, reuse, scoped replacement and recovery remain. Historical acceptance receipts are retained as engineering history, not clean-break qualification."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_learning_reconciliation_effects.py",
+      "disposition": "superseded",
+      "reason": "Exclusive offline historical Learning reconciliation/upgrade wrapper and retired SQL delta contract. Native capture, materialization, reuse, scoped replacement and recovery remain. Historical acceptance receipts are retained as engineering history, not clean-break qualification."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_learning_reconciliation_sql_variants.py",
+      "disposition": "superseded",
+      "reason": "Exclusive offline historical Learning reconciliation/upgrade wrapper and retired SQL delta contract. Native capture, materialization, reuse, scoped replacement and recovery remain. Historical acceptance receipts are retained as engineering history, not clean-break qualification."
     }
   ],
   "adapted_suites": [
@@ -1610,6 +1640,19 @@
     {
       "path": "okto_labs_pulse_community/tests/test_spec_b_scenarios_b4_b6.py",
       "reason": "B4/B5 retain atomic invalid selections, replay, CAS and post-rollback attempts. Obsolete kb_ids rejected at transport admission. Removed migration checkpoint loop; immutable-ledger attacks now target actual native mutation/replay records."
+    },
+    {
+      "path": "okto_labs_pulse_community/scripts/benchmarks/test_native_delivery.py",
+      "previous_path": "okto_labs_pulse_community/scripts/benchmarks/test_delivery_comparison.py",
+      "reason": "Current-checkout authenticated Delivery fixture with composed sessions, MCP recording, exact replay and new-session reading. Removed old/new fixture selector; this scenario alone is not a performance qualification."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_bug_cognitive_context_adapter.py",
+      "reason": "Full native schema, explicit Board realm and Spec architecture/execution contracts. Preserves cognitive context integrity and shared fixtures for native Learning materialization."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_learning_materialization_writer.py",
+      "reason": "Retains authored materialization, exact replay, recovery, curation and source fences. Mixed working/canonical duplicate now explicitly expects the already published unique-active-source guard, verifies canonical reader selection and byte-equivalent logical source history/no graph mutation after refusal. No product gate relaxed."
     }
   ],
   "removed_cases": [
