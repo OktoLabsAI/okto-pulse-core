@@ -13,7 +13,7 @@ Most MCP tool arguments documented as multi-value (labels, ids, linked_criteria,
 - `okto_pulse_add_decision`: `alternatives_considered`
 - `okto_pulse_add_api_contract`: `linked_rules`
 - `okto_pulse_add_integration_requirement`: `linked_api_contracts`; `okto_pulse_add_observability_requirement`: `linked_integration_requirements`
-- `okto_pulse_create_guideline` / `okto_pulse_update_guideline`: `tags`
+- `okto_pulse_create_guideline`: `tags`
 - the choice/answer tools: `options`, `selected`
 
 All of them accept the same four input shapes below and reject comma-only input through `coerce_to_list_str`.

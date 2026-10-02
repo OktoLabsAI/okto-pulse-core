@@ -1,25 +1,4 @@
-"""Spec R01A REST-FU7-S3 — Guideline endpoints on the UnitOfWork.
-
-The ``api/guidelines.py`` endpoints that still bound a raw request session — the
-global guideline CRUD (list / create / get / update / delete) and the board
-guideline family (board listing, link-or-create inline, unlink, priority update)
-— now route through the ``guidelines_crud`` use cases + ``get_unit_of_work``;
-each adapter only maps the result/errors to HTTP. Oracles exercise the migrated
-status codes + bodies (list 200, create 201, get 200/404, update 200/404 +
-not-owned 404, delete 204→404, board-list 200 / board-404 / foreign-board-404,
-governed-link 409 without mutation, inline-create 201, the inline-create 422
-with the EXACT legacy detail, link-board-404, unlink 204→404, governed-priority
-409 without mutation), the use case raising ``EntityNotFoundError`` for a
-missing board, and an AST signature check proving every guideline endpoint
-takes ``uow`` (not a raw ``AsyncSession``).
-
-The legacy guideline write endpoints are exercised with an explicit principal
-that has both the introduced SK-B capabilities and their historical authority
-ceilings.  Read scoping still relies on board ownership
-(``BoardService.get_board`` → 404 when missing/not-owned/not-shared), exercised
-here by ``test_get_board_guidelines_foreign_board_404`` (a board owned by
-another user, not shared, returns the legacy "Board not found").
-"""
+"""Current guideline context, inline creation, scope and unlink through the UoW."""
 
 from __future__ import annotations
 
@@ -51,12 +30,9 @@ _ENDPOINTS = (
     "list_guidelines",
     "create_guideline",
     "get_guideline",
-    "update_guideline",
-    "delete_guideline",
     "get_board_guidelines",
-    "link_or_create_board_guideline",
+    "create_board_guideline",
     "unlink_board_guideline",
-    "update_board_guideline_priority",
 )
 
 
@@ -240,42 +216,15 @@ async def test_get_guideline_404(client) -> None:
 # --- global: update ---------------------------------------------------------
 
 
-@pytest.mark.asyncio
-async def test_update_guideline_200(client) -> None:
-    gid = _create_global(client)
-    resp = client.patch(f"{PREFIX}/guidelines/{gid}", json={"title": "renamed-rule"})
-    assert resp.status_code == 200, resp.text
-    assert resp.json()["title"] == "renamed-rule"
 
 
-@pytest.mark.asyncio
-async def test_update_guideline_404(client) -> None:
-    resp = client.patch(f"{PREFIX}/guidelines/{_missing()}", json={"title": "x"})
-    assert resp.status_code == 404
-    assert resp.json()["detail"] == "Guideline not found or not owned by user"
 
 
-@pytest.mark.asyncio
-async def test_update_guideline_not_owned_404(client) -> None:
-    # Guideline exists but is owned by OTHER → service returns None → the legacy
-    # "not owned" 404, proving the owner gate is preserved (not dropped).
-    foreign = await _seed_guideline(owner=OTHER)
-    resp = client.patch(f"{PREFIX}/guidelines/{foreign}", json={"title": "hijack"})
-    assert resp.status_code == 404
-    assert resp.json()["detail"] == "Guideline not found or not owned by user"
 
 
 # --- global: delete ---------------------------------------------------------
 
 
-@pytest.mark.asyncio
-async def test_delete_guideline_204_then_404(client) -> None:
-    gid = _create_global(client)
-    resp = client.delete(f"{PREFIX}/guidelines/{gid}")
-    assert resp.status_code == 204, resp.text
-    gone = client.delete(f"{PREFIX}/guidelines/{gid}")
-    assert gone.status_code == 404
-    assert gone.json()["detail"] == "Guideline not found or not owned by user"
 
 
 # --- board: list ------------------------------------------------------------
@@ -319,14 +268,15 @@ async def test_get_board_guidelines_foreign_board_404(client) -> None:
 
 
 @pytest.mark.asyncio
-async def test_link_global_requires_preview_without_mutation(client) -> None:
+async def test_direct_link_payload_refused_without_mutation(client) -> None:
     board_id = await _seed_board()
     gid = _create_global(client, title="global-to-link")
     resp = client.post(
         f"{PREFIX}/boards/{board_id}/guidelines",
         json={"guideline_id": gid, "priority": 2},
     )
-    _assert_preview_required(resp)
+    assert resp.status_code == 422, resp.text
+    assert any(e["type"] == "extra_forbidden" and e["loc"][-1] == "guideline_id" for e in resp.json()["detail"])
     board_guidelines = client.get(f"{PREFIX}/boards/{board_id}/guidelines")
     assert board_guidelines.status_code == 200
     assert board_guidelines.json() == []
@@ -351,20 +301,19 @@ async def test_link_or_create_missing_fields_422(client) -> None:
     board_id = await _seed_board()
     resp = client.post(f"{PREFIX}/boards/{board_id}/guidelines", json={"priority": 1})
     assert resp.status_code == 422, resp.text
-    assert resp.json()["detail"] == (
-        "Provide guideline_id to link a global guideline, or title and content to "
-        "create an inline guideline."
-    )
+    assert {e["loc"][-1] for e in resp.json()["detail"]} == {"title", "content"}
+
 
 
 @pytest.mark.asyncio
-async def test_link_missing_global_requires_preview_without_enumeration(client) -> None:
+async def test_direct_link_payload_refused_without_enumeration(client) -> None:
     board_id = await _seed_board()
     resp = client.post(
         f"{PREFIX}/boards/{board_id}/guidelines",
         json={"guideline_id": _missing(), "priority": 1},
     )
-    _assert_preview_required(resp)
+    assert resp.status_code == 422, resp.text
+    assert any(e["type"] == "extra_forbidden" and e["loc"][-1] == "guideline_id" for e in resp.json()["detail"])
 
 
 @pytest.mark.asyncio
@@ -403,32 +352,8 @@ async def test_unlink_missing_link_404(client) -> None:
 # --- board: priority --------------------------------------------------------
 
 
-@pytest.mark.asyncio
-async def test_update_priority_requires_preview_without_mutation(client) -> None:
-    board_id = await _seed_board()
-    gid = _create_global(client, title="prio")
-    await _link_guideline(board_id, gid)
-    resp = client.patch(
-        f"{PREFIX}/boards/{board_id}/guidelines/{gid}", json={"priority": 9}
-    )
-    _assert_preview_required(resp)
-    board_guidelines = client.get(f"{PREFIX}/boards/{board_id}/guidelines")
-    assert board_guidelines.status_code == 200
-    body = board_guidelines.json()
-    assert len(body) == 1
-    assert body[0]["guideline"]["id"] == gid
-    assert body[0]["priority"] == 0
 
 
-@pytest.mark.asyncio
-async def test_update_priority_missing_link_requires_preview_without_enumeration(
-    client,
-) -> None:
-    board_id = await _seed_board()
-    resp = client.patch(
-        f"{PREFIX}/boards/{board_id}/guidelines/{_missing()}", json={"priority": 3}
-    )
-    _assert_preview_required(resp)
 
 
 # --- use case + AST ---------------------------------------------------------

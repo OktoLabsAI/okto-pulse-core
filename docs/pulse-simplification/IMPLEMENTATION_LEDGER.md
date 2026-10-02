@@ -2,6 +2,53 @@
 
 ## Estado para retomada
 
+### 2026-10-02 — Guidelines: mutações canônicas e criação inline fechada
+
+Marco anterior publicado: Core05b89f00 / Community758f7dc6. Retirados quatro
+wrappers MCP (update_guideline/delete_guideline/link_guideline_to_board/
+update_board_guideline_priority), respectivas policies, use cases e métodos
+de serviço exclusivos. Removidos PATCH/DELETE de guideline antigo, PATCH de
+prioridade direta e URLs import/export de compatibilidade. Revisão, retirement,
+preview/adoção e import/export atuais permanecem em policy_governance.
+Criação inicial e unlink são operações atuais e foram preservados com as mesmas
+capacidades, escopo e histórico. Criação inline recebe BoardGuidelineCreate
+fechado: title/content obrigatórios, priority não negativa e recusa guideline_id.
+Não converte link antigo em criação nem infere adoção.
+
+Removidos quatro métodos frontend sem consumidores de UI; permanecem formulário
+inline/global, editor de revisão, preview/adoção e unlink. Catálogo regenerado:
+283 tools,0 aliases, SHA256
+2b21c1a9dd7e9a3c7a9633333b1ac1c1fe664243d451dd1626ae41be7cd8c484.
+Busca nas árvores src não encontra os wrappers/tipos retirados. Disposições de
+testes registradas; negações entre Boards continuam exercitadas pelo unlink
+atual, e mutações governadas conservam suas próprias provas de autoridade.
+
+guideline-surface-core1.xml:96 aprovados; guideline-surface-governance1.xml:
+58 aprovados, cinco sobrepostos à primeira campanha (149 Core distintos).
+Incluem revisão imutável, concorrência/CAS, replay, idempotência, aposentadoria,
+negações de capacidade antes de UoW, escopo Board, operações retiradas sem dispatch
+e catálogo gerado. guideline-surface-community1.xml:68 aprovados; rotas removidas
+não resolvem dependências de mutação, contratos REST e host instalados preservados.
+guideline-surface-front1.xml:43 aprovados; TypeScript/Vite build concluído.
+SPA:698925ed848201cbdaed098b5342a8854e57742f4b12acd6637fa50427e81679.
+dist-guideline-surface2 instalado; provenance-guideline-surface2.json comprova
+Core851/914 e Community318/404 Python/payload byte-idênticos. A segunda build
+retirou apenas update_priority de serviço, sem consumidores; as demais provas
+comportamentais usam o mesmo código qualificado em surface1. Closure surface2
+exit0, findings vazios, oito budgets ZERO; READMEs oficiais regenerados/validados.
+
+Próximo bloco já previsto C1/C3: referências de guidelines em templates ainda
+têm compatibility_import, resolução numérica/head e preservação de aliases em
+default_board_configuration.py, default_board_config_api.py, import_export.py,
+ports/default_board_configuration.py e GuidelineService.apply_default_guidelines.
+Retirar em conjunto com leitores/frontend e adaptar suites mistas de defaults.
+test_default_board_config_materialization.py e test_skb_b11_default_exact_revision.py
+ainda usam GuidelineUpdate/alias de versão nas fixtures; não foram executados nem
+declarados verdes aqui. test_skb_b04_guideline_lifecycle_persistence.py também
+contém imports de migradores já retirados e fluxo misto da antiga fachada;
+preservar/adaptar suas garantias nativas na qualificação, sem restaurar conversores.
+C1–C4 seguem abertos; versão0.4.0/aceite integral e decisões T23/KG-10 pendentes.
+
 ### 2026-10-01 — Decisões estruturadas e mutações MCP sem writers depreciados
 
 Marco anterior publicado: Core425347c9 / Community7659c6d7. Removidos os handlers,

@@ -319,7 +319,6 @@ MCP_TOOL_PERMISSION_POLICIES: tuple[McpToolPermissionPolicy, ...] = (
     _policy("okto_pulse_delete_card", "card.entity.delete"),
     _policy("okto_pulse_delete_comment", "card.comments.delete"),
     _policy("okto_pulse_delete_design_system", "design_system.entity.delete"),
-    _policy("okto_pulse_delete_guideline", "guidelines.delete"),
     _policy("okto_pulse_delete_ideation", "ideation.entity.delete"),
     _policy("okto_pulse_delete_ideation_knowledge", "ideation.knowledge.delete"),
     _policy("okto_pulse_delete_ideation_question", "ideation.qa.delete"),
@@ -547,7 +546,6 @@ MCP_TOOL_PERMISSION_POLICIES: tuple[McpToolPermissionPolicy, ...] = (
         "okto_pulse_link_code_evidence",
         "code_traceability.spec_link.create",
     ),
-    _policy("okto_pulse_link_guideline_to_board", "guidelines.link"),
     _policy("okto_pulse_link_story_to_ideation", "story.links.ideation"),
     _policy(
         "okto_pulse_link_task",
@@ -833,7 +831,6 @@ MCP_TOOL_PERMISSION_POLICIES: tuple[McpToolPermissionPolicy, ...] = (
         "spec.architecture.edit",
         "card.architecture.edit",
     ),
-    _policy("okto_pulse_update_board_guideline_priority", "guidelines.link"),
     _policy("okto_pulse_update_card", "card.entity.edit_fields"),
     _policy("okto_pulse_update_comment", "card.comments.edit"),
     _policy(
@@ -841,7 +838,6 @@ MCP_TOOL_PERMISSION_POLICIES: tuple[McpToolPermissionPolicy, ...] = (
         "default_board_config.guidelines.edit",
     ),
     _policy("okto_pulse_update_design_system", "design_system.entity.edit"),
-    _policy("okto_pulse_update_guideline", "guidelines.edit"),
     _policy(
         "okto_pulse_update_ideation",
         "ideation.entity.edit_fields",

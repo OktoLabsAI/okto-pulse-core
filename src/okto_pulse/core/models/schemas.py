@@ -4153,12 +4153,6 @@ class GuidelineCreate(BaseModel):
     priority: int = Field(default=0, ge=0)
 
 
-class GuidelineUpdate(BaseModel):
-    """Schema for updating a guideline."""
-
-    title: str | None = Field(None, min_length=1, max_length=500)
-    content: str | None = None
-    tags: list[str] | None = None
 
 
 class GuidelineResponse(BaseSchema):
@@ -4175,14 +4169,14 @@ class GuidelineResponse(BaseSchema):
     updated_at: datetime
 
 
-class BoardGuidelineLinkRequest(BaseModel):
-    """Schema for linking a global guideline or creating an inline board guideline."""
+class BoardGuidelineCreate(BaseModel):
+    """Create inline Board context; adoption uses the governed revision contract."""
 
-    guideline_id: str | None = None
-    title: str | None = Field(None, min_length=1, max_length=500)
-    content: str | None = Field(None, min_length=1)
+    model_config = ConfigDict(extra="forbid")
+    title: str = Field(..., min_length=1, max_length=500)
+    content: str = Field(..., min_length=1)
     tags: list[str] | None = None
-    priority: int = 0
+    priority: int = Field(default=0, ge=0)
 
 
 # ============================================================================

@@ -118,11 +118,9 @@ Semantic guideline protocol:
 - `okto_pulse_adopt_guideline_revision` — docs: `okto-pulse://reference/tool-docs/guideline`
 - `okto_pulse_create_guideline` — docs: `okto-pulse://reference/tool-docs/guideline`
 - `okto_pulse_create_guideline_revision` — docs: `okto-pulse://reference/tool-docs/guideline`
-- `okto_pulse_delete_guideline` — docs: `okto-pulse://reference/tool-docs/guideline`
 - `okto_pulse_get_board_guidelines` — docs: `okto-pulse://reference/tool-docs/guideline`
 - `okto_pulse_get_guideline_impact` — docs: `okto-pulse://reference/tool-docs/guideline`
 - `okto_pulse_get_guideline_revision` — docs: `okto-pulse://reference/tool-docs/guideline`
-- `okto_pulse_link_guideline_to_board` — docs: `okto-pulse://reference/tool-docs/guideline`
 - `okto_pulse_list_default_guideline_candidates` — docs: `okto-pulse://reference/tool-docs/guideline`
 - `okto_pulse_list_guideline_impact_items` — docs: `okto-pulse://reference/tool-docs/guideline`
 - `okto_pulse_list_guideline_revisions` — docs: `okto-pulse://reference/tool-docs/guideline`
@@ -130,9 +128,7 @@ Semantic guideline protocol:
 - `okto_pulse_preview_guideline_impact` — docs: `okto-pulse://reference/tool-docs/guideline`
 - `okto_pulse_retire_guideline` — docs: `okto-pulse://reference/tool-docs/guideline`
 - `okto_pulse_unlink_guideline_from_board` — docs: `okto-pulse://reference/tool-docs/guideline`
-- `okto_pulse_update_board_guideline_priority` — docs: `okto-pulse://reference/tool-docs/guideline`
 - `okto_pulse_update_default_guideline_refs` — docs: `okto-pulse://reference/tool-docs/guideline`
-- `okto_pulse_update_guideline` — docs: `okto-pulse://reference/tool-docs/guideline`
 
 ## Code Traceability
 - `okto_pulse_acknowledge_implementation_overlap` — docs: `okto-pulse://reference/tool-docs/code-traceability`

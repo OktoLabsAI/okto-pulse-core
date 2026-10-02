@@ -18,7 +18,7 @@ For versioned guidelines prefer retirement/unlink as defined in
 | `okto_pulse_delete_ideation` / `okto_pulse_delete_refinement` | The ideation/refinement and every derived child (refinements, specs). |
 | `okto_pulse_delete_attachment` | The file blob. |
 | `okto_pulse_delete_comment` / `okto_pulse_delete_question` | The comment or Q&A item. |
-| `okto_pulse_delete_guideline` | The guideline (globally, if it's a global guideline). |
+| `okto_pulse_retire_guideline` | The guideline (globally, if it's a global guideline). |
 | `okto_pulse_delete_spec_knowledge` | The attached knowledge base content. |
 | `okto_pulse_delete_screen_mockup` | The mockup HTML. |
 | `okto_pulse_remove_spec_entity` (`target_type="business_rule"`) / `okto_pulse_remove_spec_entity` (`target_type="api_contract"`) | The BR / contract. Linked tasks remain but the coverage gate may now fail. |

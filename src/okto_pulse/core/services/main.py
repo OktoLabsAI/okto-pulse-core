@@ -146,7 +146,6 @@ from okto_pulse.core.models.schemas import (
     CommentCreate,
     CommentUpdate,
     GuidelineCreate,
-    GuidelineUpdate,
     IdeationCreate,
     IdeationKnowledgeCreate,
     IdeationKnowledgeUpdate,
@@ -18027,7 +18026,7 @@ class GuidelineService:
                 metrics=(),
                 created_by=scoped_owner_id,
                 created_at=occurred_at,
-                idempotency_key=f"legacy:create:{guideline_id}",
+                idempotency_key=f"guideline:create:{guideline_id}",
             )
         )
         policy = self._policy()
@@ -18055,7 +18054,7 @@ class GuidelineService:
                     metric_threshold_overrides={},
                     actor_id=scoped_owner_id,
                     occurred_at=occurred_at,
-                    idempotency_key=(f"legacy:inline-binding:{identity.guideline_id}"),
+                    idempotency_key=(f"guideline:inline-binding:{identity.guideline_id}"),
                     expected_binding_revision=None,
                 ),
                 current=None,
@@ -18148,117 +18147,7 @@ class GuidelineService:
             )
         return projected[offset : offset + limit]
 
-    async def update_guideline(
-        self,
-        guideline_id: str,
-        owner_id: str,
-        data: GuidelineUpdate,
-        *,
-        query_scope: QueryScope | None = None,
-    ) -> Guideline | None:
-        """Append a canonical immutable revision and advance the head by CAS."""
-        from okto_pulse.core.domain.guideline_lifecycle import (
-            GuidelinePatchApplied,
-            GuidelinePatchCommand,
-            GuidelinePatchNoop,
-            GuidelineRevisionPatch,
-            execute_guideline_patch,
-        )
 
-        scoped_owner_id = _scope_actor_id(owner_id, query_scope) or owner_id
-        snapshot = await self._authoritative_snapshot(guideline_id)
-        if snapshot is None:
-            return None
-        identity, head, current, retirement = snapshot
-        if identity.owner_id != scoped_owner_id:
-            return None
-        patch_id = str(uuid.uuid4())
-        result = execute_guideline_patch(
-            GuidelinePatchCommand(
-                current_revision=current,
-                current_head=head,
-                patch=GuidelineRevisionPatch(
-                    title=data.title,
-                    content=data.content,
-                    tags=(tuple(data.tags) if data.tags is not None else None),
-                ),
-                next_revision_id=patch_id,
-                actor_id=scoped_owner_id,
-                occurred_at=self._next_event_time(head.updated_at),
-                idempotency_key=f"legacy:patch:{patch_id}",
-            ),
-            retirement=retirement,
-        )
-        if isinstance(result, GuidelinePatchNoop):
-            return self._guideline_projection(
-                identity,
-                current,
-                updated_at=head.updated_at,
-            )
-        if not isinstance(result, GuidelinePatchApplied):
-            raise ValueError(result.code)
-        revision, next_head = await self._policy().append_revision_cas(
-            revision=result.revision,
-            next_head=result.head,
-            expected_head_revision=result.expected_head_revision,
-            idempotency_key=result.idempotency_key,
-            request_digest=result.request_digest,
-        )
-        return self._guideline_projection(
-            identity,
-            revision,
-            updated_at=next_head.updated_at,
-        )
-
-    async def delete_guideline(
-        self,
-        guideline_id: str,
-        owner_id: str,
-        *,
-        actor_type: str = "user",
-        query_scope: QueryScope | None = None,
-    ) -> bool:
-        """Logically retire a guideline while retaining its complete history."""
-        from okto_pulse.core.domain.guideline_lifecycle import (
-            GuidelineRetirementCommand,
-            plan_guideline_retirement,
-        )
-        from okto_pulse.core.domain.guideline_policy import (
-            GuidelineLifecycleStatus,
-        )
-
-        scoped_owner_id = _scope_actor_id(owner_id, query_scope) or owner_id
-        snapshot = await self._authoritative_snapshot(
-            guideline_id,
-            include_retired=True,
-        )
-        if snapshot is None:
-            return False
-        identity, head, revision, retirement = snapshot
-        if identity.owner_id != scoped_owner_id or retirement is not None:
-            return False
-        retirement_id = str(uuid.uuid4())
-        plan = plan_guideline_retirement(
-            GuidelineRetirementCommand(
-                current_revision=revision,
-                current_head=head,
-                retirement_id=retirement_id,
-                status=GuidelineLifecycleStatus.RETIRED,
-                reason="Retired through the legacy guideline faÃ§ade.",
-                actor_id=scoped_owner_id,
-                occurred_at=self._next_event_time(head.updated_at),
-                idempotency_key=f"legacy:retire:{retirement_id}",
-            ),
-            current_retirement=None,
-        )
-        await self._policy().retire_guideline_cas(
-            retirement=plan.retirement,
-            expected_head_revision=plan.expected_head_revision,
-            idempotency_key=plan.idempotency_key,
-            request_digest=plan.request_digest,
-            actor_type=actor_type,
-        )
-        return True
 
     async def get_board_guidelines(
         self,
@@ -18335,38 +18224,6 @@ class GuidelineService:
             emit_governance_metric(details, raise_on_violation=False)
         return items
 
-    async def link_guideline_to_board(
-        self,
-        board_id: str,
-        guideline_id: str,
-        priority: int = 0,
-        *,
-        owner_id: str | None = None,
-        query_scope: QueryScope | None = None,
-    ) -> BoardGuideline | None:
-        """Fail closed: global links require preview then explicit adoption."""
-        from okto_pulse.core.ports.guideline_policy import (
-            GuidelinePolicyBindingConflict,
-        )
-
-        if query_scope is not None and not await self._board_visible(
-            board_id,
-            owner_id,
-            query_scope,
-        ):
-            return None
-        snapshot = await self._authoritative_snapshot(guideline_id)
-        if snapshot is None:
-            return None
-        del priority
-        raise GuidelinePolicyBindingConflict(
-            "guideline_impact_preview_required",
-            details=(
-                ("board_id", board_id),
-                ("guideline_id", guideline_id),
-                ("remediation", "preview_then_adopt"),
-            ),
-        )
 
     async def unlink_guideline_from_board(
         self,
@@ -18419,7 +18276,7 @@ class GuidelineService:
         resolved_key = (
             idempotency_key.strip()
             if isinstance(idempotency_key, str) and idempotency_key.strip()
-            else f"legacy:unlink:{uuid.uuid4()}"
+            else f"guideline:unlink:{uuid.uuid4()}"
         )
         event_id = str(
             uuid.uuid5(
@@ -18442,35 +18299,6 @@ class GuidelineService:
         await policy.unlink_binding_cas(mutation=mutation)
         return True
 
-    async def update_priority(
-        self,
-        board_id: str,
-        guideline_id: str,
-        priority: int,
-        *,
-        owner_id: str | None = None,
-        query_scope: QueryScope | None = None,
-    ) -> bool:
-        """Fail closed: priority changes alter policy and require a preview."""
-        from okto_pulse.core.ports.guideline_policy import (
-            GuidelinePolicyBindingConflict,
-        )
-
-        if query_scope is not None and not await self._board_visible(
-            board_id,
-            owner_id,
-            query_scope,
-        ):
-            return False
-        del priority
-        raise GuidelinePolicyBindingConflict(
-            "guideline_impact_preview_required",
-            details=(
-                ("board_id", board_id),
-                ("guideline_id", guideline_id),
-                ("remediation", "preview_then_adopt"),
-            ),
-        )
 
     async def apply_default_guidelines(
         self,

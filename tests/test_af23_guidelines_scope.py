@@ -34,7 +34,7 @@ from okto_pulse.community.api.auth_deps import (
 from okto_pulse.core.domain.permissions import get_builtin_presets
 from okto_pulse.core.domain.realm import LOCAL_REALM_ID
 from okto_pulse.core.infra.database import get_db, get_session_factory
-from okto_pulse.core.models.schemas import GuidelineCreate, GuidelineUpdate
+from okto_pulse.core.models.schemas import GuidelineCreate
 from okto_pulse.core.ports.authentication import Principal
 
 USER = "af23-guidelines-user"
@@ -254,7 +254,7 @@ async def test_ts1_foreign_global_guideline_get_is_fail_closed(
 
 
 @pytest.mark.asyncio
-async def test_ts1_foreign_board_unlink_and_priority_are_fail_closed(
+async def test_ts1_foreign_board_unlink_is_fail_closed(
     client: TestClient,
 ) -> None:
     board_id = await _seed_board(OTHER)
@@ -262,15 +262,9 @@ async def test_ts1_foreign_board_unlink_and_priority_are_fail_closed(
     await _link_guideline(board_id, guideline_id)
 
     unlink = client.delete(f"{PREFIX}/boards/{board_id}/guidelines/{guideline_id}")
-    priority = client.patch(
-        f"{PREFIX}/boards/{board_id}/guidelines/{guideline_id}",
-        json={"priority": 7},
-    )
-
     assert unlink.status_code == 404
     assert unlink.json()["detail"] == "Board not found"
-    assert priority.status_code == 404
-    assert priority.json()["detail"] == "Board not found"
+
 
 
 @pytest.mark.asyncio
@@ -287,10 +281,7 @@ async def test_shared_viewer_reads_guidelines_but_cannot_mutate(
     await _share_board(board_id, permission="viewer")
 
     listing = client.get(f"{PREFIX}/boards/{board_id}/guidelines")
-    mutation = client.patch(
-        f"{PREFIX}/boards/{board_id}/guidelines/{guideline_id}",
-        json={"priority": 9},
-    )
+    mutation = client.delete(f"{PREFIX}/boards/{board_id}/guidelines/{guideline_id}")
 
     assert listing.status_code == 200, listing.text
     assert {item["id"] for item in listing.json()} == {guideline_id}
@@ -307,7 +298,7 @@ async def test_shared_viewer_reads_guidelines_but_cannot_mutate(
 
 
 @pytest.mark.asyncio
-async def test_shared_editor_reaches_b08_preview_gate_for_priority(
+async def test_shared_editor_can_unlink_through_current_writer(
     client: TestClient,
 ) -> None:
     from okto_pulse.core.ports.relational_application import (
@@ -319,16 +310,8 @@ async def test_shared_editor_reaches_b08_preview_gate_for_priority(
     await _link_guideline(board_id, guideline_id, priority=1)
     await _share_board(board_id, permission="editor")
 
-    response = client.patch(
-        f"{PREFIX}/boards/{board_id}/guidelines/{guideline_id}",
-        json={"priority": 7},
-    )
-    assert response.status_code == 409
-    assert (
-        response.json()["detail"]["error_code"]
-        == "guideline_impact_preview_required"
-    )
-    assert response.json()["detail"]["next_action"] == "preview_then_adopt"
+    response = client.delete(f"{PREFIX}/boards/{board_id}/guidelines/{guideline_id}")
+    assert response.status_code == 204, response.text
 
     async with get_session_factory()() as db:
         persisted = (
@@ -337,7 +320,7 @@ async def test_shared_editor_reaches_b08_preview_gate_for_priority(
             .get_binding(board_id=board_id, guideline_id=guideline_id)
         )
         assert persisted is not None
-        assert persisted.priority == 1
+        assert persisted.state.value == "unlinked"
 
 
 @pytest.mark.asyncio
@@ -349,16 +332,12 @@ async def test_ts2_owner_floor_is_preserved_when_query_scope_is_none() -> None:
     async with get_session_factory()() as db:
         service = GuidelineService(db)
         guidelines = await service.list_guidelines(USER, query_scope=None)
-        updated = await service.update_guideline(
-            guideline_id,
-            USER,
-            GuidelineUpdate(title="local owner update"),
-            query_scope=None,
-        )
+        current = await service.get_guideline(guideline_id, owner_id=USER, query_scope=None)
+        foreign = await service.get_guideline(guideline_id, owner_id=OTHER, query_scope=None)
 
     assert any(guideline.id == guideline_id for guideline in guidelines)
-    assert updated is not None
-    assert updated.title == "local owner update"
+    assert current is not None
+    assert foreign is None
 
 
 @pytest.mark.asyncio
@@ -490,11 +469,7 @@ def test_ts3_mcp_guideline_tools_use_scoped_use_cases_not_board_owner() -> None:
         "okto_pulse_get_board_guidelines",
         "okto_pulse_list_guidelines",
         "okto_pulse_create_guideline",
-        "okto_pulse_update_guideline",
-        "okto_pulse_delete_guideline",
-        "okto_pulse_link_guideline_to_board",
         "okto_pulse_unlink_guideline_from_board",
-        "okto_pulse_update_board_guideline_priority",
     ]
 
     combined = "\n\n".join(
@@ -504,7 +479,7 @@ def test_ts3_mcp_guideline_tools_use_scoped_use_cases_not_board_owner() -> None:
     assert "board.owner_id" not in combined
     assert "db.get(Board" not in combined
     assert combined.count("MCPAdapterContract.actor") == 2
-    assert combined.count("_authorize_legacy_guideline_mcp") == 6
+    assert combined.count("_authorize_guideline_mcp") == 2
     assert combined.count("get_unit_of_work_factory_for_mcp") == len(tool_names)
 
 
@@ -625,7 +600,7 @@ def test_ts4_mcp_default_guideline_tools_pass_query_scope() -> None:
 
 
 @pytest.mark.asyncio
-async def test_ts5_mcp_priority_update_without_board_grant_is_denied() -> None:
+async def test_ts5_mcp_unlink_without_board_grant_is_denied() -> None:
     from okto_pulse.core.ports.relational_application import (
         require_relational_application_adapter,
     )
@@ -639,10 +614,9 @@ async def test_ts5_mcp_priority_update_without_board_grant_is_denied() -> None:
     register_mcp_test_runtime(get_session_factory())
     with patch.object(mcp_server, "_get_agent_ctx", AsyncMock(return_value=None)):
         response = json.loads(
-            await mcp_server.okto_pulse_update_board_guideline_priority.fn(
+            await mcp_server.okto_pulse_unlink_guideline_from_board.fn(
                 board_id=board_id,
                 guideline_id=guideline_id,
-                priority="9",
             )
         )
 
@@ -658,7 +632,7 @@ async def test_ts5_mcp_priority_update_without_board_grant_is_denied() -> None:
 
 
 @pytest.mark.asyncio
-async def test_ts5_mcp_same_scope_reaches_b08_gate_then_unlinks() -> None:
+async def test_ts5_mcp_same_scope_unlinks_and_retains_history() -> None:
     from okto_pulse.core.domain.guideline_policy import GuidelineBindingState
     from okto_pulse.core.ports.relational_application import (
         require_relational_application_adapter,
@@ -667,15 +641,6 @@ async def test_ts5_mcp_same_scope_reaches_b08_gate_then_unlinks() -> None:
     board_id = await _seed_board(USER)
     guideline_id = await _seed_guideline(USER)
     await _link_guideline(board_id, guideline_id, priority=1)
-
-    response = await _call_mcp_tool(
-        "okto_pulse_update_board_guideline_priority",
-        board_id=board_id,
-        guideline_id=guideline_id,
-        priority="9",
-    )
-    assert response["error_code"] == "guideline_impact_preview_required"
-    assert response["next_action"] == "preview_then_adopt"
 
     async with get_session_factory()() as db:
         active = (

@@ -13,7 +13,7 @@ Full long-form documentation (args, returns, examples, enum prose) for `okto_pul
 
 Create a guideline identity and immutable initial revision (`1.0.0`). If scope
 is "global", it goes into the catalog; if scope is "inline", set a board_id.
-Requires `guidelines.revisions.create`. This compatibility payload cannot
+Requires `guidelines.revisions.create`. The initial context-only payload cannot
 author executable rules.
 
 Args:
@@ -26,18 +26,6 @@ Args:
 Returns:
     JSON with created guideline
 
-## `okto_pulse_delete_guideline`
-
-Compatibility name for retiring a guideline. Retirement is terminal for new
-adoptions, but immutable revisions, binding lineage and audit evidence remain.
-Requires `guidelines.revisions.retire`.
-
-Args:
-    board_id: Board ID (used for authentication)
-    guideline_id: Guideline ID to retire
-
-Returns:
-    JSON with success status
 
 ## `okto_pulse_get_board_guidelines`
 
@@ -52,20 +40,6 @@ Args:
 Returns:
     JSON with guidelines sorted by ascending priority (lower values first).
 
-## `okto_pulse_link_guideline_to_board`
-
-Deprecated direct-adoption shim. It checks `guidelines.adoption.manage` and
-returns `guideline_impact_preview_required` without mutation. Use
-`okto_pulse_preview_guideline_impact`, then
-`okto_pulse_adopt_guideline_revision` with the exact receipt and digest.
-
-Args:
-    board_id: Board ID
-    guideline_id: Guideline ID to link
-    priority: Non-negative order; lower values are evaluated first (default 0).
-
-Returns:
-    Typed migration error with `next_action=preview_then_adopt`.
 
 ## `okto_pulse_list_guidelines`
 
@@ -121,19 +95,6 @@ Args:
 Returns:
     JSON with the EFFECTIVE template (including its default guideline refs).
 
-## `okto_pulse_update_board_guideline_priority`
-
-Deprecated direct-adoption shim. It checks `guidelines.adoption.manage` and
-returns `guideline_impact_preview_required` without mutation. Preview the
-proposed priority and then adopt using the exact receipt.
-
-Args:
-    board_id: Board ID
-    guideline_id: Linked guideline ID
-    priority: New non-negative order; lower values are evaluated first.
-
-Returns:
-    Typed migration error with `next_action=preview_then_adopt`.
 
 ## `okto_pulse_unlink_guideline_from_board`
 
@@ -147,21 +108,6 @@ Args:
 Returns:
     JSON with success status
 
-## `okto_pulse_update_guideline`
-
-Compatibility façade that appends an immutable guideline revision when title,
-content or tags change. Requires `guidelines.revisions.create`; a no-op keeps
-the current head. Semantic metrics require the governed revision tool.
-
-Args:
-    board_id: Board ID (used for authentication)
-    guideline_id: Guideline ID to update
-    title: New title (empty = no change)
-    content: New content (empty = no change)
-    tags: New pipe-separated tags (empty = no change)
-
-Returns:
-    JSON with updated guideline
 
 ## Governed policy tool conventions
 

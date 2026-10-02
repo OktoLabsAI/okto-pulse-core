@@ -1248,6 +1248,30 @@
     {
       "path": "okto_labs_pulse_core/tests/test_add_business_rule_structured_fr.py",
       "reason": "Canonical structured mutations/native Decision projection replace retired writers, Markdown conversion and decision_legacy parameters. Current scope, permissions and declared links retained."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_skb_b14_policy_governance_mcp.py",
+      "reason": "Removed positive alias parameters/cases; retained current context creation, Board unlink and native governed revision/adoption/retirement tests. Closed inline DTO rejects old direct-link payload."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_r01a_guidelines_uow.py",
+      "reason": "Removed positive alias parameters/cases; retained current context creation, Board unlink and native governed revision/adoption/retirement tests. Closed inline DTO rejects old direct-link payload."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_skb_b13_policy_governance_rest.py",
+      "reason": "Removed positive alias parameters/cases; retained current context creation, Board unlink and native governed revision/adoption/retirement tests. Closed inline DTO rejects old direct-link payload."
+    },
+    {
+      "path": "okto_labs_pulse_community/frontend/src/services/__tests__/api.guidelinesCurrent.test.ts",
+      "reason": "Removed positive alias parameters/cases; retained current context creation, Board unlink and native governed revision/adoption/retirement tests. Closed inline DTO rejects old direct-link payload."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_af23_guidelines_scope.py",
+      "reason": "Authority cases now exercise retained audited unlink and scoped current reads; only removed priority wrapper expectations retired. Current governed revision/adoption permission tests retained."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_r01a_mcp_board_uow.py",
+      "reason": "AST inventory excludes two removed guideline shims; all current delegation checks retained."
     }
   ],
   "removed_cases": [
@@ -1652,6 +1676,54 @@
       "test": "test_migrate_decisions_preserves_prose_after_contiguous_bullets",
       "disposition": "superseded",
       "reason": "Exclusive Markdown decision migration/parser removed. Native structured decisions and negative non-conversion tests remain."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_r01a_guidelines_uow.py",
+      "test": "test_update_guideline_200",
+      "disposition": "superseded",
+      "reason": "Exclusive retired guideline alias path. Native governed revision/retirement/adoption, permission and scope suites remain; removed calls are covered by negative surface tests."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_r01a_guidelines_uow.py",
+      "test": "test_update_guideline_404",
+      "disposition": "superseded",
+      "reason": "Exclusive retired guideline alias path. Native governed revision/retirement/adoption, permission and scope suites remain; removed calls are covered by negative surface tests."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_r01a_guidelines_uow.py",
+      "test": "test_update_guideline_not_owned_404",
+      "disposition": "superseded",
+      "reason": "Exclusive retired guideline alias path. Native governed revision/retirement/adoption, permission and scope suites remain; removed calls are covered by negative surface tests."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_r01a_guidelines_uow.py",
+      "test": "test_delete_guideline_204_then_404",
+      "disposition": "superseded",
+      "reason": "Exclusive retired guideline alias path. Native governed revision/retirement/adoption, permission and scope suites remain; removed calls are covered by negative surface tests."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_r01a_guidelines_uow.py",
+      "test": "test_update_priority_requires_preview_without_mutation",
+      "disposition": "superseded",
+      "reason": "Exclusive retired guideline alias path. Native governed revision/retirement/adoption, permission and scope suites remain; removed calls are covered by negative surface tests."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_r01a_guidelines_uow.py",
+      "test": "test_update_priority_missing_link_requires_preview_without_enumeration",
+      "disposition": "superseded",
+      "reason": "Exclusive retired guideline alias path. Native governed revision/retirement/adoption, permission and scope suites remain; removed calls are covered by negative surface tests."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_skb_b13_policy_governance_rest.py",
+      "test": "test_legacy_patch_and_delete_delegate_immutable_append_and_retirement",
+      "disposition": "superseded",
+      "reason": "Exclusive retired guideline alias path. Native governed revision/retirement/adoption, permission and scope suites remain; removed calls are covered by negative surface tests."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_skb_b13_policy_governance_rest.py",
+      "test": "test_legacy_patch_delete_gate_then_delegate_append_retire",
+      "disposition": "superseded",
+      "reason": "Exclusive retired guideline alias path. Native governed revision/retirement/adoption, permission and scope suites remain; removed calls are covered by negative surface tests."
     }
   ]
 }

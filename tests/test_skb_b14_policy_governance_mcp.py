@@ -1275,7 +1275,7 @@ def test_policy_resource_contract_and_pointer_cardinality() -> None:
 
 
 @pytest.mark.asyncio
-async def test_legacy_unlink_denial_precedes_uow_factory_and_enter(
+async def test_current_unlink_denial_precedes_uow_factory_and_enter(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from okto_pulse.core.mcp import server
@@ -1341,50 +1341,10 @@ async def test_legacy_unlink_denial_precedes_uow_factory_and_enter(
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(
-    ("tool_name", "arguments", "capability", "operation"),
-    (
-        (
-            "okto_pulse_create_guideline",
-            {
-                "board_id": "board-1",
-                "title": "Policy",
-                "content": "Content",
-            },
-            REVISIONS_CREATE,
-            "create_guideline",
-        ),
-        (
-            "okto_pulse_update_guideline",
-            {"board_id": "board-1", "guideline_id": "guideline-1"},
-            REVISIONS_CREATE,
-            "update_guideline",
-        ),
-        (
-            "okto_pulse_delete_guideline",
-            {"board_id": "board-1", "guideline_id": "guideline-1"},
-            REVISIONS_RETIRE,
-            "delete_guideline",
-        ),
-        (
-            "okto_pulse_link_guideline_to_board",
-            {"board_id": "board-1", "guideline_id": "guideline-1"},
-            ADOPTION_MANAGE,
-            "link_guideline",
-        ),
-        (
-            "okto_pulse_update_board_guideline_priority",
-            {
-                "board_id": "board-1",
-                "guideline_id": "guideline-1",
-                "priority": "3",
-            },
-            ADOPTION_MANAGE,
-            "update_guideline_priority",
-        ),
-    ),
-)
-async def test_legacy_guideline_mutation_denial_precedes_uow(
+@pytest.mark.parametrize(("tool_name", "arguments", "capability", "operation"), [
+    ("okto_pulse_create_guideline", {"board_id": "board-1", "title": "Policy", "content": "Content"}, REVISIONS_CREATE, "create_guideline"),
+])
+async def test_current_guideline_mutation_denial_precedes_uow(
     monkeypatch: pytest.MonkeyPatch,
     tool_name: str,
     arguments: dict[str, str],
@@ -1410,7 +1370,7 @@ async def test_legacy_guideline_mutation_denial_precedes_uow(
 
     def forbidden_uow() -> object:
         calls["provider"] += 1
-        raise AssertionError("denied legacy mutation resolved a UoW")
+        raise AssertionError("denied mutation resolved a UoW")
 
     monkeypatch.setattr(server, "_get_agent_ctx", get_agent)
     monkeypatch.setattr(
@@ -1432,68 +1392,19 @@ async def test_legacy_guideline_mutation_denial_precedes_uow(
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(
-    ("use_case", "command", "capability"),
-    (
-        pytest.param(
-            "create",
-            SimpleNamespace(data=SimpleNamespace(board_id=None)),
-            REVISIONS_CREATE,
-            id="create",
-        ),
-        pytest.param(
-            "update",
-            SimpleNamespace(guideline_id="guideline-1", data=SimpleNamespace()),
-            REVISIONS_CREATE,
-            id="update",
-        ),
-        pytest.param(
-            "delete",
-            SimpleNamespace(guideline_id="guideline-1"),
-            REVISIONS_RETIRE,
-            id="retire",
-        ),
-        pytest.param(
-            "link",
-            SimpleNamespace(
-                board_id="board-1",
-                data=SimpleNamespace(guideline_id="guideline-1"),
-            ),
-            ADOPTION_MANAGE,
-            id="link",
-        ),
-        pytest.param(
-            "priority",
-            SimpleNamespace(
-                board_id="board-1",
-                guideline_id="guideline-1",
-                priority=3,
-            ),
-            ADOPTION_MANAGE,
-            id="priority",
-        ),
-    ),
-)
-async def test_legacy_guideline_use_cases_repeat_capability_before_uow(
+@pytest.mark.parametrize(("use_case", "command", "capability"), [
+    ("create", SimpleNamespace(data=SimpleNamespace(board_id=None)), REVISIONS_CREATE),
+    ("inline", SimpleNamespace(board_id="board-1", data=SimpleNamespace()), REVISIONS_CREATE),
+])
+async def test_current_guideline_use_cases_repeat_capability_before_uow(
     use_case: str,
     command: object,
     capability: str,
 ) -> None:
     from okto_pulse.core.application.use_cases.guidelines_crud import (
-        CreateGuidelineUseCase,
-        DeleteGuidelineUseCase,
-        LinkOrCreateBoardGuidelineUseCase,
-        UpdateBoardGuidelinePriorityUseCase,
-        UpdateGuidelineUseCase,
+        CreateGuidelineUseCase, CreateBoardGuidelineUseCase,
     )
-
-    implementations = {
-        "create": CreateGuidelineUseCase(),
-        "update": UpdateGuidelineUseCase(),
-        "delete": DeleteGuidelineUseCase(),
-        "link": LinkOrCreateBoardGuidelineUseCase(),
-        "priority": UpdateBoardGuidelinePriorityUseCase(),
-    }
+    implementations = {"create": CreateGuidelineUseCase(), "inline": CreateBoardGuidelineUseCase()}
 
     class Permissions:
         def check(self, required: str) -> str | None:
@@ -1521,7 +1432,7 @@ async def test_legacy_guideline_use_cases_repeat_capability_before_uow(
 
 
 @pytest.mark.asyncio
-async def test_legacy_unlink_allow_preserves_envelope_and_one_uow(
+async def test_current_unlink_allow_preserves_envelope_and_one_uow(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from okto_pulse.core.mcp import server

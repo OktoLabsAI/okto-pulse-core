@@ -42,9 +42,6 @@ from okto_pulse.core.application.use_cases.policy_governance import (
     require_policy_governance_capabilities,
 )
 from okto_pulse.core.application.scope import ActorScope, QueryScope
-from okto_pulse.core.ports.guideline_policy import (
-    GuidelinePolicyBindingConflict,
-)
 from okto_pulse.core.services.default_board_configuration import (
     guideline_ref_diff_has_changes,
 )
@@ -504,32 +501,8 @@ class McpGetBoardGuidelinesUseCase:
         return _DataResult(items)
 
 
-class McpLinkGuidelineToBoardCommand:
-    __slots__ = ("board_id", "guideline_id", "priority")
-
-    def __init__(self, board_id: str, guideline_id: str, priority: int) -> None:
-        self.board_id = board_id
-        self.guideline_id = guideline_id
-        self.priority = priority
 
 
-class McpLinkGuidelineToBoardUseCase:
-    """Link a global guideline to a board (write). A missing guideline is
-    ``EntityNotFoundError("guideline", ...)`` → adapter ``"Guideline not found"``.
-    Returns the link (the adapter reads ``.priority``)."""
-
-    async def execute(
-        self,
-        command: McpLinkGuidelineToBoardCommand,
-        *,
-        actor: ActorContext,
-        uow: PulseUnitOfWork,
-    ) -> _DataResult:
-
-        require_policy_governance_capabilities(actor, ADOPTION_MANAGE)
-        raise GuidelinePolicyBindingConflict(
-            "guideline_impact_preview_required"
-        )
 
 
 class McpUnlinkGuidelineFromBoardCommand:
@@ -573,29 +546,8 @@ class McpUnlinkGuidelineFromBoardUseCase:
         return _DataResult(unlinked)
 
 
-class McpUpdateBoardGuidelinePriorityCommand:
-    __slots__ = ("board_id", "guideline_id", "priority")
-
-    def __init__(self, board_id: str, guideline_id: str, priority: int) -> None:
-        self.board_id = board_id
-        self.guideline_id = guideline_id
-        self.priority = priority
 
 
-class McpUpdateBoardGuidelinePriorityUseCase:
-    """Update a board guideline through an MCP-authorized board grant."""
-
-    async def execute(
-        self,
-        command: McpUpdateBoardGuidelinePriorityCommand,
-        *,
-        actor: ActorContext,
-        uow: PulseUnitOfWork,
-    ) -> _DataResult:
-        require_policy_governance_capabilities(actor, ADOPTION_MANAGE)
-        raise GuidelinePolicyBindingConflict(
-            "guideline_impact_preview_required"
-        )
 
 
 # --- board ↔ design-system links (DesignSystemService) ----------------------
