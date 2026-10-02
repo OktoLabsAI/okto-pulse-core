@@ -1710,6 +1710,22 @@
     {
       "path": "okto_labs_pulse_community/tests/test_delivery_reused_impact.py",
       "reason": "Explicit current verification scope/capability, coherent observation digest, and native semantic UoW for completion policy. Cognitive gate runs unchanged with a disposable filesystem store."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_spec_validation_pinpoint_snapshots.py",
+      "reason": "Replaced positive legacy_unavailable fallback with refusal; native sealing, authorized anchors and immutable roundtrip retained."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_spec_validation_five_metric_transport.py",
+      "reason": "Previous native edition and sealed snapshot replace pre-five-metric compatibility fixture; typed REST history retained."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_entity_exports.py",
+      "reason": "Native schema, architecture adoption and investigation context replace Sprint/old fixtures; read-only, refusal, isolation, disclosure and native detached history retained."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_entity_export_rich_media.py",
+      "reason": "Spec fixture declares native architecture adoption; rich media and passive rendering requirements unchanged."
     }
   ],
   "removed_cases": [

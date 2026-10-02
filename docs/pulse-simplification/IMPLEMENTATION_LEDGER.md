@@ -2,6 +2,36 @@
 
 ## Estado para retomada
 
+### 2026-10-02 — C1: snapshots nativos de validação, sem fabricação histórica
+
+Base publicada: Core 547e4974 / Community d01b1298. Removidos estado
+legacy_unavailable, factory e serializer histórico de compatibilidade de
+SpecValidationPinpoint. Resposta exige snapshot disponível com texto, label,
+digest e versão. Export valida o contrato sem preencher/reconstruir snapshots.
+Requisições de avaliação continuam sem snapshot: o servidor o sela pela projeção
+autorizada antes de persistir. Histórico nativo e restrições de acesso mantidos.
+
+pinpoint-current-core1: 14 aprovados; pinpoint-current-front1: 35 aprovados.
+Community rodada1: 76 aprovados/8 falhas de fixtures antigas; rodada2: 42
+aprovados/1 falha; rodada3: caso restante aprovado. Total distinto dessas suites:
+84. Testes adicionais de export: rodada2 falhou na preparação de AnchorSnapshot;
+rodada3: 3 aprovados (preservação e recusa sem mutação). Total Community: 87.
+Fixtures agora usam adoção arquitetural e contexto de investigação atuais;
+histórico REST e renderização detached usam edições nativas. Export operacional
+usa schema nativo sem Sprint, mantendo prova de leitura sem escrita, isolamento,
+permissões e recusa de seção aposentada. Nenhum gate de produto relaxado.
+
+dist-pinpoint-current1 instalado; provenance-pinpoint-current1 confirma 847/910
+Core e 319/405 Community byte-idênticos antes dos testes. Catálogo regenerado
+oficialmente sem diff e drift aprovado. closure-pinpoint-current1 tinha apenas
+matrizes README desatualizadas; renderizadas oficialmente, closure-pinpoint-current2
+aprovado com oito budgets ZERO. Ruff F/E9 e diff aprovados. Frontend de produto
+não mudou; nenhuma reconstrução SPA necessária. Sem release/tag/deploy.
+
+Próximo: normalizadores remanescentes C1 (respostas/identidade de captura Learning,
+planos sem contrato), depois qualificação integral C3/C4 já prevista. A auditoria
+global e decisões T23/KG-10 continuam abertas. Esta frente não conclui a iniciativa.
+
 ### 2026-10-02 — C1: manifesto único de seleção e impacto
 
 Base publicada: Core 925fe982 / Community f22798c4. Writer e modelo aceitam

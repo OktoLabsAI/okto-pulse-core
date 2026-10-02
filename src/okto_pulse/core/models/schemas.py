@@ -4035,22 +4035,18 @@ class SpecValidationAnchorSnapshotResponse(BaseModel):
     contract_version: Literal["spec-validation-pinpoint-snapshot/v1"] = (
         "spec-validation-pinpoint-snapshot/v1"
     )
-    availability_at_seal: Literal["available", "legacy_unavailable"]
-    label: str | None = None
-    text: str | None = None
+    availability_at_seal: Literal["available"]
+    label: str
+    text: str
     excerpt: str | None = None
-    source_digest: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
-    source_version: str | None = None
+    source_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    source_version: str
 
 
 class SpecValidationPinpointResponse(SpecValidationPinpoint):
-    """Read projection; old rows state that no sealed snapshot exists."""
+    """Read projection of a natively sealed validation pinpoint."""
 
-    anchor_snapshot: SpecValidationAnchorSnapshotResponse = Field(
-        default_factory=lambda: SpecValidationAnchorSnapshotResponse(
-            availability_at_seal="legacy_unavailable"
-        )
-    )
+    anchor_snapshot: SpecValidationAnchorSnapshotResponse
 
 
 class SpecValidationSubmit(BaseModel):

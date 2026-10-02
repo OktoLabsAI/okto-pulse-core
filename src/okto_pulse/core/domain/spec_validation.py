@@ -39,15 +39,13 @@ class SpecValidationPinpointAnchorType(str, Enum):
 
 class SpecValidationAnchorSnapshotAvailability(str, Enum):
     AVAILABLE = "available"
-    LEGACY_UNAVAILABLE = "legacy_unavailable"
 
 
 @dataclass(frozen=True, slots=True)
 class SpecValidationAnchorSnapshot:
     """Human-readable anchor evidence sealed with a validation record.
 
-    Records written before this contract project ``legacy_unavailable``. They
-    are never re-resolved against mutable current Spec content.
+    Stored evidence is never re-resolved against mutable current Spec content.
     """
 
     availability_at_seal: SpecValidationAnchorSnapshotAvailability
@@ -117,18 +115,6 @@ class SpecValidationAnchorSnapshot:
             )
             if self.source_digest != expected_digest:
                 raise ValueError("spec_validation_anchor_snapshot_digest_mismatch")
-        elif any(
-            value is not None
-            for value in (
-                self.label,
-                self.text,
-                self.excerpt,
-                self.source_digest,
-                self.source_version,
-            )
-        ):
-            raise ValueError("spec_validation_legacy_snapshot_content_forbidden")
-
     @classmethod
     def seal(cls, snapshot: AnchorSnapshot) -> "SpecValidationAnchorSnapshot":
         if not isinstance(snapshot, AnchorSnapshot):
@@ -149,14 +135,6 @@ class SpecValidationAnchorSnapshot:
             excerpt=snapshot.excerpt,
             source_digest=canonical_sha256(digest_payload),
             source_version=snapshot.source_version,
-        )
-
-    @classmethod
-    def legacy_unavailable(cls) -> "SpecValidationAnchorSnapshot":
-        return cls(
-            availability_at_seal=(
-                SpecValidationAnchorSnapshotAvailability.LEGACY_UNAVAILABLE
-            )
         )
 
     @classmethod
@@ -297,12 +275,6 @@ class SpecValidationPinpoint:
             payload["anchor_snapshot"] = self.anchor_snapshot.to_dict()
         return payload
 
-    def to_historical_dict(self) -> dict[str, Any]:
-        payload = self.to_dict()
-        payload["anchor_snapshot"] = (
-            self.anchor_snapshot or SpecValidationAnchorSnapshot.legacy_unavailable()
-        ).to_dict()
-        return payload
 
 
 class SpecValidationConflictError(ValueError):

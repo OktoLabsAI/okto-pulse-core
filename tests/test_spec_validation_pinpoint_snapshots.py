@@ -47,9 +47,9 @@ def _pinpoint() -> SpecValidationPinpoint:
     )
 
 
-def test_sealed_snapshot_round_trips_and_legacy_is_explicit() -> None:
+def test_sealed_snapshot_round_trips_without_resolving_current_content() -> None:
     sealed = _pinpoint().seal(_anchor())
-    projected = sealed.to_historical_dict()
+    projected = sealed.to_dict()
     snapshot = projected["anchor_snapshot"]
     assert snapshot["label"].startswith("AC-1")
     assert snapshot["text"].startswith("Given a valid request")
@@ -58,16 +58,20 @@ def test_sealed_snapshot_round_trips_and_legacy_is_explicit() -> None:
     assert snapshot["source_version"] == "17:edition:3"
     assert SpecValidationPinpoint.from_dict(projected) == sealed
 
-    legacy = _pinpoint().to_historical_dict()["anchor_snapshot"]
-    assert legacy == {
-        "contract_version": "spec-validation-pinpoint-snapshot/v1",
-        "availability_at_seal": "legacy_unavailable",
-    }
-
     response = SpecValidationResponse.model_validate(
-        {"id": "legacy-validation", "pinpoints": [_pinpoint().to_dict()]}
+        {"id": "validation", "pinpoints": [projected]}
     ).model_dump(exclude_none=True)
-    assert response["pinpoints"][0]["anchor_snapshot"] == legacy
+    assert response["pinpoints"][0]["anchor_snapshot"] == snapshot
+
+
+@pytest.mark.parametrize("snapshot", [None, {"availability_at_seal": "legacy_unavailable"}])
+def test_old_pinpoint_without_native_snapshot_is_rejected(snapshot):
+    from pydantic import ValidationError
+    data = _pinpoint().to_dict()
+    if snapshot is not None:
+        data["anchor_snapshot"] = snapshot
+    with pytest.raises(ValidationError):
+        SpecValidationResponse.model_validate({"id": "incompatible", "pinpoints": [data]})
 
 
 class _Projection:
