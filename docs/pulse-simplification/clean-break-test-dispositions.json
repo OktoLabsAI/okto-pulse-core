@@ -1384,6 +1384,18 @@
     {
       "path": "okto_labs_pulse_community/tests/test_current_relational_schema.py",
       "reason": "Added byte-preserving refusal for orphan Card rejection migration and Spec validation pointer repair tables removed from the fresh schema."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_current_relational_schema.py",
+      "reason": "Removed retired rules column from revision fixtures and added byte-preserving schema refusal. Ordered semantic metrics, full native history, exact materialization, atomicity and current policy/waiver assertions retained."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_skb_b12_guideline_import_export_persistence.py",
+      "reason": "Removed retired rules column from revision fixtures and added byte-preserving schema refusal. Ordered semantic metrics, full native history, exact materialization, atomicity and current policy/waiver assertions retained."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_sqlalchemy_validation_cycle.py",
+      "reason": "Removed retired rules column from revision fixtures and added byte-preserving schema refusal. Ordered semantic metrics, full native history, exact materialization, atomicity and current policy/waiver assertions retained."
     }
   ],
   "removed_cases": [

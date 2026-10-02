@@ -2,6 +2,32 @@
 
 ## Estado para retomada
 
+### 2026-10-02 — Revisões sem coluna rules de legado
+
+Marco anterior publicado: Coref83852b1 / Communityb5462e0c. Removida rules de
+GuidelineRevisionRow e dos dois writers, que só gravavam lista vazia. Busca nos
+adapters não encontrou leitor atual. Métricas ordenadas, snapshots imutáveis,
+source/content/revision digests e respectivas FKs permanecem. Corrigidos os
+docstrings que ainda descreviam migração policy/v1 e nome da FK do snapshot de
+conteúdo. As fixtures atuais não fornecem mais rules. A base que ainda contenha
+essa coluna é recusada sem alterações; não há conversor.
+
+guideline-rules-community1:45 aprovados, schema fresh/restart/refusal,
+export/import nativo e replay, atomicidade, materialização de pin exato,
+resumo de policy vinculado ao snapshot e waivers atuais. guideline-rules-front1:
+30 aprovados no painel de import/export; nenhuma mudança na SPA.
+dist-guideline-rules1 instalado; provenance-guideline-rules1.json comprova
+Core851/914 e Community318/404 Python/payload byte-idênticos antes dos testes.
+closure-guideline-rules1 exit0, oito budgets ZERO e READMEs oficiais validados.
+Ruff F/E9 e diff checks passaram.
+
+Próximo C1/C3 já identificado no adapter de projeção: _legacy_rule_nodes e loop
+que encerra automaticamente Constraints do modelo antigo. Investigar/retirar
+essa conversão preservando projeção, reparo e histórico NATIVOS, com testes
+correspondentes; não transformar incompatibilidade em mutação automática.
+Demais resíduos/suites do inventário e C4 integral continuam pendentes, assim
+como as decisões T23/KG-10. Não declarar entrega integral neste marco.
+
 ### 2026-10-02 — Erasure nativo e retirada de tabelas órfãs de migração
 
 Marco anterior publicado: Corebfc2abea / Community356914c1. Suite
