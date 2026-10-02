@@ -2,6 +2,44 @@
 
 ## Estado para retomada
 
+### 2026-10-02 — C1/C3: reader cognitivo sem revisão-zero de compatibilidade
+
+Marco anterior publicado: Corec4b6ea70 / Community524f04a2. Reader por realm exige
+o ledger completo: removida consulta alternativa que aceitava ausência da tabela
+de revisões. Ausência causa erro sem alteração do arquivo. Todas as revisões são
+auditadas antes de escolher o head; fingerprint ausente, vazio ou divergente em
+revisão posterior é recusado, inclusive com head mais recente válido. Birth nativo
+revision-zero continua parte do contrato atual, com digest calculado do conteúdo.
+
+Retirados modelos/tabelas kg_cognitive_source_fingerprint_epoch_permits e
+kg_cognitive_source_fingerprint_epoch_receipts, registro no contrato relacional e
+quatro triggers exclusivos de conversão. Guard UPDATE das revisões agora é
+incondicional: não existe permit para reescrever fingerprint. Nenhum consumidor
+atual dessas tabelas foi encontrado em src; pertenciam aos conversores removidos.
+Bases contendo essas tabelas são recusadas byte-a-byte, não convertidas/apagadas.
+O identificador de fingerprint/v3 continua sendo o contrato NATIVO corrente;
+seu número não é, por si, suporte a uma versão antiga.
+
+Suite test_kg_cognitive_source_revision_schema.py mantém contrato do modelo,
+guardas/constraints/FK, incremento do fence global, restart e reader com escopo
+por realm. Retirados nove casos exclusivos de epoch/upgrade/compatibilidade,
+com disposição explícita no JSON. Fixtures SQL mínimas do reader servem à
+injeção de conteúdo malformado; provas de DDL/admissão usam schema completo.
+
+cognitive-reader-native1:91 aprovados (schema/reader,35 de admissão,49 adapter).
+Após estender a prova de revisão anterior, cognitive-reader-history1:10 aprovados;
+cognitive-snapshot-audit-native1:6 aprovados. Produto não mudou entre as rodadas.
+Build/install dist-native-cognitive-reader1 e provenance-native-cognitive-reader1
+provam Core851/914 e Community319/405 Python/payload byte-idênticos antes dos
+testes. Ambos src no PYTHONPATH, processos novos; SPA sem alteração.
+closure-native-cognitive-reader1:exit0, oito budgets ZERO; READMEs regenerados
+e validados oficialmente. Ruff F/E9 e diff checks aprovados.
+
+Coleta community12:6101 casos/14 erros, antes da adição dos três casos de revisão
+anterior; não equivale a execução integral. Próximo: demais bloqueios C3 de
+semantic persistence/F3, code evidence, knowledge propagation, Spec dependency e
+governed queue; C1 residual e C4 integral permanecem. T23/KG-10 pendentes.
+
 ### 2026-10-02 — C1/C3: fontes cognitivas atuais e retirada de provas de conversão
 
 Marco anterior publicado: Core75f771f3 / Community9c6108b1. Retiradas as suites

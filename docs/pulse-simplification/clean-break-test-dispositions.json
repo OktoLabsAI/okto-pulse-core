@@ -1550,6 +1550,10 @@
     {
       "path": "okto_labs_pulse_community/tests/test_kg_cognitive_source_adapter.py",
       "reason": "Full current schema with immutable source guards. Retains native capture identity, CAS/races/replay and history integrity. Actual mutation is refused; independent reader tamper checks inject corrupt decoded rows without weakening DDL. Missing revision storage must fail, never return base-only history."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_kg_cognitive_source_revision_schema.py",
+      "reason": "Exact native model/current initialization, immutable fingerprint and global source fence retained. Raw reader fixtures test missing/invalid fingerprints and corruption in unselected history; missing revision table refuses without writes. Epoch permits and receipts are absent from current schema."
     }
   ],
   "removed_cases": [
@@ -2332,6 +2336,60 @@
       "test": "test_card6_resumes_legacy_split_table_state_without_loss",
       "disposition": "superseded",
       "reason": "Exclusive conversion of predecessor outbox, converter-copy rollback/retry or resumed split-table migration. Native delivery constraints, checkpoints/restart, transactional ownership rollback and immutable current-schema refusal remain covered."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_kg_cognitive_source_revision_schema.py",
+      "test": "test_fingerprint_epoch_models_have_exact_permit_and_receipt_contracts",
+      "disposition": "superseded",
+      "reason": "Removed fingerprint-epoch conversion/permit/receipt, predecessor guard upgrade or revision-zero compatibility expectation. Native guards, scope, complete history audit and incompatible-storage refusal retained."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_kg_cognitive_source_revision_schema.py",
+      "test": "test_fingerprint_epoch_is_guarded_durable_and_one_shot",
+      "disposition": "superseded",
+      "reason": "Removed fingerprint-epoch conversion/permit/receipt, predecessor guard upgrade or revision-zero compatibility expectation. Native guards, scope, complete history audit and incompatible-storage refusal retained."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_kg_cognitive_source_revision_schema.py",
+      "test": "test_fingerprint_epoch_failure_rolls_back_permits_updates_and_receipt",
+      "disposition": "superseded",
+      "reason": "Removed fingerprint-epoch conversion/permit/receipt, predecessor guard upgrade or revision-zero compatibility expectation. Native guards, scope, complete history audit and incompatible-storage refusal retained."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_kg_cognitive_source_revision_schema.py",
+      "test": "test_fingerprint_epoch_upgrades_exact_v3_trigger_to_v4_once",
+      "disposition": "superseded",
+      "reason": "Removed fingerprint-epoch conversion/permit/receipt, predecessor guard upgrade or revision-zero compatibility expectation. Native guards, scope, complete history audit and incompatible-storage refusal retained."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_kg_cognitive_source_revision_schema.py",
+      "test": "test_v4_upgrade_rejects_tampered_v3_trigger",
+      "disposition": "superseded",
+      "reason": "Removed fingerprint-epoch conversion/permit/receipt, predecessor guard upgrade or revision-zero compatibility expectation. Native guards, scope, complete history audit and incompatible-storage refusal retained."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_kg_cognitive_source_revision_schema.py",
+      "test": "test_v4_trigger_swap_rolls_back_when_final_inventory_is_corrupt",
+      "disposition": "superseded",
+      "reason": "Removed fingerprint-epoch conversion/permit/receipt, predecessor guard upgrade or revision-zero compatibility expectation. Native guards, scope, complete history audit and incompatible-storage refusal retained."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_kg_cognitive_source_revision_schema.py",
+      "test": "test_migration_upgrades_exact_pre_erasure_delete_guards",
+      "disposition": "superseded",
+      "reason": "Removed fingerprint-epoch conversion/permit/receipt, predecessor guard upgrade or revision-zero compatibility expectation. Native guards, scope, complete history audit and incompatible-storage refusal retained."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_kg_cognitive_source_revision_schema.py",
+      "test": "test_legacy_database_without_child_is_upgraded_without_rewriting_base",
+      "disposition": "superseded",
+      "reason": "Removed fingerprint-epoch conversion/permit/receipt, predecessor guard upgrade or revision-zero compatibility expectation. Native guards, scope, complete history audit and incompatible-storage refusal retained."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_kg_cognitive_source_revision_schema.py",
+      "test": "test_reader_falls_back_to_revision_zero_without_child_table",
+      "disposition": "superseded",
+      "reason": "Removed fingerprint-epoch conversion/permit/receipt, predecessor guard upgrade or revision-zero compatibility expectation. Native guards, scope, complete history audit and incompatible-storage refusal retained."
     }
   ]
 }
