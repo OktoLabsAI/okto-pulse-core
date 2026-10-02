@@ -282,13 +282,7 @@ class SubmitSpecValidationUseCase:
             spec_id=command.spec_id,
             reviewer_id=actor.actor_id,
             reviewer_name=reviewer_name,
-            # Pydantic compatibility models may materialize absent optional
-            # fields as ``None``.  The service consumes a discriminated
-            # formal-or-legacy mapping, so omit those transport placeholders.
-            data={
-                key: value for key, value in command.data.items() if value is not None
-            }
-            | {"pinpoints": sealed_pinpoints},
+            data={**command.data, "pinpoints": sealed_pinpoints},
         )
         await commit(uow)
         return SubmitSpecValidationResult(payload=result)

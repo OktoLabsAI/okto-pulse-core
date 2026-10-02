@@ -3975,10 +3975,6 @@ class SpecValidationSubmit(BaseModel):
     expected_validation_edition: int = Field(
         ...,
         ge=1,
-        validation_alias=AliasChoices(
-            "expected_validation_edition",
-            "expected_spec_edition",
-        ),
     )
     expected_spec_version: int = Field(..., ge=1)
     expected_head_revision: int = Field(..., ge=0)

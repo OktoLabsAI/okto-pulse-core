@@ -215,6 +215,12 @@ async def _seed_board_with_ids(db_factory, board_id, spec_id) -> None:
                 ideation_id=ideation_id,
                 refinement_id=ref_id,
                 title="Validation Gate Spec",
+                architecture_adoption={
+                    "contract_version": "architecture-adoption/v1",
+                    "board_id": board_id, "spec_id": spec_id,
+                    "adopted_in_edition": 1, "actor_id": USER_ID,
+                    "inherited_resource_ids": [],
+                },
                 status=SpecStatus.APPROVED,
                 archived=False,
                 delivery_context=DeliveryContext.BROWNFIELD.value,
@@ -237,14 +243,14 @@ async def _seed_board_with_ids(db_factory, board_id, spec_id) -> None:
                 source_context_sha256=source_context.payload_sha256,
                 skip_test_coverage=True,
                 acceptance_criteria=[
-                    "AC1: System returns 200 on health check",
-                    "AC2: System returns 401 on invalid token",
-                    "AC3: System returns 404 on unknown resource",
+                    {"id": "ac_0", "text": "AC1: System returns 200 on health check"},
+                    {"id": "ac_1", "text": "AC2: System returns 401 on invalid token"},
+                    {"id": "ac_2", "text": "AC3: System returns 404 on unknown resource"},
                 ],
                 functional_requirements=[
-                    "FR1: Health endpoint exists",
-                    "FR2: Authentication required",
-                    "FR3: Resource not found handling",
+                    {"id": "fr_0", "text": "FR1: Health endpoint exists"},
+                    {"id": "fr_1", "text": "FR2: Authentication required"},
+                    {"id": "fr_2", "text": "FR3: Resource not found handling"},
                 ],
                 test_scenarios=[
                     {
@@ -254,7 +260,7 @@ async def _seed_board_with_ids(db_factory, board_id, spec_id) -> None:
                         "when": "GET /health",
                         "then": "Returns 200 OK",
                         "scenario_type": "integration",
-                        "linked_criteria": [0],
+                        "linked_criteria": ["ac_0"],
                         "linked_task_ids": [card_impl_id],
                     },
                     {
@@ -264,7 +270,7 @@ async def _seed_board_with_ids(db_factory, board_id, spec_id) -> None:
                         "when": "GET /resource",
                         "then": "Returns 401 Unauthorized",
                         "scenario_type": "integration",
-                        "linked_criteria": [1],
+                        "linked_criteria": ["ac_1"],
                         "linked_task_ids": [card_impl_id],
                     },
                     {
@@ -274,7 +280,7 @@ async def _seed_board_with_ids(db_factory, board_id, spec_id) -> None:
                         "when": "GET /unknown",
                         "then": "Returns 404 Not Found",
                         "scenario_type": "integration",
-                        "linked_criteria": [2],
+                        "linked_criteria": ["ac_2"],
                         "linked_task_ids": [card_impl_id],
                     },
                 ],
@@ -285,7 +291,7 @@ async def _seed_board_with_ids(db_factory, board_id, spec_id) -> None:
                         "rule": "Health endpoint must return 200",
                         "when": "GET /health is called",
                         "then": "Return 200 OK",
-                        "linked_requirements": [0],
+                        "linked_requirements": ["fr_0"],
                         "linked_task_ids": [card_impl_id],
                     },
                     {
@@ -294,7 +300,7 @@ async def _seed_board_with_ids(db_factory, board_id, spec_id) -> None:
                         "rule": "All endpoints require valid token",
                         "when": "Request is made without token",
                         "then": "Return 401",
-                        "linked_requirements": [1],
+                        "linked_requirements": ["fr_1"],
                         "linked_task_ids": [card_impl_id],
                     },
                     {
@@ -303,7 +309,7 @@ async def _seed_board_with_ids(db_factory, board_id, spec_id) -> None:
                         "rule": "Unknown resources return 404",
                         "when": "Resource does not exist",
                         "then": "Return 404 with message",
-                        "linked_requirements": [2],
+                        "linked_requirements": ["fr_2"],
                         "linked_task_ids": [card_impl_id],
                     },
                 ],
@@ -330,7 +336,7 @@ async def _seed_board_with_ids(db_factory, board_id, spec_id) -> None:
                         "response_errors": [
                             {"status": 500, "detail": "internal error"}
                         ],
-                        "linked_requirements": [0],
+                        "linked_requirements": ["fr_0"],
                         "linked_rules": [],
                         "linked_task_ids": [card_impl_id],
                     },

@@ -2,6 +2,46 @@
 
 ## Estado para retomada
 
+### 2026-10-02 — C1: writer de Spec Validation sem entradas antigas
+
+Base publicada: Core 0d2e774f / Community 8d820825. Investigação de todos os
+chamadores de produto confirmou submissão por SubmitSpecValidationUseCase,
+cujo comando já exige cinco dimensões. Retirados formal_submission score/summary
+e ramo antigo completeness/general_justification do serviço. Guard de campos
+desconhecidos executa antes de flush/lookup, inclusive para valor null; antigo
+expected_spec_edition também deixa de ser alias no DTO. Use case passa contrato
+atual com pinpoints selados, sem filtragem destinada a placeholders antigos.
+Mantidos gates, fences, justificativas, snapshots, limiares atuais e histórico.
+
+spec-writer-core1: 64 aprovados/duas falhas de fixture com links antigos. Links
+AC/FR da fixture atualizados para IDs; core2 confirmou falta de adoção arquitetural.
+Fixture passou a declarar seleção vazia explicitamente; core3: caso dos cinco
+thresholds aprovado, caso de sucesso ainda falha por
+semantic_subject_authority_missing_or_stale no gate de policy, usando a fixture
+relacional antiga do Core. Total Core aprovado: 65 distintos; UMA FALHA PENDENTE,
+não ocultada nem contabilizada como sucesso. Preservado teste para adaptação C3
+ao UoW/autoridade nativos. Não relaxar gate nem adicionar compatibilidade para ele.
+As 12 recusas diretas novas provam ausência de flush para campos removidos; DTO,
+pinpoints, ciclo e drift de catálogo também passaram. Community1: sete aprovados;
+Community2: nove, incluindo cinco recusas REST antes do use case. União: 12.
+Frontend de submissão/histórico: 23 aprovados. Produto frontend não mudou.
+
+Catálogo/manifesto regenerados oficialmente sem diff. dist-spec-writer1 instalado
+e provenance-spec-writer1 confirma 847/910 Core e 319/405 Community byte-idênticos
+antes de comportamento. Wheels SHA256:
+Core bc550d903a570002c5a8e8fc8670c7b73de68303c3a559084a2b674647d531b4;
+Community 840dd1d9889cfa570af1917025e9d0eeeed25df5e2b78b557d59a34e63ed20d9.
+closure-spec-writer1 aprovado, oito budgets ZERO. Ruff F/E9 aprovado. SPA atual
+preservada. Sem release/tag/deploy ou mudanças em dados de usuário.
+
+A retirada de compatibilidade de Spec Validation ainda NÃO está completa:
+list_spec_validations/DTO/REST/MCP mantêm history_only para NULL edition, resposta
+esparsa e campos antigos; política ainda expõe min_spec_completeness. Resolver
+consumidores atuais em conjunto. A suite extensa test_spec_validation_gate.py
+continua majoritariamente usando _valid_submit_data antigo: exige reescrita C3,
+preservando seus cenários funcionais; não restaurar entrada antiga. C4 e decisões
+T23/KG-10 continuam abertos, sem resposta nova às perguntas assíncronas.
+
 ### 2026-10-02 — C1/C3: avaliação de decomposição exige edição registrada
 
 Base publicada: Core a536d8c9 / Community 56b7c84d. Removido ramo que concedia

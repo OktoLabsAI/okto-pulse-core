@@ -1814,6 +1814,18 @@
     {
       "path": "okto_labs_pulse_community/tests/test_spec_evaluation_reopen_characterization.py",
       "reason": "Retained native approval/rejection, same-edition rejection, concurrency and rollback using real current writer. Added stored missing-edition refusal on REST read/start/reopen without persistent effects."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_spec_validation_gate.py",
+      "reason": "Seed AC/FR links now use exact IDs and explicit empty architecture adoption. Canonical five-threshold failure case passed; canonical approval case still blocked by old fixture missing semantic subject authority. Remaining old input scenarios need native rewrite; suite NOT qualified."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_spec_validation_current_input.py",
+      "reason": "Added 12 removed-field refusal cases before persistence/lookup, and predecessor edition alias refusal in DTO."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_spec_validation_five_metric_transport.py",
+      "reason": "Added five removed-field REST 422 cases before use-case execution; canonical transport/history retained."
     }
   ],
   "removed_cases": [

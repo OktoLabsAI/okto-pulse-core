@@ -12169,6 +12169,17 @@ class SpecService:
         """
         import uuid as _uuid
 
+        allowed_fields = {
+            "expected_validation_edition", "expected_spec_version", "expected_head_revision",
+            "confidence", "confidence_justification", "clarity", "clarity_justification",
+            "assertiveness", "assertiveness_justification", "decidability",
+            "decidability_justification", "ambiguity", "ambiguity_justification",
+            "recommendation", "pinpoints",
+        }
+        unknown = sorted(set(data).difference(allowed_fields))
+        if unknown:
+            raise ValueError("Unknown spec validation fields: " + ", ".join(unknown))
+
         # Preserve read-your-writes when callers intentionally compose more
         # than one service command in the same UoW. The late fence must compare
         # against this transaction's latest authoritative projection.
@@ -12314,9 +12325,7 @@ class SpecService:
                 details={"reason": type(exc).__name__},
             ) from exc
 
-        # Five evaluator-supplied dimensions are the canonical contract. The
-        # score/summary and completeness shapes remain compatibility inputs so
-        # immutable records created by older clients stay readable/replayable.
+        # Five evaluator-supplied dimensions form the single validation contract.
         canonical_validation_fields = (
             "confidence",
             "confidence_justification",
@@ -12330,196 +12339,108 @@ class SpecService:
             "ambiguity_justification",
             "recommendation",
         )
-        canonical_marker_fields = (
-            "confidence",
-            "confidence_justification",
-            "clarity",
-            "clarity_justification",
-            "decidability",
-            "decidability_justification",
-            "pinpoints",
-        )
-        legacy_validation_fields = (
-            "completeness",
-            "completeness_justification",
-            "assertiveness",
-            "assertiveness_justification",
-            "ambiguity",
-            "ambiguity_justification",
-            "general_justification",
-            "recommendation",
-        )
-        formal_submission = (
-            data.get("score") is not None or data.get("summary") is not None
-        )
-        canonical_submission = any(
-            data.get(field) is not None for field in canonical_marker_fields
-        )
-        legacy_submission = any(
-            data.get(field) is not None for field in legacy_validation_fields
-        )
-        if formal_submission and (canonical_submission or legacy_submission):
-            raise ValueError(
-                "formal and legacy validation shapes are mutually exclusive"
-            )
-        if canonical_submission and any(
-            data.get(field) is not None
-            for field in (
-                "completeness",
-                "completeness_justification",
-                "general_justification",
-            )
-        ):
-            raise ValueError(
-                "canonical and legacy validation shapes are mutually exclusive"
-            )
-        score: float | None = None
-        human_summary: str | None = None
-        confidence: int | None = None
-        clarity: int | None = None
-        completeness: int | None = None
-        assertiveness: int | None = None
-        decidability: int | None = None
-        ambiguity: int | None = None
         pinpoints: list[dict[str, Any]] = []
-        recommendation: str | None = None
         violations: list[str] = []
-        if formal_submission:
-            if data.get("score") is None or data.get("summary") is None:
-                raise ValueError("score and summary are required together")
-            score = float(data["score"])
-            human_summary = str(data["summary"]).strip()
-            outcome = "success"
-        elif canonical_submission:
-            missing = [
-                field
-                for field in canonical_validation_fields
-                if data.get(field) is None
-            ]
-            if missing:
-                raise ValueError("Missing required fields: " + ", ".join(missing))
-            for name in (
-                "confidence",
-                "clarity",
-                "assertiveness",
-                "decidability",
-                "ambiguity",
+        missing = [
+            field
+            for field in canonical_validation_fields
+            if data.get(field) is None
+        ]
+        if missing:
+            raise ValueError("Missing required fields: " + ", ".join(missing))
+        for name in (
+            "confidence",
+            "clarity",
+            "assertiveness",
+            "decidability",
+            "ambiguity",
+        ):
+            raw_score = data[name]
+            if not isinstance(raw_score, int) or isinstance(raw_score, bool):
+                raise ValueError(f"{name} must be between 0 and 100")
+        confidence = int(data["confidence"])
+        clarity = int(data["clarity"])
+        assertiveness = int(data["assertiveness"])
+        decidability = int(data["decidability"])
+        ambiguity = int(data["ambiguity"])
+        recommendation = data["recommendation"]
+        if recommendation not in ("approve", "reject"):
+            raise ValueError("recommendation must be 'approve' or 'reject'")
+        for name, dimension_score in (
+            ("confidence", confidence),
+            ("clarity", clarity),
+            ("assertiveness", assertiveness),
+            ("decidability", decidability),
+            ("ambiguity", ambiguity),
+        ):
+            if not (0 <= dimension_score <= 100):
+                raise ValueError(f"{name} must be between 0 and 100")
+            justification = data.get(f"{name}_justification")
+            if (
+                not isinstance(justification, str)
+                or len(justification.strip()) < 10
             ):
-                raw_score = data[name]
-                if not isinstance(raw_score, int) or isinstance(raw_score, bool):
-                    raise ValueError(f"{name} must be between 0 and 100")
-            confidence = int(data["confidence"])
-            clarity = int(data["clarity"])
-            assertiveness = int(data["assertiveness"])
-            decidability = int(data["decidability"])
-            ambiguity = int(data["ambiguity"])
-            recommendation = data["recommendation"]
-            if recommendation not in ("approve", "reject"):
-                raise ValueError("recommendation must be 'approve' or 'reject'")
-            for name, dimension_score in (
-                ("confidence", confidence),
-                ("clarity", clarity),
-                ("assertiveness", assertiveness),
-                ("decidability", decidability),
-                ("ambiguity", ambiguity),
-            ):
-                if not (0 <= dimension_score <= 100):
-                    raise ValueError(f"{name} must be between 0 and 100")
-                justification = data.get(f"{name}_justification")
-                if (
-                    not isinstance(justification, str)
-                    or len(justification.strip()) < 10
-                ):
-                    raise ValueError(
-                        f"{name}_justification must be at least 10 characters"
-                    )
-            from okto_pulse.core.domain.spec_validation import (
-                SpecValidationPinpoint,
-            )
+                raise ValueError(
+                    f"{name}_justification must be at least 10 characters"
+                )
+        from okto_pulse.core.domain.spec_validation import (
+            SpecValidationPinpoint,
+        )
 
-            raw_pinpoints = data.get("pinpoints") or []
-            if not isinstance(raw_pinpoints, list):
-                raise ValueError("pinpoints must be a list")
-            pinpoint_identities: set[tuple[str | None, ...]] = set()
-            for raw_pinpoint in raw_pinpoints:
-                required_pinpoint_fields = {"metric", "anchor_type", "detail"}
-                allowed_pinpoint_fields = {
-                    *required_pinpoint_fields,
-                    "anchor_ref",
-                    "anchor_snapshot",
-                }
-                if (
-                    not isinstance(raw_pinpoint, dict)
-                    or not required_pinpoint_fields.issubset(raw_pinpoint)
-                    or not set(raw_pinpoint).issubset(allowed_pinpoint_fields)
-                ):
-                    raise ValueError("spec_validation_pinpoint_invalid")
-                pinpoint = SpecValidationPinpoint.from_dict(raw_pinpoint)
-                projected_pinpoint = pinpoint.to_dict()
-                pinpoint_identity = (
-                    projected_pinpoint["metric"],
-                    projected_pinpoint["anchor_type"],
-                    projected_pinpoint.get("anchor_ref"),
-                    projected_pinpoint["detail"],
-                )
-                if pinpoint_identity in pinpoint_identities:
-                    raise ValueError("spec_validation_pinpoint_duplicate")
-                pinpoint_identities.add(pinpoint_identity)
-                pinpoints.append(projected_pinpoint)
-            if confidence < config["min_spec_confidence"]:
-                violations.append(
-                    f"confidence {confidence} < min {config['min_spec_confidence']}"
-                )
-            if clarity < config["min_spec_clarity"]:
-                violations.append(
-                    f"clarity {clarity} < min {config['min_spec_clarity']}"
-                )
-            if assertiveness < config["min_spec_assertiveness"]:
-                violations.append(
-                    "assertiveness "
-                    f"{assertiveness} < min {config['min_spec_assertiveness']}"
-                )
-            if decidability < config["min_spec_decidability"]:
-                violations.append(
-                    "decidability "
-                    f"{decidability} < min {config['min_spec_decidability']}"
-                )
-            if ambiguity > config["max_spec_ambiguity"]:
-                violations.append(
-                    f"ambiguity {ambiguity} > max {config['max_spec_ambiguity']}"
-                )
-            outcome = (
-                "failed" if violations or recommendation == "reject" else "success"
-            )
-        else:
-            completeness = int(data["completeness"])
-            assertiveness = int(data["assertiveness"])
-            ambiguity = int(data["ambiguity"])
-            recommendation = data["recommendation"]
-            if recommendation not in ("approve", "reject"):
-                raise ValueError("recommendation must be 'approve' or 'reject'")
-            for name, dimension_score in (
-                ("completeness", completeness),
-                ("assertiveness", assertiveness),
-                ("ambiguity", ambiguity),
+        raw_pinpoints = data.get("pinpoints") or []
+        if not isinstance(raw_pinpoints, list):
+            raise ValueError("pinpoints must be a list")
+        pinpoint_identities: set[tuple[str | None, ...]] = set()
+        for raw_pinpoint in raw_pinpoints:
+            required_pinpoint_fields = {"metric", "anchor_type", "detail"}
+            allowed_pinpoint_fields = {
+                *required_pinpoint_fields,
+                "anchor_ref",
+                "anchor_snapshot",
+            }
+            if (
+                not isinstance(raw_pinpoint, dict)
+                or not required_pinpoint_fields.issubset(raw_pinpoint)
+                or not set(raw_pinpoint).issubset(allowed_pinpoint_fields)
             ):
-                if not (0 <= dimension_score <= 100):
-                    raise ValueError(f"{name} must be between 0 and 100")
-            if completeness < config["min_spec_completeness"]:
-                violations.append(
-                    f"completeness {completeness} < min {config['min_spec_completeness']}"
-                )
-            if assertiveness < config["min_spec_assertiveness"]:
-                violations.append(
-                    f"assertiveness {assertiveness} < min {config['min_spec_assertiveness']}"
-                )
-            if ambiguity > config["max_spec_ambiguity"]:
-                violations.append(
-                    f"ambiguity {ambiguity} > max {config['max_spec_ambiguity']}"
-                )
-            outcome = (
-                "failed" if violations or recommendation == "reject" else "success"
+                raise ValueError("spec_validation_pinpoint_invalid")
+            pinpoint = SpecValidationPinpoint.from_dict(raw_pinpoint)
+            projected_pinpoint = pinpoint.to_dict()
+            pinpoint_identity = (
+                projected_pinpoint["metric"],
+                projected_pinpoint["anchor_type"],
+                projected_pinpoint.get("anchor_ref"),
+                projected_pinpoint["detail"],
             )
+            if pinpoint_identity in pinpoint_identities:
+                raise ValueError("spec_validation_pinpoint_duplicate")
+            pinpoint_identities.add(pinpoint_identity)
+            pinpoints.append(projected_pinpoint)
+        if confidence < config["min_spec_confidence"]:
+            violations.append(
+                f"confidence {confidence} < min {config['min_spec_confidence']}"
+            )
+        if clarity < config["min_spec_clarity"]:
+            violations.append(
+                f"clarity {clarity} < min {config['min_spec_clarity']}"
+            )
+        if assertiveness < config["min_spec_assertiveness"]:
+            violations.append(
+                "assertiveness "
+                f"{assertiveness} < min {config['min_spec_assertiveness']}"
+            )
+        if decidability < config["min_spec_decidability"]:
+            violations.append(
+                "decidability "
+                f"{decidability} < min {config['min_spec_decidability']}"
+            )
+        if ambiguity > config["max_spec_ambiguity"]:
+            violations.append(
+                f"ambiguity {ambiguity} > max {config['max_spec_ambiguity']}"
+            )
+        outcome = (
+            "failed" if violations or recommendation == "reject" else "success"
+        )
 
         if outcome == "success":
             try:
@@ -12593,21 +12514,13 @@ class SpecService:
         validation_id = f"val_{_uuid.uuid4().hex[:8]}"
         subject_version = int(spec.version)
         head_revision = previous_head_revision + 1
-        resolved_thresholds = (
-            {
-                "min_spec_confidence": config["min_spec_confidence"],
-                "min_spec_clarity": config["min_spec_clarity"],
-                "min_spec_assertiveness": config["min_spec_assertiveness"],
-                "min_spec_decidability": config["min_spec_decidability"],
-                "max_spec_ambiguity": config["max_spec_ambiguity"],
-            }
-            if canonical_submission
-            else {
-                "min_spec_completeness": config["min_spec_completeness"],
-                "min_spec_assertiveness": config["min_spec_assertiveness"],
-                "max_spec_ambiguity": config["max_spec_ambiguity"],
-            }
-        )
+        resolved_thresholds = {
+            "min_spec_confidence": config["min_spec_confidence"],
+            "min_spec_clarity": config["min_spec_clarity"],
+            "min_spec_assertiveness": config["min_spec_assertiveness"],
+            "min_spec_decidability": config["min_spec_decidability"],
+            "max_spec_ambiguity": config["max_spec_ambiguity"],
+        }
         validation: dict[str, Any] = {
             "id": validation_id,
             "validation_id": validation_id,
@@ -12627,48 +12540,28 @@ class SpecService:
             "resolved_thresholds": resolved_thresholds,
             "created_at": datetime.now(timezone.utc).isoformat(),
         }
-        if formal_submission:
-            validation.update({"score": score, "summary": human_summary})
-        elif canonical_submission:
-            validation.update(
-                {
-                    "confidence": confidence,
-                    "confidence_justification": data[
-                        "confidence_justification"
-                    ].strip(),
-                    "clarity": clarity,
-                    "clarity_justification": data["clarity_justification"].strip(),
-                    "assertiveness": assertiveness,
-                    "assertiveness_justification": data[
-                        "assertiveness_justification"
-                    ].strip(),
-                    "decidability": decidability,
-                    "decidability_justification": data[
-                        "decidability_justification"
-                    ].strip(),
-                    "ambiguity": ambiguity,
-                    "ambiguity_justification": data["ambiguity_justification"].strip(),
-                    "pinpoints": pinpoints,
-                    "recommendation": recommendation,
-                }
-            )
-        else:
-            validation.update(
-                {
-                    "completeness": completeness,
-                    "completeness_justification": data[
-                        "completeness_justification"
-                    ].strip(),
-                    "assertiveness": assertiveness,
-                    "assertiveness_justification": data[
-                        "assertiveness_justification"
-                    ].strip(),
-                    "ambiguity": ambiguity,
-                    "ambiguity_justification": data["ambiguity_justification"].strip(),
-                    "general_justification": data["general_justification"].strip(),
-                    "recommendation": recommendation,
-                }
-            )
+        validation.update(
+            {
+                "confidence": confidence,
+                "confidence_justification": data[
+                    "confidence_justification"
+                ].strip(),
+                "clarity": clarity,
+                "clarity_justification": data["clarity_justification"].strip(),
+                "assertiveness": assertiveness,
+                "assertiveness_justification": data[
+                    "assertiveness_justification"
+                ].strip(),
+                "decidability": decidability,
+                "decidability_justification": data[
+                    "decidability_justification"
+                ].strip(),
+                "ambiguity": ambiguity,
+                "ambiguity_justification": data["ambiguity_justification"].strip(),
+                "pinpoints": pinpoints,
+                "recommendation": recommendation,
+            }
+        )
 
         # Append-only: never overwrite history. flag_modified is required for JSONB.
         old_current_validation_id = spec.current_validation_id
@@ -12718,28 +12611,13 @@ class SpecService:
                 "spec_id": spec_id,
                 "validation_id": validation_id,
                 "outcome": outcome,
-                **(
-                    {"score": score}
-                    if formal_submission
-                    else (
-                        {
-                            "recommendation": recommendation,
-                            "confidence": confidence,
-                            "clarity": clarity,
-                            "assertiveness": assertiveness,
-                            "decidability": decidability,
-                            "ambiguity": ambiguity,
-                            "pinpoint_count": len(pinpoints),
-                        }
-                        if canonical_submission
-                        else {
-                            "recommendation": recommendation,
-                            "completeness": completeness,
-                            "assertiveness": assertiveness,
-                            "ambiguity": ambiguity,
-                        }
-                    )
-                ),
+                "recommendation": recommendation,
+                "confidence": confidence,
+                "clarity": clarity,
+                "assertiveness": assertiveness,
+                "decidability": decidability,
+                "ambiguity": ambiguity,
+                "pinpoint_count": len(pinpoints),
                 "threshold_violations": violations,
                 "edition": spec.edition,
                 "subject_version": subject_version,
@@ -12775,21 +12653,9 @@ class SpecService:
             ),
             changes=history_changes,
             summary=(
-                f"Validation submitted: {outcome} ({score})"
-                if formal_submission
-                else (
-                    (
-                        f"Validation submitted: {outcome} "
-                        f"({recommendation}; {confidence}/{clarity}/"
-                        f"{assertiveness}/{decidability}/{ambiguity})"
-                    )
-                    if canonical_submission
-                    else (
-                        f"Validation submitted: {outcome} "
-                        f"({recommendation}; "
-                        f"{completeness}/{assertiveness}/{ambiguity})"
-                    )
-                )
+                f"Validation submitted: {outcome} "
+                f"({recommendation}; {confidence}/{clarity}/"
+                f"{assertiveness}/{decidability}/{ambiguity})"
             ),
             version=spec.version,
         )
