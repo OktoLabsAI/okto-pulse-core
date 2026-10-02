@@ -1524,6 +1524,10 @@
     {
       "path": "okto_labs_pulse_community/tests/test_card7_delivery_outbox_integration.py",
       "reason": "Native full schema, explicit Board realms and composed sessions replace Base-only fixture. Existing functional/CAS/rollback checks preserved. Card6 removes only its own injected failure trigger before format admission on reopen. Historical identity fallback expectations in Card7 remain a known C1 removal dependency, not clean-break acceptance."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_card7_delivery_ledger.py",
+      "reason": "C1 removes historical identity fallback from the product. Former positive fallback cases now require fail-closed refusal. Full native envelope and exact delivered ledger identity preserve earlier attempts; future attempts and forged session/event/extra payload/delete event/Board are refused. Indexed query-plan and reopen assertions retained. Supersedes the prior pending-fallback disposition."
     }
   ],
   "removed_cases": [

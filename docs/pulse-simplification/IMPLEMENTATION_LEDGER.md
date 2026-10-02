@@ -2,6 +2,41 @@
 
 ## Estado para retomada
 
+### 2026-10-02 — C1: retirada do fallback de identidade do outbox
+
+Marco anterior publicado: Core4a319114 / Community853f4a4b. Removida inferência
+por delivery_key OU delete_event_id OU prefixo físico em read_circuit_snapshot.
+A consulta usa uma chave indexada e exige envelope atual completo, identidade
+do ledger coincidente, estado delivered e número de tentativa não futuro.
+Tentativas anteriores NATIVAS continuam reconhecidas após entrega/redrive;
+payload incompleto, adulterado ou de outra identidade mantém circuito bloqueado.
+
+Validação reutiliza parse_delivery_attempt_event da porta pública do Core por
+função SQLite determinística instalada em cada conexão Community após admissão
+do schema. Mecânica permanece em community/adapters; não há cópia do contrato
+de domínio nem alteração de permissões, semântica de consumo ou histórico válido.
+Testes antigos de fallback viraram recusas. Cobertura adicional: sessão forjada,
+tipo de evento, campo extra, delete_event divergente, outro Board, tentativa
+futura e tentativa anterior após reabertura. Query plan exige lookup indexado,
+sem full scan do ledger nem MULTI-INDEX OR.
+
+Build/install: dist-current-delivery-identity1, provenance-current-delivery-identity1
+com Core851/914 e Community319/405 arquivos Python/payload byte-idênticos entre
+src, instalação e wheels antes de testar. SPA sem mudança. Testes usam ambos src;
+processos de teste novos após instalação, nenhum runtime de usuário reutilizado.
+current-delivery-identity1:102 aprovados e1 expectativa antiga de aceitar reason
+adulterado; teste corrigido separa entrega válida e corrupção. A correção passou
+em current-delivery-identity-correction1. Nenhuma mudança de produto após o build.
+
+closure-current-delivery-identity1:exit0, oito budgets ZERO, nenhum finding.
+READMEs regenerados pelo renderer oficial e validação oficial aprovada. Ruff F/E9
+e diff checks aprovados. A pendência de fallback descrita no marco anterior está
+resolvida; não confundir esta evidência com C4 integral ou coleta completa.
+
+Continuar pelos17 bloqueios de coleta Community registrados em community9 e C1
+residual; versões coordenadas0.4.0 e auditoria C4 continuam pendentes, assim como
+as decisões já registradas T23/KG-10. Não declarar conclusão integral.
+
 ### 2026-10-02 — C3: delivery/recovery nativos de Global Discovery
 
 Marco anterior publicado: Core913f3427 / Community60a59d22. Suite Card6 de schema
