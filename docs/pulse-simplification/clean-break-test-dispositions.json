@@ -1794,6 +1794,18 @@
     {
       "path": "okto_labs_pulse_community/frontend/src/services/__tests__/api.taskValidation.test.ts",
       "reason": "Old sparse history fixture replaced with complete native historical review; current request and rejection propagation preserved."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_impact_evidence_shape.py",
+      "reason": "Predecessor provenance case replaced by refusal of reviewer-generated conclusion. Optional impact/corruption guards retained; added missing-field and alias refusal for native executor reports."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_get_board_envelope.py",
+      "reason": "Historical shape conversion fixture replaced with two native executor reports; text/author/scores preserved through full Board response."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_application_persistence_adapter.py",
+      "reason": "Added SQL proof that removed author aliases confer no attribution; bounded current author projection and validation metrics retained."
     }
   ],
   "removed_cases": [

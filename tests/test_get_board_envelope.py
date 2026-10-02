@@ -155,8 +155,8 @@ def test_board_response_accepts_counts_payload():
     assert with_counts.counts == {"ideations": 23, "specs": 28, "cards": 247, "agents": 1}
 
 
-def test_board_response_normalizes_historical_card_conclusion_shapes():
-    """Full board payloads must tolerate executor/MCP conclusion variants."""
+def test_board_response_preserves_native_card_conclusions():
+    """Full board payloads preserve native executor report content."""
     from datetime import datetime, timezone
 
     from okto_pulse.core.models.schemas import BoardResponse
@@ -190,16 +190,23 @@ def test_board_response_normalizes_historical_card_conclusion_shapes():
                     "labels": None,
                     "conclusions": [
                         {
-                            "description": "Executor summary",
-                            "author": "executor",
+                            "text": "Executor summary",
+                            "author_id": "executor",
                             "created_at": now.isoformat(),
                             "completeness": 95,
                             "drift": 2,
+                            "completeness_justification": "Delivered scope",
+                            "drift_justification": "Documented adjustment",
+                            "source": "move_to_validation",
                         },
                         {
-                            "body": "Structured execution body",
-                            "author_agent_id": "agent-executor",
-                            "kind": "execution_summary",
+                            "text": "Structured execution body",
+                            "author_id": "agent-executor",
+                            "source": "move_to_done",
+                            "completeness": 100,
+                            "completeness_justification": "Delivered full scope",
+                            "drift": 0,
+                            "drift_justification": "No deviation",
                             "created_at": now.isoformat(),
                         },
                     ],

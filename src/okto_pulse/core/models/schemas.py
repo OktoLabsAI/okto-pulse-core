@@ -3225,49 +3225,12 @@ class ConclusionEntrySummary(BaseModel):
     text: str
     author_id: str
     created_at: datetime
-    completeness: int = 100  # 0-100
-    completeness_justification: str = ""
-    drift: int = 0  # 0-100
-    drift_justification: str = ""
-    # FR-9: declared provenance fields - legacy conclusions already carry
-    # them in the JSON; declaring them stops the REST projection from
-    # stripping them (the dead Legacy report badge bug).
-    source: str | None = None
-    validation_id: str | None = None
+    completeness: int = Field(ge=0, le=100)
+    completeness_justification: str
+    drift: int = Field(ge=0, le=100)
+    drift_justification: str
+    source: Literal["move_to_validation", "move_to_done"]
 
-    @model_validator(mode="before")
-    @classmethod
-    def normalize_legacy_shapes(cls, value: Any) -> Any:
-        """Accept historical executor/MCP conclusion payload variants.
-
-        `cards.conclusions` is an append-only JSON field and older/newer
-        writers have used `description`/`body` and `author`/`author_agent_id`.
-        The public card response keeps the stable `text` + `author_id` shape.
-        """
-        if not isinstance(value, dict):
-            return value
-        data = dict(value)
-        if not data.get("text"):
-            data["text"] = (
-                data.get("description")
-                or data.get("body")
-                or data.get("summary")
-                or data.get("conclusion")
-                or data.get("message")
-                or ""
-            )
-        if not data.get("author_id"):
-            data["author_id"] = (
-                data.get("author")
-                or data.get("author_agent_id")
-                or data.get("actor_id")
-                or data.get("reviewer_id")
-                or data.get("created_by")
-                or "unknown"
-            )
-        if not data.get("created_at"):
-            data["created_at"] = "1970-01-01T00:00:00+00:00"
-        return data
 
 
 class ConclusionEntry(ConclusionEntrySummary):

@@ -2,6 +2,46 @@
 
 ## Estado para retomada
 
+### 2026-10-02 — C1/C3: conclusões somente no contrato do executor atual
+
+Base publicada: Core 91e35152 / Community 08a3691d. Removido
+ConclusionEntrySummary.normalize_legacy_shapes: descrição/body/aliases de
+autor não viram texto/autoria; ausência não inventa unknown ou data epoch.
+Scores, justificativas e source passam a ser exigidos como já escritos por
+CardService.move_card. Origins admitidas: move_to_validation/move_to_done.
+Retirado validation_id da projeção de conclusão e referência a relatório
+fabricado por task_validation no frontend/export. Pareceres continuam em seu
+ledger próprio. SQL conclusion_actor_id usa somente author_id, sem aliases.
+
+Mantidas projeções lean/full, impacto opcional e os guards que recusam crédito
+por blocos de evidência corrompidos; não são conversores de dados antigos.
+Teste de Board reescrito para dois relatórios nativos. Testes de schema recusam
+campos ausentes, aliases e origem antiga sem fabricar conteúdo. Consulta SQL
+confirma ausência de autoria pelos quatro aliases anteriores e mantém projeção
+limitada sem trazer corpos históricos completos.
+
+conclusion-native-core1: 81 aprovados. Community1: 42 aprovados/uma falha da
+asserção nova comparando tupla vazia com lista vazia; corrigida para ausência,
+Community2: caso aprovado. Total Community: 43 distintos. Incluídos writer,
+Learning binding/replay e impacto reutilizado. Frontend: 120 aprovados.
+TypeScript/Vite aprovado; SPA tree
+6ceab29a7edd029e09bce8fdf60e98e9b292eed3befa397259339b1e4203e91b.
+
+dist-conclusion-native1 instalado, provenance-conclusion-native1 comprova
+847/910 Core e 319/405 Community byte-idênticos antes dos testes. Wheels SHA256:
+Core 2045df0729f5a7f2c9947071d1429b4b61ff85602354efe15f91d5bb6c6ab405;
+Community 9b3fa89a7ebd3f16539315ef810c1807087b0af68218a54584e115773ce1d8e9.
+closure-conclusion-native1 aprovado; oito budgets ZERO. Catálogo sem drift,
+Ruff F/E9 e diff (incluindo assets staged) aprovados. Sem release/tag/deploy.
+
+Próximo resíduo confirmado: domain/spec_evaluation.py ainda considera atual
+parecer sem spec_edition e emite edition_origin=legacy_unknown. Writer atual
+grava spec_edition. Remover esse caminho junto aos consumidores, preservando
+pareceres Previous da própria versão e rejeições da mesma edição. A superfície
+SpecValidationResponse/history_only também exige análise coordenada. C3/C4
+permanecem abertos. Perguntas T23/KG-10 reapresentadas por ferramenta assíncrona;
+nenhuma alteração desses gates autorizada nesta entrada. Não é entrega final.
+
 Publicado o lote abaixo: Core 459795c6 / Community 08a3691d. Inspeção do diff
 publicado encontrou somente uma linha vazia excedente no EOF do helper de teste;
 corrigida em seguida. A menção a diff aprovado abaixo refere-se à checagem
