@@ -103,6 +103,7 @@ def make_subject(
     input_digest: str = INPUT_DIGEST,
 ) -> ChecklistSpecSnapshot:
     return ChecklistSpecSnapshot(
+        spec_edition=1,
         board_id="board-1",
         spec_id="spec-1",
         spec_version=spec_version,
@@ -159,6 +160,7 @@ def make_submission(
     binding = binding or make_binding()
     subject = subject or make_subject()
     return ChecklistSubmission(
+        spec_edition=subject.spec_edition,
         board_id=subject.board_id,
         spec_id=subject.spec_id,
         spec_version=subject.spec_version,
@@ -230,6 +232,7 @@ class FakeChecklistPersistence:
         if self.result is not None:
             return self.result
         return ChecklistCommitResult(
+            spec_edition=bundle.receipt.spec_edition,
             board_id=bundle.receipt.board_id,
             spec_id=bundle.receipt.spec_id,
             spec_version=bundle.receipt.spec_version,
@@ -533,7 +536,7 @@ def test_prepare_fails_closed_on_every_version_and_digest_fence() -> None:
         assert exc.value.code == expected_code
 
 
-def test_currentness_compares_subject_and_template_execution_fences() -> None:
+def test_currentness_is_stable_within_edition_despite_technical_drift() -> None:
     receipt = prepare_receipt()
     changed_subject = make_subject(
         spec_version=4,
@@ -556,14 +559,14 @@ def test_currentness_compares_subject_and_template_execution_fences() -> None:
         current_binding=changed_binding,
         current_template=changed_template,
     )
-    assert currentness.current is False
-    assert currentness.stale_reasons == (
-        ChecklistStaleReason.SPEC_VERSION_CHANGED,
-        ChecklistStaleReason.CONTENT_DIGEST_CHANGED,
-        ChecklistStaleReason.INPUT_DIGEST_CHANGED,
-        ChecklistStaleReason.TEMPLATE_VERSION_CHANGED,
-        ChecklistStaleReason.TEMPLATE_DIGEST_CHANGED,
+    assert currentness.current is True
+    assert currentness.stale_reasons == ()
+    next_edition = evaluate_checklist_currentness(
+        receipt, current_subject=replace(changed_subject, spec_edition=2),
+        current_binding=changed_binding, current_template=changed_template,
     )
+    assert next_edition.current is False
+    assert next_edition.stale_reasons == (ChecklistStaleReason.SPEC_EDITION_CHANGED,)
 
 
 def test_mode_only_promotion_preserves_receipt_currentness_and_passes_gate() -> None:
@@ -648,7 +651,7 @@ def test_open_advisory_execution_can_be_receipted_after_blocking_promotion() -> 
     assert bundle.expected_binding_mode is ChecklistMode.BLOCKING
 
 
-def test_template_repin_still_makes_existing_receipt_stale() -> None:
+def test_template_repin_does_not_invalidate_same_edition_human_result() -> None:
     subject = make_subject()
     advisory = make_binding(mode=ChecklistMode.ADVISORY)
     receipt = prepare_receipt(binding=advisory, subject=subject)
@@ -665,11 +668,8 @@ def test_template_repin_still_makes_existing_receipt_stale() -> None:
         current_binding=advisory,
         current_template=repinned_template,
     )
-    assert currentness.current is False
-    assert currentness.stale_reasons == (
-        ChecklistStaleReason.TEMPLATE_VERSION_CHANGED,
-        ChecklistStaleReason.TEMPLATE_DIGEST_CHANGED,
-    )
+    assert currentness.current is True
+    assert currentness.stale_reasons == ()
 
 
 def test_gate_modes_are_explicit_and_native_failure_blocks() -> None:
@@ -774,6 +774,7 @@ def test_native_replay_validates_same_request_digest() -> None:
         actor_id="agent-1",
     )
     replay = ChecklistCommitResult(
+        spec_edition=1,
         board_id="board-1",
         spec_id="spec-1",
         spec_version=3,
@@ -969,6 +970,7 @@ async def test_current_and_list_reads_validate_scope_currentness_and_order() -> 
     )
     page = await service.list_executions(
         ChecklistListQuery(
+            current_spec_edition=1,
             board_id="board-1",
             spec_id="spec-1",
             offset=0,
@@ -992,6 +994,7 @@ async def test_list_pagination_limit_is_closed_to_one_through_two_hundred(
     with pytest.raises(ChecklistValidationError) as exc:
         await make_service().list_executions(
             ChecklistListQuery(
+                current_spec_edition=1,
                 board_id="board-1",
                 spec_id="spec-1",
                 offset=0,
@@ -1037,3 +1040,28 @@ def test_enum_values_are_exactly_the_persisted_contract() -> None:
     assert tuple(item.value for item in ChecklistStaleReason) == tuple(
         item.value for item in CHECKLIST_STALE_REASON_ORDER
     )
+
+
+@pytest.mark.parametrize("value", [None, 0, -1, True, "1"])
+def test_all_native_checklist_objects_require_positive_edition(value):
+    service = make_service()
+    subject = make_subject()
+    submission = make_submission(subject=subject)
+    preflight = make_preflight(subject=subject)
+    execution = service.prepare_execution_start(
+        preflight=preflight, actor_id="agent-1", idempotency_key="edition-proof",
+    )
+    bundle = service.prepare_execution(submission, actor_id="agent-1", preflight=preflight)
+    commit = ChecklistCommitResult(
+        board_id=subject.board_id, spec_id=subject.spec_id, spec_version=subject.spec_version,
+        spec_edition=1, receipt_id=bundle.receipt.id,
+        request_digest=bundle.request_digest, head_revision=1,
+    )
+    for dto in (subject, submission, execution, bundle.receipt, commit):
+        with pytest.raises(ChecklistContractError, match="checklist_spec_edition_invalid"):
+            replace(dto, spec_edition=value)
+    with pytest.raises(ChecklistContractError, match="checklist_spec_edition_invalid"):
+        replace(bundle, expected_spec_edition=value)
+    with pytest.raises(ValueError, match="checklist_spec_edition_invalid"):
+        ChecklistListQuery(board_id="board-1", spec_id="spec-1", offset=0, limit=25,
+                           current_spec_edition=value)

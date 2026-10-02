@@ -1932,6 +1932,22 @@
     {
       "path": "okto_labs_pulse_community/tests/test_current_relational_schema.py",
       "reason": "Fresh/restart checks prove imported Checklist column absent and source constraint native-only. Reintroduced old column must be refused before WAL/content changes, without conversion."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_checklist.py",
+      "reason": "Editionless fixtures rewritten with explicit native edition. Technical-drift/template-stale tests now prove stability within one edition and Previous on the next; write version/digest conflicts remain tested. Added positive-edition refusal for all six native DTOs and list query."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_sqlalchemy_checklist.py",
+      "reason": "Current and history queries explicitly carry the native edition; same-edition and prior-edition paging/replay/history assertions retained."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_checklist_routes_contract.py",
+      "reason": "Removed history_only filter is rejected with 422 before use-case effects."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_current_relational_schema.py",
+      "reason": "Physical fresh/restarted Checklist execution and receipt spec_edition columns must be NOT NULL."
     }
   ],
   "removed_cases": [

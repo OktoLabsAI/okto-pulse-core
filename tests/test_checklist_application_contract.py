@@ -57,8 +57,11 @@ def subject(edition):
 
 @pytest.mark.asyncio
 async def test_editionless_port_subject_cannot_fall_back_to_live_binding():
+    malformed = subject(1)
+    # Simulate an adapter violating the DTO invariant; normal construction rejects None.
+    object.__setattr__(malformed, "spec_edition", None)
     persistence = SimpleNamespace(
-        get_spec_snapshot=AsyncMock(return_value=subject(None)),
+        get_spec_snapshot=AsyncMock(return_value=malformed),
         get_binding=AsyncMock(), get_validation_binding=AsyncMock(),
         get_current=AsyncMock(),
     )

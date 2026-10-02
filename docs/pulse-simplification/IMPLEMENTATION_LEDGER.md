@@ -2,6 +2,46 @@
 
 ## Estado para retomada
 
+### 2026-10-02 — C1/C2/C3: Checklist exige edição em todo o contrato
+
+Base publicada Core 7910b951 / Community 8e9f3b88. Snapshot, execução, submission,
+receipt e commit exigem spec_edition positiva; bundle exige expected_spec_edition.
+Não há valor default ou ramo de digest sem edição. Query de histórico e leitura
+de Current exigem edição; removidas tentativas após TypeError com assinatura antiga.
+Removidos history_only, filtro de NULL e a semântica técnica de currentness para
+objetos sem edição. Current/Previous usam a edição humana; versão, conteúdo,
+template e digest continuam nos fences de escrita e auditoria, não foram relaxados.
+Colunas Checklist execution/receipt agora são NOT NULL com valor positivo.
+
+Fixtures antigas passaram a declarar a edição nativa. Testes de stale técnico
+foram reescritos para comprovar estabilidade na mesma edição e Previous na seguinte;
+os testes de conflito de escrita por versão/digest permanecem. Cinco valores
+inválidos exercitam os seis DTOs e a query, incluindo None/bool/string. REST recusa
+history_only com 422. A disposição dos testes foi registrada. A projeção frontend
+já exigia edição e não precisou de alteração.
+
+Provas: checklist-edition-core1, 104 aprovados; community1, 88 aprovados; front1,
+14 aprovados. Schema físico após criação/restart confirma NOT NULL em ambas as
+colunas. Resources atualizados, manifest regenerado oficialmente; resources2,
+25 aprovados para MCP/manifests/catálogo após a documentação final (contagens
+sobrepostas com Core1). Nenhuma falha nas campanhas deste incremento.
+
+Par dist-checklist-edition2 instalado/conferido em provenance-checklist-edition2:
+Core 845 Python/908 payload, Community 319/405, igualdade src/install/wheel.
+SHA256 Core 7de536f532a5f1b176eb6e69a406467c2b29671994a77710d607e5a576f4cfd1;
+Community 082886bb1f157ea6757f8f13d00d6d7da0e1caeec4d64d4d6bf9d490ed349b99.
+Closure1 e closure2 aprovadas com oito budgets ZERO, sem findings; todos os
+processos terminaram. Assets não mudaram; sem release/tag/deploy/dados reais.
+
+Continuação dentro do escopo: retirar synthetic_off para Board sem binding,
+preservando binding explícito criado pelo fluxo nativo de Board e OFF configurado.
+Investigar/reproduzir divergência evaluate_spec_gate (binding vivo) versus snapshot
+congelado usado pela execução/validation-cycle, antes de alterar o efeito do gate.
+Resources quality-assessments.md/tool-docs quality.md/spec.md ainda descrevem
+history_only e avaliações importadas; conciliar com os contratos reais remanescentes,
+sem declarar encerramento C3 por apenas buscar palavras. PolicyCompliancePanel,
+demais itens do assessment e C4 integral continuam abertos.
+
 ### 2026-10-02 — C1/C2/C3: Checklist sem recibo importado
 
 Base publicada Core 3928f85d / Community cedf784f. Retirados source

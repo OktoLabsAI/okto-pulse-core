@@ -1057,6 +1057,7 @@ class _CoreTestRelationalApplicationAdapter:
                 if spec is None or spec.board_id != board_id:
                     return None
                 return ChecklistSpecSnapshot(
+                    spec_edition=spec.edition,
                     board_id=board_id,
                     spec_id=spec_id,
                     spec_version=spec.version,

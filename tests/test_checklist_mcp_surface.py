@@ -87,6 +87,7 @@ def _failed_items() -> tuple[ChecklistItemResult, ...]:
 
 def _incomplete_native_receipt() -> ChecklistReceipt:
     return ChecklistReceipt(
+        spec_edition=1,
         id="receipt-legacy",
         board_id="board-1",
         spec_id="spec-1",
@@ -298,6 +299,7 @@ async def test_mcp_submit_and_receipt_expose_failed_aggregate_outcome(
     async def receipt_execute(self, command, *, actor, uow):
         del self, command, actor, uow
         return ChecklistReceipt(
+            spec_edition=3,
             id="receipt-1",
             board_id="board-1",
             spec_id="spec-1",

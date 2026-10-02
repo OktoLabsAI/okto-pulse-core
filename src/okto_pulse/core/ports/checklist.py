@@ -92,8 +92,16 @@ class ChecklistListQuery:
     spec_id: str
     offset: int
     limit: int
-    current_spec_edition: int | None = None
+    current_spec_edition: int
     state: ChecklistReceiptState | None = None
+
+    def __post_init__(self) -> None:
+        if (
+            not isinstance(self.current_spec_edition, int)
+            or isinstance(self.current_spec_edition, bool)
+            or self.current_spec_edition < 1
+        ):
+            raise ValueError("checklist_spec_edition_invalid")
 
 
 @runtime_checkable
@@ -203,7 +211,7 @@ class ChecklistPersistencePort(Protocol):
         board_id: str,
         spec_id: str,
         phase: ChecklistPhase,
-        spec_edition: int | None = None,
+        spec_edition: int,
     ) -> tuple[ChecklistReceipt, ChecklistExecutionHead] | None: ...
 
     async def get_execution(

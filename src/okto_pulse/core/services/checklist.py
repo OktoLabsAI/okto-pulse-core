@@ -862,19 +862,12 @@ class ChecklistService:
         # effective OFF, with no retroactive row materialization.
         if binding is None:
             binding = ChecklistBinding.synthetic_off(board_id=board_id)
-        try:
-            current = await persistence.get_current(
-                board_id=board_id,
-                spec_id=spec_id,
-                phase=ChecklistPhase.SPEC_VALIDATION,
-                spec_edition=snapshot.spec_edition,
-            )
-        except TypeError:
-            current = await persistence.get_current(
-                board_id=board_id,
-                spec_id=spec_id,
-                phase=ChecklistPhase.SPEC_VALIDATION,
-            )
+        current = await persistence.get_current(
+            board_id=board_id,
+            spec_id=spec_id,
+            phase=ChecklistPhase.SPEC_VALIDATION,
+            spec_edition=snapshot.spec_edition,
+        )
         receipt = None if current is None else current[0]
         if receipt is not None and receipt.spec_edition != snapshot.spec_edition:
             receipt = None
@@ -957,19 +950,12 @@ class ChecklistService:
         current_binding: ChecklistBinding,
         persistence: ChecklistPersistencePort,
     ) -> CurrentChecklistView:
-        try:
-            resolved = await persistence.get_current(
-                board_id=board_id,
-                spec_id=spec_id,
-                phase=ChecklistPhase.SPEC_VALIDATION,
-                spec_edition=current_subject.spec_edition,
-            )
-        except TypeError:
-            resolved = await persistence.get_current(
-                board_id=board_id,
-                spec_id=spec_id,
-                phase=ChecklistPhase.SPEC_VALIDATION,
-            )
+        resolved = await persistence.get_current(
+            board_id=board_id,
+            spec_id=spec_id,
+            phase=ChecklistPhase.SPEC_VALIDATION,
+            spec_edition=current_subject.spec_edition,
+        )
         if resolved is None:
             raise ChecklistNotFoundError("checklist_current_not_found")
         if (
@@ -1098,14 +1084,9 @@ class ChecklistService:
                         currentness=currentness,
                         gate=gate,
                         state=(
-                            ChecklistReceiptState.HISTORY_ONLY
-                            if receipt.spec_edition is None
-                            else (
-                                ChecklistReceiptState.CURRENT
-                                if receipt.id == head_receipt_id
-                                and currentness.current
-                                else ChecklistReceiptState.PREVIOUS
-                            )
+                            ChecklistReceiptState.CURRENT
+                            if receipt.id == head_receipt_id and currentness.current
+                            else ChecklistReceiptState.PREVIOUS
                         ),
                     )
                 )
