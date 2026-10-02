@@ -2,6 +2,58 @@
 
 ## Estado para retomada
 
+### 2026-10-02 — C3: QualityPanel tem uma única apresentação nativa
+
+Base publicada Core 7798584b / Community a7c72dc5. Removidos presentationMode,
+default legacy, branch de renderização duplicado, estado/filtro current-only,
+HistoryItems, ícones e metadados usados exclusivamente por esse branch. Os cinco
+consumidores de produção já usavam lifecycle-edition; agora não escolhem modo.
+QualityPanel exige subjectEdition explícito, sem default. Outros tipos/consumidores
+globais ainda têm edição opcional/fallback e continuam pendentes, sem declaração
+de encerramento C1/C3 por esta mudança.
+
+Mantidos avaliação manual com fences e idempotência, perguntas sob permissão,
+leitura de arquivados, autoria somente no estágio autorizado, resultado atual,
+histórico nativo e auditoria técnica sob demanda. Filtros de severidade/categoria
+e paginação de findings foram trazidos para o único painel. Ideation/Refinement
+consultam seu ciclo; lint consulta os recibos nativos de Spec. Isso é distinção
+de recurso, não fallback para contrato antigo.
+
+Corrigido gap registrado: Previous de lint carregava history, mas renderizava
+lifecycleHistory vazio. Agora solicita state=previous ao servidor e apresenta
+esses recibos com edição, score/escala, autor, data e justificativa. Paginação usa
+total_filtered da resposta, sem contar apenas os itens da página. Resultado sem
+edição não recebe rótulo Legacy nem é reinterpretado: o painel recusa a resposta.
+Ao retirar/restaurar permissão de leitura, o resumo é consultado novamente.
+
+Provas frontend: quality-native-ui-front2, 118 aprovados nos seis conjuntos
+QualityPanel, IdeationModal ambiguity gate, RefinementModal ambiguity gate,
+SpecValidationPanel, SpecModal qualityTab e SpecModal validationTabs. Front3 repetiu
+os 25 de QualityPanel após completar a validação do resultado atual na resposta
+de histórico: todos aprovados. Casos incluem histórico lint paginado sem Current,
+filtros/paginação de findings, atualização do head, perguntas/permissões, arquivado,
+retry/idempotência e recusa de edição ausente. Front1 teve 19 aprovados/3 falhas:
+expectativas antigas exigiam remoção do DOM, mas a seção nativa usa hidden; corrigido
+o teste para verificar visibilidade. Nenhum teste de governança foi descartado.
+Um caso exclusivo de ícone Stale foi substituído pelas provas de recusa/Previous.
+
+TypeScript/Vite e diff check aprovados. SPA: 79 arquivos, árvore
+75c82106d04c5b3753fea1f333581994549ce8ee20f879f056cd77ea6609b205.
+Par dist-quality-native-ui1 instalado/conferido em provenance-quality-native-ui1:
+Core 845 Python/908 payload, Community 319/405, igualdade src/install/wheel.
+SHA256 Core e5ab83bab1ffc0e3853819e222e3171d1f956eadc7704743a05e00b78ab1cd1b;
+Community 1cea92f93c024e7545247809381c3f4915619a10e181d728596414a7736a1a64.
+closure-quality-native-ui1 aprovado com oito budgets ZERO. Nenhum código Python
+ou inventário MCP mudou; não se repetiram suites Python de comportamento sem causa.
+Sem release/tag/deploy ou acesso a dados reais.
+
+Próximo C1/C3: retirar modos alternativos de PolicyCompliancePanel e
+SpecChecklistPanel, endurecer edições/nullable nos contratos e consumidores restantes.
+Checklist ainda possui presentationMode/lifecycleMode e rótulo Legacy para recibo
+sem spec_edition; investigar junto ao contrato/adapter, preservando execução e
+histórico nativos. Args de digest sem uso e lint_languages continuam no inventário.
+C4 integral e decisões T23/KG-10 permanecem abertos. Entrega final não certificada.
+
 ### 2026-10-02 — C1/C3: retirada da cadeia técnica de stale no lifecycle Quality
 
 Base publicada Core 6fd0f436 / Community c5a31c6d. Removidos DTO de current inputs,

@@ -1908,6 +1908,10 @@
     {
       "path": "okto_labs_pulse_community/frontend/src/components/quality/__tests__/QualityPanel.test.tsx",
       "reason": "Closed Current/Previous history options and actual previous filter request verified. Edition reason fixtures updated with API and Refinement suites."
+    },
+    {
+      "path": "okto_labs_pulse_community/frontend/src/components/quality/__tests__/QualityPanel.test.tsx",
+      "reason": "All rendering tests use the single edition-based UI. Preserved authoring, questions/permissions, archive, retry/idempotency, filters, paging and head refresh. Added native lint history/pagination, editionless history refusal and permission-reload tests. Closed DOM assertions now check visibility of native hidden sections."
     }
   ],
   "removed_cases": [
@@ -3176,6 +3180,12 @@
       "test": "test_requirement_lint_inherits_only_semantic_writer_domain_authority",
       "disposition": "rewritten",
       "reason": "Removed positive domain-write-only exemption. Replaced by explicit quality-assess denial and authorized external submission with native edition."
+    },
+    {
+      "path": "okto_labs_pulse_community/frontend/src/components/quality/__tests__/QualityPanel.test.tsx",
+      "test": "keeps the stale receipt signal consistent with the server gate reason",
+      "disposition": "superseded",
+      "reason": "Exclusive alternate UI icon for technical Stale removed. Current-edition UI uses server summary and Previous history; malformed edition is refused. Dedicated Previous gate projection test retained."
     }
   ]
 }
