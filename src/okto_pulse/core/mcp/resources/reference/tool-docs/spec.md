@@ -417,12 +417,14 @@ Returns:
 
 ## `okto_pulse_get_checklist_binding`
 
-Read the effective curated checklist binding for a board. A legacy board with
-no persisted binding is reported as effective `off`; this read never
-materializes or changes a binding.
+Read Board configuration, or pass `spec_id` to read the binding governing the
+current Spec edition. After entry into validation this is the immutable snapshot;
+Board changes apply to the next edition. A missing required binding is an error.
+This read never creates or changes a binding.
 
 Args:
     board_id: Board ID
+    spec_id: Optional Spec ID; supply it before starting an execution
 
 Returns:
     JSON containing the binding identity/digest, immutable version,
@@ -441,17 +443,14 @@ Mode `off` rejects the operation without creating an execution.
 Args:
     board_id: Board ID
     spec_id: Spec ID
-    binding_id: Current binding digest returned by
-        `okto_pulse_get_checklist_binding`
+    binding_version: The `version` returned by
+        `okto_pulse_get_checklist_binding(board_id, spec_id)`
     spec_edition: Exact current lifecycle edition
     expected_spec_version: Current Spec version
-    idempotency_key: Stable key for exact retries
 
 Returns:
-    JSON with execution ID, frozen identities, revision, status, `replayed`,
-    and the ten immutable template items in their normative order. Each item
-    includes `item_id`, English and Portuguese title/description, and
-    `allow_na`, so the subsequent submission is self-describing over MCP.
+    JSON data with `execution_id`, `spec_edition`, and `status: started`.
+    Retry identities are derived by the server from the native command.
 
 Permissions:
     Requires both Spec update authority and `spec.checklist.execute`.
@@ -467,15 +466,14 @@ Args:
     board_id: Board ID
     spec_id: Spec ID
     execution_id: Open execution ID
-    expected_execution_revision: Current execution revision
-    idempotency_key: Stable key for exact retries
-    results: Array of exactly ten objects with `item_id`, `outcome`
+    spec_edition: Exact current lifecycle edition
+    expected_spec_version: Current Spec version
+    item_results: Array of exactly ten objects with `item_id`, `outcome`
         (`pass`, `fail`, or `not_applicable`), `anchor`, and optional
         `rationale`
 
 Returns:
-    JSON with a compatibility `receipt_id`, aggregate `outcome` (`pass` unless
-    any item is `fail`), request digest, head revision, and `replayed`.
+    JSON data with `result_id`, `spec_edition`, and `status` (`passed` or `failed`).
 
 Permissions:
     Requires both Spec update authority and `spec.checklist.execute`.
@@ -483,12 +481,12 @@ Permissions:
 ## `okto_pulse_get_checklist_receipt`
 
 Read an immutable checklist result and its ordered per-item evidence through
-the compatibility receipt-named API. A result supports a blocking gate only
+the receipt API. A result supports a blocking gate only
 when it is Current for the exact Spec edition and every item is non-failing.
 
 Args:
     board_id: Board ID
-    receipt_id: Compatibility checklist result ID
+    receipt_id: Checklist result ID returned as `result_id` by submission
 
 Returns:
     JSON with the frozen identities, ordered results, source, head revision,

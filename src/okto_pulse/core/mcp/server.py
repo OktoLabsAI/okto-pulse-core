@@ -9638,14 +9638,14 @@ class _ChecklistItemResultInput(BaseModel):
 
 
 def _checklist_receipt_outcome(receipt) -> Literal["pass", "fail"]:
-    """Project aggregate truth without treating legacy empty items as a pass."""
+    """Project the aggregate outcome of the complete native receipt."""
 
     return "pass" if receipt.blocking_satisfied else "fail"
 
 
 @mcp.tool()
-async def okto_pulse_get_checklist_binding(board_id: str) -> str:
-    """Read the effective /specify checklist binding for one board."""
+async def okto_pulse_get_checklist_binding(board_id: str, spec_id: str | None = None) -> str:
+    """Read Board configuration, or the effective binding for a Spec edition."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -9671,7 +9671,7 @@ async def okto_pulse_get_checklist_binding(board_id: str) -> str:
     try:
         async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
             binding = await GetChecklistBindingUseCase().execute(
-                GetChecklistBindingCommand(board_id),
+                GetChecklistBindingCommand(board_id=board_id, spec_id=spec_id),
                 actor=actor,
                 uow=uow,
             )

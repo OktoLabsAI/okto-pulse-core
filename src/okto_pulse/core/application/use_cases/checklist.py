@@ -39,6 +39,7 @@ from okto_pulse.core.ports.checklist import ChecklistListQuery
 from okto_pulse.core.repositories.interfaces.unit_of_work import PulseUnitOfWork
 from okto_pulse.core.services.checklist import (
     ChecklistConflictError,
+    ChecklistPortContractError,
     ChecklistService,
 )
 
@@ -112,25 +113,9 @@ async def _preflight(
         or subject.spec_edition < 1
     ):
         raise RuntimeError("checklist_subject_edition_required")
-    binding = await persistence.get_validation_binding(
-        board_id=board_id,
-        spec_id=spec_id,
-        spec_edition=subject.spec_edition,
-        target_type=ChecklistTargetType.SPEC,
-        phase=ChecklistPhase.SPEC_VALIDATION,
+    binding = await ChecklistService.resolve_edition_binding(
+        subject=subject, persistence=persistence,
     )
-    if binding is None and subject.status in {"draft", "review", "cancelled"}:
-        # Preview the current Board configuration before validation begins.
-        # Reading a draft must not freeze policy for its future validation.
-        binding = await persistence.get_binding(
-            board_id=board_id,
-            target_type=ChecklistTargetType.SPEC,
-            phase=ChecklistPhase.SPEC_VALIDATION,
-        )
-    if binding is None:
-        raise RuntimeError("checklist_validation_binding_snapshot_missing")
-    if not isinstance(binding, ChecklistBinding):
-        raise RuntimeError("checklist_validation_binding_port_invalid")
     current = await persistence.get_current(
         board_id=board_id,
         spec_id=spec_id,
@@ -456,6 +441,7 @@ class SubmitChecklistExecutionUseCase:
 @dataclass(frozen=True, slots=True)
 class GetChecklistBindingCommand:
     board_id: str
+    spec_id: str | None = None
 
 
 class GetChecklistBindingUseCase:
@@ -478,14 +464,19 @@ class GetChecklistBindingUseCase:
             command.board_id,
             _READ_PERMISSIONS,
         )
+        if command.spec_id is not None:
+            await _require_spec(uow, board_id=command.board_id, spec_id=command.spec_id)
+            return (await _preflight(
+                uow, board_id=command.board_id, spec_id=command.spec_id,
+            )).binding
         binding = await uow.services.checklists.get_binding(
             board_id=command.board_id,
             target_type=ChecklistTargetType.SPEC,
             phase=ChecklistPhase.SPEC_VALIDATION,
         )
-        return binding or ChecklistBinding.synthetic_off(
-            board_id=command.board_id,
-        )
+        if binding is None:
+            raise ChecklistPortContractError("checklist_board_binding_missing")
+        return binding
 
 
 @dataclass(frozen=True, slots=True)

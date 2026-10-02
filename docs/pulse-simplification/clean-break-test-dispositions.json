@@ -1948,6 +1948,26 @@
     {
       "path": "okto_labs_pulse_community/tests/test_current_relational_schema.py",
       "reason": "Physical fresh/restarted Checklist execution and receipt spec_edition columns must be NOT NULL."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_checklist.py",
+      "reason": "Synthetic OFF/revision-zero acceptance replaced by rejection for every mode; explicit native OFF and initial CAS zero remain tested."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_r4_imp4_gate_readiness.py",
+      "reason": "Context fixtures now carry native architecture adoption and explicit OFF through the test port. Preserved real context projection and permission/readiness assertions."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_sqlalchemy_checklist.py",
+      "reason": "Board mode changes preserve the current edition binding; OFF applies after a new edition pin. Native application read/start/submit/replay tested after live Board switches to OFF."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_spec_validation_lifecycle_gate.py",
+      "reason": "Directly seeded admitted Specs explicitly freeze native Checklist governance in fixture setup; no reader-side materialization added to product."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_checklist_frozen_gate_characterization.py",
+      "reason": "Authorized regression replaces reproducer: Blocking/OFF/Advisory remain frozen despite Board changes; missing next-edition snapshot refuses admission and previous snapshot remains immutable."
     }
   ],
   "removed_cases": [

@@ -98,8 +98,9 @@ evidence. For an ambiguity write:
    current.
 
 Before executing the Spec checklist, read the full Spec context and
-`okto_pulse_get_checklist_binding`; freeze the current Spec version and binding
-identity when starting the execution. Submit every immutable item exactly once.
+`okto_pulse_get_checklist_binding(board_id, spec_id)`; use its frozen binding
+version and the current Spec edition/version when starting the execution.
+Submit every immutable item exactly once.
 Only a complete native Checklist result satisfies A3; imported manual references
 are not accepted by the Checklist contract.
 

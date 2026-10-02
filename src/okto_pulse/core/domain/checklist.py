@@ -452,12 +452,8 @@ class ChecklistBinding:
                 "checklist_binding_revision_invalid",
             )
         )
-        if revision not in (0, version):
+        if revision != version:
             raise ChecklistContractError("checklist_binding_revision_invalid")
-        if revision == 0 and (
-            self.mode is not ChecklistMode.OFF or version != 1
-        ):
-            raise ChecklistContractError("checklist_binding_synthetic_invalid")
         if self.target_type is not ChecklistTargetType.SPEC:
             raise ChecklistContractError("checklist_target_type_unsupported")
         if self.phase is not ChecklistPhase.SPEC_VALIDATION:
@@ -482,25 +478,6 @@ class ChecklistBinding:
         object.__setattr__(self, "revision", revision)
         object.__setattr__(self, "digest", expected_digest)
 
-    @classmethod
-    def synthetic_off(cls, *, board_id: str) -> ChecklistBinding:
-        """Project a legacy board with no persisted binding head.
-
-        The effective contract remains OFF at binding version 1, while
-        ``revision=0`` exposes the real initial CAS revision.  A persisted
-        OFF/v1 row has ``revision=1`` and is therefore unambiguous.
-        """
-
-        return cls(
-            board_id=board_id,
-            mode=ChecklistMode.OFF,
-            version=1,
-            revision=0,
-        )
-
-    @property
-    def is_synthetic(self) -> bool:
-        return self.revision == 0
 
 
 @dataclass(frozen=True, slots=True)

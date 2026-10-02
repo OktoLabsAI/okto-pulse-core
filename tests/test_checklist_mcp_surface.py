@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 import pytest
 
 from okto_pulse.core.application.use_cases.checklist import (
+    GetChecklistBindingUseCase,
     GetChecklistReceiptUseCase,
     StartChecklistExecutionUseCase,
     SubmitChecklistExecutionUseCase,
@@ -16,6 +17,7 @@ from okto_pulse.core.domain.checklist import (
     SPECIFY_CHECKLIST_ITEM_IDS,
     SPECIFY_CHECKLIST_TEMPLATE_V1,
     ChecklistCommitResult,
+    ChecklistBinding,
     ChecklistExecution,
     ChecklistExecutionStartResult,
     ChecklistItemOutcome,
@@ -254,6 +256,9 @@ async def test_mcp_edition_conflict_emits_one_audit_and_rolls_back(
 @pytest.mark.asyncio
 async def test_live_registry_excludes_redundant_reads_and_closes_results_schema():
     tools = await server.mcp.get_tools()
+    binding_schema = tools["okto_pulse_get_checklist_binding"].parameters
+    assert "spec_id" in binding_schema["properties"]
+    assert binding_schema["required"] == ["board_id"]
     assert "okto_pulse_get_checklist_state" not in tools
     assert "okto_pulse_list_checklist_executions" not in tools
 
@@ -267,6 +272,30 @@ async def test_live_registry_excludes_redundant_reads_and_closes_results_schema(
         "fail",
         "not_applicable",
     ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("spec_id", [None, "spec-1"])
+async def test_mcp_binding_forwards_optional_spec_scope(monkeypatch, spec_id):
+    async def agent_ctx(_board_id):
+        return _ctx()
+
+    monkeypatch.setattr(server, "_get_agent_ctx", agent_ctx)
+    monkeypatch.setattr(server, "check_permission", lambda *_args: None)
+    monkeypatch.setattr(server, "get_unit_of_work_factory_for_mcp",
+                        lambda: lambda **_kwargs: _UowContext())
+
+    async def execute(self, command, *, actor, uow):
+        assert command.board_id == "board-1"
+        assert command.spec_id == spec_id
+        return ChecklistBinding(board_id="board-1", mode=ChecklistMode.BLOCKING, version=2)
+
+    monkeypatch.setattr(GetChecklistBindingUseCase, "execute", execute)
+    result = json.loads(await server.okto_pulse_get_checklist_binding.fn(
+        board_id="board-1", spec_id=spec_id,
+    ))
+    assert result["outcome"] == "success"
+    assert result["data"]["version"] == 2
 
 
 @pytest.mark.asyncio

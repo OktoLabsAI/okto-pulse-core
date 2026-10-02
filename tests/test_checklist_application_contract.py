@@ -16,6 +16,7 @@ from okto_pulse.core.domain.checklist import (
     ChecklistMode,
     ChecklistSpecSnapshot,
 )
+from okto_pulse.core.services.checklist import ChecklistPortContractError
 
 
 @pytest.mark.parametrize("field", ["expected_spec_edition", "idempotency_key", "binding_digest"])
@@ -97,7 +98,7 @@ async def test_missing_validation_snapshot_cannot_use_live_governance(status):
         get_validation_binding=AsyncMock(return_value=None),
         get_binding=AsyncMock(), get_current=AsyncMock(),
     )
-    with pytest.raises(RuntimeError, match="snapshot_missing"):
+    with pytest.raises(ChecklistPortContractError, match="snapshot_missing"):
         await _preflight(SimpleNamespace(services=SimpleNamespace(checklists=persistence)),
                          board_id="board", spec_id="spec")
     persistence.get_binding.assert_not_called()

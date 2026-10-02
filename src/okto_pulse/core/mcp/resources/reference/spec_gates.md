@@ -394,24 +394,25 @@ submission replaces Current within an edition.
 
 Every board resolves one versioned binding for target `spec`, phase
 `spec_validation`, and mode `off`, `advisory`, or `blocking`. New boards
-snapshot the mode selected by the active Global Default; absent and historical
-default values resolve to `advisory`. Legacy boards without a binding resolve
-effective `off` without creating a row. Only an authenticated human session
+persist the mode selected by the active Global Default. Every Board requires an
+explicit binding, including mode `off`. Entry into validation freezes this binding
+for the Spec edition; later Board changes apply to the next edition. Before entry,
+preview reads Board configuration without creating a snapshot. A missing snapshot
+after entry is rejected. Only an authenticated human session
 can change the board binding or the checklist mode on a Global Default.
 Agents can read and execute the curated checklist but cannot mutate either of
 those human-owned controls.
 
 The execution flow is:
 
-1. Read `okto_pulse_get_checklist_binding(board_id)` and the required full Spec
+1. Read `okto_pulse_get_checklist_binding(board_id, spec_id)` and the required full Spec
    context.
 2. If mode is `advisory` or `blocking`, call
-   `okto_pulse_start_checklist_execution` with the current binding digest and
+   `okto_pulse_start_checklist_execution` with the returned `version` as `binding_version` and
    exact Spec edition plus its technical version.
 3. Submit all ten immutable items exactly once with `pass`, `fail`, or allowed
    `not_applicable`; every result needs an anchor and N/A needs a rationale.
-4. Read the submitted result with `okto_pulse_get_checklist_receipt` (the
-   compatibility API name), then re-run full Spec context or
+4. Read the submitted result with `okto_pulse_get_checklist_receipt`, then re-run full Spec context or
    `okto_pulse_get_allowed_transitions`. Canonical human readiness requires a
    passing Current result for the exact Spec edition. Frozen content, template,
    and binding identities remain technical audit evidence and do not create a

@@ -2,6 +2,58 @@
 
 ## Estado para retomada
 
+### Decisão Checklist autorizada — gate usa o snapshot da edição
+
+Usuário autorizou explicitamente “Autorizar o gate pelo snapshot da edição”.
+Implementação concluída neste incremento: preflight, leitura por Spec e gate
+compartilham resolve_edition_binding; snapshot após admissão é obrigatório.
+Regressões cobrem Blocking→OFF, OFF→Blocking e Advisory→Blocking, nova edição e
+preservação do pin anterior. synthetic_off/revision zero removidos como
+compatibilidade de Board sem binding; OFF explícito permanece. A leitura MCP
+aceita spec_id para obter a versão congelada usada no start, com as mesmas
+permissões e conferência de pertencimento ao Board. A leitura sem Spec continua
+sendo a configuração do Board. Resources corrigidos para os argumentos e respostas
+nativos; tools/manifest regenerados pelos geradores oficiais.
+
+Par final dist-checklist-binding3 instalado, provenance-checklist-binding3 confirmou
+igualdade byte a byte src/install/wheel: Core 845 Python/908 payload, Community
+319/405. SHA256 Core ee18126a3c9ff8270a5ad9f043036b3f08a428c41623d52de06c1406be45fd02;
+Community cf782dd834afd3bd57608cffb09e81d117675367d1622a64810354e7db9bbead.
+Closure-checklist-binding3 aprovada, sem findings e com oito budgets ZERO.
+
+Provas: binding-core2 84 aprovados; binding-community2 87 aprovados e uma falha
+de fixture Approved sem snapshot. Corrigido o setup nativo; binding-community3
+aprovou 160 testes (SQL, lifecycle, REST e criação/restart/recusa de schema).
+Binding-core3 teve 102 aprovados e sete falhas de fixture: duas de contexto MCP
+sem stub de permissão e cinco de contexto sem adoção arquitetural. Corrigidas
+as fixtures para adoção e OFF explícitos, sem relaxar produto ou asserções;
+binding-core4 aprovou os 26 casos dos dois arquivos. Frontend binding-front3:
+28 aprovados em SpecChecklistPanel e SpecValidationPanel. Campanha manifests3
+não coletou testes por caminho inexistente; substituída por manifests4.
+Manifests4 aprovou 23 casos C9/manifest. Todos os processos citados terminaram.
+
+Sem alteração de assets, release, tag, deploy ou dados reais. C1–C4 integral,
+PolicyCompliancePanel e demais itens do assessment continuam abertos. Próximo:
+retirar a apresentação/formatos anteriores de Policy Compliance, preservando
+escopo congelado, evidências nativas e autoridade humana.
+
+Reprodução nativa no par publicado Core 2dd2b2f7 / Community 697ed671:
+checklist-frozen-gate-characterization1 passou reproduzindo a divergência, não
+certificando aceite. Em SQLite, binding Blocking é congelado na edição 1; o Board
+muda para OFF, sem nenhum recibo Checklist. get_validation_binding conserva Blocking,
+mas ChecklistService.evaluate_spec_gate consulta get_binding e retorna allowed=True,
+reason=checklist_off. Execução/preflight e validation-cycle usam snapshot da edição.
+O teste explícito está em tests/test_checklist_frozen_gate_characterization.py.
+
+Proposta: nas fases de validação/execução, o gate deve consumir o mesmo snapshot
+imutável da edição; alteração posterior do Board vale após a próxima entrada em
+validação de uma nova edição. Antes da validação, preview pode mostrar o binding
+atual sem criar pin. Snapshot ausente após admissão deve falhar fechado. Preservar
+OFF explicitamente congelado, permissões de configuração, recibos e histórico.
+O efeito do gate vivo existente muda; por isso a decisão foi solicitada conforme
+§10.2/10.4, sem presumir que remoção de legado autoriza nova semântica de governança.
+Remoção independente de synthetic_off/contrato sem binding pode continuar.
+
 ### 2026-10-02 — C1/C2/C3: Checklist exige edição em todo o contrato
 
 Base publicada Core 7910b951 / Community 8e9f3b88. Snapshot, execução, submission,

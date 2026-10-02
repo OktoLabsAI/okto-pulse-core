@@ -192,12 +192,12 @@ When the board has `require_spec_validation=true`, advancing a spec from `approv
 2. **With the spec in `approved`, create the test cards** (`okto_pulse_create_card(card_type="test", test_scenario_ids=...)` — the server rejects test card creation before `approved`) and **link each scenario** to a test card via `okto_pulse_link_task(target_type="scenario", ...)` until `scenario_task_linkage_pct = 100`. The validation gate fails on any scenario without a linked `card_type="test"` card.
 3. Iterate until ALL deterministic gates are green — the complete gate enumeration is the one in `okto-pulse://reference/spec_gates` (single source; it includes more gates than just AC/FR coverage).
 4. Read the configured binding with
-   `okto_pulse_get_checklist_binding(board_id)`. When mode is `advisory` or
-   `blocking`, combine its identity with the current Spec version from the
+   `okto_pulse_get_checklist_binding(board_id, spec_id)`. When mode is `advisory` or
+   `blocking`, pass its `version` as `binding_version` with the current Spec edition and version from the
    required full Spec context, then call `okto_pulse_start_checklist_execution`.
    Submit all ten ordered `/specify/v1` results with concrete anchors via
    `okto_pulse_submit_checklist_execution`, and read the submitted result with
-   `okto_pulse_get_checklist_receipt` (the compatibility API name). Re-run the full Spec context or
+   `okto_pulse_get_checklist_receipt`. Re-run the full Spec context or
    `okto_pulse_get_allowed_transitions` before validation; that canonical
    readiness check detects a missing or failing Current result.
 5. Only then call `okto_pulse_submit_spec_validation` with the current fences,

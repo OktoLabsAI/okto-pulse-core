@@ -260,6 +260,9 @@ class FakeChecklistPersistence:
     async def get_binding(self, **_kwargs):
         return self.binding
 
+    async def get_validation_binding(self, **_kwargs):
+        return self.binding
+
     async def get_current(self, **_kwargs):
         return self.current
 
@@ -349,28 +352,11 @@ def test_binding_is_exact_versioned_immutable_and_digest_bound() -> None:
     assert exc.value.code == "checklist_template_version_unsupported"
 
 
-def test_synthetic_off_binding_exposes_initial_cas_revision() -> None:
-    synthetic = ChecklistBinding.synthetic_off(board_id="board-1")
-    persisted = ChecklistBinding(
-        board_id="board-1",
-        mode=ChecklistMode.OFF,
-        version=1,
-    )
-
-    assert synthetic.mode is ChecklistMode.OFF
-    assert synthetic.version == persisted.version == 1
-    assert synthetic.revision == 0
-    assert synthetic.is_synthetic is True
-    assert persisted.revision == 1
-    assert persisted.is_synthetic is False
-    assert synthetic.digest == persisted.digest
-
-    with pytest.raises(ChecklistContractError) as exc:
-        replace(synthetic, mode=ChecklistMode.ADVISORY)
-    assert exc.value.code == "checklist_binding_synthetic_invalid"
-    with pytest.raises(ChecklistContractError) as exc:
-        replace(persisted, revision=2)
-    assert exc.value.code == "checklist_binding_revision_invalid"
+def test_binding_requires_persisted_revision_even_when_explicitly_off() -> None:
+    for mode in ChecklistMode:
+        with pytest.raises(ChecklistContractError, match="checklist_binding_revision_invalid"):
+            ChecklistBinding(board_id="board-1", mode=mode, version=1, revision=0)
+    assert ChecklistBinding(board_id="board-1", mode=ChecklistMode.OFF, version=1).revision == 1
 
 
 def test_binding_service_creates_new_immutable_versions() -> None:
@@ -911,20 +897,19 @@ async def test_binding_apply_uses_previous_version_and_digest_as_cas() -> None:
 
 
 @pytest.mark.asyncio
-async def test_synthetic_off_binding_starts_real_cas_at_zero() -> None:
+async def test_native_binding_creation_starts_cas_at_zero() -> None:
     service = make_service()
-    synthetic = ChecklistBinding.synthetic_off(board_id="board-1")
     first_persisted = service.prepare_binding(
         board_id="board-1",
         mode=ChecklistMode.ADVISORY,
-        current_binding=synthetic,
+        current_binding=None,
     )
     persistence = FakeChecklistPersistence()
 
     assert first_persisted.version == first_persisted.revision == 1
     await service.apply_binding(
         first_persisted,
-        previous_binding=synthetic,
+        previous_binding=None,
         persistence=persistence,  # type: ignore[arg-type]
     )
     assert persistence.binding_call == (first_persisted, 0, None)

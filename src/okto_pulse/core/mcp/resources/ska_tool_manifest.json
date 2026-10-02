@@ -1,6 +1,6 @@
 {
   "canonicalization": "json-utf8-lf-sort-keys-v1",
-  "manifest_sha256": "c40a6e5a0a948c34d71d47cfbba4cd5150a938741505374e1144deee2a19fb26",
+  "manifest_sha256": "20a9d828c183df2ae58c56e4ca35f0fe857e254d20a8e8b0618c33476e21006e",
   "manifest_version": "SK-A-tools/v1",
   "tool_count": 13,
   "tools": [
@@ -16,13 +16,13 @@
     },
     {
       "documentation_uri": "okto-pulse://reference/tool-docs/spec",
-      "implementation_sha256": "4d60b23dea2ff19b019276b113ea94b12aec35c9e477fd736f1213b485614cee",
+      "implementation_sha256": "7da83aeff1db5dee02981c5596d9af2ca9011974bbd17f1092d5f0bdd283d1f0",
       "name": "okto_pulse_get_checklist_binding",
       "permission_policy": [
         "BOARD_READ",
         "spec.checklist.read"
       ],
-      "schema_sha256": "09ba6375dcf875532b1fdb4424f53890ed66ef3ff23ae0e769a312c15b8a9f85"
+      "schema_sha256": "56d11dfca455b0e5b712e1ea5236fe784063f4f2c7cf4a60ffb843c1770aafb8"
     },
     {
       "documentation_uri": "okto-pulse://reference/tool-docs/spec",

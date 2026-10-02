@@ -28,6 +28,7 @@ import pytest
 
 from okto_pulse.core.mcp import server as mcp_server
 from okto_pulse.core.mcp.projection_envelope import _stable_payload_bytes
+from okto_pulse.core.domain.architecture_adoption import ArchitectureAdoptionScope
 from sqlalchemy_test_models import (
     Board,
     Card,
@@ -47,6 +48,34 @@ from okto_pulse.core.services.gate_contracts import (
 )
 
 USER_ID = "user-r4-imp4"
+
+
+@pytest.fixture(autouse=True)
+def explicit_checklist_policy(monkeypatch):
+    """This readiness suite configures OFF explicitly through its test port."""
+    from conftest import _CoreTestRelationalApplicationAdapter
+    from okto_pulse.core.domain.checklist import ChecklistBinding, ChecklistMode
+
+    original = _CoreTestRelationalApplicationAdapter.checklists
+
+    def checklists(self, session):
+        port = original(self, session)
+
+        async def binding(*, board_id, **_kwargs):
+            return ChecklistBinding(board_id=board_id, mode=ChecklistMode.OFF, version=1)
+
+        port.get_binding = binding
+        port.get_validation_binding = binding
+        return port
+
+    monkeypatch.setattr(_CoreTestRelationalApplicationAdapter, "checklists", checklists)
+
+
+def _adoption(board_id, spec_id):
+    return ArchitectureAdoptionScope(
+        board_id=board_id, spec_id=spec_id, adopted_in_edition=1,
+        actor_id=USER_ID, inherited_resource_ids=(),
+    ).model_dump(mode="json")
 
 
 def _id(prefix: str) -> str:
@@ -341,6 +370,7 @@ async def _seed_spec(db_factory, *, status: str, settings=None):
     async with db_factory() as db:
         db.add(Board(id=board_id, name="r4 imp4", owner_id=USER_ID, settings=settings or {}))
         db.add(Spec(id=spec_id, board_id=board_id, title="spec",
+                    architecture_adoption=_adoption(board_id, spec_id),
                     status=SpecStatus(status), created_by=USER_ID,
                     functional_requirements=[], acceptance_criteria=[],
                     test_scenarios=[], business_rules=[], api_contracts=[]))
@@ -421,6 +451,7 @@ async def test_get_task_context_test_card_gate_matches_operational_flow(db_facto
     async with db_factory() as db:
         db.add(Board(id=board_id, name="r4 imp4", owner_id=USER_ID))
         db.add(Spec(id=spec_id, board_id=board_id, title="spec",
+                    architecture_adoption=_adoption(board_id, spec_id),
                     status=SpecStatus.IN_PROGRESS, created_by=USER_ID,
                     functional_requirements=[], acceptance_criteria=[],
                     test_scenarios=scenarios, business_rules=[], api_contracts=[]))
