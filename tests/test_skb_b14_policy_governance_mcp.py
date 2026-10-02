@@ -561,7 +561,7 @@ def test_policy_v1_python_names_and_evaluator_modules_are_removed() -> None:
         "RecordSemanticGuidelineAssessmentCommand",
         "RecordSemanticGuidelineAssessmentResult",
         "RecordSemanticGuidelineAssessmentUseCase",
-    } <= set(policy_governance.__all__)
+    }.isdisjoint(policy_governance.__all__)
     assert {
         "PolicyComplianceFindingListQuery",
         "PolicyComplianceCurrentSnapshotResolver",

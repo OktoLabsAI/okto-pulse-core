@@ -1992,6 +1992,30 @@
     {
       "path": "okto_labs_pulse_core/tests/test_mcp_permission_registry.py",
       "reason": "Exact inventory updated for clean-break tool removals; retired historical_context and semantic v1 writer explicitly absent. Native permission policy coverage and three human-only exemptions retained."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_skb3_semantic_guideline_application.py",
+      "reason": "Waiver revalidation fixture directly seeds domain evidence; retained append-only replay and authority checks without removed application writer."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_f3_policy_write_retirement.py",
+      "reason": "Native v2 writer refuses Sprint with authenticated UoW and without UoW, before resolving persistence."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_skb_b13_policy_governance_use_cases.py",
+      "reason": "Permission denial uses native writer; context-only import uses schema 3 export without metrics, preserving permission proof."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_skb_b14_policy_governance_mcp.py",
+      "reason": "Removed application writer exports must be absent."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_skb3_semantic_guideline_persistence.py",
+      "reason": "Real native writer resolves active binding/revision digests with unrelated unlinked heads."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_skb31_semantic_pinpoint_v2_persistence.py",
+      "reason": "Same client idempotency key in distinct Boards yields distinct native receipts; replay stays isolated and cross-Board reads fail."
     }
   ],
   "removed_cases": [
@@ -3266,6 +3290,36 @@
       "test": "keeps the stale receipt signal consistent with the server gate reason",
       "disposition": "superseded",
       "reason": "Exclusive alternate UI icon for technical Stale removed. Current-edition UI uses server summary and Previous history; malformed edition is refused. Dedicated Previous gate projection test retained."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_skb3_semantic_guideline_application.py",
+      "test": "test_record_semantic_assessment_locks_and_persists_atomically",
+      "disposition": "superseded",
+      "reason": "Retired application writer and Sprint replay contract removed. Native v2 application/persistence tests retain atomic write, replay, immutable receipts and Board-scoped identity; Sprint writes fail before persistence."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_skb3_semantic_guideline_application.py",
+      "test": "test_record_semantic_assessment_uses_unlinked_binding_head_fence",
+      "disposition": "superseded",
+      "reason": "Retired application writer and Sprint replay contract removed. Native v2 application/persistence tests retain atomic write, replay, immutable receipts and Board-scoped identity; Sprint writes fail before persistence."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_skb3_semantic_guideline_application.py",
+      "test": "test_exact_idempotent_replay_never_rewrites",
+      "disposition": "superseded",
+      "reason": "Retired application writer and Sprint replay contract removed. Native v2 application/persistence tests retain atomic write, replay, immutable receipts and Board-scoped identity; Sprint writes fail before persistence."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_skb3_semantic_guideline_application.py",
+      "test": "test_default_receipt_identity_and_replay_are_board_scoped",
+      "disposition": "superseded",
+      "reason": "Retired application writer and Sprint replay contract removed. Native v2 application/persistence tests retain atomic write, replay, immutable receipts and Board-scoped identity; Sprint writes fail before persistence."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_f3_policy_write_retirement.py",
+      "test": "test_core_preserves_exact_sprint_assessment_replay_before_retirement_guard",
+      "disposition": "superseded",
+      "reason": "Retired application writer and Sprint replay contract removed. Native v2 application/persistence tests retain atomic write, replay, immutable receipts and Board-scoped identity; Sprint writes fail before persistence."
     }
   ]
 }

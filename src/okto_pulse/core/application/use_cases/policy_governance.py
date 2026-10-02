@@ -10,7 +10,7 @@ domain plans, and gives every mutation one commit/rollback boundary.
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any
 import uuid
@@ -48,7 +48,6 @@ from okto_pulse.core.domain.guideline_policy import (
     POLICY_BOARD_ID_MAX_LENGTH,
     POLICY_IDEMPOTENCY_KEY_MAX_LENGTH,
     POLICY_IMPACT_RECEIPT_ID_MAX_LENGTH,
-    POLICY_RECEIPT_ID_MAX_LENGTH,
     POLICY_SQL_INTEGER_MAX,
     BoardGuidelineBinding,
     Guideline,
@@ -63,32 +62,18 @@ from okto_pulse.core.domain.guideline_policy import (
     normalize_guideline_sha256,
     normalize_policy_bounded_text,
 )
-from okto_pulse.core.domain.guideline_semantic_assessment import (
-    SemanticGuidelineAssessmentContext,
-    SemanticGuidelineAssessmentResult,
-    SemanticGuidelineAssessmentSubmission,
-    record_semantic_guideline_assessment,
-)
-from okto_pulse.core.domain.guideline_semantic_currentness import (
-    semantic_assessment_current_snapshot_from_context,
-)
 from okto_pulse.core.domain.permissions import PermissionSet
 from okto_pulse.core.ports.guideline_policy import (
     GuidelineImpactListQuery,
-    GuidelinePolicyDigestConflict,
     GuidelinePolicyEditionConflict,
     GuidelinePolicyIdempotencyConflict,
     GuidelinePolicyLifecycleConflict,
     GuidelinePolicyPersistencePort,
-    GuidelinePolicySubjectConflict,
-    require_writable_policy_subject_type,
     require_writable_guideline_revision,
-    GuidelinePolicyVersionConflict,
     GuidelineRetirementReplay,
     GuidelineRevisionNoopReplay,
     GuidelineRevisionReplay,
     GuidelineRevisionListQuery,
-    SemanticGuidelineAssessmentPersistencePort,
 )
 from okto_pulse.core.repositories.interfaces.unit_of_work import PulseUnitOfWork
 
@@ -932,51 +917,8 @@ class AdoptGuidelineRevisionResult:
     receipt: Any
 
 
-@dataclass(frozen=True, slots=True)
-class RecordSemanticGuidelineAssessmentCommand:
-    board_id: str
-    submission: SemanticGuidelineAssessmentSubmission
-    receipt_id: str | None = None
-    recorded_at: datetime | None = None
-
-    def __post_init__(self) -> None:
-        object.__setattr__(
-            self,
-            "board_id",
-            _bounded_text(
-                self.board_id,
-                POLICY_BOARD_ID_MAX_LENGTH,
-                "board_id_required",
-            ),
-        )
-        if not isinstance(
-            self.submission,
-            SemanticGuidelineAssessmentSubmission,
-        ):
-            raise ValueError("semantic_assessment_submission_invalid")
-        if self.submission.subject.board_id != self.board_id:
-            raise ValueError("semantic_assessment_subject_board_mismatch")
-        object.__setattr__(
-            self,
-            "receipt_id",
-            _bounded_optional_text(
-                self.receipt_id,
-                POLICY_RECEIPT_ID_MAX_LENGTH,
-                "semantic_assessment_receipt_id_invalid",
-            ),
-        )
 
 
-@dataclass(frozen=True, slots=True)
-class RecordSemanticGuidelineAssessmentResult:
-    assessment: SemanticGuidelineAssessmentResult
-
-    def __post_init__(self) -> None:
-        if not isinstance(
-            self.assessment,
-            SemanticGuidelineAssessmentResult,
-        ):
-            raise ValueError("semantic_assessment_result_invalid")
 
 
 class ListGuidelineRevisionsUseCase:
@@ -1380,48 +1322,6 @@ class AdoptGuidelineRevisionUseCase:
         return AdoptGuidelineRevisionResult(binding, receipt)
 
 
-def _semantic_assessment_replay_matches(
-    replay: SemanticGuidelineAssessmentResult,
-    submission: SemanticGuidelineAssessmentSubmission,
-) -> bool:
-    receipt = replay.receipt
-    if (
-        receipt.subject != submission.subject
-        or receipt.binding_id != submission.binding_id
-        or receipt.binding_revision != submission.expected_binding_revision
-        or receipt.guideline_revision_id != submission.guideline_revision_id
-        or receipt.idempotency_key != submission.idempotency_key
-        or receipt.assessor != submission.assessor
-        or receipt.confidence != submission.confidence
-        or len(receipt.metric_results) != len(submission.metric_results)
-    ):
-        return False
-    recorded_by_metric = {result.metric_id: result for result in receipt.metric_results}
-    for submitted in submission.metric_results:
-        recorded = recorded_by_metric.get(submitted.metric_id)
-        if recorded is None or (
-            recorded.score != submitted.score
-            or recorded.rationale != submitted.rationale
-            or recorded.evidence_refs != submitted.evidence_refs
-            or tuple(
-                (
-                    pinpoint.anchor_type,
-                    pinpoint.anchor_ref,
-                    pinpoint.excerpt_hash,
-                )
-                for pinpoint in recorded.pinpoints
-            )
-            != tuple(
-                (
-                    pinpoint.anchor_type,
-                    pinpoint.anchor_ref,
-                    pinpoint.excerpt_hash,
-                )
-                for pinpoint in submitted.pinpoints
-            )
-        ):
-            return False
-    return True
 
 
 _POLICY_ASSESSMENT_ADMISSION_STATUS = {
@@ -1480,181 +1380,6 @@ async def require_policy_assessment_lifecycle(
         )
 
 
-class RecordSemanticGuidelineAssessmentUseCase:
-    """Validate and atomically persist external cognition against exact fences."""
-
-    def __init__(
-        self,
-        *,
-        clock: Clock = _utc_now,
-        id_factory: IdFactory = _uuid5,
-    ) -> None:
-        self._clock = clock
-        self._id_factory = id_factory
-
-    async def execute(
-        self,
-        command: RecordSemanticGuidelineAssessmentCommand,
-        *,
-        actor: ActorContext,
-        uow: PulseUnitOfWork,
-    ) -> RecordSemanticGuidelineAssessmentResult:
-        _require_capability(actor, ASSESSMENTS_RECORD)
-        await _require_board(uow, command.board_id, actor, write=True)
-        submission = command.submission
-        if submission.assessor.agent_id != actor.actor_id:
-            raise PermissionDeniedError("semantic_assessment_assessor_mismatch")
-        port = uow.services.guidelines.policy_persistence()
-        semantic_port: SemanticGuidelineAssessmentPersistencePort = (
-            uow.services.guidelines.semantic_policy_persistence()
-        )
-        replay = await semantic_port.get_semantic_assessment_result_by_idempotency(
-            board_id=command.board_id,
-            binding_id=submission.binding_id,
-            idempotency_key=submission.idempotency_key,
-        )
-        if replay is not None:
-            if not _semantic_assessment_replay_matches(replay, submission):
-                raise GuidelinePolicyIdempotencyConflict(
-                    "semantic_assessment_idempotency_conflict"
-                )
-            return RecordSemanticGuidelineAssessmentResult(
-                replace(replay, replayed=True)
-            )
-
-        require_writable_policy_subject_type(submission.subject.entity_type)
-        subject_snapshot = await semantic_port.resolve_policy_subject_snapshot(
-            board_id=command.board_id,
-            entity_type=submission.subject.entity_type,
-            subject_id=submission.subject.subject_id,
-            lock=True,
-        )
-        if subject_snapshot is None:
-            raise EntityNotFoundError(
-                "policy_subject",
-                submission.subject.subject_id,
-            )
-        if (
-            submission.subject.subject_edition
-            != subject_snapshot.subject.subject_edition
-        ):
-            raise GuidelinePolicyEditionConflict(
-                "guideline_policy_edition_conflict",
-                details=(
-                    (
-                        "current",
-                        str(subject_snapshot.subject.subject_edition),
-                    ),
-                    ("expected", str(submission.subject.subject_edition)),
-                ),
-            )
-        if (
-            submission.subject.subject_version
-            != subject_snapshot.subject.subject_version
-        ):
-            raise GuidelinePolicyVersionConflict(
-                "guideline_policy_version_conflict"
-            )
-        if (
-            submission.subject.board_id != subject_snapshot.subject.board_id
-            or submission.subject.entity_type
-            is not subject_snapshot.subject.entity_type
-            or submission.subject.subject_id
-            != subject_snapshot.subject.subject_id
-        ):
-            raise GuidelinePolicySubjectConflict(
-                "guideline_policy_subject_conflict"
-            )
-        await require_policy_assessment_lifecycle(
-            uow,
-            subject=subject_snapshot.subject,
-        )
-        bindings = tuple(
-            binding
-            for binding in await port.list_bindings(board_id=command.board_id)
-            if binding.state is GuidelineBindingState.ACTIVE
-        )
-        selected = tuple(
-            binding
-            for binding in bindings
-            if binding.binding_id == submission.binding_id
-        )
-        if len(selected) != 1:
-            raise EntityNotFoundError(
-                "guideline_binding",
-                submission.binding_id,
-            )
-        binding = selected[0]
-        selected_revision: GuidelineRevision | None = None
-        for active_binding in bindings:
-            revision = await port.get_revision(
-                guideline_id=active_binding.guideline_id,
-                revision_id=active_binding.revision_id,
-            )
-            if revision is None:
-                raise RuntimeError("guideline_binding_revision_mismatch")
-            if active_binding.binding_id == binding.binding_id:
-                selected_revision = revision
-        if (
-            selected_revision is None
-            or selected_revision.revision_id != submission.guideline_revision_id
-        ):
-            raise EntityNotFoundError(
-                "guideline_revision",
-                submission.guideline_revision_id,
-            )
-        current_snapshot = (
-            await semantic_port.resolve_semantic_assessment_current_snapshot(
-                board_id=command.board_id,
-                entity_type=submission.subject.entity_type,
-                subject_id=submission.subject.subject_id,
-                binding_id=binding.binding_id,
-                lock=True,
-            )
-        )
-        if current_snapshot is None:
-            raise EntityNotFoundError(
-                "guideline_binding",
-                submission.binding_id,
-            )
-        context = SemanticGuidelineAssessmentContext(
-            subject_snapshot=subject_snapshot,
-            binding=binding,
-            revision=selected_revision,
-            policy_set_digest=current_snapshot.policy_set_digest,
-            binding_head_digest=current_snapshot.binding_head_digest,
-        )
-        if (
-            semantic_assessment_current_snapshot_from_context(context)
-            != current_snapshot
-        ):
-            raise GuidelinePolicyDigestConflict("semantic_assessment_authority_stale")
-        recorded_at = _aware_utc(
-            command.recorded_at,
-            self._clock,
-            "semantic_assessment_recorded_at_invalid",
-        )
-        result = record_semantic_guideline_assessment(
-            submission,
-            context,
-            receipt_id=(
-                command.receipt_id
-                or self._id_factory(
-                    "semantic-guideline-assessment",
-                    f"{command.board_id}:{submission.idempotency_key}",
-                )
-            ),
-            recorded_at=recorded_at,
-        )
-
-        async def mutate() -> SemanticGuidelineAssessmentResult:
-            return await semantic_port.save_semantic_assessment_result(
-                result=result,
-                request_digest=result.request_digest,
-            )
-
-        saved = await _write(uow, mutate)
-        return RecordSemanticGuidelineAssessmentResult(saved)
 
 
 __all__ = [
@@ -1694,9 +1419,6 @@ __all__ = [
     "PreviewGuidelineImpactCommand",
     "PreviewGuidelineImpactResult",
     "PreviewGuidelineImpactUseCase",
-    "RecordSemanticGuidelineAssessmentCommand",
-    "RecordSemanticGuidelineAssessmentResult",
-    "RecordSemanticGuidelineAssessmentUseCase",
     "RetireGuidelineCommand",
     "RetireGuidelineResult",
     "RetireGuidelineUseCase",

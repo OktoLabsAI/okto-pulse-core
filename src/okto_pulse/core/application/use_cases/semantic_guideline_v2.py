@@ -36,6 +36,7 @@ from okto_pulse.core.domain.guideline_semantic_v2 import (
     semantic_metric_result_digest_v2,
 )
 from okto_pulse.core.domain.quality_canonicalization import canonical_sha256
+from okto_pulse.core.ports.guideline_policy import require_writable_policy_subject_type
 from okto_pulse.core.ports.semantic_subject_projection import (
     SemanticAssessmentV2PersistencePort,
     SemanticAssessmentV2CapabilityPort,
@@ -304,6 +305,7 @@ class SealSemanticGuidelineAssessmentV2UseCase:
                 raise SemanticSubjectProjectionError(
                     SemanticSubjectProjectionFailure.FORBIDDEN
                 )
+            require_writable_policy_subject_type(command.draft.subject.entity_type)
             await require_policy_assessment_lifecycle(
                 uow,
                 subject=command.draft.subject,
@@ -318,6 +320,8 @@ class SealSemanticGuidelineAssessmentV2UseCase:
             )
             if not capability_snapshot.writer_active:
                 raise SemanticAssessmentV2WriterUnavailable(capability_snapshot)
+        if actor is None:
+            require_writable_policy_subject_type(command.draft.subject.entity_type)
         if not isinstance(subject_projection, SemanticSubjectProjectionPort):
             raise TypeError("semantic_subject_projection_adapter_missing")
         if not isinstance(persistence, SemanticAssessmentV2PersistencePort):

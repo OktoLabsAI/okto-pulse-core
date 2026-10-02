@@ -10,10 +10,6 @@ from okto_pulse.core.application.use_cases.base import ActorContext
 from okto_pulse.core.application.use_cases import policy_governance as policy
 from okto_pulse.core.application.use_cases import semantic_guideline_governance as governance
 from okto_pulse.core.domain.guideline_policy import PolicyEntityType, PolicySubjectRef, PolicySubjectSnapshot
-from okto_pulse.core.domain.guideline_semantic_assessment import (
-    SemanticGuidelineAssessmentContext, record_semantic_guideline_assessment,
-    semantic_binding_head_digest_v1, semantic_policy_set_digest_v1,
-)
 from okto_pulse.core.domain.guideline_semantic_exceptions import SemanticMetricWaiverEventType
 from okto_pulse.core.domain.quality_assessment import FindingAnchorType, UnboundFindingAnchor
 from okto_pulse.core.ports.guideline_policy import GuidelinePolicySubjectConflict
@@ -56,9 +52,15 @@ async def test_new_sprint_policy_writes_are_refused_before_commit(operation):
     port, uow, submission, actor = _retired_fixture()
     evidence = submission.metric_results[0].evidence_refs
     common = dict(board_id="board-1", idempotency_key="new-operation")
+    from okto_pulse.core.application.use_cases.semantic_guideline_v2 import (
+        SealSemanticGuidelineAssessmentV2Command, SealSemanticGuidelineAssessmentV2UseCase,
+    )
+    from test_skb31_semantic_guideline_v2_application import _draft, _pinpoint
+    draft = replace(_draft(_pinpoint(FindingAnchorType.WHOLE_ARTIFACT)),
+                    subject=submission.subject, assessor=submission.assessor)
     cases = {
-        "assessment": (policy.RecordSemanticGuidelineAssessmentUseCase(),
-                       policy.RecordSemanticGuidelineAssessmentCommand(board_id="board-1", submission=submission)),
+        "assessment": (SealSemanticGuidelineAssessmentV2UseCase(),
+                       SealSemanticGuidelineAssessmentV2Command(board_id="board-1", actor_id=actor.actor_id, draft=draft)),
         "request": (governance.RequestSemanticMetricWaiverUseCase(), governance.RequestSemanticMetricWaiverCommand(
             **common, metric_result_id="metric", finding_id="finding", receipt_id="receipt",
             justification="New exception", evidence_refs=evidence, expires_at=None)),
@@ -84,16 +86,17 @@ async def test_new_sprint_policy_writes_are_refused_before_commit(operation):
 
 
 @pytest.mark.asyncio
-async def test_core_preserves_exact_sprint_assessment_replay_before_retirement_guard():
-    port, uow, submission, actor = _retired_fixture()
-    context = SemanticGuidelineAssessmentContext(
-        subject_snapshot=port._subject_snapshot(), binding=port.binding, revision=port.revision,
-        policy_set_digest=semantic_policy_set_digest_v1((port.binding,), (port.revision,)),
-        binding_head_digest=semantic_binding_head_digest_v1((port.binding,)),
+async def test_native_writer_refuses_sprint_without_uow_before_resolving_adapters():
+    from okto_pulse.core.application.use_cases.semantic_guideline_v2 import (
+        SealSemanticGuidelineAssessmentV2Command, SealSemanticGuidelineAssessmentV2UseCase,
     )
-    port.replay = record_semantic_guideline_assessment(submission, context, receipt_id="old-receipt", recorded_at=NOW)
-    result = await policy.RecordSemanticGuidelineAssessmentUseCase().execute(
-        policy.RecordSemanticGuidelineAssessmentCommand(board_id="board-1", submission=submission), actor=actor, uow=uow,
+    from test_skb31_semantic_guideline_v2_application import _draft, _pinpoint
+
+    _, _, submission, actor = _retired_fixture()
+    draft = replace(_draft(_pinpoint(FindingAnchorType.WHOLE_ARTIFACT)),
+                    subject=submission.subject, assessor=submission.assessor)
+    command = SealSemanticGuidelineAssessmentV2Command(
+        board_id="board-1", actor_id=actor.actor_id, draft=draft,
     )
-    assert result.assessment.receipt == port.replay.receipt and result.assessment.replayed
-    assert uow.commit_count == 0 and port.lock_values == [] and port.saved is None
+    with pytest.raises(GuidelinePolicySubjectConflict, match="semantic_policy_subject_type_retired"):
+        await SealSemanticGuidelineAssessmentV2UseCase().execute(command)

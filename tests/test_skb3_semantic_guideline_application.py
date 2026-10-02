@@ -12,8 +12,6 @@ from okto_pulse.core.application.use_cases.base import (
 from okto_pulse.core.application.use_cases.policy_governance import (
     ADOPTION_MANAGE,
     ASSESSMENTS_RECORD,
-    RecordSemanticGuidelineAssessmentCommand,
-    RecordSemanticGuidelineAssessmentUseCase,
     WAIVER_REVALIDATE,
 )
 from okto_pulse.core.application.use_cases.semantic_guideline_governance import (
@@ -24,7 +22,6 @@ from okto_pulse.core.application.use_cases.semantic_guideline_governance import 
 )
 from okto_pulse.core.domain.guideline_policy import (
     BoardGuidelineBinding,
-    GuidelineBindingState,
     GuidelineEnforcement,
     GuidelineMetric,
     GuidelineMetricDirection,
@@ -35,6 +32,7 @@ from okto_pulse.core.domain.guideline_policy import (
 )
 from okto_pulse.core.domain.guideline_semantic_assessment import (
     SemanticAssessmentAssessor,
+    record_semantic_guideline_assessment,
     SemanticGuidelineAssessmentContext,
     SemanticGuidelineAssessmentSubmission,
     SemanticMetricAssessment,
@@ -321,157 +319,31 @@ def _actor(board_id: str = "board-1") -> ActorContext:
     )
 
 
-@pytest.mark.asyncio
-async def test_record_semantic_assessment_locks_and_persists_atomically() -> None:
-    port = _Port()
-    uow = _Uow(port)
-    result = await RecordSemanticGuidelineAssessmentUseCase(
-        clock=lambda: NOW,
-    ).execute(
-        RecordSemanticGuidelineAssessmentCommand(
-            board_id="board-1",
-            submission=_submission(),
-            receipt_id="receipt-1",
-        ),
-        actor=_actor(),
-        uow=uow,
-    )
-
-    assert result.assessment.receipt.state.value == "passed"
-    assert result.assessment.receipt.metric_results[0].effective_threshold == 75
-    assert result.assessment.receipt.confidence == 90
-    assert port.saved == result.assessment
-    assert port.lock_values == [True, True]
-    assert (uow.commit_count, uow.rollback_count) == (1, 0)
 
 
-@pytest.mark.asyncio
-async def test_record_semantic_assessment_uses_unlinked_binding_head_fence() -> None:
-    port = _Port()
-    unlinked = BoardGuidelineBinding(
-        binding_id="binding-unlinked",
-        board_id="board-1",
-        guideline_id="guideline-unlinked",
-        revision_id="revision-unlinked",
-        semantic_version="1.0.0",
-        revision_digest="d" * 64,
-        priority=1,
-        binding_revision=2,
-        adopted_by="owner-1",
-        adopted_at=NOW,
-        enforcement=GuidelineEnforcement.BLOCKING,
-        minimum_confidence=80,
-        state=GuidelineBindingState.UNLINKED,
-    )
-    port.binding_heads = (port.binding, unlinked)
-
-    result = await RecordSemanticGuidelineAssessmentUseCase(
-        clock=lambda: NOW,
-    ).execute(
-        RecordSemanticGuidelineAssessmentCommand(
-            board_id="board-1",
-            submission=_submission(),
-            receipt_id="receipt-with-unlinked-head",
-        ),
-        actor=_actor(),
-        uow=_Uow(port),
-    )
-
-    expected_head_digest = semantic_binding_head_digest_v1((port.binding, unlinked))
-    assert result.assessment.receipt.binding_head_digest == (expected_head_digest)
-    assert port.saved == result.assessment
 
 
-@pytest.mark.asyncio
-async def test_exact_idempotent_replay_never_rewrites() -> None:
-    port = _Port()
-    first_uow = _Uow(port)
-    first = await RecordSemanticGuidelineAssessmentUseCase(
-        clock=lambda: NOW,
-    ).execute(
-        RecordSemanticGuidelineAssessmentCommand(
-            board_id="board-1",
-            submission=_submission(),
-            receipt_id="receipt-1",
-        ),
-        actor=_actor(),
-        uow=first_uow,
-    )
-    port.replay = first.assessment
-    port.saved = None
-    replay_uow = _Uow(port)
-
-    replay = await RecordSemanticGuidelineAssessmentUseCase().execute(
-        RecordSemanticGuidelineAssessmentCommand(
-            board_id="board-1",
-            submission=_submission(),
-            receipt_id="receipt-1",
-        ),
-        actor=_actor(),
-        uow=replay_uow,
-    )
-
-    assert replay.assessment.replayed is True
-    assert port.saved is None
-    assert replay_uow.commit_count == 0
 
 
-@pytest.mark.asyncio
-async def test_default_receipt_identity_and_replay_are_board_scoped() -> None:
-    use_case = RecordSemanticGuidelineAssessmentUseCase(clock=lambda: NOW)
-    port_one = _Port("board-1")
-    port_two = _Port("board-2")
-
-    first = await use_case.execute(
-        RecordSemanticGuidelineAssessmentCommand(
-            board_id="board-1",
-            submission=_submission("board-1"),
-        ),
-        actor=_actor("board-1"),
-        uow=_Uow(port_one),
-    )
-    second = await use_case.execute(
-        RecordSemanticGuidelineAssessmentCommand(
-            board_id="board-2",
-            submission=_submission("board-2"),
-        ),
-        actor=_actor("board-2"),
-        uow=_Uow(port_two),
-    )
-
-    assert first.assessment.receipt.receipt_id != second.assessment.receipt.receipt_id
-    assert port_one.replay_lookups[-1]["board_id"] == "board-1"
-    assert port_two.replay_lookups[-1]["board_id"] == "board-2"
-
-    port_one.replay = first.assessment
-    replay = await use_case.execute(
-        RecordSemanticGuidelineAssessmentCommand(
-            board_id="board-1",
-            submission=_submission("board-1"),
-        ),
-        actor=_actor("board-1"),
-        uow=_Uow(port_one),
-    )
-    assert replay.assessment.replayed is True
-    assert port_two.replay is None
 
 
 async def _seed_approved_semantic_waiver(
     port: _Port,
     uow: _Uow,
 ):
-    assessment = await RecordSemanticGuidelineAssessmentUseCase(
-        clock=lambda: NOW,
-    ).execute(
-        RecordSemanticGuidelineAssessmentCommand(
-            board_id=port.board_id,
-            submission=_submission(port.board_id, score=50),
-            receipt_id="receipt-failed",
-        ),
-        actor=_actor(port.board_id),
-        uow=uow,
+    # Build immutable evidence for the waiver unit tests without invoking a
+    # removed writer. Native SQL writer coverage lives in the v2 suite.
+    context = SemanticGuidelineAssessmentContext(
+        subject_snapshot=port._subject_snapshot(), binding=port.binding,
+        revision=port.revision,
+        policy_set_digest=semantic_policy_set_digest_v1((port.binding,), (port.revision,)),
+        binding_head_digest=semantic_binding_head_digest_v1(port.binding_heads),
     )
-    receipt = assessment.assessment.receipt
+    port.saved = record_semantic_guideline_assessment(
+        _submission(port.board_id, score=50), context,
+        receipt_id="receipt-failed", recorded_at=NOW,
+    )
+    receipt = port.saved.receipt
     finding = project_semantic_metric_findings(receipt)[0]
     evidence = receipt.metric_results[0].evidence_refs
     requested = request_semantic_metric_waiver(
@@ -597,7 +469,7 @@ async def test_revalidation_use_case_is_append_only_replay_safe_and_atomic() -> 
         "waiver-event-approve"
     )
     assert port.lock_values[-1] is True
-    assert uow.commit_count == 2
+    assert uow.commit_count == 1
 
     port.waiver_replay = port.last_waiver_mutation
     replay_uow = _Uow(port)

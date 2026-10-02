@@ -44,7 +44,6 @@ from okto_pulse.core.application.use_cases.policy_governance import (
     ListGuidelineImpactItemsUseCase,
     PreviewGuidelineImpactCommand,
     PreviewGuidelineImpactUseCase,
-    RecordSemanticGuidelineAssessmentUseCase,
     RetireGuidelineCommand,
     RetireGuidelineUseCase,
     GuidelineRevisionUnderBump,
@@ -206,7 +205,14 @@ def _denial_case(capability: str):
     if capability == ASSESSMENTS_READ:
         return _CapabilityOnlyUseCase(capability), object()
     if capability == ASSESSMENTS_RECORD:
-        return RecordSemanticGuidelineAssessmentUseCase(), object()
+        from okto_pulse.core.application.use_cases.semantic_guideline_v2 import (
+            SealSemanticGuidelineAssessmentV2Command, SealSemanticGuidelineAssessmentV2UseCase,
+        )
+        from test_skb31_semantic_guideline_v2_application import _draft, _pinpoint
+        from okto_pulse.core.domain.quality_assessment import FindingAnchorType
+        return SealSemanticGuidelineAssessmentV2UseCase(), SealSemanticGuidelineAssessmentV2Command(
+            board_id="board-1", actor_id="actor-1", draft=_draft(_pinpoint(FindingAnchorType.FIELD)),
+        )
     if capability.startswith("guidelines.waiver."):
         return _CapabilityOnlyUseCase(capability), object()
     raise AssertionError(capability)
@@ -1245,6 +1251,15 @@ async def test_import_export_capabilities_fail_before_uow_access(
 @pytest.mark.asyncio
 async def test_context_only_import_does_not_require_metric_authority(
 ) -> None:
+    from dataclasses import replace
+    from test_skb_b12_guideline_import_export_use_case import _aggregate, _payload
+
+    aggregate = _aggregate()
+    revision = replace(aggregate.revisions[0].revision, metrics=(), revision_digest=None)
+    aggregate = replace(
+        aggregate,
+        revisions=(replace(aggregate.revisions[0], revision=revision),),
+    )
     uow = _UntouchedUow()
     with pytest.raises(
         AssertionError,
@@ -1252,17 +1267,7 @@ async def test_context_only_import_does_not_require_metric_authority(
     ):
         await ImportGuidelinePolicyUseCase().execute(
             ImportGuidelinePolicyCommand(
-                envelope={
-                    "schema_version": "1",
-                    "kind": "guidelines",
-                    "items": [
-                        {
-                            "title": "Context-only guideline",
-                            "content": "Imported without semantic metrics.",
-                            "scope": "global",
-                        }
-                    ],
-                }
+                envelope=_payload(aggregate)
             ),
             actor=ActorContext(
                 "agent-1",

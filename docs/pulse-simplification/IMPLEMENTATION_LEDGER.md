@@ -2,6 +2,52 @@
 
 ## Estado para retomada
 
+### 2026-10-02 — C1: retirada do caso de uso antigo de avaliação
+
+Base publicada Core d9027049 / Community 92fa9dfc. Removidos Command/Result/UseCase
+RecordSemanticGuidelineAssessment e _semantic_assessment_replay_matches, incluindo
+exports públicos. O replay de Sprint antes do guard não é preservado no clean break.
+Testes de permissão/Sprint passam pelo SealSemanticGuidelineAssessmentV2UseCase;
+a integração SQL de binding ativo com heads unlinked também foi convertida ao
+gravador nativo. Adicionada prova nativa de mesmo idempotency_key em dois Boards,
+IDs distintos, replay sem duplicação e recusa de leitura fora do Board.
+
+Quatro testes exclusivos do writer removido saíram do arquivo misto de aplicação;
+provas nativas de gravação/replay/imutabilidade/edição já estão no conjunto v2.
+Setup dos testes unitários de waiver agora constrói sua evidência imutável pelo
+domínio, sem usar o writer removido; seu commit esperado é só o da revalidação.
+Isso não fecha a adaptação do domínio/persistência de waiver ao ledger nativo.
+
+Par dist-semantic-application1 instalado e provenance-semantic-application1
+aprovado (845/907 Core, 319/405 Community). Core SHA256
+7b30df480aa0ff81419523270bc3c1001d18b03dd8c684f4747390175d0eaaae;
+Community 920d801c1c052220ed7f00b662b6b42732ff19f0d21a244e3ddd0150de6f0291.
+Core1: 124 aprovados/3 falhas. Duas fixtures corrigidas (evidência de waiver
+não estava no port; import context-only ainda usava schema 1). A terceira falha
+revelou ausência do guard F3 no writer nativo: agora Sprint é recusado antes dos
+adapters, preservando a autorização primeiro quando existe ator/UoW. Não há nova
+decisão de autoridade: aplica-se a retirada de escrita Sprint já estabelecida.
+Core2: 126 aprovados/1 falha de digest da fixture context-only; corrigida pela
+recomputação nativa. Core3: todos os 52 testes B13 aprovados. Community1 e
+Community2: 13 aprovados cada, incluindo identidade/replay isolados por Board.
+Disposições dos testes removidos/adaptados registradas no inventário JSON.
+
+Closure1/2: nenhum finding arquitetural e oito budgets ZERO; apenas drift dos
+READMEs gerados. Regenerados pelo renderer oficial após estabilizar o produto.
+Par final dist-semantic-application3 instalado, provenance-semantic-application3
+aprovado byte a byte (845/907 Core, 319/405 Community). SHA256 Core
+591f85012d5269790f4ec8f3b0b333fe791a41d1a6a90b131aff2fd5e2e541f6;
+Community 72a53f1909468b7ce0e1c27bc9db536c86d1f3e78b57ed3a46c00f3a82a7382a.
+Python de produto idêntico ao par application2 testado; só README mudou no wheel.
+Ruff F/E9 e diff-check passaram. Sem alteração de frontend neste incremento.
+Core4: oito testes aprovados, incluindo a prova adicional sem UoW. Closure3
+terminou com exit 0, sem findings arquiteturais/documentais e oito budgets ZERO.
+Todos os handles encerrados; incremento pronto para commit/push nos dois repos.
+
+Retomada: retirada de leitores/tabelas/DTOs/UI antigos de Policy permanece aberta,
+incluindo FKs de waiver e projeções/recovery; não apagar autoridade atual
+compartilhada do adapter. Este incremento não fecha C1–C4 nem a entrega final.
+
 ### 2026-10-02 — C1/C3: um gravador público de avaliação semântica
 
 Base publicada Core 53770e8e / Community d033ef31. Retirados tool MCP e POST REST
