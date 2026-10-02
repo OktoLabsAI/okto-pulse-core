@@ -1025,6 +1025,16 @@
     {
       "path": "okto_labs_pulse_community/tests/test_f3_kg_sprint_inventory_retirement.py",
       "reason": "Exclusive mixed Sprint DLQ cutover/skipping behavior removed with migration; native queue recovery is retained in operational suites."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_c7_rdl_postgresql_contract.py",
+      "disposition": "superseded",
+      "reason": "Exclusive DDL/converter catalog proof for a removed PostgreSQL migration implementation, including obsolete semantic migration audit table. Native current-schema SQLite guards and edition refusal remain required."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_skb3_postgresql_trigger_proof_v1.py",
+      "disposition": "superseded",
+      "reason": "Exclusive DDL/converter catalog proof for a removed PostgreSQL migration implementation, including obsolete semantic migration audit table. Native current-schema SQLite guards and edition refusal remain required."
     }
   ],
   "adapted_suites": [
@@ -1528,6 +1538,18 @@
     {
       "path": "okto_labs_pulse_community/tests/test_card7_delivery_ledger.py",
       "reason": "C1 removes historical identity fallback from the product. Former positive fallback cases now require fail-closed refusal. Full native envelope and exact delivered ledger identity preserve earlier attempts; future attempts and forged session/event/extra payload/delete event/Board are refused. Indexed query-plan and reopen assertions retained. Supersedes the prior pending-fallback disposition."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_sqlalchemy_research_decision_ledger.py",
+      "reason": "Full current schema, composed sessions, explicit realm and Spec architecture/execution contract. All 19 native CAS/replay/immutability/snapshot/derivation checks retained."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_f15_sqlite_only_boundary.py",
+      "reason": "Retains executable SQLite-only source/dependency/runtime audit and nonselectable server runtime. Removes assertions requiring retired converter and PostgreSQL proof files."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_kg_cognitive_source_adapter.py",
+      "reason": "Full current schema with immutable source guards. Retains native capture identity, CAS/races/replay and history integrity. Actual mutation is refused; independent reader tamper checks inject corrupt decoded rows without weakening DDL. Missing revision storage must fail, never return base-only history."
     }
   ],
   "removed_cases": [

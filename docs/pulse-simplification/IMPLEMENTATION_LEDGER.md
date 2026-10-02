@@ -2,6 +2,52 @@
 
 ## Estado para retomada
 
+### 2026-10-02 — C1/C3: fontes cognitivas atuais e retirada de provas de conversão
+
+Marco anterior publicado: Core75f771f3 / Community9c6108b1. Retiradas as suites
+test_c7_rdl_postgresql_contract.py e test_skb3_postgresql_trigger_proof_v1.py,
+exclusivas do DDL/conversor PostgreSQL removido, inclusive tabela antiga de auditoria
+de migração semântica. F15 não exige mais esses arquivos/conversores. Preservados
+auditoria de source/dependências SQLite-only, fábrica que recusa outro backend e
+seams portáveis já governados; nenhuma exceção criada. Disposições constam no JSON.
+
+F15 expôs ramo PostgreSQL de advisory lock em reserve_capture_identity_in_context.
+Removido somente esse ramo; reserva SQLite e recusa de backend não suportado
+permanecem. A suite CognitiveSource passa a usar schema completo e sessões
+compostas; captura é recuperada por sua identidade e isolada entre autores.
+
+No mesmo adapter, retirado _enumerate_base_only e seu fallback quando falta a
+tabela de revisões. Leitura incompleta agora falha, e reabertura recusa formato
+incompatível. Escrita exige ledger completo antes de stage; erro/remediação não
+sugerem upgrade. Birth revision-zero e revisões posteriores são partes do único
+contrato NATIVO e permanecem. Não há conversão nem exclusão automática.
+
+Fixtures de adulteração mantêm os guards: UPDATE de fingerprint/payload é recusado
+no banco; corrupção injetada nas linhas decodificadas testa independentemente
+a verificação de leitura. Não foram desativados triggers do produto. Preservados
+CAS, corrida entre writers, replay sem crescimento, histórico, seleção por Board/
+geração e limites de leitura. RDL também usa schema completo, realm explícito e
+contratos de arquitetura/execução da Spec, preservando todas as19 verificações.
+
+rdl-native1:19 aprovados. rdl-boundary-native1 registrou5 aprovados e o ramo PG
+detectado por F15. rdl-cognitive-native1 preserva reprodução dos3 casos que
+tentavam adulterar revisões com guards ativos. Rodada final rdl-cognitive-native2:
+74 aprovados (49 cognitive source,6 F15,19 RDL). Build final instalado e provado:
+dist-current-cognitive-storage2 / provenance-current-cognitive-storage2.json,
+Core851/914 e Community319/405 arquivos Python/payload byte-idênticos entre
+src/install/wheels. Processos novos, ambos src no PYTHONPATH; SPA sem mudança.
+closure-current-cognitive-storage2:exit0, oito budgets ZERO e READMEs validados.
+Ruff F/E9 e diff checks aprovados. Builds/rodadas intermediárias foram preservados.
+Coleta community10:6091/15 erros; community11:6092/15 erros (ante6084/17 em
+community9). São contagens de coleta, não execução integral.
+
+Próximo: test_kg_cognitive_source_revision_schema.py ainda mistura modelos/guards
+nativos, epochs/conversores antigos e reader de revisão-zero sem tabela filha.
+Investigar board_source_reader.py (checagem de existência da tabela em torno de1511)
+e retirar apenas compatibilidade/conversão, preservando leitura nativa e escopo.
+Outros bloqueios C3, C1 residual e C4 integral continuam abertos. T23/KG-10 pendentes.
+Não declarar entrega completa com base nesta rodada.
+
 ### 2026-10-02 — C1: retirada do fallback de identidade do outbox
 
 Marco anterior publicado: Core4a319114 / Community853f4a4b. Removida inferência
