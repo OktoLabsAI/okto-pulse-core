@@ -2950,6 +2950,12 @@
       "test": "renders the canonical score and summary without legacy dimension noise",
       "disposition": "superseded",
       "reason": "Aggregate score/summary rendering removed. Replaced by five-metric-only presentation; previous expandable details, edition changes, pagination, snapshots and errors retained. Three-dimensional fixture updated to five metrics."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_spec_validation_gate.py",
+      "test": "67 remaining lifecycle scenarios",
+      "disposition": "rewritten",
+      "reason": "All 67 functional methods moved to Community/tests/test_spec_validation_lifecycle_gate.py with native five-metric records, semantic authority and UoW commits. Final suite: 69 passed including two canonical cases. Retired Sprint-only parameter; native forward lifecycle retained. Missing execution contract refusal remains in test_execution_contract.py. Planning and lint acceptance are explicit fixture inputs, not E2E coverage. No product gates changed."
     }
   ]
 }

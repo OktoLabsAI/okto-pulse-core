@@ -2,6 +2,37 @@
 
 ## Estado para retomada
 
+### 2026-10-02 — C3: ciclo Spec Validation qualificado na persistência nativa
+
+Base publicada: Core 8c70be31 / Community 3a6220c4. Transferidos os 67
+cenários funcionais restantes de test_spec_validation_gate.py para Community
+test_spec_validation_lifecycle_gate.py; removida a suíte SQL antiga do Core.
+Correspondência de métodos verificada por AST, com renomeação completeness→confidence.
+Fixtures usam cinco métricas, arquitetura e contrato de execução atuais, links
+estruturados, realm local, CommunitySemanticSession e commits reais pelo UoW.
+Política e autoridade semântica permanecem reais, sem mudanças no produto.
+
+Variante Sprint retirada do teste de avanço; o cenário nativo permanece. Ausência
+de contrato continua coberta por test_execution_contract.py::
+test_missing_execution_contract_is_rejected_without_conversion. No avanço até
+Done, planejamento aceito continua entrada isolada e não certifica completude
+do plano; política delivery advisory é criada na fixture inicial e o gate
+cognitivo usa armazenamento descartável real. Requirement Lint aceito também
+é entrada explícita desta suíte, não evidência E2E de admissão.
+
+spec-lifecycle1: 51 aprovados/16 falhas de fixture antiga; lifecycle2: 15
+aprovados/uma falha de composição cognitiva. lifecycle3/4 identificaram autoridade
+obsoleta causada por reescrita da fixture após commit; resolvido criando a fixture
+já completa, sem alterar gates. lifecycle5: três aprovados. Execução final
+spec-lifecycle6: 69 aprovados (67 transferidos e dois canônicos), sem skips.
+provenance-spec-lifecycle1 confirma produto instalado idêntico ao par
+dist-spec-analytics1; nenhum código de produto mudou neste lote. Closure anterior
+closure-spec-analytics2 mantém oito budgets ZERO. Sem alteração de frontend.
+
+Continuar inventário C1/C3 de origens quality/policy, aliases e compatibilidade
+remanescente, seguido da qualificação integral C4 e versão final coordenada.
+T23/KG-10 seguem sem resposta nova. Este marco não encerra o plano.
+
 ### 2026-10-02 — C1/C3: Analytics e export usam o registro Spec Validation atual
 
 Base publicada: Core 657b36be / Community 99c932b8, ambos com push confirmado.
