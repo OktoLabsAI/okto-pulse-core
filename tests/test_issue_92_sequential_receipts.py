@@ -6,7 +6,7 @@ import pytest
 
 import test_code_traceability_application as support
 from okto_pulse.core.models.code_traceability import (
-    CodeInvestigationReceiptSubmissionV2,
+    CodeInvestigationReceiptSubmission,
 )
 from okto_pulse.core.domain.code_traceability import (
     CodeInvestigationReceiptCurrentness,
@@ -20,7 +20,7 @@ from okto_pulse.core.services.code_traceability_gate import (
 
 
 class Scenario:
-    def __init__(self, *, version=2):
+    def __init__(self):
         self.clock = support.MutableClock()
         self.store = support.FakeInvestigationStore()
         self.service = support.CodeInvestigationService(
@@ -28,7 +28,6 @@ class Scenario:
             clock=self.clock,
             id_factory=support.StableIds(),
         )
-        self.version = version
         self.count = 0
         self.source_ref = None
         self.scope = support.selector_scope_digest_for_card_targets(
@@ -72,20 +71,14 @@ class Scenario:
         workspace_changes = changes.pop("workspace", {})
         payload["workspace_state"].update(workspace_changes)
         payload.update(changes)
-        kwargs = {}
-        if self.version == 2:
-            payload.update(contract_version=2, outcome="evidence_applicable")
-            command = CodeInvestigationReceiptSubmissionV2.model_validate(payload)
-            kwargs["delivery_context"] = support.DeliveryContext.BROWNFIELD
-        else:
-            command = support.CodeInvestigationReceiptSubmission.model_validate(payload)
+        command = CodeInvestigationReceiptSubmission.model_validate(payload)
         result = await self.service.submit_receipt(
             command,
             actor_id=actor,
             actor_kind="agent",
             freshness_seconds=1800,
             store=self.store,
-            **kwargs,
+            delivery_context=support.DeliveryContext.BROWNFIELD,
         )
         self.source_ref = result.receipt.source_ref
         return result.receipt
@@ -96,9 +89,8 @@ class Scenario:
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("version", [1, 2])
-async def test_new_revision_accepts_real_resolution_execution_and_replay(version):
-    scenario = Scenario(version=version)
+async def test_new_revision_accepts_real_resolution_execution_and_replay():
+    scenario = Scenario()
     traces = support.FakeTraceabilityStore(scenario.store)
     traces.targets["target-1"] = support.sample_target()
     targets = support.ImplementationTargetService(
@@ -157,29 +149,28 @@ async def test_new_revision_accepts_real_resolution_execution_and_replay(version
         **common,
     )
     assert refreshed.resolution.workspace_state.declared_revision == "revision-B"
-    if version == 2:
-        context = support.CodeTraceabilityContext(
-            board_id="board-1",
-            subject_type=support.CodeTraceabilitySubjectType.CARD,
-            subject_id="card-1",
-            subject_version=4,
-            profile=support.CodeTraceabilityProjectionProfile.FULL,
-            context_scope=support.CodeTraceabilityContextScope.GATE,
-            heads=(scenario.head,),
-            receipts=(before, after),
-            targets=tuple(traces.targets.values()),
-            resolutions=(refreshed.resolution,),
-            executions=(executed.record,),
+    context = support.CodeTraceabilityContext(
+        board_id="board-1",
+        subject_type=support.CodeTraceabilitySubjectType.CARD,
+        subject_id="card-1",
+        subject_version=4,
+        profile=support.CodeTraceabilityProjectionProfile.FULL,
+        context_scope=support.CodeTraceabilityContextScope.GATE,
+        heads=(scenario.head,),
+        receipts=(before, after),
+        targets=tuple(traces.targets.values()),
+        resolutions=(refreshed.resolution,),
+        executions=(executed.record,),
+    )
+    gate = CodeTraceabilityGateEvaluator(clock=scenario.clock)
+    for destination in ("validation", "done"):
+        result = gate.evaluate_transition(
+            context,
+            CodeTraceabilitySettings(mode="blocking"),
+            from_status="in_progress",
+            to_status=destination,
         )
-        gate = CodeTraceabilityGateEvaluator(clock=scenario.clock)
-        for destination in ("validation", "done"):
-            result = gate.evaluate_transition(
-                context,
-                CodeTraceabilitySettings(mode="blocking"),
-                from_status="in_progress",
-                to_status=destination,
-            )
-            assert result.allowed, result.blockers
+        assert result.allowed, result.blockers
 
 
 @pytest.mark.asyncio

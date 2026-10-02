@@ -1400,6 +1400,46 @@
     {
       "path": "okto_labs_pulse_community/tests/test_skb_b14_policy_constraint_projection.py",
       "reason": "Removed automatic retirement of legacy rule Constraints. Native semantic projection/replay/rebuild/lineage/repair retained; foreign Constraint payload stays unchanged. Removed fake support for retired Constraint scan/mutation queries. Current graph schema admission separately verifies byte-inert refusal."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_af38_rebuild_artifact_provider.py",
+      "reason": "Retained native rebuild event/report/generation/confirmation/manifest provider and fail-closed coverage; removed only obsolete schema rebaseline audit segment."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_issue_92_sequential_receipts.py",
+      "reason": "One current contextual receipt DTO. Removed predecessor version parameter; retained sequential revision resolution/execution/replay, transition gates, same-revision conflict and independent corroboration tests."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_mcp_mutation_granular_permissions.py",
+      "reason": "Removed parameters referencing retired copy-knowledge/copy-QA tools. Existing current tool permission-denial tests retained."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_rest_ideation_refinement_scope.py",
+      "reason": "Scope-denial matrices now construct the current DeriveSpecCommand with its required data; authority assertions unchanged."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_delivery_evidence_integration.py",
+      "reason": "Current contextual receipt hash, composed session, explicit architecture/execution/verification/contribution contracts. Preserved native signed evidence, CAS, read-only projection, human waivers, revocation, audit immutability, race and transport denial tests. Removed historical Spec-proof injection; obsolete transport remains rejected without writes."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_delivery_progress.py",
+      "reason": "Current realm and architecture fixtures, composed session; native progress/replay/freeze/history/transport assertions retained."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_delivery_inline_execution.py",
+      "reason": "Current contextual hash and explicit contribution to actual criterion replace obsolete unallocated Card obligation; real origin, transaction rollback, actor separation, allowlist replay and REST/MCP retained."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_evidence_v2_adapter.py",
+      "reason": "Signed fixture declares automated_test and a qualified criterion linked to its native requirement. Receipt digest binds current authored verification semantics."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_multicard_delivery_integration.py",
+      "reason": "Current contextual hash; native cross-card proof isolation, partial contribution, criterion verdict and source-currentness assertions retained."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_single_agent_spec_execution.py",
+      "reason": "Receipt seed uses current contextual hash. Full T01 runtime qualification remains pending; collection alone does not qualify the scenario."
     }
   ],
   "removed_cases": [
@@ -1936,6 +1976,30 @@
       "test": "legacy_unknown parametrizations of blocking/advisory assessor admission",
       "disposition": "superseded",
       "reason": "No sentinel subject exists in the current contract; adapter now rejects missing/stale authority before assessment, covered by test_subject_snapshot_refuses_missing_or_stale_authority_without_writes. Real self/independent assessor cases retained."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_delivery_evidence_integration.py",
+      "test": "test_upgrade_adds_only_delivery_table_and_is_idempotent",
+      "disposition": "superseded",
+      "reason": "Exclusive incremental predecessor upgrade. Fresh schema admission/refusal is covered by test_current_relational_schema.py; native audit integrity remains in this suite."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_af38_rebuild_artifact_provider.py",
+      "test": "test_af38_default_rebuild_artifact_consumers_use_registry_provider: rebaseline segment",
+      "disposition": "superseded",
+      "reason": "Only removed manifest-schema conversion audit; current rebuild artifact consumers remain tested."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_issue_92_sequential_receipts.py",
+      "test": "test_new_revision_accepts_real_resolution_execution_and_replay[1]",
+      "disposition": "superseded",
+      "reason": "Retired receipt contract variant. Current contextual case and its native gate assertions remain."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_mcp_mutation_granular_permissions.py",
+      "test": "test_copy_to_card_looks_up_source_before_permission_denial: copy_knowledge / copy_qa parameters",
+      "disposition": "superseded",
+      "reason": "Retired duplicate-copy MCP tools; current mockup tool parameter retained."
     }
   ]
 }

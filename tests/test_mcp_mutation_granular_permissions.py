@@ -258,16 +258,6 @@ async def test_submit_spec_validation_precheck_accepts_legacy_evaluate_permissio
             "card.copy_from_spec.mockups",
             {"screen_ids": ["screen-1", "screen-2"]},
         ),
-        (
-            server.okto_pulse_copy_knowledge_to_card,
-            "card.copy_from_spec.knowledge",
-            {"knowledge_ids": ["knowledge-1", "knowledge-2"]},
-        ),
-        (
-            server.okto_pulse_copy_qa_to_card,
-            "card.copy_from_spec.qa",
-            {},
-        ),
     ),
 )
 async def test_copy_to_card_looks_up_source_before_permission_denial(

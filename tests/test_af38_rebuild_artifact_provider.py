@@ -38,10 +38,6 @@ from okto_pulse.core.kg.rebuild_sources import (
     KGRebuildSourceManifest,
     RebuildSourceRow,
     RebuildSourceSet,
-    RevalidationResult,
-    SourceSetRevalidation,
-    _append_spec_manifest_rebaseline_audit,
-    read_spec_manifest_rebaseline_audit,
 )
 
 
@@ -153,20 +149,6 @@ def test_af38_default_rebuild_artifact_consumers_use_registry_provider() -> None
         preflight_hash="d" * 64,
     )
     assert store.exists(RebuildAuditKey("source_manifest", "_global", artifact_id=manifest.manifest_ref))
-
-    _append_spec_manifest_rebaseline_audit(
-        None,
-        board_id=board_id,
-        manifest_ref=manifest.manifest_ref,
-        result=RevalidationResult(
-            outcome=SourceSetRevalidation.REBASELINE,
-            rebaselined_source_refs=("spec:af38",),
-            from_manifest_schema_version=1,
-            to_manifest_schema_version=2,
-        ),
-        recorded_at=datetime.now(timezone.utc).isoformat(),
-    )
-    assert read_spec_manifest_rebaseline_audit(None, board_id)[0]["manifest_ref"] == manifest.manifest_ref
 
     audit = ConfirmationConsumptionAuditRecorder().record(
         board_id=board_id,

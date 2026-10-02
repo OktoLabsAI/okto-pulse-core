@@ -2,6 +2,44 @@
 
 ## Estado para retomada
 
+### 2026-10-02 — C3: fixtures nativas de entrega e coleta do Core
+
+Marco anterior publicado: Core c3fe07a9 / Community e3fb4824. Alterações somente
+em testes e rastreabilidade; produto e SPA sem alteração. Recibos das fixtures
+usam hash contextual atual, contexto/outcome tipados; Specs declaram arquitetura,
+execução, população completa, requisito qualificado, cenário/método e contribuição
+explícita. Sessões usam composição Community. Nenhum alias ou fallback restaurado.
+Inline usa a obrigação real ac:ac, preservando rollback, replay, separação de ator,
+allowlist e REST/MCP. Testes de evidência preservam assinatura, currentness, CAS,
+corrida SQLite, imutabilidade, waiver humano/revogação e isolamento multicard.
+
+Retirado somente o teste exclusivo de upgrade da tabela de entrega e a inserção
+de prova Spec histórica no teste de rejeição do transporte antigo. Rejeição sem
+efeitos continua testada. No Core, retirado segmento exclusivo de rebaseline de
+manifesto, parâmetros de tools de cópia já removidas e variante antiga de recibo
+da issue92. Contrato contextual, corroboration/conflict, rebuild nativo, gates e
+negações atuais permanecem. Matrizes DeriveSpec recebem data obrigatório.
+Disposições explícitas em clean-break-test-dispositions.json. Hash no seed T01
+também atualizado, mas a execução integral T01 NÃO foi qualificada neste marco.
+
+Verificação: native-c3-core-collection2 = 93 aprovados; native-delivery-fixtures8 =
+93 aprovados. Falhas exploratórias e correções preservadas nos logs
+native-delivery-fixtures1/4/7, native-delivery-diagnosis1/2/3/5/6,
+native-inline-fixtures2/3 e native-c3-core-collection1. Não relaxado gate para
+acomodar fixture antiga. provenance-delivery-fixtures1.json comprova o par
+dist-native-policy-projection1 instalado: Core851/914, Community318/404 Python/
+payload byte-idênticos antes dos testes. closure-native-delivery-fixtures1 exit0,
+oito budgets ZERO, README validado; Ruff F/E9 e diff checks aprovados.
+
+Coleta inicial: Core13667/4 erros; Community5607/90 erros. Após adaptação:
+c3-collection-refresh-core2 = 13760 testes, ZERO erros; Community refresh2 =
+6021 testes, 30 erros (29 suites ainda referenciam migradores/modelos retirados;
+benchmark separado exige PULSE_BENCHMARK_TEST_HELPERS). Coleta não é execução.
+Não interpretar esse resultado como qualificação integral. C1/C3 continuam com
+normalizadores/resíduos e suites mistas; próximo bloco é adaptar os contratos de
+armazenamento nativo preservando sua recusa de drift. C4, T23/KG-10 e fechamento
+integral do plano continuam pendentes. Sem alteração de frontend neste marco.
+
 ### 2026-10-02 — Projeção sem conversão automática de Constraints antigas
 
 Marco anterior publicado: Corea364c9a5 / Community5659fd20. Retirados

@@ -201,7 +201,7 @@ def _ideation_matrix():
             EvaluateComplexityUseCase(),
             EvaluateComplexityCommand("ideation-b", {}),
         ),
-        (DeriveSpecUseCase(), DeriveSpecCommand("ideation-b")),
+        (DeriveSpecUseCase(), DeriveSpecCommand("ideation-b", data)),
         (
             ListIdeationSnapshotsUseCase(),
             ListIdeationSnapshotsCommand("ideation-b"),
@@ -321,7 +321,7 @@ def _ideation_write_matrix():
         (MoveIdeationUseCase(), MoveIdeationCommand("ideation-b", data)),
         (DeleteIdeationUseCase(), DeleteIdeationCommand("ideation-b")),
         (EvaluateComplexityUseCase(), EvaluateComplexityCommand("ideation-b", {})),
-        (DeriveSpecUseCase(), DeriveSpecCommand("ideation-b")),
+        (DeriveSpecUseCase(), DeriveSpecCommand("ideation-b", data)),
         (
             CreateIdeationKnowledgeUseCase(),
             CreateIdeationKnowledgeCommand("ideation-b", data),
