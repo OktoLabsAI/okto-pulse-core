@@ -2,6 +2,53 @@
 
 ## Estado para retomada
 
+### 2026-10-02 — C1/C3: resposta e apresentação de Spec Validation em cinco métricas
+
+Base publicada: Core ffcc5f2e / Community 57cecc3c, ambos com push confirmado.
+SpecValidationResponse passa a exigir o registro nativo completo: cinco métricas
+e justificativas, autoria, identidade coerente, edição, snapshots selados, outcome,
+fences, timestamp e limiares. Extra fields são recusados, inclusive antigos
+score/summary/completeness/general_justification com valor null. Limiares possuem
+shape fechado com as cinco políticas atuais; não há preenchimento de registros
+esparsos nem cálculo de valores substitutos. A listagem e o leitor Community do
+ciclo/auditoria aplicam esse contrato, preservando as verificações de permissão.
+Projeção resumida usa confidence/clarity/assertiveness/decidability/ambiguity.
+
+Retirado min_spec_completeness da configuração tipada e do resolver; entrada
+nesse campo é recusada explicitamente em BoardSettings. Frontend de histórico
+remove renderizadores de score agregado e três métricas; apresenta somente as
+cinco dimensões e suas justificativas. Mantidos Current/Previous, erros, detalhes,
+pinpoints, paginação e demais controles. Fixtures antigas reescritas como registros
+completos; o teste de persistência nativa agora verifica também leitura pelo serviço
+em nova sessão. Os pinpoints dessa fixture são selados explicitamente como entrada
+de teste; admissão pública continua coberta pelas suítes próprias.
+
+Evidência final: spec-metrics-core2 109 aprovados; spec-metrics-community2 53
+aprovados; spec-metrics-front1 90 aprovados (histórico/submissão e configuração de
+Board/Header). Core1 tinha 108 aprovados; Community1 52 aprovados/uma asserção
+antiga general_justification na projeção autorizada, corrigida para confidence.
+As negativas de permissão continuam aprovadas. Build TypeScript/Vite aprovado.
+Ruff F/E9 aprovado, inclusive fixtures novas em cada árvore de testes.
+
+dist-spec-metrics2 instalado e provenance-spec-metrics2 confirma src/install/wheel
+byte-idênticos: Core 847 Python/910 payload; Community 319/405. Wheels SHA256:
+Core 9c3a99d98968031e14455d65ed935edda1768dcb202454ed414049cfa27eb966;
+Community a30ad2f1589556f3f42154d13babd82b96e3bb4a61aac150a1630c9340626293.
+SPA embarcada 9621192cd324222e3dc83a7730bc0a09d4fbeb9962cba85cbd0a1bc5aca621a3.
+Catálogo/manifesto regenerados oficialmente sem diff. Closure1 mostrou apenas
+drift da matriz README (budgets ZERO); matrizes atualizadas e closure-spec-metrics2
+aprovado com oito budgets ZERO. Sem release/tag/deploy/dados de usuário.
+
+Próximo escopo obrigatório, identificado nos consumidores: Analytics ainda possui
+completeness de Spec Validation em classify_spec_violation, aggregate_spec_validation_gate,
+timeline/detalhe/last_completeness e frontend BoardDashboard/OverviewDashboard/EntityDetail.
+Remover somente a dimensão antiga de SPEC; completeness/estimated_completeness de
+Task/conclusão continuam domínio atual. Verificar também export do registro completo
+(hoje valida pinpoints separadamente). Isso não é nova funcionalidade: são consumidores
+remanescentes do contrato retirado. Depois, adaptar os cenários funcionais da suíte antiga
+test_spec_validation_gate.py e demais superfícies C1/C3 antes da qualificação integral C4.
+T23/KG-10 continuam sem decisão nova. Não declarar o plano completo por este lote.
+
 ### 2026-10-02 — C1/C3: histórico de Spec Validation exige edição nativa
 
 Base publicada: Core 1ac15583 / Community f3bea628 (ambos com push confirmado).

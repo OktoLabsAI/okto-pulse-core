@@ -3992,51 +3992,60 @@ class SpecValidationSubmit(BaseModel):
     pinpoints: list[SpecValidationPinpoint] | None = None
 
 
-class SpecValidationResponse(BaseModel):
-    """History record bound to its recorded native Spec edition."""
+class SpecValidationThresholds(BaseModel):
+    """The five thresholds recorded by the native writer."""
 
-    id: str | None = None
-    validation_id: str | None = None
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    min_spec_confidence: int = Field(ge=0, le=100)
+    min_spec_clarity: int = Field(ge=0, le=100)
+    min_spec_assertiveness: int = Field(ge=0, le=100)
+    min_spec_decidability: int = Field(ge=0, le=100)
+    max_spec_ambiguity: int = Field(ge=0, le=100)
+
+
+class SpecValidationResponse(BaseModel):
+    """Native five-metric record; incompatible records are never normalized."""
+
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    id: str = Field(min_length=1)
+    validation_id: str = Field(min_length=1)
     validation_edition: int = Field(ge=1, strict=True)
-    is_current: bool = False
-    spec_id: str | None = None
-    board_id: str | None = None
-    reviewer_id: str | None = None
-    reviewer_name: str | None = None
-    score: float | None = None
-    summary: str | None = None
-    confidence: int | None = None
-    confidence_justification: str | None = None
-    clarity: int | None = None
-    clarity_justification: str | None = None
-    decidability: int | None = None
-    decidability_justification: str | None = None
-    completeness: int | None = None
-    completeness_justification: str | None = None
-    assertiveness: int | None = None
-    assertiveness_justification: str | None = None
-    ambiguity: int | None = None
-    ambiguity_justification: str | None = None
-    general_justification: str | None = None
-    recommendation: str | None = None
-    pinpoints: list[SpecValidationPinpointResponse] | None = None
-    outcome: str | None = None
-    receipt_id: str | None = None
-    subject_version: int | None = Field(default=None, ge=1)
-    head_revision: int | None = Field(default=None, ge=1)
-    digests: dict[str, str] | None = None
-    threshold_violations: list[str] | None = None
-    resolved_thresholds: dict | None = None
-    created_at: str | None = None
+    is_current: bool
+    spec_id: str = Field(min_length=1)
+    board_id: str = Field(min_length=1)
+    reviewer_id: str = Field(min_length=1)
+    reviewer_name: str | None
+    confidence: int = Field(ge=0, le=100, strict=True)
+    confidence_justification: str = Field(min_length=1)
+    clarity: int = Field(ge=0, le=100, strict=True)
+    clarity_justification: str = Field(min_length=1)
+    decidability: int = Field(ge=0, le=100, strict=True)
+    decidability_justification: str = Field(min_length=1)
+    assertiveness: int = Field(ge=0, le=100, strict=True)
+    assertiveness_justification: str = Field(min_length=1)
+    ambiguity: int = Field(ge=0, le=100, strict=True)
+    ambiguity_justification: str = Field(min_length=1)
+    recommendation: Literal["approve", "reject"]
+    pinpoints: list[SpecValidationPinpointResponse]
+    outcome: Literal["success", "failed"]
+    receipt_id: str = Field(min_length=1)
+    subject_version: int = Field(ge=1, strict=True)
+    head_revision: int = Field(ge=1, strict=True)
+    digests: dict[str, str]
+    threshold_violations: list[str]
+    resolved_thresholds: SpecValidationThresholds
+    created_at: str = Field(min_length=1)
     spec_status: str | None = None
     active: bool | None = None
     edition: int = Field(ge=1, strict=True)
     lifecycle_state: Literal["current", "previous"] | None = None
 
     @model_validator(mode="after")
-    def require_compatible_identity(self) -> "SpecValidationResponse":
-        if not self.id and not self.validation_id:
-            raise ValueError("spec_validation_identity_required")
+    def require_native_identity(self) -> "SpecValidationResponse":
+        if self.id != self.validation_id or self.id != self.receipt_id:
+            raise ValueError("spec_validation_identity_mismatch")
         if self.edition != self.validation_edition:
             raise ValueError("spec_validation_edition_mismatch")
         return self
@@ -4264,6 +4273,13 @@ class FlowHealthSettingsRestore(BaseModel):
 class BoardSettings(BaseModel):
     """Board-level settings for governance rules."""
 
+    @model_validator(mode="before")
+    @classmethod
+    def refuse_removed_spec_threshold(cls, value: Any) -> Any:
+        if isinstance(value, dict) and "min_spec_completeness" in value:
+            raise ValueError("min_spec_completeness_removed")
+        return value
+
     analytics: AnalyticsSettings = Field(default_factory=AnalyticsSettings)
 
     max_scenarios_per_card: int = 3  # max test scenarios a single card can be linked to
@@ -4363,9 +4379,6 @@ class BoardSettings(BaseModel):
     min_spec_assertiveness: int = Field(default=80, ge=0, le=100)
     min_spec_decidability: int = Field(default=80, ge=0, le=100)
     max_spec_ambiguity: int = Field(default=30, ge=0, le=100)
-    # Compatibility-only setting for historical three-dimensional records.
-    # It is not part of the canonical five-metric gate.
-    min_spec_completeness: int = Field(default=80, ge=0, le=100)
     # Max ambiguity gate for ideation completion — opt-in (spec 2485780b).
     # When enabled, blocks ONLY the evaluating→done transition if the ideation
     # has no ambiguity score or scope_assessment.ambiguity exceeds the

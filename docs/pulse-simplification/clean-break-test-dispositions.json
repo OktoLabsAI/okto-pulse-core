@@ -2944,6 +2944,12 @@
       "test": "keeps a null-edition legacy validation in Previous and never promotes it to Current",
       "disposition": "rewritten",
       "reason": "Positive legacy display replaced by server-refusal feedback; native edition changes/current/previous and pagination remain covered."
+    },
+    {
+      "path": "okto_labs_pulse_community/frontend/src/components/specs/__tests__/SpecValidationHistoryPanel.test.tsx",
+      "test": "renders the canonical score and summary without legacy dimension noise",
+      "disposition": "superseded",
+      "reason": "Aggregate score/summary rendering removed. Replaced by five-metric-only presentation; previous expandable details, edition changes, pagination, snapshots and errors retained. Three-dimensional fixture updated to five metrics."
     }
   ]
 }

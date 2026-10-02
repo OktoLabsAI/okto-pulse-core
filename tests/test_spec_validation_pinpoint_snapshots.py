@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+from spec_validation_fixtures import native_validation
+
 import pytest
 
 from okto_pulse.core.application.use_cases.base import (
@@ -59,7 +61,7 @@ def test_sealed_snapshot_round_trips_without_resolving_current_content() -> None
     assert SpecValidationPinpoint.from_dict(projected) == sealed
 
     response = SpecValidationResponse.model_validate(
-        {"id": "validation", "edition": 3, "validation_edition": 3, "pinpoints": [projected]}
+        native_validation("validation", 3, pinpoints=[projected])
     ).model_dump(exclude_none=True)
     assert response["pinpoints"][0]["anchor_snapshot"] == snapshot
 
@@ -71,7 +73,7 @@ def test_old_pinpoint_without_native_snapshot_is_rejected(snapshot):
     if snapshot is not None:
         data["anchor_snapshot"] = snapshot
     with pytest.raises(ValidationError):
-        SpecValidationResponse.model_validate({"id": "incompatible", "edition": 3, "validation_edition": 3, "pinpoints": [data]})
+        SpecValidationResponse.model_validate(native_validation("incompatible", 3, pinpoints=[data]))
 
 
 class _Projection:

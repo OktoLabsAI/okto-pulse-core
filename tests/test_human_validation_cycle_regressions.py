@@ -4,6 +4,8 @@ from pathlib import Path
 from types import SimpleNamespace
 import uuid
 
+from spec_validation_fixtures import native_validation
+
 import pytest
 from sqlalchemy import func, select
 
@@ -470,9 +472,9 @@ async def test_spec_current_previous_and_native_history_follow_real_reopen(
     board_id = _id("board")
     spec_id = _id("spec")
     validations = [
-        {"id": "prior-edition", "edition": 3, "validation_edition": 3, "outcome": "success"},
-        {"id": "attempt-1", "edition": 4, "validation_edition": 4, "outcome": "failed"},
-        {"id": "attempt-2", "edition": 4, "validation_edition": 4, "outcome": "success"},
+        native_validation("prior-edition", 3, outcome="success"),
+        native_validation("attempt-1", 4, outcome="failed"),
+        native_validation("attempt-2", 4, outcome="success"),
     ]
     async with db_factory() as db:
         db.add(Board(id=board_id, name="History", owner_id=_ACTOR, settings={}))

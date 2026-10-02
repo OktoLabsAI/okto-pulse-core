@@ -12144,7 +12144,6 @@ class SpecService:
             ),
             "min_spec_confidence": int(settings.get("min_spec_confidence", 70)),
             "min_spec_clarity": int(settings.get("min_spec_clarity", 80)),
-            "min_spec_completeness": int(settings.get("min_spec_completeness", 80)),
             "min_spec_assertiveness": int(settings.get("min_spec_assertiveness", 80)),
             "min_spec_decidability": int(settings.get("min_spec_decidability", 80)),
             "max_spec_ambiguity": int(settings.get("max_spec_ambiguity", 30)),
@@ -12699,8 +12698,10 @@ class SpecService:
 
         validations = list(spec.validations or [])
         from okto_pulse.core.domain.spec_validation import require_spec_validation_edition
+        from okto_pulse.core.models.schemas import SpecValidationResponse
         for validation in validations:
             require_spec_validation_edition(validation)
+            SpecValidationResponse.model_validate(validation)
         pointer_id = getattr(spec, "current_validation_id", None)
         pointer = next((v for v in validations if v.get("id") == pointer_id), None)
         current_id = (
