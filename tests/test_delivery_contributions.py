@@ -106,7 +106,7 @@ def test_implementation_requires_typed_declarations_before_store_admission():
     dict(kind="implementation", execution_id="execution", bindings=[dict(obligation_ref="fr:a", contribution="complete")]),
     dict(kind="test", scenario_id="scenario", obligation_refs=["fr:a"], implementation_ids=["implementation"]),
     dict(kind="revoke", record_id="record"),
-    dict(kind="progress", progress=dict(source_state=dict(workspace_state="unknown", recoverability="unknown"), remaining="Inspect")),
+    dict(kind="progress", progress=dict(material_change="none", source_state=dict(workspace_state="unknown", recoverability="unknown"), remaining="Inspect")),
 ])
 def test_current_commands_have_one_round_trip_and_canonical_defaults(fields):
     value = CardDeliveryEvidenceInput(expected_card_version=1, expected_spec_edition=1,

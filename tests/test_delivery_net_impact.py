@@ -117,11 +117,11 @@ def test_large_but_valid_claim_does_not_bypass_projection_byte_bound():
     assert result["issues"][0]["code"] == "net_impact_payload_limit"
 
 
-def test_base_is_optional_for_history_but_never_invented_and_absence_preserves_digest():
-    legacy = DeliveryProgress(source_state=dict(workspace_state="unknown", recoverability="unknown"), remaining="Continue")
-    assert "impact_base_revision" not in legacy.model_dump()
+def test_base_is_optional_for_current_history_but_never_invented():
+    note = DeliveryProgress(material_change="none", source_state=dict(workspace_state="unknown", recoverability="unknown"), remaining="Continue")
+    assert note.model_dump()["impact_base_revision"] is None
     with pytest.raises(ValueError, match="impact_base_scope_required"):
-        DeliveryProgress(**legacy.model_dump(), impact_base_revision=A)
-    scoped = DeliveryProgress(source_state=dict(workspace_state="clean", recoverability="declared_commit", source_ref="source", declared_revision=B),
+        DeliveryProgress.model_validate({**note.model_dump(), "impact_base_revision": A})
+    scoped = DeliveryProgress(material_change="source", source_state=dict(workspace_state="clean", recoverability="declared_commit", source_ref="source", declared_revision=B),
                               remaining="Review", impact_base_revision=A, impact_delta=ImpactEvidence(files=[file("created")]))
     assert scoped.model_dump()["impact_base_revision"] == A

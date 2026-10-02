@@ -4,7 +4,7 @@ import pytest
 from pydantic import ValidationError
 
 from okto_pulse.core.domain.delivery_progress import (
-    DeliveryProgress, progress_blocks_execution, progress_change_scope,
+    DeliveryProgress, progress_blocks_execution,
 )
 
 NOW = datetime(2026, 9, 19, tzinfo=timezone.utc)
@@ -61,15 +61,16 @@ def test_closed_change_contract_rejects_missing_scope_or_contradiction(changes):
         progress(**changes)
 
 
-def test_legacy_dirty_is_uncertain_scoped_work_without_rewriting_its_payload():
+@pytest.mark.parametrize("version", ["delivery-progress/v1", "delivery-progress/v2"])
+def test_missing_declaration_is_rejected_without_inference(version):
     data = progress().model_dump()
-    data["contract_version"] = "delivery-progress/v1"
+    data["contract_version"] = version
     data.pop("material_change")
-    value = DeliveryProgress.model_validate(data)
-    assert value.model_dump() == data
-    assert progress_change_scope(value) == "targets"
-    assert blocked(value) and not blocked(value, target="other")
-    data["source_state"]["workspace_state"] = "unknown"
-    assert progress_change_scope(DeliveryProgress.model_validate(data)) == "none"
-    data["impact_delta"] = {"files": [dict(repo="core", path="a.py", change_kind="modified")]}
-    assert blocked(DeliveryProgress.model_validate(data))
+    with pytest.raises(ValidationError):
+        DeliveryProgress.model_validate(data)
+
+
+def test_current_checkpoint_round_trip_has_canonical_defaults():
+    value = progress()
+    assert value.model_dump()["impact_base_revision"] is None
+    assert DeliveryProgress.model_validate_json(value.model_dump_json()) == value

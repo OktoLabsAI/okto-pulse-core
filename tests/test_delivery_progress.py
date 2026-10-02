@@ -23,6 +23,7 @@ def command(**changes):
             "kind": "progress",
             "justification": "Parser changed, normalization still missing",
             "progress": {
+                "material_change": "unknown",
                 "source_state": {
                     "workspace_state": "dirty",
                     "recoverability": "external_workspace",
@@ -55,6 +56,7 @@ def test_dirty_progress_does_not_require_execution_commit_or_obligation():
         },
         {
             "progress": {
+                "material_change": "unknown",
                 "source_state": {
                     "workspace_state": "dirty",
                     "recoverability": "declared_commit",
@@ -64,6 +66,7 @@ def test_dirty_progress_does_not_require_execution_commit_or_obligation():
         },
         {
             "progress": {
+                "material_change": "unknown",
                 "source_state": {
                     "workspace_state": "dirty",
                     "recoverability": "unknown",
@@ -74,6 +77,7 @@ def test_dirty_progress_does_not_require_execution_commit_or_obligation():
         },
         {
             "progress": {
+                "material_change": "unknown",
                 "source_state": {
                     "workspace_state": "unknown",
                     "recoverability": "unknown",

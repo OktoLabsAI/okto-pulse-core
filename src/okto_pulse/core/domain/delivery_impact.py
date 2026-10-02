@@ -11,7 +11,7 @@ import json
 import re
 
 from okto_pulse.core.models.schemas import ImpactEvidence
-from okto_pulse.core.domain.delivery_progress import DeliveryProgress, progress_change_scope
+from okto_pulse.core.domain.delivery_progress import DeliveryProgress
 
 
 @dataclass(frozen=True)
@@ -34,7 +34,7 @@ class DeliveryImpactObservation:
 
 
 def progress_affects_impact_source(progress: DeliveryProgress, source_ref: str, target_sources: dict[str, str]) -> bool:
-    if progress_change_scope(progress) == "none":
+    if progress.material_change == "none":
         return False
     if progress.source_state.source_ref:
         return progress.source_state.source_ref == source_ref

@@ -24,6 +24,7 @@ def progress(ref="first"):
         "kind": "progress",
         "justification": "Partial parser",
         "progress": {
+                "material_change": "unknown",
             "source_state": {
                 "workspace_state": "dirty",
                 "recoverability": "external_workspace",

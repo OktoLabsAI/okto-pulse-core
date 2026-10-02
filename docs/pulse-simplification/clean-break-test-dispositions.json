@@ -2758,6 +2758,24 @@
       "test": "identifies legacy proof without inventing a complete declaration",
       "disposition": "superseded",
       "reason": "Old undeclared contribution display removed with alternate fact representation. Current explicit partial/complete and server readiness remain covered; previous storage is rejected by reader tests."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_delivery_progress_currentness.py",
+      "test": "test_legacy_dirty_is_uncertain_scoped_work_without_rewriting_its_payload",
+      "disposition": "superseded",
+      "reason": "Removed positive v1 inference; replaced by old-version/missing-declaration rejection and canonical current round-trip."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_delivery_progress_currentness.py",
+      "test": "test_progress_recomputes_exact_sets_candidates_and_pre_done_gate[legacy_dirty]",
+      "disposition": "superseded",
+      "reason": "Removed exclusive legacy_dirty case; explicit targets/none/unknown and all native authority/currentness cases retained."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_delivery_net_impact.py",
+      "test": "test_base_is_optional_for_history_but_never_invented_and_absence_preserves_digest",
+      "disposition": "superseded",
+      "reason": "Removed old digest preservation assertion; current optional base scope and no invented base remain covered."
     }
   ]
 }

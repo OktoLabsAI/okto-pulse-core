@@ -14,7 +14,7 @@ def body():
     return dict(contract_version="card-delivery-report/v1", expected_card_status="in_progress",
         batch=dict(contract_version="card-delivery-batch/v1", expected_card_version=1, expected_spec_edition=1,
             expected_delivery_revision=0, idempotency_key="final", entries=[dict(client_ref="last", kind="progress",
-                justification="Last checkpoint", progress=dict(source_state=dict(workspace_state="unknown", recoverability="unknown"), remaining="Review"))]),
+                justification="Last checkpoint", progress=dict(material_change="none", source_state=dict(workspace_state="unknown", recoverability="unknown"), remaining="Review"))]),
         report=dict(status="validation", conclusion="Completed work", completeness=100,
             completeness_justification="All assigned work", drift=0, drift_justification="Within scope"))
 

@@ -2,6 +2,46 @@
 
 ## Estado para retomada
 
+### 2026-10-02 — C1: checkpoint atual único, sem inferência v1
+
+Base publicada: Core 233a1479 / Community 28d23982. DeliveryProgress aceita
+somente delivery-progress/v2 e exige material_change tipado. Removidos serializer
+preserve_v1_digest e helper de inferência progress_change_scope. Consumidores de
+impacto, validade de recibos e histórico usam a declaração explícita; não há
+atribuição automática de none/targets/source a um checkpoint antigo. Notas atuais
+podem declarar none, inclusive quando o workspace externo está dirty. Regras de
+observação posterior, escopo, autoridade e lifecycle foram preservadas.
+
+Frontend e tipos retiram a origem/mensagem v1. Fixtures atuais declaram a mudança;
+casos exclusivos de compatibilidade têm disposição no JSON. Testes negativos
+recusam v1 e ausência de declaração; reader SQL recusa um registro incompatível
+semeado separadamente, preservando payload. A primeira fixture tentou alterar
+uma linha existente e foi corretamente bloqueada por card_delivery_audit_immutable;
+o teste foi corrigido sem remover esse guard.
+
+progress-current-core1: 69 aprovados e três falhas em
+test_delivery_reused_impact::test_completion_impact_policy_is_independent_of_advisory_delivery
+(off/advisory/require). Falha: semantic_subject_authority_missing_or_stale após
+a fixture escrever status/conclusions pelo db_factory genérico sobre modelos
+relacionais de teste. Esses três casos não estão qualificados; preservados para
+adaptação nativa, sem mock/relaxamento do gate. progress-current-core-rest1:
+58 aprovados, incluindo drift do catálogo MCP. Total Core aprovado: 127.
+progress-current-community1: 62 aprovados e duas falhas da fixture de imutabilidade
+acima; progress-current-refusal2: ambos aprovados. Total Community: 64.
+progress-current-front1: 23 aprovados. Build TypeScript/Vite aprovado.
+
+dist-progress-current1 instalado antes dos testes; provenance-progress-current1
+confirma 847 Python/910 payload Core e 319/405 Community byte-idênticos.
+closure-progress-current1 aprovado, oito budgets ZERO; READMEs renderizados e
+validados oficialmente. Catálogo regenerado oficialmente sem diff. SPA tree:
+30364020dee41450fa757d33c940a2f28fd8922ffcd1f492f1f410f711716877.
+Ruff F/E9 e diff verificados antes da publicação. Sem release/tag/deploy.
+
+Próximo: adaptar os três casos de conclusão acima à composição nativa, preservando
+a prova de independência entre policy de impacto e Delivery advisory. Restam os
+normalizadores inventariados C1 e auditoria C4 integral; decisões T23/KG-10 abertas.
+Esta rodada não representa regressão integral verde nem conclusão da iniciativa.
+
 ### 2026-10-02 — C1: fatos e projeções de Delivery sem representação alternativa
 
 Base publicada: Core 55303b99 / Community 580aca18. ImplementationDeliveryFact
