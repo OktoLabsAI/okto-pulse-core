@@ -2,6 +2,50 @@
 
 ## Estado para retomada
 
+### 2026-10-02 — requisito adicional: Connections configura o host local
+
+Usuário esclareceu: configuração e integração com harnesses disponíveis deve ser
+inteiramente realizável em Agents → Connections no host local. Remoto usa connector.
+Confirmação posterior: local salva/aplica diretamente no host; remoto fornece na
+interface os comandos de configuração do connector com opção de copiar e colar.
+Assessment atualizado com escopo, fronteira arquitetural e provas necessárias.
+AgentsModal.tsx atual apenas gera snippets para seis formatos MCP, não possui aba
+Connections nem aplicação local completa. Requisito ainda NÃO implementado; preservar
+segredos/grants, separar local/remoto e testar frontend e mecanismo descartável.
+Nenhuma configuração real de harness foi alterada.
+
+### 2026-10-02 — C1/C3: snapshot Checklist criado somente na entrada nativa
+
+Base publicada Core 982da1af / Community 99f7a069. get_validation_binding é somente
+leitura e retorna ausência sem criá-la. freeze_validation_binding é chamado pela
+entrada nativa de lifecycle; não é rota/tool de manutenção. Escritas exigem snapshot.
+Preflight admite preview da configuração atual em Draft/Review/Cancelled sem pin;
+snapshot existente permanece soberano. Approved/Validated/In Progress/Done sem
+snapshot são recusados, sem substituição pela configuração atual do Board.
+
+Provas: checklist-snapshot-core1, 79 aprovados; checklist-snapshot-community1,
+117 aprovados (Checklist SQL, Spec lifecycle e rotas). A prova adicional
+checklist-snapshot-lifecycle2 passou: reabertura/Review não possuem pin da nova
+edição, a transição real para Approved o cria. Testes SQL verificam leitura sem
+escrita, recusa de snapshot ausente, preservação após alteração do Board e novo
+snapshot na edição seguinte. Fixtures sem lifecycle agora fazem setup explícito
+do pin; não se restaurou criação lazy no produto. Frontend checklist-snapshot-front1,
+14 aprovados. Não houve alteração de assets ou inventário MCP.
+
+dist-checklist-snapshot1 instalado e provenance-checklist-snapshot1 confirmou
+igualdade src/install/wheel (Core 845 Python/908 payload; Community 319/405).
+SHA256 Core dc2a4d658a5658e1fe2150672a55fa448f5c7d74165a6b0d54f0a75972b647cf;
+Community 08e702a0cb9699590b112a57c4399e0ab6fced3cd1be3bcdbf2c16f8bd3f1310.
+closure-checklist-snapshot1 aprovado, oito budgets ZERO. Todos os processos dessa
+campanha terminaram; sem release/tag/deploy ou alteração de dados reais.
+
+Pendências Checklist confirmadas para a continuação: DTOs/SQL nullable e recibos
+importados ainda presentes. evaluate_spec_gate no serviço ainda consulta binding
+vivo, enquanto execução/preflight e validation-cycle usam snapshot; caracterizar
+a divergência antes de alterar o efeito do gate. synthetic_off ainda cobre Board
+sem binding e precisa ser conciliado com a criação nativa que já instala binding.
+Demais itens de C1–C4 e Connections local permanecem abertos. Não é entrega integral.
+
 ### 2026-10-02 — C1/C3: comandos Checklist sem aliases ou leitura sem edição
 
 Base publicada Core 4dc96196 / Community c88357ed. Start exige spec_edition e

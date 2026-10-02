@@ -10,6 +10,32 @@ O estado factual, inclusive o trabalho incompleto, está registrado abaixo e no 
 
 ## Direção
 
+### Requisito adicional autorizado — Agents → Connections no host local
+
+Em 2026-10-02 o usuário determinou que toda configuração e integração com os
+harnesses disponíveis no host local seja realizável pela interface
+**Agents → Connections**, sem depender de edição manual de arquivos ou comandos.
+A integração remota é feita pelo **connector**: a interface fornece os comandos
+de configuração com opção de copiar e colar, conforme confirmação posterior do
+usuário. No host local a configuração é salva e aplicada diretamente. Não tratar
+o filesystem do servidor remoto como o host do usuário.
+
+Implementação necessária: inventariar os harnesses efetivamente suportados e sua
+configuração nativa, detectar disponibilidade no host local, apresentar estado e
+configuração na aba Connections e aplicar/verificar a integração pelo mecanismo
+local. Preservar configurações de terceiros, credenciais e permissões de Agents;
+falhas devem ser explícitas e não produzir sucesso apenas por gerar um snippet.
+O Core declara os contratos/autoridade; descoberta, arquivos, processos e integrações
+concretas pertencem aos adapters Community. Incluir testes de frontend, persistência
+local descartável, negações e verificação de configuração. Este requisito não autoriza
+orquestração cognitiva de agentes nem mudança de contas/configurações reais durante
+os testes de desenvolvimento.
+
+Estado inspecionado: AgentsModal.tsx possui My Agents/Board Access e geração de
+snippets MCP para Claude Desktop/Code, Codex, Cursor, VS Code e Windsurf/Cline.
+Isso não satisfaz a configuração integral local. Falta auditar suporte/formatos
+reais e implementar o fluxo completo; não considerar esta seção como entrega.
+
 Adotar a 0.4.0 como instalação nova, com um único contrato de dados, execução e API.
 Retirar o suporte a bases, payloads e fluxos anteriores, inclusive os caminhos de
 compatibilidade introduzidos durante esta iniciativa. Não criar um pacote de legado,

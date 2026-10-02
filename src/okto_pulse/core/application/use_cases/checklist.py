@@ -119,6 +119,16 @@ async def _preflight(
         target_type=ChecklistTargetType.SPEC,
         phase=ChecklistPhase.SPEC_VALIDATION,
     )
+    if binding is None and subject.status in {"draft", "review", "cancelled"}:
+        # Preview the current Board configuration before validation begins.
+        # Reading a draft must not freeze policy for its future validation.
+        binding = await persistence.get_binding(
+            board_id=board_id,
+            target_type=ChecklistTargetType.SPEC,
+            phase=ChecklistPhase.SPEC_VALIDATION,
+        )
+    if binding is None:
+        raise RuntimeError("checklist_validation_binding_snapshot_missing")
     if not isinstance(binding, ChecklistBinding):
         raise RuntimeError("checklist_validation_binding_port_invalid")
     current = await persistence.get_current(

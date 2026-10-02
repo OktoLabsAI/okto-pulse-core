@@ -184,15 +184,15 @@ class ChecklistPersistencePort(Protocol):
         spec_edition: int,
         target_type: ChecklistTargetType,
         phase: ChecklistPhase,
-    ) -> ChecklistBinding:
+    ) -> ChecklistBinding | None:
         """Resolve the immutable governance snapshot for one Spec edition.
 
         The snapshot includes ``OFF`` and is keyed by board/Spec/edition. The
         adapter pins it atomically when the edition first enters its validation
-        lifecycle (with a first-read/write fallback for migrated rows). Later
+        lifecycle. This read never creates or repairs a missing snapshot. Later
         board binding/template changes never alter this result; they apply only
-        after the Spec returns to Draft and opens a new edition. Legacy subjects
-        without an edition continue to use ``get_binding``.
+        after the Spec returns to Draft and opens a new edition. ``None`` means
+        that validation has not begun; it cannot authorize an execution.
         """
 
         ...

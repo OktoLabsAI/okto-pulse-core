@@ -1,6 +1,7 @@
 """The native Checklist application boundary has one command and read contract."""
 
 from types import SimpleNamespace
+from dataclasses import replace
 from unittest.mock import AsyncMock
 
 import pytest
@@ -83,3 +84,34 @@ async def test_current_read_type_error_is_not_retried_without_edition():
                          board_id="board", spec_id="spec")
     persistence.get_current.assert_awaited_once()
     assert persistence.get_current.await_args.kwargs["spec_edition"] == 2
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status", ["approved", "validated", "in_progress", "done"])
+async def test_missing_validation_snapshot_cannot_use_live_governance(status):
+    persistence = SimpleNamespace(
+        get_spec_snapshot=AsyncMock(return_value=replace(subject(2), status=status)),
+        get_validation_binding=AsyncMock(return_value=None),
+        get_binding=AsyncMock(), get_current=AsyncMock(),
+    )
+    with pytest.raises(RuntimeError, match="snapshot_missing"):
+        await _preflight(SimpleNamespace(services=SimpleNamespace(checklists=persistence)),
+                         board_id="board", spec_id="spec")
+    persistence.get_binding.assert_not_called()
+    persistence.get_current.assert_not_called()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status", ["draft", "review", "cancelled"])
+async def test_prevalidation_preview_reads_board_without_creating_snapshot(status):
+    binding = ChecklistBinding(board_id="board", mode=ChecklistMode.BLOCKING, version=1)
+    persistence = SimpleNamespace(
+        get_spec_snapshot=AsyncMock(return_value=replace(subject(2), status=status)),
+        get_validation_binding=AsyncMock(return_value=None),
+        get_binding=AsyncMock(return_value=binding),
+        get_current=AsyncMock(return_value=None),
+    )
+    result = await _preflight(SimpleNamespace(services=SimpleNamespace(checklists=persistence)),
+                              board_id="board", spec_id="spec")
+    assert result.binding == binding
+    persistence.get_binding.assert_awaited_once()
