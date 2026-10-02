@@ -601,12 +601,8 @@ async def test_fr_and_ac_linked_task_ids_cleaned(db_session, board):
 
 
 @pytest.mark.asyncio
-async def test_dead_task_refs_pruned_not_blocking(db_session, board):
-    """A dead card ref predating the cascade fix must not deadlock the spec.
-
-    _validate_spec_linked_refs prunes ids of nonexistent cards from the
-    incoming payload instead of raising, so legacy specs stay editable.
-    """
+async def test_dead_task_refs_refused_without_pruning(db_session, board):
+    """Incompatible references are refused; native deletion owns cascade cleanup."""
     dead_id = str(uuid.uuid4())  # card never inserted / hard-deleted earlier
     spec = _spec_factory(
         board.id,
@@ -633,7 +629,9 @@ async def test_dead_task_refs_pruned_not_blocking(db_session, board):
             }
         ],
     }
-    # Must not raise despite the dead refs on both containers.
-    await services_main._validate_spec_linked_refs(db_session, spec, update_data)
-    assert update_data["functional_requirements"][0]["linked_task_ids"] == []
-    assert update_data["decisions"][0]["linked_task_ids"] == []
+    with pytest.raises(ValueError, match="linked_task_ids.*does not match"):
+        await services_main._validate_spec_linked_refs(db_session, spec, update_data)
+    assert update_data["functional_requirements"][0]["linked_task_ids"] == [dead_id]
+    assert update_data["decisions"][0]["linked_task_ids"] == [dead_id]
+    assert spec.functional_requirements[0]["linked_task_ids"] == [dead_id]
+    assert not db_session.dirty

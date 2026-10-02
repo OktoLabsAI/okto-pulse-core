@@ -1413,9 +1413,7 @@ class StructuredSpecEntityService:
             else [entity_id]
         )
         target_id_set = set(target_ids)
-        target_ref_set = self._target_ref_aliases(
-            command.entity_type, current_items, target_id_set
-        )
+        target_ref_set = target_id_set
 
         for item in current_items:
             item_id = self._entity_id(command.entity_type, item)
@@ -1542,25 +1540,6 @@ class StructuredSpecEntityService:
         return StructuredSpecEntityImpactReport(
             impacted_refs=refs, counts_by_type=counts
         )
-
-    def _target_ref_aliases(
-        self,
-        entity_type: str,
-        current_items: list[Any],
-        target_id_set: set[str],
-    ) -> set[str]:
-        refs = set(target_id_set)
-        if entity_type not in _TEXT_ENTITY_TYPES:
-            return refs
-        for index, item in enumerate(current_items):
-            item_id = self._entity_id(entity_type, item)
-            if item_id not in target_id_set:
-                continue
-            refs.add(str(index))
-            text = spec_child_text(item).strip()
-            if text:
-                refs.add(text)
-        return refs
 
     def _impact_fingerprint(self, impact: StructuredSpecEntityImpactReport) -> str:
         payload = sorted(

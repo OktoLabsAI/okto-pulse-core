@@ -272,6 +272,7 @@ from okto_pulse.core.services.reviewer_separation import (
 )
 from okto_pulse.core.services.spec_entity_canonicalization import (
     canonicalize_spec_requirement_fields,
+    validate_stored_spec_children,
 )
 from okto_pulse.core.services.spec_resource_propagation import (
     SpecResourcePropagationService,
@@ -8298,13 +8299,6 @@ async def _validate_spec_linked_refs(
             return update_data[field] if update_data[field] is not None else default
         return getattr(current_spec, field, None) or default
 
-    def _child_text(item: Any) -> str:
-        if isinstance(item, dict):
-            return str(
-                item.get("text") or item.get("title") or item.get("description") or ""
-            )
-        return str(item)
-
     def _child_id(item: Any) -> str | None:
         if isinstance(item, dict):
             raw = item.get("id")
@@ -8313,8 +8307,6 @@ async def _validate_spec_linked_refs(
 
     final_frs_raw: list[Any] = list(_final("functional_requirements", []) or [])
     final_acs_raw: list[Any] = list(_final("acceptance_criteria", []) or [])
-    final_frs: list[str] = [_child_text(item) for item in final_frs_raw]
-    final_acs: list[str] = [_child_text(item) for item in final_acs_raw]
     final_brs: list[dict] = [
         b if isinstance(b, dict) else b.model_dump()
         for b in (_final("business_rules", []) or [])
@@ -8340,6 +8332,8 @@ async def _validate_spec_linked_refs(
         for d in (_final("decisions", []) or [])
     ]
     final_trs_raw: list = list(_final("technical_requirements", []) or [])
+    for children in (final_frs_raw, final_acs_raw, final_trs_raw):
+        validate_stored_spec_children(children)
     from okto_pulse.core.domain.criterion_verification import validate_criterion_requirement_links
 
     validate_criterion_requirement_links(
@@ -8377,15 +8371,8 @@ async def _validate_spec_linked_refs(
         _final("project_structure", None)
     )
 
-    valid_fr_indices = {str(i) for i in range(len(final_frs))}
-    valid_ac_indices = {str(i) for i in range(len(final_acs))}
-    valid_fr_texts = {text for text in final_frs if text}
-    valid_ac_texts = {text for text in final_acs if text}
     valid_fr_ids = {child_id for item in final_frs_raw if (child_id := _child_id(item))}
     valid_ac_ids = {child_id for item in final_acs_raw if (child_id := _child_id(item))}
-    valid_tr_texts = {
-        _child_text(item) for item in final_trs_structured if _child_text(item)
-    }
     valid_tr_ids = {
         child_id for item in final_trs_structured if (child_id := _child_id(item))
     }
@@ -8397,37 +8384,23 @@ async def _validate_spec_linked_refs(
 
     _DIM_TARGET = {"requirements": "FR", "criteria": "AC"}
 
-    def _check_index_text_or_id(
-        refs: list[str],
-        valid_indices: set,
-        valid_texts: set,
-        valid_ids: set,
-        dim: str,
-        owner_label: str,
+    def _check_requirement_ids(
+        refs: list[str], valid_ids: set, dim: str, owner_label: str,
         target_label: str | None = None,
     ):
         target = target_label or _DIM_TARGET.get(dim, dim.upper()[:2])
         for ref in refs or []:
-            ref_str = str(ref)
-            if (
-                ref_str in valid_indices
-                or ref_str in valid_texts
-                or ref_str in valid_ids
-            ):
+            if isinstance(ref, str) and ref in valid_ids:
                 continue
-            max_idx = max(0, len(valid_indices) - 1)
             errors.append(
-                f"{owner_label}: linked_{dim} reference '{ref_str}' is not a valid 0-based index "
-                f"(0..{max_idx}), existing {target} text, or structured {target} id."
+                f"{owner_label}: linked_{dim} reference '{ref}' does not match an existing {target} id."
             )
 
     # business_rules.linked_requirements â†’ FR
     for br in final_brs:
         owner = f"BR '{br.get('id') or br.get('title') or '?'}'"
-        _check_index_text_or_id(
+        _check_requirement_ids(
             br.get("linked_requirements") or [],
-            valid_fr_indices,
-            valid_fr_texts,
             valid_fr_ids,
             "requirements",
             owner,
@@ -8437,10 +8410,8 @@ async def _validate_spec_linked_refs(
     # api_contracts.linked_rules â†’ BR.id
     for ct in final_contracts:
         owner = f"Contract '{ct.get('id') or (ct.get('method', '?') + ' ' + ct.get('path', '?'))}'"
-        _check_index_text_or_id(
+        _check_requirement_ids(
             ct.get("linked_requirements") or [],
-            valid_fr_indices,
-            valid_fr_texts | valid_tr_texts,
             valid_fr_ids | valid_tr_ids,
             "requirements",
             owner,
@@ -8457,10 +8428,8 @@ async def _validate_spec_linked_refs(
     # integration_requirements.linked_api_contracts â†’ api_contract.id
     for ir in final_irs:
         owner = f"IR '{ir.get('id') or ir.get('title') or '?'}'"
-        _check_index_text_or_id(
+        _check_requirement_ids(
             ir.get("linked_requirements") or [],
-            valid_fr_indices,
-            valid_fr_texts | valid_tr_texts,
             valid_fr_ids | valid_tr_ids,
             "requirements",
             owner,
@@ -8477,10 +8446,8 @@ async def _validate_spec_linked_refs(
     # observability_requirements.linked_integration_requirements â†’ IR.id
     for req in final_ors:
         owner = f"OR '{req.get('id') or req.get('title') or '?'}'"
-        _check_index_text_or_id(
+        _check_requirement_ids(
             req.get("linked_requirements") or [],
-            valid_fr_indices,
-            valid_fr_texts | valid_tr_texts,
             valid_fr_ids | valid_tr_ids,
             "requirements",
             owner,
@@ -8496,10 +8463,8 @@ async def _validate_spec_linked_refs(
     # test_scenarios.linked_criteria â†’ AC
     for sc in final_scenarios:
         owner = f"Scenario '{sc.get('id') or sc.get('title') or '?'}'"
-        _check_index_text_or_id(
+        _check_requirement_ids(
             sc.get("linked_criteria") or [],
-            valid_ac_indices,
-            valid_ac_texts,
             valid_ac_ids,
             "criteria",
             owner,
@@ -8509,10 +8474,8 @@ async def _validate_spec_linked_refs(
     valid_decision_ids = {d.get("id") for d in final_decisions if d.get("id")}
     for dec in final_decisions:
         owner = f"Decision '{dec.get('id') or dec.get('title') or '?'}'"
-        _check_index_text_or_id(
+        _check_requirement_ids(
             dec.get("linked_requirements") or [],
-            valid_fr_indices,
-            valid_fr_texts | valid_tr_texts,
             valid_fr_ids | valid_tr_ids,
             "requirements",
             owner,
@@ -8538,6 +8501,11 @@ async def _validate_spec_linked_refs(
             continue
         owner = f"FR '{fr.get('id') or fr.get('text') or idx}'"
         for tid in fr.get("linked_task_ids") or []:
+            all_task_ids.add(tid)
+            task_owners.setdefault(tid, []).append(owner)
+    for criterion in final_acs_raw:
+        owner = f"AC '{criterion['id']}'"
+        for tid in criterion.get("linked_task_ids") or []:
             all_task_ids.add(tid)
             task_owners.setdefault(tid, []).append(owner)
     for br in final_brs:
@@ -8581,35 +8549,10 @@ async def _validate_spec_linked_refs(
         existing_ids.update(card.id for card in cards)
         missing_task_ids = all_task_ids - existing_ids
         if missing_task_ids:
-            # linked_task_ids referencing hard-deleted cards is irrecoverable
-            # legacy garbage: delete_card has cascade-cleaned every container
-            # since 0.3.4, so a dead id can only predate that fix. Prune it
-            # instead of deadlocking the spec behind the fail-closed orphan
-            # gate (audit finding, board E2E 2026-09-17) â€” every other orphan
-            # class below still rejects the update.
-            for collection in (
-                final_scenarios,
-                final_brs,
-                final_contracts,
-                final_irs,
-                final_ors,
-                final_trs_structured,
-                final_decisions,
-            ):
-                for item in collection:
-                    if isinstance(item, dict) and item.get("linked_task_ids"):
-                        item["linked_task_ids"] = [
-                            tid
-                            for tid in item["linked_task_ids"]
-                            if tid not in missing_task_ids
-                        ]
-            for item in (*final_frs_raw, *final_acs_raw):
-                if isinstance(item, dict) and item.get("linked_task_ids"):
-                    item["linked_task_ids"] = [
-                        tid
-                        for tid in item["linked_task_ids"]
-                        if tid not in missing_task_ids
-                    ]
+            for task_id in sorted(missing_task_ids):
+                errors.append(
+                    f"{', '.join(task_owners[task_id])}: linked_task_ids reference '{task_id}' does not match an existing Card.id."
+                )
 
     project_task_ids, project_test_ids, project_evidence_ids = (
         project_structure_reference_ids(final_project_structure)
@@ -8644,8 +8587,7 @@ async def _validate_spec_linked_refs(
         more = f" (and {len(errors) - 10} more)" if len(errors) > 10 else ""
         raise ValueError(
             f"Cannot update spec: {len(errors)} orphan link reference(s) found. {joined}{more}. "
-            f'Use 0-based string indices ("0", "1", ...) for FR/AC; '
-            f"TR id/text is accepted for API contracts, IR/OR, and decisions; the BR.id for linked_rules, "
+            f"Use existing FR/AC IDs; FR/TR IDs for API contracts, IR/OR and decisions; BR.id for linked_rules, "
             f"the api_contract.id / integration_requirement.id for cross-resource links, "
             f"and an existing Card.id for linked_task_ids."
         )

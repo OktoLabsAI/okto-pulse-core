@@ -13,15 +13,22 @@ from test_delivery_evidence_domain import SNAPSHOT
 
 def install_complete_delivery_port(monkeypatch):
     from okto_pulse.core.services import delivery_evidence
+    from test_execution_contract import adopted_snapshot
+
+    snapshot = adopted_snapshot()
 
     async def load(scope):
+        implementations = tuple(replace(row, fact=replace(row.fact, scope=scope))
+                                for row in snapshot.effective_context.implementations)
+        tests = tuple(replace(row, fact=replace(row.fact, scope=scope))
+                      for row in snapshot.effective_context.tests)
         return replace(
-            SNAPSHOT,
+            snapshot,
             scope=scope,
-            implementations=tuple(
-                replace(i, scope=scope) for i in SNAPSHOT.implementations
-            ),
-            tests=tuple(replace(t, scope=scope) for t in SNAPSHOT.tests),
+            implementations=tuple(row.fact for row in implementations),
+            tests=tuple(row.fact for row in tests),
+            effective_context=replace(snapshot.effective_context,
+                                      implementations=implementations, tests=tests),
         )
 
     store = SimpleNamespace(

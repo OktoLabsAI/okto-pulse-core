@@ -145,8 +145,8 @@ class TestResolveLinkedRequirementsToIds:
         resolved, unresolved = resolve_linked_requirements_to_ids(
             ["0", "fr_2222bbbb", "User can log in", "ghost"], self._FRS
         )
-        assert resolved == ["fr_1111aaaa", "fr_2222bbbb"]  # dedup, order
-        assert unresolved == ["ghost"]
+        assert resolved == ["fr_2222bbbb"]  # dedup, order
+        assert unresolved == ["0", "User can log in", "ghost"]
 
 
 # ====================================================================
@@ -228,7 +228,7 @@ async def test_update_spec_preserves_ids(db_factory):
     assert now == original  # IDs preserved through reorder
 
 
-async def test_no_breaking_change_text_links(db_factory):
+async def test_current_id_links_survive_requirement_edit(db_factory):
     # ts_fb5fcb7e — legacy linked_requirements by text still validate after canonicalization
     board_id = await _seed_board(db_factory)
     async with db_factory() as db:
@@ -246,7 +246,7 @@ async def test_no_breaking_change_text_links(db_factory):
                         "rule": "r",
                         "when": "w",
                         "then": "t",
-                        "linked_requirements": ["User can log in"],  # by TEXT
+                        "linked_requirements": ["fr_login"],
                     }
                 ],
             ),
@@ -262,7 +262,7 @@ async def test_no_breaking_change_text_links(db_factory):
         await db.commit()
     # read-path still resolves the text link to the FR index
     assert resolve_linked_fr_indices(
-        ["User can log in"], updated.functional_requirements
+        ["fr_login"], updated.functional_requirements
     ) == {0}
 
 

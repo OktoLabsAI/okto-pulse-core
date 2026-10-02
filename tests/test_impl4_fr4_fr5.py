@@ -1,14 +1,4 @@
-"""Behavioral tests for IMPL-4 (spec c61569b2):
-
-AC5 — FR4 non-regression: a spec persisted with linked_requirements in
-      INDEX (legacy) resolves correctly in spec_coverage_summary AND passes
-      the _validate_spec_linked_refs gate, with identical results to the
-      fr_id case.
-
-AC6 — FR5 lazy migration: update_spec on a legacy spec (refs in index)
-      rewrites linked_requirements/linked_criteria to canonical fr_/ac_ ids;
-      a spec NOT touched by update_spec retains the raw index refs in the DB.
-"""
+"""Native ID links and refusal of incompatible stored requirements."""
 from __future__ import annotations
 
 import uuid
@@ -17,7 +7,6 @@ import pytest
 
 from sqlalchemy_test_models import Board, Spec, SpecStatus
 from okto_pulse.core.models.schemas import SpecUpdate
-from okto_pulse.core.services.analytics_service import spec_coverage_summary
 from okto_pulse.core.services.main import SpecService
 
 
@@ -84,114 +73,10 @@ async def _seed_legacy_spec(
 # ===========================================================================
 
 
-class _FakeSpecForCoverage:
-    """Minimal fake spec for spec_coverage_summary (pure-function target)."""
-
-    def __init__(self, *, frs, acs, business_rules=None, test_scenarios=None):
-        self.functional_requirements = frs
-        self.acceptance_criteria = acs
-        self.business_rules = business_rules or []
-        self.test_scenarios = test_scenarios or []
-        self.api_contracts = []
-        self.technical_requirements = []
-        self.decisions = []
-        self.observability_requirements = []
-        self.integration_requirements = []
 
 
-@pytest.mark.asyncio
-async def test_ac5_index_ref_resolves_same_as_fr_id_in_coverage(db_factory):
-    """AC5 — spec with linked_requirements in INDEX produces the same
-    fr_coverage_pct as a spec whose linked_requirements use the canonical
-    fr_id.  Proves the permanent read-resolver (resolve_linked_fr_indices)
-    handles both shapes identically.
-    """
-    # ---- spec A: FRs as legacy strings, BR ref by INDEX ----
-    spec_index = _FakeSpecForCoverage(
-        frs=["User can register", "User can log in"],
-        acs=[],
-        business_rules=[
-            {
-                "id": "br_idx",
-                "title": "By index",
-                "rule": "R",
-                "when": "W",
-                "then": "T",
-                "linked_requirements": ["0"],  # index ref
-            }
-        ],
-    )
-
-    # ---- spec B: FRs already structured (fr_ids assigned), BR ref by id ----
-    spec_frid = _FakeSpecForCoverage(
-        frs=[
-            {"id": "fr_aabb1122", "text": "User can register", "status": "active"},
-            {"id": "fr_ccdd3344", "text": "User can log in", "status": "active"},
-        ],
-        acs=[],
-        business_rules=[
-            {
-                "id": "br_frid",
-                "title": "By fr_id",
-                "rule": "R",
-                "when": "W",
-                "then": "T",
-                "linked_requirements": ["fr_aabb1122"],  # fr_id ref
-            }
-        ],
-    )
-
-    cov_index = spec_coverage_summary(spec_index)
-    cov_frid = spec_coverage_summary(spec_frid)
-
-    # Both specs have 1 FR covered out of 2 total → 50 %
-    assert cov_index["fr_covered"] == 1, f"index path: {cov_index}"
-    assert cov_frid["fr_covered"] == 1, f"fr_id path: {cov_frid}"
-    assert cov_index["fr_coverage_pct"] == cov_frid["fr_coverage_pct"], (
-        f"index={cov_index['fr_coverage_pct']} != frid={cov_frid['fr_coverage_pct']}"
-    )
-    assert cov_index["fr_uncovered_indices"] == cov_frid["fr_uncovered_indices"]
 
 
-@pytest.mark.asyncio
-async def test_ac5_index_ref_passes_validate_spec_linked_refs_gate(db_factory):
-    """AC5 — updating a field on a legacy spec (with index-based
-    linked_requirements in business_rules) passes the referential integrity
-    gate without raising ValueError.  The gate must accept index refs just
-    as it accepts fr_id refs.
-    """
-    board_id = await _seed_board(db_factory)
-    spec_id = await _seed_legacy_spec(
-        db_factory,
-        board_id,
-        frs=["Register endpoint", "Login endpoint"],   # legacy strings
-        acs=["Accepts valid token"],
-        business_rules=[
-            {
-                "id": "br_legacy",
-                "title": "Index ref",
-                "rule": "R",
-                "when": "W",
-                "then": "T",
-                "linked_requirements": ["0", "1"],  # index refs
-            }
-        ],
-    )
-
-    # Touch the spec via update_spec (only update title — does NOT rewrite FRs).
-    # The gate must accept the existing index refs in business_rules.
-    async with db_factory() as db:
-        updated = await SpecService(db).update_spec(
-            spec_id, USER, SpecUpdate(title="Updated Title")
-        )
-        await db.commit()
-
-    assert updated is not None
-    assert updated.title == "Updated Title"
-    # business_rules must NOT have been touched (only title changed, no FR migration)
-    assert updated.business_rules[0]["linked_requirements"] == ["0", "1"], (
-        "Gate must not rewrite refs when FRs were not part of the update"
-    )
 
 
 @pytest.mark.asyncio
@@ -211,7 +96,7 @@ async def test_ac5_fr_id_ref_passes_validate_spec_linked_refs_gate(db_factory):
             ).SpecCreate(
                 title="Structured Spec",
                 delivery_context="brownfield",
-                functional_requirements=["Register", "Login"],
+                functional_requirements=[{"id": "fr_register", "text": "Register"}, {"id": "fr_login", "text": "Login"}],
                 business_rules=[
                     {
                         "id": "br_frid",
@@ -219,7 +104,7 @@ async def test_ac5_fr_id_ref_passes_validate_spec_linked_refs_gate(db_factory):
                         "rule": "R",
                         "when": "W",
                         "then": "T",
-                        "linked_requirements": ["Register"],  # text ref (will validate)
+                        "linked_requirements": ["fr_register"],  # text ref (will validate)
                     }
                 ],
             ),
@@ -247,57 +132,6 @@ async def test_ac5_fr_id_ref_passes_validate_spec_linked_refs_gate(db_factory):
 
 
 
-@pytest.mark.asyncio
-async def test_ac6_untouched_spec_retains_index_refs_in_db(db_factory):
-    """AC6 (non-touched guard) — a spec that is never passed through
-    update_spec with FRs/ACs keeps its raw index refs in the DB column.
-    Only touched specs get migrated (lazy on-touch contract).
-    """
-    board_id = await _seed_board(db_factory)
-    spec_id = await _seed_legacy_spec(
-        db_factory,
-        board_id,
-        frs=["FR only"],
-        acs=[],
-        business_rules=[
-            {
-                "id": "br_idx",
-                "title": "Index ref",
-                "rule": "R",
-                "when": "W",
-                "then": "T",
-                "linked_requirements": ["0"],
-            }
-        ],
-    )
-
-    # Touch only the title — does NOT pass functional_requirements, so no migration.
-    async with db_factory() as db:
-        updated = await SpecService(db).update_spec(
-            spec_id, USER, SpecUpdate(title="Title Only Update")
-        )
-        await db.commit()
-
-    async with db_factory() as db:
-        after = await db.get(Spec, updated.id)
-
-    # FRs must remain as legacy strings (not canonicalized)
-    assert after.functional_requirements == ["FR only"], (
-        f"FRs must not be canonicalized when not in update payload: "
-        f"{after.functional_requirements}"
-    )
-    # linked_requirements must remain as index ref (not migrated)
-    assert after.business_rules[0]["linked_requirements"] == ["0"], (
-        f"BR refs must not be migrated when FRs were not updated: "
-        f"{after.business_rules[0]['linked_requirements']}"
-    )
-    # But the read-resolver must still work on the raw index refs
-    from okto_pulse.core.services.analytics_service import resolve_linked_fr_indices
-    resolved = resolve_linked_fr_indices(
-        after.business_rules[0]["linked_requirements"],
-        after.functional_requirements,
-    )
-    assert resolved == {0}, f"Read-resolver must still handle index refs: {resolved}"
 
 
 @pytest.mark.asyncio

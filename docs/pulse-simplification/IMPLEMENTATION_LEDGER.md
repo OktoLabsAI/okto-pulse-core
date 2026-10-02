@@ -2,6 +2,48 @@
 
 ## Estado para retomada
 
+### 2026-10-01 — Referências FR/TR/AC: IDs atuais, sem poda automática
+
+Retirada a resolução de referências por posição, texto e prefixo nos resolvers
+compartilhados de analytics/escrita e no validador de vínculos da Spec. Índices
+de saída continuam apenas como posições de apresentação. IDs numéricos em string
+são IDs exatos; números/bools não são convertidos. A união FR/TR agora resolve
+sem coerção intermediária e recusa identidades duplicadas entre coleções.
+Impacto usa apenas IDs atuais, sem aliases. SpecResponse recusa identidade ausente,
+duplicada ou forma title-only, sem preencher JSON. Validação de escrita verifica
+também a forma persistida em patches que não editam requisitos.
+
+Removida a poda automática de linked_task_ids mortos em _validate_spec_linked_refs:
+um patch inválido é recusado, sem alterar payload, JSON, versão, eventos ou histórico.
+ACs também participam da verificação de links de Cards. A exclusão nativa continua
+limpando seus próprios vínculos; test_delete_card_cascade prova essa responsabilidade.
+Não alteradas permissões, overrides atuais nem semântica de aprovação.
+
+Frontend: contrato Spec FR/AC passa a objetos e TR deixa de aceitar string;
+SpecModal deixa de inventar IDs por índice/tr_legacy_N. Cobertura e exportação
+resolvem referências somente por ID, mantendo avisos de referência não resolvida.
+Dados sem identidade são recusados, não ocultados nem convertidos. Build passou;
+SPA79 arquivos, hash 816d2b7928e62977ceefeb0614564a949857ac1aaf20481dd2609fee869ae333.
+
+**Prova:** dist-requirement-refs1 instalado; provenance-requirement-refs1.json:
+Core852/915 e Community318/404 arquivos Python/payload byte-idênticos. Agregado
+requirement-refs-core1/gates1/cascade2/refusal2/coverage1/coverage2/analytics2:
+286 casos distintos Core aprovados; Community1:12; frontend1/2:100. As falhas
+intermediárias foram expectativas de poda/alias antigos e fixture Delivery sem
+contexto efetivo; corrigidas sem relaxar produto. O fake de Delivery de gates
+independentes agora retorna contexto atual explícito, sem certificar persistência.
+Closure-requirement-refs1 exit0, findings vazios, oito budgets ZERO; READMEs
+validados oficialmente (.readmes.json). Ruff/diff passaram.
+
+Scripts aplicados uma vez, não reaplicar: close_requirement_references.py,
+close_requirement_front_readers.py, close_requirement_export_refs.py,
+adapt_requirement_reference_tests.py, refine_requirement_id_contract.py,
+retire_tolerant_reference_cases.py, adapt_coverage_reference_contract.py,
+replace_analytics_coverage_tests.py. C1–C4 continuam abertos: esta qualificação
+não substitui regressão integral, auditoria dos demais leitores/projeções e
+requisitos restantes do assessment.
+
+
 ### 2026-10-01 — Autoria publicada; leitores de referências são a próxima cadeia
 
 Core **d82f178b** / Community **8361c3db**, pushes confirmados em feature/v0.4.0.

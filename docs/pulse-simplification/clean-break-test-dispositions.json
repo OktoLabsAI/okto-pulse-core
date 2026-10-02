@@ -1176,6 +1176,22 @@
     {
       "path": "okto_labs_pulse_core/tests/test_r3a_schema_honesty.py",
       "reason": "Spec requirement MCP inputs now array-of-objects/null; other domain multi-value inputs unchanged."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_analytics_coverage.py",
+      "reason": "Old int/text/prefix acceptance replaced by exact-ID coverage; retains no-double-counting, bounds, empty inputs, repeated text and duplicate identity checks."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_ac_structured_coverage_gate.py",
+      "reason": "Native ID/duplicate-ID positive coverage and Done gates retained; old link aliases now negative cases. Current execution/adoption and Delivery context in fixtures."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_structured_reference_write_identity.py",
+      "reason": "Unique legacy text/index acceptance becomes unresolved; ambiguity and identity-precedence tests retained."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_delete_card_cascade.py",
+      "reason": "Automatic orphan-pruning expectation replaced by refusal with unchanged payload; all native delete cleanup tests retained."
     }
   ],
   "removed_cases": [
@@ -1412,6 +1428,18 @@
       "test": "test_f06_legacy_resume_without_enqueue_receipt_uses_empty_dlq_cut",
       "disposition": "superseded",
       "reason": "Exclusive queue-only legacy recovery or pre-v4 checkpoint conversion removed; native recovery/compensation remains in this mixed suite and incompatible format is refused without writes."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_impl4_fr4_fr5.py::test_ac5_index_ref_resolves_same_as_fr_id_in_coverage",
+      "reason": "Old compatibility-only guarantee superseded by exact-ID coverage and no-write refusal in test_requirement_reference_contract, test_spec_structured_entities and retained native-ID tests."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_impl4_fr4_fr5.py::test_ac5_index_ref_passes_validate_spec_linked_refs_gate",
+      "reason": "Old compatibility-only guarantee superseded by exact-ID coverage and no-write refusal in test_requirement_reference_contract, test_spec_structured_entities and retained native-ID tests."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_impl4_fr4_fr5.py::test_ac6_untouched_spec_retains_index_refs_in_db",
+      "reason": "Old compatibility-only guarantee superseded by exact-ID coverage and no-write refusal in test_requirement_reference_contract, test_spec_structured_entities and retained native-ID tests."
     }
   ]
 }

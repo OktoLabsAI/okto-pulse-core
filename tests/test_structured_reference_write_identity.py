@@ -41,11 +41,11 @@ def test_duplicate_id_is_unresolved(resolver):
     assert resolve([token], rows) == ([], [token])
 
 
-def test_unique_legacy_text_and_index_remain_supported(resolver):
+def test_unique_legacy_text_and_index_are_unresolved(resolver):
     prefix, resolve = resolver
     rows = [{'id': f'{prefix}_one', 'text': 'First'}, {'id': f'{prefix}_two', 'text': 'Second'}]
-    assert resolve(['Second', 0, '1'], rows) == ([f'{prefix}_two', f'{prefix}_one'], [])
-    assert resolve(['Legacy'], ['Legacy']) == (['Legacy'], [])
+    assert resolve(['Second', 0, '1'], rows) == ([], ['Second', '0', '1'])
+    assert resolve(['Legacy'], ['Legacy']) == ([], ['Legacy'])
 
 
 def test_duplicate_legacy_text_is_unresolved(resolver):

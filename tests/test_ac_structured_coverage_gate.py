@@ -1,30 +1,4 @@
-"""Regression tests for the AC→Scenario coverage gate with STRUCTURED ACs.
-
-Okto Pulse 0.2.3 · item #3.
-
-Background
-----------
-The deterministic coverage gate builds the "uncovered" error list with a slice
-``criterion[:80]``. When acceptance criteria are stored as structured dicts
-(``{"id": "AC-1", "text": "..."}``) instead of legacy strings, slicing a dict
-with ``[:80]`` raises ``KeyError: slice(None, 80, None)`` — crashing the gate
-INSTEAD of returning the intended ``ValueError`` listing the uncovered ACs.
-
-The bug lived at TWO call sites in ``services/main.py``:
-  * ``CardService.check_ac_scenario_coverage`` (submit_spec_validation path)
-  * ``SpecService.move_spec`` → ``done`` gate
-
-Fix: extract text via ``_structured_ref_text(criterion)[:80]`` at both sites.
-
-These tests assert that, for structured ACs referenced by id / text / title /
-prefix / index / mixed-with-string, the gate:
-  * NEVER raises ``KeyError`` (the regression),
-  * counts coverage correctly (covered → passes; uncovered → clean ValueError).
-
-Plus an anti-drift test pinning ``api/analytics.py``'s resolver alias to the
-canonical ``services/analytics_service.py`` implementation, and a bidirectional
-prefix-matching contract test.
-"""
+"""Structured AC coverage gates use current IDs. Unknown aliases remain uncovered; error rendering never slices a dictionary."""
 
 from __future__ import annotations
 
@@ -111,7 +85,9 @@ def _make_spec(spec_id: str, board_id: str, *, acs: list, scenarios: list) -> Sp
         created_by=USER_ID,
         skip_test_coverage=False,
         skip_qualitative_validation=True,
-        functional_requirements=["FR1"],
+        functional_requirements=[{"id": "fr1", "text": "FR1"}],
+        execution_contract={"contract_version": "spec-execution-contract/v1", "board_id": board_id, "spec_id": spec_id, "adopted_in_edition": 1, "actor_id": USER_ID, "origin": "new_spec"},
+        architecture_adoption={"contract_version": "architecture-adoption/v1", "board_id": board_id, "spec_id": spec_id, "adopted_in_edition": 1, "actor_id": USER_ID, "inherited_resource_ids": []},
         acceptance_criteria=acs,
         test_scenarios=scenarios,
         business_rules=[],
@@ -148,6 +124,9 @@ AC_DICT_TITLE = {"id": "AC-3", "title": "Password reset via email link"}  # titl
 # Each param: (case label, linked_criteria reference that covers BOTH ACs).
 _FULLY_COVERED_REFS = [
     pytest.param(["AC-1", "AC-2"], id="by-id"),
+    pytest.param(["AC-2", "AC-1", "AC-1"], id="duplicate-current-ids"),
+]
+_INVALID_REFS = [
     pytest.param(
         [
             "User can log in with valid credentials and reach dashboard",
@@ -332,7 +311,7 @@ def test_mcp_server_resolver_is_canonical_service_function():
 # ---------------------------------------------------------------------------
 
 
-def test_resolver_prefix_matching_is_bidirectional():
+def test_resolver_prefix_matching_is_not_supported():
     """The resolver matches when EITHER the AC text starts with the ref OR the ref
     starts with the AC text — the contracted tolerant behavior shared with the gate.
     """
@@ -343,13 +322,13 @@ def test_resolver_prefix_matching_is_bidirectional():
     ac_list = [{"id": "AC-1", "text": "User can log in with valid credentials"}]
 
     # ref shorter than AC text → AC text startswith(ref)
-    assert resolve_linked_criteria_to_indices(["User can log in"], ac_list) == {0}
+    assert resolve_linked_criteria_to_indices(["User can log in"], ac_list) == set()
     # ref longer than AC text → ref startswith(AC text)
     assert (
         resolve_linked_criteria_to_indices(
             ["User can log in with valid credentials and a TOTP token"], ac_list
         )
-        == {0}
+        == set()
     )
     # unrelated text → no match
     assert resolve_linked_criteria_to_indices(["Completely different"], ac_list) == set()
@@ -381,3 +360,16 @@ def test_resolver_rejects_out_of_range_and_bool():
     ac_list = [{"id": "AC-1", "text": "only one AC"}]
     # index 5 out of range; True is bool (subclass of int) and must be rejected.
     assert resolve_linked_criteria_to_indices([5, True], ac_list) == set()
+
+
+@pytest.mark.parametrize("linked", _INVALID_REFS)
+async def test_coverage_gate_does_not_accept_old_reference_aliases(db_factory, linked):
+    _, spec_id = await _seed(db_factory, acs=list(AC_DICTS), scenarios=[_scenario("ts-old-refs", linked)])
+    async with db_factory() as db:
+        spec = await SpecService(db).get_spec(spec_id)
+        board = await db.get(Board, spec.board_id)
+        with pytest.raises(ValueError, match="acceptance criteria lack test scenarios"):
+            await CardService(db).check_ac_scenario_coverage(spec, board)
+        assert spec.status == SpecStatus.IN_PROGRESS
+        assert spec.test_scenarios[0]["linked_criteria"] == linked
+        assert not db.dirty

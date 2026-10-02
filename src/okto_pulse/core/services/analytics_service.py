@@ -147,7 +147,7 @@ def _structured_ref_text(item) -> str:
 def _structured_ref_id(item) -> str | None:
     if isinstance(item, dict):
         raw = item.get("id")
-        return str(raw) if raw not in (None, "") else None
+        return raw if isinstance(raw, str) and raw.strip() else None
     return None
 
 
@@ -174,177 +174,43 @@ def _hours_between(start, end) -> float | None:
     return (end_dt - start_dt).total_seconds() / 3600.0
 
 
-def resolve_linked_criteria_to_indices(
-    linked_list: list | None, ac_list: list
-) -> set[int]:
-    """Normalize heterogeneous `linked_criteria` entries into a deduplicated set
-    of 0-based AC indices.
-
-    Scenarios in the wild store entries in three shapes: `int`, numeric `str`
-    (e.g. ``"3"``), or full AC text. Without normalization, a set over raw
-    values double-counts the same AC when multiple shapes coexist.
-
-    Out-of-range indices and unmatched texts are dropped silently so the
-    invariant `covered_ac <= total_ac` holds even for degenerate inputs.
-    """
-    if not linked_list or not ac_list:
-        return set()
-    valid_range = range(len(ac_list))
-    resolved: set[int] = set()
-    for entry in linked_list:
-        if isinstance(entry, bool):
-            continue
-        if isinstance(entry, int):
-            if entry in valid_range:
-                resolved.add(entry)
-            continue
-        if isinstance(entry, str):
-            stripped = entry.strip()
-            if not stripped:
-                continue
-            try:
-                idx = int(stripped)
-            except ValueError:
-                pass
-            else:
-                if idx in valid_range:
-                    resolved.add(idx)
-                continue
-            for i, ac in enumerate(ac_list):
-                ac_text = _structured_ref_text(ac)
-                ac_id = _structured_ref_id(ac)
-                if (
-                    stripped == ac_id
-                    or stripped == ac_text
-                    or (ac_text and ac_text.startswith(stripped))
-                    or (ac_text and stripped.startswith(ac_text))
-                ):
-                    resolved.add(i)
-                    break
-    return resolved
-
-
-def _resolve_one_linked_criterion_to_id(entry, ac_list: list) -> str | None:
-    """Resolve ONE ``linked_criteria`` token to a canonical ac_id (write-path, STRICT).
-
-    Accepts a 0-based index (``int`` or numeric ``str``), an exact ``ac_id``, or
-    the exact AC text. Unlike :func:`resolve_linked_criteria_to_indices`
-    (read-path), this does NO prefix matching — write resolution must be
-    deterministic. Returns the ac_id (or the AC text when the AC is legacy and
-    has no id), else ``None``.
-    """
-    # bool is a subclass of int — reject explicitly so True/False never index.
-    if isinstance(entry, bool):
-        return None
-
-    token = str(entry).strip()
-    if not token:
-        return None
-    # Canonical identity precedes legacy text/index compatibility. Ambiguous
-    # references stay unresolved so existing writers reject before mutation.
-    identities = [ac for ac in ac_list if _structured_ref_id(ac) == token]
-    if identities:
-        return token if len(identities) == 1 else None
-    if token.startswith(("ac_", "fr_", "tr_")):
-        return None
-
-    idx: int | None = None
-    if isinstance(entry, int):
-        idx = entry
-    elif isinstance(entry, str):
-        stripped = entry.strip()
-        if stripped.lstrip("-").isdigit():
-            idx = int(stripped)
-    if idx is not None:
-        if 0 <= idx < len(ac_list):
-            ac = ac_list[idx]
-            return _structured_ref_id(ac) or _structured_ref_text(ac)
-        return None
-
-    matches = [ac for ac in ac_list if _structured_ref_text(ac) == token]
-    if len(matches) == 1:
-        ac = matches[0]
-        return _structured_ref_id(ac) or _structured_ref_text(ac)
-    return None
-
-
-def resolve_linked_criteria_to_ids(
-    linked_list: list | None, ac_list: list
-) -> tuple[list[str], list[str]]:
-    """Write-path resolver for ``linked_criteria``. Mirrors the read resolver but
-    projects to canonical ids instead of indices.
-
-    Returns ``(resolved_ids, unresolved_tokens)``:
-
-    * ``resolved_ids`` — canonical ``ac_id`` values (or the AC text for legacy
-      ACs without an id), deduplicated while preserving first-seen order.
-    * ``unresolved_tokens`` — tokens that did not resolve. These are NEVER
-      dropped silently, so the caller can fail closed.
-
-    Never emits a dict. The tolerant read resolver
-    :func:`resolve_linked_criteria_to_indices` is intentionally left untouched —
-    its prefix/index leniency must not leak into write persistence.
-    """
+def _resolve_linked_child_ids(linked: list | None, children: list) -> tuple[list[str], list[str]]:
+    """Resolve exact, unambiguous stored IDs; never infer identity from content."""
+    counts: dict[str, int] = {}
+    for child in children:
+        identity = _structured_ref_id(child)
+        if identity is not None:
+            counts[identity] = counts.get(identity, 0) + 1
     resolved: list[str] = []
     unresolved: list[str] = []
-    seen: set[str] = set()
-    for entry in linked_list or []:
-        rid = _resolve_one_linked_criterion_to_id(entry, ac_list)
-        if rid is None:
-            unresolved.append(str(entry))
-        elif rid not in seen:
-            seen.add(rid)
-            resolved.append(rid)
+    for ref in linked or []:
+        if not isinstance(ref, str) or counts.get(ref) != 1:
+            unresolved.append(str(ref))
+        elif ref not in resolved:
+            resolved.append(ref)
     return resolved, unresolved
 
 
-def resolve_linked_requirements_to_ids(
-    linked_list: list | None, fr_list: list
-) -> tuple[list[str], list[str]]:
-    """Write-path resolver for ``linked_requirements`` — the FR analog of
-    :func:`resolve_linked_criteria_to_ids` (spec 9d66847f).
+def resolve_linked_criteria_to_indices(linked_list: list | None, ac_list: list) -> set[int]:
+    """Return display positions for exact AC IDs; positions are never input refs."""
+    resolved, _ = _resolve_linked_child_ids(linked_list, ac_list)
+    identities = set(resolved)
+    return {index for index, item in enumerate(ac_list) if _structured_ref_id(item) in identities}
 
-    Returns ``(resolved_ids, unresolved_tokens)``: canonical ``fr_id`` values
-    (or the FR text for legacy FRs without an id), deduplicated in first-seen
-    order, plus the tokens that did not resolve (never dropped silently). Token
-    resolution is identical to the AC write-path — strict, exact match, no
-    prefix leniency. The tolerant read resolver
-    :func:`resolve_linked_fr_indices` is intentionally left untouched.
-    """
-    resolved: list[str] = []
-    unresolved: list[str] = []
-    seen: set[str] = set()
-    for entry in linked_list or []:
-        rid = _resolve_one_linked_criterion_to_id(entry, fr_list)
-        if rid is None:
-            unresolved.append(str(entry))
-        elif rid not in seen:
-            seen.add(rid)
-            resolved.append(rid)
-    return resolved, unresolved
+
+def resolve_linked_criteria_to_ids(linked_list: list | None, ac_list: list) -> tuple[list[str], list[str]]:
+    """Return current IDs and unresolved tokens so writers can refuse invalid links."""
+    return _resolve_linked_child_ids(linked_list, ac_list)
+
+
+def resolve_linked_requirements_to_ids(linked_list: list | None, fr_list: list) -> tuple[list[str], list[str]]:
+    """Resolve FR identity under the same contract used for ACs."""
+    return _resolve_linked_child_ids(linked_list, fr_list)
 
 
 def resolve_linked_fr_indices(linked_refs: list, frs: list) -> set[int]:
-    """Resolve linked_requirements (indices or FR text) to FR indices."""
-    indices: set[int] = set()
-    for ref in linked_refs:
-        ref_str = str(ref)
-        try:
-            idx = int(ref_str)
-            if 0 <= idx < len(frs):
-                indices.add(idx)
-                continue
-        except (ValueError, TypeError):
-            pass
-        for i, fr in enumerate(frs):
-            fr_text = _structured_ref_text(fr)
-            fr_id = _structured_ref_id(fr)
-            if ref_str == fr_id or (
-                fr_text and (ref_str in fr_text or fr_text in ref_str)
-            ):
-                indices.add(i)
-                break
-    return indices
+    """Return display positions of FRs selected by exact current IDs."""
+    return resolve_linked_criteria_to_indices(linked_refs, frs)
 
 
 # ---------------------------------------------------------------------------
@@ -3876,35 +3742,8 @@ def resolve_linked_requirement_tokens_to_fr_or_tr_ids(
     frs: list,
     trs: list,
 ) -> tuple[list[str], list[str]]:
-    """Resolve requirement refs against FRs first, then TRs (MCP-FU6: moved here
-    from the MCP server so MCP-scoped use cases can resolve without importing the
-    transport package).
-
-    ``linked_requirements`` is used by agents as a generic requirement-link
-    surface on API contracts, integration requirements, observability
-    requirements, and decisions. Keep FR behavior unchanged and add strict TR
-    support for structured technical requirements.
-    """
-    resolved: list[str] = []
-    unresolved: list[str] = []
-    seen: set[str] = set()
-
-    fr_ids, fr_unresolved = resolve_linked_requirements_to_ids(linked_tokens, frs)
-    for rid in fr_ids:
-        if rid not in seen:
-            seen.add(rid)
-            resolved.append(rid)
-
-    if not fr_unresolved:
-        return resolved, unresolved
-
-    tr_ids, tr_unresolved = resolve_linked_requirements_to_ids(fr_unresolved, trs)
-    for rid in tr_ids:
-        if rid not in seen:
-            seen.add(rid)
-            resolved.append(rid)
-    unresolved.extend(tr_unresolved)
-    return resolved, unresolved
+    """Resolve exact IDs across the complete FR/TR namespace without coercion."""
+    return _resolve_linked_child_ids(linked_tokens, [*frs, *trs])
 
 
 def available_structured_ids(items: list) -> list[str]:

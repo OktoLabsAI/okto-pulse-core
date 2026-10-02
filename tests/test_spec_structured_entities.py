@@ -1205,7 +1205,7 @@ async def test_unsupported_operation_and_missing_entity_are_typed_errors(db_fact
 
 
 @pytest.mark.asyncio
-async def test_link_task_prunes_missing_target_and_preserves_live_card(db_factory):
+async def test_link_task_refuses_missing_target_and_preserves_live_card(db_factory):
     board_id = f"board-{uuid.uuid4()}"
     spec_id = f"spec-{uuid.uuid4()}"
     card_id = f"card-{uuid.uuid4()}"
@@ -1229,11 +1229,11 @@ async def test_link_task_prunes_missing_target_and_preserves_live_card(db_factor
             )
         )
 
-        # The v0.3.4 baseline prunes missing Card references in the shared
-        # final-state validator, including structured writes. Preserve that
-        # behavior while requiring that no dangling reference is persisted.
-        assert missing.success is True
-        assert (await db.get(Spec, spec_id)).decisions[0]["linked_task_ids"] == []
+        assert missing.success is False
+        assert missing.error_code == StructuredSpecEntityErrorCode.LINK_TARGET_INVALID
+        assert spec.decisions == [_payload_for("decision")]
+        assert spec.version == 1
+        assert not db.dirty
 
         db.add(
             Card(
@@ -1606,7 +1606,7 @@ async def test_revoke_linked_fr_requires_impact_ack_and_then_marks_revoked(db_fa
 
 
 @pytest.mark.asyncio
-async def test_revoke_fr_impact_detects_legacy_index_and_text_links(db_factory):
+async def test_revoke_fr_refuses_legacy_index_and_text_links(db_factory):
     board_id = f"board-{uuid.uuid4()}"
     spec_id = f"spec-{uuid.uuid4()}"
     actor_id = "actor-structured"
@@ -1649,11 +1649,12 @@ async def test_revoke_fr_impact_detects_legacy_index_and_text_links(db_factory):
         )
 
         assert preview.success is False
-        assert preview.error_code == StructuredSpecEntityErrorCode.IMPACT_ACK_REQUIRED
-        assert preview.impact_report["counts_by_type"] == {
-            "business_rule": 1,
-            "decision": 1,
-        }
+        assert preview.error_code == StructuredSpecEntityErrorCode.LINK_TARGET_INVALID
+        assert spec.functional_requirements[0]["status"] == "active"
+        assert spec.business_rules[0]["linked_requirements"] == ["0"]
+        assert spec.decisions[0]["linked_requirements"] == ["A"]
+        assert spec.version == 1
+        assert not db.dirty
 
 
 @pytest.mark.asyncio
@@ -1715,6 +1716,9 @@ async def test_ack_token_is_single_use_and_version_scoped(db_factory):
                 "status": "active",
             }
         ]
+        db.add(Card(id="card-a", board_id=board_id, spec_id=spec_id,
+            title="Linked task", status=CardStatus.NOT_STARTED, card_type=CardType.NORMAL,
+            created_by=actor_id))
         await db.flush()
         service = StructuredSpecEntityService(db)
 
@@ -2209,3 +2213,40 @@ async def test_bulk_requirement_update_refuses_incompatible_stored_identity(db_f
         assert await _spec_json_snapshot(db, spec_id) == before
         assert await _side_effect_counts(db, board_id=board_id, spec_id=spec_id) == effects
         assert not db.dirty
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("field", ["functional_requirements", "technical_requirements", "acceptance_criteria"])
+async def test_content_edit_does_not_prune_stored_missing_card_references(db_factory, field):
+    board_id, spec_id = f"board-{uuid.uuid4()}", f"spec-{uuid.uuid4()}"
+    async with db_factory() as db:
+        await _seed_spec(db, board_id=board_id, spec_id=spec_id, actor_id="actor-structured")
+        spec = await db.get(Spec, spec_id)
+        setattr(spec, field, [{"id": "requirement", "text": "Current content", "linked_task_ids": ["missing-card"]}])
+        await db.flush()
+        before = await _spec_json_snapshot(db, spec_id)
+        effects = await _side_effect_counts(db, board_id=board_id, spec_id=spec_id)
+        with pytest.raises(ValueError, match="linked_task_ids.*missing-card"):
+            await SpecService(db).update_spec(spec_id, "actor-structured", SpecUpdate(title="Must not repair"))
+        assert await _spec_json_snapshot(db, spec_id) == before
+        assert await _side_effect_counts(db, board_id=board_id, spec_id=spec_id) == effects
+        assert spec.title == "Structured Spec"
+        assert not db.dirty
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("stored", [[{"text": "Missing ID"}], [{"id": "id", "title": "Old alias"}], [{"id": "duplicate", "text": "A"}, {"id": "duplicate", "text": "B"}]])
+async def test_rest_refuses_incompatible_stored_requirement_without_rewriting(structured_rest_client, db_factory, stored):
+    from fastapi.exceptions import ResponseValidationError
+    client, board_id, spec_id, _ = structured_rest_client
+    async with db_factory() as db:
+        spec = await db.get(Spec, spec_id)
+        spec.functional_requirements = copy.deepcopy(stored)
+        await db.commit()
+        before = await _spec_json_snapshot(db, spec_id)
+        effects = await _side_effect_counts(db, board_id=board_id, spec_id=spec_id)
+    with pytest.raises(ResponseValidationError, match="incompatible_spec_requirement"):
+        client.get(f"/api/v1/specs/{spec_id}")
+    async with db_factory() as db:
+        assert await _spec_json_snapshot(db, spec_id) == before
+        assert await _side_effect_counts(db, board_id=board_id, spec_id=spec_id) == effects

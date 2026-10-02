@@ -1,22 +1,4 @@
-"""R3b — canonical-id parity (AC7) + scope guard (AC8). Spec c61569b2.
-
-The other 6 scenarios point to per-IMPL behavioral tests — each genuinely
-exercises its own ``then`` (verified at the per-IMPL gates):
-- AC1 ts_bfcc4474 -> tests/test_add_business_rule_structured_fr.py::test_add_business_rule_index_structured_fr
-  (write persists the canonical fr_id in the RAW spec.business_rules column, not the index)
-- AC2 ts_0a41792b -> tests/test_add_business_rule_structured_fr.py::test_add_business_rule_index_out_of_range
-  (an unresolvable FR ref returns an "Unresolved" error, fail-closed)
-- AC3 ts_ff3a7b6c -> tests/test_payload_compaction.py::test_list_business_rules_does_not_duplicate_fr_text
-  (list_business_rules projection emits the fr_id, not the re-normalized index)
-- AC4 ts_64b520dd -> tests/test_kg_deterministic_worker.py::test_impl3_decision_derives_from_resolves_via_fr_id
-  (the KG worker resolves a derives_from edge by fr_id at confidence 1.0, not the 0.6 co-occurrence fallback)
-- AC5 ts_6356cf07 -> tests/test_impl4_fr4_fr5.py::test_ac5_index_ref_resolves_same_as_fr_id_in_coverage
-  (a legacy index-ref spec resolves in coverage; the permanent read-resolver is intact)
-- AC6 ts_f3b81fd7 -> tests/test_impl4_fr4_fr5.py::test_ac6_update_spec_with_frs_migrates_linked_requirements_to_fr_ids
-  (update_spec on a legacy spec materializes the index ref to fr_id — lazy on-touch)
-
-This file adds AC7 (parity) and AC8 (scope guard).
-"""
+"""Exact-ID coverage remains stable across reorder; retired converters stay absent."""
 
 from __future__ import annotations
 
@@ -54,24 +36,15 @@ def _br(ref: str) -> list:
 # ---------------------------------------------------------------------------
 
 
-def test_ac7_parity_index_vs_fr_id_coverage():
-    """AC7 — the same FR link expressed as a positional INDEX (legacy) and as
-    the canonical fr_id (new) produces IDENTICAL coverage, via the permanent
-    tolerant read-resolver."""
-    frs = [
-        {"id": "fr_aabb1122", "text": "User can register", "status": "active"},
-        {"id": "fr_ccdd3344", "text": "User can log in", "status": "active"},
-    ]
-    cov_index = spec_coverage_summary(_CovSpec(frs, _br("0")))
-    cov_fr_id = spec_coverage_summary(_CovSpec(frs, _br("fr_aabb1122")))
-
-    for key in ("fr_covered", "fr_coverage_pct", "fr_uncovered_indices"):
-        assert cov_index[key] == cov_fr_id[key], (
-            f"parity broken on {key}: index={cov_index[key]} fr_id={cov_fr_id[key]}"
-        )
-    # Non-vacuous: the link genuinely resolved (1 of 2 covered), not both-zero.
-    assert cov_index["fr_covered"] == 1, cov_index
-    assert cov_index["fr_uncovered_indices"] == [1], cov_index
+def test_current_id_coverage_survives_reorder_without_positional_identity():
+    frs = [{"id": "fr_a", "text": "A"}, {"id": "fr_b", "text": "B"}]
+    first = spec_coverage_summary(_CovSpec(frs, _br("fr_a")))
+    reordered = spec_coverage_summary(_CovSpec(list(reversed(frs)), _br("fr_a")))
+    assert first["fr_covered"] == reordered["fr_covered"] == 1
+    assert first["fr_uncovered_indices"] == [1]
+    assert reordered["fr_uncovered_indices"] == [0]
+    invalid = spec_coverage_summary(_CovSpec(frs, _br("0")))
+    assert invalid["fr_covered"] == 0
 
 
 def test_no_requirement_migration_in_write_surfaces():

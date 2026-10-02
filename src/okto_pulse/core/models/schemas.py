@@ -2794,6 +2794,20 @@ class CardSummaryForSpec(BaseSchema):
 class SpecResponse(BaseSchema):
     """Schema for full spec response."""
 
+    @field_validator("functional_requirements", "technical_requirements", "acceptance_criteria")
+    @classmethod
+    def require_current_requirement_identity(cls, items: list[dict] | None) -> list[dict] | None:
+        seen: set[str] = set()
+        for item in items or []:
+            identity, text = item.get("id"), item.get("text")
+            if (
+                not isinstance(identity, str) or not identity.strip()
+                or identity in seen or not isinstance(text, str) or not text.strip()
+            ):
+                raise ValueError("incompatible_spec_requirement: stored children require unique id and text")
+            seen.add(identity)
+        return items
+
     execution_contract: SpecExecutionContract
 
     id: str
