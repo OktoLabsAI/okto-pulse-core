@@ -9,7 +9,6 @@ instead of being projected as current by assumption.
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from typing import Any
 
 from okto_pulse.core.domain.quality_assessment import (
     AssessmentCurrentness,
@@ -89,109 +88,47 @@ def evaluate_quality_projection_currentness(
     origin: AssessmentOrigin | str,
     source: AssessmentSource | str,
     current_subject: object,
-    qa_items: Sequence[object] | None,
-    board_settings: Mapping[str, object] | None,
-    assessed_subject_edition: int | None = None,
+    assessed_subject_edition: int,
 ) -> AssessmentCurrentness:
-    """Return current/previous, retaining digest dispatch for legacy callers."""
+    """Project only native, explicitly edition-scoped quality evidence."""
 
     try:
         resolved_type = AssessmentSubjectType(subject_type)
         AssessmentKind(assessment_kind)
         AssessmentOrigin(origin)
         AssessmentSource(source)
-        current_id = str(
-            (
-                current_subject.get("id")
-                if isinstance(current_subject, Mapping)
-                else getattr(current_subject, "id")
-            )
-            or ""
-        ).strip()
-        current_version_raw: Any = (
-            current_subject.get("version")
-            if isinstance(current_subject, Mapping)
+        current_id = (
+            current_subject.get("id") if isinstance(current_subject, Mapping)
+            else getattr(current_subject, "id")
+        )
+        current_version = (
+            current_subject.get("version") if isinstance(current_subject, Mapping)
             else getattr(current_subject, "version")
         )
-        current_version = int(current_version_raw)
-        current_edition_raw: Any = (
-            current_subject.get("edition")
-            if isinstance(current_subject, Mapping)
+        current_edition = (
+            current_subject.get("edition") if isinstance(current_subject, Mapping)
             else getattr(current_subject, "edition", None)
         )
-        current_edition = (
-            int(current_edition_raw) if current_edition_raw is not None else None
+        for edition in (assessed_subject_edition, current_edition):
+            if type(edition) is not int or edition < 1:
+                raise QualityProjectionCurrentnessError("quality_projection_edition_required")
+        if current_id != subject_id:
+            raise QualityProjectionCurrentnessError("quality_projection_subject_invalid")
+        assessed = AssessmentSubjectRef(
+            board_id=board_id, subject_type=resolved_type, subject_id=subject_id,
+            subject_version=assessed_subject_version, subject_edition=assessed_subject_edition,
         )
+        current = AssessmentSubjectRef(
+            board_id=board_id, subject_type=resolved_type, subject_id=current_id,
+            subject_version=current_version, subject_edition=current_edition,
+        )
+    except QualityProjectionCurrentnessError:
+        raise
     except (AttributeError, TypeError, ValueError) as exc:
-        raise QualityProjectionCurrentnessError(
-            "quality_projection_subject_invalid"
-        ) from exc
-    if (
-        not board_id
-        or not subject_id
-        or current_id != subject_id
-        or current_version < 1
-        or not isinstance(assessed_subject_version, int)
-        or isinstance(assessed_subject_version, bool)
-        or assessed_subject_version < 1
-    ):
-        raise QualityProjectionCurrentnessError(
-            "quality_projection_subject_invalid"
-        )
-    if current_edition is not None:
-        if current_edition < 1 or (
-            assessed_subject_edition is not None
-            and (
-                not isinstance(assessed_subject_edition, int)
-                or isinstance(assessed_subject_edition, bool)
-                or assessed_subject_edition < 1
-            )
-        ):
-            raise QualityProjectionCurrentnessError(
-                "quality_projection_subject_invalid"
-            )
-        return evaluate_assessment_input_currentness(
-            AssessmentSubjectRef(
-                board_id=board_id,
-                subject_type=resolved_type,
-                subject_id=subject_id,
-                subject_version=assessed_subject_version,
-                subject_edition=assessed_subject_edition,
-            ),
-            assessed_digests,
-            current_subject=AssessmentSubjectRef(
-                board_id=board_id,
-                subject_type=resolved_type,
-                subject_id=subject_id,
-                subject_version=current_version,
-                subject_edition=current_edition,
-            ),
-            current_digests=assessed_digests,
-        )
-    current_digests = current_quality_projection_digests(
-        subject_type=resolved_type,
-        assessment_kind=assessment_kind,
-        origin=origin,
-        source=source,
-        subject=current_subject,
-        qa_items=qa_items,
-        board_settings=board_settings,
-    )
+        raise QualityProjectionCurrentnessError("quality_projection_subject_invalid") from exc
     return evaluate_assessment_input_currentness(
-        AssessmentSubjectRef(
-            board_id=board_id,
-            subject_type=resolved_type,
-            subject_id=subject_id,
-            subject_version=assessed_subject_version,
-        ),
-        assessed_digests,
-        current_subject=AssessmentSubjectRef(
-            board_id=board_id,
-            subject_type=resolved_type,
-            subject_id=subject_id,
-            subject_version=current_version,
-        ),
-        current_digests=current_digests,
+        assessed, assessed_digests, current_subject=current,
+        current_digests=assessed_digests,
     )
 
 

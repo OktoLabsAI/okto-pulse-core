@@ -101,9 +101,40 @@ def test_projection_refuses_removed_identity_even_with_current_edition(origin, s
             assessed_subject_version=7, assessed_subject_edition=1,
             assessed_digests=_digests(), assessment_kind="ambiguity",
             origin=origin, source=source, current_subject=subject,
-            qa_items=(), board_settings={},
         )
     assert subject == {"id": "r1", "version": 7, "edition": 1}
+
+
+@pytest.mark.parametrize("field", ["assessed", "current"])
+@pytest.mark.parametrize("edition", [None, 0, -1, True, "1", 1.0])
+def test_projection_requires_explicit_positive_integer_editions(field, edition):
+    from okto_pulse.core.services.quality_projection_currentness import (
+        QualityProjectionCurrentnessError, evaluate_quality_projection_currentness,
+    )
+    subject = {"id": "r1", "version": 7, "edition": edition if field == "current" else 1}
+    with pytest.raises(QualityProjectionCurrentnessError, match="quality_projection_edition_required"):
+        evaluate_quality_projection_currentness(
+            board_id="b1", subject_type="refinement", subject_id="r1",
+            assessed_subject_version=7,
+            assessed_subject_edition=edition if field == "assessed" else 1,
+            assessed_digests=_digests(), assessment_kind="ambiguity",
+            origin="human_or_agent", source="native", current_subject=subject,
+        )
+    assert subject["edition"] == (edition if field == "current" else 1)
+
+
+@pytest.mark.parametrize("assessed_edition,current_edition,current", [(1, 1, True), (1, 2, False)])
+def test_projection_uses_native_edition_without_technical_drift_fallback(assessed_edition, current_edition, current):
+    from okto_pulse.core.services.quality_projection_currentness import evaluate_quality_projection_currentness
+    result = evaluate_quality_projection_currentness(
+        board_id="b1", subject_type="refinement", subject_id="r1",
+        assessed_subject_version=7, assessed_subject_edition=assessed_edition,
+        assessed_digests=_digests(), assessment_kind="ambiguity",
+        origin="human_or_agent", source="native",
+        current_subject={"id": "r1", "version": 20, "edition": current_edition},
+    )
+    assert result.current is current
+    assert result.stale_reasons == (() if current else (AssessmentStaleReason.SUBJECT_EDITION_CHANGED,))
 
 
 def test_scale_kind_is_a_closed_explicit_contract() -> None:

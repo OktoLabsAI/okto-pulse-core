@@ -217,7 +217,7 @@ def create_complete_source_catalog(connection: sqlite3.Connection) -> None:
                 "INTEGER NOT NULL DEFAULT 1"
                 if column == "edition"
                 else "INTEGER"
-                if column == "archived"
+                if column in {"archived", "version"}
                 else "TEXT"
             )
             for column in sorted(columns - {"id"})

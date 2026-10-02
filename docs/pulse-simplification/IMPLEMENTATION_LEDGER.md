@@ -2,6 +2,55 @@
 
 ## Estado para retomada
 
+### 2026-10-02 — C1/C3: projeção Quality exige edição, sem fallback por digests
+
+Base publicada: Core 50b50314 / Community b7446740, ambos com push confirmado.
+evaluate_quality_projection_currentness exige edição inteira positiva no recibo e
+no objeto atual; retirado o caminho alternativo por versão/digests quando faltava
+edição. None, bool, float, texto e valores não positivos são recusados, sem inferir
+edição. Mantidos identidade, Board, tipos e validação dos digests registrados.
+Mudanças técnicas na mesma edição não invalidam o resultado humano; outra edição
+retira a avaliação da projeção atual, preservando o registro histórico.
+
+Os dois consumidores, rebuild SQLite e consolidação SQLAlchemy, usam o seletor
+único. Retiradas consultas de conteúdo/Q&A/settings que existiam para rederivar
+os digests desse fallback. Permanece a verificação de existência/escopo do Board
+e objeto. Projeção incremental mantém três consultas limitadas (heads, identidade
+do Board, dependências), sem recarregar Q&A. Leitor público recusa recibo sem
+edição, em vez de omiti-lo silenciosamente ou produzir um root aparentemente válido.
+
+Seis testes de projeção com recibos sem edição foram substituídos por cinco casos
+nativos (sem mudança, versão, Q&A, policy e edição) e uma recusa explícita, com
+paridade incremental/rebuild, hash da raiz e imutabilidade. Os antigos casos
+rotulados staleness não exerciam edições nativas: todos sem edição eram omitidos.
+Fixtures novas são entradas de projeção; não certificam o writer de avaliações.
+O helper SQL de testes agora declara version como INTEGER, como o schema real.
+Na regressão dos consumidores desse helper, removidas expectativas exclusivas de
+hash Sprint e coluna antiga knowledge_bases; hash Card fixado sobre campos atuais,
+preservadas determinismo, ausência de Sprint e sensibilidade ao conteúdo.
+
+Evidência: quality-projection-core1 48 aprovados/uma fixture version TEXT; core2
+49 aprovados após correção. Sources1 88 aprovados/duas expectativas antigas;
+sources2 90 aprovados, total Core distinto 139. Community1 14 aprovados/seis
+falhas de ordenação da fixture (head antes do recibo); corrigido flush da fixture,
+community2 42 aprovados, incluindo fail-closed e Research Decision. Refusal3 um
+aprovado após acrescentar asserção do leitor público. Nenhum skip. Ruff F/E9 passou.
+
+dist-quality-projection1 instalado e provenance-quality-projection1 confirma
+src/install/wheel byte-idênticos (Core 847 Python/910 payload; Community 319/405).
+SHA256 Core 5c7fe43b55ebd49ef3f08de1bda3539ff724c9d3ae3bd45bcc75905132a8d6ef;
+Community 0257c055e24aa2eb21cdb6e2bcbed7a5e26ce453942ce59c608fba8c77567bd3.
+Closure1 encontrou somente matrizes README divergentes; regeneradas e
+closure-quality-projection2 aprovado, oito budgets ZERO. Sem mudança REST/MCP/UI.
+
+Restante C1/C3: AssessmentSubjectRef/serviço/listagem ainda aceitam ausência de
+edição. A investigação local encontrou build_requirement_lint_assessment_bundle
+e commit_requirement_lint_assessment sem consumidores de produção fora do próprio
+módulo, mas ainda usados em fixtures antigas; retirar a cadeia antiga sem remover
+o lint externo atual, seus recursos/contratos ou isolamento de autoridade. Há também
+modos legacy nas UIs Quality/Policy/Checklist. C4 permanece aberto, assim como as
+decisões T23/KG-10; este marco não declara a entrega final.
+
 ### 2026-10-02 — C1/C3: Quality Assessment sem origens de importação
 
 Base publicada: Core de9da2d1 / Community 10c610ed, ambos com push confirmado.

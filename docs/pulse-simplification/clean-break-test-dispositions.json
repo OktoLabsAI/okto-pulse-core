@@ -2962,6 +2962,48 @@
       "test": "test_legacy_null_edition_ambiguity_is_previous_only_and_auditable",
       "disposition": "rewritten",
       "reason": "Imported editionless positive case replaced by native previous-edition history, batch and technical audit. Removed origins rejected separately by domain/projection/SQL constraints; editionless quality paths remain a tracked follow-up."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_sqlalchemy_quality_assessment.py",
+      "test": "test_consolidation_projection_loads_spec_inputs_in_three_bounded_queries",
+      "disposition": "rewritten",
+      "reason": "Editionless positive omission removed. Replaced with five explicit native edition cases and incompatible-receipt refusal. Preserves bounded queries, incremental/rebuild agreement, current root fingerprint and immutable history. Version/Q&A/policy changes within one edition do not invalidate its human result; a new edition does."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_sqlalchemy_quality_assessment.py",
+      "test": "test_consolidation_projection_omits_head_stale_by_subject_version",
+      "disposition": "rewritten",
+      "reason": "Editionless positive omission removed. Replaced with five explicit native edition cases and incompatible-receipt refusal. Preserves bounded queries, incremental/rebuild agreement, current root fingerprint and immutable history. Version/Q&A/policy changes within one edition do not invalidate its human result; a new edition does."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_sqlalchemy_quality_assessment.py",
+      "test": "test_consolidation_projection_omits_head_stale_by_clarification_digest",
+      "disposition": "rewritten",
+      "reason": "Editionless positive omission removed. Replaced with five explicit native edition cases and incompatible-receipt refusal. Preserves bounded queries, incremental/rebuild agreement, current root fingerprint and immutable history. Version/Q&A/policy changes within one edition do not invalidate its human result; a new edition does."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_sqlalchemy_quality_assessment.py",
+      "test": "test_consolidation_projection_omits_head_stale_by_policy_digest",
+      "disposition": "rewritten",
+      "reason": "Editionless positive omission removed. Replaced with five explicit native edition cases and incompatible-receipt refusal. Preserves bounded queries, incremental/rebuild agreement, current root fingerprint and immutable history. Version/Q&A/policy changes within one edition do not invalidate its human result; a new edition does."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_sqlalchemy_quality_assessment.py",
+      "test": "test_board_source_root_hash_ignores_subject_version_stale_quality_head",
+      "disposition": "rewritten",
+      "reason": "Editionless positive omission removed. Replaced with five explicit native edition cases and incompatible-receipt refusal. Preserves bounded queries, incremental/rebuild agreement, current root fingerprint and immutable history. Version/Q&A/policy changes within one edition do not invalidate its human result; a new edition does."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_sqlalchemy_quality_assessment.py",
+      "test": "test_board_source_root_hash_ignores_clarification_stale_quality_head",
+      "disposition": "rewritten",
+      "reason": "Editionless positive omission removed. Replaced with five explicit native edition cases and incompatible-receipt refusal. Preserves bounded queries, incremental/rebuild agreement, current root fingerprint and immutable history. Version/Q&A/policy changes within one edition do not invalidate its human result; a new edition does."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_af07_source_materialization_contract.py",
+      "test": "test_content_hashes_match_pinned_core_and_historical_contracts",
+      "disposition": "rewritten",
+      "reason": "Removed Sprint hash and prior Card shape with retired Sprint/knowledge_bases fields. Native Card digest pinned independently; other current content hashes and determinism remain covered."
     }
   ]
 }
