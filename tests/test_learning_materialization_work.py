@@ -12,10 +12,10 @@ from okto_pulse.core.kg.rebuild_audit import normalize_cognitive_artifact_id
     ('bug:with suffix/ç', 'learning:%colon:'),
 ])
 def test_work_reference_round_trip_preserves_opaque_ids_and_bug_group(bug, learning):
-    work = LearningCaptureWorkRef(bug, learning, 0)
+    work = LearningCaptureWorkRef(bug, learning, 0, 'a' * 64)
     assert parse_learning_capture_work_ref(work.encode()) == work
     assert normalize_cognitive_artifact_id(work.encode()) == normalize_cognitive_artifact_id('bug:' + bug)
-    assert LearningCaptureWorkRef(bug, learning + 'other', 0).encode() != work.encode()
+    assert LearningCaptureWorkRef(bug, learning + 'other', 0, 'a' * 64).encode() != work.encode()
 
 
 @pytest.mark.parametrize('value', [
@@ -49,7 +49,8 @@ def test_distinct_capture_fingerprints_have_distinct_work_without_changing_bug_g
     assert parse_learning_capture_work_ref(first.encode()) == first
     assert parse_learning_capture_work_ref(second.encode()) == second
     assert normalize_cognitive_artifact_id(first.encode()) == normalize_cognitive_artifact_id(second.encode())
-    assert LearningCaptureWorkRef('b', 'n', 0).encode() == 'bug:b:learning:capture-v1:n:0'
+    with pytest.raises(ValueError, match='learning_capture_work_reference_invalid'):
+        parse_learning_capture_work_ref('bug:b:learning:capture-v1:n:0')
 
 
 @pytest.mark.parametrize('suffix', ['0', '01:' + 'a' * 64, '0:' + 'A' * 64,

@@ -30,7 +30,7 @@ async def inspect_capture_work_basis(scope_factory, *, board_id, work, fingerpri
     from okto_pulse.core.application.learning_capture import revalidate_learning_capture_for_materialization
 
     try:
-        if work.fingerprint is not None and work.fingerprint != fingerprint:
+        if work.fingerprint != fingerprint:
             return CaptureMaterializationAttempt('materialization_failed', 'learning_capture_work_source_mismatch')
         async with scope_factory() as context:
             await revalidate_learning_capture_for_materialization(context, board_id=board_id,
@@ -73,7 +73,7 @@ async def materialize_capture_work(scope_factory, *, board_id, work, fingerprint
     pending = lambda reason: CaptureMaterializationAttempt('materialization_pending', reason)
     failed = lambda reason: CaptureMaterializationAttempt('materialization_failed', reason)
     try:
-        if work.fingerprint is not None and work.fingerprint != fingerprint:
+        if work.fingerprint != fingerprint:
             return failed('learning_capture_work_source_mismatch')
         selection = LearningCaptureSelection(learning_id=work.learning_id,
             generation=work.generation, fingerprint=fingerprint)

@@ -12,7 +12,7 @@ from okto_pulse.core.kg.workers import cognitive_closeout
 @pytest.mark.asyncio
 async def test_recovery_is_bounded_fair_and_excludes_human_receipts(monkeypatch):
     items = [CognitiveConsolidationItem(item_id=str(index), board_id='board', kg_generation_id='gen',
-        source_ref=LearningCaptureWorkRef('bug', f'learning-{index}', 0).encode(), artifact_type='bug',
+        source_ref=LearningCaptureWorkRef('bug', f'learning-{index}', 0, 'a' * 64).encode(), artifact_type='bug',
         status='consolidated', recorded_at='2026-09-29T00:00:00+00:00',
         updated_by_agent_id=cognitive_closeout.AGENT_ID, reason='authored_capture_materialized',
         outcome_type='candidate_created', evidence_refs=(f'kg:learning-{index}',), content_hash='a' * 64)

@@ -2,6 +2,34 @@
 
 ## Estado para retomada
 
+### 2026-10-02 — C1: identidade única do trabalho de captura Learning
+
+Base publicada: Core 0402d47c / Community 11a1ba83. LearningCaptureWorkRef exige
+fingerprint e emite/lê somente capture-v2. Formato anterior ou versão desconhecida
+do namespace reservado é recusado; fila deixa de procurar um proprietário v1.
+Materialização, inspeção e invalidação exigem correspondência do fingerprint,
+sem aceitar sua ausência. Writer de eventos já produzia a identidade atual.
+Não foram alteradas permissões, admissão, escopo ou efeitos históricos do Learning.
+
+capture-work-core1: 49 aprovados. capture-work-community1:
+33 aprovados, incluindo replay com decisões humanas em cinco estados,
+capturas distintas para o mesmo Learning, reuso, recuperação, indisponibilidade
+da fonte e invalidação transacional. Retiradas apenas cinco combinações positivas
+de fila v1; as cinco nativas e a recusa de v1 permanecem. Recuperação nativa
+usa fingerprint explícito. Nenhuma mudança de frontend/API/UI neste incremento.
+
+dist-capture-work1 instalado e provenance-capture-work1 comprovou 847/910 Core,
+319/405 Community byte-idênticos antes dos testes. closure-capture-work1 encontrou
+somente drift da matriz README pelo import removido; READMEs renderizados e
+validados oficialmente. closure-capture-work2 aprovado, oito budgets ZERO.
+Ruff F/E9 e diff aprovados. Nenhuma mudança de catálogo/SPA, release/tag/deploy.
+
+Próximo resíduo confirmado: ports/learning_capture.py ainda escreve/lê v1 para
+criação/reuso e v2 para substituição com scope=source_bug. Unificar representação
+sem ampliar substituição, reinterpretar histórico ou conceder autoridade.
+Demais normalizadores e auditoria integral C3/C4 continuam abertos; esta frente
+não é entrega completa. Decisões T23/KG-10 permanecem registradas como pendentes.
+
 ### 2026-10-02 — C1: revisão de estrutura sem conversão de NULL
 
 Base publicada: Core cfcc994c / Community c24e67ee. Removido normalizador de

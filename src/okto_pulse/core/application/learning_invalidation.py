@@ -36,7 +36,7 @@ async def qualify_obsolete_learning_association(context, *, board_id, work, fing
             or not isinstance(store, TransactionalCognitiveSourceReader)
             or not isinstance(store, FingerprintCognitiveSourceReader)):
         raise ValueError('learning_capture_transaction_capability_unavailable')
-    if work.fingerprint is not None and work.fingerprint != fingerprint:
+    if work.fingerprint != fingerprint:
         raise ValueError('learning_capture_work_source_mismatch')
     source = qualify_bug_semantic_context(await reader.assemble_semantic_for_write(
         context, board_id=board_id, bug_id=work.bug_id))
