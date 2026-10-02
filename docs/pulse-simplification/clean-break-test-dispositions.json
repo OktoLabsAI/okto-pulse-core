@@ -1496,6 +1496,18 @@
     {
       "path": "okto_labs_pulse_community/tests/test_current_relational_schema.py",
       "reason": "Added byte-inert refusal when current binding/adoption/unlink/retirement impact insertion guards are absent. No regeneration or automatic conversion."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_skb_b14_binding_materialization.py",
+      "reason": "Complete current schema fixture, explicit Board realm. All native inline/default materialization assertions retained: exact pinned template, transaction rollback, replay, immutable outbox, invalid projection-handler event rejection and permit-scoped erasure."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_validation_cycle_native_schema.py",
+      "reason": "Renamed from test_validation_cycle_edition_schema_convergence.py. Retains native admit_validation storage action on full current schema and real reopen. Removes predecessor DDL builders, NULL-edition imported history and converter auditors."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_current_relational_schema.py",
+      "reason": "Added byte-inert refusal of lifecycle transition legacy column and missing before/after edition guards; never restores guards or converts data."
     }
   ],
   "removed_cases": [
@@ -2230,6 +2242,36 @@
       "test": "test_sealed_sprint_history_survives_live_inventory_retirement",
       "disposition": "superseded",
       "reason": "Four cases reconstructed old Sprint storage and disabled the native publication guard to replay pre-retirement receipts. No imported history in fresh-install contract. Native Board-scoped policy inventory and B08 receipt/adoption/unlink/retirement history remain tested."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_validation_cycle_edition_schema_convergence.py",
+      "test": "test_preceding_lifecycle_action_contract_converges_losslessly",
+      "disposition": "superseded",
+      "reason": "Removed predecessor/converter lifecycle-edition contract. Full current-schema admission/restart and native validation-cycle persistence retained; incompatible current schema is refused byte-inertly, never converged."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_validation_cycle_edition_schema_convergence.py",
+      "test": "test_exact_alter_overlay_converges_losslessly_and_replays_stably",
+      "disposition": "superseded",
+      "reason": "Removed predecessor/converter lifecycle-edition contract. Full current-schema admission/restart and native validation-cycle persistence retained; incompatible current schema is refused byte-inertly, never converged."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_validation_cycle_edition_schema_convergence.py",
+      "test": "test_unknown_validation_edition_drift_fails_closed_without_mutation",
+      "disposition": "superseded",
+      "reason": "Removed predecessor/converter lifecycle-edition contract. Full current-schema admission/restart and native validation-cycle persistence retained; incompatible current schema is refused byte-inertly, never converged."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_validation_cycle_edition_schema_convergence.py",
+      "test": "test_unknown_lifecycle_action_contract_fails_closed_without_mutation",
+      "disposition": "superseded",
+      "reason": "Removed predecessor/converter lifecycle-edition contract. Full current-schema admission/restart and native validation-cycle persistence retained; incompatible current schema is refused byte-inertly, never converged."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_validation_cycle_edition_schema_convergence.py",
+      "test": "test_mixed_validation_edition_cohort_fails_closed",
+      "disposition": "superseded",
+      "reason": "Removed predecessor/converter lifecycle-edition contract. Full current-schema admission/restart and native validation-cycle persistence retained; incompatible current schema is refused byte-inertly, never converged."
     }
   ]
 }

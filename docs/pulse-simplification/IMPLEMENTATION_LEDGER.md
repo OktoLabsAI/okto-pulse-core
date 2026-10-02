@@ -2,6 +2,32 @@
 
 ## Estado para retomada
 
+### 2026-10-02 — C3: materialização B14 e schema nativo de validação
+
+Marco anterior publicado: Coree12c24a4 / Community31e116b7. B14 usa a fixture
+completa atual da B08; nenhuma asserção funcional removida. Mantidos pins exatos
+do template, materialização inline/default, replay, rollback, eventos imutáveis,
+recusa de handler ligado ao evento incorreto e apagamento com permit do Board.
+
+test_validation_cycle_edition_schema_convergence.py foi substituída por
+test_validation_cycle_native_schema.py. Preservada admissão nativa de validação,
+agora no schema completo e após reabertura; removidos builders de predecessores,
+histórico importado com edição NULL e auditoria/conversão de overlays. Casos
+discriminados no JSON de disposições. Schema admission ganhou recusa byte-inerte
+de coluna antiga e ausência dos guards de edição anterior/posterior. A suite
+nativa de ciclos de validação continua integral, sem mudanças de autoridade.
+
+b14-native1:1 aprovado; b14-validation-native1:38 aprovados (B14, admissão,
+36 casos de ciclos); validation-refusal-native1:33 aprovados. Produto/SPA sem
+mudanças; provenance-b08-native1 continua válida para dist-native-delivery-ledger1,
+com ambos src/install/wheels byte-idênticos. Ruff F/E9 e diff checks aprovados.
+closure-b14-validation-native1:exit0, oito budgets ZERO e documentação validada.
+Coleta community8:6076 casos enumerados/18 erros, ante6071/20. Coleta não é execução.
+
+Próximo: separar casos nativos de recovery/delivery discovery dos conversores
+Card6, depois restantes suites semânticas e code evidence. C1/C4 e decisões
+T23/KG-10 continuam abertos; este registro não qualifica entrega integral.
+
 ### 2026-10-02 — C3: impacto B08 exclusivamente nativo
 
 Marco anterior publicado: Core26d55788 / Community50645501. B08 persistence e
