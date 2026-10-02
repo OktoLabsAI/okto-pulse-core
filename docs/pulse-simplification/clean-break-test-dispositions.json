@@ -2016,6 +2016,22 @@
     {
       "path": "okto_labs_pulse_community/tests/test_skb31_semantic_pinpoint_v2_persistence.py",
       "reason": "Same client idempotency key in distinct Boards yields distinct native receipts; replay stays isolated and cross-Board reads fail."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_skb_b14_policy_governance_mcp.py",
+      "reason": "Current read uses native receipt, exact edition, not-found without fallback and closed reader errors."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_skb31_semantic_guideline_v2_transport.py",
+      "reason": "Current REST accepts native only and rejects predecessor/missing discriminator."
+    },
+    {
+      "path": "okto_labs_pulse_community/frontend/src/components/policy-compliance/__tests__/PolicyCompliancePanel.test.tsx",
+      "reason": "Current fixtures use native sealed evidence for edition, waiver and scope tests; history fixtures remain pending coordinated history retirement."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_skb31_semantic_pinpoint_v2_persistence.py",
+      "reason": "Native trigger manifest excludes cross-contract legacy receipt guard. Direct SQL rejects predecessor or missing payload version while preserving the valid receipt; schema admission and distribution regression passed."
     }
   ],
   "removed_cases": [
@@ -3320,6 +3336,18 @@
       "test": "test_core_preserves_exact_sprint_assessment_replay_before_retirement_guard",
       "disposition": "superseded",
       "reason": "Retired application writer and Sprint replay contract removed. Native v2 application/persistence tests retain atomic write, replay, immutable receipts and Board-scoped identity; Sprint writes fail before persistence."
+    },
+    {
+      "path": "okto_labs_pulse_community/frontend/src/components/policy-compliance/__tests__/semanticPolicyModel.v2.test.ts",
+      "test": "preserves legacy rationale without inventing severity or remediation",
+      "disposition": "superseded",
+      "reason": "Exclusive v1 current receipt presentation removed. Native pinpoint rendering and navigation remain covered; predecessor current envelopes are rejected."
+    },
+    {
+      "path": "okto_labs_pulse_community/frontend/src/components/policy-compliance/__tests__/PolicyCompliancePanel.test.tsx",
+      "test": "renders a legacy policy pinpoint as metric, human target with stable ID, then rationale",
+      "disposition": "superseded",
+      "reason": "Exclusive v1 current receipt presentation removed. Native pinpoint rendering and navigation remain covered; predecessor current envelopes are rejected."
     }
   ]
 }

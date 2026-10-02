@@ -1234,7 +1234,7 @@ def register_policy_governance_tools(
             GetCurrentSemanticGuidelineAssessmentCommand,
         )
         from okto_pulse.core.application.use_cases.semantic_guideline_v2 import (
-            GetCurrentSemanticGuidelineAssessmentAnyUseCase,
+            GetCurrentSemanticGuidelineAssessmentV2UseCase,
         )
         from okto_pulse.core.domain.guideline_policy import PolicyEntityType
         from okto_pulse.core.domain.guideline_semantic_projection import (
@@ -1255,7 +1255,7 @@ def register_policy_governance_tools(
             board_id,
             "get_current_assessment",
             command,
-            GetCurrentSemanticGuidelineAssessmentAnyUseCase(),
+            GetCurrentSemanticGuidelineAssessmentV2UseCase(),
         )
 
     async def okto_pulse_list_semantic_guideline_findings(

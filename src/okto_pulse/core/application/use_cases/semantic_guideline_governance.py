@@ -273,9 +273,6 @@ class GetCurrentSemanticGuidelineAssessmentCommand:
         _profile(self.projection)
 
 
-@dataclass(frozen=True, slots=True)
-class GetCurrentSemanticGuidelineAssessmentResult:
-    assessment: SemanticAssessmentProjection
 
 
 @dataclass(frozen=True, slots=True)
@@ -871,47 +868,6 @@ class GetSemanticGuidelineAssessmentUseCase:
         )
 
 
-class GetCurrentSemanticGuidelineAssessmentUseCase:
-    async def execute(
-        self,
-        command: GetCurrentSemanticGuidelineAssessmentCommand,
-        *,
-        actor: ActorContext,
-        uow: PulseUnitOfWork,
-    ) -> GetCurrentSemanticGuidelineAssessmentResult:
-        _require_capability(actor, ASSESSMENTS_READ)
-        await _require_board(uow, command.board_id, actor, write=False)
-        port = await _semantic_port(uow)
-        subject = await port.resolve_policy_subject_snapshot(
-            board_id=command.board_id,
-            entity_type=command.entity_type,
-            subject_id=command.subject_id,
-            lock=False,
-        )
-        if subject is None:
-            raise EntityNotFoundError("policy_subject", command.subject_id)
-        receipt = await port.get_current_semantic_assessment_receipt(
-            board_id=command.board_id,
-            entity_type=command.entity_type,
-            subject_id=command.subject_id,
-            binding_id=command.binding_id,
-            subject_edition=subject.subject.subject_edition,
-        )
-        if receipt is None:
-            raise EntityNotFoundError(
-                "current_semantic_guideline_assessment",
-                f"{command.subject_id}:{command.binding_id}",
-            )
-        currentness = await _receipt_currentness(port, receipt)
-        if currentness.currentness is not PolicyCurrentness.CURRENT:
-            raise RuntimeError("semantic_current_assessment_adapter_stale")
-        return GetCurrentSemanticGuidelineAssessmentResult(
-            project_semantic_assessment(
-                receipt,
-                currentness=currentness,
-                projection=command.projection,
-            )
-        )
 
 
 class ListSemanticGuidelineFindingsUseCase:
@@ -2096,8 +2052,6 @@ __all__ = [
     "CreateSemanticPolicySkipCommand",
     "CreateSemanticPolicySkipUseCase",
     "GetCurrentSemanticGuidelineAssessmentCommand",
-    "GetCurrentSemanticGuidelineAssessmentResult",
-    "GetCurrentSemanticGuidelineAssessmentUseCase",
     "GetSemanticGuidelineAssessmentCommand",
     "GetSemanticGuidelineAssessmentResult",
     "GetSemanticGuidelineAssessmentUseCase",

@@ -978,16 +978,19 @@ def test_mcp_unknown_errors_use_closed_internal_fallback(
 
 @pytest.mark.asyncio
 async def test_mcp_current_semantic_assessment_forwards_edition_and_closes_reader_error(
-    monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    from okto_pulse.core.application.use_cases import (
-        semantic_guideline_governance,
-    )
+    from okto_pulse.core.domain.guideline_policy import PolicyEntityType, PolicySubjectRef
+    from okto_pulse.core.domain.guideline_semantic_assessment import SemanticMetricOutcome
+    from test_skb31_semantic_guideline_v2_findings import _pinpoint, _receipt, _result
 
     active_edition = 7
     reader_calls: list[dict[str, object]] = []
-    legacy_calls: list[str] = []
+    subject = PolicySubjectRef(board_id="board-1", entity_type=PolicyEntityType.SPEC,
+                               subject_id="spec-1", subject_version=3, subject_edition=active_edition)
+    receipt = _receipt(_result("pass", outcome=SemanticMetricOutcome.PASS,
+                               pinpoints=(_pinpoint("warning"),), subject=subject), subject=subject)
+    receipts = [receipt]
     reader_error: list[Exception] = []
 
     class Permissions:
@@ -1051,7 +1054,7 @@ async def test_mcp_current_semantic_assessment_forwards_edition_and_closes_reade
             )
             if reader_error:
                 raise reader_error[0]
-            return None
+            return receipts[0]
 
     reader = Reader()
 
@@ -1076,24 +1079,6 @@ async def test_mcp_current_semantic_assessment_forwards_edition_and_closes_reade
             assert actor.board_id == "board-1"
             return Uow()
 
-    async def get_legacy_current(
-        _self: object,
-        command: object,
-        *,
-        actor: ActorContext,
-        uow: object,
-    ) -> object:
-        assert getattr(command, "subject_id") == "spec-1"
-        assert actor.actor_id == "agent-1"
-        assert isinstance(uow, Uow)
-        legacy_calls.append("read")
-        return SimpleNamespace(assessment={"receipt_id": "legacy-receipt"})
-
-    monkeypatch.setattr(
-        semantic_guideline_governance.GetCurrentSemanticGuidelineAssessmentUseCase,
-        "execute",
-        get_legacy_current,
-    )
     catalog = CoreMcpCatalog(name="semantic-current-test", version="test")
     factory = UowFactory()
     register_policy_governance_tools(
@@ -1123,12 +1108,15 @@ async def test_mcp_current_semantic_assessment_forwards_edition_and_closes_reade
         "subject_edition": active_edition,
     }
     assert success.kind is McpOutcomeKind.SUCCESS
-    assert success.payload == {
-        "contract_version": "v1",
-        "assessment": {"receipt_id": "legacy-receipt"},
-    }
+    assert success.payload["contract_version"] == "v2"
+    assert success.payload["assessment"]["receipt_id"] == receipt.receipt_id
+    assert success.payload["assessment"]["validation_edition"] == active_edition
     assert reader_calls == [expected_reader_call]
-    assert legacy_calls == ["read"]
+
+    receipts[0] = None
+    missing = await tool(**arguments)
+    assert missing.kind is McpOutcomeKind.ERROR
+    assert missing.code == "not_found"
 
     secret = "reader-dsn=SECRET-DO-NOT-LEAK"
     reader_error.append(
@@ -1139,8 +1127,7 @@ async def test_mcp_current_semantic_assessment_forwards_edition_and_closes_reade
     )
     failure = await tool(**arguments)
 
-    assert reader_calls == [expected_reader_call, expected_reader_call]
-    assert legacy_calls == ["read"]
+    assert reader_calls == [expected_reader_call] * 3
     assert failure.kind is McpOutcomeKind.ERROR
     assert failure.code == "internal_error"
     assert failure.retryable is False

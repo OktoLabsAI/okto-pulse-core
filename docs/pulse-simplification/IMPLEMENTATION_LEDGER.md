@@ -2,6 +2,49 @@
 
 ## Estado para retomada
 
+### 2026-10-02 — C1/C3: consulta corrente exclusivamente nativa
+
+Base publicada Core ef355573 / Community a43f7079. Retirados seletor dual v1/v2,
+GetCurrentSemanticGuidelineAssessmentUseCase/Result antigos e exports. REST/MCP
+usam GetCurrentSemanticGuidelineAssessmentV2UseCase, preservando autorização,
+Board e edição. Ausência nativa retorna not_found sem fallback. REST current
+exige envelope v2 explícito. Adapter nativo deixa de consultar idempotency_key
+na tabela predecessora. Autoridade compartilhada e leituras históricas ainda
+precisam da retirada coordenada restante; C1–C4 não estão completos.
+
+Par dist-semantic-current1 instalado e byte a byte conferido. Core1 72 aprovados/1
+falha de fixture sem pinpoint; Core2 47 aprovados/1 expectativa do código MCP
+incorreta (not_found); Core3 todos os 48 aprovados. Community1: 69 aprovados
+(REST e persistência nativa). Closure1 aprovado, nenhum finding, oito budgets ZERO.
+
+Frontend: retirados union/parser/render de current v1, legacyPinpointView, helper
+de label antigo e labels exclusivos. Testes de edição/waiver mantidos com
+evidência nativa; dois casos exclusivos de render antigo saíram e estão no JSON.
+Histórico/listagem antigos continuam pendentes; presentationMode do painel que
+atende Card/Scenario não foi apagado indiscriminadamente. Frontend1/2 anteriores
+à mudança: 8+48 aprovados. Frontend3: 60 aprovados/1 assert antigo de label;
+Frontend4: 63 aprovados. Build1 apontou helper morto e fixture de telemetria v1;
+corrigidos. Build2 aprovado; SPA sincronizada: 79 arquivos, tree SHA256
+92f6e7f45c475036bec49b2cb4b58dc3b3b3424808df13d488c3dc23549fec95.
+
+A busca de dependências encontrou triggers de colisão cruzada entre ledgers.
+Retirado trg_semantic_pinpoint_v2_legacy_receipt_i e a consulta predecessora
+do trigger nativo; o guard preserva a validação estrita de versão/payload
+inclusive versão ausente. Não há upgrade: novo schema incompatível é recusado
+pela admissão existente. Teste SQL direto cobre versão 1/ausente e preservação
+do recibo nativo já gravado; teste do manifest lista somente tabelas nativas.
+
+Par final dist-semantic-current2 instalado/provado byte a byte: Core 845/907,
+Community 319/405. SHA Core e26e73b4210f0452e7800aa1be6790640fcb45c1ec199db2534fff941fe14247;
+Community 4e0adb72f01a604ae6f5d55c1f8ba0a4c062fdb024530e1726170800e3a11834.
+Community2: 65 aprovados (SQL/schema/SPA). Closure2: exit 0, nenhum finding
+arquitetural/documental, oito budgets ZERO. Todos os handles encerrados.
+Ruff F/E9 e diff-check aprovados. Pronto para commit/push do par.
+Retomada: listagem/get por receipt, findings/waivers e suas FKs, validação SQL,
+KG/recovery e UI de histórico ainda dependem do ledger antigo. Retirar em
+conjunto, preservando o histórico produzido pela própria 0.4.0.
+
+
 ### 2026-10-02 — C1: retirada do caso de uso antigo de avaliação
 
 Base publicada Core d9027049 / Community 92fa9dfc. Removidos Command/Result/UseCase
