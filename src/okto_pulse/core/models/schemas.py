@@ -3750,6 +3750,8 @@ class CardPageItem(BaseSchema):
 class TaskValidationSubmit(BaseModel):
     """Request body for submitting a task validation."""
 
+    model_config = ConfigDict(extra="forbid")
+
     learning_capture: LearningCaptureSelection | None = Field(
         default=None,
         description="Explicit existing Learning capture to bind if this Bug completion succeeds; never approves execution.",
@@ -3758,9 +3760,6 @@ class TaskValidationSubmit(BaseModel):
     expected_subject_version: int = Field(
         ...,
         ge=1,
-        validation_alias=AliasChoices(
-            "expected_subject_version", "expected_card_version"
-        ),
         description="Optimistic card subject-version fence.",
     )
     idempotency_key: str = Field(..., min_length=1, max_length=255)
@@ -3814,31 +3813,30 @@ class TaskValidationResponse(BaseModel):
     id: str
     card_id: str
     board_id: str
-    # Historical rows predating the governed validation contract can be sparse.
-    # The submit input remains strict; public history reads are deliberately
-    # tolerant while still stripping all internal ledger fields.
-    reviewer_id: str | None = None
-    reviewer_name: str | None = Field(default=None, max_length=255)
-    confidence: int | None = None
-    confidence_justification: str | None = None
-    estimated_completeness: int | None = None
-    completeness_justification: str | None = None
-    estimated_drift: int | None = None
-    drift_justification: str | None = None
-    general_justification: str | None = None
-    recommendation: str | None = None
-    outcome: str | None = None
-    validation_outcome: str | None = None
-    completion_outcome: str | None = None
-    threshold_violations: list[str] = Field(default_factory=list)
-    created_at: str | None = None
-    card_status: str | None = None
-    resolved_thresholds: dict | None = None
-    reviewer_separation: dict | None = None
-    expected_subject_version: int | None = None
-    completion_gate_failures: list[dict] = Field(default_factory=list)
+    # Every admitted record is written with the governed contract, including
+    # its immutable response snapshot. Sparse predecessor records are invalid.
+    reviewer_id: str
+    reviewer_name: str = Field(max_length=255)
+    confidence: int = Field(ge=0, le=100)
+    confidence_justification: str
+    estimated_completeness: int = Field(ge=0, le=100)
+    completeness_justification: str
+    estimated_drift: int = Field(ge=0, le=100)
+    drift_justification: str
+    general_justification: str
+    recommendation: Literal["approve", "reject"]
+    outcome: Literal["success", "failed"]
+    validation_outcome: Literal["success", "failed"]
+    completion_outcome: Literal["completed", "rejected"]
+    threshold_violations: list[str]
+    created_at: str
+    card_status: Literal["done", "rejected"]
+    resolved_thresholds: dict
+    reviewer_separation: dict
+    expected_subject_version: int = Field(ge=1)
+    completion_gate_failures: list[dict]
     rejection_cause: CardRejectionCauseResponse | None = None
-    subject_version: int | None = None
+    subject_version: int = Field(ge=1)
     replayed: bool = False
 
 
@@ -3937,8 +3935,6 @@ def project_task_validation_public(
     if board_id and not merged.get("board_id"):
         merged["board_id"] = board_id
 
-    merged.setdefault("threshold_violations", [])
-    merged.setdefault("completion_gate_failures", [])
     if replayed is not None:
         merged["replayed"] = replayed
     else:

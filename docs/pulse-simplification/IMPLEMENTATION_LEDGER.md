@@ -2,6 +2,46 @@
 
 ## Estado para retomada
 
+### 2026-10-02 — C1/C3: validação nativa completa e cobertura por IDs
+
+Base publicada: Core beb5b404 / Community 12f369f8. TaskValidationResponse
+exige os campos que o writer atual já produz: identidade do revisor, scores,
+justificativas, snapshots de policy/separação, versões, data e resultados.
+Retirada tolerância a registros esparsos e fabricação de listas de falhas
+ausentes. Histórico atual e resposta selada de replay continuam válidos.
+TaskValidationSubmit recusa extras e aceita somente expected_subject_version;
+expected_card_version deixa de ser alias nesta operação. O campo de mesmo nome
+de Delivery pertence a outro contrato e permanece. Tipos frontend correspondem
+ao DTO completo; removido tipo Verdict sem consumidor. Nenhum gate relaxado.
+
+Os doze testes de links de analytics que falharam no lote anterior foram
+reescritos para IDs exatos e recusa de índice/texto/prefixo. Adicionado caso
+de identidade duplicada sem mutação. native-link-tests1: 39 aprovados.
+task-strict-core1: 77 aprovados/3 fixtures antigas; core2: 76 aprovados,
+incluindo reexecução das três corrigidas, recusa de campos ausentes/null,
+alias de entrada e catálogo. União com analytics: 124 distintos aprovados.
+Community rodada1: 36 aprovados/3 preparações SQL sem realm; rodada2: seis
+aprovados com criação de Board pelo adapter atual. União: 39 distintos.
+Writer e binding/replay reais passaram sem modificar produto nesses caminhos.
+Frontend rodada1: 127 aprovados/uma expectativa contaminada por defaults de
+fixture; corrigida, rodada2: caso aprovado (78 não selecionados). União: 128.
+Build TypeScript/Vite aprovado, SPA permaneceu byte-idêntica à publicada.
+
+dist-task-strict1 instalado e provenance-task-strict1 comprovou 847/910 Core
+e 319/405 Community byte-idênticos antes de comportamento. Wheel Core SHA256
+89f6e5355f09cd934951d4dd6b5f3450db6481ba32f423b6efb2c6384a6c5443;
+Community c183b5a8f66e2e8833aa08ea6ea88227c3b8b352cfe6af2f88069f1c39aff02d.
+Catálogo/manifesto regenerados oficialmente sem diff; closure-task-strict1
+aprovado com oito budgets ZERO. Ruff F/E9 e diff aprovados. Nenhuma alteração
+de runtime em memória/dados de usuário, release/tag/deploy.
+
+Próximo resíduo confirmado: ConclusionEntrySummary.normalize_legacy_shapes
+converte description/body/summary em text, aliases de autor em author_id e
+inventa data epoch. Investigar writer e consumidores para retirar conversão,
+preservando tratamento de corrupção de evidência que nega crédito e recuperação
+atual. SpecValidationResponse ainda contém semântica histórica anterior; C3/C4
+e decisões T23/KG-10 seguem abertos. Esta entrada não conclui a iniciativa.
+
 ### 2026-10-02 — C1: contrato único de campos de Task Validation
 
 Base publicada: Core f6e9466a / Community 81b642e1. Writer, DTO, analytics,

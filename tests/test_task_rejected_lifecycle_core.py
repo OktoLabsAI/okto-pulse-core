@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from task_validation_native_fixtures import native_entry
+
 import json
 from datetime import datetime, timezone
 from types import SimpleNamespace
@@ -340,7 +342,7 @@ async def test_nested_board_cards_require_validation_read() -> None:
         updated_at=now,
         due_date=None,
         labels=[],
-        validations=[{"id": "validation-1", "card_id": "card-1",
+        validations=[{**native_entry(), "id": "validation-1", "card_id": "card-1",
                       "board_id": "board-1", "general_justification": secret}],
         rejection_records=[{"id": "rejection-1", "summary": secret}],
         current_rejection_kind="task_validation",
@@ -462,7 +464,11 @@ async def test_validation_analytics_are_leaf_aware_and_strip_ledger_plumbing() -
         "status": "rejected",
         "validations": [
             {
+                **native_entry(),
                 "id": "validation-1",
+                "validation_outcome": "failed",
+                "completion_outcome": "rejected",
+                "card_status": "rejected",
                 "outcome": "failed",
                 "general_justification": secret,
                 "idempotency_key": "private-key",
@@ -737,7 +743,7 @@ def test_task_validation_transport_requires_fence_and_idempotency() -> None:
     request = TaskValidationSubmit.model_validate(
         {
             **base,
-            "expected_card_version": 7,
+            "expected_subject_version": 7,
             "idempotency_key": "validation-attempt-7",
         }
     )

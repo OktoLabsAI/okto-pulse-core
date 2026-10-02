@@ -19,10 +19,10 @@ from okto_pulse.core.services.analytics_service import (
 
 
 class TestResolveLinkedCriteria:
-    def test_mixed_shapes_dedup(self):
-        ac_list = ["AC0", "AC1", "AC2", "AC3"]
-        out = resolve_linked_criteria_to_indices([0, "1", "AC2"], ac_list)
-        assert out == {0, 1, 2}
+    def test_exact_ids_dedup(self):
+        ac_list = [{"id": f"ac_{i}", "text": f"AC{i}"} for i in range(4)]
+        out = resolve_linked_criteria_to_indices(["ac_0", "ac_2", "ac_0"], ac_list)
+        assert out == {0, 2}
 
     def test_out_of_range_dropped(self):
         assert resolve_linked_criteria_to_indices([99, "100", -1], ["A", "B"]) == set()
@@ -35,8 +35,9 @@ class TestResolveLinkedCriteria:
         # bool é subclass de int mas não deve virar 0/1
         assert resolve_linked_criteria_to_indices([True, False], ["A", "B", "C"]) == set()
 
-    def test_whitespace_stripped(self):
-        assert resolve_linked_criteria_to_indices([" 2 ", "  "], ["A", "B", "C", "D"]) == {2}
+    def test_identity_is_not_trimmed_or_converted(self):
+        ac_list = [{"id": "ac_2", "text": "Criterion"}]
+        assert resolve_linked_criteria_to_indices([" ac_2 ", "0", 0], ac_list) == set()
 
 
 class TestResolveLinkedCriteriaToIds:
@@ -52,25 +53,25 @@ class TestResolveLinkedCriteriaToIds:
         {"id": "ac_0003", "text": "Invalid token is rejected"},
     ]
 
-    def test_index_resolves_to_ac_id(self):
-        assert resolve_linked_criteria_to_ids(["0"], self._ACS) == (["ac_0001"], [])
+    def test_index_is_unresolved(self):
+        assert resolve_linked_criteria_to_ids(["0"], self._ACS) == ([], ["0"])
 
     def test_ac_id_resolves_to_itself(self):
         assert resolve_linked_criteria_to_ids(["ac_0002"], self._ACS) == (["ac_0002"], [])
 
-    def test_exact_text_resolves_to_ac_id(self):
+    def test_exact_text_is_not_identity(self):
         assert resolve_linked_criteria_to_ids(
             ["Invalid token is rejected"], self._ACS
-        ) == (["ac_0003"], [])
+        ) == ([], ["Invalid token is rejected"])
 
     def test_prefix_is_unresolved_on_write(self):
-        # read-path tolerates prefixes; write-path must NOT.
+        # Content prefixes are not identities on either path.
         resolved, unresolved = resolve_linked_criteria_to_ids(["User can log"], self._ACS)
         assert resolved == []
         assert unresolved == ["User can log"]
 
     def test_mixed_valid_invalid_is_fail_closed(self):
-        resolved, unresolved = resolve_linked_criteria_to_ids(["0", "ghost"], self._ACS)
+        resolved, unresolved = resolve_linked_criteria_to_ids(["ac_0001", "ghost"], self._ACS)
         assert resolved == ["ac_0001"]
         assert unresolved == ["ghost"]
 
@@ -80,9 +81,9 @@ class TestResolveLinkedCriteriaToIds:
         assert unresolved == ["99"]
 
     def test_dedup_preserves_order(self):
-        # index 1 and its ac_id collapse to a single id; first-seen order kept.
+        # Repeated exact IDs collapse; first-seen order is retained.
         resolved, unresolved = resolve_linked_criteria_to_ids(
-            ["1", "ac_0002", "0"], self._ACS
+            ["ac_0002", "ac_0002", "ac_0001"], self._ACS
         )
         assert resolved == ["ac_0002", "ac_0001"]
         assert unresolved == []
@@ -92,12 +93,12 @@ class TestResolveLinkedCriteriaToIds:
         assert resolved == []
         assert unresolved == ["True", "False"]
 
-    def test_legacy_string_ac_falls_back_to_text(self):
+    def test_string_children_never_acquire_an_identity(self):
         legacy = ["AC0 legacy text", "AC1 legacy text"]
-        assert resolve_linked_criteria_to_ids(["0"], legacy) == (["AC0 legacy text"], [])
+        assert resolve_linked_criteria_to_ids(["0"], legacy) == ([], ["0"])
         assert resolve_linked_criteria_to_ids(
             ["AC1 legacy text"], legacy
-        ) == (["AC1 legacy text"], [])
+        ) == ([], ["AC1 legacy text"])
 
     def test_never_emits_dict(self):
         resolved, _ = resolve_linked_criteria_to_ids(["0", "ac_0002"], self._ACS)
@@ -107,18 +108,25 @@ class TestResolveLinkedCriteriaToIds:
         assert resolve_linked_criteria_to_ids(None, self._ACS) == ([], [])
         assert resolve_linked_criteria_to_ids([], self._ACS) == ([], [])
 
-    def test_read_resolver_unchanged_still_prefix_tolerant(self):
-        # Guard: the write helper must not have altered read-path tolerance.
-        assert resolve_linked_criteria_to_indices(["User can log"], self._ACS) == {0}
+    def test_read_resolver_does_not_infer_identity_from_prefix(self):
+        assert resolve_linked_criteria_to_indices(["User can log"], self._ACS) == set()
+
+    def test_duplicate_child_identity_is_unresolved_without_mutation(self):
+        children = [dict(self._ACS[0]), dict(self._ACS[0])]
+        before = [dict(child) for child in children]
+        assert resolve_linked_criteria_to_ids(["ac_0001"], children) == ([], ["ac_0001"])
+        assert resolve_linked_criteria_to_indices(["ac_0001"], children) == set()
+        assert children == before
 
 
 class TestResolveLinkedFR:
-    def test_int_indices(self):
-        assert resolve_linked_fr_indices([0, 2], ["FR0", "FR1", "FR2"]) == {0, 2}
+    def test_exact_ids(self):
+        frs = [{"id": f"fr_{i}", "text": f"FR{i}"} for i in range(3)]
+        assert resolve_linked_fr_indices(["fr_0", "fr_2"], frs) == {0, 2}
 
-    def test_text_match(self):
-        frs = ["Endpoint returns 200", "Helper normalizes input"]
-        assert resolve_linked_fr_indices(["Helper normalizes"], frs) == {1}
+    def test_text_and_indices_do_not_match(self):
+        frs = [{"id": "fr_0", "text": "Endpoint returns 200"}]
+        assert resolve_linked_fr_indices(["Endpoint returns", "Endpoint returns 200", 0, "0"], frs) == set()
 
     def test_out_of_range(self):
         assert resolve_linked_fr_indices([99], ["A"]) == set()
@@ -242,19 +250,19 @@ class TestSpecCoverageSummary:
 
     def test_mixed_coverage(self):
         spec = self._FakeSpec(
-            acs=["AC0", "AC1", "AC2"],
-            scenarios=[{"linked_criteria": [0, "AC1"]}],
+            acs=[{"id": f"ac_{i}", "text": f"AC{i}"} for i in range(3)],
+            scenarios=[{"linked_criteria": ["ac_0", "ac_1"]}],
         )
         out = spec_coverage_summary(spec)
         assert out["ac_covered"] == 2
         assert out["ac_uncovered_indices"] == [2]
 
-    def test_numeric_string_links_count_for_ac_and_fr_coverage(self):
+    def test_exact_id_links_count_for_ac_and_fr_coverage(self):
         spec = self._FakeSpec(
-            acs=["AC0", "AC1"],
-            frs=["FR0", "FR1"],
-            scenarios=[{"linked_criteria": ["0", "1"]}],
-            rules=[{"linked_requirements": ["0", "1"]}],
+            acs=[{"id": f"ac_{i}", "text": f"AC{i}"} for i in range(2)],
+            frs=[{"id": f"fr_{i}", "text": f"FR{i}"} for i in range(2)],
+            scenarios=[{"linked_criteria": ["ac_0", "ac_1"]}],
+            rules=[{"linked_requirements": ["fr_0", "fr_1"]}],
         )
         out = spec_coverage_summary(spec)
         assert out["ac_coverage_pct"] == 100

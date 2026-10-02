@@ -1774,6 +1774,26 @@
     {
       "path": "okto_labs_pulse_community/frontend/src/lib/__tests__/exportMarkdown.test.ts",
       "reason": "Task fixtures use canonical outcome/general_justification/reviewer fields; export meaning and completion refusal retained."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_analytics_service.py",
+      "reason": "Twelve predecessor index/text/prefix conversion expectations rewritten for exact IDs/refusal. Native dedup, partial coverage and unresolved tokens retained; added duplicate identity refusal without mutation. All 39 passed."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_task_validation_public_contract.py",
+      "reason": "Complete native records and sealed replay. Added 36 missing/null refusal cases and current-only request version field; private redaction retained."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_task_rejected_lifecycle_core.py",
+      "reason": "Sparse read fixtures replaced with complete native reviews, retaining leaf permissions and private-field redaction. Submit fence uses canonical name."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_analytics_sqlite_contract_v2.py",
+      "reason": "Board fixture created by current application adapter with realm scope; literal wildcard search assertions unchanged."
+    },
+    {
+      "path": "okto_labs_pulse_community/frontend/src/services/__tests__/api.taskValidation.test.ts",
+      "reason": "Old sparse history fixture replaced with complete native historical review; current request and rejection propagation preserved."
     }
   ],
   "removed_cases": [
