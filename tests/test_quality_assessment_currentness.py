@@ -88,7 +88,27 @@ def test_receipt_preserves_explicit_scale_and_analyzer_versions() -> None:
     assert receipt.versions.analyzer_version == "analyzer/v1"
 
 
-@pytest.mark.parametrize("origin,source", [("legacy_import", "native"), ("human_or_agent", "legacy_migration")])
+@pytest.mark.parametrize("head,edition,expected", [
+    ("qar_1", 1, AssessmentReceiptState.CURRENT),
+    ("qar_new", 1, AssessmentReceiptState.PREVIOUS),
+    ("qar_1", 2, AssessmentReceiptState.PREVIOUS),
+    ("qar_new", 2, AssessmentReceiptState.PREVIOUS),
+])
+def test_native_receipt_view_preserves_current_and_previous(head, edition, expected):
+    original = _receipt()
+    receipt = replace(original, subject=replace(original.subject, subject_edition=1))
+    view = project_assessment_receipt_view(
+        receipt, head_receipt_id=head,
+        current_subject=replace(receipt.subject, subject_edition=edition, subject_version=8),
+        current_digests=_digests("changed"),
+    )
+    assert view.state is expected
+    assert view.receipt == receipt
+    with pytest.raises(QualityAssessmentContractError, match="assessment_receipt_state_mismatch"):
+        replace(view, state=AssessmentReceiptState.SUPERSEDED)
+
+
+@pytest.mark.parametrize("origin,source", [("legacy_import", "native"), ("semantic_writer", "native"), ("human_or_agent", "legacy_migration")])
 def test_projection_refuses_removed_identity_even_with_current_edition(origin, source):
     from okto_pulse.core.services.quality_projection_currentness import (
         QualityProjectionCurrentnessError,
@@ -161,6 +181,11 @@ def test_scale_kind_is_a_closed_explicit_contract() -> None:
         (
             "origin",
             "legacy_import",
+            "assessment_origin_invalid",
+        ),
+        (
+            "origin",
+            "semantic_writer",
             "assessment_origin_invalid",
         ),
         (

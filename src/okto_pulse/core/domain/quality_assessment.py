@@ -118,7 +118,6 @@ class AssessmentKind(str, Enum):
 class AssessmentOrigin(str, Enum):
     HUMAN_OR_AGENT = "human_or_agent"
     SPEC_VALIDATION = "spec_validation"
-    SEMANTIC_WRITER = "semantic_writer"
 
 
 class AssessmentSource(str, Enum):
@@ -1442,6 +1441,12 @@ class AssessmentReceiptView:
                 else AssessmentReceiptState.STALE
             )
         )
+        if self.receipt.subject.subject_edition is not None:
+            expected = (
+                AssessmentReceiptState.CURRENT
+                if self.is_head and self.freshness.current
+                else AssessmentReceiptState.PREVIOUS
+            )
         if self.state is not expected:
             raise QualityAssessmentContractError(
                 "assessment_receipt_state_mismatch"
@@ -2297,6 +2302,12 @@ def project_assessment_receipt_view(
             else AssessmentReceiptState.STALE
         )
     )
+    if receipt.subject.subject_edition is not None:
+        state = (
+            AssessmentReceiptState.CURRENT
+            if is_head and freshness.current
+            else AssessmentReceiptState.PREVIOUS
+        )
     return AssessmentReceiptView(
         receipt=receipt,
         is_head=is_head,

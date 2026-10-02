@@ -1826,6 +1826,28 @@
     {
       "path": "okto_labs_pulse_community/tests/test_spec_validation_five_metric_transport.py",
       "reason": "Added five removed-field REST 422 cases before use-case execution; canonical transport/history retained."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_sqlalchemy_quality_assessment.py",
+      "reason": "Lint fixtures now author external native submissions with edition and explicit assessment authority, without automatic builder or proposed lint questions. CAS, replay, race, rollback, pagination, audit and Board isolation retained. Ambiguity proposed-question case remains and now carries edition.",
+      "removed_test_functions": [],
+      "current_test_functions": [
+        "test_parent_summary_permission_denial_is_omission_without_quality_io",
+        "test_parent_summary_projects_not_started_for_subject_without_receipts",
+        "test_semantic_spec_writes_never_run_requirement_lint_in_community",
+        "test_schema_refuses_imported_quality_receipts_without_conversion",
+        "test_round_trip_audit_projection_pagination_and_board_isolation",
+        "test_idempotent_replay_and_fingerprint_conflict",
+        "test_fail_closed_authority_input_and_subject_fences",
+        "test_lifecycle_winner_rejects_stale_quality_writer_with_zero_rows",
+        "test_stale_head_and_real_head_cas_rollback",
+        "test_concurrent_initial_writers_produce_one_head_winner",
+        "test_caller_rollback_and_fault_injection_are_atomic",
+        "test_materializes_ideation_and_refinement_qa_losslessly",
+        "test_relational_application_seam_returns_concrete_adapter",
+        "test_native_projection_and_rebuild_share_edition_selector_and_immutable_history",
+        "test_projection_refuses_editionless_receipt_without_repair_or_silent_omission"
+      ]
     }
   ],
   "removed_cases": [
@@ -3004,6 +3026,96 @@
       "test": "test_content_hashes_match_pinned_core_and_historical_contracts",
       "disposition": "rewritten",
       "reason": "Removed Sprint hash and prior Card shape with retired Sprint/knowledge_bases fields. Native Card digest pinned independently; other current content hashes and determinism remain covered."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_requirement_lint_assessment.py",
+      "test": "test_semantic_writer_authority_is_rederivable_and_identity_bound",
+      "disposition": "superseded",
+      "reason": "Exclusive automatic-lint builder/semantic-writer command retired. Seven independent native mutation tests retained; external authority and adapter CAS/replay/rollback/history are covered by current suites. Shared ten-category taxonomy remains covered by test_quality_taxonomy.py (19 passed)."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_requirement_lint_assessment.py",
+      "test": "test_builder_computes_all_normative_digests_and_versions",
+      "disposition": "superseded",
+      "reason": "Exclusive automatic-lint builder/semantic-writer command retired. Seven independent native mutation tests retained; external authority and adapter CAS/replay/rollback/history are covered by current suites. Shared ten-category taxonomy remains covered by test_quality_taxonomy.py (19 passed)."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_requirement_lint_assessment.py",
+      "test": "test_builder_uses_child_locale_then_explicit_unknown_default",
+      "disposition": "superseded",
+      "reason": "Exclusive automatic-lint builder/semantic-writer command retired. Seven independent native mutation tests retained; external authority and adapter CAS/replay/rollback/history are covered by current suites. Shared ten-category taxonomy remains covered by test_quality_taxonomy.py (19 passed)."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_requirement_lint_assessment.py",
+      "test": "test_taxonomy_is_the_shared_closed_set_of_ten_categories",
+      "disposition": "superseded",
+      "reason": "Exclusive automatic-lint builder/semantic-writer command retired. Seven independent native mutation tests retained; external authority and adapter CAS/replay/rollback/history are covered by current suites. Shared ten-category taxonomy remains covered by test_quality_taxonomy.py (19 passed)."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_requirement_lint_assessment.py",
+      "test": "test_builder_carries_head_cas_writer_channel_origin_and_advisory_outcome",
+      "disposition": "superseded",
+      "reason": "Exclusive automatic-lint builder/semantic-writer command retired. Seven independent native mutation tests retained; external authority and adapter CAS/replay/rollback/history are covered by current suites. Shared ten-category taxonomy remains covered by test_quality_taxonomy.py (19 passed)."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_requirement_lint_assessment.py",
+      "test": "test_bundle_is_byte_identical_with_deterministic_ids_and_clock",
+      "disposition": "superseded",
+      "reason": "Exclusive automatic-lint builder/semantic-writer command retired. Seven independent native mutation tests retained; external authority and adapter CAS/replay/rollback/history are covered by current suites. Shared ten-category taxonomy remains covered by test_quality_taxonomy.py (19 passed)."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_requirement_lint_assessment.py",
+      "test": "test_bundle_materializes_proposed_questions_and_stable_child_anchors",
+      "disposition": "superseded",
+      "reason": "Exclusive automatic-lint builder/semantic-writer command retired. Seven independent native mutation tests retained; external authority and adapter CAS/replay/rollback/history are covered by current suites. Shared ten-category taxonomy remains covered by test_quality_taxonomy.py (19 passed)."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_requirement_lint_assessment.py",
+      "test": "test_commit_helper_calls_cas_once_and_never_owns_the_uow",
+      "disposition": "superseded",
+      "reason": "Exclusive automatic-lint builder/semantic-writer command retired. Seven independent native mutation tests retained; external authority and adapter CAS/replay/rollback/history are covered by current suites. Shared ten-category taxonomy remains covered by test_quality_taxonomy.py (19 passed)."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_requirement_lint_assessment.py",
+      "test": "test_commit_helper_propagates_head_cas_failure",
+      "disposition": "superseded",
+      "reason": "Exclusive automatic-lint builder/semantic-writer command retired. Seven independent native mutation tests retained; external authority and adapter CAS/replay/rollback/history are covered by current suites. Shared ten-category taxonomy remains covered by test_quality_taxonomy.py (19 passed)."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_requirement_lint_assessment.py",
+      "test": "test_unclassified_persistence_failure_propagates_for_facade_normalization",
+      "disposition": "superseded",
+      "reason": "Exclusive automatic-lint builder/semantic-writer command retired. Seven independent native mutation tests retained; external authority and adapter CAS/replay/rollback/history are covered by current suites. Shared ten-category taxonomy remains covered by test_quality_taxonomy.py (19 passed)."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_requirement_lint_assessment.py",
+      "test": "test_currentness_profile_resolution_matches_writer_hook",
+      "disposition": "superseded",
+      "reason": "Exclusive automatic-lint builder/semantic-writer command retired. Seven independent native mutation tests retained; external authority and adapter CAS/replay/rollback/history are covered by current suites. Shared ten-category taxonomy remains covered by test_quality_taxonomy.py (19 passed)."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_requirement_lint_writer.py",
+      "test": "test_write_command_carries_the_complete_canonical_post_mutation_payload",
+      "disposition": "superseded",
+      "reason": "Exclusive automatic-lint builder/semantic-writer command retired. Seven independent native mutation tests retained; external authority and adapter CAS/replay/rollback/history are covered by current suites. Shared ten-category taxonomy remains covered by test_quality_taxonomy.py (19 passed)."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_requirement_lint_writer.py",
+      "test": "test_write_command_rejects_an_invalid_or_noncanonical_payload",
+      "disposition": "superseded",
+      "reason": "Exclusive automatic-lint builder/semantic-writer command retired. Seven independent native mutation tests retained; external authority and adapter CAS/replay/rollback/history are covered by current suites. Shared ten-category taxonomy remains covered by test_quality_taxonomy.py (19 passed)."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_requirement_lint_writer_matrix.py",
+      "test": "test_explicit_assessment_channels_build_an_equivalent_semantic_snapshot",
+      "disposition": "superseded",
+      "reason": "Exclusive automatic-lint builder/semantic-writer command retired. Seven independent native mutation tests retained; external authority and adapter CAS/replay/rollback/history are covered by current suites. Shared ten-category taxonomy remains covered by test_quality_taxonomy.py (19 passed)."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_quality_assessment_service.py",
+      "test": "test_requirement_lint_inherits_only_semantic_writer_domain_authority",
+      "disposition": "rewritten",
+      "reason": "Removed positive domain-write-only exemption. Replaced by explicit quality-assess denial and authorized external submission with native edition."
     }
   ]
 }

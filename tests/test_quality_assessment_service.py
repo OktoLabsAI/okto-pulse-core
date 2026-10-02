@@ -393,7 +393,7 @@ def test_finding_can_never_be_blocking_eligible_in_a1a_or_a2() -> None:
         replace(_finding(), blocking_eligible=True)
 
 
-def test_requirement_lint_inherits_only_semantic_writer_domain_authority() -> None:
+def test_external_lint_requires_explicit_quality_authority() -> None:
     service = QualityAssessmentService(id_factory=_Ids(), clock=lambda: NOW)
     scale = AssessmentScale(
         AssessmentScaleKind.FINDING_COUNT,
@@ -406,6 +406,7 @@ def test_requirement_lint_inherits_only_semantic_writer_domain_authority() -> No
         subject_type=AssessmentSubjectType.SPEC,
         subject_id="s1",
         assessment_kind=AssessmentKind.REQUIREMENT_LINT,
+        expected_subject_edition=1,
         score=0,
         scale=scale,
     )
@@ -422,21 +423,25 @@ def test_requirement_lint_inherits_only_semantic_writer_domain_authority() -> No
             board_id="b1",
             subject_type=AssessmentSubjectType.SPEC,
             subject_id="s1",
-            subject_version=7,
+            subject_version=7, subject_edition=1,
         ),
-        status="in_progress",
+        status="approved",
         expected_scale=scale,
-        origin=AssessmentOrigin.SEMANTIC_WRITER,
+        origin=AssessmentOrigin.HUMAN_OR_AGENT,
     )
 
+    with pytest.raises(QualityAssessmentForbiddenError) as denied:
+        service.prepare_submission(submission, actor_id="external-reviewer", preflight=preflight)
+    assert denied.value.code == "assessment_permission_denied"
+    preflight = replace(preflight, authority=replace(preflight.authority, quality_assess=True))
     bundle = service.prepare_submission(
         submission,
-        actor_id="semantic-writer",
+        actor_id="external-reviewer",
         preflight=preflight,
     )
 
     assert bundle.receipt.assessment_kind is AssessmentKind.REQUIREMENT_LINT
-    assert bundle.receipt.origin is AssessmentOrigin.SEMANTIC_WRITER
+    assert bundle.receipt.origin is AssessmentOrigin.HUMAN_OR_AGENT
     assert bundle.receipt.outcome is AssessmentOutcome.ADVISORY
     assert bundle.findings == ()
 

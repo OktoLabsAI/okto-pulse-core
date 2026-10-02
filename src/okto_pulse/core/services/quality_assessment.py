@@ -351,18 +351,6 @@ class QualityAssessmentService:
         ):
             raise QualityAssessmentValidationError("assessment_subject_mismatch")
         authority = preflight.authority
-        if (
-            submission.subject_type is AssessmentSubjectType.SPEC
-            and submission.assessment_kind is AssessmentKind.REQUIREMENT_LINT
-            and preflight.origin is AssessmentOrigin.SEMANTIC_WRITER
-            and preflight.subject.subject_edition is None
-        ):
-            if not authority.domain_write:
-                raise QualityAssessmentForbiddenError(
-                    "assessment_permission_denied",
-                    "Automatic requirement lint inherits the semantic writer's domain authority.",
-                )
-            return
         if not authority.domain_write or not authority.quality_assess:
             raise QualityAssessmentForbiddenError(
                 "assessment_permission_denied",
@@ -690,32 +678,20 @@ class QualityAssessmentService:
             return
 
         if submission.assessment_kind is AssessmentKind.REQUIREMENT_LINT:
-            if preflight.subject.subject_edition is not None:
-                if preflight.origin is not AssessmentOrigin.HUMAN_OR_AGENT:
-                    raise QualityAssessmentForbiddenError(
-                        "requirement_lint_internal_cognition_forbidden"
-                    )
-                if preflight.status != "approved":
-                    raise QualityAssessmentConflictError(
-                        "assessment_subject_status_conflict",
-                        retryable=False,
-                    )
-                if (
-                    submission.scale.kind
-                    is not AssessmentScaleKind.FINDING_COUNT
-                    or submission.scale.direction
-                    is not ScoreDirection.LOWER_BETTER
-                    or submission.scale.minimum != 0
-                    or submission.score != float(len(submission.findings))
-                    or submission.proposed_questions
-                ):
-                    raise QualityAssessmentValidationError(
-                        "requirement_lint_external_contract_invalid"
-                    )
-            elif preflight.origin is not AssessmentOrigin.SEMANTIC_WRITER:
-                raise QualityAssessmentForbiddenError(
-                    "requirement_lint_external_submission_forbidden"
-                )
+            if preflight.subject.subject_edition is None:
+                raise QualityAssessmentValidationError("assessment_subject_edition_required")
+            if preflight.origin is not AssessmentOrigin.HUMAN_OR_AGENT:
+                raise QualityAssessmentForbiddenError("requirement_lint_internal_cognition_forbidden")
+            if preflight.status != "approved":
+                raise QualityAssessmentConflictError("assessment_subject_status_conflict", retryable=False)
+            if (
+                submission.scale.kind is not AssessmentScaleKind.FINDING_COUNT
+                or submission.scale.direction is not ScoreDirection.LOWER_BETTER
+                or submission.scale.minimum != 0
+                or submission.score != float(len(submission.findings))
+                or submission.proposed_questions
+            ):
+                raise QualityAssessmentValidationError("requirement_lint_external_contract_invalid")
             return
         if (
             preflight.origin is not AssessmentOrigin.SPEC_VALIDATION

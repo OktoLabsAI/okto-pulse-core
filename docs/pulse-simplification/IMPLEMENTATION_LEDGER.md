@@ -2,6 +2,59 @@
 
 ## Estado para retomada
 
+### 2026-10-02 — C1/C3: retirada da cadeia de lint automático
+
+Base publicada: Core f4441bc6 / Community 1f1d6c18, ambos com push confirmado.
+Retirados ports/requirement_lint.py e services/requirement_lint_assessment.py,
+sem consumidores de produção externos ao próprio módulo. Retirados a origem
+semantic_writer, sua constraint/tipo frontend e o bypass de autoridade que
+aceitava somente domain_write. Lint atual exige avaliação externa, edição,
+Spec Approved, domain_write e quality_assess; não aceita perguntas propostas
+nesse comando. Mantidos domínio de regras/taxonomia, lint externo, recursos,
+transporte, persistência e autorização atuais. Nenhuma conversão substituta.
+
+Excluídos os testes exclusivos do builder/command antigo; sete testes de criação,
+derivação, CRUD, cenários e rollback sem lint automático permanecem e passaram.
+Teste de herança de autoridade virou negativa para falta de quality_assess seguida
+de submissão externa autorizada. Fixture Community agora produz submissão externa
+nativa, não executa o builder removido. Conservados CAS/replay, concorrência,
+rollback/injeção de falha, filtros/paginação, auditoria/outbox e isolamento de Board.
+Perguntas propostas continuam cobertas pela avaliação de Ideation/Refinement,
+também com edição explícita. Resolutores de autoridade/input são entradas isoladas
+nos testes de adapter; estes resultados não substituem E2E do preflight real.
+
+Gap real encontrado pelo teste nativo: a listagem já retornava Previous, mas
+AssessmentReceiptView exigia os estados técnicos antigos. Alinhados validador e
+project_assessment_receipt_view ao contrato Current/Previous para recibos com
+edição, com quatro casos de head/edição e recusa de estado técnico incompatível.
+Não houve alteração de conteúdo histórico, autoridade ou regra de reabertura.
+Os caminhos sem edição ainda existentes no domínio/leitura continuam explicitamente
+pendentes de retirada; esta correção não os qualifica como contrato final.
+
+Evidência final: lint-external-core3 236 aprovados; taxonomy1 19, total Core 255.
+Community3 144 aprovados, incluindo schema/admissão/contratos/ciclo; manual4 repete
+um caso após tornar explícita a edição da fixture de ambiguidade, aprovado.
+Front1 41 aprovados; build TypeScript/Vite e Ruff F/E9 aprovados. Core1 teve 215
+aprovados/uma asserção que comparava mensagem ao code da exceção; Core2 216.
+Community1 102 aprovados/uma asserção de shape de resumo; Community2 20 aprovados
+e revelou o gap de Previous descrito acima. Não houve skips ou relaxamento de gates.
+
+dist-lint-external2 instalado, provenance-lint-external2 confirma src/install/wheel
+byte-idênticos: Core 845 Python/908 payload; Community 319/405. SHA256:
+Core f2d929bb7926650ab18a39f96c531183ff15f8bff1bc280a871b8ab6fc0d5c41;
+Community 1072b5e759b90d8ef29e1eb2daf57164c6f4812b8d3e5c177ab95f12f359d1d1.
+SPA 5f399c862bf19b84154baf088a04a7326919ed21108855f1770f642698130fe6.
+Closure1 apenas README divergente; matrizes regeneradas, Closure2 aprovado;
+closure-lint-external3 aprovado no par final, oito budgets ZERO. Sem mudança
+de tools MCP, release/tag/deploy ou dados de usuário.
+
+Próximo C1/C3: tornar obrigatória a edição em AssessmentSubjectRef/leitores,
+retirar estados/filtros Stale/Superseded e fallback de currentness; adaptar fixtures
+sem edição sem reintroduzir importadores. Investigar lint_languages remanescente
+em BoardSettings/UI, cujo resolver estava na cadeia retirada, antes de alterar
+esse contrato. Modos legacy de Quality/Policy/Checklist e qualificação integral C4
+continuam abertos. T23/KG-10 seguem sem decisão nova; entrega total não certificada.
+
 ### 2026-10-02 — C1/C3: projeção Quality exige edição, sem fallback por digests
 
 Base publicada: Core 50b50314 / Community b7446740, ambos com push confirmado.
