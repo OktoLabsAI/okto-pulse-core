@@ -30,7 +30,6 @@ KnowledgeWorkspaceProfile = Literal["summary", "detail", "full"]
 
 CONTRACT_VERSION = 2
 SUPPORTED_PROFILES: tuple[str, ...] = ("summary", "detail", "full")
-LEGACY_VERSION_TOKEN = "legacy"
 _RESOURCE_TYPES = frozenset({"knowledge_base", "architecture", "mockup"})
 _CURSOR_VERSION = 2
 _DETAIL_CURSOR_KIND = "detail"
@@ -810,7 +809,6 @@ class KnowledgeWorkspaceProjector:
             representative_id = _optional_text(
                 representative.get("resource_id") or representative.get("id")
             )
-            version_token = version or LEGACY_VERSION_TOKEN
             revision_stamp = representative.get("revision_stamp")
             stamp = revision_stamp if isinstance(revision_stamp, Mapping) else {}
             physical = [
@@ -821,7 +819,12 @@ class KnowledgeWorkspaceProjector:
                 {
                     "resource_type": resource_type,
                     "canonical_unique_resource_id": canonical_id,
-                    "versioned_projection_id": f"{canonical_id}@{version_token}",
+                    # Optional revision evidence is not a legacy exemption. An
+                    # unstamped current resource keeps its canonical identity;
+                    # never invent a revision for it.
+                    "versioned_projection_id": (
+                        f"{canonical_id}@{version}" if version is not None else canonical_id
+                    ),
                     "root_id": root_id,
                     "resource_version": version,
                     "representative_resource_id": representative_id,
@@ -830,7 +833,6 @@ class KnowledgeWorkspaceProjector:
                         representative.get("attachment_kind")
                     ),
                     "inherited": bool(representative.get("inherited")),
-                    "grandfathered": version is None,
                     "provenance": {
                         "source_entity_type": _optional_text(
                             representative.get("source_entity_type")
@@ -984,6 +986,5 @@ __all__ = [
     "KnowledgeWorkspaceProfile",
     "KnowledgeWorkspaceProjectionError",
     "KnowledgeWorkspaceProjector",
-    "LEGACY_VERSION_TOKEN",
     "SUPPORTED_PROFILES",
 ]

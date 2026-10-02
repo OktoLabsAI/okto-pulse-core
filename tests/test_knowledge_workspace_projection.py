@@ -33,7 +33,7 @@ def _attachment(
 ) -> dict:
     raw = {
         "id": resource_id,
-        "title": f"KB {root_id} {version or 'legacy'}",
+        "title": f"KB {root_id} {version or 'unversioned'}",
         "root_source_kb_id": root_id,
         "source_version": version,
         "source_entity_type": "card",
@@ -55,7 +55,7 @@ def _attachment(
         "resource_type": "knowledge_base",
         "resource_id": resource_id,
         "id": resource_id,
-        "title": f"KB {root_id} {version or 'legacy'}",
+        "title": f"KB {root_id} {version or 'unversioned'}",
         "unique_resource_id": f"knowledge_base:{root_id}",
         "attachment_kind": kind,
         "source_entity_type": "card" if kind == "direct" else "spec",
@@ -123,12 +123,15 @@ def _serialized_bytes(value: object) -> int:
 
 
 @pytest.mark.parametrize("resource_type", ["architecture", "mockup"])
-def test_artifact_pages_preserve_complete_native_bodies(resource_type: str) -> None:
+@pytest.mark.parametrize("revision", [None, "1"])
+def test_artifact_pages_preserve_complete_native_bodies(
+    resource_type: str, revision: str | None,
+) -> None:
     attachments = []
     for index in range(2):
         attachment = _attachment(
             root_id=f"root-{index}", resource_id=f"artifact-{index}",
-            version="1", kind="inherited_reference", inherited=True,
+            version=revision, kind="inherited_reference", inherited=True,
         )
         attachment["resource_type"] = resource_type
         attachment["unique_resource_id"] = f"{resource_type}:root-{index}"
@@ -151,6 +154,12 @@ def test_artifact_pages_preserve_complete_native_bodies(resource_type: str) -> N
     assert page["count"] == 1
     assert page["total_count"] == page["raw_attachment_count"] == 2
     assert page["items"][0]["body"] == large_body
+    assert page["items"][0]["resource_version"] == revision
+    assert "grandfathered" not in page["items"][0]
+    if revision is None:
+        assert page["items"][0]["versioned_projection_id"] == (
+            page["items"][0]["canonical_unique_resource_id"]
+        )
     assert page["next_cursor"] is not None
     next_requests = KnowledgeWorkspaceProjector.hydration_requests(
         projection, profile="full", cursor=page["next_cursor"],
@@ -178,7 +187,7 @@ def test_ts_fab5c273_groups_only_same_root_version_and_keeps_canonical_identity(
         ),
         _attachment(
             root_id="root-b",
-            resource_id="root-b-legacy",
+            resource_id="root-b-native",
             version=None,
             kind="inherited_reference",
             inherited=True,
@@ -220,18 +229,18 @@ def test_ts_fab5c273_groups_only_same_root_version_and_keeps_canonical_identity(
     assert [item["versioned_projection_id"] for item in first["items"]] == [
         "knowledge_base:root-a@v1",
         "knowledge_base:root-a@v2",
-        "knowledge_base:root-b@legacy",
+        "knowledge_base:root-b",
     ]
-    v1, v2, legacy = first["items"]
+    v1, v2, unversioned = first["items"]
     assert v1["canonical_unique_resource_id"] == "knowledge_base:root-a"
     assert v1["representative_resource_id"] == "root-a-v1-local"
     assert v1["attachment_kind"] == "direct"
     assert len(v1["physical_attachments"]) == 2
     assert v2["representative_resource_id"] == "root-a-v2-parent"
     assert len(v2["physical_attachments"]) == 1
-    assert legacy["resource_version"] is None
-    assert legacy["grandfathered"] is True
-    assert legacy["versioned_projection_id"].endswith("@legacy")
+    assert unversioned["resource_version"] is None
+    assert "grandfathered" not in unversioned
+    assert unversioned["versioned_projection_id"] == unversioned["canonical_unique_resource_id"]
     assert all("body" not in item for item in first["items"])
     assert all(item["detail_cursor"] for item in first["items"])
     assert all("raw" not in json.dumps(item) for item in first["items"])

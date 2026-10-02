@@ -2,6 +2,38 @@
 
 ## Estado para retomada
 
+### 2026-10-01 — Knowledge Workspace sem classificação de legado
+
+Marco anterior publicado: Corec15ecbb1 / Communityca9d7543. Retirados
+LEGACY_VERSION_TOKEN, sufixo @legacy e campo/badge grandfathered do projetor e
+frontend. ResourceRevisionStamp.source_revision permanece opcional no contrato
+atual (inclusive arquitetura/mockup); ausência não significa contrato antigo,
+waiver ou autorização. A projeção usa a identidade canônica quando não há revisão,
+mantém resource_version=null e mostra “Revision unavailable”, sem revisão inventada,
+conversão ou concessão de autoridade. Raízes, agrupamento, ordenação e budgets
+atuais não foram alterados. Os writers de Knowledge novos continuam carimbando
+parent_version via _new_knowledge_application_record; nenhum writer foi relaxado.
+
+dist-workspace-native-identity1 instalado; provenance-workspace-native-identity1.json
+comprova Core851/914 e Community318/404 Python/payload byte-idênticos antes dos testes.
+SPA:4b557e4f272e2b426cf6eda73908db19935b8c3f50b31dea43ca9df6c09e868e.
+workspace-native-identity-core1.xml:13 aprovados, incluindo arquitetura/mockup
+com/sem revisão, corpo completo e cursor escopado; workspace-native-identity-community1.xml:
+8 aprovados; workspace-native-identity-front1.xml:40 aprovados (KnowledgeWorkspace,
+CardKnowledgeTab, RefinementModal e coletor paginado). Build TypeScript/Vite e
+Ruff/diff-check aprovados. Não há atividade sobre runtime ou base de usuário.
+closure-workspace-native-identity1.json exit0, findings vazios, oito budgets ZERO;
+READMEs regenerados e validados pelo renderer oficial.
+
+Próxima retirada C3 identificada no código: server.py mantém quatro ask_* e três
+remove_* como wrappers legados para ask/remove_spec_entity, além de writers
+update_* depreciados. tool_family_registry.py e manifest.py ainda publicam esses
+aliases; remover em conjunto com instruções e catálogo gerado, preservando os
+checks de autorização/soft-delete nos dispatchers canônicos. Famílias dedicadas
+excluídas da consolidação por schema heterogêneo não são legado pelo nome do campo
+legacy_aliases; classificar antes de retirar. Não manter alias só para passar
+testes antigos. C1–C4 e decisões T23/KG-10 continuam abertos conforme ledger.
+
 ### 2026-10-01 — REST e frontend: recursos efetivos em contrato único
 
 Marco anterior publicado: Core8057705c / Communitye19da6f3. effective-resources
