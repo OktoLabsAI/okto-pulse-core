@@ -1469,7 +1469,7 @@ def _avg(values: list[float]) -> float | None:
 
 def classify_spec_violation(violations: list[str], recommendation: str) -> list[str]:
     """Map a spec validation's threshold_violations + recommendation to reason
-    buckets for the canonical five metrics plus legacy completeness. A record
+    buckets for the canonical five metrics. A record
     may hit multiple reasons (D3 multi-count).
     """
     reasons: list[str] = []
@@ -1479,8 +1479,6 @@ def classify_spec_violation(violations: list[str], recommendation: str) -> list[
             reasons.append("confidence_below")
         elif "clarity" in v_lower:
             reasons.append("clarity_below")
-        elif "completeness" in v_lower:
-            reasons.append("completeness_below")
         elif "assertiveness" in v_lower:
             reasons.append("assertiveness_below")
         elif "decidability" in v_lower:
@@ -1511,6 +1509,24 @@ def classify_task_violation(violations: list[str], recommendation: str) -> list[
     return reasons
 
 
+def _native_spec_validations(spec: object) -> list[dict]:
+    """Validate stored records without rewriting history or inventing scores."""
+    from okto_pulse.core.domain.spec_validation import require_spec_validation_edition
+    from okto_pulse.core.models.schemas import SpecValidationResponse
+
+    records = getattr(spec, "validations", None)
+    if records is None:
+        return []
+    if not isinstance(records, list):
+        raise ValueError("spec_validation_history_invalid")
+    for record in records:
+        if not isinstance(record, dict):
+            raise ValueError("spec_validation_history_invalid")
+        require_spec_validation_edition(record)
+        SpecValidationResponse.model_validate(record)
+    return records
+
+
 def aggregate_spec_validation_gate(specs: list) -> dict:
     """Aggregate Spec Validation Gate metrics across a collection of specs.
 
@@ -1523,12 +1539,11 @@ def aggregate_spec_validation_gate(specs: list) -> dict:
           total_submitted, total_success, total_failed,
           success_rate, avg_attempts_per_spec,
           avg_scores: {
-            confidence, clarity, assertiveness, decidability, ambiguity,
-            completeness (legacy)
+            confidence, clarity, assertiveness, decidability, ambiguity
           },
           rejection_reasons: {
             confidence_below, clarity_below, assertiveness_below,
-            decidability_below, ambiguity_above, completeness_below (legacy),
+            decidability_below, ambiguity_above,
             reject_recommendation,
           },
           specs_with_validation,
@@ -1539,14 +1554,12 @@ def aggregate_spec_validation_gate(specs: list) -> dict:
     total_failed = 0
     confidence_vals: list[float] = []
     clarity_vals: list[float] = []
-    completeness_vals: list[float] = []
     assertiveness_vals: list[float] = []
     decidability_vals: list[float] = []
     ambiguity_vals: list[float] = []
     reasons: dict[str, int] = {
         "confidence_below": 0,
         "clarity_below": 0,
-        "completeness_below": 0,
         "assertiveness_below": 0,
         "decidability_below": 0,
         "ambiguity_above": 0,
@@ -1556,14 +1569,12 @@ def aggregate_spec_validation_gate(specs: list) -> dict:
     attempts_per_spec: list[int] = []
 
     for s in specs:
-        vals = getattr(s, "validations", None) or []
-        if not isinstance(vals, list) or len(vals) == 0:
+        vals = _native_spec_validations(s)
+        if not vals:
             continue
         specs_with_validation += 1
         attempts_per_spec.append(len(vals))
         for v in vals:
-            if not isinstance(v, dict):
-                continue
             total_submitted += 1
             outcome = v.get("outcome")
             if outcome == "success":
@@ -1578,13 +1589,11 @@ def aggregate_spec_validation_gate(specs: list) -> dict:
             for field_name, values in (
                 ("confidence", confidence_vals),
                 ("clarity", clarity_vals),
-                ("completeness", completeness_vals),
                 ("assertiveness", assertiveness_vals),
                 ("decidability", decidability_vals),
                 ("ambiguity", ambiguity_vals),
             ):
-                if v.get(field_name) is not None:
-                    values.append(_safe_int(v.get(field_name)))
+                values.append(v[field_name])
 
     return {
         "total_submitted": total_submitted,
@@ -1601,7 +1610,6 @@ def aggregate_spec_validation_gate(specs: list) -> dict:
         "avg_scores": {
             "confidence": _avg(confidence_vals),
             "clarity": _avg(clarity_vals),
-            "completeness": _avg(completeness_vals),
             "assertiveness": _avg(assertiveness_vals),
             "decidability": _avg(decidability_vals),
             "ambiguity": _avg(ambiguity_vals),
@@ -2402,8 +2410,8 @@ async def compute_validations(db, board_id: str, *, dt_from=None, dt_to=None) ->
     # Per-spec breakdown for Spec Validation Gate — walks full history (D4)
     per_spec: list[dict] = []
     for s in specs:
-        vals = getattr(s, "validations", None) or []
-        if not isinstance(vals, list) or len(vals) == 0:
+        vals = _native_spec_validations(s)
+        if not vals:
             continue
         agg = aggregate_spec_validation_gate([s])
         last = vals[-1] if isinstance(vals[-1], dict) else None
@@ -2416,9 +2424,9 @@ async def compute_validations(db, board_id: str, *, dt_from=None, dt_to=None) ->
                 else str(s.status),
                 "attempts": len(vals),
                 "last_outcome": last.get("outcome") if last else None,
-                "last_completeness": _safe_int(last.get("completeness"))
-                if last
-                else None,
+                "last_confidence": last["confidence"],
+                "last_clarity": last["clarity"],
+                "last_decidability": last["decidability"],
                 "last_assertiveness": _safe_int(last.get("assertiveness"))
                 if last
                 else None,
@@ -2519,15 +2527,15 @@ async def compute_spec_analytics(db, board_id: str, spec_id: str) -> dict | None
 
     # Validation timeline: all submissions (D4), oldest first
     validation_timeline: list[dict] = []
-    for v in spec.validations or []:
-        if not isinstance(v, dict):
-            continue
+    for v in _native_spec_validations(spec):
         validation_timeline.append(
             {
                 "id": v.get("id"),
                 "reviewer_id": v.get("reviewer_id"),
                 "reviewer_name": v.get("reviewer_name"),
-                "completeness": _safe_int(v.get("completeness")),
+                "confidence": v["confidence"],
+                "clarity": v["clarity"],
+                "decidability": v["decidability"],
                 "assertiveness": _safe_int(v.get("assertiveness")),
                 "ambiguity": _safe_int(v.get("ambiguity")),
                 "recommendation": v.get("recommendation"),

@@ -2,6 +2,49 @@
 
 ## Estado para retomada
 
+### 2026-10-02 — C1/C3: Analytics e export usam o registro Spec Validation atual
+
+Base publicada: Core 657b36be / Community 99c932b8, ambos com push confirmado.
+Removida completeness de SPEC no classificador de motivos, agregação, média,
+último resultado e timeline de Analytics. Leitores validam o mesmo DTO nativo de
+histórico e recusam registros incompatíveis, sem converter score, ignorar linhas
+inválidas ou inventar zero. Preservados todos os attempts nativos, cálculo de média,
+success rate e contagem de múltiplos motivos por reprovação. Task/conclusão mantêm
+suas dimensões atuais de completude; os testes verificam explicitamente a distinção.
+
+BoardDashboard mostra as cinco médias de Spec; Overview usa confidence em seu
+resumo e labels de clarity/decidability nos motivos. EntityDetail foi investigado:
+os usos de completeness nele são de Task/conclusão, portanto preservados. O payload
+de compute_spec_analytics, que produz a timeline Spec, foi atualizado e testado.
+Export valida o registro Spec completo, além de seus pinpoints; helper renomeado
+para refletir essa responsabilidade. Erro de leitura continua seguindo o manifesto
+de falha de seção existente, sem emitir uma conversão ou apagar conteúdo.
+
+Evidência: spec-analytics-core1 82 aprovados, incluindo casos de agregação nativa,
+múltiplos motivos, recusa sem mutação, último resultado e timeline. Community1:
+49 aprovados/uma fixture de export antiga com score; atualizada para registro nativo,
+Community2: caso aprovado, total distinto 50. Frontend1: 108 aprovados/um teste novo
+que procurava avg complete fora do painel Spec e alcançava Task; escopo corrigido,
+Frontend2: 14 aprovados, total distinto 109. Teste confirma ausência no painel Spec
+e presença legítima no Task. Build TypeScript/Vite e Ruff F/E9 aprovados.
+
+dist-spec-analytics1 instalado, provenance-spec-analytics1 confirma byte a byte
+847 Python/910 payload Core e 319/405 Community antes do comportamento. SHA256:
+Core 7bf755f7d24c8c26ddf8288c0b2d491456984bdb3fcabc23351978f7772bd37d;
+Community 93efcc176d3ee12edd59fb3be34543051cd8228cad00e7cd18c4d1d7e04c7dbb.
+SPA embarcada 91976ccb5347f7e15db282a91c8b43504d71d5ac48b845e392e30d7399817ba8.
+Closure1: somente matriz README divergente, sem findings arquiteturais e budgets
+ZERO; matrizes regeneradas e closure-spec-analytics2 aprovado, oito budgets ZERO.
+Superfície MCP não mudou neste lote. Sem release/tag/deploy/dados de usuário.
+
+Próximo trabalho: reescrever os cenários funcionais da suíte antiga
+test_spec_validation_gate.py que ainda submetem completeness/general_justification,
+sem restaurar o contrato antigo ou relaxar gates. Prosseguir no inventário C1/C3
+remanescente (policy/quality history_only, aliases operacionais e campos ausentes
+tratados como versão antiga) e concluir a auditoria integral C4. Resultados deste
+lote não certificam suites antigas não executadas, nem a entrega completa.
+Decisões T23/KG-10 continuam sem resposta nova; há trabalho independente pendente.
+
 ### 2026-10-02 — C1/C3: resposta e apresentação de Spec Validation em cinco métricas
 
 Base publicada: Core ffcc5f2e / Community 57cecc3c, ambos com push confirmado.
