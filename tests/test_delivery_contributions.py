@@ -93,6 +93,32 @@ def test_absent_declaration_never_infers_completion(declarations):
     assert not evaluate_delivery_coverage(replace(SNAPSHOT, implementations=(fact,))).allowed
 
 
+def test_implementation_requires_typed_declarations_before_store_admission():
+    data = request()
+    data.pop("bindings")
+    data["obligation_refs"] = [BINDING.obligation_ref]
+    with pytest.raises(ValidationError, match="delivery_contribution_bindings_required"):
+        CardDeliveryEvidenceInput.model_validate(data)
+
+
+@pytest.mark.parametrize("fields", [
+    dict(kind="implementation", execution_id="execution", bindings=[dict(obligation_ref="fr:a", contribution="complete")]),
+    dict(kind="test", scenario_id="scenario", obligation_refs=["fr:a"], implementation_ids=["implementation"]),
+    dict(kind="revoke", record_id="record"),
+    dict(kind="progress", progress=dict(source_state=dict(workspace_state="unknown", recoverability="unknown"), remaining="Inspect")),
+])
+def test_current_commands_have_one_round_trip_and_canonical_defaults(fields):
+    value = CardDeliveryEvidenceInput(expected_card_version=1, expected_spec_edition=1,
+        idempotency_key="canonical", justification="Current declaration", **fields)
+    canonical = value.model_dump(mode="json")
+    omitted = {key: item for key, item in canonical.items() if item is not None}
+    assert CardDeliveryEvidenceInput.model_validate(canonical).model_dump(mode="json") == canonical
+    assert CardDeliveryEvidenceInput.model_validate(omitted).model_dump(mode="json") == canonical
+    assert "execution_submission" in canonical and "progress_refs" in canonical
+    if value.kind == "implementation":
+        assert canonical["bindings"][0]["execution_refs"] == []
+
+
 @pytest.mark.parametrize(
     "bindings",
     [

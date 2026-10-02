@@ -2,6 +2,39 @@
 
 ## Estado para retomada
 
+### 2026-10-02 — C1: pedido de Delivery canônico sem digest antigo
+
+Marco anterior publicado: Core928520de / Communityc4669aa1. Removidos os dois
+serializadores preserve_single_execution_digest e preserve_legacy_request_digest.
+Campos opcionais e coleções vazias passam pela serialização normal do contrato
+atual. Omissão/default explícito convergem para o mesmo conteúdo canônico; não
+há preservação de hashes de clientes anteriores. Implementation exige bindings
+tipados já na construção do pedido, antes do adapter. Test/progress/revoke
+continuam com suas formas atuais; round-trip dos quatro kinds foi verificado.
+
+Fixtures de single/batch/referências locais usam declarações atuais; retiradas
+as expectativas positivas de omissão para conservar digest antigo. Autoridade,
+origem de execução, limites agregados, falha atômica, escopo, replay após nova
+sessão e testes REST/MCP continuam exercidos. Campos resolvidos sem conteúdo
+ficam explicitamente null; nenhuma referência local vira autoridade persistida.
+
+canonical-request-core1:132 aprovados/3 expectativas antigas; correção core-
+correction1:58 aprovados incluindo esses casos. Total135 Core distintos.
+canonical-request-community1:62 aprovados/4 falhas de fixture; community-
+correction1:8 aprovados incluindo os quatro e os quatro restantes da suite de
+referências locais. Total70 Community distintos. canonical-request-front1:
+25 aprovados nos painéis Evidence/ReportBatch. Catálogo MCP regenerado pelo
+gerador oficial, sem diff; gate de drift aprovado. Ruff F/E9 e diff aprovados.
+
+dist-delivery-canonical-request1 instalado; provenance-delivery-canonical-
+request1 confirma847 Python/910 payload Core e319/405 Community idênticos
+byte a byte antes dos testes. closure-delivery-canonical-request1 aprovado,
+oito budgets ZERO. SPA sem mudança de fonte. Nenhuma release/tag/deploy.
+
+Próximo resíduo C1: persistência/leitura de contribuições simples versus sets
+de execuções; preservar ambas as capacidades atuais sob representação única.
+Normalizadores inventariados, C4 integral e T23/KG-10 continuam abertos.
+
 ### 2026-10-02 — identidade na criação nativa de Card
 
 Delivery publicado e enviado: Core4c29c72a / Community7b525e5e. Corrigida na

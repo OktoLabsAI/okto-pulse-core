@@ -89,15 +89,15 @@ def test_progress_contract_rejects_authority_or_ambiguous_proof(changes):
         command(**changes)
 
 
-def test_legacy_serialization_keeps_prior_digest_shape():
+def test_implementation_serialization_has_current_defaults():
     value = command(
         kind="implementation",
         progress=None,
         execution_id="receipt",
-        obligation_refs=["fr:x"],
+        bindings=[dict(obligation_ref="fr:x", contribution="complete")],
     )
-    assert "progress" not in value.model_dump()
-    assert "progress" not in value.model_dump_json()
+    assert value.model_dump()["progress"] is None
+    assert CardDeliveryEvidenceCommand.model_validate_json(value.model_dump_json()) == value
 
 
 @pytest.mark.parametrize(

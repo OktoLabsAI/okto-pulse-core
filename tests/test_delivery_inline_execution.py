@@ -16,7 +16,7 @@ def command(**changes):
             expected_spec_edition=1,
             idempotency_key="key",
             kind="implementation",
-            obligation_refs=["card:c"],
+            bindings=[dict(obligation_ref="card:c", contribution="complete")],
             justification="Implemented",
             execution_submission=dict(
                 target_id="target",
@@ -47,20 +47,21 @@ def test_inline_owns_no_scope_identity_or_authority(extra):
         CardDeliveryEvidenceCommand.model_validate(payload)
 
 
-def test_inline_and_reference_are_exclusive_and_legacy_digest_unchanged():
+def test_inline_and_reference_are_exclusive_and_have_one_canonical_serialization():
     with pytest.raises(ValidationError, match="fields_invalid"):
         command(execution_id="existing")
     payload = command().model_dump()
-    payload.pop("execution_submission")
+    payload["execution_submission"] = None
     payload["execution_id"] = "existing"
-    legacy = CardDeliveryEvidenceCommand.model_validate(payload)
-    assert "execution_submission" not in legacy.model_dump()
-    assert legacy.model_dump() == payload
+    reference = CardDeliveryEvidenceCommand.model_validate(payload)
+    assert reference.model_dump() == payload
+    omitted = {key: value for key, value in payload.items() if value is not None}
+    assert CardDeliveryEvidenceCommand.model_validate(omitted).model_dump() == payload
 
 
 def test_inline_single_counts_technical_references_in_aggregate_limit():
     payload = command().model_dump()
-    payload["obligation_refs"] = [f"fr:{i}" for i in range(199)]
+    payload["bindings"] = [dict(obligation_ref=f"fr:{i}", contribution="complete") for i in range(199)]
     with pytest.raises(ValidationError, match="payload_limit"):
         CardDeliveryEvidenceCommand.model_validate(payload)
 

@@ -91,7 +91,7 @@ def test_local_and_persisted_references_consume_aggregate_budget():
         implementation(
             str(i),
             progress_refs=[{"client_ref": "p"}],
-            obligation_refs=[f"fr:{j}" for j in range(98)],
+            bindings=[dict(obligation_ref=f"fr:{j}", contribution="complete") for j in range(98)],
         )
         for i in range(2)
     ]

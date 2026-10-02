@@ -1677,6 +1677,18 @@
     {
       "path": "okto_labs_pulse_community/tests/test_test_card_creation_surfaces.py",
       "reason": "Full native schema, composed sessions and explicit Spec contracts; retains creation, rollback, permission/scope denial and extends generated/reserved ID collision coverage."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_delivery_batch.py",
+      "reason": "Current typed declarations and canonical null defaults, preserving real receipt admission, atomic batch rollback, same-ID replay and local-reference scope/permission checks."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_delivery_inline_execution.py",
+      "reason": "Current typed declarations and canonical null defaults, preserving real receipt admission, atomic batch rollback, same-ID replay and local-reference scope/permission checks."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_delivery_local_references.py",
+      "reason": "Current typed declarations and canonical null defaults, preserving real receipt admission, atomic batch rollback, same-ID replay and local-reference scope/permission checks."
     }
   ],
   "removed_cases": [
@@ -2705,6 +2717,24 @@
       "test": "test_legacy_remains_absent_not_fabricated_complete",
       "disposition": "superseded",
       "reason": "Positive acceptance of missing declaration and inferred complete removed; replaced by rejection/no-credit tests. Current partial/complete, receipt and lifecycle predicates remain."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_delivery_batch.py",
+      "test": "test_one_and_many_use_same_builder_without_changing_legacy_shape",
+      "disposition": "superseded",
+      "reason": "Old request digest/shape preservation removed. Replaced by current explicit declaration, canonical defaults and round-trip; exclusivity and authority checks retained."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_delivery_inline_execution.py",
+      "test": "test_inline_and_reference_are_exclusive_and_legacy_digest_unchanged",
+      "disposition": "superseded",
+      "reason": "Old request digest/shape preservation removed. Replaced by current explicit declaration, canonical defaults and round-trip; exclusivity and authority checks retained."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_delivery_progress.py",
+      "test": "test_legacy_serialization_keeps_prior_digest_shape",
+      "disposition": "superseded",
+      "reason": "Old request digest/shape preservation removed. Replaced by current explicit declaration, canonical defaults and round-trip; exclusivity and authority checks retained."
     }
   ]
 }

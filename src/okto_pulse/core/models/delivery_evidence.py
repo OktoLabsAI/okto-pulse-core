@@ -2,7 +2,7 @@
 
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_serializer, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 from pydantic_core import PydanticCustomError
 
 from okto_pulse.core.domain.delivery_progress import DeliveryProgress
@@ -50,14 +50,6 @@ class CardImplementationBinding(BaseModel):
         if len(set(identities)) != len(identities):
             raise ValueError("delivery_execution_reference_duplicate")
         return self
-
-    @model_serializer(mode="wrap")
-    def preserve_single_execution_digest(self, handler):
-        result = handler(self)
-        if not self.execution_refs:
-            result.pop("execution_refs", None)
-        return result
-
 
 class DeliveryEvidenceQuery(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
@@ -178,30 +170,10 @@ class CardDeliveryEvidenceFields(BaseModel):
     def composite_execution(self) -> bool:
         return bool(self.binding_execution_refs)
 
-    @model_validator(mode="before")
-    @classmethod
-    def reject_null_bindings(cls, value):
-        if isinstance(value, dict) and "bindings" in value and value["bindings"] is None:
-            raise ValueError("delivery_contribution_bindings_required")
-        return value
-
-    @model_serializer(mode="wrap")
-    def preserve_legacy_request_digest(self, handler):
-        result = handler(self)
-        if self.progress is None:
-            result.pop("progress", None)
-        if self.execution_submission is None:
-            result.pop("execution_submission", None)
-        if self.execution_client_ref is None:
-            result.pop("execution_client_ref", None)
-        if not self.progress_refs:
-            result.pop("progress_refs", None)
-        if self.bindings is None:
-            result.pop("bindings", None)
-        return result
-
     @model_validator(mode="after")
     def closed_shape(self):
+        if self.kind == "implementation" and self.bindings is None:
+            raise ValueError("delivery_contribution_bindings_required")
         if self.bindings is not None and (self.kind != "implementation" or self.obligation_refs):
             raise ValueError("delivery_contribution_bindings_invalid")
         refs = self.selected_obligation_refs
@@ -355,7 +327,7 @@ CardDeliveryEvidenceWriteCommand = (
 def card_delivery_command(
     *, board_id, card_id, spec_id, evidence
 ) -> CardDeliveryEvidenceWriteCommand:
-    """REST and MCP share the same closed envelope and legacy parsing."""
+    """REST and MCP share the current single, batch and report envelopes."""
     if getattr(evidence, "contract_version", None) == "card-delivery-report/v1" or (
         isinstance(evidence, dict) and evidence.get("contract_version") == "card-delivery-report/v1"
     ):

@@ -101,7 +101,7 @@ def test_grouping_cannot_borrow_another_card_types_authority(card_type, kind):
         require_delivery_entry_card_type(card_type, kind)
 
 
-def test_one_and_many_use_same_builder_without_changing_legacy_shape():
+def test_one_and_many_round_trip_through_the_current_builder():
     value = batch()
     assert (
         card_delivery_command(
@@ -112,27 +112,27 @@ def test_one_and_many_use_same_builder_without_changing_legacy_shape():
         )
         == value
     )
-    legacy = CardDeliveryEvidenceCommand(
+    single = CardDeliveryEvidenceCommand(
         board_id="b",
         card_id="c",
         spec_id="s",
         expected_card_version=1,
         expected_spec_edition=1,
-        idempotency_key="old",
+        idempotency_key="single",
         kind="implementation",
-        obligation_refs=["fr:x"],
+        bindings=[dict(obligation_ref="fr:x", contribution="complete")],
         execution_id="execution",
         justification="Existing proof",
     )
-    assert "progress" not in legacy.model_dump()
+    assert single.model_dump()["progress"] is None
     assert (
         card_delivery_command(
             board_id="b",
             card_id="c",
             spec_id="s",
-            evidence=legacy.model_dump(exclude={"board_id", "card_id", "spec_id"}),
+            evidence=single.model_dump(exclude={"board_id", "card_id", "spec_id"}),
         )
-        == legacy
+        == single
     )
 
 
@@ -155,7 +155,7 @@ async def test_all_subactions_are_authorized_before_any_store_call():
             {
                 "client_ref": "proof",
                 "kind": "implementation",
-                "obligation_refs": ["fr:x"],
+                "bindings": [dict(obligation_ref="fr:x", contribution="complete")],
                 "execution_id": "execution",
                 "justification": "Proof",
             },

@@ -10,7 +10,7 @@ from okto_pulse.core.models.delivery_evidence import (
     DeliveryEvidenceInput,
 )
 from okto_pulse.core.services.delivery_evidence import delivery_inventory
-from okto_pulse.core.domain.delivery_evidence import evaluate_delivery_coverage
+from okto_pulse.core.domain.delivery_evidence import _evaluate_delivery_facts as evaluate_delivery_coverage
 from test_delivery_evidence_domain import SNAPSHOT, IMPLEMENTATION, TEST
 
 
