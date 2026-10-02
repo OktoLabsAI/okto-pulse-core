@@ -2,6 +2,46 @@
 
 ## Estado para retomada
 
+### 2026-10-02 — C1/C3: comandos Checklist sem aliases ou leitura sem edição
+
+Base publicada Core 4dc96196 / Community c88357ed. Start exige spec_edition e
+binding_version positivos; removidos expected_spec_edition, binding_digest e
+idempotency_key do comando. Submit aceita somente item_results, sem items,
+expected_execution_revision ou idempotency_key externos. As chaves continuam
+derivadas pelo Core; CAS, digest, ator e replay permanecem no serviço/persistência.
+REST/MCP já usavam esses campos canônicos e mantêm o contrato de resposta.
+Tipos frontend agora representam exatamente os acknowledgements reais de start
+e submit; retirados campos que o servidor não retornava.
+
+Preflight recusa subject sem edição positiva antes de consultar binding/current.
+Retirados o fallback para binding vivo e a repetição sem edição após TypeError.
+O binding congelado ainda tem criação lazy no adapter: este incremento não a
+retira nem certifica o fechamento integral do backend Checklist.
+
+Provas após build/install e provenance-checklist-command1: Core1 teve 71 aprovados
+e uma falha de fixture (binding sem version); corrigida, Core2 aprovou os 18 casos
+do arquivo afetado. Community1 teve 34 aprovados e uma falha de composição do novo
+teste SQL (adapter não registrado); corrigida, Community2 aprovou o fluxo real de
+start/submit/replay. SQL1 aprovou os 14 testes do adapter, incluindo CAS, histórico,
+binding, rollback e o novo fluxo nativo. Routes inclui seis recusas de aliases.
+Fixtures SQL passaram a declarar realm, adoção arquitetural e contrato de execução
+nativos; baseline1 havia falhado em setup por realm_id ausente. Nenhum gate foi
+relaxado. Frontend checklist-command-front1: 20 aprovados. TypeScript/Vite aprovados;
+SPA idêntica ao marco anterior (79 arquivos, d5238942ead0006ac630967bfd0fe19cb8b91a7e9cbd35354bb8178fc8fca4ed).
+
+Par dist-checklist-command1: Core 845 Python/908 payload, Community 319/405,
+igualdade src/install/wheel. SHA256 Core
+e6b958a2ab4b799b79f70edcf3abf219799895011bd36b4b67448eabdaf2547c;
+Community 535b5ffb660c12b7bc1dd2195c12f922726a6cf2a2d687b47a23479e8b812437.
+closure-checklist-command1 aprovado, oito budgets ZERO e nenhum finding.
+Sem mudança de inventário MCP, release/tag/deploy ou acesso a dados reais.
+
+Próximo passo C1/C3: separar a criação nativa do snapshot de binding na entrada de
+validação da leitura que hoje o cria como fallback; depois fechar DTOs/colunas
+nullable e recibos importados Checklist com seus consumidores. Preservar congelamento,
+CAS, replay e histórico da própria edição. PolicyCompliancePanel e demais itens do
+assessment/C4 continuam abertos; decisões T23/KG-10 não foram presumidas autorizadas.
+
 ### 2026-10-02 — C3: Checklist UI exige edição nativa, sem modo alternativo
 
 Base publicada Core 32c02e70 / Community cb270fd3. SpecChecklistPanel não possui

@@ -106,37 +106,27 @@ async def _preflight(
         raise EntityNotFoundError("spec", spec_id)
     if not isinstance(subject, ChecklistSpecSnapshot):
         raise RuntimeError("checklist_subject_port_invalid")
-    if subject.spec_edition is None:
-        binding = await persistence.get_binding(
-            board_id=board_id,
-            target_type=ChecklistTargetType.SPEC,
-            phase=ChecklistPhase.SPEC_VALIDATION,
-        )
-        if binding is None:
-            binding = ChecklistBinding.synthetic_off(board_id=board_id)
-    else:
-        binding = await persistence.get_validation_binding(
-            board_id=board_id,
-            spec_id=spec_id,
-            spec_edition=subject.spec_edition,
-            target_type=ChecklistTargetType.SPEC,
-            phase=ChecklistPhase.SPEC_VALIDATION,
-        )
-        if not isinstance(binding, ChecklistBinding):
-            raise RuntimeError("checklist_validation_binding_port_invalid")
-    try:
-        current = await persistence.get_current(
-            board_id=board_id,
-            spec_id=spec_id,
-            phase=ChecklistPhase.SPEC_VALIDATION,
-            spec_edition=subject.spec_edition,
-        )
-    except TypeError:
-        current = await persistence.get_current(
-            board_id=board_id,
-            spec_id=spec_id,
-            phase=ChecklistPhase.SPEC_VALIDATION,
-        )
+    if (
+        not isinstance(subject.spec_edition, int)
+        or isinstance(subject.spec_edition, bool)
+        or subject.spec_edition < 1
+    ):
+        raise RuntimeError("checklist_subject_edition_required")
+    binding = await persistence.get_validation_binding(
+        board_id=board_id,
+        spec_id=spec_id,
+        spec_edition=subject.spec_edition,
+        target_type=ChecklistTargetType.SPEC,
+        phase=ChecklistPhase.SPEC_VALIDATION,
+    )
+    if not isinstance(binding, ChecklistBinding):
+        raise RuntimeError("checklist_validation_binding_port_invalid")
+    current = await persistence.get_current(
+        board_id=board_id,
+        spec_id=spec_id,
+        phase=ChecklistPhase.SPEC_VALIDATION,
+        spec_edition=subject.spec_edition,
+    )
     if current is not None and current[0].spec_edition != subject.spec_edition:
         current = None
     return ChecklistPreflight(
@@ -216,25 +206,17 @@ class StartChecklistExecutionCommand:
     board_id: str
     spec_id: str
     expected_spec_version: int
-    spec_edition: int | None = None
-    binding_version: int | None = None
-    # Legacy transport aliases. Canonical transports use ``spec_edition`` and
-    # ``binding_version`` and let Core derive idempotency.
-    expected_spec_edition: int | None = None
-    idempotency_key: str | None = None
-    binding_digest: str | None = None
+    spec_edition: int
+    binding_version: int
 
     def __post_init__(self) -> None:
-        canonical = self.spec_edition
-        legacy = self.expected_spec_edition
-        if canonical is not None and legacy is not None and canonical != legacy:
-            raise ValueError("checklist_spec_edition_alias_conflict")
-        resolved = canonical if canonical is not None else legacy
-        if not isinstance(resolved, int) or isinstance(resolved, bool) or resolved < 1:
+        if (
+            not isinstance(self.spec_edition, int)
+            or isinstance(self.spec_edition, bool)
+            or self.spec_edition < 1
+        ):
             raise ValueError("checklist_spec_edition_invalid")
-        object.__setattr__(self, "spec_edition", resolved)
-        object.__setattr__(self, "expected_spec_edition", resolved)
-        if self.binding_version is not None and (
+        if (
             not isinstance(self.binding_version, int)
             or isinstance(self.binding_version, bool)
             or self.binding_version < 1
@@ -282,17 +264,9 @@ class StartChecklistExecutionUseCase:
                     "current": preflight.subject.spec_edition,
                 },
             )
-        if (
-            command.binding_version is not None
-            and command.binding_version != preflight.binding.version
-        ):
+        if command.binding_version != preflight.binding.version:
             raise ChecklistConflictError("checklist_binding_conflict")
-        if (
-            command.binding_digest is not None
-            and command.binding_digest != preflight.binding.digest
-        ):
-            raise ChecklistConflictError("checklist_binding_conflict")
-        idempotency_key = command.idempotency_key or canonical_sha256(
+        idempotency_key = canonical_sha256(
             {
                 "operation": "start_checklist_execution",
                 "board_id": command.board_id,
@@ -321,21 +295,9 @@ class SubmitChecklistExecutionCommand:
     spec_edition: int
     expected_spec_version: int
     item_results: tuple[ChecklistItemResult, ...]
-    # Legacy aliases are accepted only at the application boundary.
-    expected_execution_revision: int | None = None
-    items: tuple[ChecklistItemResult, ...] | None = None
-    idempotency_key: str | None = None
 
     def __post_init__(self) -> None:
-        canonical_items = tuple(self.item_results)
-        if self.items is not None:
-            legacy_items = tuple(self.items)
-            if canonical_items and canonical_items != legacy_items:
-                raise ValueError("checklist_item_results_alias_conflict")
-            if not canonical_items:
-                canonical_items = legacy_items
-        object.__setattr__(self, "item_results", canonical_items)
-        object.__setattr__(self, "items", canonical_items)
+        object.__setattr__(self, "item_results", tuple(self.item_results))
 
 
 class SubmitChecklistExecutionUseCase:
@@ -386,15 +348,7 @@ class SubmitChecklistExecutionUseCase:
             if execution.status is ChecklistExecutionStatus.SUBMITTED
             else execution.revision
         )
-        if (
-            command.expected_execution_revision is not None
-            and command.expected_execution_revision
-            != expected_execution_revision
-        ):
-            raise ChecklistConflictError(
-                "checklist_execution_revision_conflict"
-            )
-        idempotency_key = command.idempotency_key or canonical_sha256(
+        idempotency_key = canonical_sha256(
             {
                 "operation": "submit_checklist_execution",
                 "board_id": command.board_id,
@@ -414,10 +368,7 @@ class SubmitChecklistExecutionUseCase:
             }
         )
         if execution.status is ChecklistExecutionStatus.SUBMITTED:
-            if (
-                execution.receipt_id is None
-                or expected_execution_revision != execution.revision - 1
-            ):
+            if execution.receipt_id is None:
                 raise ChecklistConflictError(
                     "checklist_execution_revision_conflict"
                 )
