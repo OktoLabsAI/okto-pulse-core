@@ -13,10 +13,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from enum import Enum
-from typing import ClassVar, Generic, TypeVar
+from typing import ClassVar, Generic, Literal, TypeVar
 
 from okto_pulse.core.domain.guideline_policy import (
-    GuidelineEnforcement,
     GuidelineMetricDirection,
     GuidelinePolicyContractError,
     PolicyCurrentness,
@@ -25,16 +24,14 @@ from okto_pulse.core.domain.guideline_policy import (
 from okto_pulse.core.domain.guideline_semantic_assessment import (
     SemanticAssessmentPinpoint,
     SemanticAssessmentState,
-    SemanticGuidelineAssessmentReceipt,
     SemanticMetricOutcome,
-    SemanticMetricResult,
     SemanticThresholdSource,
 )
 from okto_pulse.core.domain.guideline_semantic_currentness import (
     SemanticAssessmentCurrentSnapshot,
     SemanticAssessmentCurrentness,
     SemanticAssessmentCurrentnessReason,
-    assess_semantic_assessment_currentness,
+    assess_native_semantic_assessment_currentness,
 )
 from okto_pulse.core.domain.guideline_semantic_exceptions import (
     SemanticMetricWaiver,
@@ -50,7 +47,11 @@ from okto_pulse.core.domain.guideline_semantic_exceptions import (
 from okto_pulse.core.domain.guideline_semantic_findings import (
     SemanticMetricFinding,
 )
-from okto_pulse.core.domain.quality_assessment import EvidenceRef
+from okto_pulse.core.domain.guideline_semantic_findings_v2 import SemanticAssessmentReceiptProjectionV2
+from okto_pulse.core.domain.guideline_semantic_v2 import (
+    AnchorSnapshot, SemanticMetricResultV2, SemanticPinpointKind, SemanticPinpointV2,
+)
+from okto_pulse.core.domain.quality_assessment import EvidenceRef, FindingSeverity, UnboundFindingAnchor
 
 
 SEMANTIC_GUIDELINE_KEYSET_CONTRACT_VERSION = "semantic-guideline-keyset/v1"
@@ -150,6 +151,20 @@ class SemanticPinpointProjection:
 
 
 @dataclass(frozen=True, slots=True)
+class NativeSemanticPinpointProjection:
+    contract_version: Literal["v2"]
+    pinpoint_key: str
+    kind: SemanticPinpointKind
+    title: str
+    detail: str
+    severity: FindingSeverity | None
+    remediation: str | None
+    anchor: UnboundFindingAnchor
+    anchor_snapshot: AnchorSnapshot
+    blocking: bool
+
+
+@dataclass(frozen=True, slots=True)
 class SemanticMetricResultDetail:
     metric_result_id: str
     metric_id: str
@@ -162,7 +177,7 @@ class SemanticMetricResultDetail:
     outcome: SemanticMetricOutcome
     rationale: str
     evidence_refs: tuple[SemanticEvidenceProjection, ...]
-    pinpoints: tuple[SemanticPinpointProjection, ...]
+    pinpoints: tuple[NativeSemanticPinpointProjection, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -183,12 +198,10 @@ class SemanticAssessmentSummary:
     binding_id: str
     guideline_id: str
     guideline_revision_id: str
-    enforcement: GuidelineEnforcement
     state: SemanticAssessmentState
     currentness: PolicyCurrentness
     currentness_reasons: tuple[SemanticAssessmentCurrentnessReason, ...]
     confidence: int
-    minimum_confidence: int
     metric_count: int
     failed_metric_count: int
     recorded_at: datetime
@@ -205,9 +218,6 @@ class SemanticAssessmentSummary:
 class SemanticAssessmentDetail(SemanticAssessmentSummary):
     binding_revision: int
     assessor_agent_id: str
-    assessor_model_id: str | None
-    assessor_independent: bool
-    confidence_admissible: bool
     metric_results: tuple[
         SemanticMetricResultDetail | SemanticMetricResultFull,
         ...,
@@ -230,12 +240,8 @@ class SemanticAssessmentDetail(SemanticAssessmentSummary):
 @dataclass(frozen=True, slots=True)
 class SemanticAssessmentFull(SemanticAssessmentDetail):
     subject_content_digest: str
-    last_semantic_editor_id: str
     guideline_revision_digest: str
     binding_configuration_digest: str
-    policy_set_digest: str
-    binding_head_digest: str
-    input_digest: str
     request_digest: str
     idempotency_key: str
     receipt_digest: str
@@ -509,8 +515,19 @@ def _pinpoint_projection(
     )
 
 
+def _native_pinpoint_projection(
+    pinpoint: SemanticPinpointV2, outcome: SemanticMetricOutcome,
+) -> NativeSemanticPinpointProjection:
+    return NativeSemanticPinpointProjection(
+        contract_version="v2", pinpoint_key=pinpoint.pinpoint_key, kind=pinpoint.kind,
+        title=pinpoint.title, detail=pinpoint.detail, severity=pinpoint.severity,
+        remediation=pinpoint.remediation, anchor=pinpoint.anchor,
+        anchor_snapshot=pinpoint.anchor_snapshot, blocking=pinpoint.blocking_for(outcome),
+    )
+
+
 def _metric_detail(
-    value: SemanticMetricResult,
+    value: SemanticMetricResultV2,
 ) -> SemanticMetricResultDetail:
     return SemanticMetricResultDetail(
         metric_result_id=value.metric_result_id,
@@ -524,11 +541,11 @@ def _metric_detail(
         outcome=value.outcome,
         rationale=value.rationale,
         evidence_refs=tuple(_evidence_projection(item) for item in value.evidence_refs),
-        pinpoints=tuple(_pinpoint_projection(item) for item in value.pinpoints),
+        pinpoints=tuple(_native_pinpoint_projection(item, value.outcome) for item in value.pinpoints),
     )
 
 
-def _metric_full(value: SemanticMetricResult) -> SemanticMetricResultFull:
+def _metric_full(value: SemanticMetricResultV2) -> SemanticMetricResultFull:
     detail = _metric_detail(value)
     return SemanticMetricResultFull(
         **{
@@ -541,7 +558,7 @@ def _metric_full(value: SemanticMetricResult) -> SemanticMetricResultFull:
 
 def _currentness(
     *,
-    receipt: SemanticGuidelineAssessmentReceipt,
+    receipt: SemanticAssessmentReceiptProjectionV2,
     assessment: SemanticAssessmentCurrentness | None,
 ) -> SemanticAssessmentCurrentness:
     if assessment is not None and not isinstance(
@@ -550,7 +567,7 @@ def _currentness(
     ):
         raise GuidelinePolicyContractError("semantic_projection_currentness_invalid")
     resolved = (
-        assess_semantic_assessment_currentness(receipt, None)
+        assess_native_semantic_assessment_currentness(receipt, subject=None)
         if assessment is None
         else assessment
     )
@@ -574,12 +591,12 @@ def _lifecycle_state(
 
 
 def project_semantic_assessment(
-    receipt: SemanticGuidelineAssessmentReceipt,
+    receipt: SemanticAssessmentReceiptProjectionV2,
     *,
     currentness: SemanticAssessmentCurrentness | None,
     projection: SemanticGuidelineProjection,
 ) -> SemanticAssessmentProjection:
-    if not isinstance(receipt, SemanticGuidelineAssessmentReceipt):
+    if not isinstance(receipt, SemanticAssessmentReceiptProjectionV2):
         raise GuidelinePolicyContractError(
             "semantic_assessment_projection_receipt_invalid"
         )
@@ -594,21 +611,21 @@ def project_semantic_assessment(
         "subject_id": receipt.subject.subject_id,
         "subject_version": receipt.subject.subject_version,
         "subject_edition": receipt.subject.subject_edition,
-        "lifecycle_state": _lifecycle_state(
-            subject_edition=receipt.subject.subject_edition,
-            currentness=state.currentness,
+        "lifecycle_state": (
+            SemanticAssessmentLifecycleState.CURRENT if state.is_current
+            else SemanticAssessmentLifecycleState.PREVIOUS
         ),
         "binding_id": receipt.binding_id,
         "guideline_id": receipt.guideline_id,
         "guideline_revision_id": receipt.guideline_revision_id,
-        "enforcement": receipt.enforcement,
-        "state": receipt.state,
+        "state": (SemanticAssessmentState.METRIC_THRESHOLD_FAILED
+                  if any(item.outcome is SemanticMetricOutcome.FAIL for item in receipt.metric_results)
+                  else SemanticAssessmentState.PASSED),
         "currentness": state.currentness,
         "currentness_reasons": state.reasons,
         "confidence": receipt.confidence,
-        "minimum_confidence": receipt.minimum_confidence,
-        "metric_count": receipt.metric_count,
-        "failed_metric_count": receipt.failed_metric_count,
+        "metric_count": len(receipt.metric_results),
+        "failed_metric_count": sum(item.outcome is SemanticMetricOutcome.FAIL for item in receipt.metric_results),
         "recorded_at": receipt.recorded_at,
     }
     if projection is SemanticGuidelineProjection.SUMMARY:
@@ -616,10 +633,7 @@ def project_semantic_assessment(
     details = {
         **summary,
         "binding_revision": receipt.binding_revision,
-        "assessor_agent_id": receipt.assessor.agent_id,
-        "assessor_model_id": receipt.assessor.model_id,
-        "assessor_independent": receipt.assessor_independent,
-        "confidence_admissible": receipt.confidence_admissible,
+        "assessor_agent_id": receipt.assessment_assessor_id,
         "metric_results": tuple(
             (
                 _metric_full(item)
@@ -634,12 +648,8 @@ def project_semantic_assessment(
     return SemanticAssessmentFull(
         **details,
         subject_content_digest=receipt.subject_content_digest,
-        last_semantic_editor_id=receipt.last_semantic_editor_id,
         guideline_revision_digest=receipt.guideline_revision_digest,
         binding_configuration_digest=receipt.binding_configuration_digest,
-        policy_set_digest=receipt.policy_set_digest,
-        binding_head_digest=receipt.binding_head_digest,
-        input_digest=receipt.input_digest,
         request_digest=receipt.request_digest,
         idempotency_key=receipt.idempotency_key,
         receipt_digest=receipt.receipt_digest,

@@ -2040,6 +2040,26 @@
     {
       "path": "okto_labs_pulse_community/tests/test_skb31_semantic_pinpoint_v2_persistence.py",
       "reason": "All native read signatures match the public Core port. Added tied-time keyset paging, outcome and Board/edition filters, immutable history across edition reopening and currentness for multiple same-edition receipts."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_skb3_semantic_guideline_persistence.py",
+      "reason": "Mixed predecessor assessment/finding keyset case split: finding proof remains; native public assessment SQL proof with 205 receipts, profiles, signed Board-bound cursor and sealed get is in test_native_semantic_history_transport.py. Application test additionally scans past 200 current receipts to find Previous receipts."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_skb3_semantic_guideline_projection_contract.py",
+      "reason": "Assessment projection uses native sealed receipt; old finding/waiver/skip proofs retained pending their coordinated removal."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_skb3_semantic_policy_governance_rest.py",
+      "reason": "Native detail contract preserves required nullable anchor/snapshot fields and rejects predecessor-only fields."
+    },
+    {
+      "path": "okto_labs_pulse_community/frontend/src/components/policy-compliance/__tests__/PolicyCompliancePanel.test.tsx",
+      "reason": "History fixture now native; removed artificial inadmissible-confidence flags absent from sealed contract. Writer admission tests retain confidence/separation enforcement. Native stale authority, evidence preservation after refresh failure, retry and empty-state proofs retained."
+    },
+    {
+      "path": "okto_labs_pulse_community/frontend/src/components/policy-compliance/__tests__/semanticPolicyModel.test.ts",
+      "reason": "Native history parses v2 pinpoints and current/previous lifecycle; predecessor admission fields and history_only are rejected."
     }
   ],
   "removed_cases": [

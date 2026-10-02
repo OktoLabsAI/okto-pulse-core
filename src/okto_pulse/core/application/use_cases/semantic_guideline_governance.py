@@ -101,6 +101,7 @@ from okto_pulse.core.domain.guideline_semantic_findings import (
     semantic_metric_result_digest_v1,
 )
 from okto_pulse.core.domain.quality_assessment import EvidenceRef
+from okto_pulse.core.ports.semantic_subject_projection import SemanticAssessmentV2ReadPort
 from okto_pulse.core.ports.guideline_policy import (
     GuidelinePolicyIdempotencyConflict,
     require_writable_policy_subject_type,
@@ -766,7 +767,9 @@ class ListSemanticGuidelineAssessmentsUseCase:
         query = command.query
         _require_capability(actor, ASSESSMENTS_READ)
         await _require_board(uow, query.board_id, actor, write=False)
-        port = await _semantic_port(uow)
+        port = uow.semantic_assessment_v2_reader
+        if not isinstance(port, SemanticAssessmentV2ReadPort):
+            raise TypeError("semantic_assessment_v2_reader_missing")
         after = (
             None
             if query.cursor is None
@@ -775,7 +778,7 @@ class ListSemanticGuidelineAssessmentsUseCase:
         selected: list[tuple[Any, SemanticAssessmentCurrentness]] = []
         has_more = False
         while True:
-            receipts, raw_next = await port.list_semantic_assessment_receipts(
+            receipts, raw_next = await port.list_semantic_assessment_v2_receipts(
                 board_id=query.board_id,
                 entity_type=query.entity_type,
                 subject_id=query.subject_id,
@@ -791,7 +794,7 @@ class ListSemanticGuidelineAssessmentsUseCase:
                 ),
             )
             for receipt in receipts:
-                currentness = await _receipt_currentness(port, receipt)
+                currentness = await port.get_semantic_assessment_v2_currentness(receipt)
                 if (
                     query.currentness is None
                     or currentness.currentness is query.currentness
@@ -848,8 +851,10 @@ class GetSemanticGuidelineAssessmentUseCase:
     ) -> GetSemanticGuidelineAssessmentResult:
         _require_capability(actor, ASSESSMENTS_READ)
         await _require_board(uow, command.board_id, actor, write=False)
-        port = await _semantic_port(uow)
-        receipt = await port.get_semantic_assessment_receipt(
+        port = uow.semantic_assessment_v2_reader
+        if not isinstance(port, SemanticAssessmentV2ReadPort):
+            raise TypeError("semantic_assessment_v2_reader_missing")
+        receipt = await port.get_semantic_assessment_v2(
             board_id=command.board_id,
             receipt_id=command.receipt_id,
         )
@@ -858,7 +863,7 @@ class GetSemanticGuidelineAssessmentUseCase:
                 "semantic_guideline_assessment",
                 command.receipt_id,
             )
-        currentness = await _receipt_currentness(port, receipt)
+        currentness = await port.get_semantic_assessment_v2_currentness(receipt)
         return GetSemanticGuidelineAssessmentResult(
             project_semantic_assessment(
                 receipt,

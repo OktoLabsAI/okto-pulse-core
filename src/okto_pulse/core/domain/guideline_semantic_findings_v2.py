@@ -78,6 +78,8 @@ def _evidence_payload(item: EvidenceRef) -> dict[str, object]:
 class SemanticAssessmentReceiptProjectionV2:
     receipt_id: str
     receipt_digest: str
+    request_digest: str
+    idempotency_key: str
     subject: PolicySubjectRef
     subject_content_digest: str
     guideline_id: str
@@ -103,6 +105,7 @@ class SemanticAssessmentReceiptProjectionV2:
             )
         for field_name in (
             "receipt_id",
+            "idempotency_key",
             "guideline_id",
             "guideline_revision_id",
             "binding_id",
@@ -134,6 +137,7 @@ class SemanticAssessmentReceiptProjectionV2:
             )
         for field_name in (
             "receipt_digest",
+            "request_digest",
             "subject_content_digest",
             "guideline_revision_digest",
             "binding_configuration_digest",

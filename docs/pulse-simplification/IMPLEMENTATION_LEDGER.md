@@ -2,6 +2,57 @@
 
 ## Estado para retomada
 
+### 2026-10-02 — C1/C3 em andamento: histórico público exclusivamente nativo
+
+Base publicada Core 575cf761 / Community 86158e34. List/Get usam a porta
+nativa e projeções seladas, sem converter recibos predecessores. REST e painel
+foram alinhados: rationale, evidence_refs, pinpoints e digests nativos;
+campos ausentes do recibo não recebem defaults inventados.
+Par public1 instalado e conferido byte a byte (845/907 Core, 319/405 Community).
+Core: 67 aprovados; Community: 74 aprovados. Frontend1 teve três expectativas
+incompatíveis com o novo histórico; frontend2 deixou uma referência DOM obsoleta
+após refresh. Corrigida para consultar novamente o card montado. Application1:
+paginação acima de 200 passou, duas fixtures usaram dataclasses.replace em
+ActorContext indevidamente. Correção e repetição pendentes.
+Ainda faltam integração mista antiga, frontend, build SPA, par final e closure.
+Incremento NÃO concluído nem publicado. Gate de Checklist por snapshot já
+autorizado e entregue no par 53770e8e / d033ef31; não reabrir essa decisão.
+
+Application2: três aprovados. Frontend4: 59 aprovados; build completo aprovado,
+SPA sincronizada (79 arquivos, SHA256 da árvore
+73f1d9a2b3ba315ab1963926d3ae78b43f81cbe56d6c1c29eab4d0f89079721e).
+Keysets1: dois aprovados — nova prova SQL pública de 205 recibos nativos em
+summary/detail/get completo, isolamento de Board e cursor; prova de findings
+mantida separadamente até sua retirada coordenada. Disposições registradas no JSON.
+Package1: 23 aprovados (distribuição frontend, SPA e OpenAPI).
+Par public2 conferido byte a byte. Closure2: nenhum finding arquitetural,
+oito budgets ZERO; apenas matriz README desatualizada. Regenerada oficialmente.
+Par public3 recompilado, instalação/proveniência e closure final pendentes.
+SHA256 Core 7e64a782749161c92fea2823e67320a47168a4557bc66392b30ee221b679425b;
+Community 3583ffd51fc1f9f9b5ae968f7fb713e3edf10118dba1c481d1f7bc752e435898.
+Somente README difere do produto Python/SPA já testado.
+
+Fechamento deste incremento: public3 instalado e provenance-public3 aprovado
+byte a byte (845/907 Core; 319/405 Community). Closure-public3 terminou exit 0,
+sem findings arquiteturais/documentais e com os oito budgets ZERO. Campanhas
+terminais: Core 67+3; Community 74+2+23; frontend 59 aprovados. Ruff F/E9 e
+diff-check aprovados. Todos os handles encerrados. Pronto para commit/push
+coordenado em feature/v0.4.0; C1–C4 e entrega integral continuam em andamento.
+
+Dependência seguinte confirmada: ListSemanticGuidelineFindingsUseCase e Request/
+Review/RevalidateSemanticMetricWaiver ainda usam a porta de persistência antiga.
+O adapter nativo grava FindingV2Row, mas não expõe get/list de finding/metric.
+Criar essas leituras pela porta pública e alinhar projeção/frontend; request de
+waiver deve validar IDs/digests/Board/edição no recibo nativo e preservar as
+permissões e separação de atores existentes. As FKs de waiver em sqlalchemy_models
+ainda apontam para receipt/metric/finding predecessores: retirar coordenadamente
+com os consumidores de validação, KG/recovery e guards. Não usar conversor nem
+apagar a autoridade compartilhada de bindings/revisões. SemanticMetricWaiverAnchorV2
+já existe para identidade selada, mas não substitui sozinho os dados exigidos
+pela governança de waiver; preservar esses dados nativos ao consolidar o contrato.
+Também resta union SemanticPinpointProjectionV1/V2 na porta (sem consumidor de
+produto; apenas teste de convivência), a retirar junto com os DTOs predecessores.
+
 ### 2026-10-02 — C1: porta de histórico nativo e atualidade no Core
 
 Base publicada Core 567ba75f / Community e37ad50d. A porta pública de leitura

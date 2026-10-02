@@ -119,6 +119,8 @@ def _receipt(
     return SemanticAssessmentReceiptProjectionV2(
         receipt_id=receipt_id,
         receipt_digest=DIGEST_C,
+        request_digest=DIGEST_A,
+        idempotency_key="native-request-1",
         subject=subject or _subject(),
         subject_content_digest=DIGEST_A,
         guideline_id="guideline-1",

@@ -230,22 +230,32 @@ def _field_names(value: object) -> set[str]:
     return {field.name for field in fields(value)}
 
 
+def _native_projection_evidence():
+    from test_native_semantic_history_currentness import _fixture
+    from okto_pulse.core.domain.guideline_semantic_currentness import assess_native_semantic_assessment_currentness
+    receipt, subject, binding, revision = _fixture(edition=1)
+    return receipt, assess_native_semantic_assessment_currentness(
+        receipt, subject=subject, binding=binding, revision=revision,
+    )
+
+
 def test_summary_detail_full_allowlists_are_structurally_closed() -> None:
-    receipt, current, currentness, finding, waiver, skip = _semantic_evidence()
+    _old_receipt, current, currentness, finding, waiver, skip = _semantic_evidence()
+    receipt, native_currentness = _native_projection_evidence()
 
     assessment_summary = project_semantic_assessment(
         receipt,
-        currentness=currentness,
+        currentness=native_currentness,
         projection=SemanticGuidelineProjection.SUMMARY,
     )
     assessment_detail = project_semantic_assessment(
         receipt,
-        currentness=currentness,
+        currentness=native_currentness,
         projection=SemanticGuidelineProjection.DETAIL,
     )
     assessment_full = project_semantic_assessment(
         receipt,
-        currentness=currentness,
+        currentness=native_currentness,
         projection=SemanticGuidelineProjection.FULL,
     )
     assert {
@@ -265,7 +275,7 @@ def test_summary_detail_full_allowlists_are_structurally_closed() -> None:
     assert "metric_definition_digest" not in _field_names(metric_detail)
     assert {
         "receipt_digest",
-        "input_digest",
+        "subject_content_digest",
         "request_digest",
         "idempotency_key",
     } <= _field_names(assessment_full)
@@ -538,7 +548,7 @@ async def test_singular_waiver_projects_expiry_at_required_snapshot() -> None:
 
 
 def test_projection_and_page_reject_cross_profile_construction() -> None:
-    receipt, _current, currentness, *_ = _semantic_evidence()
+    receipt, currentness = _native_projection_evidence()
     summary = project_semantic_assessment(
         receipt,
         currentness=currentness,
