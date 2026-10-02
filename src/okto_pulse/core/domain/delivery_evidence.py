@@ -122,7 +122,7 @@ def read_delivery_contributions(
     """
     rows = payload.get("contributions")
     version = payload.get("contribution_contract_version")
-    if version not in {"card-binding-contribution/v1", "card-binding-contribution/v2"} or not isinstance(rows, list) or not rows:
+    if version != "card-binding-contribution/v2" or not isinstance(rows, list) or not rows:
         raise ValueError("delivery_contribution_payload_invalid")
     by_ref = {binding.obligation_ref: binding for binding in bindings}
     if len(by_ref) != len(bindings) or len(rows) != len(bindings):
@@ -131,15 +131,15 @@ def read_delivery_contributions(
     result = []
     execution_count = 0
     for row in rows:
-        fields = {"obligation_ref", "contribution"} | ({"execution_ids"} if version.endswith("/v2") else set())
+        fields = {"obligation_ref", "contribution", "execution_ids"}
         if not isinstance(row, dict) or set(row) != fields:
             raise ValueError("delivery_contribution_payload_invalid")
         ref = row["obligation_ref"]
         if not isinstance(ref, str) or ref not in by_ref or ref in seen:
             raise ValueError("delivery_contribution_payload_invalid")
         seen.add(ref)
-        execution_ids = row.get("execution_ids", [])
-        if version.endswith("/v2") and (
+        execution_ids = row["execution_ids"]
+        if (
             not isinstance(execution_ids, list) or not 1 <= len(execution_ids) <= 100
             or any(not isinstance(identity, str) or not identity.strip() or len(identity) > 512 for identity in execution_ids)
             or len(set(execution_ids)) != len(execution_ids)
@@ -147,21 +147,18 @@ def read_delivery_contributions(
             raise ValueError("delivery_execution_set_invalid")
         execution_count += len(execution_ids)
         result.append(DeliveryContribution(by_ref[ref], row["contribution"], tuple(execution_ids)))
-    if version.endswith("/v2") and execution_count + len(rows) > 200:
+    if execution_count + len(rows) > 200:
         raise ValueError("delivery_execution_set_invalid")
     return tuple(result)
 
 
 def delivery_execution_ids(payload: dict, selected_bindings: tuple[DeliveryBinding, ...] | None = None) -> tuple[str, ...]:
     """Exact immutable receipt references, optionally restricted to tested bindings."""
-    if payload.get("contribution_contract_version") == "card-binding-contribution/v2":
-        bindings = tuple(DeliveryBinding(**value) for value in payload.get("bindings", []))
-        contributions = read_delivery_contributions(payload, bindings)
-        return tuple(sorted({identity for item in contributions
-            if selected_bindings is None or item.binding in selected_bindings
-            for identity in item.execution_ids}))
-    identity = payload.get("execution_id")
-    return (identity,) if isinstance(identity, str) and identity.strip() else ()
+    bindings = tuple(DeliveryBinding(**value) for value in payload.get("bindings", []))
+    contributions = read_delivery_contributions(payload, bindings)
+    return tuple(sorted({identity for item in contributions
+        if selected_bindings is None or item.binding in selected_bindings
+        for identity in item.execution_ids}))
 
 
 @dataclass(frozen=True, slots=True)

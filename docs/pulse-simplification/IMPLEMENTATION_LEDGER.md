@@ -2,6 +2,30 @@
 
 ## Estado para retomada
 
+### 2026-10-02 — C1: persistência única das contribuições de Delivery
+
+Base publicada: Core bcb2d70a / Community e41e0a97. Writer grava somente
+card-binding-contribution/v2, com execution_ids explícitos por obrigação,
+inclusive para execução simples. Reader recusa v1/versão ausente e não usa
+execution_id de topo como fallback. Adapter autentica o conjunto declarado
+pela mesma rotina para execução simples e composta; pedidos inline, referências
+locais e replay continuam disponíveis no contrato atual.
+
+Build dist-delivery-storage1 instalado antes dos testes; provenance-delivery-
+storage1.json confirma 847 Python/910 payload Core e 319/405 Community idênticos
+byte a byte. storage-core1: 44 aprovados. storage-community1 teve duas falhas
+de expectativa (forma persistida e diagnóstico de recibo inexistente);
+storage-correction1: quatro aprovados, incluindo ambas. As recusas e rollback
+continuam exercidos. storage-front1: 25 aprovados. closure-delivery-storage1:
+aprovado, oito budgets ZERO; READMEs renderizados e validados oficialmente.
+Ruff F/E9 e diff aprovados. Nenhuma alteração de fonte SPA, release ou deploy.
+
+Próximo: retirar a representação alternativa dos fatos internos de Delivery
+(executions=None e campos-resumo), adaptando as provas unitárias de recibo;
+o reader de armazenamento já não produz esse caminho. C1 restante e auditoria
+integral C4 continuam abertos, assim como as decisões T23/KG-10. Este incremento
+não certifica a conclusão do plano.
+
 ### 2026-10-02 — C1: pedido de Delivery canônico sem digest antigo
 
 Marco anterior publicado: Core928520de / Communityc4669aa1. Removidos os dois

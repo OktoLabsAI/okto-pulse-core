@@ -11,6 +11,7 @@ from okto_pulse.core.domain.delivery_evidence import (
     DeliveryObligation,
     _evaluate_delivery_facts as evaluate_delivery_coverage,
     read_delivery_contributions,
+    delivery_execution_ids,
 )
 from okto_pulse.core.domain.enums import CardStatus
 from okto_pulse.core.models.delivery_evidence import (
@@ -181,16 +182,33 @@ def test_declarations_are_exclusive_to_implementation_and_count_in_batch_limits(
         },
     ],
 )
-def test_corrupt_new_history_never_falls_back_to_legacy(change):
+def test_corrupt_current_history_is_rejected(change):
     payload = dict(
-        contribution_contract_version="card-binding-contribution/v1",
+        contribution_contract_version="card-binding-contribution/v2",
         contributions=[
-            dict(obligation_ref=BINDING.obligation_ref, contribution="partial")
+            dict(obligation_ref=BINDING.obligation_ref, contribution="partial", execution_ids=["execution"])
         ],
     )
     payload.update(change)
     with pytest.raises(ValueError):
         read_delivery_contributions(payload, (BINDING,))
+
+
+@pytest.mark.parametrize("version", [None, "card-binding-contribution/v1"])
+def test_previous_storage_is_rejected_even_with_a_top_level_receipt(version):
+    payload = dict(contribution_contract_version=version, execution_id="old-receipt",
+        bindings=[dict(obligation_ref=BINDING.obligation_ref, semantic_sha256=BINDING.semantic_sha256)],
+        contributions=[dict(obligation_ref=BINDING.obligation_ref, contribution="complete")])
+    with pytest.raises(ValueError, match="delivery_contribution_payload_invalid"):
+        delivery_execution_ids(payload)
+
+
+def test_current_storage_resolves_only_explicit_binding_receipts():
+    payload = dict(contribution_contract_version="card-binding-contribution/v2", execution_id="ignored",
+        bindings=[dict(obligation_ref=BINDING.obligation_ref, semantic_sha256=BINDING.semantic_sha256)],
+        contributions=[dict(obligation_ref=BINDING.obligation_ref, contribution="complete", execution_ids=["receipt"])])
+    assert delivery_execution_ids(payload) == ("receipt",)
+    assert delivery_execution_ids(payload, ()) == ()
 
 
 @pytest.mark.asyncio
