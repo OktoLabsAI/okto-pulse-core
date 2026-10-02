@@ -1742,6 +1742,22 @@
     {
       "path": "okto_labs_pulse_community/tests/test_learning_reuse_materialization.py",
       "reason": "Native work includes exact capture fingerprint; projection/reuse recovery behavior retained."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_learning_scoped_supersedence_contract.py",
+      "reason": "Single v2 contract with explicit nullable scope; old v1 preservation replaced by refusal. Unscoped intent never acquires replacement authority."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_learning_capture_projection.py",
+      "reason": "Native v2 fixtures declare null scope; source fingerprints, identity, projection and malformed payload checks retained."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_learning_scope_lineage_reader.py",
+      "reason": "Unscoped current payload replaces legacy positive fixture; no inferred historical linkage."
+    },
+    {
+      "path": "okto_labs_pulse_community/frontend/src/services/__tests__/learning-capture-api.test.tsx",
+      "reason": "Current history only, explicit scope, legacy format refusal without mutation; source and lineage checks retained."
     }
   ],
   "removed_cases": [

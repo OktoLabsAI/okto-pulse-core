@@ -72,7 +72,9 @@ def test_claim_cannot_substitute_target_or_uncommitted_successor(damage):
     else:
         capture = replace(capture, record_fingerprint='', payload={**capture.payload,
             'intent': {**capture.payload['intent'], 'expected_fingerprint': 'f' * 64}})
-    with pytest.raises(ValueError, match='learning_(scope_claim_invalid|materialization_projection_conflict)'):
+    error = ('learning_capture_payload_invalid' if damage == 'v1'
+             else 'learning_(scope_claim_invalid|materialization_projection_conflict)')
+    with pytest.raises(ValueError, match=error):
         qualify_learning_scope_replacement(previous=previous, claimed=claimed, capture=capture, successor=successor)
 
 
@@ -87,9 +89,9 @@ def test_later_curation_cannot_silently_drop_prior_scope_claim():
 def test_pending_reuse_is_not_a_literal_claim_deletion():
     previous, claimed, capture, _ = records()
     pending = replace(capture, node_id=previous.node_id, record_fingerprint='', source_revision=2,
-        payload={**capture.payload, 'capture_format': 'learning-capture/v1', 'intent': {
+        payload={**capture.payload, 'capture_format': 'learning-capture/v2', 'intent': {
             'kind': 'reuse', 'target_node_id': claimed.node_id, 'target_generation': claimed.generation,
-            'expected_fingerprint': claimed.record_fingerprint, 'reason': 'Applies to another origin'}})
+            'expected_fingerprint': claimed.record_fingerprint, 'reason': 'Applies to another origin', 'scope': None}})
     assert len(scope_reference_additions((previous, claimed, pending))) == 1
 
 

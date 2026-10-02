@@ -1,4 +1,4 @@
-"""An explicit replacement scope must not be retrofitted onto v1 history."""
+"""The current capture contract carries explicit scope without granting authority."""
 from copy import deepcopy
 from dataclasses import replace
 
@@ -22,10 +22,24 @@ def scoped_record():
 
 
 @pytest.mark.parametrize('kind', ['create', 'reuse', 'supersede'])
-def test_unscoped_request_keeps_exact_v1_intent_fields(kind):
+def test_current_request_always_serializes_explicit_scope(kind):
     intent = LearningCaptureIntent() if kind == 'create' else LearningCaptureIntent(kind, 'target', 0, 'a' * 64, 'Reason')
+    assert learning_capture_intent_payload(intent)['scope'] is None
     assert set(learning_capture_intent_payload(intent)) == {
-        'kind', 'target_node_id', 'target_generation', 'expected_fingerprint', 'reason'}
+        'kind', 'target_node_id', 'target_generation', 'expected_fingerprint', 'reason', 'scope'}
+
+
+@pytest.mark.parametrize('damage', ['old_format', 'missing_scope'])
+def test_current_create_refuses_incompatible_payload_without_conversion(damage):
+    record = capture_record()
+    if damage == 'old_format':
+        record['payload']['capture_format'] = 'learning-capture/v1'
+    del record['payload']['intent']['scope']
+    original = deepcopy(record)
+    with pytest.raises(ValueError, match='learning_capture_payload_invalid'):
+        validate_learning_capture_payload(record['payload'], **{key: record[key] for key in (
+            'board_id', 'node_type', 'node_id', 'generation', 'evidence_refs')})
+    assert record == original
 
 
 def test_v2_explicit_source_bug_scope_is_durable_but_not_a_literal_projection():
@@ -93,12 +107,12 @@ def test_scoped_syntax_without_qualified_target_cannot_enter_commit():
         plan.require_scope_target()
 
 
-def test_v1_supersede_is_not_silently_given_source_bug_scope():
+def test_unscoped_supersede_does_not_acquire_source_bug_authority():
     from okto_pulse.core.domain.learning_materialization import CapturedLearningProjection
     from okto_pulse.core.ports.kg_cognitive_source import CognitiveSourceRecord
     raw = scoped_record()
-    raw['payload']['capture_format'] = 'learning-capture/v1'
-    del raw['payload']['intent']['scope']
+    raw['payload']['capture_format'] = 'learning-capture/v2'
+    raw['payload']['intent']['scope'] = None
     capture = CognitiveSourceRecord(**raw)
     with pytest.raises(ValueError, match='learning_materialization_intent_unsupported'):
         CapturedLearningProjection(capture, capture, 'bug-a').require_literal_head()

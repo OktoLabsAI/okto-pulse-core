@@ -76,8 +76,8 @@ async def test_partial_or_inconsistent_history_never_becomes_recorded_linkage(da
 
 
 @pytest.mark.asyncio
-async def test_legacy_unscoped_supersede_does_not_acquire_linkage_or_scope():
+async def test_unscoped_supersede_does_not_acquire_linkage_or_scope():
     _, _, capture, _ = records()
     capture = replace(capture, record_fingerprint='', payload={**capture.payload,
-        'capture_format': 'learning-capture/v1', 'intent': {key: value for key, value in capture.payload['intent'].items() if key != 'scope'}})
+        'capture_format': 'learning-capture/v2', 'intent': {**capture.payload['intent'], 'scope': None}})
     assert await LearningScopeHistoryPageReader(None, object()).lineage(capture) is None

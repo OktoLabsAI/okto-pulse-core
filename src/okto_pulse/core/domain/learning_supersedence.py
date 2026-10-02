@@ -9,7 +9,7 @@ from dataclasses import dataclass, replace
 from okto_pulse.core.domain.learning_materialization import CapturedLearningProjection
 from okto_pulse.core.ports.kg_cognitive_source import CognitiveSourceRecord, latest_cognitive_source_records
 from okto_pulse.core.ports.learning_capture import (
-    LEARNING_SCOPED_CAPTURE_FORMAT, LearningCaptureSourceRef,
+    LEARNING_CAPTURE_FORMAT, LearningCaptureSourceRef,
     parse_learning_capture_source_ref, validate_learning_capture_payload,
 )
 
@@ -130,7 +130,7 @@ def qualify_learning_scope_replacement(*, previous, claimed, capture, successor)
     valid = validate_learning_capture_payload(payload, board_id=capture.board_id,
         node_type=capture.node_type, node_id=capture.node_id, generation=capture.generation,
         evidence_refs=capture.evidence_refs)
-    if (not valid or payload['capture_format'] != LEARNING_SCOPED_CAPTURE_FORMAT
+    if (not valid or payload['capture_format'] != LEARNING_CAPTURE_FORMAT
             or payload['intent']['kind'] != 'supersede' or payload['intent']['scope'] != 'source_bug'):
         raise ValueError('learning_scope_claim_invalid')
     intent = payload['intent']

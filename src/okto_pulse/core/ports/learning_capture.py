@@ -14,15 +14,14 @@ from urllib.parse import quote, unquote
 
 from okto_pulse.core.ports.kg_cognitive_source import CognitiveSourceRecord
 
-LEARNING_CAPTURE_FORMAT = 'learning-capture/v1'
-LEARNING_SCOPED_CAPTURE_FORMAT = 'learning-capture/v2'
+LEARNING_CAPTURE_FORMAT = 'learning-capture/v2'
 LEARNING_CAPTURE_MAX_BYTES = 256 * 1024
 
 
 def is_scoped_learning_supersede(payload) -> bool:
     """Recognize the explicit scoped format; this is not target admission."""
     intent = payload.get('intent', {})
-    return (payload.get('capture_format') == LEARNING_SCOPED_CAPTURE_FORMAT
+    return (payload.get('capture_format') == LEARNING_CAPTURE_FORMAT
         and intent.get('kind') == 'supersede' and intent.get('scope') == 'source_bug')
 
 
@@ -87,8 +86,7 @@ class LearningCaptureIntent:
     expected_fingerprint: str | None = None
     reason: str | None = None
     # Explicitly replaces applicability for this capture's source Bug only.
-    # None preserves the original v1 format; legacy supersede captures do not
-    # acquire a scope or new historical effect merely by being read.
+    # None grants no replacement scope; readers must never infer one.
     scope: str | None = None
 
     def __post_init__(self):
@@ -138,13 +136,10 @@ def _digest(value):
 
 
 def learning_capture_intent_payload(intent: LearningCaptureIntent) -> dict:
-    """Preserve v1 bytes/meaning when the caller has not declared a scope."""
-    value = dict(kind=intent.kind, target_node_id=intent.target_node_id,
+    """Serialize explicit scope in the single current capture contract."""
+    return dict(kind=intent.kind, target_node_id=intent.target_node_id,
         target_generation=intent.target_generation, expected_fingerprint=intent.expected_fingerprint,
-        reason=intent.reason)
-    if intent.scope is not None:
-        value['scope'] = intent.scope
-    return value
+        reason=intent.reason, scope=intent.scope)
 
 
 @dataclass(frozen=True, slots=True)
@@ -187,7 +182,7 @@ def parse_learning_capture_source_ref(value: str) -> LearningCaptureSourceRef | 
 def validate_learning_capture_payload(payload, *, board_id, node_type, node_id, generation, evidence_refs):
     """Return whether this is a capture, rejecting malformed/unknown formats.
 
-    Legacy property maps have no ``capture_format`` key and are left unchanged.
+    Literal cognitive projections have no ``capture_format`` discriminator.
     No authority, truth, evidence admission or permission follows from this
     validation. The caller must also verify the enclosing source fingerprint.
     """
@@ -196,7 +191,7 @@ def validate_learning_capture_payload(payload, *, board_id, node_type, node_id, 
     invalid = ValueError('learning_capture_payload_invalid')
     if (set(payload) != {'capture_format', 'capture_id', 'author_id', 'captured_at',
             'content', 'context', 'applicability', 'source', 'intent'}
-            or payload['capture_format'] not in (LEARNING_CAPTURE_FORMAT, LEARNING_SCOPED_CAPTURE_FORMAT)
+            or payload['capture_format'] != LEARNING_CAPTURE_FORMAT
             or node_type != 'Learning' or not _text(node_id)
             or type(generation) is not int or generation < 0
             or not _text(payload['capture_id']) or not _text(payload['author_id'])
@@ -220,13 +215,10 @@ def validate_learning_capture_payload(payload, *, board_id, node_type, node_id, 
             or type(evidence_refs) not in (list, tuple)
             or tuple(source['evidence_refs']) != tuple(evidence_refs)):
         raise invalid
-    scoped = payload['capture_format'] == LEARNING_SCOPED_CAPTURE_FORMAT
-    intent_keys = {'kind', 'target_node_id', 'target_generation', 'expected_fingerprint', 'reason'}
-    if scoped:
-        intent_keys.add('scope')
+    intent_keys = {'kind', 'target_node_id', 'target_generation', 'expected_fingerprint', 'reason', 'scope'}
     if type(intent) is not dict or set(intent) != intent_keys:
         raise invalid
-    if scoped and (intent['kind'] != 'supersede' or intent['scope'] != 'source_bug'):
+    if intent['scope'] is not None and (intent['kind'] != 'supersede' or intent['scope'] != 'source_bug'):
         raise invalid
     if intent['kind'] == 'create':
         if any(intent[key] is not None for key in ('target_node_id', 'target_generation', 'expected_fingerprint', 'reason')):

@@ -25,11 +25,11 @@ def captured(before):
     refs = ('spec:spec:test_scenario:scenario',)
     return CognitiveSourceRecord(board_id=before.board_id, node_type='Learning', node_id='learning',
         generation=0, source_revision=2, evidence_refs=refs,
-        payload=dict(capture_format='learning-capture/v1', capture_id='capture', author_id='author',
+        payload=dict(capture_format='learning-capture/v2', capture_id='capture', author_id='author',
             captured_at='2026-09-29T12:00:00+00:00', content='An authored lesson.', context='Context',
             applicability='Scope', source=dict(board_id=before.board_id, bug_id=before.bug_id,
                 policy_version=before.source_policy_version, digest=before.source_digest, evidence_refs=list(refs)),
-            intent=dict(kind='create', target_node_id=None, target_generation=None, expected_fingerprint=None, reason=None)))
+            intent=dict(kind='create', target_node_id=None, target_generation=None, expected_fingerprint=None, reason=None, scope=None)))
 
 
 def bind(before, closed, **changes):
@@ -60,7 +60,7 @@ def test_explicit_reuse_binding_preserves_target_intent_and_requires_current_clo
     record = replace(record, record_fingerprint='', payload={**record.payload,
         'intent': {'kind': 'reuse', 'target_node_id': record.node_id,
             'target_generation': record.generation, 'expected_fingerprint': 'a' * 64,
-            'reason': 'Explicit applicability to this correction'}})
+            'reason': 'Explicit applicability to this correction', 'scope': None}})
     reviews = ({'id': 'review', 'outcome': 'success'},) if operation == 'submit_task_validation' else ()
     closed = source(status='done', source_policy_version=4, validations=reviews)
     binding = bind(before, closed, capture=record, operation=operation, appended_validations=reviews)

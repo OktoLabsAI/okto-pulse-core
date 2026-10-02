@@ -2,6 +2,36 @@
 
 ## Estado para retomada
 
+### 2026-10-02 — C1: contrato persistido único de captura Learning
+
+Base publicada: Core 42de0cd3 / Community 95e8992c. Writer/validator usam somente
+learning-capture/v2; scope é sempre explícito, inclusive null. Retirada constante
+e escolha de formato separado para substituição. Escopo source_bug continua
+exclusivo de supersede; null não concede substituição nem materialização implícita.
+Parser frontend também exige v2 e scope presente. Projeções cognitivas literais
+continuam distintas de capturas; seu discriminator não foi inventado/converso.
+
+Core learning-format-core1: 141 aprovados/2 fixtures sem scope; corrigidas,
+core2: 23 aprovados (suite repetida). refusal1: 27 aprovados, incluindo dois
+novos casos de recusa sem mutação. Total distinto Core: 145. Community rodada1
+não executou testes por nome incorreto de arquivo; rodada2: 73 aprovados.
+Frontend rodada1: 21 aprovados antes de atualizar o parser; rodada2: 64 aprovados
+com parser final, incluindo criação/reuso/substituição, escopo, histórico e recusa
+do formato antigo sem reescrita. Não relaxados guards de autoridade/histórico.
+
+dist-learning-format1 instalado/provado antes do backend. Após frontend final,
+TypeScript/Vite aprovado e dist-learning-format2 instalado. Provenance final:
+847/910 Core e 319/405 Community byte-idênticos. Python não mudou entre os dois
+pares; não houve repetição desnecessária do backend. SPA tree:
+3107409964ae7b270d80425e338bded6de4e77a9951858603ed07d0b98abefea.
+closure-learning-format1 e closure-learning-format2 aprovados, oito budgets ZERO.
+Ruff F/E9 e diff aprovados. Registry MCP sem mudança. Sem release/tag/deploy.
+
+Seguem abertos normalizadores de respostas (notadamente validação de tarefa),
+ausência de plano/contrato e auditoria integral C3/C4. Investigar por consumidores
+atuais antes de remover semântica: nome v1 por si só não significa legado.
+Decisões T23/KG-10 continuam pendentes. Não representa conclusão da iniciativa.
+
 ### 2026-10-02 — C1: identidade única do trabalho de captura Learning
 
 Base publicada: Core 0402d47c / Community 11a1ba83. LearningCaptureWorkRef exige

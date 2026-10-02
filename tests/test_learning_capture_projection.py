@@ -20,14 +20,14 @@ from test_cognitive_projection import SCHEMA, node
 def capture_record():
     return {'board_id': 'board', 'node_type': 'Learning', 'node_id': 'old', 'generation': 0,
         'source_revision': 0, 'evidence_refs': ['test_task:test-a'],
-        'payload': {'capture_format': 'learning-capture/v1', 'capture_id': 'capture-a',
+        'payload': {'capture_format': 'learning-capture/v2', 'capture_id': 'capture-a',
             'author_id': 'author', 'captured_at': '2026-09-24T12:00:00+00:00',
             'content': 'Retry only idempotent operations.', 'context': 'Worker retries',
             'applicability': 'Operations with an idempotency key',
             'source': {'board_id': 'board', 'bug_id': 'bug-a', 'policy_version': 2,
                 'digest': 'a' * 64, 'evidence_refs': ['test_task:test-a']},
             'intent': {'kind': 'create', 'target_node_id': None, 'target_generation': None,
-                'expected_fingerprint': None, 'reason': None}}}
+                'expected_fingerprint': None, 'reason': None, 'scope': None}}}
 
 
 def test_capture_is_preserved_without_projection_or_implicit_admission():
@@ -108,7 +108,7 @@ def test_malformed_capture_is_not_hidden_by_a_later_valid_revision(change):
 def test_explicit_intent_preserves_target_cas_and_applicability_without_auto_linking(kind, target):
     source = capture_record()
     source['payload']['intent'] = {'kind': kind, 'target_node_id': target,
-        'target_generation': 0, 'expected_fingerprint': 'b' * 64, 'reason': 'explicit applicability decision'}
+        'target_generation': 0, 'expected_fingerprint': 'b' * 64, 'reason': 'explicit applicability decision', 'scope': None}
     assert validate_learning_capture_payload(source['payload'],
         **{key: source[key] for key in ('board_id', 'node_type', 'node_id', 'generation', 'evidence_refs')})
 
