@@ -1614,9 +1614,7 @@ def aggregate_spec_validation_gate(specs: list) -> dict:
 def aggregate_task_validation_gate(cards: list) -> dict:
     """Aggregate Task Validation Gate metrics across a collection of cards.
 
-    Walks ALL card.validations records. Supports both legacy naming
-    (``estimated_completeness``/``estimated_drift``) and new naming
-    (``completeness``/``drift``).
+    Walks current card.validations records using their canonical score fields.
 
     Returns shape mirrors :func:`aggregate_spec_validation_gate` but for
     confidence/completeness/drift dimensions, plus ``first_pass_rate`` and
@@ -1651,9 +1649,8 @@ def aggregate_task_validation_gate(cards: list) -> dict:
                 continue
             total_submitted += 1
             outcome = v.get("outcome")
-            verdict = v.get("verdict")
-            is_success = outcome == "success" or verdict == "pass"
-            is_failed = outcome == "failed" or verdict == "fail"
+            is_success = outcome == "success"
+            is_failed = outcome == "failed"
             if is_success:
                 total_success += 1
             elif is_failed:
@@ -1666,16 +1663,12 @@ def aggregate_task_validation_gate(cards: list) -> dict:
             confidence_vals.append(_safe_int(v.get("confidence")))
             completeness_vals.append(
                 _safe_int(
-                    v.get("completeness")
-                    if v.get("completeness") is not None
-                    else v.get("estimated_completeness")
+                    v.get("estimated_completeness")
                 )
             )
             drift_vals.append(
                 _safe_int(
-                    v.get("drift")
-                    if v.get("drift") is not None
-                    else v.get("estimated_drift")
+                    v.get("estimated_drift")
                 )
             )
 
@@ -1970,7 +1963,7 @@ def _build_velocity_buckets(
         for v in vals:
             if not isinstance(v, dict):
                 continue
-            if v.get("outcome") == "failed" or v.get("verdict") == "fail":
+            if v.get("outcome") == "failed":
                 created_at = v.get("created_at")
                 if not created_at:
                     continue
@@ -2362,7 +2355,7 @@ async def compute_quality(db, board_id: str, *, dt_from=None, dt_to=None) -> dic
                 v
                 for v in vals
                 if isinstance(v, dict)
-                and (v.get("outcome") == "success" or v.get("verdict") == "pass")
+                and (v.get("outcome") == "success")
             ]
             v = (
                 success_vals[-1]
@@ -2379,16 +2372,12 @@ async def compute_quality(db, board_id: str, *, dt_from=None, dt_to=None) -> dic
                         .lower(),
                         "confidence": _safe_int(v.get("confidence")),
                         "completeness": _safe_int(
-                            v.get("completeness")
-                            if v.get("completeness") is not None
-                            else v.get("estimated_completeness")
+                            v.get("estimated_completeness")
                         ),
                         "drift": _safe_int(
-                            v.get("drift")
-                            if v.get("drift") is not None
-                            else v.get("estimated_drift")
+                            v.get("estimated_drift")
                         ),
-                        "outcome": v.get("outcome") or v.get("verdict"),
+                        "outcome": v.get("outcome"),
                     }
                 )
     return {
@@ -2462,21 +2451,17 @@ async def compute_validations(db, board_id: str, *, dt_from=None, dt_to=None) ->
                 if hasattr(c.status, "value")
                 else str(c.status),
                 "attempts": len(vals),
-                "last_outcome": (last.get("outcome") or last.get("verdict"))
+                "last_outcome": (last.get("outcome"))
                 if last
                 else None,
                 "last_confidence": _safe_int(last.get("confidence")) if last else None,
                 "last_completeness": _safe_int(
-                    last.get("completeness")
-                    if last and last.get("completeness") is not None
-                    else (last.get("estimated_completeness") if last else None)
+                    (last.get("estimated_completeness") if last else None)
                 )
                 if last
                 else None,
                 "last_drift": _safe_int(
-                    last.get("drift")
-                    if last and last.get("drift") is not None
-                    else (last.get("estimated_drift") if last else None)
+                    (last.get("estimated_drift") if last else None)
                 )
                 if last
                 else None,
@@ -2635,7 +2620,7 @@ async def compute_agents(db, board_id: str, *, dt_from=None, dt_to=None) -> dict
     for c in cards:
         for v in getattr(c, "validations", None) or []:
             if isinstance(v, dict):
-                rid = v.get("reviewer_id") or v.get("evaluator_id")
+                rid = v.get("reviewer_id")
                 if rid:
                     actors.add(rid)
     for s in specs:
@@ -2666,9 +2651,9 @@ async def compute_agents(db, board_id: str, *, dt_from=None, dt_to=None) -> dict
             for v in getattr(c, "validations", None) or []:
                 if not isinstance(v, dict):
                     continue
-                if (v.get("reviewer_id") or v.get("evaluator_id")) == actor_id:
+                if (v.get("reviewer_id")) == actor_id:
                     task_sub += 1
-                    if v.get("outcome") == "success" or v.get("verdict") == "pass":
+                    if v.get("outcome") == "success":
                         task_sub_success += 1
 
         # Spec validations submitted BY this actor
@@ -2693,7 +2678,6 @@ async def compute_agents(db, board_id: str, *, dt_from=None, dt_to=None) -> dict
                 and isinstance(vals[0], dict)
                 and (
                     vals[0].get("outcome") == "success"
-                    or vals[0].get("verdict") == "pass"
                 )
             ):
                 first_pass += 1
@@ -2859,21 +2843,19 @@ async def compute_delivery_intelligence(
             ]
             if validations:
                 fact["own_with_validation"] += 1
-                first_outcome = validations[0].get("outcome") or validations[0].get(
-                    "verdict"
-                )
-                if first_outcome in {"success", "pass"}:
+                first_outcome = validations[0].get("outcome")
+                if first_outcome == "success":
                     fact["own_first_pass"] += 1
                 failed = sum(
                     1
                     for value in validations
-                    if (value.get("outcome") or value.get("verdict"))
-                    not in {"success", "pass"}
+                    if (value.get("outcome"))
+                    != "success"
                 )
                 fact["rework_introduced"] += failed
                 if failed and any(
-                    (value.get("outcome") or value.get("verdict"))
-                    in {"success", "pass"}
+                    (value.get("outcome"))
+                    == "success"
                     for value in validations[1:]
                 ):
                     fact["rework_resolved"] += 1
@@ -2881,7 +2863,7 @@ async def compute_delivery_intelligence(
         for validation in getattr(card, "validations", None) or []:
             if not isinstance(validation, dict):
                 continue
-            reviewer = validation.get("reviewer_id") or validation.get("evaluator_id")
+            reviewer = validation.get("reviewer_id")
             if not reviewer:
                 continue
             reviewer_fact = actor_facts.setdefault(
@@ -2898,8 +2880,8 @@ async def compute_delivery_intelligence(
                 },
             )
             reviewer_fact["validation_total"] += 1
-            outcome = validation.get("outcome") or validation.get("verdict")
-            if outcome in {"success", "pass"}:
+            outcome = validation.get("outcome")
+            if outcome == "success":
                 reviewer_fact["validation_success"] += 1
 
     contribution_clause = next(iter(_field_clauses("contribution_view")), None)

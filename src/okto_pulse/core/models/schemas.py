@@ -3809,7 +3809,7 @@ class TaskValidationSubmit(BaseModel):
 class TaskValidationResponse(BaseModel):
     """Response for a task validation."""
 
-    model_config = ConfigDict(extra="ignore")
+    model_config = ConfigDict(extra="forbid")
 
     id: str
     card_id: str
@@ -3819,21 +3819,15 @@ class TaskValidationResponse(BaseModel):
     # tolerant while still stripping all internal ledger fields.
     reviewer_id: str | None = None
     reviewer_name: str | None = Field(default=None, max_length=255)
-    evaluator_id: str | None = None
-    evaluator_name: str | None = Field(default=None, max_length=255)
     confidence: int | None = None
     confidence_justification: str | None = None
     estimated_completeness: int | None = None
-    completeness: int | None = None
     completeness_justification: str | None = None
     estimated_drift: int | None = None
-    drift: int | None = None
     drift_justification: str | None = None
     general_justification: str | None = None
-    summary: str | None = None
     recommendation: str | None = None
     outcome: str | None = None
-    verdict: str | None = None
     validation_outcome: str | None = None
     completion_outcome: str | None = None
     threshold_violations: list[str] = Field(default_factory=list)
@@ -3943,25 +3937,6 @@ def project_task_validation_public(
     if board_id and not merged.get("board_id"):
         merged["board_id"] = board_id
 
-    alias_pairs = (
-        ("reviewer_id", "evaluator_id"),
-        ("reviewer_name", "evaluator_name"),
-        ("estimated_completeness", "completeness"),
-        ("estimated_drift", "drift"),
-        ("general_justification", "summary"),
-    )
-    for canonical, alias in alias_pairs:
-        if merged.get(canonical) is None and merged.get(alias) is not None:
-            merged[canonical] = merged[alias]
-        if merged.get(alias) is None and merged.get(canonical) is not None:
-            merged[alias] = merged[canonical]
-    if merged.get("outcome") is None and merged.get("verdict") in {"pass", "fail"}:
-        merged["outcome"] = "success" if merged["verdict"] == "pass" else "failed"
-    if merged.get("verdict") is None and merged.get("outcome") in {
-        "success",
-        "failed",
-    }:
-        merged["verdict"] = "pass" if merged["outcome"] == "success" else "fail"
     merged.setdefault("threshold_violations", [])
     merged.setdefault("completion_gate_failures", [])
     if replayed is not None:

@@ -1762,6 +1762,18 @@
     {
       "path": "okto_labs_pulse_community/tests/test_learning_capture_validation_binding.py",
       "reason": "Legacy-tagged report fixture replaced with missing native report; existing binding refusal retained. Added isolated proof that reviewer approval never fabricates executor conclusion or its event, including after commit."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_task_validation_public_contract.py",
+      "reason": "Added six alias refusal cases; native snapshot replay and private-field redaction retained."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_application_persistence_adapter.py",
+      "reason": "Current Spec architecture adoption fixtures; canonical task outcome and estimated score SQL assertions preserve analytics behavior."
+    },
+    {
+      "path": "okto_labs_pulse_community/frontend/src/lib/__tests__/exportMarkdown.test.ts",
+      "reason": "Task fixtures use canonical outcome/general_justification/reviewer fields; export meaning and completion refusal retained."
     }
   ],
   "removed_cases": [

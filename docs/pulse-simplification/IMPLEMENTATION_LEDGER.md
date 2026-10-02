@@ -2,6 +2,39 @@
 
 ## Estado para retomada
 
+### 2026-10-02 — C1: contrato único de campos de Task Validation
+
+Base publicada: Core f6e9466a / Community 81b642e1. Writer, DTO, analytics,
+projeções SQL, export e frontend usam reviewer_id/reviewer_name,
+estimated_completeness/estimated_drift, general_justification e outcome.
+Retirados evaluator_id/evaluator_name, completeness/drift, summary e verdict
+da representação de validação de Task. Campos homônimos de Spec, conclusão
+e relatórios humanos pertencem a contratos distintos e permanecem. DTO recusa
+aliases; snapshot response nativo permanece para replay. Autoridade inalterada.
+
+Rodadas task-aliases: Core 74 testes distintos aprovados; Community 69;
+frontend 128. Falhas iniciais Community (três fixtures) e frontend (duas
+fixtures) corrigidas e reexecutadas. Doze testes de links em
+test_analytics_service.py ainda exigem conversão antiga de índices/texto/prefixo;
+falham e permanecem pendentes de disposição C3, não contabilizados como verdes.
+Os nove testes analytics_contract_v2 passaram novamente contra o par final.
+SQL confirma fail/pass e métricas canônicas; teste do writer confirma ausência
+dos aliases na resposta e no registro. Recusa de aliases não altera a entrada.
+
+Build TypeScript/Vite aprovado. SPA tree:
+b8abc8ccf5f3e04a57f2f75195beac9bed7fb341b7180867ef9531b865623282.
+dist-task-aliases2 instalado; provenance-task-aliases2 comprova byte a byte
+847 Python/910 payload Core e 319/405 Community. Wheels SHA256:
+Core 3a76c08998682c448d5ee5071019fbdebc513b1d7233f9944e0a49fcf38fea0e;
+Community c183b5a8f66e2e8833aa08ea6ea88227c3b8b352cfe6af2f88069f1c39aff02d.
+closure-task-aliases2 aprovado, oito budgets ZERO. Catálogo MCP sem drift.
+Ruff F/E9 aprovado. Sem release/tag/deploy ou alteração de dados de usuário.
+
+Restam campos esparsos/normalizadores inventariados, qualificação C3/C4 e
+decisões T23/KG-10; não representa conclusão da iniciativa. Próxima ação:
+resolver os doze testes de links conforme IDs do contrato atual, sem restaurar
+conversão; depois continuar as pendências explícitas do assessment.
+
 ### 2026-10-02 — C1: parecer não fabrica conclusão do executor
 
 Base publicada: Core 6c1f02cb / Community f717b1c1. CardService deixou de criar

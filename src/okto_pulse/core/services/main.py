@@ -5043,13 +5043,7 @@ class CardService:
             gate_failures=gate_failures,
         )
 
-        # Build validation entry.
-        # Dual naming: we persist BOTH the legacy names (estimated_*, outcome, reviewer_id,
-        # general_justification) and the clean frontend-compatible names (completeness, drift,
-        # verdict, evaluator_id, summary). This keeps backward compat for any downstream code
-        # that reads the legacy names while allowing the IDE ValidationsTab (which reads the
-        # clean names) to render correctly. Going forward, consumers should prefer the clean
-        # names; the legacy aliases can be removed in a future cleanup.
+        # Persist the single Task Validation contract.
         validation_id = f"val_{_uuid.uuid4().hex[:8]}"
         _general = data["general_justification"].strip()
         reviewer_display_name = str(reviewer_name or reviewer_id).strip()[:255]
@@ -5057,33 +5051,22 @@ class CardService:
             "id": validation_id,
             "card_id": card_id,
             "board_id": card.board_id,
-            # Reviewer â€” legacy name + clean alias for frontend
             "reviewer_id": reviewer_id,
             "reviewer_name": reviewer_display_name,
-            "evaluator_id": reviewer_id,
-            "evaluator_name": reviewer_display_name,
             # Confidence
             "confidence": confidence,
             "confidence_justification": data["confidence_justification"].strip(),
-            # Completeness â€” legacy estimated_* + clean name
             "estimated_completeness": completeness,
-            "completeness": completeness,
             "completeness_justification": data["completeness_justification"].strip(),
-            # Drift â€” legacy estimated_* + clean name
             "estimated_drift": drift,
-            "drift": drift,
             "drift_justification": data["drift_justification"].strip(),
-            # General justification â€” legacy + frontend "summary" alias
             "general_justification": _general,
-            "summary": _general,
-            # Recommendation + outcome â€” legacy "outcome" + frontend "verdict" alias
             "recommendation": recommendation,
             "outcome": outcome,
-            "verdict": "pass" if outcome == "success" else "fail",
             "threshold_violations": violations,
             # Persist the effective threshold snapshot with the append-only
             # record. Historical UI must not reinterpret an old validation
-            # against board/spec/sprint settings changed later.
+            # against Board/Spec settings changed later.
             "resolved_thresholds": dict(config),
             "reviewer_separation": reviewer_separation.to_dict(),
             "expected_subject_version": expected_subject_version,

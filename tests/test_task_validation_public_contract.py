@@ -43,3 +43,12 @@ def test_sealed_native_response_remains_replay_stable_and_private():
     assert result['replayed'] is True
     assert {'response', 'request_digest', 'idempotency_key'}.isdisjoint(result)
     assert entry == original
+
+
+@pytest.mark.parametrize('alias', ['evaluator_id', 'evaluator_name', 'completeness', 'drift', 'summary', 'verdict'])
+def test_removed_alias_is_refused_without_inference(alias):
+    entry = dict(id='validation', card_id='card', board_id='board', **{alias: 'old'})
+    original = deepcopy(entry)
+    with pytest.raises(ValueError, match='Extra inputs'):
+        project_task_validation_public(entry)
+    assert entry == original
