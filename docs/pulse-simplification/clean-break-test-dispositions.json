@@ -1806,6 +1806,14 @@
     {
       "path": "okto_labs_pulse_community/tests/test_application_persistence_adapter.py",
       "reason": "Added SQL proof that removed author aliases confer no attribution; bounded current author projection and validation metrics retained."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_spec_evaluation_currentness.py",
+      "reason": "Removed positive unscoped review compatibility; invalid edition refused on read/gate/reopen without mutation. Native previous edition and idempotent metadata retained."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_spec_evaluation_reopen_characterization.py",
+      "reason": "Retained native approval/rejection, same-edition rejection, concurrency and rollback using real current writer. Added stored missing-edition refusal on REST read/start/reopen without persistent effects."
     }
   ],
   "removed_cases": [
@@ -2888,6 +2896,12 @@
       "test": "test_new_capture_is_independent_and_replay_preserves_all_old_decisions[legacy=True]",
       "disposition": "superseded",
       "reason": "Five positive legacy capture-v1 queue ownership cases removed. Five native status/hold/replay cases retained; parser rejects old and unknown reserved identities."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_spec_evaluation_reopen_characterization.py",
+      "test": "test_reopen_requires_new_review_and_preserves_original_verdict[legacy=True]",
+      "disposition": "superseded",
+      "reason": "Two positive predecessor-without-edition combinations removed; both native verdicts and explicit incompatible-record refusal retained."
     }
   ]
 }

@@ -2,6 +2,45 @@
 
 ## Estado para retomada
 
+### 2026-10-02 — C1/C3: avaliação de decomposição exige edição registrada
+
+Base publicada: Core a536d8c9 / Community 56b7c84d. Removido ramo que concedia
+atualidade a evaluation sem spec_edition. Leitura, gate e reabertura recusam
+edição ausente, inválida, bool/string ou não positiva, sem reparar o registro.
+Projeção deixa de emitir edition_origin; frontend exige/exibe a edição efetiva,
+sem variante “Original edition unknown”. Writer atual já grava spec_edition.
+Reabertura autorizada mantém conteúdo original como Previous; rejeição na mesma
+edição continua ativa apesar de aprovação posterior. Nenhuma nova autoridade.
+
+evaluation-edition-core1: 22 aprovados. Community1: quatro aprovados/uma fixture
+de rollback com parecer antigo; substituída por parecer criado pelo writer.
+Community2: rollback aprovado/uma falha no código HTTP esperado do novo teste
+negativo; Community3: caso aprovado. Total Community: seis distintos. Recusa
+REST confirmada para leitura/início/reabertura sem mudança de edição, versão,
+parecer ou status. O endpoint de listagem já mapeava ValueError a 404; move usa
+400, ambos com diagnóstico spec_evaluation_edition_required. Não alterado esse
+mapeamento neste lote. Retiradas duas combinações positivas legacy=True do teste
+de reabertura; os dois vereditos nativos, concorrência e rollback permanecem.
+Frontend: quatro aprovados (Previous, rejeição, permissão revogada e erro).
+
+Build TypeScript/Vite aprovado; SPA tree
+68ddde60ab97baef354ef2f58d97bd5ffb613af8cb11f14d43f3a40db1166ed6.
+dist-evaluation-edition1 instalado/provado antes do backend; par final com SPA
+dist-evaluation-edition2 instalado e provenance-evaluation-edition2 comprova
+847/910 Core e 319/405 Community byte-idênticos. Python idêntico entre os pares.
+Wheels SHA256: Core 7868edc508de21e17dcd505f6bdf28f3c3ab311b10018bd05f8e2e1bdb69887c;
+Community 840dd1d9889cfa570af1917025e9d0eeeed25df5e2b78b557d59a34e63ed20d9.
+closure-evaluation-edition1 aprovado, oito budgets ZERO. Ruff F/E9 e diff
+aprovados. Nenhuma alteração de registry MCP, release/tag/deploy/dados reais.
+
+Próximo: Spec Validation é outra avaliação, distinta da decomposição acima.
+main.py submit_spec_validation ainda seleciona formal_submission (score/summary),
+canonical_submission (cinco dimensões/pinpoints) e legacy_submission; investigar
+chamadores atuais antes de remover variantes. list_spec_validations ainda mantém
+history_only para NULL edition; DTO, REST/MCP e frontend devem convergir em conjunto.
+Preservar checklist/recibos e pinpoints nativos. C3/C4 e decisões T23/KG-10 continuam
+abertos; perguntas assíncronas anteriores ainda sem resposta recebida.
+
 ### 2026-10-02 — C1/C3: conclusões somente no contrato do executor atual
 
 Base publicada: Core 91e35152 / Community 08a3691d. Removido
