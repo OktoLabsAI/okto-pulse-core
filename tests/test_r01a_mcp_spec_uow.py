@@ -313,9 +313,7 @@ async def _seed():
         DirectSpecDeliveryContextProvenance,
     )
     from okto_pulse.core.infra.database import get_session_factory
-    from okto_pulse.core.services.main import (
-        _direct_spec_source_context_manifest,
-    )
+    from okto_pulse.core.domain.code_traceability import build_direct_spec_source_context_manifest
 
     factory = get_session_factory()
     async with factory() as db:
@@ -398,7 +396,7 @@ async def _seed():
         (
             spec.source_context_manifest,
             spec.source_context_sha256,
-        ) = _direct_spec_source_context_manifest(
+        ) = build_direct_spec_source_context_manifest(
             spec_id=spec_id,
             delivery_context=DeliveryContext.BROWNFIELD,
             provenance=provenance,

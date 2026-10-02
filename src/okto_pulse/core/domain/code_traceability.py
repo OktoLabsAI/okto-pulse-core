@@ -4705,3 +4705,39 @@ class CodeTraceabilityContext:
             raise CodeTraceabilityContractError(
                 "code_traceability_context_excerpt_forbidden"
             )
+
+
+def build_direct_spec_source_context_manifest(
+    *,
+    spec_id: str,
+    delivery_context: DeliveryContext,
+    provenance: DirectSpecDeliveryContextProvenance,
+    subject_version: int = 1,
+) -> tuple[dict[str, object], str]:
+    summary = build_source_context_summary_v2(
+        delivery_context=delivery_context,
+        delivery_context_provenance=provenance,
+        current_investigation_outcomes=(),
+        evidence=(),
+    )
+    manifest: dict[str, object] = {
+        "contract_version": 2,
+        "subject_type": CodeTraceabilitySubjectType.SPEC.value,
+        "subject_id": spec_id,
+        "subject_version": subject_version,
+        "delivery_context": delivery_context.value,
+        "delivery_context_provenance": {"value": provenance.value.value, "source_spec_id": provenance.source_spec_id, "source_spec_version": provenance.source_spec_version},
+        "current_receipts": [],
+        "investigation_outcome": None,
+        "evidence_applicable": None,
+        "role_counts": {
+            "current_implementation_count": 0,
+            "existing_scaffold_count": 0,
+            "existing_constraint_count": 0,
+            "reference_pattern_count": 0,
+        },
+        "interpretation_rule": summary.interpretation_rule,
+        "items_not_current_implementation_count": 0,
+        "technical_details_available": False,
+    }
+    return manifest, canonical_code_traceability_sha256(manifest)

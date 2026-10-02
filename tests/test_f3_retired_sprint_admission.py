@@ -12,7 +12,7 @@ from okto_pulse.core.infra.database import get_session_factory
 from okto_pulse.core.models.schemas import CardMove, SpecMove
 from okto_pulse.core.runtime_registry import resolve_unit_of_work_factory
 from okto_pulse.core.services.main import CardService, SpecService
-from okto_pulse.core.services.main import _direct_spec_source_context_manifest
+from okto_pulse.core.domain.code_traceability import build_direct_spec_source_context_manifest
 from sqlalchemy_test_models import Board, Card, CardStatus, Spec, SpecStatus, Sprint, SprintStatus
 
 
@@ -20,7 +20,7 @@ def _source_context(spec_id):
     provenance = DirectSpecDeliveryContextProvenance(
         value=DeliveryContext.BROWNFIELD, source_spec_id=spec_id, source_spec_version=1,
     )
-    manifest, fingerprint = _direct_spec_source_context_manifest(
+    manifest, fingerprint = build_direct_spec_source_context_manifest(
         spec_id=spec_id, delivery_context=DeliveryContext.BROWNFIELD,
         provenance=provenance, subject_version=1,
     )

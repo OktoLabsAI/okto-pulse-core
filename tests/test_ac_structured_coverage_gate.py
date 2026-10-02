@@ -58,7 +58,7 @@ def _direct_spec_context_fields(spec_id: str) -> dict[str, object]:
         source_spec_id=spec_id,
         source_spec_version=1,
     )
-    manifest, manifest_sha256 = main_service._direct_spec_source_context_manifest(
+    manifest, manifest_sha256 = main_service.build_direct_spec_source_context_manifest(
         spec_id=spec_id,
         delivery_context=DeliveryContext.BROWNFIELD,
         provenance=provenance,

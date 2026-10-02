@@ -2,6 +2,33 @@
 
 ## Estado para retomada
 
+### 2026-10-01 — Seed da instalação nova corrigido e qualificado
+
+Marco API publicado: Core ae61914e / Community 5634f902. Investigação do gap já
+registrado no seed confirmou IntegrityError NOT NULL specs.architecture_adoption
+na criação de Demo em schema oficial (seed-current3.xml). A primeira fixture
+criava Base.metadata vazio sem importar modelos; seed-current1 foi interrompido
+após espera sem limite de um evento de commit que nunca ocorreria. Fixture agora
+usa initialize_current_schema e limita essa espera. Não houve runtime do usuário.
+
+Seed agora declara arquitetura vazia explicitamente, contrato de execução atual,
+contexto greenfield com proveniência/hash e BR com identidade. Demo nasce Draft,
+sem fabricar aprovação/evidência para marcar Done. Recuperação de KG e entrega da
+credencial após commit continuam. Extraído o builder puro de contexto direto do
+privado services.main para domain.code_traceability, usado por criação normal e
+seed; Community não importa helper privado nem duplica semântica. Testes consumidores
+adaptados ao nome público, sem alias de compatibilidade. Nenhum mecanismo entra no Core.
+
+dist-seed-current1 instalado; provenance-seed-current1.json Core851/914 e
+Community318/404 byte-idênticos. Seed-current4:11 testes de seed aprovados (incluindo
+reinício sem duplicação, entrega de credencial, cancelamento, retomada e isolamento
+do embedder). Quatro fixtures de início ainda usavam referência por texto; corrigidas
+para ID atual e scenario_type integration. Seed-start5:7 aprovados, preservando
+bloqueios por arquitetura pendente/decomposição incompleta e sucesso após classificação.
+Seed-context1:35 Core aprovados. Total Community18. Closure-seed-current1 exit0,
+findings vazios e oito budgets ZERO; READMEs oficiais validados e Ruff/diff verdes.
+C1–C4 continuam abertos. Nenhuma alteração de componente de frontend neste marco.
+
 ### 2026-10-01 — Contratos de API sem inferência de formato antigo
 
 Retirados conversor TOOL/COMPONENT/EVENT e leitura tolerante de contratos inválidos.

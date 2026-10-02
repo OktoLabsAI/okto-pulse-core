@@ -70,6 +70,7 @@ from okto_pulse.core.domain.code_traceability import (
     CodeTraceabilityProjectionProfile,
     CodeTraceabilitySubjectType,
     DirectSpecDeliveryContextProvenance,
+    build_direct_spec_source_context_manifest,
     DeliveryContext,
     RefinementDeliveryContextProvenance,
     RefinementSourceContextManifestV2,
@@ -8763,40 +8764,6 @@ def _snapshot_source_context_manifest(
     return manifest, actual_sha256
 
 
-def _direct_spec_source_context_manifest(
-    *,
-    spec_id: str,
-    delivery_context: DeliveryContext,
-    provenance: DirectSpecDeliveryContextProvenance,
-    subject_version: int = 1,
-) -> tuple[dict[str, object], str]:
-    summary = build_source_context_summary_v2(
-        delivery_context=delivery_context,
-        delivery_context_provenance=provenance,
-        current_investigation_outcomes=(),
-        evidence=(),
-    )
-    manifest: dict[str, object] = {
-        "contract_version": 2,
-        "subject_type": CodeTraceabilitySubjectType.SPEC.value,
-        "subject_id": spec_id,
-        "subject_version": subject_version,
-        "delivery_context": delivery_context.value,
-        "delivery_context_provenance": _spec_context_provenance_payload(provenance),
-        "current_receipts": [],
-        "investigation_outcome": None,
-        "evidence_applicable": None,
-        "role_counts": {
-            "current_implementation_count": 0,
-            "existing_scaffold_count": 0,
-            "existing_constraint_count": 0,
-            "reference_pattern_count": 0,
-        },
-        "interpretation_rule": summary.interpretation_rule,
-        "items_not_current_implementation_count": 0,
-        "technical_details_available": False,
-    }
-    return manifest, canonical_code_traceability_sha256(manifest)
 
 
 def _spec_source_context_manifest_matches(
@@ -9313,7 +9280,7 @@ class SpecService:
                 direct_provenance
             )
             source_context_manifest, source_context_sha256 = (
-                _direct_spec_source_context_manifest(
+                build_direct_spec_source_context_manifest(
                     spec_id=spec_id,
                     delivery_context=delivery_context,
                     provenance=direct_provenance,
@@ -10652,7 +10619,7 @@ class SpecService:
                         source_spec_id=spec.id,
                         source_spec_version=int(spec.version) + 1,
                     )
-                    manifest, manifest_sha256 = _direct_spec_source_context_manifest(
+                    manifest, manifest_sha256 = build_direct_spec_source_context_manifest(
                         spec_id=spec.id,
                         delivery_context=requested_context,
                         provenance=next_provenance,
@@ -10687,7 +10654,7 @@ class SpecService:
                         source_spec_id=spec.id,
                         source_spec_version=int(spec.version) + 1,
                     )
-                    manifest, manifest_sha256 = _direct_spec_source_context_manifest(
+                    manifest, manifest_sha256 = build_direct_spec_source_context_manifest(
                         spec_id=spec.id,
                         delivery_context=requested_context,
                         provenance=next_provenance,

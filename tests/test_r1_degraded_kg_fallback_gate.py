@@ -364,7 +364,7 @@ async def test_ts_dd9452a5_spec_done_allowed_on_degraded_board(monkeypatch):
         source_spec_version=1,
     )
     source_context_manifest, source_context_sha256 = (
-        main_service._direct_spec_source_context_manifest(
+        main_service.build_direct_spec_source_context_manifest(
             spec_id=spec_id,
             delivery_context=DeliveryContext.BROWNFIELD,
             provenance=provenance,
