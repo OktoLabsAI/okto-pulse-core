@@ -1726,6 +1726,14 @@
     {
       "path": "okto_labs_pulse_community/tests/test_entity_export_rich_media.py",
       "reason": "Spec fixture declares native architecture adoption; rich media and passive rendering requirements unchanged."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_project_structure.py",
+      "reason": "Positive legacy NULL-to-zero response assertion replaced by refusal without mutation and explicit native-zero acceptance; structure semantics retained."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_ska_structured_spec_snapshot.py",
+      "reason": "Current revision required in projection fixture; null revision refusal added without changing null-versus-empty JSON fidelity."
     }
   ],
   "removed_cases": [

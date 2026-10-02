@@ -96,12 +96,15 @@ def test_collective_reorder_does_not_require_an_entity_id() -> None:
     ] == ["psn_second", "psn_first"]
 
 
-def test_spec_response_normalizes_legacy_null_structure_revision() -> None:
+def test_spec_response_requires_nonnull_structure_revision() -> None:
     now = datetime.now(UTC)
 
-    response = SpecResponse.model_validate(
-        {
+    payload = {
             "id": "spec-legacy",
+            "execution_contract": {
+                "board_id": "board-1", "spec_id": "spec-legacy",
+                "adopted_in_edition": 1, "actor_id": "agent-1", "origin": "new_spec",
+            },
             "board_id": "board-1",
             "title": "Legacy Spec",
             "description": None,
@@ -120,10 +123,14 @@ def test_spec_response_normalizes_legacy_null_structure_revision() -> None:
             "created_at": now,
             "updated_at": now,
             "labels": None,
-        }
-    )
+    }
+    from pydantic import ValidationError
 
-    assert response.project_structure_revision == 0
+    with pytest.raises(ValidationError, match="project_structure_revision"):
+        SpecResponse.model_validate(payload)
+    assert payload["project_structure_revision"] is None
+    payload["project_structure_revision"] = 0
+    assert SpecResponse.model_validate(payload).project_structure_revision == 0
 
 
 def test_closed_node_validation_normalizes_before_enforcing_limits() -> None:

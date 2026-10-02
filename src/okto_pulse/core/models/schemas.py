@@ -2850,14 +2850,6 @@ class SpecResponse(BaseSchema):
     architecture_designs: list[ArchitectureDesignSummary] = []
     qa_items: list[SpecQAResponse] = []
 
-    @field_validator("project_structure_revision", mode="before")
-    @classmethod
-    def _legacy_project_structure_revision(cls, value: Any) -> Any:
-        """Expose legacy SQL NULL revisions through the public zero baseline."""
-
-        return 0 if value is None else value
-
-
 # Keep the legacy response model untouched while allowing the refinement
 # derive route to declare its authoritative v2 receipt projection.
 DeriveSpecResponse: TypeAlias = DeriveSpecKnowledgeMutationResponse

@@ -2,6 +2,29 @@
 
 ## Estado para retomada
 
+### 2026-10-02 — C1: revisão de estrutura sem conversão de NULL
+
+Base publicada: Core cfcc994c / Community c24e67ee. Removido normalizador de
+SpecResponse que convertia SQL NULL em zero e os nove fallbacks equivalentes
+de MCP, casos de uso, serviço estruturado, adapter SQL e export. A revisão zero
+nativa continua válida; NULL ou atributo inexistente não são uma revisão.
+Não se altera distinção semântica entre estrutura ausente e lista vazia.
+
+structure-null-core1: 40 aprovados/1 falha de fixture sem execution_contract;
+fixture atualizada, structure-null-core2: 6 aprovados, incluindo repetição dos
+casos de uso e nova asserção de recusa sem mutação. Total distinto Core: 41.
+Community rodada1: 13 aprovados/1 fixture SimpleNamespace sem revisão; rodada2:
+caso corrigido aprovado, com recusa explícita de NULL e preservação de conteúdo.
+Total Community: 14. structure-null-front1: 7 aprovados. Nenhum gate relaxado.
+
+dist-structure-null1 foi substituído antes de testes pelo par completo
+dist-structure-null2; instalado e provenance-structure-null2 comprovou 847/910
+Core, 319/405 Community byte-idênticos antes de comportamento. Gate de catálogo
+MCP aprovado sem mudança de registry. closure-structure-null2 aprovado, oito
+budgets ZERO e READMEs atuais. Ruff F/E9 e diff aprovados. SPA sem alteração.
+Sem release/tag/deploy. Seguem abertos os demais normalizadores inventariados,
+auditoria integral C3/C4 e decisões T23/KG-10; não é entrega final.
+
 ### 2026-10-02 — C1: snapshots nativos de validação, sem fabricação histórica
 
 Base publicada: Core 547e4974 / Community d01b1298. Removidos estado

@@ -58,6 +58,16 @@ async def test_spec_read_preserves_authored_empty_and_requires_spec_read(
     assert result.structure.spec_version == 8
     assert required == ["spec.entity.read"]
 
+    # A stored null revision is incompatible, never the native zero baseline.
+    spec.project_structure_revision = None
+    with pytest.raises(TypeError):
+        await GetProjectStructureUseCase().execute(
+            GetProjectStructureCommand("board-1", "spec-1"),
+            actor=_actor(),
+            uow=SimpleNamespace(),
+        )
+    assert spec.project_structure_revision is None
+
 
 @pytest.mark.asyncio
 async def test_card_projection_requires_card_and_spec_read_and_rejects_bug(

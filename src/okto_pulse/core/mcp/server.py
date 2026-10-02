@@ -10617,7 +10617,7 @@ async def okto_pulse_get_spec(board_id: str, spec_id: str) -> str:
             "acceptance_criteria": spec.acceptance_criteria,
             "project_structure": getattr(spec, "project_structure", None),
             "project_structure_revision": int(
-                getattr(spec, "project_structure_revision", 0) or 0
+                spec.project_structure_revision
             ),
             "project_structure_digest": getattr(spec, "project_structure_digest", None),
             "test_scenarios": spec.test_scenarios or [],
@@ -10829,7 +10829,7 @@ async def okto_pulse_get_spec_context(
             # Optional aggregate: preserve not-authored (null) versus authored-empty ([]).
             "project_structure": getattr(spec, "project_structure", None),
             "project_structure_revision": int(
-                getattr(spec, "project_structure_revision", 0) or 0
+                spec.project_structure_revision
             ),
             "project_structure_digest": getattr(spec, "project_structure_digest", None),
             # Structured sections — gated by their own granular read flags when available.
@@ -11201,7 +11201,7 @@ async def okto_pulse_update_spec(
                         "acceptance_criteria": spec.acceptance_criteria,
                         "project_structure": getattr(spec, "project_structure", None),
                         "project_structure_revision": int(
-                            getattr(spec, "project_structure_revision", 0) or 0
+                            spec.project_structure_revision
                         ),
                         "project_structure_digest": getattr(
                             spec, "project_structure_digest", None

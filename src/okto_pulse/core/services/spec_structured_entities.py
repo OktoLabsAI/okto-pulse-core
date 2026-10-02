@@ -909,7 +909,7 @@ class StructuredSpecEntityService:
                 entity_id=command.entity_id,
                 spec_version=spec.version,
                 structure_revision=int(
-                    getattr(spec, "project_structure_revision", 0) or 0
+                    spec.project_structure_revision
                 ),
                 structure_digest=getattr(spec, "project_structure_digest", None),
                 idempotency_key=command.idempotency_key,
@@ -1013,7 +1013,7 @@ class StructuredSpecEntityService:
                 f"Expected spec version {command.expected_spec_version}, found {spec.version}.",
             )
         current_revision = int(
-            getattr(spec, "project_structure_revision", 0) or 0
+            spec.project_structure_revision
         )
         if command.expected_structure_revision != current_revision:
             return failure(
