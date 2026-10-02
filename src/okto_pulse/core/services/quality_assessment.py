@@ -490,11 +490,7 @@ class QualityAssessmentService:
             subject=preflight.subject,
             assessment_kind=submission.assessment_kind,
             origin=preflight.origin,
-            source=(
-                AssessmentSource.LEGACY_MIGRATION
-                if preflight.origin is AssessmentOrigin.LEGACY_IMPORT
-                else AssessmentSource.NATIVE
-            ),
+            source=AssessmentSource.NATIVE,
             channel=preflight.channel,
             outcome=(
                 AssessmentOutcome.ADVISORY

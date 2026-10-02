@@ -2,6 +2,40 @@
 
 ## Estado para retomada
 
+### 2026-10-02 — C1/C3: Quality Assessment sem origens de importação
+
+Base publicada: Core de9da2d1 / Community 10c610ed, ambos com push confirmado.
+Removidos legacy_import/legacy_migration dos enums, writer, restrições SQL e tipos
+frontend; retirados builders de identidade/digest da antiga importação de Spec
+Validation e helper privado sem consumidores que oferecia essas identidades.
+O gate nativo de ambiguidade permanece. A projeção verifica os enums também no
+caminho por edição, impedindo que uma edição válida admita uma origem removida.
+Não houve conversão de registros ou alteração de permissões.
+
+Teste de ciclo antes dedicado à importação sem edição agora cobre histórico nativo
+da edição anterior, inclusive batch e auditoria. Fixtures do leitor de fontes usam
+origem nativa explícita; retiradas colunas antigas knowledge_bases/sprint_id da
+inserção de Card. Não inferem identidade a partir de validação antiga. Acrescentados
+testes de recusa no domínio, na projeção por edição e nas constraints SQL com rollback
+e preservação do recibo nativo. SQL/schema fingerprint continua recusando formatos
+incompatíveis; nenhuma migração foi criada.
+
+Evidência: quality-origin-core1 109 aprovados/3 falhas de fixture com coluna removida;
+core2 oito aprovados após correção, total distinto Core 112. Community1 143 aprovados,
+incluindo schema/admissão, ciclo, persistência e contratos de transporte. Front1 41
+aprovados; build TypeScript/Vite aprovado, SPA idêntica (alteração apenas de tipos).
+Ruff F/E9 aprovado. dist-quality-origin1 instalado e provenance-quality-origin1
+confirma byte a byte 847 Python/910 payload Core e 319/405 Community. SHA256 wheels:
+Core d89c8ccc7b41773722973f0a72e14eab04efc86e97b4a593796fa67cab5ff88e;
+Community 3c849ab0c65dfe0adf36d12745e43ad8c03d4f3929c170f1f298247f52ac37ef.
+Closure1: oito budgets ZERO, apenas matrizes README divergentes; regeneradas.
+closure-quality-origin2 aprovado, oito budgets ZERO. Sem alteração da superfície MCP.
+
+Restante identificado: caminhos sem edição em Quality Assessment ainda coexistem
+com leitura por edição (domain/ports/adapter/projeção/UI). A retirada das origens
+importadas não certifica sua eliminação; tratar no próximo incremento C1/C3, mantendo
+histórico Current/Previous nativo. C4 e decisões T23/KG-10 continuam abertos.
+
 ### 2026-10-02 — C3: ciclo Spec Validation qualificado na persistência nativa
 
 Base publicada: Core 8c70be31 / Community 3a6220c4. Transferidos os 67

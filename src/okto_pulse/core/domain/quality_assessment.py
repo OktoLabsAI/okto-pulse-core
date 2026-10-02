@@ -119,12 +119,10 @@ class AssessmentOrigin(str, Enum):
     HUMAN_OR_AGENT = "human_or_agent"
     SPEC_VALIDATION = "spec_validation"
     SEMANTIC_WRITER = "semantic_writer"
-    LEGACY_IMPORT = "legacy_import"
 
 
 class AssessmentSource(str, Enum):
     NATIVE = "native"
-    LEGACY_MIGRATION = "legacy_migration"
 
 
 class AssessmentOutcome(str, Enum):
@@ -1154,16 +1152,6 @@ class AssessmentReceipt:
                     "assessment_predecessor_self_reference"
                 )
             object.__setattr__(self, "predecessor_receipt_id", predecessor)
-        if (
-            self.origin is AssessmentOrigin.LEGACY_IMPORT
-            and self.source is not AssessmentSource.LEGACY_MIGRATION
-        ) or (
-            self.origin is not AssessmentOrigin.LEGACY_IMPORT
-            and self.source is not AssessmentSource.NATIVE
-        ):
-            raise QualityAssessmentContractError(
-                "assessment_source_origin_mismatch"
-            )
         expected_outcome = (
             AssessmentOutcome.ADVISORY
             if self.assessment_kind is AssessmentKind.REQUIREMENT_LINT

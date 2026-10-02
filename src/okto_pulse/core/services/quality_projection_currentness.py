@@ -19,91 +19,15 @@ from okto_pulse.core.domain.quality_assessment import (
     AssessmentSource,
     AssessmentSubjectRef,
     AssessmentSubjectType,
-    AssessmentVersionSet,
     evaluate_assessment_input_currentness,
-)
-from okto_pulse.core.domain.quality_canonicalization import (
-    canonical_sha256,
-    clarification_digest_v1,
-    policy_digest_v1,
-    ruleset_digest_v1,
-    semantic_content_digest_v1,
 )
 from okto_pulse.core.services.ambiguity_assessment import (
     ambiguity_digest_set,
-    ambiguity_qa_payload,
-    ambiguity_subject_payload,
     resolve_ambiguity_gate_configuration,
 )
 
-LEGACY_SPEC_VALIDATION_RULESET_VERSION = (
-    "legacy-spec-validation-ruleset/v1"
-)
-LEGACY_SPEC_VALIDATION_TAXONOMY_VERSION = (
-    "legacy-spec-validation-taxonomy/v1"
-)
-LEGACY_SPEC_VALIDATION_ANALYZER_VERSION = (
-    "legacy-spec-validation-analyzer/v1"
-)
-LEGACY_SPEC_VALIDATION_POLICY_VERSION = (
-    "legacy-spec-validation-policy/v1"
-)
-LEGACY_SPEC_VALIDATION_RULESET_DIGEST = ruleset_digest_v1(
-    LEGACY_SPEC_VALIDATION_RULESET_VERSION,
-    {
-        "source": "current successful legacy SpecValidation",
-        "score_field": "ambiguity",
-        "range": [0, 100],
-    },
-)
-LEGACY_SPEC_VALIDATION_TAXONOMY_DIGEST = canonical_sha256(
-    {
-        "version": LEGACY_SPEC_VALIDATION_TAXONOMY_VERSION,
-        "assessment_kind": AssessmentKind.SPEC_VALIDATION.value,
-    }
-)
-LEGACY_SPEC_VALIDATION_POLICY_DIGEST = policy_digest_v1(
-    LEGACY_SPEC_VALIDATION_POLICY_VERSION,
-    {
-        "current_validation_required": True,
-        "outcome": "success",
-        "scope_match_required": True,
-    },
-)
-
-
 class QualityProjectionCurrentnessError(ValueError):
     """A projected quality head has no supported normative currentness path."""
-
-
-def legacy_spec_validation_digest_set_v1(
-    *,
-    subject: object,
-    qa_items: Sequence[object] | None,
-) -> AssessmentDigestSet:
-    """Rederive the frozen legacy SpecValidation migration input identity."""
-
-    return AssessmentDigestSet(
-        content_digest=semantic_content_digest_v1(
-            AssessmentSubjectType.SPEC,
-            ambiguity_subject_payload(AssessmentSubjectType.SPEC, subject),
-        ),
-        clarification_digest=clarification_digest_v1(
-            ambiguity_qa_payload(qa_items),
-        ),
-        ruleset_digest=LEGACY_SPEC_VALIDATION_RULESET_DIGEST,
-        taxonomy_digest=LEGACY_SPEC_VALIDATION_TAXONOMY_DIGEST,
-        policy_digest=LEGACY_SPEC_VALIDATION_POLICY_DIGEST,
-    )
-
-
-def legacy_spec_validation_versions_v1() -> AssessmentVersionSet:
-    return AssessmentVersionSet(
-        ruleset_version=LEGACY_SPEC_VALIDATION_RULESET_VERSION,
-        taxonomy_version=LEGACY_SPEC_VALIDATION_TAXONOMY_VERSION,
-        analyzer_version=LEGACY_SPEC_VALIDATION_ANALYZER_VERSION,
-        policy_version=LEGACY_SPEC_VALIDATION_POLICY_VERSION,
-    )
 
 
 def current_quality_projection_digests(
@@ -134,7 +58,6 @@ def current_quality_projection_digests(
             AssessmentSubjectType.REFINEMENT,
         } or (resolved_origin, resolved_source) not in {
             (AssessmentOrigin.HUMAN_OR_AGENT, AssessmentSource.NATIVE),
-            (AssessmentOrigin.LEGACY_IMPORT, AssessmentSource.LEGACY_MIGRATION),
         }:
             raise QualityProjectionCurrentnessError(
                 "quality_projection_identity_unsupported"
@@ -148,17 +71,6 @@ def current_quality_projection_digests(
             subject=subject,
             qa_items=qa_items,
             configuration=configuration,
-        )
-
-    if (
-        resolved_kind is AssessmentKind.SPEC_VALIDATION
-        and resolved_type is AssessmentSubjectType.SPEC
-        and resolved_origin is AssessmentOrigin.LEGACY_IMPORT
-        and resolved_source is AssessmentSource.LEGACY_MIGRATION
-    ):
-        return legacy_spec_validation_digest_set_v1(
-            subject=subject,
-            qa_items=qa_items,
         )
 
     raise QualityProjectionCurrentnessError(
@@ -185,6 +97,9 @@ def evaluate_quality_projection_currentness(
 
     try:
         resolved_type = AssessmentSubjectType(subject_type)
+        AssessmentKind(assessment_kind)
+        AssessmentOrigin(origin)
+        AssessmentSource(source)
         current_id = str(
             (
                 current_subject.get("id")
@@ -281,16 +196,7 @@ def evaluate_quality_projection_currentness(
 
 
 __all__ = [
-    "LEGACY_SPEC_VALIDATION_ANALYZER_VERSION",
-    "LEGACY_SPEC_VALIDATION_POLICY_DIGEST",
-    "LEGACY_SPEC_VALIDATION_POLICY_VERSION",
-    "LEGACY_SPEC_VALIDATION_RULESET_DIGEST",
-    "LEGACY_SPEC_VALIDATION_RULESET_VERSION",
-    "LEGACY_SPEC_VALIDATION_TAXONOMY_DIGEST",
-    "LEGACY_SPEC_VALIDATION_TAXONOMY_VERSION",
     "QualityProjectionCurrentnessError",
     "current_quality_projection_digests",
     "evaluate_quality_projection_currentness",
-    "legacy_spec_validation_digest_set_v1",
-    "legacy_spec_validation_versions_v1",
 ]

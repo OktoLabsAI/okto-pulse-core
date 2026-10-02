@@ -88,6 +88,24 @@ def test_receipt_preserves_explicit_scale_and_analyzer_versions() -> None:
     assert receipt.versions.analyzer_version == "analyzer/v1"
 
 
+@pytest.mark.parametrize("origin,source", [("legacy_import", "native"), ("human_or_agent", "legacy_migration")])
+def test_projection_refuses_removed_identity_even_with_current_edition(origin, source):
+    from okto_pulse.core.services.quality_projection_currentness import (
+        QualityProjectionCurrentnessError,
+        evaluate_quality_projection_currentness,
+    )
+    subject = {"id": "r1", "version": 7, "edition": 1}
+    with pytest.raises(QualityProjectionCurrentnessError):
+        evaluate_quality_projection_currentness(
+            board_id="b1", subject_type="refinement", subject_id="r1",
+            assessed_subject_version=7, assessed_subject_edition=1,
+            assessed_digests=_digests(), assessment_kind="ambiguity",
+            origin=origin, source=source, current_subject=subject,
+            qa_items=(), board_settings={},
+        )
+    assert subject == {"id": "r1", "version": 7, "edition": 1}
+
+
 def test_scale_kind_is_a_closed_explicit_contract() -> None:
     with pytest.raises(
         QualityAssessmentContractError,
@@ -106,8 +124,13 @@ def test_scale_kind_is_a_closed_explicit_contract() -> None:
     [
         (
             "source",
-            AssessmentSource.LEGACY_MIGRATION,
-            "assessment_source_origin_mismatch",
+            "legacy_migration",
+            "assessment_source_invalid",
+        ),
+        (
+            "origin",
+            "legacy_import",
+            "assessment_origin_invalid",
         ),
         (
             "outcome",

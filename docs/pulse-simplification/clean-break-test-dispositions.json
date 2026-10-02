@@ -2956,6 +2956,12 @@
       "test": "67 remaining lifecycle scenarios",
       "disposition": "rewritten",
       "reason": "All 67 functional methods moved to Community/tests/test_spec_validation_lifecycle_gate.py with native five-metric records, semantic authority and UoW commits. Final suite: 69 passed including two canonical cases. Retired Sprint-only parameter; native forward lifecycle retained. Missing execution contract refusal remains in test_execution_contract.py. Planning and lint acceptance are explicit fixture inputs, not E2E coverage. No product gates changed."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_sqlalchemy_validation_cycle.py",
+      "test": "test_legacy_null_edition_ambiguity_is_previous_only_and_auditable",
+      "disposition": "rewritten",
+      "reason": "Imported editionless positive case replaced by native previous-edition history, batch and technical audit. Removed origins rejected separately by domain/projection/SQL constraints; editionless quality paths remain a tracked follow-up."
     }
   ]
 }
