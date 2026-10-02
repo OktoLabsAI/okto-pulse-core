@@ -9,7 +9,7 @@ from okto_pulse.core.domain.delivery_evidence import (
     DeliveryBinding,
     DeliveryContribution,
     DeliveryObligation,
-    evaluate_delivery_coverage,
+    _evaluate_delivery_facts as evaluate_delivery_coverage,
     read_delivery_contributions,
 )
 from okto_pulse.core.domain.enums import CardStatus
@@ -85,19 +85,12 @@ def test_explicit_complete_preserves_all_original_proof_and_lifecycle_checks():
         ).allowed
 
 
-def test_legacy_remains_absent_not_fabricated_complete():
-    assert read_delivery_contributions({}, (BINDING,)) is None
-    assert IMPLEMENTATION.contributions is None
-    assert evaluate_delivery_coverage(SNAPSHOT).allowed
-    old = request()
-    old.pop("bindings")
-    old["obligation_refs"] = [BINDING.obligation_ref]
-    assert "bindings" not in CardDeliveryEvidenceInput(**old).model_dump()
-    # Serialization adds no new empty field to the legacy idempotency digest.
-    assert (
-        CardDeliveryEvidenceInput(**old).selected_obligation_refs
-        == old["obligation_refs"]
-    )
+@pytest.mark.parametrize("declarations", [None, ()])
+def test_absent_declaration_never_infers_completion(declarations):
+    with pytest.raises(ValueError, match="delivery_contribution_payload_invalid"):
+        read_delivery_contributions({}, (BINDING,))
+    fact = replace(IMPLEMENTATION, contributions=declarations)
+    assert not evaluate_delivery_coverage(replace(SNAPSHOT, implementations=(fact,))).allowed
 
 
 @pytest.mark.parametrize(
@@ -177,21 +170,24 @@ def test_corrupt_new_history_never_falls_back_to_legacy(change):
 @pytest.mark.asyncio
 async def test_card_gate_before_done_uses_the_same_completion_predicate(monkeypatch):
     from okto_pulse.core.services import delivery_evidence as service
+    from test_delivery_card_readiness import ready_snapshot
 
     store = SimpleNamespace(load_card_snapshot=AsyncMock())
     monkeypatch.setattr(service, "card_delivery_store", lambda _: store)
     card = SimpleNamespace(
-        id="task-1", board_id="board", spec_id="spec", card_type="normal"
+        id="ui", board_id="board", spec_id="spec", card_type="normal"
     )
     spec = SimpleNamespace(id="spec", edition=2)
     for state in ("partial", "complete"):
+        current = ready_snapshot()
         fact = replace(
-            IMPLEMENTATION,
+            current.implementations[0],
             card_status=CardStatus.IN_PROGRESS,
             contributions=(DeliveryContribution(BINDING, state),),
         )
         store.load_card_snapshot.return_value = replace(
-            SNAPSHOT, implementations=(fact,)
+            current, implementations=(fact,), effective_context=replace(current.effective_context,
+                implementations=(replace(current.effective_context.implementations[0], fact=fact),)),
         )
         if state == "partial":
             with pytest.raises(ValueError, match="delivery_evidence_incomplete"):

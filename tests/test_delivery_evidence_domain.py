@@ -6,6 +6,7 @@ import pytest
 
 from okto_pulse.core.domain.delivery_evidence import (
     DeliveryBinding,
+    DeliveryContribution,
     DeliveryEvidenceSnapshot,
     DeliveryObligation,
     DeliveryPhase,
@@ -38,6 +39,7 @@ IMPLEMENTATION = ImplementationDeliveryFact(
     "execution-receipt",
     True,
     "agent-1",
+    contributions=(DeliveryContribution(BINDING, "complete"),),
 )
 TEST = DeliveryTestFact(
     "test",
@@ -144,7 +146,8 @@ def test_shared_evidence_and_selective_invalidation():
     snapshot = replace(
         SNAPSHOT,
         obligations=(OBLIGATION, DeliveryObligation(second, "Bound concurrency")),
-        implementations=(replace(IMPLEMENTATION, bindings=(BINDING, second)),),
+        implementations=(replace(IMPLEMENTATION, bindings=(BINDING, second),
+            contributions=tuple(DeliveryContribution(binding, "complete") for binding in (BINDING, second))),),
         tests=(replace(TEST, bindings=(BINDING, second)),),
     )
     assert _evaluate_delivery_facts(snapshot).allowed

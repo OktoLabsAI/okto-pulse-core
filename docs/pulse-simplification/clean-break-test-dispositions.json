@@ -1653,6 +1653,22 @@
     {
       "path": "okto_labs_pulse_community/tests/test_learning_materialization_writer.py",
       "reason": "Retains authored materialization, exact replay, recovery, curation and source fences. Mixed working/canonical duplicate now explicitly expects the already published unique-active-source guard, verifies canonical reader selection and byte-equivalent logical source history/no graph mutation after refusal. No product gate relaxed."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_delivery_contributions.py",
+      "reason": "Explicit declarations and native effective context for the pre-Done gate; absent or empty declarations never grant completion."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_delivery_execution_sets.py",
+      "reason": "Receipt-set unit predicates remain separate from effective planning; native SQL integration retains full-context admission and rollup."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_delivery_contributions.py",
+      "reason": "Current obligations/explicit ownership and concrete verifier. Partial/complete replay, scope denial, atomic rollback and missing-declaration refusal without rewriting payloads."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_delivery_execution_sets.py",
+      "reason": "Native complete verification plan and explicit implementation/test scope for every binding; no missing-authority fallback."
     }
   ],
   "removed_cases": [
@@ -2675,6 +2691,12 @@
       "test": "test_ts_2db9d6c3_grandfathering_to_explicit_empty_is_conservative",
       "disposition": "superseded",
       "reason": "Grandfathering and imported legacy Knowledge Base bytes are outside clean-break scope. Native explicit selection and temporal audit remain covered."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_delivery_contributions.py",
+      "test": "test_legacy_remains_absent_not_fabricated_complete",
+      "disposition": "superseded",
+      "reason": "Positive acceptance of missing declaration and inferred complete removed; replaced by rejection/no-credit tests. Current partial/complete, receipt and lifecycle predicates remain."
     }
   ]
 }

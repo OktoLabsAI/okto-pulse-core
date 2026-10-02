@@ -114,14 +114,12 @@ class DeliveryContribution:
 
 def read_delivery_contributions(
     payload: dict, bindings: tuple[DeliveryBinding, ...]
-) -> tuple[DeliveryContribution, ...] | None:
-    """Decode server-persisted declarations; absence alone denotes legacy.
+) -> tuple[DeliveryContribution, ...]:
+    """Decode explicit server-persisted declarations in the current ledger.
 
     Never infer complete from a receipt, a missing new-format field or an empty
     collection. Declaration data does not establish receipt validity.
     """
-    if "contribution_contract_version" not in payload and "contributions" not in payload:
-        return None
     rows = payload.get("contributions")
     version = payload.get("contribution_contract_version")
     if version not in {"card-binding-contribution/v1", "card-binding-contribution/v2"} or not isinstance(rows, list) or not rows:
@@ -198,8 +196,8 @@ class ImplementationDeliveryFact:
     current_accepted_execution: bool
     actor_id: str
     symbol: str | None = None
-    # None is historical compatibility, not an authored complete declaration.
-    contributions: tuple[DeliveryContribution, ...] | None = None
+    # Missing declarations never establish completion.
+    contributions: tuple[DeliveryContribution, ...] = ()
     executions: tuple[ImplementationExecutionProof, ...] | None = None
     blocking_progress_ids: tuple[str, ...] = ()
     blocking_progress_truncated: bool = False
@@ -252,8 +250,8 @@ def implementation_binding_complete(fact: ImplementationDeliveryFact, binding: D
     """
     if binding not in fact.bindings:
         return False
-    if fact.contributions is None:
-        return True  # Preserve the tested legacy verdict without rewriting it.
+    if not fact.contributions:
+        return False
     declarations = {item.binding: item.contribution for item in fact.contributions}
     return (
         len(declarations) == len(fact.contributions) == len(fact.bindings)

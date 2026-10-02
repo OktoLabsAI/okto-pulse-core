@@ -270,7 +270,7 @@ async def test_require_exemptions_inherited_from_report_target(db_factory, monke
     from types import SimpleNamespace
     from unittest.mock import AsyncMock
     from okto_pulse.core.domain.delivery_evidence import (
-        DeliveryEvidenceSnapshot, DeliveryScope, ImplementationDeliveryFact,
+        DeliveryEvidenceSnapshot, DeliveryScope, ImplementationDeliveryFact, DeliveryContribution,
     )
     from okto_pulse.core.domain.delivery_inventory import card_delivery_inventory
     from okto_pulse.core.services import delivery_evidence as delivery_service
@@ -333,6 +333,7 @@ async def test_require_exemptions_inherited_from_report_target(db_factory, monke
             relative_path="src/x.py", explanation="Test adapter accepted proof",
             receipt_id="impact-test-receipt", current_accepted_execution=True,
             actor_id=USER_ID,
+            contributions=tuple(DeliveryContribution(row.binding, "complete") for row in obligations),
         )
         snapshot = DeliveryEvidenceSnapshot(
             scope=scope, obligations=obligations,

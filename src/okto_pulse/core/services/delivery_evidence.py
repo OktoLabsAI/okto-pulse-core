@@ -121,7 +121,7 @@ async def require_card_delivery(
     card is already DONE — a status the completing card cannot have while
     this gate runs (AC ac_c41b1fa3: record proof, then move). The gate
     therefore accepts chain-valid proof (``current_accepted_execution``)
-    with a complete contribution (or the preserved legacy contract) bound to
+    with an explicit complete contribution bound to
     the obligation. The same completion predicate applies at the spec rollup.
     """
     if resolve_delivery_gate_mode(board) != "blocking":
@@ -158,7 +158,7 @@ async def require_card_delivery(
     # The card DoD covers the implementation phase only — the evaluator's
     # test-phase blockers (delivery_test_result_missing) are rollup concerns
     # (BR-5). Evaluator-valid proof always satisfies; beyond that, chain-valid
-    # proof (accepted committed execution) with complete/legacy contribution satisfies
+    # proof (accepted committed execution) with an explicit complete contribution satisfies
     # the DoD even before the DONE status lands (see docstring).
     missing = [
         row.obligation.binding.obligation_ref

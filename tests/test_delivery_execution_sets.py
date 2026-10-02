@@ -9,7 +9,7 @@ from okto_pulse.core.domain.delivery_evidence import (
     DeliveryObligation,
     ImplementationExecutionProof,
     delivery_execution_ids,
-    evaluate_delivery_coverage,
+    _evaluate_delivery_facts as evaluate_delivery_coverage,
     implementation_binding_ready,
     read_delivery_contributions,
 )

@@ -2,6 +2,49 @@
 
 ## Estado para retomada
 
+### 2026-10-02 — C1: ausência de declaração não concede completude
+
+Marco anterior publicado: Core0a2db87a / Communitya0fa8a1b. Reader de Delivery
+recusa payload sem versão/declarations, sem conversão. Fato sem contributions
+(ausente/vazio) não satisfaz completude. Projeção de candidatos autentica a
+execução diretamente, preservando escopo Board/Spec/Card, em vez de fabricar
+CardRecord sem bindings apenas para reutilizar o reader do ledger.
+
+Fixtures de domínio declaram contribuição explicitamente. Testes unitários
+dos predicados de recibo usam o avaliador interno; os gates e rollups atuais
+continuam com contexto efetivo real nas suites de readiness/coverage e SQL.
+Fixtures SQL de conjuntos de execuções agora têm plano explícito, critérios,
+cenário de observação, Test Card e verifier concreto descartável. Os critérios
+diretos têm seu próprio Card; os dois requisitos avaliados pertencem ao Card c.
+Replay parcial nunca promove complete; nova declaração é novo histórico.
+Reader rejeita campos ausentes e conserva payloads originais. Nenhum gate foi
+relaxado para aceitar as fixtures anteriores.
+
+explicit-delivery-core1:128 aprovados/2 expectativas sem contexto; correção
+explicit-delivery-execution-core2:17 aprovados, incluindo ambos os casos.
+explicit-delivery-community9:38 aprovados/1 expectativa da projeção completa;
+explicit-delivery-correction1:2 aprovados, incluindo esse caso e o rollup misto.
+Total169 casos backend distintos e39 frontend aprovados. Rodadas Community1–8
+e plan-diagnostic1/2 registram fixtures incompletas e um registro duplicado da
+fixture de verifier, corrigidos sem mudar gates. closure-explicit-delivery-
+declarations2 aprovado com oito budgets ZERO; Ruff F/E9 e diff aprovados.
+
+dist-explicit-delivery-declarations2 instalado/provado antes da rodada final:
+847 Python/910 payload Core,319/405 Community idênticos byte a byte. Core é
+byte-idêntico ao primeiro par desta frente; Community acrescenta guarda de
+escopo/ausência do Card na projeção. SPA sem mudança de fonte; testes frontend
+explicit-delivery-front1:39 aprovados nos painéis Evidence/DoD.
+
+Bloqueio funcional reproduzido separadamente em explicit-delivery-impact1:
+create_card sem target_id acessa card.id antes de atribuir uma identidade
+(main.py, construção do ApplicationRecordConflictError). Falha antecede o
+gate de Delivery; esta suite não está qualificada. Corrigir o caminho de
+autoria nativo na próxima etapa, mantendo a reserva de ID e conflito explícito.
+
+Ainda pendentes em C1: serialização que conserva digest antigo, admissão
+tipada de bindings e formatos de contribuição simples/composta, além dos
+normalizadores já inventariados. C4 integral e T23/KG-10 continuam abertos.
+
 ### 2026-10-02 — C2/C3: Learning nativo sem reconciliação de upgrade
 
 Marco anterior publicado: Core6772938a / Community8805305a. Removidos os quatro
