@@ -2,6 +2,25 @@
 
 ## Estado para retomada
 
+### 2026-10-02 — identidade na criação nativa de Card
+
+Delivery publicado e enviado: Core4c29c72a / Community7b525e5e. Corrigida na
+implementação a causa de explicit-delivery-impact1: create_card passa a atribuir
+UUID antes de construir ApplicationRecord e seu erro de conflito, preservando
+target_id quando fornecido. Não há mecanismo concreto novo nem fallback de dados.
+Fixtures dos testes de criação passaram a schema completo, sessões compostas e
+contratos explícitos de Spec. native-card-identity1:22 aprovados, incluindo UUID
+automático, ID reservado, colisão sem sobrescrever, rollback e REST/MCP com
+negação de autoridade e cenários de Spec/Board alheios. O warning SQLAlchemy na
+colisão é provocado deliberadamente. native-card-identity-front1:10 aprovados.
+Build dist-native-card-identity1 instalado; provenance-native-card-identity1
+confirma847/910 Core e319/405 Community idênticos byte a byte antes dos testes.
+closure-native-card-identity1 aprovado com oito budgets ZERO. Ruff F/E9 e diff
+aprovados. SPA e catálogo inalterados. A suite histórica de impact enforcement
+ainda não constitui prova integral; autoria corrente foi qualificada nas rotas
+reais acima. C1/C4 e decisões T23/KG-10 continuam abertos. Próximo: serialização
+e admissão tipada de Delivery sem preservação de formato antigo.
+
 ### 2026-10-02 — C1: ausência de declaração não concede completude
 
 Marco anterior publicado: Core0a2db87a / Communitya0fa8a1b. Reader de Delivery

@@ -3708,7 +3708,7 @@ class CardService:
 
         card = _new_application_record(
             "card",
-            **({"id": target_id} if target_id is not None else {}),
+            id=target_id if target_id is not None else str(uuid.uuid4()),
             board_id=board_id,
             spec_id=data.spec_id,
             title=data.title,

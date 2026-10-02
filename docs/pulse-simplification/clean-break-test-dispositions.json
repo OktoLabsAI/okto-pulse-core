@@ -1669,6 +1669,14 @@
     {
       "path": "okto_labs_pulse_community/tests/test_delivery_execution_sets.py",
       "reason": "Native complete verification plan and explicit implementation/test scope for every binding; no missing-authority fallback."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_test_card_creation_atomicity.py",
+      "reason": "Full native schema, composed sessions and explicit Spec contracts; retains creation, rollback, permission/scope denial and extends generated/reserved ID collision coverage."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_test_card_creation_surfaces.py",
+      "reason": "Full native schema, composed sessions and explicit Spec contracts; retains creation, rollback, permission/scope denial and extends generated/reserved ID collision coverage."
     }
   ],
   "removed_cases": [
