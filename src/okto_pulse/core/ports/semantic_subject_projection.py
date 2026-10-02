@@ -3,13 +3,16 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 from enum import Enum
 from typing import Literal, Protocol, runtime_checkable
 
-from okto_pulse.core.domain.guideline_policy import PolicySubjectRef
+from okto_pulse.core.domain.guideline_policy import PolicyEntityType, PolicySubjectRef
 from okto_pulse.core.domain.guideline_semantic_assessment import (
     SemanticAssessmentContractError,
+    SemanticAssessmentState,
 )
+from okto_pulse.core.domain.guideline_semantic_currentness import SemanticAssessmentCurrentness
 from okto_pulse.core.domain.guideline_semantic_findings_v2 import (
     SemanticAssessmentReceiptProjectionV2,
 )
@@ -118,6 +121,32 @@ class SemanticAssessmentV2PersistencePort(Protocol):
 
 @runtime_checkable
 class SemanticAssessmentV2ReadPort(Protocol):
+    async def get_semantic_assessment_v2(
+        self, *, board_id: str, receipt_id: str,
+    ) -> SemanticAssessmentReceiptProjectionV2 | None:
+        """Read one immutable native receipt, constrained to its Board."""
+        ...
+
+    async def list_semantic_assessment_v2_receipts(
+        self, *, board_id: str,
+        entity_type: PolicyEntityType | None = None,
+        subject_id: str | None = None,
+        subject_edition: int | None = None,
+        guideline_id: str | None = None,
+        binding_id: str | None = None,
+        outcome: SemanticAssessmentState | None = None,
+        after: tuple[datetime, str] | None = None,
+        limit: int = 50,
+    ) -> tuple[tuple[SemanticAssessmentReceiptProjectionV2, ...], tuple[datetime, str] | None]:
+        """Page native history by descending recorded_at/id, without current-only filtering."""
+        ...
+
+    async def get_semantic_assessment_v2_currentness(
+        self, receipt: SemanticAssessmentReceiptProjectionV2,
+    ) -> SemanticAssessmentCurrentness:
+        """Resolve current authority and delegate its interpretation to Core."""
+        ...
+
     async def get_current_semantic_assessment_v2(
         self,
         *,

@@ -1034,6 +1034,15 @@ async def test_mcp_current_semantic_assessment_forwards_edition_and_closes_reade
     semantic_port = SemanticPort()
 
     class Reader:
+        async def get_semantic_assessment_v2(self, **kwargs):
+            raise AssertionError("current read must not query history")
+
+        async def list_semantic_assessment_v2_receipts(self, **kwargs):
+            raise AssertionError("current read must not list history")
+
+        async def get_semantic_assessment_v2_currentness(self, receipt):
+            raise AssertionError("current reader already verifies its fence")
+
         async def get_current_semantic_assessment_v2(
             self,
             *,

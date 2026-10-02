@@ -15,8 +15,12 @@ from okto_pulse.core.domain.guideline_policy import (
     GUIDELINE_BINDING_ID_MAX_LENGTH,
     GUIDELINE_ID_MAX_LENGTH,
     GUIDELINE_REVISION_ID_MAX_LENGTH,
+    BoardGuidelineBinding,
+    GuidelineBindingState,
+    GuidelineRevision,
     PolicyCurrentness,
     PolicySubjectRef,
+    PolicySubjectSnapshot,
     normalize_policy_bounded_text,
 )
 from okto_pulse.core.domain.guideline_semantic_assessment import (
@@ -24,6 +28,9 @@ from okto_pulse.core.domain.guideline_semantic_assessment import (
     SemanticGuidelineAssessmentContext,
     SemanticGuidelineAssessmentReceipt,
     semantic_assessment_input_digest_v1,
+)
+from okto_pulse.core.domain.guideline_semantic_findings_v2 import (
+    SemanticAssessmentReceiptProjectionV2,
 )
 
 
@@ -318,11 +325,60 @@ def assess_semantic_assessment_currentness(
     )
 
 
+def assess_native_semantic_assessment_currentness(
+    receipt: SemanticAssessmentReceiptProjectionV2,
+    *,
+    subject: PolicySubjectSnapshot | None,
+    binding: BoardGuidelineBinding | None = None,
+    revision: GuidelineRevision | None = None,
+) -> SemanticAssessmentCurrentness:
+    """Apply native edition authority, or the technical fences of an uneditioned subject."""
+    if not isinstance(receipt, SemanticAssessmentReceiptProjectionV2):
+        raise SemanticAssessmentContractError("semantic_currentness_receipt_invalid")
+    present: set[SemanticAssessmentCurrentnessReason] = set()
+    reason = SemanticAssessmentCurrentnessReason
+    if subject is None:
+        present.add(reason.CURRENT_SNAPSHOT_MISSING)
+    else:
+        if _subject_identity(receipt.subject) != _subject_identity(subject.subject):
+            raise SemanticAssessmentContractError("semantic_currentness_subject_scope_mismatch")
+        if subject.subject.subject_edition is not None:
+            if receipt.subject.subject_edition != subject.subject.subject_edition:
+                present.add(reason.SUBJECT_EDITION_CHANGED)
+        else:
+            if receipt.subject.subject_version != subject.subject.subject_version:
+                present.add(reason.SUBJECT_VERSION_CHANGED)
+            if receipt.subject_content_digest != subject.content_digest:
+                present.add(reason.SUBJECT_CONTENT_CHANGED)
+            if binding is None or revision is None or binding.state is not GuidelineBindingState.ACTIVE:
+                present.add(reason.CURRENT_SNAPSHOT_MISSING)
+            else:
+                if (binding.board_id != receipt.subject.board_id
+                    or binding.binding_id != receipt.binding_id
+                    or binding.guideline_id != receipt.guideline_id
+                    or revision.guideline_id != receipt.guideline_id):
+                    raise SemanticAssessmentContractError("semantic_currentness_binding_scope_mismatch")
+                if receipt.guideline_revision_id != revision.revision_id:
+                    present.add(reason.GUIDELINE_REVISION_CHANGED)
+                if receipt.guideline_revision_digest != revision.revision_digest:
+                    present.add(reason.GUIDELINE_REVISION_DIGEST_CHANGED)
+                if receipt.binding_revision != binding.binding_revision:
+                    present.add(reason.BINDING_REVISION_CHANGED)
+                if receipt.binding_configuration_digest != binding.configuration_digest:
+                    present.add(reason.BINDING_CONFIGURATION_CHANGED)
+    return SemanticAssessmentCurrentness(
+        receipt_id=receipt.receipt_id,
+        currentness=PolicyCurrentness.STALE if present else PolicyCurrentness.CURRENT,
+        reasons=tuple(item for item in _CURRENTNESS_REASON_ORDER if item in present),
+    )
+
+
 __all__ = [
     "SEMANTIC_ASSESSMENT_CURRENTNESS_CONTRACT_VERSION",
     "SemanticAssessmentCurrentSnapshot",
     "SemanticAssessmentCurrentness",
     "SemanticAssessmentCurrentnessReason",
     "assess_semantic_assessment_currentness",
+    "assess_native_semantic_assessment_currentness",
     "semantic_assessment_current_snapshot_from_context",
 ]

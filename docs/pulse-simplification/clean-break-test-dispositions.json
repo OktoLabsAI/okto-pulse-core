@@ -2032,6 +2032,14 @@
     {
       "path": "okto_labs_pulse_community/tests/test_skb31_semantic_pinpoint_v2_persistence.py",
       "reason": "Native trigger manifest excludes cross-contract legacy receipt guard. Direct SQL rejects predecessor or missing payload version while preserving the valid receipt; schema admission and distribution regression passed."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_skb_b14_policy_governance_mcp.py",
+      "reason": "Native reader Protocol now includes history; current-reader spy rejects accidental calls to history methods."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_skb31_semantic_pinpoint_v2_persistence.py",
+      "reason": "All native read signatures match the public Core port. Added tied-time keyset paging, outcome and Board/edition filters, immutable history across edition reopening and currentness for multiple same-edition receipts."
     }
   ],
   "removed_cases": [

@@ -2,6 +2,47 @@
 
 ## Estado para retomada
 
+### 2026-10-02 — C1: porta de histórico nativo e atualidade no Core
+
+Base publicada Core 567ba75f / Community e37ad50d. A porta pública de leitura
+v2 passou a declarar get por receipt, página por recorded_at/id e classificação
+de atualidade. Adapter usa apenas ledger nativo, filtros de Board/subject/edição/
+binding/guideline/outcome e keyset descendente com desempate por ID. O Core
+centraliza a regra nativa: mesma edição conserva evidência apesar de drift técnico;
+outra edição vira Previous; sujeitos sem edição continuam cercados pelos digests
+nativos. A consulta corrente agora delega essa regra, eliminando sua cópia SQL.
+
+Testes adicionados para empates de tempo, filtros, dois Boards, mesma edição
+com múltiplos recibos nativos, leitura histórica depois de reabertura e
+isolamento. Transporte list/get e UI de histórico ainda devem ser conectados
+a esta porta; tabelas/FKs antigas e demais consumidores continuam pendentes.
+Par dist-semantic-history1 instalado e byte a byte aprovado (845/907 Core,
+319/405 Community). Core1: 65 aprovados. Community1: 28 aprovados/1 falha
+na fixture de relógio, que chamava now() a cada gravação; fixado o instante
+único e repetindo a prova SQL em community2. Closure1 em andamento.
+SHA Core 09d45c1c18ea0c549a9596bd94b125116a25167357415d673533955382f347de;
+Community 895273ba373cea5069e62eedbc4cb8b26c9ee095346e9336aadc7412d05844c3.
+Community2 passou paginação/filtros mas a fixture alterava edição sem atualizar
+a autoridade semântica; corrigida para executar record_semantic_subject_mutation
+como a prova de reabertura existente. Community3 aprovado. Closure1: somente
+README drift, sem finding arquitetural e oito budgets ZERO. READMEs regenerados.
+
+Par history2 instalado e byte a byte aprovado: SHA Core
+3326efc5045e2a4e1d7a4f99569c8ef23c4cd0548c8366ee4dc2b6b79559a75f;
+Community 053b1884e4c50744c9500f5ea338138d140183fdf8aee654481b4f05fbb5da4f.
+Apenas README mudou no par final. Community4: quatro assinaturas públicas
+aprovadas. Closure2: exit 0, sem findings arquiteturais/documentais, oito budgets
+ZERO. Ruff F/E9 e diff-check aprovados; todos os handles encerrados. Sem mudança
+de UI nesta etapa. Incremento pronto para commit/push; C1–C4 permanecem abertos.
+
+Próxima implementação: substituir List/GetSemanticGuidelineAssessmentUseCase
+por projeções de histórico nativo (com rationale, evidence_refs e pinpoints
+selados), atualizar os responses REST/MCP e o painel de histórico, e então
+retirar os leitores e DTOs antigos correspondentes. Não usar o receipt v1
+como conversor de v2. O receipt nativo não carrega todos os campos do DTO antigo
+(enforcement/minimum_confidence/model_id); não inventar defaults ou proveniência.
+
+
 ### 2026-10-02 — C1/C3: consulta corrente exclusivamente nativa
 
 Base publicada Core ef355573 / Community a43f7079. Retirados seletor dual v1/v2,
