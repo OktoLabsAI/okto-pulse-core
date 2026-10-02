@@ -1842,7 +1842,6 @@ class GuidelinePolicyPersistencePort(
         guideline_ids: tuple[str, ...] | None = None,
         owner_id: str | None = None,
         board_id: str | None = None,
-        include_binding_history: bool = True,
     ) -> GuidelineExportSnapshot:
         """Read one canonical immutable policy snapshot."""
 

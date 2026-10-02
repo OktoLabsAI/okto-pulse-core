@@ -297,7 +297,6 @@ class ExportGuidelinePolicyCommand:
 
     board_id: str | None = None
     guideline_ids: tuple[str, ...] = ()
-    include_binding_history: bool = True
 
     def __post_init__(self) -> None:
         object.__setattr__(
@@ -322,8 +321,6 @@ class ExportGuidelinePolicyCommand:
         if len(set(guideline_ids)) != len(guideline_ids):
             raise ValueError("guideline_export_guideline_ids_duplicate")
         object.__setattr__(self, "guideline_ids", tuple(sorted(guideline_ids)))
-        if not isinstance(self.include_binding_history, bool):
-            raise ValueError("guideline_export_include_binding_history_invalid")
 
 
 @dataclass(frozen=True, slots=True)
@@ -357,7 +354,6 @@ class ExportGuidelinePolicyV3UseCase:
             owner_id=actor.actor_id,
             board_id=command.board_id,
             guideline_ids=(command.guideline_ids or None),
-            include_binding_history=command.include_binding_history,
         )
         envelope = build_guideline_export_v3(
             snapshot,

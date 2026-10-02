@@ -311,7 +311,6 @@ async def test_export_scopes_snapshot_by_actor_and_board_without_commit() -> Non
             "owner_id": ACTOR.actor_id,
             "board_id": "board-1",
             "guideline_ids": ("guideline-1",),
-            "include_binding_history": True,
         }
     ]
     assert uow.commit_count == 0
@@ -354,7 +353,6 @@ async def test_default_export_selects_actor_catalog_instead_of_empty_selection()
             "owner_id": ACTOR.actor_id,
             "board_id": None,
             "guideline_ids": None,
-            "include_binding_history": True,
         }
     ]
 

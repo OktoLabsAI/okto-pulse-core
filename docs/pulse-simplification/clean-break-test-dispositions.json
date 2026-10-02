@@ -1320,6 +1320,22 @@
     {
       "path": "okto_labs_pulse_community/tests/test_skb_b12_guideline_import_export_persistence.py",
       "reason": "Native binding provenance replaces bridge fields; physical source matches current adapter output. Typed materialization, complete history, inert import, replay and rollback retained. B11 exercises complete schema and forged SQL proof rejection."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_skb_b12_guideline_import_export_domain.py",
+      "reason": "Removed ignored history option and binding attribute compatibility alias; complete native history and board scope retained. REST explicitly rejects removed/unknown query parameters. Duplicate identical export invocation removed; native history assertions preserved."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_skb_b12_guideline_import_export_use_case.py",
+      "reason": "Removed ignored history option and binding attribute compatibility alias; complete native history and board scope retained. REST explicitly rejects removed/unknown query parameters. Duplicate identical export invocation removed; native history assertions preserved."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_skb_b12_guideline_import_export_persistence.py",
+      "reason": "Removed ignored history option and binding attribute compatibility alias; complete native history and board scope retained. REST explicitly rejects removed/unknown query parameters. Duplicate identical export invocation removed; native history assertions preserved."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_skb_b13_policy_governance_rest.py",
+      "reason": "Removed ignored history option and binding attribute compatibility alias; complete native history and board scope retained. REST explicitly rejects removed/unknown query parameters. Duplicate identical export invocation removed; native history assertions preserved."
     }
   ],
   "removed_cases": [

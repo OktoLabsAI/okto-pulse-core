@@ -434,11 +434,6 @@ class GuidelineExportBinding:
         object.__setattr__(self, "evidence_refs", refs_tuple)
         object.__setattr__(self, "binding_digest", expected_digest)
 
-    def __getattr__(self, name: str) -> object:
-        """Compatibility projection for immutable logical binding fields."""
-
-        return getattr(self.binding, name)
-
     @property
     def candidate_key(self) -> tuple[str, str, str, int]:
         return (
@@ -776,7 +771,7 @@ class GuidelineExportSnapshot:
                             "guideline_export_snapshot_board_mismatch"
                         )
                 if any(
-                    binding.board_id != source_board_id
+                    binding.binding.board_id != source_board_id
                     for binding in aggregate.bindings
                 ):
                     raise GuidelineImportExportError(

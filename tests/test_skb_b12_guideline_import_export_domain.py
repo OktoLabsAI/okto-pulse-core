@@ -207,6 +207,14 @@ def _envelope(
 
 
 
+def test_export_snapshot_enforces_binding_board_scope() -> None:
+    aggregate = _aggregate()
+    snapshot = GuidelineExportSnapshot(aggregates=(aggregate,), source_board_id="board-1")
+    assert snapshot.aggregates == (aggregate,)
+    with pytest.raises(GuidelineImportExportError, match="guideline_export_snapshot_binding_board_mismatch"):
+        GuidelineExportSnapshot(aggregates=(aggregate,), source_board_id="another-board")
+
+
 def test_v3_round_trip_is_closed_complete_and_canonical() -> None:
     first = _revision()
     second = _revision(
@@ -589,12 +597,12 @@ def test_fresh_binding_import_is_inert_and_pending_native_adoption() -> None:
     assert entry.binding_candidates[0].live_write_forbidden is True
     assert entry.binding_candidates[0].source_board_id == "board-1"
     assert entry.binding_candidates[0].target_board_id == "board-target"
-    assert entry.aggregate.bindings[0].board_id == "board-target"
+    assert entry.aggregate.bindings[0].binding.board_id == "board-target"
     assert entry.aggregate.bindings[0].materialization is (
         GuidelineBindingMaterialization.CANDIDATE
     )
-    assert entry.aggregate.bindings[0].configuration_digest != (
-        aggregate.bindings[0].configuration_digest
+    assert entry.aggregate.bindings[0].binding.configuration_digest != (
+        aggregate.bindings[0].binding.configuration_digest
     )
     assert "source_active_binding_pending_explicit_preview_and_adoption" in (
         entry.diagnostics

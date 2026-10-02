@@ -2,6 +2,34 @@
 
 ## Estado para retomada
 
+### 2026-10-02 — Export com histórico completo e contrato explícito
+
+Marco anterior publicado: Core dfb19317 / Community cba8f9f7. Retirados
+include_binding_history/includeBindingHistory da porta, comando, adapter, REST
+e frontend. A opção era ignorada pelo adapter; o export continua trazendo todo
+o histórico. REST recusa o parâmetro removido e demais parâmetros desconhecidos
+com validation_failed. Removido __getattr__ de compatibilidade do binding exportado;
+consumidores usam binding explicitamente. A validação de escopo por Board permanece.
+
+export-contract-core1:134 aprovados; core2:43 aprovados, incluindo um novo caso
+positivo/negativo de escopo. União:135 casos Core distintos. community1:60 aprovados
+e 7 falhas no consumidor do alias removido; corrigido o acesso explícito e a fixture.
+community2:67 aprovados, sem pendências. frontend:8 testes de API +30 do painel
+aprovados (front1/front2). A primeira seleção do painel tinha caminho incorreto;
+front2 executou o arquivo real. Nenhuma falha intermediária foi ocultada.
+
+dist-export-contract2 instalado; provenance-export-contract2.json comprova
+Core851/914 e Community318/404 Python/payload byte-idênticos antes dos testes.
+TypeScript/Vite passou; SPA
+3c2459034d86219f20193fec0264097356e874976e4d21d840a0887f213aa39b.
+closure-export-contract2 exit0, oito budgets ZERO, READMEs oficiais validados.
+Ruff F/E9 passou. Nenhuma conversão, exclusão automática ou nova autoridade.
+
+Próximo trabalho permanece C1/C3: estados e metadados semânticos de legado e seus
+consumidores, suites mistas e demais itens já previstos; depois auditoria C4 do
+produto completo. C1–C4 e decisões T23/KG-10 continuam abertos. Este incremento
+não declara a entrega final nem muda antecipadamente a versão dos artefatos.
+
 ### 2026-10-02 — Proveniência nativa de materialização, sem campos de bridge
 
 Marco anterior publicado: Core d9328d74 / Community1684d59e. Retirados
