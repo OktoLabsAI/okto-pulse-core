@@ -83,7 +83,7 @@ assessor identity.
 2. Read each exact adopted revision with
    `okto_pulse_get_guideline_revision(profile="detail")`.
 3. Analyze every applicable metric as described above, then call
-   `okto_pulse_record_semantic_guideline_assessment` with the context fences.
+   `okto_pulse_record_semantic_guideline_assessment_v2` with the context fences.
 4. Confirm the sealed result with
    `okto_pulse_get_current_semantic_guideline_assessment(profile="full")`.
 5. If the Current read is missing for the active edition, reload context and
@@ -92,30 +92,19 @@ assessor identity.
    are never reused or edited.
 
 <!-- semantic-assessment-rollout:start -->
-## Semantic assessment contract rollout
+## Native semantic assessment contract
 
-The legacy writer remains available as contract v1. The explicit v2 writer is
-`okto_pulse_record_semantic_guideline_assessment_v2`; its REST twin is
-`POST /boards/{board_id}/semantic-guideline-assessments/v2`. Current reads are
-dual-read and return the newest Current result with an outer v1/v2
-discriminator. Versioned request examples ship at
-`reference/examples/semantic-guideline-assessment-v1.json` and
+Use `okto_pulse_record_semantic_guideline_assessment_v2`; its REST counterpart is
+`POST /boards/{board_id}/semantic-guideline-assessments/v2`. The request contract
+is `v2`, with actionable pinpoints sealed against authorized subject content.
+The generated request example is
 `reference/examples/semantic-guideline-assessment-v2.json`.
 
-Roll out forward-only, in this order:
-
-1. deploy dual-read readers;
-2. apply the idempotent v2 tables and immutability/idempotency triggers;
-3. deploy both v2 transports;
-4. set `SEMANTIC_ASSESSMENT_V2_READERS_READY=true`;
-5. set `SEMANTIC_ASSESSMENT_V2_WRITER_ENABLED=true`.
-
-The writer activates only when both flags and all runtime probes agree. A
-disabled writer fails with `unsupported_contract_version`. A requested writer
-with a missing reader, table, trigger, REST or MCP capability fails with
-`v2_writer_not_ready`. Operational rollback disables only the writer flag;
-schema and readers remain forward-compatible. Never drop v2 data or triggers
-as a rollback action.
+Fresh installation provides the reader, tables, immutability triggers and both
+transports. No version-selection or rollout flags are required. The writer
+refuses incomplete runtime prerequisites with `v2_writer_not_ready`; this never
+selects another writer or converts stored evidence. Incompatible storage must be
+refused by admission, without conversion or automatic deletion.
 <!-- semantic-assessment-rollout:end -->
 
 ## Gate and lifecycle edition

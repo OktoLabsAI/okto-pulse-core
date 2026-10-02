@@ -2,6 +2,47 @@
 
 ## Estado para retomada
 
+### 2026-10-02 — C1/C3: um gravador público de avaliação semântica
+
+Base publicada Core 53770e8e / Community d033ef31. Retirados tool MCP e POST REST
+antigos de gravação semântica, seus DTOs, dispatch, projeção de resposta e policy
+MCP. O gravador canônico com contrato v2 permanece, sem alias para o anterior.
+Retiradas as flags de rollout readers_ready/writer_enabled dos settings e do gate
+de defaults: instalação nova ativa a escrita quando reader, schema, triggers e
+transports estão presentes. A capacidade do reader é verificada pela porta real,
+não por declaração de operador. Prerequisito ausente continua falhando fechado.
+
+Retirado exemplo v1 e seu force-include do wheel. Gerador oficial passou a produzir
+somente o exemplo nativo e instruções sem rollout/migração. Catálogo MCP oficial
+tem 282 tools e 279 policies mais três exceções humanas auditadas. README F16 foi
+regenerado oficialmente; oito budgets continuam ZERO. Sem mudança de permissões
+para o gravador atual, waiver ou skip.
+
+Provas parciais: build writer1 falhou por force-include do exemplo excluído;
+corrigido antes de instalar. Par writer2 instalado e byte a byte conferido.
+Core2: 90 aprovados e três falhas de expectativas antigas (telemetria da negação,
+contagem de catálogo e historical_context já retirado). Core3: 58 aprovados e
+uma contagem remanescente de policies. Community2: 66 aprovados e uma expectativa
+de resposta v1; Community3 aprovou os 42 casos do arquivo adaptado. Front2: 48
+aprovados em PolicyCompliancePanel/modelo. Manifests2: 22 aprovados e contagem
+de tools antiga. Closure2 teve apenas drift dos dois READMEs, regenerados.
+Par final writer3 instalado; provenance-semantic-native-writer3 confirma igualdade
+src/install/wheel: Core 845 Python/907 payload, Community 319/405. SHA256 Core
+d2b929e88b0c440f51f50851ab5a392a8ee1572685b16a05c49af866e8946f22;
+Community 920d801c1c052220ed7f00b662b6b42732ff19f0d21a244e3ddd0150de6f0291.
+Core4 aprovou os 37 casos de permission registry/C9/manifests/exemplos após as
+expectativas finais. Closure3 aprovada, sem findings/documentation findings e
+oito budgets ZERO. Todos os processos citados terminaram. Sem mudança de assets,
+release/tag/deploy ou dados reais.
+
+Escopo ainda aberto: a aplicação/persistência/leitura semântica antigas e a
+apresentação v1 do frontend continuam presentes. Retirá-las é a continuação desta
+mesma frente, incluindo leitores Current/history, uso de v1 nos gates e constraints
+físicas. Não declarar Policy Compliance ou C1–C4 concluídos por retirar só a entrada
+externa. Preservar waivers/skips e diferenças atuais de lifecycle de Card/Scenario;
+presentationMode chamado legacy também atende esses hosts, portanto sua remoção
+exige conciliar os contratos reais, não apenas apagar o ramo por nome.
+
 ### Decisão Checklist autorizada — gate usa o snapshot da edição
 
 Usuário autorizou explicitamente “Autorizar o gate pelo snapshot da edição”.

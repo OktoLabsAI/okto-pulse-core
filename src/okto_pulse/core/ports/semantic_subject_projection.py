@@ -138,7 +138,6 @@ class SemanticAssessmentV2CapabilitySnapshot:
     triggers_ready: bool
     rest_transport_ready: bool
     mcp_transport_ready: bool
-    writer_requested: bool
 
     @property
     def writer_active(self) -> bool:
@@ -149,7 +148,6 @@ class SemanticAssessmentV2CapabilitySnapshot:
                 self.triggers_ready,
                 self.rest_transport_ready,
                 self.mcp_transport_ready,
-                self.writer_requested,
             )
         )
 
@@ -157,14 +155,10 @@ class SemanticAssessmentV2CapabilitySnapshot:
     def reason_code(self) -> str | None:
         if self.writer_active:
             return None
-        if not self.writer_requested:
-            return "unsupported_contract_version"
         return "v2_writer_not_ready"
 
     @property
     def state(self) -> str:
-        if not self.writer_requested:
-            return "disabled"
         if not self.readers_ready:
             return "readers_not_ready"
         if not self.storage_ready:
@@ -190,7 +184,6 @@ class SemanticAssessmentV2WriterUnavailable(GuidelinePolicyAdapterMissing):
                 ("triggers_ready", str(snapshot.triggers_ready).lower()),
                 ("rest_transport_ready", str(snapshot.rest_transport_ready).lower()),
                 ("mcp_transport_ready", str(snapshot.mcp_transport_ready).lower()),
-                ("writer_requested", str(snapshot.writer_requested).lower()),
                 ("capability_state", snapshot.state),
             ),
         )

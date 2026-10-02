@@ -52,8 +52,9 @@ from okto_pulse.core.mcp.policy_governance_tools import (
     POLICY_GOVERNANCE_CAPABILITY_BY_OPERATION,
     GuidelineRevisionPatchInput,
     SemanticEvidenceRefInput,
-    SemanticMetricAssessmentInput,
-    SemanticPinpointInput,
+    SemanticMetricAssessmentV2Input,
+    SemanticPinpointV2Input,
+    SemanticAnchorV2Input,
     _native,
     register_policy_governance_tools,
 )
@@ -90,7 +91,6 @@ NEW_TOOL_NAMES = (
     "okto_pulse_get_guideline_impact",
     "okto_pulse_list_guideline_impact_items",
     "okto_pulse_adopt_guideline_revision",
-    "okto_pulse_record_semantic_guideline_assessment",
     "okto_pulse_record_semantic_guideline_assessment_v2",
     "okto_pulse_list_semantic_guideline_assessments",
     "okto_pulse_get_semantic_guideline_assessment",
@@ -297,7 +297,7 @@ def test_pagination_projection_and_authoritative_input_contracts_are_closed() ->
         assert forbidden.isdisjoint(schema["properties"])
 
     assessment_properties = schemas[
-        "okto_pulse_record_semantic_guideline_assessment"
+        "okto_pulse_record_semantic_guideline_assessment_v2"
     ]["properties"]
     assert {
         "binding_id",
@@ -307,7 +307,6 @@ def test_pagination_projection_and_authoritative_input_contracts_are_closed() ->
         "guideline_revision_id",
     } <= set(assessment_properties)
     for name in (
-        "okto_pulse_record_semantic_guideline_assessment",
         "okto_pulse_record_semantic_guideline_assessment_v2",
     ):
         assert "expected_subject_edition" in schemas[name]["properties"]
@@ -318,7 +317,6 @@ def test_pagination_projection_and_authoritative_input_contracts_are_closed() ->
         if "binding_id" in schema["properties"]
     }
     assert binding_surfaces == {
-        "okto_pulse_record_semantic_guideline_assessment",
         "okto_pulse_record_semantic_guideline_assessment_v2",
         "okto_pulse_list_semantic_guideline_assessments",
         "okto_pulse_get_current_semantic_guideline_assessment",
@@ -370,8 +368,8 @@ def test_pagination_projection_and_authoritative_input_contracts_are_closed() ->
 async def test_policy_assessment_edition_conflict_is_audited_and_rolled_back(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from okto_pulse.core.application.use_cases import (
-        RecordSemanticGuidelineAssessmentUseCase,
+    from okto_pulse.core.application.use_cases.semantic_guideline_v2 import (
+        SealSemanticGuidelineAssessmentV2UseCase,
     )
 
     reset_ska_metric_samples_for_tests()
@@ -401,7 +399,7 @@ async def test_policy_assessment_edition_conflict_is_audited_and_rolled_back(
         )
 
     monkeypatch.setattr(
-        RecordSemanticGuidelineAssessmentUseCase,
+        SealSemanticGuidelineAssessmentV2UseCase,
         "execute",
         reject_old_edition,
     )
@@ -414,10 +412,11 @@ async def test_policy_assessment_edition_conflict_is_audited_and_rolled_back(
     )
 
     outcome = await catalog._tool_manager._tools[
-        "okto_pulse_record_semantic_guideline_assessment"
+        "okto_pulse_record_semantic_guideline_assessment_v2"
     ].fn(
         board_id="board-1",
-        entity_type="spec",
+        contract_version="v2",
+        subject_type="spec",
         subject_id="spec-1",
         expected_subject_version=7,
         expected_subject_edition=3,
@@ -427,7 +426,8 @@ async def test_policy_assessment_edition_conflict_is_audited_and_rolled_back(
         idempotency_key="assessment-edition-conflict",
         confidence=90,
         metric_results=[
-            SemanticMetricAssessmentInput(
+            SemanticMetricAssessmentV2Input(
+                contract_version="v2",
                 metric_id="metric-1",
                 score=90,
                 rationale="The evidence demonstrates segregation.",
@@ -440,10 +440,11 @@ async def test_policy_assessment_edition_conflict_is_audited_and_rolled_back(
                     )
                 ],
                 pinpoints=[
-                    SemanticPinpointInput(
-                        anchor_type="field",
-                        anchor_ref="description",
-                        excerpt_hash="b" * 64,
+                    SemanticPinpointV2Input(
+                        contract_version="v2", pinpoint_key="boundary",
+                        kind="evidence", title="Explicit boundary",
+                        detail="The description defines the boundary.",
+                        anchor=SemanticAnchorV2Input(anchor_type="field", anchor_ref="description"),
                     )
                 ],
             )
@@ -639,11 +640,12 @@ _DENIAL_CASES = (
         },
     ),
     (
-        "okto_pulse_record_semantic_guideline_assessment",
+        "okto_pulse_record_semantic_guideline_assessment_v2",
         ASSESSMENTS_RECORD,
         {
             "board_id": "board-1",
-            "entity_type": "spec",
+            "contract_version": "v2",
+            "subject_type": "spec",
             "subject_id": "spec-1",
             "expected_subject_version": 1,
             "expected_subject_edition": 1,
@@ -654,7 +656,8 @@ _DENIAL_CASES = (
             "confidence": 90,
             "model_id": "semantic-agent-v1",
             "metric_results": [
-                SemanticMetricAssessmentInput(
+                SemanticMetricAssessmentV2Input(
+                    contract_version="v2",
                     metric_id="metric-1",
                     score=90,
                     rationale="The evidence demonstrates segregation.",
@@ -667,10 +670,11 @@ _DENIAL_CASES = (
                         )
                     ],
                     pinpoints=[
-                        SemanticPinpointInput(
-                            anchor_type="field",
-                            anchor_ref="description",
-                            excerpt_hash="b" * 64,
+                        SemanticPinpointV2Input(
+                            contract_version="v2", pinpoint_key="boundary",
+                            kind="evidence", title="Explicit boundary",
+                            detail="The description defines the boundary.",
+                            anchor=SemanticAnchorV2Input(anchor_type="field", anchor_ref="description"),
                         )
                     ],
                 )
@@ -782,7 +786,7 @@ async def test_capability_denial_precedes_cursor_factory_and_uow(
     samples = get_governance_metric_samples()
     expected_count = (
         2
-        if tool_name == "okto_pulse_record_semantic_guideline_assessment"
+        if tool_name == "okto_pulse_record_semantic_guideline_assessment_v2"
         else 1
     )
     assert len(samples) == expected_count
@@ -804,9 +808,9 @@ async def test_capability_denial_precedes_cursor_factory_and_uow(
         assert samples[1]["metric_name"] == METRIC_SEMANTIC_ASSESSMENT_WRITES
         assert samples[1]["labels"] == {
             "surface": "mcp",
-            "contract_version": "v1",
+            "contract_version": "v2",
             "outcome": "error",
-            "capability_state": "legacy_v1",
+            "capability_state": "unchecked",
             "reason_code": "permission_denied",
         }
 
@@ -1230,7 +1234,7 @@ def test_policy_resource_contract_and_pointer_cardinality() -> None:
     ).read_text(encoding="utf-8")
     assert "Pulse never judges semantic adherence" in policy_resource
     assert "`confidence` is reserved and compulsory" in policy_resource
-    assert "`okto_pulse_record_semantic_guideline_assessment`" in (
+    assert "`okto_pulse_record_semantic_guideline_assessment_v2`" in (
         policy_resource
     )
     assert "Human skip is deliberately absent from MCP" in policy_resource
@@ -1244,7 +1248,7 @@ def test_policy_resource_contract_and_pointer_cardinality() -> None:
         "### Canonical agent journey",
         "full context tool named by its workflow",
         "okto_pulse_get_guideline_revision",
-        "okto_pulse_record_semantic_guideline_assessment",
+        "okto_pulse_record_semantic_guideline_assessment_v2",
         "okto_pulse_get_current_semantic_guideline_assessment",
         "If the Current read is missing for the active edition",
         "stable idempotency key. Previous results",

@@ -717,10 +717,6 @@ MCP_TOOL_PERMISSION_POLICIES: tuple[McpToolPermissionPolicy, ...] = (
         "spec.quality.assess",
     ),
     _policy(
-        "okto_pulse_record_semantic_guideline_assessment",
-        "guidelines.assessments.record",
-    ),
-    _policy(
         "okto_pulse_record_semantic_guideline_assessment_v2",
         "guidelines.assessments.record",
     ),

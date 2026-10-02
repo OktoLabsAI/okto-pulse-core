@@ -292,8 +292,7 @@ async def test_projection_contracts_discriminate_v1_and_v2_losslessly() -> None:
 @pytest.mark.parametrize(
     ("overrides", "expected_active", "expected_reason"),
     (
-        ({}, False, "unsupported_contract_version"),
-        ({"writer_requested": True}, False, "v2_writer_not_ready"),
+        ({}, False, "v2_writer_not_ready"),
         (
             {
                 "readers_ready": True,
@@ -301,7 +300,6 @@ async def test_projection_contracts_discriminate_v1_and_v2_losslessly() -> None:
                 "triggers_ready": True,
                 "rest_transport_ready": True,
                 "mcp_transport_ready": True,
-                "writer_requested": True,
             },
             True,
             None,
@@ -319,7 +317,6 @@ def test_v2_writer_capability_requires_every_readers_first_prerequisite(
         "triggers_ready": False,
         "rest_transport_ready": False,
         "mcp_transport_ready": False,
-        "writer_requested": False,
     }
     values.update(overrides)
 
@@ -329,42 +326,35 @@ def test_v2_writer_capability_requires_every_readers_first_prerequisite(
     assert snapshot.reason_code == expected_reason
 
 
-@pytest.mark.parametrize(
-    ("writer_requested", "expected_code", "expected_retryable"),
-    (
-        (False, "unsupported_contract_version", False),
-        (True, "v2_writer_not_ready", True),
-    ),
-)
-def test_v2_writer_gate_projects_one_bounded_rest_mcp_error(
-    writer_requested: bool,
-    expected_code: str,
-    expected_retryable: bool,
-) -> None:
+def test_v2_writer_gate_projects_one_bounded_rest_mcp_error() -> None:
     snapshot = SemanticAssessmentV2CapabilitySnapshot(
-        readers_ready=False,
-        storage_ready=True,
-        triggers_ready=True,
-        rest_transport_ready=True,
-        mcp_transport_ready=True,
-        writer_requested=writer_requested,
+        readers_ready=False, storage_ready=True, triggers_ready=True,
+        rest_transport_ready=True, mcp_transport_ready=True,
     )
     error = SemanticAssessmentV2WriterUnavailable(snapshot)
-
     projection = project_guideline_policy_error(error)
-
     assert guideline_policy_http_status(error) == 503
-    assert projection["code"] == expected_code
-    assert projection["retryable"] is expected_retryable
+    assert projection["code"] == "v2_writer_not_ready"
+    assert projection["retryable"] is True
     assert projection["details"] == {
-        "capability_state": (
-            "disabled" if not writer_requested else "readers_not_ready"
-        ),
-        "mcp_transport_ready": "true",
-        "readers_ready": "false",
-        "reason_code": expected_code,
-        "rest_transport_ready": "true",
-        "storage_ready": "true",
-        "triggers_ready": "true",
-        "writer_requested": str(writer_requested).lower(),
+        "capability_state": "readers_not_ready",
+        "mcp_transport_ready": "true", "readers_ready": "false",
+        "reason_code": "v2_writer_not_ready", "rest_transport_ready": "true",
+        "storage_ready": "true", "triggers_ready": "true",
     }
+
+
+def test_native_writer_has_no_rollout_selection_settings() -> None:
+    from okto_pulse.core.infra.config import CoreSettings
+
+    assert {"semantic_assessment_v2_readers_ready", "semantic_assessment_v2_writer_enabled"}.isdisjoint(CoreSettings.model_fields)
+
+
+@pytest.mark.parametrize("missing", ["readers_ready", "storage_ready", "triggers_ready", "rest_transport_ready", "mcp_transport_ready"])
+def test_native_writer_refuses_each_missing_runtime_prerequisite(missing) -> None:
+    values = dict(readers_ready=True, storage_ready=True, triggers_ready=True,
+                  rest_transport_ready=True, mcp_transport_ready=True)
+    values[missing] = False
+    snapshot = SemanticAssessmentV2CapabilitySnapshot(**values)
+    assert not snapshot.writer_active
+    assert snapshot.reason_code == "v2_writer_not_ready"

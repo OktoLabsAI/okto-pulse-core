@@ -14,11 +14,11 @@ def test_versioned_semantic_assessment_examples_are_current() -> None:
     rendered = render_examples()
 
     assert set(rendered) == {
-        "semantic-guideline-assessment-v1.json",
         "semantic-guideline-assessment-v2.json",
     }
     for name, expected in rendered.items():
         assert (EXAMPLES_DIR / name).read_text(encoding="utf-8") == expected
+    assert not (EXAMPLES_DIR / "semantic-guideline-assessment-v1.json").exists()
 
 
 def test_v2_example_has_explicit_discriminators_and_human_pinpoint() -> None:
@@ -40,10 +40,10 @@ def test_v2_example_has_explicit_discriminators_and_human_pinpoint() -> None:
     assert pinpoint["anchor"]["anchor_ref"]
 
 
-def test_policy_compliance_rollout_resource_is_generated_and_current() -> None:
+def test_policy_compliance_native_resource_is_generated_and_current() -> None:
     source = POLICY_RESOURCE_PATH.read_text(encoding="utf-8")
 
     assert render_policy_compliance_resource(source) == source
-    assert source.count("okto_pulse_record_semantic_guideline_assessment_v2") == 1
-    assert "SEMANTIC_ASSESSMENT_V2_READERS_READY=true" in source
-    assert "SEMANTIC_ASSESSMENT_V2_WRITER_ENABLED=true" in source
+    assert "okto_pulse_record_semantic_guideline_assessment_v2" in source
+    assert "SEMANTIC_ASSESSMENT_V2_READERS_READY" not in source
+    assert "SEMANTIC_ASSESSMENT_V2_WRITER_ENABLED" not in source

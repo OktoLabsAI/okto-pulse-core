@@ -82,7 +82,6 @@ POLICY_GOVERNANCE_CAPABILITY_BY_OPERATION = {
     "get_impact": (IMPACT_PREVIEW,),
     "list_impact_items": (IMPACT_PREVIEW,),
     "adopt_revision": (ADOPTION_MANAGE,),
-    "record_assessment": (ASSESSMENTS_RECORD,),
     "record_assessment_v2": (ASSESSMENTS_RECORD,),
     "list_assessments": (ASSESSMENTS_READ,),
     "get_assessment": (ASSESSMENTS_READ,),
@@ -210,40 +209,8 @@ class SemanticEvidenceRefInput(_ClosedInput):
     content_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
 
 
-class SemanticPinpointInput(_ClosedInput):
-    anchor_type: Literal[
-        "whole_artifact",
-        "field",
-        "structured_child",
-        "qa",
-    ]
-    anchor_ref: str | None = Field(default=None, min_length=1)
-    excerpt_hash: str | None = Field(
-        default=None,
-        pattern=r"^[0-9a-f]{64}$",
-    )
-
-    @model_validator(mode="after")
-    def validate_anchor_shape(self) -> SemanticPinpointInput:
-        if self.anchor_type == "whole_artifact" and self.anchor_ref is not None:
-            raise ValueError("finding_whole_artifact_ref_forbidden")
-        if self.anchor_type != "whole_artifact" and self.anchor_ref is None:
-            raise ValueError("finding_anchor_ref_required")
-        return self
 
 
-class SemanticMetricAssessmentInput(_ClosedInput):
-    metric_id: str = Field(min_length=1, max_length=POLICY_METRIC_ID_MAX_LENGTH)
-    score: int = Field(ge=0, le=100)
-    rationale: str = Field(min_length=1, max_length=20_000)
-    evidence_refs: list[SemanticEvidenceRefInput] = Field(
-        min_length=1,
-        max_length=200,
-    )
-    pinpoints: list[SemanticPinpointInput] = Field(
-        min_length=1,
-        max_length=200,
-    )
 
 
 class SemanticAnchorV2Input(_ClosedInput):
@@ -550,7 +517,6 @@ def register_policy_governance_tools(
         paginated: bool = False,
     ) -> McpToolOutcome:
         semantic_contract_version = {
-            "record_assessment": "v1",
             "record_assessment_v2": "v2",
         }.get(operation)
         correlation_id = uuid.uuid4().hex
@@ -1008,124 +974,6 @@ def register_policy_governance_tools(
             AdoptGuidelineRevisionUseCase(),
         )
 
-    async def okto_pulse_record_semantic_guideline_assessment(
-        board_id: BoardId,
-        entity_type: PolicyEntityTypeValue,
-        subject_id: Annotated[
-            str,
-            Field(min_length=1, max_length=POLICY_SUBJECT_ID_MAX_LENGTH),
-        ],
-        expected_subject_version: PositiveRevision,
-        binding_id: Annotated[str, Field(min_length=1, max_length=128)],
-        expected_binding_revision: PositiveRevision,
-        guideline_revision_id: RevisionId,
-        idempotency_key: IdempotencyKey,
-        confidence: Annotated[int, Field(ge=0, le=100)],
-        metric_results: Annotated[
-            list[SemanticMetricAssessmentInput],
-            Field(min_length=1, max_length=200),
-        ],
-        model_id: Annotated[
-            str | None,
-            Field(default=None, min_length=1, max_length=200),
-        ] = None,
-        expected_subject_edition: PositiveRevision | None = None,
-    ) -> McpToolOutcome:
-        """Record complete agent-produced metric evidence against exact fences.
-
-        Read ``okto-pulse://reference/policy-compliance`` before use. Pulse
-        validates structure, current authority, thresholds and aggregation; it
-        never performs the cognitive assessment itself.
-        """
-
-        from okto_pulse.core.application.use_cases import (
-            RecordSemanticGuidelineAssessmentCommand,
-            RecordSemanticGuidelineAssessmentUseCase,
-        )
-        from okto_pulse.core.domain.guideline_policy import (
-            PolicyEntityType,
-            PolicySubjectRef,
-        )
-        from okto_pulse.core.domain.guideline_semantic_assessment import (
-            SemanticAssessmentAssessor,
-            SemanticGuidelineAssessmentSubmission,
-            SemanticMetricAssessment,
-        )
-        from okto_pulse.core.domain.quality_assessment import (
-            EvidenceRef,
-            FindingAnchorType,
-            UnboundFindingAnchor,
-        )
-
-        def build_command(
-            _codec: object | None,
-            actor: object,
-        ) -> object:
-            if (
-                entity_type in EDITION_VALIDATION_SUBJECT_TYPES
-                and expected_subject_edition is None
-            ):
-                raise ValueError("expected_subject_edition_required")
-            submission = SemanticGuidelineAssessmentSubmission(
-                subject=PolicySubjectRef(
-                    board_id=board_id,
-                    entity_type=PolicyEntityType(entity_type),
-                    subject_id=subject_id,
-                    subject_version=expected_subject_version,
-                    subject_edition=expected_subject_edition,
-                ),
-                binding_id=binding_id,
-                expected_binding_revision=expected_binding_revision,
-                guideline_revision_id=guideline_revision_id,
-                idempotency_key=idempotency_key,
-                confidence=confidence,
-                assessor=SemanticAssessmentAssessor(
-                    agent_id=str(getattr(actor, "actor_id")),
-                    model_id=model_id,
-                ),
-                metric_results=tuple(
-                    SemanticMetricAssessment(
-                        metric_id=item.metric_id,
-                        score=item.score,
-                        rationale=item.rationale,
-                        evidence_refs=tuple(
-                            EvidenceRef(
-                                source_type=evidence.source_type,
-                                source_id=evidence.source_id,
-                                source_version=evidence.source_version,
-                                content_hash=evidence.content_hash,
-                            )
-                            for evidence in item.evidence_refs
-                        ),
-                        pinpoints=tuple(
-                            UnboundFindingAnchor(
-                                anchor_type=FindingAnchorType(pinpoint.anchor_type),
-                                anchor_ref=pinpoint.anchor_ref,
-                                excerpt_hash=pinpoint.excerpt_hash,
-                            )
-                            for pinpoint in item.pinpoints
-                        ),
-                    )
-                    for item in metric_results
-                ),
-            )
-            return RecordSemanticGuidelineAssessmentCommand(
-                board_id=board_id,
-                submission=submission,
-                receipt_id=_server_id(
-                    "semantic-guideline-assessment",
-                    board_id,
-                    idempotency_key,
-                ),
-            )
-
-        return await _execute(
-            board_id,
-            "record_assessment",
-            None,
-            RecordSemanticGuidelineAssessmentUseCase(),
-            build_command=build_command,
-        )
 
     async def okto_pulse_record_semantic_guideline_assessment_v2(
         board_id: BoardId,
@@ -1831,7 +1679,6 @@ def register_policy_governance_tools(
         okto_pulse_get_guideline_impact,
         okto_pulse_list_guideline_impact_items,
         okto_pulse_adopt_guideline_revision,
-        okto_pulse_record_semantic_guideline_assessment,
         okto_pulse_record_semantic_guideline_assessment_v2,
         okto_pulse_list_semantic_guideline_assessments,
         okto_pulse_get_semantic_guideline_assessment,
@@ -1852,9 +1699,7 @@ __all__ = [
     "GuidelineMetricInput",
     "GuidelineRevisionPatchInput",
     "SemanticEvidenceRefInput",
-    "SemanticMetricAssessmentInput",
     "SemanticMetricAssessmentV2Input",
-    "SemanticPinpointInput",
     "SemanticPinpointV2Input",
     "SemanticGuidelineProjectionValue",
     "SEMANTIC_GUIDELINE_RESOURCE_URI",

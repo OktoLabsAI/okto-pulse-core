@@ -233,37 +233,12 @@ Args:
 Returns:
     Outcome with the new exact-revision binding.
 
-## `okto_pulse_record_semantic_guideline_assessment`
-
-Record complete externally-produced semantic metric evidence. The normative
-assessment and gate protocol lives only in the canonical protocol linked
-above.
-
-Args:
-    board_id: Authenticated board scope.
-    entity_type: Closed governed entity type.
-    subject_id: Exact entity identity.
-    expected_subject_version: Exact current entity version fence.
-    expected_subject_edition: Required exact validation-edition fence for
-        Ideation, Refinement, and Spec; omit for Sprint, Card, and Test Scenario.
-    binding_id: Exact adopted binding identity.
-    expected_binding_revision: Exact binding revision fence.
-    guideline_revision_id: Exact adopted guideline revision fence.
-    idempotency_key: Retry-stable client key.
-    confidence: Compulsory whole-assessment confidence, 0 through 100.
-    metric_results: Complete score, rationale, evidence and pinpoint set.
-    model_id: Optional assessor model identifier.
-
-Returns:
-    Outcome with one atomically sealed result and all metric evidence.
-
 ## `okto_pulse_record_semantic_guideline_assessment_v2`
 
 Record an actionable semantic assessment using the explicit `v2` contract.
 The server resolves and authorizes every anchor, snapshots a human-readable
 label/excerpt, computes digests and persists the assessment atomically. The
-readers-first capability gate must be active before either REST or MCP admits
-the write.
+runtime capability checks must pass before either REST or MCP admits the write.
 
 Args:
     board_id: Authenticated board scope.
@@ -271,7 +246,7 @@ Args:
     subject_type, subject_id: Exact governed subject.
     expected_subject_version: Exact current subject version fence.
     expected_subject_edition: Required exact validation-edition fence for
-        Ideation, Refinement, and Spec; omit for Sprint, Card, and Test Scenario.
+        Ideation, Refinement, and Spec; omit for Card and Test Scenario.
     binding_id, expected_binding_revision: Exact adopted binding fences.
     guideline_revision_id: Exact adopted guideline revision fence.
     idempotency_key: Retry-stable client key.
@@ -283,8 +258,7 @@ Args:
 
 Returns:
     A `v2` result with server-owned snapshots, findings and metric evidence.
-    Disabled writer returns `unsupported_contract_version`; requested writer
-    with incomplete prerequisites returns `v2_writer_not_ready`.
+    Incomplete runtime prerequisites return `v2_writer_not_ready`.
 
 ## `okto_pulse_list_semantic_guideline_assessments`
 

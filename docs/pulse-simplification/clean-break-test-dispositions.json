@@ -1968,6 +1968,30 @@
     {
       "path": "okto_labs_pulse_community/tests/test_checklist_frozen_gate_characterization.py",
       "reason": "Authorized regression replaces reproducer: Blocking/OFF/Advisory remain frozen despite Board changes; missing next-edition snapshot refuses admission and previous snapshot remains immutable."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_skb_b14_policy_governance_mcp.py",
+      "reason": "Removed writer replaced by native v2 payloads for exact catalog/schema, permission denial before UoW, and edition-conflict rollback/audit. No old writer alias remains registered."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_skb3_semantic_policy_governance_rest.py",
+      "reason": "Removed v1 POST positively asserted absent/405 without dispatch. Edition fences, nested unknown fields and server-owned field rejection moved to v2. Waiver/skip nullable-field and acknowledgement assertions retained; v2 sealed digests explicitly expected."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_skb31_semantic_guideline_v2_application.py",
+      "reason": "Retired rollout-switch tests replaced by mandatory native readiness and refusal of each missing runtime prerequisite; removed settings asserted absent."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_skb31_semantic_pinpoint_v2_persistence.py",
+      "reason": "Fresh schema enables the native writer without operator flags; deleting a required trigger still refuses writing."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_skb31_semantic_guideline_v2_transport.py",
+      "reason": "Retired disabled-writer response replaced with missing-storage 503 refusal and exact error telemetry, preserving no-success proof."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_mcp_permission_registry.py",
+      "reason": "Exact inventory updated for clean-break tool removals; retired historical_context and semantic v1 writer explicitly absent. Native permission policy coverage and three human-only exemptions retained."
     }
   ],
   "removed_cases": [
