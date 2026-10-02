@@ -4,10 +4,10 @@ Covers spec ``MCP High-Frequency Response Projection and Dedup`` card R2.3
 (FR9 / api_c163fb7d):
 
 - ``ts_a7e8204e`` — default copy response is copy metadata + ids, no bodies;
-  full/legacy preserve the prior bodies; invalid profile errors structurally.
+  full preserve the prior bodies; invalid profile errors structurally.
 - ``ts_cb1046ab`` — projected response uses the R5 canonical metadata names.
 
-The copy tools support a 3-value profile set (``summary``/``full``/``legacy``) —
+The copy tools support a 2-value profile set (``summary``/``full``) —
 ``detail`` is intentionally NOT supported here.
 """
 
@@ -22,6 +22,7 @@ from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 import pytest
+from okto_pulse.core.domain.architecture_adoption import ArchitectureAdoptionScope
 
 from okto_pulse.core.infra.database import get_session_factory
 from okto_pulse.core.mcp import server as mcp_server
@@ -125,9 +126,9 @@ def test_summary_payload_bytes_measures_final_projected_response():
     assert out["projection"]["payload_bytes"] > _stable_payload_bytes(bare)
 
 
-def test_full_and_legacy_preserve_prior_shape():
+def test_full_preserve_prior_shape():
     designs = [_full_design("ad1")]
-    for profile in ("full", "legacy"):
+    for profile in ("full",):
         out = project_copy_architecture_response(designs, total_on_card=1, profile=profile)
         assert out["success"] is True
         assert out["copied"] == 1
@@ -143,11 +144,11 @@ def test_unsupported_profile_returns_structured_error():
         )
         assert out["outcome"] == "error"
         assert out["error_code"] == "unsupported_projection"
-        assert out["supported_profiles"] == ["summary", "full", "legacy"]
+        assert out["supported_profiles"] == ["summary", "full"]
     # detail is explicitly NOT a supported copy profile (unlike the context tools).
     assert resolve_copy_profile("detail") is None
     assert resolve_copy_profile("summary") == "summary"
-    assert list(COPY_SUPPORTED_PROFILES) == ["summary", "full", "legacy"]
+    assert list(COPY_SUPPORTED_PROFILES) == ["summary", "full"]
 
 
 def test_copy_architecture_emits_safe_metrics(caplog):
@@ -209,7 +210,7 @@ async def test_copy_architecture_handler_summary_full_and_unsupported():
     async with db_factory() as db:
         db.add(Board(id=board_id, name="Copy Arch", owner_id=USER_ID))
         db.add(
-            Spec(
+            Spec(architecture_adoption=ArchitectureAdoptionScope(board_id=board_id, spec_id=spec_id, adopted_in_edition=1, actor_id=USER_ID, inherited_resource_ids=()).model_dump(mode="json"),
                 id=spec_id,
                 board_id=board_id,
                 title="Spec",
@@ -269,7 +270,7 @@ async def test_copy_architecture_handler_summary_full_and_unsupported():
         )
 
     # default summary: copy metadata only, no bodies.
-    assert default["copied"] == 2
+    assert default.get("copied") == 2, default
     assert len(default["design_ids"]) == 2
     assert default["total_on_card"] == 2
     assert "architecture_designs" not in default
@@ -286,7 +287,7 @@ async def test_copy_architecture_handler_summary_full_and_unsupported():
 
     # unsupported profile: structured error, no mutation, no silent fallback.
     assert bad["error_code"] == "unsupported_projection"
-    assert bad["supported_profiles"] == ["summary", "full", "legacy"]
+    assert bad["supported_profiles"] == ["summary", "full"]
 
 
 # ---------------------------------------------------------------------------
@@ -310,10 +311,10 @@ def test_copy_architecture_tool_doc_documents_profile_contract():
 
     # The new contract must be documented...
     assert "profile" in section
-    assert "summary" in section and "full" in section and "legacy" in section
+    assert "summary" in section and "full" in section
     assert "total_on_card" in section
     assert "design_ids" in section
     assert "unsupported_projection" in section
-    assert "supported_profiles=[summary, full, legacy]" in section
+    assert "supported_profiles=[summary, full]" in section
     # ...and the stale "returns full bodies by default" wording must be gone.
     assert "JSON with copied Architecture Designs." not in section

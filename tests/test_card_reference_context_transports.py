@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock
 from uuid import uuid4
 
 import pytest
+from okto_pulse.core.domain.architecture_adoption import ArchitectureAdoptionScope
 
 from mcp_runtime_testing import register_mcp_test_runtime
 from sqlalchemy_test_models import Board, Card, Spec
@@ -16,14 +17,14 @@ from okto_pulse.core.infra.database import get_session_factory
 from okto_pulse.core.mcp import server
 
 
-@pytest.mark.parametrize('profile,scope', [('summary', 'all'), ('full', 'all'), ('full', 'gate'), ('legacy', 'all')])
+@pytest.mark.parametrize('profile,scope', [('summary', 'all'), ('full', 'all'), ('full', 'gate')])
 async def test_real_card_and_mcp_read_follow_source_correction_without_waiting_for_graph(monkeypatch, profile, scope):
     suffix = uuid4().hex
     board_id, spec_id, card_id = [f'{kind}-{suffix}' for kind in ('board', 'spec', 'card')]
     factory = get_session_factory()
     async with factory() as session:
         session.add(Board(id=board_id, name='Board', owner_id='owner'))
-        session.add(Spec(id=spec_id, board_id=board_id, title='Spec', created_by='owner', test_scenarios=[]))
+        session.add(Spec(architecture_adoption=ArchitectureAdoptionScope(board_id=board_id, spec_id=spec_id, adopted_in_edition=1, actor_id='owner', inherited_resource_ids=()).model_dump(mode="json"), id=spec_id, board_id=board_id, title='Spec', created_by='owner', test_scenarios=[]))
         session.add(Card(id=card_id, board_id=board_id, spec_id=spec_id, title='Card', created_by='owner',
                          test_scenario_ids=['missing']))
         await session.commit()
@@ -46,9 +47,6 @@ async def test_real_card_and_mcp_read_follow_source_correction_without_waiting_f
     async def context():
         return json.loads(await tool.fn(board_id=board_id, card_id=card_id, profile=profile, context_scope=scope))
     before = await context()
-    if profile == 'legacy':
-        assert 'scenario_reference_context' not in before
-        return
     assert before['scenario_reference_context'] == reference.model_dump(mode='json')
     async with factory() as session:
         spec = await session.get(Spec, spec_id)

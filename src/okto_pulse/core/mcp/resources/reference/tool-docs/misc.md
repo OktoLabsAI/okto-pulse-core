@@ -108,8 +108,7 @@ Args:
     include_architecture: Include Architecture Designs from card and spec (default "true")
     include_superseded: When "false" (default), superseded/revoked decisions are
         filtered out; set "true" for full decision history.
-    profile: Response projection — one of: summary (default), detail, full,
-        legacy. Use `summary` for exploration, `detail` plus follow-ups for
+    profile: Response projection — one of: summary (default), detail, full. Use `summary` for exploration, `detail` plus follow-ups for
         bounded body reads, and `full` + `context_scope="gate"` before
         status-changing moves. See okto-pulse://reference/projection-profiles.
     context_scope: `all` (default, historical complete body) or `gate`

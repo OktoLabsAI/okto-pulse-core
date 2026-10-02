@@ -114,7 +114,7 @@ Args:
     spec_id: Source spec ID
     card_id: Target card ID
     design_ids: Optional multi-value design IDs to copy; empty copies all
-    profile: Response projection profile — `summary` (default) | `full` | `legacy`.
+    profile: Response projection profile — `summary` (default) | `full`.
 
 Returns:
     Response shape depends on `profile` (R2.3 projection):
@@ -125,10 +125,10 @@ Returns:
       `follow_up[{rel, target_ref}]`). The full bodies are persisted on the card
       regardless of profile — read them with `okto_pulse_get_task_context(profile=full, context_scope=all)`
       or re-call here with `profile=full`.
-    - `full` / `legacy`: the prior payload with complete bodies —
+    - `full`: the prior payload with complete bodies —
       `{success, copied, architecture_designs:[...]}`, no projection envelope.
     - Unsupported profile (e.g. `detail`): structured error `unsupported_projection`
-      with `supported_profiles=[summary, full, legacy]` (no silent fallback, no copy
+      with `supported_profiles=[summary, full]` (no silent fallback, no copy
       performed).
 
 ## `okto_pulse_delete_architecture_design`

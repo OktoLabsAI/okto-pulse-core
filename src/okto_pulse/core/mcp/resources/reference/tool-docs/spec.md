@@ -382,8 +382,7 @@ Args:
         the common "what rules today?" path. Set to "true" to get the
         full history (active + superseded + revoked). A `decisions_stats`
         summary is always included so you can see what was filtered.
-    profile: Response projection — one of: summary (default), detail, full,
-        legacy. Use `summary` for exploration and `full` before evaluating,
+    profile: Response projection — one of: summary (default), detail, full. Use `summary` for exploration and `full` before evaluating,
         moving, or deriving cards. See okto-pulse://reference/projection-profiles.
 
 Returns:

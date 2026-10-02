@@ -31,7 +31,7 @@ class InvalidProfileError(ValueError):
 
 
 def _is_full(profile: str) -> bool:
-    return profile in ("full", "legacy")
+    return profile == "full"
 
 
 def _persistence_present(health: dict) -> tuple[bool, str | None]:

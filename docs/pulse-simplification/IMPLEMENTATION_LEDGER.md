@@ -2,6 +2,55 @@
 
 ## Estado para retomada
 
+### 2026-10-01 — MCP: retirada do perfil e da resposta textual legacy
+
+Marco anterior publicado: Core4e2ec4e2 / Community4170f14b. Retirados o perfil
+legacy do envelope compartilhado, contextos, cópia e saúde do grafo; removidos
+os ramos que suprimiam rastreabilidade/scenario_reference_context para conservar
+formato antigo. Summary/detail/full permanecem (cópia:summary/full). Removido
+legacy_success sem consumidor de produto; sinais atuais de erro continuam
+classificados sem transformar falha em sucesso. Telemetria contabiliza somente
+o perfil full sob nome atual, sem alias da métrica antiga.
+
+McpToolOutcome não retém texto antigo nem publica legacy_content. Community
+sempre emite o envelope estruturado; profile=legacy é recusado antes do handler.
+Erros de argumento, autenticação, domínio, retry, action_required e saturação
+permanecem no contrato atual. Mantida interpretação dos retornos JSON/mappings
+dos handlers atuais: não é importação de payload/base antiga. Não houve alteração
+de autoridade, persistência ou componentes frontend neste marco.
+
+Qualificação encontrou fixtures sem escopo arquitetural explícito; corrigidas
+com ArchitectureAdoptionScope tipado. A leitura metadata-only falhava também
+por réplica de adapter desatualizada em tests/sqlalchemy_test_resource_gate_service:
+incluídos edition/architecture_adoption, já existentes no adapter Community real.
+Nenhum guard relaxado. Teste do host ainda contava duas tools já retiradas
+(get_historical_context e classify_legacy_code_evidence); agora exige ausência
+delas e schemas fechados das 45 tools atuais. Retirado caso exclusivo de base
+Sprint; demais casos atuais preservados. Disposições registradas no JSON.
+
+Recibos: mcp-profiles-qualified4.xml:245 Core aprovados, incluindo contextos,
+identidade, negações de leitura de avaliações, budgets, cópia, saúde, erros,
+catálogo e recusa do perfil antigo. Community:50 casos distintos aprovados entre
+mcp-outcome1-community (49 passaram; único erro era inventário antigo),
+mcp-outcome2-community (14 passaram após correção) e mcp-profiles1-community
+(38 passaram no par com projetores finais). Sem testes frontend por não haver
+alteração de feature frontend neste incremento.
+
+dist-mcp-profiles3 instalado; provenance-mcp-profiles3.json comprova Core851/914
+e Community318/404 Python/payload byte-idênticos. Catálogo regenerado pelo módulo
+oficial, sem delta final. closure-mcp-profiles3.json exit0, findings vazios, oito
+budgets ZERO; READMEs oficiais regenerados/validados. Ruff e diff-check aprovados.
+
+C1–C4 continuam abertos. Próxima retirada de C3 já localizada: REST effective-resources
+e GetEffectiveResourcesUseCase ainda usam profile ausente/legacy para hidratação
+antiga. Consumidores frontend incluem CreateCardModal, MockupsTab, ArchitectureTab,
+CardKnowledgeTab e KnowledgeWorkspace; conferir paginação/seleção antes de mudar
+o contrato e executar testes frontend correspondentes. Knowledge Workspace também
+tem cursor v1 e identidade @legacy; resolver junto dos consumidores atuais, sem
+inventar versões. Demais resíduos e decisões T23/KG-10 continuam no ledger, sem
+nova autorização implícita para alterar esses gates. Qualificação global C4 e
+versão coordenada0.4.0 permanecem pendentes.
+
 ### 2026-10-01 — MCP: resposta de saturação sem seletor de compatibilidade
 
 Retirados mcp_legacy_coverage, mcp_legacy_offset e o ramo que devolvia coverage

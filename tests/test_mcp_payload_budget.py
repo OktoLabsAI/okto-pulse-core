@@ -21,7 +21,7 @@ from okto_pulse.core.mcp import server as mcp_server
 from okto_pulse.core.mcp.payload_budget import (
     METRIC_BUDGET_VIOLATION,
     METRIC_PAYLOAD_BUDGET_VIOLATION,
-    METRIC_PROJECTION_LEGACY_FULL,
+    METRIC_PROJECTION_FULL,
     METRIC_PROJECTION_RESPONSE,
     METRIC_UNSAFE_LABEL_REJECTED,
     UNSAFE_LABEL_REASON,
@@ -155,11 +155,9 @@ def test_telemetry_records_safe_projection_labels_only():
         assert sink.record_projection_envelope(env).accepted is True
     full_env = project_response(profile="full", body={"id": "c1", "success": True}, truncated=True)
     assert sink.record_projection_envelope(full_env).accepted is True
-    legacy_env = project_response(profile="legacy", body={"id": "c1", "success": True})
-    assert sink.record_projection_envelope(legacy_env).accepted is True
 
-    assert sink.metrics[METRIC_PROJECTION_RESPONSE] == 4
-    assert sink.metrics[METRIC_PROJECTION_LEGACY_FULL] == 2  # full + legacy only
+    assert sink.metrics[METRIC_PROJECTION_RESPONSE] == 3
+    assert sink.metrics[METRIC_PROJECTION_FULL] == 1
     # No event carries a body field — only safe labels — and outcome is recorded
     # on every projected response (or_13c4906b).
     for event in sink.events:
@@ -174,7 +172,7 @@ def test_telemetry_records_safe_projection_labels_only():
             "omitted_count",
             "deduped_count",
             "payload_bytes",
-            "legacy_full",
+            "full_profile",
         }
 
 
@@ -344,13 +342,13 @@ def test_r1_r4_outputs_wrap_in_summary_and_full_without_mutation():
 
 
 def test_envelope_requires_outcome_and_treats_status_as_optional():
-    for profile in ("summary", "detail", "full", "legacy"):
+    for profile in ("summary", "detail", "full"):
         ok = project_response(
             profile=profile, body={"id": "c1", "success": True, "status": "active"}
         )
         assert ok["outcome"] == "ok"  # canonical success key always present
         assert ok.get("status") == "active"  # status passes through as metadata
-        if profile in ("full", "legacy"):
+        if profile == "full":
             assert ok["success"] is True  # compat success preserved
         else:
             assert "success" not in ok  # slim omits positive success

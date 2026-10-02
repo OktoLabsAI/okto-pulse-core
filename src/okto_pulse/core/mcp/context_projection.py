@@ -25,7 +25,7 @@ Profiles (reuses the R5.1 envelope contract):
 - ``detail`` — ``summary`` plus prose ``description``/scope fields, bounded
   2 KiB primary-artifact previews, and a larger deterministic 64 KiB response
   budget (full artifact bodies still live behind ``profile=full``).
-- ``full`` / ``legacy`` with the default task ``context_scope=all`` — the
+- ``full`` with the default task ``context_scope=all`` — the
   assembled payload UNCHANGED (FR-2/FR-9 back-compat).
 - task ``full`` + ``context_scope=gate`` — bounded 32 KiB pre-mutation slice:
   current gate/readiness metadata plus a metadata-only inventory for omitted
@@ -36,7 +36,7 @@ The exploratory live byte budget is applied to ``get_task_context`` after full
 assembly; the gate scope is assembled from bounded reads. When a projection exceeds
 its budget, deterministic collection/string limits are applied and
 ``projection.truncated`` becomes true with a ``read_full_context`` follow-up.
-``full/all`` and ``legacy`` are never budget-truncated. The additive
+``full/all`` are never budget-truncated. The additive
 ``full/gate`` task scope is the mandatory in-band transition/evaluation read;
 mutations still resolve and fingerprint full context server-side. Other context
 families continue to share the dedup/envelope path without inheriting a
@@ -76,7 +76,7 @@ from okto_pulse.core.mcp.projection_envelope import (
 _LOG = logging.getLogger("okto_pulse.mcp.context_projection")
 
 # Profiles that return the assembled payload unchanged (back-compat).
-_PASSTHROUGH_PROFILES = frozenset({"full", "legacy"})
+_PASSTHROUGH_PROFILES = frozenset({"full"})
 
 # ``get_task_context`` keeps its historical full/all response byte-compatible,
 # but status-changing callers can request the complete *gate* slice in-band.
@@ -1351,7 +1351,7 @@ class MCPContextProjectionService:
             return unsupported_projection_error(profile)
 
         if resolved_profile in _PASSTHROUGH_PROFILES:
-            # FR-2/FR-9: full/legacy preserve the assembled payload exactly. We still
+            # FR-2/FR-9: full preserve the assembled payload exactly. We still
             # record usage telemetry (no envelope is injected into the payload).
             out = dict(result)
             _emit_context_projection_metric(

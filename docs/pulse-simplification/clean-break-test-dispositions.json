@@ -1196,6 +1196,30 @@
     {
       "path": "okto_labs_pulse_core/tests/test_api_contract_data_model.py",
       "reason": "HTTP/non-HTTP and justification contracts retained. Positive method-token inference and tolerant malformed reads replaced by refusal without input mutation; native explicit projection remains covered."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_mcp_projection_envelope.py",
+      "reason": "Removed positive legacy-profile/text-only variants; retained current projection, domain-error, authorization, metadata, budget and schema checks. Removed profile is refused before handler execution; native fixtures declare architecture scope."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_mcp_context_projection.py",
+      "reason": "Removed positive legacy-profile/text-only variants; retained current projection, domain-error, authorization, metadata, budget and schema checks. Removed profile is refused before handler execution; native fixtures declare architecture scope."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_mcp_copy_architecture_projection.py",
+      "reason": "Removed positive legacy-profile/text-only variants; retained current projection, domain-error, authorization, metadata, budget and schema checks. Removed profile is refused before handler execution; native fixtures declare architecture scope."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_mcp_payload_budget.py",
+      "reason": "Removed positive legacy-profile/text-only variants; retained current projection, domain-error, authorization, metadata, budget and schema checks. Removed profile is refused before handler execution; native fixtures declare architecture scope."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_mcp_outcome_v2_transport.py",
+      "reason": "Removed positive legacy-profile/text-only variants; retained current projection, domain-error, authorization, metadata, budget and schema checks. Removed profile is refused before handler execution; native fixtures declare architecture scope."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_mcp_host_adapter.py",
+      "reason": "Removed positive legacy-profile/text-only variants; retained current projection, domain-error, authorization, metadata, budget and schema checks. Removed profile is refused before handler execution; native fixtures declare architecture scope."
     }
   ],
   "removed_cases": [
@@ -1480,6 +1504,18 @@
       "test": "test_legacy_hook_stage_faults_do_not_participate_in_mutation_uow",
       "disposition": "superseded",
       "reason": "Four callback fault variants exercised only the retired compatibility hook; native commit failure rollback and explicit assessment atomicity remain covered."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_mcp_outcome_v2.py",
+      "test": "test_explicit_legacy_text_is_preserved_byte_for_byte",
+      "disposition": "superseded",
+      "reason": "Exclusive byte-preserving old transport mode removed; native semantic errors and action-required responses retained."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_mcp_context_projection.py",
+      "test": "test_spec_context_does_not_read_or_publish_retired_sprints",
+      "disposition": "superseded",
+      "reason": "Four old-storage profile cases require removed Sprint model/columns. Current task and Spec projections remain tested; incompatible storage rejection is covered by admission suites."
     }
   ]
 }

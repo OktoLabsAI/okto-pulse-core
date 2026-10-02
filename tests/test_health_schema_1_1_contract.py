@@ -201,7 +201,7 @@ async def test_failed_debt_provider_remains_unavailable_through_health_and_mcp(d
         assert result["canonical_debt"][name] is None
     assert result["rebuild_diagnostics"]["last_outcome"] == "unavailable"
     assert result["rebuild_diagnostics"]["canonical_open_debt_count"] is None
-    for profile in ("summary", "full", "legacy"):
+    for profile in ("summary", "full"):
         projected = KGHealthMCPProjection().project(result, profile=profile)
         assert projected["canonical_debt"]["open_count"] is None
         assert projected["operational_domains"]["canonical_debt"]["status"] == "unavailable"

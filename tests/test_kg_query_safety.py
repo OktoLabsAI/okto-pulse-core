@@ -286,9 +286,9 @@ def test_health_full_profile_returns_everything_untouched():
     assert "health_issues" in out and "diagnostics" in out
 
 
-def test_health_legacy_profile_is_also_full():
+def test_health_rejects_retired_profile():
     out = KGHealthMCPProjection().project(_full_health_payload(), profile="legacy")
-    assert "diagnostics" in out and "health_issues" in out
+    assert out["error_code"] == "unsupported_projection"
 
 
 def test_health_projection_rejects_unknown_profile_consistently():
@@ -297,7 +297,7 @@ def test_health_projection_rejects_unknown_profile_consistently():
         "outcome": "error",
         "error": "Unsupported projection profile: 'verbose'",
         "error_code": "unsupported_projection",
-        "supported_profiles": ["summary", "detail", "full", "legacy"],
+        "supported_profiles": ["summary", "detail", "full"],
     }
 
 

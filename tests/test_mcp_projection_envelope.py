@@ -4,11 +4,11 @@ Covers spec ``MCP Projection Envelope and Token Budget Guardrails`` scenarios:
 
 - ``ts_a284663c`` — projection helper emits complete envelope metadata.
 - ``ts_68dc1a8d`` — profiles have deterministic shapes; unsupported errors.
-- ``ts_d9a55d11`` — legacy/full preserve success true and success false.
+- ``ts_d9a55d11`` — full preserve success true and success false.
 - ``ts_1d78055d`` — slim/default success omission still exposes outcome + error.
 
 Plus card R5.1 required units: response-only (no input mutation), deterministic
-``payload_bytes``, R1–R4 fixture wrapping without changing full/legacy
+``payload_bytes``, R1–R4 fixture wrapping without changing full
 semantics, and the lazy ``okto-pulse://reference/projection-profiles`` resource.
 """
 
@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import copy
 import json
+import pytest
 
 from okto_pulse.core.mcp.projection_envelope import (
     DEFAULT_PROFILE,
@@ -37,7 +38,6 @@ BODIES = {
     "summary": {"id": "c1", "count": 3},
     "detail": {"id": "c1", "count": 3, "titles": ["a", "b", "c"]},
     "full": {"id": "c1", "count": 3, "items": [{"id": "a", "body": "x" * 40}]},
-    "legacy": {"id": "c1", "success": True, "data": {"legacy_field": "kept"}},
 }
 
 
@@ -88,13 +88,12 @@ def test_profiles_return_distinct_deterministic_shapes():
     assert "titles" not in out["summary"] and "items" not in out["summary"]
     assert out["detail"]["titles"] == ["a", "b", "c"]
     assert out["full"]["items"][0]["body"] == "x" * 40
-    assert out["legacy"]["data"] == {"legacy_field": "kept"}
 
-    # Each labels its own profile, and the four shapes are pairwise distinct.
+    # Each labels its own profile, and the three shapes are pairwise distinct.
     for p in SUPPORTED_PROFILES:
         assert out[p]["profile"] == p
     serialized = {json.dumps(v, sort_keys=True, default=str) for v in out.values()}
-    assert len(serialized) == 4
+    assert len(serialized) == 3
 
     # Determinism: same input → byte-identical output.
     again = helper.project(profile="full", bodies=BODIES)
@@ -103,26 +102,27 @@ def test_profiles_return_distinct_deterministic_shapes():
     )
 
 
-def test_unsupported_profile_returns_structured_error():
-    result = project_response(profile="verbose", body={"id": "c1"})
+@pytest.mark.parametrize("profile", ["verbose", "legacy"])
+def test_unsupported_profile_returns_structured_error(profile):
+    result = project_response(profile=profile, body={"id": "c1"})
     assert result["error_code"] == UNSUPPORTED_PROFILE_CODE
     assert result["outcome"] == OUTCOME_ERROR
     assert result["supported_profiles"] == list(SUPPORTED_PROFILES)
-    assert "verbose" in result["error"]
-    assert is_supported_profile("verbose") is False
+    assert profile in result["error"]
+    assert is_supported_profile(profile) is False
     assert is_supported_profile("summary") is True
 
 
 # ---------------------------------------------------------------------------
-# ts_d9a55d11 — legacy/full preserve success true AND success false
+# ts_d9a55d11 — full preserve success true AND success false
 # ---------------------------------------------------------------------------
 
 
-def test_legacy_and_full_preserve_positive_and_negative_success():
+def test_full_preserve_positive_and_negative_success():
     ok_body = {"id": "c1", "success": True, "data": {"k": "v"}}
     err_body = {"id": "c1", "success": False, "error": "boom", "error_code": "x"}
 
-    for profile in ("legacy", "full"):
+    for profile in ("full",):
         ok = project_response(profile=profile, body=ok_body)
         assert ok["success"] is True
         assert ok["profile"] == profile
@@ -134,8 +134,8 @@ def test_legacy_and_full_preserve_positive_and_negative_success():
         assert err["outcome"] == OUTCOME_ERROR
 
 
-def test_legacy_success_override_sets_value():
-    out = project_response(profile="legacy", body={"id": "c1"}, legacy_success=False)
+def test_full_success_uses_domain_signal_or_explicit_outcome():
+    out = project_response(profile="full", body={"id": "c1", "success": False})
     assert out["success"] is False
     out2 = project_response(profile="full", body={"id": "c1"}, outcome=OUTCOME_OK)
     # derived from outcome when body has no success
@@ -229,8 +229,8 @@ def test_explicit_ok_over_failure_body_returns_contract_violation():
     assert "boom" not in out.get("error", "")  # it's the violation message, not the body
 
 
-def test_legacy_success_false_infers_error_outcome_and_keeps_failure_contract():
-    out = project_response(profile="legacy", body={"id": "c1"}, legacy_success=False)
+def test_full_domain_failure_without_error_detail_still_infers_error():
+    out = project_response(profile="full", body={"id": "c1", "success": False})
     assert out["success"] is False
     assert out["outcome"] == OUTCOME_ERROR
     assert out["error"] and out["error_code"]  # failure contract satisfied

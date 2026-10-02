@@ -12,7 +12,7 @@ Covers spec ``MCP High-Frequency Response Projection and Dedup`` scenarios:
 - ``ts_85b00d36`` — summary spec context deduplicates resolved references.
 
 Small contexts remain conservative/dedup-first. Oversized task contexts now use
-explicit 32/64 KiB exploration budgets; full/all and legacy remain unchanged,
+explicit 32/64 KiB exploration budgets; full/all remain unchanged,
 while full/gate is the bounded mandatory pre-mutation slice.
 """
 
@@ -25,6 +25,7 @@ import json
 import uuid
 
 import pytest
+from okto_pulse.core.domain.architecture_adoption import ArchitectureAdoptionScope
 
 from okto_pulse.core.infra.database import get_session_factory
 from okto_pulse.core.mcp import server as mcp_server
@@ -166,17 +167,17 @@ def _task_result_with_arch_md() -> dict:
 
 
 # ---------------------------------------------------------------------------
-# ts_ffdb99a6 — full/legacy preserve the assembled payload exactly
+# ts_ffdb99a6 — full preserve the assembled payload exactly
 # ---------------------------------------------------------------------------
 
 
-def test_full_and_legacy_preserve_payload_unchanged():
+def test_full_preserve_payload_unchanged():
     src = _full_task_result()
     snapshot = copy.deepcopy(src)
-    for profile in ("full", "legacy"):
+    for profile in ("full",):
         out = project_task_context(src, card_id="c1", profile=profile)
         assert out == snapshot  # byte-for-byte the prior payload
-        assert "projection" not in out  # no envelope injected in full/legacy
+        assert "projection" not in out  # no envelope injected in full
     assert src == snapshot  # input never mutated
 
 
@@ -581,7 +582,7 @@ def test_optional_gate_manifest_does_not_change_non_gate_profiles() -> None:
     source = _full_task_result()
     supplied = {"manifest_version": 2, "sentinel": "bounded-only"}
 
-    for profile in ("summary", "detail", "full", "legacy"):
+    for profile in ("summary", "detail", "full"):
         without_manifest = project_task_context(
             source,
             card_id="c1",
@@ -619,7 +620,7 @@ def test_gate_scope_requires_full_profile_and_rejects_unknown_scope():
 def test_unsupported_profile_returns_supported_list():
     out = project_task_context(_full_task_result(), card_id="c1", profile="verbose")
     assert out["error_code"] == "unsupported_projection"
-    assert out["supported_profiles"] == ["summary", "detail", "full", "legacy"]
+    assert out["supported_profiles"] == ["summary", "detail", "full"]
     # spec context too
     out2 = project_spec_context({"id": "s1"}, profile="weird")
     assert out2["error_code"] == "unsupported_projection"
@@ -666,7 +667,7 @@ def test_other_context_families_share_profiles_metadata_and_error_contract():
         tool_name="okto_pulse_get_ideation_context",
     )
     assert bad["error_code"] == "unsupported_projection"
-    assert bad["supported_profiles"] == ["summary", "detail", "full", "legacy"]
+    assert bad["supported_profiles"] == ["summary", "detail", "full"]
 
 
 # ---------------------------------------------------------------------------
@@ -731,7 +732,7 @@ async def test_get_task_context_default_summary_and_full_passthrough():
     async with db_factory() as db:
         db.add(Board(id=board_id, name="Ctx Proj", owner_id=USER_ID))
         db.add(
-            Spec(
+            Spec(architecture_adoption=ArchitectureAdoptionScope(board_id=board_id, spec_id=spec_id, adopted_in_edition=1, actor_id=USER_ID, inherited_resource_ids=()).model_dump(mode="json"),
                 id=spec_id,
                 board_id=board_id,
                 title="Spec",
@@ -844,14 +845,13 @@ async def test_get_task_context_default_summary_and_full_passthrough():
     # include_knowledge=false honored even under the full profile
     assert no_kb["resolved_references"].get("knowledge_bases") == []
 
-    # AC20: the additive block is available to every modern profile, while the
-    # explicit legacy passthrough keeps its historical payload shape.
+    # AC20: current profiles include traceability; the retired profile is refused.
     assert default["code_traceability"]["subject_id"] == card_id
     assert full["code_traceability"]["subject_id"] == card_id
     assert "historical_context_read" not in default
     assert "historical_context_read" not in full
     assert "historical_context_read" not in legacy
-    assert "code_traceability" not in legacy
+    assert legacy["error_code"] == "unsupported_projection"
     assert all(
         call.kwargs["profile"] != "legacy"
         for call in traceability_projection.await_args_list
@@ -872,7 +872,7 @@ async def test_task_context_current_rejection_requires_validation_read():
     async with db_factory() as db:
         db.add(Board(id=board_id, name="Rejected context", owner_id=USER_ID))
         db.add(
-            Spec(
+            Spec(architecture_adoption=ArchitectureAdoptionScope(board_id=board_id, spec_id=spec_id, adopted_in_edition=1, actor_id=USER_ID, inherited_resource_ids=()).model_dump(mode="json"),
                 id=spec_id,
                 board_id=board_id,
                 title="Spec",
@@ -1012,7 +1012,7 @@ async def test_full_gate_uses_lean_application_queries_and_skips_omitted_bodies(
     async with db_factory() as db:
         db.add(Board(id=board_id, name="Bounded Gate", owner_id=USER_ID))
         db.add(
-            Spec(
+            Spec(architecture_adoption=ArchitectureAdoptionScope(board_id=board_id, spec_id=spec_id, adopted_in_edition=1, actor_id=USER_ID, inherited_resource_ids=()).model_dump(mode="json"),
                 id=spec_id,
                 board_id=board_id,
                 title="Spec with omitted bodies",
@@ -1219,7 +1219,7 @@ async def test_full_gate_uses_lean_application_queries_and_skips_omitted_bodies(
 
 
 # ---------------------------------------------------------------------------
-# ts_0fb8a3f4 — summary gates decisions_markdown; full/legacy preserve it
+# ts_0fb8a3f4 — summary gates decisions_markdown; full preserve it
 # ---------------------------------------------------------------------------
 
 
@@ -1241,10 +1241,10 @@ def test_summary_gates_decisions_markdown_with_render_follow_up():
     assert src == snapshot  # input untouched
 
 
-def test_full_and_legacy_preserve_decisions_markdown_and_architecture_bodies():
+def test_full_preserve_decisions_markdown_and_architecture_bodies():
     src = _task_result_with_arch_md()
     snapshot = copy.deepcopy(src)
-    for profile in ("full", "legacy"):
+    for profile in ("full",):
         out = project_task_context(src, card_id="c1", profile=profile)
         assert out == snapshot  # byte-for-byte
         assert out["spec"]["decisions_markdown"]  # markdown preserved
@@ -1375,7 +1375,7 @@ def test_context_projection_emits_usage_and_bytes_metrics(caplog):
         project_task_context(_full_task_result(), card_id="c1", profile="full")
 
     messages = [r.getMessage() for r in caplog.records]
-    # Emitted once per projected response — summary AND full/legacy passthrough.
+    # Emitted once per projected response — summary AND full passthrough.
     assert messages.count("mcp_context_projection_usage_total") == 2
     assert messages.count("mcp_context_projection_payload_bytes") == 2
 
@@ -1449,7 +1449,7 @@ async def test_get_spec_context_default_summary_full_and_unsupported():
             )
         )
         db.add(
-            Spec(
+            Spec(architecture_adoption=ArchitectureAdoptionScope(board_id=board_id, spec_id=spec_id, adopted_in_edition=1, actor_id=USER_ID, inherited_resource_ids=()).model_dump(mode="json"),
                 id=spec_id,
                 board_id=board_id,
                 title="Spec",
@@ -1528,7 +1528,7 @@ async def test_get_spec_context_default_summary_full_and_unsupported():
     assert "historical_context_read" not in default
     assert "historical_context_read" not in full
     assert "historical_context_read" not in legacy
-    assert "code_traceability" not in legacy
+    assert legacy["error_code"] == "unsupported_projection"
     assert all(
         call.kwargs["profile"] != "legacy"
         for call in traceability_projection.await_args_list
@@ -1538,76 +1538,6 @@ async def test_get_spec_context_default_summary_full_and_unsupported():
     assert bad["error_code"] == "unsupported_projection"
 
 
-@pytest.mark.asyncio
-@pytest.mark.parametrize("profile", ("summary", "detail", "full", "legacy"))
-async def test_spec_context_does_not_read_or_publish_retired_sprints(monkeypatch, profile):
-    from contextlib import asynccontextmanager
-    from unittest.mock import AsyncMock
-
-    from sqlalchemy_test_models import Sprint, SprintStatus
-    from okto_pulse.core.ports.application_persistence import get_application_persistence_port
-
-    board_id, spec_id, sprint_id, card_id = (
-        _id("retired-context-board"), _id("retired-context-spec"),
-        _id("retired-context-sprint"), _id("retired-context-card"),
-    )
-    async with get_session_factory()() as db:
-        db.add(Board(id=board_id, name="Retired context", owner_id=USER_ID))
-        db.add(Spec(id=spec_id, board_id=board_id, title="Active Spec",
-                    status=SpecStatus.IN_PROGRESS, created_by=USER_ID,
-                    functional_requirements=[{"id": "fr_0", "text": "Keep this requirement"}]))
-        db.add(Sprint(id=sprint_id, board_id=board_id, spec_id=spec_id,
-                      title="Retired private context", status=SprintStatus.CLOSED,
-                      created_by=USER_ID))
-        db.add(Card(id=card_id, board_id=board_id, spec_id=spec_id,
-                    sprint_id=sprint_id, title="Keep this task",
-                    status=CardStatus.NOT_STARTED, card_type=CardType.NORMAL,
-                    created_by=USER_ID))
-        await db.commit()
-
-    register_mcp_test_runtime(get_session_factory())
-    actual_factory = mcp_server.get_unit_of_work_factory_for_mcp()
-    commits = AsyncMock(side_effect=AssertionError("context read must not commit"))
-
-    @asynccontextmanager
-    async def observed_uow(**kwargs):
-        async with actual_factory(**kwargs) as uow:
-            monkeypatch.setattr(uow, "commit", commits)
-            yield uow
-
-    persistence = get_application_persistence_port()
-    actual_list = persistence.list
-    sprint_reads = []
-    async def observed_list(context, query):
-        if query.entity == "sprint":
-            sprint_reads.append(query.entity)
-            raise AssertionError("retired Sprint was queried")
-        return await actual_list(context, query)
-    monkeypatch.setattr(persistence, "list", observed_list)
-    monkeypatch.setattr(mcp_server, "get_unit_of_work_factory_for_mcp", lambda: observed_uow)
-    monkeypatch.setattr(mcp_server, "_get_agent_ctx", AsyncMock(return_value=_stub_ctx(board_id)))
-    monkeypatch.setattr(mcp_server, "check_permission", lambda *args: None)
-    monkeypatch.setattr(mcp_server, "_mcp_code_traceability_projection",
-                        AsyncMock(return_value={"subject_type": "spec", "subject_id": spec_id}))
-    tool = await mcp_server.mcp.get_tool("okto_pulse_get_spec_context")
-    result = json.loads(await tool.fn(board_id=board_id, spec_id=spec_id, profile=profile))
-
-    assert sprint_reads == []
-    commits.assert_not_awaited()
-    assert "sprints" not in result
-    assert sprint_id not in json.dumps(result)
-    assert "Retired private context" not in json.dumps(result)
-    assert result["cards"][0]["id"] == card_id
-    assert "sprint_id" not in result["cards"][0]
-    assert result["functional_requirements"][0]["text"] == "Keep this requirement"
-    if profile != "legacy":
-        assert "historical_context_read" not in result
-        assert result["gate_readiness"]
-
-    async with get_session_factory()() as db:
-        assert (await db.get(Sprint, sprint_id)).status == SprintStatus.CLOSED
-        assert (await db.get(Card, card_id)).sprint_id == sprint_id
-        assert (await db.get(Spec, spec_id)).status == SpecStatus.IN_PROGRESS
 
 
 # ---------------------------------------------------------------------------

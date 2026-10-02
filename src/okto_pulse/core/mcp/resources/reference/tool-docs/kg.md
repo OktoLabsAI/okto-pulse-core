@@ -264,7 +264,7 @@ ranking (default_score_ratio > 0.7 = scoring not differentiating).
 
 Args:
     board_id: Board ID (uuid)
-    profile: "summary" (default, slim) or "full"/"legacy" (all diagnostics).
+    profile: "summary" (default, slim) or "full" (all diagnostics).
 
 Returns:
     JSON health snapshot, or {"error": "..."} on auth/not-found.

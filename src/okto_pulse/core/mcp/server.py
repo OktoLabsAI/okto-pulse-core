@@ -505,7 +505,7 @@ _CORE_RESOURCE_TABLE = [
     (
         "okto-pulse://reference/projection-profiles",
         "reference/projection_profiles.md",
-        "Projection profiles (summary/detail/full/legacy) + response envelope (SC1).",
+        "Projection profiles (summary/detail/full) + response envelope (SC1).",
     ),
     (
         "okto-pulse://reference/kg-health",
@@ -1896,7 +1896,6 @@ async def _mcp_code_traceability_projection(
         "summary": CodeTraceabilityProjectionProfile.SUMMARY,
         "detail": CodeTraceabilityProjectionProfile.DETAIL,
         "full": CodeTraceabilityProjectionProfile.FULL,
-        "legacy": CodeTraceabilityProjectionProfile.FULL,
     }.get(profile, CodeTraceabilityProjectionProfile.SUMMARY)
     resolved_scope = (
         CodeTraceabilityContextScope.GATE
@@ -3676,7 +3675,7 @@ async def okto_pulse_get_task_context(
         str,
         Field(
             description=(
-                "summary | detail | full | legacy — use full with "
+                "summary | detail | full — use full with "
                 "context_scope=gate before any status-changing move"
             )
         ),
@@ -4368,23 +4367,19 @@ async def okto_pulse_get_task_context(
             cognitive_verdict=cognitive_verdict,
             operational_flow=operational_flow,
         )
-        # ``legacy`` is a byte-shape compatibility contract. New semantic blocks
-        # are additive only on the profiled surfaces and must not leak through
-        # the legacy passthrough projector.
-        if _resolved_profile != "legacy":
-            from okto_pulse.core.application.use_cases.card_reference_context import GetCardScenarioReferenceContextUseCase
-            result["scenario_reference_context"] = (await GetCardScenarioReferenceContextUseCase().execute(
-                board_id=board_id, card_id=card.id, actor=actor, uow=uow)).model_dump(mode='json')
-            result["code_traceability"] = await _mcp_code_traceability_projection(
-                uow=uow,
-                actor=actor,
-                board_id=board_id,
-                subject_type="card",
-                subject_id=card.id,
-                subject_version=_card_subject_version(card),
-                profile=_resolved_profile,
-                context_scope=_resolved_context_scope,
-            )
+        from okto_pulse.core.application.use_cases.card_reference_context import GetCardScenarioReferenceContextUseCase
+        result["scenario_reference_context"] = (await GetCardScenarioReferenceContextUseCase().execute(
+            board_id=board_id, card_id=card.id, actor=actor, uow=uow)).model_dump(mode='json')
+        result["code_traceability"] = await _mcp_code_traceability_projection(
+            uow=uow,
+            actor=actor,
+            board_id=board_id,
+            subject_type="card",
+            subject_id=card.id,
+            subject_version=_card_subject_version(card),
+            profile=_resolved_profile,
+            context_scope=_resolved_context_scope,
+        )
 
         if not can_read_task_validations:
             result.pop("validations", None)
@@ -8483,16 +8478,15 @@ async def okto_pulse_get_refinement_context(
         if not _inc_architecture:
             resolved_references["architecture_designs"] = []
         result["resolved_references"] = resolved_references
-        if profile != "legacy":
-            result["code_traceability"] = await _mcp_code_traceability_projection(
-                uow=uow,
-                actor=actor,
-                board_id=board_id,
-                subject_type="refinement",
-                subject_id=refinement.id,
-                subject_version=refinement.version,
-                profile=profile,
-            )
+        result["code_traceability"] = await _mcp_code_traceability_projection(
+            uow=uow,
+            actor=actor,
+            board_id=board_id,
+            subject_type="refinement",
+            subject_id=refinement.id,
+            subject_version=refinement.version,
+            profile=profile,
+        )
 
         from okto_pulse.core.mcp.context_projection import project_entity_context
 
@@ -10760,7 +10754,7 @@ async def okto_pulse_get_spec_context(
     profile: Annotated[
         str,
         Field(
-            description="summary | detail | full | legacy — full is MANDATORY before any status-changing move"
+            description="summary | detail | full — full is MANDATORY before any status-changing move"
         ),
     ] = "summary",
 ) -> str:
@@ -11090,16 +11084,15 @@ async def okto_pulse_get_spec_context(
             dependency_readiness=dependency_readiness,
             **checklist_readiness,
         )
-        if _resolved_profile != "legacy":
-            result["code_traceability"] = await _mcp_code_traceability_projection(
-                uow=uow,
-                actor=actor,
-                board_id=board_id,
-                subject_type="spec",
-                subject_id=spec.id,
-                subject_version=spec.version,
-                profile=_resolved_profile,
-            )
+        result["code_traceability"] = await _mcp_code_traceability_projection(
+            uow=uow,
+            actor=actor,
+            board_id=board_id,
+            subject_type="spec",
+            subject_id=spec.id,
+            subject_version=spec.version,
+            profile=_resolved_profile,
+        )
 
         from okto_pulse.core.mcp.context_projection import project_spec_context
 
@@ -13440,13 +13433,13 @@ async def okto_pulse_copy_architecture_to_card(
     profile: Annotated[
         str,
         Field(
-            description="summary | full | legacy (copy tools have no detail profile)"
+            description="summary | full (copy tools have no detail profile)"
         ),
     ] = "summary",
 ) -> str:
     """Copy Architecture Designs from a spec to a card/task as deep-copy
     snapshots. profile=summary (default) returns copy metadata only (copied,
-    design_ids, total_on_card + the projection envelope); full/legacy include
+    design_ids, total_on_card + the projection envelope); full include
     the complete copied architecture_designs. Bodies are persisted on the
     card regardless of profile — read them with
     okto_pulse_get_task_context(profile=full, context_scope=all).
@@ -19836,7 +19829,7 @@ async def okto_pulse_kg_health(board_id: str, profile: str = "summary") -> str:
     memory_pressure_status, recent_events — plus operational scalars,
     decay_scheduler_diagnostics and storage_footprint_proxy. Scheduler debt is
     operational and does not by itself require graph recovery. profile=full
-    (or legacy) adds the complete dashboard payload.
+    adds the complete dashboard payload.
     Profiles: okto-pulse://reference/projection-profiles.
     Docs: okto-pulse://reference/tool-docs/kg.
     """
@@ -19883,7 +19876,7 @@ async def okto_pulse_kg_health(board_id: str, profile: str = "summary") -> str:
     except BoardNotFoundError as exc:
         return json.dumps({"error": str(exc)})
     # FR4: slim default projection — keep the stop-rule fields, omit verbose
-    # diagnostics until profile=full/legacy is requested.
+    # diagnostics until profile=full is requested.
     visible_health = mask_code_traceability_graph_metrics(
         result.data,
         ct_access,

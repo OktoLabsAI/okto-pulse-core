@@ -32,7 +32,7 @@ NATURAL_QUERY_MAX_CHARS = 2000
 
 # --- FR2: agent-safe Cypher row bounds -------------------------------------
 # The MCP surface defaults to a small, agent-safe page. A caller that genuinely
-# needs more may pass max_rows up to the hard cap (FR9 full/legacy access);
+# needs more may pass max_rows up to the hard cap (FR9 full access);
 # anything above the hard cap is rejected structurally rather than silently
 # dumping an unbounded result into the context window.
 CYPHER_DEFAULT_ROWS = 200
@@ -265,7 +265,7 @@ def round_kg_numbers(obj: Any, *, ndigits: int = NUMERIC_ROUND_DIGITS) -> Any:
 # (triple-aliased state, duplicated schema-version strings, verbose
 # health_issues prose, a nested diagnostics block). An LLM agent polling
 # health only needs the operational stop-rule fields. The slim default keeps
-# those; the full diagnostics stay available behind profile=full/legacy (FR9).
+# those; the full diagnostics stay available behind profile=full (FR9).
 
 # Operational stop-rule fields that MUST survive the slim projection
 # (scenario ts_860cb8a4). ``recent_events`` carries the "recent critical
@@ -333,7 +333,7 @@ _KG_HEALTH_SLIM_KEEP = frozenset(KG_HEALTH_STOP_FIELDS) | frozenset(
 class KGHealthMCPProjection:
     """Project a full kg_health payload to a slim MCP default (FR4).
 
-    ``profile in {'full', 'legacy'}`` returns the payload untouched (full
+    ``profile in {'full'}`` returns the payload untouched (full
     diagnostics). The default ``'summary'`` keeps the stop-rule fields + a few
     operational scalars and drops everything else, recording which keys were
     omitted so a caller can ask for ``profile=full`` when it needs them.
@@ -350,7 +350,7 @@ class KGHealthMCPProjection:
         resolved_profile = resolve_profile(profile)
         if resolved_profile is None:
             return unsupported_projection_error(profile)
-        if resolved_profile in ("full", "legacy"):
+        if resolved_profile in ("full",):
             return payload
         slim = {k: v for k, v in payload.items() if k in _KG_HEALTH_SLIM_KEEP}
         omitted = sorted(k for k in payload if k not in _KG_HEALTH_SLIM_KEEP)

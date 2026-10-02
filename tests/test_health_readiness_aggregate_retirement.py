@@ -8,7 +8,7 @@ from okto_pulse.core.services import kg_health_service as health_service
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("profile", ["summary", "full", "legacy"])
+@pytest.mark.parametrize("profile", ["summary", "full"])
 @pytest.mark.parametrize("enforcement", [False, True])
 @pytest.mark.parametrize("artifact_ref", [None, "spec:foreign-or-sensitive"])
 async def test_aggregates_do_not_read_rows_or_expose_errors_and_preserve_policy(
@@ -84,7 +84,7 @@ def test_no_aggregate_invents_a_signal_for_zero_counts():
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("profile", ["summary", "full", "legacy"])
+@pytest.mark.parametrize("profile", ["summary", "full"])
 @pytest.mark.parametrize("enforcement", [False, True])
 @pytest.mark.parametrize("known_dlq", [0, 2])
 @pytest.mark.parametrize("summary", [None, {}, {"open_count": None},

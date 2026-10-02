@@ -7,17 +7,17 @@ reuses the R5.1 envelope primitives + canonical R5 projection metadata and align
 with the sibling copy tools (``copy_mockups_to_card`` / ``copy_knowledge_to_card``
 already return ``{success, copied, total_on_card}``).
 
-Profiles for the copy tools are a 3-value set — there is no ``detail`` middle
+Profiles for the copy tools are a 2-value set — there is no ``detail`` middle
 ground: either copy metadata (``summary``) or the full copied bodies
-(``full``/``legacy``):
+(``full``):
 
 - ``summary`` (DEFAULT) — ``success`` + ``copied`` + ``design_ids`` +
   ``total_on_card`` + the canonical ``projection`` metadata. NO
   ``architecture_designs`` body.
-- ``full`` / ``legacy`` — the prior payload exactly: ``{success, copied,
+- ``full`` — the prior payload exactly: ``{success, copied,
   architecture_designs:[full bodies]}`` (FR-2 back-compat, no envelope injected).
 - unsupported profile (including ``detail``) → structured ``unsupported_projection``
-  error with ``supported_profiles=[summary, full, legacy]``; never a silent
+  error with ``supported_profiles=[summary, full]``; never a silent
   fallback.
 
 It is PURE response shaping — it never touches the copy persistence (that already
@@ -45,10 +45,10 @@ _LOG = logging.getLogger("okto_pulse.mcp.copy_projection")
 
 TOOL_NAME = "okto_pulse_copy_architecture_to_card"
 
-# The copy tools support a 3-value profile set (no ``detail``).
-COPY_SUPPORTED_PROFILES: tuple[str, ...] = ("summary", "full", "legacy")
+# The copy tools support a 2-value profile set (no ``detail``).
+COPY_SUPPORTED_PROFILES: tuple[str, ...] = ("summary", "full")
 COPY_DEFAULT_PROFILE = "summary"
-_COPY_PASSTHROUGH = frozenset({"full", "legacy"})
+_COPY_PASSTHROUGH = frozenset({"full"})
 
 
 def resolve_copy_profile(profile: str | None) -> str | None:
@@ -117,7 +117,7 @@ def project_copy_architecture_response(
     """Shape the ``copy_architecture_to_card`` response for ``profile``.
 
     ``designs`` are the FULL serialized designs copied in this call (used for the
-    full/legacy body and to derive ``copied``/``design_ids``). ``total_on_card`` is
+    full body and to derive ``copied``/``design_ids``). ``total_on_card`` is
     the count of Architecture Designs on the card AFTER the copy.
     """
     resolved = resolve_copy_profile(profile)

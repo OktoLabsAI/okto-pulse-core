@@ -43,18 +43,17 @@ Illustrative V2 shape (domain payloads and optional projection fields vary):
 }
 ```
 
-`profile="legacy"` explicitly preserves the older response shape; identify that
-contract before interpreting it. Do not unwrap `data` repeatedly or confuse a
+The removed `profile="legacy"` request is refused before tool execution. There
+is no text-only response mode. Do not unwrap `data` repeatedly or confuse a
 domain's own `outcome` with the transport result.
 
-## The four profiles
+## The three profiles
 
 | Profile | Returns | Use it for |
 |---|---|---|
 | `summary` *(default)* | IDs, counts, minimal state | cheap exploration / listing |
 | `detail` | summary + selected bodies | inspecting a few items |
 | `full` | complete current modern body (within hard safety caps) | reading one item fully |
-| `legacy` | prior compatibility fields, preserved exactly | existing callers mid-migration |
 
 An unsupported profile returns a structured error `unsupported_projection`
 with the allowed list under `supported_profiles`.
@@ -67,10 +66,10 @@ permission-gated `quality_summaries` field, whose closed row allowlist is
 not projection-profile aliases; see
 `okto-pulse://reference/quality-assessments`.
 
-**Per-family variance:** the `copy_*_to_card` family supports a 3-value
-profile set — `summary`/`full`/`legacy`, **no `detail`**. Passing `detail`
+**Per-family variance:** the `copy_*_to_card` family supports a 2-value
+profile set — `summary`/`full`, **no `detail`**. Passing `detail`
 to a copy tool that exposes `profile` (e.g. `copy_architecture_to_card`)
-returns `unsupported_projection` with the 3-value `supported_profiles` list.
+returns `unsupported_projection` with the 2-value `supported_profiles` list.
 
 ## Envelope metadata (shared contract SC1)
 
@@ -85,20 +84,19 @@ returns `unsupported_projection` with the 3-value `supported_profiles` list.
 - `follow_up` — compact, machine-readable next-step affordances, e.g.
   `{ "rel": "read_full_context", "target_ref": "okto_pulse_get_task_context" }`.
 
-`full` returns the complete modern payload and `legacy` preserves the prior
-payload exactly, so those two profiles normally do not inject the nested
-projection object. The additive task-only
+`full` returns the complete current payload and normally does not inject the
+nested projection object. The additive task-only
 `profile="full", context_scope="gate"` view is the exception: it carries
 projection metadata because it is explicitly bounded and content-manifested.
-At the MCP transport boundary, every non-legacy call is still wrapped once by
+At the MCP transport boundary, every call is still wrapped once by
 the `okto-pulse.mcp-tool-outcome` V2 envelope, whose `meta` identifies the
 contract and tool.
 
 ## Context tools
 
 `get_task_context` and `get_spec_context` default to `summary` for exploration.
-`get_ideation_context`, `get_refinement_context`, and `get_sprint_context`
-default to `full` for backward compatibility, but now accept the same four
+`get_ideation_context` and `get_refinement_context`
+default to `full` and accept the same three
 profiles and return the same `unsupported_projection` error for invalid values.
 
 `get_task_context` enforces deterministic wire-response budgets: 32 KiB for
@@ -116,10 +114,9 @@ lineage are represented by a deterministic `content_manifest` with per-section
 counts, byte sizes and SHA-256 digests. Its `follow_up` entries point to bounded
 detail and complete drill-down reads.
 
-The historical `profile="full", context_scope="all"` response remains the
-default and is byte-compatible for API clients that can accept a large body;
-`legacy` is also unchanged. Neither is the required in-band card mutation
-pre-flight. Mutation services independently resolve and fingerprint complete
+`profile="full", context_scope="all"` returns the complete context. The default
+profile remains summary. The required in-band card mutation pre-flight remains
+mandatory. Mutation services independently resolve and fingerprint complete
 context server-side, so omitting large bodies from the client-side gate slice
 does not weaken the critical-context guard.
 
@@ -151,7 +148,7 @@ affordance below.
   accompanying `*_preview_truncated` flag. Use `profile=full` for complete
   content or markup.
 
-`full/all` and `legacy` preserve all of the above bodies exactly for back-compat.
+`full/all` preserves all of the above current bodies.
 
 ## Invariant: full context before status-changing moves
 

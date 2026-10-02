@@ -207,7 +207,7 @@ class TestSqlAlchemyResourceGateAdapter:
         self._validate_entity_type(entity_type)
         model = self._model_options(entity_type)[0]
         columns = [model.id, model.board_id, model.title]
-        for field_name in ("ideation_id", "refinement_id", "spec_id"):
+        for field_name in ("ideation_id", "refinement_id", "spec_id", "edition", "architecture_adoption"):
             column = getattr(model, field_name, None)
             if column is not None:
                 columns.append(column)
@@ -227,6 +227,8 @@ class TestSqlAlchemyResourceGateAdapter:
             ideation_id=row.get("ideation_id"),
             refinement_id=row.get("refinement_id"),
             spec_id=row.get("spec_id"),
+            edition=row.get("edition", 1),
+            architecture_adoption=row.get("architecture_adoption"),
         )
         return LineageEntityRef(
             entity_type=entity_type,

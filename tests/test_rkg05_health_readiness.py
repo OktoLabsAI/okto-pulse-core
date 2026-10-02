@@ -157,4 +157,4 @@ async def test_mcp_health_readiness_tool_exposes_signals(db_factory, monkeypatch
     # Invalid profiles use the shared MCP projection error (not silent summary).
     bad = json.loads(await tool.fn(board_id=board_id, profile="bogus"))
     assert bad.get("error_code") == "unsupported_projection"
-    assert bad.get("supported_profiles") == ["summary", "detail", "full", "legacy"]
+    assert bad.get("supported_profiles") == ["summary", "detail", "full"]

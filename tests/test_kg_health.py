@@ -406,7 +406,7 @@ async def test_orphan_integrity_warning_is_at_risk_not_recovery_needed(
     assert "samples" not in result["orphan_integrity"]
     assert "internal_probe_extension" not in result["orphan_integrity"]
     from okto_pulse.core.mcp.kg_query_safety import KGHealthMCPProjection
-    for profile in ("summary", "full", "legacy"):
+    for profile in ("summary", "full"):
         projected = KGHealthMCPProjection().project(result, profile=profile)
         assert "never-publish" not in str(projected)
         assert "learning_orphan_1" not in str(projected)
