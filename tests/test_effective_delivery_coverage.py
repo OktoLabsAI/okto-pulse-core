@@ -48,7 +48,7 @@ def case():
                 IMPLEMENTATION,
                 id=p.card_id,
                 card_id=p.card_id,
-                contributions=(DeliveryContribution(BINDING, "complete"),),
+                contributions=(DeliveryContribution(BINDING, "complete", ("execution-receipt",)),),
             ),
             (DeliveryScopeAttestation(BINDING, p.scope_sha256),),
         )
@@ -162,7 +162,7 @@ def test_whole_scope_criterion_allocation_still_requires_its_own_observation():
     contribution = replace(inventory.rows[0].contributions[0], criterion_ids=(), scope='whole_requirement')
     inventory = replace(inventory, rows=(replace(inventory.rows[0], binding=ac_binding, family='ac', contributions=(contribution,)),))
     implementation = replace(implementations[0], fact=replace(implementations[0].fact, bindings=(ac_binding,),
-        contributions=(DeliveryContribution(ac_binding, 'complete'),)),
+        contributions=(DeliveryContribution(ac_binding, 'complete', ("execution-receipt",)),)),
         scopes=(DeliveryScopeAttestation(ac_binding, contribution.scope_sha256),))
     run = replace(tests[0], fact=replace(tests[0].fact, bindings=(ac_binding,)))
     snapshot = replace(SNAPSHOT, obligations=(replace(SNAPSHOT.obligations[0], binding=ac_binding),),
@@ -206,7 +206,7 @@ def test_partial_declarations_never_add_up_to_the_approved_card_scope():
         implementations[1],
         fact=replace(
             implementations[1].fact,
-            contributions=(DeliveryContribution(BINDING, "partial"),),
+            contributions=(DeliveryContribution(BINDING, "partial", ("execution-receipt",)),),
         ),
     )
     other = replace(partial, fact=replace(partial.fact, id="second-partial"))
@@ -261,7 +261,7 @@ def test_no_implicit_upgrade_or_borrowed_card_credit(mutation):
         first = replace(first, fact=replace(first.fact, card_status="in_progress"))
     if mutation == "proof_stale":
         first = replace(
-            first, fact=replace(first.fact, current_accepted_execution=False)
+            first, fact=replace(first.fact, executions=(replace(first.fact.executions[0], current_accepted_execution=False),))
         )
     result = evaluate(inventory, (first, implementations[1]), tests)
     assert not result.allowed and result.rows[0].missing_card_ids == ("ui",)
@@ -425,7 +425,7 @@ def test_actual_inherited_rule_is_allocated_only_to_authorization_card():
             id="br-impl",
             card_id="authorization",
             bindings=(rule.binding,),
-            contributions=(DeliveryContribution(rule.binding, "complete"),),
+            contributions=(DeliveryContribution(rule.binding, "complete", ("execution-receipt",)),),
         ),
         (DeliveryScopeAttestation(rule.binding, planned.scope_sha256),),
     )

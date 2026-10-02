@@ -37,7 +37,7 @@ def request(**changes):
 
 def test_partial_is_not_credit_and_two_partials_never_accumulate_completion():
     partial = replace(
-        IMPLEMENTATION, contributions=(DeliveryContribution(BINDING, "partial"),)
+        IMPLEMENTATION, contributions=(DeliveryContribution(BINDING, "partial", ("execution-receipt",)),)
     )
     for facts in ((partial,), (partial, replace(partial, id="second"))):
         result = evaluate_delivery_coverage(replace(SNAPSHOT, implementations=facts))
@@ -54,8 +54,8 @@ def test_one_receipt_keeps_partial_and_complete_obligations_distinct():
         IMPLEMENTATION,
         bindings=(BINDING, second),
         contributions=(
-            DeliveryContribution(BINDING, "partial"),
-            DeliveryContribution(second, "complete"),
+            DeliveryContribution(BINDING, "partial", ("execution-receipt",)),
+            DeliveryContribution(second, "complete", ("execution-receipt",)),
         ),
     )
     result = evaluate_delivery_coverage(
@@ -71,15 +71,15 @@ def test_one_receipt_keeps_partial_and_complete_obligations_distinct():
 
 def test_explicit_complete_preserves_all_original_proof_and_lifecycle_checks():
     complete = replace(
-        IMPLEMENTATION, contributions=(DeliveryContribution(BINDING, "complete"),)
+        IMPLEMENTATION, contributions=(DeliveryContribution(BINDING, "complete", ("execution-receipt",)),)
     )
     assert evaluate_delivery_coverage(
         replace(SNAPSHOT, implementations=(complete,))
     ).allowed
     for change in (
-        {"current_accepted_execution": False},
+        {"executions": (replace(IMPLEMENTATION.executions[0], current_accepted_execution=False),)},
         {"card_status": CardStatus.IN_PROGRESS},
-        {"receipt_id": ""},
+        {"executions": (replace(IMPLEMENTATION.executions[0], execution_id=""),)},
     ):
         assert not evaluate_delivery_coverage(
             replace(SNAPSHOT, implementations=(replace(complete, **change),))
@@ -227,7 +227,7 @@ async def test_card_gate_before_done_uses_the_same_completion_predicate(monkeypa
         fact = replace(
             current.implementations[0],
             card_status=CardStatus.IN_PROGRESS,
-            contributions=(DeliveryContribution(BINDING, state),),
+            contributions=(DeliveryContribution(BINDING, state, ("execution-receipt",)),),
         )
         store.load_card_snapshot.return_value = replace(
             current, implementations=(fact,), effective_context=replace(current.effective_context,

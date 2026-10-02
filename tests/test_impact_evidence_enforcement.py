@@ -270,7 +270,7 @@ async def test_require_exemptions_inherited_from_report_target(db_factory, monke
     from types import SimpleNamespace
     from unittest.mock import AsyncMock
     from okto_pulse.core.domain.delivery_evidence import (
-        DeliveryEvidenceSnapshot, DeliveryScope, ImplementationDeliveryFact, DeliveryContribution,
+        DeliveryEvidenceSnapshot, DeliveryScope, ImplementationDeliveryFact, DeliveryContribution, ImplementationExecutionProof,
     )
     from okto_pulse.core.domain.delivery_inventory import card_delivery_inventory
     from okto_pulse.core.services import delivery_evidence as delivery_service
@@ -329,11 +329,10 @@ async def test_require_exemptions_inherited_from_report_target(db_factory, monke
             id="impact-test-proof", scope=scope, card_id=exec_card.id,
             card_type=CardType.NORMAL, card_status=CardStatus.IN_PROGRESS,
             bindings=tuple(row.binding for row in obligations),
-            source_ref="impact-test-source", result_revision="a" * 40,
-            relative_path="src/x.py", explanation="Test adapter accepted proof",
-            receipt_id="impact-test-receipt", current_accepted_execution=True,
+            explanation="Test adapter accepted proof",
+            executions=(ImplementationExecutionProof("execution-receipt", "target", 1, "impact-test-source", "a" * 40, "src/x.py", True),),
             actor_id=USER_ID,
-            contributions=tuple(DeliveryContribution(row.binding, "complete") for row in obligations),
+            contributions=tuple(DeliveryContribution(row.binding, "complete", ("execution-receipt",)) for row in obligations),
         )
         snapshot = DeliveryEvidenceSnapshot(
             scope=scope, obligations=obligations,

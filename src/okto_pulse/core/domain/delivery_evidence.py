@@ -183,19 +183,11 @@ class ImplementationDeliveryFact:
     card_type: CardType
     card_status: CardStatus
     bindings: tuple[DeliveryBinding, ...]
-    source_ref: str
-    result_revision: str
-    relative_path: str
     explanation: str
-    receipt_id: str
-    # Projection of an authenticated, non-revoked current target execution
-    # record (not merely a planned target, receipt ID or agent-supplied flag).
-    current_accepted_execution: bool
     actor_id: str
-    symbol: str | None = None
     # Missing declarations never establish completion.
     contributions: tuple[DeliveryContribution, ...] = ()
-    executions: tuple[ImplementationExecutionProof, ...] | None = None
+    executions: tuple[ImplementationExecutionProof, ...] = ()
     blocking_progress_ids: tuple[str, ...] = ()
     blocking_progress_truncated: bool = False
 
@@ -204,11 +196,6 @@ def implementation_binding_proof_issue(fact: ImplementationDeliveryFact, binding
     """Check only the declared receipt set; no head is transferred to a new binding."""
     if binding not in fact.bindings:
         return "delivery_execution_set_unresolved"
-    if fact.executions is None:
-        valid = fact.current_accepted_execution is True and _text(
-            fact.source_ref, fact.result_revision, fact.relative_path, fact.receipt_id,
-        )
-        return None if valid else "delivery_accepted_committed_task_execution_required"
     selected = [item for item in fact.contributions or () if item.binding == binding]
     if len(selected) != 1 or not selected[0].execution_ids:
         return "delivery_execution_set_unresolved"

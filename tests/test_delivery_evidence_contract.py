@@ -15,7 +15,7 @@ from test_delivery_evidence_domain import SNAPSHOT, IMPLEMENTATION, TEST
 
 
 def test_all_current_implementations_require_tests_but_separate_runs_can_jointly_cover():
-    second = replace(IMPLEMENTATION, id="second-impl", receipt_id="second-receipt")
+    second = replace(IMPLEMENTATION, id="second-impl", executions=(replace(IMPLEMENTATION.executions[0], execution_id="second-receipt"),), contributions=tuple(replace(row, execution_ids=("second-receipt",)) for row in IMPLEMENTATION.contributions))
     snapshot = replace(SNAPSHOT, implementations=(IMPLEMENTATION, second))
     assert not evaluate_delivery_coverage(snapshot).allowed
     second_test = replace(

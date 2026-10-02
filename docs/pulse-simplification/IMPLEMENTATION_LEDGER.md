@@ -2,6 +2,49 @@
 
 ## Estado para retomada
 
+### 2026-10-02 — C1: fatos e projeções de Delivery sem representação alternativa
+
+Base publicada: Core 55303b99 / Community 580aca18. ImplementationDeliveryFact
+contém somente conjuntos explícitos de execuções; removidos executions=None,
+campos-resumo e sua validação alternativa. Declarações das fixtures nomeiam seus
+recibos; testes negativos alteram os próprios recibos, mantendo validação de
+escopo, validade, revisão, lifecycle e autoridade. Ausência de provas não concede
+completude. A fixture de admissão de Test agora usa contexto efetivo atual em
+todos os casos, inclusive negativos; antes falhava por contexto ausente.
+
+Retomada projeta recibos e vínculos por obrigação, com totais/truncamento explícitos.
+Teste SQL verifica conjunto de dois recibos e seleção distinta por obrigação;
+caso simples preserva autor e invalidação após trabalho dirty. Frontend de
+retomada lista cada execução. Painel DoD consome readiness/admissão por obrigação
+do servidor, sem fallback global, campos-resumo ou mensagem legada. Removido um
+caso exclusivo da apresentação antiga, com disposição registrada no JSON.
+
+facts-core1: 186 aprovados/2 fixtures sem contexto; facts-core-correction1:
+15 aprovados incluindo ambos, total 188 Core distintos. facts-community1:
+11 aprovados/2 expectativas antigas; facts-community-correction1: oito aprovados
+incluindo ambos, total 13 Community distintos. facts-resume-composite1: aprovado
+com as novas asserções de retomada. facts-front2 identificou duas expectativas
+antigas; facts-front3: 24 aprovados. Build TypeScript/Vite final aprovado.
+Nenhum teste de autorização ou prova removido para obter resultado verde.
+
+dist-delivery-facts1 instalado e provado antes dos testes backend. O segundo
+build incorpora a retirada adicional de fallback no painel DoD; backend idêntico.
+Artefatos finais: dist-delivery-facts2, provenance-delivery-facts2.json e
+closure-delivery-facts2.json. SPA tree SHA256:
+30c4d1839248d98fc7d8a082f817fd423d126421747d16183884e556cdd46989.
+Prova final byte a byte aprovada: Core 847 Python/910 payload; Community 319/405.
+Closure final aprovado com oito budgets ZERO, READMEs oficialmente validados.
+facts-consumers1: mais 16 aprovados para seleção congelada, gate de conclusão,
+checkpoint material e revogação autorizada; total 217 backend distintos nesta
+frente. Removida suite exclusiva test_delivery_fallback_characterization.py
+(três casos de compatibilidade v0.3.4), com disposição no JSON. Ruff F/E9 e diff
+aprovados. As versões de produto continuam 0.3.4 até a coordenação final C4.
+
+Próximo resíduo confirmado: CardProgressPanel ainda apresenta compatibilidade
+delivery-progress/v1; investigar reader e testes relacionados antes de remover.
+Normalizadores C1, qualificação integral C4 e decisões T23/KG-10 permanecem
+abertos. Não houve release, tag, deploy ou alteração de dados reais.
+
 ### 2026-10-02 — C1: persistência única das contribuições de Delivery
 
 Base publicada: Core bcb2d70a / Community e41e0a97. Writer grava somente

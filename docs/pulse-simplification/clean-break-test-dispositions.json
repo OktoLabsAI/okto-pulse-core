@@ -1070,6 +1070,11 @@
       "path": "okto_labs_pulse_community/tests/test_learning_reconciliation_sql_variants.py",
       "disposition": "superseded",
       "reason": "Exclusive offline historical Learning reconciliation/upgrade wrapper and retired SQL delta contract. Native capture, materialization, reuse, scoped replacement and recovery remain. Historical acceptance receipts are retained as engineering history, not clean-break qualification."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_delivery_fallback_characterization.py",
+      "disposition": "superseded",
+      "reason": "Exclusive v0.3.4 fallback characterization, including accepting unlinked Card intent changes without current execution contracts. No current authority or recovery coverage removed. Current semantic inventory/delivery tests remain."
     }
   ],
   "adapted_suites": [
@@ -1689,6 +1694,18 @@
     {
       "path": "okto_labs_pulse_community/tests/test_delivery_local_references.py",
       "reason": "Current typed declarations and canonical null defaults, preserving real receipt admission, atomic batch rollback, same-ID replay and local-reference scope/permission checks."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_delivery_selection.py",
+      "reason": "Explicit execution proofs and native verification capability; selection/history, checkpoint currentness and authority predicates retained."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_delivery_progress_currentness.py",
+      "reason": "Explicit execution proofs and native verification capability; selection/history, checkpoint currentness and authority predicates retained."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_delivery_resume_proofs.py",
+      "reason": "Explicit execution proofs and native verification capability; selection/history, checkpoint currentness and authority predicates retained."
     }
   ],
   "removed_cases": [
@@ -2735,6 +2752,12 @@
       "test": "test_legacy_serialization_keeps_prior_digest_shape",
       "disposition": "superseded",
       "reason": "Old request digest/shape preservation removed. Replaced by current explicit declaration, canonical defaults and round-trip; exclusivity and authority checks retained."
+    },
+    {
+      "path": "okto_labs_pulse_community/frontend/src/components/code-traceability/__tests__/CardDeliveryDoDPanel.test.tsx",
+      "test": "identifies legacy proof without inventing a complete declaration",
+      "disposition": "superseded",
+      "reason": "Old undeclared contribution display removed with alternate fact representation. Current explicit partial/complete and server readiness remain covered; previous storage is rejected by reader tests."
     }
   ]
 }

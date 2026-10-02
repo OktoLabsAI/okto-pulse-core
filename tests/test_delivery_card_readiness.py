@@ -60,11 +60,11 @@ async def test_known_but_unready_contribution_still_blocks_card(monkeypatch, mut
     context = snapshot.effective_context
     scoped = context.implementations[0]
     if mutation == "partial":
-        scoped = replace(scoped, fact=replace(scoped.fact, contributions=(DeliveryContribution(BINDING, "partial"),)))
+        scoped = replace(scoped, fact=replace(scoped.fact, contributions=(DeliveryContribution(BINDING, "partial", ("execution-receipt",)),)))
     elif mutation == "scope_changed":
         scoped = replace(scoped, scopes=(replace(scoped.scopes[0], scope_sha256="e" * 64),))
     else:
-        scoped = replace(scoped, fact=replace(scoped.fact, current_accepted_execution=False))
+        scoped = replace(scoped, fact=replace(scoped.fact, executions=(replace(scoped.fact.executions[0], current_accepted_execution=False),)))
     snapshot = replace(snapshot, implementations=(scoped.fact,), effective_context=replace(context, implementations=(scoped,)))
     with pytest.raises(ValueError, match="delivery_evidence_incomplete"):
         await require(snapshot, monkeypatch)

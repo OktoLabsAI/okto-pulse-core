@@ -13,6 +13,7 @@ from okto_pulse.core.domain.delivery_evidence import (
     DeliveryScope,
     DeliveryWaiverFact,
     ImplementationDeliveryFact,
+    ImplementationExecutionProof,
     TestDeliveryFact as DeliveryTestFact,
     _evaluate_delivery_facts,
 )
@@ -25,21 +26,13 @@ from okto_pulse.core.domain.enums import (
 SCOPE = DeliveryScope("board", "spec", 2)
 BINDING = DeliveryBinding("functional_requirement:fr-1", "a" * 64)
 OBLIGATION = DeliveryObligation(BINDING, "Store memories atomically")
+EXECUTION = ImplementationExecutionProof("execution-receipt", "target", 1,
+    "repository:neuron", "c" * 40, "src/storage.py", True)
 IMPLEMENTATION = ImplementationDeliveryFact(
-    "impl",
-    SCOPE,
-    "task-1",
-    CardType.NORMAL,
-    CardStatus.DONE,
-    (BINDING,),
-    "repository:neuron",
-    "c" * 40,
-    "src/storage.py",
-    "Implements the atomic write",
-    "execution-receipt",
-    True,
-    "agent-1",
-    contributions=(DeliveryContribution(BINDING, "complete"),),
+    "impl", SCOPE, "task-1", CardType.NORMAL, CardStatus.DONE, (BINDING,),
+    "Implements the atomic write", "agent-1",
+    contributions=(DeliveryContribution(BINDING, "complete", ("execution-receipt",)),),
+    executions=(EXECUTION,),
 )
 TEST = DeliveryTestFact(
     "test",
@@ -120,11 +113,11 @@ def test_done_alone_stale_or_wrong_scope_test_is_not_proof(overrides):
 @pytest.mark.parametrize(
     "overrides",
     [
-        {"current_accepted_execution": False},
-        {"receipt_id": ""},
-        {"result_revision": ""},
-        {"source_ref": ""},
-        {"relative_path": ""},
+        {"executions": (replace(EXECUTION, current_accepted_execution=False),)},
+        {"executions": (replace(EXECUTION, execution_id=""),)},
+        {"executions": (replace(EXECUTION, result_revision=""),)},
+        {"executions": (replace(EXECUTION, source_ref=""),)},
+        {"executions": (replace(EXECUTION, relative_path=""),)},
         {"explanation": "  "},
         {"card_status": CardStatus.CANCELLED},
         {"card_status": CardStatus.VALIDATION},
@@ -147,7 +140,7 @@ def test_shared_evidence_and_selective_invalidation():
         SNAPSHOT,
         obligations=(OBLIGATION, DeliveryObligation(second, "Bound concurrency")),
         implementations=(replace(IMPLEMENTATION, bindings=(BINDING, second),
-            contributions=tuple(DeliveryContribution(binding, "complete") for binding in (BINDING, second))),),
+            contributions=tuple(DeliveryContribution(binding, "complete", ("execution-receipt",)) for binding in (BINDING, second))),),
         tests=(replace(TEST, bindings=(BINDING, second)),),
     )
     assert _evaluate_delivery_facts(snapshot).allowed

@@ -34,10 +34,6 @@ PROOFS = tuple(
 )
 COMPOSITE = replace(
     IMPLEMENTATION,
-    source_ref="",
-    result_revision="",
-    relative_path="",
-    receipt_id="",
     bindings=(BINDING, SECOND),
     executions=PROOFS,
     contributions=(
@@ -77,7 +73,6 @@ def test_exact_execution_sets_have_selective_currentness_and_test_credit():
     assert result.rows[0].test_satisfied
     changed = replace(
         COMPOSITE,
-        current_accepted_execution=False,
         executions=(PROOFS[0], replace(PROOFS[1], current_accepted_execution=False)),
     )
     result = evaluate_delivery_coverage(replace(snapshot, implementations=(changed,)))
@@ -90,6 +85,7 @@ def test_exact_execution_sets_have_selective_currentness_and_test_credit():
 @pytest.mark.parametrize(
     "proofs",
     [
+        (),
         PROOFS[:1],
         (PROOFS[0], replace(PROOFS[1], result_revision="b" * 40)),
         (PROOFS[0], replace(PROOFS[1], source_ref="other-source")),

@@ -98,7 +98,7 @@ def test_adopted_admission_accepts_failed_partial_work_before_done_without_credi
         fact=replace(
             implementations[0].fact,
             card_status="in_progress",
-            contributions=(DeliveryContribution(BINDING, "partial"),),
+            contributions=(DeliveryContribution(BINDING, "partial", ("execution-receipt",)),),
         ),
     )
     failed = replace(
