@@ -2914,6 +2914,12 @@
       "test": "test_reopen_requires_new_review_and_preserves_original_verdict[legacy=True]",
       "disposition": "superseded",
       "reason": "Two positive predecessor-without-edition combinations removed; both native verdicts and explicit incompatible-record refusal retained."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_spec_validation_gate.py",
+      "test": "TestCanonicalFiveMetricGate",
+      "disposition": "rewritten",
+      "reason": "Both five-metric persistence cases moved to Community/tests/test_spec_validation_native_gate.py with current schema, native semantic authority and actual UoW commits. Policy gate retained; durable results read in another session. Remaining old Core cases are not qualified by this move."
     }
   ]
 }

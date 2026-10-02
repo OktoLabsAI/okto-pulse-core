@@ -409,38 +409,6 @@ def _valid_submit_data(
     }
 
 
-def _canonical_submit_data(
-    *,
-    confidence: int = 90,
-    clarity: int = 90,
-    assertiveness: int = 90,
-    decidability: int = 90,
-    ambiguity: int = 10,
-    recommendation: str = "approve",
-) -> dict:
-    return {
-        "confidence": confidence,
-        "confidence_justification": "The evaluator inspected the complete Spec.",
-        "clarity": clarity,
-        "clarity_justification": "Problem, solution and requirements are explicit.",
-        "assertiveness": assertiveness,
-        "assertiveness_justification": "Requirements use measurable and testable language.",
-        "decidability": decidability,
-        "decidability_justification": "Constraints lead to concrete implementation choices.",
-        "ambiguity": ambiguity,
-        "ambiguity_justification": "Defined terms have one interpretation in context.",
-        "recommendation": recommendation,
-        "pinpoints": [
-            {
-                "metric": "decidability",
-                "anchor_type": "field",
-                "anchor_ref": "technical_requirements.tr_availability",
-                "detail": "State the required scaling bounds.",
-            }
-        ],
-    }
-
-
 async def _submit_spec_validation(service, db, *args, **kwargs):
     """Model the caller-owned transaction used by the application UoW."""
     data = dict(kwargs.get("data") or {})
@@ -975,79 +943,6 @@ class TestStateGuard:
 # ===========================================================================
 # 2. Threshold pass — all scores meet thresholds + approve → success
 # ===========================================================================
-
-
-@pytest.mark.asyncio
-class TestCanonicalFiveMetricGate:
-    async def test_canonical_scores_justifications_and_pinpoints_are_persisted(
-        self,
-        db_factory,
-    ):
-        await _seed_board(db_factory)
-        async with db_factory() as db:
-            result = await _submit_spec_validation(
-                SpecService(db),
-                db,
-                spec_id=SPEC_ID,
-                reviewer_id=USER_ID,
-                reviewer_name="Evaluator Agent",
-                data=_canonical_submit_data(),
-            )
-
-        assert result["outcome"] == "success"
-        assert result["spec_status"] == "validated"
-        assert result["confidence"] == 90
-        assert result["clarity"] == 90
-        assert result["assertiveness"] == 90
-        assert result["decidability"] == 90
-        assert result["ambiguity"] == 10
-        assert result["pinpoints"] == [
-            {
-                "metric": "decidability",
-                "anchor_type": "field",
-                "anchor_ref": "technical_requirements.tr_availability",
-                "detail": "State the required scaling bounds.",
-            }
-        ]
-        assert result["resolved_thresholds"] == {
-            "min_spec_confidence": 70,
-            "min_spec_clarity": 80,
-            "min_spec_assertiveness": 80,
-            "min_spec_decidability": 80,
-            "max_spec_ambiguity": 30,
-        }
-        assert "min_spec_completeness" not in result["resolved_thresholds"]
-
-    async def test_every_canonical_threshold_participates_in_gate_outcome(
-        self,
-        db_factory,
-    ):
-        await _seed_board(db_factory)
-        async with db_factory() as db:
-            result = await _submit_spec_validation(
-                SpecService(db),
-                db,
-                spec_id=SPEC_ID,
-                reviewer_id=USER_ID,
-                reviewer_name="Evaluator Agent",
-                data=_canonical_submit_data(
-                    confidence=69,
-                    clarity=79,
-                    assertiveness=79,
-                    decidability=79,
-                    ambiguity=31,
-                ),
-            )
-
-        assert result["outcome"] == "failed"
-        assert result["spec_status"] == "approved"
-        assert result["threshold_violations"] == [
-            "confidence 69 < min 70",
-            "clarity 79 < min 80",
-            "assertiveness 79 < min 80",
-            "decidability 79 < min 80",
-            "ambiguity 31 > max 30",
-        ]
 
 
 @pytest.mark.asyncio

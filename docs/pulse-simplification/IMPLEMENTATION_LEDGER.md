@@ -2,6 +2,34 @@
 
 ## Estado para retomada
 
+### 2026-10-02 — C3: Spec Validation qualificada com autoridade nativa
+
+Base publicada: Core 4ccfabcd / Community 3e2865d6. Resolvida a falha de
+aprovação registrada no marco anterior: os dois casos TestCanonicalFiveMetricGate
+foram transferidos para Community/tests/test_spec_validation_native_gate.py,
+usando schema atual, ORM Community, CommunitySemanticSession e commit pelo
+CommunityUnitOfWork. O gate real de política/autoridade semântica permanece
+ativo; não houve alteração no produto nem bypass de policy. Removido helper
+canônico órfão do teste Core. Requirement Lint aceito é entrada explícita da
+fixture para isolar esta suíte; não é evidência E2E de admissão do lint.
+
+spec-native1/2 identificaram duas lacunas de composição da fixture transferida
+(realm_id obrigatório e porta Knowledge não registrada). Ambas corrigidas com
+contratos/adaptadores atuais. spec-native3: dois aprovados. Acrescentada leitura
+em nova sessão após commit para provar status, pointer, métricas, justificativas,
+pinpoints e reprovação duráveis. spec-native4: 11 aprovados, incluindo nove
+casos do transporte REST. A antiga falha de autoridade está resolvida, não
+suprimida. O restante da suíte antiga do Core continua pendente de adaptação C3.
+
+Antes dos testes, provenance-spec-native1 reconfirmou src/install/wheels
+dist-spec-writer1 byte-idênticos: Core 847 Python/910 payload e Community
+319/405. Produto, catálogo e SPA não mudaram; closure-spec-writer1 continua a
+evidência do mesmo produto com oito budgets ZERO. Sem necessidade de novo build
+ou testes frontend neste marco exclusivamente de testes backend. Próximo escopo:
+retirada coordenada de history_only/campos antigos da leitura de Spec Validation,
+seguida da adaptação dos cenários funcionais antigos e qualificação C4.
+T23/KG-10 continuam aguardando decisão; não houve resposta nova.
+
 ### 2026-10-02 — C1: writer de Spec Validation sem entradas antigas
 
 Base publicada: Core 0d2e774f / Community 8d820825. Investigação de todos os
