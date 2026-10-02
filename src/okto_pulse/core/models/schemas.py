@@ -3912,11 +3912,9 @@ def project_task_validation_public(
 ) -> dict[str, Any]:
     """Project one persisted Task Validation into its public, replay-stable DTO.
 
-    New entries validate through :class:`TaskValidationResponse`. Historical
-    rows are intentionally read-tolerant: known clean aliases are normalized,
-    context-known card/board identities are filled, and whatever canonical
-    fields are actually present are returned. Ledger plumbing is removed on
-    every path, including legacy nested ``response`` snapshots.
+    The persisted response snapshot preserves the original business result on
+    replay. Ledger plumbing is never public, and an invalid DTO is refused
+    rather than returned as a partially validated mapping.
     """
 
     if isinstance(value, BaseModel):
@@ -3924,7 +3922,7 @@ def project_task_validation_public(
     elif isinstance(value, Mapping):
         raw = dict(value)
     else:
-        return {}
+        raise ValueError("task_validation_response_invalid")
 
     nested = raw.get("response")
     merged = {
@@ -3971,16 +3969,10 @@ def project_task_validation_public(
     else:
         merged["replayed"] = bool(merged.get("replayed", False))
 
-    try:
-        return TaskValidationResponse.model_validate(merged).model_dump(
-            mode="json",
-            exclude_none=False,
-        )
-    except (TypeError, ValueError):
-        # Legacy task validations can predate required identity/score fields.
-        # Preserve only reviewed public keys; never fall back to the raw dict.
-        allowed = set(TaskValidationResponse.model_fields)
-        return {key: item for key, item in merged.items() if key in allowed}
+    return TaskValidationResponse.model_validate(merged).model_dump(
+        mode="json",
+        exclude_none=False,
+    )
 
 
 # ============================================================================

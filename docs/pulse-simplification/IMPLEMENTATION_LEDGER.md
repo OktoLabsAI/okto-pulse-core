@@ -2,6 +2,37 @@
 
 ## Estado para retomada
 
+### 2026-10-02 — C1: resposta de validação sem bypass de DTO inválido
+
+Base publicada: Core f9964819 / Community f717b1c1. project_task_validation_public
+não retorna mais mapping parcialmente validado após falha de Pydantic, nem {}
+para entrada não estruturada. A resposta selada response é produzida pelo writer
+atual e continua necessária ao replay; preservada com remoção de campos privados.
+Testes novos recusam identidade ausente, score inválido, gates inválidos e entrada
+não estruturada, sem mutação. Snapshot mantém resultado original e replayed.
+
+validation-dto-core1: 27 aprovados/1 falha de fixture sem card_id/board_id;
+fixture atualizada, core2: caso aprovado. Total Core: 28. Community: 14 REST/
+analytics e 21 binding/UOW aprovados. Estes 21 têm gates independentes admitidos
+por fixture; provam escrita composta/autoridade/replay, não admissão integral de
+grafo/implementação. Frontend API de task validation: 4 aprovados. Total Community:
+35 distintos. Nenhuma alteração de produto Community/frontend neste incremento.
+
+dist-validation-dto1 instalado e provenance-validation-dto1 comprovou 847/910
+Core e 319/405 Community byte-idênticos antes dos testes. closure-validation-dto1
+aprovado, oito budgets ZERO. Ruff F/E9 e diff aprovados. SPA/registry inalterados.
+Community permanece no commit f717b1c1; sem commit vazio, release/tag/deploy.
+
+Investigação confirmou trabalho restante nesta mesma frente: TaskValidationResponse
+ainda admite campos de score/autor opcionais e project_task_validation_public
+ainda normaliza aliases; CardService grava explicitamente ambos os nomes.
+A resposta selada não é legado e não pode ser removida como tal. main.py também
+ainda fabrica conclusão task_validation quando falta relatório move_to_validation;
+test_learning_capture_validation_binding.py conserva caso legacy=True para esse
+caminho. Retirar essa compatibilidade junto aos consumidores/testes atuais sem
+transformar parecer do revisor em relatório do executor. Não marcar unificação
+da validação concluída. C3/C4 e decisões T23/KG-10 permanecem abertos.
+
 ### 2026-10-02 — C1: contrato persistido único de captura Learning
 
 Base publicada: Core 42de0cd3 / Community 95e8992c. Writer/validator usam somente
