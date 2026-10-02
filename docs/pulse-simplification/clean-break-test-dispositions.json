@@ -1292,6 +1292,18 @@
     {
       "path": "okto_labs_pulse_community/tests/test_skb_b12_guideline_import_export_persistence.py",
       "reason": "Fresh current schema initializer replaces removed migrator; missing trigger must refuse startup without repair or byte changes. Native transaction, candidate immutability, erasure, roundtrip and history cases retained."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_f3_guideline_authoring_retirement.py",
+      "reason": "Current import diagnostics renamed import_notes; retired revision provenance removed. Existing native authoring, permissions, atomicity and roundtrip assertions retained."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_skb_b12_guideline_import_export_use_case.py",
+      "reason": "Current import diagnostics renamed import_notes; retired revision provenance removed. Existing native authoring, permissions, atomicity and roundtrip assertions retained."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_skb_b13_policy_governance_rest.py",
+      "reason": "Current import diagnostics renamed import_notes; retired revision provenance removed. Existing native authoring, permissions, atomicity and roundtrip assertions retained."
     }
   ],
   "removed_cases": [
@@ -1816,6 +1828,12 @@
       "test": "test_postgresql_candidate_guard_covers_update_and_delete",
       "disposition": "superseded",
       "reason": "Retired PostgreSQL migration DDL generator is outside fresh-install Community SQLite contract; live native SQLite immutability and erasure-permit tests retained."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_skb_b12_guideline_import_export_domain.py",
+      "test": "test_legacy_version_text_and_integer_projection_match_durable_bounds",
+      "disposition": "superseded",
+      "reason": "Removed textual/integer legacy revision projection; current revision contract refuses these fields. Native revision evidence retained."
     }
   ]
 }

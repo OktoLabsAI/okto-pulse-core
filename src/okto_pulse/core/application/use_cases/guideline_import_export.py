@@ -165,10 +165,10 @@ def _normalize_guideline_import_global(
                 scope=GuidelineScope.GLOBAL,
                 board_id=None,
             ),
-            migration_notes=tuple(
+            import_notes=tuple(
                 sorted(
                     {
-                        *aggregate.migration_notes,
+                        *aggregate.import_notes,
                         "import_destination_normalized_global",
                     }
                 )
@@ -258,8 +258,8 @@ def _version_existing_guideline_ids(
             published_head_updated_at=created_at,
         )
         notes = {
-            *current.migration_notes,
-            *source.migration_notes,
+            *current.import_notes,
+            *source.import_notes,
             "same_id_import_version_bump",
         }
         if source.bindings:
@@ -279,7 +279,7 @@ def _version_existing_guideline_ids(
                 retirement=None,
                 bindings=current.bindings,
                 history_status=current.history_status,
-                migration_notes=tuple(sorted(notes)),
+                import_notes=tuple(sorted(notes)),
             )
         )
     return build_guideline_export_v3(

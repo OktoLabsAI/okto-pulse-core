@@ -588,10 +588,10 @@ async def test_same_id_changed_import_appends_a_new_revision_without_overwrite()
         == imported.revisions[-1].revision.metrics
     )
     assert entry.aggregate.revisions[-1].semantic_version == "1.0.1"
-    assert "same_id_import_version_bump" in entry.aggregate.migration_notes
+    assert "same_id_import_version_bump" in entry.aggregate.import_notes
     assert (
         "source_binding_history_not_applied_to_existing_identity"
-        in entry.aggregate.migration_notes
+        in entry.aggregate.import_notes
     )
     assert len(port.apply_calls) == 1
     assert uow.commit_count == 1

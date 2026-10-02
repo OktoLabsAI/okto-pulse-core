@@ -144,5 +144,5 @@ async def test_import_use_case_rolls_back_whole_batch_including_same_id_versioni
     assert len(result.plan.entries) == 2 and not result.plan.entries[1].has_conflict
     assert uow.commit_count == 0 and uow.rollback_count == 1
     if same_id:
-        assert "same_id_import_version_bump" in result.plan.entries[0].aggregate.migration_notes
+        assert "same_id_import_version_bump" in result.plan.entries[0].aggregate.import_notes
         assert result.plan.entries[0].aggregate.revisions[0] == existing.revisions[0]

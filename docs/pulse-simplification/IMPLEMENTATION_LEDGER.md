@@ -2,6 +2,45 @@
 
 ## Estado para retomada
 
+### 2026-10-02 — Revisões de guidelines sem baseline e metadados antigos
+
+Marco anterior publicado: Core1d3a8aa0 / Community1bedd371. Retirados de revisão
+legacy_version, legacy_version_unresolvable, legacy_tags, sua projeção numérica e
+as quatro colunas SQL correspondentes (incluindo legacy_version_text). Retirado
+o estado baseline_only e o branch do reader que reconstruía baseline antigo.
+O export atual exige histórico completo. Domínio, REST, adapter e frontend usam
+o mesmo contrato; payload com os campos removidos é recusado. Nenhuma conversão
+ou remoção automática de dados foi introduzida; schema divergente é recusado.
+
+As notas realmente utilizadas pelo import NATIVO (destino global, nova revisão
+do mesmo ID, histórico de bindings inerte) permanecem como import_notes. Nome
+migration_notes retirado desses consumidores. Não se apagou a semântica atual
+de versionamento/import nem sua proveniência. Fields legados dos bindings ainda
+não foram removidos neste incremento e não são declarados resolvidos.
+
+revision-metadata-core1:122 aprovados; domínio/codec, aplicação, MCP, authoring/
+retirement e defaults exatos. revision-metadata-community1:71 aprovados; REST,
+persistência, atomicidade/replay, guards, instalação limpa, reinício e recusa.
+revision-metadata-front1:24 aprovados; front2 acrescenta caso baseline_only,
+25 aprovados. Testes frontend recusam metadados retirados antes de API e preservam
+roundtrip/preview/import atual. TypeScript/Vite build passou; SPA
+ffae7ae79350bbaf9c3b8c5983ae300b9b563e712918f8ec97944e681df23a90.
+
+dist-revision-metadata1 instalado e byte-verificado antes dos testes; dist2
+altera apenas docstring do adapter (sem efeito executável). Provas
+provenance-revision-metadata1/2: Core851/914 e Community318/404 Python/payload
+byte-idênticos. Closure metadata1/2, oito budgets ZERO; READMEs oficiais validados.
+Ruff F/E9 e diff checks passaram. Disposições de suíte mista registradas.
+
+Próximo bloco C1/C3: retirar legacy_source_id e legacy_version_unresolvable de
+bindings; substituir legacy_template_id/version e legacy_guideline_version por
+prova nominal de materialização atual, preservando CAS/replay e comparações SQL.
+Coordenar domain guideline_import_export, adapter sqlalchemy_guideline_policy,
+sqlalchemy_models, current_relational_objects.json (dois guards fazem comparação
+da prova), REST policy_governance, tipos/validação frontend e suites B11/B12/B13.
+Não tratar source_kind/facades/semantic authority como simples nomes sem investigar
+seu efeito. B04 misto ainda pendente; C1–C4 e decisões T23/KG-10 seguem abertos.
+
 ### 2026-10-02 — Conversores de envelopes de guidelines retirados
 
 Marco anterior publicado: Core a28bfa5f / Community e3ee89b4. Retirados os

@@ -86,7 +86,6 @@ class GuidelineHistoryStatus(str, Enum):
     """How faithfully one exported aggregate represents source history."""
 
     COMPLETE = "complete"
-    BASELINE_ONLY = "baseline_only"
 
 
 class GuidelineImportRevisionDisposition(str, Enum):
@@ -280,14 +279,11 @@ def _domain_error(exc: ValueError, path: str) -> GuidelineImportExportError:
 
 @dataclass(frozen=True, slots=True)
 class GuidelineExportRevision:
-    """One immutable revision plus honest legacy provenance."""
+    """One immutable revision and its publication evidence."""
 
     revision: GuidelineRevision
     published_head_revision: int | None = None
     published_head_updated_at: datetime | None = None
-    legacy_version: str | None = None
-    legacy_version_unresolvable: bool = False
-    legacy_tags: tuple[str, ...] | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.revision, GuidelineRevision):
@@ -320,45 +316,6 @@ class GuidelineExportRevision:
                 "guideline_export_published_head_time_before_revision",
                 path="$.published_head_updated_at",
             )
-        legacy_version = _optional_bounded_text(
-            self.legacy_version,
-            "guideline_export_legacy_version_invalid",
-            "$.legacy_version",
-            max_length=GUIDELINE_LEGACY_VERSION_MAX_LENGTH,
-        )
-        if not isinstance(self.legacy_version_unresolvable, bool):
-            raise GuidelineImportExportError(
-                "guideline_export_legacy_resolution_invalid"
-            )
-        if self.legacy_version_unresolvable and legacy_version is None:
-            raise GuidelineImportExportError(
-                "guideline_export_unresolvable_legacy_version_required"
-            )
-        if legacy_version is not None and not self.legacy_version_unresolvable:
-            raise GuidelineImportExportError(
-                "guideline_export_legacy_version_resolution_invalid"
-            )
-        if self.legacy_tags is None:
-            legacy_tags = None
-        else:
-            if not isinstance(self.legacy_tags, tuple | list):
-                raise GuidelineImportExportError("guideline_export_legacy_tags_invalid")
-            legacy_tags = tuple(
-                sorted(
-                    {
-                        _required_text(
-                            item,
-                            "guideline_export_legacy_tag_invalid",
-                            "$.legacy_tags",
-                        )
-                        for item in self.legacy_tags
-                    }
-                )
-            )
-        if legacy_tags is not None and not self.legacy_version_unresolvable:
-            raise GuidelineImportExportError(
-                "guideline_export_legacy_tags_resolution_invalid"
-            )
         object.__setattr__(
             self,
             "published_head_revision",
@@ -369,8 +326,6 @@ class GuidelineExportRevision:
             "published_head_updated_at",
             published_head_updated_at,
         )
-        object.__setattr__(self, "legacy_version", legacy_version)
-        object.__setattr__(self, "legacy_tags", legacy_tags)
 
     @property
     def revision_id(self) -> str:
@@ -383,18 +338,6 @@ class GuidelineExportRevision:
     @property
     def revision_digest(self) -> str:
         return self.revision.revision_digest
-
-    @property
-    def legacy_version_as_int(self) -> int | None:
-        """Compatibility projection without losing the textual source value."""
-
-        if self.legacy_version is None or not self.legacy_version.isascii():
-            return None
-        if not self.legacy_version.isdigit():
-            return None
-        parsed = int(self.legacy_version)
-        return parsed if parsed <= POLICY_SQL_INTEGER_MAX else None
-
 
 @dataclass(frozen=True, slots=True)
 class GuidelineExportBinding:
@@ -549,7 +492,7 @@ class GuidelineExportAggregate:
     retirement: GuidelineRetirement | None = None
     bindings: tuple[GuidelineExportBinding, ...] = ()
     history_status: GuidelineHistoryStatus = GuidelineHistoryStatus.COMPLETE
-    migration_notes: tuple[str, ...] = ()
+    import_notes: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         if not isinstance(self.identity, Guideline):
@@ -796,29 +739,15 @@ class GuidelineExportAggregate:
                     ) from exc
                 previous_binding = binding
 
-        if not isinstance(self.migration_notes, tuple | list) or any(
+        if not isinstance(self.import_notes, tuple | list) or any(
             not isinstance(item, str) or not item.strip()
-            for item in self.migration_notes
+            for item in self.import_notes
         ):
-            raise GuidelineImportExportError("guideline_export_migration_notes_invalid")
-        migration_notes = tuple(sorted(set(self.migration_notes)))
-        if self.history_status is GuidelineHistoryStatus.BASELINE_ONLY:
-            if len(revisions) != 1 or not revisions[0].legacy_version_unresolvable:
-                raise GuidelineImportExportError(
-                    "guideline_export_baseline_history_mismatch"
-                )
-            if revisions[0].revision.metrics or bindings:
-                raise GuidelineImportExportError(
-                    "guideline_export_legacy_baseline_must_be_contextual"
-                )
-        elif any(item.legacy_version is not None for item in revisions):
-            raise GuidelineImportExportError(
-                "guideline_export_complete_history_legacy_metadata_forbidden"
-            )
-
+            raise GuidelineImportExportError("guideline_export_import_notes_invalid")
+        import_notes = tuple(sorted(set(self.import_notes)))
         object.__setattr__(self, "revisions", revisions)
         object.__setattr__(self, "bindings", bindings)
-        object.__setattr__(self, "migration_notes", migration_notes)
+        object.__setattr__(self, "import_notes", import_notes)
 
     @property
     def guideline_id(self) -> str:
@@ -1538,11 +1467,7 @@ def _revision_payload(exported: GuidelineExportRevision) -> dict[str, object]:
         "published_head_updated_at": _datetime_payload(
             exported.published_head_updated_at
         ),
-        "legacy_version": exported.legacy_version,
-        "legacy_version_unresolvable": exported.legacy_version_unresolvable,
-        "legacy_tags": (
-            list(exported.legacy_tags) if exported.legacy_tags is not None else None
-        ),
+
     }
 
 
@@ -1622,7 +1547,7 @@ def _aggregate_payload(
         "retirement": _retirement_payload(aggregate.retirement),
         "bindings": [binding.digest_payload() for binding in aggregate.bindings],
         "history_status": aggregate.history_status.value,
-        "migration_notes": list(aggregate.migration_notes),
+        "import_notes": list(aggregate.import_notes),
     }
 
 
@@ -1786,9 +1711,6 @@ def _parse_revision(raw: object, path: str) -> GuidelineExportRevision:
                 "tags",
                 "published_head_revision",
                 "published_head_updated_at",
-                "legacy_version",
-                "legacy_version_unresolvable",
-                "legacy_tags",
             }
         ),
         path=path,
@@ -1864,34 +1786,6 @@ def _parse_revision(raw: object, path: str) -> GuidelineExportRevision:
             value["published_head_updated_at"],
             "guideline_export_published_head_updated_at_invalid",
             f"{path}.published_head_updated_at",
-        ),
-        legacy_version=_optional_text(
-            value["legacy_version"],
-            "guideline_export_legacy_version_invalid",
-            f"{path}.legacy_version",
-        ),
-        legacy_version_unresolvable=_strict_bool(
-            value["legacy_version_unresolvable"],
-            "guideline_export_legacy_resolution_invalid",
-            f"{path}.legacy_version_unresolvable",
-        ),
-        legacy_tags=(
-            None
-            if value["legacy_tags"] is None
-            else tuple(
-                _required_text(
-                    item,
-                    "guideline_export_legacy_tag_invalid",
-                    f"{path}.legacy_tags[{index}]",
-                )
-                for index, item in enumerate(
-                    _sequence(
-                        value["legacy_tags"],
-                        "guideline_export_legacy_tags_invalid",
-                        f"{path}.legacy_tags",
-                    )
-                )
-            )
         ),
     )
 
@@ -2262,7 +2156,7 @@ def _parse_aggregate(raw: object, path: str) -> GuidelineExportAggregate:
                 "retirement",
                 "bindings",
                 "history_status",
-                "migration_notes",
+                "import_notes",
             }
         ),
         path=path,
@@ -2290,14 +2184,14 @@ def _parse_aggregate(raw: object, path: str) -> GuidelineExportAggregate:
     notes = tuple(
         _required_text(
             item,
-            "guideline_export_migration_note_invalid",
-            f"{path}.migration_notes[{index}]",
+            "guideline_export_import_note_invalid",
+            f"{path}.import_notes[{index}]",
         )
         for index, item in enumerate(
             _sequence(
-                value["migration_notes"],
-                "guideline_export_migration_notes_invalid",
-                f"{path}.migration_notes",
+                value["import_notes"],
+                "guideline_export_import_notes_invalid",
+                f"{path}.import_notes",
             )
         )
     )
@@ -2316,7 +2210,7 @@ def _parse_aggregate(raw: object, path: str) -> GuidelineExportAggregate:
             "guideline_export_history_status_invalid",
             f"{path}.history_status",
         ),
-        migration_notes=notes,
+        import_notes=notes,
     )
 
 
@@ -2489,11 +2383,11 @@ def _remap_aggregate(
         aggregate,
         identity=identity,
         bindings=bindings,
-        migration_notes=tuple(
+        import_notes=tuple(
             sorted(
                 set(
                     (
-                        *aggregate.migration_notes,
+                        *aggregate.import_notes,
                         *(("binding_history_stored_inert",) if bindings else ()),
                     )
                 )
@@ -2687,7 +2581,7 @@ def plan_guideline_import(
             )
 
         diagnostics = [
-            *aggregate.migration_notes,
+            *aggregate.import_notes,
             *identity_diagnostics,
         ]
         planned_bindings = {

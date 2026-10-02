@@ -42,7 +42,6 @@ from okto_pulse.core.domain.guideline_policy import (
     GuidelineRetirement,
     GuidelineRevision,
     GuidelineScope,
-    POLICY_SQL_INTEGER_MAX,
     PolicyEntityType,
 )
 
@@ -266,6 +265,15 @@ def test_v3_round_trip_is_closed_complete_and_canonical() -> None:
 
 
 
+@pytest.mark.parametrize("field", ["legacy_version", "legacy_version_unresolvable", "legacy_tags"])
+def test_revision_rejects_removed_metadata(field):
+    payload = guideline_export_payload(_envelope(_aggregate()))
+    payload["guidelines"][0]["revisions"][0][field] = None
+    with pytest.raises(GuidelineImportExportError) as caught:
+        parse_guideline_export(payload)
+    assert "unknown" in caught.value.code
+
+
 def test_digest_and_bytes_ignore_object_key_order_but_reject_unknown_fields() -> None:
     payload = guideline_export_payload(_envelope(_aggregate()))
     reordered = {key: copy.deepcopy(payload[key]) for key in reversed(tuple(payload))}
@@ -331,32 +339,6 @@ def test_publication_provenance_rejects_revision_local_tampering() -> None:
         )
 
 
-def test_legacy_version_text_and_integer_projection_match_durable_bounds() -> None:
-    revision = _revision()
-    boundary = GuidelineExportRevision(
-        revision=revision,
-        legacy_version="9" * 64,
-        legacy_version_unresolvable=True,
-    )
-    assert boundary.legacy_version == "9" * 64
-    assert boundary.legacy_version_as_int is None
-
-    persisted_integer = GuidelineExportRevision(
-        revision=revision,
-        legacy_version=str(POLICY_SQL_INTEGER_MAX),
-        legacy_version_unresolvable=True,
-    )
-    assert persisted_integer.legacy_version_as_int == POLICY_SQL_INTEGER_MAX
-
-    with pytest.raises(
-        GuidelineImportExportError,
-        match="guideline_export_legacy_version_invalid",
-    ):
-        GuidelineExportRevision(
-            revision=revision,
-            legacy_version="9" * 65,
-            legacy_version_unresolvable=True,
-        )
 
 
 def test_publication_provenance_rejects_history_and_head_time_tampering() -> None:
