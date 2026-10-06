@@ -19,10 +19,6 @@ from okto_pulse.core.domain.guideline_policy import (
     GuidelineRevision,
     GuidelineRevisionPageCursor,
     GuidelineMetric,
-    PolicySubjectRef,
-    PolicyWaiver,
-    PolicyWaiverExpireReasonCode,
-    PolicyWaiverStatus,
 )
 from okto_pulse.core.domain.guideline_semantic_projection import (
     SEMANTIC_GUIDELINE_KEYSET_CONTRACT_VERSION,
@@ -228,345 +224,11 @@ def project_guideline_revision(
     )
 
 
-@dataclass(frozen=True, slots=True)
-class PolicyWaiverListItem:
-    """Projection-safe waiver head; summary excludes reasons and evidence."""
-
-    projection: PolicyProjection
-    waiver_id: str
-    board_id: str
-    finding_id: str
-    receipt_id: str
-    guideline_id: str
-    revision_id: str
-    rule_id: str
-    subject: PolicySubjectRef
-    status: PolicyWaiverStatus
-    source_current: bool
-    effective: bool
-    requested_by: str
-    requested_at: datetime
-    expires_at: datetime
-    waiver_revision: int
-    last_event_at: datetime
-    expire_reason_code: PolicyWaiverExpireReasonCode | None
-    justification: str | None = None
-    evidence_refs: tuple[str, ...] | None = None
-    reviewed_by: str | None = None
-    reviewed_at: datetime | None = None
-    review_reason: str | None = None
-    revoked_by: str | None = None
-    revoked_at: datetime | None = None
-
-    def __post_init__(self) -> None:
-        if not isinstance(self.projection, PolicyProjection):
-            raise GuidelinePolicyContractError("policy_waiver_projection_invalid")
-        if not isinstance(self.subject, PolicySubjectRef):
-            raise GuidelinePolicyContractError(
-                "policy_waiver_projection_subject_invalid"
-            )
-        if not isinstance(self.status, PolicyWaiverStatus):
-            raise GuidelinePolicyContractError(
-                "policy_waiver_projection_status_invalid"
-            )
-        if self.expire_reason_code is not None and not isinstance(
-            self.expire_reason_code,
-            PolicyWaiverExpireReasonCode,
-        ):
-            raise GuidelinePolicyContractError(
-                "policy_waiver_projection_expire_reason_code_invalid"
-            )
-        if (self.status is PolicyWaiverStatus.EXPIRED) != (
-            self.expire_reason_code is not None
-        ):
-            raise GuidelinePolicyContractError(
-                "policy_waiver_projection_expire_reason_code_mismatch"
-            )
-        for field_name in (
-            "waiver_id",
-            "board_id",
-            "finding_id",
-            "receipt_id",
-            "guideline_id",
-            "revision_id",
-            "rule_id",
-            "requested_by",
-        ):
-            object.__setattr__(
-                self,
-                field_name,
-                _required_text(
-                    getattr(self, field_name),
-                    f"policy_waiver_projection_{field_name}_required",
-                ),
-            )
-        if self.board_id != self.subject.board_id:
-            raise GuidelinePolicyContractError(
-                "policy_waiver_projection_board_mismatch"
-            )
-        for field_name in ("source_current", "effective"):
-            if not isinstance(getattr(self, field_name), bool):
-                raise GuidelinePolicyContractError(
-                    f"policy_waiver_projection_{field_name}_invalid"
-                )
-        if self.effective and (
-            not self.source_current or self.status is not PolicyWaiverStatus.APPROVED
-        ):
-            raise GuidelinePolicyContractError(
-                "policy_waiver_projection_effective_invalid"
-            )
-        for field_name in (
-            "requested_at",
-            "expires_at",
-            "last_event_at",
-            "reviewed_at",
-            "revoked_at",
-        ):
-            value = getattr(self, field_name)
-            if value is not None:
-                object.__setattr__(
-                    self,
-                    field_name,
-                    _aware_utc(
-                        value,
-                        f"policy_waiver_projection_{field_name}_invalid",
-                    ),
-                )
-        if (
-            not isinstance(self.waiver_revision, int)
-            or isinstance(self.waiver_revision, bool)
-            or self.waiver_revision < 1
-        ):
-            raise GuidelinePolicyContractError(
-                "policy_waiver_projection_revision_invalid"
-            )
-        detail_fields = (
-            "justification",
-            "evidence_refs",
-        )
-        if self.projection is PolicyProjection.SUMMARY:
-            if any(
-                getattr(self, field_name) is not None for field_name in detail_fields
-            ):
-                raise GuidelinePolicyContractError("policy_waiver_summary_not_slim")
-            if any(
-                value is not None
-                for value in (
-                    self.reviewed_by,
-                    self.reviewed_at,
-                    self.review_reason,
-                    self.revoked_by,
-                    self.revoked_at,
-                )
-            ):
-                raise GuidelinePolicyContractError("policy_waiver_summary_not_slim")
-        elif any(getattr(self, field_name) is None for field_name in detail_fields):
-            raise GuidelinePolicyContractError("policy_waiver_detail_incomplete")
-
-    @property
-    def id(self) -> str:
-        return self.waiver_id
-
-    @property
-    def created_at(self) -> datetime:
-        """Canonical list-ordering alias for the request timestamp."""
-
-        return self.requested_at
-
-
-def project_policy_waiver(
-    waiver: PolicyWaiver,
-    *,
-    projection: PolicyProjection,
-    source_current: bool,
-    evaluated_at: datetime,
-) -> PolicyWaiverListItem:
-    if not isinstance(waiver, PolicyWaiver):
-        raise GuidelinePolicyContractError("policy_waiver_invalid")
-    if not isinstance(projection, PolicyProjection):
-        raise GuidelinePolicyContractError("policy_waiver_projection_invalid")
-    if not isinstance(source_current, bool):
-        raise GuidelinePolicyContractError(
-            "policy_waiver_projection_source_current_invalid"
-        )
-    now = _aware_utc(
-        evaluated_at,
-        "policy_waiver_projection_evaluated_at_invalid",
-    )
-    detail = projection is PolicyProjection.DETAIL
-    return PolicyWaiverListItem(
-        projection=projection,
-        waiver_id=waiver.waiver_id,
-        board_id=waiver.board_id,
-        finding_id=waiver.finding_id,
-        receipt_id=waiver.receipt_id,
-        guideline_id=waiver.guideline_id,
-        revision_id=waiver.revision_id,
-        rule_id=waiver.rule_id,
-        subject=waiver.subject,
-        status=waiver.status,
-        source_current=source_current,
-        effective=source_current and waiver.is_effective_at(now),
-        requested_by=waiver.requested_by,
-        requested_at=waiver.requested_at,
-        expires_at=waiver.expires_at,
-        waiver_revision=waiver.waiver_revision,
-        last_event_at=waiver.last_event_at,
-        expire_reason_code=waiver.expire_reason_code,
-        justification=waiver.justification if detail else None,
-        evidence_refs=waiver.evidence_refs if detail else None,
-        reviewed_by=waiver.reviewed_by if detail else None,
-        reviewed_at=waiver.reviewed_at if detail else None,
-        review_reason=waiver.review_reason if detail else None,
-        revoked_by=waiver.revoked_by if detail else None,
-        revoked_at=waiver.revoked_at if detail else None,
-    )
-
-
-POLICY_RECEIPT_ORDERING: tuple[str, str] = (
-    "evaluated_at DESC",
-    "receipt_id DESC",
-)
-POLICY_FINDING_ORDERING: tuple[str, str, str] = (
-    "severity_rank DESC",
-    "rule_id ASC",
-    "finding_id ASC",
-)
-POLICY_WAIVER_ORDERING: tuple[str, str] = (
-    "created_at DESC",
-    "id DESC",
-)
 POLICY_IMPACT_ORDERING: tuple[str, str, str] = (
     "entity_type ASC",
     "entity_id ASC",
     "impact_item_id ASC",
 )
-
-
-@dataclass(frozen=True, slots=True)
-class PolicyReceiptPageCursor:
-    evaluated_at: datetime
-    item_id: str
-    filter_digest: str
-    projection_digest: str
-    schema_version: str = POLICY_KEYSET_CONTRACT_VERSION
-    ordering: tuple[str, str] = POLICY_RECEIPT_ORDERING
-
-    def __post_init__(self) -> None:
-        if self.schema_version != POLICY_KEYSET_CONTRACT_VERSION:
-            raise GuidelinePolicyContractError("policy_cursor_schema_version_invalid")
-        if tuple(self.ordering) != POLICY_RECEIPT_ORDERING:
-            raise GuidelinePolicyContractError("policy_receipt_cursor_ordering_invalid")
-        object.__setattr__(
-            self,
-            "evaluated_at",
-            _aware_utc(
-                self.evaluated_at,
-                "policy_receipt_cursor_time_invalid",
-            ),
-        )
-        object.__setattr__(
-            self,
-            "item_id",
-            _required_text(
-                self.item_id,
-                "policy_receipt_cursor_item_id_required",
-            ),
-        )
-        for field_name in ("filter_digest", "projection_digest"):
-            object.__setattr__(
-                self,
-                field_name,
-                _sha256(
-                    getattr(self, field_name),
-                    f"policy_receipt_cursor_{field_name}_invalid",
-                ),
-            )
-        object.__setattr__(self, "ordering", POLICY_RECEIPT_ORDERING)
-
-
-@dataclass(frozen=True, slots=True)
-class PolicyFindingPageCursor:
-    severity_rank: int
-    rule_id: str
-    item_id: str
-    filter_digest: str
-    projection_digest: str
-    schema_version: str = POLICY_KEYSET_CONTRACT_VERSION
-    ordering: tuple[str, str, str] = POLICY_FINDING_ORDERING
-
-    def __post_init__(self) -> None:
-        if self.schema_version != POLICY_KEYSET_CONTRACT_VERSION:
-            raise GuidelinePolicyContractError("policy_cursor_schema_version_invalid")
-        if tuple(self.ordering) != POLICY_FINDING_ORDERING:
-            raise GuidelinePolicyContractError("policy_finding_cursor_ordering_invalid")
-        if (
-            not isinstance(self.severity_rank, int)
-            or isinstance(self.severity_rank, bool)
-            or self.severity_rank < 0
-        ):
-            raise GuidelinePolicyContractError("policy_finding_cursor_severity_invalid")
-        for field_name in ("rule_id", "item_id"):
-            object.__setattr__(
-                self,
-                field_name,
-                _required_text(
-                    getattr(self, field_name),
-                    f"policy_finding_cursor_{field_name}_required",
-                ),
-            )
-        for field_name in ("filter_digest", "projection_digest"):
-            object.__setattr__(
-                self,
-                field_name,
-                _sha256(
-                    getattr(self, field_name),
-                    f"policy_finding_cursor_{field_name}_invalid",
-                ),
-            )
-        object.__setattr__(self, "ordering", POLICY_FINDING_ORDERING)
-
-
-@dataclass(frozen=True, slots=True)
-class PolicyWaiverPageCursor:
-    created_at: datetime
-    item_id: str
-    filter_digest: str
-    projection_digest: str
-    schema_version: str = POLICY_KEYSET_CONTRACT_VERSION
-    ordering: tuple[str, str] = POLICY_WAIVER_ORDERING
-
-    def __post_init__(self) -> None:
-        if self.schema_version != POLICY_KEYSET_CONTRACT_VERSION:
-            raise GuidelinePolicyContractError("policy_cursor_schema_version_invalid")
-        if tuple(self.ordering) != POLICY_WAIVER_ORDERING:
-            raise GuidelinePolicyContractError("policy_waiver_cursor_ordering_invalid")
-        object.__setattr__(
-            self,
-            "created_at",
-            _aware_utc(
-                self.created_at,
-                "policy_waiver_cursor_time_invalid",
-            ),
-        )
-        object.__setattr__(
-            self,
-            "item_id",
-            _required_text(
-                self.item_id,
-                "policy_waiver_cursor_item_id_required",
-            ),
-        )
-        for field_name in ("filter_digest", "projection_digest"):
-            object.__setattr__(
-                self,
-                field_name,
-                _sha256(
-                    getattr(self, field_name),
-                    f"policy_waiver_cursor_{field_name}_invalid",
-                ),
-            )
-        object.__setattr__(self, "ordering", POLICY_WAIVER_ORDERING)
 
 
 @dataclass(frozen=True, slots=True)
@@ -632,26 +294,6 @@ class PolicyKeysetPage(Generic[_PolicyPageItemT, _PolicyPageCursorT]):
 
 
 @dataclass(frozen=True, slots=True)
-class PolicyWaiverPage(
-    PolicyKeysetPage[
-        PolicyWaiverListItem,
-        PolicyWaiverPageCursor,
-    ]
-):
-    ordering: ClassVar[tuple[str, ...]] = POLICY_WAIVER_ORDERING
-
-    def __post_init__(self) -> None:
-        PolicyKeysetPage.__post_init__(self)
-        if any(not isinstance(item, PolicyWaiverListItem) for item in self.items):
-            raise GuidelinePolicyContractError("policy_waiver_page_item_invalid")
-        if self.next_cursor is not None and not isinstance(
-            self.next_cursor,
-            PolicyWaiverPageCursor,
-        ):
-            raise GuidelinePolicyContractError("policy_waiver_page_cursor_invalid")
-
-
-@dataclass(frozen=True, slots=True)
 class GuidelineImpactItemPage(
     PolicyKeysetPage[
         GuidelineImpactItem,
@@ -704,9 +346,6 @@ class PolicyCursorCodec:
         self,
         cursor: (
             GuidelineRevisionPageCursor
-            | PolicyReceiptPageCursor
-            | PolicyFindingPageCursor
-            | PolicyWaiverPageCursor
             | PolicyImpactPageCursor
             | SemanticAssessmentPageCursor
             | SemanticFindingPageCursor
@@ -720,41 +359,6 @@ class PolicyCursorCodec:
                 "kind": "revision",
                 "ordering": list(cursor.ordering),
                 "revision_number": cursor.revision_number,
-                "item_id": cursor.item_id,
-                "filter_digest": cursor.filter_digest,
-                "projection_digest": cursor.projection_digest,
-            }
-        elif isinstance(cursor, PolicyReceiptPageCursor):
-            payload: dict[str, object] = {
-                "schema_version": cursor.schema_version,
-                "kind": "receipt",
-                "ordering": list(cursor.ordering),
-                "evaluated_at": cursor.evaluated_at.isoformat(
-                    timespec="microseconds"
-                ).replace("+00:00", "Z"),
-                "item_id": cursor.item_id,
-                "filter_digest": cursor.filter_digest,
-                "projection_digest": cursor.projection_digest,
-            }
-        elif isinstance(cursor, PolicyFindingPageCursor):
-            payload = {
-                "schema_version": cursor.schema_version,
-                "kind": "finding",
-                "ordering": list(cursor.ordering),
-                "severity_rank": cursor.severity_rank,
-                "rule_id": cursor.rule_id,
-                "item_id": cursor.item_id,
-                "filter_digest": cursor.filter_digest,
-                "projection_digest": cursor.projection_digest,
-            }
-        elif isinstance(cursor, PolicyWaiverPageCursor):
-            payload = {
-                "schema_version": cursor.schema_version,
-                "kind": "waiver",
-                "ordering": list(cursor.ordering),
-                "created_at": cursor.created_at.isoformat(
-                    timespec="microseconds"
-                ).replace("+00:00", "Z"),
                 "item_id": cursor.item_id,
                 "filter_digest": cursor.filter_digest,
                 "projection_digest": cursor.projection_digest,
@@ -840,9 +444,6 @@ class PolicyCursorCodec:
         expected_kind: str,
     ) -> (
         GuidelineRevisionPageCursor
-        | PolicyReceiptPageCursor
-        | PolicyFindingPageCursor
-        | PolicyWaiverPageCursor
         | PolicyImpactPageCursor
         | SemanticAssessmentPageCursor
         | SemanticFindingPageCursor
@@ -859,9 +460,6 @@ class PolicyCursorCodec:
                 raise GuidelinePolicyContractError("invalid_cursor")
             if expected_kind not in {
                 "revision",
-                "receipt",
-                "finding",
-                "waiver",
                 "impact",
                 "semantic_assessment",
                 "semantic_finding",
@@ -913,50 +511,6 @@ class PolicyCursorCodec:
                     raise GuidelinePolicyContractError("invalid_cursor")
                 return GuidelineRevisionPageCursor(
                     revision_number=payload["revision_number"],
-                    item_id=payload["item_id"],
-                    filter_digest=payload["filter_digest"],
-                    projection_digest=payload["projection_digest"],
-                    schema_version=payload["schema_version"],
-                    ordering=tuple(payload["ordering"]),
-                )
-            if expected_kind == "receipt":
-                if set(payload) != {
-                    "schema_version",
-                    "kind",
-                    "ordering",
-                    "evaluated_at",
-                    "item_id",
-                    "filter_digest",
-                    "projection_digest",
-                }:
-                    raise GuidelinePolicyContractError("invalid_cursor")
-                timestamp = str(payload["evaluated_at"])
-                if timestamp.endswith("Z"):
-                    timestamp = timestamp[:-1] + "+00:00"
-                return PolicyReceiptPageCursor(
-                    evaluated_at=datetime.fromisoformat(timestamp),
-                    item_id=payload["item_id"],
-                    filter_digest=payload["filter_digest"],
-                    projection_digest=payload["projection_digest"],
-                    schema_version=payload["schema_version"],
-                    ordering=tuple(payload["ordering"]),
-                )
-            if expected_kind == "waiver":
-                if set(payload) != {
-                    "schema_version",
-                    "kind",
-                    "ordering",
-                    "created_at",
-                    "item_id",
-                    "filter_digest",
-                    "projection_digest",
-                }:
-                    raise GuidelinePolicyContractError("invalid_cursor")
-                timestamp = str(payload["created_at"])
-                if timestamp.endswith("Z"):
-                    timestamp = timestamp[:-1] + "+00:00"
-                return PolicyWaiverPageCursor(
-                    created_at=datetime.fromisoformat(timestamp),
                     item_id=payload["item_id"],
                     filter_digest=payload["filter_digest"],
                     projection_digest=payload["projection_digest"],
@@ -1029,26 +583,7 @@ class PolicyCursorCodec:
                 ):
                     raise GuidelinePolicyContractError("invalid_cursor")
                 return semantic_cursor
-            if set(payload) != {
-                "schema_version",
-                "kind",
-                "ordering",
-                "severity_rank",
-                "rule_id",
-                "item_id",
-                "filter_digest",
-                "projection_digest",
-            }:
-                raise GuidelinePolicyContractError("invalid_cursor")
-            return PolicyFindingPageCursor(
-                severity_rank=payload["severity_rank"],
-                rule_id=payload["rule_id"],
-                item_id=payload["item_id"],
-                filter_digest=payload["filter_digest"],
-                projection_digest=payload["projection_digest"],
-                schema_version=payload["schema_version"],
-                ordering=tuple(payload["ordering"]),
-            )
+            raise GuidelinePolicyContractError("invalid_cursor")
         except GuidelinePolicyContractError:
             raise
         except Exception as exc:
@@ -1059,7 +594,6 @@ __all__ = [
     "POLICY_IMPACT_ORDERING",
     "POLICY_KEYSET_CONTRACT_VERSION",
     "POLICY_CURSOR_TOKEN_MAX_LENGTH",
-    "POLICY_WAIVER_ORDERING",
     "PolicyCursorCodec",
     "GuidelineImpactItemPage",
     "GuidelineRevisionListItem",
@@ -1067,13 +601,9 @@ __all__ = [
     "PolicyImpactPageCursor",
     "PolicyKeysetPage",
     "PolicyProjection",
-    "PolicyWaiverListItem",
-    "PolicyWaiverPage",
-    "PolicyWaiverPageCursor",
     "SemanticAssessmentPageCursor",
     "SemanticFindingPageCursor",
     "SemanticSkipPageCursor",
     "SemanticWaiverPageCursor",
-    "project_policy_waiver",
     "project_guideline_revision",
 ]

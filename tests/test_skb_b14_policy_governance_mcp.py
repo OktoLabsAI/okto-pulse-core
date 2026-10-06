@@ -582,13 +582,18 @@ def test_policy_v1_python_names_and_evaluator_modules_are_removed() -> None:
         "PolicyComplianceFindingPage", "PolicyComplianceReceiptPage",
         "assess_policy_receipt_currentness", "project_policy_compliance_receipt",
         "project_policy_compliance_finding",
+        "PolicyWaiverPage", "PolicyWaiverListItem", "project_policy_waiver",
+        "PolicyReceiptPageCursor", "PolicyFindingPageCursor", "PolicyWaiverPageCursor",
     ):
         assert not hasattr(guideline_compliance, removed_name)
-    assert not hasattr(policy_ports, "PolicyComplianceCurrentSnapshotResolver")
+    for removed_name in (
+        "PolicyComplianceCurrentSnapshotResolver", "PolicyComplianceReceiptListQuery",
+        "PolicyComplianceFindingListQuery", "PolicyWaiverListQuery",
+    ):
+        assert not hasattr(policy_ports, removed_name)
     assert {
         "GuidelineImpactItemPage",
         "GuidelineRevisionProjectionPage",
-        "PolicyWaiverPage",
     } <= set(guideline_compliance.__all__)
 
 

@@ -7,14 +7,14 @@ from datetime import datetime, timezone
 
 import pytest
 
-from okto_pulse.core.domain.guideline_compliance import (
-    POLICY_FINDING_ORDERING,
-    POLICY_KEYSET_CONTRACT_VERSION,
-    POLICY_RECEIPT_ORDERING,
-    PolicyCursorCodec,
-    PolicyFindingPageCursor,
-    PolicyProjection,
-    PolicyReceiptPageCursor,
+from okto_pulse.core.domain.guideline_compliance import PolicyCursorCodec
+from okto_pulse.core.domain.guideline_semantic_projection import (
+    SEMANTIC_FINDING_ORDERING,
+    SEMANTIC_GUIDELINE_KEYSET_CONTRACT_VERSION,
+    SEMANTIC_ASSESSMENT_ORDERING,
+    SemanticFindingPageCursor,
+    SemanticGuidelineProjection,
+    SemanticAssessmentPageCursor,
 )
 from okto_pulse.core.domain.guideline_policy import (
     AdoptedGuidelineRevisionRef,
@@ -32,8 +32,8 @@ from okto_pulse.core.domain.guideline_policy import (
 )
 from okto_pulse.core.ports.guideline_policy import (
     GuidelinePolicyCursorConflict,
-    PolicyComplianceFindingListQuery,
-    PolicyComplianceReceiptListQuery,
+    SemanticFindingListQuery,
+    SemanticAssessmentListQuery,
 )
 
 
@@ -112,70 +112,69 @@ def _receipt() -> PolicyComplianceReceipt:
 
 
 def test_policy_keyset_cursor_is_bound_to_filter_and_projection() -> None:
-    first = PolicyComplianceReceiptListQuery(
+    first = SemanticAssessmentListQuery(
         board_id="board-1",
         entity_type=PolicyEntityType.SPEC,
-        projection=PolicyProjection.SUMMARY,
+        projection=SemanticGuidelineProjection.SUMMARY,
     )
-    cursor = PolicyReceiptPageCursor(
-        evaluated_at=NOW,
+    cursor = SemanticAssessmentPageCursor(
+        at=NOW,
         item_id="receipt-1",
         filter_digest=first.filter_digest,
         projection_digest=first.projection_digest,
     )
-    second = PolicyComplianceReceiptListQuery(
+    second = SemanticAssessmentListQuery(
         board_id="board-1",
         entity_type=PolicyEntityType.SPEC,
-        projection=PolicyProjection.SUMMARY,
+        projection=SemanticGuidelineProjection.SUMMARY,
         cursor=cursor,
     )
 
     assert second.cursor is cursor
-    assert cursor.schema_version == POLICY_KEYSET_CONTRACT_VERSION
-    assert cursor.ordering == POLICY_RECEIPT_ORDERING
+    assert cursor.schema_version == SEMANTIC_GUIDELINE_KEYSET_CONTRACT_VERSION
+    assert cursor.ordering == SEMANTIC_ASSESSMENT_ORDERING
     with pytest.raises(
         GuidelinePolicyCursorConflict,
-        match="policy_receipt_cursor_context_mismatch",
+        match="semantic_assessment_cursor_context_mismatch",
     ):
-        PolicyComplianceReceiptListQuery(
+        SemanticAssessmentListQuery(
             board_id="board-1",
             entity_type=PolicyEntityType.SPEC,
-            projection=PolicyProjection.DETAIL,
+            projection=SemanticGuidelineProjection.DETAIL,
             cursor=cursor,
         )
 
 
 def test_finding_keyset_cursor_rejects_filter_drift() -> None:
-    first = PolicyComplianceFindingListQuery(
+    first = SemanticFindingListQuery(
         board_id="board-1",
         guideline_id="guideline-1",
-        projection=PolicyProjection.SUMMARY,
+        projection=SemanticGuidelineProjection.SUMMARY,
     )
-    cursor = PolicyFindingPageCursor(
-        severity_rank=50,
-        rule_id="rule-1",
+    cursor = SemanticFindingPageCursor(
+        at=NOW,
         item_id="finding-1",
         filter_digest=first.filter_digest,
         projection_digest=first.projection_digest,
     )
 
-    assert cursor.ordering == POLICY_FINDING_ORDERING
+    assert cursor.ordering == SEMANTIC_FINDING_ORDERING
     with pytest.raises(
         GuidelinePolicyCursorConflict,
-        match="policy_finding_cursor_context_mismatch",
+        match="semantic_finding_cursor_context_mismatch",
     ):
-        PolicyComplianceFindingListQuery(
+        SemanticFindingListQuery(
             board_id="board-1",
             guideline_id="guideline-2",
-            projection=PolicyProjection.SUMMARY,
+            projection=SemanticGuidelineProjection.SUMMARY,
             cursor=cursor,
         )
 
 
 def test_policy_cursor_codec_is_opaque_tamper_evident_and_kind_bound() -> None:
-    query = PolicyComplianceReceiptListQuery(board_id="board-1")
-    cursor = PolicyReceiptPageCursor(
-        evaluated_at=NOW,
+    query = SemanticAssessmentListQuery(board_id="board-1")
+    cursor = SemanticAssessmentPageCursor(
+        at=NOW,
         item_id="receipt-1",
         filter_digest=query.filter_digest,
         projection_digest=query.projection_digest,
@@ -184,17 +183,17 @@ def test_policy_cursor_codec_is_opaque_tamper_evident_and_kind_bound() -> None:
     token = codec.encode(cursor)
 
     assert "receipt-1" not in token
-    assert codec.decode(token, expected_kind="receipt") == cursor
+    assert codec.decode(token, expected_kind="semantic_assessment") == cursor
     with pytest.raises(GuidelinePolicyContractError, match="invalid_cursor"):
-        codec.decode(token, expected_kind="finding")
+        codec.decode(token, expected_kind="semantic_finding")
     replacement = "A" if token[-1] != "A" else "B"
     with pytest.raises(GuidelinePolicyContractError, match="invalid_cursor"):
-        codec.decode(token[:-1] + replacement, expected_kind="receipt")
+        codec.decode(token[:-1] + replacement, expected_kind="semantic_assessment")
     payload, signature = token.split(".")
     with pytest.raises(GuidelinePolicyContractError, match="invalid_cursor"):
-        codec.decode(f"{payload}!!!!.{signature}", expected_kind="receipt")
+        codec.decode(f"{payload}!!!!.{signature}", expected_kind="semantic_assessment")
     with pytest.raises(GuidelinePolicyContractError, match="invalid_cursor"):
-        codec.decode(f"{payload}.{signature}!!!!", expected_kind="receipt")
+        codec.decode(f"{payload}.{signature}!!!!", expected_kind="semantic_assessment")
 
 
 def test_rule_rows_and_findings_have_exact_bidirectional_integrity() -> None:

@@ -76,6 +76,35 @@ DIGEST = "a" * 64
 SIGNING_KEY = b"s" * 32
 
 
+@pytest.mark.parametrize("kind,fields,ordering", [
+    ("receipt", {"evaluated_at": "2026-07-31T12:00:00.000000Z"},
+     ["evaluated_at DESC", "receipt_id DESC"]),
+    ("finding", {"severity_rank": 50, "rule_id": "rule-1"},
+     ["severity_rank DESC", "rule_id ASC", "finding_id ASC"]),
+    ("waiver", {"created_at": "2026-07-31T12:00:00.000000Z"},
+     ["created_at DESC", "id DESC"]),
+])
+def test_signed_predecessor_cursor_kinds_are_rejected(kind, fields, ordering):
+    import base64
+    import hashlib
+    import hmac
+    import json
+
+    # A valid signature must not revive a removed cursor contract.
+    payload = {"schema_version": "policy-keyset/v1", "kind": kind,
+               "ordering": ordering, "item_id": "old-item",
+               "filter_digest": DIGEST, "projection_digest": DIGEST, **fields}
+    encoded = json.dumps(payload, ensure_ascii=True, separators=(",", ":"),
+                         sort_keys=True).encode("utf-8")
+    signature = hmac.new(SIGNING_KEY, encoded, hashlib.sha256).digest()
+    token = ".".join(base64.urlsafe_b64encode(part).decode("ascii").rstrip("=")
+                     for part in (encoded, signature))
+    codec = PolicyCursorCodec(SIGNING_KEY)
+    for expected_kind in (kind, "semantic_assessment", "semantic_finding", "semantic_waiver"):
+        with pytest.raises(GuidelinePolicyContractError, match="invalid_cursor"):
+            codec.decode(token, expected_kind=expected_kind)
+
+
 def _evidence() -> EvidenceRef:
     return EvidenceRef(
         source_type="spec",

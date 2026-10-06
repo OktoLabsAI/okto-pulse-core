@@ -14,22 +14,15 @@ from typing import Protocol, runtime_checkable
 
 from okto_pulse.core.domain.guideline_compliance import (
     GuidelineImpactItemPage,
-    POLICY_FINDING_ORDERING,
     POLICY_IMPACT_ORDERING,
     POLICY_KEYSET_CONTRACT_VERSION,
-    POLICY_RECEIPT_ORDERING,
-    POLICY_WAIVER_ORDERING,
-    PolicyFindingPageCursor,
     PolicyImpactPageCursor,
     PolicyProjection,
-    PolicyReceiptPageCursor,
-    PolicyWaiverPageCursor,
 )
 from okto_pulse.core.domain.guideline_policy import (
     GUIDELINE_BINDING_ID_MAX_LENGTH,
     GUIDELINE_PAGE_LIMIT_MAX,
     GUIDELINE_ID_MAX_LENGTH,
-    GUIDELINE_REVISION_ID_MAX_LENGTH,
     POLICY_BOARD_ID_MAX_LENGTH,
     POLICY_ENTITY_TYPE_MAX_LENGTH,
     POLICY_FINDING_ID_MAX_LENGTH,
@@ -46,12 +39,9 @@ from okto_pulse.core.domain.guideline_policy import (
     GuidelineRevisionPageCursor,
     PolicyCurrentness,
     PolicyEntityType,
-    PolicyEvaluationOutcome,
     PolicySubjectRef,
     PolicySubjectSnapshot,
-    PolicyWaiverStatus,
     POLICY_RECEIPT_ID_MAX_LENGTH,
-    POLICY_RULE_ID_MAX_LENGTH,
     POLICY_SQL_INTEGER_MAX,
     POLICY_SUBJECT_ID_MAX_LENGTH,
     normalize_policy_bounded_text,
@@ -560,310 +550,6 @@ class GuidelineImpactListQuery:
             ):
                 raise GuidelinePolicyInvalidCursor(
                     "guideline_impact_cursor_context_mismatch"
-                )
-
-
-@dataclass(frozen=True, slots=True)
-class PolicyComplianceReceiptListQuery:
-    board_id: str
-    limit: int = 50
-    cursor: PolicyReceiptPageCursor | None = None
-    entity_type: PolicyEntityType | None = None
-    subject_id: str | None = None
-    subject_edition: int | None = None
-    outcome: PolicyEvaluationOutcome | None = None
-    currentness: PolicyCurrentness | None = None
-    projection: PolicyProjection = PolicyProjection.SUMMARY
-    filter_digest: str = field(init=False)
-    projection_digest: str = field(init=False)
-
-    ordering = POLICY_RECEIPT_ORDERING
-
-    def __post_init__(self) -> None:
-        object.__setattr__(
-            self,
-            "board_id",
-            _bounded_text(
-                self.board_id,
-                POLICY_BOARD_ID_MAX_LENGTH,
-                "policy_receipt_board_id_required",
-            ),
-        )
-        object.__setattr__(
-            self,
-            "subject_id",
-            _bounded_optional_text(
-                self.subject_id,
-                POLICY_SUBJECT_ID_MAX_LENGTH,
-                "policy_receipt_subject_id_invalid",
-            ),
-        )
-        object.__setattr__(self, "limit", _limit(self.limit))
-        if self.entity_type is not None:
-            if not isinstance(self.entity_type, PolicyEntityType):
-                raise ValueError("policy_receipt_entity_type_invalid")
-        if self.outcome is not None and not isinstance(
-            self.outcome,
-            PolicyEvaluationOutcome,
-        ):
-            raise ValueError("policy_receipt_outcome_invalid")
-        if self.subject_edition is not None and (
-            not isinstance(self.subject_edition, int)
-            or isinstance(self.subject_edition, bool)
-            or not 1 <= self.subject_edition <= POLICY_SQL_INTEGER_MAX
-        ):
-            raise ValueError("policy_receipt_subject_edition_invalid")
-        if self.currentness is not None and not isinstance(
-            self.currentness,
-            PolicyCurrentness,
-        ):
-            raise ValueError("policy_receipt_currentness_invalid")
-        if not isinstance(self.projection, PolicyProjection):
-            raise ValueError("policy_receipt_projection_invalid")
-        filter_digest = canonical_sha256(
-            {
-                "contract": POLICY_KEYSET_CONTRACT_VERSION,
-                "kind": "receipt",
-                "board_id": self.board_id,
-                "entity_type": (
-                    self.entity_type.value if self.entity_type is not None else None
-                ),
-                "subject_id": self.subject_id,
-                "subject_edition": self.subject_edition,
-                "outcome": (self.outcome.value if self.outcome is not None else None),
-                "currentness": (
-                    self.currentness.value if self.currentness is not None else None
-                ),
-            }
-        )
-        projection_digest = canonical_sha256(
-            {
-                "contract": POLICY_KEYSET_CONTRACT_VERSION,
-                "kind": "receipt",
-                "projection": self.projection.value,
-            }
-        )
-        object.__setattr__(self, "filter_digest", filter_digest)
-        object.__setattr__(self, "projection_digest", projection_digest)
-        if self.cursor is not None:
-            if not isinstance(self.cursor, PolicyReceiptPageCursor):
-                raise ValueError("policy_receipt_cursor_invalid")
-            if (
-                self.cursor.filter_digest != filter_digest
-                or self.cursor.projection_digest != projection_digest
-            ):
-                raise GuidelinePolicyInvalidCursor(
-                    "policy_receipt_cursor_context_mismatch"
-                )
-
-
-@dataclass(frozen=True, slots=True)
-class PolicyComplianceFindingListQuery:
-    board_id: str
-    limit: int = 50
-    cursor: PolicyFindingPageCursor | None = None
-    receipt_id: str | None = None
-    guideline_id: str | None = None
-    rule_id: str | None = None
-    subject_id: str | None = None
-    outcome: PolicyEvaluationOutcome | None = None
-    projection: PolicyProjection = PolicyProjection.SUMMARY
-    filter_digest: str = field(init=False)
-    projection_digest: str = field(init=False)
-
-    ordering = POLICY_FINDING_ORDERING
-
-    def __post_init__(self) -> None:
-        object.__setattr__(
-            self,
-            "board_id",
-            _bounded_text(
-                self.board_id,
-                POLICY_BOARD_ID_MAX_LENGTH,
-                "policy_finding_board_id_required",
-            ),
-        )
-        for field_name, max_length in (
-            ("receipt_id", POLICY_RECEIPT_ID_MAX_LENGTH),
-            ("guideline_id", GUIDELINE_ID_MAX_LENGTH),
-            ("rule_id", POLICY_RULE_ID_MAX_LENGTH),
-            ("subject_id", POLICY_SUBJECT_ID_MAX_LENGTH),
-        ):
-            object.__setattr__(
-                self,
-                field_name,
-                _bounded_optional_text(
-                    getattr(self, field_name),
-                    max_length,
-                    f"policy_finding_{field_name}_invalid",
-                ),
-            )
-        object.__setattr__(self, "limit", _limit(self.limit))
-        if self.outcome is not None and not isinstance(
-            self.outcome,
-            PolicyEvaluationOutcome,
-        ):
-            raise ValueError("policy_finding_outcome_invalid")
-        if not isinstance(self.projection, PolicyProjection):
-            raise ValueError("policy_finding_projection_invalid")
-        filter_digest = canonical_sha256(
-            {
-                "contract": POLICY_KEYSET_CONTRACT_VERSION,
-                "kind": "finding",
-                "board_id": self.board_id,
-                "receipt_id": self.receipt_id,
-                "guideline_id": self.guideline_id,
-                "rule_id": self.rule_id,
-                "subject_id": self.subject_id,
-                "outcome": (self.outcome.value if self.outcome is not None else None),
-            }
-        )
-        projection_digest = canonical_sha256(
-            {
-                "contract": POLICY_KEYSET_CONTRACT_VERSION,
-                "kind": "finding",
-                "projection": self.projection.value,
-            }
-        )
-        object.__setattr__(self, "filter_digest", filter_digest)
-        object.__setattr__(self, "projection_digest", projection_digest)
-        if self.cursor is not None:
-            if not isinstance(self.cursor, PolicyFindingPageCursor):
-                raise ValueError("policy_finding_cursor_invalid")
-            if (
-                self.cursor.filter_digest != filter_digest
-                or self.cursor.projection_digest != projection_digest
-            ):
-                raise GuidelinePolicyInvalidCursor(
-                    "policy_finding_cursor_context_mismatch"
-                )
-
-
-@dataclass(frozen=True, slots=True)
-class PolicyWaiverListQuery:
-    board_id: str
-    evaluated_at: datetime
-    limit: int = 50
-    cursor: PolicyWaiverPageCursor | None = None
-    finding_id: str | None = None
-    receipt_id: str | None = None
-    guideline_id: str | None = None
-    revision_id: str | None = None
-    rule_id: str | None = None
-    entity_type: PolicyEntityType | None = None
-    subject_id: str | None = None
-    subject_version: int | None = None
-    subject_edition: int | None = None
-    status: PolicyWaiverStatus | None = None
-    projection: PolicyProjection = PolicyProjection.SUMMARY
-    filter_digest: str = field(init=False)
-    projection_digest: str = field(init=False)
-
-    ordering = POLICY_WAIVER_ORDERING
-
-    def __post_init__(self) -> None:
-        object.__setattr__(
-            self,
-            "board_id",
-            _bounded_text(
-                self.board_id,
-                POLICY_BOARD_ID_MAX_LENGTH,
-                "policy_waiver_board_id_required",
-            ),
-        )
-        if (
-            not isinstance(self.evaluated_at, datetime)
-            or self.evaluated_at.tzinfo is None
-            or self.evaluated_at.utcoffset() is None
-        ):
-            raise ValueError("policy_waiver_evaluated_at_invalid")
-        object.__setattr__(
-            self,
-            "evaluated_at",
-            self.evaluated_at.astimezone(timezone.utc),
-        )
-        for field_name, max_length in (
-            ("finding_id", POLICY_FINDING_ID_MAX_LENGTH),
-            ("receipt_id", POLICY_RECEIPT_ID_MAX_LENGTH),
-            ("guideline_id", GUIDELINE_ID_MAX_LENGTH),
-            ("revision_id", GUIDELINE_REVISION_ID_MAX_LENGTH),
-            ("rule_id", POLICY_RULE_ID_MAX_LENGTH),
-            ("subject_id", POLICY_SUBJECT_ID_MAX_LENGTH),
-        ):
-            object.__setattr__(
-                self,
-                field_name,
-                _bounded_optional_text(
-                    getattr(self, field_name),
-                    max_length,
-                    f"policy_waiver_{field_name}_invalid",
-                ),
-            )
-        object.__setattr__(self, "limit", _limit(self.limit))
-        if self.entity_type is not None and not isinstance(
-            self.entity_type,
-            PolicyEntityType,
-        ):
-            raise ValueError("policy_waiver_entity_type_invalid")
-        if self.subject_version is not None and (
-            not isinstance(self.subject_version, int)
-            or isinstance(self.subject_version, bool)
-            or not 1 <= self.subject_version <= POLICY_SQL_INTEGER_MAX
-        ):
-            raise ValueError("policy_waiver_subject_version_invalid")
-        if self.subject_edition is not None and (
-            not isinstance(self.subject_edition, int)
-            or isinstance(self.subject_edition, bool)
-            or not 1 <= self.subject_edition <= POLICY_SQL_INTEGER_MAX
-        ):
-            raise ValueError("policy_waiver_subject_edition_invalid")
-        if self.status is not None and not isinstance(
-            self.status,
-            PolicyWaiverStatus,
-        ):
-            raise ValueError("policy_waiver_status_invalid")
-        if not isinstance(self.projection, PolicyProjection):
-            raise ValueError("policy_waiver_projection_invalid")
-        filter_digest = canonical_sha256(
-            {
-                "contract": POLICY_KEYSET_CONTRACT_VERSION,
-                "kind": "waiver",
-                "board_id": self.board_id,
-                "evaluated_at": self.evaluated_at.isoformat(
-                    timespec="microseconds"
-                ).replace("+00:00", "Z"),
-                "finding_id": self.finding_id,
-                "receipt_id": self.receipt_id,
-                "guideline_id": self.guideline_id,
-                "revision_id": self.revision_id,
-                "rule_id": self.rule_id,
-                "entity_type": (
-                    self.entity_type.value if self.entity_type is not None else None
-                ),
-                "subject_id": self.subject_id,
-                "subject_version": self.subject_version,
-                "subject_edition": self.subject_edition,
-                "status": (self.status.value if self.status is not None else None),
-            }
-        )
-        projection_digest = canonical_sha256(
-            {
-                "contract": POLICY_KEYSET_CONTRACT_VERSION,
-                "kind": "waiver",
-                "projection": self.projection.value,
-            }
-        )
-        object.__setattr__(self, "filter_digest", filter_digest)
-        object.__setattr__(self, "projection_digest", projection_digest)
-        if self.cursor is not None:
-            if not isinstance(self.cursor, PolicyWaiverPageCursor):
-                raise ValueError("policy_waiver_cursor_invalid")
-            if (
-                self.cursor.filter_digest != filter_digest
-                or self.cursor.projection_digest != projection_digest
-            ):
-                raise GuidelinePolicyInvalidCursor(
-                    "policy_waiver_cursor_context_mismatch"
                 )
 
 
@@ -1801,7 +1487,6 @@ __all__ = [
     "GuidelineRevisionReplay",
     "GuidelineRevisionListQuery",
     "PolicyTransitionSnapshotResolver",
-    "PolicyWaiverListQuery",
     "SemanticAssessmentListQuery",
     "SemanticFindingListQuery",
     "SemanticGuidelineAssessmentPersistencePort",

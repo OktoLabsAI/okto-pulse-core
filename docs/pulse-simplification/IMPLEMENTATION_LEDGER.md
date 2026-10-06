@@ -2,6 +2,38 @@
 
 ## Estado para retomada
 
+### 2026-10-06 — C1/C3: paginação apenas nos contratos atuais
+
+Retirados PolicyReceiptPageCursor/PolicyFindingPageCursor/PolicyWaiverPageCursor,
+as três queries determinísticas, projeção/página de waiver e seus braços no
+codec assinado. Rastreio confirmou ausência de consumidores de produto externos
+a esses módulos. Revision/impact e os quatro cursores semânticos permanecem.
+B07 conserva suas três provas de paginação/assinatura com fixtures nativas;
+port_contract conserva janelas/enums/overflow usando queries nativas. Nenhum teste
+foi excluído. Nova prova recusa os três tipos antigos com assinatura HMAC válida,
+inclusive quando apresentados ao decoder semântico. B14 exige ausência real dos
+símbolos retirados e mantém as negações MCP.
+
+Ruff F/E9 e diff aprovados. Par dist-native-cursors1 instalado e byte a byte
+aprovado por provenance-native-cursors1.json (Core 844/906, Community 319/405).
+SHA Core 0f45fe84c8921ea705a23b4e4507191196b31ff9400bf4f243587aa3e6ea45e6;
+Community 2798c09846d6cfd6e098e59bfee5b7006b7db9dd1776297a9e8e7a50b435ce3f.
+native-cursors-core1: 82 aprovados. Community1 não coletou por import indireto
+de PolicyEntityType em fixture de impact_listing; import corrigido para o módulo
+público de origem. Varredura AST conjunta não encontrou outro import quebrado
+do módulo de projeções. Community2: 55 aprovados. Closure-native-cursors1: ok,
+findings/documentation_findings vazios e oito budgets current=limit=0.
+Todos os handles encerrados. Sem alteração de frontend nem Python após a prova.
+C1–C4 continuam abertos; não interpretar esta retirada como fechamento integral.
+Próximo remanescente confirmado: tipos determinísticos de guideline_policy e
+cinco models SQL antigos (receipt/adopted_revision/finding/waiver/event). Além
+dos models, consumidores persistem em purge/residuals de Board, exportação,
+manifesto de schema e listas de mutation tracking; retirar a cadeia coordenada.
+Aliases MCP PolicyWaiverStatusValue/DecisionValue nomeiam o contrato semântico
+atual e não devem ser apagados por coincidência textual. Testes Core mistos:
+B07, B10 transition_gate, B14 e guideline_domain_contract; adaptar as partes
+atuais e registrar disposição das exclusivas antes de excluir os tipos.
+
 ### 2026-10-06 — C1/C3: retirar projeções determinísticas órfãs
 
 Publicado Core ed111904, push confirmado; Community permanece em 1d69350f,
