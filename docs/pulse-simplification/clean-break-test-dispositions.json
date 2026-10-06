@@ -1165,6 +1165,21 @@
       "path": "okto_labs_pulse_community/tests/telemetry_behavioral/test_telemetry_delta_batch.py::test_classify_trust_state_canonical_matrix",
       "disposition": "superseded",
       "reason": "Unused classifier for historical pre-fix/backfill formats removed. Current delta and snapshot wire markers and endpoint separation remain tested behaviorally; no historical classification service remains."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_cli_init.py::test_af14_ts6_api_key_cli_preserves_governed_legacy_plaintext",
+      "disposition": "superseded",
+      "reason": "Persisted plaintext recovery/export retired for clean-break 0.4.0. Replacement requires explicit handoff, refuses DB recovery without reads or writes, and exports only freshly revealed credentials."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_cli_init.py::test_af14_ts6_mcp_export_skips_deferred_markers_but_exports_revealed_and_legacy",
+      "disposition": "superseded",
+      "reason": "Persisted plaintext recovery/export retired for clean-break 0.4.0. Replacement requires explicit handoff, refuses DB recovery without reads or writes, and exports only freshly revealed credentials."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_hnd2_credential_surface_gate.py::test_hnd2_init_reveals_returned_key_but_not_persisted_marker",
+      "disposition": "superseded",
+      "reason": "Expanded into parameterized native primary-commit delivery test: valid callback still reveals once; missing callback is refused without revealing the returned tuple credential."
     }
   ],
   "adapted_suites": [

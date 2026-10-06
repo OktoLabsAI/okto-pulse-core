@@ -2,7 +2,40 @@
 
 ## Estado para retomada
 
-### 2026-10-06 — C1/C3 em andamento: contrato atual de telemetria
+### 2026-10-06 — C1/C3: CLI sem export de credencial antiga
+
+Retirada exportacao governed_legacy_plaintext: cmd_api_key exige handoff
+explicito e nao acessa banco; _generate_mcp_json consulta somente nomes e exporta
+somente chaves reveladas pela chamada de criacao. Helpers/classificacao antigos
+e excecao no gate de credenciais removidos. Handoff atomico reveal-once preservado.
+Par dist-native-credentials1 instalado; provenance-native-credentials1 aprovada
+byte a byte (843/905 Core, 319/405 Community). Community1: 36 aprovados/uma falha
+real no bootstrap: seed.py ainda usava coluna Agent.permissions retirada.
+Corrigido INSERT para o schema nativo, sem restaurar coluna ou conversor.
+Closure1 aprovada com oito budgets zero. Documentacao CLI/Docker atualizada;
+Par dist-native-credentials2 instalado e comprovado byte a byte.
+Community2: 52 aprovados, incluindo instalacao real offline, seed Demo,
+recuperacao de seed interrompido, WAL, handoff, gate HND2 e README.
+Closure2 aprovada, oito budgets zero. Retirado tambem fallback CLI para seed
+antigo que devolvia tupla sem entregar ao sink no commit. A falta de entrega
+agora e erro explicito, sem revelar a chave retornada; callback nativo preservado.
+Par dist-native-credentials3 instalado e provenance-native-credentials3 aprovada,
+mesmas contagens. Community3: 53 aprovados, incluindo instalacao real offline,
+recuperacao nativa, callback obrigatorio, handoff e negações sem leitura/escrita.
+Closure3 aprovada: findings/documentation_findings vazios, oito budgets
+current=limit=0. Ruff F/E9 e diff aprovados. SHA Core
+4a98260b44aee10356779015b31084350811569b196e6bfa7d0b89950e110647;
+Community b4877b1721e9fc46e00f374f684b84d90c7dc71368bd9dac804e935745dd4880.
+Todos os handles encerrados. Frontend nao alterado nesta etapa.
+Nenhuma base/processo real alterado. C1-C4 e T23/KG-10 permanecem abertos;
+este incremento nao certifica entrega integral.
+Proximo residuo ja identificado no inventario: KGHealthView.computeTickInfo
+reconstroi estado do scheduler de last_decay_tick_at quando faltam os diagnosticos
+atuais. Rastrear produtor do DTO; retirar inferencia antiga e mostrar ausencia
+explicitamente, mantendo badge atual, polling e testes frontend. Nenhuma edicao
+dessa superficie foi feita nesta etapa.
+
+### 2026-10-06 — C1/C3: contrato atual de telemetria e progresso KG
 
 Bases Core 509ad99c / Community a52a15fc, limpas e publicadas.
 Confirmado classify_trust_state sem caller produtivo; retirados classificador
@@ -31,6 +64,8 @@ findings/documentation_findings vazios, oito budgets current=limit=0.
 SHA Core 4a98260b44aee10356779015b31084350811569b196e6bfa7d0b89950e110647;
 Community 01b0df59ac106a352bb8a5c57197b6686d9d839916afa4e9071496209547cfbf.
 Todos os handles encerrados. Nenhuma base/processo real alterado.
+Publicado em feature/v0.4.0: Core 1452ec13 / Community 5d63a7f9;
+ambos os pushes confirmados.
 C1-C4 e decisoes T23/KG-10 continuam abertos; entrega total nao certificada.
 ArchitecturePropagationLegacyReport foi investigado: detecta fonte copiada que
 se tornou inelegivel no contrato atual, sem converter/importar registros. Sua
