@@ -381,7 +381,6 @@ class CoreKnowledgeGraphOperations:
         *,
         profile: str,
         surface: str,
-        artifact_ref: str | None,
         scheduler_control: object | None = None,
     ) -> dict[str, object]:
         from okto_pulse.core.services.kg_health_readiness_service import (
@@ -393,7 +392,6 @@ class CoreKnowledgeGraphOperations:
             self.__relational_context,
             profile=profile,
             surface=surface,
-            artifact_ref=artifact_ref,
             scheduler_control=scheduler_control,
         )
 

@@ -143,13 +143,11 @@ Both `profile=summary` and `profile=full` expose:
   Missing observations stay unavailable/unknown, never zero or healthy.
 
 `profile=full` ADDS the prose `health_issues` + `root_cause`. An invalid profile
-returns `invalid_profile` (HTTP 400 on REST). The deprecated `artifact_ref`
-argument is accepted for compatibility; observations remain Board-scoped.
+returns `invalid_profile` (HTTP 400 on REST). Observations are Board-scoped.
 
 Args:
     board_id: Board UUID.
     profile: "summary" (default) or "full".
-    artifact_ref: Deprecated compatibility input; does not narrow Board signals.
 
 Returns:
     JSON `{board_id, profile, overall_state, cognitive_enforcement_mode,

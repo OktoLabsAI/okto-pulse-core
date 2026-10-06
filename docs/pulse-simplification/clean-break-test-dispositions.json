@@ -3928,6 +3928,16 @@
       "path": "okto_labs_pulse_community/tests/test_metrics_cli.py::test_metrics_cli_legacy_local_only_maps_to_off_export_and_purge",
       "disposition": "replaced",
       "reason": "Telemetry conversion/notice removed. Current consent, state preservation, export/purge and privacy retained; unsupported modes and retired route have explicit no-write refusal tests."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_health_readiness_aggregate_retirement.py::artifact_ref parameter dimension",
+      "disposition": "replaced",
+      "reason": "Retired unused compatibility input; Board output refs, privacy, profile and enforcement oracles retained. MCP schema and REST reject the removed input before reader access."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_operational_rest_access_hardening.py::test_health_readiness_transports_unknown_debt_without_numeric_coercion[legacy]",
+      "disposition": "removed",
+      "reason": "Mock-only unsupported profile removed; current summary/full transport null semantics retained. Real service invalid-profile tests remain."
     }
   ]
 }

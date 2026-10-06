@@ -18951,7 +18951,6 @@ async def okto_pulse_kg_health(board_id: str, profile: str = "summary") -> str:
 async def okto_pulse_kg_health_readiness(
     board_id: str,
     profile: str = "summary",
-    artifact_ref: str = "",
 ) -> str:
     """Canonical NON-MASKABLE KG health/readiness. REST twin: GET
     /api/v1/kg/health-readiness (RKG-05). Both summary and full expose
@@ -18961,7 +18960,7 @@ async def okto_pulse_kg_health_readiness(
     top-level cognitive_enforcement_mode / enforcement_active, and
     non_maskable_items (bounded Board aggregates, without row IDs or raw errors).
     A summary never hides a technical blocker; full adds prose health_issues +
-    root_cause. Deprecated artifact_ref is accepted for compatibility; signals remain Board-scoped.
+    root_cause. Signals remain Board-scoped.
     Profiles: okto-pulse://reference/projection-profiles.
     Docs: okto-pulse://reference/tool-docs/kg.
     """
@@ -19015,7 +19014,6 @@ async def okto_pulse_kg_health_readiness(
                     board_id,
                     profile=profile,
                     surface="mcp",
-                    artifact_ref=(artifact_ref or None),
                     scheduler_control=get_scheduler_control_for_mcp(),
                 ),
                 actor=actor,

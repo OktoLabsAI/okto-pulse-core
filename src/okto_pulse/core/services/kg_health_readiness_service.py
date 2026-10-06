@@ -156,7 +156,6 @@ async def build_health_readiness(
     *,
     profile: str = "summary",
     surface: str = "rest",
-    artifact_ref: str | None = None,
     scheduler_control: SchedulerControl | None = None,
 ) -> dict[str, Any]:
     """api_1feb6875: the canonical health/readiness projection.
@@ -182,7 +181,6 @@ async def build_health_readiness(
     )
     counters = build_technical_signal_counters(health)
     debt_unavailable = counters["canonical_debt_open_count"] is None
-    # Deprecated compatibility input: artifact_ref no longer selects technical rows.
     # Infrastructure status is Board-scoped; semantic artifact queries remain separate.
     items = _non_maskable_items(board_id, health)
 

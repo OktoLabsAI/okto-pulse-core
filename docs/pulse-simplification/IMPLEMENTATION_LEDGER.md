@@ -2,6 +2,21 @@
 
 ## Estado para retomada
 
+### 2026-10-06 — C1/C3 em andamento: health-readiness sem entrada obsoleta
+
+Bases Core 71f67e4b / Community 5019a520, limpas/publicadas. artifact_ref nao
+era consumido pelo reader: somente encaminhado por MCP/REST/use case/porta.
+Retirada coordenada da entrada; mantidos artifact_ref dos agregados de saida
+por Board e filtro de auditoria distinto. REST recusa query fora do contrato.
+Catálogos SK-A/MCP regenerados oficialmente. Testes negativos MCP/schema e REST
+confirmam recusa antes de auth/reader; privacidade, perfis e bloqueadores mantidos.
+Par dist-native-readiness1 instalado; provenance-native-readiness1 comprova bytes
+src/install/wheel: Core 843/905, Community 319/405. Core1: 78 aprovados;
+Community1: 40 aprovados. Closure1 aprovada, oito budgets zero.
+Ruff F/E9 e diff aprovados. Frontend sem consumidor da entrada removida.
+Todos os handles encerrados. C1-C4 continuam abertos, sem entrega total.
+Decisões T23/KG-10 reapresentadas ao usuário; trabalho independente continua.
+
 ### 2026-10-06 — C1/C3: scheduler sem fallback antigo
 
 Bases Core c06a6b67 / Community 05dac918, limpas/publicadas. Produtor Core sempre

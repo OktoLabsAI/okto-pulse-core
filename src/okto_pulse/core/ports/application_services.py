@@ -654,7 +654,6 @@ class KnowledgeGraphOperations(Protocol):
         *,
         profile: str,
         surface: str,
-        artifact_ref: str | None,
         scheduler_control: object | None = None,
     ) -> dict[str, object]: ...
 

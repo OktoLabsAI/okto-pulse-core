@@ -10,9 +10,8 @@ from okto_pulse.core.services import kg_health_service as health_service
 @pytest.mark.asyncio
 @pytest.mark.parametrize("profile", ["summary", "full"])
 @pytest.mark.parametrize("enforcement", [False, True])
-@pytest.mark.parametrize("artifact_ref", [None, "spec:foreign-or-sensitive"])
 async def test_aggregates_do_not_read_rows_or_expose_errors_and_preserve_policy(
-    monkeypatch, profile, enforcement, artifact_ref,
+    monkeypatch, profile, enforcement,
 ):
     snapshot = {
         "overall_state": "degraded",
@@ -45,7 +44,7 @@ async def test_aggregates_do_not_read_rows_or_expose_errors_and_preserve_policy(
     monkeypatch.setattr(health_service, "get_kg_health", get_health)
     monkeypatch.setattr(readiness, "_enforcement_active", active)
     result = await readiness.build_health_readiness(
-        "authorized-board", object(), profile=profile, artifact_ref=artifact_ref,
+        "authorized-board", object(), profile=profile,
     )
     items = result["non_maskable_items"]
     assert len(items) == 5

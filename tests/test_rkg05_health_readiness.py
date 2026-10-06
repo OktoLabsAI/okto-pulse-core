@@ -95,10 +95,10 @@ async def test_ts3_skip_cannot_reduce_or_hide_technical_signal(db_factory):
     ref = f"spec:{aid}"
 
     # The signal is derived from health, NOT from any cognitive verdict, so even
-    # scoped to the (potentially skipped) artifact the DLQ is fully surfaced.
+    # when an artifact is skipped, the Board DLQ is fully surfaced.
     async with db_factory() as db:
         hr = await build_health_readiness(
-            board_id, db, profile="summary", artifact_ref=ref)
+            board_id, db, profile="summary")
 
     items = hr["non_maskable_items"]
     assert any(i["artifact_ref"] == f"board:{board_id}" and i["signal"] == "technical_dlq" for i in items)

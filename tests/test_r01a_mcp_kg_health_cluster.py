@@ -108,7 +108,7 @@ async def _expected_health(board_id: str, profile: str) -> dict:
     return json.loads(json.dumps(projected, default=str))
 
 
-async def _expected_readiness(board_id: str, profile: str, artifact_ref: str) -> dict:
+async def _expected_readiness(board_id: str, profile: str) -> dict:
     from okto_pulse.core.infra.database import get_session_factory
     from okto_pulse.core.services.kg_health_readiness_service import (
         InvalidProfileError,
@@ -120,7 +120,6 @@ async def _expected_readiness(board_id: str, profile: str, artifact_ref: str) ->
         try:
             data = await build_health_readiness(
                 board_id, db, profile=profile, surface="mcp",
-                artifact_ref=(artifact_ref or None),
             )
         except InvalidProfileError:
             from okto_pulse.core.mcp.projection_envelope import (
@@ -219,9 +218,9 @@ async def test_kg_health_matches_reader_for_unknown_board() -> None:
 async def test_kg_health_readiness_matches_reader_for_seeded_board() -> None:
     board_id = f"fu4-ready-{uuid.uuid4().hex[:8]}"
     await _seed_board(board_id)
-    expected = await _expected_readiness(board_id, "summary", "")
+    expected = await _expected_readiness(board_id, "summary")
     with patch.object(mcp_server, "_get_agent_ctx", AsyncMock(return_value=_stub_ctx())):
-        raw = await _call(READINESS_TOOL, board_id=board_id, profile="summary", artifact_ref="")
+        raw = await _call(READINESS_TOOL, board_id=board_id, profile="summary")
     payload = json.loads(raw)
     assert _key_shape(payload) == _key_shape(expected)
     # A bounded health probe may finish between these two independent live
@@ -241,11 +240,11 @@ async def test_kg_health_readiness_invalid_profile_parity() -> None:
     """A rejected reader profile maps to the canonical MCP projection error."""
     board_id = f"fu4-badprofile-{uuid.uuid4().hex[:8]}"
     await _seed_board(board_id)
-    expected = await _expected_readiness(board_id, "definitely-not-a-profile", "")
+    expected = await _expected_readiness(board_id, "definitely-not-a-profile")
     with patch.object(mcp_server, "_get_agent_ctx", AsyncMock(return_value=_stub_ctx())):
         raw = await _call(
             READINESS_TOOL, board_id=board_id,
-            profile="definitely-not-a-profile", artifact_ref="",
+            profile="definitely-not-a-profile",
         )
     assert json.loads(raw) == expected
 
@@ -290,7 +289,6 @@ async def test_kg_health_readiness_denies_without_ct_authority() -> None:
             READINESS_TOOL,
             board_id=board_id,
             profile="summary",
-            artifact_ref="",
         )
 
     assert json.loads(raw)["error"]["code"] == "permission_denied"
@@ -353,3 +351,13 @@ def test_all_mcp_handlers_use_the_unit_of_work_boundary() -> None:
                 if isinstance(n, ast.Name) and n.id == "get_db_for_mcp"
             )
     assert other_uses == 0
+
+
+@pytest.mark.asyncio
+async def test_readiness_rejects_retired_artifact_input_before_auth() -> None:
+    tool = await mcp_server.mcp.get_tool(READINESS_TOOL)
+    assert "artifact_ref" not in tool.parameters["properties"]
+    with patch.object(mcp_server, "_get_agent_ctx", AsyncMock()) as auth:
+        with pytest.raises(TypeError, match="artifact_ref"):
+            await tool.fn(board_id="board-b", artifact_ref="spec:old")
+    auth.assert_not_awaited()

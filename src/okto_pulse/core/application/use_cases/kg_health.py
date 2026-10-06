@@ -90,20 +90,18 @@ class GetKgHealthReadinessCommand:
     non-maskable projection per caller); the adapter supplies its own value.
     """
 
-    __slots__ = ("board_id", "profile", "artifact_ref", "surface", "scheduler_control")
+    __slots__ = ("board_id", "profile", "surface", "scheduler_control")
 
     def __init__(
         self,
         board_id: str,
         *,
         profile: str = "summary",
-        artifact_ref: str | None = None,
         surface: str = "mcp",
         scheduler_control: SchedulerControl | None = None,
     ) -> None:
         self.board_id = board_id
         self.profile = profile
-        self.artifact_ref = artifact_ref
         self.surface = surface
         self.scheduler_control = scheduler_control
 
@@ -139,7 +137,6 @@ class GetKgHealthReadinessUseCase:
             command.board_id,
             profile=command.profile,
             surface=command.surface,
-            artifact_ref=command.artifact_ref,
             scheduler_control=command.scheduler_control,
         )
         return GetKgHealthReadinessResult(data=data)
