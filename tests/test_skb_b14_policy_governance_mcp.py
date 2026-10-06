@@ -577,6 +577,14 @@ def test_policy_v1_python_names_and_evaluator_modules_are_removed() -> None:
         "assess_policy_receipt_currentness",
         "project_policy_compliance_receipt",
     }.isdisjoint(guideline_compliance.__all__)
+    for removed_name in (
+        "PolicyComplianceCurrentSnapshot", "PolicyCurrentnessReason",
+        "PolicyComplianceFindingPage", "PolicyComplianceReceiptPage",
+        "assess_policy_receipt_currentness", "project_policy_compliance_receipt",
+        "project_policy_compliance_finding",
+    ):
+        assert not hasattr(guideline_compliance, removed_name)
+    assert not hasattr(policy_ports, "PolicyComplianceCurrentSnapshotResolver")
     assert {
         "GuidelineImpactItemPage",
         "GuidelineRevisionProjectionPage",

@@ -19,7 +19,6 @@ from okto_pulse.core.domain.guideline_compliance import (
     POLICY_KEYSET_CONTRACT_VERSION,
     POLICY_RECEIPT_ORDERING,
     POLICY_WAIVER_ORDERING,
-    PolicyComplianceCurrentSnapshot,
     PolicyFindingPageCursor,
     PolicyImpactPageCursor,
     PolicyProjection,
@@ -1360,19 +1359,6 @@ class SemanticSkipListQuery:
 
 
 @runtime_checkable
-class PolicyComplianceCurrentSnapshotResolver(Protocol):
-    """Server-owned live-fence resolver used for honest read projections."""
-
-    async def resolve_current_snapshot(
-        self,
-        *,
-        board_id: str,
-        entity_type: PolicyEntityType,
-        subject_id: str,
-    ) -> PolicyComplianceCurrentSnapshot | None: ...
-
-
-@runtime_checkable
 class PolicyTransitionSnapshotResolver(Protocol):
     """Resolve one gate snapshot inside the caller-owned unit of work.
 
@@ -1424,13 +1410,6 @@ class SemanticGuidelineAssessmentPersistencePort(Protocol):
         binding_id: str,
         lock: bool = False,
     ) -> NativeSemanticAssessmentCurrentSnapshot | None: ...
-
-
-
-
-
-
-
 
 
     async def get_semantic_waiver_by_idempotency(

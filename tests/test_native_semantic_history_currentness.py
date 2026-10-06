@@ -60,6 +60,29 @@ def test_uneditioned_history_reports_each_native_fence_without_global_legacy_dig
     ]
 
 
+@pytest.mark.parametrize("field,expected", [
+    ("subject_version", "subject_version_changed"),
+    ("content_digest", "subject_content_changed"),
+    ("binding_revision", "binding_revision_changed"),
+    ("configuration_digest", "binding_configuration_changed"),
+])
+def test_native_fences_report_isolated_changes(field, expected):
+    receipt, subject, binding, revision = _fixture()
+    if field == "subject_version":
+        subject = replace(subject, subject=replace(subject.subject, subject_version=9))
+    elif field == "content_digest":
+        subject = replace(subject, content_digest="f" * 64)
+    elif field == "binding_revision":
+        binding = replace(binding, binding_revision=binding.binding_revision + 1)
+    else:
+        binding = replace(binding, minimum_confidence=81, configuration_digest=None)
+    state = assess_native_semantic_assessment_currentness(
+        receipt, subject=subject, binding=binding, revision=revision,
+    )
+    assert state.currentness is PolicyCurrentness.STALE
+    assert [reason.value for reason in state.reasons] == [expected]
+
+
 def test_missing_authority_is_unavailable_and_cross_board_snapshot_is_rejected():
     receipt, subject, binding, revision = _fixture()
     for snapshot in (None, subject):

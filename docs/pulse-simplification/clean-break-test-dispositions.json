@@ -3457,6 +3457,36 @@
       "reason": "Predecessor receipt contract removed. Community test_native_semantic_admission.py: subject/binding/revision fences rejected; edition guard remains in v2 persistence suite.",
       "test": "test_admission_fails_closed_on_stale_exact_fences",
       "disposition": "superseded"
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_skb_b07_guideline_compliance.py",
+      "test": "test_currentness_is_complete_and_missing_snapshot_fails_closed",
+      "disposition": "superseded",
+      "reason": "Predecessor deterministic read projection removed. test_native_semantic_history_currentness.py: native current receipt and missing authority rejection."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_skb_b07_guideline_compliance.py",
+      "test": "test_each_normative_fence_has_one_exact_stale_reason",
+      "disposition": "superseded",
+      "reason": "Predecessor deterministic read projection removed. test_native_semantic_history_currentness.py: independent native subject/binding/revision fences. Deterministic catalog/ruleset/input aggregate have no native equivalent and are retired."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_skb_b07_guideline_compliance.py",
+      "test": "test_currentness_reports_all_independent_fences_and_suppresses_only_input",
+      "disposition": "superseded",
+      "reason": "Predecessor deterministic read projection removed. test_native_semantic_history_currentness.py: simultaneous native fences and edition dominance. No obsolete aggregate input digest."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_skb_b07_guideline_compliance.py",
+      "test": "test_summary_is_slim_and_detail_preserves_frozen_evidence",
+      "disposition": "superseded",
+      "reason": "Predecessor deterministic read projection removed. test_skb3_semantic_guideline_projection_contract.py::test_summary_detail_full_allowlists_are_structurally_closed: native summary/detail/full evidence."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_skb_b07_guideline_compliance.py",
+      "test": "test_finding_projection_and_severity_are_deterministic",
+      "disposition": "superseded",
+      "reason": "Predecessor deterministic read projection removed. test_skb31_semantic_guideline_v2_findings.py and native projection contract: current pinpoint severity, immutable finding identity and evidence. Retired rule severity ranks do not govern native findings."
     }
   ]
 }

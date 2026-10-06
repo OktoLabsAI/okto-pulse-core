@@ -2,7 +2,35 @@
 
 ## Estado para retomada
 
+### 2026-10-06 — C1/C3: retirar projeções determinísticas órfãs
+
+Rastreio conjunto dos dois repos encontrou apenas a suíte B07 como consumidora
+das projeções/currentness de recibos determinísticos; o resolver Protocol não
+possui implementação nem chamada. Retirados snapshot, comparador, projeções de
+receipt/finding, páginas tipadas e ranking antigos. Preservados projeções de
+revisão, cursores assinados e contratos ainda referenciados. Cinco testes antigos
+têm disposição individual e substitutos nativos; as partes restantes da suíte
+mista foram preservadas. Quatro casos nativos adicionais verificam motivos
+isolados de stale; teste de superfície exige ausência real dos símbolos retirados.
+
+Ruff F/E9 e diff aprovados. Par dist-deterministic-read1 instalado e igualdade
+byte a byte confirmada por provenance-deterministic-read1.json: Core 844/906,
+Community 319/405. SHA Core
+78c7acc15fa865cc52e118507ea6ffe338f0848e06889f06b9b7587b097b4372;
+Community 2798c09846d6cfd6e098e59bfee5b7006b7db9dd1776297a9e8e7a50b435ce3f.
+deterministic-read-core1: 92 aprovados/uma falha de fixture usando digest vazio;
+fixture corrigida para None e recálculo normativo, sem alteração de produto.
+deterministic-read-core2: dez aprovados, total distinto aplicável 93.
+deterministic-read-community1: dez aprovados. Closure-deterministic-read1: ok,
+findings/documentation_findings vazios e oito budgets current=limit=0.
+Todos os handles encerrados. Sem alteração de frontend.
+C1–C4 permanecem abertos. Próximo ramo a investigar: cursores/queries e waiver
+determinísticos ainda declarados; preservar revision/impact e cursores semânticos.
+
 ### 2026-10-06 — C1/C3: retirar motivos de currentness exclusivos do predecessor
+
+Publicado em feature/v0.4.0: Core f290836 / Community 1d69350; ambos os pushes
+confirmados. Restante do plano C1–C4 permanece aberto.
 
 Retirados policy_set_changed/binding_head_changed/input_digest_changed somente
 de SemanticAssessmentCurrentnessReason, mapa de revalidação, guard SQL de evento
