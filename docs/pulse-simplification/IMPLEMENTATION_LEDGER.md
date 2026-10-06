@@ -38,8 +38,8 @@ manual. Ruff F/E9 e diff aprovados. SHA Core
 222a754b2666dc1368d2d00f675c632f1117f4978554645bfd06928835272561;
 Community 551cce92e4d211fba8987eaec3652f6835db1bb3491f0ea0e32b752352311311.
 Todos os handles encerrados. Nenhum Python de produto mudou desde a prova do par.
-Nenhuma base ou processo real foi alterado. Commits/pushes deste incremento
-pendentes de registro final.
+Nenhuma base ou processo real foi alterado. Publicado em feature/v0.4.0:
+Core 7ff14414 / Community 4a10cce0, ambos os pushes confirmados.
 
 Próxima dependência concreta: LEGACY_PERMISSION_MAP/_CANONICAL_TO_LEGACY_TOKENS
 em domain/permissions.py ainda sustentam fallback de PermissionContext.legacy_operation;
