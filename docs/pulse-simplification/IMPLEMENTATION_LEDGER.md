@@ -2,6 +2,55 @@
 
 ## Estado para retomada
 
+### 2026-10-06 — C1/C3: autorização sem fallback de operação legada
+
+Bases Core 5db02cea / Community 4a10cce0. Retirada coordenada do fallback
+central, tabela inversa flat, metadados legacy_compatible/recover_all_false_materialization,
+parâmetros legacy_operation/legacy_permission/legacy_fallback e alternativas MCP/KG/story.
+Casos de uso e rotas Community consomem a operação canônica exata. Operações não
+registradas são recusadas inclusive com sentinela local. Conjunções entre folhas
+canônicas permanecem: não são conversores. Preservados owner_review, Board,
+interact_in, negações explícitas e limites de papel. Checklist/RDL usam suas
+precondições nativas. Não foram acrescentadas exceções arquiteturais.
+
+Testes exclusivos de fallback positivo substituídos por recusa e concessão
+canônica; disposição individual no JSON. Testes mistos preservam writers,
+commits, escopo, estado e grants nativos. Catálogos regenerados oficialmente.
+Corrigida tupla singleton no manifesto SK-A durante a validação; teste agora
+recusa serialização acidental em caracteres. Nenhum catálogo editado à mão.
+
+Evidências em PULSE_REFACTOR/.validation-v040:
+- native-operation-core1: 483 aprovados/78 falhas, sobretudo expectativas antigas.
+  core2: 556/5; core3: 62 aprovados, incluindo as cinco correções de fixture.
+- native-operation-core4: 51/1; core5: 4/1. Ambas as falhas restantes eram a
+  expectativa classify_legacy retirada por 55c05bc6 (contagem e presença).
+  core6: cinco aprovados. Total distinto atual Core: 613 casos aprovados.
+- native-operation-community1: 115/16. community2: 28/5, após recusa de tokens
+  e criação explícita da autoria semântica da fixture. community3: dez aprovados
+  com porta Knowledge registrada. Total distinto atual Community: 131.
+  Nenhuma asserção de entrega foi relaxada. Aviso de thread SQLite apareceu nas
+  rodadas com falha e não na última rodada aprovada.
+- native-operation-front1: 161 aprovados (permissões/painel de agentes).
+  Produto frontend e assets não mudaram nesta etapa.
+- Par dist-native-operation2 instalado e proveniência byte a byte aprovada.
+  Closure2: apenas matrizes README divergentes; findings vazio e oito budgets zero.
+  Matrizes regeneradas oficialmente, novo par dist-native-operation3 instalado.
+  provenance-native-operation3: 843 Python/905 payload Core; 319/405 Community,
+  árvores src, install e wheels byte-idênticas.
+- closure-native-operation3 aprovada: findings/documentation_findings vazios,
+  oito budgets current=limit=0. Python de produto idêntico ao par2; entre pares
+  somente README mudou. Ruff F/E9 aprovado. Não houve teste contra install stale.
+- SHA256 final Core 16b16678c895805bac7051a2e14ab4d8711dae860b3cc888011fc7e2a3851bd6;
+  Community 2ea86bd67a6120875036187356edde125dc880d5400e8ae5d7e4fd4bb4188d23.
+
+Nenhuma base ou processo real alterado. Versão de produto ainda 0.3.4;
+bump coordenado é C4. Commit/push deste incremento em andamento.
+Próxima dependência concreta: classe Permissions de constantes colon e reexports
+sem consumidores produtivos restantes; ainda usada em testes. Rastrear e retirar
+essa superfície exclusiva. Não remover conjunções nativas ou composição de
+presets pelo nome historical. C1–C4 e decisões T23/KG-10 continuam abertos;
+este incremento não certifica a entrega integral.
+
 ### 2026-10-06 — C1/C3: contrato nativo de permissões de Agent
 
 Bases Core f3564c2d / Community 47df640c, limpas. Remoção coordenada da

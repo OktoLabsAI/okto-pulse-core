@@ -174,7 +174,6 @@ async def _get_comment_with_card_in_scope(
 
 def _stateful_requirement(
     operation: str,
-    legacy_operation: str,
     *,
     entity: str,
     parent: Any,
@@ -184,7 +183,6 @@ def _stateful_requirement(
     state = entity_state(parent)
     return PermissionRequirement(
         operation,
-        legacy_operation=legacy_operation,
         entity=entity if state is not None else None,
         state=state,
     )
@@ -298,7 +296,6 @@ class McpAskQuestionUseCase:
                 card_requirement(
                     "card.qa.ask",
                     state=entity_state(card),
-                    legacy_operation="qa:create",
                 ),
                 uow=uow,
                 board_id=card.board_id,
@@ -363,7 +360,6 @@ class McpAskQuestionUseCase:
                 actor,
                 _stateful_requirement(
                     f"{command.target_type}.qa.ask",
-                    "qa:create",
                     entity=command.target_type,
                     parent=parent,
                 ),
@@ -438,7 +434,6 @@ class McpAnswerQuestionUseCase:
             card_requirement(
                 "card.qa.answer",
                 state=entity_state(card),
-                legacy_operation="qa:answer",
             ),
             uow=uow,
             board_id=card.board_id,
@@ -508,7 +503,6 @@ class McpDeleteQuestionUseCase:
             card_requirement(
                 "card.qa.delete",
                 state=entity_state(card),
-                legacy_operation="qa:delete",
             ),
             uow=uow,
             board_id=card.board_id,
@@ -552,7 +546,6 @@ class McpAddCommentUseCase:
             card_requirement(
                 "card.comments.create",
                 state=entity_state(card),
-                legacy_operation="comments:create",
             ),
             uow=uow,
             board_id=card.board_id,
@@ -628,7 +621,6 @@ class McpAddChoiceCommentUseCase:
             card_requirement(
                 "card.comments.create_choice",
                 state=entity_state(card),
-                legacy_operation="comments:create",
             ),
             uow=uow,
             board_id=card.board_id,
@@ -716,7 +708,6 @@ class McpRespondToChoiceUseCase:
             card_requirement(
                 "card.comments.respond_choice",
                 state=entity_state(card),
-                legacy_operation="comments:create",
             ),
             uow=uow,
             board_id=card.board_id,
@@ -861,7 +852,6 @@ class McpUpdateCommentUseCase:
             card_requirement(
                 "card.comments.edit",
                 state=entity_state(card),
-                legacy_operation="comments:update",
             ),
             uow=uow,
             board_id=card.board_id,
@@ -931,7 +921,6 @@ class McpDeleteCommentUseCase:
             card_requirement(
                 "card.comments.delete",
                 state=entity_state(card),
-                legacy_operation="comments:delete",
             ),
             uow=uow,
             board_id=card.board_id,
@@ -990,7 +979,6 @@ class McpUploadAttachmentUseCase:
             card_requirement(
                 "card.attachments.upload",
                 state=entity_state(card),
-                legacy_operation="attachments:upload",
             ),
             uow=uow,
             board_id=card.board_id,
@@ -1119,7 +1107,6 @@ class McpDeleteAttachmentUseCase:
             card_requirement(
                 "card.attachments.delete",
                 state=entity_state(card),
-                legacy_operation="attachments:delete",
             ),
             uow=uow,
             board_id=card.board_id,
@@ -1176,7 +1163,6 @@ class McpCreateTopicUseCase:
             actor,
             PermissionRequirement(
                 "topic.entity.create",
-                legacy_operation="specs:create",
             ),
             uow=uow,
             board_id=command.board_id,
@@ -1242,7 +1228,6 @@ class McpUpdateTopicUseCase:
             actor,
             PermissionRequirement(
                 "topic.entity.edit_fields",
-                legacy_operation="specs:update",
             ),
             uow=uow,
             board_id=topic.board_id,
@@ -1313,7 +1298,6 @@ class McpSetTopicArchivedUseCase:
             actor,
             PermissionRequirement(
                 operation,
-                legacy_operation="specs:update",
             ),
             uow=uow,
             board_id=topic.board_id,
@@ -1387,7 +1371,6 @@ class McpDeleteTopicUseCase:
             actor,
             PermissionRequirement(
                 "topic.entity.delete",
-                legacy_operation="specs:delete",
             ),
             uow=uow,
             board_id=topic.board_id,
@@ -1465,7 +1448,6 @@ class McpMergeTopicsUseCase:
             actor,
             PermissionRequirement(
                 "topic.entity.merge",
-                legacy_operation="specs:update",
             ),
             uow=uow,
             board_id=source.board_id,

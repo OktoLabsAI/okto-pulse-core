@@ -27,7 +27,7 @@ For versioned guidelines prefer retirement/unlink as defined in
 | `okto_pulse_delete_topic` | The Topic. Only allowed when it has NO associated Stories, including archived ones (`topic_not_empty` otherwise). |
 | `okto_pulse_delete_test_scenario` | The scenario, AND its id is dropped from every card's `test_scenario_ids` in atomic CASCADE. Does not block on existing links — coverage gates may start failing. |
 | `okto_pulse_delete_architecture_design` | The Architecture Design. |
-| `okto_pulse_delete_design_system` | The Design System (admin write, `SPECS_UPDATE`). |
+| `okto_pulse_delete_design_system` | The Design System (admin write, `design_system.entity.delete`). |
 | `okto_pulse_delete_ideation_knowledge` / `okto_pulse_delete_refinement_knowledge` | The knowledge base item on the ideation/refinement. |
 | `okto_pulse_delete_ideation_question` / `okto_pulse_delete_refinement_question` / `okto_pulse_delete_spec_question` | The Q&A item on that entity, including any recorded answer. |
 | `okto_pulse_remove_card_dependency` | The dependency link between two cards (the cards survive; re-add to undo). |

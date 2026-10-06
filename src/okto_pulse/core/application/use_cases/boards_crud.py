@@ -325,7 +325,6 @@ class UpdateBoardUseCase:
             actor,
             PermissionRequirement(
                 "board.admin.edit",
-                legacy_operation="board.read",
             ),
             uow=uow,
             board_id=command.board_id,
@@ -421,7 +420,6 @@ class DeleteBoardUseCase:
             actor,
             PermissionRequirement(
                 "board.admin.delete",
-                legacy_operation="board.read",
             ),
             uow=uow,
             board_id=command.board_id,
@@ -786,7 +784,6 @@ class ArchiveTreeUseCase:
             actor,
             PermissionRequirement(
                 f"{command.entity_type}.entity.archive",
-                legacy_operation="specs:update",
             ),
             uow=uow,
             board_id=command.board_id,
@@ -846,7 +843,6 @@ class RestoreTreeUseCase:
             actor,
             PermissionRequirement(
                 f"{command.entity_type}.entity.restore",
-                legacy_operation="specs:update",
             ),
             uow=uow,
             board_id=command.board_id,
@@ -901,7 +897,6 @@ class ShareBoardUseCase:
             actor,
             PermissionRequirement(
                 "board.share.create",
-                legacy_operation="board.read",
             ),
             uow=uow,
             board_id=command.board_id,
@@ -960,7 +955,6 @@ class ListBoardSharesUseCase:
             actor,
             PermissionRequirement(
                 "board.share.read",
-                legacy_operation="board.read",
             ),
             uow=uow,
             board_id=command.board_id,
@@ -1003,7 +997,6 @@ class UpdateBoardShareUseCase:
             actor,
             PermissionRequirement(
                 "board.share.edit",
-                legacy_operation="board.read",
             ),
             uow=uow,
             board_id=command.board_id,
@@ -1055,7 +1048,7 @@ class RevokeBoardShareUseCase:
         )
         await require_authorization(
             actor,
-            PermissionRequirement(operation, legacy_operation="board.read"),
+            PermissionRequirement(operation),
             uow=uow,
             board_id=command.board_id,
         )

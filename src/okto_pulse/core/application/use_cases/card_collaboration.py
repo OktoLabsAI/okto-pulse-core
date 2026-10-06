@@ -292,7 +292,6 @@ class CreateCardCommentUseCase:
             card_requirement(
                 operation,
                 state=entity_state(card),
-                legacy_operation="comments:create",
             ),
             uow=uow,
             board_id=card.board_id,
@@ -342,7 +341,6 @@ class UpdateCardCommentUseCase:
             card_requirement(
                 "card.comments.edit",
                 state=entity_state(card),
-                legacy_operation="comments:update",
             ),
             uow=uow,
             board_id=card.board_id,
@@ -391,7 +389,6 @@ class RespondToChoiceCommentUseCase:
             card_requirement(
                 "card.comments.respond_choice",
                 state=entity_state(card),
-                legacy_operation="comments:create",
             ),
             uow=uow,
             board_id=card.board_id,
@@ -439,7 +436,6 @@ class DeleteCardCommentUseCase:
             card_requirement(
                 "card.comments.delete",
                 state=entity_state(card),
-                legacy_operation="comments:delete",
             ),
             uow=uow,
             board_id=card.board_id,
@@ -476,7 +472,6 @@ class CreateCardQuestionUseCase:
             card_requirement(
                 "card.qa.ask",
                 state=entity_state(card),
-                legacy_operation="qa:create",
             ),
             uow=uow,
             board_id=card.board_id,
@@ -536,7 +531,6 @@ class AnswerCardQuestionUseCase:
             card_requirement(
                 "card.qa.answer",
                 state=entity_state(card),
-                legacy_operation="qa:answer",
             ),
             uow=uow,
             board_id=card.board_id,
@@ -602,7 +596,6 @@ class DeleteCardQuestionUseCase:
             card_requirement(
                 "card.qa.delete",
                 state=entity_state(card),
-                legacy_operation="qa:delete",
             ),
             uow=uow,
             board_id=card.board_id,
@@ -643,7 +636,6 @@ class UploadCardAttachmentUseCase:
             card_requirement(
                 "card.attachments.upload",
                 state=entity_state(card),
-                legacy_operation="attachments:upload",
             ),
             uow=uow,
             board_id=card.board_id,
@@ -744,7 +736,6 @@ class DeleteCardAttachmentUseCase:
             card_requirement(
                 "card.attachments.delete",
                 state=entity_state(card),
-                legacy_operation="attachments:delete",
             ),
             uow=uow,
             board_id=card.board_id,

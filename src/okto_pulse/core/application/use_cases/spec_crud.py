@@ -308,7 +308,6 @@ class MoveSpecUseCase:
                 "spec",
                 existing.status,
                 command.data.status,
-                legacy_operation="specs:move",
             ),
             uow=uow,
             board_id=existing.board_id,
@@ -1125,7 +1124,6 @@ class SetTestScenarioStatusUseCase:
         requirement = (
             PermissionRequirement(
                 "spec.tests.execute",
-                legacy_operation="specs:update",
                 entity="spec",
                 state=entity_state(spec),
             )
@@ -1134,7 +1132,6 @@ class SetTestScenarioStatusUseCase:
                 "test_scenario",
                 current_status,
                 command.status,
-                legacy_operation="specs:update",
             )
         )
         await require_authorization(
@@ -1222,7 +1219,6 @@ class ExecuteTestScenarioEvidenceUseCase:
             actor,
             PermissionRequirement(
                 "spec.tests.execute",
-                legacy_operation="specs:update",
             ),
             uow=uow,
             board_id=spec.board_id,
@@ -1322,7 +1318,7 @@ class AdmitTestVerificationReportUseCase:
         from okto_pulse.core.services.test_scenario_lifecycle import compute_test_scenario_semantic_sha256
 
         spec = await _require_actor_board_spec(uow, command.spec_id, actor, write=True)
-        await require_authorization(actor, PermissionRequirement("spec.tests.execute", legacy_operation="specs:update"),
+        await require_authorization(actor, PermissionRequirement("spec.tests.execute"),
                                     uow=uow, board_id=spec.board_id)
         scenario = next((item for item in (spec.test_scenarios or [])
                          if isinstance(item, dict) and item.get("id") == command.scenario_id), None)
@@ -1917,7 +1913,6 @@ class DeleteSpecQuestionUseCase:
             actor,
             PermissionRequirement(
                 "spec.qa.delete",
-                legacy_operation="qa:delete",
             ),
             uow=uow,
             board_id=spec.board_id,
@@ -1976,7 +1971,7 @@ class SubmitSpecEvaluationUseCase:
         await require_authorization(
             actor,
             PermissionRequirement(
-                "spec.evaluations.submit", legacy_operation="specs:evaluate",
+                "spec.evaluations.submit",
             ),
             uow=uow,
             board_id=spec.board_id,

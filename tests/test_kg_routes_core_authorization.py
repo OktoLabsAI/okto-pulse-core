@@ -274,7 +274,7 @@ async def test_kg_writer_rejects_cross_board_actor_before_writer(
     ),
     _WRITERS,
 )
-async def test_kg_writer_accepts_flat_historical_authority_during_migration(
+async def test_kg_writer_requires_exact_operation(
     use_case_type: type,
     command_type: type,
     operation: str,
@@ -288,7 +288,7 @@ async def test_kg_writer_accepts_flat_historical_authority_during_migration(
         "rest",
         board_id=BOARD_ID,
         realm_id=LOCAL_REALM_ID,
-        permissions=[historical_authority],
+        permissions=[operation],
     )
 
     await use_case_type().execute(
@@ -340,7 +340,7 @@ async def test_delete_board_kg_holds_erasure_scope_and_global_writer_fence() -> 
         "rest",
         board_id=BOARD_ID,
         realm_id=LOCAL_REALM_ID,
-        permissions=["kg.admin.wipe_board"],
+        permissions=["kg.operations.board.erase"],
     )
 
     await DeleteBoardKgUseCase().execute(

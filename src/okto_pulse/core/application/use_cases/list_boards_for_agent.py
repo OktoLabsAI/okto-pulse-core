@@ -48,7 +48,6 @@ class ListBoardsForAgentUseCase:
             actor,
             PermissionRequirement(
                 "agent.board_access.read",
-                legacy_operation="board.read",
             ),
             uow=uow,
         )

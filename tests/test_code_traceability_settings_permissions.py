@@ -135,7 +135,7 @@ def test_code_traceability_permission_generation_is_fail_closed() -> None:
     manifest = CODE_TRACEABILITY_PERMISSION_INTRODUCTION_V1
     assert manifest in PERMISSION_INTRODUCTION_MANIFESTS
     assert manifest.version == "CODE-TRACEABILITY/v1"
-    assert manifest.legacy_compatible is False
+    assert not hasattr(manifest, "legacy_compatible")
     assert len(manifest.leaves) == 22
     assert len(ALL_FLAGS) == 537  # Legacy classification authority was removed.
     assert set(manifest.leaves) <= set(ALL_FLAGS)
@@ -150,15 +150,13 @@ def test_code_traceability_permission_generation_is_fail_closed() -> None:
     assert PermissionSet(_flags(operation, authority)).has(operation) is True
 
 
-def test_only_the_five_preexisting_migration_manifests_allow_legacy_fallback() -> None:
-    assert [
-        manifest.version
-        for manifest in PERMISSION_INTRODUCTION_MANIFESTS
-        if manifest.legacy_compatible
-    ] == [
-        "ADMIN-CATALOG/v1",
-        "OPERATIONAL/v1",
-        "MCP-GAPS/v1",
-        "KG-OPERATIONS/v1",
-        "SDLC-TRANSITIONS/v1",
-    ]
+def test_all_introduced_operations_refuse_retired_tokens() -> None:
+    from okto_pulse.core.domain.permissions import PermissionContext, evaluate_permission
+
+    for manifest in PERMISSION_INTRODUCTION_MANIFESTS:
+        for operation in manifest.leaves:
+            denied = evaluate_permission(PermissionContext(
+                operation=operation,
+                permissions=["board:read", "specs:update", "cards:move"],
+            ))
+            assert not denied.allowed, operation

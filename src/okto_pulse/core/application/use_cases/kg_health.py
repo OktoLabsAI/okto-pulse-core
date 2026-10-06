@@ -72,7 +72,6 @@ class GetKgHealthUseCase:
             actor,
             PermissionRequirement(
                 "kg.operations.health.read",
-                legacy_operation="kg.admin.settings_read",
             ),
             uow=uow,
             board_id=command.board_id,
@@ -132,7 +131,6 @@ class GetKgHealthReadinessUseCase:
             actor,
             PermissionRequirement(
                 "kg.operations.health.read",
-                legacy_operation="kg.admin.settings_read",
             ),
             uow=uow,
             board_id=command.board_id,

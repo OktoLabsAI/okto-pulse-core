@@ -335,7 +335,6 @@ class ExportDesignSystemsUseCase:
                 actor,
                 PermissionRequirement(
                     "design_system.export",
-                    legacy_operation="spec.architecture.read",
                 ),
                 uow=uow,
                 board_id=command.board_id,
@@ -355,7 +354,6 @@ class ExportDesignSystemsUseCase:
                 actor,
                 PermissionRequirement(
                     "design_system.export",
-                    legacy_operation="spec.architecture.read",
                 ),
                 uow=uow,
             )
@@ -415,7 +413,6 @@ class ImportDesignSystemsUseCase:
             actor,
             PermissionRequirement(
                 "design_system.import",
-                legacy_operation="spec.architecture.import",
             ),
             uow=uow,
         )
@@ -494,7 +491,6 @@ class ExportPresetsUseCase:
             actor,
             PermissionRequirement(
                 "permission_preset.export",
-                legacy_operation="board.read",
             ),
             uow=uow,
         )
@@ -556,7 +552,6 @@ class ImportPresetsUseCase:
             actor,
             PermissionRequirement(
                 "permission_preset.import",
-                legacy_operation="profile.update",
             ),
             uow=uow,
         )
@@ -655,7 +650,6 @@ class ExportBoardConfigUseCase:
             actor,
             PermissionRequirement(
                 "default_board_config.export",
-                legacy_operation="board.read",
             ),
             uow=uow,
         )
@@ -712,7 +706,6 @@ class ImportBoardConfigUseCase:
             actor,
             PermissionRequirement(
                 "default_board_config.import",
-                legacy_operation="spec.entity.edit_fields",
             ),
             roles=("admin", "operator"),
             uow=uow,
@@ -742,7 +735,6 @@ class ImportBoardConfigUseCase:
                     actor,
                     PermissionRequirement(
                         "default_board_config.guidelines.edit",
-                        legacy_operation="guidelines.adoption.manage",
                     ),
                     uow=uow,
                 )

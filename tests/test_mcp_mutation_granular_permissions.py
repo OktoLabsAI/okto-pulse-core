@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from okto_pulse.core.domain.permissions import PermissionSet, Permissions
+from okto_pulse.core.domain.permissions import PermissionSet
 from okto_pulse.core.mcp import server
 
 
@@ -49,17 +49,17 @@ async def test_card_create_validates_input_before_core_lookup_and_authorization(
 
 
 @pytest.mark.asyncio
-async def test_card_create_keeps_legacy_list_fallback(
+async def test_card_create_validates_initial_status_with_canonical_capability(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     async def _context(_board_id: str):
-        return _ctx([Permissions.CARDS_CREATE])
+        return _ctx(["card.entity.create"])
 
     monkeypatch.setattr(server, "_get_agent_ctx", _context)
 
     raw = await server.okto_pulse_create_card.fn(
         board_id=BOARD_ID,
-        title="Legacy",
+        title="Native",
         spec_id="spec-1",
         status="not-a-status",
     )
@@ -209,14 +209,14 @@ async def test_card_dependency_mutations_lookup_before_permission_denial(
 
 
 @pytest.mark.asyncio
-async def test_submit_spec_validation_precheck_accepts_legacy_evaluate_permission(
+async def test_submit_spec_validation_precheck_accepts_canonical_permission(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     class ReachedCore(RuntimeError):
         pass
 
     async def _context(_board_id: str):
-        return _ctx([Permissions.SPECS_EVALUATE])
+        return _ctx(["spec.validation.submit"])
 
     def _reached_core_factory():
         raise ReachedCore

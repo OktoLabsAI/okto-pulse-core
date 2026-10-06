@@ -94,7 +94,6 @@ from okto_pulse.core.services.spec_dependency_observability import (
 def _manage_dependency_requirement() -> PermissionRequirement:
     return PermissionRequirement(
         "spec.entity.manage_dependencies",
-        legacy_operation="specs:update",
         entity="spec",
         state="draft",
     )
@@ -555,7 +554,7 @@ def test_manage_dependency_permission_is_a_fail_closed_introduction() -> None:
         requirement,
         permissions=explicit_pair,
     ).allowed
-    assert SKM_PERMISSION_INTRODUCTION_V1.legacy_compatible is False
+    assert not hasattr(SKM_PERMISSION_INTRODUCTION_V1, "legacy_compatible")
     assert SKM_PERMISSION_INTRODUCTION_V1.leaves == ("spec.entity.manage_dependencies",)
     assert any(
         manifest is SKM_PERMISSION_INTRODUCTION_V1

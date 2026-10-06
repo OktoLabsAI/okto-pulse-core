@@ -82,7 +82,7 @@ def test_default_and_fake_policies_satisfy_the_public_protocol() -> None:
     assert FakePolicy().evaluate(PermissionContext("board.read")).allowed is True
 
 
-def test_default_policy_preserves_ceiling_and_legacy_decisions() -> None:
+def test_default_policy_preserves_ceiling_and_refuses_retired_tokens() -> None:
     policy = DefaultPermissionPolicy()
     permissions = policy.resolve(
         agent_flags={"board": {"read": True}},
@@ -97,10 +97,10 @@ def test_default_policy_preserves_ceiling_and_legacy_decisions() -> None:
         PermissionContext(
             "board.read",
             permissions=["board:read"],
-            legacy_operation="board:read",
         )
     )
-    assert legacy == PermissionDecision.allow("board.read")
+    assert not legacy.allowed
+    assert legacy.required_permission == "board.read"
 
 
 def test_default_policy_rejects_an_empty_operation() -> None:

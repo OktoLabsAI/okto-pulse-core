@@ -7,7 +7,6 @@ from typing import Any
 
 from okto_pulse.core.domain.permissions import (
     PermissionSet,
-    Permissions,
     check_permission,
 )
 
@@ -24,37 +23,16 @@ def principal_id(principal: Any) -> str | None:
 def kg_permission_error(
     context: Any,
     required_permission: str,
-    *,
-    legacy_fallback: str | None = Permissions.BOARD_READ,
 ) -> str | None:
-    """Check a canonical KG flag while preserving explicit legacy ACLs.
-
-    Board-scoped ``PermissionSet`` is authoritative and therefore observes
-    board overrides. Legacy flat permission lists predate KG flags; an explicit
-    ``board:read`` retains their historical board-authorized behavior. Admin
-    callers pass ``legacy_fallback=None`` so an old read grant never becomes an
-    implicit administrative grant.
-    """
+    """Check one canonical KG operation under the resolved Board authority."""
 
     permissions = getattr(context, "permissions", None)
     if isinstance(permissions, Mapping):
         permissions = PermissionSet(dict(permissions))
-    if isinstance(permissions, PermissionSet):
-        return check_permission(permissions, required_permission)
-    if permissions is None:
-        # Canonical permission APIs deliberately retain this established
-        # compatibility meaning for principals created before permission flags.
-        return None
-    if "*" in permissions:
-        # Authenticated MCP/system principals use the wildcard as their trusted
-        # compatibility grant.  Keep KG edge checks aligned with the central
-        # authorization use case and the remaining MCP adapters.
-        return None
-    if required_permission in permissions:
-        return None
-    if legacy_fallback is not None and legacy_fallback in permissions:
-        return None
-    return f"Permission denied: requires '{required_permission}'"
+    if isinstance(permissions, (list, tuple, set)) and "*" in permissions:
+        permissions = None
+    return check_permission(permissions, required_permission)
+
 
 
 __all__ = [

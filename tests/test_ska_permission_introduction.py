@@ -360,7 +360,6 @@ def test_introduced_permission_requires_granular_and_historical_authority() -> N
         PermissionContext(
             operation="spec.quality.assess",
             permissions=["specs:evaluate"],
-            legacy_operation="specs:evaluate",
         )
     )
     assert legacy.allowed is False

@@ -64,16 +64,14 @@ def entity_state(entity: Any) -> str | None:
 
 def _requirement(
     operation: str,
-    legacy_operation: str,
     *,
     entity: str | None = None,
     state: str | None = None,
 ) -> PermissionRequirement:
     if entity is None or state is None:
-        return PermissionRequirement(operation, legacy_operation=legacy_operation)
+        return PermissionRequirement(operation)
     return PermissionRequirement(
         operation,
-        legacy_operation=legacy_operation,
         entity=entity,
         state=state,
     )
@@ -83,11 +81,9 @@ def card_requirement(
     operation: str,
     *,
     state: str | None = None,
-    legacy_operation: str = "cards:update",
 ) -> PermissionRequirement:
     return _requirement(
         operation,
-        legacy_operation,
         entity="card" if state is not None else None,
         state=state,
     )
@@ -99,8 +95,6 @@ def transition_permission_requirement(
     entity: str,
     current_state: Any,
     target_state: Any,
-    *,
-    legacy_operation: str | None,
 ) -> PermissionRequirement:
     """Build the exact state-aware requirement for one registered SDLC edge."""
 
@@ -108,7 +102,6 @@ def transition_permission_requirement(
     target = str(getattr(target_state, "value", target_state))
     return PermissionRequirement(
         transition_permission_flag(entity, current, target),
-        legacy_operation=legacy_operation,
         entity=entity,
         state=current,
     )
@@ -126,7 +119,7 @@ def card_create_permission_requirement(data: Any) -> PermissionRequirement:
         if card_type == "test"
         else "card.entity.create"
     )
-    return card_requirement(operation, legacy_operation="cards:create")
+    return card_requirement(operation)
 
 
 def card_update_permission_requirements(

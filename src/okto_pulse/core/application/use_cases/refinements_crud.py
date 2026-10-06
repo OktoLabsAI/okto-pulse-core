@@ -395,7 +395,6 @@ class MoveRefinementUseCase:
                 "refinement",
                 existing.status,
                 command.data.status,
-                legacy_operation="specs:move",
             ),
             uow=uow,
             board_id=existing.board_id,

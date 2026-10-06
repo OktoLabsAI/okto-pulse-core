@@ -33,7 +33,6 @@ from okto_pulse.core.domain.checklist import (
     ChecklistTemplate,
 )
 from okto_pulse.core.ports.application_services import ApplicationServiceCatalog
-from okto_pulse.core.domain.permissions import Permissions
 from okto_pulse.core.domain.quality_canonicalization import canonical_sha256
 from okto_pulse.core.ports.checklist import ChecklistListQuery
 from okto_pulse.core.repositories.interfaces.unit_of_work import PulseUnitOfWork
@@ -43,8 +42,8 @@ from okto_pulse.core.services.checklist import (
     ChecklistService,
 )
 
-_READ_PERMISSIONS = (Permissions.BOARD_READ, "spec.checklist.read")
-_EXECUTE_PERMISSIONS = (Permissions.SPECS_UPDATE, "spec.checklist.execute")
+_READ_PERMISSIONS = ("spec.entity.read", "spec.checklist.read")
+_EXECUTE_PERMISSIONS = ("spec.entity.edit_fields", "spec.checklist.execute")
 
 
 async def _require_permissions(

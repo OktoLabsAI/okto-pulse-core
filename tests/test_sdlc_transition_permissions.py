@@ -119,11 +119,10 @@ def test_transition_requirement_normalizes_enum_values_and_keeps_state_gate() ->
         "card",
         CardStatus.REJECTED,
         CardStatus.IN_PROGRESS,
-        legacy_operation="cards:move",
     )
 
     assert requirement.operation == "card.move.rejected_to_in_progress"
-    assert requirement.legacy_operation == "cards:move"
+    assert not hasattr(requirement, "legacy_operation")
     assert requirement.entity == "card"
     assert requirement.state == "rejected"
 
@@ -134,7 +133,6 @@ def test_rejected_transition_introduction_is_fail_closed_to_legacy_tokens() -> N
         "card",
         "rejected",
         "in_progress",
-        legacy_operation="cards:move",
     )
 
     allowed = policy.evaluate(
@@ -143,7 +141,6 @@ def test_rejected_transition_introduction_is_fail_closed_to_legacy_tokens() -> N
             permissions=["cards:move"],
             entity=requirement.entity,
             state=requirement.state,
-            legacy_operation=requirement.legacy_operation,
         )
     )
     denied = policy.evaluate(
@@ -152,7 +149,6 @@ def test_rejected_transition_introduction_is_fail_closed_to_legacy_tokens() -> N
             permissions=["cards:update"],
             entity=requirement.entity,
             state=requirement.state,
-            legacy_operation=requirement.legacy_operation,
         )
     )
 

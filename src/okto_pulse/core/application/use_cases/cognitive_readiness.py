@@ -83,7 +83,6 @@ class EvaluateBugCognitiveClosureUseCase:
             actor,
             PermissionRequirement(
                 "kg.operations.cognitive.read",
-                legacy_operation="kg.admin.settings_read",
             ),
             uow=uow,
             board_id=command.board_id,
@@ -156,7 +155,6 @@ class ListCognitiveReadinessItemsUseCase:
             actor,
             PermissionRequirement(
                 "kg.operations.cognitive.read",
-                legacy_operation="kg.admin.settings_read",
             ),
             uow=uow,
             board_id=command.board_id,
@@ -216,7 +214,6 @@ class EvaluateCognitiveReadinessUseCase:
             actor,
             PermissionRequirement(
                 "kg.operations.cognitive.read",
-                legacy_operation="kg.admin.settings_read",
             ),
             uow=uow,
             board_id=command.board_id,

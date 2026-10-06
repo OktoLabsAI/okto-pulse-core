@@ -28,7 +28,6 @@ def check_permission(permission_set: Any, permission: str) -> str | None:
 def check_story_state_permission(
     permissions: Any,
     granular: str,
-    legacy: str | None,
     story: Any,
     *,
     story_state: str,
@@ -40,8 +39,4 @@ def check_story_state_permission(
         return permissions.check_with_state(granular, "story", story_state)
     if permissions is None:
         return None
-    if granular in permissions:
-        return None
-    if legacy and legacy in permissions:
-        return None
-    return f"Permission denied: requires '{granular}'"
+    return check_permission(permissions, granular)

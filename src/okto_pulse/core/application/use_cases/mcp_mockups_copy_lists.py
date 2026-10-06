@@ -482,7 +482,6 @@ class McpAddScreenMockupUseCase:
             actor,
             PermissionRequirement(
                 f"{command.entity_type}.mockups.create",
-                legacy_operation="specs:update",
             ),
             uow=uow,
             board_id=command.board_id,
@@ -565,7 +564,6 @@ class McpUpdateScreenMockupUseCase:
             actor,
             PermissionRequirement(
                 f"{command.entity_type}.mockups.edit",
-                legacy_operation="specs:update",
             ),
             uow=uow,
             board_id=command.board_id,
@@ -646,7 +644,6 @@ class McpAnnotateMockupUseCase:
             actor,
             PermissionRequirement(
                 f"{command.entity_type}.mockups.annotate",
-                legacy_operation="specs:update",
             ),
             uow=uow,
             board_id=command.board_id,
@@ -700,7 +697,6 @@ class McpListScreenMockupsUseCase:
             actor,
             PermissionRequirement(
                 f"{command.entity_type}.mockups.read",
-                legacy_operation="board:read",
             ),
             uow=uow,
             board_id=command.board_id,
@@ -749,7 +745,6 @@ class McpDeleteScreenMockupUseCase:
             actor,
             PermissionRequirement(
                 f"{command.entity_type}.mockups.delete",
-                legacy_operation="specs:update",
             ),
             uow=uow,
             board_id=command.board_id,

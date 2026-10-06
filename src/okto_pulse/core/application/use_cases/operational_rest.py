@@ -44,15 +44,12 @@ class DataResult:
 
 _KG_COGNITIVE_READ = PermissionRequirement(
     "kg.operations.cognitive.read",
-    legacy_operation="kg.admin.settings_read",
 )
 _KG_COGNITIVE_SKIP = PermissionRequirement(
     "kg.operations.cognitive.skip",
-    legacy_operation="kg.admin.settings_write",
 )
 _KG_COGNITIVE_CLEAR = PermissionRequirement(
     "kg.operations.cognitive.clear",
-    legacy_operation="kg.admin.settings_write",
 )
 
 

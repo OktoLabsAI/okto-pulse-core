@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -257,7 +258,7 @@ _LEGACY_CASES = (
     _LEGACY_CASES,
     ids=[f"{type(case[0]).__name__}-{case[2].replace(':', '-')}" for case in _LEGACY_CASES],
 )
-async def test_flat_legacy_token_still_reaches_the_business_boundary(
+async def test_retired_token_is_denied_before_the_business_boundary(
     use_case: Any,
     command: Any,
     legacy_token: str,
@@ -269,8 +270,17 @@ async def test_flat_legacy_token_still_reaches_the_business_boundary(
         permissions=[legacy_token],
     )
 
-    with pytest.raises(AttributeError):
-        await use_case.execute(command, actor=actor, uow=SimpleNamespace())
+    # Board/child scope is resolved before operation authorization for REST-style use cases.
+    services = SimpleNamespace(
+        specs=SimpleNamespace(get_spec=AsyncMock(return_value=SimpleNamespace(
+            id="spec-1", board_id=BOARD_ID, status="draft",
+        ))),
+        spec_qa=SimpleNamespace(get_question=AsyncMock(return_value=SimpleNamespace(
+            id="qa-1", spec_id="spec-1",
+        ))),
+    )
+    with pytest.raises(PermissionDeniedError):
+        await use_case.execute(command, actor=actor, uow=SimpleNamespace(services=services))
 
 
 def test_migrated_mcp_handlers_have_no_coarse_adapter_precheck() -> None:

@@ -111,7 +111,6 @@ class McpMoveSpecUseCase:
                 "spec",
                 existing.status,
                 command.data.status,
-                legacy_operation="specs:move",
             ),
             uow=uow,
             board_id=existing.board_id,
@@ -1728,7 +1727,6 @@ class McpUpdateTestScenarioUseCase:
             actor,
             PermissionRequirement(
                 "spec.tests.edit",
-                legacy_operation="specs:update",
             ),
             uow=uow,
             board_id=actor.board_id,
@@ -1785,7 +1783,6 @@ class McpDeleteTestScenarioUseCase:
             actor,
             PermissionRequirement(
                 "spec.tests.delete",
-                legacy_operation="specs:update",
             ),
             uow=uow,
             board_id=actor.board_id,

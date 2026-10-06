@@ -76,7 +76,6 @@ def _dependency_permission_requirement(
     operation = "spec.entity.manage_dependencies" if write else "spec.entity.read"
     return PermissionRequirement(
         operation,
-        legacy_operation="specs:update" if write else None,
         entity="spec",
         state=entity_state(spec),
     )

@@ -389,7 +389,6 @@ class McpAddIdeationKnowledgeUseCase:
             actor,
             PermissionRequirement(
                 "ideation.knowledge.create",
-                legacy_operation="specs:update",
             ),
             uow=uow,
             board_id=command.board_id,
@@ -433,7 +432,6 @@ class McpDeleteIdeationKnowledgeUseCase:
             actor,
             PermissionRequirement(
                 "ideation.knowledge.delete",
-                legacy_operation="specs:update",
             ),
             uow=uow,
             board_id=command.board_id,
@@ -630,7 +628,6 @@ class McpDeleteIdeationQuestionUseCase:
             actor,
             PermissionRequirement(
                 "ideation.qa.delete",
-                legacy_operation="qa:delete",
             ),
             uow=uow,
             board_id=command.board_id,
@@ -731,7 +728,7 @@ class McpEvaluateIdeationUseCase:
 
 
 def _mcp_story_state_perm(
-    permissions: Any, granular: str, legacy: str | None, story: Any
+    permissions: Any, granular: str, story: Any
 ) -> str | None:
     from okto_pulse.core.services.permission_policy import check_story_state_permission
     from okto_pulse.core.services.story_permissions import story_state
@@ -739,7 +736,6 @@ def _mcp_story_state_perm(
     return check_story_state_permission(
         permissions,
         granular,
-        legacy,
         story,
         story_state=story_state(
             story.status, archived=bool(getattr(story, "archived", False))
@@ -784,14 +780,13 @@ class McpLinkStoryToIdeationUseCase:
     async def execute(
         self, command: McpLinkStoryToIdeationCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpLinkStoryToIdeationResult:
-        from okto_pulse.core.services.permission_policy import Permissions
 
         service = uow.services.stories
         story = await service.get_story(command.story_id)
         if not story or story.board_id != command.board_id:
             return McpLinkStoryToIdeationResult(not_found=True)
         perm_err = _mcp_story_state_perm(
-            actor.permissions, "story.links.ideation", Permissions.SPECS_CREATE, story
+            actor.permissions, "story.links.ideation",  story
         )
         if perm_err:
             return McpLinkStoryToIdeationResult(perm_err=perm_err)
@@ -850,7 +845,6 @@ class McpConvertStoriesUseCase:
     async def execute(
         self, command: McpConvertStoriesCommand, *, actor: ActorContext, uow: PulseUnitOfWork
     ) -> McpConvertStoriesResult:
-        from okto_pulse.core.services.permission_policy import Permissions
 
         service = uow.services.stories
         for story_id in command.story_ids:
@@ -860,7 +854,6 @@ class McpConvertStoriesUseCase:
             perm_err = _mcp_story_state_perm(
                 actor.permissions,
                 "story.conversion.to_ideation",
-                Permissions.SPECS_CREATE,
                 story,
             )
             if perm_err:

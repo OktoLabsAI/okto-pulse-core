@@ -32,11 +32,10 @@ Required permission by affected family:
 | takedown status | `board.read` and `kg.operations.audit.read` |
 
 Board overrides are honored because checks use the resolved board context, not
-the global agent object. Explicit legacy flat principals retain their historical
-`board:read` fallback for non-admin KG operations. Administrative schema
-introspection and every administrative mutation above have no legacy
-`board:read` fallback. Global administrative operations authenticate through
-the global effective context; a raw authenticated principal is not sufficient.
+the global agent object. Every operation requires its canonical permission;
+retired flat tokens do not grant access. Global administrative operations
+authenticate through the global effective context; a raw authenticated principal
+is not sufficient.
 `okto_pulse_kg_schema_info` with an empty `board_id` returns static global
 contract metadata and never opens, selects, or enumerates a board graph.
 

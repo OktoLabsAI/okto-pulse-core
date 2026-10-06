@@ -67,7 +67,6 @@ class UpdateAgentUseCase:
             actor,
             PermissionRequirement(
                 "agent.entity.edit",
-                legacy_operation="profile.update",
             ),
             uow=uow,
         )

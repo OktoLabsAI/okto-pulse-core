@@ -55,7 +55,7 @@ from okto_pulse.core.domain.test_scenarios import (
     VerificationMethod,
 )
 from okto_pulse.core.infra.config import get_settings
-from okto_pulse.core.infra.permissions import Permissions, check_permission
+from okto_pulse.core.infra.permissions import check_permission
 from okto_pulse.core.mcp.catalog import CoreMcpCatalog, CoreMcpResource, closed_mcp_schema
 from okto_pulse.core.domain.architecture_classification import ArchitectureClassificationBatch
 from okto_pulse.core.domain.learning_closeout import LearningCaptureSelection
@@ -1476,7 +1476,6 @@ async def _authorize_kg_operation(
     actor: Any,
     *,
     operation: str,
-    legacy_operation: str,
     board_id: str | None = None,
 ) -> str | None:
     """Authorize one canonical KG operation before adapter-owned work."""
@@ -1490,7 +1489,6 @@ async def _authorize_kg_operation(
         await AuthorizeOperationUseCase().execute(
             AuthorizeOperationCommand(
                 operation,
-                legacy_operation=legacy_operation,
                 board_id=board_id,
             ),
             actor=actor,
@@ -1536,32 +1534,17 @@ def _mcp_permission_error_response(msg: str) -> str:
 def _mcp_check_permission(
     permissions: Any,
     granular_permission: str,
-    legacy_permission: str | None = None,
 ) -> str | None:
-    """Check granular flags while keeping legacy flat permissions working."""
-    if permissions is None:
-        return None
-
-    from okto_pulse.core.infra.permissions import PermissionSet
-
-    if isinstance(permissions, PermissionSet):
-        return permissions.check(granular_permission)
+    """Check the exact canonical operation supplied by the tool."""
     if isinstance(permissions, (list, tuple, set)) and "*" in permissions:
-        # The authenticated MCP principal uses this legacy token as the same
-        # explicit trusted sentinel recognized by the central Core policy.
-        return None
-    if check_permission(permissions, granular_permission) is None:
-        return None
-    if legacy_permission and check_permission(permissions, legacy_permission) is None:
-        return None
-    return f"Permission denied: requires '{granular_permission}'"
+        permissions = None
+    return check_permission(permissions, granular_permission)
 
 
 def _mcp_check_story_state_permission(
     permissions: Any,
     granular_permission: str | None,
     story: Any,
-    legacy_permission: str | None = None,
 ) -> str | None:
     if not granular_permission:
         return None
@@ -1574,15 +1557,9 @@ def _mcp_check_story_state_permission(
             "story",
             story_state(story.status, archived=bool(getattr(story, "archived", False))),
         )
-    return _mcp_check_permission(permissions, granular_permission, legacy_permission)
+    return _mcp_check_permission(permissions, granular_permission)
 
 
-def _mcp_architecture_legacy_permission(parent_type: str, action: str) -> str:
-    if action == "read":
-        return Permissions.BOARD_READ
-    if parent_type == "card":
-        return Permissions.CARDS_UPDATE
-    return Permissions.SPECS_UPDATE
 
 
 def _mcp_check_architecture_permission(
@@ -1593,7 +1570,6 @@ def _mcp_check_architecture_permission(
     return _mcp_check_permission(
         permissions,
         f"{parent_type}.architecture.{action}",
-        _mcp_architecture_legacy_permission(parent_type, action),
     )
 
 
@@ -1601,16 +1577,9 @@ def _mcp_check_architecture_copy_permission(permissions: Any) -> str | None:
     return _mcp_check_permission(
         permissions,
         "card.copy_from_spec.architecture",
-        Permissions.CARDS_UPDATE,
     )
 
 
-def _mcp_resource_gate_legacy_permission(entity_type: str, action: str) -> str:
-    if action == "read":
-        return Permissions.BOARD_READ
-    if entity_type == "card":
-        return Permissions.CARDS_UPDATE
-    return Permissions.SPECS_UPDATE
 
 
 def _mcp_check_resource_gate_permission(
@@ -1622,7 +1591,6 @@ def _mcp_check_resource_gate_permission(
     return _mcp_check_permission(
         permissions,
         f"{entity_type}.entity.{capability}",
-        _mcp_resource_gate_legacy_permission(entity_type, action),
     )
 
 
@@ -2385,7 +2353,6 @@ async def okto_pulse_update_my_profile(
     perm_err = _mcp_check_permission(
         agent.permissions,
         "profile.update",
-        Permissions.SELF_UPDATE,
     )
     if perm_err:
         return _perm_error(perm_err)
@@ -2508,7 +2475,6 @@ async def okto_pulse_get_publish_health() -> str:
         await AuthorizeOperationUseCase().execute(
             AuthorizeOperationCommand(
                 "metrics.publish_health.read",
-                legacy_operation="board.read",
             ),
             actor=actor,
         )
@@ -2653,7 +2619,7 @@ async def okto_pulse_get_board(board_id: str, include: str = "") -> str:
     if not ctx:
         return _auth_error()
 
-    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
+    perm_err = check_permission(ctx.permissions, "board.read")
     if perm_err:
         return _perm_error(perm_err)
     wanted = _parse_include(include)
@@ -2798,7 +2764,7 @@ async def okto_pulse_get_allowed_transitions(
     if not ctx:
         return _auth_error()
 
-    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
+    perm_err = check_permission(ctx.permissions, "board.read")
     if perm_err:
         return _perm_error(perm_err)
 
@@ -3001,7 +2967,7 @@ async def okto_pulse_get_activity_log(
     if not ctx:
         return _auth_error()
 
-    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
+    perm_err = check_permission(ctx.permissions, "board.read")
     if perm_err:
         return _perm_error(perm_err)
 
@@ -3516,7 +3482,7 @@ async def okto_pulse_get_card(board_id: str, card_id: str) -> str:
     if not ctx:
         return _auth_error()
 
-    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
+    perm_err = check_permission(ctx.permissions, "board.read")
     if perm_err:
         return _perm_error(perm_err)
 
@@ -3625,7 +3591,7 @@ async def okto_pulse_resolve_bug_regression_scenarios(
     if not ctx:
         return _auth_error()
 
-    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
+    perm_err = check_permission(ctx.permissions, "board.read")
     if perm_err:
         return _perm_error(perm_err)
 
@@ -3701,7 +3667,7 @@ async def okto_pulse_get_task_context(
     if not ctx:
         return _auth_error()
 
-    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
+    perm_err = check_permission(ctx.permissions, "board.read")
     if perm_err:
         return _perm_error(perm_err)
     can_read_task_validations = (
@@ -4024,7 +3990,6 @@ async def okto_pulse_get_task_context(
                         _mcp_check_permission(
                             ctx.permissions,
                             "spec.integration_requirements.read",
-                            Permissions.BOARD_READ,
                         )
                         is None
                     )
@@ -4038,7 +4003,6 @@ async def okto_pulse_get_task_context(
                         _mcp_check_permission(
                             ctx.permissions,
                             "spec.observability_requirements.read",
-                            Permissions.BOARD_READ,
                         )
                         is None
                     )
@@ -4105,7 +4069,6 @@ async def okto_pulse_get_task_context(
                         _mcp_check_permission(
                             ctx.permissions,
                             "spec.integration_requirements.read",
-                            Permissions.BOARD_READ,
                         )
                         is None
                     ):
@@ -4116,7 +4079,6 @@ async def okto_pulse_get_task_context(
                         _mcp_check_permission(
                             ctx.permissions,
                             "spec.observability_requirements.read",
-                            Permissions.BOARD_READ,
                         )
                         is None
                     ):
@@ -4467,7 +4429,7 @@ async def okto_pulse_get_task_conclusions(board_id: str, card_id: str) -> str:
     if not ctx:
         return _auth_error()
 
-    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
+    perm_err = check_permission(ctx.permissions, "board.read")
     if perm_err:
         return _perm_error(perm_err)
 
@@ -5487,7 +5449,7 @@ async def okto_pulse_list_cards_by_status(
     if not ctx:
         return _auth_error()
 
-    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
+    perm_err = check_permission(ctx.permissions, "board.read")
     if perm_err:
         return _perm_error(perm_err)
 
@@ -5899,7 +5861,7 @@ async def okto_pulse_list_comments(board_id: str, card_id: str) -> str:
     if not ctx:
         return _auth_error()
 
-    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
+    perm_err = check_permission(ctx.permissions, "board.read")
     if perm_err:
         return _perm_error(perm_err)
 
@@ -6035,7 +5997,7 @@ async def okto_pulse_list_attachments(board_id: str, card_id: str) -> str:
     if not ctx:
         return _auth_error()
 
-    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
+    perm_err = check_permission(ctx.permissions, "board.read")
     if perm_err:
         return _perm_error(perm_err)
 
@@ -6512,7 +6474,7 @@ async def okto_pulse_create_story(
     if not ctx:
         return _auth_error()
     perm_err = _mcp_check_permission(
-        ctx.permissions, "story.entity.create", Permissions.SPECS_CREATE
+        ctx.permissions, "story.entity.create"
     )
     if perm_err:
         return _mcp_permission_error_response(perm_err)
@@ -6799,7 +6761,7 @@ async def okto_pulse_convert_stories_to_ideation(
     if not ctx:
         return _auth_error()
     perm_err = _mcp_check_permission(
-        ctx.permissions, "story.conversion.to_ideation", Permissions.SPECS_CREATE
+        ctx.permissions, "story.conversion.to_ideation"
     )
     if perm_err:
         return _mcp_permission_error_response(perm_err)
@@ -6902,7 +6864,6 @@ async def okto_pulse_create_ideation(
     perm_err = _mcp_check_permission(
         ctx.permissions,
         "ideation.entity.create",
-        Permissions.SPECS_CREATE,
     )
     if perm_err:
         return _perm_error(perm_err)
@@ -6960,7 +6921,7 @@ async def okto_pulse_get_ideation(board_id: str, ideation_id: str) -> str:
     if not ctx:
         return _auth_error()
 
-    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
+    perm_err = check_permission(ctx.permissions, "board.read")
     if perm_err:
         return _perm_error(perm_err)
 
@@ -7063,7 +7024,7 @@ async def okto_pulse_get_ideation_context(
     if not ctx:
         return _auth_error()
 
-    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
+    perm_err = check_permission(ctx.permissions, "board.read")
     if perm_err:
         return _perm_error(perm_err)
 
@@ -7235,7 +7196,6 @@ async def okto_pulse_update_ideation(
         perm_err = _mcp_check_permission(
             ctx.permissions,
             granular_permission,
-            Permissions.SPECS_UPDATE,
         )
         if perm_err:
             return _perm_error(perm_err)
@@ -7437,7 +7397,6 @@ async def okto_pulse_delete_ideation(board_id: str, ideation_id: str) -> str:
     perm_err = _mcp_check_permission(
         ctx.permissions,
         "ideation.entity.delete",
-        Permissions.SPECS_DELETE,
     )
     if perm_err:
         return _perm_error(perm_err)
@@ -7486,7 +7445,6 @@ async def okto_pulse_evaluate_ideation(
     perm_err = _mcp_check_permission(
         ctx.permissions,
         "ideation.entity.evaluate",
-        Permissions.SPECS_UPDATE,
     )
     if perm_err:
         return _perm_error(perm_err)
@@ -7567,7 +7525,6 @@ async def okto_pulse_derive_spec_from_ideation(
     perm_err = _mcp_check_permission(
         ctx.permissions,
         "ideation.specs_derive",
-        Permissions.SPECS_CREATE,
     )
     if perm_err:
         return _perm_error(perm_err)
@@ -7620,7 +7577,7 @@ async def okto_pulse_get_ideation_snapshot(
     if not ctx:
         return _auth_error()
 
-    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
+    perm_err = check_permission(ctx.permissions, "board.read")
     if perm_err:
         return _perm_error(perm_err)
 
@@ -7678,7 +7635,7 @@ async def okto_pulse_get_ideation_history(
     if not ctx:
         return _auth_error()
 
-    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
+    perm_err = check_permission(ctx.permissions, "board.read")
     if perm_err:
         return _perm_error(perm_err)
 
@@ -7754,7 +7711,7 @@ async def okto_pulse_get_ideation_knowledge(
     if not ctx:
         return _auth_error()
 
-    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
+    perm_err = check_permission(ctx.permissions, "board.read")
     if perm_err:
         return _perm_error(perm_err)
 
@@ -7916,7 +7873,6 @@ async def okto_pulse_ask_ideation_choice_question(
     perm_err = _mcp_check_permission(
         ctx.permissions,
         "ideation.qa.ask_choice",
-        Permissions.QA_CREATE,
     )
     if perm_err:
         return _perm_error(perm_err)
@@ -8016,7 +7972,6 @@ async def okto_pulse_answer_ideation_question(
     perm_err = _mcp_check_permission(
         ctx.permissions,
         "ideation.qa.answer",
-        Permissions.QA_ANSWER,
     )
     if perm_err:
         return _perm_error(perm_err)
@@ -8125,7 +8080,6 @@ async def okto_pulse_create_refinement(
     perm_err = _mcp_check_permission(
         ctx.permissions,
         "refinement.entity.create",
-        Permissions.SPECS_CREATE,
     )
     if perm_err:
         return _perm_error(perm_err)
@@ -8224,7 +8178,7 @@ async def okto_pulse_get_refinement(board_id: str, refinement_id: str) -> str:
     if not ctx:
         return _auth_error()
 
-    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
+    perm_err = check_permission(ctx.permissions, "board.read")
     if perm_err:
         return _perm_error(perm_err)
 
@@ -8318,7 +8272,7 @@ async def okto_pulse_get_refinement_context(
     if not ctx:
         return _auth_error()
 
-    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
+    perm_err = check_permission(ctx.permissions, "board.read")
     if perm_err:
         return _perm_error(perm_err)
 
@@ -8508,7 +8462,6 @@ async def okto_pulse_update_refinement(
         perm_err = _mcp_check_permission(
             ctx.permissions,
             granular_permission,
-            Permissions.SPECS_UPDATE,
         )
         if perm_err:
             return _perm_error(perm_err)
@@ -8712,7 +8665,6 @@ async def okto_pulse_delete_refinement(board_id: str, refinement_id: str) -> str
     perm_err = _mcp_check_permission(
         ctx.permissions,
         "refinement.entity.delete",
-        Permissions.SPECS_DELETE,
     )
     if perm_err:
         return _perm_error(perm_err)
@@ -8756,7 +8708,6 @@ async def okto_pulse_derive_spec_from_refinement(
     perm_err = _mcp_check_permission(
         ctx.permissions,
         "refinement.specs_derive",
-        Permissions.SPECS_CREATE,
     )
     if perm_err:
         return _perm_error(perm_err)
@@ -8806,7 +8757,7 @@ async def okto_pulse_get_refinement_history(
     if not ctx:
         return _auth_error()
 
-    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
+    perm_err = check_permission(ctx.permissions, "board.read")
     if perm_err:
         return _perm_error(perm_err)
 
@@ -9031,20 +8982,11 @@ async def okto_pulse_record_ambiguity_assessment(
         return _quality_mcp_error(exc)
     # Proposed questions stay immutable inside the assessment receipt; they do
     # not create subject Q&A and therefore require no qa.ask permission.
-    required_permissions = [
-        (
-            f"{parsed_subject_type.value}.quality.assess",
-            Permissions.SPECS_UPDATE,
-        )
-    ]
-    for granular_permission, legacy_permission in required_permissions:
-        perm_err = _mcp_check_permission(
-            ctx.permissions,
-            granular_permission,
-            legacy_permission,
-        )
-        if perm_err:
-            return _quality_mcp_permission_error(perm_err)
+    perm_err = _mcp_check_permission(
+        ctx.permissions, f"{parsed_subject_type.value}.quality.assess",
+    )
+    if perm_err:
+        return _quality_mcp_permission_error(perm_err)
 
     actor = MCPAdapterContract.actor(ctx, board_id=board_id)
     correlation_id = str(_uuid.uuid4())
@@ -9154,7 +9096,6 @@ async def okto_pulse_record_requirement_lint(
     perm_err = _mcp_check_permission(
         ctx.permissions,
         "spec.quality.assess",
-        Permissions.SPECS_UPDATE,
     )
     if perm_err:
         return _quality_mcp_permission_error(perm_err)
@@ -9232,7 +9173,7 @@ async def okto_pulse_get_requirement_lint_preflight(
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
-    for permission in (Permissions.BOARD_READ, "spec.quality.read"):
+    for permission in ("board.read", "spec.quality.read"):
         perm_err = check_permission(ctx.permissions, permission)
         if perm_err:
             return _quality_mcp_permission_error(perm_err)
@@ -9320,7 +9261,7 @@ async def okto_pulse_get_current_quality_assessment(
             assessment_kind,
         )
         for permission in (
-            Permissions.BOARD_READ,
+            "board.read",
             f"{parsed_subject_type.value}.quality.read",
         ):
             perm_err = check_permission(ctx.permissions, permission)
@@ -9365,7 +9306,7 @@ async def okto_pulse_get_quality_assessment_receipt(
     if not ctx:
         return _auth_error()
 
-    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
+    perm_err = check_permission(ctx.permissions, "board.read")
     if perm_err:
         return _quality_mcp_permission_error(perm_err)
 
@@ -9470,7 +9411,7 @@ async def okto_pulse_list_quality_assessments(
         if parsed_kind is not None:
             _quality_subject_kind(subject_type, assessment_kind)
         for permission in (
-            Permissions.BOARD_READ,
+            "board.read",
             f"{parsed_subject_type.value}.quality.read",
         ):
             perm_err = check_permission(ctx.permissions, permission)
@@ -9574,7 +9515,7 @@ async def okto_pulse_list_quality_findings(
         if parsed_kind is not None:
             _quality_subject_kind(subject_type, assessment_kind)
         for permission in (
-            Permissions.BOARD_READ,
+            "board.read",
             f"{parsed_subject_type.value}.quality.read",
         ):
             perm_err = check_permission(ctx.permissions, permission)
@@ -9648,7 +9589,7 @@ async def okto_pulse_get_checklist_binding(board_id: str, spec_id: str | None = 
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
-    for permission in (Permissions.BOARD_READ, "spec.checklist.read"):
+    for permission in ("board.read", "spec.checklist.read"):
         perm_err = check_permission(ctx.permissions, permission)
         if perm_err:
             return _perm_error(perm_err)
@@ -9721,7 +9662,6 @@ async def okto_pulse_start_checklist_execution(
     perm_err = _mcp_check_permission(
         ctx.permissions,
         "spec.checklist.execute",
-        Permissions.SPECS_UPDATE,
     )
     if perm_err:
         return _perm_error(perm_err)
@@ -9808,7 +9748,6 @@ async def okto_pulse_submit_checklist_execution(
     perm_err = _mcp_check_permission(
         ctx.permissions,
         "spec.checklist.execute",
-        Permissions.SPECS_UPDATE,
     )
     if perm_err:
         return _perm_error(perm_err)
@@ -9909,7 +9848,7 @@ async def okto_pulse_get_checklist_receipt(
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
-    for permission in (Permissions.BOARD_READ, "spec.checklist.read"):
+    for permission in ("board.read", "spec.checklist.read"):
         perm_err = check_permission(ctx.permissions, permission)
         if perm_err:
             return _perm_error(perm_err)
@@ -10034,7 +9973,6 @@ async def okto_pulse_append_research_decision(
     perm_err = _mcp_check_permission(
         ctx.permissions,
         "refinement.research_decisions.append",
-        Permissions.SPECS_UPDATE,
     )
     if perm_err:
         return _perm_error(perm_err)
@@ -10150,7 +10088,7 @@ async def okto_pulse_list_research_decisions(
         return _auth_error()
 
     for permission in (
-        Permissions.BOARD_READ,
+        "board.read",
         "refinement.research_decisions.read",
     ):
         perm_err = check_permission(ctx.permissions, permission)
@@ -10247,7 +10185,6 @@ async def okto_pulse_ask_refinement_choice_question(
     perm_err = _mcp_check_permission(
         ctx.permissions,
         "refinement.qa.ask_choice",
-        Permissions.QA_CREATE,
     )
     if perm_err:
         return _perm_error(perm_err)
@@ -10349,7 +10286,6 @@ async def okto_pulse_answer_refinement_question(
     perm_err = _mcp_check_permission(
         ctx.permissions,
         "refinement.qa.answer",
-        Permissions.QA_ANSWER,
     )
     if perm_err:
         return _perm_error(perm_err)
@@ -10451,7 +10387,6 @@ async def okto_pulse_create_spec(
     perm_err = _mcp_check_permission(
         ctx.permissions,
         "spec.entity.create",
-        Permissions.SPECS_CREATE,
     )
     if perm_err:
         return _perm_error(perm_err)
@@ -10569,7 +10504,7 @@ async def okto_pulse_get_spec(board_id: str, spec_id: str) -> str:
     if not ctx:
         return _auth_error()
 
-    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
+    perm_err = check_permission(ctx.permissions, "board.read")
     if perm_err:
         return _perm_error(perm_err)
 
@@ -10672,7 +10607,6 @@ async def okto_pulse_get_spec(board_id: str, spec_id: str) -> str:
             _mcp_check_permission(
                 ctx.permissions,
                 "spec.integration_requirements.read",
-                Permissions.BOARD_READ,
             )
             is None
         ):
@@ -10683,7 +10617,6 @@ async def okto_pulse_get_spec(board_id: str, spec_id: str) -> str:
             _mcp_check_permission(
                 ctx.permissions,
                 "spec.observability_requirements.read",
-                Permissions.BOARD_READ,
             )
             is None
         ):
@@ -10721,7 +10654,7 @@ async def okto_pulse_get_spec_context(
     if not ctx:
         return _auth_error()
 
-    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
+    perm_err = check_permission(ctx.permissions, "board.read")
     if perm_err:
         return _perm_error(perm_err)
 
@@ -10880,7 +10813,6 @@ async def okto_pulse_get_spec_context(
             _mcp_check_permission(
                 ctx.permissions,
                 "spec.integration_requirements.read",
-                Permissions.BOARD_READ,
             )
             is None
         ):
@@ -10891,7 +10823,6 @@ async def okto_pulse_get_spec_context(
             _mcp_check_permission(
                 ctx.permissions,
                 "spec.observability_requirements.read",
-                Permissions.BOARD_READ,
             )
             is None
         ):
@@ -11097,7 +11028,6 @@ async def okto_pulse_update_spec(
         perm_err = _mcp_check_permission(
             ctx.permissions,
             granular_permission,
-            Permissions.SPECS_UPDATE,
         )
         if perm_err:
             return _perm_error(perm_err)
@@ -11347,7 +11277,6 @@ async def okto_pulse_add_test_scenario(
     perm_err = _mcp_check_permission(
         ctx.permissions,
         "spec.tests.create",
-        Permissions.SPECS_UPDATE,
     )
     if perm_err:
         return _perm_error(perm_err)
@@ -11443,7 +11372,7 @@ async def okto_pulse_list_test_scenarios(
     if not ctx:
         return _auth_error()
 
-    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
+    perm_err = check_permission(ctx.permissions, "board.read")
     if perm_err:
         return _perm_error(perm_err)
 
@@ -12062,7 +11991,6 @@ async def _link_task_to_scenario_internal(
     perm_err = _mcp_check_permission(
         ctx.permissions,
         "card.link_to.scenario",
-        Permissions.CARDS_UPDATE,
     )
     if perm_err:
         return _perm_error(perm_err)
@@ -12122,7 +12050,6 @@ async def _link_task_to_rule_internal(
     perm_err = _mcp_check_permission(
         ctx.permissions,
         "card.link_to.rule",
-        Permissions.CARDS_UPDATE,
     )
     if perm_err:
         return _perm_error(perm_err)
@@ -12176,7 +12103,6 @@ async def _link_task_to_fr_internal(
     perm_err = _mcp_check_permission(
         ctx.permissions,
         "spec.structured_entity.functional_requirement.link_task",
-        Permissions.CARDS_UPDATE,
     )
     if perm_err:
         return _perm_error(perm_err)
@@ -12269,7 +12195,6 @@ async def _link_task_to_contract_internal(
     perm_err = _mcp_check_permission(
         ctx.permissions,
         "card.link_to.contract",
-        Permissions.CARDS_UPDATE,
     )
     if perm_err:
         return _perm_error(perm_err)
@@ -12332,7 +12257,6 @@ async def _link_task_to_tr_internal(
     perm_err = _mcp_check_permission(
         ctx.permissions,
         "card.link_to.tr",
-        Permissions.CARDS_UPDATE,
     )
     if perm_err:
         return _perm_error(perm_err)
@@ -12445,7 +12369,6 @@ async def okto_pulse_archive_tree(
     perm_err = _mcp_check_permission(
         ctx.permissions,
         f"{entity_type}.entity.archive",
-        Permissions.SPECS_UPDATE,
     )
     if perm_err:
         return _perm_error(perm_err)
@@ -12502,7 +12425,6 @@ async def okto_pulse_restore_tree(
     perm_err = _mcp_check_permission(
         ctx.permissions,
         f"{entity_type}.entity.restore",
-        Permissions.SPECS_UPDATE,
     )
     if perm_err:
         return _perm_error(perm_err)
@@ -12874,7 +12796,7 @@ async def okto_pulse_get_architecture_design_schema(board_id: str) -> str:
     if not ctx:
         return _auth_error()
 
-    perm_err = _mcp_check_permission(ctx.permissions, Permissions.BOARD_READ, None)
+    perm_err = _mcp_check_permission(ctx.permissions, "board.read")
     if perm_err:
         return _perm_error(perm_err)
 
@@ -13652,7 +13574,6 @@ async def okto_pulse_replace_card_knowledge_assignments(
     permission_error = _mcp_check_permission(
         ctx.permissions,
         "card.copy_from_spec.knowledge",
-        Permissions.CARDS_UPDATE,
     )
     if permission_error:
         return _perm_error(permission_error)
@@ -13690,7 +13611,6 @@ async def okto_pulse_drop_card_knowledge_assignments(
     permission_error = _mcp_check_permission(
         ctx.permissions,
         "card.copy_from_spec.knowledge",
-        Permissions.CARDS_UPDATE,
     )
     if permission_error:
         return _perm_error(permission_error)
@@ -13728,7 +13648,6 @@ async def okto_pulse_refresh_card_knowledge_assignments(
     permission_error = _mcp_check_permission(
         ctx.permissions,
         "card.copy_from_spec.knowledge",
-        Permissions.CARDS_UPDATE,
     )
     if permission_error:
         return _perm_error(permission_error)
@@ -13762,7 +13681,7 @@ async def okto_pulse_get_card_knowledge_propagation(
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
-    permission_error = check_permission(ctx.permissions, Permissions.BOARD_READ)
+    permission_error = check_permission(ctx.permissions, "board.read")
     if permission_error:
         return _perm_error(permission_error)
 
@@ -13896,7 +13815,7 @@ async def okto_pulse_get_analytics(
     if not ctx:
         return _auth_error()
 
-    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
+    perm_err = check_permission(ctx.permissions, "board.read")
     if perm_err:
         return _perm_error(perm_err)
 
@@ -13941,7 +13860,7 @@ async def okto_pulse_list_blockers(
     if not ctx:
         return _auth_error()
 
-    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
+    perm_err = check_permission(ctx.permissions, "board.read")
     if perm_err:
         return _perm_error(perm_err)
 
@@ -14234,7 +14153,6 @@ async def okto_pulse_add_business_rule(
     perm_err = _mcp_check_permission(
         ctx.permissions,
         "spec.rules.create",
-        Permissions.SPECS_UPDATE,
     )
     if perm_err:
         return _perm_error(perm_err)
@@ -14331,7 +14249,6 @@ async def okto_pulse_list_integration_requirements(
     perm_err = _mcp_check_permission(
         ctx.permissions,
         "spec.integration_requirements.read",
-        Permissions.BOARD_READ,
     )
     if perm_err:
         return _perm_error(perm_err)
@@ -14394,7 +14311,6 @@ async def okto_pulse_add_integration_requirement(
     perm_err = _mcp_check_permission(
         ctx.permissions,
         "spec.integration_requirements.create",
-        Permissions.SPECS_UPDATE,
     )
     if perm_err:
         return _perm_error(perm_err)
@@ -14512,14 +14428,12 @@ async def _link_task_to_integration_requirement_internal(
     perm_err = _mcp_check_permission(
         ctx.permissions,
         "spec.integration_requirements.link_task",
-        Permissions.SPECS_UPDATE,
     )
     if perm_err:
         return _perm_error(perm_err)
     perm_err = _mcp_check_permission(
         ctx.permissions,
         "card.link_to.ir",
-        Permissions.CARDS_UPDATE,
     )
     if perm_err:
         return _perm_error(perm_err)
@@ -14587,7 +14501,6 @@ async def okto_pulse_list_observability_requirements(
     perm_err = _mcp_check_permission(
         ctx.permissions,
         "spec.observability_requirements.read",
-        Permissions.BOARD_READ,
     )
     if perm_err:
         return _perm_error(perm_err)
@@ -14646,7 +14559,6 @@ async def okto_pulse_add_observability_requirement(
     perm_err = _mcp_check_permission(
         ctx.permissions,
         "spec.observability_requirements.create",
-        Permissions.SPECS_UPDATE,
     )
     if perm_err:
         return _perm_error(perm_err)
@@ -14749,14 +14661,12 @@ async def _link_task_to_observability_requirement_internal(
     perm_err = _mcp_check_permission(
         ctx.permissions,
         "spec.observability_requirements.link_task",
-        Permissions.SPECS_UPDATE,
     )
     if perm_err:
         return _perm_error(perm_err)
     perm_err = _mcp_check_permission(
         ctx.permissions,
         "card.link_to.or",
-        Permissions.CARDS_UPDATE,
     )
     if perm_err:
         return _perm_error(perm_err)
@@ -14839,7 +14749,6 @@ async def okto_pulse_add_decision(
     perm_err = _mcp_check_permission(
         ctx.permissions,
         "spec.structured_entity.decision.create",
-        Permissions.SPECS_UPDATE,
     )
     if perm_err:
         return _perm_error(perm_err)
@@ -14847,7 +14756,6 @@ async def okto_pulse_add_decision(
         perm_err = _mcp_check_permission(
             ctx.permissions,
             "spec.structured_entity.decision.supersede",
-            Permissions.SPECS_UPDATE,
         )
         if perm_err:
             return _perm_error(perm_err)
@@ -14954,7 +14862,6 @@ async def _link_task_to_decision_internal(
     perm_err = _mcp_check_permission(
         ctx.permissions,
         "spec.structured_entity.decision.link_task",
-        Permissions.CARDS_UPDATE,
     )
     if perm_err:
         return _perm_error(perm_err)
@@ -15155,7 +15062,6 @@ async def okto_pulse_add_api_contract(
     perm_err = _mcp_check_permission(
         ctx.permissions,
         "spec.contracts.create",
-        Permissions.SPECS_UPDATE,
     )
     if perm_err:
         return _perm_error(perm_err)
@@ -15346,7 +15252,6 @@ async def _remove_spec_entity_impl(
     perm_err = _mcp_check_permission(
         ctx.permissions,
         granular_permission,
-        Permissions.SPECS_UPDATE,
     )
     if perm_err:
         _telemetry("error")
@@ -15946,7 +15851,7 @@ async def okto_pulse_get_board_guidelines(board_id: str) -> str:
     if not ctx:
         return _auth_error()
 
-    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
+    perm_err = check_permission(ctx.permissions, "board.read")
     if perm_err:
         return _perm_error(perm_err)
 
@@ -15982,7 +15887,7 @@ async def okto_pulse_list_guidelines(
     if not ctx:
         return _auth_error()
 
-    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
+    perm_err = check_permission(ctx.permissions, "board.read")
     if perm_err:
         return _perm_error(perm_err)
 
@@ -16151,7 +16056,6 @@ async def okto_pulse_delete_spec(board_id: str, spec_id: str) -> str:
     perm_err = _mcp_check_permission(
         ctx.permissions,
         "spec.entity.delete",
-        Permissions.SPECS_DELETE,
     )
     if perm_err:
         return _perm_error(perm_err)
@@ -16190,7 +16094,6 @@ async def _link_card_to_spec_internal(board_id: str, spec_id: str, card_id: str)
     perm_err = _mcp_check_permission(
         ctx.permissions,
         "card.entity.link_spec",
-        Permissions.CARDS_UPDATE,
     )
     if perm_err:
         return _perm_error(perm_err)
@@ -16248,7 +16151,6 @@ async def okto_pulse_submit_spec_evaluation(
     perm_err = _mcp_check_permission(
         ctx.permissions,
         "spec.evaluations.submit",
-        Permissions.SPECS_EVALUATE,
     )
     if perm_err:
         return _perm_error(perm_err)
@@ -16333,7 +16235,7 @@ async def okto_pulse_list_spec_evaluations(board_id: str, spec_id: str) -> str:
     if not ctx:
         return _auth_error()
 
-    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
+    perm_err = check_permission(ctx.permissions, "board.read")
     if perm_err:
         return _perm_error(perm_err)
 
@@ -16402,7 +16304,7 @@ async def okto_pulse_get_spec_evaluation(
     if not ctx:
         return _auth_error()
 
-    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
+    perm_err = check_permission(ctx.permissions, "board.read")
     if perm_err:
         return _perm_error(perm_err)
 
@@ -16441,7 +16343,6 @@ async def okto_pulse_delete_spec_evaluation(
     perm_err = _mcp_check_permission(
         ctx.permissions,
         "spec.evaluations.delete",
-        Permissions.SPECS_EVALUATE,
     )
     if perm_err:
         return _perm_error(perm_err)
@@ -16501,7 +16402,7 @@ async def okto_pulse_get_spec_history(
     if not ctx:
         return _auth_error()
 
-    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
+    perm_err = check_permission(ctx.permissions, "board.read")
     if perm_err:
         return _perm_error(perm_err)
 
@@ -16593,7 +16494,6 @@ async def okto_pulse_ask_spec_choice_question(
     perm_err = _mcp_check_permission(
         ctx.permissions,
         "spec.qa.ask_choice",
-        Permissions.QA_CREATE,
     )
     if perm_err:
         return _perm_error(perm_err)
@@ -16704,7 +16604,6 @@ async def okto_pulse_answer_spec_question(
     perm_err = _mcp_check_permission(
         ctx.permissions,
         "spec.qa.answer",
-        Permissions.QA_ANSWER,
     )
     if perm_err:
         return _perm_error(perm_err)
@@ -16830,7 +16729,7 @@ async def okto_pulse_get_traceability_report(
     if not ctx:
         return _auth_error()
 
-    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
+    perm_err = check_permission(ctx.permissions, "board.read")
     if perm_err:
         return _perm_error(perm_err)
 
@@ -16921,7 +16820,7 @@ async def okto_pulse_get_spec_knowledge(
     if not ctx:
         return _auth_error()
 
-    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
+    perm_err = check_permission(ctx.permissions, "board.read")
     if perm_err:
         return _perm_error(perm_err)
 
@@ -16971,7 +16870,6 @@ async def okto_pulse_add_spec_knowledge(
     perm_err = _mcp_check_permission(
         ctx.permissions,
         "spec.knowledge.create",
-        Permissions.SPECS_UPDATE,
     )
     if perm_err:
         return _perm_error(perm_err)
@@ -17045,7 +16943,6 @@ async def okto_pulse_delete_spec_knowledge(
     perm_err = _mcp_check_permission(
         ctx.permissions,
         "spec.knowledge.delete",
-        Permissions.SPECS_UPDATE,
     )
     if perm_err:
         return _perm_error(perm_err)
@@ -17088,7 +16985,7 @@ async def okto_pulse_get_refinement_snapshot(
     if not ctx:
         return _auth_error()
 
-    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
+    perm_err = check_permission(ctx.permissions, "board.read")
     if perm_err:
         return _perm_error(perm_err)
 
@@ -17151,7 +17048,7 @@ async def okto_pulse_get_refinement_knowledge(
     if not ctx:
         return _auth_error()
 
-    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
+    perm_err = check_permission(ctx.permissions, "board.read")
     if perm_err:
         return _perm_error(perm_err)
 
@@ -17204,7 +17101,6 @@ async def okto_pulse_add_refinement_knowledge(
     perm_err = _mcp_check_permission(
         ctx.permissions,
         "refinement.knowledge.create",
-        Permissions.SPECS_UPDATE,
     )
     if perm_err:
         return _perm_error(perm_err)
@@ -17275,7 +17171,6 @@ async def okto_pulse_delete_refinement_knowledge(
     perm_err = _mcp_check_permission(
         ctx.permissions,
         "refinement.knowledge.delete",
-        Permissions.SPECS_UPDATE,
     )
     if perm_err:
         return _perm_error(perm_err)
@@ -17337,7 +17232,6 @@ async def okto_pulse_delete_spec_question(
     await AuthorizeOperationUseCase().execute(
         AuthorizeOperationCommand(
             "spec.qa.delete",
-            legacy_operation="qa:delete",
             board_id=board_id,
         ),
         actor=actor,
@@ -18240,7 +18134,7 @@ async def okto_pulse_list_default_guideline_candidates(
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
-    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
+    perm_err = check_permission(ctx.permissions, "board.read")
     if perm_err:
         return _perm_error(perm_err)
     from okto_pulse.core.application.use_cases.mcp_admin_validation_analytics import (
@@ -19178,7 +19072,6 @@ async def okto_pulse_kg_takedown_status(
     authorization_error = await _authorize_kg_operation(
         actor,
         operation="kg.operations.audit.read",
-        legacy_operation="kg.admin.settings_read",
         board_id=board_id,
     )
     if authorization_error is not None:
@@ -19802,7 +19695,7 @@ async def okto_pulse_list_by_board(
     if not ctx:
         return _auth_error()
 
-    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
+    perm_err = check_permission(ctx.permissions, "board.read")
     if perm_err:
         return _perm_error(perm_err)
 
@@ -20148,7 +20041,7 @@ async def okto_pulse_list_qa(
     if not ctx:
         return _auth_error()
 
-    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
+    perm_err = check_permission(ctx.permissions, "board.read")
     if perm_err:
         return _perm_error(perm_err)
 
@@ -20219,7 +20112,7 @@ async def okto_pulse_list_knowledge(
     if not ctx:
         return _auth_error()
 
-    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
+    perm_err = check_permission(ctx.permissions, "board.read")
     if perm_err:
         return _perm_error(perm_err)
 
@@ -20285,7 +20178,7 @@ async def okto_pulse_list_snapshots(
     if not ctx:
         return _auth_error()
 
-    perm_err = check_permission(ctx.permissions, Permissions.BOARD_READ)
+    perm_err = check_permission(ctx.permissions, "board.read")
     if perm_err:
         return _perm_error(perm_err)
 

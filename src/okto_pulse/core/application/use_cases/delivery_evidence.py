@@ -149,7 +149,7 @@ class RecordCardDeliveryEvidenceUseCase:
         batch = command.batch_command()
         options = await self.authorize_in_transaction(batch, actor=actor, uow=uow)
         await require_authorization(actor, transition_permission_requirement(
-            "card", command.expected_card_status, command.report.status, legacy_operation="cards:move"
+            "card", command.expected_card_status, command.report.status
         ), uow=uow, board_id=command.board_id)
 
         async def submit(selection):

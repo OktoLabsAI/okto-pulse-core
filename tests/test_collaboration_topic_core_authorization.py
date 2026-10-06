@@ -96,7 +96,7 @@ async def test_mcp_comment_orders_lookup_guard_writer_commit(
     async def tracked_require(actor, requirement, **kwargs):
         events.append("guard")
         assert requirement.operation == "card.comments.create"
-        assert requirement.legacy_operation == "comments:create"
+        assert not hasattr(requirement, "legacy_operation")
         assert requirement.entity == "card"
         assert requirement.state == "in_progress"
         assert kwargs["board_id"] == BOARD_ID
@@ -153,14 +153,14 @@ async def test_qa_ask_uses_scoped_parent_state_before_guard(
         "agent-1",
         "mcp",
         board_id=BOARD_ID,
-        permissions=["qa:create"],
+        permissions=[f"{target_type}.qa.ask"],
     )
     real_require = mcp_collaboration.require_authorization
 
     async def tracked_require(actor, requirement, **kwargs):
         events.append("guard")
         assert requirement.operation == f"{target_type}.qa.ask"
-        assert requirement.legacy_operation == "qa:create"
+        assert not hasattr(requirement, "legacy_operation")
         assert requirement.entity == target_type
         assert requirement.state == status
         assert kwargs["board_id"] == BOARD_ID
@@ -230,14 +230,14 @@ async def test_topic_merge_scopes_both_topics_before_guard_and_writer(
         "agent-1",
         "mcp",
         board_id=BOARD_ID,
-        permissions=["specs:update"],
+        permissions=["topic.entity.merge"],
     )
     real_require = mcp_collaboration.require_authorization
 
     async def tracked_require(actor, requirement, **kwargs):
         events.append("guard")
         assert requirement.operation == "topic.entity.merge"
-        assert requirement.legacy_operation == "specs:update"
+        assert not hasattr(requirement, "legacy_operation")
         assert requirement.entity is None
         assert requirement.state is None
         assert kwargs["board_id"] == BOARD_ID

@@ -71,7 +71,6 @@ def test_each_kg_operation_declares_and_accepts_its_two_authorities(
     )
     requirement = PermissionRequirement(
         operation,
-        legacy_operation=historical_authority,
     )
 
     canonical = decide_authorization(
@@ -96,7 +95,7 @@ def test_each_kg_operation_declares_and_accepts_its_two_authorities(
     )
 
     assert canonical.allowed is True
-    assert historical.allowed is True
+    assert historical.allowed is False
     assert canonical_without_historical_ceiling.allowed is False
 
 
@@ -261,7 +260,7 @@ async def test_each_dedicated_kg_writer_authorizes_after_lookup_and_before_write
         await use_case.execute(command_factory(), actor=actor, uow=uow)
 
     requirement, kwargs = captured[0]
-    assert requirement == PermissionRequirement(operation, legacy_operation=legacy)
+    assert requirement == PermissionRequirement(operation)
     assert kwargs["board_id"] == BOARD_ID
     assert kwargs["uow"] is uow
     assert uow.events == ([f"lookup:{BOARD_ID}"] if expects_lookup else [])
@@ -356,7 +355,7 @@ async def test_operational_rest_authorizes_before_any_kg_service_call(
         await use_case.execute(command_factory(), actor=actor, uow=uow)
 
     requirement, kwargs = captured[0]
-    assert requirement == PermissionRequirement(operation, legacy_operation=legacy)
+    assert requirement == PermissionRequirement(operation)
     assert kwargs == {"uow": uow, "board_id": BOARD_ID}
     assert uow.events == [f"lookup:{BOARD_ID}"]
     assert uow.commits == 0
@@ -477,7 +476,7 @@ async def test_each_dedicated_kg_reader_checks_the_specific_operation(
         await use_case.execute(command_factory(), actor=actor, uow=uow)
 
     requirement, kwargs = captured[0]
-    assert requirement == PermissionRequirement(operation, legacy_operation=legacy)
+    assert requirement == PermissionRequirement(operation)
     assert kwargs["board_id"] == BOARD_ID
     assert kwargs["uow"] is uow
     assert uow.events == ([f"lookup:{BOARD_ID}"] if expects_lookup else [])

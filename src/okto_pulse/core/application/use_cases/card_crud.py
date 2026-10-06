@@ -313,7 +313,6 @@ class DeleteCardUseCase:
             card_requirement(
                 "card.entity.delete",
                 state=entity_state(existing),
-                legacy_operation="cards:delete",
             ),
             uow=uow,
             board_id=existing.board_id,
@@ -404,14 +403,12 @@ class MoveCardUseCase:
             card_requirement(
                 "card.entity.edit_fields",
                 state=current_state,
-                legacy_operation="cards:move",
             )
             if current_state == target_state
             else transition_permission_requirement(
                 "card",
                 transition_from,
                 command.data.status,
-                legacy_operation="cards:move",
             )
         )
         await require_authorization(
@@ -1121,7 +1118,6 @@ class LinkTestTaskToBugUseCase:
             card_requirement(
                 "card.entity.link_tests",
                 state=entity_state(bug_card),
-                legacy_operation="cards:update",
             ),
             uow=uow,
             board_id=bug_card.board_id,
@@ -1197,7 +1193,6 @@ class UnlinkTestTaskFromBugUseCase:
             card_requirement(
                 "card.entity.link_tests",
                 state=entity_state(bug_card),
-                legacy_operation="cards:update",
             ),
             uow=uow,
             board_id=bug_card.board_id,

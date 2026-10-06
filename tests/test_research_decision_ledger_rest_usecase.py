@@ -16,7 +16,6 @@ from okto_pulse.core.application.use_cases.research_decision_ledger import (
     WriteResearchDecisionUseCase,
 )
 from okto_pulse.core.domain.enums import RefinementStatus
-from okto_pulse.core.domain.permissions import Permissions
 from okto_pulse.core.domain.research_decision_ledger import (
     ResearchDecisionAnchor,
     ResearchDecisionAnchorType,
@@ -77,8 +76,8 @@ class _Services:
     ) -> frozenset[str]:
         return frozenset(
             {
-                Permissions.SPECS_UPDATE,
-                Permissions.BOARD_READ,
+                "spec.entity.edit_fields",
+                "refinement.entity.read",
                 "refinement.research_decisions.append",
                 "refinement.research_decisions.read",
             }

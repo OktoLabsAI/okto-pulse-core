@@ -80,8 +80,8 @@ async def _authorized_global_query_board_ids(
     visible_board_ids = await _visible_board_ids(uow.services, actor)
     authorized: list[str] = []
     requirements = (
-        PermissionRequirement("board.read", legacy_operation="board:read"),
-        PermissionRequirement("kg.query.global", legacy_operation="board:read"),
+        PermissionRequirement("board.read"),
+        PermissionRequirement("kg.query.global"),
     )
     for board_id in visible_board_ids:
         permissions = await resolve_actor_permissions(actor, uow, board_id)
@@ -126,7 +126,6 @@ class ListAuditUseCase:
             actor,
             PermissionRequirement(
                 "kg.operations.audit.read",
-                legacy_operation="kg.admin.settings_read",
             ),
             uow=uow,
             board_id=command.board_id,
@@ -198,7 +197,6 @@ class GlobalSearchUseCase:
             actor,
             PermissionRequirement(
                 "kg.query.global",
-                legacy_operation="board:read",
             ),
             uow=uow,
         )
@@ -250,7 +248,6 @@ class DeleteBoardKgUseCase:
             actor,
             PermissionRequirement(
                 "kg.operations.board.erase",
-                legacy_operation="kg.admin.wipe_board",
             ),
             uow=uow,
             board_id=command.board_id,

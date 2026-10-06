@@ -132,7 +132,7 @@ _CASES = (
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("case", _CASES, ids=lambda case: case.operation)
-async def test_amendment_use_cases_deny_before_writer_and_accept_legacy(
+async def test_amendment_use_cases_reject_substitutes_before_writer(
     case: _Case,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -167,13 +167,11 @@ async def test_amendment_use_cases_deny_before_writer_and_accept_legacy(
         transition_lifecycle=AsyncMock(return_value={}),
     )
     allowed_uow = _Uow(SimpleNamespace(amendments=allowed_service))
-    await case.invoke(allowed_uow, _actor(case.legacy))
+    with pytest.raises(PermissionDeniedError):
+        await case.invoke(allowed_uow, _actor(case.legacy))
     if case.writer is not None:
-        getattr(allowed_service, case.writer).assert_awaited_once()
-    if case.commits:
-        allowed_uow.commit.assert_awaited_once()
-    else:
-        allowed_uow.commit.assert_not_awaited()
+        getattr(allowed_service, case.writer).assert_not_awaited()
+    allowed_uow.commit.assert_not_awaited()
 
     canonical_service = SimpleNamespace(
         create=AsyncMock(return_value={}),
@@ -209,7 +207,7 @@ async def test_confirm_coverage_denies_before_writer_and_binds_expected_board() 
     allowed_uow = _Uow(SimpleNamespace(cards=allowed_cards))
     result = await ConfirmAmendmentCoverageUseCase().execute(
         command,
-        actor=_actor("card.validation.submit"),
+        actor=_actor("amendment.coverage.confirm"),
         uow=allowed_uow,
     )
 

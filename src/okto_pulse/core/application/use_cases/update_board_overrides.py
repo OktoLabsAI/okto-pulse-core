@@ -82,7 +82,6 @@ class UpdateBoardOverridesUseCase:
             actor,
             PermissionRequirement(
                 "agent.board_access.edit",
-                legacy_operation="board.read",
             ),
             uow=uow,
             board_id=command.board_id,

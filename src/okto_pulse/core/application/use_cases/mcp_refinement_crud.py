@@ -213,7 +213,6 @@ class McpMoveRefinementUseCase:
                 "refinement",
                 existing.status,
                 command.data.status,
-                legacy_operation="specs:move",
             ),
             uow=uow,
             board_id=existing.board_id,
@@ -696,7 +695,6 @@ class McpDeleteRefinementQuestionUseCase:
             actor,
             PermissionRequirement(
                 "refinement.qa.delete",
-                legacy_operation="qa:delete",
             ),
             uow=uow,
             board_id=command.board_id,

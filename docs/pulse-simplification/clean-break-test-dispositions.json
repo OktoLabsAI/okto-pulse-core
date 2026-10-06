@@ -2135,6 +2135,11 @@
     {
       "path": "okto_labs_pulse_community/tests/test_ska_permission_lineage_adapter.py",
       "reason": "Current schema and explicit local realm; preserved native preset lineage, deltas, ceilings and owner-review refusals. Added missing-generation refusal through all three public adapter paths, with unchanged persisted flags."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_permission_namespace_introductions.py",
+      "disposition": "adapted",
+      "reason": "Remove stale assertion for classify_legacy, retired in 55c05bc6; native count is 537. Preserve all 80 namespace leaves, exact preset grants and conjunction checks."
     }
   ],
   "removed_cases": [
@@ -3607,6 +3612,101 @@
       "test": "test_merge_missing_flags_backfills_story_topic_as_allowed",
       "disposition": "superseded",
       "reason": "Exclusive permission snapshot conversion/backfill removed. Native full-control, preset deltas, exact False and malformed/retired document refusal are covered by test_native_permission_documents.py; native ceiling and lineage cases remain in the mixed suites."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_admin_namespace_core_authorization.py::test_each_namespace_write_declares_explicit_legacy_compatibility",
+      "disposition": "replaced",
+      "reason": "Operation fallback removed for the single native contract. Replacement cases require the canonical operation and/or refuse retired/substitute tokens; native scope, denial and writer/commit assertions retained."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_admin_namespace_core_authorization.py::test_namespace_write_denial_precedes_writer_and_commit_and_legacy_allows",
+      "disposition": "replaced",
+      "reason": "Operation fallback removed for the single native contract. Replacement cases require the canonical operation and/or refuse retired/substitute tokens; native scope, denial and writer/commit assertions retained."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_amendment_namespace_authorization.py::test_amendment_use_cases_deny_before_writer_and_accept_legacy",
+      "disposition": "replaced",
+      "reason": "Operation fallback removed for the single native contract. Replacement cases require the canonical operation and/or refuse retired/substitute tokens; native scope, denial and writer/commit assertions retained."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_card_sprint_core_authorization.py::test_mcp_card_update_legacy_list_still_authorizes",
+      "disposition": "replaced",
+      "reason": "Operation fallback removed for the single native contract. Replacement cases require the canonical operation and/or refuse retired/substitute tokens; native scope, denial and writer/commit assertions retained."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_card_validation_link_core_authorization.py::test_bug_test_links_keep_cards_update_legacy_compatibility",
+      "disposition": "replaced",
+      "reason": "Operation fallback removed for the single native contract. Replacement cases require the canonical operation and/or refuse retired/substitute tokens; native scope, denial and writer/commit assertions retained."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_code_traceability_settings_permissions.py::test_only_the_five_preexisting_migration_manifests_allow_legacy_fallback",
+      "disposition": "replaced",
+      "reason": "Operation fallback removed for the single native contract. Replacement cases require the canonical operation and/or refuse retired/substitute tokens; native scope, denial and writer/commit assertions retained."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_core_authorization.py::test_explicit_legacy_denial_precedes_role_for_introduced_flag",
+      "disposition": "replaced",
+      "reason": "Operation fallback removed for the single native contract. Replacement cases require the canonical operation and/or refuse retired/substitute tokens; native scope, denial and writer/commit assertions retained."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_core_authorization.py::test_flat_permissions_allow_granular_and_explicit_legacy_tokens",
+      "disposition": "replaced",
+      "reason": "Operation fallback removed for the single native contract. Replacement cases require the canonical operation and/or refuse retired/substitute tokens; native scope, denial and writer/commit assertions retained."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_core_authorization.py::test_introduced_leaf_accepts_bounded_flat_token_for_historical_authority",
+      "disposition": "replaced",
+      "reason": "Operation fallback removed for the single native contract. Replacement cases require the canonical operation and/or refuse retired/substitute tokens; native scope, denial and writer/commit assertions retained."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_kg_operations_server_authorization.py::test_server_authorization_bridge_accepts_canonical_and_historical_authority",
+      "disposition": "replaced",
+      "reason": "Operation fallback removed for the single native contract. Replacement cases require the canonical operation and/or refuse retired/substitute tokens; native scope, denial and writer/commit assertions retained."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_kg_routes_core_authorization.py::test_kg_writer_accepts_flat_historical_authority_during_migration",
+      "disposition": "replaced",
+      "reason": "Operation fallback removed for the single native contract. Replacement cases require the canonical operation and/or refuse retired/substitute tokens; native scope, denial and writer/commit assertions retained."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_mcp_gap_core_authorization.py::test_flat_legacy_token_still_reaches_the_business_boundary",
+      "disposition": "replaced",
+      "reason": "Operation fallback removed for the single native contract. Replacement cases require the canonical operation and/or refuse retired/substitute tokens; native scope, denial and writer/commit assertions retained."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_permission_policy_port_contract.py::test_default_policy_preserves_ceiling_and_legacy_decisions",
+      "disposition": "replaced",
+      "reason": "Operation fallback removed for the single native contract. Replacement cases require the canonical operation and/or refuse retired/substitute tokens; native scope, denial and writer/commit assertions retained."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_transition_core_authorization.py::test_legacy_card_move_authorizes_same_status_reorder",
+      "disposition": "replaced",
+      "reason": "Operation fallback removed for the single native contract. Replacement cases require the canonical operation and/or refuse retired/substitute tokens; native scope, denial and writer/commit assertions retained."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_transition_core_authorization.py::test_legacy_specs_update_authorizes_same_status_scenario_evidence",
+      "disposition": "replaced",
+      "reason": "Operation fallback removed for the single native contract. Replacement cases require the canonical operation and/or refuse retired/substitute tokens; native scope, denial and writer/commit assertions retained."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_transition_core_authorization.py::test_legacy_transition_permission_still_authorizes_writer",
+      "disposition": "replaced",
+      "reason": "Operation fallback removed for the single native contract. Replacement cases require the canonical operation and/or refuse retired/substitute tokens; native scope, denial and writer/commit assertions retained."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_kg_power_rest_authorization.py::test_legacy_board_read_remains_compatible",
+      "disposition": "replaced",
+      "reason": "Operation fallback removed for the single native contract. Replacement cases require the canonical operation and/or refuse retired/substitute tokens; native scope, denial and writer/commit assertions retained."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_mcp_mutation_granular_permissions.py::test_submit_spec_validation_precheck_accepts_legacy_evaluate_permission",
+      "disposition": "replaced",
+      "reason": "Canonical capability fixture replaces positive legacy-token fallback; initial-status validation and native validation precheck retained. Retired token denial is covered by test_native_authorization_operations.py."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_mcp_mutation_granular_permissions.py::test_card_create_keeps_legacy_list_fallback",
+      "disposition": "replaced",
+      "reason": "Canonical capability fixture replaces positive legacy-token fallback; initial-status validation and native validation precheck retained. Retired token denial is covered by test_native_authorization_operations.py."
     }
   ]
 }

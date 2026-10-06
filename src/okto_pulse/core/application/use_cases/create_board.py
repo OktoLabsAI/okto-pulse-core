@@ -100,7 +100,6 @@ class CreateBoardUseCase:
             actor,
             PermissionRequirement(
                 "board.admin.create",
-                legacy_operation="board.read",
             ),
             uow=uow,
         )

@@ -155,7 +155,6 @@ class McpListBoardMembersUseCase:
             actor,
             PermissionRequirement(
                 "board.share.read",
-                legacy_operation="board.read",
             ),
             uow=uow,
             board_id=command.board_id,
@@ -200,7 +199,6 @@ class McpGetActiveDefaultBoardConfigUseCase:
             actor,
             PermissionRequirement(
                 "default_board_config.read",
-                legacy_operation="board.read",
             ),
             uow=uow,
         )
@@ -229,7 +227,6 @@ class McpListDefaultBoardConfigVersionsUseCase:
             actor,
             PermissionRequirement(
                 "default_board_config.read",
-                legacy_operation="board.read",
             ),
             uow=uow,
         )
@@ -261,7 +258,6 @@ class McpGetBoardDefaultConfigDiffUseCase:
             actor,
             PermissionRequirement(
                 "default_board_config.diff_read",
-                legacy_operation="board.read",
             ),
             uow=uow,
             board_id=command.board_id,
@@ -317,7 +313,6 @@ class McpCreateDefaultBoardConfigVersionUseCase:
             actor,
             PermissionRequirement(
                 "default_board_config.create",
-                legacy_operation="spec.entity.edit_fields",
             ),
             uow=uow,
         )
@@ -334,7 +329,6 @@ class McpCreateDefaultBoardConfigVersionUseCase:
                 actor,
                 PermissionRequirement(
                     "default_board_config.guidelines.edit",
-                    legacy_operation="guidelines.adoption.manage",
                 ),
                 uow=uow,
             )
@@ -395,7 +389,6 @@ class McpActivateDefaultBoardConfigVersionUseCase:
             actor,
             PermissionRequirement(
                 "default_board_config.activate",
-                legacy_operation="spec.entity.edit_fields",
             ),
             uow=uow,
         )
@@ -410,7 +403,6 @@ class McpActivateDefaultBoardConfigVersionUseCase:
                 actor,
                 PermissionRequirement(
                     "default_board_config.guidelines.edit",
-                    legacy_operation="guidelines.adoption.manage",
                 ),
                 uow=uow,
             )
@@ -445,7 +437,6 @@ class McpDeactivateDefaultBoardConfigVersionUseCase:
             actor,
             PermissionRequirement(
                 "default_board_config.deactivate",
-                legacy_operation="spec.entity.edit_fields",
             ),
             uow=uow,
         )
@@ -459,7 +450,6 @@ class McpDeactivateDefaultBoardConfigVersionUseCase:
                 actor,
                 PermissionRequirement(
                     "default_board_config.guidelines.edit",
-                    legacy_operation="guidelines.adoption.manage",
                 ),
                 uow=uow,
             )
@@ -595,7 +585,6 @@ class McpLinkBoardDesignSystemUseCase:
             actor,
             PermissionRequirement(
                 "design_system.board_link.create",
-                legacy_operation="spec.architecture.edit",
             ),
             uow=uow,
             board_id=command.board_id,
@@ -633,7 +622,6 @@ class McpUnlinkBoardDesignSystemUseCase:
             actor,
             PermissionRequirement(
                 "design_system.board_link.delete",
-                legacy_operation="spec.architecture.edit",
             ),
             uow=uow,
             board_id=command.board_id,
@@ -668,7 +656,6 @@ class McpGetBoardDesignSystemUseCase:
             actor,
             PermissionRequirement(
                 "design_system.board_link.read",
-                legacy_operation="board.read",
             ),
             uow=uow,
             board_id=command.board_id,

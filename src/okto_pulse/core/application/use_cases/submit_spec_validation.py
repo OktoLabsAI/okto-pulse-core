@@ -256,7 +256,6 @@ class SubmitSpecValidationUseCase:
             actor,
             PermissionRequirement(
                 "spec.validation.submit",
-                legacy_operation="specs:evaluate",
                 entity="spec" if state is not None else None,
                 state=state,
             ),

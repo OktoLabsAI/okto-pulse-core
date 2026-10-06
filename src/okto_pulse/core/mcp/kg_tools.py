@@ -773,7 +773,6 @@ offset >= 0. Full args: okto-pulse://reference/tool-docs/kg."""
             await AuthorizeOperationUseCase().execute(
                 AuthorizeOperationCommand(
                     operation,
-                    legacy_operation="kg.admin.settings_read",
                     board_id=board_id,
                 ),
                 actor=actor,

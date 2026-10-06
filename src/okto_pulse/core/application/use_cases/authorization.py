@@ -44,10 +44,9 @@ _UNSET = _UnsetPermissionInput()
 
 @dataclass(frozen=True, slots=True)
 class PermissionRequirement:
-    """One canonical operation and its optional compatibility/state context."""
+    """One canonical operation and its optional state context."""
 
     operation: str
-    legacy_operation: str | None = None
     entity: str | None = None
     state: str | None = None
 
@@ -65,9 +64,9 @@ def normalize_permission_input(
     """Normalize permission documents without widening their authority.
 
     A mapping is resolved permission data, so it becomes a ``PermissionSet``.
-    Flat lists/tuples deliberately retain legacy-token support.  ``None`` is
-    preserved as the historical trusted/full-access sentinel; the actor-aware
-    decision layer limits that sentinel to legacy MCP/system callers.
+    Lists/tuples carry exact canonical capabilities. ``None`` is the explicit
+    local full-access sentinel; the actor-aware decision layer limits that
+    sentinel to trusted MCP/system callers.
     """
 
     if permissions is None or isinstance(permissions, PermissionSet):
@@ -129,7 +128,6 @@ def decide_authorization(
             permissions=normalized,
             entity=requirement.entity,
             state=requirement.state,
-            legacy_operation=requirement.legacy_operation,
         )
     )
 
@@ -303,8 +301,6 @@ def _blocks_role_fallback(
         return True
 
     paths = [requirement.operation]
-    if requirement.legacy_operation is not None:
-        paths.append(requirement.legacy_operation)
     if requirement.entity is not None and requirement.state is not None:
         paths.append(f"{requirement.entity}.interact_in.{requirement.state}")
     if isinstance(reason, Mapping):

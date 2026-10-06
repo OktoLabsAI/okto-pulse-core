@@ -30,7 +30,7 @@ def _permission_set(*paths: str) -> PermissionSet:
 
 
 @pytest.mark.asyncio
-async def test_server_authorization_bridge_accepts_canonical_and_historical_authority() -> None:
+async def test_server_authorization_bridge_requires_canonical_authority() -> None:
     operation = "kg.operations.cognitive.clear"
     legacy = "kg.admin.settings_write"
     canonical_actor = ActorContext(
@@ -50,7 +50,6 @@ async def test_server_authorization_bridge_accepts_canonical_and_historical_auth
         await server._authorize_kg_operation(
             canonical_actor,
             operation=operation,
-            legacy_operation=legacy,
             board_id=BOARD_ID,
         )
         is None
@@ -59,10 +58,9 @@ async def test_server_authorization_bridge_accepts_canonical_and_historical_auth
         await server._authorize_kg_operation(
             historical_actor,
             operation=operation,
-            legacy_operation=legacy,
             board_id=BOARD_ID,
         )
-        is None
+        is not None
     )
 
 
@@ -77,7 +75,6 @@ async def test_server_authorization_bridge_reports_the_canonical_denial() -> Non
                 permissions=_permission_set("kg.operations.cognitive.clear"),
             ),
             operation="kg.operations.cognitive.clear",
-            legacy_operation="kg.admin.settings_write",
             board_id=BOARD_ID,
         )
         or "{}"
@@ -133,10 +130,9 @@ async def test_inline_kg_operations_deny_before_adapter_owned_effects(
         _actor: ActorContext,
         *,
         operation: str,
-        legacy_operation: str,
         board_id: str | None = None,
     ) -> str:
-        captured.append((operation, legacy_operation, board_id))
+        captured.append((operation, board_id))
         return _DENIAL
 
     monkeypatch.setattr(server, "_get_agent_ctx", _board_context)
@@ -145,4 +141,4 @@ async def test_inline_kg_operations_deny_before_adapter_owned_effects(
 
     tool = getattr(server, tool_name)
     assert await tool.fn(**kwargs) == _DENIAL
-    assert captured == [(operation, legacy, board_id)]
+    assert captured == [(operation, board_id)]

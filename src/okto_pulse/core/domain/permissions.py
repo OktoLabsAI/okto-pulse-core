@@ -66,8 +66,6 @@ class PermissionIntroductionManifest:
     leaves: tuple[str, ...]
     preset_grants: tuple[tuple[str, tuple[str, ...]], ...]
     historical_authorities: tuple[tuple[str, str], ...]
-    recover_all_false_materialization: bool = False
-    legacy_compatible: bool = False
 
     def __post_init__(self) -> None:
         if not self.version.strip():
@@ -190,11 +188,6 @@ SKA_PERMISSION_INTRODUCTION_V1 = PermissionIntroductionManifest(
         ("spec.checklist.read", "spec.entity.read"),
         ("spec.checklist.execute", "spec.entity.edit_fields"),
     ),
-    # A superseded SK-A migration materialized the entire generation as False
-    # before lineage reconciliation existed.  This one-time compatibility
-    # marker lets recognizable legacy snapshots recover without making that
-    # unsafe inference for later manifests.
-    recover_all_false_materialization=True,
 )
 
 
@@ -409,7 +402,6 @@ _ADMIN_CATALOG_READ_GRANTS: tuple[str, ...] = (
 
 ADMIN_CATALOG_PERMISSION_INTRODUCTION_V1 = PermissionIntroductionManifest(
     version="ADMIN-CATALOG/v1",
-    legacy_compatible=True,
     leaves=_ADMIN_CATALOG_PERMISSION_LEAVES,
     preset_grants=_explicit_preset_grants(
         _ADMIN_CATALOG_PERMISSION_LEAVES,
@@ -507,7 +499,6 @@ _OPERATIONAL_READ_GRANTS: tuple[str, ...] = (
 
 OPERATIONAL_PERMISSION_INTRODUCTION_V1 = PermissionIntroductionManifest(
     version="OPERATIONAL/v1",
-    legacy_compatible=True,
     leaves=_OPERATIONAL_PERMISSION_LEAVES,
     preset_grants=_explicit_preset_grants(
         _OPERATIONAL_PERMISSION_LEAVES,
@@ -571,7 +562,6 @@ _MCP_GAPS_PERMISSION_LEAVES: tuple[str, ...] = (
 
 MCP_GAPS_PERMISSION_INTRODUCTION_V1 = PermissionIntroductionManifest(
     version="MCP-GAPS/v1",
-    legacy_compatible=True,
     leaves=_MCP_GAPS_PERMISSION_LEAVES,
     preset_grants=_explicit_preset_grants(
         _MCP_GAPS_PERMISSION_LEAVES,
@@ -659,7 +649,6 @@ _KG_OPERATIONS_PERMISSION_LEAVES: tuple[str, ...] = (
 
 KG_OPERATIONS_PERMISSION_INTRODUCTION_V1 = PermissionIntroductionManifest(
     version="KG-OPERATIONS/v1",
-    legacy_compatible=True,
     leaves=_KG_OPERATIONS_PERMISSION_LEAVES,
     preset_grants=_explicit_preset_grants(_KG_OPERATIONS_PERMISSION_LEAVES, {}),
     historical_authorities=(
@@ -951,7 +940,6 @@ def _introduced_sdlc_grants(*flags: str) -> tuple[str, ...]:
 
 SDLC_TRANSITION_PERMISSION_INTRODUCTION_V1 = PermissionIntroductionManifest(
     version="SDLC-TRANSITIONS/v1",
-    legacy_compatible=True,
     leaves=_SDLC_TRANSITION_PERMISSION_LEAVES,
     preset_grants=_explicit_preset_grants(
         _SDLC_TRANSITION_PERMISSION_LEAVES,
@@ -1237,20 +1225,6 @@ if len({manifest.version for manifest in PERMISSION_INTRODUCTION_MANIFESTS}) != 
 
 _FAIL_CLOSED_INTRODUCED_FLAGS = frozenset(_INTRODUCED_PERMISSION_LEAVES)
 
-# SK-A/SK-B were introduced as strict governance boundaries and deliberately
-# never accept flat-token fallbacks.  The later catalog and SDLC generations
-# are a staged migration of actions that already existed behind flat MCP
-# permissions.  Their use cases name the one accepted legacy token explicitly;
-# retaining that narrow fallback lets old agents keep working while persisted
-# permission documents are reconciled to the new canonical leaves.
-_LEGACY_COMPATIBLE_INTRODUCED_FLAGS = frozenset(
-    leaf
-    for manifest in PERMISSION_INTRODUCTION_MANIFESTS
-    if manifest.legacy_compatible
-    for leaf in manifest.leaves
-)
-
-
 @dataclass(frozen=True)
 class PermissionContext:
     """Edition-neutral input to a permission decision.
@@ -1265,7 +1239,6 @@ class PermissionContext:
     permissions: PermissionSet | tuple[str, ...] | list[str] | None = None
     entity: str | None = None
     state: str | None = None
-    legacy_operation: str | None = None
     metadata: Mapping[str, Any] = field(default_factory=dict)
 
 
@@ -2018,7 +1991,7 @@ class PermissionSet:
         # A malformed persisted permission layer is an explicit governance
         # stop, not another backward-compatibility case.  Deny even unknown
         # extension paths while the owner-review signal is active.
-        if self.owner_review_required or flag.startswith("sprint."):
+        if self.owner_review_required or flag not in ALL_FLAGS:
             return False
         present, value = _permission_value_presence(self.flags, flag)
         if not present:
@@ -2185,179 +2158,6 @@ def resolve_permissions(
 # ---------------------------------------------------------------------------
 # Legacy permission mapping (19 old â†’ ~190 new)
 # ---------------------------------------------------------------------------
-
-LEGACY_PERMISSION_MAP: dict[str, list[str]] = {
-    "board:read": [
-        "board.read",
-        "board.activity_read",
-        "board.analytics_read",
-        "board.mentions_read",
-        "board.mentions_mark_seen",
-        "story.entity.read",
-        "story.history_read",
-        "topic.entity.read",
-        "ideation.architecture.read",
-        "refinement.architecture.read",
-        "spec.architecture.read",
-        "card.architecture.read",
-    ],
-    "cards:create": [
-        "card.entity.create",
-        "card.entity.create_test",
-    ],
-    "cards:update": [
-        "card.entity.edit_fields",
-        "card.entity.edit_bug_fields",
-        "card.entity.assign",
-        "card.entity.label",
-        "card.entity.link_spec",
-        "card.entity.link_tests",
-        "card.entity.manage_dependencies",
-        "card.copy_from_spec.mockups",
-        "card.copy_from_spec.knowledge",
-        "card.copy_from_spec.qa",
-        "card.copy_from_spec.architecture",
-        "card.architecture.create",
-        "card.architecture.edit",
-        "card.architecture.delete",
-        "card.architecture.import",
-        "card.architecture.render",
-        "card.link_to.scenario",
-        "card.link_to.tr",
-        "card.link_to.rule",
-        "card.link_to.contract",
-        "card.link_to.ir",
-        "card.link_to.or",
-    ],
-    "cards:delete": ["card.entity.delete"],
-    "cards:move": list(transition_permission_flags("card")),
-    "specs:create": [
-        "story.entity.create",
-        "topic.entity.create",
-        "spec.entity.create",
-    ],
-    "specs:update": [
-        "story.entity.edit_fields",
-        "story.entity.assign",
-        "story.entity.label",
-        "story.entity.archive",
-        "story.entity.restore",
-        "story.links.ideation",
-        "story.conversion.to_ideation",
-        "topic.entity.edit_fields",
-        "topic.entity.archive",
-        "topic.entity.restore",
-        "topic.entity.merge",
-        "spec.entity.edit_fields",
-        "spec.entity.edit_coverage_flags",
-        "spec.entity.assign",
-        "spec.entity.label",
-        "spec.entity.link_card",
-        "spec.entity.manage_dependencies",
-        "spec.tests.create",
-        "spec.tests.update_status",
-        "spec.rules.create",
-        "spec.rules.edit",
-        "spec.rules.delete",
-        "spec.contracts.create",
-        "spec.contracts.edit",
-        "spec.contracts.delete",
-        "spec.integration_requirements.create",
-        "spec.integration_requirements.edit",
-        "spec.integration_requirements.delete",
-        "spec.integration_requirements.link_task",
-        "spec.observability_requirements.create",
-        "spec.observability_requirements.edit",
-        "spec.observability_requirements.delete",
-        "spec.observability_requirements.link_task",
-        "spec.mockups.create",
-        "spec.mockups.edit",
-        "spec.mockups.delete",
-        "spec.mockups.annotate",
-        "ideation.architecture.create",
-        "ideation.architecture.edit",
-        "ideation.architecture.delete",
-        "ideation.architecture.import",
-        "ideation.architecture.render",
-        "refinement.architecture.create",
-        "refinement.architecture.edit",
-        "refinement.architecture.delete",
-        "refinement.architecture.import",
-        "refinement.architecture.render",
-        "spec.architecture.create",
-        "spec.architecture.edit",
-        "spec.architecture.delete",
-        "spec.architecture.import",
-        "spec.architecture.render",
-        "spec.knowledge.create",
-        "spec.knowledge.delete",
-        "spec.cards_derive",
-    ]
-    + structured_spec_entity_permission_flags(),
-    "specs:delete": [
-        "story.entity.delete",
-        "topic.entity.delete",
-        "spec.entity.delete",
-    ],
-    "specs:move": [
-        *transition_permission_flags("story"),
-        *transition_permission_flags("ideation"),
-        *transition_permission_flags("refinement"),
-        *transition_permission_flags("spec"),
-    ],
-    "specs:evaluate": [
-        "spec.evaluations.submit",
-        "spec.evaluations.delete",
-        # Spec Validation Gate â€” legacy agents with specs:evaluate also get
-        # the new validation gate submit/read permissions automatically.
-        "spec.validation.submit",
-        "spec.validation.read",
-    ],
-    "comments:create": [
-        "card.comments.create",
-        "card.comments.create_choice",
-        "card.comments.respond_choice",
-    ],
-    "comments:update": ["card.comments.edit"],
-    "comments:delete": ["card.comments.delete"],
-    "qa:create": [
-        "card.qa.ask",
-        "spec.qa.ask",
-        "spec.qa.ask_choice",
-        "ideation.qa.ask",
-        "ideation.qa.ask_choice",
-        "refinement.qa.ask",
-        "refinement.qa.ask_choice",
-    ],
-    "qa:answer": [
-        "card.qa.answer",
-        "spec.qa.answer",
-        "ideation.qa.answer",
-        "refinement.qa.answer",
-    ],
-    "qa:delete": ["card.qa.delete"],
-    "attachments:upload": ["card.attachments.upload"],
-    "attachments:delete": ["card.attachments.delete"],
-    "self:update": ["profile.update"],
-}
-
-# Use cases express their transitional authority as the pre-introduction
-# canonical leaf (for example ``board.read``). Persisted permission documents
-# can evaluate that leaf directly, while pre-migration MCP agents still carry
-# flat tokens such as ``board:read``. Keep that compatibility translation in
-# the policy itself so every inbound adapter gets the same bounded fallback.
-_CANONICAL_TO_LEGACY_TOKENS: dict[str, tuple[str, ...]] = {
-    canonical: tuple(
-        legacy
-        for legacy, mapped in LEGACY_PERMISSION_MAP.items()
-        if canonical in mapped
-    )
-    for canonical in {
-        canonical for mapped in LEGACY_PERMISSION_MAP.values() for canonical in mapped
-    }
-}
-
-
 
 
 def _set_all_flags(d: dict[str, Any], value: bool) -> dict[str, Any]:
@@ -3630,7 +3430,7 @@ def _perm_error_detailed(
 
 
 # ---------------------------------------------------------------------------
-# Backward-compatible check functions
+# Canonical permission checks
 # ---------------------------------------------------------------------------
 
 
@@ -3640,11 +3440,11 @@ def has_permission(
     """Check if agent has a specific permission.
 
     Accepts:
-    - None: full access (backwards compat)
-    - list[str]: legacy flat permissions
-    - PermissionSet: new granular permissions
+    - None: explicit local full access
+    - list[str]: exact canonical capabilities
+    - PermissionSet: resolved native flags
     """
-    if required.startswith("sprint."):
+    if required not in ALL_FLAGS:
         return False
     if agent_permissions is None:
         return True
@@ -3659,10 +3459,10 @@ def check_permission(
     """Check permission and return error message if denied.
 
     Returns None if allowed, error message string if denied.
-    Accepts list[str] (legacy), PermissionSet (new), or None (full access).
+    Accepts canonical capabilities, resolved flags, or the local sentinel.
     """
-    if required.startswith("sprint."):
-        return f"Permission denied: retired operation '{required}'"
+    if required not in ALL_FLAGS:
+        return f"Permission denied: unregistered operation '{required}'"
     if agent_permissions is None:
         return None
     if isinstance(agent_permissions, PermissionSet):
@@ -3705,32 +3505,6 @@ def evaluate_permission(context: PermissionContext) -> PermissionDecision:
         return check_permission(permissions, required)
 
     reason = _reason_for(operation, state_aware=True)
-    if (
-        not isinstance(permissions, PermissionSet)
-        and (
-            operation not in _FAIL_CLOSED_INTRODUCED_FLAGS
-            or operation in _LEGACY_COMPATIBLE_INTRODUCED_FLAGS
-        )
-        and reason
-        and context.legacy_operation
-    ):
-        # Historical leaves and explicitly staged post-SK-B introductions keep
-        # their caller-declared flat-token compatibility during migration.
-        reason = _reason_for(
-            context.legacy_operation,
-            state_aware=False,
-        )
-        if reason and isinstance(permissions, (list, tuple)):
-            # A flat pre-migration principal cannot carry canonical tree paths.
-            # Resolve only the explicit inverse edges declared by
-            # LEGACY_PERMISSION_MAP; no wildcard or inferred widening occurs.
-            for legacy_token in _CANONICAL_TO_LEGACY_TOKENS.get(
-                context.legacy_operation,
-                (),
-            ):
-                reason = _reason_for(legacy_token, state_aware=False)
-                if reason is None:
-                    break
 
     if reason is None:
         return PermissionDecision.allow(operation)
@@ -3776,7 +3550,6 @@ __all__ = [
     "GUIDELINE_REVISIONS_READ",
     "GUIDELINE_REVISIONS_RETIRE",
     "InvalidPermissionContext",
-    "LEGACY_PERMISSION_MAP",
     "KG_OPERATIONS_PERMISSION_INTRODUCTION_V1",
     "MAX_HUMAN_ONLY_TOOL_EXEMPTIONS",
     "MCP_TOOL_PERMISSION_POLICIES",

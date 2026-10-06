@@ -199,14 +199,14 @@ async def test_mcp_card_update_granular_false_denies_before_writer():
 
 
 @pytest.mark.asyncio
-async def test_mcp_card_update_legacy_list_still_authorizes():
+async def test_mcp_card_update_exact_operation_authorizes():
     cards = _Cards()
     uow = _Uow(_Services(None, cards=cards))
     actor = ActorContext(
         "actor-1",
         "mcp",
         board_id=BOARD_ID,
-        permissions=["cards:update"],
+        permissions=["card.entity.edit_fields"],
     )
 
     await McpUpdateCardUseCase().execute(
