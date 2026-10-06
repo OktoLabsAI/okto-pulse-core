@@ -21,7 +21,6 @@ from okto_pulse.core.domain.guideline_policy import (
 )
 from okto_pulse.core.domain.guideline_semantic_assessment import (
     SemanticAssessmentInadmissibilityCause,
-    SemanticGuidelineAssessmentContext,
 )
 from okto_pulse.core.domain.guideline_semantic_currentness import (
     SemanticAssessmentCurrentnessReason,
@@ -58,8 +57,6 @@ from okto_pulse.core.domain.sdlc_registry import SDLC_REGISTRY
 
 NOW = datetime(2026, 7, 30, 22, tzinfo=timezone.utc)
 DIGEST_A = "a" * 64
-DIGEST_B = "b" * 64
-DIGEST_C = "c" * 64
 DIGEST_D = "d" * 64
 
 
@@ -115,13 +112,7 @@ def _assessment(
         last_semantic_editor_id="editor-1",
         captured_at=NOW,
     )
-    context = SemanticGuidelineAssessmentContext(
-        subject_snapshot=subject,
-        binding=binding,
-        revision=revision,
-        policy_set_digest=DIGEST_B,
-        binding_head_digest=DIGEST_C,
-    )
+    context = native_semantic_assessment_snapshot(subject=subject, binding=binding, revision=revision)
     evidence = EvidenceRef(
         source_type="spec",
         source_id="spec-1",
@@ -154,12 +145,12 @@ def _binding_snapshot(
         enforcement=enforcement,
     )
     values: dict[str, object] = {
-        "binding_id": context.binding.binding_id,
-        "guideline_id": context.revision.guideline_id,
+        "binding_id": context.binding_id,
+        "guideline_id": context.guideline_id,
         "enforcement": enforcement,
         "applicable_metric_count": 1,
         "current_snapshot": (
-            native_semantic_assessment_snapshot(subject=context.subject_snapshot, binding=context.binding, revision=context.revision)
+            context
         ),
         "receipt": receipt if include_receipt else None,
         "findings": (
@@ -191,7 +182,7 @@ def _transition_snapshot(
 def _approved_waiver(binding: SemanticBindingComplianceSnapshot):
     assert binding.findings
     context, receipt, evidence = _assessment(score=60)
-    assert context.binding.binding_id == binding.binding_id
+    assert context.binding_id == binding.binding_id
     requested = request_semantic_metric_waiver(
         waiver_id="waiver-1",
         event_id="waiver-event-1",

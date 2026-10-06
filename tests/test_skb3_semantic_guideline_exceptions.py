@@ -21,7 +21,6 @@ from okto_pulse.core.domain.guideline_policy import (
 )
 from okto_pulse.core.domain.guideline_semantic_assessment import (
     SemanticAssessmentContractError,
-    SemanticGuidelineAssessmentContext,
 )
 from okto_pulse.core.domain.guideline_semantic_exceptions import (
     SemanticExceptionActorKind,
@@ -43,6 +42,7 @@ from okto_pulse.core.domain.guideline_semantic_exceptions import (
     transition_semantic_metric_waiver,
 )
 from okto_pulse.core.domain.guideline_semantic_currentness import (
+    native_semantic_assessment_snapshot,
     SemanticAssessmentCurrentnessReason,
 )
 from okto_pulse.core.domain.guideline_semantic_findings_v2 import (
@@ -55,8 +55,6 @@ from okto_pulse.core.domain.quality_assessment import (
 
 NOW = datetime(2026, 7, 30, 21, tzinfo=timezone.utc)
 DIGEST_A = "a" * 64
-DIGEST_B = "b" * 64
-DIGEST_C = "c" * 64
 DIGEST_D = "d" * 64
 
 
@@ -126,13 +124,7 @@ def _context_and_receipt():
         last_semantic_editor_id="editor-1",
         captured_at=NOW,
     )
-    context = SemanticGuidelineAssessmentContext(
-        subject_snapshot=subject_snapshot,
-        binding=binding,
-        revision=revision,
-        policy_set_digest=DIGEST_B,
-        binding_head_digest=DIGEST_C,
-    )
+    context = native_semantic_assessment_snapshot(subject=subject_snapshot, binding=binding, revision=revision)
     evidence = EvidenceRef(
         source_type="spec",
         source_id="spec-1",

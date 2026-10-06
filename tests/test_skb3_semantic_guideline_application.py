@@ -33,8 +33,10 @@ from okto_pulse.core.domain.guideline_policy import (
 )
 from okto_pulse.core.domain.guideline_semantic_assessment import (
     SemanticAssessmentAssessor,
-    SemanticGuidelineAssessmentSubmission,
-    SemanticMetricAssessment,
+)
+from okto_pulse.core.domain.guideline_semantic_v2 import (
+    SemanticAssessmentDraftV2, SemanticMetricAssessmentDraftV2,
+    SemanticPinpointDraftV2, SemanticPinpointKind,
 )
 from okto_pulse.core.domain.guideline_semantic_currentness import (
     NativeSemanticAssessmentCurrentSnapshot,
@@ -54,7 +56,6 @@ from okto_pulse.core.domain.quality_assessment import (
     UnboundFindingAnchor,
 )
 from okto_pulse.core.ports.guideline_policy import (
-    GuidelinePolicyDigestConflict,
     GuidelinePolicyIdempotencyConflict,
     SemanticSkipListQuery,
 )
@@ -115,8 +116,8 @@ def _binding(
 def _submission(
     board_id: str = "board-1",
     score: int = 82,
-) -> SemanticGuidelineAssessmentSubmission:
-    return SemanticGuidelineAssessmentSubmission(
+) -> SemanticAssessmentDraftV2:
+    return SemanticAssessmentDraftV2(
         subject=PolicySubjectRef(
             board_id=board_id,
             entity_type=PolicyEntityType.SPEC,
@@ -134,7 +135,7 @@ def _submission(
             model_id="model-1",
         ),
         metric_results=(
-            SemanticMetricAssessment(
+            SemanticMetricAssessmentDraftV2(
                 metric_id="segregation",
                 score=score,
                 rationale="Domain behavior depends only on declared ports.",
@@ -147,9 +148,16 @@ def _submission(
                     ),
                 ),
                 pinpoints=(
-                    UnboundFindingAnchor(
-                        anchor_type=FindingAnchorType.FIELD,
-                        anchor_ref="technical_requirements.architecture",
+                    SemanticPinpointDraftV2(
+                        pinpoint_key="architecture",
+                        kind=SemanticPinpointKind.EVIDENCE,
+                        title="Architecture boundary",
+                        detail="Domain behavior depends only on declared ports.",
+                        severity=None, remediation=None,
+                        anchor=UnboundFindingAnchor(
+                            anchor_type=FindingAnchorType.FIELD,
+                            anchor_ref="technical_requirements.architecture",
+                        ),
                     ),
                 ),
             ),
@@ -180,12 +188,8 @@ class _Port:
         self.finding = None
         self.waiver_save_count = 0
         self.lock_values: list[bool] = []
-        self.replay_lookups: list[dict[str, object]] = []
         self.skip_list_count = 0
 
-    async def get_semantic_assessment_result_by_idempotency(self, **kwargs):
-        self.replay_lookups.append(kwargs)
-        return self.replay
 
     async def resolve_policy_subject_snapshot(self, *, lock=False, **_kwargs):
         self.lock_values.append(lock)
@@ -210,21 +214,6 @@ class _Port:
     async def get_revision(self, **_kwargs):
         return self.revision
 
-    async def save_semantic_assessment_result(
-        self,
-        *,
-        result,
-        request_digest,
-    ):
-        assert request_digest == result.request_digest
-        current = self._current_snapshot()
-        if (
-            result.receipt.policy_set_digest != current.policy_set_digest
-            or result.receipt.binding_head_digest != current.binding_head_digest
-        ):
-            raise GuidelinePolicyDigestConflict("semantic_assessment_policy_set_stale")
-        self.saved = result
-        return result
 
     async def get_semantic_waiver_by_idempotency(self, **_kwargs):
         return self.waiver_replay
@@ -232,16 +221,8 @@ class _Port:
     async def get_semantic_waiver(self, **_kwargs):
         return self.waiver
 
-    async def get_semantic_assessment_receipt(self, **_kwargs):
-        return None if self.saved is None else self.saved.receipt
 
-    async def get_semantic_guideline_finding(self, **_kwargs):
-        return self.finding
 
-    async def get_semantic_metric_result(self, **_kwargs):
-        if self.saved is None:
-            return None
-        return self.saved.receipt.metric_results[0]
 
     async def resolve_semantic_assessment_current_snapshot(
         self,

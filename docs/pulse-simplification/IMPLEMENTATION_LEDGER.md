@@ -2,6 +2,62 @@
 
 ## Estado para retomada
 
+### 2026-10-06 — C1 WIP: preservar admissibilidade antes de retirar writer antigo
+
+A auditoria dos consumidores reais confirmou que o writer nativo não aplicava
+a segregação autor/avaliador Blocking, embora o writer antigo e suas provas a
+exigissem. Isso é regra de governança que o plano de simplificação manda manter.
+Reprodução SQL real native-admission-repro1: a avaliação pelo último editor foi
+selada, quando a prova exigia SemanticAssessmentInadmissibleError; falhou com
+DID NOT RAISE. Não foi descartado o teste nem atribuída a regra à migração.
+
+Extraída a validação existente para validate_semantic_assessment_admissibility,
+função pública pura do Core com assessor/confidence/binding/subject_snapshot.
+Writer nativo a chama sob o lock de autoridade e antes de resultados/recibo/outbox.
+O writer antigo ainda presente usa a mesma função até sua retirada coordenada,
+sem nova modalidade/fallback/conversor. Confiança mínima agora retorna o diagnóstico
+canônico de inadmissibilidade, em vez de autoridade stale. Ordem mantida:
+confiança insuficiente precede segregação; Advisory continua aceitando autor.
+
+Novas provas: sete combinações Core para confiança/separação; três SQL para
+recusa com contagens imutáveis de receipt/metric/finding/outbox, conferidas também
+em conexão nova. Par dist-native-admission1 instalado e byte a byte aprovado:
+provenance-native-admission1.json, Core 845/907 e Community 319/405.
+SHA Core 7fb76bc20045908f68dd35aa0a06539d45364361f6a71018ef96de411e9e0b76;
+Community 4350825db6b15360a79c98fefd4091f1ac326944682ca5ea9c543f381a706068.
+native-admission-community1: 39 aprovados. Core1: 32 aprovados/3 falhas de fixture
+Advisory por reaproveitar configuration_digest do binding Blocking; corrigida a
+fixture para recalcular seu digest, sem mudar produto. Core2: sete aprovados.
+closure-native-admission1 passou com oito budgets zero.
+
+Retirados guideline_semantic_findings.py (364 linhas, nenhum consumidor em src ou
+testes), SemanticPinpointProjectionV1 e union/exports antigos. O teste de dois
+contratos foi substituído pela prova da projeção nativa, com disposição registrada.
+native-admission-finalcore: 44 aprovados (admissibilidade, domínio/aplicação/
+findings nativos, waiver e catálogo MCP). Application/F3 agora usam draft nativo;
+cinco métodos mortos de persistência antiga retirados do fake _Port.
+native-application-fixtures1: 15 aprovados, incluindo negações Sprint sem commit.
+Fixtures de exceptions/transition agora usam snapshot nativo, sem contexto antigo;
+native-context-fixtures1: 35 aprovados, incluindo preview de transição REST/MCP.
+
+Par final dist-native-admission3 instalado e byte a byte aprovado por
+provenance-native-admission3.json: Core 844 Python/906 payload, Community 319/405.
+SHA Core e6fdb6f11c548919375eb3f891579cd61b3dab80a2c47f8337e998f4bb459d22;
+Community 86311eb30b5851fcea5dba4ebd5a6772676a2b2210bc37b6aa97450118bb3c63.
+Python idêntico ao admission2 usado no teste final; matrizes README regeneradas
+após exclusão do módulo. Closure2 tinha só drift de matriz, findings vazios.
+closure-native-admission3 passou: findings/documentation_findings vazios, oito
+budgets current=limit=0. Ruff F/E9 e diff passaram, inclusive novos testes.
+Todos os handles encerrados. Nenhum Python de produto mudou após a prova final.
+
+Retirada do restante do domínio predecessor ainda pendente. Restou como consumidor
+de Context/Submission/record antigo a suíte Core test_skb3_semantic_guideline_assessment_domain.py.
+Ela mistura regras atuais de métricas/binding/digests com writer/receipts antigos:
+adaptar/separar individualmente antes de excluir o restante. A admissão de
+confiança/separação já foi preservada nesta rodada. A suíte também tem uma asserção
+da porta antiga, ainda não adaptada; não restaurar os métodos removidos.
+Nenhuma alteração frontend nesta correção interna.
+
 ### 2026-10-06 — C1/C3: snapshot único para skips e envelope de grafo estrito
 
 Publicado em feature/v0.4.0: Core 80c0c0b7 / Community 79642f35, pushes

@@ -2061,6 +2061,10 @@
     {
       "path": "okto_labs_pulse_community/frontend/src/components/policy-compliance/__tests__/semanticPolicyModel.test.ts",
       "reason": "Native history parses v2 pinpoints and current/previous lifecycle; predecessor admission fields and history_only are rejected."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_skb31_semantic_guideline_v2_application.py",
+      "reason": "Removed orphan predecessor pinpoint DTO and dual-contract projection case; native sealed pinpoint projection remains tested losslessly. Native capability and admission tests remain."
     }
   ],
   "removed_cases": [

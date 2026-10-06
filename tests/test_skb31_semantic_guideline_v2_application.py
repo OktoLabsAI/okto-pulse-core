@@ -41,7 +41,6 @@ from okto_pulse.core.ports.semantic_subject_projection import (
     SemanticAssessmentV2CapabilitySnapshot,
     SemanticAssessmentV2PersistenceResult,
     SemanticAssessmentV2WriterUnavailable,
-    SemanticPinpointProjectionV1,
     SemanticPinpointProjectionV2,
     SemanticSubjectProjectionError,
     SemanticSubjectProjectionFailure,
@@ -261,7 +260,7 @@ async def test_missing_adapters_fail_closed() -> None:
 
 
 @pytest.mark.asyncio
-async def test_projection_contracts_discriminate_v1_and_v2_losslessly() -> None:
+async def test_native_projection_preserves_sealed_pinpoint_losslessly() -> None:
     projection = ProjectionSpy()
     persistence = PersistenceSpy()
     result = await SealSemanticGuidelineAssessmentV2UseCase(
@@ -275,14 +274,8 @@ async def test_projection_contracts_discriminate_v1_and_v2_losslessly() -> None:
         )
     )
     sealed = result.request.metric_results[0].pinpoints[0]
-    v1 = SemanticPinpointProjectionV1(
-        anchor_type="field",
-        anchor_ref="stable-field-id",
-        excerpt_hash=DIGEST,
-    )
     v2 = SemanticPinpointProjectionV2.from_domain(sealed, blocking=True)
 
-    assert v1.contract_version == 1
     assert v2.contract_version == 2
     assert v2.pinpoint_key == sealed.pinpoint_key
     assert v2.label == sealed.anchor_snapshot.label

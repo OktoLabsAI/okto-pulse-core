@@ -1270,20 +1270,23 @@ def _validate_exact_fences_and_metric_set(
     return applicable_metrics
 
 
-def _validate_assessment_admissibility(
-    submission: SemanticGuidelineAssessmentSubmission,
-    context: SemanticGuidelineAssessmentContext,
+def validate_semantic_assessment_admissibility(
+    *,
+    assessor: SemanticAssessmentAssessor,
+    confidence: int,
+    binding: BoardGuidelineBinding,
+    subject_snapshot: PolicySubjectSnapshot,
 ) -> None:
     """Fail before constructing any receipt/result evidence."""
 
-    if submission.confidence < context.binding.minimum_confidence:
+    if confidence < binding.minimum_confidence:
         raise SemanticAssessmentInadmissibleError(
             SemanticAssessmentInadmissibilityCause.CONFIDENCE_BELOW_MINIMUM
         )
-    last_editor_id = context.subject_snapshot.last_semantic_editor_id
+    last_editor_id = subject_snapshot.last_semantic_editor_id
     if (
-        context.binding.enforcement is GuidelineEnforcement.BLOCKING
-        and submission.assessor.agent_id == last_editor_id
+        binding.enforcement is GuidelineEnforcement.BLOCKING
+        and assessor.agent_id == last_editor_id
     ):
         # Separation failures are a closed structural cause of
         # inadmissibility, not an additional persisted state or public
@@ -1323,7 +1326,10 @@ def record_semantic_guideline_assessment(
         submission,
         context,
     )
-    _validate_assessment_admissibility(submission, context)
+    validate_semantic_assessment_admissibility(
+        assessor=submission.assessor, confidence=submission.confidence,
+        binding=context.binding, subject_snapshot=context.subject_snapshot,
+    )
     input_digest = semantic_assessment_input_digest_v1(context)
     request_digest = semantic_assessment_request_digest_v1(
         submission,
@@ -1440,6 +1446,7 @@ def record_semantic_guideline_assessment(
 
 
 __all__ = [
+    "validate_semantic_assessment_admissibility",
     "SEMANTIC_ASSESSMENT_INPUT_DIGEST_VERSION",
     "SEMANTIC_ASSESSMENT_REQUEST_DIGEST_VERSION",
     "SEMANTIC_ASSESSMENT_RECEIPT_DIGEST_VERSION",

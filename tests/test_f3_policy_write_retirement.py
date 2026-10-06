@@ -35,7 +35,7 @@ def _retired_fixture():
     port.save_semantic_policy_skip_mutation = AsyncMock()
     submission = replace(_submission(), subject=subject,
                          assessor=replace(_submission().assessor, agent_id="owner-1"), metric_results=tuple(
-        replace(metric, pinpoints=(UnboundFindingAnchor(anchor_type=FindingAnchorType.WHOLE_ARTIFACT),))
+        replace(metric, pinpoints=(replace(metric.pinpoints[0], anchor=UnboundFindingAnchor(anchor_type=FindingAnchorType.WHOLE_ARTIFACT)),))
         for metric in _submission().metric_results
     ))
     actor = ActorContext("owner-1", "rest", actor_kind="human", board_id="board-1", permissions=(

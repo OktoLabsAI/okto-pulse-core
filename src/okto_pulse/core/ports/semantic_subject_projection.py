@@ -260,14 +260,6 @@ class SemanticAssessmentV2CapabilityPort(Protocol):
 
 
 @dataclass(frozen=True, slots=True)
-class SemanticPinpointProjectionV1:
-    anchor_type: str
-    anchor_ref: str | None
-    excerpt_hash: str | None
-    contract_version: Literal[1] = 1
-
-
-@dataclass(frozen=True, slots=True)
 class SemanticPinpointProjectionV2:
     pinpoint_key: str
     kind: str
@@ -318,7 +310,6 @@ class SemanticPinpointProjectionV2:
         )
 
 
-SemanticPinpointProjection = SemanticPinpointProjectionV1 | SemanticPinpointProjectionV2
 
 
 __all__ = [
@@ -329,8 +320,6 @@ __all__ = [
     "SemanticAssessmentV2CapabilitySnapshot",
     "SemanticAssessmentV2WriterUnavailable",
     "SemanticAssessmentV2PersistenceResult",
-    "SemanticPinpointProjection",
-    "SemanticPinpointProjectionV1",
     "SemanticPinpointProjectionV2",
     "SemanticSubjectProjectionError",
     "SemanticSubjectProjectionFailure",
