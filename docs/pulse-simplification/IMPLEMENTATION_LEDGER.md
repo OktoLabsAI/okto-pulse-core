@@ -2,7 +2,7 @@
 
 ## Estado para retomada
 
-### 2026-10-06 — C1/C3 em execução: retirada da fachada de permissões
+### 2026-10-06 — C1/C3: retirada da fachada de permissões
 
 Bases Core 38e33904 / Community 9b94f03c, limpas e publicadas. Rastreio confirmou
 classe Permissions sem consumidor produtivo após retirada do fallback. Removidos
@@ -32,7 +32,8 @@ somente README alterado, nenhum Python de produto. SHA256 Core
 Community 548aa203c3bb10c85d31d92a39bb16c4bd25fb7ccfa254e34bb63a0cd8fbd3b3.
 Frontend não alterado neste incremento. Nenhuma base/processo real alterado.
 Closure2 aprovada: findings/documentation_findings vazios e oito budgets
-current=limit=0. Todos os handles encerrados. Commits/pushes pendentes.
+current=limit=0. Todos os handles encerrados. Publicado em feature/v0.4.0:
+Core 716efe46 / Community da3c7dbd, ambos os pushes confirmados.
 
 Próxima cadeia confirmada de compatibilidade: telemetry/settings.py ainda aceita
 local_only/enable_beacon e converte local_only para disabled; mantém normalized_from
