@@ -50,7 +50,7 @@ class _HealthSchedulerControl:
 
 
 def _stub_ctx(*, ct_read: bool = True):
-    permissions = ["board:read", "kg.admin.settings_read"]
+    permissions = ["board.read", "kg.operations.health.read"]
     if ct_read:
         permissions.extend(
             (

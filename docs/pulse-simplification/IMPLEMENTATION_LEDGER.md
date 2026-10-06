@@ -2,6 +2,40 @@
 
 ## Estado para retomada
 
+### 2026-10-06 — C1/C3: scheduler sem fallback antigo
+
+Bases Core c06a6b67 / Community 05dac918, limpas/publicadas. Produtor Core sempre
+emite decay_scheduler_diagnostics; DTO REST exige o campo. Frontend agora exige
+o mesmo contrato e nao infere never/stale/fresh de last_decay_tick_at.
+Ausencia em resposta invalida fica explicitamente desconhecida. Mantidos
+diagnostico atual, timestamp informativo, polling e separacao de divida operacional.
+Testes antigos de conversao substituidos por ausencia sem inferencia.
+native-scheduler-front1/front2: 68 aprovados. Primeiro build detectou fixture
+KnowledgeGraphPage sem campo obrigatorio; atualizada para diagnostico nativo.
+Build final aprovado: 79 arquivos/78 assets, tree SHA
+91aed51091edf7e293635d630d62bc97d3905954dcc51c9fb9c58cbe9375ebb3.
+Assets staged antes do par dist-native-scheduler1. Instalacao e
+provenance-native-scheduler1 byte a byte aprovadas (843/905 Core; 319/405 Community).
+Community1: 11 aprovados. Core1: 57 aprovados/sete falhas de fixture MCP com
+board:read antigo; Core2: cinco aprovados/cinco falhas por falta da operacao
+canonica kg.operations.health.read (fixture usava kg.admin.settings_read).
+Fixture passa a conceder board.read e kg.operations.health.read, preservando
+negativas de Code Traceability. Core3: dez aprovados; total distinto Core: 64.
+Produto Python nao mudou. Ruff F/E9 e diff aprovados. Todos os handles encerrados.
+SHA Core 4a98260b44aee10356779015b31084350811569b196e6bfa7d0b89950e110647;
+Community 9005feafbf37a6b6fd008fc2ddd5205a59f0200105bae058acf5605294a00d66.
+Nenhuma base/processo real alterado. C1-C4 e T23/KG-10 permanecem abertos;
+nao declarar entrega total.
+Closure1 aprovada: findings/documentation_findings vazios, oito budgets zero.
+Proxima superficie de compatibilidade confirmada: kg_health_readiness aceita
+artifact_ref obsoleto em MCP/REST/use case/service, mas sinais sao Board-scoped.
+Retirar a entrada e consumidores/documentacao/testes exclusivos, sem mudar o
+escopo nativo das observacoes. Nao alterar artifact_ref de itens de saida atuais.
+Outra cadeia do inventario: qa_require_role_separation e helper de leitura
+sem caller produtivo; gate atual usa allow_agent_self_answering. DTO/frontend
+ainda reenviam campo antigo. Investigar e retirar cadeia coordenada depois.
+Nenhuma dessas proximas cadeias foi alterada neste incremento.
+
 ### 2026-10-06 — C1/C3: CLI sem export de credencial antiga
 
 Retirada exportacao governed_legacy_plaintext: cmd_api_key exige handoff

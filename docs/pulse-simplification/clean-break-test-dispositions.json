@@ -1180,6 +1180,11 @@
       "path": "okto_labs_pulse_community/tests/test_hnd2_credential_surface_gate.py::test_hnd2_init_reveals_returned_key_but_not_persisted_marker",
       "disposition": "superseded",
       "reason": "Expanded into parameterized native primary-commit delivery test: valid callback still reveals once; missing callback is refused without revealing the returned tuple credential."
+    },
+    {
+      "path": "okto_labs_pulse_community/frontend/src/components/knowledge/__tests__/KGHealthView.test.tsx::TS5 legacy tick fallback (three cases)",
+      "disposition": "superseded",
+      "reason": "Removed local 24-hour reconstruction for missing scheduler diagnostics. Three negative cases now preserve unknown for absent diagnostics regardless of the old timestamp; native backend diagnostics remain covered."
     }
   ],
   "adapted_suites": [
