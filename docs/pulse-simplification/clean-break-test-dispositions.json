@@ -2208,6 +2208,34 @@
     {
       "path": "okto_labs_pulse_community/tests/test_skb3_semantic_subject_writer_bridge.py",
       "reason": "Registered MCP mutation fixture uses exact ideation edit capability; semantic editor attribution and native authority assertions retained."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_permission_namespace_introductions.py",
+      "reason": "Native modes only; retired notice permission removed. Preserve native consent, complete state carrier, redaction, and exact grant/conjunction assertions."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_r12_telemetry_state_carrier.py",
+      "reason": "Native modes only; retired notice permission removed. Preserve native consent, complete state carrier, redaction, and exact grant/conjunction assertions."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/telemetry_behavioral/test_r12_telemetry_state_carrier.py",
+      "reason": "Native modes only; retired notice permission removed. Preserve native consent, complete state carrier, redaction, and exact grant/conjunction assertions."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/telemetry_behavioral/test_telemetry_local_first.py",
+      "reason": "Native modes only; retired notice permission removed. Preserve native consent, complete state carrier, redaction, and exact grant/conjunction assertions."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_metrics_cli.py",
+      "reason": "Native modes only; retired notice permission removed. Preserve native consent, complete state carrier, redaction, and exact grant/conjunction assertions."
+    },
+    {
+      "path": "okto_labs_pulse_community/frontend/src/components/layout/MetricsSettingsPanel.test.tsx",
+      "reason": "Migration toast and local_only send removed. Current On/Off, permissions and payload privacy preserved; unknown/retired mode cannot transmit and summary read never writes consent."
+    },
+    {
+      "path": "okto_labs_pulse_community/frontend/src/components/guided-help/__tests__/telemetry.test.ts",
+      "reason": "Migration toast and local_only send removed. Current On/Off, permissions and payload privacy preserved; unknown/retired mode cannot transmit and summary read never writes consent."
     }
   ],
   "removed_cases": [
@@ -3790,6 +3818,41 @@
       "path": "okto_labs_pulse_core/tests/test_r01a_specs_ir_or_linking_uow.py::test_link_task_to_observability_requirement_prunes_dead_card_reference",
       "disposition": "replaced",
       "reason": "Native contract refuses inconsistent references without automatic repair. Replacement verifies 422 and original ghost reference unchanged; valid linking and foreign-board denial cases preserved."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/telemetry_behavioral/test_telemetry_local_first.py::test_metrics_settings_normalizes_legacy_local_only_and_preserves_acknowledged_items",
+      "disposition": "replaced",
+      "reason": "Telemetry legacy mode conversion and notice removed; native telemetry admission tests verify refusal without writes. Current consent/privacy and event tests retained."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/telemetry_behavioral/test_telemetry_local_first.py::test_legacy_local_only_state_does_not_capture_events_after_normalization",
+      "disposition": "replaced",
+      "reason": "Telemetry legacy mode conversion and notice removed; native telemetry admission tests verify refusal without writes. Current consent/privacy and event tests retained."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/telemetry_behavioral/test_telemetry_local_first.py::test_seen_legacy_local_only_notice_is_not_pending",
+      "disposition": "replaced",
+      "reason": "Telemetry legacy mode conversion and notice removed; native telemetry admission tests verify refusal without writes. Current consent/privacy and event tests retained."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/telemetry_behavioral/test_telemetry_local_first.py::test_legacy_local_only_state_normalizes_to_disabled_with_bounded_notice",
+      "disposition": "replaced",
+      "reason": "Telemetry legacy mode conversion and notice removed; native telemetry admission tests verify refusal without writes. Current consent/privacy and event tests retained."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_r12_telemetry_state_carrier.py::test_consent_and_migration_notice_preserve_full_dict_carrier",
+      "disposition": "replaced",
+      "reason": "Telemetry conversion/notice removed. Current consent, state preservation, export/purge and privacy retained; unsupported modes and retired route have explicit no-write refusal tests."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/telemetry_behavioral/test_telemetry_local_first.py::test_migration_notice_seen_endpoint_is_idempotent_and_preserves_state",
+      "disposition": "replaced",
+      "reason": "Telemetry conversion/notice removed. Current consent, state preservation, export/purge and privacy retained; unsupported modes and retired route have explicit no-write refusal tests."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_metrics_cli.py::test_metrics_cli_legacy_local_only_maps_to_off_export_and_purge",
+      "disposition": "replaced",
+      "reason": "Telemetry conversion/notice removed. Current consent, state preservation, export/purge and privacy retained; unsupported modes and retired route have explicit no-write refusal tests."
     }
   ]
 }

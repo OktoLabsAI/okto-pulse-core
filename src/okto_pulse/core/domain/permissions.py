@@ -480,7 +480,6 @@ _OPERATIONAL_PERMISSION_LEAVES: tuple[str, ...] = (
     "metrics.publish_health.read",
     "metrics.local.events.create",
     "metrics.settings.edit",
-    "metrics.settings.migration_notice_seen",
     "metrics.local.export",
     "metrics.local.purge",
     "amendment.revision.read",
@@ -523,7 +522,6 @@ OPERATIONAL_PERMISSION_INTRODUCTION_V1 = PermissionIntroductionManifest(
         ("metrics.publish_health.read", "board.read"),
         ("metrics.local.events.create", "board.analytics_read"),
         ("metrics.settings.edit", "board.analytics_read"),
-        ("metrics.settings.migration_notice_seen", "board.analytics_read"),
         ("metrics.local.export", "board.analytics_read"),
         ("metrics.local.purge", "board.analytics_read"),
         ("amendment.revision.read", "card.entity.read"),
@@ -1410,7 +1408,6 @@ PERMISSION_REGISTRY: dict[str, dict[str, Any]] = {
         "publish_health": {"read": True},
         "settings": {
             "edit": True,
-            "migration_notice_seen": True,
         },
     },
     "amendment": {

@@ -19,6 +19,8 @@ those source signals.
 """
 
 from __future__ import annotations
+from okto_pulse.core.domain.telemetry_modes import validate_telemetry_state
+
 
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -113,7 +115,6 @@ class TelemetryState:
     changed_at: str | None = None
     policy_version: str | None = None
     schema_version: str | None = None
-    normalized_from: str | None = None
     next_opt_in_prompt_after: str | None = None
     acknowledged_items: tuple[str, ...] = ()
 
@@ -124,20 +125,19 @@ class TelemetryState:
             "changed_at": self.changed_at,
             "policy_version": self.policy_version,
             "schema_version": self.schema_version,
-            "normalized_from": self.normalized_from,
             "next_opt_in_prompt_after": self.next_opt_in_prompt_after,
             "acknowledged_items": list(self.acknowledged_items),
         }
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> "TelemetryState":
+        validate_telemetry_state(d)
         return cls(
             mode=d.get("mode"),
             source=d.get("source"),
             changed_at=d.get("changed_at"),
             policy_version=d.get("policy_version"),
             schema_version=d.get("schema_version"),
-            normalized_from=d.get("normalized_from"),
             next_opt_in_prompt_after=d.get("next_opt_in_prompt_after"),
             acknowledged_items=tuple(d.get("acknowledged_items") or ()),
         )
@@ -231,7 +231,7 @@ class TelemetryStateCarrier(Protocol):
     """Full-dict telemetry state carrier for an edition-owned state scope.
 
     The concrete adapter is edition-owned (Community for the local edition) and
-    must preserve every existing key, including unknown fields, migration
+    must preserve every existing key, including unknown extension fields, current
     notices, history, watermark, failure_state, install-token lifecycle and
     beacon/schema fields. ``state_ref`` is opaque to Core: only the edition may
     interpret it as a filesystem path, tenant key, object-store key, or another
@@ -366,6 +366,7 @@ class TelemetryPort(Protocol):
 
 
 __all__ = [
+    "validate_telemetry_state",
     "HEALTH_REPORT_FIELDS",
     "PRODUCT_METRIC_KEYS",
     "PRODUCT_AGGREGATE_FAMILIES",

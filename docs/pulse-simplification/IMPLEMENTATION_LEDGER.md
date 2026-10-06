@@ -2,6 +2,45 @@
 
 ## Estado para retomada
 
+### 2026-10-06 — C1/C3: telemetria com modos atuais
+
+Bases Core dbccb182 / Community da3c7dbd, limpas e publicadas. Retirada coordenada
+de local_only/enable_beacon, conversão para disabled, normalized_from, aviso de
+migração, gravador de visto, endpoint/permissão, alias CLI e frontend.
+Mantidos disabled/anonymous_beacon, consentimento explícito, privacidade,
+histórico nativo e bloqueio de consentimento desatualizado. Novo contrato puro
+de admissão, exportado pela porta: estado incompatível é recusado sem conversão
+nem escrita, mesmo sob override disabled. Carrier Community não trata JSON
+corrompido como instalação vazia e verifica destino antes de gravar.
+Guided Help só envia no modo consentido atual; modo desconhecido/retirado não envia.
+Testes exclusivos de conversão substituídos por recusa; fixtures e matriz de
+permissões ajustadas à remoção da folha de aviso. Disposições no JSON.
+native-telemetry-front1: 15 aprovados. Build frontend concluído: 79 arquivos,
+78 assets, tree SHA a0c45f842ac80557a718fce75e8eedeacc04c7f6ce45c51cb45b1ad6fb929a2d.
+Assets staged antes das wheels. Par dist-native-telemetry1 instalado; prova byte
+a byte aprovada (843 Python/905 payload Core; 319/405 Community).
+native-telemetry-core1: 60 aprovados, incluindo consentimento/carrier/privacidade,
+namespace, catálogos gerados e capstone. Community1: 46 aprovados/14 falhas
+da nova suíte sem providers; movida para telemetry_behavioral, onde a fixture
+registra os providers concretos. Community2: 17 aprovados. Total distinto
+Community: 60. Nenhuma correção de produto após a prova do par1.
+Closure1: findings vazio, oito budgets zero, só matrizes README divergentes.
+Matrizes regeneradas oficialmente; par dist-native-telemetry2 instalado e
+provenance-native-telemetry2 aprovada, mesmas contagens byte a byte.
+SHA Core f55614eeee261c13c92c6ae237d944dcdc2ebbf5b3738e60e72da2858b6f82d2;
+Community 74b4af90660c34fd2ec86de8d95705981c4da42b0631e4cbd44868ba5af0f6ce.
+Somente README alterado entre os pares. Ruff F/E9 e diff check aprovados.
+Closure2 aprovada: findings/documentation_findings vazios, oito budgets
+current=limit=0. Todos os handles encerrados. Commit/push em andamento.
+Nenhuma base/processo real alterado.
+
+Próxima dependência concreta: FailureState ainda reconstrói last_success_at de
+last_send_at quando não há bloco failure_state; watermark também deve ser
+rastreado antes de remover adaptações de estado antigo. Preservar estado inicial
+legítimo, recuperação/retry, consentimento, redaction e projeções atuais; não
+confundir default inicial com conversor. Esta cadeia não foi removida neste
+incremento. C1–C4 e decisões T23/KG-10 continuam abertos; entrega total não certificada.
+
 ### 2026-10-06 — C1/C3: retirada da fachada de permissões
 
 Bases Core 38e33904 / Community 9b94f03c, limpas e publicadas. Rastreio confirmou

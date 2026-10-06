@@ -45,11 +45,11 @@ def test_new_namespace_manifests_are_ordered_and_registered() -> None:
     ]
 
     leaves = [leaf for manifest in NEW_MANIFESTS for leaf in manifest.leaves]
-    assert len(leaves) == len(set(leaves)) == 80
+    assert len(leaves) == len(set(leaves)) == 79
     assert not any(leaf.startswith("sprint.") for leaf in leaves)
     assert set(leaves) <= set(ALL_FLAGS)
     assert "code_traceability.evidence.classify_legacy" not in ALL_FLAGS
-    assert len(ALL_FLAGS) == 537
+    assert len(ALL_FLAGS) == 536
 
 
 def test_every_new_leaf_has_one_authority_and_explicit_builtin_grants() -> None:
