@@ -2,7 +2,8 @@
 
 ## Estado para retomada
 
-### 2026-10-06 — C1/C2/C3 em andamento: defaults atuais de policy
+### 2026-10-06 — C1/C2/C3: defaults atuais de policy
+Publicado: Core 558f4f49 / Community 52244eb3, pushes confirmados.
 Bases publicadas Core 5ace08ff / Community 4e03edbe.
 Retirada preservacao exclusiva de ausencia em BoardGovernance/default templates;
 BoardSettings e resolver usam enforce (default atual de criacao) e gate de vinculo
