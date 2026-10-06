@@ -30,6 +30,8 @@ Closure2 aprovada: findings/documentation_findings vazios, oito budgets
 current=limit=0. SHA Core d8599f68077f8b8405a1cae864d062d1a18ce1bb4667566caf0a663624b9e848;
 Community 9e93885528b6611c5c11122a1be4a6a9b0f8348e7053e5cde5922c5ab93468a7.
 Todos os handles encerrados. Nenhuma base/processo real alterado.
+Publicado em feature/v0.4.0: Core 1a309781 / Community a52a15fc;
+ambos os pushes confirmados.
 Próxima dependência rastreada: telemetry/era.py ainda classifica pre_fix,
 cumulative/unknown e backfill; não há caller produtivo de classify_trust_state,
 mas o sender usa os marcadores delta/snapshot atuais. Retirar somente o ramo
