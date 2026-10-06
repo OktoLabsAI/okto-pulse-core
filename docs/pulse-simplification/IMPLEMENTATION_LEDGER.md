@@ -4,6 +4,9 @@
 
 ### 2026-10-06 — C3: caminho único para o gate semântico
 
+Publicado em feature/v0.4.0: Core 09713d3c / Community 3b5d8852; ambos os
+pushes confirmados.
+
 Retirado guideline_policy_transition.py, que apenas reexportava o gate atual
 para compatibilidade de imports. Aplicação, serviços, portas, MCP, REST e adapter
 passam a importar guideline_semantic_transition diretamente. Nenhuma regra do
