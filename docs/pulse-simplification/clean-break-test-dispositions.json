@@ -3973,6 +3973,11 @@
       "path": "okto_labs_pulse_community/frontend/src/components/layout/Header.board-settings.test.tsx::legacy null and retired explicit off projections",
       "disposition": "replaced",
       "reason": "Retired off/null conversion removed; incompatible stored policy refuses read/patch without mutation and UI offers no write controls. Native creation defaults and Blocking preservation remain."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_sdlc_sprint_authority_v2.py::test_reviewer_separation_modes_are_explicit",
+      "disposition": "adapted",
+      "reason": "Removed unsupported Sprint argument and conflict branch; policy modes now exercised with native Card creator conflict. Removed Sprint input is explicitly refused."
     }
   ]
 }

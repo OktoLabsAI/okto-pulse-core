@@ -140,6 +140,23 @@ async def test_real_scenario_status_writer_is_current_in_fresh_reads(
                 created_by=actor_id,
             )
         )
+        # Native semantic authorship is recorded by the writer in the same
+        # transaction; a raw fixture insert alone is not an authorized head.
+        from datetime import datetime, timezone
+        from okto_pulse.community.adapters.sqlalchemy_semantic_guideline_assessment import (
+            CommunitySqlAlchemySemanticGuidelineAssessment,
+        )
+        from okto_pulse.core.domain.guideline_policy import PolicyEntityType
+        from okto_pulse.core.domain.quality_canonicalization import canonical_sha256
+
+        await db.flush()
+        await CommunitySqlAlchemySemanticGuidelineAssessment(db).record_semantic_subject_mutation(
+            board_id=board_id, entity_type=PolicyEntityType.TEST_SCENARIO,
+            subject_id=scenario_id, actor_id=actor_id,
+            idempotency_key="native-scenario-" + scenario_id,
+            request_digest=canonical_sha256({"scenario_id": scenario_id}),
+            changed_at=datetime.now(timezone.utc),
+        )
         await db.commit()
 
     async with db_factory() as db:
@@ -287,8 +304,17 @@ def test_reviewer_separation_modes_are_explicit(
     decision = evaluate_reviewer_separation(
         board=SimpleNamespace(settings=settings),
         reviewer_id="same-user",
-        sprint=SimpleNamespace(created_by="same-user"),
+        cards=(SimpleNamespace(id="card-1", created_by="same-user"),),
     )
     assert decision.allowed is allowed
     assert decision.warning is warning
     assert decision.source == source
+
+
+def test_reviewer_separation_refuses_removed_sprint_input() -> None:
+    with pytest.raises(TypeError, match="sprint"):
+        evaluate_reviewer_separation(
+            board=SimpleNamespace(settings={"reviewer_separation_mode": "enforce"}),
+            reviewer_id="same-user",
+            sprint=SimpleNamespace(created_by="same-user"),
+        )

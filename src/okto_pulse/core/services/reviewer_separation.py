@@ -1,7 +1,6 @@
 """Reviewer/executor separation policy shared by review surfaces.
 
-The board setting is intentionally resolved in one place so sprint evaluation
-and task validation cannot drift.  Persisted legacy boards that do not carry
+The board setting is resolved in one place for task validation.  Persisted legacy boards that do not carry
 the setting retain their historical permissive behaviour, but the decision is
 still explicit and auditable through ``source=legacy_absent_compat``.
 """
@@ -49,24 +48,16 @@ def evaluate_reviewer_separation(
     *,
     board: object | None,
     reviewer_id: str,
-    sprint: object | None = None,
     cards: Sequence[object] = (),
 ) -> ReviewerSeparationDecision:
-    """Evaluate a reviewer against sprint/card authorship and execution facts.
+    """Evaluate a reviewer against card authorship and execution facts.
 
-    ``sprint`` is optional so the same policy can govern a single task
-    validation.  Card executor facts come from append-only conclusion entries;
+    Card executor facts come from append-only conclusion entries;
     both the canonical ``author_id`` and historical ``actor_id`` forms are
     understood.
     """
     mode, source = resolve_reviewer_separation_mode(board)
     conflicts: list[str] = []
-    if (
-        sprint is not None
-        and reviewer_id
-        and reviewer_id == str(getattr(sprint, "created_by", "") or "")
-    ):
-        conflicts.append("sprint_creator")
     for card in cards:
         if reviewer_id == str(getattr(card, "assignee_id", "") or ""):
             conflicts.append(f"card_assignee:{getattr(card, 'id', '')}")

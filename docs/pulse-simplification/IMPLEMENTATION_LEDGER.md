@@ -2,6 +2,28 @@
 
 ## Estado para retomada
 
+### 2026-10-06 — C1/C3 em andamento: avaliador sem entrada Sprint
+Publicado Code Traceability: Core 5816f51e / Community ee4cf00f, pushes confirmados.
+evaluate_reviewer_separation nao tem caller produtivo passando Sprint; somente
+evaluate_task_reviewer_separation o chama com Card. Retirados parametro Sprint
+e conflito sprint_creator. Teste misto de modos agora usa autoria do Card; teste
+negativo recusa argumento removido. Gate de separacao atual nao foi alterado.
+Par dist-native-reviewer1 instalado; provenance-native-reviewer1 byte a byte
+aprovada (843/905 Core, 319/405 Community). Core1: 16 aprovados/quatro falhas
+de fixtures: head semantico ausente e alias evaluator_name ja retirado.
+Fixture agora registra autoria atual; asserts exigem reviewer_name e ausencia
+do alias. Core2: 17 aprovados/tres falhas do mesmo alias no replay; corrigido.
+Core3: 11 aprovados; total distinto 20. Produto Python nao mudou entre provas.
+Closure1 aprovada, findings/documentation_findings vazios, oito budgets zero.
+Ruff F/E9 e diff aprovados. Todos os handles encerrados. Frontend nao alterado.
+Ainda existe ramo legacy_absent_compat/invalid_value na resolucao de policy.
+Rastreio encontrou divergencia relevante: create_board materializa enforce,
+mas seed.py cria Boards por INSERT sem settings (linhas 89/291), produzindo
+nativamente ausencia e efeito off. Antes de recusar ausencia, tornar explicita
+a policy das novas seeds preservando efeito atual; nao inferir que toda ausencia
+veio de legado. Nenhuma alteracao de seed/policy aplicada neste incremento.
+
+
 ### 2026-10-06 — C1/C3 em andamento: Code Traceability sem conversao
 Publicado Q&A: Core 6c0a6c72 / Community a751ca7f; pushes confirmados.
 Retirada from_persisted off/null -> Advisory. Reader e patch usam contrato atual.

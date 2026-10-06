@@ -192,10 +192,10 @@ async def test_off_warn_and_legacy_modes_persist_transparent_decision(
         assert result["validation_outcome"] == "failed"
         assert result["completion_outcome"] == "rejected"
         assert result["reviewer_name"] == "Task Reviewer"
-        assert result["evaluator_name"] == "Task Reviewer"
+        assert "evaluator_name" not in result
         assert persisted.validations[-1]["reviewer_separation"] == decision
         assert persisted.validations[-1]["reviewer_name"] == "Task Reviewer"
-        assert persisted.validations[-1]["evaluator_name"] == "Task Reviewer"
+        assert "evaluator_name" not in persisted.validations[-1]
         assert len(persisted.rejection_records) == 1
         rejection = persisted.rejection_records[0]
         assert persisted.current_rejection_id == rejection["id"]
@@ -210,7 +210,7 @@ async def test_off_warn_and_legacy_modes_persist_transparent_decision(
         )
         assert replay["id"] == result["id"]
         assert replay["reviewer_name"] == "Task Reviewer"
-        assert replay["evaluator_name"] == "Task Reviewer"
+        assert "evaluator_name" not in replay
         assert replay["replayed"] is True
         await db.refresh(persisted)
         assert len(persisted.rejection_records) == 1
