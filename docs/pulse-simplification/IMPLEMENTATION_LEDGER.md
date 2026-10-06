@@ -4,6 +4,9 @@
 
 ### 2026-10-06 — C1 WIP: preservar admissibilidade antes de retirar writer antigo
 
+Incremento publicado em feature/v0.4.0: Core e5c127cb / Community 49936cc0.
+Ambos os pushes confirmados. O restante de C1–C4 permanece aberto.
+
 A auditoria dos consumidores reais confirmou que o writer nativo não aplicava
 a segregação autor/avaliador Blocking, embora o writer antigo e suas provas a
 exigissem. Isso é regra de governança que o plano de simplificação manda manter.
