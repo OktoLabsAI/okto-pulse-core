@@ -29,6 +29,8 @@ Community b4877b1721e9fc46e00f374f684b84d90c7dc71368bd9dac804e935745dd4880.
 Todos os handles encerrados. Frontend nao alterado nesta etapa.
 Nenhuma base/processo real alterado. C1-C4 e T23/KG-10 permanecem abertos;
 este incremento nao certifica entrega integral.
+Publicado em feature/v0.4.0: Core 08ec398a / Community 05dac918;
+ambos os pushes confirmados.
 Proximo residuo ja identificado no inventario: KGHealthView.computeTickInfo
 reconstroi estado do scheduler de last_decay_tick_at quando faltam os diagnosticos
 atuais. Rastrear produtor do DTO; retirar inferencia antiga e mostrar ausencia
