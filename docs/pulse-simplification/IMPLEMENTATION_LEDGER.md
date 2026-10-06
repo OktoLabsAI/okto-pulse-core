@@ -4,6 +4,9 @@
 
 ### 2026-10-06 — C1/C2/C3: retirar cadeia determinística antiga
 
+Publicado em feature/v0.4.0: Core 15296b22 / Community fe9c06f9; ambos os
+pushes confirmados. O restante do plano C1–C4 continua aberto.
+
 Retirados cinco models/tabelas policy_compliance_receipts/adopted_revisions/
 findings, policy_waivers e policy_waiver_events, além de 14 objetos SQL exclusivos.
 Nenhum guard de tabela atual referenciava esses objetos. Removidos consumidores
