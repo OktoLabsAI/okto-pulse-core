@@ -4,6 +4,9 @@
 
 ### 2026-10-06 — C1/C3: paginação apenas nos contratos atuais
 
+Publicado em feature/v0.4.0: Core f79cc9e8 / Community ceb904ac; ambos os
+pushes confirmados.
+
 Retirados PolicyReceiptPageCursor/PolicyFindingPageCursor/PolicyWaiverPageCursor,
 as três queries determinísticas, projeção/página de waiver e seus braços no
 codec assinado. Rastreio confirmou ausência de consumidores de produto externos
@@ -23,7 +26,7 @@ de PolicyEntityType em fixture de impact_listing; import corrigido para o módul
 público de origem. Varredura AST conjunta não encontrou outro import quebrado
 do módulo de projeções. Community2: 55 aprovados. Closure-native-cursors1: ok,
 findings/documentation_findings vazios e oito budgets current=limit=0.
-Todos os handles encerrados. Sem alteração de frontend nem Python após a prova.
+Todos os handles encerrados. Sem alteração de frontend nem Python de produto após a prova.
 C1–C4 continuam abertos; não interpretar esta retirada como fechamento integral.
 Próximo remanescente confirmado: tipos determinísticos de guideline_policy e
 cinco models SQL antigos (receipt/adopted_revision/finding/waiver/event). Além
