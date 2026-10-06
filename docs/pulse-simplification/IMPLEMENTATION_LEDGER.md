@@ -2,6 +2,56 @@
 
 ## Estado para retomada
 
+### 2026-10-06 — C1 WIP: retirar writer, receipt e contexto semântico predecessor
+
+guideline_semantic_assessment.py reduzido de 1.476 para 328 linhas: retirados
+Submission/Context/MetricAssessment/Pinpoint/MetricResult/Receipt/Result antigos,
+writer record_semantic_guideline_assessment e digests de input/request/receipt
+exclusivos. Preservados assessor, enums/errors, digests atuais de binding/policy
+e admissibilidade. As verificações de autoridade do contexto antigo foram
+extraídas para validate_semantic_assessment_authority (Core puro), chamada pelo
+writer nativo antes da admissibilidade: Board, revisão/digest/versão e códigos
+de override conhecidos continuam validados. Nenhum stub, conversor ou alias.
+
+Suíte mista assessment_domain agora usa requests/pinpoints nativos. Preservadas
+validações de métricas, revisão, binding, confiança, duplicatas, evidência, ordem,
+ausência de composite score e digests de autoridade. Sete testes exclusivos do
+writer/receipt antigo têm substitutos registrados individualmente no JSON de
+disposição. Não contam como testes aprovados por terem sido retirados.
+
+Community test_native_semantic_admission amplia provas SQL: missing/unknown/
+not-applicable metric; subject/binding/revision stale sem evidence/outbox; quatro
+combinações de mínimo/máximo com override, leitura em conexão nova e projeção
+conjuntiva. Helper de seed recebeu opções explícitas só para essas fixtures,
+com defaults anteriores preservados.
+
+Par dist-native-domain1 instalado e byte a byte aprovado:
+provenance-native-domain1.json (Core 844/906, Community 319/405).
+SHA Core ed25171a8df18f5b24670fabc61162ad392828a4b8bc49351a7d4b3990bf8a2f;
+Community 9aa67b504b4c2244a25a12683a0018f52763543c7f034ffede59378543e9e341.
+native-domain-core1: 109 aprovados. native-domain-community1: 48 aprovados.
+native-domain-catalog: 5 aprovados. Closure1 tinha apenas drift de matriz README;
+matrizes regeneradas oficialmente. Par final dist-native-domain2 instalado e
+byte a byte aprovado por provenance-native-domain2.json, mesmas contagens e
+mesmo Python dos testes. SHA Core
+1bb2f14d0e7ff50ad638b3bb060ef391042ee9fcae80de6dcee79785c17956f2;
+Community 064fb26e7ce07a33c28fc09e439947737744a44fcdd935d541018597bed7ac1f.
+closure-native-domain2 aprovado: findings/documentation_findings vazios e oito
+budgets current=limit=0. Ruff F/E9 e diff passaram. Todos os handles encerrados.
+
+Busca conjunta src/testes não encontra mais os tipos/ funções retirados; sobra
+somente regex do gerador MCP que agrupa nome antigo/atual (não tool registrada).
+Não confundir remoção desta cadeia com encerramento C1–C4. Próximo: revisar o
+inventário fixo de remanescentes, inclusive motivos de currentness exclusivos
+do predecessor e superfícies/documentação distribuída, sem reintroduzir migração.
+Investigação inicial: os três motivos POLICY_SET_CHANGED/BINDING_HEAD_CHANGED/
+INPUT_DIGEST_CHANGED não têm emissor em guideline_semantic_currentness; existem
+no mapeamento de revalidação e parsers frontend. Há motivos homônimos ainda
+emitidos em guideline_compliance (e nomes parecidos em guideline_impact), que
+exigem rastrear consumidores antes de remover. guideline_compliance também
+exporta projeção de revisão e cursores usados por API/MCP/adapter atual: não
+excluir esse módulo por nome. Essa distinção já está dentro da auditoria C1–C3.
+
 ### 2026-10-06 — C1 WIP: preservar admissibilidade antes de retirar writer antigo
 
 Incremento publicado em feature/v0.4.0: Core e5c127cb / Community 49936cc0.

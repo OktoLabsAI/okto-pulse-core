@@ -2065,6 +2065,10 @@
     {
       "path": "okto_labs_pulse_core/tests/test_skb31_semantic_guideline_v2_application.py",
       "reason": "Removed orphan predecessor pinpoint DTO and dual-contract projection case; native sealed pinpoint projection remains tested losslessly. Native capability and admission tests remain."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_skb3_semantic_guideline_assessment_domain.py",
+      "reason": "Retains metric/revision/binding/digest/authority invariants; request validation and canonical ordering use native v2 only. Predecessor evidence tests mapped individually to native proofs."
     }
   ],
   "removed_cases": [
@@ -3411,6 +3415,48 @@
       "test": "test_semantic_receipt_keyset_pagination_and_initial_seal_guard",
       "disposition": "superseded",
       "reason": "Removed exclusive predecessor schema/writer test. Native replacement: test_native_semantic_history_transport.py::test_native_public_history_keysets_exceed_200_without_leakage and native receipt SQL immutability guards"
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_skb3_semantic_guideline_assessment_domain.py",
+      "reason": "Predecessor receipt contract removed. Native SQL threshold/evidence tests and v2 round-trip/findings/immutability proofs.",
+      "test": "test_complete_assessment_is_conjunctive_and_seals_all_evidence",
+      "disposition": "superseded"
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_skb3_semantic_guideline_assessment_domain.py",
+      "reason": "Predecessor receipt contract removed. Native SQL threshold/evidence and v2 round-trip proofs.",
+      "test": "test_metric_threshold_failure_still_seals_complete_evidence",
+      "disposition": "superseded"
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_skb3_semantic_guideline_assessment_domain.py",
+      "reason": "Predecessor receipt contract removed. Core and Community test_native_semantic_admission.py: rejection before receipt/metric/finding/outbox writes.",
+      "test": "test_low_confidence_is_rejected_before_any_result_or_receipt",
+      "disposition": "superseded"
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_skb3_semantic_guideline_assessment_domain.py",
+      "reason": "Predecessor receipt contract removed. Core and Community test_native_semantic_admission.py: exact author separation and no writes.",
+      "test": "test_blocking_assessor_separation_rejects_before_any_result_or_receipt",
+      "disposition": "superseded"
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_skb3_semantic_guideline_assessment_domain.py",
+      "reason": "Predecessor receipt contract removed. Core test_native_semantic_admission.py: Advisory permits self and independent assessors.",
+      "test": "test_advisory_binding_allows_self_or_independent_assessment",
+      "disposition": "superseded"
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_skb3_semantic_guideline_assessment_domain.py",
+      "reason": "Predecessor receipt contract removed. Community test_native_semantic_admission.py: missing/unknown/not-applicable native metric set rejected.",
+      "test": "test_admission_rejects_non_exact_metric_sets",
+      "disposition": "superseded"
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_skb3_semantic_guideline_assessment_domain.py",
+      "reason": "Predecessor receipt contract removed. Community test_native_semantic_admission.py: subject/binding/revision fences rejected; edition guard remains in v2 persistence suite.",
+      "test": "test_admission_fails_closed_on_stale_exact_fences",
+      "disposition": "superseded"
     }
   ]
 }
