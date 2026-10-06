@@ -37,8 +37,8 @@ from okto_pulse.core.domain.guideline_semantic_assessment import (
 from okto_pulse.core.domain.guideline_semantic_currentness import (
     SemanticAssessmentCurrentnessReason,
 )
-from okto_pulse.core.domain.guideline_semantic_findings import (
-    SemanticMetricFinding,
+from okto_pulse.core.domain.guideline_semantic_findings_v2 import (
+    SemanticMetricFindingV2,
 )
 from okto_pulse.core.domain.quality_assessment import EvidenceRef
 from okto_pulse.core.domain.quality_canonicalization import canonical_sha256
@@ -402,11 +402,11 @@ class SemanticMetricWaiverAnchor:
     @classmethod
     def from_finding(
         cls,
-        finding: SemanticMetricFinding,
+        finding: SemanticMetricFindingV2,
         *,
         assessment_assessor_id: str,
     ) -> SemanticMetricWaiverAnchor:
-        if not isinstance(finding, SemanticMetricFinding):
+        if not isinstance(finding, SemanticMetricFindingV2):
             raise SemanticAssessmentContractError("semantic_waiver_finding_invalid")
         return cls(
             metric_result_id=finding.metric_result_id,
@@ -428,9 +428,9 @@ class SemanticMetricWaiverAnchor:
             assessment_assessor_id=assessment_assessor_id,
         )
 
-    def matches_finding(self, finding: SemanticMetricFinding) -> bool:
+    def matches_finding(self, finding: SemanticMetricFindingV2) -> bool:
         return isinstance(
-            finding, SemanticMetricFinding
+            finding, SemanticMetricFindingV2
         ) and self == SemanticMetricWaiverAnchor.from_finding(
             finding,
             assessment_assessor_id=self.assessment_assessor_id,
@@ -1000,7 +1000,7 @@ class SemanticMetricWaiver:
 
     def is_active_for(
         self,
-        finding: SemanticMetricFinding,
+        finding: SemanticMetricFindingV2,
         *,
         currentness: PolicyCurrentness,
         at: datetime,
@@ -1552,7 +1552,7 @@ def transition_semantic_metric_waiver(
     idempotency_key: str,
     expires_at: datetime | None = None,
     expire_reason: SemanticMetricWaiverExpireReason | None = None,
-    current_finding: SemanticMetricFinding | None = None,
+    current_finding: SemanticMetricFindingV2 | None = None,
 ) -> SemanticMetricWaiverMutation:
     if not isinstance(current, SemanticMetricWaiver):
         raise SemanticAssessmentContractError("semantic_waiver_current_invalid")

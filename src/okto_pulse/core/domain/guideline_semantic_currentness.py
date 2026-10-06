@@ -80,6 +80,79 @@ _CURRENTNESS_REASON_ORDER = tuple(SemanticAssessmentCurrentnessReason)
 
 
 @dataclass(frozen=True, slots=True)
+class NativeSemanticAssessmentCurrentSnapshot:
+    """Authoritative live fences for one subject×binding assessment."""
+
+    subject: PolicySubjectRef
+    subject_content_digest: str
+    guideline_id: str
+    guideline_revision_id: str
+    guideline_revision_digest: str
+    binding_id: str
+    binding_revision: int
+    binding_configuration_digest: str
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.subject, PolicySubjectRef):
+            raise SemanticAssessmentContractError(
+                "semantic_current_snapshot_subject_invalid"
+            )
+        for field_name, max_length in (
+            ("guideline_id", GUIDELINE_ID_MAX_LENGTH),
+            ("guideline_revision_id", GUIDELINE_REVISION_ID_MAX_LENGTH),
+            ("binding_id", GUIDELINE_BINDING_ID_MAX_LENGTH),
+        ):
+            object.__setattr__(
+                self,
+                field_name,
+                normalize_policy_bounded_text(
+                    getattr(self, field_name),
+                    max_length=max_length,
+                    code=f"semantic_current_snapshot_{field_name}_required",
+                ),
+            )
+        object.__setattr__(
+            self,
+            "binding_revision",
+            _positive_int(
+                self.binding_revision,
+                "semantic_current_snapshot_binding_revision_invalid",
+            ),
+        )
+        for field_name in (
+            "subject_content_digest",
+            "guideline_revision_digest",
+            "binding_configuration_digest",
+        ):
+            object.__setattr__(
+                self,
+                field_name,
+                _sha256(
+                    getattr(self, field_name),
+                    f"semantic_current_snapshot_{field_name}_invalid",
+                ),
+            )
+
+
+def native_semantic_assessment_snapshot(
+    *, subject: PolicySubjectSnapshot, binding: BoardGuidelineBinding,
+    revision: GuidelineRevision,
+) -> NativeSemanticAssessmentCurrentSnapshot:
+    if (subject.subject.board_id != binding.board_id
+        or binding.guideline_id != revision.guideline_id
+        or binding.revision_id != revision.revision_id
+        or binding.revision_digest != revision.revision_digest):
+        raise SemanticAssessmentContractError("semantic_currentness_binding_scope_mismatch")
+    return NativeSemanticAssessmentCurrentSnapshot(
+        subject=subject.subject, subject_content_digest=subject.content_digest,
+        guideline_id=revision.guideline_id, guideline_revision_id=revision.revision_id,
+        guideline_revision_digest=revision.revision_digest,
+        binding_id=binding.binding_id, binding_revision=binding.binding_revision,
+        binding_configuration_digest=binding.configuration_digest,
+    )
+
+
+@dataclass(frozen=True, slots=True)
 class SemanticAssessmentCurrentSnapshot:
     """Authoritative live fences for one subject×binding assessment."""
 
@@ -325,6 +398,105 @@ def assess_semantic_assessment_currentness(
     )
 
 
+def assess_native_semantic_assessment_fences(
+    receipt: SemanticAssessmentReceiptProjectionV2,
+    current: NativeSemanticAssessmentCurrentSnapshot | None,
+) -> SemanticAssessmentCurrentness:
+    """Compare every normative fence without consulting model metadata."""
+
+    if not isinstance(receipt, SemanticAssessmentReceiptProjectionV2):
+        raise SemanticAssessmentContractError(
+            "semantic_currentness_receipt_invalid"
+        )
+    if current is None:
+        return SemanticAssessmentCurrentness(
+            receipt_id=receipt.receipt_id,
+            currentness=PolicyCurrentness.STALE,
+            reasons=(
+                SemanticAssessmentCurrentnessReason.CURRENT_SNAPSHOT_MISSING,
+            ),
+        )
+    if not isinstance(current, NativeSemanticAssessmentCurrentSnapshot):
+        raise SemanticAssessmentContractError(
+            "semantic_current_snapshot_invalid"
+        )
+    if _subject_identity(receipt.subject) != _subject_identity(current.subject):
+        raise SemanticAssessmentContractError(
+            "semantic_currentness_subject_scope_mismatch"
+        )
+    if (
+        receipt.guideline_id != current.guideline_id
+        or receipt.binding_id != current.binding_id
+    ):
+        raise SemanticAssessmentContractError(
+            "semantic_currentness_binding_scope_mismatch"
+        )
+
+    if current.subject.subject_edition is not None:
+        reasons = (
+            ()
+            if receipt.subject.subject_edition == current.subject.subject_edition
+            else (
+                SemanticAssessmentCurrentnessReason.SUBJECT_EDITION_CHANGED,
+            )
+        )
+        return SemanticAssessmentCurrentness(
+            receipt_id=receipt.receipt_id,
+            currentness=(
+                PolicyCurrentness.CURRENT
+                if not reasons
+                else PolicyCurrentness.STALE
+            ),
+            reasons=reasons,
+        )
+
+    present: set[SemanticAssessmentCurrentnessReason] = set()
+    if receipt.subject.subject_version != current.subject.subject_version:
+        present.add(
+            SemanticAssessmentCurrentnessReason.SUBJECT_VERSION_CHANGED
+        )
+    if receipt.subject_content_digest != current.subject_content_digest:
+        present.add(
+            SemanticAssessmentCurrentnessReason.SUBJECT_CONTENT_CHANGED
+        )
+    if receipt.guideline_revision_id != current.guideline_revision_id:
+        present.add(
+            SemanticAssessmentCurrentnessReason.GUIDELINE_REVISION_CHANGED
+        )
+    if (
+        receipt.guideline_revision_digest
+        != current.guideline_revision_digest
+    ):
+        present.add(
+            SemanticAssessmentCurrentnessReason
+            .GUIDELINE_REVISION_DIGEST_CHANGED
+        )
+    if receipt.binding_revision != current.binding_revision:
+        present.add(
+            SemanticAssessmentCurrentnessReason.BINDING_REVISION_CHANGED
+        )
+    if (
+        receipt.binding_configuration_digest
+        != current.binding_configuration_digest
+    ):
+        present.add(
+            SemanticAssessmentCurrentnessReason
+            .BINDING_CONFIGURATION_CHANGED
+        )
+    reasons = tuple(
+        reason for reason in _CURRENTNESS_REASON_ORDER if reason in present
+    )
+    return SemanticAssessmentCurrentness(
+        receipt_id=receipt.receipt_id,
+        currentness=(
+            PolicyCurrentness.STALE
+            if reasons
+            else PolicyCurrentness.CURRENT
+        ),
+        reasons=reasons,
+    )
+
+
 def assess_native_semantic_assessment_currentness(
     receipt: SemanticAssessmentReceiptProjectionV2,
     *,
@@ -374,6 +546,9 @@ def assess_native_semantic_assessment_currentness(
 
 
 __all__ = [
+    "assess_native_semantic_assessment_fences",
+    "native_semantic_assessment_snapshot",
+    "NativeSemanticAssessmentCurrentSnapshot",
     "SEMANTIC_ASSESSMENT_CURRENTNESS_CONTRACT_VERSION",
     "SemanticAssessmentCurrentSnapshot",
     "SemanticAssessmentCurrentness",

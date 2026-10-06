@@ -73,10 +73,7 @@ from okto_pulse.core.domain.guideline_policy_transition import (
 )
 from okto_pulse.core.domain.guideline_semantic_assessment import (
     SemanticAssessmentState,
-    SemanticGuidelineAssessmentReceipt,
-    SemanticGuidelineAssessmentResult,
     SemanticMetricOutcome,
-    SemanticMetricResult,
 )
 from okto_pulse.core.domain.guideline_semantic_currentness import (
     SemanticAssessmentCurrentSnapshot,
@@ -90,9 +87,6 @@ from okto_pulse.core.domain.guideline_semantic_exceptions import (
     SemanticPolicySkipEvent,
     SemanticPolicySkipMutation,
     SemanticPolicySkipStatus,
-)
-from okto_pulse.core.domain.guideline_semantic_findings import (
-    SemanticMetricFinding,
 )
 from okto_pulse.core.domain.guideline_semantic_projection import (
     SEMANTIC_ASSESSMENT_ORDERING,
@@ -1431,87 +1425,13 @@ class SemanticGuidelineAssessmentPersistencePort(Protocol):
         lock: bool = False,
     ) -> SemanticAssessmentCurrentSnapshot | None: ...
 
-    async def get_semantic_assessment_result_by_idempotency(
-        self,
-        *,
-        board_id: str,
-        binding_id: str,
-        idempotency_key: str,
-    ) -> SemanticGuidelineAssessmentResult | None: ...
 
-    async def save_semantic_assessment_result(
-        self,
-        *,
-        result: SemanticGuidelineAssessmentResult,
-        request_digest: str,
-    ) -> SemanticGuidelineAssessmentResult: ...
 
-    async def get_semantic_assessment_receipt(
-        self,
-        *,
-        board_id: str,
-        receipt_id: str,
-    ) -> SemanticGuidelineAssessmentReceipt | None: ...
 
-    async def get_current_semantic_assessment_receipt(
-        self,
-        *,
-        board_id: str,
-        entity_type: PolicyEntityType,
-        subject_id: str,
-        binding_id: str,
-        subject_edition: int | None = None,
-    ) -> SemanticGuidelineAssessmentReceipt | None: ...
 
-    async def list_semantic_assessment_receipts(
-        self,
-        *,
-        board_id: str,
-        entity_type: PolicyEntityType | None = None,
-        subject_id: str | None = None,
-        subject_edition: int | None = None,
-        guideline_id: str | None = None,
-        binding_id: str | None = None,
-        outcome: SemanticAssessmentState | None = None,
-        after: tuple[datetime, str] | None = None,
-        limit: int = 50,
-    ) -> tuple[
-        tuple[SemanticGuidelineAssessmentReceipt, ...],
-        tuple[datetime, str] | None,
-    ]: ...
 
-    async def get_semantic_metric_result(
-        self,
-        *,
-        board_id: str,
-        metric_result_id: str,
-    ) -> SemanticMetricResult | None: ...
 
-    async def get_semantic_guideline_finding(
-        self,
-        *,
-        board_id: str,
-        finding_id: str,
-    ) -> SemanticMetricFinding | None: ...
 
-    async def list_semantic_guideline_findings(
-        self,
-        *,
-        board_id: str,
-        entity_type: PolicyEntityType | None = None,
-        subject_id: str | None = None,
-        subject_edition: int | None = None,
-        receipt_id: str | None = None,
-        guideline_id: str | None = None,
-        binding_id: str | None = None,
-        metric_id: str | None = None,
-        outcome: SemanticMetricOutcome | None = None,
-        after: tuple[datetime, str] | None = None,
-        limit: int = 50,
-    ) -> tuple[
-        tuple[SemanticMetricFinding, ...],
-        tuple[datetime, str] | None,
-    ]: ...
 
     async def get_semantic_waiver_by_idempotency(
         self,

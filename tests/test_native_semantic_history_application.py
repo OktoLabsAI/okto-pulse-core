@@ -10,11 +10,12 @@ from okto_pulse.core.application.use_cases.policy_governance import ASSESSMENTS_
 from okto_pulse.core.application.use_cases.semantic_guideline_governance import (
     GetSemanticGuidelineAssessmentCommand, GetSemanticGuidelineAssessmentUseCase,
     ListSemanticGuidelineAssessmentsCommand, ListSemanticGuidelineAssessmentsUseCase,
+    ListSemanticGuidelineFindingsCommand, ListSemanticGuidelineFindingsUseCase,
 )
 from okto_pulse.core.domain.guideline_policy import PolicyCurrentness
 from okto_pulse.core.domain.guideline_semantic_currentness import SemanticAssessmentCurrentness, SemanticAssessmentCurrentnessReason
 from okto_pulse.core.domain.guideline_semantic_projection import SemanticGuidelineProjection
-from okto_pulse.core.ports.guideline_policy import SemanticAssessmentListQuery, GuidelinePolicyInvalidCursor
+from okto_pulse.core.ports.guideline_policy import SemanticAssessmentListQuery, SemanticFindingListQuery, GuidelinePolicyInvalidCursor
 from test_native_semantic_history_currentness import _fixture
 
 
@@ -112,3 +113,13 @@ async def test_native_history_permission_denial_precedes_reader_access():
             actor=ActorContext("reader", "rest", board_id="board-1", permissions=()), uow=uow,
         )
     assert reader.calls == []
+
+
+@pytest.mark.asyncio
+async def test_native_finding_permission_denial_precedes_reader_resolution():
+    with pytest.raises(PermissionDeniedError):
+        await ListSemanticGuidelineFindingsUseCase().execute(
+            ListSemanticGuidelineFindingsCommand(SemanticFindingListQuery(board_id="board-1")),
+            actor=ActorContext("reader", "rest", board_id="board-1", permissions=()),
+            uow=SimpleNamespace(),
+        )

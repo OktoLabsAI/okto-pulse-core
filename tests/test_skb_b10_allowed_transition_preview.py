@@ -26,7 +26,7 @@ from okto_pulse.core.domain.guideline_policy import (
     PolicySubjectRef,
 )
 from okto_pulse.core.domain.guideline_semantic_currentness import (
-    SemanticAssessmentCurrentSnapshot,
+    NativeSemanticAssessmentCurrentSnapshot,
 )
 from okto_pulse.core.domain.guideline_policy_transition import (
     PolicyTransitionReasonCode,
@@ -51,7 +51,7 @@ DIGEST_B = "b" * 64
 def _decision(*, blocking_metrics: int):
     bindings = ()
     if blocking_metrics:
-        current = SemanticAssessmentCurrentSnapshot(
+        current = NativeSemanticAssessmentCurrentSnapshot(
             subject=PolicySubjectRef(
                 board_id="board-1",
                 entity_type=PolicyEntityType.SPEC,
@@ -65,9 +65,6 @@ def _decision(*, blocking_metrics: int):
             binding_id="binding-1",
             binding_revision=1,
             binding_configuration_digest=DIGEST_A,
-            policy_set_digest=DIGEST_B,
-            binding_head_digest=DIGEST_B,
-            input_digest=DIGEST_A,
         )
         bindings = (
             SemanticBindingComplianceSnapshot(

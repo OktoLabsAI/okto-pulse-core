@@ -11,14 +11,17 @@ from okto_pulse.core.domain.guideline_policy import PolicyEntityType, PolicySubj
 from okto_pulse.core.domain.guideline_semantic_assessment import (
     SemanticAssessmentContractError,
     SemanticAssessmentState,
+    SemanticMetricOutcome,
 )
 from okto_pulse.core.domain.guideline_semantic_currentness import SemanticAssessmentCurrentness
 from okto_pulse.core.domain.guideline_semantic_findings_v2 import (
     SemanticAssessmentReceiptProjectionV2,
+    SemanticMetricFindingV2,
 )
 from okto_pulse.core.domain.guideline_semantic_v2 import (
     AnchorSnapshot,
     SemanticAssessmentRequestV2,
+    SemanticMetricResultV2,
     SemanticPinpointV2,
 )
 from okto_pulse.core.domain.quality_assessment import UnboundFindingAnchor
@@ -142,7 +145,7 @@ class SemanticAssessmentV2ReadPort(Protocol):
         ...
 
     async def get_semantic_assessment_v2_currentness(
-        self, receipt: SemanticAssessmentReceiptProjectionV2,
+        self, receipt: SemanticAssessmentReceiptProjectionV2, *, lock: bool = False,
     ) -> SemanticAssessmentCurrentness:
         """Resolve current authority and delegate its interpretation to Core."""
         ...
@@ -157,6 +160,37 @@ class SemanticAssessmentV2ReadPort(Protocol):
         subject_edition: int | None = None,
     ) -> SemanticAssessmentReceiptProjectionV2 | None:
         """Return only a live-current v2 receipt for the exact subject fence."""
+        ...
+
+
+@runtime_checkable
+class SemanticFindingV2ReadPort(Protocol):
+    async def list_semantic_findings_v2(
+        self, *, board_id: str,
+        entity_type: PolicyEntityType | None = None,
+        subject_id: str | None = None,
+        subject_edition: int | None = None,
+        receipt_id: str | None = None,
+        guideline_id: str | None = None,
+        binding_id: str | None = None,
+        metric_id: str | None = None,
+        outcome: SemanticMetricOutcome | None = None,
+        after: tuple[datetime, str] | None = None,
+        limit: int = 50,
+    ) -> tuple[tuple[SemanticMetricFindingV2, ...], tuple[datetime, str] | None]:
+        """Page native findings by descending created_at/id within this Board."""
+        ...
+
+    async def get_semantic_metric_result_v2(
+        self, *, board_id: str, metric_result_id: str,
+    ) -> SemanticMetricResultV2 | None:
+        """Read a metric sealed by a native receipt in this Board."""
+        ...
+
+    async def get_semantic_finding_v2(
+        self, *, board_id: str, finding_id: str,
+    ) -> SemanticMetricFindingV2 | None:
+        """Read a native finding and verify its immutable receipt identity."""
         ...
 
 
@@ -288,6 +322,7 @@ SemanticPinpointProjection = SemanticPinpointProjectionV1 | SemanticPinpointProj
 
 
 __all__ = [
+    "SemanticFindingV2ReadPort",
     "SemanticAssessmentV2PersistencePort",
     "SemanticAssessmentV2ReadPort",
     "SemanticAssessmentV2CapabilityPort",

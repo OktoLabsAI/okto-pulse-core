@@ -22,7 +22,6 @@ from okto_pulse.core.domain.guideline_policy import (
     PolicyEntityType,
 )
 from okto_pulse.core.domain.guideline_semantic_assessment import (
-    SemanticAssessmentPinpoint,
     SemanticAssessmentState,
     SemanticMetricOutcome,
     SemanticThresholdSource,
@@ -44,10 +43,7 @@ from okto_pulse.core.domain.guideline_semantic_exceptions import (
     SemanticPolicySkipEventType,
     SemanticPolicySkipStatus,
 )
-from okto_pulse.core.domain.guideline_semantic_findings import (
-    SemanticMetricFinding,
-)
-from okto_pulse.core.domain.guideline_semantic_findings_v2 import SemanticAssessmentReceiptProjectionV2
+from okto_pulse.core.domain.guideline_semantic_findings_v2 import SemanticAssessmentReceiptProjectionV2, SemanticMetricFindingV2
 from okto_pulse.core.domain.guideline_semantic_v2 import (
     AnchorSnapshot, SemanticMetricResultV2, SemanticPinpointKind, SemanticPinpointV2,
 )
@@ -140,14 +136,6 @@ class SemanticEvidenceProjection:
     source_id: str
     source_version: int
     content_hash: str
-
-
-@dataclass(frozen=True, slots=True)
-class SemanticPinpointProjection:
-    anchor_type: str
-    anchor_ref: str | None
-    excerpt_hash: str | None
-    input_digest: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -299,7 +287,7 @@ class SemanticFindingDetail(SemanticFindingSummary):
     binding_revision: int
     rationale: str
     evidence_refs: tuple[SemanticEvidenceProjection, ...]
-    pinpoints: tuple[SemanticPinpointProjection, ...]
+    pinpoints: tuple[NativeSemanticPinpointProjection, ...]
 
     def __post_init__(self) -> None:
         _exact_projection(
@@ -504,17 +492,6 @@ def _evidence_projection(value: EvidenceRef) -> SemanticEvidenceProjection:
     )
 
 
-def _pinpoint_projection(
-    value: SemanticAssessmentPinpoint,
-) -> SemanticPinpointProjection:
-    return SemanticPinpointProjection(
-        anchor_type=value.anchor_type.value,
-        anchor_ref=value.anchor_ref,
-        excerpt_hash=value.excerpt_hash,
-        input_digest=value.input_digest,
-    )
-
-
 def _native_pinpoint_projection(
     pinpoint: SemanticPinpointV2, outcome: SemanticMetricOutcome,
 ) -> NativeSemanticPinpointProjection:
@@ -657,12 +634,12 @@ def project_semantic_assessment(
 
 
 def project_semantic_finding(
-    finding: SemanticMetricFinding,
+    finding: SemanticMetricFindingV2,
     *,
     currentness: SemanticAssessmentCurrentness,
     projection: SemanticGuidelineProjection,
 ) -> SemanticFindingProjection:
-    if not isinstance(finding, SemanticMetricFinding):
+    if not isinstance(finding, SemanticMetricFindingV2):
         raise GuidelinePolicyContractError("semantic_finding_projection_invalid")
     if not isinstance(projection, SemanticGuidelineProjection):
         raise GuidelinePolicyContractError("semantic_finding_projection_invalid")
@@ -681,10 +658,8 @@ def project_semantic_finding(
         "subject_id": finding.subject.subject_id,
         "subject_version": finding.subject.subject_version,
         "subject_edition": finding.subject.subject_edition,
-        "lifecycle_state": _lifecycle_state(
-            subject_edition=finding.subject.subject_edition,
-            currentness=currentness.currentness,
-        ),
+        "lifecycle_state": (SemanticAssessmentLifecycleState.CURRENT if currentness.is_current
+                            else SemanticAssessmentLifecycleState.PREVIOUS),
         "guideline_id": finding.guideline_id,
         "guideline_revision_id": finding.guideline_revision_id,
         "binding_id": finding.binding_id,
@@ -704,7 +679,7 @@ def project_semantic_finding(
         "evidence_refs": tuple(
             _evidence_projection(item) for item in finding.evidence_refs
         ),
-        "pinpoints": tuple(_pinpoint_projection(item) for item in finding.pinpoints),
+        "pinpoints": tuple(_native_pinpoint_projection(item, SemanticMetricOutcome.FAIL) for item in finding.pinpoints),
     }
     if projection is SemanticGuidelineProjection.DETAIL:
         return SemanticFindingDetail(**details)
@@ -760,10 +735,8 @@ def project_semantic_waiver(
         "subject_id": anchor.subject.subject_id,
         "subject_version": anchor.subject.subject_version,
         "subject_edition": anchor.subject.subject_edition,
-        "lifecycle_state": _lifecycle_state(
-            subject_edition=anchor.subject.subject_edition,
-            currentness=currentness.currentness,
-        ),
+        "lifecycle_state": (SemanticAssessmentLifecycleState.CURRENT if currentness.is_current
+                            else SemanticAssessmentLifecycleState.PREVIOUS),
         "finding_id": anchor.finding_id,
         "receipt_id": anchor.receipt_id,
         "guideline_id": anchor.guideline_id,
@@ -1211,7 +1184,7 @@ __all__ = [
     "SemanticKeysetPage",
     "SemanticMetricResultDetail",
     "SemanticMetricResultFull",
-    "SemanticPinpointProjection",
+    "NativeSemanticPinpointProjection",
     "SemanticSkipDetail",
     "SemanticSkipFull",
     "SemanticSkipPage",

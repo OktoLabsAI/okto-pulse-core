@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict, fields
+from dataclasses import asdict, fields, replace
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
@@ -33,16 +33,11 @@ from okto_pulse.core.domain.guideline_policy import (
     PolicySubjectSnapshot,
 )
 from okto_pulse.core.domain.guideline_semantic_assessment import (
-    SemanticAssessmentAssessor,
     SemanticGuidelineAssessmentContext,
-    SemanticGuidelineAssessmentSubmission,
-    SemanticMetricAssessment,
-    record_semantic_guideline_assessment,
     semantic_binding_head_digest_v1,
     semantic_policy_set_digest_v1,
 )
 from okto_pulse.core.domain.guideline_semantic_currentness import (
-    assess_semantic_assessment_currentness,
     semantic_assessment_current_snapshot_from_context,
 )
 from okto_pulse.core.domain.guideline_semantic_exceptions import (
@@ -55,9 +50,6 @@ from okto_pulse.core.domain.guideline_semantic_exceptions import (
     create_semantic_policy_skip,
     request_semantic_metric_waiver,
     transition_semantic_metric_waiver,
-)
-from okto_pulse.core.domain.guideline_semantic_findings import (
-    project_semantic_metric_findings,
 )
 from okto_pulse.core.domain.guideline_semantic_projection import (
     SemanticAssessmentPage,
@@ -74,8 +66,6 @@ from okto_pulse.core.domain.guideline_semantic_projection import (
 )
 from okto_pulse.core.domain.quality_assessment import (
     EvidenceRef,
-    FindingAnchorType,
-    UnboundFindingAnchor,
 )
 from okto_pulse.core.ports.guideline_policy import (
     GuidelinePolicyInvalidCursor,
@@ -157,52 +147,30 @@ def _semantic_evidence():
         ),
         binding_head_digest=semantic_binding_head_digest_v1((binding,)),
     )
-    submission = SemanticGuidelineAssessmentSubmission(
-        subject=subject.subject,
-        binding_id=binding.binding_id,
-        expected_binding_revision=binding.binding_revision,
-        guideline_revision_id=revision.revision_id,
-        idempotency_key="assessment-key",
-        confidence=90,
-        assessor=SemanticAssessmentAssessor(
-            agent_id="agent-1",
-            model_id="model-1",
-        ),
-        metric_results=(
-            SemanticMetricAssessment(
-                metric_id=metric.metric_id,
-                score=20,
-                rationale="The domain imports an infrastructure adapter.",
-                evidence_refs=(_evidence(),),
-                pinpoints=(
-                    UnboundFindingAnchor(
-                        anchor_type=FindingAnchorType.FIELD,
-                        anchor_ref="technical_requirements.architecture",
-                    ),
-                ),
-            ),
-        ),
-    )
-    result = record_semantic_guideline_assessment(
-        submission,
-        context,
-        receipt_id="receipt-1",
-        recorded_at=NOW,
-    )
+    from test_skb31_semantic_guideline_v2_findings import _receipt, _result, _pinpoint
+    from okto_pulse.core.domain.guideline_semantic_assessment import SemanticMetricOutcome
+    from okto_pulse.core.domain.guideline_semantic_findings_v2 import project_semantic_metric_findings_v2
+    from okto_pulse.core.domain.guideline_semantic_currentness import assess_native_semantic_assessment_currentness
+
+    receipt = _receipt(_result("failed", outcome=SemanticMetricOutcome.FAIL,
+        pinpoints=(_pinpoint("boundary"),), subject=subject.subject), subject=subject.subject)
+    receipt = replace(receipt, subject_content_digest=subject.content_digest,
+        binding_id=binding.binding_id, binding_revision=binding.binding_revision,
+        binding_configuration_digest=binding.configuration_digest,
+        guideline_id=revision.guideline_id, guideline_revision_id=revision.revision_id,
+        guideline_revision_digest=revision.revision_digest)
     current_snapshot = semantic_assessment_current_snapshot_from_context(context)
-    currentness = assess_semantic_assessment_currentness(
-        result.receipt,
-        current_snapshot,
-    )
-    finding = project_semantic_metric_findings(result.receipt)[0]
+    currentness = assess_native_semantic_assessment_currentness(
+        receipt, subject=subject, binding=binding, revision=revision)
+    finding = project_semantic_metric_findings_v2(receipt)[0]
     waiver = request_semantic_metric_waiver(
         waiver_id="waiver-1",
         event_id="waiver-event-1",
         anchor=SemanticMetricWaiverAnchor.from_finding(
             finding,
-            assessment_assessor_id=result.receipt.assessor.agent_id,
+            assessment_assessor_id=receipt.assessment_assessor_id,
         ),
-        justification="Temporary migration exception.",
+        justification="Bounded policy exception.",
         evidence_refs=(_evidence(),),
         requested_by="requester-1",
         requested_at=NOW + timedelta(minutes=1),
@@ -223,7 +191,15 @@ def _semantic_evidence():
         occurred_at=NOW,
         idempotency_key="skip-key",
     ).skip
-    return result.receipt, current_snapshot, currentness, finding, waiver, skip
+    return receipt, current_snapshot, currentness, finding, waiver, skip
+
+
+class _NativeProjectionReader:
+    async def list_semantic_assessment_v2_receipts(self, **kwargs):
+        raise AssertionError("Unexpected assessment list")
+
+    async def get_current_semantic_assessment_v2(self, **kwargs):
+        raise AssertionError("Unexpected current assessment read")
 
 
 def _field_names(value: object) -> set[str]:
@@ -281,19 +257,25 @@ def test_summary_detail_full_allowlists_are_structurally_closed() -> None:
     } <= _field_names(assessment_full)
     assert "metric_definition_digest" in _field_names(assessment_full.metric_results[0])
 
+    from okto_pulse.core.domain.guideline_semantic_findings_v2 import project_semantic_metric_findings_v2
+    from test_skb31_semantic_guideline_v2_findings import _result, _pinpoint
+    from okto_pulse.core.domain.guideline_semantic_assessment import SemanticMetricOutcome
+    failed = _result("failed", outcome=SemanticMetricOutcome.FAIL,
+                     pinpoints=(_pinpoint("boundary"),), subject=receipt.subject)
+    finding = project_semantic_metric_findings_v2(replace(receipt, metric_results=(failed,)))[0]
     finding_summary = project_semantic_finding(
         finding,
-        currentness=currentness,
+        currentness=native_currentness,
         projection=SemanticGuidelineProjection.SUMMARY,
     )
     finding_detail = project_semantic_finding(
         finding,
-        currentness=currentness,
+        currentness=native_currentness,
         projection=SemanticGuidelineProjection.DETAIL,
     )
     finding_full = project_semantic_finding(
         finding,
-        currentness=currentness,
+        currentness=native_currentness,
         projection=SemanticGuidelineProjection.FULL,
     )
     assert {"rationale", "evidence_refs", "pinpoints"}.isdisjoint(
@@ -371,7 +353,7 @@ def test_waiver_collection_projection_is_expiry_aware_without_mutating_head() ->
 
 @pytest.mark.asyncio
 async def test_expired_status_filter_scans_approved_heads_as_of_evaluated_at() -> None:
-    receipt, current, _, _, requested, _ = _semantic_evidence()
+    receipt, current, currentness, _, requested, _ = _semantic_evidence()
     expired_head = transition_semantic_metric_waiver(
         requested,
         event_id="waiver-event-expired-head-approve",
@@ -387,7 +369,7 @@ async def test_expired_status_filter_scans_approved_heads_as_of_evaluated_at() -
         waiver_id="waiver-future",
         event_id="waiver-event-future-request",
         anchor=requested.anchor,
-        justification="A second independently bounded migration exception.",
+        justification="A second independently bounded policy exception.",
         evidence_refs=(_evidence(),),
         requested_by="requester-2",
         requested_at=NOW + timedelta(minutes=5),
@@ -406,7 +388,7 @@ async def test_expired_status_filter_scans_approved_heads_as_of_evaluated_at() -
         idempotency_key="waiver-future-approve",
     ).waiver
 
-    class Port:
+    class Port(_NativeProjectionReader):
         def __init__(self) -> None:
             self.calls: list[dict[str, object]] = []
 
@@ -420,14 +402,11 @@ async def test_expired_status_filter_scans_approved_heads_as_of_evaluated_at() -
                 )
             return ((expired_head,), None)
 
-        async def get_semantic_assessment_receipt(self, **_kwargs):
+        async def get_semantic_assessment_v2(self, **_kwargs):
             return receipt
 
-        async def resolve_semantic_assessment_current_snapshot(
-            self,
-            **_kwargs,
-        ):
-            return current
+        async def get_semantic_assessment_v2_currentness(self, receipt, *, lock=False):
+            return currentness
 
     class Boards:
         async def get(self, board_id: str):
@@ -440,6 +419,7 @@ async def test_expired_status_filter_scans_approved_heads_as_of_evaluated_at() -
     port = Port()
     uow = SimpleNamespace(
         boards=Boards(),
+        semantic_assessment_v2_reader=Port(),
         services=SimpleNamespace(
             guidelines=SimpleNamespace(
                 semantic_policy_persistence=lambda: port,
@@ -473,7 +453,7 @@ async def test_expired_status_filter_scans_approved_heads_as_of_evaluated_at() -
 
 @pytest.mark.asyncio
 async def test_singular_waiver_projects_expiry_at_required_snapshot() -> None:
-    receipt, current, _, _, requested, _ = _semantic_evidence()
+    receipt, current, currentness, _, requested, _ = _semantic_evidence()
     approved = transition_semantic_metric_waiver(
         requested,
         event_id="waiver-event-singular-approve",
@@ -486,18 +466,15 @@ async def test_singular_waiver_projects_expiry_at_required_snapshot() -> None:
         idempotency_key="waiver-singular-approve",
     ).waiver
 
-    class Port:
+    class Port(_NativeProjectionReader):
         async def get_semantic_waiver(self, **_kwargs):
             return approved
 
-        async def get_semantic_assessment_receipt(self, **_kwargs):
+        async def get_semantic_assessment_v2(self, **_kwargs):
             return receipt
 
-        async def resolve_semantic_assessment_current_snapshot(
-            self,
-            **_kwargs,
-        ):
-            return current
+        async def get_semantic_assessment_v2_currentness(self, receipt, *, lock=False):
+            return currentness
 
     class Boards:
         async def get(self, board_id: str):
@@ -509,6 +486,7 @@ async def test_singular_waiver_projects_expiry_at_required_snapshot() -> None:
 
     uow = SimpleNamespace(
         boards=Boards(),
+        semantic_assessment_v2_reader=Port(),
         services=SimpleNamespace(
             guidelines=SimpleNamespace(
                 semantic_policy_persistence=lambda: Port(),

@@ -2,6 +2,386 @@
 
 ## Estado para retomada
 
+### 2026-10-06 — Milestone: cadeia persistente de avaliação semântica nativa
+
+Concluída a cadeia integrada de leitura, findings, waiver, gate, ciclo de validação,
+exportação, projeção/rebuild e purge sobre evidência nativa. Removidos os três
+models/tabelas predecessores e seus onze objetos SQL exclusivos, entradas no
+manifesto e helper de testes órfão. Fixtures mistas usam o writer nativo. O teste
+CAS/replay agora abre nova edição após adoção do Board, preservando o snapshot
+congelado. Quatro casos exclusivos do predecessor têm substitutos nativos
+explicitados em clean-break-test-dispositions.json; nenhum conversor introduzido.
+
+Validação final (artefatos em PULSE_REFACTOR/.validation-v040):
+- native-semantic-final1: 164 testes Community aprovados, incluindo SQL real,
+  rollback atômico, waiver/UoW, projeção/rebuild, purge isolado, schema e exports.
+- native-semantic-final-core1: 70 testes Core aprovados.
+- native-semantic-catalog1: 5 testes do catálogo MCP aprovados.
+- native-schema-front1: 145 testes frontend aprovados; TypeScript/Vite/build/sync
+  concluídos. SPA empacotada: 79 arquivos, árvore SHA256
+  22b1e5a8370d2de56fc0edcd5ddbfca57a74a1c8c002f6f9757e1ffaf8f5976c.
+- closure-native-semantic-final1.json: ok, findings/documentation_findings vazios;
+  oito budgets com current=limit=0. Matrizes README regeneradas pelo gerador.
+
+Par dist-native-semantic-final1 instalado e verificado byte a byte antes dos
+testes: provenance-native-semantic-final1.json, Core 845 Python/907 payload,
+Community 319 Python/405 payload. Wheels SHA256:
+Core c0388dd546b0aab3a1b97462eff64ef69bc4b71ba43c0c44063b034ed1b76edb;
+Community 517c088fc93db2dbc8a041803920cc0b02d659e4a67c93dd1378e7b4f84055da.
+Nenhum Python de produto mudou após a prova. Ruff encontrou somente import
+obsoleto numa fixture, removido. Todos os handles encerrados.
+
+Este milestone não encerra C1–C4. Próximo: auditar consumidores remanescentes de
+contratos semânticos antigos/currentness/skips e fallback de projeção, seguindo
+o plano fixo. Preservar autoridade atual de binding/revision e histórico nativo;
+não excluir pelo nome legacy/v1. Decisões BASE T23 e KG-10 já registradas continuam
+pendentes; não reclassificá-las como migração. Versão dos artefatos segue 0.3.4;
+o bump coordenado 0.4.0 e aceitação completa continuam no fechamento C4.
+Commit/push deste milestone: registrar confirmação após publicação dos dois repos.
+
+### 2026-10-06 — C1 WIP: porta/adapter antigos retirados e exportação nativa
+
+Retirados oito métodos antigos de assessment/metric/finding da porta
+SemanticGuidelineAssessmentPersistencePort e adapter misto, além de helpers de
+serialização e persistência exclusivos. Diff acumulado do adapter elimina mais
+de 1.300 linhas. Mantidos sujeito/autoridade congelada, mutation tracking, skips,
+waivers e gate nativo. Sem stubs/conversores/fallbacks. Busca por classes antigas
+em Community src encontra agora somente as definições em sqlalchemy_models.
+
+Busca adicional por nomes SQL encontrou consumidor em exportação. Retiradas
+queries/labels/allowlists de assessments/results/findings antigos. A consulta de
+revisions para títulos passa a ocorrer após recibos nativos, usando seus IDs.
+39 testes de exportação passaram (retire-semantic-exports2). Campanha inicial
+retire-semantic1 teve 62 aprovados/1 falha em fixture antiga de projeção humana;
+adaptada para campos nativos. Os 62 incluem grafo/rebuild, waiver SQL/UoW e
+pinpoint persistence. Core retire-semantic-core1: 40 aprovados.
+
+Helper SQL _record_failed_semantic_assessment agora cria SemanticAssessmentRequestV2
+diretamente e usa writer nativo. persist_result=False retorna request ainda não
+executada para teste CAS (teste precisa ser adaptado), sem produzir recibo antigo.
+native-mixed-waivers1: quatro provas anteriores de lifecycle/revalidação passaram
+sem relaxar assertivas. native-sql-journey1: duas provas adaptadas passaram,
+incluindo gate real completo e reassessment/histórico na mesma edição.
+
+native-mixed-inventory1: 17 aprovados/12 falhas antes das duas adaptações acima.
+Restam 10 casos: FK de waiver com nome/colunas antigas; três parâmetros do teste
+v1 de edição; composite CAS usando writer removido; roundtrip antigo; unsealed
+antigo; keyset antigo; lista de limites com métodos removidos; purge contando
+tabelas antigas. Classificar/adaptar individualmente, registrando substitutos
+nativos quando o cenário é exclusivamente predecessor. NÃO restaurar APIs antigas
+nem retirar governança para obter verde. Três models/triggers antigos ainda não
+foram retirados para que a adaptação das fixtures seja explícita e revisável.
+
+Último par dist-retire-semantic1 instalado e provenance-retire-semantic1.json byte
+a byte aprovado (845/907 Core,319/405 Community). SHA Core
+730f7b507dde05e5db3110c42ca83c6d8797997e41c2d885b487a1a4bb6f2f09;
+Community 16d985cb5d90c754e8ee4b4756d30ee78c6f83a4dd690384697446e305c31c79.
+Somente fixtures/docs mudaram depois dessa prova. Handles encerrados.
+Pydantic/core continuam fixados no venv descartável conforme entrada anterior.
+
+Próximo: terminar esses testes mistos, excluir models/objetos SQL/manifesto antigo
+(sqlalchemy_schema_contract também lista as três tabelas), auditar restante de
+ports/domain não usados e reconstruir SPA/closure. WIP sem commit/push ainda;
+não afirmar milestone fechado enquanto schema/fixtures/closure estiverem pendentes.
+
+### 2026-10-06 — C1 WIP: projeção/rebuild e purge somente com evidence nativa
+
+sqlalchemy_policy_constraint_projection valida assessment_receipt/metric_result
+nas tabelas nativas e reconstrói seus nós a partir delas. Writer já emitia esses
+eventos; consumidor ainda consultava tabela antiga. Extraído decoder compartilhado
+native_semantic_receipt_from_rows no adapter nativo, usado pelo reader singular e
+pelo rebuild: mesmas verificações de digest, duas consultas em lote para evidence,
+sem uma consulta por recibo. State/count são derivados dos outcomes nativos.
+Não há conversão de recibo antigo. Autoridade de guideline/binding permanece atual.
+
+Novo test_native_semantic_graph_projection.py usa SQL real e grafo fake da suíte
+de projeção: recebe os três eventos do writer (um recibo, duas métricas), aplica,
+reaplica sem mudança, esvazia apenas o grafo de teste e reconstrói identidades e
+arestas belongs_to. native-graph1: 32 aprovados/1 falha de fixture (payload do
+evento não inclui envelope); native-graph2 passou após juntar campos do envelope.
+Os 32 aprovados incluem concorrência/cancelamento/replay e pinpoint persistence.
+
+KG governance deixa de importar/deletar/verificar tabelas antigas. Purge de
+waiver remove eventos em ordem inversa de predecessor, depois head, depois
+finding/metric/receipt nativos; mantém FKs e permit. Verificação terminal inclui
+as três tabelas nativas. Novo trecho no fluxo real de waiver prova exclusão após
+request/approve/revalidate/revoke e preserva recibo integral de outro Board.
+native-graph-purge1 detectou erro de recorte do loop, corrigido; purge3 revelou
+RESTRICT imediato dos predecessors de evento durante CASCADE do head, corrigido
+com _delete_restrict_history já existente. native-graph-purge4: 3 aprovados,
+incluindo duas provas anteriores de exclusão de evidências de código.
+
+Purge2 parou antes da coleta por atualização externa concorrente de Pydantic no
+user site-packages (core 2.46.5 versus código ainda exigindo 2.46.4). Metadata depois
+confirmou Pydantic 2.13.5 exige core 2.46.5. Instalados somente no venv descartável
+com --ignore-installed --no-deps pydantic==2.13.5 pydantic-core==2.46.5; nenhuma
+mudança no ambiente global/projeto por isso. Testes subsequentes passaram.
+
+Último par: dist-native-graph4, instalado e byte a byte aprovado por
+provenance-native-graph4.json (845/907 Core,319/405 Community).
+SHA Core 35d9f6dc10de3a6be41263c4ea930a955ce01bb0ca341f76a7927c0cd1f33761;
+Community 9e3bcea6c60f7815921dc3596ca8329ed8d5be248b84af7dc0307003cfd74b54.
+Ruff F/E9 e diff passaram, incluindo novos testes explicitamente. Handles encerrados.
+
+Busca em Community src agora encontra ReceiptRow/MetricResultRow/FindingRow antigos
+SOMENTE em sqlalchemy_models e sqlalchemy_semantic_guideline_assessment. Próximo:
+retirar métodos antigos desse adapter e porta, adaptar fixtures SQL antes de
+retirar models/triggers correspondentes. Resolver consumidor de current snapshot
+para skips sem manter leitor de recibo antigo. Cuidado: nem todo nome v1/legacy
+nesses arquivos é compatibilidade; autoridade de binding/revision ainda é atual.
+Raw JSON fallback e comentários Kuzu/Constraint em projection foram identificados,
+mas não alterados nesta rodada; revisar no fechamento C1, sem ampliar escopo.
+
+WIP ainda não publicado, SPA empacotada anterior, closure pendente. Não encerrar
+milestone nem objetivo enquanto consumidores/fixtures/schema/SPA/closure estiverem
+pendentes. Nenhum processo de produto ou base do usuário foi alterado.
+
+### 2026-10-06 — C1 WIP: gate de transição passa a consumir avaliações nativas
+
+SemanticBindingComplianceSnapshot aceita somente receipt/finding nativos. Usa
+NativeSemanticAssessmentCurrentSnapshot, sem policy_set/binding_head/input digests
+do contrato predecessor. assess_native_semantic_assessment_fences preserva edição
+humana e fences técnicos para sujeitos sem edição. O adapter misto, método correto
+resolve_transition_snapshot (não resolve_policy_transition_snapshot como anotado
+na entrada anterior), seleciona somente AssessmentV2Row da edição sob lock e lê
+o recibo validado pelo reader nativo. Autoridade continua vindo de
+_authority_bundle_for_subject, congelada por edição; skip e waiver exatos mantidos.
+
+Par dist-native-transition1 instalado e byte a byte aprovado (845/907 Core,
+319/405 Community), provenance-native-transition1.json. SHA Core
+35d9f6dc10de3a6be41263c4ea930a955ce01bb0ca341f76a7927c0cd1f33761;
+Community 42bc7d5bf10927fff8903b53317bb369c8281c5215903b76595327d1cead3c21.
+Core native-transition1: 17 aprovados/2 falhas por input_digest retirado da fixture;
+native-transition2: 19 aprovados. native-transition-preview1: 22 aprovados,
+incluindo projeção REST/MCP e nova prova de edição: alteração técnica na mesma
+edição preserva resultado, edição reaberta bloqueia a evidência anterior.
+
+Community native-transition-uow1 falhou na coleta por caminho incorreto de import
+na fixture; corrigido para services.main. native-transition-uow2 passou fluxo real
+com SQL/UoW e GuidelineService: avaliação nativa falha bloqueia, waiver aprovado
+libera, waiver revogado volta a bloquear, usando conexões distintas. Mantidas
+provas de replay, autoaprovação negada, revalidação e leitura após revogação.
+Nenhuma produção mudou depois da prova do par instalado. Todos os handles encerrados.
+
+Próximas dependências concretas: sqlalchemy_policy_constraint_projection ainda
+valida eventos assessment_receipt/metric_result e reconstrói nós das tabelas
+antigas (~591/604 e 949/1034), enquanto native writer tem suas próprias projeções.
+Inspecionar toda cadeia de outbox/recovery antes de retirar duplicação. KG governance
+ainda lista/delete/verifica tabelas antigas; seu purge remove evidence nativa antes
+de waiver, ordem a rever agora que waiver referencia evidence nativa. As fixtures
+SQL mistas ainda escrevem recibos antigos (incluindo test_semantic_transition_runtime_is_authoritative_end_to_end).
+Não marcar esse teste como verde nem restaurar leitor antigo; adaptar evidência.
+
+WIP integrado segue sem commit/push: terminar consumidores/fixtures, retirar portas
+e schema antigos, reconstruir SPA e executar closure antes de publicar milestone.
+Currentness antigo ainda existe para consumidores não retirados; novo snapshot
+não é conversor nem fallback. C1–C4 e auditoria final permanecem abertos.
+
+### 2026-10-06 — C1 WIP: ciclo de validação somente nativo e fixtures de waiver
+
+sqlalchemy_validation_cycle deixa de unir ReceiptRow/MetricResultRow antigos;
+remove discriminador de contrato e permite aplicar os waivers exatos aos resultados
+nativos. A suíte usa somente avaliações nativas, inclusive dois recibos da mesma
+binding para provar seleção determinística do mais recente. native-cycle1: 38
+aprovados; preserva snapshot, isolamento, waivers completos/parciais, recusa de
+waivers vencidos/revogados/outra edição e orçamento de seis SELECTs.
+
+Par dist-native-cycle1 instalado: Core SHA
+e260c88dfdc73094fd5f12506629577f68f0748c11dda84f79b9e9ea5a15098c;
+Community b6410156ec2e26c7a5acac4ea53c4a8b799a7b63dbd9414d3681f3096b4f94f0.
+provenance-native-cycle1.json comprova byte a byte 845/907 Core e 319/405
+Community. Nenhum Python de produto mudou após essa prova nesta rodada.
+
+Fixtures de projeção/expiração, exceções, revalidação e impacto agora constroem
+evidência nativa diretamente, sem converter recibos predecessores. Resultados:
+native-waiver-projection1 12; native-waiver-exceptions2 13;
+native-waiver-revalidation1 10 (inclui aplicação nativa e currentness);
+native-waiver-impact1 9 aprovados. Exceptions1 teve duas falhas de indexação na
+fixture: o contrato nativo ordena métricas; corrigido para localizar a identidade
+exata, sem alterar produto. Ruff F/E9 e diff serão revistos no fechamento.
+
+Auditoria native-waiver-remaining1 identificou 16 falhas/28 aprovados antes das
+adaptações. Resta daquele conjunto test_threshold_failure_blocks_but_exact_current_waiver_unblocks:
+o problema não é só fixture. SemanticBindingComplianceSnapshot e o método
+resolve_policy_transition_snapshot do adapter misto ainda usam recibo/finding
+antigos. A inspeção confirmou SELECT exclusivo de ReceiptRow antigo em
+sqlalchemy_semantic_guideline_assessment.py, perto de 4414, e tipos/projeção
+antigos no domínio guideline_semantic_transition.py. Próximo passo: substituir
+essa cadeia pelo contrato nativo preservando autoridade congelada, admissibilidade,
+skip, efeitos de waiver e diagnósticos; adaptar e executar os testes do gate.
+Não aceitar finding antigo nem relaxar o teste para fechar essa lacuna.
+
+Todos os handles encerrados. WIP continua sem commit/push porque gate real,
+consumidores KG/constraint/recovery, fixtures SQL mistas, build SPA e closure
+ainda precisam fechar em conjunto. SPA empacotada segue anterior; não afirmar
+entrega final. Nenhuma nova decisão de autoridade introduzida nesta rodada.
+
+### 2026-10-06 — C1/C3 WIP: fluxo real de waiver e lifecycle nativo na UI
+
+Novo test_native_semantic_waiver_use_cases.py usa CommunityUnitOfWork real,
+composição real de adapters e conexões separadas para request/replay/review/
+revalidate/revoke/get. Recusa autoaprovação e preserva digests na leitura final.
+Campanhas real-uow1/2/3 falharam em setup: registro do adapter ausente, grants
+spec.validation.submit e guidelines.delete ausentes. Corrigido somente setup,
+sem afrouxar os controles. Real-uow4 passou todo o fluxo. Requests, transições e
+revalidação agora foram exercitados com SQL real, além da prova direta de storage.
+
+Projeção de waiver também usa current/previous para sujeitos sem edição;
+frontend deixa de aceitar history_only em waiver, exige edição ativa quando
+informada e mantém skip inalterado até sua retirada/separação. Front1 67 e
+Front2 24 aprovados; TypeScript passou após corrigir duas fixtures adicionais de
+PolicyWaiverPanel/policyWaiverModel. Não remover os grants de autoridade com base
+apenas na palavra historical: são guardas efetivos atuais que exigem investigação
+de consumidores e de semântica no restante da simplificação.
+
+Par dist-native-waiver-workflow1 instalado e byte a byte aprovado (845/907 Core,
+319/405 Community); SHA Core e260c88dfdc73094fd5f12506629577f68f0748c11dda84f79b9e9ea5a15098c;
+Community 43f0216c62f0f800a8917bd28df8dd62661c80f9e6dc8765ac3c41777e9d4b28.
+Core workflow1 passou a prova adicional de lifecycle de waiver de Card sem edição.
+Todos os handles encerrados. WIP ainda não publicado; SPA empacotada continua
+anterior. Os testes mistos de waiver ainda precisam de fixtures nativas.
+Consumidores de ReceiptRow antigo ainda encontrados nos adapters
+sqlalchemy_validation_cycle, sqlalchemy_policy_constraint_projection,
+sqlalchemy_kg_governance e sqlalchemy_semantic_guideline_assessment, além dos
+models. Resolver esses consumidores e os testes em conjunto antes de excluir
+as tabelas/portas antigas. C1–C4 e auditoria final continuam abertos.
+
+### 2026-10-06 — C1 WIP: persistência de waiver com fences nativos
+
+Atualização final da rodada: storage3 instalado e byte a byte aprovado (845/907
+Core, 319/405 Community). SHA Core 6ace9f1b14dd05ff598e30fc1732d87b4457602e6838e65b46ed9d48de88c10b;
+Community 43f0216c62f0f800a8917bd28df8dd62661c80f9e6dc8765ac3c41777e9d4b28.
+Community2: 38 aprovados (waiver nativo e current_relational_schema, incluindo
+instalação nova, restart e recusa de formato incompatível antes de writes).
+Community3: prova ampliada aprovada; persiste evento de revalidação ANCHOR_STALE
+por SUBJECT_EDITION_CHANGED e o recupera em conexão nova. Prova SQL de negativos
+exige o erro do guard de anchor, com scope/idempotency distintos para não passar
+por conflito de duplicidade. Inspeção do WaiverRow não encontra FK para tabelas
+predecessoras. Todos os handles encerrados; WIP local sem commit/push.
+
+Próxima execução deve adaptar as fixtures antigas e testar a aplicação com SQL
+real, incluindo Review/Revalidate/Revoke e concorrência; então retirar a união
+antiga da validação e os consumidores de KG/recovery antes de fechar este conjunto.
+A leitura nativa das tabelas de waiver está funcionando; o adapter misto ainda
+contém métodos antigos de assessment/finding não retirados. Não restaurar antigos
+findings nas fixtures para fazer testes verdes. SPA/build/closure continuam pendentes.
+
+Adaptado bloco REQUEST de save_semantic_metric_waiver_mutation para resolver
+finding/receipt nativos sob lock_policy_board, comparar anchor completo e
+recusar edição/atualidade divergente antes de gravar. Replay, duplicidade,
+CAS de revisão e eventos imutáveis preservados. WaiverRow passa a ter três
+FKs compostas para assessment/metric/finding nativos (unique keys adicionadas
+nas tabelas nativas), preservando campos e digests relacionais; guard INSERT
+conferindo edição nullable por IS, assessor, falha e tempo do recibo.
+Guard de evento aceita subject_edition_changed na ordem canônica do Core.
+Sem conversão de base. Novo fingerprint deriva do schema atual.
+
+Storage2 instalado e byte a byte aprovado. Community1: 21 passaram e nova
+prova de waiver falhou por FK simples residual em receipt_id ainda apontando
+ao predecessor; corrigida para assessments_v2. Storage3 recompilado, instalação
+em andamento. Teste novo cobre request/replay/approve/reabertura e SQL adulterado.
+Ainda não publicado. Restam validação da correção, fixtures antigas de waiver,
+validação/KG/recovery, frontend waiver, build SPA e closure.
+
+### 2026-10-06 — C1 WIP: domínio/aplicação de waiver usam evidência nativa
+
+SemanticMetricWaiverAnchor.from_finding/matches_finding e consumidores do domínio
+passaram a exigir SemanticMetricFindingV2, preservando todos os fences existentes
+(incluindo assessor, revisão e digests). Request e revalidação consultam recibo,
+metric e finding nativos; List/Get waiver obtêm atualidade do recibo nativo.
+Retirados helpers de leitura de recibo predecessor nesta aplicação. A porta de
+atualidade nativa agora declara lock=False opcional; Request/Revalidate pedem
+lock=True e adapter propaga a resolução serializada de subject/autoridade.
+Não houve relaxamento de permissões, separação de atores ou revisão CAS.
+
+Par waiver-app1 instalado/conferido; teste novo encontrou KeyError ao revalidar
+uma edição trocada. Incluído SUBJECT_EDITION_CHANGED -> SUBJECT_SCOPE_CHANGED,
+conforme delimitação por edição já autorizada. Removido import morto detectado
+por Ruff. Par dist-native-waiver-app2 instalado/provado byte a byte (845/907 Core,
+319/405 Community); SHA Core 6ace9f1b14dd05ff598e30fc1732d87b4457602e6838e65b46ed9d48de88c10b;
+Community b866ebe2c7c1b7e528d99205258f1abf7e241a1c9e590d64507d9786c9684bb5.
+Core2: nove aprovados; Community1: 21 aprovados. Nova prova cobre Request nativo,
+identidade do anchor, lock de atualidade, revalidação corrente e stale por edição,
+recusa de novo request stale e nenhuma gravação extra. Ruff F/E9/diff passaram.
+Todos os handles encerrados. Ainda WIP sem commit/push.
+
+ATENÇÃO PARA RETOMADA: persistência de waiver continua predecessora. Não executar
+nem publicar como produto pronto: save_semantic_metric_waiver_mutation no adapter
+sqlalchemy_semantic_guideline_assessment ainda procura FindingRow/ReceiptRow
+antigos; FKs do WaiverRow apontam para tabelas antigas. Substituir o bloco REQUEST
+sob lock_policy_board por resolução nativa e anchor exato, preservando revisão,
+duplicidade de escopo e replay. Consolidar FKs/guards para manter integridade
+equivalente (campos nativos estão distribuídos em colunas e payload), depois
+admitir novo fingerprint somente em instalação nova, sem conversão.
+Fixtures de waiver em suites mistas ainda constroem SemanticMetricFinding antigo
+e precisarão ser reescritas usando recibos nativos; não tratar resultados verdes
+anteriores dessas suites como válidos após esta mudança. Revalidação fake usa
+armazenamento de domínio, NÃO prova persistência SQL. Também faltam a UI de waiver
+current/previous, validação/KG/recovery, build SPA e closure antes do milestone.
+
+### 2026-10-06 — C1/C3 WIP: listagem pública de findings nativos conectada
+
+Sobre o WIP de leitura abaixo, ListSemanticGuidelineFindingsUseCase passou a
+usar SemanticFindingV2ReadPort no reader do UoW e atualidade do recibo nativo.
+Autorização permanece antes de resolver a porta. Projeção de finding agora
+aceita somente SemanticMetricFindingV2; removidos DTO/helper de pinpoint antigo
+deste módulo. Lifecycle nativo é current/previous também para Card sem edição.
+Frontend tipa/parser/renderiza pinpoint v2 com título, snapshot, detalhe e
+remediação; rejeita formato predecessor e history_only em finding. Waivers e
+skips ainda não foram alterados nesta etapa e continuam pendentes.
+
+Fixtures de projeção, painel, dialogs e parser atualizadas. Teste antigo de
+paginação de findings substituído pela prova SQL nativa de 205 findings em
+summary/detail, cursors vinculados ao Board e nenhum vazamento; disposição
+registrada em clean-break-test-dispositions.json.
+Par dist-native-finding-public1 instalado e byte a byte aprovado (845/907 Core,
+319/405 Community). SHA Core e44d63537a886dbfd187e944939753c3fe40b72a2a4862224b371d7062e65bae;
+Community 78000d44fb07f145bc18df7872816f37bc07a9498cbd438c6fdf1d80e2e45440.
+Core1: 19 aprovados; Core2: quatro aprovados, incluindo recusa de permissão
+antes de resolver reader de finding. Community1: 64 aprovados (SQL, REST,
+paginação e adapter). Front1: 65 aprovados; Front2: 21 aprovados incluindo
+negativos de contrato predecessor e edição ativa divergente. TypeScript passou.
+Ruff/diff passaram antes dos dois testes adicionais; repetir no fechamento.
+Todos os handles terminaram. SPA empacotada ainda é a do milestone anterior;
+não alegar entrega de UI instalada. Nenhum commit/push novo neste WIP.
+
+Próximo passo: consolidar SemanticMetricWaiverAnchor para finding nativo e
+ligar Request/List/Get/Review/Revalidate aos leitores nativos. A revalidação
+atual resolve snapshot antigo com lock=True; preservar serialização e validar
+autoridade pela edição, sem simplesmente remover o lock ao trocar a leitura.
+Alterar FKs/guards e leitura SQL de waiver em conjunto, atualizar validação e
+projeção/recovery. Em seguida build SPA, novo par/proveniência, closure ZERO,
+ledger e commit/push coordenado. A implementação não está concluída.
+
+### 2026-10-06 — C1: leituras nativas para findings/waivers em implementação
+
+Retomada conferiu ambos os repositórios limpos em feature/v0.4.0; incremento
+anterior publicado em Core 8d7cfd20 / Community 7132f28a. A interrupção não
+deixou alteração parcial. Criada SemanticFindingV2ReadPort com get de metric e
+finding, implementada no adapter nativo. Finding é conferido contra a projeção
+do recibo selado, incluindo payload, IDs, digests e escopo; ausência fora do Board
+retorna None. Sem conversor nem leitura predecessora. Testes acrescentados para
+assinaturas, round-trip, isolamento e recusa de digest divergente.
+Build dist-native-finding-read1 em andamento. Ainda não validado/publicado.
+Faltam listagem, conexão de aplicação/frontend e consolidação dos waivers/FKs,
+validação/KG/recovery já registrados abaixo. C1–C4 continuam abertos.
+
+read1 instalado e byte a byte aprovado; Community1: 20 aprovados. Acrescentada
+list_semantic_findings_v2 com keyset created_at/id descendente, filtros por
+Board/subject/edição/receipt/guideline/binding/metric/outcome e limite 1..200.
+Joins usam somente tabelas nativas; cada item passa pela verificação do recibo.
+read2 instalado e byte a byte aprovado (845/907 Core, 319/405 Community).
+SHA Core cf739b3e88f37668b1a7603d4bae5df241904d96ae4c8c014a03dadff9a8420d;
+Community 78000d44fb07f145bc18df7872816f37bc07a9498cbd438c6fdf1d80e2e45440.
+Community2: 21 aprovados, incluindo paginação, filtros e escopo. Ruff F/E9 e
+diff-check passaram. Todos os processos desta etapa terminaram. WIP local,
+sem novo commit/push: fechar conexão aplicação/UI e waiver antes do milestone.
+Próximo passo concreto: ListSemanticGuidelineFindingsUseCase usar esta porta;
+project_semantic_finding aceitar SemanticMetricFindingV2 e pinpoints nativos;
+frontend semanticPolicyModel.parseSemanticFindingDetail e FindingList ainda
+usam anchor_type/input_digest predecessores. Atualizar fixtures e testes de
+painel/dialogs junto com os contratos, mantendo identidade usada pelo waiver.
+
 ### 2026-10-02 — C1/C3 em andamento: histórico público exclusivamente nativo
 
 Base publicada Core 575cf761 / Community 86158e34. List/Get usam a porta

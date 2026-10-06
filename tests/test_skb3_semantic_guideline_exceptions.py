@@ -20,12 +20,8 @@ from okto_pulse.core.domain.guideline_policy import (
     PolicySubjectSnapshot,
 )
 from okto_pulse.core.domain.guideline_semantic_assessment import (
-    SemanticAssessmentAssessor,
     SemanticAssessmentContractError,
     SemanticGuidelineAssessmentContext,
-    SemanticGuidelineAssessmentSubmission,
-    SemanticMetricAssessment,
-    record_semantic_guideline_assessment,
 )
 from okto_pulse.core.domain.guideline_semantic_exceptions import (
     SemanticExceptionActorKind,
@@ -49,13 +45,11 @@ from okto_pulse.core.domain.guideline_semantic_exceptions import (
 from okto_pulse.core.domain.guideline_semantic_currentness import (
     SemanticAssessmentCurrentnessReason,
 )
-from okto_pulse.core.domain.guideline_semantic_findings import (
-    project_semantic_metric_findings,
+from okto_pulse.core.domain.guideline_semantic_findings_v2 import (
+    project_semantic_metric_findings_v2,
 )
 from okto_pulse.core.domain.quality_assessment import (
     EvidenceRef,
-    FindingAnchorType,
-    UnboundFindingAnchor,
 )
 
 
@@ -145,49 +139,23 @@ def _context_and_receipt():
         source_version=4,
         content_hash=DIGEST_A,
     )
-    submission = SemanticGuidelineAssessmentSubmission(
-        subject=subject_snapshot.subject,
-        binding_id=binding.binding_id,
-        expected_binding_revision=binding.binding_revision,
-        guideline_revision_id=revision.revision_id,
-        idempotency_key="assessment:spec-1:v4",
-        confidence=90,
-        assessor=SemanticAssessmentAssessor(
-            agent_id="reviewer-1",
-            model_id="model-a",
-        ),
-        metric_results=tuple(
-            SemanticMetricAssessment(
-                metric_id=metric.metric_id,
-                score=score,
-                rationale=f"Evidence supports score {score} for {metric.code}.",
-                evidence_refs=(evidence,),
-                pinpoints=(
-                    UnboundFindingAnchor(
-                        anchor_type=FindingAnchorType.STRUCTURED_CHILD,
-                        anchor_ref=f"technical_requirements.{metric.metric_id}",
-                        excerpt_hash=DIGEST_D,
-                    ),
-                ),
-            )
-            for metric, score in (
-                (failed_metric, 60),
-                (passed_metric, 90),
-            )
-        ),
-    )
-    receipt = record_semantic_guideline_assessment(
-        submission,
-        context,
-        receipt_id="receipt-1",
-        recorded_at=NOW,
-    ).receipt
+    from test_skb31_semantic_guideline_v2_findings import _receipt, _result, _pinpoint
+    from okto_pulse.core.domain.guideline_semantic_assessment import SemanticMetricOutcome
+    results = tuple(replace(_result(metric.metric_id, outcome=outcome,
+        pinpoints=(_pinpoint(metric.metric_id),), subject=subject_snapshot.subject),
+        metric_code=metric.code, evidence_refs=(evidence,))
+        for metric, outcome in ((failed_metric, SemanticMetricOutcome.FAIL),
+                                (passed_metric, SemanticMetricOutcome.PASS)))
+    receipt = replace(_receipt(*results, subject=subject_snapshot.subject),
+        recorded_at=NOW, assessment_assessor_id="reviewer-1",
+        binding_configuration_digest=binding.configuration_digest,
+        guideline_revision_digest=revision.revision_digest)
     return context, receipt, evidence
 
 
 def _finding():
     context, receipt, evidence = _context_and_receipt()
-    findings = project_semantic_metric_findings(receipt)
+    findings = project_semantic_metric_findings_v2(receipt)
     assert len(findings) == 1
     return context, receipt, findings[0], evidence
 
@@ -205,7 +173,7 @@ def _request_waiver(*, expires_at: datetime | None = None):
         waiver_id="waiver-1",
         event_id="waiver-event-1",
         anchor=_waiver_anchor(finding),
-        justification="A bounded migration requires a temporary exception.",
+        justification="A bounded policy deviation requires a temporary exception.",
         evidence_refs=(evidence,),
         requested_by="requester-1",
         requested_at=NOW,
@@ -248,15 +216,15 @@ def _skip_scope() -> SemanticPolicySkipScope:
 def test_findings_project_exactly_one_failed_result_and_normalize_utc() -> None:
     _, receipt, finding, _ = _finding()
 
-    assert finding.metric_result_id == receipt.metric_results[0].metric_result_id
+    assert finding.metric_result_id == next(item for item in receipt.metric_results if item.metric_result_id == finding.metric_result_id).metric_result_id
     assert finding.receipt_digest == receipt.receipt_digest
-    assert finding.rationale == receipt.metric_results[0].rationale
-    assert finding.evidence_refs == receipt.metric_results[0].evidence_refs
-    assert finding.pinpoints == receipt.metric_results[0].pinpoints
+    assert finding.rationale == next(item for item in receipt.metric_results if item.metric_result_id == finding.metric_result_id).rationale
+    assert finding.evidence_refs == next(item for item in receipt.metric_results if item.metric_result_id == finding.metric_result_id).evidence_refs
+    assert finding.pinpoints == next(item for item in receipt.metric_results if item.metric_result_id == finding.metric_result_id).pinpoints
     assert finding.created_at.tzinfo is timezone.utc
     assert len(finding.finding_id) == 64
     assert len(finding.finding_digest) == 64
-    assert project_semantic_metric_findings(receipt) == (finding,)
+    assert project_semantic_metric_findings_v2(receipt) == (finding,)
     with pytest.raises(FrozenInstanceError):
         finding.rationale = "mutated"  # type: ignore[misc]
 
@@ -280,11 +248,10 @@ def test_waiver_is_exact_to_result_and_finding_and_requires_independent_review()
         currentness=PolicyCurrentness.STALE,
         at=NOW + timedelta(minutes=2),
     )
-    changed_finding = replace(
-        finding,
-        finding_id="finding-other",
-        finding_digest=None,
-    )
+    _, receipt, _ = _context_and_receipt()
+    changed_metric = replace(next(item for item in receipt.metric_results if item.metric_result_id == finding.metric_result_id), metric_result_id="another-result")
+    changed_finding = project_semantic_metric_findings_v2(
+        replace(receipt, metric_results=(changed_metric,)))[0]
     assert not approved.waiver.is_active_for(
         changed_finding,
         currentness=PolicyCurrentness.CURRENT,
@@ -734,7 +701,7 @@ def test_idempotency_digests_exclude_server_generated_ids_and_timestamps() -> No
         waiver_id="waiver-generated-1",
         event_id="waiver-event-generated-1",
         anchor=anchor,
-        justification="A bounded migration requires a temporary exception.",
+        justification="A bounded policy deviation requires a temporary exception.",
         evidence_refs=(evidence,),
         requested_by="requester-1",
         requested_at=NOW,
@@ -745,7 +712,7 @@ def test_idempotency_digests_exclude_server_generated_ids_and_timestamps() -> No
         waiver_id="waiver-generated-2",
         event_id="waiver-event-generated-2",
         anchor=anchor,
-        justification="A bounded migration requires a temporary exception.",
+        justification="A bounded policy deviation requires a temporary exception.",
         evidence_refs=(evidence,),
         requested_by="requester-1",
         requested_at=NOW + timedelta(minutes=5),

@@ -1075,6 +1075,11 @@
       "path": "okto_labs_pulse_community/tests/test_delivery_fallback_characterization.py",
       "disposition": "superseded",
       "reason": "Exclusive v0.3.4 fallback characterization, including accepting unlinked Card intent changes without current execution contracts. No current authority or recovery coverage removed. Current semantic inventory/delivery tests remain."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/semantic_schema_assertions.py",
+      "disposition": "superseded",
+      "reason": "Orphaned offline predecessor schema qualifier; no callers remain. Current schema shape and incompatible-store refusal are exercised by test_current_relational_schema.py."
     }
   ],
   "adapted_suites": [
@@ -1405,10 +1410,6 @@
     },
     {
       "path": "okto_labs_pulse_community/tests/test_skb_b14_policy_constraint_projection.py",
-      "reason": "Native semantic revision removes migration state/digest/table. Fixtures use explicit realm, architecture adoption and execution contract; propagation uses current selection without activation flags. Schema refusal, native policy summaries, board erasure isolation and projection assertions preserved. Legacy-null-edition cases remain pending C3 disposition and are not included in this milestone coverage."
-    },
-    {
-      "path": "okto_labs_pulse_community/tests/semantic_schema_assertions.py",
       "reason": "Native semantic revision removes migration state/digest/table. Fixtures use explicit realm, architecture adoption and execution contract; propagation uses current selection without activation flags. Schema refusal, native policy summaries, board erasure isolation and projection assertions preserved. Legacy-null-edition cases remain pending C3 disposition and are not included in this milestone coverage."
     },
     {
@@ -3376,6 +3377,36 @@
       "test": "renders a legacy policy pinpoint as metric, human target with stable ID, then rationale",
       "disposition": "superseded",
       "reason": "Exclusive v1 current receipt presentation removed. Native pinpoint rendering and navigation remain covered; predecessor current envelopes are rejected."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_skb3_semantic_guideline_persistence.py",
+      "test": "test_semantic_finding_keysets_exceed_200_without_leakage",
+      "disposition": "superseded",
+      "reason": "Public finding reader now exclusively native. Preserved 205-item SQL pagination, projection profiles, Board isolation and cursor binding in test_native_semantic_history_transport.py, using native writer and ledger instead of predecessor fixtures."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_skb3_semantic_guideline_persistence.py",
+      "test": "test_v1_persistence_records_and_fences_validation_edition",
+      "disposition": "superseded",
+      "reason": "Removed exclusive predecessor schema/writer test. Native replacement: test_skb31_semantic_pinpoint_v2_persistence.py::test_v2_persistence_records_and_fences_validation_edition"
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_skb3_semantic_guideline_persistence.py",
+      "test": "test_semantic_receipt_round_trip_replay_and_currentness",
+      "disposition": "superseded",
+      "reason": "Removed exclusive predecessor schema/writer test. Native replacement: test_skb31_semantic_pinpoint_v2_persistence.py::test_v2_round_trip_findings_idempotency_and_immutability and test_canonical_resource_agent_journey_reassesses_same_edition_subject"
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_skb3_semantic_guideline_persistence.py",
+      "test": "test_unsealed_receipt_hides_findings_from_exact_and_list",
+      "disposition": "superseded",
+      "reason": "Removed exclusive predecessor schema/writer test. Native replacement: test_native_semantic_graph_projection.py::test_native_writer_rollback_discards_receipt_metrics_findings_and_outbox (native transaction; no unsealed predecessor state)"
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_skb3_semantic_guideline_persistence.py",
+      "test": "test_semantic_receipt_keyset_pagination_and_initial_seal_guard",
+      "disposition": "superseded",
+      "reason": "Removed exclusive predecessor schema/writer test. Native replacement: test_native_semantic_history_transport.py::test_native_public_history_keysets_exceed_200_without_leakage and native receipt SQL immutability guards"
     }
   ]
 }

@@ -24,22 +24,22 @@ from okto_pulse.core.domain.guideline_policy import (
 )
 from okto_pulse.core.domain.guideline_semantic_assessment import (
     SemanticAssessmentInadmissibilityCause,
-    SemanticGuidelineAssessmentReceipt,
     SemanticMetricOutcome,
 )
 from okto_pulse.core.domain.guideline_semantic_currentness import (
-    SemanticAssessmentCurrentSnapshot,
+    NativeSemanticAssessmentCurrentSnapshot,
     SemanticAssessmentCurrentnessReason,
-    assess_semantic_assessment_currentness,
+    assess_native_semantic_assessment_fences,
 )
 from okto_pulse.core.domain.guideline_semantic_exceptions import (
     SemanticMetricWaiver,
     SemanticPolicySkip,
     SemanticPolicySkipStatus,
 )
-from okto_pulse.core.domain.guideline_semantic_findings import (
-    SemanticMetricFinding,
-    project_semantic_metric_findings,
+from okto_pulse.core.domain.guideline_semantic_findings_v2 import (
+    SemanticMetricFindingV2,
+    SemanticAssessmentReceiptProjectionV2,
+    project_semantic_metric_findings_v2,
 )
 from okto_pulse.core.domain.quality_canonicalization import canonical_sha256
 from okto_pulse.core.domain.sdlc_registry import (
@@ -151,7 +151,7 @@ def _same_subject(
     board_id: str,
     entity_type: PolicyEntityType,
     subject_id: str,
-    snapshot: SemanticAssessmentCurrentSnapshot,
+    snapshot: NativeSemanticAssessmentCurrentSnapshot,
 ) -> bool:
     return (
         snapshot.subject.board_id == board_id
@@ -162,7 +162,7 @@ def _same_subject(
 
 def _skip_matches_current(
     skip: SemanticPolicySkip,
-    current: SemanticAssessmentCurrentSnapshot,
+    current: NativeSemanticAssessmentCurrentSnapshot,
 ) -> bool:
     scope = skip.scope
     return (
@@ -185,7 +185,7 @@ def _skip_matches_current(
 
 
 def _current_snapshot_payload(
-    snapshot: SemanticAssessmentCurrentSnapshot,
+    snapshot: NativeSemanticAssessmentCurrentSnapshot,
 ) -> dict[str, object]:
     return {
         "subject": {
@@ -208,9 +208,6 @@ def _current_snapshot_payload(
         "binding_configuration_digest": (
             snapshot.binding_configuration_digest
         ),
-        "policy_set_digest": snapshot.policy_set_digest,
-        "binding_head_digest": snapshot.binding_head_digest,
-        "input_digest": snapshot.input_digest,
     }
 
 
@@ -222,9 +219,9 @@ class SemanticBindingComplianceSnapshot:
     guideline_id: str
     enforcement: GuidelineEnforcement
     applicable_metric_count: int
-    current_snapshot: SemanticAssessmentCurrentSnapshot
-    receipt: SemanticGuidelineAssessmentReceipt | None = None
-    findings: tuple[SemanticMetricFinding, ...] = ()
+    current_snapshot: NativeSemanticAssessmentCurrentSnapshot
+    receipt: SemanticAssessmentReceiptProjectionV2 | None = None
+    findings: tuple[SemanticMetricFindingV2, ...] = ()
     waivers: tuple[SemanticMetricWaiver, ...] = ()
     skip: SemanticPolicySkip | None = None
     assessment_available: bool = True
@@ -268,7 +265,7 @@ class SemanticBindingComplianceSnapshot:
         )
         if not isinstance(
             self.current_snapshot,
-            SemanticAssessmentCurrentSnapshot,
+            NativeSemanticAssessmentCurrentSnapshot,
         ):
             raise GuidelinePolicyContractError(
                 "semantic_transition_current_snapshot_invalid"
@@ -282,7 +279,7 @@ class SemanticBindingComplianceSnapshot:
             )
         if self.receipt is not None and not isinstance(
             self.receipt,
-            SemanticGuidelineAssessmentReceipt,
+            SemanticAssessmentReceiptProjectionV2,
         ):
             raise GuidelinePolicyContractError(
                 "semantic_transition_receipt_invalid"
@@ -295,7 +292,7 @@ class SemanticBindingComplianceSnapshot:
                 "semantic_transition_receipt_scope_mismatch"
             )
         findings = tuple(self.findings)
-        if any(not isinstance(item, SemanticMetricFinding) for item in findings):
+        if any(not isinstance(item, SemanticMetricFindingV2) for item in findings):
             raise GuidelinePolicyContractError(
                 "semantic_transition_findings_invalid"
             )
@@ -319,7 +316,7 @@ class SemanticBindingComplianceSnapshot:
         if self.receipt is not None:
             canonical_findings = tuple(
                 sorted(
-                    project_semantic_metric_findings(self.receipt),
+                    project_semantic_metric_findings_v2(self.receipt),
                     key=lambda item: item.finding_id,
                 )
             )
@@ -413,7 +410,7 @@ class SemanticBindingComplianceSnapshot:
             SemanticAssessmentCurrentnessReason, ...
         ] = ()
         if self.receipt is not None:
-            assessment = assess_semantic_assessment_currentness(
+            assessment = assess_native_semantic_assessment_fences(
                 self.receipt,
                 self.current_snapshot,
             )
@@ -421,7 +418,7 @@ class SemanticBindingComplianceSnapshot:
             currentness_reasons = assessment.reasons
             if (
                 currentness is PolicyCurrentness.CURRENT
-                and self.receipt.metric_count
+                and len(self.receipt.metric_results)
                 != self.applicable_metric_count
             ):
                 raise GuidelinePolicyContractError(
@@ -943,7 +940,7 @@ def _evaluate_binding(
             ),
         )
 
-    canonical_findings = project_semantic_metric_findings(snapshot.receipt)
+    canonical_findings = project_semantic_metric_findings_v2(snapshot.receipt)
     supplied_findings = {item.finding_id: item for item in snapshot.findings}
     waived_count = 0
     for finding in canonical_findings:

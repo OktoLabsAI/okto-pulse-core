@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
@@ -32,7 +33,6 @@ from okto_pulse.core.domain.guideline_policy import (
 )
 from okto_pulse.core.domain.guideline_semantic_assessment import (
     SemanticAssessmentAssessor,
-    record_semantic_guideline_assessment,
     SemanticGuidelineAssessmentContext,
     SemanticGuidelineAssessmentSubmission,
     SemanticMetricAssessment,
@@ -50,9 +50,6 @@ from okto_pulse.core.domain.guideline_semantic_exceptions import (
     SemanticMetricWaiverRevalidationStatus,
     request_semantic_metric_waiver,
     transition_semantic_metric_waiver,
-)
-from okto_pulse.core.domain.guideline_semantic_findings import (
-    project_semantic_metric_findings,
 )
 from okto_pulse.core.domain.quality_assessment import (
     EvidenceRef,
@@ -268,6 +265,30 @@ class _Port:
         self.lock_values.append(lock)
         return self._current_snapshot()
 
+    async def get_semantic_assessment_v2(self, **kwargs):
+        return None if self.saved is None else self.saved.receipt
+
+    async def get_semantic_finding_v2(self, **kwargs):
+        return self.finding
+
+    async def get_semantic_metric_result_v2(self, **kwargs):
+        return None if self.saved is None else self.saved.receipt.metric_results[0]
+
+    async def get_semantic_assessment_v2_currentness(self, receipt, *, lock=False):
+        from okto_pulse.core.domain.guideline_semantic_currentness import assess_native_semantic_assessment_currentness
+        self.lock_values.append(lock)
+        return assess_native_semantic_assessment_currentness(receipt,
+            subject=self._subject_snapshot(), binding=self.binding, revision=self.revision)
+
+    async def list_semantic_assessment_v2_receipts(self, **kwargs):
+        raise AssertionError("Unexpected native assessment list")
+
+    async def get_current_semantic_assessment_v2(self, **kwargs):
+        raise AssertionError("Unexpected current assessment read")
+
+    async def list_semantic_findings_v2(self, **kwargs):
+        raise AssertionError("Unexpected native finding list")
+
     async def save_semantic_metric_waiver_mutation(self, *, mutation):
         self.waiver_save_count += 1
         self.last_waiver_mutation = mutation
@@ -283,6 +304,7 @@ class _Uow:
     def __init__(self, port: _Port) -> None:
         self._board_id = port.board_id
         self.boards = _BoardRepo()
+        self.semantic_assessment_v2_reader = port
         self.services = SimpleNamespace(
             guidelines=SimpleNamespace(
                 policy_persistence=lambda: port,
@@ -331,29 +353,26 @@ async def _seed_approved_semantic_waiver(
     port: _Port,
     uow: _Uow,
 ):
-    # Build immutable evidence for the waiver unit tests without invoking a
-    # removed writer. Native SQL writer coverage lives in the v2 suite.
-    context = SemanticGuidelineAssessmentContext(
-        subject_snapshot=port._subject_snapshot(), binding=port.binding,
-        revision=port.revision,
-        policy_set_digest=semantic_policy_set_digest_v1((port.binding,), (port.revision,)),
-        binding_head_digest=semantic_binding_head_digest_v1(port.binding_heads),
-    )
-    port.saved = record_semantic_guideline_assessment(
-        _submission(port.board_id, score=50), context,
-        receipt_id="receipt-failed", recorded_at=NOW,
-    )
-    receipt = port.saved.receipt
-    finding = project_semantic_metric_findings(receipt)[0]
+    from test_skb31_semantic_guideline_v2_findings import _receipt, _result, _pinpoint
+    from okto_pulse.core.domain.guideline_semantic_assessment import SemanticMetricOutcome
+    from okto_pulse.core.domain.guideline_semantic_findings_v2 import project_semantic_metric_findings_v2
+    reference = port._subject_snapshot().subject
+    receipt = replace(_receipt(_result("failed", outcome=SemanticMetricOutcome.FAIL,
+        pinpoints=(_pinpoint("boundary"),), subject=reference), subject=reference),
+        recorded_at=NOW, binding_revision=port.binding.binding_revision,
+        binding_configuration_digest=port.binding.configuration_digest,
+        guideline_revision_digest=port.revision.revision_digest)
+    port.saved = SimpleNamespace(receipt=receipt)
+    finding = project_semantic_metric_findings_v2(receipt)[0]
     evidence = receipt.metric_results[0].evidence_refs
     requested = request_semantic_metric_waiver(
         waiver_id="waiver-1",
         event_id="waiver-event-request",
         anchor=SemanticMetricWaiverAnchor.from_finding(
             finding,
-            assessment_assessor_id=receipt.assessor.agent_id,
+            assessment_assessor_id=receipt.assessment_assessor_id,
         ),
-        justification="A bounded migration exception is required.",
+        justification="A bounded policy exception is required.",
         evidence_refs=evidence,
         requested_by="requester-1",
         requested_at=NOW + timedelta(minutes=1),

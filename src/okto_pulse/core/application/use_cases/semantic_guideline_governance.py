@@ -44,7 +44,6 @@ from okto_pulse.core.domain.guideline_policy import (
     BoardGuidelineBinding,
     GuidelineBindingState,
     GuidelineRevision,
-    PolicyCurrentness,
     PolicyEntityType,
     PolicySubjectSnapshot,
     normalize_policy_bounded_text,
@@ -53,7 +52,6 @@ from okto_pulse.core.domain.guideline_semantic_currentness import (
     SemanticAssessmentCurrentSnapshot,
     SemanticAssessmentCurrentness,
     SemanticAssessmentCurrentnessReason,
-    assess_semantic_assessment_currentness,
 )
 from okto_pulse.core.domain.guideline_semantic_exceptions import (
     SemanticAssessmentContractError,
@@ -97,11 +95,9 @@ from okto_pulse.core.domain.guideline_semantic_projection import (
     project_semantic_skip,
     project_semantic_waiver,
 )
-from okto_pulse.core.domain.guideline_semantic_findings import (
-    semantic_metric_result_digest_v1,
-)
+from okto_pulse.core.domain.guideline_semantic_v2 import semantic_metric_result_digest_v2
 from okto_pulse.core.domain.quality_assessment import EvidenceRef
-from okto_pulse.core.ports.semantic_subject_projection import SemanticAssessmentV2ReadPort
+from okto_pulse.core.ports.semantic_subject_projection import SemanticAssessmentV2ReadPort, SemanticFindingV2ReadPort
 from okto_pulse.core.ports.guideline_policy import (
     GuidelinePolicyIdempotencyConflict,
     require_writable_policy_subject_type,
@@ -157,33 +153,14 @@ async def _semantic_port(
     return uow.services.guidelines.semantic_policy_persistence()
 
 
-async def _receipt_currentness(
-    semantic_port: SemanticGuidelineAssessmentPersistencePort,
-    receipt: Any,
-) -> SemanticAssessmentCurrentness:
-    current = await semantic_port.resolve_semantic_assessment_current_snapshot(
-        board_id=receipt.subject.board_id,
-        entity_type=receipt.subject.entity_type,
-        subject_id=receipt.subject.subject_id,
-        binding_id=receipt.binding_id,
-        lock=False,
-    )
-    return assess_semantic_assessment_currentness(receipt, current)
-
-
 async def _finding_currentness(
-    semantic_port: SemanticGuidelineAssessmentPersistencePort,
-    *,
-    board_id: str,
-    receipt_id: str,
+    reader: SemanticAssessmentV2ReadPort,
+    *, board_id: str, receipt_id: str,
 ) -> SemanticAssessmentCurrentness:
-    receipt = await semantic_port.get_semantic_assessment_receipt(
-        board_id=board_id,
-        receipt_id=receipt_id,
-    )
+    receipt = await reader.get_semantic_assessment_v2(board_id=board_id, receipt_id=receipt_id)
     if receipt is None:
         raise RuntimeError("semantic_finding_receipt_missing")
-    return await _receipt_currentness(semantic_port, receipt)
+    return await reader.get_semantic_assessment_v2_currentness(receipt)
 
 
 @dataclass(frozen=True, slots=True)
@@ -886,8 +863,10 @@ class ListSemanticGuidelineFindingsUseCase:
         query = command.query
         _require_capability(actor, ASSESSMENTS_READ)
         await _require_board(uow, query.board_id, actor, write=False)
-        port = await _semantic_port(uow)
-        findings, raw_next = await port.list_semantic_guideline_findings(
+        port = uow.semantic_assessment_v2_reader
+        if not isinstance(port, SemanticFindingV2ReadPort) or not isinstance(port, SemanticAssessmentV2ReadPort):
+            raise TypeError("semantic_finding_v2_reader_missing")
+        findings, raw_next = await port.list_semantic_findings_v2(
             board_id=query.board_id,
             entity_type=query.entity_type,
             subject_id=query.subject_id,
@@ -906,14 +885,15 @@ class ListSemanticGuidelineFindingsUseCase:
         )
         items: list[SemanticFindingProjection] = []
         for finding in findings:
+            receipt = await port.get_semantic_assessment_v2(
+                board_id=query.board_id, receipt_id=finding.receipt_id,
+            )
+            if receipt is None:
+                raise SemanticAssessmentContractError("semantic_finding_receipt_missing")
             items.append(
                 project_semantic_finding(
                     finding,
-                    currentness=await _finding_currentness(
-                        port,
-                        board_id=query.board_id,
-                        receipt_id=finding.receipt_id,
-                    ),
+                    currentness=await port.get_semantic_assessment_v2_currentness(receipt),
                     projection=query.projection,
                 )
             )
@@ -985,7 +965,7 @@ class ListSemanticMetricWaiversUseCase:
                 item = project_semantic_waiver(
                     waiver,
                     currentness=await _finding_currentness(
-                        port,
+                        uow.semantic_assessment_v2_reader,
                         board_id=query.board_id,
                         receipt_id=waiver.anchor.receipt_id,
                     ),
@@ -1046,7 +1026,7 @@ class GetSemanticMetricWaiverUseCase:
         if waiver is None:
             raise EntityNotFoundError("semantic_metric_waiver", command.waiver_id)
         currentness = await _finding_currentness(
-            port,
+            uow.semantic_assessment_v2_reader,
             board_id=command.board_id,
             receipt_id=waiver.anchor.receipt_id,
         )
@@ -1179,7 +1159,10 @@ class RequestSemanticMetricWaiverUseCase:
                     "semantic_waiver_idempotency_conflict"
                 )
             return SemanticMetricWaiverMutationResult(replay, replayed=True)
-        finding = await port.get_semantic_guideline_finding(
+        reader = uow.semantic_assessment_v2_reader
+        if not isinstance(reader, SemanticFindingV2ReadPort) or not isinstance(reader, SemanticAssessmentV2ReadPort):
+            raise TypeError("semantic_finding_v2_reader_missing")
+        finding = await reader.get_semantic_finding_v2(
             board_id=command.board_id,
             finding_id=command.finding_id,
         )
@@ -1196,7 +1179,7 @@ class RequestSemanticMetricWaiverUseCase:
             raise SemanticAssessmentContractError(
                 "semantic_waiver_anchor_identity_mismatch"
             )
-        metric_result = await port.get_semantic_metric_result(
+        metric_result = await reader.get_semantic_metric_result_v2(
             board_id=command.board_id,
             metric_result_id=command.metric_result_id,
         )
@@ -1205,7 +1188,7 @@ class RequestSemanticMetricWaiverUseCase:
                 "semantic_metric_result",
                 command.metric_result_id,
             )
-        receipt = await port.get_semantic_assessment_receipt(
+        receipt = await reader.get_semantic_assessment_v2(
             board_id=command.board_id,
             receipt_id=command.receipt_id,
         )
@@ -1223,7 +1206,7 @@ class RequestSemanticMetricWaiverUseCase:
             or metric_result.metric_id != finding.metric_id
             or metric_result.metric_code != finding.metric_code
             or (
-                semantic_metric_result_digest_v1(metric_result)
+                semantic_metric_result_digest_v2(metric_result)
                 != finding.metric_result_digest
             )
             or receipt.receipt_id != command.receipt_id
@@ -1236,7 +1219,7 @@ class RequestSemanticMetricWaiverUseCase:
             raise SemanticAssessmentContractError(
                 "semantic_waiver_anchor_integrity_mismatch"
             )
-        if not (await _receipt_currentness(port, receipt)).is_current:
+        if not (await reader.get_semantic_assessment_v2_currentness(receipt, lock=True)).is_current:
             raise SemanticAssessmentContractError("semantic_waiver_anchor_stale")
         occurred_at = _aware_utc(
             None,
@@ -1254,7 +1237,7 @@ class RequestSemanticMetricWaiverUseCase:
             ),
             anchor=SemanticMetricWaiverAnchor.from_finding(
                 finding,
-                assessment_assessor_id=receipt.assessor.agent_id,
+                assessment_assessor_id=receipt.assessment_assessor_id,
             ),
             justification=command.justification,
             evidence_refs=command.evidence_refs,
@@ -1417,6 +1400,9 @@ class RevokeSemanticMetricWaiverUseCase:
 
 
 _REVALIDATION_REASON_BY_CURRENTNESS = {
+    SemanticAssessmentCurrentnessReason.SUBJECT_EDITION_CHANGED: (
+        SemanticMetricWaiverRevalidationReason.SUBJECT_SCOPE_CHANGED
+    ),
     SemanticAssessmentCurrentnessReason.CURRENT_SNAPSHOT_MISSING: (
         SemanticMetricWaiverRevalidationReason.ANCHOR_MISSING
     ),
@@ -1494,7 +1480,7 @@ def _merged_evidence_refs(
 
 async def _evaluate_semantic_waiver_revalidation(
     *,
-    port: SemanticGuidelineAssessmentPersistencePort,
+    reader: SemanticAssessmentV2ReadPort,
     waiver: SemanticMetricWaiver,
     evaluated_at: datetime,
 ) -> tuple[
@@ -1505,15 +1491,15 @@ async def _evaluate_semantic_waiver_revalidation(
     tuple[EvidenceRef, ...],
 ]:
     anchor = waiver.anchor
-    receipt = await port.get_semantic_assessment_receipt(
+    receipt = await reader.get_semantic_assessment_v2(
         board_id=anchor.subject.board_id,
         receipt_id=anchor.receipt_id,
     )
-    finding = await port.get_semantic_guideline_finding(
+    finding = await reader.get_semantic_finding_v2(
         board_id=anchor.subject.board_id,
         finding_id=anchor.finding_id,
     )
-    metric_result = await port.get_semantic_metric_result(
+    metric_result = await reader.get_semantic_metric_result_v2(
         board_id=anchor.subject.board_id,
         metric_result_id=anchor.metric_result_id,
     )
@@ -1532,7 +1518,7 @@ async def _evaluate_semantic_waiver_revalidation(
         stale_reason = SemanticMetricWaiverRevalidationReason.ANCHOR_MISSING
     elif (
         receipt.receipt_digest != anchor.receipt_digest
-        or receipt.assessor.agent_id != anchor.assessment_assessor_id
+        or receipt.assessment_assessor_id != anchor.assessment_assessor_id
     ):
         stale_reason = SemanticMetricWaiverRevalidationReason.ANCHOR_MISSING
     elif (
@@ -1546,34 +1532,13 @@ async def _evaluate_semantic_waiver_revalidation(
         or metric_result.metric_id != anchor.metric_id
         or metric_result.metric_code != anchor.metric_code
         or (
-            semantic_metric_result_digest_v1(metric_result)
+            semantic_metric_result_digest_v2(metric_result)
             != anchor.metric_result_digest
         )
     ):
         stale_reason = SemanticMetricWaiverRevalidationReason.METRIC_RESULT_CHANGED
     else:
-        snapshot = await port.resolve_semantic_assessment_current_snapshot(
-            board_id=anchor.subject.board_id,
-            entity_type=anchor.subject.entity_type,
-            subject_id=anchor.subject.subject_id,
-            binding_id=anchor.binding_id,
-            lock=True,
-        )
-        try:
-            currentness = assess_semantic_assessment_currentness(
-                receipt,
-                snapshot,
-            )
-        except SemanticAssessmentContractError as exc:
-            if str(exc) != "semantic_currentness_binding_scope_mismatch":
-                raise
-            currentness = SemanticAssessmentCurrentness(
-                receipt_id=receipt.receipt_id,
-                currentness=PolicyCurrentness.STALE,
-                reasons=(
-                    SemanticAssessmentCurrentnessReason.BINDING_CONFIGURATION_CHANGED,
-                ),
-            )
+        currentness = await reader.get_semantic_assessment_v2_currentness(receipt, lock=True)
         currentness_reasons = currentness.reasons
         if not currentness.is_current:
             stale_reason = _revalidation_reason_from_currentness(currentness)
@@ -1705,7 +1670,7 @@ class RevalidateSemanticMetricWaiverUseCase:
             expiry_observed,
             evidence_refs,
         ) = await _evaluate_semantic_waiver_revalidation(
-            port=port,
+            reader=uow.semantic_assessment_v2_reader,
             waiver=current,
             evaluated_at=command.evaluated_at,
         )
