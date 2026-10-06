@@ -15,6 +15,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from okto_pulse.core.telemetry.settings import load_state, save_state
 from okto_pulse.core.telemetry.watermark import (
     DEFAULT_NEXT_BATCH_SEQ,
@@ -30,15 +32,16 @@ from okto_pulse.core.telemetry.watermark import (
     write_watermark,
 )
 
-# A legacy state.json exactly as scenario ts_0d21a342 describes: it carries the
-# install identity/token and next_batch_seq, but NO watermark fields.
-_LEGACY_STATE = {
+# A native state with its explicit outcome and cursor pair.
+_NATIVE_STATE = {
     "install_id": "11111111-2222-3333-4444-555555555555",
     "install_token": "super-secret-token-value",
     "token_hash": "deadbeefdeadbeef",
     "install_token_expires_at": "2026-07-01T00:00:00Z",
     "last_send_at": "2026-06-01T10:00:00Z",
     "next_batch_seq": 7,
+    "watermark": None,
+    "watermark_event_id": None,
     "failure_state": {"status": "ok"},
     "mode": "anonymous_beacon",
 }
@@ -46,9 +49,9 @@ _LEGACY_STATE = {
 _SECRET_VALUES = {"super-secret-token-value", "deadbeefdeadbeef"}
 
 
-def _write_legacy_state(tmp_path: Path, **extra) -> Path:
+def _write_native_state(tmp_path: Path, **extra) -> Path:
     metrics_dir = tmp_path / "metrics"
-    save_state(metrics_dir, {**_LEGACY_STATE, **extra})
+    save_state(metrics_dir, {**_NATIVE_STATE, **extra})
     return metrics_dir
 
 
@@ -69,38 +72,16 @@ def test_fresh_state_has_empty_cursor_and_documented_defaults() -> None:
     assert wm.cursor_tuple() is None
 
 
-# --- conservative legacy migration (ts_0d21a342) ---------------------------
+# --- native diagnostics ---------------------------------------------------
 
 
-def test_legacy_state_migration_is_conservative(tmp_path: Path) -> None:
-    """A legacy state migrates with an EMPTY cursor — nothing marked confirmed."""
-    metrics_dir = _write_legacy_state(tmp_path)
-    wm = read_watermark(load_state(metrics_dir))
-
-    # Cursor stays empty: no pending event is treated as already sent.
-    assert wm.is_empty
-    assert wm.watermark is None and wm.watermark_event_id is None
-    # The legacy send-time sequence is carried over (single source of truth).
-    assert wm.next_batch_seq == 7
-    assert wm.retention_days == DEFAULT_RETENTION_DAYS
-    # We must NOT seed the cursor from last_send_at (that would confirm-and-drop).
-    assert wm.watermark != _LEGACY_STATE["last_send_at"]
 
 
-def test_legacy_empty_cursor_keeps_every_local_event_pending() -> None:
-    """With an empty cursor every existing event is "after" it → still pending."""
-    wm = read_watermark({"next_batch_seq": 3})
-    for ev in (
-        _event("e-old", "2026-05-01T00:00:00Z"),
-        _event("e-mid", "2026-06-01T00:00:00Z"),
-        _event("e-new", "2026-06-15T00:00:00Z"),
-    ):
-        assert compare_to_cursor(wm, ev) == 1  # 1 == after cursor == pending
 
 
 def test_diagnostic_projection_omits_token_even_when_injected(tmp_path: Path) -> None:
     """ts_0d21a342: the diagnostic watermark state never exposes a token/secret."""
-    metrics_dir = _write_legacy_state(
+    metrics_dir = _write_native_state(
         tmp_path,
         watermark="2026-06-10T00:00:00Z",
         watermark_event_id="evt-123",
@@ -114,14 +95,14 @@ def test_diagnostic_projection_omits_token_even_when_injected(tmp_path: Path) ->
     assert "install_token" not in projection and "token_hash" not in projection
 
 
-# --- backward compatibility (tr_f5b5d90a) ----------------------------------
+# --- state preservation ---------------------------------------------------
 
 
 def test_write_watermark_preserves_other_state_keys() -> None:
     # R-P2-08: the FS persistence roundtrip is a Community concern (see the
     # community telemetry_state tests). The core keeps the PURE projection —
     # write_watermark must not disturb other state keys and must round-trip.
-    state = dict(_LEGACY_STATE)
+    state = dict(_NATIVE_STATE)
     wm = Watermark(
         watermark="2026-06-10T00:00:00Z",
         watermark_event_id="evt-abc",
@@ -144,7 +125,7 @@ def test_next_batch_seq_is_a_single_flat_source_of_truth(tmp_path: Path) -> None
     """The watermark reads/writes the SAME flat key the R1 sender uses."""
     metrics_dir = tmp_path / "metrics"
     # Sender-style state advancing the send sequence.
-    save_state(metrics_dir, {NEXT_BATCH_SEQ_KEY: 9})
+    save_state(metrics_dir, {**_NATIVE_STATE, NEXT_BATCH_SEQ_KEY: 9})
     assert read_watermark(load_state(metrics_dir)).next_batch_seq == 9
 
     written = write_watermark({"other": 1}, Watermark(next_batch_seq=12))
@@ -255,7 +236,7 @@ def test_read_watermark_coerces_bad_types_to_safe_defaults() -> None:
             "watermark": 12345,  # not a str → dropped
             "watermark_event_id": "",  # empty → None
             "pending_event_count": True,  # bool → default 0 (not 1)
-            "next_batch_seq": "not-an-int",
+            "next_batch_seq": 1,
             "retention_days": -5,  # negative → default
         }
     )
@@ -264,3 +245,14 @@ def test_read_watermark_coerces_bad_types_to_safe_defaults() -> None:
     assert wm.pending_event_count == 0
     assert wm.next_batch_seq == DEFAULT_NEXT_BATCH_SEQ
     assert wm.retention_days == DEFAULT_RETENTION_DAYS
+
+
+@pytest.mark.parametrize("state", [
+    {"next_batch_seq": 3},
+    {"last_send_at": "2026-06-01T00:00:00Z"},
+    {"next_batch_seq": "not-an-int"},
+    {"next_batch_seq": True},
+])
+def test_incompatible_cursor_is_refused_without_reconstruction(state):
+    with pytest.raises(ValueError):
+        read_watermark(state)

@@ -1,8 +1,7 @@
 """Behavioral tests for R1-D: sanitized publish-status surface for UI/MCP/CLI.
 
 Covers test card dfeb73f7 (ts_c39b140e — status visible without secrets) and
-closes the R1-A leftover 11c0ac9b (ts_c5b11103 — legacy state migrates and is
-exposed via the service surface). All consumers (UI via the metrics API, MCP and
+covers initial status without a previous publish outcome. All consumers (UI via the metrics API, MCP and
 CLI) read TelemetryService.summary(), so asserting the service output covers the
 contract. The projection is allowlist-based (R1-A), so secrets cannot leak.
 """
@@ -105,6 +104,8 @@ def test_summary_exposes_publish_status_without_secrets(tmp_path):
             "token_hash": _SECRET_HASH,
             "install_token_expires_at": "2026-07-15T00:00:00Z",
             "next_batch_seq": 3,
+            "watermark": None,
+            "watermark_event_id": None,
             "failure_state": {
                 "status": fs.STATUS_DEGRADED,
                 "reason_code": "USAGE_503",
@@ -136,9 +137,8 @@ def test_summary_exposes_publish_status_without_secrets(tmp_path):
     _assert_summary_has_no_secret(summary)
 
 
-def test_summary_migrates_legacy_state_with_safe_defaults_no_secrets(tmp_path):
-    """ts_c5b11103 (R1-A leftover) — legacy state without a failure_state block
-    is exposed via the service with safe defaults and no secrets."""
+def test_initial_summary_has_no_previous_outcome_or_secrets(tmp_path):
+    """An initial installation exposes no previous publish outcome or secrets."""
     settings = _settings(tmp_path)
     save_state(
         tmp_path / "metrics",
@@ -147,7 +147,7 @@ def test_summary_migrates_legacy_state_with_safe_defaults_no_secrets(tmp_path):
             "install_token": _SECRET_TOKEN,
             "token_hash": _SECRET_HASH,
             "install_token_expires_at": "2026-07-01T00:00:00Z",
-            "next_batch_seq": 7,
+            "next_batch_seq": 1,
         },
     )
 
@@ -155,7 +155,7 @@ def test_summary_migrates_legacy_state_with_safe_defaults_no_secrets(tmp_path):
     publish = summary["publish_status"]
 
     assert set(publish) == set(fs.PUBLIC_FAILURE_STATE_FIELDS)
-    # safe, actionable defaults for a legacy install with no recorded mode
+    # initial defaults with no recorded mode or publish
     assert publish["status"] == fs.STATUS_UNKNOWN
     assert publish["reason_code"] is None
     assert publish["retry_count"] == 0

@@ -2,6 +2,42 @@
 
 ## Estado para retomada
 
+### 2026-10-06 — C1/C3 em andamento: estado nativo de recuperacao da telemetria
+
+Bases Core 78a96dc6 / Community 17bee7c8. Retirada da reconstrucao de
+failure_state a partir de last_send_at e de cursor ausente apos publicacao.
+Estado inicial sem envios continua valido; primeiro sucesso/duplicata grava
+cursor nativo antes de avancar sequencia. Carrier recusa estado incompatível
+sem escrita. Fixtures de conversao substituidas por recusa e controles nativos.
+Par dist-native-recovery1 instalado; provenance-native-recovery1 aprovada
+byte a byte: Core 843 Python/905 payload, Community 319/405.
+Core1: 58 aprovados/5 falhas em fixtures antigas; Core2: nove aprovados
+apos adequar fixtures nativas (63 casos distintos aprovados).
+Community1: 126 aprovados/25 falhas, por fixtures sem status/cursor nativos e
+expectativas de conversao ou tolerancia a JSON corrompido. Community2:
+151 aprovados, incluindo primeiro envio, duplicata, token refresh, backoff,
+recuperacao, receipts atomicos, product snapshot, privacidade e recusa sem escrita.
+Nenhum Python de produto mudou entre prova do par e testes.
+Disposicoes individuais registradas; nenhuma assercao de retry ou permissao relaxada.
+Frontend nao alterado nesta etapa. Ruff F/E9 e diff check aprovados.
+Closure1: findings vazio, oito budgets zero, somente matrizes README divergentes.
+Matrizes regeneradas oficialmente. Rastreio adicional encontrou reparo explicito
+de fatal-404 de product snapshot da v0.3.0; removido o reparo. Teste substituto
+exige bloqueio fatal sem transporte nem mutacao, mantendo 404 transitorio nativo.
+Novo par dist-native-recovery2 instalado e provenance-native-recovery2 aprovada
+byte a byte, mesmas contagens. Community3: 151 aprovados.
+Closure2 aprovada: findings/documentation_findings vazios, oito budgets
+current=limit=0. SHA Core d8599f68077f8b8405a1cae864d062d1a18ce1bb4667566caf0a663624b9e848;
+Community 9e93885528b6611c5c11122a1be4a6a9b0f8348e7053e5cde5922c5ab93468a7.
+Todos os handles encerrados. Nenhuma base/processo real alterado.
+Próxima dependência rastreada: telemetry/era.py ainda classifica pre_fix,
+cumulative/unknown e backfill; não há caller produtivo de classify_trust_state,
+mas o sender usa os marcadores delta/snapshot atuais. Retirar somente o ramo
+exclusivo antigo, preservando o contrato de transporte e sem somar snapshots.
+C1-C4 e decisões T23/KG-10 permanecem abertos. Entrega integral não certificada.
+Autorizacao Checklist pelo snapshot da edicao ja incorporada em etapa anterior;
+esta retomada nao altera novamente sua autoridade.
+
 ### 2026-10-06 — C1/C3: telemetria com modos atuais
 
 Bases Core dbccb182 / Community da3c7dbd, limpas e publicadas. Retirada coordenada

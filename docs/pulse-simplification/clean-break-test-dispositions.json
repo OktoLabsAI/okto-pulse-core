@@ -1110,6 +1110,56 @@
       "path": "okto_labs_pulse_core/tests/test_presets.py::test_role_summary_legacy_list_permissions",
       "disposition": "replaced",
       "reason": "No flat-list conversion remains; replaced by test_role_summary_refuses_flat_list_permissions. Native preset and PermissionSet summaries retain positive coverage."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_telemetry_failure_state.py::test_legacy_anonymous_beacon_migrates_to_granted_consent",
+      "disposition": "superseded",
+      "reason": "Clean-break 0.4.0: conversion of missing publish status/cursor or corrupt state removed; native initial-state, recovery and refusal-without-write cases cover the current contract."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_telemetry_failure_state.py::test_legacy_disabled_mode_migrates_to_blocked_consent",
+      "disposition": "superseded",
+      "reason": "Clean-break 0.4.0: conversion of missing publish status/cursor or corrupt state removed; native initial-state, recovery and refusal-without-write cases cover the current contract."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_telemetry_failure_state.py::test_legacy_state_without_failure_block_migrates_to_safe_defaults",
+      "disposition": "superseded",
+      "reason": "Clean-break 0.4.0: conversion of missing publish status/cursor or corrupt state removed; native initial-state, recovery and refusal-without-write cases cover the current contract."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_telemetry_status_surface.py::test_summary_migrates_legacy_state_with_safe_defaults_no_secrets",
+      "disposition": "superseded",
+      "reason": "Clean-break 0.4.0: conversion of missing publish status/cursor or corrupt state removed; native initial-state, recovery and refusal-without-write cases cover the current contract."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_telemetry_watermark.py::test_legacy_empty_cursor_keeps_every_local_event_pending",
+      "disposition": "superseded",
+      "reason": "Clean-break 0.4.0: conversion of missing publish status/cursor or corrupt state removed; native initial-state, recovery and refusal-without-write cases cover the current contract."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_telemetry_watermark.py::test_legacy_state_migration_is_conservative",
+      "disposition": "superseded",
+      "reason": "Clean-break 0.4.0: conversion of missing publish status/cursor or corrupt state removed; native initial-state, recovery and refusal-without-write cases cover the current contract."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/telemetry_behavioral/test_r_p2_08_telemetry_state.py::test_load_state_of_missing_or_corrupt_file_is_empty_dict",
+      "disposition": "superseded",
+      "reason": "Clean-break 0.4.0: conversion of missing publish status/cursor or corrupt state removed; native initial-state, recovery and refusal-without-write cases cover the current contract."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/telemetry_behavioral/test_telemetry_failure_state_r5a.py::test_legacy_disabled_mode_migrates_blocked_consent_and_no_secret",
+      "disposition": "superseded",
+      "reason": "Clean-break 0.4.0: conversion of missing publish status/cursor or corrupt state removed; native initial-state, recovery and refusal-without-write cases cover the current contract."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/telemetry_behavioral/test_telemetry_failure_state_r5a.py::test_legacy_state_migrates_failure_state_with_safe_defaults",
+      "disposition": "superseded",
+      "reason": "Clean-break 0.4.0: conversion of missing publish status/cursor or corrupt state removed; native initial-state, recovery and refusal-without-write cases cover the current contract."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/telemetry_behavioral/test_product_snapshot_resilience.py::test_legacy_fatal_route_missing_state_retries_and_recovers",
+      "disposition": "superseded",
+      "reason": "Removed v0.3.0 fatal-404 repair. Replacement proves fatal state remains closed, unchanged, and performs no transport; native transient 404 retry remains covered."
     }
   ],
   "adapted_suites": [

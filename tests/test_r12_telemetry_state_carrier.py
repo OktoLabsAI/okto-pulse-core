@@ -64,7 +64,8 @@ def test_native_consent_preserves_full_dict_carrier(
         "mode": "disabled",
         "source": "settings_ui",
         "history": [{"mode": "disabled", "changed_at": f"t{i}"} for i in range(55)],
-        "watermark": {"cursor": "abc"},
+        "watermark": "2026-06-01T10:01:00Z",
+        "watermark_event_id": "evt-1",
         "failure_state": {"status": "degraded", "retry_count": 2},
         "install_token": "SECRET-TOKEN",
         "install_token_expires_at": "2026-07-01T00:00:00Z",
@@ -133,7 +134,8 @@ def test_record_event_schema_reject_writes_through_carrier_and_preserves_state(
             "schema_version": CURRENT_SCHEMA_VERSION,
             "install_token": "SECRET-TOKEN",
             "token_hash": "SECRET-HASH",
-            "watermark": {"cursor": "w1"},
+            "watermark": "2026-06-01T10:01:00Z",
+            "watermark_event_id": "evt-1",
             "failure_state": {"status": "healthy"},
             "last_handshake_at": "2026-06-01T10:00:00Z",
             "last_send_at": "2026-06-01T10:01:00Z",
@@ -151,7 +153,7 @@ def test_record_event_schema_reject_writes_through_carrier_and_preserves_state(
     assert reloaded["schema_reject_count"] == 1
     assert reloaded["install_token"] == "SECRET-TOKEN"
     assert reloaded["token_hash"] == "SECRET-HASH"
-    assert reloaded["watermark"] == {"cursor": "w1"}
+    assert reloaded["watermark"] == "2026-06-01T10:01:00Z"
     assert reloaded["failure_state"] == {"status": "healthy"}
     assert reloaded["last_handshake_at"] == "2026-06-01T10:00:00Z"
     assert reloaded["last_send_at"] == "2026-06-01T10:01:00Z"
@@ -224,6 +226,9 @@ def test_public_surfaces_do_not_emit_install_token_or_hash(tmp_path: Path) -> No
                 "install_token": "SECRET-TOKEN",
                 "token_hash": "SECRET-HASH",
                 "install_token_expires_at": "2026-07-01T00:00:00Z",
+                "watermark": None,
+                "watermark_event_id": None,
+                "failure_state": {"status": "ok"},
                 "last_handshake_at": "2026-06-01T10:00:00Z",
                 "last_send_at": "2026-06-01T10:01:00Z",
                 "circuit_open_until": "2026-06-01T10:15:00Z",

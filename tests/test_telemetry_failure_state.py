@@ -1,9 +1,4 @@
-"""Behavioral tests for the base failure-state schema (spec R1, card R1-A).
-
-Covers test card 11c0ac9b / scenario ts_c5b11103 (legacy state.json without a
-failure-state block migrates to safe defaults and never leaks secrets) plus the
-structural secret-redaction invariant (BR br_89e39ee6 / FR fr_8ead6f5e).
-"""
+"""Native publish status, initial defaults and secret-redaction invariants."""
 
 from __future__ import annotations
 
@@ -29,24 +24,21 @@ from okto_pulse.core.telemetry.failure_state import (
 )
 from okto_pulse.core.telemetry.settings import load_state, save_state
 
-# A legacy state.json exactly as described by ts_c5b11103: it carries install
-# identity/token fields and next_batch_seq, but NO failure-state block.
-_LEGACY_STATE = {
+# A native state with explicit outcome and cursor fields.
+_NATIVE_STATE = {
     "install_id": "11111111-2222-3333-4444-555555555555",
     "install_token": "super-secret-token-value",
     "token_hash": "deadbeefdeadbeef",
     "install_token_expires_at": "2026-07-01T00:00:00Z",
     "next_batch_seq": 7,
+    "watermark": None,
+    "watermark_event_id": None,
+    FAILURE_STATE_KEY: FailureState().to_public_dict(),
 }
 
 _SECRET_VALUES = {"super-secret-token-value", "deadbeefdeadbeef"}
 
 
-def _write_legacy_state(tmp_path: Path, **extra) -> Path:
-    metrics_dir = tmp_path / "metrics"
-    state = {**_LEGACY_STATE, **extra}
-    save_state(metrics_dir, state)
-    return metrics_dir
 
 
 def _assert_no_secret(obj) -> None:
@@ -59,55 +51,10 @@ def _assert_no_secret(obj) -> None:
             assert not is_secret_key(key), f"secret key leaked: {key}"
 
 
-def test_legacy_state_without_failure_block_migrates_to_safe_defaults(tmp_path: Path) -> None:
-    """ts_c5b11103 — legacy state migrates with safe defaults, no secrets exposed."""
-    metrics_dir = _write_legacy_state(tmp_path)
-
-    state = load_state(metrics_dir)
-    # The stored state still carries the token (it is needed to publish); only
-    # the projection must omit it.
-    assert state["install_token"] == "super-secret-token-value"
-    assert FAILURE_STATE_KEY not in state
-
-    fs = read_failure_state(state)
-    # Safe, actionable defaults.
-    assert fs.status == STATUS_UNKNOWN
-    assert fs.reason_code is None
-    assert fs.http_status is None
-    assert fs.last_success_at is None
-    assert fs.last_failure_at is None
-    assert fs.next_retry_at is None
-    assert fs.retry_count == 0
-    assert fs.recovered_at is None
-    # No recorded mode => consent unknown and publishing not assumed.
-    assert fs.consent_state == CONSENT_UNKNOWN
-    assert fs.publish_enabled is False
-
-    projection = public_status_projection(state)
-    # Exactly the 10 allowlisted fields, and no secret key/value.
-    assert set(projection) == set(PUBLIC_FAILURE_STATE_FIELDS)
-    _assert_no_secret(projection)
 
 
-def test_legacy_anonymous_beacon_migrates_to_granted_consent(tmp_path: Path) -> None:
-    """A legacy opted-in install migrates to granted consent + publish enabled,
-    seeding last_success_at from the legacy last_send_at field."""
-    metrics_dir = _write_legacy_state(
-        tmp_path, mode="anonymous_beacon", last_send_at="2026-06-12T20:15:00Z"
-    )
-
-    fs = read_failure_state(load_state(metrics_dir))
-    assert fs.consent_state == CONSENT_GRANTED
-    assert fs.publish_enabled is True
-    assert fs.status == STATUS_UNKNOWN
-    assert fs.last_success_at == "2026-06-12T20:15:00Z"  # seeded from legacy field
 
 
-def test_legacy_disabled_mode_migrates_to_blocked_consent(tmp_path: Path) -> None:
-    metrics_dir = _write_legacy_state(tmp_path, mode="disabled")
-    fs = read_failure_state(load_state(metrics_dir))
-    assert fs.consent_state == CONSENT_BLOCKED
-    assert fs.publish_enabled is False
 
 
 def test_public_projection_is_allowlisted_even_with_injected_secret(tmp_path: Path) -> None:
@@ -145,7 +92,7 @@ def test_public_projection_is_allowlisted_even_with_injected_secret(tmp_path: Pa
 def test_write_failure_state_preserves_other_keys_and_omits_secrets() -> None:
     # R-P2-08: the FS persistence roundtrip is a Community concern; the core keeps
     # the PURE projection — write_failure_state must not disturb other state keys.
-    state = {**_LEGACY_STATE, "mode": "anonymous_beacon"}
+    state = {**_NATIVE_STATE, "mode": "anonymous_beacon"}
 
     fs = merge(
         read_failure_state(state),
@@ -185,11 +132,11 @@ def test_is_secret_key_covers_credentials_not_timestamps() -> None:
 
 
 def test_redact_secret_keys_strips_credentials_keeps_safe_fields() -> None:
-    redacted = redact_secret_keys({**_LEGACY_STATE, "mode": "anonymous_beacon"})
+    redacted = redact_secret_keys({**_NATIVE_STATE, "mode": "anonymous_beacon"})
     assert "install_token" not in redacted
     assert "token_hash" not in redacted
     assert redacted["install_token_expires_at"] == "2026-07-01T00:00:00Z"
-    assert redacted["install_id"] == _LEGACY_STATE["install_id"]
+    assert redacted["install_id"] == _NATIVE_STATE["install_id"]
     _assert_no_secret(redacted)
 
 
@@ -214,3 +161,25 @@ def test_write_failure_state_is_pure_and_allowlisted() -> None:
     assert set(out[FAILURE_STATE_KEY]) == set(PUBLIC_FAILURE_STATE_FIELDS)
     # untouched sibling keys preserved
     assert out["install_token"] == "secret"
+
+
+@pytest.mark.parametrize("mode,consent,enabled", [(None, CONSENT_UNKNOWN, False), ("disabled", CONSENT_BLOCKED, False), ("anonymous_beacon", CONSENT_GRANTED, True)])
+def test_initial_status_does_not_invent_a_previous_outcome(mode, consent, enabled):
+    state = {"mode": mode}
+    result = read_failure_state(state)
+    assert result.status == STATUS_UNKNOWN
+    assert result.last_success_at is None
+    assert result.consent_state == consent
+    assert result.publish_enabled is enabled
+    assert state == {"mode": mode}
+    _assert_no_secret(public_status_projection(state))
+
+
+@pytest.mark.parametrize("state", [
+    {"last_send_at": "2026-06-12T20:15:00Z"},
+    {"next_batch_seq": 7},
+    {"failure_state": None},
+])
+def test_missing_or_invalid_status_is_not_reconstructed(state):
+    with pytest.raises(ValueError):
+        read_failure_state(state)
