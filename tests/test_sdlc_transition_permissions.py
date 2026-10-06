@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import copy
 
 import pytest
 
@@ -13,14 +12,11 @@ from okto_pulse.core.domain.enums import CardStatus
 from okto_pulse.core.domain.permissions import (
     ALL_FLAGS,
     DefaultPermissionPolicy,
-    PERMISSION_INTRODUCTION_MANIFESTS,
     PermissionContext,
     SDLC_TRANSITION_PERMISSION_INTRODUCTION_V1,
     TASK_REJECTED_PERMISSION_INTRODUCTION_V1,
     PermissionSet,
     get_builtin_presets,
-    normalize_agent_permission_overrides,
-    resolve_permissions,
 )
 from okto_pulse.core.domain.sdlc_registry import (
     SDLC_REGISTRY,
@@ -219,55 +215,3 @@ def test_spec_preset_preserves_historical_test_scenario_status_authority() -> No
         "test_scenario",
         "draft",
     ) is None
-
-
-def test_pre_registry_full_control_snapshot_normalizes_without_transition_denials() -> None:
-    # Historical input must not be fabricated from a registry that has already
-    # retired Sprint. This is the frozen v0.3.4 policy, never live authority.
-    from okto_pulse.core.domain import historical_permission_policy_v034 as historical
-    snapshot = copy.deepcopy(historical.PERMISSION_REGISTRY)
-    for manifest in historical.PERMISSION_INTRODUCTION_MANIFESTS:
-        for leaf in manifest.leaves:
-            _delete(snapshot, leaf)
-    for retired in (
-        "card.move.any_to_cancelled",
-        "card.move.validation_to_not_started",
-        "ideation.move.any_to_cancelled",
-        "ideation.move.draft_to_evaluating",
-        "ideation.move.evaluating_to_refined",
-        "ideation.move.refined_to_done",
-        "refinement.move.any_to_cancelled",
-        "refinement.move.draft_to_in_progress",
-        "refinement.move.in_progress_to_review",
-        "spec.move.any_to_cancelled",
-        "sprint.move.any_to_cancelled",
-        "ideation.interact_in.refined",
-        "refinement.interact_in.in_progress",
-    ):
-        _set(snapshot, retired, True)
-
-    normalized = normalize_agent_permission_overrides(snapshot)
-
-    assert normalized is None
-    permissions = resolve_permissions(normalized, None, None)
-    assert all(permissions.has(flag) for flag in transition_permission_flags())
-
-
-def test_legacy_cancellation_wildcard_does_not_become_an_exact_deny() -> None:
-    executor = next(
-        preset for preset in get_builtin_presets() if preset["name"] == "Executor"
-    )
-    snapshot = copy.deepcopy(executor["flags"])
-    for manifest in PERMISSION_INTRODUCTION_MANIFESTS:
-        for leaf in manifest.leaves:
-            _delete(snapshot, leaf)
-    _set(snapshot, "card.move.any_to_cancelled", True)
-    # Historical wildcard authorization dominated this stale exact value.
-    _set(snapshot, "card.move.validation_to_cancelled", False)
-
-    normalized = normalize_agent_permission_overrides(snapshot, executor["flags"])
-    permissions = resolve_permissions(normalized, executor["flags"], None)
-
-    assert permissions.has("card.move.validation_to_cancelled") is True
-    for flag in transition_permission_flags("card"):
-        assert permissions.has(flag) is PermissionSet(executor["flags"]).has(flag)

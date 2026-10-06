@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import copy
 
 import pytest
 from pydantic import ValidationError
@@ -16,8 +15,6 @@ from okto_pulse.core.domain.permissions import (
     evaluate_permission,
     get_builtin_presets,
     map_legacy_permissions,
-    merge_missing_flags,
-    normalize_agent_permission_overrides,
     permission_flag_overrides,
     resolve_permission_preset_lineage,
     resolve_permissions,
@@ -127,18 +124,6 @@ def test_legacy_bridge_grants_only_the_closed_ra2_matrix() -> None:
     assert all(reads_only.has(leaf) is False for leaf in LEAVES - READS)
 
 
-def test_missing_introduced_leaves_remain_denied_on_generic_merge() -> None:
-    stored = {"board": {"read": False}}
-    merged, added = merge_missing_flags(stored, registered_permission_flags())
-    assert added > 0
-    assert merged["board"]["read"] is False
-    assert merged["profile"]["update"] is True
-    assert _values(merged) == {leaf: False for leaf in LEAVES}
-
-    # The old absent-leaf compatibility rule remains scoped to old flags.
-    partial = PermissionSet({})
-    assert partial.has("board.read") is True
-    assert partial.has("spec.quality.read") is False
 
 
 def test_resolution_preserves_full_control_but_closes_direct_partial_data() -> None:
@@ -426,70 +411,8 @@ def test_minimal_override_tree_keeps_only_real_differences() -> None:
     }
 
 
-def _without_ska_branches(flags: dict) -> dict:
-    result = copy.deepcopy(flags)
-    del result["ideation"]["quality"]
-    del result["refinement"]["quality"]
-    del result["refinement"]["research_decisions"]
-    del result["spec"]["quality"]
-    del result["spec"]["checklist"]
-    return result
 
 
-def test_agent_upgrade_normalizes_full_control_and_preset_snapshots() -> None:
-    full = next(
-        preset["flags"]
-        for preset in get_builtin_presets()
-        if preset["name"] == "Full Control"
-    )
-    spec = next(
-        preset["flags"]
-        for preset in get_builtin_presets()
-        if preset["name"] == "Spec"
-    )
-
-    historical_full_control = _without_ska_branches(full)
-    assert normalize_agent_permission_overrides(historical_full_control) is None
-
-    # Recover the generic False materialization produced by the superseded
-    # backfill for a recognizable historical Full Control snapshot.
-    faulty_full_control = copy.deepcopy(full)
-    for leaf in LEAVES:
-        current = faulty_full_control
-        parts = leaf.split(".")
-        for part in parts[:-1]:
-            current = current[part]
-        current[parts[-1]] = False
-    assert normalize_agent_permission_overrides(faulty_full_control) is None
-
-    historical_full_with_extensions = copy.deepcopy(historical_full_control)
-    historical_full_with_extensions["vendor_extension"] = {
-        "grant": False,
-        "audit": True,
-    }
-    historical_full_with_extensions["board"]["vendor_extension"] = {
-        "strict": True,
-    }
-    assert normalize_agent_permission_overrides(
-        historical_full_with_extensions
-    ) == {
-        "board": {"vendor_extension": {"strict": True}},
-        "vendor_extension": {"grant": False, "audit": True},
-    }
-
-    historical_preset_snapshot = _without_ska_branches(spec)
-    normalized = normalize_agent_permission_overrides(
-        historical_preset_snapshot,
-        spec,
-    )
-    assert normalized == {}
-    assert normalize_agent_permission_overrides(normalized, spec) == {}
-
-    explicit_sparse_false = {"ideation": {"quality": {"read": False}}}
-    assert normalize_agent_permission_overrides(
-        explicit_sparse_false,
-        spec,
-    ) == explicit_sparse_false
 
 
 def test_non_boolean_direct_agent_values_deny_instead_of_coercing_truthiness() -> None:

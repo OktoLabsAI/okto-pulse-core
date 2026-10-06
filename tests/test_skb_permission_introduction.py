@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import copy
 
 from okto_pulse.core.domain.permissions import (
     GUIDELINE_ADOPTION_MANAGE,
@@ -20,8 +19,6 @@ from okto_pulse.core.domain.permissions import (
     _get_nested,
     get_builtin_presets,
     map_legacy_permissions,
-    merge_missing_flags,
-    normalize_agent_permission_overrides,
     resolve_permissions,
 )
 from okto_pulse.core.ports.permission_policy import (
@@ -197,13 +194,7 @@ def test_introduced_leaves_fail_closed_and_require_historical_authority() -> Non
         assert PermissionSet(both).has(leaf) is True
 
 
-def test_merge_legacy_bridge_and_materialized_ceiling_stay_fail_closed() -> None:
-    merged, added = merge_missing_flags(
-        {"guidelines": {"read": True}},
-        registered_permission_flags(),
-    )
-    assert added > 0
-    assert _values(merged) == {leaf: False for leaf in LEAVES}
+def test_legacy_bridge_and_native_materialized_ceiling_stay_fail_closed() -> None:
     assert _values(map_legacy_permissions(["board:read", "specs:update"])) == {
         leaf: False for leaf in LEAVES
     }
@@ -234,125 +225,3 @@ def test_merge_legacy_bridge_and_materialized_ceiling_stay_fail_closed() -> None
     assert admitted.has("guidelines.revisions.read") is True
     assert admitted.has("guidelines.revisions.create") is True
     assert admitted.has("guidelines.revisions.retire") is False
-
-
-def test_ordered_normalization_upgrades_full_control_without_custom_elevation() -> None:
-    presets = {preset["name"]: preset["flags"] for preset in get_builtin_presets()}
-    full = presets["Full Control"]
-    spec = presets["Spec"]
-
-    # A materialized snapshot from the SK-A era has every historical/SK-A flag
-    # but no SK-B3 generation.  It normalizes to the trusted Full Control
-    # sentinel so the new manifest propagates automatically.
-    ska_era_full = copy.deepcopy(full)
-    for branch in (
-        "revisions",
-        "metrics",
-        "impact",
-        "adoption",
-        "assessments",
-        "waiver",
-    ):
-        del ska_era_full["guidelines"][branch]
-    assert normalize_agent_permission_overrides(ska_era_full) is None
-
-    ska_era_spec = copy.deepcopy(spec)
-    for branch in (
-        "revisions",
-        "metrics",
-        "impact",
-        "adoption",
-        "assessments",
-        "waiver",
-    ):
-        del ska_era_spec["guidelines"][branch]
-    assert normalize_agent_permission_overrides(ska_era_spec, spec) == {}
-
-    # Sparse deltas are modern explicit choices, not migration fingerprints.
-    custom_false = {
-        "guidelines": {
-            "assessments": {"record": False},
-            "waiver": {"request": False},
-        }
-    }
-    assert normalize_agent_permission_overrides(custom_false, spec) == custom_false
-    resolved = resolve_permissions(custom_false, spec, None)
-    assert resolved.has(GUIDELINE_ASSESSMENTS_RECORD) is False
-    assert resolved.has("guidelines.waiver.request") is False
-    assert resolved.has(GUIDELINE_REVISIONS_CREATE) is True
-    assert resolved.has(GUIDELINE_IMPACT_PREVIEW) is True
-
-    # A mixed materialized generation is explicit as a complete generation.
-    # Keeping every value prevents a later preset reconciliation from turning
-    # an absence into a grant.
-    mixed_full = copy.deepcopy(full)
-    _set(mixed_full, "guidelines.waiver.request", False)
-    mixed_normalized = normalize_agent_permission_overrides(mixed_full)
-    assert mixed_normalized is not None
-    assert _values(mixed_normalized) == {
-        leaf: leaf != "guidelines.waiver.request" for leaf in LEAVES
-    }
-    mixed_resolved = resolve_permissions(mixed_normalized, None, None)
-    assert mixed_resolved.has("guidelines.revisions.read") is True
-    assert mixed_resolved.has("guidelines.waiver.request") is False
-
-    # A partially materialized generation is never a Full Control migration
-    # fingerprint.  Its missing leaves are explicit denies, both without and
-    # with a preset base.
-    partial_full = copy.deepcopy(ska_era_full)
-    partial_full["guidelines"]["revisions"] = {"read": True}
-    partial_normalized = normalize_agent_permission_overrides(partial_full)
-    assert partial_normalized is not None
-    assert _values(partial_normalized) == {
-        leaf: leaf == GUIDELINE_REVISIONS_READ for leaf in LEAVES
-    }
-    partial_resolved = resolve_permissions(partial_normalized, None, None)
-    assert partial_resolved.has(GUIDELINE_REVISIONS_READ) is True
-    assert all(
-        not partial_resolved.has(leaf)
-        for leaf in LEAVES - {GUIDELINE_REVISIONS_READ}
-    )
-
-    partial_spec = copy.deepcopy(ska_era_spec)
-    partial_spec["guidelines"]["assessments"] = {"record": True}
-    partial_spec_normalized = normalize_agent_permission_overrides(
-        partial_spec,
-        spec,
-    )
-    assert partial_spec_normalized is not None
-    assert _values(partial_spec_normalized) == {
-        leaf: leaf == GUIDELINE_ASSESSMENTS_RECORD for leaf in LEAVES
-    }
-    partial_spec_resolved = resolve_permissions(
-        partial_spec_normalized,
-        spec,
-        None,
-    )
-    assert partial_spec_resolved.has(GUIDELINE_ASSESSMENTS_RECORD) is True
-    assert all(
-        not partial_spec_resolved.has(leaf)
-        for leaf in LEAVES - {GUIDELINE_ASSESSMENTS_RECORD}
-    )
-
-    all_false_full = copy.deepcopy(full)
-    for leaf in LEAVES:
-        _set(all_false_full, leaf, False)
-    all_false_normalized = normalize_agent_permission_overrides(all_false_full)
-    assert all_false_normalized is not None
-    assert _values(all_false_normalized) == {leaf: False for leaf in LEAVES}
-    # The earlier SK-A generation remains explicit True because this document
-    # is no longer the Full Control sentinel.  Dropping those values would
-    # silently deny capabilities that the materialized snapshot granted.
-    assert all(
-        _get_nested(all_false_normalized, leaf) is True
-        for leaf in SKA_PERMISSION_INTRODUCTION_V1.leaves
-    )
-    all_false_resolved = resolve_permissions(
-        all_false_normalized,
-        None,
-        None,
-    )
-    assert all(
-        all_false_resolved.has(leaf) for leaf in SKA_PERMISSION_INTRODUCTION_V1.leaves
-    )
-    assert all(not all_false_resolved.has(leaf) for leaf in LEAVES)

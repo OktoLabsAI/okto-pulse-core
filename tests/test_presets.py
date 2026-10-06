@@ -831,19 +831,6 @@ def test_legacy_permission_map_includes_story_topic_flags():
     assert _get_nested(delete_flags, "topic.entity.delete") is True
 
 
-def test_merge_missing_flags_backfills_story_topic_as_allowed():
-    from okto_pulse.core.infra.permissions import (
-        PERMISSION_REGISTRY,
-        merge_missing_flags,
-    )
-
-    stored = {"board": {"read": False}}
-    merged, added = merge_missing_flags(stored, PERMISSION_REGISTRY)
-
-    assert added > 0
-    assert _get_nested(merged, "board.read") is False
-    assert _get_nested(merged, "story.entity.create") is True
-    assert _get_nested(merged, "topic.entity.merge") is True
 
 
 # ---------------------------------------------------------------------------

@@ -1169,7 +1169,6 @@ PERMISSION_INTRODUCTION_MANIFESTS: tuple[PermissionIntroductionManifest, ...] = 
 
 # Preserve the original generations for documents that still carry retired data.
 # Public manifests describe only capabilities that the runtime can grant.
-_HISTORICAL_NORMALIZATION_MANIFESTS = PERMISSION_INTRODUCTION_MANIFESTS
 
 
 def _without_retired_sprint(
@@ -2437,44 +2436,6 @@ def _set_all_flags(d: dict[str, Any], value: bool) -> dict[str, Any]:
     return d
 
 
-def merge_missing_flags(
-    stored: dict,
-    registry: dict,
-    *,
-    _prefix: str = "",
-) -> tuple[dict, int]:
-    """Deep-merge missing permission keys while preserving existing values.
-
-    Historical registry leaves retain the legacy default of True.  Leaves in
-    a versioned introduction manifest are inserted as False.
-    """
-    added = 0
-    for key, reg_val in registry.items():
-        path = f"{_prefix}.{key}" if _prefix else key
-        if key not in stored:
-            if isinstance(reg_val, dict):
-                import copy as _copy
-
-                subtree = _copy.deepcopy(reg_val)
-                _set_all_leaves(subtree, True)
-                stored[key] = subtree
-                for flag_path in _INTRODUCED_PERMISSION_LEAVES:
-                    prefix = f"{path}."
-                    if flag_path.startswith(prefix):
-                        relative_path = flag_path[len(prefix) :]
-                        _set_nested(stored[key], relative_path, False)
-                added += _count_leaves(subtree)
-            else:
-                stored[key] = path not in _FAIL_CLOSED_INTRODUCED_FLAGS
-                added += 1
-        elif isinstance(reg_val, dict) and isinstance(stored[key], dict):
-            _, sub_added = merge_missing_flags(
-                stored[key],
-                reg_val,
-                _prefix=path,
-            )
-            added += sub_added
-    return stored, added
 
 
 def _set_all_leaves(d: dict, value: bool) -> None:
@@ -2809,215 +2770,11 @@ def _delete_permission_value(document: PermissionFlags, path: str) -> None:
             break
 
 
-def normalize_agent_permission_overrides(
-    agent_flags: Mapping[str, Any],
-    preset_flags: Mapping[str, Any] | None = None,
-) -> PermissionFlags | None:
-    """Normalize historical materialized agent snapshots into direct deltas.
-
-    Before preset lineage existed, assigning a preset copied its complete flag
-    tree into the agent row.  A previous introduction backfill could then add
-    generic False values for every SK-A leaf, unintentionally shadowing a newly
-    reconciled preset.  Each ordered manifest generation is classified
-    independently.  An entirely absent generation is historical; an all-False
-    generation is recoverable only when that manifest explicitly records a
-    known legacy backfill.  Partial generations and every False value in newer
-    manifests remain explicit.  Sparse documents are retained verbatim so
-    explicit custom False overrides are never elevated.
-
-    Historical all-True snapshots without a preset represent Full Control and
-    normalize to ``None``.  That trusted sentinel lets future manifest grants
-    propagate without materializing another snapshot.
-    """
-
-    import copy
-
-    working = copy.deepcopy(dict(agent_flags))
-    has_retired_sprint = "sprint" in working
-    normalization_manifests = (
-        _HISTORICAL_NORMALIZATION_MANIFESTS if has_retired_sprint
-        else PERMISSION_INTRODUCTION_MANIFESTS
-    )
-    normalization_introduced = {
-        path for manifest in normalization_manifests for path in manifest.leaves
-    }
-    normalization_registry = copy.deepcopy(PERMISSION_REGISTRY)
-    if has_retired_sprint:
-        normalization_registry.update(copy.deepcopy(_RETIRED_SPRINT_PERMISSION_SHAPE))
-    historical_paths = tuple(
-        path
-        for path in _flatten_registry(normalization_registry)
-        if path not in normalization_introduced
-    )
-    historical_values = tuple(
-        _permission_value_presence(working, path) for path in historical_paths
-    )
-    materialized = all(
-        present and type(value) is bool for present, value in historical_values
-    )
-    if not materialized:
-        return working
-
-    # Retired operations are provenance, never active authority. Recognize only
-    # the complete all-True v0.3.4 generation; partial generations,
-    # False values and unknown extensions must still require owner review.
-    fingerprint = copy.deepcopy(working)
-    if not (
-        _remove_retired_kg_full_control_fingerprint(fingerprint)
-        and _remove_retired_runtime_full_control_fingerprint(fingerprint)
-    ):
-        return working
-    working = fingerprint
-
-    # The retired ``any_to_cancelled`` leaf dominated every source-specific
-    # cancellation check.  Some historical presets therefore carried a False
-    # exact leaf that was semantically irrelevant beside a True wildcard.  Do
-    # not project the wildcard into newly introduced leaves yet: doing so would
-    # turn an otherwise absent manifest generation into a partial explicit
-    # document.  Remove only overlapping historical exact leaves now, then
-    # preserve any missing capability in the final sparse delta below.
-    legacy_cancel_all_entities = {
-        entity_type
-        for entity_type in ("ideation", "refinement", "spec", "card", "sprint")
-        if _permission_value_presence(working, f"{entity_type}.move.any_to_cancelled")
-        == (True, True)
-    }
-    for flag_path in _PRE_REGISTRY_TRANSITION_PERMISSION_LEAVES:
-        entity_type = flag_path.split(".", 1)[0]
-        if entity_type in legacy_cancel_all_entities and flag_path.endswith(
-            "_to_cancelled"
-        ):
-            _delete_permission_value(working, flag_path)
-
-    # Exact aliases removed when the canonical graph gained source-specific
-    # edges are migration fingerprints, not extension grants.  They no longer
-    # authorize an operation and must not prevent a materialized historical
-    # Full Control snapshot from normalizing to the trusted ``None`` sentinel.
-    for path in (
-        *_RETIRED_TRANSITION_PERMISSION_LEAVES,
-        *_RETIRED_STATE_PERMISSION_LEAVES,
-    ):
-        present, value = _permission_value_presence(working, path)
-        if present and type(value) is bool:
-            _delete_permission_value(working, path)
-
-    generic_introduction_manifests: list[PermissionIntroductionManifest] = []
-    non_propagating_introduction_manifests: list[PermissionIntroductionManifest] = []
-    complete_explicit_introduction_manifests: list[PermissionIntroductionManifest] = []
-    for manifest in normalization_manifests:
-        introduced_values = tuple(
-            _permission_value_presence(working, path) for path in manifest.leaves
-        )
-        all_absent = all(not present for present, _value in introduced_values)
-        all_true_materialized = all(
-            present and value is True for present, value in introduced_values
-        )
-        all_false_materialized = all(
-            present and value is False for present, value in introduced_values
-        )
-        if all_absent or (
-            manifest.recover_all_false_materialization and all_false_materialized
-        ):
-            generic_introduction_manifests.append(manifest)
-        elif not all_true_materialized:
-            non_propagating_introduction_manifests.append(manifest)
-            matches_preset_generation = preset_flags is not None and all(
-                present and _get_nested(preset_flags, path) is value
-                for path, (present, value) in zip(
-                    manifest.leaves,
-                    introduced_values,
-                    strict=True,
-                )
-            )
-            # A mixed or partial materialized generation is an explicit
-            # permission document, never a Full Control migration
-            # fingerprint.  Materialize every absent leaf as False before
-            # reducing it to a delta so an inherited preset cannot turn those
-            # absences into grants.
-            if not matches_preset_generation:
-                complete_explicit_introduction_manifests.append(manifest)
-            for path, (present, _value) in zip(
-                manifest.leaves,
-                introduced_values,
-                strict=True,
-            ):
-                if not present:
-                    _set_nested(working, path, False)
-
-    if (
-        preset_flags is None
-        and all(value is True for _present, value in historical_values)
-        and not non_propagating_introduction_manifests
-    ):
-        normalized_full_control = copy.deepcopy(working)
-        for manifest in generic_introduction_manifests:
-            for path in manifest.leaves:
-                _delete_permission_value(normalized_full_control, path)
-        if has_retired_sprint:
-            # Only a complete all-True historical generation can reach here.
-            # Delete known retired leaves individually so extensions still stop
-            # an ambiguous document from becoming the trusted None sentinel.
-            for path in _flatten_registry(_RETIRED_SPRINT_PERMISSION_SHAPE):
-                _delete_permission_value(normalized_full_control, path)
-        # ``None`` is safe only for an exact historical Full Control snapshot.
-        # Unknown extension leaves (and any other explicit difference) remain
-        # a sparse direct delta instead of being silently discarded.
-        explicit_delta = permission_flag_overrides(
-            PERMISSION_REGISTRY,
-            normalized_full_control,
-        )
-        return explicit_delta or None
-
-    for manifest in generic_introduction_manifests:
-        for path in manifest.leaves:
-            _delete_permission_value(working, path)
-
-    base = (
-        preset_flags
-        if preset_flags is not None
-        else _historical_compatibility_permission_flags()
-    )
-    explicit_delta = permission_flag_overrides(base, working)
-    # Preserve the complete explicit generation, including False values that
-    # happen to equal the current base.  This keeps custom denies auditable
-    # and prevents a later preset or manifest reconciliation from elevating
-    # them.
-    for manifest in complete_explicit_introduction_manifests:
-        for path in manifest.leaves:
-            present, value = _permission_value_presence(working, path)
-            if present and type(value) is bool:
-                _set_nested(explicit_delta, path, value)
-    for entity_type in legacy_cancel_all_entities:
-        if entity_type == "sprint":
-            continue
-        for flag_path in transition_permission_flags(entity_type):
-            if (
-                flag_path.endswith("_to_cancelled")
-                and _get_nested(base, flag_path) is not True
-            ):
-                _set_nested(explicit_delta, flag_path, True)
-    return explicit_delta
 
 
 _RETIRED_RUNTIME_PERMISSION_SHAPE = {"runtime": {"settings": {"read": True, "write": True}}}
 
 
-def _remove_retired_runtime_full_control_fingerprint(working: PermissionFlags) -> bool:
-    """Retired tuning belongs to OPERATIONAL/v1, independently of KG operations.
-
-    Recognize only that entire original all-True generation. Partial or denied
-    leaves, malformed parents and unknown extensions remain explicit evidence
-    for owner review; deleting tuning must never grant surviving capabilities.
-    """
-    if not _permission_value_presence(working, "runtime")[0]:
-        return True
-    retired = ("runtime.settings.read", "runtime.settings.write")
-    if not all(_get_nested(working, path) is True
-               for path in (*retired, *OPERATIONAL_PERMISSION_INTRODUCTION_V1.leaves)):
-        return False
-    for path in retired:
-        _delete_permission_value(working, path)
-    return True
 
 
 _RETIRED_KG_PERMISSION_SHAPE = {"kg": {"operations": {
@@ -3035,36 +2792,6 @@ _RETIRED_KG_PERMISSION_SHAPE = {"kg": {"operations": {
 }}}
 
 
-def _remove_retired_kg_full_control_fingerprint(working: PermissionFlags) -> bool:
-    """Recognize the complete original KG-OPERATIONS/v1 snapshot.
-
-    Intermediate F4 shapes are ambiguous without stored source provenance and
-    must not turn a partial v0.3.4 document into Full Control. Captured authority
-    still uses the frozen evaluator and classifies ambiguous documents against
-    that original generation before any operational permission cleanup.
-    """
-    tick = frozenset({"kg.operations.tick.run"})
-    outbox = tick | {"kg.operations.global_outbox.read", "kg.operations.global_outbox.reprocess", "kg.operations.global_outbox.verify"}
-    recovery = outbox | {"kg.operations.global_recovery.preflight", "kg.operations.global_recovery.confirm",
-        "kg.operations.global_recovery.read", "kg.operations.global_recovery.cancel", "kg.operations.global_recovery.resume",
-        "kg.operations.global_recovery.run", "kg.operations.quarantine.restore"}
-    rebuild = recovery | {"kg.operations.rebuild.preflight", "kg.operations.rebuild.confirm", "kg.operations.rebuild.run"}
-    retired_integrity = {"kg.operations.integrity.read", "kg.operations.integrity.backfill", "kg.operations.integrity.reconcile"}
-    retired_configuration = {"kg.operations.historical.read", "kg.operations.historical.start", "kg.operations.historical.cancel", "kg.operations.settings.read", "kg.operations.settings.write"}
-    rebuild = rebuild | {"kg.operations.schema.migrate"} | retired_integrity | retired_configuration | {"kg.operations.queue.read", "kg.operations.queue.reprocess"}
-    rebuild = rebuild | {"kg.operations.node.boost"}
-    present = frozenset(path for path in rebuild if _permission_value_presence(working, path)[0])
-    has_retired_subtree = any(_permission_value_presence(working, path.rsplit(".", 1)[0])[0] for path in rebuild)
-    if not has_retired_subtree:
-        return True
-    if present != rebuild:
-        return False
-    if not all(_get_nested(working, path) is True
-               for path in (*present, *KG_OPERATIONS_PERMISSION_INTRODUCTION_V1.leaves)):
-        return False
-    for path in present:
-        _delete_permission_value(working, path)
-    return True
 
 
 # ---------------------------------------------------------------------------
@@ -4163,8 +3890,6 @@ __all__ = [
     "get_builtin_presets",
     "has_permission",
     "map_legacy_permissions",
-    "merge_missing_flags",
-    "normalize_agent_permission_overrides",
     "permission_flag_overrides",
     "resolve_permission_preset_lineage",
     "resolve_permissions",

@@ -17,7 +17,6 @@ from okto_pulse.core.domain.permissions import (
 from okto_pulse.core.ports.permission_policy import (
     PermissionPolicyPort,
     builtin_permission_presets,
-    merge_permission_registry_defaults,
     registered_permission_flags,
 )
 
@@ -124,7 +123,3 @@ def test_adapter_bootstrap_views_do_not_expose_mutable_registry_state() -> None:
     assert presets
     presets[0]["flags"]["board"]["read"] = False
     assert builtin_permission_presets()[0]["flags"]["board"]["read"] is True
-
-    merged, added = merge_permission_registry_defaults({"board": {"read": False}})
-    assert merged["board"]["read"] is False
-    assert added > 0

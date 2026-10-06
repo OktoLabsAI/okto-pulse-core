@@ -45,8 +45,6 @@ from okto_pulse.core.domain.permissions import (
     evaluate_permission,
     get_builtin_presets,
     map_legacy_permissions,
-    merge_missing_flags,
-    normalize_agent_permission_overrides,
     permission_flag_overrides,
     resolve_permission_preset_lineage,
     resolve_permissions,
@@ -104,10 +102,10 @@ def direct_permission_review(agent_flags: object, *, preset_id: str | None) -> t
     if not isinstance(agent_flags, dict):
         return True, "invalid_agent_flags"
     try:
-        normalized = normalize_agent_permission_overrides(agent_flags)
-    except (TypeError, ValueError):
+        validate_strict_permission_flags(agent_flags)
+    except (TypeError, ValueError, PermissionContractViolation):
         return True, "invalid_agent_flags"
-    return (False, None) if normalized is None else (True, "unrecognized_direct_permissions")
+    return (False, None) if agent_flags == PERMISSION_REGISTRY else (True, "unrecognized_direct_permissions")
 
 
 def resolve_agent_permission_facts(
@@ -233,13 +231,6 @@ def explicit_permission_overrides(
     return permission_flag_overrides(base, desired)
 
 
-def normalize_agent_permission_layer(
-    agent_flags: PermissionFlags,
-    preset_flags: PermissionFlags | None = None,
-) -> PermissionFlags | None:
-    """Reduce a historical materialized agent snapshot to direct overrides."""
-
-    return normalize_agent_permission_overrides(agent_flags, preset_flags)
 
 
 def validate_permission_flag_values(
@@ -251,12 +242,6 @@ def validate_permission_flag_values(
     return flags
 
 
-def merge_permission_registry_defaults(
-    stored: PermissionFlags,
-) -> tuple[PermissionFlags, int]:
-    """Backfill missing canonical flags without overwriting stored values."""
-
-    return merge_missing_flags(stored, PERMISSION_REGISTRY)
 
 
 __all__ = [
@@ -294,8 +279,6 @@ __all__ = [
     "flatten_permission_flags",
     "get_permission_flag",
     "legacy_permissions_to_flags",
-    "merge_permission_registry_defaults",
-    "normalize_agent_permission_layer",
     "permission_introduction_manifests",
     "registered_permission_flags",
     "resolve_effective_permissions",

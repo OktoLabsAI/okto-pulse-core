@@ -2,6 +2,42 @@
 
 ## Estado para retomada
 
+### 2026-10-06 — C1/C3: retirada da normalização histórica de permissões
+
+Bases Core 876d4b20 / Community 7de94180. Retirados normalizador de snapshots
+históricos e helpers exclusivos de fingerprint, merge/backfill de flags e dois
+wrappers públicos sem consumidores produtivos. A revisão de documento direto
+agora reconhece somente a árvore completa atual, com booleanos estritos; mantém
+a sentinela nativa None e a composição de preset/delta/ceiling. Documentos antigos,
+incompletos ou com diferenças são negados com owner_review, sem conversão
+para Full Control. Nenhum adapter passa a importar implementação privada.
+
+Testes mistos mantêm matriz de presets, flags introduzidas, negações e ceilings;
+casos exclusivos de upgrade removidos têm disposição individual. Nova suíte
+native_permission_documents cobre documento atual, None, metadados ausentes,
+False, Sprint/runtime/extensão, valor 1 inválido e delta nativo sem mutação.
+Par dist-native-permission-docs1 instalado e byte a byte aprovado (843/905 Core,
+319/405 Community). Core1: 172 aprovados. Community1/2: sete aprovados/seis falhas
+por fixtures Board sem realm_id; a primeira tentativa de editar a fixture falhou
+por quoting, por isso Community2 repetiu a mesma falha, sem alteração de produto.
+Fixtures agora usam schema atual e realm explícito; Community3: 13 aprovados.
+Acrescentada prova SQL de documento sem geração pelo gateway, autenticação e
+resolver compacto, sem alteração persistida. Community4: dois aprovados;
+total distinto Community: 14.
+Core2 reforça prova da geração SK-A inteiramente False: oito aprovados; total
+distinto Core permanece 172.
+Closure1: só matrizes README divergentes, findings vazios e oito budgets zero.
+Geradas oficialmente e par dist-native-permission-docs2 instalado; provenance-native-
+permission-docs2.json aprovado, mesmas contagens/Python dos testes. SHA Core
+1072f2aecb69091c8a88ee161a5550935e700534ca12c9a936eddad220dbd5e8;
+Community bc2a92cb2790fc2660e2448306577f2239fde6a162ca61a85450f1606802383b.
+Closure2 aprovado: findings/documentation_findings vazios e oito budgets zero.
+Ruff F/E9 e diff aprovados. Todos os handles encerrados. Nenhum Python de produto
+mudou após a prova final. Nenhuma alteração frontend ou dados reais.
+Mapeamento flat, campo Agent.permissions e fallback de autorização continuam
+pendentes de retirada coordenada com DTOs/API/UI; não considerar esta etapa como
+fechamento da cadeia inteira. C1–C4 e decisões T23/KG-10 permanecem abertos.
+
 ### 2026-10-06 — C1: recusa de autoridade sem configuração
 
 Bases Core 0135c713 / Community 3852dc89, limpas no início. Rastreio encontrou

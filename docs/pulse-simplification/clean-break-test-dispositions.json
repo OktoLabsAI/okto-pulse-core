@@ -2106,6 +2106,10 @@
     {
       "path": "okto_labs_pulse_community/tests/test_cancelled_at_utc_roundtrip.py",
       "reason": "Current cancellable entities only; keeps timezone-preserving type and actual SQLite normalization/roundtrip. SQLite naive datetimes are current driver behavior, not migration support."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_ska_permission_lineage_adapter.py",
+      "reason": "Current schema and explicit local realm; preserved native preset lineage, deltas, ceilings and owner-review refusals. Added missing-generation refusal through all three public adapter paths, with unchanged persisted flags."
     }
   ],
   "removed_cases": [
@@ -3542,6 +3546,42 @@
       "test": "test_new_revision_refuses_explicit_or_inherited_retired_targets",
       "disposition": "superseded",
       "reason": "Inherited Sprint metric no longer constructible. Replaced by constructor/codec rejection; native immutable history, semver and batch no-write checks remain in the same suite."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_ska_permission_introduction.py",
+      "test": "test_agent_upgrade_normalizes_full_control_and_preset_snapshots",
+      "disposition": "superseded",
+      "reason": "Exclusive permission snapshot conversion/backfill removed. Native full-control, preset deltas, exact False and malformed/retired document refusal are covered by test_native_permission_documents.py; native ceiling and lineage cases remain in the mixed suites."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_ska_permission_introduction.py",
+      "test": "test_missing_introduced_leaves_remain_denied_on_generic_merge",
+      "disposition": "superseded",
+      "reason": "Exclusive permission snapshot conversion/backfill removed. Native full-control, preset deltas, exact False and malformed/retired document refusal are covered by test_native_permission_documents.py; native ceiling and lineage cases remain in the mixed suites."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_skb_permission_introduction.py",
+      "test": "test_ordered_normalization_upgrades_full_control_without_custom_elevation",
+      "disposition": "superseded",
+      "reason": "Exclusive permission snapshot conversion/backfill removed. Native full-control, preset deltas, exact False and malformed/retired document refusal are covered by test_native_permission_documents.py; native ceiling and lineage cases remain in the mixed suites."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_sdlc_transition_permissions.py",
+      "test": "test_legacy_cancellation_wildcard_does_not_become_an_exact_deny",
+      "disposition": "superseded",
+      "reason": "Exclusive permission snapshot conversion/backfill removed. Native full-control, preset deltas, exact False and malformed/retired document refusal are covered by test_native_permission_documents.py; native ceiling and lineage cases remain in the mixed suites."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_sdlc_transition_permissions.py",
+      "test": "test_pre_registry_full_control_snapshot_normalizes_without_transition_denials",
+      "disposition": "superseded",
+      "reason": "Exclusive permission snapshot conversion/backfill removed. Native full-control, preset deltas, exact False and malformed/retired document refusal are covered by test_native_permission_documents.py; native ceiling and lineage cases remain in the mixed suites."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_presets.py",
+      "test": "test_merge_missing_flags_backfills_story_topic_as_allowed",
+      "disposition": "superseded",
+      "reason": "Exclusive permission snapshot conversion/backfill removed. Native full-control, preset deltas, exact False and malformed/retired document refusal are covered by test_native_permission_documents.py; native ceiling and lineage cases remain in the mixed suites."
     }
   ]
 }
