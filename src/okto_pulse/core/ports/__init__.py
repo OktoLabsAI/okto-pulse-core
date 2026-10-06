@@ -97,7 +97,6 @@ from .takedown_telemetry import (
     reset_takedown_telemetry_read_port_for_tests,
 )
 from .kg_events import (
-    HISTORICAL_PROGRESS_SETTINGS_KEY,
     KGEventsPoll,
     KGEventsProviderMissing,
     KGEventsReaderPort,
@@ -454,7 +453,6 @@ __all__ = [
     "resolve_sqlite_database_path",
     "sanitize_message",
     "set_permission_flag",
-    "HISTORICAL_PROGRESS_SETTINGS_KEY",
     "POLICY_CONSTRAINT_GUIDELINE_RETIRED_REASON",
     "POLICY_CONSTRAINT_GUIDELINE_SUPERSEDED_REASON",
     "POLICY_CONSTRAINT_PERMANENT_TOMBSTONE_REASONS",

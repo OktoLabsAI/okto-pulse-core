@@ -1160,6 +1160,11 @@
       "path": "okto_labs_pulse_community/tests/telemetry_behavioral/test_product_snapshot_resilience.py::test_legacy_fatal_route_missing_state_retries_and_recovers",
       "disposition": "superseded",
       "reason": "Removed v0.3.0 fatal-404 repair. Replacement proves fatal state remains closed, unchanged, and performs no transport; native transient 404 retry remains covered."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/telemetry_behavioral/test_telemetry_delta_batch.py::test_classify_trust_state_canonical_matrix",
+      "disposition": "superseded",
+      "reason": "Unused classifier for historical pre-fix/backfill formats removed. Current delta and snapshot wire markers and endpoint separation remain tested behaviorally; no historical classification service remains."
     }
   ],
   "adapted_suites": [

@@ -6,16 +6,13 @@ from datetime import datetime, timezone
 from typing import Any
 
 from sqlalchemy import delete
-from sqlalchemy.orm.attributes import flag_modified
 
 from sqlalchemy_test_models import (
-    Board,
     ConsolidationAudit,
     ConsolidationQueue,
     GlobalUpdateOutbox,
     KuzuNodeRef,
 )
-from okto_pulse.core.ports.kg_events import HISTORICAL_PROGRESS_SETTINGS_KEY
 from okto_pulse.core.ports.kg_governance import BoardErasureJobFact
 
 
@@ -54,12 +51,6 @@ class TestSqlAlchemyKGGovernanceStore:
             GlobalUpdateOutbox,
         ):
             await context.execute(delete(model).where(model.board_id == board_id))
-        board = await context.get(Board, board_id)
-        if board is not None and isinstance(board.settings, dict):
-            settings = dict(board.settings)
-            settings.pop(HISTORICAL_PROGRESS_SETTINGS_KEY, None)
-            board.settings = settings
-            flag_modified(board, "settings")
 
     async def stage_board_erasure_job(
         self,

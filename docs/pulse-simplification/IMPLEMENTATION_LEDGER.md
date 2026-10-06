@@ -2,6 +2,48 @@
 
 ## Estado para retomada
 
+### 2026-10-06 — C1/C3 em andamento: contrato atual de telemetria
+
+Bases Core 509ad99c / Community a52a15fc, limpas e publicadas.
+Confirmado classify_trust_state sem caller produtivo; retirados classificador
+de backfill/pre_fix, vocabulario cumulative/unknown e estados de classificacao.
+Mantidos os marcadores delta/snapshot e era=post_fix do transporte ativo.
+Teste exclusivo do classificador tem disposicao; testes de payload, endpoints,
+replay e exclusao de metricas de produto do delta permanecem. Retirada tabela
+Sprint inutil da fixture de product snapshot. Par dist-native-markers1
+instalado e provenance-native-markers1 aprovado: Core 843/905, Community 319/405.
+Community1: 150 aprovados. Closure1: findings vazio, oito budgets zero,
+somente matrizes README divergentes. Todos os handles encerrados.
+
+Inventario seguinte: kg_events ainda inflava o progresso com total de backfill
+no Board; nenhum produtor desse estado permanece. Retirada a constante publica,
+branch do reader, limpeza exclusiva na exclusao de Board e copias de teste.
+Contagem atual, filtro de maintenance e cursor/replay permanecem. Teste de fila
+agora cobre os cinco estados nativos. Frontend de indicadores executado;
+Par dist-native-progress1 instalado e provenance-native-progress1 aprovada
+byte a byte (843/905 Core, 319/405 Community). native-progress-core1: 30 aprovados;
+community1: 39 aprovados; front1: 13 aprovados, sem mudanca nos assets.
+Ruff F/E9 e diff aprovados. Closure1: findings vazio, oito budgets zero,
+somente matrizes README divergentes. Matrizes regeneradas oficialmente;
+par dist-native-progress2 instalado e provenance-native-progress2 aprovado,
+mesmas contagens e mesmo Python dos testes. Closure2 aprovada:
+findings/documentation_findings vazios, oito budgets current=limit=0.
+SHA Core 4a98260b44aee10356779015b31084350811569b196e6bfa7d0b89950e110647;
+Community 01b0df59ac106a352bb8a5c57197b6686d9d839916afa4e9071496209547cfbf.
+Todos os handles encerrados. Nenhuma base/processo real alterado.
+C1-C4 e decisoes T23/KG-10 continuam abertos; entrega total nao certificada.
+ArchitecturePropagationLegacyReport foi investigado: detecta fonte copiada que
+se tornou inelegivel no contrato atual, sem converter/importar registros. Sua
+funcao de diagnostico atual deve permanecer; nao excluir apenas pelo nome.
+DefaultBoardConfiguration sem snapshot tambem pode ser produzido pela criacao
+atual sem template ativo; nao classificar ausencia automaticamente como legado.
+Proxima retirada concreta do inventario: CLI ainda exporta governed_legacy_plaintext
+em cmd_api_key sem handoff e em _generate_mcp_json; helpers
+_stored_agent_credential_source/_exportable_credential_from_legacy_agent.
+Preservar handoff atomico reveal-once e export dos segredos recebidos na criacao.
+Tests test_cli_init, test_release_credential_handoff e gate HND2 devem acompanhar.
+Nao houve alteracao desta cadeia ainda.
+
 ### 2026-10-06 — C1/C3 em andamento: estado nativo de recuperacao da telemetria
 
 Bases Core 78a96dc6 / Community 17bee7c8. Retirada da reconstrucao de

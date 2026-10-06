@@ -27,9 +27,6 @@ class KGEventsProviderMissing(RuntimeError):
         )
 
 
-HISTORICAL_PROGRESS_SETTINGS_KEY = "kg_historical_consolidation"
-
-
 @dataclass(frozen=True, slots=True)
 class KGOutboxEvent:
     """A transport-neutral event emitted by the KG transactional outbox."""
@@ -108,7 +105,6 @@ def reset_kg_events_reader_port_for_tests() -> None:
 
 
 __all__ = [
-    "HISTORICAL_PROGRESS_SETTINGS_KEY",
     "KGEventsPoll",
     "KGEventsProviderMissing",
     "KGEventsReaderPort",

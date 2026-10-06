@@ -186,7 +186,6 @@ from okto_pulse.core.ports.kg_operational import (  # noqa: E402
     reset_kg_operational_ports_for_tests,
 )
 from okto_pulse.core.ports.kg_events import (  # noqa: E402
-    HISTORICAL_PROGRESS_SETTINGS_KEY,
     KGEventsPoll,
     KGOutboxEvent,
     register_kg_events_reader_port,
@@ -1197,46 +1196,18 @@ class _CoreTestKGEventsReader:
         rows = (
             await session.execute(
                 select(
-                    ConsolidationQueue.status, ConsolidationQueue.source, func.count()
+                    ConsolidationQueue.status, func.count()
                 )
                 .where(ConsolidationQueue.board_id == board_id)
-                .group_by(ConsolidationQueue.status, ConsolidationQueue.source)
+                .group_by(ConsolidationQueue.status)
             )
         ).all()
         snapshot = {"pending": 0, "claimed": 0, "done": 0, "failed": 0, "paused": 0}
-        historical = {"pending": 0, "claimed": 0, "done": 0, "failed": 0, "paused": 0}
-        for status, source, count in rows:
+        for status, count in rows:
             if status in snapshot:
                 snapshot[status] += int(count)
-                if source == "historical_backfill":
-                    historical[status] += int(count)
-
-        live_total = sum(snapshot.values())
-        historical_active = (
-            historical["pending"] + historical["claimed"] + historical["paused"]
-        )
-        historical_total = 0
-        if historical_active > 0:
-            board = await session.get(Board, board_id)
-            if board is not None and isinstance(board.settings, dict):
-                state = board.settings.get(HISTORICAL_PROGRESS_SETTINGS_KEY)
-                if isinstance(state, dict):
-                    try:
-                        historical_total = int(state.get("total") or 0)
-                    except (TypeError, ValueError):
-                        historical_total = 0
-
-        non_historical_total = live_total - sum(historical.values())
-        if historical_active > 0 and historical_total > 0:
-            snapshot["total"] = max(live_total, historical_total + non_historical_total)
-            snapshot["processed"] = max(
-                0,
-                snapshot["total"]
-                - (snapshot["pending"] + snapshot["claimed"] + snapshot["paused"]),
-            )
-        else:
-            snapshot["total"] = live_total
-            snapshot["processed"] = snapshot["done"]
+        snapshot["total"] = sum(snapshot.values())
+        snapshot["processed"] = snapshot["done"]
         return snapshot
 
 
