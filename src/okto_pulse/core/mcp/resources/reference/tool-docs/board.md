@@ -99,8 +99,8 @@ Use this to define the gate/settings defaults that future boards should
 inherit. Creating a version does not activate it unless `activate=true`
 (single-active is enforced). New versions default
 `reviewer_separation_mode="enforce"`; pass `warn` or `off` explicitly only when
-that is the intended policy. Historical boards/templates with the field absent
-are not backfilled and resolve through `legacy_absent_compat`.
+that is the intended policy. An omitted setting uses the current `enforce`
+default; invalid policy values are refused without conversion.
 The same `enforce` default is materialized when a new board is created before
 any active template exists; an explicitly supplied `warn`/`off` is preserved.
 The curated Spec checklist default is human-owned and is intentionally not an

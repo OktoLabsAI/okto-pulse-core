@@ -1,9 +1,4 @@
-"""Reviewer/executor separation policy shared by review surfaces.
-
-The board setting is resolved in one place for task validation.  Persisted legacy boards that do not carry
-the setting retain their historical permissive behaviour, but the decision is
-still explicit and auditable through ``source=legacy_absent_compat``.
-"""
+"""Current reviewer/executor separation policy for task validation."""
 
 from __future__ import annotations
 
@@ -34,13 +29,15 @@ class ReviewerSeparationDecision:
 
 def resolve_reviewer_separation_mode(board: object | None) -> tuple[str, str]:
     settings = getattr(board, "settings", None) if board is not None else None
-    if not isinstance(settings, Mapping) or "reviewer_separation_mode" not in settings:
-        # Compatibility is explicit: existing boards/templates with no field keep
-        # their historical behavior; new templates materialize ``enforce``.
-        return "off", "legacy_absent_compat"
-    mode = str(settings.get("reviewer_separation_mode") or "off").strip().lower()
-    if mode not in REVIEWER_SEPARATION_MODES:
-        return "off", "invalid_value_fail_compat"
+    if settings is None:
+        settings = {}
+    if not isinstance(settings, Mapping):
+        raise ValueError("reviewer_separation_policy_invalid")
+    if "reviewer_separation_mode" not in settings:
+        return "enforce", "board_default"
+    mode = settings["reviewer_separation_mode"]
+    if not isinstance(mode, str) or mode not in REVIEWER_SEPARATION_MODES:
+        raise ValueError("reviewer_separation_policy_invalid")
     return mode, "board_settings"
 
 

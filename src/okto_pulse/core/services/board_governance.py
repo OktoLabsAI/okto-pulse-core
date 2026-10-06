@@ -19,10 +19,6 @@ GOVERNANCE_SETTING_KEYS = (
     "allow_agent_self_answering",
     "require_full_context_for_critical_actions",
 )
-LEGACY_ABSENT_SETTING_KEYS = (
-    "skip_task_requirement_link_gate_global",
-    "reviewer_separation_mode",
-)
 QA_SELF_ANSWER_DENIED_ACTION = "qa_self_answer_denied"
 QA_SELF_ANSWER_DENIED_METRIC = METRIC_QA_SELF_ANSWER_DENIED
 SELF_ANSWERING_NOT_ALLOWED_REASON = "self_answering_not_allowed"
@@ -137,11 +133,6 @@ class BoardGovernanceService:
         )
         if "code_traceability" in patch_raw:
             CodeTraceabilitySettings.model_validate(patch_raw["code_traceability"])
-        preserve_absent = {
-            key
-            for key in LEGACY_ABSENT_SETTING_KEYS
-            if key not in current_raw and key not in patch_raw
-        }
         # A patch merges PERSISTED state (read) with AUTHORED keys (write).
         # Tolerance applies only to the persisted half: a value the author is
         # actually writing stays strict, so a typo is rejected instead of
@@ -161,8 +152,6 @@ class BoardGovernanceService:
             normalized["cognitive_readiness_policy"] = current_raw[
                 "cognitive_readiness_policy"
             ]
-        for key in preserve_absent:
-            normalized.pop(key, None)
         return normalized
 
     async def resolve(self, board_id: str) -> BoardGovernanceSettings:

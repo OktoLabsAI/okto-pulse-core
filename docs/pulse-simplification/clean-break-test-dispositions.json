@@ -3978,6 +3978,21 @@
       "path": "okto_labs_pulse_core/tests/test_sdlc_sprint_authority_v2.py::test_reviewer_separation_modes_are_explicit",
       "disposition": "adapted",
       "reason": "Removed unsupported Sprint argument and conflict branch; policy modes now exercised with native Card creator conflict. Removed Sprint input is explicitly refused."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_task_reviewer_separation.py::absent-policy compatibility cases",
+      "disposition": "replaced",
+      "reason": "Removed absent-policy compatibility; current creation defaults apply (reviewer enforce, requirement-link skip false). Explicit off/warn/skip and permissions remain tested. Native Community seeds explicitly persist their existing off/skip behavior. Invalid reviewer policy refuses edits instead of off conversion."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_task_requirement_link_gate.py::absent-key grandfathering and preservation cases",
+      "disposition": "replaced",
+      "reason": "Removed absent-policy compatibility; current creation defaults apply (reviewer enforce, requirement-link skip false). Explicit off/warn/skip and permissions remain tested. Native Community seeds explicitly persist their existing off/skip behavior. Invalid reviewer policy refuses edits instead of off conversion."
+    },
+    {
+      "path": "okto_labs_pulse_community/frontend/src/components/board/__tests__/BoardSettingsForm.test.tsx::projects an absent or unknown legacy value as off",
+      "disposition": "replaced",
+      "reason": "Removed absent-policy compatibility; current creation defaults apply (reviewer enforce, requirement-link skip false). Explicit off/warn/skip and permissions remain tested. Native Community seeds explicitly persist their existing off/skip behavior. Invalid reviewer policy refuses edits instead of off conversion."
     }
   ]
 }

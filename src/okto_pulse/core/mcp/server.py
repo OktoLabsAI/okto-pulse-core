@@ -17358,9 +17358,9 @@ async def okto_pulse_submit_task_validation(
     applies the board's reviewer-separation policy to task creator, assignee,
     and executor conflicts. ``enforce`` returns
     ``reviewer_separation_required`` as an actionable outcome; ``warn`` and
-    ``off`` accept the submission and persist the complete decision. Legacy
-    boards with no setting resolve to ``off`` with
-    ``source=legacy_absent_compat``. The system then
+    ``off`` accept the submission and persist the complete decision. An omitted
+    policy uses the current ``enforce`` creation default; invalid values are refused.
+    The system then
     automatically routes the card: successful completion → done; a failed
     validation or other admitted completion blocker → rejected. Rejected is a
     rework handoff: an executor must first move it to in_progress. Exact

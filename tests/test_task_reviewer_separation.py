@@ -122,12 +122,12 @@ def test_task_decision_evaluates_creator_assignee_and_executor_conflicts() -> No
     )
 
 
-def test_unrelated_legacy_settings_patch_preserves_absent_compat_source() -> None:
+def test_settings_patch_uses_current_creation_default() -> None:
     merged = BoardGovernanceService.merge_settings_patch(
         {"max_scenarios_per_card": 3},
         {"max_scenarios_per_card": 4},
     )
-    assert "reviewer_separation_mode" not in merged
+    assert merged["reviewer_separation_mode"] == "enforce"
 
 
 def test_enforce_allows_an_independent_task_reviewer() -> None:
@@ -158,12 +158,11 @@ def test_enforce_allows_an_independent_task_reviewer() -> None:
 @pytest.mark.parametrize(
     ("mode", "expected_source", "expected_warning"),
     [
-        (None, "legacy_absent_compat", False),
         ("off", "board_settings", False),
         ("warn", "board_settings", True),
     ],
 )
-async def test_off_warn_and_legacy_modes_persist_transparent_decision(
+async def test_off_and_warn_modes_persist_transparent_decision(
     db_factory,
     mode: str | None,
     expected_source: str,
@@ -304,7 +303,7 @@ async def test_mcp_enforce_response_projects_action_required_and_remediation(
 
 
 @pytest.mark.asyncio
-async def test_full_task_context_projects_legacy_compat_decision(db_factory) -> None:
+async def test_full_task_context_projects_current_default_decision(db_factory) -> None:
     board_id, card_id = await _seed_conflicted_card(db_factory, mode=None)
     context = await _call_tool(
         "okto_pulse_get_task_context",
@@ -316,9 +315,9 @@ async def test_full_task_context_projects_legacy_compat_decision(db_factory) -> 
 
     decision = context["reviewer_separation"]
     assert decision["applies_to_task_validation"] is True
-    assert decision["mode"] == "off"
-    assert decision["source"] == "legacy_absent_compat"
-    assert decision["allowed"] is True
+    assert decision["mode"] == "enforce"
+    assert decision["source"] == "board_default"
+    assert decision["allowed"] is False
     assert decision["conflicts"]
 
 
@@ -360,9 +359,19 @@ def test_mcp_resources_describe_task_reviewer_separation_contract() -> None:
     gates = (root / "reference" / "spec_gates.md").read_text(encoding="utf-8")
     for text in (cards, errors, gates):
         assert "reviewer_separation_required" in text
-        assert "legacy_absent_compat" in text
+        assert "legacy_absent_compat" not in text
     assert "ready for validation only after the move succeeds" in cards
     assert "the implementor has not completed the handoff" in cards
     for coupling in ("notify", "notification", "nexus", "messaging"):
         assert coupling not in cards.lower()
     assert "\"Card is not in 'validation' status\"" in errors
+
+
+@pytest.mark.parametrize("mode", [None, "invalid", " OFF ", False])
+def test_invalid_reviewer_policy_is_refused_without_relaxation(mode):
+    from types import SimpleNamespace
+    from okto_pulse.core.services.reviewer_separation import resolve_reviewer_separation_mode
+    board = SimpleNamespace(settings={"reviewer_separation_mode": mode})
+    with pytest.raises(ValueError, match="reviewer_separation_policy_invalid"):
+        resolve_reviewer_separation_mode(board)
+    assert board.settings == {"reviewer_separation_mode": mode}

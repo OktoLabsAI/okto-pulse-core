@@ -49,7 +49,6 @@ from okto_pulse.core.ports.default_board_configuration import (
     get_default_board_configuration_store,
 )
 from okto_pulse.core.services.board_governance import (
-    LEGACY_ABSENT_SETTING_KEYS,
     BoardGovernanceService,
 )
 
@@ -317,7 +316,7 @@ class DefaultBoardConfigurationService:
         board defaults) and snapshot_meta is ``None`` (graceful fallback,
         AC11). New boards default reviewer separation to ``enforce`` even when
         no template has been configured; an explicit ``off``/``warn`` override
-        is preserved. Persisted legacy boards are not touched by this path.
+        is preserved.
         """
         template = await self.resolve_active(scope)
         if template is None:
@@ -327,7 +326,6 @@ class DefaultBoardConfigurationService:
                 )
             else:
                 supplied_settings = dict(settings_override or {})
-            supplied_settings.setdefault("reviewer_separation_mode", "enforce")
             supplied_settings.setdefault(
                 "code_traceability",
                 {"mode": "advisory"},
@@ -337,11 +335,6 @@ class DefaultBoardConfigurationService:
         effective = BoardGovernanceService.merge_settings_patch(
             template.settings_payload, settings_override
         )
-        # Creating a board is forward-only. A historical template may itself
-        # predate reviewer_separation_mode; do not mutate that template, but do
-        # materialize the current safe default on the new board unless the
-        # template/override explicitly selected another mode.
-        effective.setdefault("reviewer_separation_mode", "enforce")
         effective.setdefault("code_traceability", {"mode": "advisory"})
         snapshot_meta = {
             "template_id": template.id,
@@ -774,7 +767,6 @@ class DefaultBoardConfigurationService:
             supplied.setdefault("skip_cognitive_consolidation", previous.get("skip_cognitive_consolidation", False))
             supplied.setdefault("bug_learning_closeout", previous.get("bug_learning_closeout", "advisory"))
             supplied.setdefault("kg_query_timeout_ms", previous.get("kg_query_timeout_ms", 15000))
-        supplied.setdefault("reviewer_separation_mode", "enforce")
         supplied.setdefault("code_traceability", {"mode": "advisory"})
         validated = self._validate_settings(supplied)
         if "cognitive_readiness_policy" in previous:
@@ -800,8 +792,7 @@ class DefaultBoardConfigurationService:
         All callers provide a closed complete immutable revision pin.
 
         New template versions default reviewer separation to ``enforce``. This
-        is forward-only: legacy templates/boards are never backfilled and their
-        absent value resolves explicitly to compatibility mode ``off``.
+        does not change any existing Board policy.
         """
         validated_payload = await self.prepare_version_settings(
             settings_payload=settings_payload, actor_kind=actor_kind, scope=scope,
@@ -820,15 +811,6 @@ class DefaultBoardConfigurationService:
             if spec_checklist_mode is not None
             else getattr(active, "spec_checklist_mode", None)
         )
-        if isinstance(settings_payload, dict) and active is not None:
-            active_payload = active.settings_payload or {}
-            for key in LEGACY_ABSENT_SETTING_KEYS:
-                if key == "reviewer_separation_mode":
-                    # Forward-only default for every newly-created template
-                    # version, including one derived from a historical template.
-                    continue
-                if key not in settings_payload and key not in active_payload:
-                    validated_payload.pop(key, None)
         store = get_default_board_configuration_store()
         next_version = await store.next_version(self.db, scope=scope)
         now = datetime.now(timezone.utc)

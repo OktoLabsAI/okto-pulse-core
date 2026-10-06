@@ -291,7 +291,7 @@ async def test_locked_traceability_narrow_writer_persists_links_without_version_
 @pytest.mark.parametrize(
     ("mode", "allowed", "warning", "source"),
     [
-        (None, True, False, "legacy_absent_compat"),
+        (None, False, False, "board_default"),
         ("off", True, False, "board_settings"),
         ("warn", True, True, "board_settings"),
         ("enforce", False, False, "board_settings"),

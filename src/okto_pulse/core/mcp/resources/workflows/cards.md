@@ -338,7 +338,7 @@ When the **Task Validation Gate** is enabled, cards must pass through an indepen
 | `warn` | Submission continues; `reviewer_separation.warning=true`, conflicts, and source are persisted in the validation and returned to the caller. |
 | `off` | Submission continues transparently, while the complete decision (including conflicts) is still persisted and returned. |
 
-New boards (including the no-active-template fallback) and new default-board template versions materialize `enforce` unless `warn`/`off` is explicitly selected. A persisted legacy board with no setting is **not** backfilled: it resolves to `off` with `source="legacy_absent_compat"`, so historical self-validation remains operable and auditable.
+New boards (including the no-active-template fallback) and new default-board template versions materialize `enforce` unless `warn`/`off` is explicitly selected. An omitted setting uses `enforce` with `source="board_default"`. Invalid policy values are refused. Community bootstrap Boards explicitly select `off`.
 
 ### Deterministic Thresholds
 

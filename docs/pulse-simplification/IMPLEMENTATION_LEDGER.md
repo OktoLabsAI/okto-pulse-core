@@ -2,6 +2,35 @@
 
 ## Estado para retomada
 
+### 2026-10-06 — C1/C2/C3 em andamento: defaults atuais de policy
+Bases publicadas Core 5ace08ff / Community 4e03edbe.
+Retirada preservacao exclusiva de ausencia em BoardGovernance/default templates;
+BoardSettings e resolver usam enforce (default atual de criacao) e gate de vinculo
+usa False quando ausente. Seeds explicitam off/skip=True para conservar exatamente
+efeito anterior; nenhuma base existente convertida. Valores invalidos de separacao
+nao sao mais rebaixados a off; UI mostra erro sem edicao.
+Documentos ativos e catalogos MCP regenerados oficialmente.
+native-policy-defaults-front1: 104 aprovados. Build aprovado, 79 arquivos/78 assets,
+SHA 56bf18bce0f74b9003905b9b5f49168f260e7da3f53d1abb2a56c309e18819f6.
+Assets staged antes de dist-native-policy-defaults1. Par instalado; prova
+provenance-native-policy-defaults1 byte a byte aprovada (843/905 Core, 319/405 Community).
+Core1: 53 aprovados; Community1: 44 aprovados, incluindo init real/recovery/handoff.
+Closure1 aprovada: findings/documentation_findings vazios, oito budgets current=limit=0.
+Ruff F/E9 e diff aprovados. Nenhum handle ativo nem dados/processos reais alterados.
+C1-C4 continuam abertos e T23/KG-10 aguardam respostas; nao declarar entrega total.
+
+Proxima cadeia confirmada no mesmo inventario: impact_evidence.py ainda converte
+valor invalido para off (invalid_value_fail_compat), repetido em
+BoardGovernance.normalize_settings(read_tolerant=True) e BoardSettingsForm.
+Escrita atual ja exige enum fechado; ausencia legitima tem default off.
+Retirar conversao de valores invalidos e o caminho read_tolerant, mantendo
+off/advisory/require, defaults de criacao, provas de impacto/atualidade e testes
+de movimentos/frontend. Nenhuma edicao desta cadeia ainda.
+Outra referencia sem funcao antiga: default_config_snapshot None e produzido
+nativamente sem template; preservar estado, mesmo que label legacy_no_snapshot
+precise refletir seu significado atual. Nao apagar funcionalidade pelo nome.
+
+
 ### 2026-10-06 — C2 em andamento: bootstrap com policy explicita
 Publicado avaliador sem Sprint: Core 0c76928b / Community ee4cf00f.
 My Board/Demo eram criados sem settings e recebiam efetivamente off pelo resolver.

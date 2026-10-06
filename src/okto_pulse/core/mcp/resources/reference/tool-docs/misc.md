@@ -330,8 +330,8 @@ the board's `reviewer_separation_mode` against task creator, assignee, and
 executor conflicts. `enforce` returns the action-required code
 `reviewer_separation_required` with remediation
 `request_independent_task_validator` before any mutation. `warn` and `off`
-continue and persist/return `reviewer_separation`; a legacy board with the
-setting absent is explicitly `off` with `source=legacy_absent_compat`.
+continue and persist/return `reviewer_separation`. An omitted setting uses
+`enforce` with `source=board_default`; invalid values are refused.
 
 The result separates two decisions:
 

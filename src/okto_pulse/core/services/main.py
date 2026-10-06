@@ -4903,12 +4903,7 @@ class CardService:
         )
         config = self._resolve_validation_config(card, spec, board_settings)
 
-        # Reviewer independence is board policy, shared with sprint evaluation.
-        # The decision happens before authorization, closeout checks, activity
-        # writes, or mutation so ``enforce`` is fail-closed and atomic.  Legacy
-        # boards with no persisted setting resolve to explicit compatibility
-        # mode ``off`` and still record their conflicts/source on the accepted
-        # validation below.
+        # Evaluate current Board policy before any validation mutation.
         reviewer_separation = evaluate_task_reviewer_separation(
             board=board,
             reviewer_id=reviewer_id,
@@ -5974,8 +5969,6 @@ class CardService:
         if board is None:
             return False
         settings = board.settings or {}
-        if "skip_task_requirement_link_gate_global" not in settings:
-            return True
         return bool(settings.get("skip_task_requirement_link_gate_global", False))
 
     @classmethod

@@ -4304,11 +4304,8 @@ class BoardSettings(BaseModel):
     require_full_context_for_critical_actions: bool = (
         True  # if True, critical mutations must resolve full entity context
     )
-    # Task-validation and sprint reviewer/executor separation. Missing on legacy
-    # persisted boards is resolved explicitly as ``off``; new boards and new
-    # default-board template versions inject ``enforce`` unless the administrator
-    # chooses another mode.
-    reviewer_separation_mode: Literal["off", "warn", "enforce"] = "off"
+    # Current creation default; an authorized author may select off or warn.
+    reviewer_separation_mode: Literal["off", "warn", "enforce"] = "enforce"
     # Requirement-lint languages for this board's spec content. Each code
     # activates the built-in lexicon of that language; multiple codes are
     # evaluated as a deterministic UNION of lexicons. Empty (the legacy
