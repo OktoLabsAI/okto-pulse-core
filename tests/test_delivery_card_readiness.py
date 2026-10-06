@@ -73,3 +73,39 @@ async def test_known_but_unready_contribution_still_blocks_card(monkeypatch, mut
 @pytest.mark.asyncio
 async def test_existing_advisory_policy_is_not_reinterpreted_as_credit(monkeypatch):
     await require(replace(ready_snapshot(), complete=False, effective_context=False), monkeypatch, mode="advisory")
+
+
+@pytest.mark.parametrize("mode", ["advisory", "blocking"])
+def test_current_delivery_policy_modes_are_preserved(mode):
+    assert service.resolve_delivery_gate_mode(SimpleNamespace(settings={"delivery_evidence_gate": mode})) == mode
+
+
+def test_delivery_creation_default_is_blocking():
+    assert service.resolve_delivery_gate_mode(SimpleNamespace(settings={})) == "blocking"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("value", [None, "off", " BLOCKING ", True, {}, []])
+async def test_invalid_delivery_policy_refuses_both_gates_before_loading(value, monkeypatch):
+    from copy import deepcopy
+    from unittest.mock import Mock
+    from okto_pulse.core.services.board_governance import BoardGovernanceService
+
+    settings = {"delivery_evidence_gate": value}
+    before = deepcopy(settings)
+    board = SimpleNamespace(settings=settings)
+    store = Mock(side_effect=AssertionError("Invalid policy must not read the delivery store"))
+    monkeypatch.setattr(service, "delivery_store", store)
+    monkeypatch.setattr(service, "card_delivery_store", store)
+    for gate in (
+        service.require_spec_delivery(None, SimpleNamespace(), board=board),
+        service.require_card_delivery(None, SimpleNamespace(), SimpleNamespace(), board=board),
+    ):
+        with pytest.raises(ValueError, match="delivery_evidence_policy_invalid"):
+            await gate
+    with pytest.raises(ValueError, match="delivery_evidence_gate"):
+        BoardGovernanceService.normalize_settings(settings)
+    with pytest.raises(ValueError, match="delivery_evidence_gate"):
+        BoardGovernanceService.merge_settings_patch(settings, {"min_confidence": 80})
+    assert settings == before
+    store.assert_not_called()

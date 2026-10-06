@@ -2,6 +2,39 @@
 
 ## Estado para retomada
 
+### 2026-10-06 — C1/C3 em andamento: Delivery policy sem conversao
+Bases Core accb6377 / Community 861edb7c limpas/publicadas.
+Resolver recusa policy fora do enum sem converte-la para blocking; default
+legitimo de criacao permanece blocking, advisory explicito preservado.
+Formularios/Header/template preservam policy lida; invalidos nao abrem controles
+de edicao. Rastreio encontrou campo omitido em Header/template, agora transportado.
+Paineis mostram Unknown em falha/policy invalida, limpando modo ao trocar Board;
+cobertura factual continua visivel e nao se torna credito por causa do modo.
+Frontend1: 156 aprovados, uma expectativa antiga de fallback Blocking; adaptada
+para Unknown. Front2 detectou substituicao excessiva na expectativa positiva;
+corrigida sem alterar produto. Front3: 21 aprovados; total distinto 157 aprovados.
+Build aprovado, 79 arquivos/78 assets,
+tree SHA 405a056af8fd2bbae0d1c3e787e79f8f96964412f08f86cdf65b53d175751b26.
+Par dist-native-delivery-policy1 instalado; provenance-native-delivery-policy1
+comprova bytes src/install/wheels (843 Python/905 payload Core; 319/405 Community).
+Core1: 51 aprovados/3 falhas de fixture antiga sem adocao arquitetural.
+Fixture atualizada com adocao explicita, requisitos estruturados e autoria
+semantica. Core2: gates passaram, mas dois testes de projecao processavam Card
+antes do endpoint Spec; Core3 encontrou fila pai ja existente (tentativa duplicada
+recusada pelo indice unico). Fixture final processa a fila Spec emitida pelo
+dispatcher real antes da fila Card. Core4: 4 aprovados, total distinto backend 54.
+Prova mantem advisory->done/canonical e blocking->rejected/nao canonical.
+Produto nao mudou durante esses ajustes de fixture.
+Closure-native-delivery-policy1 aprovada, findings/documentation_findings vazios,
+oito budgets current=limit=0. Ruff F/E9 e diff aprovados. Handles encerrados.
+C1-C4 permanecem abertos, T23/KG-10 aguardam decisao.
+Proximo ponto confirmado: require_spec_delivery ainda escolhe via getattr entre
+load_rollup_snapshot concreto e load_snapshot da porta. O adapter atual implementa
+load_snapshot pela mesma rollup e verifica edition; usar somente a porta elimina
+o caminho alternativo e conserva a verificacao de edition. Investigar callers e
+testes antes de editar. Nao remover load_snapshot: e o contrato publico atual.
+
+
 ### 2026-10-06 — C3 em andamento: estado nativo sem template
 Publicado: Core a99a45b9 / Community 861edb7c, pushes confirmados.
 Impact Evidence publicado: Core 579c23b3 / Community 4b516689; pushes confirmados.

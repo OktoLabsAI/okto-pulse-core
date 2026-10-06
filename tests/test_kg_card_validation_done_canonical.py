@@ -20,6 +20,7 @@ working e a asserção canonical-only (predicado fail-closed centralizado) falha
 from __future__ import annotations
 
 import math
+from datetime import datetime, timezone
 import uuid
 
 import pytest
@@ -40,6 +41,7 @@ from sqlalchemy_test_models import (
     SpecStatus,
 )
 from okto_pulse.core.models.schemas import CardCreate, CardMove
+from okto_pulse.core.domain.architecture_adoption import ArchitectureAdoptionScope
 from sqlalchemy_test_models import CardStatus
 from okto_pulse.core.services.main import CardService
 from okto_pulse.core.services.resource_gate import ResourceGateService
@@ -72,8 +74,12 @@ async def _seed_board_spec_card(db_factory, board_id: str, spec_id: str, *, deli
                 # otherwise successful validation to ``rejected``.
                 status=SpecStatus.IN_PROGRESS,
                 created_by="owner-valdone",
-                functional_requirements=["FR1"],
-                acceptance_criteria=["AC1"],
+                functional_requirements=[{"id": "fr_valdone", "text": "FR1"}],
+                acceptance_criteria=[{"id": "ac_valdone", "text": "AC1"}],
+                architecture_adoption=ArchitectureAdoptionScope(
+                    board_id=board_id, spec_id=spec_id, adopted_in_edition=1,
+                    actor_id="owner-valdone", inherited_resource_ids=(),
+                ).model_dump(mode="json"),
                 test_scenarios=[],
                 business_rules=[],
                 api_contracts=[],
@@ -128,6 +134,21 @@ async def _approve_via_validation_gate(db_factory, board_id: str, card_id: str, 
                 justification=f"{rt} n/a nesta regressão",
                 source_channel="ui",
             )
+        # Direct fixture setup must establish native semantic authorship before review.
+        from okto_pulse.community.adapters.sqlalchemy_semantic_guideline_assessment import (
+            CommunitySqlAlchemySemanticGuidelineAssessment,
+        )
+        from okto_pulse.core.domain.guideline_policy import PolicyEntityType
+        from okto_pulse.core.domain.quality_canonicalization import canonical_sha256
+
+        await db.flush()
+        await CommunitySqlAlchemySemanticGuidelineAssessment(db).record_semantic_subject_mutation(
+            board_id=board_id, entity_type=PolicyEntityType.CARD,
+            subject_id=card_id, actor_id="owner-valdone",
+            idempotency_key="native-valdone-" + card_id,
+            request_digest=canonical_sha256({"card_id": card_id}),
+            changed_at=datetime.now(timezone.utc),
+        )
         result = await svc.submit_task_validation(
             card_id,
             "reviewer-valdone",
@@ -272,6 +293,20 @@ async def test_validation_gate_promotes_card_to_canonical(db_factory, delivery_m
         "ConsolidationEnqueuer não enfileirou o card após card.moved "
         "(defeito de re-enfileiramento na transição via validation gate)"
     )
+
+    # Process the parent work emitted by the real dispatcher before its Card.
+    # The Card worker must not manufacture the Spec endpoint for belongs_to.
+    async with db_factory() as db:
+        parent = (await db.execute(
+            select(ConsolidationQueue).where(
+                ConsolidationQueue.board_id == board_id,
+                ConsolidationQueue.artifact_type == "spec",
+                ConsolidationQueue.artifact_id == spec_id,
+                ConsolidationQueue.work_kind == "consolidate",
+            )
+        )).scalar_one()
+        assert await _process_queue_entry(db, parent) is True
+        await db.commit()
 
     # Drena a entry do card pelo worker real.
     async with db_factory() as db:

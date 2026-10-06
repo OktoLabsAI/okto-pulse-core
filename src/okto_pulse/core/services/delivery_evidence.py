@@ -87,17 +87,18 @@ async def require_spec_delivery(
 
 
 def resolve_delivery_gate_mode(board: object | None) -> str:
-    """Resolve the board's delivery-evidence gate mode.
-
-    Default (and any persisted out-of-enum value) resolves to ``blocking``:
-    the 0.3.3 spec-side gate was unconditional, so legacy boards keep their
-    existing protection level (BR-8 — default blocking, fail-closed read).
-    """
-    settings = (getattr(board, "settings", None) or {}) if board is not None else {}
-    if not isinstance(settings, dict):
+    """Resolve the current policy; refuse incompatible values without conversion."""
+    settings = getattr(board, "settings", None) if board is not None else None
+    if settings is None:
+        settings = {}
+    if not isinstance(settings, Mapping):
+        raise ValueError("delivery_evidence_policy_invalid")
+    if "delivery_evidence_gate" not in settings:
         return "blocking"
-    value = settings.get("delivery_evidence_gate")
-    return value if value in {"advisory", "blocking"} else "blocking"
+    value = settings["delivery_evidence_gate"]
+    if not isinstance(value, str) or value not in {"advisory", "blocking"}:
+        raise ValueError("delivery_evidence_policy_invalid")
+    return value
 
 
 async def require_card_delivery(
