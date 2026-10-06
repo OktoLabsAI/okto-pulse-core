@@ -242,7 +242,7 @@ async def test_existing_structured_writer_persists_all_five_types_and_rejects_ba
     from sqlalchemy import select, func
     from sqlalchemy_test_models import Spec, Card, SpecHistory
     from test_criterion_verification import seed, create, criterion
-    from okto_pulse.core.infra.permissions import (
+    from okto_pulse.core.domain.permissions import (
         get_builtin_presets,
         resolve_permissions,
     )

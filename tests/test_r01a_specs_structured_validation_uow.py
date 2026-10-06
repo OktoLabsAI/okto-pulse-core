@@ -48,7 +48,7 @@ _BUSINESS_RULE = {
 
 
 async def _allow_permissions(db, user_id, board_id):
-    from okto_pulse.core.infra.permissions import resolve_permissions
+    from okto_pulse.core.domain.permissions import resolve_permissions
 
     return resolve_permissions(None, None, None)
 

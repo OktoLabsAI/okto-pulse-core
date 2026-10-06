@@ -1,7 +1,6 @@
 """Pure permission policy and value objects.
 
 Provides:
-- Legacy flat permission constants (Permissions class) for backward compat
 - Granular permission registry (PERMISSION_REGISTRY) with ~190 flags
 - PermissionSet class for resolved, board-scoped permissions
 
@@ -1324,87 +1323,6 @@ def structured_spec_entity_permission_flags() -> list[str]:
 
 
 # ---------------------------------------------------------------------------
-# Legacy flat permissions (kept for backward compat during migration)
-# ---------------------------------------------------------------------------
-
-
-class Permissions:
-    """Permission constants for agent access control (legacy flat model)."""
-
-    # Board
-    BOARD_READ = "board:read"
-
-    # Cards
-    CARDS_CREATE = "cards:create"
-    CARDS_UPDATE = "cards:update"
-    CARDS_DELETE = "cards:delete"
-    CARDS_MOVE = "cards:move"
-
-    # Comments
-    COMMENTS_CREATE = "comments:create"
-    COMMENTS_UPDATE = "comments:update"
-    COMMENTS_DELETE = "comments:delete"
-
-    # Q&A
-    QA_CREATE = "qa:create"
-    QA_ANSWER = "qa:answer"
-    QA_DELETE = "qa:delete"
-
-    # Specs
-    SPECS_CREATE = "specs:create"
-    SPECS_UPDATE = "specs:update"
-    SPECS_DELETE = "specs:delete"
-    SPECS_MOVE = "specs:move"
-    SPECS_EVALUATE = "specs:evaluate"
-
-    # Attachments
-    ATTACHMENTS_UPLOAD = "attachments:upload"
-    ATTACHMENTS_DELETE = "attachments:delete"
-
-    # Self
-    SELF_UPDATE = "self:update"
-
-    ALL = [
-        BOARD_READ,
-        CARDS_CREATE,
-        CARDS_UPDATE,
-        CARDS_DELETE,
-        CARDS_MOVE,
-        SPECS_CREATE,
-        SPECS_UPDATE,
-        SPECS_DELETE,
-        SPECS_MOVE,
-        SPECS_EVALUATE,
-        COMMENTS_CREATE,
-        COMMENTS_UPDATE,
-        COMMENTS_DELETE,
-        QA_CREATE,
-        QA_ANSWER,
-        QA_DELETE,
-        ATTACHMENTS_UPLOAD,
-        ATTACHMENTS_DELETE,
-        SELF_UPDATE,
-    ]
-
-    # Default permissions for new agents
-    DEFAULT = [
-        BOARD_READ,
-        CARDS_CREATE,
-        CARDS_UPDATE,
-        CARDS_MOVE,
-        SPECS_CREATE,
-        SPECS_UPDATE,
-        SPECS_MOVE,
-        SPECS_EVALUATE,
-        COMMENTS_CREATE,
-        QA_CREATE,
-        QA_ANSWER,
-        ATTACHMENTS_UPLOAD,
-        SELF_UPDATE,
-    ]
-
-
-# ---------------------------------------------------------------------------
 # Granular permission registry (~190 flags)
 # ---------------------------------------------------------------------------
 
@@ -2155,9 +2073,6 @@ def resolve_permissions(
     )
 
 
-# ---------------------------------------------------------------------------
-# Legacy permission mapping (19 old â†’ ~190 new)
-# ---------------------------------------------------------------------------
 
 
 def _set_all_flags(d: dict[str, Any], value: bool) -> dict[str, Any]:
@@ -3569,7 +3484,6 @@ __all__ = [
     "PermissionPresetLineageNode",
     "PermissionPresetLineageResolution",
     "PermissionSet",
-    "Permissions",
     "PERMISSION_INTRODUCTION_MANIFESTS",
     "PROJECT_STRUCTURE_ENTITY_OPERATIONS",
     "SKA_PERMISSION_INTRODUCTION_V1",

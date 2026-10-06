@@ -13,7 +13,6 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from native_permission_fixtures import native_permission_flags
-from okto_pulse.core.infra.permissions import Permissions
 from okto_pulse.core.mcp import server as mcp_server
 from sqlalchemy_test_models import (
     ActivityLog,
@@ -28,6 +27,7 @@ from okto_pulse.core.services import AgentService
 
 
 AGENT_NAME = "AF35Bot"
+PROFILE_ACTIVITY_CAPABILITIES = ["board.read", "board.activity_read", "board.mentions_read", "board.mentions_mark_seen", "agent.entity.read", "profile.update"]
 
 
 def _id(prefix: str) -> str:
@@ -40,7 +40,7 @@ def _ctx(
     agent_id: str = "af35-agent",
     permissions: list[str] | None = None,
 ) -> SimpleNamespace:
-    default_permissions = [*Permissions.DEFAULT, "board.activity_read"]
+    default_permissions = PROFILE_ACTIVITY_CAPABILITIES.copy()
     return SimpleNamespace(
         agent_id=agent_id,
         agent_name=AGENT_NAME,
@@ -57,7 +57,7 @@ def _agent_stub(
     return SimpleNamespace(
         id=agent_id,
         name=AGENT_NAME,
-        permissions=permissions if permissions is not None else Permissions.DEFAULT,
+        permissions=permissions if permissions is not None else PROFILE_ACTIVITY_CAPABILITIES.copy(),
     )
 
 
@@ -322,7 +322,7 @@ async def test_auth_and_permission_denial_envelopes_are_preserved(db_factory) ->
         AsyncMock(
             return_value=_agent_stub(
                 agent_id="agent-no-self-update",
-                permissions=[Permissions.BOARD_READ],
+                permissions=["board.read"],
             )
         ),
     ):

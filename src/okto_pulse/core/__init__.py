@@ -41,10 +41,9 @@ _LAZY_EXPORTS: dict[str, str] = {
     "get_db_session": "okto_pulse.core.ports.relational_runtime",
     "init_db": "okto_pulse.core.ports.relational_runtime",
     "close_db": "okto_pulse.core.ports.relational_runtime",
-    # infra.permissions
-    "Permissions": "okto_pulse.core.infra.permissions",
-    "check_permission": "okto_pulse.core.infra.permissions",
-    "has_permission": "okto_pulse.core.infra.permissions",
+    # domain.permissions
+    "check_permission": "okto_pulse.core.domain.permissions",
+    "has_permission": "okto_pulse.core.domain.permissions",
     # infra.storage
     "DEFAULT_STREAM_CHUNK_SIZE": "okto_pulse.core.infra.storage",
     "StorageProvider": "okto_pulse.core.infra.storage",
@@ -90,8 +89,7 @@ if TYPE_CHECKING:  # static type-checkers / import resolvers see the real symbol
         get_db_session,
         init_db,
     )
-    from okto_pulse.core.infra.permissions import (
-        Permissions,
+    from okto_pulse.core.domain.permissions import (
         check_permission,
         has_permission,
     )

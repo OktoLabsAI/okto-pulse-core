@@ -55,7 +55,7 @@ from okto_pulse.core.domain.test_scenarios import (
     VerificationMethod,
 )
 from okto_pulse.core.infra.config import get_settings
-from okto_pulse.core.infra.permissions import check_permission
+from okto_pulse.core.domain.permissions import check_permission
 from okto_pulse.core.mcp.catalog import CoreMcpCatalog, CoreMcpResource, closed_mcp_schema
 from okto_pulse.core.domain.architecture_classification import ArchitectureClassificationBatch
 from okto_pulse.core.domain.learning_closeout import LearningCaptureSelection
@@ -1549,7 +1549,7 @@ def _mcp_check_story_state_permission(
     if not granular_permission:
         return None
 
-    from okto_pulse.core.infra.permissions import PermissionSet
+    from okto_pulse.core.domain.permissions import PermissionSet
 
     if isinstance(permissions, PermissionSet):
         return permissions.check_with_state(
@@ -2318,7 +2318,7 @@ async def okto_pulse_get_my_profile() -> str:
     if not agent:
         return json.dumps({"error": "Authentication failed"})
 
-    from okto_pulse.core.infra.permissions import generate_role_summary
+    from okto_pulse.core.domain.permissions import generate_role_summary
 
     return json.dumps(
         {

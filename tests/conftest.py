@@ -547,7 +547,7 @@ class _CoreTestPermissionPresetGateway:
         self._session = session
 
     async def get_effective_permissions(self, *, user_id, board_id):
-        from okto_pulse.core.infra.permissions import (
+        from okto_pulse.core.domain.permissions import (
             _match_builtin_preset_name,
             resolve_permissions,
         )
@@ -649,7 +649,7 @@ class _CoreTestPermissionPresetGateway:
     async def clone_preset(
         self, *, source_preset_id, user_id, name, description, flags
     ):
-        from okto_pulse.core.infra.permissions import (
+        from okto_pulse.core.domain.permissions import (
             _flatten_registry,
             _get_nested,
             _set_nested,

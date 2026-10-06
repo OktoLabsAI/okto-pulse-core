@@ -108,10 +108,14 @@ def test_default_policy_rejects_an_empty_operation() -> None:
         DefaultPermissionPolicy().evaluate(PermissionContext("  "))
 
 
-def test_infra_compatibility_facade_reexports_domain_identity() -> None:
-    from okto_pulse.core.infra.permissions import PermissionSet as LegacyPermissionSet
+def test_retired_permission_facade_and_constants_are_absent() -> None:
+    import importlib.util
+    from okto_pulse.core.domain import permissions
+    from okto_pulse import core
 
-    assert LegacyPermissionSet is PermissionSet
+    assert importlib.util.find_spec("okto_pulse.core.infra.permissions") is None
+    assert not hasattr(permissions, "Permissions")
+    assert not hasattr(core, "Permissions")
 
 
 def test_adapter_bootstrap_views_do_not_expose_mutable_registry_state() -> None:

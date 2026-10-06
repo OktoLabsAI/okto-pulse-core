@@ -43,7 +43,7 @@ from okto_pulse.core.domain.project_structure import (
     canonical_project_structure_digest,
     project_structure_management_nodes,
 )
-from okto_pulse.core.infra.permissions import PermissionSet
+from okto_pulse.core.domain.permissions import PermissionSet
 from okto_pulse.core.models.schemas import (
     ApiContract,
     BusinessRule,

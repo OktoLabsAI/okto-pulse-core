@@ -6,7 +6,7 @@ import sys
 
 import pytest
 
-from okto_pulse.core.infra.permissions import (  # noqa: E402
+from okto_pulse.core.domain.permissions import (  # noqa: E402
     PROJECT_STRUCTURE_ENTITY_OPERATIONS,
     STRUCTURED_SPEC_ENTITY_OPERATIONS,
     STRUCTURED_SPEC_ENTITY_TYPES,
@@ -203,7 +203,7 @@ def test_kg_matrix_covered_by_test_suite():
 
 def test_legacy_agents_retain_access_via_has_permission():
     """Trusted legacy callers keep active capabilities, never retired operations."""
-    from okto_pulse.core.infra.permissions import check_permission, has_permission
+    from okto_pulse.core.domain.permissions import check_permission, has_permission
 
     # Simulates an agent pre-granular-flag system (permissions column NULL).
     assert has_permission(None, "kg.power.cypher") is True
@@ -393,7 +393,7 @@ def test_reporter_addition_does_not_break_other_presets(presets_by_name):
 
 def test_role_summary_local_full_control():
     """The native local sentinel is explicit and needs no legacy field."""
-    from okto_pulse.core.infra.permissions import generate_role_summary
+    from okto_pulse.core.domain.permissions import generate_role_summary
 
     summary = generate_role_summary(None)
     assert summary.startswith("Role: Full Control")
@@ -403,7 +403,7 @@ def test_role_summary_local_full_control():
 
 
 def test_role_summary_full_control(presets_by_name):
-    from okto_pulse.core.infra.permissions import generate_role_summary
+    from okto_pulse.core.domain.permissions import generate_role_summary
 
     summary = generate_role_summary(presets_by_name["Full Control"]["flags"])
     assert summary.startswith("Role: Full Control")
@@ -417,7 +417,7 @@ def test_role_summary_full_control(presets_by_name):
 
 
 def test_role_summary_executor(presets_by_name):
-    from okto_pulse.core.infra.permissions import generate_role_summary
+    from okto_pulse.core.domain.permissions import generate_role_summary
 
     summary = generate_role_summary(presets_by_name["Executor"]["flags"])
     assert summary.startswith("Role: Executor")
@@ -430,7 +430,7 @@ def test_role_summary_executor(presets_by_name):
 
 
 def test_role_summary_validator(presets_by_name):
-    from okto_pulse.core.infra.permissions import generate_role_summary
+    from okto_pulse.core.domain.permissions import generate_role_summary
 
     summary = generate_role_summary(presets_by_name["Validator"]["flags"])
     assert summary.startswith("Role: Validator")
@@ -441,7 +441,7 @@ def test_role_summary_validator(presets_by_name):
 
 
 def test_role_summary_qa(presets_by_name):
-    from okto_pulse.core.infra.permissions import generate_role_summary
+    from okto_pulse.core.domain.permissions import generate_role_summary
 
     summary = generate_role_summary(presets_by_name["QA"]["flags"])
     assert summary.startswith("Role: QA")
@@ -452,7 +452,7 @@ def test_role_summary_qa(presets_by_name):
 
 
 def test_role_summary_reporter(presets_by_name):
-    from okto_pulse.core.infra.permissions import generate_role_summary
+    from okto_pulse.core.domain.permissions import generate_role_summary
 
     summary = generate_role_summary(presets_by_name["Reporter"]["flags"])
     assert summary.startswith("Role: Reporter")
@@ -464,7 +464,7 @@ def test_role_summary_reporter(presets_by_name):
 
 
 def test_role_summary_spec(presets_by_name):
-    from okto_pulse.core.infra.permissions import generate_role_summary
+    from okto_pulse.core.domain.permissions import generate_role_summary
 
     summary = generate_role_summary(presets_by_name["Spec"]["flags"])
     assert summary.startswith("Role: Spec")
@@ -475,7 +475,7 @@ def test_role_summary_spec(presets_by_name):
 
 def test_role_summary_empty_flags():
     """Empty/custom flags still produce a valid single-line string."""
-    from okto_pulse.core.infra.permissions import generate_role_summary
+    from okto_pulse.core.domain.permissions import generate_role_summary
 
     summary = generate_role_summary({})
     # No preset match → "Custom"
@@ -485,7 +485,7 @@ def test_role_summary_empty_flags():
 
 def test_role_summary_unknown_type():
     """Non-list, non-dict permissions return a safe fallback."""
-    from okto_pulse.core.infra.permissions import generate_role_summary
+    from okto_pulse.core.domain.permissions import generate_role_summary
 
     summary = generate_role_summary("invalid")
     assert summary == "Role: unknown"
@@ -534,7 +534,7 @@ def test_spec_retains_earlier_interact_in(presets_by_name):
 
 def test_spec_check_with_state_allows_knowledge_in_validated(presets_by_name):
     """Spec can add/edit knowledge in validated spec — flag chain clears."""
-    from okto_pulse.core.infra.permissions import resolve_permissions
+    from okto_pulse.core.domain.permissions import resolve_permissions
 
     spec = resolve_permissions(None, presets_by_name["Spec"]["flags"], None)
     err = spec.check_with_state(
@@ -545,7 +545,7 @@ def test_spec_check_with_state_allows_knowledge_in_validated(presets_by_name):
 
 def test_spec_check_with_state_allows_mockup_annotate_in_in_progress(presets_by_name):
     """Spec can annotate mockups mid-flight."""
-    from okto_pulse.core.infra.permissions import resolve_permissions
+    from okto_pulse.core.domain.permissions import resolve_permissions
 
     spec = resolve_permissions(None, presets_by_name["Spec"]["flags"], None)
     err = spec.check_with_state(
@@ -564,7 +564,7 @@ ARCHITECTURE_ACTIONS = ("read", "create", "edit", "delete", "import", "render")
 
 
 def test_architecture_registry_contains_parent_actions():
-    from okto_pulse.core.infra.permissions import ALL_FLAGS
+    from okto_pulse.core.domain.permissions import ALL_FLAGS
 
     for parent in ARCHITECTURE_PARENTS:
         for action in ARCHITECTURE_ACTIONS:
@@ -615,7 +615,7 @@ IR_OR_RESOURCE_FLAGS = (
 
 
 def test_ir_or_registry_contains_first_class_resource_flags():
-    from okto_pulse.core.infra.permissions import ALL_FLAGS
+    from okto_pulse.core.domain.permissions import ALL_FLAGS
 
     for flag in IR_OR_RESOURCE_FLAGS:
         assert flag in ALL_FLAGS
@@ -719,7 +719,7 @@ TOPIC_FLAGS = (
 
 
 def test_story_topic_registry_contains_expected_flags():
-    from okto_pulse.core.infra.permissions import ALL_FLAGS
+    from okto_pulse.core.domain.permissions import ALL_FLAGS
 
     for flag in STORY_FLAGS + TOPIC_FLAGS:
         assert flag in ALL_FLAGS
@@ -772,7 +772,7 @@ def test_operational_presets_read_stories_topics_without_editing(
 
 def test_role_summary_refuses_flat_list_permissions():
     """Removed flat lists do not imply a role in the native contract."""
-    from okto_pulse.core.infra.permissions import generate_role_summary
+    from okto_pulse.core.domain.permissions import generate_role_summary
 
     # Old input is not converted into current authority.
     legacy_perms = [

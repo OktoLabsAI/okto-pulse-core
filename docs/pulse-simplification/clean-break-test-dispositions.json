@@ -2140,6 +2140,74 @@
       "path": "okto_labs_pulse_core/tests/test_permission_namespace_introductions.py",
       "disposition": "adapted",
       "reason": "Remove stale assertion for classify_legacy, retired in 55c05bc6; native count is 537. Preserve all 80 namespace leaves, exact preset grants and conjunction checks."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/conftest.py",
+      "reason": "Import canonical domain policy after removal of infra compatibility facade. Native behavior assertions retained; profile fixtures use exact current capabilities."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_af35_s4_mcp_profile_activity_parity.py",
+      "reason": "Import canonical domain policy after removal of infra compatibility facade. Native behavior assertions retained; profile fixtures use exact current capabilities."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_architecture_mcp.py",
+      "reason": "Import canonical domain policy after removal of infra compatibility facade. Native behavior assertions retained; profile fixtures use exact current capabilities."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_criterion_verification.py",
+      "reason": "Import canonical domain policy after removal of infra compatibility facade. Native behavior assertions retained; profile fixtures use exact current capabilities."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_implementation_responsibility.py",
+      "reason": "Import canonical domain policy after removal of infra compatibility facade. Native behavior assertions retained; profile fixtures use exact current capabilities."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_mcp_consolidated_list_handlers.py",
+      "reason": "Import canonical domain policy after removal of infra compatibility facade. Native behavior assertions retained; profile fixtures use exact current capabilities."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_permission_policy_port_contract.py",
+      "reason": "Import canonical domain policy after removal of infra compatibility facade. Native behavior assertions retained; profile fixtures use exact current capabilities."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_presets.py",
+      "reason": "Import canonical domain policy after removal of infra compatibility facade. Native behavior assertions retained; profile fixtures use exact current capabilities."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_r01a_spec_crud_uow.py",
+      "reason": "Import canonical domain policy after removal of infra compatibility facade. Native behavior assertions retained; profile fixtures use exact current capabilities."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_r01a_specs_ir_or_linking_uow.py",
+      "reason": "Import canonical domain policy after removal of infra compatibility facade. Native behavior assertions retained; profile fixtures use exact current capabilities."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_r01a_specs_structured_validation_uow.py",
+      "reason": "Import canonical domain policy after removal of infra compatibility facade. Native behavior assertions retained; profile fixtures use exact current capabilities."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_requirement_lint_writer_matrix.py",
+      "reason": "Import canonical domain policy after removal of infra compatibility facade. Native behavior assertions retained; profile fixtures use exact current capabilities."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_requirement_verification.py",
+      "reason": "Import canonical domain policy after removal of infra compatibility facade. Native behavior assertions retained; profile fixtures use exact current capabilities."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_spec_rest_scope_hardening.py",
+      "reason": "Import canonical domain policy after removal of infra compatibility facade. Native behavior assertions retained; profile fixtures use exact current capabilities."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_spec_structured_entities.py",
+      "reason": "Import canonical domain policy after removal of infra compatibility facade. Native behavior assertions retained; profile fixtures use exact current capabilities."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_story_topic_permissions.py",
+      "reason": "Import canonical domain policy after removal of infra compatibility facade. Native behavior assertions retained; profile fixtures use exact current capabilities."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_skb3_semantic_subject_writer_bridge.py",
+      "reason": "Registered MCP mutation fixture uses exact ideation edit capability; semantic editor attribution and native authority assertions retained."
     }
   ],
   "removed_cases": [
@@ -3707,6 +3775,21 @@
       "path": "okto_labs_pulse_core/tests/test_mcp_mutation_granular_permissions.py::test_card_create_keeps_legacy_list_fallback",
       "disposition": "replaced",
       "reason": "Canonical capability fixture replaces positive legacy-token fallback; initial-status validation and native validation precheck retained. Retired token denial is covered by test_native_authorization_operations.py."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_permission_policy_port_contract.py::test_infra_compatibility_facade_reexports_domain_identity",
+      "disposition": "replaced",
+      "reason": "Compatibility facade and old constants removed; test_retired_permission_facade_and_constants_are_absent proves their absence. Native permission policy port coverage preserved."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_r01a_specs_ir_or_linking_uow.py::test_link_task_to_integration_requirement_prunes_dead_card_reference",
+      "disposition": "replaced",
+      "reason": "Native contract refuses inconsistent references without automatic repair. Replacement verifies 422 and original ghost reference unchanged; valid linking and foreign-board denial cases preserved."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_r01a_specs_ir_or_linking_uow.py::test_link_task_to_observability_requirement_prunes_dead_card_reference",
+      "disposition": "replaced",
+      "reason": "Native contract refuses inconsistent references without automatic repair. Replacement verifies 422 and original ghost reference unchanged; valid linking and foreign-board denial cases preserved."
     }
   ]
 }

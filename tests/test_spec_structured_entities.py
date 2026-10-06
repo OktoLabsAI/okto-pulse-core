@@ -11,7 +11,7 @@ import pytest
 import pytest_asyncio
 from sqlalchemy import func, select
 
-from okto_pulse.core.infra.permissions import get_builtin_presets, resolve_permissions
+from okto_pulse.core.domain.permissions import get_builtin_presets, resolve_permissions
 from okto_pulse.core.domain.permissions import (
     PROJECT_STRUCTURE_ENTITY_OPERATIONS,
     STRUCTURED_SPEC_ENTITY_OPERATIONS as PERMISSIONED_STRUCTURED_SPEC_ENTITY_OPERATIONS,

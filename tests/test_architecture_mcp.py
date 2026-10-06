@@ -26,6 +26,10 @@ from sqlalchemy_test_models import (
 from okto_pulse.core.services.architecture import ArchitectureFindingRunStore
 
 
+from okto_pulse.core.domain.permissions import PermissionSet
+from okto_pulse.core.ports.permission_policy import registered_permission_flags
+from okto_pulse.core.domain.architecture_adoption import ArchitectureAdoptionScope
+
 USER_ID = "architecture-mcp-agent"
 
 
@@ -41,15 +45,7 @@ def _stub_ctx(board_id: str):
             "agent_id": USER_ID,
             "agent_name": "architecture-mcp-agent",
             "board_id": board_id,
-            "permissions": [
-                "board:read",
-                "cards:update",
-                "specs:update",
-                "code_traceability.investigation.read",
-                "code_traceability.evidence.read",
-                "code_traceability.target.read",
-                "code_traceability.overlap.read",
-            ],
+            "permissions": PermissionSet(registered_permission_flags()),
         },
     )()
 
@@ -186,9 +182,11 @@ async def _seed_spec_card():
     spec_id = _id("architecture-mcp-spec")
     card_id = _id("architecture-mcp-card")
     async with db_factory() as db:
-        db.add(Board(id=board_id, name="Architecture MCP Board", owner_id=USER_ID))
+        db.add(Board(id=board_id, realm_id="local", name="Architecture MCP Board", owner_id=USER_ID))
         db.add(
             Spec(
+                execution_contract={"contract_version": "spec-execution-contract/v1", "board_id": board_id, "spec_id": spec_id, "adopted_in_edition": 1, "actor_id": USER_ID, "origin": "new_spec"},
+                architecture_adoption=ArchitectureAdoptionScope(board_id=board_id, spec_id=spec_id, adopted_in_edition=1, actor_id=USER_ID, inherited_resource_ids=()).model_dump(mode="json"),
                 id=spec_id,
                 board_id=board_id,
                 title="Architecture MCP Spec",
@@ -228,8 +226,7 @@ async def _call(name: str, **kwargs) -> dict:
 @pytest_asyncio.fixture(autouse=True)
 async def _stub_auth(_seed_spec_card):
     board_id, _, _ = _seed_spec_card
-    with patch.object(mcp_server, "_get_agent_ctx", AsyncMock(return_value=_stub_ctx(board_id))), \
-         patch.object(mcp_server, "check_permission", return_value=None):
+    with patch.object(mcp_server, "_get_agent_ctx", AsyncMock(return_value=_stub_ctx(board_id))):
         yield
 
 
@@ -870,7 +867,7 @@ async def test_mcp_copy_architecture_to_card_and_task_context(_seed_spec_card):
     )
     source_id = created["architecture_design"]["id"]
 
-    # profile=full preserves the prior payload shape (back-compat, R2.3).
+    # Full projection includes the complete native resource payload.
     copied = await _call(
         "okto_pulse_copy_architecture_to_card",
         board_id=board_id,
@@ -1104,7 +1101,7 @@ async def test_mcp_spec_lock_allows_dry_run_but_blocks_architecture_writes(
 
 @pytest.mark.asyncio
 async def test_mcp_architecture_tools_enforce_granular_permissions(_seed_spec_card):
-    from okto_pulse.core.infra.permissions import _build_preset_flags, resolve_permissions
+    from okto_pulse.core.domain.permissions import _build_preset_flags, resolve_permissions
 
     board_id, spec_id, card_id = _seed_spec_card
     created = await _call(
@@ -1113,7 +1110,7 @@ async def test_mcp_architecture_tools_enforce_granular_permissions(_seed_spec_ca
         parent_type="spec",
         parent_id=spec_id,
         title="Permissioned Architecture",
-        global_description="Architecture created with legacy-compatible permissions.",
+        global_description="Architecture created with native permissions.",
     )
     assert created.get("success") is True, created
 

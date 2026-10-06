@@ -165,7 +165,7 @@ async def seeded_board(db_factory):
 
         import copy
         from okto_pulse.core.services.main import AgentService
-        from okto_pulse.core.infra.permissions import PERMISSION_REGISTRY
+        from okto_pulse.core.domain.permissions import PERMISSION_REGISTRY
 
         db.add(
             Board(id=BOARD_ID, name="Consolidated List Test Board", owner_id="owner-1")

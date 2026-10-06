@@ -13,7 +13,7 @@ from okto_pulse.core.domain.enums import (
     IdeationStatus,
     RefinementStatus,
 )
-from okto_pulse.core.infra.permissions import get_builtin_presets, resolve_permissions
+from okto_pulse.core.domain.permissions import get_builtin_presets, resolve_permissions
 from okto_pulse.core.models.schemas import SpecCreate, SpecUpdate
 from okto_pulse.core.services.main import (
     IdeationService,

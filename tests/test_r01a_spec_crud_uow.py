@@ -186,7 +186,7 @@ async def test_update_spec_403_when_permission_denied() -> None:
     board_id = await _seed_board()
     spec_id = await _seed_spec(board_id)
     with patch(
-        "okto_pulse.core.infra.permissions.check_permission",
+        "okto_pulse.core.domain.permissions.check_permission",
         return_value="permission_denied: spec.integration_requirements.create",
     ):
         resp = _client().patch(f"{PREFIX}/specs/{spec_id}", json=_IR_CHANGE)
@@ -209,7 +209,7 @@ async def test_update_spec_permission_use_case_raises_permission_denied() -> Non
     actor = ActorContext(USER, "rest", realm_id=LOCAL_REALM_ID)
     uowf = SQLAlchemyUnitOfWorkFactory(get_session_factory())
     with patch(
-        "okto_pulse.core.infra.permissions.check_permission",
+        "okto_pulse.core.domain.permissions.check_permission",
         return_value="permission_denied",
     ):
         with pytest.raises(PermissionDeniedError):

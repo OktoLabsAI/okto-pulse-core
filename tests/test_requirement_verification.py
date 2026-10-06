@@ -499,7 +499,7 @@ async def test_real_writer_preserves_all_requirement_kinds_and_refusals_preserve
     from sqlalchemy import select, func
     from sqlalchemy_test_models import Spec, SpecHistory
     from test_criterion_verification import seed, create, criterion
-    from okto_pulse.core.infra.permissions import (
+    from okto_pulse.core.domain.permissions import (
         get_builtin_presets,
         resolve_permissions,
     )

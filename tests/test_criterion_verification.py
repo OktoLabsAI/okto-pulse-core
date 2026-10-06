@@ -13,7 +13,7 @@ from okto_pulse.core.domain.criterion_verification import (
     validate_criterion_requirement_links,
     VERIFICATION_REQUIREMENT_FIELDS,
 )
-from okto_pulse.core.infra.permissions import get_builtin_presets, resolve_permissions
+from okto_pulse.core.domain.permissions import get_builtin_presets, resolve_permissions
 from okto_pulse.core.models.schemas import SpecCreate, SpecUpdate
 from okto_pulse.core.services.main import SpecService
 from okto_pulse.core.services.spec_structured_entities import (

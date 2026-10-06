@@ -2,6 +2,47 @@
 
 ## Estado para retomada
 
+### 2026-10-06 — C1/C3 em execução: retirada da fachada de permissões
+
+Bases Core 38e33904 / Community 9b94f03c, limpas e publicadas. Rastreio confirmou
+classe Permissions sem consumidor produtivo após retirada do fallback. Removidos
+constantes colon, DEFAULT/ALL antigos e reexports. Retirada também a fachada
+infra.permissions, exclusiva de compatibilidade, incluindo singleton sem consumidor
+e delegação de privados. Core importa domínio; Community continua na porta pública.
+Reexports nativos de check/has na raiz Core apontam para o domínio. As regras que
+detectam reach-in/import proibido permanecem, mesmo citando o caminho retirado.
+Fixtures de perfil recebem capacidades exatas; writer MCP usa ideation.entity.edit_fields.
+Teste de identidade da fachada vira prova de ausência. Suítes nativas adaptam import,
+mantendo comportamento e negativas. Primeiro script de edição falhou no parsing
+PowerShell antes de executar; segunda execução aplicada e Ruff F/E9 aprovado.
+Par dist-native-facade1 instalado e proveniência byte a byte aprovada:
+842 arquivos Python/904 payload Core (fachada ausente), 319/405 Community.
+native-facade-core1: 383 aprovados/9 falhas em fixtures desatualizadas. core2:
+37/3; core3: 24 aprovados. Total distinto atual Core: 392. As fixtures de
+arquitetura/REST agora declaram architecture_adoption e execution_contract nativos.
+Retirado mock que liberava check_permission; a matriz granular testa a política real.
+Dois casos de poda automática IR/OR viraram recusa 422 com estado inalterado,
+conforme retirada de reparos antigos; vínculos válidos e escopo continuam cobertos.
+native-facade-community1: 16 aprovados, incluindo escritor MCP e limite de adapter.
+Closure1: findings vazio, oito budgets zero, só matrizes README divergentes.
+Matrizes regeneradas oficialmente. Par dist-native-facade2 instalado e
+provenance-native-facade2 aprovada, mesmas contagens byte a byte; entre pares
+somente README alterado, nenhum Python de produto. SHA256 Core
+42dda7066ad1b39c92d127a5ec92c037fa8275fd34fee41449c0585875e7b25f,
+Community 548aa203c3bb10c85d31d92a39bb16c4bd25fb7ccfa254e34bb63a0cd8fbd3b3.
+Frontend não alterado neste incremento. Nenhuma base/processo real alterado.
+Closure2 aprovada: findings/documentation_findings vazios e oito budgets
+current=limit=0. Todos os handles encerrados. Commits/pushes pendentes.
+
+Próxima cadeia confirmada de compatibilidade: telemetry/settings.py ainda aceita
+local_only/enable_beacon e converte local_only para disabled; mantém normalized_from
+e migration_notice, gravador de aviso visto, rota/permissão e banner frontend.
+Retirar a cadeia inteira conforme C1–C3, incluindo contratos/CLI/adapters e testes
+frontend. Preservar modos atuais disabled/anonymous_beacon, consentimento explícito,
+privacidade e recusa sem escrita de estado incompatível. Não confundir renovação
+de consentimento atual por mudança de schema com conversão de dados antigos.
+C1–C4 e decisões T23/KG-10 permanecem abertos; não declarar entrega integral.
+
 ### 2026-10-06 — C1/C3: autorização sem fallback de operação legada
 
 Bases Core 5db02cea / Community 4a10cce0. Retirada coordenada do fallback

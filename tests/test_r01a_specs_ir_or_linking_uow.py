@@ -181,7 +181,7 @@ async def test_link_task_to_integration_requirement_requirement_404(client) -> N
 async def test_link_task_to_integration_requirement_permission_403(
     client, monkeypatch
 ) -> None:
-    from okto_pulse.core.infra.permissions import PermissionSet
+    from okto_pulse.core.domain.permissions import PermissionSet
 
     async def _deny(db, user_id, board_id):
         return PermissionSet(
@@ -203,7 +203,7 @@ async def test_link_task_to_integration_requirement_permission_403(
 
 
 @pytest.mark.asyncio
-async def test_link_task_to_integration_requirement_prunes_dead_card_reference(client) -> None:
+async def test_link_task_to_integration_requirement_rejects_dead_card_reference_without_repair(client) -> None:
     ghost = f"ghost-{uuid.uuid4().hex[:8]}"
     _, sid, cid = await _seed(
         integration_requirements=[
@@ -213,9 +213,10 @@ async def test_link_task_to_integration_requirement_prunes_dead_card_reference(c
     resp = client.post(
         f"{PREFIX}/specs/{sid}/integration-requirements/ir1/link-task/{cid}"
     )
-    assert resp.status_code == 200, resp.text
+    assert resp.status_code == 422, resp.text
+    assert "orphan link" in resp.text
     spec = await _get_spec(sid)
-    assert spec.integration_requirements[0]["linked_task_ids"] == [cid]
+    assert spec.integration_requirements[0]["linked_task_ids"] == [ghost]
 
 
 # --- observability requirement ----------------------------------------------
@@ -281,7 +282,7 @@ async def test_link_task_to_observability_requirement_requirement_404(client) ->
 async def test_link_task_to_observability_requirement_permission_403(
     client, monkeypatch
 ) -> None:
-    from okto_pulse.core.infra.permissions import PermissionSet
+    from okto_pulse.core.domain.permissions import PermissionSet
 
     async def _deny(db, user_id, board_id):
         return PermissionSet(
@@ -303,7 +304,7 @@ async def test_link_task_to_observability_requirement_permission_403(
 
 
 @pytest.mark.asyncio
-async def test_link_task_to_observability_requirement_prunes_dead_card_reference(client) -> None:
+async def test_link_task_to_observability_requirement_rejects_dead_card_reference_without_repair(client) -> None:
     ghost = f"ghost-{uuid.uuid4().hex[:8]}"
     _, sid, cid = await _seed(
         observability_requirements=[
@@ -313,9 +314,10 @@ async def test_link_task_to_observability_requirement_prunes_dead_card_reference
     resp = client.post(
         f"{PREFIX}/specs/{sid}/observability-requirements/or1/link-task/{cid}"
     )
-    assert resp.status_code == 200, resp.text
+    assert resp.status_code == 422, resp.text
+    assert "orphan link" in resp.text
     spec = await _get_spec(sid)
-    assert spec.observability_requirements[0]["linked_task_ids"] == [cid]
+    assert spec.observability_requirements[0]["linked_task_ids"] == [ghost]
 
 
 @pytest.mark.asyncio

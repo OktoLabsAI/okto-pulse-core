@@ -91,7 +91,7 @@ EVALUATION = {
 
 
 async def _allow_permissions(db, user_id, board_id):
-    from okto_pulse.core.infra.permissions import resolve_permissions
+    from okto_pulse.core.domain.permissions import resolve_permissions
 
     return resolve_permissions(None, None, None)
 
@@ -191,6 +191,8 @@ async def spec_graph(db_factory) -> dict[str, str]:
             creator = ATTACKER if scope in {"owned", "realm"} else OTHER_OWNER
             db.add(
                 Spec(
+                    execution_contract={"contract_version": "spec-execution-contract/v1", "board_id": ids[f"{scope}_board"], "spec_id": ids[f"{scope}_spec"], "adopted_in_edition": 1, "actor_id": creator, "origin": "new_spec"},
+                    architecture_adoption={"contract_version": "architecture-adoption/v1", "board_id": ids[f"{scope}_board"], "spec_id": ids[f"{scope}_spec"], "adopted_in_edition": 1, "actor_id": creator, "inherited_resource_ids": []},
                     id=ids[f"{scope}_spec"],
                     board_id=ids[f"{scope}_board"],
                     title=f"{scope} scoped spec",
