@@ -54,9 +54,7 @@ from okto_pulse.core.domain.guideline_impact import (
 from okto_pulse.core.domain.guideline_import_export import (
     GuidelineExportSnapshot,
     GuidelineImportPlan,
-    require_writable_guideline_import_entry,
 )
-from okto_pulse.core.domain.guideline_lifecycle import require_writable_guideline_revision
 from okto_pulse.core.domain.guideline_semantic_transition import (
     PolicyTransitionSnapshot,
 )
@@ -139,15 +137,9 @@ class GuidelinePolicySubjectConflict(GuidelinePolicyPersistenceError):
 
 
 def require_writable_policy_subject_type(entity_type: PolicyEntityType) -> None:
-    """Admit a new policy mutation after checking for exact historical replay.
-
-    Historical receipts keep the full PolicyEntityType vocabulary. A retired
-    subject cannot acquire new policy authority through any edition's adapter.
-    """
+    """Require a subject type from the current closed policy contract."""
     if not isinstance(entity_type, PolicyEntityType):
         raise GuidelinePolicySubjectConflict("semantic_policy_subject_type_invalid")
-    if entity_type is PolicyEntityType.SPRINT:
-        raise GuidelinePolicySubjectConflict("semantic_policy_subject_type_retired")
 
 
 class GuidelinePolicyVersionConflict(GuidelinePolicyPersistenceError):
@@ -1054,8 +1046,8 @@ class PolicyTransitionSnapshotResolver(Protocol):
     the returned policy set and governance digests MUST come from the immutable
     snapshot pinned to that subject edition. A later policy deployment applies
     only after the subject returns to Draft and opens its next edition. Live
-    board policy resolution is compatibility-only for legacy subjects whose
-    edition is absent; it must never replace an already-pinned edition snapshot.
+    board policy resolution applies to uneditioned Card and scenario subjects;
+    it must never replace an already-pinned edition snapshot.
     """
 
     async def resolve_transition_snapshot(
@@ -1460,8 +1452,6 @@ class GuidelinePolicyPersistencePort(
 
 
 __all__ = [
-    "require_writable_guideline_revision",
-    "require_writable_guideline_import_entry",
     "require_writable_policy_subject_type",
     "GuidelineAdoptionReplay",
     "GuidelineDefaultMaterializationProof",

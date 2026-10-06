@@ -18,12 +18,12 @@ from test_skb3_semantic_guideline_application import _Port, _Uow, _binding, _sub
 
 def _retired_fixture():
     port = _Port()
-    subject = PolicySubjectRef(board_id="board-1", entity_type=PolicyEntityType.SPRINT,
+    subject = PolicySubjectRef(board_id="board-1", entity_type=PolicyEntityType.SPEC,
                                subject_id="historical", subject_version=4)
     snapshot = PolicySubjectSnapshot(subject=subject, content_digest=DIGEST,
                                     last_semantic_editor_id="author-1", captured_at=NOW)
     port.revision = replace(port.revision, revision_digest=None, metrics=tuple(
-        replace(metric, target_entity_types=(PolicyEntityType.SPRINT,)) for metric in port.revision.metrics
+        replace(metric, target_entity_types=(PolicyEntityType.SPEC,)) for metric in port.revision.metrics
     ))
     port.binding = _binding(port.revision)
     port.binding_heads = (port.binding,)
@@ -72,13 +72,17 @@ async def test_new_sprint_policy_writes_are_refused_before_commit(operation):
         "revalidate": (governance.RevalidateSemanticMetricWaiverUseCase(), governance.RevalidateSemanticMetricWaiverCommand(
             **common, waiver_id="waiver", expected_waiver_revision=2, evaluated_at=NOW)),
         "skip_create": (governance.CreateSemanticPolicySkipUseCase(), governance.CreateSemanticPolicySkipCommand(
-            **common, entity_type=PolicyEntityType.SPRINT, subject_id="historical", expected_subject_version=4,
+            **common, entity_type=PolicyEntityType.SPEC, subject_id="historical", expected_subject_version=4,
             binding_id=port.binding.binding_id, reason="New skip")),
         "skip_revoke": (governance.RevokeSemanticPolicySkipUseCase(), governance.RevokeSemanticPolicySkipCommand(
             **common, skip_id="skip", expected_skip_revision=1, reason="Revoke")),
     }
     use_case, command = cases[operation]
-    with pytest.raises(GuidelinePolicySubjectConflict, match="semantic_policy_subject_type_retired"):
+    # Simulate a corrupt adapter response after valid native construction.
+    object.__setattr__(submission.subject, "entity_type", "sprint")
+    if operation == "skip_create":
+        object.__setattr__(command, "entity_type", "sprint")
+    with pytest.raises(GuidelinePolicySubjectConflict, match="semantic_policy_subject_type_invalid"):
         await use_case.execute(command, actor=actor, uow=uow)
     assert uow.commit_count == 0
     assert port.saved is None and port.waiver_save_count == 0
@@ -98,5 +102,6 @@ async def test_native_writer_refuses_sprint_without_uow_before_resolving_adapter
     command = SealSemanticGuidelineAssessmentV2Command(
         board_id="board-1", actor_id=actor.actor_id, draft=draft,
     )
-    with pytest.raises(GuidelinePolicySubjectConflict, match="semantic_policy_subject_type_retired"):
+    object.__setattr__(submission.subject, "entity_type", "sprint")
+    with pytest.raises(GuidelinePolicySubjectConflict, match="semantic_policy_subject_type_invalid"):
         await SealSemanticGuidelineAssessmentV2UseCase().execute(command)

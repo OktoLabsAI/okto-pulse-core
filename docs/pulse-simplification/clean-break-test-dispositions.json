@@ -2069,6 +2069,26 @@
     {
       "path": "okto_labs_pulse_core/tests/test_skb3_semantic_guideline_assessment_domain.py",
       "reason": "Retains metric/revision/binding/digest/authority invariants; request validation and canonical ordering use native v2 only. Predecessor evidence tests mapped individually to native proofs."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_f3_guideline_authoring_retirement.py",
+      "reason": "Native Card/Spec revision history, major bump, immutable replay and current interchange preserved. Sprint construction/read/import now rejected before planning or writes; same-ID/dry-run batch rejection remains."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_f3_guideline_authoring_retirement.py",
+      "reason": "Replaced historical head/import-plan toleration with invalid target constructor and SQL injection refusal, full authority row rollback plus successful native control."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_card_resequence_semantic_currentness.py",
+      "reason": "Receipts use native reader; all movement, audit, content and Card/scenario propagation assertions preserved. Removed historical Sprint table/rows and unchanged-version assertions."
+    },
+    {
+      "path": "okto_labs_pulse_community/frontend/src/components/guidelines/__tests__/GuidelineRevisionEditor.test.tsx",
+      "reason": "Native Card target removal preserves revision and permission denial; historical Sprint removal UI retired."
+    },
+    {
+      "path": "okto_labs_pulse_community/frontend/src/components/policy-compliance/__tests__/PolicyWaiverPanel.test.tsx",
+      "reason": "All five old Sprint waiver statuses are refused instead of displayed read-only; no rows or mutations. Native waiver cases preserved."
     }
   ],
   "removed_cases": [
@@ -3499,6 +3519,12 @@
       "test": "test_unavailable_blocking_fails_closed_and_advisory_degrades",
       "disposition": "superseded",
       "reason": "Exclusive deterministic rule receipt removed. Native counterparts: test_skb31_semantic_guideline_v2_findings.py::test_pass_creates_zero_findings_and_each_fail_creates_exactly_one; test_skb3_semantic_policy_transition_gate.py (incomplete evidence, missing/unavailable/inadmissible, Blocking/Advisory and forged decisions). Old rule error/degraded states are not a native contract."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_f3_guideline_authoring_retirement.py",
+      "test": "test_new_revision_refuses_explicit_or_inherited_retired_targets",
+      "disposition": "superseded",
+      "reason": "Inherited Sprint metric no longer constructible. Replaced by constructor/codec rejection; native immutable history, semver and batch no-write checks remain in the same suite."
     }
   ]
 }

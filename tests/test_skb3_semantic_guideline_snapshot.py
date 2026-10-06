@@ -19,6 +19,11 @@ _DIGEST_A = "a" * 64
 _DIGEST_B = "b" * 64
 
 
+def test_snapshot_refuses_removed_subject_type():
+    with pytest.raises(SemanticPolicySubjectSnapshotError, match="semantic_policy_subject_type_invalid"):
+        semantic_policy_subject_snapshot_v1(subject_type="sprint", artifact={"title": "Unsupported"})
+
+
 def _qa(item_id: str = "qa-1") -> dict[str, object]:
     return {
         "id": item_id,
@@ -100,17 +105,6 @@ def _resource(
             },
             "details",
             "Use an open payload.",
-        ),
-        (
-            PolicyEntityType.SPRINT,
-            {
-                "title": "Semantic delivery",
-                "description": "Ship SK-B3.",
-                "objective": "Replace executable predicates.",
-                "expected_outcome": "Cognitive deterministic governance.",
-            },
-            "objective",
-            "Changed objective.",
         ),
         (
             PolicyEntityType.TEST_SCENARIO,

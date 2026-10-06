@@ -35,7 +35,6 @@ from okto_pulse.core.domain.guideline_policy import (
     GuidelineRetirement,
     GuidelineRevision,
     GuidelineScope,
-    PolicyEntityType,
     guideline_revision_digest_v2,
 )
 
@@ -70,15 +69,6 @@ class GuidelineLifecycleError(GuidelinePolicyContractError):
     """A requested lifecycle transition violates the B04 contract."""
 
 
-def require_writable_guideline_revision(revision: GuidelineRevision) -> None:
-    """Admit a new normative revision, after any exact historical replay.
-
-    Historical constructors and digests deliberately keep retired targets. A
-    successor must remove them explicitly through the normal metric-authority
-    and SemVer gates; silently filtering an inherited metric would change policy.
-    """
-    if any(PolicyEntityType.SPRINT in metric.target_entity_types for metric in revision.metrics):
-        raise GuidelineLifecycleError("guideline_metric_target_type_retired")
 
 
 class GuidelineVersionUnderBump(GuidelineLifecycleError):
@@ -2223,7 +2213,6 @@ def validate_binding_transition(
 
 
 __all__ = [
-    "require_writable_guideline_revision",
     "GUIDELINE_LIFECYCLE_CONTRACT_VERSION",
     "GUIDELINE_REQUEST_DIGEST_CONTRACT_VERSION",
     "GUIDELINE_REVISION_DIGEST_CONTRACT_VERSION",

@@ -147,7 +147,6 @@ def test_contract_literals_and_closed_semantic_enums_are_frozen() -> None:
         "ideation",
         "refinement",
         "spec",
-        "sprint",
         "card",
         "test_scenario",
     }

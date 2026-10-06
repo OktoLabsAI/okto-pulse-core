@@ -1,4 +1,4 @@
-"""Retired targets remain readable, but cannot enter a new normative head."""
+"""Only native targets enter contracts; native revision history stays immutable."""
 
 from dataclasses import replace
 from datetime import timedelta
@@ -11,13 +11,13 @@ from okto_pulse.core.application.use_cases.policy_governance import (
     METRICS_AUTHOR, REVISIONS_CREATE,
 )
 from okto_pulse.core.domain.guideline_lifecycle import (
-    GuidelineLifecycleError, GuidelinePatchCommand, GuidelineRevisionPatch,
+    GuidelinePatchCommand, GuidelineRevisionPatch,
     execute_guideline_patch,
 )
-from okto_pulse.core.domain.guideline_policy import PolicyEntityType
+from okto_pulse.core.domain.guideline_policy import PolicyEntityType, GuidelinePolicyContractError
 from okto_pulse.core.domain.guideline_import_export import (
     GuidelineExportSnapshot, build_guideline_export_v3, guideline_export_payload,
-    GuidelineImportTransactionStatus, guideline_export_json_bytes,
+    GuidelineImportExportError, guideline_export_json_bytes,
     parse_guideline_export, plan_guideline_import,
 )
 from okto_pulse.core.ports.guideline_policy import GuidelineRevisionReplay
@@ -34,7 +34,7 @@ from test_skb_b12_guideline_import_export_use_case import ACTOR, _Port, _Uow
 
 
 def _historical_metric():
-    return replace(_metric(), target_entity_types=(PolicyEntityType.SPEC, PolicyEntityType.SPRINT))
+    return replace(_metric(), target_entity_types=(PolicyEntityType.SPEC, PolicyEntityType.CARD))
 
 
 def _historical_port():
@@ -44,20 +44,11 @@ def _historical_port():
     return port
 
 
-@pytest.mark.asyncio
-@pytest.mark.parametrize("inherited", [False, True])
-async def test_new_revision_refuses_explicit_or_inherited_retired_targets(inherited):
-    port = _historical_port() if inherited else _UnboundGlobalPolicyPort()
-    uow = _GovernanceUow(port)
-    patch = GuidelineRevisionPatch(title="Next") if inherited else GuidelineRevisionPatch(metrics=(_historical_metric(),))
-    before = dict(port.revisions)
-    with pytest.raises(GuidelineLifecycleError, match="guideline_metric_target_type_retired"):
-        await CreateGuidelineRevisionUseCase().execute(
-            CreateGuidelineRevisionCommand("board-1", "guideline-1", patch, "new-key", occurred_at=NOW + timedelta(seconds=1)),
-            actor=_owner_actor(REVISIONS_CREATE, METRICS_AUTHOR), uow=uow,
-        )
-    assert port.revisions == before
-    assert port.append_count == uow.commit_count == 0
+def test_unsupported_target_cannot_construct_a_metric_or_entity_type():
+    with pytest.raises(ValueError, match="not a valid PolicyEntityType"):
+        PolicyEntityType("sprint")
+    with pytest.raises(GuidelinePolicyContractError, match="guideline_metric_target_entity_types_invalid"):
+        replace(_metric(), target_entity_types=("sprint",))
 
 
 @pytest.mark.asyncio
@@ -97,16 +88,16 @@ async def test_historical_revision_replay_keeps_exact_patch_and_digest(explicit_
     assert port.append_count == uow.commit_count == 0
 
 
-@pytest.mark.parametrize("dry_run", [False, True])
-def test_import_reports_retired_live_head_without_rewriting_history(dry_run):
+def test_import_rejects_unsupported_target_before_digest_or_planning():
     old = replace(_revision(), metrics=(_historical_metric(),), revision_digest=None)
     aggregate = _aggregate(revisions=(old,), bindings=())
     envelope = _envelope(aggregate)
     original_bytes = guideline_export_json_bytes(envelope)
     assert guideline_export_json_bytes(parse_guideline_export(json.loads(original_bytes))) == original_bytes
-    plan = plan_guideline_import(envelope, existing_aggregates=(), dry_run=dry_run, target_owner_id="actor-1")
-    assert plan.transaction_status is GuidelineImportTransactionStatus.ROLLED_BACK
-    assert "guideline_metric_target_type_retired" in plan.entries[0].identity_conflicts
+    payload = json.loads(original_bytes)
+    payload["guidelines"][0]["revisions"][0]["metrics"][0]["target_entity_types"] = ["sprint"]
+    with pytest.raises(GuidelineImportExportError, match="guideline_export_metric_target_invalid"):
+        parse_guideline_export(payload)
     assert guideline_export_json_bytes(envelope) == original_bytes
 
 
@@ -126,7 +117,7 @@ def test_import_keeps_inert_history_and_identical_replay(historical_kind):
 @pytest.mark.asyncio
 @pytest.mark.parametrize("same_id", [False, True])
 @pytest.mark.parametrize("dry_run", [False, True])
-async def test_import_use_case_rolls_back_whole_batch_including_same_id_versioning(same_id, dry_run):
+async def test_import_use_case_rejects_whole_batch_before_access_including_same_id(same_id, dry_run):
     old = replace(_revision(), metrics=(_historical_metric(),), revision_digest=None)
     source = _aggregate(revisions=(old,), bindings=())
     valid = _aggregate(guideline_id="guideline-2", bindings=())
@@ -134,15 +125,13 @@ async def test_import_use_case_rolls_back_whole_batch_including_same_id_versioni
     existing = _aggregate(bindings=())
     port = _Port(snapshot=GuidelineExportSnapshot(aggregates=(existing,) if same_id else ()))
     uow = _Uow(port)
-    result = await ImportGuidelinePolicyUseCase().execute(
-        ImportGuidelinePolicyCommand(envelope=guideline_export_payload(envelope), dry_run=dry_run),
-        actor=ACTOR, uow=uow,
-    )
-    assert result.result.transaction_status is GuidelineImportTransactionStatus.ROLLED_BACK
-    assert "guideline_metric_target_type_retired" in result.plan.entries[0].identity_conflicts
+    payload = guideline_export_payload(envelope)
+    # A malformed late item must not let the earlier valid aggregate be applied.
+    payload["guidelines"][1]["revisions"][0]["metrics"][0]["target_entity_types"] = ["sprint"]
+    with pytest.raises(GuidelineImportExportError, match="guideline_export_metric_target_invalid"):
+        await ImportGuidelinePolicyUseCase().execute(
+            ImportGuidelinePolicyCommand(envelope=payload, dry_run=dry_run),
+            actor=ACTOR, uow=uow,
+        )
     assert not port.apply_calls
-    assert len(result.plan.entries) == 2 and not result.plan.entries[1].has_conflict
-    assert uow.commit_count == 0 and uow.rollback_count == 1
-    if same_id:
-        assert "same_id_import_version_bump" in result.plan.entries[0].aggregate.import_notes
-        assert result.plan.entries[0].aggregate.revisions[0] == existing.revisions[0]
+    assert uow.commit_count == uow.rollback_count == 0

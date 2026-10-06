@@ -51,7 +51,6 @@ from okto_pulse.core.domain.guideline_lifecycle import (
     GuidelineVersionBump,
     SemanticVersion,
     classify_guideline_change,
-    require_writable_guideline_revision,
     validate_binding_transition,
 )
 from okto_pulse.core.domain.quality_canonicalization import canonical_json_bytes
@@ -1182,16 +1181,6 @@ def guideline_import_digest(
     )
 
 
-def require_writable_guideline_import_entry(entry: GuidelineImportPlanEntry) -> None:
-    """Keep inert revisions and replay, but never import a new retired target head."""
-    if entry.aggregate.retirement is not None:
-        return
-    if any(
-        action.revision_id == entry.aggregate.head.revision_id
-        and action.disposition is GuidelineImportRevisionDisposition.CREATE
-        for action in entry.revision_actions
-    ):
-        require_writable_guideline_revision(entry.aggregate.revisions[-1].revision)
 
 
 @dataclass(frozen=True, slots=True)
@@ -2671,10 +2660,6 @@ def plan_guideline_import(
             binding_conflicts=tuple(binding_conflicts),
             diagnostics=tuple(diagnostics),
         )
-        try:
-            require_writable_guideline_import_entry(entry)
-        except GuidelineLifecycleError as error:
-            entry = replace(entry, identity_conflicts=(*entry.identity_conflicts, error.code))
         entries.append(entry)
 
     has_conflict = any(entry.has_conflict for entry in entries)
@@ -2706,7 +2691,6 @@ def plan_guideline_import(
 
 
 __all__ = [
-    "require_writable_guideline_import_entry",
     "GUIDELINE_EXPORT_CONTRACT_VERSION",
     "GUIDELINE_EXPORT_KIND",
     "GUIDELINE_EXPORT_SCHEMA_VERSION",

@@ -2,6 +2,40 @@
 
 ## Estado para retomada
 
+### 2026-10-06 — C1/C3: contrato Policy sem Sprint
+
+Retirado Sprint do enum PolicyEntityType, manifest de snapshot, quatro constraints
+SQL, guard de métricas SQL e tipos/parsers/editor frontend. Removidos os helpers
+que toleravam história Sprint e proibiam só novos heads; os construtores e codecs
+agora recusam esse tipo. Guard genérico de tipo permanece. Nenhuma conversão.
+Revisões, semver, replay, interchange e permissões nativas permanecem; testes
+mistos adaptados e disposição registrada. Propagação Card→cenário usa evidência
+nativa; nenhuma fixture de Sprint é necessária para resequenciamento.
+
+Ruff F/E9 e diff aprovados. Frontend2: 236 aprovados; frontend3: 12 aprovados,
+incluindo uma nova recusa de tipo inválido (237 casos distintos). Build/TypeScript
+aprovados; 79 arquivos, árvore 593b727cb4d8fe7e370c4ca54513cde5994637fe6379988ac4db616018caea1e.
+Par dist-native-targets1 instalado e aprovado byte a byte antes dos testes:
+Core 843/905, Community 319/405. native-targets-core1: 194 aprovados;
+community1: 67 aprovados, incluindo SQL inválido sem efeitos, controle nativo,
+reinício e recusa de formato incompatível. Closure1 tinha apenas drift das matrizes
+README; findings vazios e oito budgets zero. Matrizes regeneradas oficialmente.
+Par dist-native-targets2 instalado, provenance-native-targets2.json aprovado,
+mesmas contagens e mesmo Python dos testes. SHA Core
+1e952c4475450e471ca2e6c6673d5704b824fec2281cd79e687bded2e5d1ca8b;
+Community 230f5b029a080229ed4010d1f992247d8ca99a44fd7ca3e9cfe3bc663d6ebbe1.
+Closure2 aprovado: findings/documentation_findings vazios e oito budgets
+current=limit=0. Catálogo MCP: cinco testes aprovados. Todos os handles encerrados;
+nenhum Python de produto mudou após a prova. Commits/pushes em preparação.
+
+Próximo remanescente concreto: legacy_sprint_schema.py tem três consumidores
+mistos (cancelled_at_utc_roundtrip, f3_critical_context_retirement,
+f3_parent_artifact_retirement). Preservar timezone, fingerprint/contexto atual e
+leitura dos pais; retirar apenas fixtures/asserções de migração/Sprint. As properties
+currentness/currentness_reasons do gate têm consumidores atuais em
+allowed_transitions: não excluir pelo comentário deprecated. C1–C4 e decisões
+T23/KG-10 continuam abertos. Nenhuma base/processo real alterado.
+
 ### 2026-10-06 — C3: caminho único para o gate semântico
 
 Publicado em feature/v0.4.0: Core 09713d3c / Community 3b5d8852; ambos os

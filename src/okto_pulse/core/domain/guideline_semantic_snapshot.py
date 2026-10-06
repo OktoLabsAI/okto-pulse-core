@@ -77,17 +77,6 @@ SEMANTIC_POLICY_ARTIFACT_FIELD_MANIFEST_V1: Mapping[
             "linked_test_task_ids",
             "conclusions",
         ),
-        PolicyEntityType.SPRINT: (
-            "title",
-            "description",
-            "objective",
-            "expected_outcome",
-            "lane_type",
-            "origin_sprint_id",
-            "origin_bug_id",
-            "test_scenario_ids",
-            "business_rule_ids",
-        ),
         PolicyEntityType.TEST_SCENARIO: (
             "title",
             "linked_criteria",
