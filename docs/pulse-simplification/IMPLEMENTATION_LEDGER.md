@@ -26,6 +26,8 @@ SHA Core 4a98260b44aee10356779015b31084350811569b196e6bfa7d0b89950e110647;
 Community 9005feafbf37a6b6fd008fc2ddd5205a59f0200105bae058acf5605294a00d66.
 Nenhuma base/processo real alterado. C1-C4 e T23/KG-10 permanecem abertos;
 nao declarar entrega total.
+Publicado em feature/v0.4.0: Core 69f7f3d8 / Community 5019a520;
+ambos os pushes confirmados.
 Closure1 aprovada: findings/documentation_findings vazios, oito budgets zero.
 Proxima superficie de compatibilidade confirmada: kg_health_readiness aceita
 artifact_ref obsoleto em MCP/REST/use case/service, mas sinais sao Board-scoped.
