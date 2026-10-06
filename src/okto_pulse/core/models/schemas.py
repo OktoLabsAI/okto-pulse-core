@@ -4276,9 +4276,11 @@ class BoardSettings(BaseModel):
 
     @model_validator(mode="before")
     @classmethod
-    def refuse_removed_spec_threshold(cls, value: Any) -> Any:
+    def refuse_removed_board_settings(cls, value: Any) -> Any:
         if isinstance(value, dict) and "min_spec_completeness" in value:
             raise ValueError("min_spec_completeness_removed")
+        if isinstance(value, dict) and "qa_require_role_separation" in value:
+            raise ValueError("qa_require_role_separation_removed")
         return value
 
     analytics: AnalyticsSettings = Field(default_factory=AnalyticsSettings)
@@ -4323,7 +4325,6 @@ class BoardSettings(BaseModel):
     require_full_context_for_critical_actions: bool = (
         True  # if True, critical mutations must resolve full entity context
     )
-    qa_require_role_separation: bool = False  # if True, a Q&A question cannot be answered by the same principal who asked it
     # Task-validation and sprint reviewer/executor separation. Missing on legacy
     # persisted boards is resolved explicitly as ``off``; new boards and new
     # default-board template versions inject ``enforce`` unless the administrator

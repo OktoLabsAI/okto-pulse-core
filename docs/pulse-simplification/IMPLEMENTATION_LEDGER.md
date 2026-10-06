@@ -2,6 +2,26 @@
 
 ## Estado para retomada
 
+### 2026-10-06 — C1/C3 em andamento: Q&A com policy atual
+Publicado health-readiness: Core 89b98e0d / Community 0b04f235, pushes confirmados.
+qa_require_role_separation era entrada de compatibilidade; helper sem caller
+produtivo. Gate usa allow_agent_self_answering. Retirada coordenada de schema,
+resolver, helper e serializadores frontend; entrada retirada recusada sem conversao.
+Testes de servicos mantem a policy atual. native-qa-front1: 74 aprovados.
+Build frontend: 79 arquivos/78 assets; SHA
+4e7ef3af5b2accbe5dce34dda8ddfe853338ea2cb32be9531a117aa74c3293e3.
+Assets staged antes das wheels. Par dist-native-qa1 instalado e
+provenance-native-qa1 byte a byte aprovada: Core 843/905, Community 319/405.
+Closure-native-qa1 aprovada: findings/documentation_findings vazios, oito
+budgets zero. Testes backend native-qa-core1: 60 aprovados em 288s; todos os handles encerrados.
+Ruff F/E9 e diff aprovados. Nenhuma base/processo real alterado.
+Proxima cadeia confirmada: CodeTraceabilitySettings.from_persisted converte
+off/null para Advisory em board_governance/code_traceability_gate; frontend
+codeTraceabilitySettings repete a conversao em Header/form/template.
+Retirar conversao coordenadamente, mantendo default legitimo de criacao.
+Nenhuma edicao desta proxima cadeia ainda. T23/KG-10 aguardam respostas.
+
+
 ### 2026-10-06 — C1/C3 em andamento: health-readiness sem entrada obsoleta
 
 Bases Core 71f67e4b / Community 5019a520, limpas/publicadas. artifact_ref nao

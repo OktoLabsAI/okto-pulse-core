@@ -3938,6 +3938,16 @@
       "path": "okto_labs_pulse_community/tests/test_operational_rest_access_hardening.py::test_health_readiness_transports_unknown_debt_without_numeric_coercion[legacy]",
       "disposition": "removed",
       "reason": "Mock-only unsupported profile removed; current summary/full transport null semantics retained. Real service invalid-profile tests remain."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_r5_impl3_qa_role_separation.py::test_fr6_board_settings_field_present_and_defaults_false",
+      "disposition": "replaced",
+      "reason": "Unused legacy Q&A switch/helper removed; schema/read refusal without conversion replaces compatibility oracle. Native self-answer opt-in, denials, audit and REST/MCP wrappers retained."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_r5_impl3_qa_role_separation.py::test_fr6_helper_reads_board_settings",
+      "disposition": "replaced",
+      "reason": "Unused legacy Q&A switch/helper removed; schema/read refusal without conversion replaces compatibility oracle. Native self-answer opt-in, denials, audit and REST/MCP wrappers retained."
     }
   ]
 }

@@ -3,12 +3,11 @@
 Covers:
 - BG-01: default allow_agent_self_answering=false rejects asked_by == answered_by.
 - BG-01: allow_agent_self_answering=true accepts asked_by == answered_by.
-- Legacy qa_require_role_separation remains readable but does not grant self-answering.
+- Retired role-separation input is refused without conversion.
 - Reject works in all 4 active handlers (QAService, SpecQAService, IdeationQAService,
   RefinementQAService), plus REST/MCP card answer wrappers.
 
-Historical R5 role-separation tests live here because BG-01 supersedes their
-same-principal semantics while preserving the legacy field compatibility.
+Current same-principal semantics use only allow_agent_self_answering.
 
 NOTE: Tests exercise REAL service-layer calls (not source inspection).
       The validator can reproduce by running: pytest tests/test_r5_impl3_qa_role_separation.py -v
@@ -43,14 +42,12 @@ USER_ANSWERER = "user-answerer-001"
 async def _create_board(
     db,
     board_id: str,
-    qa_require_role_separation: bool = False,
     allow_agent_self_answering: bool = False,
 ):
-    """Create a Board with given qa_require_role_separation setting."""
+    """Create a Board with the current self-answering policy."""
     from sqlalchemy_test_models import Board
 
     settings = {
-        "qa_require_role_separation": qa_require_role_separation,
         "allow_agent_self_answering": allow_agent_self_answering,
     }
     existing = await db.get(Board, board_id)
@@ -146,50 +143,15 @@ async def _create_card(db, board_id: str):
     return card
 
 
-# ---------------------------------------------------------------------------
-# FR6 — BoardSettings.qa_require_role_separation field
-# ---------------------------------------------------------------------------
-
-
-async def test_fr6_board_settings_field_present_and_defaults_false():
-    """FR6 — BoardSettings has qa_require_role_separation defaulting to False."""
+@pytest.mark.parametrize("retired_value", [False, True])
+async def test_board_settings_refuses_retired_role_separation(retired_value):
+    from pydantic import ValidationError
     from okto_pulse.core.models.schemas import BoardSettings
 
-    settings = BoardSettings()
-    assert settings.qa_require_role_separation is False
-
-    settings_on = BoardSettings(qa_require_role_separation=True)
-    assert settings_on.qa_require_role_separation is True
-
-    dumped = settings_on.model_dump()
-    assert "qa_require_role_separation" in dumped
-    assert dumped["qa_require_role_separation"] is True
-
-
-async def test_fr6_helper_reads_board_settings(db_factory):
-    """FR6 — _board_qa_require_role_separation helper reads the flag correctly."""
-    from okto_pulse.core.services.main import _board_qa_require_role_separation
-    from sqlalchemy_test_models import Board
-
-    board_id_off = f"board-helper-off-{uuid.uuid4().hex[:8]}"
-    board_id_on = f"board-helper-on-{uuid.uuid4().hex[:8]}"
-
-    async with db_factory() as db:
-        await _create_board(db, board_id_off, qa_require_role_separation=False)
-        await _create_board(db, board_id_on, qa_require_role_separation=True)
-        await db.commit()
-
-    async with db_factory() as db:
-        board_off = await db.get(Board, board_id_off)
-        board_on = await db.get(Board, board_id_on)
-        assert _board_qa_require_role_separation(board_off) is False
-        assert _board_qa_require_role_separation(board_on) is True
-        assert _board_qa_require_role_separation(None) is False
-
-
-# ---------------------------------------------------------------------------
-# BG-01 — canonical self-answering policy supersedes legacy flag semantics
-# ---------------------------------------------------------------------------
+    assert "qa_require_role_separation" not in BoardSettings.model_json_schema()["properties"]
+    assert "qa_require_role_separation" not in BoardSettings().model_dump()
+    with pytest.raises(ValidationError, match="qa_require_role_separation_removed"):
+        BoardSettings.model_validate({"qa_require_role_separation": retired_value})
 
 
 async def test_ac8_qa_service_flag_off_same_principal_accepted(db_factory):
@@ -200,7 +162,7 @@ async def test_ac8_qa_service_flag_off_same_principal_accepted(db_factory):
 
     board_id = f"board-ac8-qa-{uuid.uuid4().hex[:8]}"
     async with db_factory() as db:
-        await _create_board(db, board_id, qa_require_role_separation=False)
+        await _create_board(db, board_id)
         card = await _create_card(db, board_id)
         qa = QAItem(
             id=str(uuid.uuid4()),
@@ -255,7 +217,6 @@ async def test_ac8_spec_qa_service_flag_off_same_principal_accepted(db_factory):
         await _create_board(
             db,
             board_id,
-            qa_require_role_separation=False,
             allow_agent_self_answering=True,
         )
         spec = await _create_spec(db, board_id)
@@ -278,20 +239,20 @@ async def test_ac8_spec_qa_service_flag_off_same_principal_accepted(db_factory):
 
 
 # ---------------------------------------------------------------------------
-# AC9 — flag ON → same-principal answer is REJECTED with real service call
+# AC9 — self-answering disabled → same-principal answer is REJECTED with real service call
 # ---------------------------------------------------------------------------
 
 
 async def test_ac9_qa_service_flag_on_same_principal_rejected(db_factory):
-    """AC9 — QAService: flag ON, answered_by == asked_by → ValueError with
-    role_separation_required message. REAL service call, not source inspection."""
+    """AC9 — QAService: self-answering disabled, answered_by == asked_by → ValueError with
+    self_answering_not_allowed message. REAL service call, not source inspection."""
     from sqlalchemy_test_models import QAItem
     from okto_pulse.core.models.schemas import QAAnswer
     from okto_pulse.core.services.main import QAService
 
     board_id = f"board-ac9-qa-{uuid.uuid4().hex[:8]}"
     async with db_factory() as db:
-        await _create_board(db, board_id, qa_require_role_separation=True)
+        await _create_board(db, board_id)
         card = await _create_card(db, board_id)
         qa = QAItem(
             id=str(uuid.uuid4()),
@@ -313,14 +274,14 @@ async def test_ac9_qa_service_flag_on_same_principal_rejected(db_factory):
 
 
 async def test_ac9_spec_qa_service_flag_on_same_principal_rejected(db_factory):
-    """AC9 — SpecQAService: flag ON, answered_by == asked_by → ValueError."""
+    """AC9 — SpecQAService: self-answering disabled, answered_by == asked_by → ValueError."""
     from sqlalchemy_test_models import SpecQAItem
     from okto_pulse.core.models.schemas import SpecQAAnswer
     from okto_pulse.core.services.main import SpecQAService
 
     board_id = f"board-ac9-spec-{uuid.uuid4().hex[:8]}"
     async with db_factory() as db:
-        await _create_board(db, board_id, qa_require_role_separation=True)
+        await _create_board(db, board_id)
         spec = await _create_spec(db, board_id)
         qa = SpecQAItem(
             id=str(uuid.uuid4()),
@@ -343,14 +304,14 @@ async def test_ac9_spec_qa_service_flag_on_same_principal_rejected(db_factory):
 
 
 async def test_ac9_ideation_qa_service_flag_on_same_principal_rejected(db_factory):
-    """AC9 — IdeationQAService: flag ON, answered_by == asked_by → ValueError."""
+    """AC9 — IdeationQAService: self-answering disabled, answered_by == asked_by → ValueError."""
     from sqlalchemy_test_models import IdeationQAItem
     from okto_pulse.core.models.schemas import IdeationQAAnswer
     from okto_pulse.core.services.main import IdeationQAService
 
     board_id = f"board-ac9-ideation-{uuid.uuid4().hex[:8]}"
     async with db_factory() as db:
-        await _create_board(db, board_id, qa_require_role_separation=True)
+        await _create_board(db, board_id)
         ideation = await _create_ideation(db, board_id)
         qa = IdeationQAItem(
             id=str(uuid.uuid4()),
@@ -373,14 +334,14 @@ async def test_ac9_ideation_qa_service_flag_on_same_principal_rejected(db_factor
 
 
 async def test_ac9_refinement_qa_service_flag_on_same_principal_rejected(db_factory):
-    """AC9 — RefinementQAService: flag ON, answered_by == asked_by → ValueError."""
+    """AC9 — RefinementQAService: self-answering disabled, answered_by == asked_by → ValueError."""
     from sqlalchemy_test_models import RefinementQAItem
     from okto_pulse.core.models.schemas import RefinementQAAnswer
     from okto_pulse.core.services.main import RefinementQAService
 
     board_id = f"board-ac9-ref-{uuid.uuid4().hex[:8]}"
     async with db_factory() as db:
-        await _create_board(db, board_id, qa_require_role_separation=True)
+        await _create_board(db, board_id)
         ideation = await _create_ideation(db, board_id)
         ref = await _create_refinement(db, board_id, ideation.id)
         qa = RefinementQAItem(
@@ -406,19 +367,19 @@ async def test_ac9_refinement_qa_service_flag_on_same_principal_rejected(db_fact
 
 
 # ---------------------------------------------------------------------------
-# AC10 — flag ON → different principal answer is ACCEPTED
+# AC10 — self-answering disabled → different principal answer is ACCEPTED
 # ---------------------------------------------------------------------------
 
 
 async def test_ac10_qa_service_flag_on_different_principal_accepted(db_factory):
-    """AC10 — QAService: flag ON, answered_by != asked_by → accepted."""
+    """AC10 — QAService: self-answering disabled, answered_by != asked_by → accepted."""
     from sqlalchemy_test_models import QAItem
     from okto_pulse.core.models.schemas import QAAnswer
     from okto_pulse.core.services.main import QAService
 
     board_id = f"board-ac10-qa-{uuid.uuid4().hex[:8]}"
     async with db_factory() as db:
-        await _create_board(db, board_id, qa_require_role_separation=True)
+        await _create_board(db, board_id)
         card = await _create_card(db, board_id)
         qa = QAItem(
             id=str(uuid.uuid4()),
@@ -439,14 +400,14 @@ async def test_ac10_qa_service_flag_on_different_principal_accepted(db_factory):
 
 
 async def test_ac10_spec_qa_service_flag_on_different_principal_accepted(db_factory):
-    """AC10 — SpecQAService: flag ON, different principal → accepted."""
+    """AC10 — SpecQAService: self-answering disabled, different principal → accepted."""
     from sqlalchemy_test_models import SpecQAItem
     from okto_pulse.core.models.schemas import SpecQAAnswer
     from okto_pulse.core.services.main import SpecQAService
 
     board_id = f"board-ac10-spec-{uuid.uuid4().hex[:8]}"
     async with db_factory() as db:
-        await _create_board(db, board_id, qa_require_role_separation=True)
+        await _create_board(db, board_id)
         spec = await _create_spec(db, board_id)
         qa = SpecQAItem(
             id=str(uuid.uuid4()),
@@ -473,14 +434,14 @@ async def test_ac10_spec_qa_service_flag_on_different_principal_accepted(db_fact
 
 
 async def test_ac11_all_active_handlers_reject_same_principal(db_factory):
-    """AC11 — All active service handlers enforce role separation when enabled.
+    """AC11 — All active service handlers enforce the default same-principal denial.
 
     This test creates fixtures for all 4 entity types on a SINGLE board with
     allow_agent_self_answering=False and confirms each handler raises ValueError
     with the canonical message when asked_by == answered_by.
 
     The 4 handlers: QAService, SpecQAService, IdeationQAService,
-    RefinementQAService. Retired Sprint Q&A is read through the historical archive.
+    RefinementQAService.
     """
     from sqlalchemy_test_models import (
         QAItem, SpecQAItem, IdeationQAItem, RefinementQAItem,
@@ -493,7 +454,7 @@ async def test_ac11_all_active_handlers_reject_same_principal(db_factory):
     board_id = f"board-ac11-active-{uuid.uuid4().hex[:8]}"
 
     async with db_factory() as db:
-        await _create_board(db, board_id, qa_require_role_separation=True)
+        await _create_board(db, board_id)
         card = await _create_card(db, board_id)
         spec = await _create_spec(db, board_id)
         ideation = await _create_ideation(db, board_id)
@@ -547,7 +508,7 @@ async def test_fr8_error_message_contains_remediation(db_factory):
 
     board_id = f"board-fr8-{uuid.uuid4().hex[:8]}"
     async with db_factory() as db:
-        await _create_board(db, board_id, qa_require_role_separation=True)
+        await _create_board(db, board_id)
         spec = await _create_spec(db, board_id)
         qa = SpecQAItem(
             id=str(uuid.uuid4()),

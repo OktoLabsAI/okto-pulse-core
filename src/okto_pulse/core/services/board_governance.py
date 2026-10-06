@@ -34,7 +34,6 @@ class BoardGovernanceSettings:
 
     allow_agent_self_answering: bool
     require_full_context_for_critical_actions: bool
-    qa_require_role_separation: bool
     settings: dict[str, Any]
 
 
@@ -52,11 +51,7 @@ class QASelfAnsweringNotAllowedError(ValueError):
 
 
 class BoardGovernanceService:
-    """Resolve effective board governance settings with safe defaults.
-
-    Legacy ``qa_require_role_separation`` is retained as input compatibility,
-    but it never grants the canonical positive opt-in for self-answering.
-    """
+    """Resolve current board governance settings with safe defaults."""
 
     def __init__(self, db: object | None = None):
         self.db = db
@@ -111,9 +106,6 @@ class BoardGovernanceService:
             ),
             require_full_context_for_critical_actions=bool(
                 normalized.get("require_full_context_for_critical_actions", True)
-            ),
-            qa_require_role_separation=bool(
-                normalized.get("qa_require_role_separation", False)
             ),
             settings=normalized,
         )

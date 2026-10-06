@@ -1303,13 +1303,6 @@ async def resolve_user_permissions(db, user_id: str, board_id: str):
     )
 
 
-def _board_qa_require_role_separation(board: ApplicationRecord | None) -> bool:
-    """Return True if the board requires that Q&A answers come from a different
-    principal than the one who asked the question (qa_require_role_separation)."""
-    settings = (board.settings or {}) if board else {}
-    return BoardGovernanceService.from_settings(settings).qa_require_role_separation
-
-
 async def _attach_open_qa_counts(
     db: Any,
     rows: list[Any],
