@@ -27,13 +27,21 @@ Core1: 34 aprovados; Community1: 33 aprovados, incluindo falta de configuração
 sem escrita, conexão nova e controle positivo. Closure1 aprovado: findings e
 documentation_findings vazios; oito budgets current=limit=0. Todos os handles
 encerrados, nenhum Python mudou após a prova. Diff aprovado.
+Publicado em feature/v0.4.0: Core 2f43007c / Community 7de94180;
+ambos os pushes confirmados.
 
 Próxima cadeia concreta do inventário C1/C3: permissions.py mantém
 map_legacy_permissions, normalize_agent_permission_overrides, tradução flat e
 normalização de snapshots com Sprint. Callers: ports/permission_policy,
 services/main, role summary e política de autorização. Resolver o contrato
 nativo/presets e callers antes de retirar; não transformar sentinela Full Control
-atual em negação por associação textual com comentário legacy. C1–C4 abertos.
+atual em negação por associação textual com comentário legacy. Porta pública
+permission_policy contém direct_permission_review, resolve_agent_permission_facts
+(com legacy_permissions), legacy_permissions_to_flags, normalize_agent_permission_layer
+e merge_permission_registry_defaults. Callers Community reais: relational_application
+(autenticação/contexto) e sqlalchemy_application_persistence (permissões efetivas).
+Não fazer reach-in no domínio a partir dos adapters nem duplicar o resolver.
+C1–C4 abertos; nenhuma alteração dessa cadeia foi iniciada nesta rodada.
 
 ### 2026-10-06 — C3: retirada das fixtures de schema Sprint
 
