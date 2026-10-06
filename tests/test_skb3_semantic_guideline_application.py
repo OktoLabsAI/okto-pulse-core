@@ -33,15 +33,12 @@ from okto_pulse.core.domain.guideline_policy import (
 )
 from okto_pulse.core.domain.guideline_semantic_assessment import (
     SemanticAssessmentAssessor,
-    SemanticGuidelineAssessmentContext,
     SemanticGuidelineAssessmentSubmission,
     SemanticMetricAssessment,
-    semantic_binding_head_digest_v1,
-    semantic_policy_set_digest_v1,
 )
 from okto_pulse.core.domain.guideline_semantic_currentness import (
-    SemanticAssessmentCurrentSnapshot,
-    semantic_assessment_current_snapshot_from_context,
+    NativeSemanticAssessmentCurrentSnapshot,
+    native_semantic_assessment_snapshot,
 )
 from okto_pulse.core.domain.guideline_semantic_exceptions import (
     SemanticMetricWaiverAnchor,
@@ -202,20 +199,10 @@ class _Port:
             captured_at=NOW,
         )
 
-    def _current_snapshot(self) -> SemanticAssessmentCurrentSnapshot:
-        context = SemanticGuidelineAssessmentContext(
-            subject_snapshot=self._subject_snapshot(),
-            binding=self.binding,
-            revision=self.revision,
-            policy_set_digest=semantic_policy_set_digest_v1(
-                (self.binding,),
-                (self.revision,),
-            ),
-            binding_head_digest=semantic_binding_head_digest_v1(
-                self.binding_heads,
-            ),
+    def _current_snapshot(self) -> NativeSemanticAssessmentCurrentSnapshot:
+        return native_semantic_assessment_snapshot(
+            subject=self._subject_snapshot(), binding=self.binding, revision=self.revision,
         )
-        return semantic_assessment_current_snapshot_from_context(context)
 
     async def list_bindings(self, **_kwargs):
         return (self.binding,)

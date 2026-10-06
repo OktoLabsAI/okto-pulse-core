@@ -27,7 +27,7 @@ from okto_pulse.core.domain.guideline_semantic_assessment import (
     SemanticThresholdSource,
 )
 from okto_pulse.core.domain.guideline_semantic_currentness import (
-    SemanticAssessmentCurrentSnapshot,
+    NativeSemanticAssessmentCurrentSnapshot,
     SemanticAssessmentCurrentness,
     SemanticAssessmentCurrentnessReason,
     assess_native_semantic_assessment_currentness,
@@ -802,7 +802,7 @@ def project_semantic_waiver(
 
 def _skip_currentness(
     skip: SemanticPolicySkip,
-    current: SemanticAssessmentCurrentSnapshot | None,
+    current: NativeSemanticAssessmentCurrentSnapshot | None,
 ) -> tuple[
     PolicyCurrentness,
     tuple[SemanticAssessmentCurrentnessReason, ...],
@@ -862,7 +862,7 @@ def _skip_currentness(
 def project_semantic_skip(
     skip: SemanticPolicySkip,
     *,
-    current: SemanticAssessmentCurrentSnapshot | None,
+    current: NativeSemanticAssessmentCurrentSnapshot | None,
     projection: SemanticGuidelineProjection,
 ) -> SemanticSkipProjection:
     if not isinstance(skip, SemanticPolicySkip):

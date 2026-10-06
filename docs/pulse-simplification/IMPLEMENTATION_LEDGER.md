@@ -2,6 +2,53 @@
 
 ## Estado para retomada
 
+### 2026-10-06 — C1/C3: snapshot único para skips e envelope de grafo estrito
+
+Retirados SemanticAssessmentCurrentSnapshot, seu conversor de contexto e o
+comparador exclusivo de recibo predecessor (202 linhas). O último consumidor
+produtivo era a projeção de skip: porta, aplicação e adapter usam agora
+NativeSemanticAssessmentCurrentSnapshot. A projeção de skip já comparava apenas
+os campos nativos; seus predicados/autoridade não foram alterados. O adapter
+continua selecionando binding/revision na autoridade congelada por edição.
+
+Removido fallback de JSON sem envelope em sqlalchemy_policy_constraint_projection.
+Writer conserva o envelope atual; reader recusa o mesmo payload sem prefixo.
+Teste negativo explícito e provas de JSON duplicado/NaN com envelope mantidas.
+Comentários de runtime antigo substituídos pela descrição do contrato atual.
+
+native-fences-core1: 42 aprovados/1 falha de fixture, corrigida para incrementar
+a binding_revision em vez de usar um literal igual à revisão original.
+native-fences-core2: cinco provas de currentness aprovadas; total aplicável 43.
+native-fences-community1: 38 aprovados, incluindo projeção/rebuild, persistência
+mista nativa e fluxo waiver/UoW. Ruff F/E9 e diff aprovados.
+
+Par dist-native-fences2 instalado, byte a byte aprovado após instalação terminal:
+provenance-native-fences2-after-install.json, Core 845/907, Community 319/405.
+SHA Core 6e0cba582e59e74b616104d780860102ee48e82ca3a2deda8ffa591b62a1b1b1;
+Community ff6c78e5542ad2d64bd531b885c7cb03cca9d75126212501561733a5d6b0f899.
+Python idêntico ao par fences1 usado nos testes; somente matrizes README
+regeneradas depois. closure-native-fences1 tinha apenas drift dessas matrizes,
+findings vazios e oito budgets zero. closure-native-fences2 passou: ok,
+findings/documentation_findings vazios e os oito budgets current=limit=0.
+
+Community subject_writer_bridge foi adaptado nesta rodada: o helper grava request
+nativa com pinpoint/anchor snapshot atuais. native-subject-writer1: 13 testes
+aprovados, incluindo os cinco sujeitos, propagação REST/MCP de ator, rollback,
+savepoints, Q&A e atualização de head. Nenhum produto mudou para essa adaptação.
+
+Próximo já investigado: guideline_semantic_findings.py está órfão em src/testes;
+guideline_semantic_assessment.py ainda reúne writer/receipt/submission/contexto
+antigos e tipos/digests realmente atuais. Não apagar o módulo inteiro: preservar
+Assessor, errors/enums e semantic_binding_head_digest_v1/semantic_policy_set_digest_v1.
+Suítes mistas a adaptar antes da retirada: Core assessment_domain (preserva regras
+de métricas, binding, segregação, confiança e digest), application (fixture
+_submission e métodos órfãos do fake _Port), exceptions/transition (contexto).
+subject_writer_bridge já não usa writer antigo; não repetir sua adaptação.
+O helper _submission também é importado por test_f3_policy_write_retirement;
+adaptar esse consumidor em conjunto, preservando a prova de autoridade F3.
+Todos os handles encerrados; nenhum processo/base do usuário foi alterado.
+
+
 ### 2026-10-06 — Milestone: cadeia persistente de avaliação semântica nativa
 
 Concluída a cadeia integrada de leitura, findings, waiver, gate, ciclo de validação,
@@ -37,7 +84,8 @@ o plano fixo. Preservar autoridade atual de binding/revision e histórico nativo
 não excluir pelo nome legacy/v1. Decisões BASE T23 e KG-10 já registradas continuam
 pendentes; não reclassificá-las como migração. Versão dos artefatos segue 0.3.4;
 o bump coordenado 0.4.0 e aceitação completa continuam no fechamento C4.
-Commit/push deste milestone: registrar confirmação após publicação dos dois repos.
+Publicado em feature/v0.4.0: Core 90e38f30 / Community ddbdb51d; ambos os pushes
+confirmados. Ruff F/E9 e git diff --check aprovados, incluindo novos testes.
 
 ### 2026-10-06 — C1 WIP: porta/adapter antigos retirados e exportação nativa
 

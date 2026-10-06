@@ -32,13 +32,8 @@ from okto_pulse.core.domain.guideline_policy import (
     PolicySubjectRef,
     PolicySubjectSnapshot,
 )
-from okto_pulse.core.domain.guideline_semantic_assessment import (
-    SemanticGuidelineAssessmentContext,
-    semantic_binding_head_digest_v1,
-    semantic_policy_set_digest_v1,
-)
 from okto_pulse.core.domain.guideline_semantic_currentness import (
-    semantic_assessment_current_snapshot_from_context,
+    native_semantic_assessment_snapshot,
 )
 from okto_pulse.core.domain.guideline_semantic_exceptions import (
     SemanticExceptionActorKind,
@@ -137,16 +132,6 @@ def _semantic_evidence():
         last_semantic_editor_id="author-1",
         captured_at=NOW,
     )
-    context = SemanticGuidelineAssessmentContext(
-        subject_snapshot=subject,
-        binding=binding,
-        revision=revision,
-        policy_set_digest=semantic_policy_set_digest_v1(
-            (binding,),
-            (revision,),
-        ),
-        binding_head_digest=semantic_binding_head_digest_v1((binding,)),
-    )
     from test_skb31_semantic_guideline_v2_findings import _receipt, _result, _pinpoint
     from okto_pulse.core.domain.guideline_semantic_assessment import SemanticMetricOutcome
     from okto_pulse.core.domain.guideline_semantic_findings_v2 import project_semantic_metric_findings_v2
@@ -159,7 +144,7 @@ def _semantic_evidence():
         binding_configuration_digest=binding.configuration_digest,
         guideline_id=revision.guideline_id, guideline_revision_id=revision.revision_id,
         guideline_revision_digest=revision.revision_digest)
-    current_snapshot = semantic_assessment_current_snapshot_from_context(context)
+    current_snapshot = native_semantic_assessment_snapshot(subject=subject, binding=binding, revision=revision)
     currentness = assess_native_semantic_assessment_currentness(
         receipt, subject=subject, binding=binding, revision=revision)
     finding = project_semantic_metric_findings_v2(receipt)[0]

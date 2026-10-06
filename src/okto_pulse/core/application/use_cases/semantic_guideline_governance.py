@@ -49,7 +49,7 @@ from okto_pulse.core.domain.guideline_policy import (
     normalize_policy_bounded_text,
 )
 from okto_pulse.core.domain.guideline_semantic_currentness import (
-    SemanticAssessmentCurrentSnapshot,
+    NativeSemanticAssessmentCurrentSnapshot,
     SemanticAssessmentCurrentness,
     SemanticAssessmentCurrentnessReason,
 )
@@ -1765,7 +1765,7 @@ class ListSemanticPolicySkipsUseCase:
             else (query.cursor.created_at, query.cursor.item_id)
         )
         selected: list[
-            tuple[SemanticPolicySkip, SemanticAssessmentCurrentSnapshot | None]
+            tuple[SemanticPolicySkip, NativeSemanticAssessmentCurrentSnapshot | None]
         ] = []
         has_more = False
         while True:

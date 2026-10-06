@@ -76,7 +76,7 @@ from okto_pulse.core.domain.guideline_semantic_assessment import (
     SemanticMetricOutcome,
 )
 from okto_pulse.core.domain.guideline_semantic_currentness import (
-    SemanticAssessmentCurrentSnapshot,
+    NativeSemanticAssessmentCurrentSnapshot,
 )
 from okto_pulse.core.domain.guideline_semantic_exceptions import (
     SemanticMetricWaiver,
@@ -1423,7 +1423,7 @@ class SemanticGuidelineAssessmentPersistencePort(Protocol):
         subject_id: str,
         binding_id: str,
         lock: bool = False,
-    ) -> SemanticAssessmentCurrentSnapshot | None: ...
+    ) -> NativeSemanticAssessmentCurrentSnapshot | None: ...
 
 
 
