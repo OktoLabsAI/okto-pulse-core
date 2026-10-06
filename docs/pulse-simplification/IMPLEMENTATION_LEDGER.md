@@ -2,6 +2,39 @@
 
 ## Estado para retomada
 
+### 2026-10-06 — C1: recusa de autoridade sem configuração
+
+Bases Core 0135c713 / Community 3852dc89, limpas no início. Rastreio encontrou
+_authority_bundle ignorando binding sem configuração semântica por regra explícita
+de migração/inércia. Contrato único aprovado exige recusar metadado normativo
+inválido, sem inferir ausência de policy. Preparada reprodução nativa por falha
+injetada na leitura SQL (sem desativar triggers ou alterar dados) para leitura de
+fences e congelamento da edição. Reprodução native-authority-repro1 sobre par targets2 byte-proven: duas falhas
+DID NOT RAISE, confirmando tolerância na leitura e no congelamento. Retirado o
+continue e emitido semantic_guideline_binding_configuration_missing. Autorização:
+assessment, Regra para todo o desenvolvimento restante, exige erro para ausência
+normativa inválida e proíbe branches legacy em readers. Não altera policy válida.
+
+Retiradas também properties receipt_id de PolicyTransitionDecision/Rejected,
+shim de recibo singular sem consumidor atual; transportes usam receipt_ids.
+currentness agregado tem consumidores nativos e foi preservado, com comentário
+correto. Nenhuma mudança frontend. Ruff F/E9 aprovado. Par dist-native-authority1
+instalado e provenance-native-authority1.json byte a byte aprovado (843/905 Core,
+319/405 Community). SHA Core
+8a837be3ce7cf98fb304a9a3fd99e1ca3d29a3ee6baacca4018f553de961c9f7;
+Community 56abe6e141b796aefe18093fc239fb7243cbff3d4a5ec1c7e7dfc25688e57878.
+Core1: 34 aprovados; Community1: 33 aprovados, incluindo falta de configuração
+sem escrita, conexão nova e controle positivo. Closure1 aprovado: findings e
+documentation_findings vazios; oito budgets current=limit=0. Todos os handles
+encerrados, nenhum Python mudou após a prova. Diff aprovado.
+
+Próxima cadeia concreta do inventário C1/C3: permissions.py mantém
+map_legacy_permissions, normalize_agent_permission_overrides, tradução flat e
+normalização de snapshots com Sprint. Callers: ports/permission_policy,
+services/main, role summary e política de autorização. Resolver o contrato
+nativo/presets e callers antes de retirar; não transformar sentinela Full Control
+atual em negação por associação textual com comentário legacy. C1–C4 abertos.
+
 ### 2026-10-06 — C3: retirada das fixtures de schema Sprint
 
 Três consumidores mistos adaptados ao schema atual; removida cópia executável

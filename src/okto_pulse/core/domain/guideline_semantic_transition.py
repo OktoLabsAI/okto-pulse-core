@@ -1560,14 +1560,8 @@ class PolicyTransitionDecision:
         return self.reason_codes[0]
 
     @property
-    def receipt_id(self) -> str | None:
-        """Deprecated single-receipt compatibility seam."""
-
-        return self.receipt_ids[0] if len(self.receipt_ids) == 1 else None
-
-    @property
     def currentness(self) -> PolicyCurrentness | None:
-        """Deprecated aggregate compatibility seam."""
+        """Aggregate currentness exposed by transition previews and rejections."""
 
         values = {
             item.currentness
@@ -1612,10 +1606,6 @@ class PolicyTransitionRejected(GuidelinePolicyContractError):
         self.failed_metric_count = decision.failed_metric_count
         self.blocking_metric_count = decision.blocking_metric_count
         super().__init__(decision.reason_code.value)
-
-    @property
-    def receipt_id(self) -> str | None:
-        return self.decision.receipt_id
 
     @property
     def currentness(self) -> PolicyCurrentness | None:
