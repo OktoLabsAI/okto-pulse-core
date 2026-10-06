@@ -4318,8 +4318,7 @@ class BoardSettings(BaseModel):
     # off = no effect; advisory = gated moves succeed but a missing block is
     # recorded in the activity log; require = gated moves reject a conclusion
     # without a minimally populated block. Write-time validation rejects
-    # out-of-enum values; READ-side resolution of persisted legacy/tampered
-    # values is fail-compat ('off') via resolve_impact_evidence_mode.
+    # out-of-enum values. Reads use the same closed contract without conversion.
     impact_evidence_mode: Literal["off", "advisory", "require"] = "off"
     # Design System mockup gate mode (spec 3a006f65 / card 96f76a5f). CANONICAL source
     # of the board's Design System gate mode (the design_system_default_ref only carries

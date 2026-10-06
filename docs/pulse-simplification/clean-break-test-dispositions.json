@@ -3993,6 +3993,21 @@
       "path": "okto_labs_pulse_community/frontend/src/components/board/__tests__/BoardSettingsForm.test.tsx::projects an absent or unknown legacy value as off",
       "disposition": "replaced",
       "reason": "Removed absent-policy compatibility; current creation defaults apply (reviewer enforce, requirement-link skip false). Explicit off/warn/skip and permissions remain tested. Native Community seeds explicitly persist their existing off/skip behavior. Invalid reviewer policy refuses edits instead of off conversion."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_impact_evidence_enforcement.py::test_tampered_mode_resolves_off_and_never_raises",
+      "disposition": "replaced",
+      "reason": "Invalid Impact Evidence values no longer convert to off. Replacement verifies refusal without changes or UI writes; legitimate creation default off and current modes remain."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_impact_evidence_enforcement.py::test_tolerance_is_read_only_write_paths_stay_strict",
+      "disposition": "replaced",
+      "reason": "Invalid Impact Evidence values no longer convert to off. Replacement verifies refusal without changes or UI writes; legitimate creation default off and current modes remain."
+    },
+    {
+      "path": "okto_labs_pulse_community/frontend/src/components/board/__tests__/BoardSettingsForm.test.tsx::an unknown persisted value reads as off instead of breaking the screen",
+      "disposition": "replaced",
+      "reason": "Invalid Impact Evidence values no longer convert to off. Replacement verifies refusal without changes or UI writes; legitimate creation default off and current modes remain."
     }
   ]
 }

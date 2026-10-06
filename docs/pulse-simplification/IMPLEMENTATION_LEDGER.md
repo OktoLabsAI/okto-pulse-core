@@ -2,6 +2,31 @@
 
 ## Estado para retomada
 
+### 2026-10-06 — C1/C3 em andamento: Impact Evidence sem conversao
+Bases Core 0adf347e / Community 52244eb3 limpas/publicadas.
+Retirado read_tolerant de BoardGovernance e conversao invalido->off do resolver
+e formulario. Ausencia legitima continua default off; enum authored/persistido
+e unico. Rastreio encontrou que toBoardSettings do template descartava o campo,
+mostrando off mesmo sob require; agora transporta a policy atual e recusa invalida
+sem controles de Save.
+Frontend native-impact-front1: 108 aprovados; build aprovado, 79 arquivos/78 assets,
+tree SHA 0cbc59d52b1dda7783e406daf722617811bb39679ecfb403aff0185250b96ba0.
+Core native-impact-policy-core1/core4: 71 casos distintos aprovados; Community
+native-impact-community1: 13 aprovados. Tentativa native-impact-core1 recusada
+por colisao de nome de log, sem execucao; nao contada como evidencia.
+Fixtures de conclusao agora estabelecem adocao arquitetural, autoria semantica
+e contexto efetivo Delivery nativos; negativa continua bloqueando sem prova.
+Closure1 encontrou somente drift de README; matrizes regeneradas oficialmente.
+Par final dist-native-impact2 instalado e provenance-native-impact2 aprovado
+byte a byte: Core 843 Python/905 payload, Community 319/405. Closure-native-impact2
+aprovada, findings/documentation_findings vazios e oito budgets current=limit=0.
+Ruff F/E9 e diff aprovados. Todos os handles encerrados; nenhum dado real alterado.
+C1-C4 permanecem abertos. T23/KG-10 seguem pendentes de decisao especifica.
+Proxima cadeia: estado nativo sem template ainda denominado legacy_no_snapshot;
+preservar funcionalidade e corrigir contrato/textos, inclusive referencias ativas
+a defaults antigos ja removidos. Sem alteracao desta proxima cadeia neste commit.
+
+
 ### 2026-10-06 — C1/C2/C3: defaults atuais de policy
 Publicado: Core 558f4f49 / Community 52244eb3, pushes confirmados.
 Bases publicadas Core 5ace08ff / Community 4e03edbe.

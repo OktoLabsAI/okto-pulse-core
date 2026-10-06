@@ -55,35 +55,12 @@ class BoardGovernanceService:
     @staticmethod
     def normalize_settings(
         settings: dict[str, Any] | BoardSettings | None,
-        *,
-        read_tolerant: bool = False,
     ) -> dict[str, Any]:
-        """Normalize a settings payload against :class:`BoardSettings`.
-
-        ``read_tolerant`` is OPT-IN and belongs to READ paths only. A
-        persisted/tampered ``impact_evidence_mode`` must never fail-close a
-        move (AC-9 of SK-B2-S1), so read callers degrade it to the ``off``
-        default exactly like ``resolve_impact_evidence_mode``. WRITE callers
-        (board create/update, default-config templates) keep the strict
-        parse: an out-of-enum value there is an authoring error and must be
-        rejected, never silently disabled. Code Traceability uses the same
-        closed contract for persisted and authored values.
-        """
+        """Validate stored and authored settings against the current contract."""
 
         if isinstance(settings, BoardSettings):
             return settings.model_dump(mode="json")
         raw = dict(settings or {})
-        if read_tolerant:
-            from okto_pulse.core.services.impact_evidence import (
-                IMPACT_EVIDENCE_MODES,
-            )
-
-            mode = raw.get("impact_evidence_mode")
-            if (
-                mode is not None
-                and str(mode).strip().lower() not in IMPACT_EVIDENCE_MODES
-            ):
-                raw.pop("impact_evidence_mode", None)
         return BoardSettings.model_validate(raw).model_dump(mode="json")
 
     @classmethod
@@ -91,7 +68,7 @@ class BoardGovernanceService:
         cls,
         settings: dict[str, Any] | BoardSettings | None,
     ) -> BoardGovernanceSettings:
-        normalized = cls.normalize_settings(settings, read_tolerant=True)
+        normalized = cls.normalize_settings(settings)
         return BoardGovernanceSettings(
             allow_agent_self_answering=bool(
                 normalized.get("allow_agent_self_answering", False)
@@ -133,14 +110,7 @@ class BoardGovernanceService:
         )
         if "code_traceability" in patch_raw:
             CodeTraceabilitySettings.model_validate(patch_raw["code_traceability"])
-        # A patch merges PERSISTED state (read) with AUTHORED keys (write).
-        # Tolerance applies only to the persisted half: a value the author is
-        # actually writing stays strict, so a typo is rejected instead of
-        # silently disabling governance, while a previously tampered value
-        # never blocks an unrelated settings edit.
-        # Normalize only the persisted half tolerantly, then validate the
-        # authored patch under the closed write contract.
-        persisted = cls.normalize_settings(current_raw, read_tolerant=True)
+        persisted = cls.normalize_settings(current_raw)
         normalized = cls.normalize_settings({**persisted, **patch_raw})
         # The lifecycle already consumes this persisted switch, but the public
         # BoardSettings authoring contract does not expose it. An unrelated
