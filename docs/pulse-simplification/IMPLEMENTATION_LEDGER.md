@@ -44,7 +44,8 @@ Evidências em PULSE_REFACTOR/.validation-v040:
   Community 2ea86bd67a6120875036187356edde125dc880d5400e8ae5d7e4fd4bb4188d23.
 
 Nenhuma base ou processo real alterado. Versão de produto ainda 0.3.4;
-bump coordenado é C4. Commit/push deste incremento em andamento.
+bump coordenado é C4. Publicado em feature/v0.4.0: Core f46fcfe7 /
+Community 9b94f03c, ambos os pushes confirmados. Todos os handles encerrados.
 Próxima dependência concreta: classe Permissions de constantes colon e reexports
 sem consumidores produtivos restantes; ainda usada em testes. Rastrear e retirar
 essa superfície exclusiva. Não remover conjunções nativas ou composição de
