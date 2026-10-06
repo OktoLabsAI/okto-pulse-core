@@ -4,6 +4,9 @@
 
 ### 2026-10-06 — C1 WIP: retirar writer, receipt e contexto semântico predecessor
 
+Publicado em feature/v0.4.0: Core 7f74b9c4 / Community eca1e716; ambos os pushes
+confirmados. C1–C4 continuam abertos para o restante do escopo fixo.
+
 guideline_semantic_assessment.py reduzido de 1.476 para 328 linhas: retirados
 Submission/Context/MetricAssessment/Pinpoint/MetricResult/Receipt/Result antigos,
 writer record_semantic_guideline_assessment e digests de input/request/receipt
