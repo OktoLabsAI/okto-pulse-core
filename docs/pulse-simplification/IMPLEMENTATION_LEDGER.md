@@ -2,6 +2,27 @@
 
 ## Estado para retomada
 
+### 2026-10-06 — C2 em andamento: bootstrap com policy explicita
+Publicado avaliador sem Sprint: Core 0c76928b / Community ee4cf00f.
+My Board/Demo eram criados sem settings e recebiam efetivamente off pelo resolver.
+Novas seeds agora gravam reviewer_separation_mode=off explicitamente, preservando
+efeito nativo anterior e sem atualizar Boards existentes. Isto prepara a retirada
+da tolerancia a ausencia; Boards autorados continuam com default enforce.
+Teste de primeiro boot exige policy persistida em ambos.
+Par dist-native-seed-policy1 instalado; provenance-native-seed-policy1 byte a byte
+aprovada (843/905 Core, 319/405 Community). Community1: 44 aprovados, incluindo
+init real offline, recuperacao Demo, cancelamento e handoff de credenciais.
+Closure1 aprovada: findings/documentation_findings vazios e oito budgets zero.
+Ruff F/E9 e diff aprovados. Nenhum handle ativo. Frontend nao alterado.
+C1-C4 continuam abertos. T23/KG-10 aguardam respostas.
+Rastreio adicional: _board_skips_task_requirement_link_gate tambem usa ausencia
+como True, embora schema/criacao atual use False. Seeds ainda produzem ausencia
+nativamente para esse campo. Proxima retirada deve explicitar o efeito atual nas
+seeds antes de eliminar ramo/preservacao de ausencia em BoardGovernance/default
+templates. Nao inferir True/False novo nem ampliar/relaxar authority.
+
+
+
 ### 2026-10-06 — C1/C3 em andamento: avaliador sem entrada Sprint
 Publicado Code Traceability: Core 5816f51e / Community ee4cf00f, pushes confirmados.
 evaluate_reviewer_separation nao tem caller produtivo passando Sprint; somente
