@@ -4,6 +4,9 @@
 
 ### 2026-10-06 — C1/C3: retirar projeções determinísticas órfãs
 
+Publicado Core ed111904, push confirmado; Community permanece em 1d69350f,
+sem mudanças adicionais neste incremento.
+
 Rastreio conjunto dos dois repos encontrou apenas a suíte B07 como consumidora
 das projeções/currentness de recibos determinísticos; o resolver Protocol não
 possui implementação nem chamada. Retirados snapshot, comparador, projeções de
@@ -26,6 +29,12 @@ findings/documentation_findings vazios e oito budgets current=limit=0.
 Todos os handles encerrados. Sem alteração de frontend.
 C1–C4 permanecem abertos. Próximo ramo a investigar: cursores/queries e waiver
 determinísticos ainda declarados; preservar revision/impact e cursores semânticos.
+Rastreio confirmado: PolicyComplianceReceiptListQuery/PolicyComplianceFindingListQuery/
+PolicyWaiverListQuery e seus três cursores só têm consumidores nas suítes B07 e
+port_contract. Codec ainda aceita receipt/finding/waiver; retirar esses braços
+e adaptar provas de assinatura/filtro para os cursores semânticos, preservando
+revision/impact. B14 ainda exige PolicyWaiverPage em __all__: substituir essa
+expectativa quando retirar a projeção órfã, sem eliminar negações MCP.
 
 ### 2026-10-06 — C1/C3: retirar motivos de currentness exclusivos do predecessor
 
