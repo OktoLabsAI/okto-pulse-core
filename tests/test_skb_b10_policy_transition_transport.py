@@ -59,7 +59,7 @@ def _rejection() -> PolicyTransitionRejected:
         receipt_id="receipt-1",
         currentness=PolicyCurrentness.STALE,
         currentness_reasons=(
-            SemanticAssessmentCurrentnessReason.POLICY_SET_CHANGED,
+            SemanticAssessmentCurrentnessReason.BINDING_CONFIGURATION_CHANGED,
         ),
         inadmissibility_cause=None,
         failed_metric_count=0,
@@ -133,7 +133,7 @@ def test_policy_transition_rejection_projection_is_complete_and_stable() -> None
         "fence_digest": "f" * 64,
         "receipt_ids": ["receipt-1"],
         "currentness": "stale",
-        "currentness_reasons": ["policy_set_changed"],
+        "currentness_reasons": ["binding_configuration_changed"],
         "counts": {
             "applicable_metrics": 5,
             "applicable_blocking_metrics": 5,

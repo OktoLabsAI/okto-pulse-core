@@ -1424,15 +1424,6 @@ _REVALIDATION_REASON_BY_CURRENTNESS = {
     SemanticAssessmentCurrentnessReason.BINDING_CONFIGURATION_CHANGED: (
         SemanticMetricWaiverRevalidationReason.BINDING_CONFIGURATION_CHANGED
     ),
-    SemanticAssessmentCurrentnessReason.POLICY_SET_CHANGED: (
-        SemanticMetricWaiverRevalidationReason.BINDING_CONFIGURATION_CHANGED
-    ),
-    SemanticAssessmentCurrentnessReason.BINDING_HEAD_CHANGED: (
-        SemanticMetricWaiverRevalidationReason.BINDING_CONFIGURATION_CHANGED
-    ),
-    SemanticAssessmentCurrentnessReason.INPUT_DIGEST_CHANGED: (
-        SemanticMetricWaiverRevalidationReason.SUBJECT_SCOPE_CHANGED
-    ),
 }
 
 _REVALIDATION_REASON_BY_EXPIRY = {

@@ -11,6 +11,13 @@ from test_skb31_semantic_guideline_v2_findings import _receipt, _result, _pinpoi
 from test_skb3_semantic_guideline_application import _binding, _revision
 
 
+@pytest.mark.parametrize("reason", ["policy_set_changed", "binding_head_changed", "input_digest_changed"])
+def test_predecessor_currentness_reasons_are_not_native_values(reason):
+    from okto_pulse.core.domain.guideline_semantic_currentness import SemanticAssessmentCurrentnessReason
+    with pytest.raises(ValueError):
+        SemanticAssessmentCurrentnessReason(reason)
+
+
 def _fixture(edition=None):
     reference = replace(_subject(), subject_edition=edition,
                         entity_type=PolicyEntityType.SPEC if edition else PolicyEntityType.CARD)

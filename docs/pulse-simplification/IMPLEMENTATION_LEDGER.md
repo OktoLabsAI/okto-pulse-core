@@ -2,6 +2,36 @@
 
 ## Estado para retomada
 
+### 2026-10-06 — C1/C3: retirar motivos de currentness exclusivos do predecessor
+
+Retirados policy_set_changed/binding_head_changed/input_digest_changed somente
+de SemanticAssessmentCurrentnessReason, mapa de revalidação, guard SQL de evento
+de waiver e parsers/types de histórico/waiver/preview no frontend. Nenhum emissor
+nativo retornava esses três motivos desde a retirada do snapshot predecessor.
+Mantidos os motivos homônimos de guideline_compliance e guideline_impact, que
+pertencem a contratos diferentes e exigem auditoria de consumidores própria.
+Fixtures de transportes REST/MCP usam binding_configuration_changed, uma causa
+nativa real; não relaxados os campos nem a ordenação.
+
+Novas provas negativas: enum Core recusa os três valores; frontend recusa os
+valores em assessment/finding/waiver/transition com controle positivo nativo.
+Fixture SQL tenta injetar cada valor em head+event de revalidação correspondentes
+no before_flush; deve falhar no guard e reverter ao waiver aprovado, depois aceita
+o evento nativo. Isso verifica a enumeração SQL sem depender de drift do head.
+
+native-reasons-front1: 154 testes, zero falhas/erros. TypeScript/Vite/build/sync
+passaram; 79 arquivos empacotados, árvore SHA256
+e38b1f658690588ac901d497ece3d8b69b98697b279c5da3d6871ae50997824b.
+Assets novos staged antes do wheel. Par dist-native-reasons1 instalado e byte
+a byte aprovado por provenance-native-reasons1.json (Core 844/906, Community
+319/405). SHA Core
+fb197a7c9efd7c57b3110a105307b4d5f00741e4362416ce1e1aab6edab1a84c;
+Community 2798c09846d6cfd6e098e59bfee5b7006b7db9dd1776297a9e8e7a50b435ce3f.
+native-reasons-core1: 55 aprovados; native-reasons-community1: 48 aprovados.
+closure-native-reasons1: ok, findings/documentation_findings vazios; oito budgets
+current=limit=0. Ruff F/E9 e diff aprovados. Todos os handles encerrados.
+Nenhuma base/processo real alterado. C1–C4 continuam abertos.
+
 ### 2026-10-06 — C1 WIP: retirar writer, receipt e contexto semântico predecessor
 
 Publicado em feature/v0.4.0: Core 7f74b9c4 / Community eca1e716; ambos os pushes

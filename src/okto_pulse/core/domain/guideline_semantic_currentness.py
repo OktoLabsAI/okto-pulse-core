@@ -68,9 +68,6 @@ class SemanticAssessmentCurrentnessReason(str, Enum):
     GUIDELINE_REVISION_DIGEST_CHANGED = "guideline_revision_digest_changed"
     BINDING_REVISION_CHANGED = "binding_revision_changed"
     BINDING_CONFIGURATION_CHANGED = "binding_configuration_changed"
-    POLICY_SET_CHANGED = "policy_set_changed"
-    BINDING_HEAD_CHANGED = "binding_head_changed"
-    INPUT_DIGEST_CHANGED = "input_digest_changed"
 
 
 _CURRENTNESS_REASON_ORDER = tuple(SemanticAssessmentCurrentnessReason)
