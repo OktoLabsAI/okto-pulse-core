@@ -4008,6 +4008,16 @@
       "path": "okto_labs_pulse_community/frontend/src/components/board/__tests__/BoardSettingsForm.test.tsx::an unknown persisted value reads as off instead of breaking the screen",
       "disposition": "replaced",
       "reason": "Invalid Impact Evidence values no longer convert to off. Replacement verifies refusal without changes or UI writes; legitimate creation default off and current modes remain."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_default_board_configuration.py::test_ts_dcd56041_template_changes_forward_only_and_legacy_boards_compatible",
+      "disposition": "adapted",
+      "reason": "No-template snapshot is produced by native Board creation. Tests now create current Boards and require no_template_snapshot; forward-only template changes and read-only diagnostics remain covered without a legacy alias."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_default_board_config_api.py::test_diff_legacy_board_reports_no_snapshot",
+      "disposition": "adapted",
+      "reason": "No-template snapshot is produced by native Board creation. Tests now create current Boards and require no_template_snapshot; forward-only template changes and read-only diagnostics remain covered without a legacy alias."
     }
   ]
 }

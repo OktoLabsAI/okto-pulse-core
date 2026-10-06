@@ -371,9 +371,9 @@ class DefaultBoardConfigurationService:
     async def describe_board_config(self, board) -> dict[str, Any]:
         """READ-ONLY diff/state of a board's applied snapshot vs the currently
         active template (card 7da43521 exposes this via API/MCP/UI). It NEVER
-        mutates the board and NEVER backfills a legacy board (TR4/TR5):
+        mutates the board (TR4/TR5):
 
-        * a board with no snapshot is reported as ``legacy_no_snapshot`` as-is;
+        * a board with no snapshot is reported as ``no_template_snapshot`` as-is;
         * a board with a snapshot reports its ORIGINAL applied template version
           alongside the currently active one, so template changes stay
           forward-only (no live inheritance).
@@ -389,7 +389,7 @@ class DefaultBoardConfigurationService:
             }
         if snapshot is None:
             return {
-                "state": "legacy_no_snapshot",
+                "state": "no_template_snapshot",
                 "board_id": board.id,
                 "configuration_presence": "null",
                 "baseline_available": False,
@@ -458,7 +458,7 @@ class DefaultBoardConfigurationService:
         if snapshot is None:
             return {
                 "board_id": board.id,
-                "snapshot_state": "legacy_no_snapshot",
+                "snapshot_state": "no_template_snapshot",
                 "configuration_presence": "null",
                 "baseline_available": False,
                 "comparable": False,

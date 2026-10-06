@@ -2,6 +2,31 @@
 
 ## Estado para retomada
 
+### 2026-10-06 — C3 em andamento: estado nativo sem template
+Impact Evidence publicado: Core 579c23b3 / Community 4b516689; pushes confirmados.
+Retirada nomenclatura legacy_no_snapshot do contrato/UI; no_template_snapshot
+representa Board criado sem template ativo, sem alias antigo nem conversao.
+Fixture forward-only agora cria esse Board pelo fluxo nativo antes de ativar
+template. Mantida ausencia de mutacao em Boards ja criados. Corrigidos textos
+ativos de reviewer separation que ainda descreviam fallback off ja retirado.
+native-template-state-front1: 108 aprovados; build aprovado, 79 arquivos/78 assets,
+tree SHA 08a846a47a8825ce3701f2d62118da23c6f002bf77424aa05c5d04e783239388.
+Par dist-native-template-state1 instalado; provenance-native-template-state1
+aprovado byte a byte (843/905 Core, 319/405 Community).
+Core1: 32 aprovados/uma falha de fixture por db.refresh(ApplicationRecord).
+Corrigida releitura pela API atual BoardService.get_board; Core2: caso aprovado.
+Total distinto: 33 casos backend aprovados. Produto nao mudou entre campanhas.
+Closure-native-template-state1 aprovada, findings/documentation_findings vazios,
+oito budgets current=limit=0. Ruff F/E9 e diff aprovados. Handles encerrados.
+C1-C4 continuam abertos; T23/KG-10 aguardam decisao especifica.
+Proximo ramo confirmado no inventario: resolve_delivery_gate_mode converte
+settings invalido ou valor fora do enum para blocking; formulario tambem usa
+null como default. Investigar consumidores e preservar advisory/blocking e
+default legitimo de criacao; nenhuma edicao dessa cadeia neste incremento.
+Inventario de aceite integral continua historico; reavaliar criterios aplicaveis
+em C4, sem contar migracao retirada como funcionalidade pendente.
+
+
 ### 2026-10-06 — C1/C3 em andamento: Impact Evidence sem conversao
 Bases Core 0adf347e / Community 52244eb3 limpas/publicadas.
 Retirado read_tolerant de BoardGovernance e conversao invalido->off do resolver
