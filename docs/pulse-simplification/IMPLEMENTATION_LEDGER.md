@@ -2,6 +2,58 @@
 
 ## Estado para retomada
 
+### 2026-10-06 — C1/C2/C3: retirar cadeia determinística antiga
+
+Retirados cinco models/tabelas policy_compliance_receipts/adopted_revisions/
+findings, policy_waivers e policy_waiver_events, além de 14 objetos SQL exclusivos.
+Nenhum guard de tabela atual referenciava esses objetos. Removidos consumidores
+de purge/residuals, manifesto, mutation tracking e exportação. Mantida a seção
+policy_waivers do relatório, que apresenta o ledger semântico nativo com sua
+permissão própria; seu nome não constitui legado. Sem migration de DROP.
+
+Testes de criação/restart consultam sqlite_master e exigem ausência das cinco
+tabelas, além da presença nativa; cinco provas adicionais injetam schema
+incompatível e exigem recusa sem alteração de bytes/WAL. Exportação exige
+apenas tabelas nativas nas duas seções de policy. Ruff F/E9 e diff aprovados.
+Par dist-native-storage1 instalado e aprovado byte a byte por provenance-native-
+storage1.json. native-storage-schema1: 48 aprovados; native-storage-exports1:
+41 aprovados (export, escritores nativos e grafo/rebuild). Closure1 aprovado, findings/documentation_findings vazios e oito budgets zero.
+
+Core: retirados valores PolicyEvaluation/Compliance/Waiver antigos, regras e
+predicados executáveis, seus parâmetros/helpers exclusivos, AdoptedGuidelineRevisionRef
+e aliases de digest antigos. Preservados subject/binding/revision/impact atuais
+e constantes efetivamente consumidas. Dois testes B07 exclusivamente antigos
+têm disposição individual com substitutos nativos; as provas de paginação
+permanecem. B09/domain_contract passam a exigir ausência real do digest antigo;
+três suites Community usam digest_v2 explicitamente, sem defaults de migração.
+Varredura AST nos dois repos não encontrou imports quebrados dos dois módulos.
+
+Par storage2 foi instalado, mas substituído antes dos testes para preservar o
+espaçamento original fora dos cinco models retirados (sem reformatar o arquivo
+inteiro). Par final dist-native-storage3 instalado e byte a byte aprovado por
+provenance-native-storage3.json: Core 844/906, Community 319/405. SHA Core
+a8c34b715f856a62fecb897ad4940b75fbb9d6d4e1c5bbd40b8220bd0039cf27;
+Community 4718de079c7822a0874130c8f9a4105130cc36616cee4af4b17a412dfb8f3952.
+native-values-core1: 121 aprovados; community1: 22 aprovados. Closure-storage3
+aprovado, findings/documentation_findings vazios e oito budgets zero.
+Revisão final encontrou também wrapper homônimo no adapter Community: retirado;
+fixtures agora importam digest_v2 diretamente do domínio público. Par final
+storage4 instalado e aprovado byte a byte por provenance-native-storage4.json,
+mesmas contagens. SHA Community
+eb265a950de2d8075ff1b9a808dad3efb42ed2405b35d59104aa1b3dcc95b854.
+Revalidação native-values-community2: 22 aprovados. Closure-native-storage4:
+ok, findings/documentation_findings vazios e oito budgets current=limit=0.
+Todos os handles encerrados. Ruff F/E9 e diff aprovados. Nenhuma base/processo
+real foi alterado; sem alteração frontend. Nenhum Python de produto mudou após
+a prova final.
+Core permanece byte idêntico ao storage3 já testado.
+C1–C4 continuam abertos. Shim guideline_policy_transition ainda requer retirada
+com seus consumidores, substituindo imports pelo gate semântico público atual.
+Outro remanescente do inventário: PolicyEntityType ainda aceita Sprint para
+construtores/digests históricos e há guards de escrita que o recusam. A retirada
+precisa alcançar esses consumidores e suas fixtures (sem reabrir migração);
+não alterar por substituição cega enquanto o enum for acessado em caminhos atuais.
+
 ### 2026-10-06 — C1/C3: paginação apenas nos contratos atuais
 
 Publicado em feature/v0.4.0: Core f79cc9e8 / Community ceb904ac; ambos os

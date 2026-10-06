@@ -188,9 +188,9 @@ def test_domain_module_is_stdlib_only_and_active_public_surface_is_v2() -> None:
         "guideline_impact_digest_v1",
     }
     assert public.isdisjoint(retired)
-    # Transitional internals remain explicitly importable until all adapters
-    # finish migration, but wildcard/public exports cannot advertise policy/v1.
-    assert all(hasattr(guideline_policy, name) for name in retired)
+    assert all(not hasattr(guideline_policy, name) for name in retired)
+    assert not hasattr(guideline_policy, "PolicyWaiverAuthorization")
+    assert not hasattr(guideline_policy, "PolicyWaiver")
     assert "guideline_revision_content_digest_v2" in (
         guideline_lifecycle.__all__
     )
@@ -198,10 +198,8 @@ def test_domain_module_is_stdlib_only_and_active_public_surface_is_v2() -> None:
         "guideline_revision_content_digest",
         "guideline_revision_content_digest_v1",
     }.isdisjoint(guideline_lifecycle.__all__)
-    assert hasattr(
-        guideline_lifecycle,
-        "guideline_revision_content_digest_v1",
-    )
+    assert not hasattr(guideline_lifecycle, "guideline_revision_content_digest_v1")
+    assert not hasattr(guideline_lifecycle, "guideline_revision_content_digest")
 
 
 def test_guideline_identity_is_contextual_and_board_scope_is_closed() -> None:

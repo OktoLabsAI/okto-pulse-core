@@ -3487,6 +3487,18 @@
       "test": "test_finding_projection_and_severity_are_deterministic",
       "disposition": "superseded",
       "reason": "Predecessor deterministic read projection removed. test_skb31_semantic_guideline_v2_findings.py and native projection contract: current pinpoint severity, immutable finding identity and evidence. Retired rule severity ranks do not govern native findings."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_skb_b07_guideline_compliance.py",
+      "test": "test_rule_rows_and_findings_have_exact_bidirectional_integrity",
+      "disposition": "superseded",
+      "reason": "Exclusive deterministic rule receipt removed. Native counterparts: test_skb31_semantic_guideline_v2_findings.py::test_pass_creates_zero_findings_and_each_fail_creates_exactly_one; test_skb3_semantic_policy_transition_gate.py (incomplete evidence, missing/unavailable/inadmissible, Blocking/Advisory and forged decisions). Old rule error/degraded states are not a native contract."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_skb_b07_guideline_compliance.py",
+      "test": "test_unavailable_blocking_fails_closed_and_advisory_degrades",
+      "disposition": "superseded",
+      "reason": "Exclusive deterministic rule receipt removed. Native counterparts: test_skb31_semantic_guideline_v2_findings.py::test_pass_creates_zero_findings_and_each_fail_creates_exactly_one; test_skb3_semantic_policy_transition_gate.py (incomplete evidence, missing/unavailable/inadmissible, Blocking/Advisory and forged decisions). Old rule error/degraded states are not a native contract."
     }
   ]
 }

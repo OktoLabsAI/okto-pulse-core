@@ -363,35 +363,6 @@ def guideline_revision_content_digest_v2(
         raise GuidelineLifecycleError(exc.code) from exc
 
 
-def guideline_revision_content_digest_v1(
-    *,
-    title: str,
-    content: str,
-    rules: tuple[object, ...] | list[object] = (),
-    tags: tuple[str, ...] | list[str] = (),
-    semantic_version: str = "1.0.0",
-) -> str:
-    """Transitional import seam for rule-empty legacy callers.
-
-    The executable policy/v1 digest is retired: non-empty rules fail with the
-    same actionable migration diagnostic used by interchange.  Keeping this
-    symbol temporarily lets concurrent migration streams import the module
-    while they move to :func:`guideline_revision_content_digest_v2`.
-    """
-
-    if rules:
-        raise GuidelineLifecycleError("legacy_executable_rules_unsupported")
-    return guideline_revision_content_digest_v2(
-        semantic_version=semantic_version,
-        title=title,
-        content=content,
-        metrics=(),
-        tags=tags,
-    )
-
-
-# Removed at the coordinated final cut once all concurrent consumers use v2.
-guideline_revision_content_digest = guideline_revision_content_digest_v1
 
 
 def _metric_bump(
