@@ -391,13 +391,13 @@ def test_reporter_addition_does_not_break_other_presets(presets_by_name):
 # ---------------------------------------------------------------------------
 
 
-def test_role_summary_legacy_null():
-    """Agent with permissions=None (legacy Full Control) gets an explicit
-    summary that flags the legacy source of its access."""
+def test_role_summary_local_full_control():
+    """The native local sentinel is explicit and needs no legacy field."""
     from okto_pulse.core.infra.permissions import generate_role_summary
 
     summary = generate_role_summary(None)
-    assert summary.startswith("Role: Full Control (legacy)")
+    assert summary.startswith("Role: Full Control")
+    assert "legacy" not in summary
     assert "unrestricted" in summary
     assert "\n" not in summary  # single line
 
@@ -593,25 +593,6 @@ def test_operational_presets_read_architecture_without_editing(
     assert _get_nested(flags, "card.copy_from_spec.architecture") is False
 
 
-def test_legacy_permission_map_includes_architecture_flags():
-    from okto_pulse.core.infra.permissions import map_legacy_permissions
-
-    read_flags = map_legacy_permissions(["board:read"])
-    for parent in ARCHITECTURE_PARENTS:
-        assert _get_nested(read_flags, f"{parent}.architecture.read") is True
-
-    spec_update_flags = map_legacy_permissions(["specs:update"])
-    for parent in ("ideation", "refinement", "spec"):
-        for action in ("create", "edit", "delete", "import", "render"):
-            assert (
-                _get_nested(spec_update_flags, f"{parent}.architecture.{action}")
-                is True
-            )
-
-    card_update_flags = map_legacy_permissions(["cards:update"])
-    for action in ("create", "edit", "delete", "import", "render"):
-        assert _get_nested(card_update_flags, f"card.architecture.{action}") is True
-    assert _get_nested(card_update_flags, "card.copy_from_spec.architecture") is True
 
 
 # ---------------------------------------------------------------------------
@@ -695,29 +676,6 @@ def test_non_authoring_presets_read_ir_or_without_editing(presets_by_name, prese
         assert _get_nested(flags, flag) is False
 
 
-def test_legacy_permission_map_includes_ir_or_flags():
-    from okto_pulse.core.infra.permissions import map_legacy_permissions
-
-    read_flags = map_legacy_permissions(["board:read"])
-    assert _get_nested(read_flags, "spec.integration_requirements.read") is True
-    assert _get_nested(read_flags, "spec.observability_requirements.read") is True
-
-    spec_update_flags = map_legacy_permissions(["specs:update"])
-    for flag in (
-        "spec.integration_requirements.create",
-        "spec.integration_requirements.edit",
-        "spec.integration_requirements.delete",
-        "spec.integration_requirements.link_task",
-        "spec.observability_requirements.create",
-        "spec.observability_requirements.edit",
-        "spec.observability_requirements.delete",
-        "spec.observability_requirements.link_task",
-    ):
-        assert _get_nested(spec_update_flags, flag) is True
-
-    card_update_flags = map_legacy_permissions(["cards:update"])
-    assert _get_nested(card_update_flags, "card.link_to.ir") is True
-    assert _get_nested(card_update_flags, "card.link_to.or") is True
 
 
 # ---------------------------------------------------------------------------
@@ -803,32 +761,6 @@ def test_operational_presets_read_stories_topics_without_editing(
     assert _get_nested(flags, "topic.entity.delete") is False
 
 
-def test_legacy_permission_map_includes_story_topic_flags():
-    from okto_pulse.core.infra.permissions import map_legacy_permissions
-
-    read_flags = map_legacy_permissions(["board:read"])
-    assert _get_nested(read_flags, "story.entity.read") is True
-    assert _get_nested(read_flags, "story.history_read") is True
-    assert _get_nested(read_flags, "topic.entity.read") is True
-
-    create_flags = map_legacy_permissions(["specs:create"])
-    assert _get_nested(create_flags, "story.entity.create") is True
-    assert _get_nested(create_flags, "topic.entity.create") is True
-
-    update_flags = map_legacy_permissions(["specs:update"])
-    assert _get_nested(update_flags, "story.entity.edit_fields") is True
-    assert _get_nested(update_flags, "story.links.ideation") is True
-    assert _get_nested(update_flags, "story.conversion.to_ideation") is True
-    assert _get_nested(update_flags, "topic.entity.edit_fields") is True
-    assert _get_nested(update_flags, "topic.entity.merge") is True
-
-    move_flags = map_legacy_permissions(["specs:move"])
-    assert _get_nested(move_flags, "story.interact_in.ready") is True
-    assert _get_nested(move_flags, "story.move.ready_to_triage") is True
-
-    delete_flags = map_legacy_permissions(["specs:delete"])
-    assert _get_nested(delete_flags, "story.entity.delete") is True
-    assert _get_nested(delete_flags, "topic.entity.delete") is True
 
 
 
@@ -838,11 +770,11 @@ def test_legacy_permission_map_includes_story_topic_flags():
 # ---------------------------------------------------------------------------
 
 
-def test_role_summary_legacy_list_permissions():
-    """Legacy flat list permissions are mapped and summarized."""
+def test_role_summary_refuses_flat_list_permissions():
+    """Removed flat lists do not imply a role in the native contract."""
     from okto_pulse.core.infra.permissions import generate_role_summary
 
-    # A legacy agent with the default flat permission set
+    # Old input is not converted into current authority.
     legacy_perms = [
         "board:read",
         "cards:create",
@@ -855,5 +787,4 @@ def test_role_summary_legacy_list_permissions():
     summary = generate_role_summary(legacy_perms)
     assert summary.startswith("Role:")
     assert "\n" not in summary
-    # Should identify as (legacy) custom or matched preset
-    assert "legacy" in summary.lower() or "Custom" in summary
+    assert summary == "Role: unknown"

@@ -1255,7 +1255,7 @@ async def _get_agent_ctx_for_credential(
     """Authenticate a provided MCP credential and verify board access.
 
     Resolves granular PermissionSet (agent_flags ∩ board_overrides) with 60s
-    cache. Falls back to legacy flat permissions if permission_flags is not set.
+    cache. Preset lineage and direct flags use the canonical permission policy.
     """
     auth_session = await _authenticate_mcp_session(credential)
     if auth_session is None:
@@ -2359,7 +2359,7 @@ async def okto_pulse_get_my_profile() -> str:
             "description": agent.description,
             "objective": agent.objective,
             "is_active": agent.is_active,
-            "permissions": agent.permissions,
+            "permissions": agent.permissions.flags if agent.permissions is not None else None,
             "role_summary": generate_role_summary(agent.permissions),
             "created_at": agent.created_at.isoformat() if agent.created_at else None,
             "last_used_at": (
@@ -2849,7 +2849,6 @@ async def okto_pulse_list_agents(board_id: str) -> str:
     )
     from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
     from okto_pulse.core.application.use_cases.base import PermissionDeniedError
-    from okto_pulse.core.infra.permissions import generate_role_summary
 
     actor = MCPAdapterContract.actor(ctx, board_id=board_id)
     try:
@@ -2870,7 +2869,7 @@ async def okto_pulse_list_agents(board_id: str) -> str:
                     "description": a.description,
                     "objective": a.objective,
                     "is_active": a.is_active,
-                    "role_summary": generate_role_summary(a.permissions),
+                    "role_summary": a.role_summary,
                     "created_at": a.created_at.isoformat(),
                     "last_used_at": (
                         a.last_used_at.isoformat() if a.last_used_at else None

@@ -1085,6 +1085,31 @@
       "path": "okto_labs_pulse_community/tests/legacy_sprint_schema.py",
       "disposition": "superseded",
       "reason": "Upgrade-only copy of four Sprint tables and old Card columns has no remaining consumers. Three mixed suites use current schema/types and keep native context, parent reads and UTC proofs."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_presets.py::test_legacy_permission_map_includes_story_topic_flags",
+      "disposition": "superseded",
+      "reason": "Flat Agent permission conversion removed for the single native contract; native preset grants, denials and ceilings retained, old Agent payloads explicitly refused."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_presets.py::test_legacy_permission_map_includes_ir_or_flags",
+      "disposition": "superseded",
+      "reason": "Flat Agent permission conversion removed for the single native contract; native preset grants, denials and ceilings retained, old Agent payloads explicitly refused."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_presets.py::test_legacy_permission_map_includes_architecture_flags",
+      "disposition": "superseded",
+      "reason": "Flat Agent permission conversion removed for the single native contract; native preset grants, denials and ceilings retained, old Agent payloads explicitly refused."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_ska_permission_introduction.py::test_legacy_bridge_grants_only_the_closed_ra2_matrix",
+      "disposition": "superseded",
+      "reason": "Flat Agent permission conversion removed for the single native contract; native preset grants, denials and ceilings retained, old Agent payloads explicitly refused."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_presets.py::test_role_summary_legacy_list_permissions",
+      "disposition": "replaced",
+      "reason": "No flat-list conversion remains; replaced by test_role_summary_refuses_flat_list_permissions. Native preset and PermissionSet summaries retain positive coverage."
     }
   ],
   "adapted_suites": [

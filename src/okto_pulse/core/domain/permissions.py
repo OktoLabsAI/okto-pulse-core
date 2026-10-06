@@ -31,7 +31,6 @@ from okto_pulse.core.domain.mcp_permission_registry import (
     build_mcp_permission_registry_report,
 )
 from okto_pulse.core.domain.sdlc_registry import (
-    SDLC_REGISTRY,
     lifecycle_state_permission_registry,
     transition_permission_flags,
     transition_permission_registry,
@@ -2359,71 +2358,6 @@ _CANONICAL_TO_LEGACY_TOKENS: dict[str, tuple[str, ...]] = {
 }
 
 
-def map_legacy_permissions(old_permissions: list[str]) -> dict[str, Any]:
-    """Map legacy flat permissions to new granular flag structure.
-
-    Flags mapped from old permissions â†’ True. All others â†’ False.
-    All interact_in flags â†’ True (backward compat).
-    All read flags â†’ True (backward compat).
-    """
-    import copy
-
-    # Start with all False
-    flags = _set_all_flags(copy.deepcopy(PERMISSION_REGISTRY), False)
-
-    # Enable all interact_in (backward compat â€” existing agents could interact in all states)
-    for entity in ("story", "ideation", "refinement", "spec", "card"):
-        interact_in = flags.get(entity, {}).get("interact_in", {})
-        if isinstance(interact_in, dict):
-            for status in interact_in:
-                interact_in[status] = True
-
-    # Enable all read flags (backward compat)
-    for flag_path in ALL_FLAGS:
-        if flag_path.endswith(".read") or flag_path.endswith("_read"):
-            _set_nested(flags, flag_path, True)
-
-    # Map each legacy permission to new flags
-    for old_perm in old_permissions:
-        new_flags = LEGACY_PERMISSION_MAP.get(old_perm, [])
-        for flag_path in new_flags:
-            _set_nested(flags, flag_path, True)
-
-    # The SK-A introduction has one deliberately bounded legacy bridge (RA2).
-    # First erase any grant produced by broad compatibility, then re-apply
-    # exactly the five context reads and the mutations backed by the two
-    # historical authorities.  No skip/template/binding authority is created.
-    for flag_path in _INTRODUCED_PERMISSION_LEAVES:
-        _set_nested(flags, flag_path, False)
-    for flag_path in _SKA_CONTEXT_READ_LEAVES:
-        _set_nested(flags, flag_path, True)
-    if "specs:update" in old_permissions:
-        for flag_path in (
-            "ideation.quality.assess",
-            "refinement.quality.assess",
-            "refinement.research_decisions.append",
-            "spec.checklist.execute",
-        ):
-            _set_nested(flags, flag_path, True)
-    if "specs:evaluate" in old_permissions:
-        _set_nested(flags, "spec.quality.assess", True)
-    if "cards:move" in old_permissions:
-        for flag_path in transition_permission_flags("card"):
-            _set_nested(flags, flag_path, True)
-    if "specs:move" in old_permissions:
-        for entity_type in ("story", "ideation", "refinement", "spec"):
-            for flag_path in transition_permission_flags(entity_type):
-                _set_nested(flags, flag_path, True)
-        for flag_path in _NEW_SDLC_STATE_PERMISSION_LEAVES:
-            _set_nested(flags, flag_path, True)
-    if "specs:update" in old_permissions:
-        _set_nested(flags, "spec.tests.execute", True)
-        for flag_path in transition_permission_flags("test_scenario"):
-            _set_nested(flags, flag_path, True)
-        for state in SDLC_REGISTRY["test_scenario"].status_enum:
-            _set_nested(flags, f"test_scenario.interact_in.{state.value}", True)
-
-    return flags
 
 
 def _set_all_flags(d: dict[str, Any], value: bool) -> dict[str, Any]:
@@ -3602,32 +3536,20 @@ def generate_role_summary(permissions: Any) -> str:
     Empty sections are omitted. The value is always recomputed â€” never cached â€”
     so preset edits and board overrides propagate immediately.
 
-    Accepts:
-    - ``None``: legacy agent (permissions column NULL) â€” grants all by compat.
-    - ``list[str]``: legacy flat permissions â€” mapped to granular for analysis.
-    - ``dict``: granular flags (the current canonical form).
-
-    The returned string always starts with ``Role: `` and never contains
-    newlines.
+    Accepts a resolved PermissionSet, native flag tree, or the explicit local
+    Full Control sentinel (None). The result never contains newlines.
     """
-    # Legacy permissions=null â€” unrestricted by backward-compat path in
-    # has_permission/check_permission. Signal it explicitly so the agent
-    # understands the source of its access.
     if permissions is None:
-        return (
-            "Role: Full Control (legacy) | "
-            "Owns: unrestricted (permissions=null grants all)"
-        )
-
-    # Normalize to granular dict + guess preset name.
-    if isinstance(permissions, list):
-        flags = map_legacy_permissions(permissions)
-        preset_name = _match_builtin_preset_name(flags) or "Custom (legacy)"
+        return "Role: Full Control | Owns: unrestricted (local)"
+    if isinstance(permissions, PermissionSet):
+        if permissions.owner_review_required:
+            return "Role: blocked | Owner review required"
+        flags = permissions.flags
     elif isinstance(permissions, dict):
         flags = permissions
-        preset_name = _match_builtin_preset_name(flags) or "Custom"
     else:
         return "Role: unknown"
+    preset_name = _match_builtin_preset_name(flags) or "Custom"
 
     owns = [label for flag, label in _OWNS_LABELS if _get_nested(flags, flag) is True]
     cannot = [
@@ -3889,7 +3811,6 @@ __all__ = [
     "generate_role_summary",
     "get_builtin_presets",
     "has_permission",
-    "map_legacy_permissions",
     "permission_flag_overrides",
     "resolve_permission_preset_lineage",
     "resolve_permissions",

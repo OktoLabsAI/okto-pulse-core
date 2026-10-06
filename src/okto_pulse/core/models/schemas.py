@@ -119,10 +119,11 @@ class KnowledgeGovernanceResponseSchema(BaseSchema):
 class AgentCreate(BaseModel):
     """Schema for creating a new agent."""
 
+    model_config = ConfigDict(extra="forbid")
+
     name: str = Field(..., min_length=1, max_length=255)
     description: str | None = None
     objective: str | None = None
-    permissions: list[str] | None = None
     preset_id: str | None = None
     permission_flags: dict[str, Any] | None = None
 
@@ -141,11 +142,12 @@ class AgentCreate(BaseModel):
 class AgentUpdate(BaseModel):
     """Schema for updating an agent."""
 
+    model_config = ConfigDict(extra="forbid")
+
     name: str | None = Field(None, min_length=1, max_length=255)
     description: str | None = None
     objective: str | None = None
     is_active: bool | None = None
-    permissions: list[str] | None = None
     preset_id: str | None = None
     permission_flags: dict[str, Any] | None = None
 
@@ -176,7 +178,6 @@ class AgentResponse(BaseSchema):
     description: str | None
     objective: str | None = None
     is_active: bool
-    permissions: list[str] | None
     preset_id: str | None = None
     permission_flags: dict[str, Any] | None = None
     created_by: str

@@ -57,7 +57,6 @@ async def test_authenticated_planner_review_boundary_across_mcp_variants(
         await db.execute(update(Board).values(realm_id=LOCAL_REALM_ID,
                                              settings={'require_spec_validation': True}))
         agent = await db.get(Agent, 'A1')
-        agent.permissions = ['specs:evaluate']  # Explicit granular denial still wins.
         selected = {
             'spec': {
                 'entity': {'read': True, 'edit_fields': True},

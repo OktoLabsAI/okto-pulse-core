@@ -549,7 +549,6 @@ class _CoreTestPermissionPresetGateway:
     async def get_effective_permissions(self, *, user_id, board_id):
         from okto_pulse.core.infra.permissions import (
             _match_builtin_preset_name,
-            map_legacy_permissions,
             resolve_permissions,
         )
         from okto_pulse.core.ports.permission_policy import (
@@ -569,8 +568,6 @@ class _CoreTestPermissionPresetGateway:
         if agent is not None:
             if isinstance(agent.permission_flags, dict) and agent.permission_flags:
                 agent_flags = agent.permission_flags
-            elif isinstance(agent.permissions, list) and agent.permissions:
-                agent_flags = map_legacy_permissions(agent.permissions)
             if agent.preset_id:
                 preset_rows = list(
                     (
@@ -733,10 +730,12 @@ class _CoreTestAgentAuthenticationGateway:
         agent = result.scalar_one_or_none()
         if agent is None:
             return None
+        context = await self.resolve_agent_permission_context(agent.id)
         return AgentAuthSession(
             agent_id=agent.id,
             agent_name=agent.name,
             is_active=True,
+            permissions=context.permissions,
             metadata={
                 "credential_source": credential_source,
                 "realm_id": "local",
@@ -762,43 +761,34 @@ class _CoreTestAgentAuthenticationGateway:
         return result.scalar_one_or_none() is not None
 
     async def resolve_agent_permission_context(self, agent_id, *, board_id=None):
-        from okto_pulse.core.infra.permissions import resolve_permissions
+        from okto_pulse.core.ports.permission_policy import (
+            PermissionPresetLineageNode, resolve_agent_permission_facts,
+        )
 
         agent = await self._session.get(Agent, agent_id)
-        if agent is None or not bool(getattr(agent, "is_active", True)):
+        if agent is None or not agent.is_active:
             return None
-        agent_board = None
+        binding = None
         if board_id:
-            result = await self._session.execute(
-                select(AgentBoard).where(
-                    AgentBoard.agent_id == agent.id,
-                    AgentBoard.board_id == board_id,
-                )
-            )
-            agent_board = result.scalar_one_or_none()
-            if agent_board is None:
+            binding = (await self._session.execute(select(AgentBoard).where(
+                AgentBoard.agent_id == agent.id, AgentBoard.board_id == board_id,
+            ))).scalar_one_or_none()
+            if binding is None:
                 return None
-        agent_flags = getattr(agent, "permission_flags", None)
-        if agent_flags is None:
-            permissions = agent.permissions
-        else:
-            preset_flags = None
-            if agent.preset_id:
-                preset = await self._session.get(PermissionPreset, agent.preset_id)
-                if preset is not None:
-                    preset_flags = preset.flags
-            board_overrides = (
-                agent_board.permission_overrides if agent_board is not None else None
+        presets = ()
+        if agent.preset_id:
+            rows = (await self._session.execute(select(PermissionPreset))).scalars().all()
+            presets = tuple(
+                PermissionPresetLineageNode(row.id, row.flags, row.base_preset_id)
+                for row in rows
             )
-            permissions = resolve_permissions(
-                agent_flags,
-                preset_flags,
-                board_overrides,
-            )
+        permissions = resolve_agent_permission_facts(
+            agent_flags=agent.permission_flags, preset_id=agent.preset_id,
+            presets=presets,
+            board_overrides=binding.permission_overrides if binding else None,
+        )
         return AgentPermissionContext(
-            agent_id=agent.id,
-            agent_name=agent.name,
-            permissions=permissions,
+            agent_id=agent.id, agent_name=agent.name, permissions=permissions,
         )
 
 

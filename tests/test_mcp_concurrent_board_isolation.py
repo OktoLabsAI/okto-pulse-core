@@ -12,7 +12,6 @@ from okto_pulse.community.adapters.mcp_host import register_community_mcp_host
 from okto_pulse.community.adapters.sqlalchemy_models import Agent, Board
 from okto_pulse.community.adapters.sqlalchemy_unit_of_work import CommunityUnitOfWorkFactory
 from okto_pulse.core.domain.realm import LOCAL_REALM_ID
-from okto_pulse.core.infra.permissions import Permissions
 from okto_pulse.core.mcp import server
 from okto_pulse.core.ports.mcp_resources import freeze_mcp_resource_catalog
 from okto_pulse.core.runtime_registry import register_unit_of_work_factory
@@ -30,7 +29,7 @@ async def test_overlapping_http_mcp_sessions_do_not_leak_board_data_or_discovery
     register_unit_of_work_factory(CommunityUnitOfWorkFactory(factory))
     async with factory() as db:
         await db.execute(update(Board).values(realm_id=LOCAL_REALM_ID))
-        await db.execute(update(Agent).where(Agent.id.in_(['A1', 'A2'])).values(permissions=[Permissions.BOARD_READ]))
+        await db.execute(update(Agent).where(Agent.id.in_(['A1', 'A2'])).values(permission_flags=None))
         await db.commit()
 
     provider = register_community_mcp_host()

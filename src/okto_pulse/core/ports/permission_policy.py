@@ -44,7 +44,6 @@ from okto_pulse.core.domain.permissions import (
     _set_nested,
     evaluate_permission,
     get_builtin_presets,
-    map_legacy_permissions,
     permission_flag_overrides,
     resolve_permission_preset_lineage,
     resolve_permissions,
@@ -109,15 +108,13 @@ def direct_permission_review(agent_flags: object, *, preset_id: str | None) -> t
 
 
 def resolve_agent_permission_facts(
-    *, agent_flags: object, legacy_permissions: object, preset_id: str | None,
+    *, agent_flags: object, preset_id: str | None,
     presets: tuple[PermissionPresetLineageNode, ...], board_overrides: object,
     policy: PermissionPolicyPort | None = None,
 ) -> PermissionSet:
     """Resolve current edition-loaded facts through the canonical agent policy."""
     review, reason = direct_permission_review(agent_flags, preset_id=preset_id)
     direct = copy.deepcopy(agent_flags)
-    if direct is None and isinstance(legacy_permissions, list):
-        direct = map_legacy_permissions(legacy_permissions)
     preset_flags = None
     if preset_id:
         lineage = resolve_permission_preset_lineage(preset_id, presets)
@@ -151,10 +148,6 @@ def builtin_preset_name(flags: PermissionFlags) -> str | None:
     return _match_builtin_preset_name(flags)
 
 
-def legacy_permissions_to_flags(values: list[str]) -> PermissionFlags:
-    """Normalize legacy flat permissions into the canonical flag tree."""
-
-    return map_legacy_permissions(values)
 
 
 def resolve_effective_permissions(
@@ -278,7 +271,6 @@ __all__ = [
     "explicit_permission_overrides",
     "flatten_permission_flags",
     "get_permission_flag",
-    "legacy_permissions_to_flags",
     "permission_introduction_manifests",
     "registered_permission_flags",
     "resolve_effective_permissions",

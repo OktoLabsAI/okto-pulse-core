@@ -20,7 +20,7 @@ def test_current_full_control_document_and_trusted_sentinel_are_preserved():
     assert direct_permission_review(full, preset_id=None) == (False, None)
     for flags in (None, full):
         resolved = resolve_agent_permission_facts(
-            agent_flags=flags, legacy_permissions=None, preset_id=None,
+            agent_flags=flags, preset_id=None,
             presets=(), board_overrides=None,
         )
         assert not resolved.owner_review_required
@@ -47,7 +47,7 @@ def test_incomplete_or_retired_snapshot_is_not_normalized_to_full_control(varian
         flags["board"]["read"] = 1
     before = deepcopy(flags)
     resolved = resolve_agent_permission_facts(
-        agent_flags=flags, legacy_permissions=None, preset_id=None,
+        agent_flags=flags, preset_id=None,
         presets=(), board_overrides=None,
     )
     assert resolved.owner_review_required
@@ -61,7 +61,7 @@ def test_native_preset_delta_preserves_explicit_denial_and_board_ceiling():
     delta = {"guidelines": {"assessments": {"record": False}}}
     before = deepcopy(delta)
     resolved = resolve_agent_permission_facts(
-        agent_flags=delta, legacy_permissions=None, preset_id="native",
+        agent_flags=delta, preset_id="native",
         presets=(PermissionPresetLineageNode("native", full, None),),
         board_overrides=registered_permission_flags(),
     )

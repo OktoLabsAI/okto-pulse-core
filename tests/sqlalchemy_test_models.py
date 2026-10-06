@@ -2292,7 +2292,6 @@ class Agent(Base):
     )
     api_key_hash: Mapped[str] = mapped_column(String(128), nullable=False)
     is_active: Mapped[bool] = mapped_column(default=True)
-    permissions: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
     # Granular permission flags (new system) — JSON dict with nested flags
     permission_flags: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     # Preset ID — FK to permission_presets (nullable, agent may have custom flags without preset)

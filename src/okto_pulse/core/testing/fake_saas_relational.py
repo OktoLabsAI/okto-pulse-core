@@ -316,11 +316,13 @@ class _FakeAgentAuthenticationGateway:
         digest = hashlib.sha256(api_key.encode()).hexdigest()
         for agent in self._adapter._agents.values():
             if agent.api_key_hash == digest and agent.is_active:
+                context = await self.resolve_agent_permission_context(agent.agent_id)
                 return AgentAuthSession(
                     agent_id=agent.agent_id,
                     agent_name=agent.name,
                     is_active=True,
                     metadata={"credential_source": credential_source},
+                    permissions=context.permissions,
                 )
         return None
 

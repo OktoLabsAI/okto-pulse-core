@@ -2,6 +2,54 @@
 
 ## Estado para retomada
 
+### 2026-10-06 — C1/C3: contrato nativo de permissões de Agent
+
+Bases Core f3564c2d / Community 47df640c, limpas. Remoção coordenada da
+coluna flat Agent.permissions, DTOs de entrada/saída, tipos frontend e leitores.
+A sessão MCP global deve carregar PermissionSet resolvido pela porta pública;
+None não pode substituir permissões restritas. Preservar preset/delta/ceiling,
+linhagem inválida fail-closed, resumo de papel, ausência de escrita na autenticação.
+Payload antigo será recusado explicitamente. Schema novo não terá a coluna;
+bases incompatíveis continuam recusadas antes de escrita, sem migração.
+Retirada de map_legacy_permissions e wrapper exclusivo após ajuste dos consumidores
+e disposição dos testes exclusivos de conversão, concluídas. ActorContext.permissions e
+capacidades canônicas não são a coluna retirada. Fallback de operações antigas
+é dependência remanescente distinta, não declarado concluído por esta mudança.
+Par dist-native-agent1 instalado e provenance-native-agent1 aprovado byte a byte
+(843/905 Core; 319/405 Community). Frontend: 15 aprovados e build concluído,
+79 arquivos/78 assets, mesmo hash de árvore 593b727cb4d8fe7e370c4ca54513cde5994637fe6379988ac4db616018caea1e.
+Core1: 153 aprovados e uma expectativa exclusiva de conversão de role_summary;
+substituída por recusa do formato. Core2: 72 aprovados/14 falhas de fixtures:
+modelo SQL de teste ainda tinha permissions e três Boards sem realm. Removida
+a coluna também no modelo de teste e realm local explícito. Core3: 38 aprovados.
+Reforçado o preset nativo read-only nas fixtures de sessão/cache/isolamento e
+peer no painel de agentes; Core4: 16 aprovados. Community1: 91 aprovados/4 falhas
+de fixtures sem binding Checklist ou autoria semântica; Community2 progrediu
+aos gates seguintes (4 falhas/2 aprovados), Community3 aprovou handoff (4) e
+indicou falta de autoria inicial de TestScenario (2 falhas). Fixtures passam a
+registrar seus fatos nativos durante a criação, nunca no reader; nenhuma
+asserção de governança foi relaxada. Community4: dois aprovados; fluxo completo
+de Spec até Done, evidência e avaliações preservados. Total distinto de casos
+atuais aprovados: Core 192 / Community 95 (a expectativa antiga de resumo foi
+substituída e tem disposição explícita, não contada como aprovada).
+Closure-native-agent1 aprovada: findings/documentation_findings vazios, oito
+budgets current=limit=0. Catálogo gerado passou no gate byte a byte, sem edição
+manual. Ruff F/E9 e diff aprovados. SHA Core
+222a754b2666dc1368d2d00f675c632f1117f4978554645bfd06928835272561;
+Community 551cce92e4d211fba8987eaec3652f6835db1bb3491f0ea0e32b752352311311.
+Todos os handles encerrados. Nenhum Python de produto mudou desde a prova do par.
+Nenhuma base ou processo real foi alterado. Commits/pushes deste incremento
+pendentes de registro final.
+
+Próxima dependência concreta: LEGACY_PERMISSION_MAP/_CANONICAL_TO_LEGACY_TOKENS
+em domain/permissions.py ainda sustentam fallback de PermissionContext.legacy_operation;
+MCP _mcp_check_permission, kg_authorization.kg_permission_error e
+services.permission_policy.check_story_state_permission também aceitam tokens antigos.
+Retirar essas alternativas com os callers e testes correspondentes. Preservar
+as duplas de folhas canônicas que hoje governam permissões introduzidas; remover
+o fallback flat não autoriza relaxar essas negações nativas. C1–C4 e decisões
+BASE T23/KG-10 permanecem abertos; este incremento não certifica a entrega total.
+
 ### 2026-10-06 — C1/C3: retirada da normalização histórica de permissões
 
 Bases Core 876d4b20 / Community 7de94180. Retirados normalizador de snapshots

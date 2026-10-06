@@ -1265,53 +1265,42 @@ async def resolve_user_permissions(db, user_id: str, board_id: str):
         # this keeps paginated REST authorization inside its <=6 SQL budget.
         return await compact_resolver(db, user_id=user_id, board_id=board_id)
 
-    from okto_pulse.core.infra.permissions import (
-        map_legacy_permissions,
-        resolve_permissions,
+    from okto_pulse.core.ports.permission_policy import (
+        PermissionPresetLineageNode,
+        resolve_agent_permission_facts,
     )
 
     agents = await _application_list(
-        db,
-        "agent",
-        filters=(_apf("created_by", "eq", user_id),),
-        limit=1,
+        db, "agent", filters=(_apf("created_by", "eq", user_id),), limit=1,
     )
     agent = agents[0] if agents else None
-
-    agent_flags: dict | None = None
-    preset_flags: dict | None = None
-    board_overrides: dict | None = None
-
+    presets = ()
+    board_overrides = None
     if agent is not None:
-        if isinstance(agent.permission_flags, dict):
-            agent_flags = agent.permission_flags
-        elif isinstance(agent.permissions, list) and agent.permissions:
-            agent_flags = map_legacy_permissions(agent.permissions)
-
         if agent.preset_id:
-            preset = await _application_get(
-                db,
-                "permission_preset",
-                agent.preset_id,
+            rows = await _application_list(db, "permission_preset")
+            presets = tuple(
+                PermissionPresetLineageNode(row.id, row.flags, row.base_preset_id)
+                for row in rows
             )
-            if preset and preset.flags is not None:
-                preset_flags = preset.flags
-
         if board_id:
-            agent_boards = await _application_list(
-                db,
-                "agent_board",
+            bindings = await _application_list(
+                db, "agent_board",
                 filters=(
                     _apf("agent_id", "eq", agent.id),
                     _apf("board_id", "eq", board_id),
                 ),
                 limit=1,
             )
-            agent_board = agent_boards[0] if agent_boards else None
-            if agent_board and isinstance(agent_board.permission_overrides, dict):
-                board_overrides = agent_board.permission_overrides
+            if bindings:
+                board_overrides = bindings[0].permission_overrides
 
-    return resolve_permissions(agent_flags, preset_flags, board_overrides)
+    return resolve_agent_permission_facts(
+        agent_flags=agent.permission_flags if agent is not None else None,
+        preset_id=agent.preset_id if agent is not None else None,
+        presets=presets,
+        board_overrides=board_overrides,
+    )
 
 
 def _board_qa_require_role_separation(board: ApplicationRecord | None) -> bool:
@@ -7658,7 +7647,6 @@ class AgentService:
             objective=data.objective,
             api_key=self.credential_marker(key_hash),
             api_key_hash=key_hash,
-            permissions=data.permissions,
             preset_id=preset_id,
             permission_flags=flags,
             created_by=user_id,
@@ -7725,12 +7713,33 @@ class AgentService:
             else []
         )
         grants_by_agent = {grant.agent_id: grant for grant in grants}
+        from okto_pulse.core.domain.permissions import generate_role_summary
+        from okto_pulse.core.ports.permission_policy import (
+            PermissionPresetLineageNode,
+            resolve_agent_permission_facts,
+        )
+
+        preset_rows = (
+            await _application_list(self.db, "permission_preset")
+            if any(agent.preset_id for agent in agents) else []
+        )
+        presets = tuple(
+            PermissionPresetLineageNode(row.id, row.flags, row.base_preset_id)
+            for row in preset_rows
+        )
         for agent in agents:
             grant = grants_by_agent.get(agent.id)
             agent.attach(
                 "permission_overrides",
                 getattr(grant, "permission_overrides", None),
             )
+            resolved = resolve_agent_permission_facts(
+                agent_flags=agent.permission_flags,
+                preset_id=agent.preset_id,
+                presets=presets,
+                board_overrides=getattr(grant, "permission_overrides", None),
+            )
+            agent.attach("role_summary", generate_role_summary(resolved))
         return agents
 
     async def list_agents(self, board_id: str) -> list[ApplicationRecord]:

@@ -12,6 +12,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
+from native_permission_fixtures import native_permission_flags
 from okto_pulse.core.infra.permissions import Permissions
 from okto_pulse.core.mcp import server as mcp_server
 from sqlalchemy_test_models import (
@@ -21,6 +22,7 @@ from sqlalchemy_test_models import (
     Board,
     Card,
     Comment,
+    PermissionPreset,
 )
 from okto_pulse.core.services import AgentService
 
@@ -71,7 +73,9 @@ async def _seed_profile_activity_fixture(db_factory) -> dict[str, str]:
     key_hash = AgentService.hash_api_key(_id("api-key"))
     peer_key_hash = AgentService.hash_api_key(_id("api-key-peer"))
     async with db_factory() as db:
-        db.add(Board(id=board_id, name="AF35 S4 Board", description="Board", owner_id="owner"))
+        db.add(PermissionPreset(id="peer-reader", name="Reader", owner_id="owner",
+            flags=native_permission_flags("board.read")))
+        db.add(Board(id=board_id, realm_id="local", name="AF35 S4 Board", description="Board", owner_id="owner"))
         db.add(
             Agent(
                 id=agent_id,
@@ -80,7 +84,7 @@ async def _seed_profile_activity_fixture(db_factory) -> dict[str, str]:
                 objective="old objective",
                 api_key=AgentService.credential_marker(key_hash),
                 api_key_hash=key_hash,
-                permissions=Permissions.DEFAULT,
+                permission_flags=None,
                 created_by="owner",
                 created_at=now,
             )
@@ -93,7 +97,7 @@ async def _seed_profile_activity_fixture(db_factory) -> dict[str, str]:
                 objective="peer objective",
                 api_key=AgentService.credential_marker(peer_key_hash),
                 api_key_hash=peer_key_hash,
-                permissions=[Permissions.BOARD_READ],
+                preset_id="peer-reader", permission_flags={},
                 created_by="owner",
                 created_at=now,
             )

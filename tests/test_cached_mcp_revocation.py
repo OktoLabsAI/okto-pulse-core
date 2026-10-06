@@ -5,7 +5,6 @@ from sqlalchemy import update
 
 from okto_pulse.community.adapters.mcp_host import CommunityMcpHostProvider
 from okto_pulse.community.adapters.sqlalchemy_unit_of_work import CommunityUnitOfWorkFactory
-from okto_pulse.core.infra.permissions import Permissions
 from okto_pulse.core.mcp import server
 from okto_pulse.core.ports import McpCredential
 from okto_pulse.core.ports.mcp_resources import freeze_mcp_resource_catalog
@@ -27,7 +26,7 @@ async def test_cached_catalog_cannot_authorize_revoked_access(_harness_env, monk
         # The older auth-only fixture omits realm; actual Board reads are scoped.
         await db.execute(update(Board).values(realm_id=LOCAL_REALM_ID))
         agent = await db.get(Agent, 'A1')
-        agent.permissions = [Permissions.BOARD_READ]
+        agent.permission_flags = None
         await db.commit()
 
     # In-process FastMCP has no HTTP request; supply only the extracted credential.

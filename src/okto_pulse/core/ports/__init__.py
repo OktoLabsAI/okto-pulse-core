@@ -176,7 +176,6 @@ from .permission_policy import (
     builtin_preset_name,
     flatten_permission_flags,
     get_permission_flag,
-    legacy_permissions_to_flags,
     resolve_effective_permissions,
     set_permission_flag,
 )
@@ -416,7 +415,6 @@ __all__ = [
     "get_takedown_telemetry_read_port",
     "get_session_factory",
     "get_write_lock_port",
-    "legacy_permissions_to_flags",
     "close_db",
     "configure_database_runtime",
     "init_db",

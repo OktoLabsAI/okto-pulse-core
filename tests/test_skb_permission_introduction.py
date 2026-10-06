@@ -18,7 +18,6 @@ from okto_pulse.core.domain.permissions import (
     SKB3_PERMISSION_INTRODUCTION_V1,
     _get_nested,
     get_builtin_presets,
-    map_legacy_permissions,
     resolve_permissions,
 )
 from okto_pulse.core.ports.permission_policy import (
@@ -194,10 +193,7 @@ def test_introduced_leaves_fail_closed_and_require_historical_authority() -> Non
         assert PermissionSet(both).has(leaf) is True
 
 
-def test_legacy_bridge_and_native_materialized_ceiling_stay_fail_closed() -> None:
-    assert _values(map_legacy_permissions(["board:read", "specs:update"])) == {
-        leaf: False for leaf in LEAVES
-    }
+def test_native_materialized_ceiling_stays_fail_closed() -> None:
 
     full = next(
         preset["flags"]

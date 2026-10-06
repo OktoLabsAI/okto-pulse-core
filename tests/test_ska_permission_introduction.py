@@ -14,7 +14,6 @@ from okto_pulse.core.domain.permissions import (
     _get_nested,
     evaluate_permission,
     get_builtin_presets,
-    map_legacy_permissions,
     permission_flag_overrides,
     resolve_permission_preset_lineage,
     resolve_permissions,
@@ -99,29 +98,6 @@ def test_builtin_preset_matrix_is_exact() -> None:
         )
 
 
-def test_legacy_bridge_grants_only_the_closed_ra2_matrix() -> None:
-    legacy = map_legacy_permissions(["board:read", "specs:update"])
-    expected = {
-        **{leaf: True for leaf in READS},
-        "ideation.quality.assess": True,
-        "refinement.quality.assess": True,
-        "refinement.research_decisions.append": True,
-        "spec.checklist.execute": True,
-        "spec.quality.assess": False,
-    }
-    assert _values(legacy) == expected
-    resolved = PermissionSet(legacy)
-    assert all(resolved.has(leaf) for leaf, enabled in expected.items() if enabled)
-    assert resolved.has("spec.quality.assess") is False
-
-    evaluator = PermissionSet(map_legacy_permissions(["specs:evaluate"]))
-    assert all(evaluator.has(leaf) for leaf in READS)
-    assert evaluator.has("spec.quality.assess") is True
-    assert evaluator.has("ideation.quality.assess") is False
-
-    reads_only = PermissionSet(map_legacy_permissions([]))
-    assert all(reads_only.has(leaf) for leaf in READS)
-    assert all(reads_only.has(leaf) is False for leaf in LEAVES - READS)
 
 
 

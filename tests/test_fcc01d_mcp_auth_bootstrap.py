@@ -12,7 +12,7 @@ from pathlib import Path
 import pytest
 from sqlalchemy import select
 
-from okto_pulse.core.infra.permissions import Permissions, map_legacy_permissions
+from okto_pulse.core.ports.permission_policy import PermissionSet, registered_permission_flags, set_permission_flag
 from okto_pulse.core.mcp import server as mcp_server
 from sqlalchemy_test_models import Agent, AgentBoard, Board, PermissionPreset
 from okto_pulse.core.ports import AgentAuthSession, McpCredential
@@ -111,7 +111,7 @@ async def test_authenticate_mcp_credential_uses_registered_authenticator() -> No
                 is_active=True,
                 description="Auth regression agent",
                 objective="Preserve the MCP profile contract",
-                permissions=[Permissions.BOARD_READ],
+                permissions=PermissionSet(_native_flags("board.read")),
                 created_at=datetime(2026, 7, 13, tzinfo=timezone.utc),
                 metadata={"credential_source": "query_param"},
             ),
@@ -133,7 +133,8 @@ async def test_authenticate_mcp_credential_uses_registered_authenticator() -> No
     assert resolved.name == "FCC01D Agent"
     assert resolved.description == "Auth regression agent"
     assert resolved.objective == "Preserve the MCP profile contract"
-    assert resolved.permissions == [Permissions.BOARD_READ]
+    assert resolved.permissions.has("board.read")
+    assert not resolved.permissions.has("profile.update")
     assert resolved.created_at == datetime(2026, 7, 13, tzinfo=timezone.utc)
     assert resolved.api_key != secret
     assert secret not in repr(resolved)
@@ -153,36 +154,48 @@ def _id(prefix: str) -> str:
     return f"{prefix}-{uuid.uuid4().hex[:12]}"
 
 
+def _native_flags(*grants):
+    flags = registered_permission_flags()
+    def deny(tree):
+        for key, value in tree.items():
+            if isinstance(value, dict):
+                deny(value)
+            else:
+                tree[key] = False
+    deny(flags)
+    for grant in grants:
+        set_permission_flag(flags, grant, True)
+    return flags
+
+
 async def _seed_context_fixture(db_factory) -> dict[str, str]:
     board_id = _id("board-fcc01d")
-    legacy_agent_id = _id("agent-legacy")
+    native_agent_id = _id("agent-native")
     granular_agent_id = _id("agent-granular")
     denied_agent_id = _id("agent-denied")
     preset_id = _id("preset-fcc01d")
     now = datetime.now(timezone.utc)
 
     async with db_factory() as db:
-        db.add(Board(id=board_id, name="FCC01D Board", owner_id="owner"))
+        db.add(Board(id=board_id, realm_id="local", name="FCC01D Board", owner_id="owner"))
         db.add(
             PermissionPreset(
                 id=preset_id,
                 name="FCC01D Preset",
                 owner_id="owner",
-                flags=map_legacy_permissions(
-                    [Permissions.BOARD_READ, Permissions.CARDS_CREATE]
-                ),
+                flags=_native_flags("board.read", "card.entity.create"),
             )
         )
         db.add(
             Agent(
-                id=legacy_agent_id,
-                name="Legacy Agent",
+                id=native_agent_id,
+                name="Native Agent",
                 api_key=AgentService.credential_marker(
-                    AgentService.hash_api_key("legacy-key")
+                    AgentService.hash_api_key("native-key")
                 ),
-                api_key_hash=AgentService.hash_api_key("legacy-key"),
-                permissions=[Permissions.BOARD_READ],
-                permission_flags=None,
+                api_key_hash=AgentService.hash_api_key("native-key"),
+                permission_flags={"card": {"entity": {"create": False}}},
+                preset_id=preset_id,
                 is_active=True,
                 created_by="owner",
                 created_at=now,
@@ -196,7 +209,6 @@ async def _seed_context_fixture(db_factory) -> dict[str, str]:
                     AgentService.hash_api_key("granular-key")
                 ),
                 api_key_hash=AgentService.hash_api_key("granular-key"),
-                permissions=[],
                 permission_flags={"card": {"entity": {"create": True}}},
                 preset_id=preset_id,
                 is_active=True,
@@ -212,14 +224,14 @@ async def _seed_context_fixture(db_factory) -> dict[str, str]:
                     AgentService.hash_api_key("denied-key")
                 ),
                 api_key_hash=AgentService.hash_api_key("denied-key"),
-                permissions=[Permissions.BOARD_READ],
-                permission_flags=None,
+                permission_flags={"card": {"entity": {"create": False}}},
+                preset_id=preset_id,
                 is_active=True,
                 created_by="owner",
                 created_at=now,
             )
         )
-        db.add(AgentBoard(agent_id=legacy_agent_id, board_id=board_id, granted_by="owner"))
+        db.add(AgentBoard(agent_id=native_agent_id, board_id=board_id, granted_by="owner"))
         db.add(
             AgentBoard(
                 agent_id=granular_agent_id,
@@ -232,7 +244,7 @@ async def _seed_context_fixture(db_factory) -> dict[str, str]:
 
     return {
         "board_id": board_id,
-        "legacy_agent_id": legacy_agent_id,
+        "native_agent_id": native_agent_id,
         "granular_agent_id": granular_agent_id,
         "denied_agent_id": denied_agent_id,
     }
@@ -246,9 +258,9 @@ async def test_agent_context_board_and_global_parity(
     ids = await _seed_context_fixture(db_factory)
     authenticator = _StaticMcpAuthenticator(
         {
-            "legacy-key": AgentAuthSession(
-                agent_id=ids["legacy_agent_id"],
-                agent_name="Legacy Agent",
+            "native-key": AgentAuthSession(
+                agent_id=ids["native_agent_id"],
+                agent_name="Native Agent",
                 is_active=True,
                 metadata={"realm_id": "local"},
             ),
@@ -272,15 +284,16 @@ async def test_agent_context_board_and_global_parity(
     )
 
     board_id = ids["board_id"]
-    legacy_credential = McpCredential(source="query_param", value="legacy-key")
-    legacy_ctx = await mcp_server._get_agent_ctx_for_credential(
+    native_credential = McpCredential(source="query_param", value="native-key")
+    native_ctx = await mcp_server._get_agent_ctx_for_credential(
         board_id,
-        legacy_credential,
+        native_credential,
     )
-    assert legacy_ctx is not None
-    assert legacy_ctx.agent_id == ids["legacy_agent_id"]
-    assert legacy_ctx.board_id == board_id
-    assert legacy_ctx.permissions == [Permissions.BOARD_READ]
+    assert native_ctx is not None
+    assert native_ctx.agent_id == ids["native_agent_id"]
+    assert native_ctx.board_id == board_id
+    assert native_ctx.permissions.has("board.read")
+    assert not native_ctx.permissions.has("card.entity.create")
 
     granular_ctx = await mcp_server._get_agent_ctx_for_credential(
         board_id,
@@ -310,15 +323,15 @@ async def test_agent_context_board_and_global_parity(
     )
     cached_ctx = await mcp_server._get_agent_ctx_for_credential(
         board_id,
-        legacy_credential,
+        native_credential,
     )
-    assert cached_ctx is legacy_ctx
+    assert cached_ctx is native_ctx
 
     async with db_factory() as db:
         grant = (
             await db.execute(
                 select(AgentBoard).where(
-                    AgentBoard.agent_id == ids["legacy_agent_id"],
+                    AgentBoard.agent_id == ids["native_agent_id"],
                     AgentBoard.board_id == board_id,
                 )
             )
@@ -328,7 +341,7 @@ async def test_agent_context_board_and_global_parity(
 
     revoked_ctx = await mcp_server._get_agent_ctx_for_credential(
         board_id,
-        legacy_credential,
+        native_credential,
     )
     assert revoked_ctx is None
 
@@ -355,7 +368,7 @@ async def test_agent_context_board_and_global_parity(
                 select(Agent).where(
                     Agent.id.in_(
                         [
-                            ids["legacy_agent_id"],
+                            ids["native_agent_id"],
                             ids["granular_agent_id"],
                             ids["denied_agent_id"],
                         ]
