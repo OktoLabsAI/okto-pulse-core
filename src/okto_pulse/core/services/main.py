@@ -17238,7 +17238,7 @@ class GuidelineService:
             return None
 
         from okto_pulse.core.domain.guideline_policy import PolicyEntityType
-        from okto_pulse.core.domain.guideline_policy_transition import (
+        from okto_pulse.core.domain.guideline_semantic_transition import (
             evaluate_policy_transition,
         )
 
@@ -17272,7 +17272,7 @@ class GuidelineService:
         if decision is None:
             return None
 
-        from okto_pulse.core.domain.guideline_policy_transition import (
+        from okto_pulse.core.domain.guideline_semantic_transition import (
             raise_for_policy_transition,
         )
 

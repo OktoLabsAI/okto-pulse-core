@@ -4755,7 +4755,7 @@ async def okto_pulse_move_card(
         McpMoveCardUseCase,
     )
     from okto_pulse.core.application.use_cases.base import EntityNotFoundError
-    from okto_pulse.core.domain.guideline_policy_transition import (
+    from okto_pulse.core.domain.guideline_semantic_transition import (
         PolicyTransitionRejected,
     )
     from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
@@ -7346,7 +7346,7 @@ async def okto_pulse_move_ideation(
         MoveIdeationCommand,
         MoveIdeationUseCase,
     )
-    from okto_pulse.core.domain.guideline_policy_transition import (
+    from okto_pulse.core.domain.guideline_semantic_transition import (
         PolicyTransitionRejected,
     )
     from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
@@ -8658,7 +8658,7 @@ async def okto_pulse_move_refinement(
         McpMoveRefinementUseCase,
     )
     from okto_pulse.core.application.use_cases.base import EntityNotFoundError
-    from okto_pulse.core.domain.guideline_policy_transition import (
+    from okto_pulse.core.domain.guideline_semantic_transition import (
         PolicyTransitionRejected,
     )
     from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
@@ -11262,7 +11262,7 @@ async def okto_pulse_move_spec(
         McpMoveSpecUseCase,
     )
     from okto_pulse.core.application.use_cases.base import EntityNotFoundError
-    from okto_pulse.core.domain.guideline_policy_transition import (
+    from okto_pulse.core.domain.guideline_semantic_transition import (
         PolicyTransitionRejected,
     )
     from okto_pulse.core.domain.human_validation_cycle import (
@@ -11742,7 +11742,7 @@ async def okto_pulse_update_test_scenario_status(
         SetTestScenarioStatusCommand,
         SetTestScenarioStatusUseCase,
     )
-    from okto_pulse.core.domain.guideline_policy_transition import (
+    from okto_pulse.core.domain.guideline_semantic_transition import (
         PolicyTransitionRejected,
     )
     from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
@@ -17515,7 +17515,7 @@ async def okto_pulse_submit_task_validation(
         SubmitTaskValidationCommand,
         SubmitTaskValidationUseCase,
     )
-    from okto_pulse.core.domain.guideline_policy_transition import (
+    from okto_pulse.core.domain.guideline_semantic_transition import (
         PolicyTransitionRejected,
     )
     from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
@@ -18817,7 +18817,7 @@ async def okto_pulse_submit_spec_validation(
         SubmitSpecValidationCommand,
         SubmitSpecValidationUseCase,
     )
-    from okto_pulse.core.domain.guideline_policy_transition import (
+    from okto_pulse.core.domain.guideline_semantic_transition import (
         PolicyTransitionRejected,
     )
     from okto_pulse.core.domain.spec_validation import (

@@ -1,12 +1,12 @@
-"""Compatibility-path checks for the SK-B3 semantic native gate."""
+"""Closed public contract for the semantic native gate."""
 
 from __future__ import annotations
 
 from dataclasses import fields
+from importlib.util import find_spec
 
-import okto_pulse.core.domain.guideline_policy_transition as public_gate
-import okto_pulse.core.domain.guideline_semantic_transition as semantic_gate
-from okto_pulse.core.domain.guideline_policy_transition import (
+import okto_pulse.core.domain.guideline_semantic_transition as public_gate
+from okto_pulse.core.domain.guideline_semantic_transition import (
     PolicyTransitionDecision,
     PolicyTransitionDiagnosticCode,
     PolicyTransitionReasonCode,
@@ -14,20 +14,12 @@ from okto_pulse.core.domain.guideline_policy_transition import (
 )
 
 
-def test_historical_module_path_exports_the_active_semantic_contract() -> None:
+def test_native_gate_has_no_compatibility_import_path() -> None:
     assert (
         public_gate.POLICY_TRANSITION_CONTRACT_VERSION
         == "semantic-policy-transition/v2"
     )
-    assert public_gate.PolicyTransitionSnapshot is (
-        semantic_gate.PolicyTransitionSnapshot
-    )
-    assert public_gate.PolicyTransitionDecision is (
-        semantic_gate.PolicyTransitionDecision
-    )
-    assert public_gate.evaluate_policy_transition is (
-        semantic_gate.evaluate_policy_transition
-    )
+    assert find_spec("okto_pulse.core.domain.guideline_policy_transition") is None
 
 
 def test_transition_contract_has_no_executable_rule_fields_or_states() -> None:

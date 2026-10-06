@@ -28,7 +28,7 @@ from okto_pulse.core.domain.guideline_policy import (
 from okto_pulse.core.domain.guideline_semantic_currentness import (
     NativeSemanticAssessmentCurrentSnapshot,
 )
-from okto_pulse.core.domain.guideline_policy_transition import (
+from okto_pulse.core.domain.guideline_semantic_transition import (
     PolicyTransitionReasonCode,
     PolicyTransitionSnapshot,
     SemanticBindingComplianceSnapshot,

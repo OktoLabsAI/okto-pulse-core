@@ -16,7 +16,7 @@ from okto_pulse.core.domain.guideline_policy import (
 from okto_pulse.core.domain.guideline_semantic_currentness import (
     SemanticAssessmentCurrentnessReason,
 )
-from okto_pulse.core.domain.guideline_policy_transition import (
+from okto_pulse.core.domain.guideline_semantic_transition import (
     PolicyTransitionDecision,
     PolicyTransitionDiagnosticCode,
     PolicyTransitionReasonCode,
@@ -202,7 +202,7 @@ def test_mcp_mutations_catch_policy_rejection_before_value_error(
     )
     assert any(
         isinstance(node, ast.ImportFrom)
-        and node.module == "okto_pulse.core.domain.guideline_policy_transition"
+        and node.module == "okto_pulse.core.domain.guideline_semantic_transition"
         and any(alias.name == "PolicyTransitionRejected" for alias in node.names)
         for node in ast.walk(handler)
     )

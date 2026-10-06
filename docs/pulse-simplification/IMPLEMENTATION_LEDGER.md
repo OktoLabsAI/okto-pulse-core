@@ -2,6 +2,38 @@
 
 ## Estado para retomada
 
+### 2026-10-06 — C3: caminho único para o gate semântico
+
+Retirado guideline_policy_transition.py, que apenas reexportava o gate atual
+para compatibilidade de imports. Aplicação, serviços, portas, MCP, REST e adapter
+passam a importar guideline_semantic_transition diretamente. Nenhuma regra do
+gate mudou. Teste B10 exige ausência do módulo antigo; provas de vocabulário,
+campos, projeção de erros e ordem dos handlers permanecem. Histórico de engenharia
+que registra o caminho antigo não foi reescrito.
+
+Ruff F/E9 e diff aprovados. Par dist-native-gate-path1 instalado e byte a byte
+aprovado por provenance-native-gate-path1.json: Core 843/905, Community 319/405.
+native-gate-path-core1: 39 aprovados; community1: 58 aprovados. Closure1 encontrou
+somente drift de matriz README, sem findings e com oito budgets zero. Matrizes
+regeneradas pelo gerador oficial. Par final dist-native-gate-path2 instalado,
+byte a byte aprovado por provenance-native-gate-path2.json, mesmas contagens.
+SHA Core fffe9f5a5cff78d1c1420e7a2bb992e600cc459bcf1ba7c5a25520b28820acba;
+Community 1f12fafd3b3973fcea3ab2f3b1c0aa63f70fb0b0c06faf1a4709e232c5bad23d.
+Python idêntico ao par dos testes; somente README mudou após eles. Closure2
+aprovado: findings/documentation_findings vazios e oito budgets current=limit=0.
+Todos os handles encerrados; nenhum Python mudou após a prova final. Próximo: contrato PolicyEntityType
+ainda admite Sprint em domínio, quatro constraints SQL e tipos/parsers frontend;
+retirar coordenadamente com as fixtures históricas, preservando negações atuais.
+Inventário da próxima retirada: enum em guideline_policy; lista de campos Sprint
+em guideline_semantic_snapshot; helper require_writable_guideline_revision e
+require_writable_guideline_import_entry/callers; guard genérico de tipo no port
+permanece. SQL: SemanticSubjectVersionEventRow/VersionRow/WaiverRow/SkipRow e
+trg_semantic_guideline_v3_revision_insert. Frontend: PolicyWaiverPanel/model e
+PolicyEntityType/ActivePolicyEntityType (este último usado no guidelineEditorShared).
+Suítes mistas Core/Community F3 precisam adaptar rejeições para entrada inválida,
+retirar só replay/leitura de Sprint e preservar autoria/replay/waiver nativos.
+C1–C4 continuam abertos.
+
 ### 2026-10-06 — C1/C2/C3: retirar cadeia determinística antiga
 
 Publicado em feature/v0.4.0: Core 15296b22 / Community fe9c06f9; ambos os

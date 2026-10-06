@@ -29,7 +29,7 @@ from okto_pulse.core.domain.sdlc_registry import (
     lifecycle_definition,
     transition_contracts,
 )
-from okto_pulse.core.domain.guideline_policy_transition import (
+from okto_pulse.core.domain.guideline_semantic_transition import (
     PolicyTransitionDecision,
 )
 from okto_pulse.core.domain.card_transition import (

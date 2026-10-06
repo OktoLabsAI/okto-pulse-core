@@ -57,7 +57,7 @@ from okto_pulse.core.domain.guideline_import_export import (
     require_writable_guideline_import_entry,
 )
 from okto_pulse.core.domain.guideline_lifecycle import require_writable_guideline_revision
-from okto_pulse.core.domain.guideline_policy_transition import (
+from okto_pulse.core.domain.guideline_semantic_transition import (
     PolicyTransitionSnapshot,
 )
 from okto_pulse.core.domain.guideline_semantic_assessment import (
