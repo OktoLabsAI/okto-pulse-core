@@ -3,6 +3,7 @@
 ## Estado para retomada
 
 ### 2026-10-06 — C3 em andamento: estado nativo sem template
+Publicado: Core a99a45b9 / Community 861edb7c, pushes confirmados.
 Impact Evidence publicado: Core 579c23b3 / Community 4b516689; pushes confirmados.
 Retirada nomenclatura legacy_no_snapshot do contrato/UI; no_template_snapshot
 representa Board criado sem template ativo, sem alias antigo nem conversao.
