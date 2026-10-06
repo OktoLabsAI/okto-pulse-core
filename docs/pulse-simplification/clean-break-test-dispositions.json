@@ -1080,6 +1080,11 @@
       "path": "okto_labs_pulse_community/tests/semantic_schema_assertions.py",
       "disposition": "superseded",
       "reason": "Orphaned offline predecessor schema qualifier; no callers remain. Current schema shape and incompatible-store refusal are exercised by test_current_relational_schema.py."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/legacy_sprint_schema.py",
+      "disposition": "superseded",
+      "reason": "Upgrade-only copy of four Sprint tables and old Card columns has no remaining consumers. Three mixed suites use current schema/types and keep native context, parent reads and UTC proofs."
     }
   ],
   "adapted_suites": [
@@ -2089,6 +2094,18 @@
     {
       "path": "okto_labs_pulse_community/frontend/src/components/policy-compliance/__tests__/PolicyWaiverPanel.test.tsx",
       "reason": "All five old Sprint waiver statuses are refused instead of displayed read-only; no rows or mutations. Native waiver cases preserved."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_f3_critical_context_retirement.py",
+      "reason": "Replaces migrated/unmigrated Sprint fixtures with current schema and native activity history. Keeps unsupported-type no-query refusal, read-only SQL, dependency/context fidelity, stable unchanged fingerprint and semantic-change invalidation."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_f3_parent_artifact_retirement.py",
+      "reason": "Current schema only; keeps unsupported/unknown-type rejection before SQL, exact native parents, missing/duplicate references, input immutability and select-only reads."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_cancelled_at_utc_roundtrip.py",
+      "reason": "Current cancellable entities only; keeps timezone-preserving type and actual SQLite normalization/roundtrip. SQLite naive datetimes are current driver behavior, not migration support."
     }
   ],
   "removed_cases": [

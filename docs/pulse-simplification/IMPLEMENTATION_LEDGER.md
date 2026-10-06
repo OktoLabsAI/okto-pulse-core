@@ -2,6 +2,24 @@
 
 ## Estado para retomada
 
+### 2026-10-06 — C3: retirada das fixtures de schema Sprint
+
+Três consumidores mistos adaptados ao schema atual; removida cópia executável
+legacy_sprint_schema.py (quatro tabelas e colunas antigas de Card). Busca Python
+nos dois repos não encontrou consumidores restantes. Preservadas negações antes
+de SQL, fingerprint/contexto nativos, atividade atual, leitura exata dos pais e
+normalização de timezone do driver SQLite. Disposição registrada individualmente.
+Nenhum Python de produto ou frontend mudou; vale o par targets2 byte-proven.
+Campanha native-fixtures-final1: oito aprovados/três falhas por fixture Spec
+sem architecture_adoption obrigatório. Fixtures recebem adoção e contrato de
+execução nativos explícitos, sem alterar produto nem guard. native-fixtures-final2:
+11 aprovados. Ruff F/E9 e diff aprovados; todos os handles encerrados. O par de
+produto e closure targets2 permanecem inalterados; nenhuma nova execução de
+closure é alegada neste incremento exclusivamente de testes/documentação.
+Community publicado em 3852dc89, push confirmado. Próxima verificação: coleta
+das suítes atuais para localizar consumidores quebrados de contratos retirados;
+coleta não constitui execução/aprovação dos cenários. C1–C4 permanecem abertos.
+
 ### 2026-10-06 — C1/C3: contrato Policy sem Sprint
 
 Retirado Sprint do enum PolicyEntityType, manifest de snapshot, quatro constraints
@@ -26,7 +44,8 @@ mesmas contagens e mesmo Python dos testes. SHA Core
 Community 230f5b029a080229ed4010d1f992247d8ca99a44fd7ca3e9cfe3bc663d6ebbe1.
 Closure2 aprovado: findings/documentation_findings vazios e oito budgets
 current=limit=0. Catálogo MCP: cinco testes aprovados. Todos os handles encerrados;
-nenhum Python de produto mudou após a prova. Commits/pushes em preparação.
+nenhum Python de produto mudou após a prova. Publicado: Core 27def6d1 /
+Community 7d9997a6, ambos os pushes confirmados.
 
 Próximo remanescente concreto: legacy_sprint_schema.py tem três consumidores
 mistos (cancelled_at_utc_roundtrip, f3_critical_context_retirement,
