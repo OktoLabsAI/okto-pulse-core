@@ -31,7 +31,8 @@ SHA Core f55614eeee261c13c92c6ae237d944dcdc2ebbf5b3738e60e72da2858b6f82d2;
 Community 74b4af90660c34fd2ec86de8d95705981c4da42b0631e4cbd44868ba5af0f6ce.
 Somente README alterado entre os pares. Ruff F/E9 e diff check aprovados.
 Closure2 aprovada: findings/documentation_findings vazios, oito budgets
-current=limit=0. Todos os handles encerrados. Commit/push em andamento.
+current=limit=0. Todos os handles encerrados. Publicado em feature/v0.4.0:
+Core 3b70d208 / Community 17bee7c8, ambos os pushes confirmados.
 Nenhuma base/processo real alterado.
 
 Próxima dependência concreta: FailureState ainda reconstrói last_success_at de
