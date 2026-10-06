@@ -16,9 +16,13 @@ execução nativos explícitos, sem alterar produto nem guard. native-fixtures-f
 11 aprovados. Ruff F/E9 e diff aprovados; todos os handles encerrados. O par de
 produto e closure targets2 permanecem inalterados; nenhuma nova execução de
 closure é alegada neste incremento exclusivamente de testes/documentação.
-Community publicado em 3852dc89, push confirmado. Próxima verificação: coleta
-das suítes atuais para localizar consumidores quebrados de contratos retirados;
-coleta não constitui execução/aprovação dos cenários. C1–C4 permanecem abertos.
+Community publicado em 3852dc89; ledger/disposição Core 6385824f, pushes
+confirmados. Coleta completa native-collection-core1: 13.812 testes;
+native-collection-community1: 6.306 testes, ambas exit0 e sem erros de import.
+Coleta não constitui execução/aprovação dos cenários. Todos os handles encerrados.
+Próximo: continuar inventário fixo C1–C3 de superfícies/aliases remanescentes e
+qualificação C4; não refazer retirada de schema Sprint nem tratar coleta como
+aceite funcional. C1–C4 permanecem abertos.
 
 ### 2026-10-06 — C1/C3: contrato Policy sem Sprint
 
