@@ -70,29 +70,36 @@ def test_traceability_defaults_advisory_and_authored_policy_is_closed() -> None:
     }
 
 
-@pytest.mark.parametrize(
-    "legacy",
-    [None, {}, {"code_traceability": None}, {"code_traceability": {"mode": "off"}}],
-)
-def test_legacy_absence_null_and_off_resolve_to_advisory(legacy) -> None:
-    resolved = resolve_code_traceability_settings(legacy)
-    assert resolved.mode is CodeTraceabilityEnforcement.ADVISORY
+@pytest.mark.parametrize("settings", [None, {}])
+def test_native_absence_resolves_creation_default(settings) -> None:
+    assert resolve_code_traceability_settings(settings).mode is CodeTraceabilityEnforcement.ADVISORY
 
 
-def test_unrelated_board_patch_upgrades_legacy_off_but_authored_off_is_rejected() -> (
-    None
-):
+@pytest.mark.parametrize("policy", [None, {"mode": "off"}])
+def test_incompatible_policy_is_refused_without_conversion(policy) -> None:
+    from copy import deepcopy
+    from okto_pulse.core.services.code_traceability_gate import CodeTraceabilityContractError
+
+    settings = {"code_traceability": policy, "max_scenarios_per_card": 3}
+    original = deepcopy(settings)
+    with pytest.raises(CodeTraceabilityContractError, match="code_traceability_settings_invalid"):
+        resolve_code_traceability_settings(settings)
+    with pytest.raises(ValidationError):
+        BoardGovernanceService.from_settings(settings)
+    with pytest.raises(ValidationError):
+        BoardGovernanceService.merge_settings_patch(settings, {"max_scenarios_per_card": 5})
+    assert settings == original
+
+
+def test_native_policy_patch_preserves_blocking_and_rejects_authored_off() -> None:
     merged = BoardGovernanceService.merge_settings_patch(
-        {"code_traceability": {"mode": "off"}, "max_scenarios_per_card": 3},
+        {"code_traceability": {"mode": "blocking"}, "max_scenarios_per_card": 3},
         {"max_scenarios_per_card": 5},
     )
-    assert merged["code_traceability"]["mode"] == "advisory"
-    assert merged["max_scenarios_per_card"] == 5
-
+    assert merged["code_traceability"]["mode"] == "blocking"
     with pytest.raises(ValidationError):
         BoardGovernanceService.merge_settings_patch(
-            {"code_traceability": {"mode": "advisory"}},
-            {"code_traceability": {"mode": "off"}},
+            merged, {"code_traceability": {"mode": "off"}},
         )
 
 
@@ -137,7 +144,8 @@ def test_code_traceability_permission_generation_is_fail_closed() -> None:
     assert manifest.version == "CODE-TRACEABILITY/v1"
     assert not hasattr(manifest, "legacy_compatible")
     assert len(manifest.leaves) == 22
-    assert len(ALL_FLAGS) == 537  # Legacy classification authority was removed.
+    assert len(ALL_FLAGS) == 536  # Classification and telemetry migration notice removed.
+    assert "metrics.settings.migration_notice_seen" not in ALL_FLAGS
     assert set(manifest.leaves) <= set(ALL_FLAGS)
     assert set(dict(manifest.historical_authorities)) == set(manifest.leaves)
 

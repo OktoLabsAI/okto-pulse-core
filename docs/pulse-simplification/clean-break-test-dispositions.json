@@ -3948,6 +3948,31 @@
       "path": "okto_labs_pulse_core/tests/test_r5_impl3_qa_role_separation.py::test_fr6_helper_reads_board_settings",
       "disposition": "replaced",
       "reason": "Unused legacy Q&A switch/helper removed; schema/read refusal without conversion replaces compatibility oracle. Native self-answer opt-in, denials, audit and REST/MCP wrappers retained."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_code_traceability_settings_permissions.py::test_legacy_absence_null_and_off_resolve_to_advisory",
+      "disposition": "replaced",
+      "reason": "Retired off/null conversion removed; incompatible stored policy refuses read/patch without mutation and UI offers no write controls. Native creation defaults and Blocking preservation remain."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_code_traceability_settings_permissions.py::test_unrelated_board_patch_upgrades_legacy_off_but_authored_off_is_rejected",
+      "disposition": "replaced",
+      "reason": "Retired off/null conversion removed; incompatible stored policy refuses read/patch without mutation and UI offers no write controls. Native creation defaults and Blocking preservation remain."
+    },
+    {
+      "path": "okto_labs_pulse_community/frontend/src/components/board/__tests__/BoardSettingsForm.test.tsx::projects the retired Off value as Advisory",
+      "disposition": "replaced",
+      "reason": "Retired off/null conversion removed; incompatible stored policy refuses read/patch without mutation and UI offers no write controls. Native creation defaults and Blocking preservation remain."
+    },
+    {
+      "path": "okto_labs_pulse_community/frontend/src/components/board/__tests__/DefaultBoardConfigPanel.test.tsx::converges a retired Off template policy to Advisory when saving any draft",
+      "disposition": "replaced",
+      "reason": "Retired off/null conversion removed; incompatible stored policy refuses read/patch without mutation and UI offers no write controls. Native creation defaults and Blocking preservation remain."
+    },
+    {
+      "path": "okto_labs_pulse_community/frontend/src/components/layout/Header.board-settings.test.tsx::legacy null and retired explicit off projections",
+      "disposition": "replaced",
+      "reason": "Retired off/null conversion removed; incompatible stored policy refuses read/patch without mutation and UI offers no write controls. Native creation defaults and Blocking preservation remain."
     }
   ]
 }

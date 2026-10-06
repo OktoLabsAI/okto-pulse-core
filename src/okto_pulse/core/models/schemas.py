@@ -4169,27 +4169,6 @@ class CodeTraceabilitySettings(BaseModel):
     ] = "allow_dirty_attestation"
     receipt_content: Literal["metadata_only", "safe_excerpt"] = "safe_excerpt"
 
-    @classmethod
-    def from_persisted(cls, value: object) -> "CodeTraceabilitySettings":
-        """Read one historical policy without reopening the write contract.
-
-        ``off`` and an explicit legacy ``null`` were valid before enforcement
-        became mandatory.  They now resolve to Advisory so existing databases
-        remain readable and agent-mediated checks still run.  Native model
-        validation remains strict, so Board create/update and default-template
-        writes cannot author either compatibility value.
-        """
-
-        if isinstance(value, cls):
-            return value
-        if value is None:
-            return cls()
-        if isinstance(value, Mapping) and value.get("mode") == "off":
-            value = {
-                **value,
-                "mode": CodeTraceabilityEnforcement.ADVISORY.value,
-            }
-        return cls.model_validate(value)
 
 
 FlowHealthOverrideState: TypeAlias = Literal[
@@ -4351,10 +4330,8 @@ class BoardSettings(BaseModel):
     # advisory = warn/audit; blocking = reject mockups without valid DS evidence. Legacy
     # boards with no field validate as 'off' (TR4 — never breaks an existing board).
     design_system_gate_mode: Literal["off", "advisory", "blocking"] = "off"
-    # Agent-mediated Code Traceability is always evaluated. Historical absent,
-    # null, or ``off`` policies resolve to Advisory on tolerant READ paths and
-    # are converged by Community's startup migration. Native writes are closed
-    # to Advisory or Blocking.
+    # Agent-mediated Code Traceability is always evaluated. Creation defaults
+    # to Advisory; persisted and authored policies share the same closed contract.
     code_traceability: CodeTraceabilitySettings = Field(
         default_factory=CodeTraceabilitySettings
     )

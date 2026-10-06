@@ -554,8 +554,8 @@ investigation before submission. Pulse Core validates the receipt and Community
 persists/projects it; neither reads a repository to satisfy the gate.
 
 For the broader Code Traceability posture,
-historical absent, `null`, or `off` settings resolve to the default Advisory
-behavior; that compatibility rule does not disable the deterministic matrix
-coverage gate described above.
+creation defaults to Advisory. Persisted and authored settings share the same
+closed contract: `null` and `off` are refused without conversion. The deterministic
+matrix coverage gate described above remains separately applicable.
 
 Read `okto-pulse://reference/code-traceability` before operating this domain.

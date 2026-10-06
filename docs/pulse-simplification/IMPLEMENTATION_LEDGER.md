@@ -2,6 +2,24 @@
 
 ## Estado para retomada
 
+### 2026-10-06 — C1/C3 em andamento: Code Traceability sem conversao
+Publicado Q&A: Core 6c0a6c72 / Community a751ca7f; pushes confirmados.
+Retirada from_persisted off/null -> Advisory. Reader e patch usam contrato atual.
+Frontend deixa de converter: resposta incompatível mostra erro sem controles de
+edicao. Ausencia de campo na criacao conserva default Advisory.
+native-trace-policy-front1: 104 aprovados. Primeiro build encontrou cast ausente
+em fixture negativa; corrigido tipo do teste, build final aprovado. Assets: 79
+arquivos/78 assets, SHA 15ae1627315c43bd3519cc94b4b70baa834da0f5926567a10dbaa1ee7b3cde77.
+Par dist-native-trace-policy1 instalado; provenance-native-trace-policy1 aprovada
+byte a byte (843/905 Core, 319/405 Community). Core1: 30 aprovados/uma falha
+por contagem antiga de ALL_FLAGS; a permissao metrics.settings.migration_notice_seen
+foi retirada em 3b70d208. Corrigida contagem para 536 e adicionada ausencia explicita.
+Core2: 16 aprovados incluindo namespace; 36 casos backend distintos aprovados.
+Closure1 aprovada: findings/documentation_findings vazios, oito budgets zero.
+Ruff F/E9 e diff aprovados. Todos os handles encerrados, sem dados reais alterados.
+C1-C4 continuam abertos; T23/KG-10 aguardam respostas. Sem entrega total.
+
+
 ### 2026-10-06 — C1/C3 em andamento: Q&A com policy atual
 Publicado health-readiness: Core 89b98e0d / Community 0b04f235, pushes confirmados.
 qa_require_role_separation era entrada de compatibilidade; helper sem caller

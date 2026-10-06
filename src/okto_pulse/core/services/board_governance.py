@@ -70,9 +70,8 @@ class BoardGovernanceService:
         default exactly like ``resolve_impact_evidence_mode``. WRITE callers
         (board create/update, default-config templates) keep the strict
         parse: an out-of-enum value there is an authoring error and must be
-        rejected, never silently disabled. Historical Code Traceability
-        ``off``/``null`` values are likewise normalized to Advisory only on
-        tolerant reads; authored values remain closed to Advisory or Blocking.
+        rejected, never silently disabled. Code Traceability uses the same
+        closed contract for persisted and authored values.
         """
 
         if isinstance(settings, BoardSettings):
@@ -89,9 +88,6 @@ class BoardGovernanceService:
                 and str(mode).strip().lower() not in IMPACT_EVIDENCE_MODES
             ):
                 raw.pop("impact_evidence_mode", None)
-            raw["code_traceability"] = CodeTraceabilitySettings.from_persisted(
-                raw.get("code_traceability")
-            ).model_dump(mode="json")
         return BoardSettings.model_validate(raw).model_dump(mode="json")
 
     @classmethod
@@ -140,10 +136,6 @@ class BoardGovernanceService:
             else dict(patch or {})
         )
         if "code_traceability" in patch_raw:
-            # Validate the authored nested policy before enabling tolerance for
-            # the persisted half of this merge. Otherwise an explicit new
-            # ``off`` could be mistaken for a legacy value and silently
-            # upgraded instead of being rejected by BoardUpdate/default config.
             CodeTraceabilitySettings.model_validate(patch_raw["code_traceability"])
         preserve_absent = {
             key
@@ -156,9 +148,7 @@ class BoardGovernanceService:
         # silently disabling governance, while a previously tampered value
         # never blocks an unrelated settings edit.
         # Normalize only the persisted half tolerantly, then validate the
-        # authored patch under the closed write contract. This lets an
-        # unrelated valid patch converge historical ``off`` without letting
-        # that compatibility value back through the API.
+        # authored patch under the closed write contract.
         persisted = cls.normalize_settings(current_raw, read_tolerant=True)
         normalized = cls.normalize_settings({**persisted, **patch_raw})
         # The lifecycle already consumes this persisted switch, but the public

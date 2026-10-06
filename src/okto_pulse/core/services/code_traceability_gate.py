@@ -1012,7 +1012,7 @@ def is_evidence_citation_only_change(before: object, after: object) -> bool:
 def resolve_code_traceability_settings(
     raw_board_settings: object,
 ) -> CodeTraceabilitySettings:
-    """Resolve known legacy persistence as Advisory and reject other drift."""
+    """Resolve the current policy, rejecting incompatible persisted values."""
 
     if raw_board_settings is None:
         return CodeTraceabilitySettings()
@@ -1026,8 +1026,8 @@ def resolve_code_traceability_settings(
             details={"reason": "board_settings_not_mapping"},
         )
     try:
-        settings = CodeTraceabilitySettings.from_persisted(
-            raw_board_settings.get("code_traceability")
+        settings = CodeTraceabilitySettings.model_validate(
+            raw_board_settings.get("code_traceability", {})
         )
     except ValidationError as exc:
         raise CodeTraceabilityContractError(
