@@ -4,6 +4,9 @@
 
 ### 2026-10-06 — C1/C3: snapshot único para skips e envelope de grafo estrito
 
+Publicado em feature/v0.4.0: Core 80c0c0b7 / Community 79642f35, pushes
+confirmados e working trees limpas após os commits de implementação.
+
 Retirados SemanticAssessmentCurrentSnapshot, seu conversor de contexto e o
 comparador exclusivo de recibo predecessor (202 linhas). O último consumidor
 produtivo era a projeção de skip: porta, aplicação e adapter usam agora
