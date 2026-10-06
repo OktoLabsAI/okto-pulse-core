@@ -34,9 +34,21 @@ Community bc2a92cb2790fc2660e2448306577f2239fde6a162ca61a85450f1606802383b.
 Closure2 aprovado: findings/documentation_findings vazios e oito budgets zero.
 Ruff F/E9 e diff aprovados. Todos os handles encerrados. Nenhum Python de produto
 mudou após a prova final. Nenhuma alteração frontend ou dados reais.
+Publicado em feature/v0.4.0: Core 078fb32e / Community 47df640c;
+ambos os pushes confirmados.
 Mapeamento flat, campo Agent.permissions e fallback de autorização continuam
 pendentes de retirada coordenada com DTOs/API/UI; não considerar esta etapa como
-fechamento da cadeia inteira. C1–C4 e decisões T23/KG-10 permanecem abertos.
+fechamento da cadeia inteira.
+Dependências verificadas para a próxima retirada: AgentCreate/Update/Response
+em models/schemas.py e coluna Agent.permissions em sqlalchemy_models; tipos
+frontend Agent/Create/Update em types/index.ts; resolve_agent_permission_facts
+e callers relational_application/sqlalchemy_application_persistence; fallback
+de services/main.resolve_user_permissions. Atenção: AgentAuthSession.permissions
+é usado por MCP antes do contexto por Board; substituir sua origem por resolução
+nativa de flags/preset, preservando grants/denies globais, não apenas apagar o
+argumento. MCP get_my_profile/role_summary também consomem esse valor. O campo
+permissions de ActorContext/PermissionSet não é a coluna antiga e não deve ser
+eliminado por coincidência de nome. Mapear callers/testes antes de alterar. C1–C4 e decisões T23/KG-10 permanecem abertos.
 
 ### 2026-10-06 — C1: recusa de autoridade sem configuração
 
