@@ -3,6 +3,7 @@
 ## Estado para retomada
 
 ### 2026-10-06 — C3 em andamento: contrato Knowledge sem fallback historico
+Publicado: Core b23d6864 / Community 2c34de6b, pushes confirmados.
 Bases Core 60c17632 / Community a999edf3 publicadas.
 Resources cards/refinements/governance e erros operacionais deixam de anunciar
 v1/legacy_all/copy-all: omissao ja cria selecao nativa sem fontes herdadas.
@@ -26,7 +27,8 @@ total distinto Community 48. Nao houve mudanca de produto entre campanhas.
 Frontend native-knowledge-front1: 38 aprovados em API, CardKnowledgeTab,
 CreateCardModal e selector. Avisos act/navigation preexistentes, sem falhas.
 Nenhum arquivo frontend alterado; assets previamente qualificados preservados.
-Catalogo/manifesto regenerados oficialmente, sem diff.
+Catalogo/manifesto regenerados oficialmente, sem diff. Prova final
+provenance-native-knowledge1-final confirma mesmos bytes apos regeneracao.
 Closure-native-knowledge1 aprovada: findings/documentation_findings vazios,
 oito budgets current=limit=0. Handles encerrados. Disposicoes no JSON.
 
