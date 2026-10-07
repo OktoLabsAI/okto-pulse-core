@@ -2,6 +2,102 @@
 
 ## Estado para retomada
 
+### 2026-10-07 — C3 alias removido,81 testes aprovados,commit publicado
+Community6d8beb6a criado no worktree isolado e push HEAD:feature/v0.4.0 confirmado
+(fast-forward de6efad1c0). Main Community continua LOCALMENTE6efad1c0 para manter
+Core11 congelada; não é perda de commit. Após terminal64730, integrar com
+git merge --ff-only 6d8beb6a, após conferir árvore limpa. NÃO reaplicar o script.
+
+native-data-home2 terminal:31 aprovados175.21s. Com50/18.34s do primeiro bloco,
+81 aprovados, zero falhas. Um warning Starlette/httpx por bloco; nenhuma dep de
+produto mudou. Closure e prova isoladas verdes, budgetsZERO. Recibo no campo
+native_data_home de clean-break-full-qualification.json. E2E instalado foi
+somente teste de isolamento de paths; não qualificar módulo inteiro.
+Não há teste/processo ativo no worktree isolado; fontes dele livres para próximo
+incremento C2 Ladybug binding/rollout. Core do worktree723fc54c tem os mesmos src
+do principal, diferindo apenas pelos recibos/ledger posteriores.
+Main Core apenas docs alterados; Core11 handle64730 permanece ativo,11 falhas
+parciais. Instalação principal dist-v040-native-release2 intocada.
+Próximo: continuar remoção da cadeia rollout no worktree isolado, preservando
+recusa/privacidade/restore atuais; após Core11 terminar, registrar/corrigir falhas.
+C1-C4 integral, critérios,benchmark,T23 eKG-10 continuam abertos.
+
+### 2026-10-07 — C3 data-home em checkouts isolados,50 testes aprovados
+Para avançar sem invalidar Core11, criados worktrees detached de Core723fc54c/
+Community6efad1c0 em .validation-v040/data-home-work/okto_labs_pulse_{core,community}.
+Main Community permanece limpo; main src/install da Core11 NÃO alterados.
+Patch de alias aplicado SOMENTE ao Community isolado: config/telemetry sem
+OKTO_PULSE_HOME, fixtures executáveis DATA_DIR, negativos old env não selecionam
+path (Path.home temporário), instruções README alinhadas. Onze arquivos alterados.
+Data-home explicit/env/dotenv/default e identidade de origem preservados.
+
+Par dist-native-data-home1 do worktree instalado em ambiente isolado reutilizado
+do release gate3 já terminal:
+.validation-v040/v040-release-gate3-tmp/test_fresh_wheels_install_and_0/
+release-artifact-gate/venv/Scripts/python.exe.
+Este ambiente não é o venv principal da Core11. Adicionados pytest8.3.4 e
+pytest-asyncio0.25.3 iguais ao principal. Wheels/provenance-native-data-home1
+confirmam843/905+318/404 bytes iguais ANTES dos testes.
+verify_data_home_pair.py/check_data_home_closure.py apontam explicitamente aos
+worktrees; PYTHONPATH das duas árvores isoladas + OKTO_PULSE_CORE_REPO explícito.
+
+native-data-home1 terminal:50 aprovados18.34s, um aviso Starlette/httpx.
+Ruff/diff verdes. Closure-native-data-home1 terminal ok=true/findings/docs
+vazios/oito budgets current=limit=0. Handles73284/79188/46179/9683 encerrados.
+native-data-home2 ativo56508: CLI init integral, recovery lifespan integral e
+teste isolado de caminhos do installed E2E (não campanha E2E completa).
+Aguardar terminal; não editar/reinstalar worktree isolado durante essa campanha.
+Core11 segue ativo64730 e independente. Nenhum commit desta alteração ainda.
+Após qualificação, commit detached; integrar em feature/v0.4.0 e push somente
+quando Core11 terminar, evitando mudar a working tree usada por ela.
+
+### 2026-10-07 — C2 resíduo Ladybug→Grafx confirmado por dependências
+Revisão somente leitura durante Core11. graph_rollout_journal.py ainda tem
+GraphBackend ladybug|grafx, tabela com CHECK source_backend='ladybug', início
+normalizando source Ladybug e shadow Grafx, comparações/rollback e mutation recorder.
+São caminhos concretos de transição, não apenas referências históricas.
+Consumidores produtivos localizados: routed_board_graph_composition.py (recorder,
+require_route_materialization_allowed, admin guards, invalidate/finalize privacy),
+routed_graph_transaction.py e routed_board_graph_facades.py (graph_rollout_capture).
+graph_rollout_capture.py declara captura para shadow worker sobre snapshot de fonte.
+Retirar essa cadeia dentro de C2 após terminar a campanha; não manter dois backends
+no binding. Preservar locks/CAS/restore nativos, erasure autorizada e proteção de
+paths. Onde a cadeia antiga fornecia recusa por tombstone/arquivos antigos, separar
+admissão sem escrita de armazenamento incompatível antes de remover o leitor.
+Não remover bloqueios de privacidade por exclusão cega dos callbacks.
+Nenhum código foi alterado ainda; Core11 handle64730 ativo,11 falhas parciais.
+
+### 2026-10-07 — Core11 aguardando terminal; índice de diagnóstico
+Handle64730 confirmado ativo; log10%,11 falhas parciais. Coleta independente
+--collect-only/-p no:cacheprovider terminou0 (handle78723 encerrado),7754 testes;
+não é execução comportamental. Arquivo clean-break-full-run11-collection.log e
+índice parcial clean-break-full-run11-live-failures.json permitem localizar falhas.
+Identificados: graph_store schema_info (contrato atual22 entradas incluindo
+precedes multi); integration_registry schema version lista antiga sem0.8;
+layer_propagation quatro RESTs usam board:read em vez de grants nativos;
+operational_visibility dois MCPs sem kg.operations.cognitive.read;
+primitives_connectivity_guard seed sem generation;
+provenance_columns_migration espera0.7 em bootstrap atual0.8;
+query_contract_v1 espera precedes só Entity->Entity apesar de pares Bug atuais.
+São indícios por leitura; conferir tracebacks terminais antes de editar/qualificar.
+Source/install ainda congelados. Script remove_data_home_alias.py continua
+preparado e NÃO executado. Não reiniciar Core11 por demora/timeout de observação.
+
+### 2026-10-07 — C3 patch do data-home preparado, ainda não aplicado
+Core11 handle64730 segue ativo (poll confirmado; log6% com seis falhas parciais).
+Sem alteração de produto, testes ou install nesta espera.
+Preparado .validation-v040/remove_data_home_alias.py; compilação do script passou.
+NÃO executado ainda: aguardar campanha terminal. Script calcula edits em memória,
+compila os arquivos Python resultantes antes de escrever e muda somente dez arquivos
+Community: config, telemetry_effect_config, data_home_identity, af31_s3 telemetry,
+metrics_cli, terms_acceptance_cli, recovery_lifespan/installed_e2e, cli_init e README.
+DATA_DIR/explicit/default preservados; old alias deixa de selecionar caminho.
+Negativos usam Path.home temporário; subprocessos continuam isolados por DATA_DIR.
+Após aplicar: revisar diff, fortalecer negative legacy/default em
+test_issue_84_88_regressions se necessário, Ruff/diff, novo par/prova antes de teste.
+Core11 falhas ainda não diagnosticadas; não presumir que sejam só fixtures.
+Últimos pushes confirmados Core723fc54c / Community6efad1c0.
+
 ### 2026-10-07 — C3 instruções operacionais e resíduos confirmados
 Core11 handle64730 confirmado ativo por polling; log chegou4%, seis falhas
 parciais, sem resultado terminal. Nenhuma edição de src/teste/install durante a

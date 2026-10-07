@@ -2476,5 +2476,35 @@
     },
     "scope": "Coordinated 0.4.0 packages, exact Core dependency, Docker and bundled UI version. Removed release-harness upgrade/migrator dependency; current seeds crash/resume and concurrency preserved. Incompatible database refused with identical bytes and unchanged sidecars. Isolated fresh-wheel metadata, full payload provenance and real MCP HTTP verified:282 canonical tools,zero aliases,54 resources.",
     "limits": "Backend broad campaigns/acceptance criteria/benchmark remain open. Prior frontend2451/269 broad campaign plus39 Header cases; no full frontend rerun claimed. No tag/release/deploy."
+  },
+  "native_data_home": {
+    "community_commit": "6d8beb6a",
+    "published_branch": "feature/v0.4.0",
+    "workspace": "PULSE_REFACTOR/.validation-v040/data-home-work",
+    "proof_pair": "dist-native-data-home1",
+    "provenance": "provenance-native-data-home1.json",
+    "closure": "closure-native-data-home1.json",
+    "closure_ok": true,
+    "all_eight_budgets_zero": true,
+    "campaigns": [
+      {
+        "name": "native-data-home1",
+        "passed": 50,
+        "failed": 0,
+        "seconds": 18.34
+      },
+      {
+        "name": "native-data-home2",
+        "passed": 31,
+        "failed": 0,
+        "seconds": 175.21
+      }
+    ],
+    "xml_sha256": {
+      "native-data-home1": "5e5aedcd3cdc2098514c3f157cca3786a9313c2055e227038445fa19ca72a994",
+      "native-data-home2": "561972a54248e846a57bc7051f6a386b8c3024acdf463e2265d41d143c21f625"
+    },
+    "scope": "Remove OKTO_PULSE_HOME runtime fallback and origin enum. Preserve explicit/DATA_DIR environment/dotenv/default identity, telemetry paths, terms and CLI isolation. Native subprocess fixtures use DATA_DIR; removed env has no effect and cannot create retired path. CLI init and Global recovery lifespan suites pass.",
+    "limits": "Installed recovery E2E only test_installed_runtime_paths_override_parent_campaign qualified in this increment; no full E2E claim. No frontend code changed. Core11 continues against main trees/install frozen at previous product state. Main Community checkout awaits fast-forward to published6d8beb6a after Core11 terminal; do not run old removal script again on main."
   }
 }
