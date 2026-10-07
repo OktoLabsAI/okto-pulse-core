@@ -29,7 +29,12 @@ async def test_current_card_and_scenario_sources_converge_to_one_support(card_ty
     document = await make_deterministic_projection_planner(port).prepare(None,
         DeterministicProjectionSource('board', 'card', 'card-one'))
     projection = json.loads(document.document)['projection']
-    assert projection['reference_findings']['findings'] == []
+    findings = projection['reference_findings']['findings']
+    if link_origin == 'both':
+        assert findings == []
+    else:
+        assert len(findings) == 1
+        assert findings[0]['reason_code'] == 'source_disagreement'
     parent_intent, = [item for item in projection['relational_projection_active_set_intents']
                       if item['namespace'] == 'card_parent']
     assert len(parent_intent['active_edges']) == 1

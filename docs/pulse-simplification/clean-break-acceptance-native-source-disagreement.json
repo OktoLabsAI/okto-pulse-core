@@ -1,0 +1,331 @@
+{
+  "format": "pulse-040-reviewed-acceptance/v1",
+  "criterion_keys": [
+    "KG:KG-06"
+  ],
+  "status": "verified_current_pair_review",
+  "proof_pair": "dist-native-main35",
+  "provenance": {
+    "checked_at": "2026-10-07T15:57:14.828915+00:00",
+    "python": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Scripts\\python.exe",
+    "packages": {
+      "core": {
+        "python_files": 843,
+        "origin": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages\\okto_pulse\\core\\__init__.py",
+        "repository_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_core",
+        "commit": "16920e03b57ab77e1283a9db8d0f6294c70e034e",
+        "dirty": true,
+        "dirty_entry_count": 8,
+        "distribution": "okto-pulse-core",
+        "version": "0.4.0",
+        "wheel": {
+          "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\dist-native-main35\\okto_pulse_core-0.4.0-py3-none-any.whl",
+          "sha256": "809085d3bc5395a2451a8c897e3c7faf940a77d57c0fd3dce1ad2ac5a046a157",
+          "size": 3604406
+        },
+        "source_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_core\\src",
+        "site_packages_root": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages",
+        "package_prefix": "okto_pulse/core/",
+        "byte_identical_member_count": 905,
+        "byte_identical": true,
+        "aggregate_sha256": "336f9c9d6a4fb06475eda57a5ca30725935477d478c1a654cc4a6487281f96fe",
+        "chain_hashes": {
+          "source": "336f9c9d6a4fb06475eda57a5ca30725935477d478c1a654cc4a6487281f96fe",
+          "wheel": "336f9c9d6a4fb06475eda57a5ca30725935477d478c1a654cc4a6487281f96fe",
+          "site_packages": "336f9c9d6a4fb06475eda57a5ca30725935477d478c1a654cc4a6487281f96fe"
+        },
+        "critical_resource_sha256": {
+          "okto_pulse/core/mcp/resources/ska_resource_manifest.json": "4f6360d46eab0f9c8931d3fb5e8a50e0c04b0e6f3b164619a55ac381917ba34d",
+          "okto_pulse/core/mcp/resources/ska_tool_manifest.json": "3d3ecc80ab6b699b2021eddcf02b72bf48eddd06bf34dcf245f2b00fcc69b433"
+        },
+        "mismatches": []
+      },
+      "community": {
+        "python_files": 316,
+        "origin": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages\\okto_pulse\\community\\__init__.py",
+        "repository_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_community",
+        "commit": "f341d0c62081157424457fef0e0f2149b315cae5",
+        "dirty": true,
+        "dirty_entry_count": 34,
+        "distribution": "okto-pulse",
+        "version": "0.4.0",
+        "wheel": {
+          "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\dist-native-main35\\okto_pulse-0.4.0-py3-none-any.whl",
+          "sha256": "ed4e0eb94e0b43f27f6b502968f488b07d82e28fcc41afcfffd4d5c52a462a19",
+          "size": 4071353
+        },
+        "source_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_community\\src",
+        "site_packages_root": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages",
+        "package_prefix": "okto_pulse/community/",
+        "byte_identical_member_count": 402,
+        "byte_identical": true,
+        "aggregate_sha256": "a0ea3ba032d86f6c1cb37091156b869852be097cfa80a640294858b13d0612cf",
+        "chain_hashes": {
+          "source": "a0ea3ba032d86f6c1cb37091156b869852be097cfa80a640294858b13d0612cf",
+          "wheel": "a0ea3ba032d86f6c1cb37091156b869852be097cfa80a640294858b13d0612cf",
+          "site_packages": "a0ea3ba032d86f6c1cb37091156b869852be097cfa80a640294858b13d0612cf"
+        },
+        "critical_resource_sha256": {},
+        "mismatches": []
+      }
+    }
+  },
+  "runs": [
+    {
+      "name": "acceptance-native-source-disagreement1",
+      "xml_sha256": "64a3f0e7f730c40fb801af5c7dba93e28207974f0502ddaddebbb35d693bfae5",
+      "passed": 0,
+      "failures": [
+        "tests.test_card_scenario_reference_analysis::test_unilateral_reference_is_explicit_without_changing_observed_link[card]",
+        "tests.test_card_scenario_reference_analysis::test_unilateral_reference_is_explicit_without_changing_observed_link[spec]"
+      ],
+      "cases": [
+        "tests.test_card_scenario_reference_analysis::test_unilateral_reference_is_explicit_without_changing_observed_link[card]",
+        "tests.test_card_scenario_reference_analysis::test_unilateral_reference_is_explicit_without_changing_observed_link[spec]"
+      ]
+    },
+    {
+      "name": "acceptance-native-source-disagreement2",
+      "xml_sha256": "de11d5705e8457b4b0cfbed1fffffa7498a37c00e1b5c405c2b220dda04f90ea",
+      "passed": 68,
+      "failures": [],
+      "cases": [
+        "tests.test_card_scenario_reference_analysis::test_known_removal_diagnoses_only_the_broken_reference_and_keeps_valid_links",
+        "tests.test_card_scenario_reference_analysis::test_known_absent_parent_retains_intended_selector_without_inventing_endpoint[missing]",
+        "tests.test_card_scenario_reference_analysis::test_known_absent_parent_retains_intended_selector_without_inventing_endpoint[None]",
+        "tests.test_card_scenario_reference_analysis::test_intentional_unlink_with_no_remaining_obligation_is_not_a_finding",
+        "tests.test_card_scenario_reference_analysis::test_incomplete_source_refuses_to_produce_a_complete_snapshot[None]",
+        "tests.test_card_scenario_reference_analysis::test_incomplete_source_refuses_to_produce_a_complete_snapshot[scenarios1]",
+        "tests.test_card_scenario_reference_analysis::test_incomplete_source_refuses_to_produce_a_complete_snapshot[unavailable]",
+        "tests.test_card_scenario_reference_analysis::test_incomplete_source_refuses_to_produce_a_complete_snapshot[scenarios3]",
+        "tests.test_card_scenario_reference_analysis::test_ambiguous_target_is_not_selected_arbitrarily",
+        "tests.test_card_scenario_reference_analysis::test_ambiguous_spec_only_reference_keeps_its_actual_source_selector",
+        "tests.test_card_scenario_reference_analysis::test_order_and_duplicates_in_card_reference_list_do_not_create_new_defects",
+        "tests.test_card_scenario_reference_analysis::test_unilateral_reference_is_explicit_without_changing_observed_link[card]",
+        "tests.test_card_scenario_reference_analysis::test_unilateral_reference_is_explicit_without_changing_observed_link[spec]",
+        "tests.test_card_reference_context::test_denial_precedes_every_source_read[board.read]",
+        "tests.test_card_reference_context::test_denial_precedes_every_source_read[card.entity.read]",
+        "tests.test_card_reference_context::test_denial_precedes_every_source_read[card.entity.context_read]",
+        "tests.test_card_reference_context::test_denial_precedes_every_source_read[card.tests.read]",
+        "tests.test_card_reference_context::test_denial_precedes_every_source_read[spec.entity.read]",
+        "tests.test_card_reference_context::test_denial_precedes_every_source_read[spec.tests.read]",
+        "tests.test_card_reference_context::test_unavailable_never_becomes_known_absence[card_board]",
+        "tests.test_card_reference_context::test_unavailable_never_becomes_known_absence[realm]",
+        "tests.test_card_reference_context::test_unavailable_never_becomes_known_absence[parent_board]",
+        "tests.test_card_reference_context::test_unavailable_never_becomes_known_absence[incomplete]",
+        "tests.test_card_reference_context::test_unavailable_never_becomes_known_absence[provider]",
+        "tests.test_card_reference_context::test_current_source_closes_previous_finding_without_audit_or_graph",
+        "tests.test_card_reference_context::test_ambiguous_identity_is_visible_without_choosing_a_target",
+        "tests.test_card_reference_context::test_bounded_view_keeps_exact_count_and_never_truncates_an_identity[False]",
+        "tests.test_card_reference_context::test_bounded_view_keeps_exact_count_and_never_truncates_an_identity[True]",
+        "tests.test_card_reference_context::test_budget_preserves_exact_findings_and_explicit_unavailable[summary-all]",
+        "tests.test_card_reference_context::test_budget_preserves_exact_findings_and_explicit_unavailable[detail-all]",
+        "tests.test_card_reference_context::test_budget_preserves_exact_findings_and_explicit_unavailable[full-gate]",
+        "tests.test_card_reference_context::test_unilateral_source_is_visible_and_read_never_reconciles_it[card]",
+        "tests.test_card_reference_context::test_unilateral_source_is_visible_and_read_never_reconciles_it[spec]",
+        "tests.test_card_reference_context_transports::test_real_card_and_mcp_read_follow_source_correction_without_waiting_for_graph[summary-all]",
+        "tests.test_card_reference_context_transports::test_real_card_and_mcp_read_follow_source_correction_without_waiting_for_graph[full-all]",
+        "tests.test_card_reference_context_transports::test_real_card_and_mcp_read_follow_source_correction_without_waiting_for_graph[full-gate]",
+        "tests.test_kg_card_scenario_projection::test_current_card_and_scenario_sources_converge_to_one_support[card-normal]",
+        "tests.test_kg_card_scenario_projection::test_current_card_and_scenario_sources_converge_to_one_support[card-test]",
+        "tests.test_kg_card_scenario_projection::test_current_card_and_scenario_sources_converge_to_one_support[card-bug]",
+        "tests.test_kg_card_scenario_projection::test_current_card_and_scenario_sources_converge_to_one_support[spec-normal]",
+        "tests.test_kg_card_scenario_projection::test_current_card_and_scenario_sources_converge_to_one_support[spec-test]",
+        "tests.test_kg_card_scenario_projection::test_current_card_and_scenario_sources_converge_to_one_support[spec-bug]",
+        "tests.test_kg_card_scenario_projection::test_current_card_and_scenario_sources_converge_to_one_support[both-normal]",
+        "tests.test_kg_card_scenario_projection::test_current_card_and_scenario_sources_converge_to_one_support[both-test]",
+        "tests.test_kg_card_scenario_projection::test_current_card_and_scenario_sources_converge_to_one_support[both-bug]",
+        "tests.test_kg_card_scenario_projection::test_retired_card_plans_empty_owned_set_without_reviving_root[cancelled-False-normal]",
+        "tests.test_kg_card_scenario_projection::test_retired_card_plans_empty_owned_set_without_reviving_root[cancelled-False-test]",
+        "tests.test_kg_card_scenario_projection::test_retired_card_plans_empty_owned_set_without_reviving_root[cancelled-False-bug]",
+        "tests.test_kg_card_scenario_projection::test_retired_card_plans_empty_owned_set_without_reviving_root[done-True-normal]",
+        "tests.test_kg_card_scenario_projection::test_retired_card_plans_empty_owned_set_without_reviving_root[done-True-test]",
+        "tests.test_kg_card_scenario_projection::test_retired_card_plans_empty_owned_set_without_reviving_root[done-True-bug]",
+        "tests.test_kg_card_scenario_projection::test_incomplete_or_ambiguous_sources_do_not_authorize_empty_replacement[card_scope]",
+        "tests.test_kg_card_scenario_projection::test_incomplete_or_ambiguous_sources_do_not_authorize_empty_replacement[incomplete_card]",
+        "tests.test_kg_card_scenario_projection::test_incomplete_or_ambiguous_sources_do_not_authorize_empty_replacement[parent_scope]",
+        "tests.test_kg_card_scenario_projection::test_incomplete_or_ambiguous_sources_do_not_authorize_empty_replacement[duplicate_target]",
+        "tests.test_kg_card_scenario_projection::test_known_absence_produces_empty_owned_set_and_durable_diagnostic[parent]",
+        "tests.test_kg_card_scenario_projection::test_known_absence_produces_empty_owned_set_and_durable_diagnostic[target]",
+        "tests.test_kg_card_scenario_projection::test_known_absence_produces_empty_owned_set_and_durable_diagnostic[unlinked]",
+        "tests.test_kg_card_scenario_projection::test_source_provider_failure_does_not_become_absence_or_cleanup",
+        "tests.test_card_scenario_divergence_gate::test_unilateral_observation_never_substitutes_completion_evidence[ready-card]",
+        "tests.test_card_scenario_divergence_gate::test_unilateral_observation_never_substitutes_completion_evidence[ready-spec]",
+        "tests.test_card_scenario_divergence_gate::test_unilateral_observation_never_substitutes_completion_evidence[passed-card]",
+        "tests.test_card_scenario_divergence_gate::test_unilateral_observation_never_substitutes_completion_evidence[passed-spec]",
+        "tests.test_mcp_tools_catalog_drift::test_every_live_tool_is_classified",
+        "tests.test_mcp_tools_catalog_drift::test_catalog_file_matches_live_registry",
+        "tests.test_mcp_tools_catalog_drift::test_public_schema_tool_does_not_offer_internal_storage_view",
+        "tests.test_mcp_tools_catalog_drift::test_every_live_tool_has_one_exact_tool_doc_heading",
+        "tests.test_mcp_tools_catalog_drift::test_catalog_covers_exact_tool_set"
+      ]
+    },
+    {
+      "name": "acceptance-native-source-disagreement-storage1",
+      "xml_sha256": "176866dce28a84ca1b7dcf182d70f2362f9cbb266dabea9e09492506d5f7bd8d",
+      "passed": 27,
+      "failures": [],
+      "cases": [
+        "tests.test_audit_reference_findings::test_receipt_rollback_commit_empty_closure_and_undo",
+        "tests.test_audit_reference_findings::test_rejects_cross_scope_or_cognitive_source_diagnostics_before_writes[board]",
+        "tests.test_audit_reference_findings::test_rejects_cross_scope_or_cognitive_source_diagnostics_before_writes[owner]",
+        "tests.test_audit_reference_findings::test_rejects_cross_scope_or_cognitive_source_diagnostics_before_writes[type]",
+        "tests.test_audit_reference_findings::test_rejects_cross_scope_or_cognitive_source_diagnostics_before_writes[writer]",
+        "tests.test_audit_reference_findings::test_read_scope_and_corruption_are_not_clean_results",
+        "tests.test_completion_authenticated_delivery::test_signed_test_closeout_separates_product_proof_from_projection[False]",
+        "tests.test_completion_authenticated_delivery::test_signed_test_closeout_separates_product_proof_from_projection[True]",
+        "tests.test_frontend_distribution::test_windows_checkout_preserves_packaged_asset_bytes",
+        "tests.test_frontend_distribution::test_tracked_frontend_bytes_match_the_distribution_manifest",
+        "tests.test_frontend_distribution::test_incompatible_frontend_refuses_before_runtime_state",
+        "tests.test_frontend_distribution::test_valid_frontend_is_read_only_and_packaged_bundle_is_admitted",
+        "tests.test_frontend_distribution::test_incompatible_artifacts_are_refused_without_repair[release-frontend_release_mismatch]",
+        "tests.test_frontend_distribution::test_incompatible_artifacts_are_refused_without_repair[core-frontend_core_contract_mismatch]",
+        "tests.test_frontend_distribution::test_incompatible_artifacts_are_refused_without_repair[same_size_content-frontend_assets_mismatch]",
+        "tests.test_frontend_distribution::test_incompatible_artifacts_are_refused_without_repair[missing_asset-frontend_assets_mismatch]",
+        "tests.test_frontend_distribution::test_incompatible_artifacts_are_refused_without_repair[extra_asset-frontend_assets_mismatch]",
+        "tests.test_frontend_distribution::test_incompatible_artifacts_are_refused_without_repair[missing_manifest-frontend_contract_missing]",
+        "tests.test_frontend_distribution::test_incompatible_artifacts_are_refused_without_repair[traversal-frontend_contract_invalid]",
+        "tests.test_frontend_distribution::test_incompatible_artifacts_are_refused_without_repair[duplicate-frontend_contract_invalid]",
+        "tests.test_frontend_distribution::test_incompatible_artifacts_are_refused_without_repair[boolean_size-frontend_contract_invalid]",
+        "tests.test_frontend_distribution::test_incompatible_artifacts_are_refused_without_repair[oversized_manifest-frontend_contract_invalid]",
+        "tests.test_frontend_distribution::test_incompatible_artifacts_are_refused_without_repair[oversized_asset-frontend_asset_budget_exceeded]",
+        "tests.test_frontend_release_version::test_frontend_manifest_and_python_distribution_share_release_version",
+        "tests.test_frontend_release_version::test_about_version_is_injected_from_authoritative_pyproject",
+        "tests.test_frontend_release_version::test_packaged_frontend_contains_current_about_version_only",
+        "tests.test_frontend_release_version::test_packaged_frontend_attests_negative_scenario_type_and_help"
+      ]
+    },
+    {
+      "name": "acceptance-native-source-disagreement-grafx1",
+      "xml_sha256": "284cd85858668be7b6eb35353e28f1479d8b6fd6b8d08d0325c4ae9eda459b83",
+      "passed": 0,
+      "failures": [
+        "tests.test_projection_materialized_parity::test_card_scenario_links_match_native_rebuild_after_removal_and_replay[normal]",
+        "tests.test_projection_materialized_parity::test_card_scenario_links_match_native_rebuild_after_removal_and_replay[test]",
+        "tests.test_projection_materialized_parity::test_card_scenario_links_match_native_rebuild_after_removal_and_replay[bug]",
+        "tests.test_projection_materialized_parity::test_known_unlinked_source_rebuild_preserves_diagnostic_without_stale_edge"
+      ],
+      "cases": [
+        "tests.test_projection_materialized_parity::test_card_scenario_links_match_native_rebuild_after_removal_and_replay[normal]",
+        "tests.test_projection_materialized_parity::test_card_scenario_links_match_native_rebuild_after_removal_and_replay[test]",
+        "tests.test_projection_materialized_parity::test_card_scenario_links_match_native_rebuild_after_removal_and_replay[bug]",
+        "tests.test_projection_materialized_parity::test_known_unlinked_source_rebuild_preserves_diagnostic_without_stale_edge"
+      ]
+    },
+    {
+      "name": "acceptance-native-source-disagreement-grafx2",
+      "xml_sha256": "b2002814caf9d5fb75fee4400902b1b9833306ed7318eff9cb6a986edc8ca1f9",
+      "passed": 4,
+      "failures": [],
+      "cases": [
+        "tests.test_projection_materialized_parity::test_card_scenario_links_match_native_rebuild_after_removal_and_replay[normal]",
+        "tests.test_projection_materialized_parity::test_card_scenario_links_match_native_rebuild_after_removal_and_replay[test]",
+        "tests.test_projection_materialized_parity::test_card_scenario_links_match_native_rebuild_after_removal_and_replay[bug]",
+        "tests.test_projection_materialized_parity::test_known_unlinked_source_rebuild_preserves_diagnostic_without_stale_edge"
+      ]
+    }
+  ],
+  "frontend": {
+    "report_sha256": "6911641ac9edb99a93679cfa300c3333a252cc794dcdf26579fcdea58ed4f27c",
+    "passed": 5,
+    "build_exit": 0,
+    "lint_exit": 0,
+    "lint_warnings": 316,
+    "lint_errors": 0,
+    "tree_sha256": "b9478dee1b64ed9f8d2ec6f6814872050c8b7d4421474f1901fd4c49c3277993",
+    "files": 79,
+    "assets": 78
+  },
+  "review": {
+    "discrepancy": "Card-only and Spec-only references retain their observed logical relation and source provenance while emitting source_disagreement. Reciprocal references close the diagnostic. Optional authorized reads never write or reconcile source data.",
+    "gate": "Four real MCP move_card cases cover both unilateral directions with ready/passed status lacking authenticated proof. All remain blocked by test_card_completion; Card status and relational references remain unchanged. Existing authenticated closeout tests preserve the positive path.",
+    "durability": "Normal/test/bug materialized logical relations equal native reconstruction after removal/restoration/replay, without duplicate edges. Source/target diagnostic selectors are verified in final durable receipts; parent removal retains parent_absent.",
+    "surface": "Typed Card/MCP context and packaged frontend display the discrepancy and both source review locations. The UI does not offer graph repair or claim completion from a link."
+  },
+  "resolved_distinct_cases": 104,
+  "failure_disposition": "Two reproduction failures showed missing diagnostics. Four Grafx failures expected the former empty diagnostic; their oracle now requires the new finding, retaining full relationship multiset assertions. Final helper assertion is limited to its own fixture or the original final_unlinked path; exercise callbacks retain their existing independent oracles. All four rerun cases pass exercise=None and exercise the same final assertion.",
+  "closure": {
+    "ok": true,
+    "budgets": [
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "import_boundary_baseline",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every import_boundary_baseline allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "singleton_baseline",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every singleton_baseline allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "dependency_temporary_exceptions",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every dependency_temporary_exceptions allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "graph_runtime_compatibility",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every graph_runtime_compatibility allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "rebuild_artifact_compatibility",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every rebuild_artifact_compatibility allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "community_private_reach_ins",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every community_private_reach_ins allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "community_adapter_bridges",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every community_adapter_bridges allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "af35_relational_residue",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every af35_relational_residue allowance before F16 completion."
+      }
+    ],
+    "findings": [],
+    "documentation_findings": []
+  },
+  "limits": [
+    "5 frontend tests use JSDOM, not a new browser E2E campaign.",
+    "No gate, permission or historical verdict authority changed.",
+    "No complete-plan qualification; remaining fixed acceptance criteria and T23/KG-10 decisions stay open."
+  ]
+}

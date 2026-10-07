@@ -54,7 +54,24 @@ def test_ambiguous_spec_only_reference_keeps_its_actual_source_selector():
 
 
 def test_order_and_duplicates_in_card_reference_list_do_not_create_new_defects():
-    first = analyze(card_links=['missing_b', 'missing_a'])
-    second = analyze(card_links=['missing_a', 'missing_b', 'missing_a'])
+    first = analyze(card_links=['missing_b', 'missing_a'], scenarios=[])
+    second = analyze(card_links=['missing_a', 'missing_b', 'missing_a'], scenarios=[])
     assert first == second
     assert len({finding.finding_id for finding in first.snapshot.findings}) == 2
+
+
+@pytest.mark.parametrize("origin", ["card", "spec"])
+def test_unilateral_reference_is_explicit_without_changing_observed_link(origin):
+    result = analyze(
+        card_links=["ts_one"] if origin == "card" else [],
+        scenarios=[{"id": "ts_one", "linked_task_ids": ["card"] if origin == "spec" else []}],
+    )
+    assert result.links == (("ts_one", f"supports/card_scenario_observed_{origin}@v2.1"),)
+    finding, = result.snapshot.findings
+    assert finding.reason_code == "source_disagreement"
+    assert finding.target_ref == "spec:spec:test_scenario:ts_one"
+    assert finding.source_selector == (
+        "card:card:test_scenario_ids" if origin == "card"
+        else "spec:spec:test_scenario:ts_one:linked_task_ids"
+    )
+    assert analyze().snapshot.findings == ()

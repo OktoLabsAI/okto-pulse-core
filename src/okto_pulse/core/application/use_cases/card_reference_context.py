@@ -63,7 +63,8 @@ class GetCardScenarioReferenceContextUseCase:
             for item in snapshot.findings[:20]:
                 view = ScenarioReferenceFindingView(finding_id=item.finding_id,
                 source_selector=item.source_selector, target_ref=item.target_ref, reason_code=item.reason_code,
-                correction_surface=('spec_test_scenarios' if item.reason_code == 'target_ambiguous'
+                correction_surface=('card_and_spec_scenario_links' if item.reason_code == 'source_disagreement'
+                                    else 'spec_test_scenarios' if item.reason_code == 'target_ambiguous'
                                     or item.source_selector.startswith('spec:') else 'card_scenario_links'))
                 # Omit a whole entry rather than corrupt an exact source/target
                 # identity under MCP's response budget. Count remains complete.

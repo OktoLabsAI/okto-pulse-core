@@ -62,6 +62,13 @@ def analyze_card_scenario_references(*, board_id, card_id, spec_id, card_links,
         else:
             selected.append((identity, card_scenario_rule(card_reference=identity in card_ids,
                                                          spec_reference=observed[identity])))
+            if (identity in card_ids) != observed[identity]:
+                selector = (f'card:{card_id}:test_scenario_ids' if identity in card_ids
+                            else f'spec:{spec_id}:test_scenario:{identity}:linked_task_ids')
+                findings.append(ProjectionReferenceFinding(
+                    board_id, 'card', card_id, CARD_SCENARIO_NAMESPACE, selector,
+                    f'spec:{spec_id}:test_scenario:{identity}', 'source_disagreement'))
+
     fingerprint = hashlib.sha256(json.dumps(
         ['card-scenario-source/v1', board_id, card_id, spec_id, parent_exists,
          sorted(card_ids), sorted(normalized)], separators=(',', ':'), ensure_ascii=True).encode()).hexdigest()

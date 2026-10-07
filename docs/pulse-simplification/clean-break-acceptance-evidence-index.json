@@ -2616,7 +2616,12 @@
       "historical_review_status": "not_audited_in_this_inventory",
       "prior_reviewed_execution": null,
       "discovered_artifacts": [],
-      "current_qualification": "pending_current_pair_review"
+      "current_qualification": "verified_current_pair_review",
+      "current_review": {
+        "artifact": "clean-break-acceptance-native-source-disagreement.json",
+        "criterion_key": "KG:KG-06",
+        "proof_pair": "dist-native-main35"
+      }
     },
     {
       "key": "KG:KG-07",

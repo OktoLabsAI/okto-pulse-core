@@ -62,7 +62,7 @@ async def test_current_source_closes_previous_finding_without_audit_or_graph():
     card, parent, uow, actor = source()
     absent = await read(uow, actor)
     assert absent.finding_count == 1 and absent.findings[0].reason_code == 'target_absent'
-    parent.test_scenarios = [{'id': 'missing'}]
+    parent.test_scenarios = [{'id': 'missing', 'linked_task_ids': ['card']}]
     resolved = await read(uow, actor)
     assert resolved.status == 'available' and resolved.finding_count == 0
     assert resolved.source_fingerprint != absent.source_fingerprint
@@ -104,3 +104,16 @@ async def test_budget_preserves_exact_findings_and_explicit_unavailable(profile,
     assert projected['scenario_reference_context'] == context and payload == before
     assert _stable_payload_bytes(projected) <= projected['projection']['budget_bytes']
     assert projected['projection']['payload_bytes'] == _stable_payload_bytes(projected)
+
+@pytest.mark.parametrize("origin", ["card", "spec"])
+async def test_unilateral_source_is_visible_and_read_never_reconciles_it(origin):
+    card, parent, uow, actor = source()
+    card.test_scenario_ids = ["scenario"] if origin == "card" else []
+    parent.test_scenarios = [{"id": "scenario", "linked_task_ids": ["card"] if origin == "spec" else []}]
+    before = copy.deepcopy((card.test_scenario_ids, parent.test_scenarios))
+    result = await read(uow, actor)
+    assert result.status == "available" and result.finding_count == 1
+    assert result.findings[0].reason_code == "source_disagreement"
+    assert result.findings[0].correction_surface == "card_and_spec_scenario_links"
+    assert (card.test_scenario_ids, parent.test_scenarios) == before
+    uow.commit.assert_not_awaited()

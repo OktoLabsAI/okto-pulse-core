@@ -2,6 +2,57 @@
 
 ## Estado para retomada
 
+### 2026-10-07 — KG-06 fechado no par main35; pronto para publicação pareada
+Grafx2 handle64961 terminou0:4pass/336.38s. XMLs conferidos; nenhum processo ativo.
+Recibo clean-break-acceptance-native-source-disagreement.json promove KG-06:
+68Core+27Community+4Grafx+5frontend=104casos distintos. Falhas de reprodução e
+oráculo antigo preservadas. Helper final limitado a exercise=None ou final_unlinked;
+os quatro casos qualificados usam exercise=None, sem alteração de seu caminho.
+Mantidos os oráculos independentes dos exercícios de outros cenários.
+Closure35 ok/oitoZERO; instalação main35 byte-idêntica, inclui SPA nova.
+Core wheel809085d3bc5395a2451a8c897e3c7faf940a77d57c0fd3dce1ad2ac5a046a157;
+Community wheeled4e0eb94e0b43f27f6b502968f488b07d82e28fcc41afcfffd4d5c52a462a19.
+UI/build/lint/verify e distribuição passaram. Sem novo browser E2E alegado.
+Índice49 verificados/186 aplicáveis pendentes/11 superados, sem entrega integral.
+Próximo fixo: KG-11 e demais C4; antes, retirar compatibilidade comprovada de
+get_decision_history com linha antiga de sete colunas. Grafx e memory store
+atuais retornam oito colunas incluindo source_artifact_ref; semantic enrichment
+opcional atual não é conversor e deve permanecer. Fixture r2_scenario_helpers
+também requer revisão posterior, conforme C3/C4. T23/KG-10 pendentes.
+Não há pausa solicitada nem bloqueio de progresso. Isolado next27 STALE;
+usar main35 e sincronizar/reconstruir isolado se necessário.
+
+### 2026-10-07 — KG-06 divergência de fontes — WIP main35
+Incremento anterior publicado Core16920e03, push0; Communityf341d0c6.
+source-disagreement1 handle23208 terminou1:2fail/4.52s, confirmando ausência de
+diagnóstico em ambos sentidos unilaterais. Implementado source_disagreement na
+análise compartilhada e DTO/contexto; preservada exatamente a união observada,
+rule_id e autoridade do gate. Leitura aponta revisão das duas fontes, sem escrita
+nem reconciliação automática. UI explica que vínculo observado não prova execução.
+Testes novos cobrem diagnóstico, leitura sem mutação e MCP move_card negado tanto
+sem referência Card quanto com cenário sem prova; estes Python ainda NÃO executados.
+UI92637 terminou0:5pass; lint56784 terminou0:316warnings/0errors, budget inalterado.
+Build6360/verify terminaram0:79files/78assets, SPA
+b9478dee1b64ed9f8d2ec6f6814872050c8b7d4421474f1901fd4c49c3277993, assets staged.
+main35 builds/install/prova65399 terminaram0:843/905+316/402 byte-idênticos.
+source-disagreement2 handle10409 terminou0:68pass/15.44s, incluindo4 recusas
+MCP com fontes divergentes e prova ausente; UI5pass. storage1 handle33598
+terminou0:27pass/42.88s (audit/closeout autenticado/distribuição frontend).
+closure35 handle4290 terminou0/oitoZERO. grafx1 handle74561 terminou1:
+4fail/135.03s; todas asserções antigas de snapshot vazio para vínculo unilateral.
+Após terminal, oráculo exige source_disagreement e verifica source_selector/target
+também no recibo final reconstruído. Rerun dos quatro casos necessário.
+Produto main35 permanece inalterado/byteprovado. Não publicar até terminal verde.
+Não promover KG-06 até validar backend/Grafx/frontend/distribuição/closure.
+Rerun Grafx2 handle64961 ATIVO após ajuste do oráculo; não editar produto.
+Ao fechar o teste, limitar nova asserção final do helper materialize a exercise=None,
+pois os exercícios de outros cenários alteram o estado final deliberadamente.
+Próximo resíduo C1 identificado na revisão KG-11: kg_service.get_decision_history
+ainda aceita linha antiga de sete colunas (linha1039), com teste positivo em
+test_kg_decision_history_provenance. Investigar porta/stores antes de remover;
+nenhum produto dessa frente foi editado.
+Sem alteração de autoridade nem aprovação presumida de T23/KG-10.
+
 ### 2026-10-07 — Identidades nativas dos filhos fechadas; cinco critérios KG qualificados
 child-grafx1 handle45362 terminou0:32pass/920.70s. Todos XMLs conferidos,
 nenhum processo permanece ativo. Recibo clean-break-acceptance-native-child-identity.json

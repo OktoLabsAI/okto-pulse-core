@@ -9,8 +9,8 @@ class ScenarioReferenceFindingView(BaseModel):
     finding_id: str
     source_selector: str
     target_ref: str | None
-    reason_code: Literal['parent_absent', 'target_absent', 'target_ambiguous']
-    correction_surface: Literal['card_scenario_links', 'spec_test_scenarios']
+    reason_code: Literal['parent_absent', 'target_absent', 'target_ambiguous', 'source_disagreement']
+    correction_surface: Literal['card_scenario_links', 'spec_test_scenarios', 'card_and_spec_scenario_links']
 
 
 class CardScenarioReferenceContext(BaseModel):

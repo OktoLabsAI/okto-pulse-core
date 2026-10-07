@@ -50,7 +50,7 @@ async def test_real_card_and_mcp_read_follow_source_correction_without_waiting_f
     assert before['scenario_reference_context'] == reference.model_dump(mode='json')
     async with factory() as session:
         spec = await session.get(Spec, spec_id)
-        spec.test_scenarios = [{'id': 'missing', 'title': 'Now present', 'status': 'not_run'}]
+        spec.test_scenarios = [{'id': 'missing', 'title': 'Now present', 'status': 'not_run', 'linked_task_ids': [card_id]}]
         await session.commit()
     after = (await context())['scenario_reference_context']
     assert after['status'] == 'available' and after['finding_count'] == 0 and after['findings'] == []
