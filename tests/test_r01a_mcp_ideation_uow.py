@@ -575,14 +575,14 @@ async def test_ideation_cross_board_matrix_has_no_payload_write_or_log(
             board_id=BOARD_ID,
             ideation_id=ideation_id,
             question="must-not-create",
-            options="A|B",
+            options=[{"label": "A"}, {"label": "B"}],
         ),
         "answer": await _call(
             "okto_pulse_answer_ideation_question",
             board_id=BOARD_ID,
             ideation_id=ideation_id,
             qa_id=foreign["qa_id"],
-            selected="opt_0",
+            selected=["opt_0"],
         ),
         "delete_qa": await _call(
             "okto_pulse_delete_ideation_question",
@@ -675,14 +675,14 @@ async def test_ideation_missing_parent_matrix_is_not_found_and_zero_write(
             board_id=BOARD_ID,
             ideation_id=missing,
             question="must-not-create",
-            options="A|B",
+            options=[{"label": "A"}, {"label": "B"}],
         ),
         await _call(
             "okto_pulse_answer_ideation_question",
             board_id=BOARD_ID,
             ideation_id=missing,
             qa_id=missing_qa,
-            selected="opt_0",
+            selected=["opt_0"],
         ),
         await _call(
             "okto_pulse_delete_ideation_question",
@@ -812,7 +812,7 @@ async def test_ideation_qa_rejects_same_board_wrong_parent_without_log(
         board_id=BOARD_ID,
         ideation_id=sibling,
         qa_id=local["qa_id"],
-        selected="opt_0",
+        selected=["opt_0"],
     )
     deleted = await _call(
         "okto_pulse_delete_ideation_question",
@@ -866,7 +866,7 @@ async def test_ideation_same_board_matrix_preserves_all_capabilities(
         board_id=BOARD_ID,
         ideation_id=ideation_id,
         qa_id=local["qa_id"],
-        selected="opt_0",
+        selected=["opt_0"],
     )
     deleted_qa = await _call(
         "okto_pulse_delete_ideation_question",
@@ -956,14 +956,14 @@ async def test_qa_ask_and_answer(_seed):
     iid = created["ideation"]["id"]
     asked = await _call(
         "okto_pulse_ask_ideation_choice_question", board_id=BOARD_ID, ideation_id=iid,
-        question="A or B?", options="A|B",
+        question="A or B?", options=[{"label": "A"}, {"label": "B"}],
     )
     assert asked["success"] is True
     qa_id = asked["qa"]["id"]
     opt_id = asked["qa"]["choices"][0]["id"]
     answered = await _call(
         "okto_pulse_answer_ideation_question", board_id=BOARD_ID, ideation_id=iid,
-        qa_id=qa_id, selected=opt_id,
+        qa_id=qa_id, selected=[opt_id],
     )
     # The SAME agent asked + answers -> McpAnswerIdeationQuestionUseCase catches
     # QASelfAnsweringNotAllowedError (committing, legacy parity) and returns the
@@ -1182,6 +1182,6 @@ async def test_link_story_missing_story_envelope(_seed):
 async def test_convert_stories_missing_story_envelope(_seed):
     out = await _call(
         "okto_pulse_convert_stories_to_ideation", board_id=BOARD_ID,
-        story_ids="does-not-exist", title="From stories",
+        story_ids=["does-not-exist"], title="From stories",
     )
     assert out == {"error": "One or more Stories were not found in this board"}

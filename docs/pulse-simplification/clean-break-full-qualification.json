@@ -3977,5 +3977,573 @@
       }
     ],
     "limits": "Terminal1 handle91252. Four first tests passed. Fifth timed out waiting480s at1052/1500 boards, no reported preparation errors; native attempt budget600s. Not a qualified full E2E. Concurrent host workload observed; cause not established. Do not relax product deadline or reduce census to manufacture pass."
+  },
+  "core_full_run15": {
+    "campaign": "clean-break-full-run15",
+    "counts": {
+      "name": "pytest",
+      "errors": "0",
+      "failures": "20",
+      "skipped": "0",
+      "tests": "142",
+      "time": "133.561",
+      "timestamp": "2026-10-07T06:34:47.206457-03:00",
+      "hostname": "Alienware_m15"
+    },
+    "xml_sha256": "a5dfd98035a87bee1cc340ed12aaa01dde7bcb315d3b715bcc51f5c7c0674d9a",
+    "failures": [
+      {
+        "class": "tests.test_r01a_mcp_cognitive_readiness_uow",
+        "name": "test_evaluate_cognitive_readiness_parity",
+        "message": "okto_pulse.core.application.use_cases.base.PermissionDeniedError: {\"error\": \"permission_denied\", \"reason\": \"permission_missing\", \"required_permission\": \"kg.operations.cognitive.read\", \"detail\": \"Permission denied: requires 'kg.operations.cognitive.read'\"}"
+      },
+      {
+        "class": "tests.test_r01a_mcp_cognitive_readiness_uow",
+        "name": "test_list_cognitive_readiness_items_parity",
+        "message": "okto_pulse.core.application.use_cases.base.PermissionDeniedError: {\"error\": \"permission_denied\", \"reason\": \"permission_missing\", \"required_permission\": \"kg.operations.cognitive.read\", \"detail\": \"Permission denied: requires 'kg.operations.cognitive.read'\"}"
+      },
+      {
+        "class": "tests.test_r01a_mcp_cognitive_readiness_uow",
+        "name": "test_evaluate_bug_cognitive_closure_context_aware_fail_closed",
+        "message": "okto_pulse.core.application.use_cases.base.PermissionDeniedError: {\"error\": \"permission_denied\", \"reason\": \"permission_missing\", \"required_permission\": \"kg.operations.cognitive.read\", \"detail\": \"Permission denied: requires 'kg.operations.cognitive.read'\"}"
+      },
+      {
+        "class": "tests.test_r01a_mcp_ideation_uow",
+        "name": "test_ideation_cross_board_matrix_has_no_payload_write_or_log",
+        "message": "AssertionError: assert {'add_kb': {'... found'}, ...} == {'add_kb': {'... found'}, ...}\n  \n  Omitting 9 identical items, use -vv to show\n  Differing items:\n  {'ask': {'error': 'Invalid options: At least one option in a native array is required'}} != {'ask': {'error': 'Ideation not found'}}\n  {'answer': {'detail': 'expected a native array of strings', 'error': 'invalid_multi_value_input'}} != {'answer': {'code': 'qa_not_found', 'error': 'qa_not_found', 'message': 'Q&A item not found', 'mutation_applied': False}}\n  Use -v to get more diff"
+      },
+      {
+        "class": "tests.test_r01a_mcp_ideation_uow",
+        "name": "test_ideation_missing_parent_matrix_is_not_found_and_zero_write",
+        "message": "AssertionError: assert [{'error': 'I... found'}, ...] == [{'error': 'I... found'}, ...]\n  \n  At index 7 diff: {'error': 'Invalid options: At least one option in a native array is required'} != {'error': 'Ideation not found'}\n  Use -v to get more diff"
+      },
+      {
+        "class": "tests.test_r01a_mcp_ideation_uow",
+        "name": "test_ideation_qa_rejects_same_board_wrong_parent_without_log",
+        "message": "AssertionError: assert {'detail': 'e..._value_input'} == {'code': 'qa_...plied': False}\n  \n  Differing items:\n  {'error': 'invalid_multi_value_input'} != {'error': 'qa_not_found'}\n  Left contains 1 more item:\n  {'detail': 'expected a native array of strings'}\n  Right contains 3 more items:\n  {'code': 'qa_not_found',...\n  \n  ...Full output truncated (3 lines hidden), use '-vv' to show"
+      },
+      {
+        "class": "tests.test_r01a_mcp_ideation_uow",
+        "name": "test_ideation_same_board_matrix_preserves_all_capabilities",
+        "message": "KeyError: 'success'"
+      },
+      {
+        "class": "tests.test_r01a_mcp_ideation_uow",
+        "name": "test_qa_ask_and_answer",
+        "message": "KeyError: 'success'"
+      },
+      {
+        "class": "tests.test_r01a_mcp_ideation_uow",
+        "name": "test_convert_stories_missing_story_envelope",
+        "message": "AssertionError: assert {'error': 'ex...y of strings'} == {'error': 'On...n this board'}\n  \n  Differing items:\n  {'error': 'expected a native array of strings'} != {'error': 'One or more Stories were not found in this board'}\n  Use -v to get more diff"
+      },
+      {
+        "class": "tests.test_r01a_mcp_refinement_uow",
+        "name": "test_refinement_context_adds_traceability_without_changing_legacy_shape",
+        "message": "KeyError: 'edition'"
+      },
+      {
+        "class": "tests.test_r01a_mcp_refinement_uow",
+        "name": "test_refinement_cross_board_matrix_has_no_payload_write_or_log",
+        "message": "AssertionError: assert {'add_kb': {'... found'}, ...} == {'add_kb': {'... found'}, ...}\n  \n  Omitting 8 identical items, use -vv to show\n  Differing items:\n  {'ask': {'error': 'Invalid options: At least one option in a native array is required'}} != {'ask': {'error': 'Refinement not found'}}\n  {'answer': {'detail': 'expected a native array of strings', 'error': 'invalid_multi_value_input'}} != {'answer': {'code': 'qa_not_found', 'error': 'qa_not_found', 'message': 'Q&A item not found', 'mutation_applied': False}}\n  Use -v to get more diff"
+      },
+      {
+        "class": "tests.test_r01a_mcp_refinement_uow",
+        "name": "test_refinement_missing_parent_matrix_is_not_found_and_zero_write",
+        "message": "AssertionError: assert [{'error': 'R... found'}, ...] == [{'error': 'R... found'}, ...]\n  \n  At index 7 diff: {'error': 'Invalid options: At least one option in a native array is required'} != {'error': 'Refinement not found'}\n  Use -v to get more diff"
+      },
+      {
+        "class": "tests.test_r01a_mcp_refinement_uow",
+        "name": "test_refinement_qa_rejects_same_board_wrong_parent_without_log",
+        "message": "AssertionError: assert {'detail': 'e..._value_input'} == {'code': 'qa_...plied': False}\n  \n  Differing items:\n  {'error': 'invalid_multi_value_input'} != {'error': 'qa_not_found'}\n  Left contains 1 more item:\n  {'detail': 'expected a native array of strings'}\n  Right contains 3 more items:\n  {'code': 'qa_not_found',...\n  \n  ...Full output truncated (3 lines hidden), use '-vv' to show"
+      },
+      {
+        "class": "tests.test_r01a_mcp_refinement_uow",
+        "name": "test_refinement_same_board_matrix_preserves_all_capabilities",
+        "message": "KeyError: 'success'"
+      },
+      {
+        "class": "tests.test_r01a_mcp_refinement_uow",
+        "name": "test_qa_ask_and_answer",
+        "message": "KeyError: 'success'"
+      },
+      {
+        "class": "tests.test_r01a_mcp_spec_uow",
+        "name": "test_core_resolver_fr_then_tr_dedup_unresolved",
+        "message": "AssertionError: assert ['0', 'nope'] == ['nope']\n  \n  At index 0 diff: '0' != 'nope'\n  Left contains one more item: 'nope'\n  Use -v to get more diff"
+      },
+      {
+        "class": "tests.test_r01a_mcp_spec_uow",
+        "name": "test_move_spec_refreshes_inside_transaction_before_commit",
+        "message": "okto_pulse.core.application.use_cases.base.PermissionDeniedError: {\"error\": \"permission_denied\", \"reason\": \"permission_missing\", \"required_permission\": \"spec.move.draft_to_review\", \"detail\": \"Permission denied: requires 'spec.move.draft_to_review'\"}"
+      },
+      {
+        "class": "tests.test_r01a_mcp_spec_uow",
+        "name": "test_get_spec_exposes_structured_families_and_archive_state",
+        "message": "okto_pulse.core.services.resource_gate_contracts.ResourceGateViolation: Resource Gate could not resolve resource lineage for spec '421a1335-f698-4b7e-a3d0-aa2b5ec4f3c3': The adopted architecture scope is unavailable."
+      },
+      {
+        "class": "tests.test_r01a_mcp_spec_uow",
+        "name": "test_spec_parent_operations_fail_closed_cross_board_without_audit[ask_spec_choice_question]",
+        "message": "AssertionError: assert {'error': 'In...t at index 0'} == {'error': 'Spec not found'}\n  \n  Differing items:\n  {'error': 'Invalid options: expected option object at index 0'} != {'error': 'Spec not found'}\n  Use -v to get more diff"
+      },
+      {
+        "class": "tests.test_r01a_mcp_spec_uow",
+        "name": "test_spec_parent_operations_fail_closed_cross_board_without_audit[delete_spec_question]",
+        "message": "assert {'error': '{\"...ermission.\"}'} == {'error': 'Q&...em not found'}\n  \n  Differing items:\n  {'error': '{\"error\": \"Permission denied\", \"reason\": \"permission_missing\", \"required_permission\": \"spec.qa.delete\", \"detail\": \"Agent does not have the \\'spec.qa.delete\\' permission.\"}'} != {'error': 'Q&A item not found'}\n  Use -v to get more diff"
+      }
+    ]
+  },
+  "core15_native_surfaces1": {
+    "campaign": "core15-native-surfaces1",
+    "counts": {
+      "name": "pytest",
+      "errors": "71",
+      "failures": "1",
+      "skipped": "0",
+      "tests": "135",
+      "time": "34.171",
+      "timestamp": "2026-10-07T06:38:59.510191-03:00",
+      "hostname": "Alienware_m15"
+    },
+    "xml_sha256": "a2f914832e042485c8ec00cc7301312aa4d71abf9e878ae4e66c362994eb9817",
+    "failures": [
+      {
+        "class": "tests.test_r01a_mcp_refinement_uow",
+        "name": "test_refinement_context_projects_traceability_and_refuses_retired_profile",
+        "message": "assert \"Unsupported ...ile: 'legacy'\" == 'unsupported_projection'\n  \n  - unsupported_projection\n  + Unsupported projection profile: 'legacy'"
+      },
+      {
+        "class": "tests.test_r01a_mcp_spec_uow",
+        "name": "test_all_spec_tools_strangled",
+        "message": "failed on setup with \"TypeError: Value after * must be an iterable, not PermissionSet\""
+      },
+      {
+        "class": "tests.test_r01a_mcp_spec_uow",
+        "name": "test_mcp_spec_crud_is_transport_free",
+        "message": "failed on setup with \"TypeError: Value after * must be an iterable, not PermissionSet\""
+      },
+      {
+        "class": "tests.test_r01a_mcp_spec_uow",
+        "name": "test_test_scenario_commit_map_no_double_commit",
+        "message": "failed on setup with \"TypeError: Value after * must be an iterable, not PermissionSet\""
+      },
+      {
+        "class": "tests.test_r01a_mcp_spec_uow",
+        "name": "test_core_resolver_fr_then_tr_dedup_unresolved",
+        "message": "failed on setup with \"TypeError: Value after * must be an iterable, not PermissionSet\""
+      },
+      {
+        "class": "tests.test_r01a_mcp_spec_uow",
+        "name": "test_move_spec_refreshes_inside_transaction_before_commit",
+        "message": "failed on setup with \"TypeError: Value after * must be an iterable, not PermissionSet\""
+      },
+      {
+        "class": "tests.test_r01a_mcp_spec_uow",
+        "name": "test_api_contract_f9_f10_canonical_no_pydantic_url",
+        "message": "failed on setup with \"TypeError: Value after * must be an iterable, not PermissionSet\""
+      },
+      {
+        "class": "tests.test_r01a_mcp_spec_uow",
+        "name": "test_update_spec_exposes_delivery_context_bootstrap",
+        "message": "failed on setup with \"TypeError: Value after * must be an iterable, not PermissionSet\""
+      },
+      {
+        "class": "tests.test_r01a_mcp_spec_uow",
+        "name": "test_move_spec_returns_committed_version",
+        "message": "failed on setup with \"TypeError: Value after * must be an iterable, not PermissionSet\""
+      },
+      {
+        "class": "tests.test_r01a_mcp_spec_uow",
+        "name": "test_add_business_rule_roundtrip",
+        "message": "failed on setup with \"TypeError: Value after * must be an iterable, not PermissionSet\""
+      },
+      {
+        "class": "tests.test_r01a_mcp_spec_uow",
+        "name": "test_add_api_contract_roundtrip",
+        "message": "failed on setup with \"TypeError: Value after * must be an iterable, not PermissionSet\""
+      },
+      {
+        "class": "tests.test_r01a_mcp_spec_uow",
+        "name": "test_get_spec_exposes_structured_families_and_archive_state",
+        "message": "failed on setup with \"TypeError: Value after * must be an iterable, not PermissionSet\""
+      },
+      {
+        "class": "tests.test_r01a_mcp_spec_uow",
+        "name": "test_add_api_contract_invalid_method_is_canonical",
+        "message": "failed on setup with \"TypeError: Value after * must be an iterable, not PermissionSet\""
+      },
+      {
+        "class": "tests.test_r01a_mcp_spec_uow",
+        "name": "test_integration_requirement_is_board_scoped",
+        "message": "failed on setup with \"TypeError: Value after * must be an iterable, not PermissionSet\""
+      },
+      {
+        "class": "tests.test_r01a_mcp_spec_uow",
+        "name": "test_business_rule_read_is_board_scoped",
+        "message": "failed on setup with \"TypeError: Value after * must be an iterable, not PermissionSet\""
+      },
+      {
+        "class": "tests.test_r01a_mcp_spec_uow",
+        "name": "test_json_spec_operations_fail_closed_cross_board_without_audit[update_spec]",
+        "message": "failed on setup with \"TypeError: Value after * must be an iterable, not PermissionSet\""
+      },
+      {
+        "class": "tests.test_r01a_mcp_spec_uow",
+        "name": "test_json_spec_operations_fail_closed_cross_board_without_audit[add_business_rule]",
+        "message": "failed on setup with \"TypeError: Value after * must be an iterable, not PermissionSet\""
+      },
+      {
+        "class": "tests.test_r01a_mcp_spec_uow",
+        "name": "test_json_spec_operations_fail_closed_cross_board_without_audit[update_spec_entity0]",
+        "message": "failed on setup with \"TypeError: Value after * must be an iterable, not PermissionSet\""
+      },
+      {
+        "class": "tests.test_r01a_mcp_spec_uow",
+        "name": "test_json_spec_operations_fail_closed_cross_board_without_audit[remove_spec_entity0]",
+        "message": "failed on setup with \"TypeError: Value after * must be an iterable, not PermissionSet\""
+      },
+      {
+        "class": "tests.test_r01a_mcp_spec_uow",
+        "name": "test_json_spec_operations_fail_closed_cross_board_without_audit[list_business_rules]",
+        "message": "failed on setup with \"TypeError: Value after * must be an iterable, not PermissionSet\""
+      },
+      {
+        "class": "tests.test_r01a_mcp_spec_uow",
+        "name": "test_json_spec_operations_fail_closed_cross_board_without_audit[add_api_contract]",
+        "message": "failed on setup with \"TypeError: Value after * must be an iterable, not PermissionSet\""
+      },
+      {
+        "class": "tests.test_r01a_mcp_spec_uow",
+        "name": "test_json_spec_operations_fail_closed_cross_board_without_audit[update_spec_api_contract]",
+        "message": "failed on setup with \"TypeError: Value after * must be an iterable, not PermissionSet\""
+      },
+      {
+        "class": "tests.test_r01a_mcp_spec_uow",
+        "name": "test_json_spec_operations_fail_closed_cross_board_without_audit[remove_spec_entity1]",
+        "message": "failed on setup with \"TypeError: Value after * must be an iterable, not PermissionSet\""
+      },
+      {
+        "class": "tests.test_r01a_mcp_spec_uow",
+        "name": "test_json_spec_operations_fail_closed_cross_board_without_audit[list_api_contracts]",
+        "message": "failed on setup with \"TypeError: Value after * must be an iterable, not PermissionSet\""
+      },
+      {
+        "class": "tests.test_r01a_mcp_spec_uow",
+        "name": "test_json_spec_operations_fail_closed_cross_board_without_audit[add_decision]",
+        "message": "failed on setup with \"TypeError: Value after * must be an iterable, not PermissionSet\""
+      },
+      {
+        "class": "tests.test_r01a_mcp_spec_uow",
+        "name": "test_json_spec_operations_fail_closed_cross_board_without_audit[update_spec_entity1]",
+        "message": "failed on setup with \"TypeError: Value after * must be an iterable, not PermissionSet\""
+      },
+      {
+        "class": "tests.test_r01a_mcp_spec_uow",
+        "name": "test_json_spec_operations_fail_closed_cross_board_without_audit[remove_spec_entity2]",
+        "message": "failed on setup with \"TypeError: Value after * must be an iterable, not PermissionSet\""
+      },
+      {
+        "class": "tests.test_r01a_mcp_spec_uow",
+        "name": "test_json_spec_operations_fail_closed_cross_board_without_audit[add_test_scenario]",
+        "message": "failed on setup with \"TypeError: Value after * must be an iterable, not PermissionSet\""
+      },
+      {
+        "class": "tests.test_r01a_mcp_spec_uow",
+        "name": "test_json_spec_operations_fail_closed_cross_board_without_audit[list_test_scenarios]",
+        "message": "failed on setup with \"TypeError: Value after * must be an iterable, not PermissionSet\""
+      },
+      {
+        "class": "tests.test_r01a_mcp_spec_uow",
+        "name": "test_json_spec_operations_fail_closed_cross_board_without_audit[update_test_scenario]",
+        "message": "failed on setup with \"TypeError: Value after * must be an iterable, not PermissionSet\""
+      },
+      {
+        "class": "tests.test_r01a_mcp_spec_uow",
+        "name": "test_json_spec_operations_fail_closed_cross_board_without_audit[delete_test_scenario]",
+        "message": "failed on setup with \"TypeError: Value after * must be an iterable, not PermissionSet\""
+      },
+      {
+        "class": "tests.test_r01a_mcp_spec_uow",
+        "name": "test_json_spec_operations_fail_closed_cross_board_without_audit[update_test_scenario_status]",
+        "message": "failed on setup with \"TypeError: Value after * must be an iterable, not PermissionSet\""
+      },
+      {
+        "class": "tests.test_r01a_mcp_spec_uow",
+        "name": "test_spec_parent_operations_fail_closed_cross_board_without_audit[get_spec]",
+        "message": "failed on setup with \"TypeError: Value after * must be an iterable, not PermissionSet\""
+      },
+      {
+        "class": "tests.test_r01a_mcp_spec_uow",
+        "name": "test_spec_parent_operations_fail_closed_cross_board_without_audit[delete_spec]",
+        "message": "failed on setup with \"TypeError: Value after * must be an iterable, not PermissionSet\""
+      },
+      {
+        "class": "tests.test_r01a_mcp_spec_uow",
+        "name": "test_spec_parent_operations_fail_closed_cross_board_without_audit[get_spec_history]",
+        "message": "failed on setup with \"TypeError: Value after * must be an iterable, not PermissionSet\""
+      },
+      {
+        "class": "tests.test_r01a_mcp_spec_uow",
+        "name": "test_spec_parent_operations_fail_closed_cross_board_without_audit[list_spec_validations]",
+        "message": "failed on setup with \"TypeError: Value after * must be an iterable, not PermissionSet\""
+      },
+      {
+        "class": "tests.test_r01a_mcp_spec_uow",
+        "name": "test_spec_parent_operations_fail_closed_cross_board_without_audit[submit_spec_validation]",
+        "message": "failed on setup with \"TypeError: Value after * must be an iterable, not PermissionSet\""
+      },
+      {
+        "class": "tests.test_r01a_mcp_spec_uow",
+        "name": "test_spec_parent_operations_fail_closed_cross_board_without_audit[list_spec_evaluations]",
+        "message": "failed on setup with \"TypeError: Value after * must be an iterable, not PermissionSet\""
+      },
+      {
+        "class": "tests.test_r01a_mcp_spec_uow",
+        "name": "test_spec_parent_operations_fail_closed_cross_board_without_audit[get_spec_evaluation]",
+        "message": "failed on setup with \"TypeError: Value after * must be an iterable, not PermissionSet\""
+      },
+      {
+        "class": "tests.test_r01a_mcp_spec_uow",
+        "name": "test_spec_parent_operations_fail_closed_cross_board_without_audit[delete_spec_evaluation]",
+        "message": "failed on setup with \"TypeError: Value after * must be an iterable, not PermissionSet\""
+      },
+      {
+        "class": "tests.test_r01a_mcp_spec_uow",
+        "name": "test_spec_parent_operations_fail_closed_cross_board_without_audit[submit_spec_evaluation]",
+        "message": "failed on setup with \"TypeError: Value after * must be an iterable, not PermissionSet\""
+      },
+      {
+        "class": "tests.test_r01a_mcp_spec_uow",
+        "name": "test_spec_parent_operations_fail_closed_cross_board_without_audit[get_spec_knowledge]",
+        "message": "failed on setup with \"TypeError: Value after * must be an iterable, not PermissionSet\""
+      },
+      {
+        "class": "tests.test_r01a_mcp_spec_uow",
+        "name": "test_spec_parent_operations_fail_closed_cross_board_without_audit[add_spec_knowledge]",
+        "message": "failed on setup with \"TypeError: Value after * must be an iterable, not PermissionSet\""
+      },
+      {
+        "class": "tests.test_r01a_mcp_spec_uow",
+        "name": "test_spec_parent_operations_fail_closed_cross_board_without_audit[delete_spec_knowledge]",
+        "message": "failed on setup with \"TypeError: Value after * must be an iterable, not PermissionSet\""
+      },
+      {
+        "class": "tests.test_r01a_mcp_spec_uow",
+        "name": "test_spec_parent_operations_fail_closed_cross_board_without_audit[ask_spec_choice_question]",
+        "message": "failed on setup with \"TypeError: Value after * must be an iterable, not PermissionSet\""
+      },
+      {
+        "class": "tests.test_r01a_mcp_spec_uow",
+        "name": "test_spec_parent_operations_fail_closed_cross_board_without_audit[answer_spec_question]",
+        "message": "failed on setup with \"TypeError: Value after * must be an iterable, not PermissionSet\""
+      },
+      {
+        "class": "tests.test_r01a_mcp_spec_uow",
+        "name": "test_spec_parent_operations_fail_closed_cross_board_without_audit[delete_spec_question]",
+        "message": "failed on setup with \"TypeError: Value after * must be an iterable, not PermissionSet\""
+      },
+      {
+        "class": "tests.test_r01a_mcp_spec_uow",
+        "name": "test_link_task_parents_fail_closed_cross_board_without_audit[spec-__seed_spec__-Spec or card not found, or they belong to different boards]",
+        "message": "failed on setup with \"TypeError: Value after * must be an iterable, not PermissionSet\""
+      },
+      {
+        "class": "tests.test_r01a_mcp_spec_uow",
+        "name": "test_link_task_parents_fail_closed_cross_board_without_audit[contract-api_scope-Spec not found]",
+        "message": "failed on setup with \"TypeError: Value after * must be an iterable, not PermissionSet\""
+      },
+      {
+        "class": "tests.test_r01a_mcp_spec_uow",
+        "name": "test_link_task_parents_fail_closed_cross_board_without_audit[tr-tr_scope-Spec not found]",
+        "message": "failed on setup with \"TypeError: Value after * must be an iterable, not PermissionSet\""
+      },
+      {
+        "class": "tests.test_r01a_mcp_spec_uow",
+        "name": "test_link_task_parents_fail_closed_cross_board_without_audit[decision-dec_scope-Spec not found]",
+        "message": "failed on setup with \"TypeError: Value after * must be an iterable, not PermissionSet\""
+      },
+      {
+        "class": "tests.test_r01a_mcp_spec_uow",
+        "name": "test_link_task_parents_fail_closed_cross_board_without_audit[ir-ir_scope-Spec not found]",
+        "message": "failed on setup with \"TypeError: Value after * must be an iterable, not PermissionSet\""
+      },
+      {
+        "class": "tests.test_r01a_mcp_spec_uow",
+        "name": "test_link_task_parents_fail_closed_cross_board_without_audit[or-or_scope-Spec not found]",
+        "message": "failed on setup with \"TypeError: Value after * must be an iterable, not PermissionSet\""
+      },
+      {
+        "class": "tests.test_r01a_mcp_spec_uow",
+        "name": "test_link_task_foreign_card_fails_closed_without_audit[spec-__seed_spec__-Spec or card not found, or they belong to different boards]",
+        "message": "failed on setup with \"TypeError: Value after * must be an iterable, not PermissionSet\""
+      },
+      {
+        "class": "tests.test_r01a_mcp_spec_uow",
+        "name": "test_link_task_foreign_card_fails_closed_without_audit[contract-api_scope-Card not found]",
+        "message": "failed on setup with \"TypeError: Value after * must be an iterable, not PermissionSet\""
+      },
+      {
+        "class": "tests.test_r01a_mcp_spec_uow",
+        "name": "test_link_task_foreign_card_fails_closed_without_audit[tr-tr_scope-Card not found]",
+        "message": "failed on setup with \"TypeError: Value after * must be an iterable, not PermissionSet\""
+      },
+      {
+        "class": "tests.test_r01a_mcp_spec_uow",
+        "name": "test_link_task_foreign_card_fails_closed_without_audit[decision-dec_scope-Card not found]",
+        "message": "failed on setup with \"TypeError: Value after * must be an iterable, not PermissionSet\""
+      },
+      {
+        "class": "tests.test_r01a_mcp_spec_uow",
+        "name": "test_link_task_foreign_card_fails_closed_without_audit[ir-ir_scope-Card not found]",
+        "message": "failed on setup with \"TypeError: Value after * must be an iterable, not PermissionSet\""
+      },
+      {
+        "class": "tests.test_r01a_mcp_spec_uow",
+        "name": "test_link_task_foreign_card_fails_closed_without_audit[or-or_scope-Card not found]",
+        "message": "failed on setup with \"TypeError: Value after * must be an iterable, not PermissionSet\""
+      },
+      {
+        "class": "tests.test_r01a_mcp_spec_uow",
+        "name": "test_link_task_parents_same_board_roundtrip",
+        "message": "failed on setup with \"TypeError: Value after * must be an iterable, not PermissionSet\""
+      },
+      {
+        "class": "tests.test_r01a_mcp_spec_uow",
+        "name": "test_spec_qa_same_board_choice_answer_delete",
+        "message": "failed on setup with \"TypeError: Value after * must be an iterable, not PermissionSet\""
+      },
+      {
+        "class": "tests.test_r01a_mcp_spec_uow",
+        "name": "test_spec_qa_child_must_belong_to_requested_spec_without_audit",
+        "message": "failed on setup with \"TypeError: Value after * must be an iterable, not PermissionSet\""
+      },
+      {
+        "class": "tests.test_r01a_mcp_spec_uow",
+        "name": "test_spec_knowledge_same_board_lifecycle",
+        "message": "failed on setup with \"TypeError: Value after * must be an iterable, not PermissionSet\""
+      },
+      {
+        "class": "tests.test_r01a_mcp_spec_uow",
+        "name": "test_spec_evaluation_same_board_read_and_delete",
+        "message": "failed on setup with \"TypeError: Value after * must be an iterable, not PermissionSet\""
+      },
+      {
+        "class": "tests.test_r01a_mcp_spec_uow",
+        "name": "test_decision_remove_is_soft_delete",
+        "message": "failed on setup with \"TypeError: Value after * must be an iterable, not PermissionSet\""
+      },
+      {
+        "class": "tests.test_r01a_mcp_spec_uow",
+        "name": "test_get_spec_history_accepts_explicit_limit",
+        "message": "failed on setup with \"TypeError: Value after * must be an iterable, not PermissionSet\""
+      },
+      {
+        "class": "tests.test_r01a_mcp_spec_uow",
+        "name": "test_add_api_contract_explicit_non_http[in_process]",
+        "message": "failed on setup with \"TypeError: Value after * must be an iterable, not PermissionSet\""
+      },
+      {
+        "class": "tests.test_r01a_mcp_spec_uow",
+        "name": "test_add_api_contract_explicit_non_http[grpc]",
+        "message": "failed on setup with \"TypeError: Value after * must be an iterable, not PermissionSet\""
+      },
+      {
+        "class": "tests.test_r01a_mcp_spec_uow",
+        "name": "test_add_api_contract_explicit_non_http[event]",
+        "message": "failed on setup with \"TypeError: Value after * must be an iterable, not PermissionSet\""
+      },
+      {
+        "class": "tests.test_r01a_mcp_spec_uow",
+        "name": "test_update_api_contract_old_method_refused_without_effects[TOOL]",
+        "message": "failed on setup with \"TypeError: Value after * must be an iterable, not PermissionSet\""
+      },
+      {
+        "class": "tests.test_r01a_mcp_spec_uow",
+        "name": "test_update_api_contract_old_method_refused_without_effects[COMPONENT]",
+        "message": "failed on setup with \"TypeError: Value after * must be an iterable, not PermissionSet\""
+      },
+      {
+        "class": "tests.test_r01a_mcp_spec_uow",
+        "name": "test_update_api_contract_old_method_refused_without_effects[EVENT]",
+        "message": "failed on setup with \"TypeError: Value after * must be an iterable, not PermissionSet\""
+      }
+    ]
+  },
+  "global_incomplete_bootstrap_reproduction": {
+    "root": "C:\\Users\\jpamb\\AppData\\Local\\Temp\\pulse-native-global-incomplete-q9bkk89p",
+    "source": "C:\\Users\\jpamb\\AppData\\Local\\Temp\\pulse-v040-native-installed-recovery6\\global-recovery-installed-e2e0\\venv\\Lib\\site-packages\\okto_pulse\\community\\adapters\\grafx_global_discovery.py",
+    "source_sha256": "d72dd677b459d87e6e95bfb2a55fd1ed88364d731a74fc926b0a298e80070205",
+    "before": {
+      "tables": [
+        "Board"
+      ],
+      "lsn": 4
+    },
+    "outcome": {
+      "accepted": true,
+      "changed": true
+    },
+    "after": {
+      "tables": [
+        "Board",
+        "CONTAINS_DECISION",
+        "DECISION_DERIVES_FROM",
+        "DECISION_MENTIONS_ENTITY",
+        "DecisionDigest",
+        "ENTITY_RELATES_TO",
+        "Entity",
+        "HAS_TOPIC",
+        "MENTIONS_ENTITY",
+        "TOPIC_RELATES_TO",
+        "Topic"
+      ],
+      "lsn": 10
+    },
+    "limits": "Confirmed direct initializer expands nonempty incomplete Global catalog. Existing native writer creates complete logical schema atomically then physical digest index separately: preserve that index recovery. Need inspect root admission before changing initializer; not yet implementation or closure qualification."
+  },
+  "core15_native_surfaces_qualified": {
+    "pair": "dist-native-claim-recovery1",
+    "campaigns": [
+      {
+        "campaign": "core15-native-surfaces2",
+        "counts": {
+          "name": "pytest",
+          "errors": "0",
+          "failures": "1",
+          "skipped": "0",
+          "tests": "90",
+          "time": "22.870",
+          "timestamp": "2026-10-07T06:40:50.003077-03:00",
+          "hostname": "Alienware_m15"
+        },
+        "xml_sha256": "4c1a4bd0ec88553341d00feced8476c7e950f2e64d46ab309a7f6158ad17fa11",
+        "failures": [
+          {
+            "class": "tests.test_r01a_mcp_refinement_uow",
+            "name": "test_refinement_context_projects_traceability_and_refuses_retired_profile",
+            "message": "AssertionError: Expected mock to have been awaited once. Awaited 2 times.\n\npytest introspection follows:\n\nKwargs:\nassert {'actor': Act...1847777', ...} == {}\n  \n  Left contains 7 more items:\n  {'actor': ActorContext(actor_id='r01a-mcprefinement-agent', source='mcp', actor_name='mcp-refinement-test', actor_kind='agent', board_id='r01a-mcprefinement', realm_id=None),\n   'board_id': 'r01a-mcprefinement',\n   'profile': 'legacy',\n   'subject_id': '444669a2-5f51-4e36-88ff-bf3111847777',\n   'subject_type': 'refinement',...\n  \n  ...Full output truncated (3 lines hidden), use '-vv' to show"
+          }
+        ]
+      },
+      {
+        "campaign": "core15-native-refinement3",
+        "counts": {
+          "name": "pytest",
+          "errors": "0",
+          "failures": "0",
+          "skipped": "0",
+          "tests": "19",
+          "time": "10.485",
+          "timestamp": "2026-10-07T06:41:49.492877-03:00",
+          "hostname": "Alienware_m15"
+        },
+        "xml_sha256": "1c4928a7a90d18e6db4ef965b7d83772772391b74b07b17aabf68a5965bff849",
+        "failures": []
+      }
+    ],
+    "distinct_cases_qualified": 135,
+    "complete_modules": 4,
+    "limits": "Native arrays/options and permission leaves; no positional ID conversion. Explicit architecture adoption. Spec QA delete grant only in fixture via native PermissionSet composition; cross-board and zero-write assertions retained. Full Refinement projection checked independently from real retired-profile refusal."
   }
 }

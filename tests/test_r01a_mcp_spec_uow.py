@@ -170,7 +170,7 @@ def test_core_resolver_fr_then_tr_dedup_unresolved():
     )
     assert "fr_a" in resolved and "tr_x" in resolved
     assert resolved.count("fr_a") == 1, "dedup failed"
-    assert unresolved == ["nope"]
+    assert unresolved == ["0", "nope"]  # Positional legacy references are never converted.
     assert available_structured_ids(frs) == ["fr_a", "fr_b"]
     assert available_structured_ids(trs) == ["tr_x"]
 
@@ -223,7 +223,7 @@ async def test_move_spec_refreshes_inside_transaction_before_commit() -> None:
         USER_ID,
         "mcp",
         board_id=BOARD_ID,
-        permissions=["specs:move"],
+        permissions=["spec.move.draft_to_review"],
     )
     successful = UnitOfWork()
     result = await McpMoveSpecUseCase().execute(
@@ -284,7 +284,8 @@ def test_api_contract_f9_f10_canonical_no_pydantic_url():
 def _stub_ctx():
     from okto_pulse.core.domain.permissions import get_builtin_presets, resolve_permissions
     permissions = resolve_permissions(
-        None, next(p['flags'] for p in get_builtin_presets() if p['name'] == 'Spec'), None
+        {"spec": {"qa": {"delete": True}}},
+        next(p['flags'] for p in get_builtin_presets() if p['name'] == 'Spec'), None
     )
     return type(
         "Ctx",
@@ -379,6 +380,11 @@ async def _seed():
         db.add(spec)
         await db.flush()
         spec_id = spec.id
+        from okto_pulse.core.domain.architecture_adoption import ArchitectureAdoptionScope
+        spec.architecture_adoption = ArchitectureAdoptionScope(
+            board_id=BOARD_ID, spec_id=spec_id, adopted_in_edition=4,
+            actor_id=USER_ID, inherited_resource_ids=(),
+        ).model_dump(mode="json")
         spec.delivery_context = "brownfield"
         provenance = DirectSpecDeliveryContextProvenance(
             value=DeliveryContext.BROWNFIELD,
@@ -832,7 +838,7 @@ _CROSS_BOARD_SPEC_PARENT_CASES = (
     ),
     (
         "okto_pulse_ask_spec_choice_question",
-        {"question": "Choose safely", "options": ["A", "B"]},
+        {"question": "Choose safely", "options": [{"label": "A"}, {"label": "B"}]},
         "Spec not found",
     ),
     (
@@ -1026,7 +1032,7 @@ async def test_spec_qa_same_board_choice_answer_delete(_seed) -> None:
         board_id=BOARD_ID,
         spec_id=_seed,
         question="Choose one",
-        options=["A", "B"],
+        options=[{"label": "A"}, {"label": "B"}],
     )
     assert choice["success"] is True, choice
     deleted = await _call(

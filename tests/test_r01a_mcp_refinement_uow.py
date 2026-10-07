@@ -188,7 +188,7 @@ async def _call(tool: str, **kwargs) -> dict:
 
 
 @pytest.mark.asyncio
-async def test_refinement_context_adds_traceability_without_changing_legacy_shape(
+async def test_refinement_context_projects_traceability_and_refuses_retired_profile(
     _seed,
 ) -> None:
     projection = AsyncMock(
@@ -205,21 +205,24 @@ async def test_refinement_context_adds_traceability_without_changing_legacy_shap
             refinement_id=_seed,
             profile="full",
         )
-        legacy = await _call(
-            "okto_pulse_get_refinement_context",
-            board_id=BOARD_ID,
-            refinement_id=_seed,
-            profile="legacy",
-        )
 
     assert modern["code_traceability"] == {
         "subject_type": "refinement",
         "subject_id": _seed,
     }
-    assert modern["edition"] == legacy["edition"] == 1
-    assert "code_traceability" not in legacy
+    assert modern["edition"] == 1
     projection.assert_awaited_once()
     assert projection.await_args.kwargs["profile"] == "full"
+
+    legacy = await _call(
+        "okto_pulse_get_refinement_context",
+        board_id=BOARD_ID,
+        refinement_id=_seed,
+        profile="legacy",
+    )
+    assert legacy["error_code"] == "unsupported_projection"
+    assert "code_traceability" not in legacy
+
 
 
 @pytest.fixture
@@ -630,14 +633,14 @@ async def test_refinement_cross_board_matrix_has_no_payload_write_or_log(
             board_id=BOARD_ID,
             refinement_id=refinement_id,
             question="must-not-create",
-            options="A|B",
+            options=[{"label": "A"}, {"label": "B"}],
         ),
         "answer": await _call(
             "okto_pulse_answer_refinement_question",
             board_id=BOARD_ID,
             refinement_id=refinement_id,
             qa_id=foreign["qa_id"],
-            selected="opt_0",
+            selected=["opt_0"],
         ),
         "delete_qa": await _call(
             "okto_pulse_delete_refinement_question",
@@ -726,14 +729,14 @@ async def test_refinement_missing_parent_matrix_is_not_found_and_zero_write(
             board_id=BOARD_ID,
             refinement_id=missing,
             question="must-not-create",
-            options="A|B",
+            options=[{"label": "A"}, {"label": "B"}],
         ),
         await _call(
             "okto_pulse_answer_refinement_question",
             board_id=BOARD_ID,
             refinement_id=missing,
             qa_id=missing_qa,
-            selected="opt_0",
+            selected=["opt_0"],
         ),
         await _call(
             "okto_pulse_delete_refinement_question",
@@ -861,7 +864,7 @@ async def test_refinement_qa_rejects_same_board_wrong_parent_without_log(
         board_id=BOARD_ID,
         refinement_id=sibling,
         qa_id=local["qa_id"],
-        selected="opt_0",
+        selected=["opt_0"],
     )
     deleted = await _call(
         "okto_pulse_delete_refinement_question",
@@ -915,7 +918,7 @@ async def test_refinement_same_board_matrix_preserves_all_capabilities(
         board_id=BOARD_ID,
         refinement_id=refinement_id,
         qa_id=local["qa_id"],
-        selected="opt_0",
+        selected=["opt_0"],
     )
     deleted_qa = await _call(
         "okto_pulse_delete_refinement_question",
@@ -1007,7 +1010,7 @@ async def test_qa_ask_and_answer(_seed):
         board_id=BOARD_ID,
         refinement_id=_seed,
         question="A or B?",
-        options="A|B",
+        options=[{"label": "A"}, {"label": "B"}],
     )
     assert asked["success"] is True
     qa_id = asked["qa"]["id"]
@@ -1017,7 +1020,7 @@ async def test_qa_ask_and_answer(_seed):
         board_id=BOARD_ID,
         refinement_id=_seed,
         qa_id=qa_id,
-        selected=opt_id,
+        selected=[opt_id],
     )
     # Same agent asked + answers -> McpAnswerRefinementQuestionUseCase catches
     # QASelfAnsweringNotAllowedError (committing, legacy parity) -> error envelope.

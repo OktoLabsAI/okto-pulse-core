@@ -2,6 +2,37 @@
 
 ## Estado para retomada
 
+### 2026-10-07 — Core15 followup completo:135 casos
+Followup2 handle82173 terminou1:89pass/1fail/22.95s. Refinement ainda esperava
+um único mock await após testar também perfil retirado. Prova de projeção full
+agora permanece isolada, assert_awaited_once preservado; recusa de legacy usa
+caminho real fora do patch. Refinement3 handle1601 terminou0:19pass/10.53s.
+135 casos distintos/quatro módulos qualificados; nenhum gate produtivo alterado.
+Community12 handle93670 segue ativo no par congelado dist-native-claim-recovery1.
+Próximos: restante da regressão, alias env C3, admissão Global C2 e E2E recovery
+com falha de prazo já registrada. Aceite integral permanece aberto.
+
+### 2026-10-07 — Core15 followup e reprodução de admissão Global
+Publicados Core b891eb43 e Community b368217f. Core15 handle36119 terminou1:
+122pass/20fail/133.70s; quatro módulos MCP cognitive/ideation/refinement/spec.
+Followup1 handle88519 terminou1:63pass/1fail/71erros34.30s. Erros de setup
+vieram da edição da fixture (PermissionSet não é lista), corrigida para
+customização granular nativa spec.qa.delete. Perfil legacy deve recusar pelo
+error_code, sem restaurar projeção. Followup2 handle82173 ATIVO nos dois módulos
+restantes. Arrays Q&A/story nativos, referência posicional não convertida,
+permission leaf atual e adoption explícita; gates produtivos intactos.
+
+Reprodução C2 em ambiente installed6 já autenticado confirma que
+ensure_current_grafx_global_schema aceita catálogo Global não vazio incompleto:
+somente Board,LSN4 ->11 tabelas,LSN10,changed=true. Recibo no arquivo de
+qualificação. A chamada inicial via main venv -I falhou antes de comportamento
+por Grafx ausente; reprodução efetiva usou venv isolado E2E e SHA de fonte.
+Investigar admissão da raiz antes de corrigir o inicializador; criação atual
+do schema lógico é transacional completa, índice físico vem em transação
+separada e sua recuperação nativa deve permanecer. Isto pertence à exigência
+já aprovada C2 de recusar formato incompatível antes de escrever.
+Produto continua congelado enquanto Community12 handle93670 estiver ativo.
+
 ### 2026-10-07 — Core14 followup completo:74 casos; installed6 falhou por prazo
 Core surfaces1 handle24233 terminou1:72pass/2fail/111.15s. Card2 handle36988
 terminou1:13pass/1fail/12.29s (segundo probe reutilizava estado cancelado).

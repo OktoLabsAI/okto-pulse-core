@@ -35,7 +35,7 @@ def _board_actor(board_id: str) -> ActorContext:
         "mcp",
         board_id=board_id,
         realm_id=LOCAL_REALM_ID,
-        permissions=["kg.admin.settings_read"],
+        permissions=["kg.operations.cognitive.read"],
     )
 
 
