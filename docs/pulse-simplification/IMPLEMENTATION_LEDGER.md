@@ -2,6 +2,42 @@
 
 ## Estado para retomada
 
+### 2026-10-07 — C3 instruções operacionais e resíduos confirmados
+Core11 handle64730 confirmado ativo por polling; log chegou4%, seis falhas
+parciais, sem resultado terminal. Nenhuma edição de src/teste/install durante a
+campanha. README Community corrigido: remove orientação de schema-migration,
+mostra bindings e diretórios Grafx/generation reais (graph_backend_binding.py),
+explica recusa sem conversão/exclusão e instalação em nova localização.
+Não exige novo teste comportamental: documentação conferida com paths/writer
+atuais e contrato de recusa já qualificado no release gate3; diff check verde.
+
+Resíduo concreto para resolver após terminal, dentro de C3 (não nova feature):
+Community config.py ainda aceita OKTO_PULSE_HOME em DataDirOrigin, precedência
+do construtor e _derive_paths; telemetry_effect_config.py também usa esse alias.
+Remover o caminho alternativo; DATA_DIR/argumento explícito/default atuais mantidos.
+Atualizar fixtures de isolamento ANTES de testes: test_cli_init, metrics_cli,
+terms_acceptance_cli, global_discovery_recovery_lifespan/installed_e2e usam o alias.
+test_data_home_identity e af31_s3_telemetry_effect_config contêm positivos antigos;
+reescrever como contrato atual/alias sem efeito, com Path.home temporário para
+não tocar armazenamento real. test_issue_84_88_regressions contém fonte legacy.
+
+Inspeção de graph_backend_binding confirmou GraphBackend ladybug|grafx e branches
+antigos; graph_route_resolver já recusa abertura Ladybug explicitamente e preserva
+arquivos. Helpers de path Ladybug também sustentam locks e detecção de resíduo:
+não excluir cegamente; separar uso de negação/ancoragem dos caminhos alternativos
+de binding. Reavaliar dentro de C2 sem remover recuperação/recusa de dados antigos.
+Nenhuma alteração de autoridade, semântica histórica ou dos gates pendentes.
+
+### 2026-10-07 — C4 distribuição publicada; continuação Core11
+Pushes confirmados Core d4c45965 / Community7a2dcd64, feature/v0.4.0; árvores
+limpas após publicação. Core11 iniciado handle64730, clean-break-full-run11:
+493 módulos integralmente qualificados excluídos, stress explicitamente excluído,
+--maxfail=20. Seleção/log/XML em .validation-v040. Par instalado e comprovado
+dist-v040-native-release2 mantido congelado; não editar produto/reinstalar durante
+campanha. Community9 ainda não iniciado. Aguardar terminal antes de corrigir
+fixtures e registrar resultado; nunca excluir último módulo parcial sem followup.
+C1-C4 integral/235 critérios/benchmark/T23/KG-10 permanecem abertos.
+
 ### 2026-10-07 — C4 incremento de distribuição0.4.0 validado
 Release gate3 terminal:6 aprovados198.40s. Handles82166/68746 encerrados.
 Closure-v040-native-release2 ok=true, findings/docs vazios e oito budgetsZERO.
