@@ -4500,7 +4500,8 @@
       ],
       "lsn": 10
     },
-    "limits": "Confirmed direct initializer expands nonempty incomplete Global catalog. Existing native writer creates complete logical schema atomically then physical digest index separately: preserve that index recovery. Need inspect root admission before changing initializer; not yet implementation or closure qualification."
+    "limits": "Confirmed direct initializer expands nonempty incomplete Global catalog. Existing native writer creates complete logical schema atomically then physical digest index separately: preserve that index recovery. Need inspect root admission before changing initializer; not yet implementation or closure qualification.",
+    "route_admission_review": "grafx_global_operational.require_global_grafx_admission checks page geometry; routed_global_graph_composition passes graph_route_resolver.admit_grafx_route, which checks current route/path/identity/geometry, not complete logical catalog. Initializer still needs nonempty incomplete-catalog refusal while retaining empty bootstrap and separately committed native physical-index recovery."
   },
   "core15_native_surfaces_qualified": {
     "pair": "dist-native-claim-recovery1",
@@ -4545,5 +4546,11 @@
     "distinct_cases_qualified": 135,
     "complete_modules": 4,
     "limits": "Native arrays/options and permission leaves; no positional ID conversion. Explicit architecture adoption. Spec QA delete grant only in fixture via native PermissionSet composition; cross-board and zero-write assertions retained. Full Refinement projection checked independently from real retired-profile refusal."
+  },
+  "core_full_run16": {
+    "status": "running",
+    "handle": 90773,
+    "excluded_qualified_modules": 788,
+    "pair": "dist-native-claim-recovery1"
   }
 }

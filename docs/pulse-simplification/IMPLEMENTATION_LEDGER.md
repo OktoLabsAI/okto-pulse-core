@@ -2,6 +2,19 @@
 
 ## Estado para retomada
 
+### 2026-10-07 — Continuação Core16 e estado exato das campanhas
+Core0797d4e2 e Communityb368217f publicados, árvores limpas antes deste recibo.
+Core16 handle90773 ATIVO:788 módulos completos excluídos; Community12
+handle93670 ATIVO. Não reinstalar/alterar produto enquanto usam o par
+dist-native-claim-recovery1. Installed6 terminou, não há E2E vivo.
+
+Revisão da composição Global: require_global_grafx_admission verifica geometria;
+callback routed passa por admit_grafx_route (rota atual/path/identidade/geometria),
+sem validar catálogo lógico completo. A recusa de catálogo não vazio incompleto
+deve entrar no inicializador antes de escritas. Preservar bootstrap vazio e
+índice físico criado separadamente após commit lógico nativo. Reprodução já
+registrada, implementação pendente de encerrar o congelamento das campanhas.
+
 ### 2026-10-07 — Core15 followup completo:135 casos
 Followup2 handle82173 terminou1:89pass/1fail/22.95s. Refinement ainda esperava
 um único mock await após testar também perfil retirado. Prova de projeção full
