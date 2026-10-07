@@ -3366,5 +3366,117 @@
       }
     ],
     "limits": "Each terminal1 after2passes and one schema fixture assertion failure. Round1 schema0.7, round2 internal count94, round3 outer report count94. All three stale assertions now use exact native0.8/97; fourth full module campaign running. No installed acceptance claim yet."
+  },
+  "community_full_run11": {
+    "campaign": "clean-break-full-run11-community",
+    "exit_code": 1,
+    "passed": 151,
+    "failed": 3,
+    "errors": 17,
+    "seconds": 185.36,
+    "xml_sha256": "2bfd0baf3dfa684358b5d8b489594790d29008785d8cb14735ccd9d376d26b3e",
+    "failures": [
+      {
+        "class": "tests.test_global_discovery_recovery_runtime_composition",
+        "name": "test_source_revision_fingerprint_detects_insert_update_delete_and_aba",
+        "message": "sqlite3.IntegrityError: NOT NULL constraint failed: boards.realm_id"
+      },
+      {
+        "class": "tests.test_global_discovery_recovery_runtime_composition",
+        "name": "test_source_revision_installs_the_exact_closed_trigger_manifest",
+        "message": "AssertionError: assert 37 == 39\n +  where 37 = len(('amendment_hotfix_revisions', 'app_settings', 'artifact_deletion_tombstones', 'boards', 'canonical_debt', 'cards', ...))"
+      },
+      {
+        "class": "tests.test_global_discovery_recovery_runtime_composition",
+        "name": "test_dropped_trigger_refuses_fingerprint_and_restart_without_repair",
+        "message": "sqlite3.IntegrityError: NOT NULL constraint failed: boards.realm_id"
+      },
+      {
+        "class": "tests.test_governed_queue_worker_fencing",
+        "name": "test_worker_fence_blocks_investigation_on_an_unrelated_board",
+        "message": "failed on setup with \"sqlalchemy.exc.IntegrityError: (sqlite3.IntegrityError) NOT NULL constraint failed: boards.realm_id\n[SQL: INSERT INTO boards (id, name, description, owner_id, realm_id) VALUES (?, ?, ?, ?, ?) RETURNING created_at, updated_at]\n[parameters: ('card4-worker-fence-board', 'Card 4', None, 'tester', None)]\n(Background on this error at: https://sqlalche.me/e/20/gkpj)\""
+      },
+      {
+        "class": "tests.test_governed_queue_worker_fencing",
+        "name": "test_queue_claim_fence_is_exact_and_generation_fail_closed",
+        "message": "failed on setup with \"sqlalchemy.exc.IntegrityError: (sqlite3.IntegrityError) NOT NULL constraint failed: boards.realm_id\n[SQL: INSERT INTO boards (id, name, description, owner_id, realm_id) VALUES (?, ?, ?, ?, ?) RETURNING created_at, updated_at]\n[parameters: ('card4-worker-fence-board', 'Card 4', None, 'tester', None)]\n(Background on this error at: https://sqlalche.me/e/20/gkpj)\""
+      },
+      {
+        "class": "tests.test_governed_queue_worker_fencing",
+        "name": "test_legacy_claim_is_current_only_until_tombstone_commits",
+        "message": "failed on setup with \"sqlalchemy.exc.IntegrityError: (sqlite3.IntegrityError) NOT NULL constraint failed: boards.realm_id\n[SQL: INSERT INTO boards (id, name, description, owner_id, realm_id) VALUES (?, ?, ?, ?, ?) RETURNING created_at, updated_at]\n[parameters: ('card4-worker-fence-board', 'Card 4', None, 'tester', None)]\n(Background on this error at: https://sqlalche.me/e/20/gkpj)\""
+      },
+      {
+        "class": "tests.test_governed_queue_worker_fencing",
+        "name": "test_wal_delete_wins_between_extraction_and_recheck",
+        "message": "failed on setup with \"sqlalchemy.exc.IntegrityError: (sqlite3.IntegrityError) NOT NULL constraint failed: boards.realm_id\n[SQL: INSERT INTO boards (id, name, description, owner_id, realm_id) VALUES (?, ?, ?, ?, ?) RETURNING created_at, updated_at]\n[parameters: ('card4-worker-fence-board', 'Card 4', None, 'tester', None)]\n(Background on this error at: https://sqlalche.me/e/20/gkpj)\""
+      },
+      {
+        "class": "tests.test_governed_queue_worker_fencing",
+        "name": "test_wal_worker_fence_holds_delete_until_ack_commit",
+        "message": "failed on setup with \"sqlalchemy.exc.IntegrityError: (sqlite3.IntegrityError) NOT NULL constraint failed: boards.realm_id\n[SQL: INSERT INTO boards (id, name, description, owner_id, realm_id) VALUES (?, ?, ?, ?, ?) RETURNING created_at, updated_at]\n[parameters: ('card4-worker-fence-board', 'Card 4', None, 'tester', None)]\n(Background on this error at: https://sqlalche.me/e/20/gkpj)\""
+      },
+      {
+        "class": "tests.test_governed_queue_worker_fencing",
+        "name": "test_ready_listing_includes_card8_stale_sweep",
+        "message": "failed on setup with \"sqlalchemy.exc.IntegrityError: (sqlite3.IntegrityError) NOT NULL constraint failed: boards.realm_id\n[SQL: INSERT INTO boards (id, name, description, owner_id, realm_id) VALUES (?, ?, ?, ?, ?) RETURNING created_at, updated_at]\n[parameters: ('card4-worker-fence-board', 'Card 4', None, 'tester', None)]\n(Background on this error at: https://sqlalche.me/e/20/gkpj)\""
+      },
+      {
+        "class": "tests.test_governed_queue_worker_fencing",
+        "name": "test_recovery_processor_claims_only_exact_rebuild_membership",
+        "message": "failed on setup with \"sqlalchemy.exc.IntegrityError: (sqlite3.IntegrityError) NOT NULL constraint failed: boards.realm_id\n[SQL: INSERT INTO boards (id, name, description, owner_id, realm_id) VALUES (?, ?, ?, ?, ?) RETURNING created_at, updated_at]\n[parameters: ('card4-worker-fence-board', 'Card 4', None, 'tester', None)]\n(Background on this error at: https://sqlalche.me/e/20/gkpj)\""
+      },
+      {
+        "class": "tests.test_governed_queue_worker_fencing",
+        "name": "test_recovery_processor_exactly_repends_claim_left_by_killed_process",
+        "message": "failed on setup with \"sqlalchemy.exc.IntegrityError: (sqlite3.IntegrityError) NOT NULL constraint failed: boards.realm_id\n[SQL: INSERT INTO boards (id, name, description, owner_id, realm_id) VALUES (?, ?, ?, ?, ?) RETURNING created_at, updated_at]\n[parameters: ('card4-worker-fence-board', 'Card 4', None, 'tester', None)]\n(Background on this error at: https://sqlalche.me/e/20/gkpj)\""
+      },
+      {
+        "class": "tests.test_governed_queue_worker_fencing",
+        "name": "test_live_claim_is_neutrally_repended_when_rebuild_reserves_board",
+        "message": "failed on setup with \"sqlalchemy.exc.IntegrityError: (sqlite3.IntegrityError) NOT NULL constraint failed: boards.realm_id\n[SQL: INSERT INTO boards (id, name, description, owner_id, realm_id) VALUES (?, ?, ?, ?, ?) RETURNING created_at, updated_at]\n[parameters: ('card4-worker-fence-board', 'Card 4', None, 'tester', None)]\n(Background on this error at: https://sqlalche.me/e/20/gkpj)\""
+      },
+      {
+        "class": "tests.test_governed_queue_worker_fencing",
+        "name": "test_recovery_processor_requires_its_exact_live_reservation[None]",
+        "message": "failed on setup with \"sqlalchemy.exc.IntegrityError: (sqlite3.IntegrityError) NOT NULL constraint failed: boards.realm_id\n[SQL: INSERT INTO boards (id, name, description, owner_id, realm_id) VALUES (?, ?, ?, ?, ?) RETURNING created_at, updated_at]\n[parameters: ('card4-worker-fence-board', 'Card 4', None, 'tester', None)]\n(Background on this error at: https://sqlalche.me/e/20/gkpj)\""
+      },
+      {
+        "class": "tests.test_governed_queue_worker_fencing",
+        "name": "test_recovery_processor_requires_its_exact_live_reservation[]",
+        "message": "failed on setup with \"sqlalchemy.exc.IntegrityError: (sqlite3.IntegrityError) NOT NULL constraint failed: boards.realm_id\n[SQL: INSERT INTO boards (id, name, description, owner_id, realm_id) VALUES (?, ?, ?, ?, ?) RETURNING created_at, updated_at]\n[parameters: ('card4-worker-fence-board', 'Card 4', None, 'tester', None)]\n(Background on this error at: https://sqlalche.me/e/20/gkpj)\""
+      },
+      {
+        "class": "tests.test_governed_queue_worker_fencing",
+        "name": "test_recovery_processor_requires_its_exact_live_reservation[rebuild:other]",
+        "message": "failed on setup with \"sqlalchemy.exc.IntegrityError: (sqlite3.IntegrityError) NOT NULL constraint failed: boards.realm_id\n[SQL: INSERT INTO boards (id, name, description, owner_id, realm_id) VALUES (?, ?, ?, ?, ?) RETURNING created_at, updated_at]\n[parameters: ('card4-worker-fence-board', 'Card 4', None, 'tester', None)]\n(Background on this error at: https://sqlalche.me/e/20/gkpj)\""
+      },
+      {
+        "class": "tests.test_governed_queue_worker_fencing",
+        "name": "test_exact_claim_cas_rejects_retag_between_listing_and_claim",
+        "message": "failed on setup with \"sqlalchemy.exc.IntegrityError: (sqlite3.IntegrityError) NOT NULL constraint failed: boards.realm_id\n[SQL: INSERT INTO boards (id, name, description, owner_id, realm_id) VALUES (?, ?, ?, ?, ?) RETURNING created_at, updated_at]\n[parameters: ('card4-worker-fence-board', 'Card 4', None, 'tester', None)]\n(Background on this error at: https://sqlalche.me/e/20/gkpj)\""
+      },
+      {
+        "class": "tests.test_governed_queue_worker_fencing",
+        "name": "test_rebuild_claim_cas_rechecks_current_head_after_listing[normal]",
+        "message": "failed on setup with \"sqlalchemy.exc.IntegrityError: (sqlite3.IntegrityError) NOT NULL constraint failed: boards.realm_id\n[SQL: INSERT INTO boards (id, name, description, owner_id, realm_id) VALUES (?, ?, ?, ?, ?) RETURNING created_at, updated_at]\n[parameters: ('card4-worker-fence-board', 'Card 4', None, 'tester', None)]\n(Background on this error at: https://sqlalche.me/e/20/gkpj)\""
+      },
+      {
+        "class": "tests.test_governed_queue_worker_fencing",
+        "name": "test_rebuild_claim_cas_rechecks_current_head_after_listing[exact]",
+        "message": "failed on setup with \"sqlalchemy.exc.IntegrityError: (sqlite3.IntegrityError) NOT NULL constraint failed: boards.realm_id\n[SQL: INSERT INTO boards (id, name, description, owner_id, realm_id) VALUES (?, ?, ?, ?, ?) RETURNING created_at, updated_at]\n[parameters: ('card4-worker-fence-board', 'Card 4', None, 'tester', None)]\n(Background on this error at: https://sqlalche.me/e/20/gkpj)\""
+      },
+      {
+        "class": "tests.test_governed_queue_worker_fencing",
+        "name": "test_rebuild_head_backoff_blocks_child_in_exact_and_normal_worker",
+        "message": "failed on setup with \"sqlalchemy.exc.IntegrityError: (sqlite3.IntegrityError) NOT NULL constraint failed: boards.realm_id\n[SQL: INSERT INTO boards (id, name, description, owner_id, realm_id) VALUES (?, ?, ?, ?, ?) RETURNING created_at, updated_at]\n[parameters: ('card4-worker-fence-board', 'Card 4', None, 'tester', None)]\n(Background on this error at: https://sqlalche.me/e/20/gkpj)\""
+      },
+      {
+        "class": "tests.test_governed_queue_worker_fencing",
+        "name": "test_repend_claimed_entry_is_an_exact_neutral_cas",
+        "message": "failed on setup with \"sqlalchemy.exc.IntegrityError: (sqlite3.IntegrityError) NOT NULL constraint failed: boards.realm_id\n[SQL: INSERT INTO boards (id, name, description, owner_id, realm_id) VALUES (?, ?, ?, ?, ?) RETURNING created_at, updated_at]\n[parameters: ('card4-worker-fence-board', 'Card 4', None, 'tester', None)]\n(Background on this error at: https://sqlalche.me/e/20/gkpj)\""
+      }
+    ],
+    "limits": "Stopped at20; affected modules need investigation/followup. Installed E2E runs separately handle92798 and is not qualified."
   }
 }

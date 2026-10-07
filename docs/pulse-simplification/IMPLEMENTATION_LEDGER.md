@@ -2,6 +2,12 @@
 
 ## Estado para retomada
 
+### 2026-10-07 — Community11 terminal, installed4 ainda ativo
+Poll confirmou Community11 handle61685 terminal1:151aprovados,3falhas,17erros
+/185.36s. XML e diagnósticos preservados em community_full_run11; followup pendente.
+Única campanha viva: native-installed-recovery4 handle92798, confirmada por poll.
+Core59casos/retirada de expectativas legadas publicados em b38eb7d1.
+
 ### 2026-10-07 — Core13 terminal e59casos qualificados; duas campanhas vivas
 Core13 handle67468 terminou1:1331aprovados,20falhas,1xfail/132.76s.
 Sete módulos afetados. core13-native-analytics-relations1 handle35991 terminou0:
