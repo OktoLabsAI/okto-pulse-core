@@ -2,6 +2,31 @@
 
 ## Estado para retomada
 
+### 2026-10-07 — Varredura Core chegou ao fim; cobertura por módulo reconciliada
+Corefcb3d65c publicado, push0. Core21 handle60638 terminou1:125pass/2fail/19.13s.
+Falhas: hash antigo submit_spec_validation e fixture SpecResponse sem contrato
+de execução. Comparação AST contra b1100a36 reproduziu exatamente hash antigo;
+diferença é a retirada autorizada de formas formal/três scores e suas projeções
+de histórico, com recusa de campos desconhecidos. Scores nativos, thresholds,
+locks/gates, promoção, fences de edição/head e histórico append-only preservados.
+Constante atualizada após revisão; nenhuma alteração no gate neste incremento.
+Fixture inclui SpecExecutionContract vigente.
+
+core21-native-validation1 handle85875 terminou0:73pass/11.10s, cinco módulos,
+incluindo inputs atuais, histórico nativo e snapshots pinpoint.
+Ruff F/E9/diff-check0. Coleta completa core-native-final-collection1 handle70376
+terminou0:13826 casos/1053 módulos/91.67s. Reconciliação com módulos completos
+qualificados das campanhas:1053/1053, nenhum módulo coletado sem qualificação.
+Isto é prova cumulativa por módulo nos pares registrados, NÃO uma execução única
+de13826 testes nem encerramento dos246 critérios do plano.
+Recibo acceptance-clean-break-core21-validation.json contém matriz/bases/limites.
+
+Community followup65213 continua ATIVO no main, último poll vivo; Learning,
+overlay e projeção são campanha única. Não integrar/editar main até terminal.
+Próximos: terminal Community, seleção restante, E2E instalado e reconciliação
+critério a critério C4. T23/KG-10 continuam decisões pendentes.
+Core isolado sem campanha ativa; publicar este checkpoint.
+
 ### 2026-10-07 — Core20 propagação/paginação concluídas
 Core0e8427c9 publicado, push0. core20-native-propagation1 handle58393
 terminou1:21pass/2fail; propagation2 handle37383 terminou0:37pass/15.75s,

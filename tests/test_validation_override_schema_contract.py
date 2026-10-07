@@ -49,6 +49,11 @@ def test_spec_response_exposes_validation_overrides() -> None:
     now = datetime.now(UTC)
     response = SpecResponse.model_validate(
         {
+            "execution_contract": {
+                "contract_version": "spec-execution-contract/v1",
+                "board_id": "board-1", "spec_id": "spec-1",
+                "adopted_in_edition": 1, "actor_id": "agent-1", "origin": "new_spec",
+            },
             "id": "spec-1",
             "board_id": "board-1",
             "title": "Spec",
