@@ -3,6 +3,8 @@
 ## Estado para retomada
 
 ### 2026-10-06 — C3 em andamento: listas MCP nativas, sem conversores
+Publicado: Core 1a7bde28 / Community 63aa833e. Push Community confirmado;
+Core teve reset TLS na resposta, mas ls-remote confirmou HEAD remoto exato.
 Bases Core f9b2c7dd / Community 6c1c6422 limpas/publicadas.
 Retirados parse_multi_value, coerce_to_list_str, parse_options_json, strict_mode
 e formatos string/pipe/JSON codificado dos seus consumidores. Uma validacao de
