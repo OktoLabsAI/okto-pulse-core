@@ -34,6 +34,10 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
+from okto_pulse.core.ports.code_evidence_projection import (
+    CODE_EVIDENCE_LINK_NAMESPACE, CODE_EVIDENCE_LINK_RULE,
+    CODE_TRACEABILITY_SPEC_ENDPOINTS,
+)
 from okto_pulse.core.domain.code_traceability_kg import (
     CODE_INVESTIGATION_RECEIPT_KG_STATUSES,
     CodeInvestigationReceiptKGStatus,
@@ -948,18 +952,7 @@ def _append_architecture_designs(
             )
 
 
-_CODE_TRACEABILITY_SPEC_ENDPOINTS: dict[str, tuple[str, str]] = {
-    "spec": ("Entity", ""),
-    "functional_requirement": ("Requirement", "fr"),
-    "technical_requirement": ("Constraint", "tr"),
-    "acceptance_criterion": ("Criterion", "ac"),
-    "business_rule": ("Constraint", "business_rule"),
-    "api_contract": ("APIContract", "api_contract"),
-    "integration_requirement": ("Requirement", "integration_requirement"),
-    "observability_requirement": ("Constraint", "observability_requirement"),
-    "decision": ("Decision", "decision"),
-    "test_scenario": ("TestScenario", "test_scenario"),
-}
+
 
 
 def _required_traceability_string(
@@ -1093,7 +1086,7 @@ def _spec_link_endpoint(link: dict[str, Any]) -> tuple[str, str]:
         "entity_type",
         max_length=64,
     )
-    endpoint = _CODE_TRACEABILITY_SPEC_ENDPOINTS.get(entity_type)
+    endpoint = CODE_TRACEABILITY_SPEC_ENDPOINTS.get(entity_type)
     if endpoint is None:
         raise ValueError("code_traceability_spec_entity_type_invalid")
     node_type, section = endpoint
@@ -2642,6 +2635,8 @@ class DeterministicWorker:
             "declared_source_content_sha256",
         )
         _optional_traceability_digest(evidence, "content_hash")
+        if "spec_links" not in evidence or not isinstance(evidence["spec_links"], (list, tuple)):
+            raise ValueError("code_traceability_spec_links_incomplete")
         spec_links = _traceability_sequence(evidence, "spec_links", limit=200)
         safe_links = tuple(
             {
@@ -2752,9 +2747,20 @@ class DeterministicWorker:
                         source_artifact_ref,
                     ),
                     confidence=1.0,
-                    rule_id=f"supports/code_traceability_spec_link@{WORKER_VERSION}",
+                    rule_id=CODE_EVIDENCE_LINK_RULE,
                 )
             )
+        result.relational_projection_active_set_intents = (
+            RelationalProjectionActiveSetIntent(
+                owner_type="code_evidence", owner_id=evidence_id,
+                namespace=CODE_EVIDENCE_LINK_NAMESPACE, active_refs=(),
+                active_edges=tuple(RelationalProjectionActiveEdgeRef(
+                    candidate_id=edge.candidate_id, edge_type=edge.edge_type,
+                    from_candidate_id=edge.from_candidate_id,
+                    to_candidate_id=edge.to_candidate_id, rule_id=edge.rule_id,
+                ) for edge in result.edges if edge.rule_id == CODE_EVIDENCE_LINK_RULE),
+            ),
+        )
         superseded_id = _optional_traceability_string(
             evidence,
             "supersedes_evidence_id",

@@ -2,6 +2,57 @@
 
 ## Estado para retomada
 
+### 2026-10-07 — C4 KG-18 concluído; Code Evidence retira somente seu vínculo
+ownership3 (73608) terminou1:6pass/1fail,51.85s; oráculo usava rule v2.1, mas
+Code Traceability emite v2.0. Corrigido oráculo sem alterar worker.
+ownership4 (90827) terminou1/30.35s e reproduziu falha real em main38-final:
+vínculo SQL removido e fila vazia, mas supports da Evidence persistia no grafo.
+
+Correção: contrato público code_evidence_projection concentra vocabulário de endpoints
+já existente e propriedade exata por Evidence/writer. Worker exige coleção spec_links
+completa e emite active set, inclusive vazio; admissão restringe ao worker autenticado.
+Mecânica Grafx reaproveita reconciliador compensado, seleciona source_ref exato e
+preserva outros donos, regras, writers e conteúdo. Nenhum dialeto entrou no Core.
+Sem mudança de autoridade, policy, migração ou contrato de histórico.
+
+Build/install/prova main39 (70343) terminou0:844/906 Core +316/402 Community byte-identical.
+Core contract1:21pass/3.78s; contract2:17pass/2.59s.
+Community ownership5 (51405):32pass/56.42s, incluindo regressões reais Spec/Card.
+ownership6 (50717):2pass/75.14s: caso normal e falha depois da exclusão real.
+Rollback preservou multiset/SQL pending e nenhum novo audit; retry convergiu.
+Recibo sela71 casos Python finais distintos (substitui positivo antigo não parametrizado).
+Frontend evidence-ui1 (21590):47pass; GraphCanvas e CodeTraceabilityPanels,
+jsdom/fallback acessível, não WebGL/browser E2E. Assets/produto frontend inalterados.
+
+Closure39 (50298) terminou1 somente pelos READMEs; findings=[], oito budgets ZERO.
+Renderer oficial regenerou fragmentos. Main39-final build/install/prova (89192)
+terminou0 com844/906+316/402. Comparação dos wheels confirmou todos .py idênticos
+ao main39 usado no comportamento. Closure final (89768) terminou0:ok=true,
+findings/documentation_findings vazios, oito ZERO. Ruff F/E9 e diff-check passaram.
+Recibo clean-break-acceptance-native-code-evidence-ownership.json qualifica KG-18.
+Índice61 verificados,174 aplicáveis pendentes,11 superados. Nenhum processo pendente.
+Próximo: KG-16/24/25, depois DEI/ARQVER; BASE:T23/KG-10 ainda exigem decisões próprias.
+Isolado next27 STALE. Pronto para commits/pushes pareados; entrega integral continua aberta.
+
+### 2026-10-07 — C4 KG-18: prova nativa de propriedade de Code Evidence em andamento
+Base publicada Core812f3ccf / Communityfde8a2cf, working trees inicialmente limpas.
+Prova provenance-native-evidence-ownership1 terminou0: main38-final instalado,
+843/905 Core +316/402 Community byte-identical antes do comportamento.
+Novo teste test_native_code_evidence_ownership.py usa schema nativo com guards,
+fila e Grafx reais: duas Evidence apoiam o mesmo FR; retirada de uma deve preservar
+a outra, conteúdos SQL e replay sem duplicação. Nenhuma alteração produtiva.
+
+Fixture compartilhada de traceability parametrizada para os IDs do Board/Spec/Card
+nativos, sem conversão de dados. Campanha ownership1 (78729) terminou1:6pass/1fail,
+38.89s; guard recusou request consumido/vencido antes de inserir receipt.
+Fixture agora insere open, receipt, depois consome request, com instante explícito.
+ownership2 (40478) terminou1:6pass/1fail,34.41s; guard do SpecLink exige versão
+da próxima edição. Teste agora insere links para edição2 e avança a fixture Spec.
+Guards preservados; estas falhas são preparação, não evidência de defeito no produto.
+ownership3 (73608) em andamento. Não qualificar KG-18 antes de terminal e revisão.
+Índice permanece60 verificados/175 pendentes/11 superados; BASE:T23/KG-10 separados.
+Autorização Checklist já implementada anteriormente, sem nova alteração neste turno.
+
 ### 2026-10-07 — C4 KG-21/KG-23 concluídos; invalidação causal atômica
 Frontend endpoint-ui1 (31855) terminou0:16 aprovados no GraphCanvas,
 incluindo Entity/Bug após remoção de parent edge e mudança de seleção. É regressão

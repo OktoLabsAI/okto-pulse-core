@@ -37,6 +37,9 @@ from typing import TypeVar
 from okto_pulse.core.domain.learning_closeout import LearningCaptureSelection
 from okto_pulse.core.domain.learning_materialization import CapturedLearningProjection, LEARNING_CAPTURE_CANDIDATE_ID
 
+from okto_pulse.core.ports.code_evidence_projection import (
+    CODE_EVIDENCE_LINK_NAMESPACE, CODE_EVIDENCE_LINK_FAMILY,
+)
 from okto_pulse.core.domain.code_traceability_kg import (
     CODE_TRACEABILITY_DETERMINISTIC_WRITER_PATH,
     CodeTraceabilityKGWriteViolation,
@@ -621,6 +624,7 @@ async def begin_consolidation(
         active_refs = tuple(getattr(projection_intent, "active_refs", ()))
         active_edges = tuple(getattr(projection_intent, "active_edges", ()))
         supported_scope = (req.artifact_type, owner_type, namespace) in {
+            ("code_evidence", "code_evidence", CODE_EVIDENCE_LINK_NAMESPACE),
             ("refinement", "refinement", "rdl"),
             ("spec", "spec", "dependencies"),
             ("card", "card", "card_scenarios"),
@@ -674,6 +678,26 @@ async def begin_consolidation(
                     "deterministic candidate identity.",
                     session_id=session_id,
                 )
+        if namespace == CODE_EVIDENCE_LINK_NAMESPACE:
+            family = CODE_EVIDENCE_LINK_FAMILY
+            roots = [candidate for candidate in deterministic_candidates.values()
+                     if _enum_value(candidate.node_type) == "Entity"
+                     and candidate.source_artifact_ref == f"code_evidence:{owner_id}"
+                     and candidate.kind_of == "code_evidence"]
+            if agent_id != "system:historical_consolidation" or active_refs or len(roots) != 1:
+                raise KGPrimitiveError("relational_projection_scope_invalid",
+                    "Evidence links require their authenticated worker and exact owner.",
+                    session_id=session_id)
+            for ref in active_edges:
+                source = deterministic_candidates.get(ref.from_candidate_id)
+                target = _parse_source_ref_endpoint(ref.to_candidate_id)
+                if (source is not roots[0] or ref.edge_type != family.edge_type
+                        or ref.rule_id not in family.rules or target is None
+                        or not family.owns_endpoints(owner_id=owner_id,
+                            source_type=_enum_value(source.node_type), target_type=target[0],
+                            source_ref=source.source_artifact_ref, target_ref=target[1])):
+                    raise KGPrimitiveError("relational_projection_edge_identity_mismatch",
+                        "Evidence link is outside its exact projection scope.", session_id=session_id)
         if namespace == CARD_DEPENDENCY_NAMESPACE:
             roots = [candidate for candidate in deterministic_candidates.values()
                      if _enum_value(candidate.node_type) in {'Entity', 'Bug'}
@@ -4289,7 +4313,8 @@ def _do_graph_commit(
             from okto_pulse.core.ports.card_projection import CARD_EDGE_NAMESPACES, card_edge_family
             from okto_pulse.core.ports.card_projection import CARD_DEPENDENCY_NAMESPACE, is_card_dependency_writer
             namespace = getattr(projection_intent, 'namespace', '')
-            family = spec_relationship_family(namespace) if namespace in SPEC_RELATIONSHIP_NAMESPACES else None
+            family = (CODE_EVIDENCE_LINK_FAMILY if namespace == CODE_EVIDENCE_LINK_NAMESPACE
+                else spec_relationship_family(namespace) if namespace in SPEC_RELATIONSHIP_NAMESPACES else None)
             emitted_projection_edge_ids = {
                 candidate_id for candidate_id, candidate in edge_candidates.items()
                 if (str(candidate.rule_id or '').startswith('supports/card_scenario_observed_')
