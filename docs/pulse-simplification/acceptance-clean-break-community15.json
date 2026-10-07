@@ -1,0 +1,67 @@
+{
+  "scope": "Community15 native fixtures and explicit composition",
+  "qualified_community_distinct_cases": 40,
+  "pair": "dist-native-main23",
+  "runs": [
+    {
+      "name": "clean-break-full-run15-community",
+      "xml_sha256": "6c50734000f5fc3dffe29db5fdd248ba9f73a122d4e90cd82a05c3c6a240b66f",
+      "tests": 261,
+      "failed": 20,
+      "failed_modules": [
+        "tests.test_permission_denied_rest_routes",
+        "tests.test_qa_clarification_consolidation",
+        "tests.test_queue_health_retry_states",
+        "tests.test_r01b_composition_no_fallback",
+        "tests.test_r02_imp1_attachment_storage_provider",
+        "tests.test_r02_imp2_download_parity_and_streaming"
+      ]
+    },
+    {
+      "name": "community15-native-fixtures1",
+      "xml_sha256": "77610e70fb8ff1056948f61b172bcaf2d1052bf32085e8b0026ab70e1e9fe2f4",
+      "tests": 40,
+      "failed": 19,
+      "failed_modules": [
+        "tests.test_r02_imp1_attachment_storage_provider",
+        "tests.test_r02_imp2_download_parity_and_streaming"
+      ]
+    },
+    {
+      "name": "community15-native-attachments2",
+      "xml_sha256": "f2b9502e8a9b287d82ba08f2d57d44967cb9c9166b63d3a68b7a0136b7904aea",
+      "tests": 28,
+      "failed": 0,
+      "failed_modules": []
+    },
+    {
+      "name": "native-reviewer22-context1",
+      "xml_sha256": "2f804061d0932c8f78f7fe679d51331adf1f4c8ead1407917d41c418b6506bfc",
+      "tests": 186,
+      "failed": 8,
+      "failed_modules": [
+        "tests.test_mcp_traceability_report",
+        "tests.test_r3_imp2_copy_effective_fallback",
+        "tests.test_r3_scenarios"
+      ]
+    }
+  ],
+  "provenance": "provenance-native-main23.json",
+  "closure": "closure-native-main23.json",
+  "closure_ok": true,
+  "closure_budgets": {
+    "import_boundary_baseline": 0,
+    "singleton_baseline": 0,
+    "dependency_temporary_exceptions": 0,
+    "graph_runtime_compatibility": 0,
+    "rebuild_artifact_compatibility": 0,
+    "community_private_reach_ins": 0,
+    "community_adapter_bridges": 0,
+    "af35_relational_residue": 0
+  },
+  "limitations": [
+    "Reviewer context regression uncovered three previously qualified Core modules requiring new investigation",
+    "Community16 and installed E2E unqualified",
+    "C4 incomplete"
+  ]
+}

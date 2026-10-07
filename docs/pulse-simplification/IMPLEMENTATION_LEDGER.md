@@ -2,6 +2,34 @@
 
 ## Estado para retomada
 
+### 2026-10-07 — Community15 fechado; regressão adicional de contexto investigada
+Core0b6d33d5 publicado e integrado main por FF após terminal fixtures1.
+Community15fixtures1 handle64436 terminou1:21pass/19fail/72.52s.
+Quatro módulos completos12casos passaram:permission REST5,QA4,queue1,composition2.
+Attachments falhavam por adapter relacional ausente na fixture; registrado
+CommunityRelationalApplicationAdapter real. attachments2 handle59444 terminou0:
+28pass/47.91s nos dois módulos, preservando streaming/ranges/ausências/limites.
+Total40casos distintos/seis módulos qualificados. Ruff F/E9/diff-check0.
+
+Par main dist-native-main23 reconstruído/instalado, prova4937 terminou0:
+843/905+316/402 byte-idênticos. SHA Core
+84322772901efad5bd25d5a6676624ccce69296096bb00b89fd2f500cd7e2a32;
+Community37f81e569589ba7f19c10906707f96eb75f7de6d36f0b9affcf7153f4727831c.
+Closure5830 terminou0:ok=true,findings/documentation_findings=[],oitoZERO.
+Community16 preparado excluindo461módulos completos, E2E separado não qualificado.
+Recibo acceptance-clean-break-community15.json. Nenhum processo ativo agora.
+
+Regressão adicional de contexto no isolado: native-reviewer22-context1 handle44810
+terminou1:178pass/8fail/47.66s, quinze módulos. Os três módulos falhos são
+mcp_traceability_report,r3_imp2_copy_effective_fallback,r3_scenarios.
+Diagnóstico inicial: as oito falhas esperam KB herdada sem assignment explícito,
+não são falhas de autoria/reviewer. Não restaurar fanout/fallback. Inspecionar
+fixtures/portas de knowledge e demonstração nativa antes de requalificar esses
+módulos. A prova cumulativa Core1053 anterior agora tem essas três regressões
+abertas; não tratá-la como passe atual integral. Nenhum arquivo isolado alterado
+após0b6d33d5. Main community seis arquivos prontos para publicar.
+T02/T03 qualificados nos limites registrados; C4/E2E/T23/KG-10 continuam.
+
 ### 2026-10-07 — C1 resíduo de autoria retirado; C4 BASE:T02 qualificado
 Inspeção T02 encontrou aliases históricos no reviewer_separation: actor_id,
 author_agent_id,author,created_by. Writer atual main.py só emite author_id.
@@ -16,7 +44,7 @@ Par dist-native-reviewer22 build/install0, prova83609 terminou0:
 843/905 Core+316/402 Community byte-idênticos. CoreSHA
 d33c2e86864f620234fcb3d33c46722b0e179235a503fded07925b01fb99766f,
 Community3fc3c5dee8d9b9d89aad926e4c9b0c6499152f429e9e2591e22dcc277c4a3c6b.
-native-reviewer22-contracts1 terminou4 de pytest/runner1, nenhum teste executado:
+native-reviewer22-contracts1 terminou1 por erro de seleção, nenhum teste executado:
 seleção continha arquivo retirado test_task_review_currentness; corrigida seleção.
 contracts2 handle34833 terminou0:173pass/25.26s em cinco módulos completos.
 Inclui approve/reject bloqueados por executor sem conflito creator/assignee,
