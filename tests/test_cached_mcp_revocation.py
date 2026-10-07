@@ -58,3 +58,38 @@ async def test_cached_catalog_cannot_authorize_revoked_access(_harness_env, monk
         assert refused.is_error, refused
         assert 'Board 1' not in str(refused)
         assert await _agent_full_snapshot() == before
+
+
+@pytest.mark.asyncio
+async def test_removed_grants_refuse_current_tool_without_rewriting_identity(
+    _harness_env, monkeypatch,
+):
+    await _seed(_harness_env)
+    factory = _db_mod.get_session_factory()
+    register_unit_of_work_factory(CommunityUnitOfWorkFactory(factory))
+    async with factory() as db:
+        agent = await db.get(Agent, "A1")
+        # Deliberately invalid input in a native database: no migration is run.
+        agent.preset_id = None
+        agent.permission_flags = {"sprint": {"entity": {"read": True}}}
+        await db.commit()
+    before = await _agent_full_snapshot()
+    monkeypatch.setattr(
+        server, "active_api_key_credential",
+        lambda: McpCredential(source="x_api_key_header", value="kA1"),
+    )
+    frozen = freeze_mcp_resource_catalog(server.effective_resource_catalog())
+    host = CommunityMcpHostProvider().materialize_catalog(
+        server.mcp, resource_catalog=frozen, projection_identity=frozen.identity,
+    )
+    async with Client(host) as client:
+        tools = {tool.name for tool in await client.list_tools()}
+        assert "okto_pulse_get_board" in tools
+        assert not any("sprint" in name for name in tools)
+        refused = await client.call_tool(
+            "okto_pulse_get_board", {"board_id": "B1"}, raise_on_error=False,
+        )
+        assert refused.is_error, refused
+        assert "permission" in str(refused).lower(), refused
+        assert "Board 1" not in str(refused)
+    assert await _agent_full_snapshot() == before

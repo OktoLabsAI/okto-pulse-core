@@ -2,6 +2,38 @@
 
 ## Estado para retomada
 
+### 2026-10-07 — C4 T27/T28/T31: policy nativa e integridade antes de escrita
+Par anterior publicado Coread711133/Communitycc59fa37. T31 reproduziu gap real:
+schema/fingerprint atuais com FK órfã eram admitidos. Reproduction1 handle16417
+falhou por id ausente na fixture (não prova produto); reproduction2 handle43555
+falhou DID NOT RAISE/6.08s. Corrigido somente adapter Community: quick_check(1)
+e foreign_key_check read-only após fingerprint, antes de WAL/DDL/seeds; recusa
+explícita sem reparo, conversão, exclusão ou alteração do arquivo original.
+Verificação ocorre por conexão admitida, sem cache que oculte alteração externa.
+
+dist-native-next26 instalado; prova44142 terminou0:843/905 Core+316/402 Community
+byte-idênticos. CoreSHAbc8a0bf77c38b91987f3c5549efd33d39598dfe8f833a22aea3df99ccfc4f686;
+CommunitySHAd3a9d508c9e9abdcef99e7e811540e8b801721838b397cb8bf810810debf64ac.
+integrity1 handle77080 terminou0:68pass/100.70s, schema completo/lifecycle locks/
+reentry/transações. closure93465 terminou0:ok=true/findings/documentation=[],
+oito budgets ZERO. Nenhum mecanismo incorporado ao Core.
+
+T27 policy por campo Spec→Board atual, false/zero/null, resolved_sources mistos,
+sem override/proveniência migrada. T28 grant Sprint inválido em base nativa não
+autoriza leitura MCP do Board; erro de permissão e snapshot completo do agente
+inalterado. Extração de credencial é fixture; host/auth/UOW reais.
+removed-grants1 handle12903 terminou0:14pass/18.03s; complemento de erro explícito
+removed-grants2 handle8354:1pass/20.93s. Total82 distintos; Ruff F/E9/diff-check0.
+Recibo clean-break-acceptance-native-policy-integrity.json promove T27/T28/T31.
+Sem alteração frontend. Policy-current1 anterior39164=13pass não somado novamente.
+
+E2E main7 handle96950 continua ATIVO; eventos já mostram sete casos aprovados,
+incluindo recovery interno e inputs missing/corrupt; hard-kill em andamento.
+Aguardar XML terminal; sem restart nem integrar/reinstalar main durante execução.
+Main ainda102acd3d/84923f75 com WIP de observador660s. Resultado de main25 não
+certifica automaticamente next26. Isolado sem processo ativo.
+Próximos fixos T32–T34 e demais C4; T23/KG-10 pendentes. Sem entrega integral.
+
 ### 2026-10-07 — C4 T25 qualificado no schema/presets reais
 Coree9730210 publicado. Isolado Community ampliou test_current_relational_schema:
 inspeção de TODAS as tabelas/colunas SQLite, mappers e alvos FK exige ausência de
