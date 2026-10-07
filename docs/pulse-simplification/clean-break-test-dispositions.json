@@ -4173,5 +4173,23 @@
       "path": "okto_labs_pulse_community/tests/test_sprint_lineage_retirement.py",
       "reason": "Register real native Knowledge and Resource Gate adapters now required by the report projection. Keep all no-Sprint, graph lineage, board isolation and dependency assertions unchanged."
     }
+  ],
+  "native_lineage_root_adaptations": [
+    {
+      "path": "tests/test_mcp_traceability_report.py, tests/test_stories_service.py and tests/sqlalchemy_test_traceability_read_model.py",
+      "reason": "Use existing canonical root_entity instead of duplicate root_ideation compatibility header; retain standalone Spec/Story and Ideation lineage assertions."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_sprint_lineage_retirement.py",
+      "reason": "All graph variants require the canonical root shape and refuse emission of the retired alias; report no-Sprint checks remain unchanged."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_lineage_dependency_graph.py",
+      "reason": "Native report dependency fixture binds local RealmScope and real Knowledge/Resource Gate ports; query bounds, transitive ranking, cycles and board boundaries remain covered."
+    },
+    {
+      "path": "okto_labs_pulse_community/frontend/src/components/traceability/__tests__/LineageGraphModal.test.tsx and services/__tests__/api.traceability.test.ts",
+      "reason": "Fixtures provide mandatory view and canonical typed root_entity without rolling-upgrade header. Keep UI navigation, dependency overlay, counts and refresh-race assertions."
+    }
   ]
 }

@@ -2,6 +2,37 @@
 
 ## Estado para retomada
 
+### 2026-10-06 — C3 em andamento: linhagem com raiz unica
+Bases Core 467e7fc6 / Community ee011cee.
+root_ideation era alias de cabecalho; root_entity ja era emitido por
+lineage/dependency/overlay. UI, tipos, adapter e fake Core agora usam somente
+root_entity. view obrigatorio no tipo atual, sem contrato rolling-upgrade.
+Retirados resolve_root_ideation_id e _LegacyTraceabilityReadError sem callers.
+Diagnostico de links conflitantes nao recomenda mais database healing retirado.
+Guard continua recusando ambiguidade; nenhuma conversao, exclusao ou reparo.
+Raizes Story, Spec, Ideation e anchors de dependencia preservados.
+
+Frontend native-lineage-root-front1: 38 aprovados; build1 aprovado e sincronizado.
+79 arquivos/78 assets, tree SHA
+1420586bc81bc69f1d4e04c7556b11e0c93a7b9bce9a5ade7ff876a21cdc2bb2.
+Assets staged antes de gerar wheels. Par dist-native-lineage-root1 instalado;
+provenance-native-lineage-root1 comprova bytes src/install/wheels
+Core 843 Python/905 payload, Community 319/405.
+Core1: 21 aprovados. Community1: 25 aprovados/duas falhas em assercao nova
+aplicada tambem ao relatorio tabular, que nao tem raiz. Guard corrigido para
+todos os grafos (lineage/dependency/overlay); alias continua ausente em todos.
+Community2: quatro aprovados, total distinto Community 27.
+Fixture de dependencias registra portas Knowledge/Resource Gate reais e realm
+local, mantendo limites de queries, ciclos, transversalidade e isolamento.
+Closure-native-lineage-root1 aprovada, findings/documentation_findings vazios
+e oito budgets current=limit=0. Ruff F/E9/diff aprovados; handles encerrados.
+
+C1-C4/T23/KG-10 permanecem abertos. Continuar a retirada de superficies C3
+ja identificadas (diagnostico architecture_propagation_legacy e aliases Story),
+classificando responsabilidades nativas antes de remover. Reconciliar o
+inventario finito de C1-C4 com evidencias atuais; o inventario v1.3 historico
+nao e prova de conclusao. Bump coordenado 0.4.0 e qualificacao integral pendentes.
+
 ### 2026-10-06 — C3 em andamento: traceability com Knowledge nativo
 Publicado: Core 0eb981c8 / Community ee011cee, pushes confirmados.
 Bases Core 5a933b9f / Community 2c34de6b.

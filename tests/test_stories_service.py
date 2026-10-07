@@ -258,7 +258,7 @@ async def test_lineage_graph_allows_unlinked_story_root(db_factory):
         "title": "Capture standalone story",
         "status": "draft",
     }
-    assert graph["root_ideation"]["entity_type"] == "story"
+    assert graph["root_entity"]["type"] == "story"
     assert graph["resolution_path"] == [{"type": "story", "id": story_id}]
     assert graph["nodes"] == [
         {

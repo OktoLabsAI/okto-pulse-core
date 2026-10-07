@@ -204,19 +204,6 @@ def project_code_traceability_report(
     }
 
 
-async def resolve_root_ideation_id(
-    context: Any,
-    board_id: str,
-    *,
-    entity_type: str,
-    entity_id: str,
-):
-    return await resolve_traceability_adapter().resolve_root_ideation_id(
-        context,
-        board_id,
-        entity_type=entity_type,
-        entity_id=entity_id,
-    )
 
 
 async def resolve_lineage_root(
@@ -286,6 +273,5 @@ __all__ = [
     "project_code_traceability_report",
     "resolve_traceability_knowledge",
     "resolve_lineage_root",
-    "resolve_root_ideation_id",
     "spec_coverage_summary",
 ]

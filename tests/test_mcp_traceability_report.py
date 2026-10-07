@@ -368,7 +368,7 @@ async def test_traceability_report_lists_sdlc_chain_without_duplicate_direct_spe
         (edge["source"], edge["target"], edge["relationship"])
         for edge in graph["edges"]
     }
-    assert graph["root_ideation"]["id"] == ideation_id
+    assert graph["root_entity"]["id"] == ideation_id
     assert f"spec:{direct_spec_id}" in node_ids
     assert f"spec:{spec_id}" in node_ids
     assert f"task:{task_id}" in node_ids
@@ -493,7 +493,7 @@ async def test_lineage_graph_allows_standalone_spec_root():
         "title": "Standalone KG Bug Spec",
         "status": "approved",
     }
-    assert graph["root_ideation"]["entity_type"] == "spec"
+    assert graph["root_entity"]["type"] == "spec"
     assert graph["summary"]["ideations"] == 0
     assert graph["summary"]["orphan_specs"] == 1
     assert graph["warnings"] == [
