@@ -4163,5 +4163,15 @@
       "path": "okto_labs_pulse_community/tests/test_knowledge_propagation_adapter.py and tests/test_spec_b_knowledge_propagation_e2e.py",
       "reason": "Fixtures use explicit local realm and required architecture adoption. Adapter suite initializes current schema and binds local RealmScope; preserve real reference/snapshot/drop/replay/history tests without restoring schema migration."
     }
+  ],
+  "native_traceability_knowledge_adaptations": [
+    {
+      "path": "okto_labs_pulse_community/tests/test_spec_b_knowledge_propagation_e2e.py",
+      "reason": "Actual report adapter is compared to effective Resource Gate Knowledge for reference/snapshot/drop and derived Spec tri-state. Preserve source revision/fingerprint/assignment state and empty/error distinctions. Frozen Refinement fixture explicitly includes its empty code-evidence manifest."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_sprint_lineage_retirement.py",
+      "reason": "Register real native Knowledge and Resource Gate adapters now required by the report projection. Keep all no-Sprint, graph lineage, board isolation and dependency assertions unchanged."
+    }
   ]
 }

@@ -45,6 +45,32 @@ async def build_traceability_report(
     )
 
 
+async def resolve_traceability_knowledge(
+    context: object, board_id: str, *, entity_type: str, entity_id: str,
+) -> list[dict[str, Any]]:
+    """Public report seam over the same effective Knowledge read as REST/MCP."""
+    from types import SimpleNamespace
+    from okto_pulse.core.application.effective_knowledge_read import load_effective_knowledge
+    from okto_pulse.core.application.service_catalog import build_application_service_catalog
+    from okto_pulse.core.domain.knowledge_governance import KnowledgeGovernanceInvalidMetadata
+    from okto_pulse.core.ports.knowledge_propagation import KnowledgePropagationPortError
+    from okto_pulse.core.services.knowledge_propagation import KnowledgePropagationServiceError
+    from okto_pulse.core.services.resource_gate import ResourceGateError
+
+    try:
+        return await load_effective_knowledge(
+            build_application_service_catalog(context),
+            SimpleNamespace(id=entity_id, board_id=board_id),
+            target_type=entity_type,
+        )
+    except (KnowledgePropagationPortError, KnowledgePropagationServiceError,
+            KnowledgeGovernanceInvalidMetadata, ResourceGateError) as exc:
+        raise TraceabilityReadError(
+            exc.code, "Effective Knowledge could not be resolved for the report.",
+            status_code=409,
+        ) from exc
+
+
 def project_code_traceability_report(
     contexts: Iterable[CodeTraceabilityContext],
 ) -> CodeTraceabilityReportSummary:
@@ -258,6 +284,7 @@ __all__ = [
     "build_lineage_graph",
     "build_traceability_report",
     "project_code_traceability_report",
+    "resolve_traceability_knowledge",
     "resolve_lineage_root",
     "resolve_root_ideation_id",
     "spec_coverage_summary",

@@ -2,6 +2,46 @@
 
 ## Estado para retomada
 
+### 2026-10-06 — C3 em andamento: traceability com Knowledge nativo
+Bases Core 5a933b9f / Community 2c34de6b.
+Reproducao real traceability-knowledge-repro1: reference/snapshot falham,
+drop passa. Card tem uma selecao efetiva, mas artifacts/compact contam zero.
+Relatorio lia colecao fisica retirada em vez do ledger atual.
+Seam publico resolve_traceability_knowledge reutiliza leitura efetiva REST/MCP.
+Adapter projeta Spec/Card, preserva assignment/mode/state/stale e fingerprint.
+Referencias contextuais parent_spec permanecem distintas da selecao do Card.
+Contagens/IDs compactos correspondem a lista completa; conteudo nao e emitido.
+Views readonly capturam campos e designs antes das consultas, sem anexar dados
+a relacionamentos ORM. Isso evita invalidacao das eager-loads pela identidade
+compartilhada no Resource Gate. Limite existente de 2000 contextos verificado
+tambem antes da hidratacao, sem mudar seu valor. Nenhum gate/grant alterado.
+
+Par traceability-knowledge1 instalado/provado. Community1: seis aprovados/seis
+falhas (lazy-load apos consulta efetiva e fixture sem porta). Closure1 apontou
+somente matrizes README, regeneradas oficialmente; oito budgets zero.
+Par2 construido/instalado, substituido antes de testes para capturar tambem
+ancestros e cobrir derivacao real. Par final dist-traceability-knowledge3:
+provenance-traceability-knowledge3 bytes src/install/wheels Core 843/905,
+Community 319/405. Core1: 31 aprovados. Community2: 11 aprovados/uma falha
+de fixture sem code_evidence_manifest congelado. Fixture passou a declarar
+manifesto vazio, coerente com ausencia de Evidence no cenario. Community3:
+oito aprovados (inclui dois novos casos de porta indisponivel). Total distinto
+Community: 14. Sem alteracao de produto entre Community2 e Community3.
+Provas reais cobrem Card reference apos fonte mudar, snapshot stale/fingerprint
+congelado, drop, Spec derivada omitted/empty/ids, campos compactos e ausencia
+de ORM dirty. Porta ausente falha fechada, sem voltar a colecao fisica.
+Frontend traceability-knowledge-front1: 35 aprovados (modal e paths).
+Nenhum arquivo frontend alterado; assets preservados.
+Closure-traceability-knowledge3 aprovada: findings/documentation_findings
+vazios, oito budgets current=limit=0. Ruff F/E9 e diff aprovados. Handles encerrados.
+
+C1-C4 e decisoes T23/KG-10 continuam abertos. Proxima cadeia confirmada no
+mesmo adapter: _LegacyTraceabilityReadError sem callers, diagnostico instrui
+restart para database healing retirado, root_ideation e mantido como campo
+de compatibilidade do header frontend. Mapear consumidores desse header
+antes de retirar alias; preservar raiz Spec/Story e navegacao sem Sprint.
+C4 integral e bump coordenado 0.4.0 permanecem pendentes.
+
 ### 2026-10-06 — C3 em andamento: contrato Knowledge sem fallback historico
 Publicado: Core b23d6864 / Community 2c34de6b, pushes confirmados.
 Bases Core 60c17632 / Community a999edf3 publicadas.
