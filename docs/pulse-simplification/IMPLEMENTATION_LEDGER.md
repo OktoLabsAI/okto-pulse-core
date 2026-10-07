@@ -2,6 +2,76 @@
 
 ## Estado para retomada
 
+### 2026-10-07 — C4 T37/T38 fechados; frontend sem exportador/fallback antigos
+Todos processos deste incremento terminaram. design-system-ui1 handle68829:
+81pass/14.87s; corrigida parametrização para não espalhar arrays no Vitest,
+API final7pass/2.12s. Formulário32/template42 verdes preservados.
+Somados navigation/export/health138, cognitive26 e Board/template/API81:
+245casos frontend distintos; Help3/API7 reexecuções não são casos adicionais.
+Nenhuma suite falha reclassificada; lint inicial33>32 preservado no log.
+Build3 handle99293 e lint3 handle74189 terminaram0,316warnings/0errors,
+Fast Refresh32 no budget original. Verify frontend79arquivos/78assets passou,
+tree443026f3f6a0a58bac267e73772fa7cadfde531b8f94fd512e54289372d4a82c.
+
+Par main29 build/install0, prova83453 terminal0:843/905 Core+316/402 Community
+byte-idênticos incluindo SPAfinal. CoreSHA6dab2b4d0503fdaf89f524d6fc91c5e4182b87f1e96ec246b14856521b69a407;
+CommunitySHA120d973d2a13f3b258d3cbcb1a88d78636dfd87474cf10b5e66db31784de9ad2.
+Distribuição final20578 terminou0:19pass/18.18s; closure21606 terminou0,
+ok=true/findings/documentation=[], oitoZERO. Assets staged para checkout gate.
+Recibo clean-break-acceptance-native-frontend.json promove somente T37/T38.
+JSDOM não é browser E2E; E2E7main25 não certifica recovery do novo par.
+
+Main pronto para commits/pushes; isolados ainda Coreb7ee9dd6/Communityec99ca23,
+next27, sem WIP/processos. Sincronizar após publicação antes de usar isolado.
+Próximos fixos T39/T40 (test_completion_authenticated_delivery), T41/T42 e demaisC4;
+par instalado final ainda pendente após fechamento do escopo. T23/KG-10 pendentes.
+Não há pausa solicitada nem entrega integral. Nenhuma authority/gate relaxada.
+
+### 2026-10-07 — Frontend WIP: último fallback de catálogo encontrado
+Lint2 handle88916 terminou0:316warnings/0errors, Fast Refresh32 no budget vigente.
+Cognitive UI handle46073=26pass/8.60s. Build2 handle1629 terminou0, mesmo hashSPA;
+verify passou. main28 build/install/prova48690 terminaram0:843/905+316/402
+byte-idênticos. Distribuição82164=19pass/19.03s; closure86801 terminou0.
+Estes resultados precedem a alteração descrita abaixo; não qualificar o novo WIP
+por eles nem tratar main28 como final.
+
+Varredura frontend encontrou fallback real de rolling upgrade em listDesignSystems:
+aceitava array REST antigo ou envelope paginado. Retirado contrato alternativo;
+array/nulo/envelope sem cursor recusados explicitamente, sem retornar catálogo parcial.
+BoardSettingsForm ainda prometia migração automática de provas ao atualizar:
+parágrafo retirado, preservando controles e política nativos. Testes API negativos
+incluem página posterior incompatível; formulário/default-template mantidos.
+
+ATIVOS main/frontend: design-system-ui1 handle68829, build3 handle99293,
+lint3 handle74189. Aguardar terminais. Depois prova final com novo par main29,
+distribuição/closure, recibo T37/T38 e commits/pushes. Main Core ledger WIP e
+Community frontend/assets WIP/staged; isolado ainda no par next27 sem WIP.
+C4/T23/KG-10 seguem pendentes. Nenhuma mudança de autoridade nem conversão criada.
+
+### 2026-10-07 — C4 frontend T37/T38 e exportador Sprint residual — WIP
+T33–T36 enviados Coreb7ee9dd6/Communityec99ca23; ambos main clean/FF antes deste WIP.
+Revisão T37 encontrou exportSprint ainda produtivo em frontend/src/lib/exportMarkdown.ts,
+sem consumidor fora de teste positivo histórico. Retirada função e fixture Sprint;
+exportações nativas mantidas. Ajuda não recomenda Off por compatibilidade legada.
+navigation-health-frontend1 handle76393 terminou0:138pass/77.24s em7arquivos;
+Help após texto final handle48902 terminou0:3pass/8.43s (sobreposto).
+Testes JSDOM, não browser E2E. Warnings act/caniuse existentes não são falhas.
+
+Build1 handle14072 terminou0:79arquivos/78assets,release0.4.0,pulse-edition-api/4,
+tree d864790649e279a5f0ee9b3cce603c6d54c050b89a472dd4d9c22a0d5ac3c95e.
+Lint1 handle89145 terminou1:317warnings/0errors, regra Fast Refresh33>32.
+Nenhum arquivo que produziu esses33warnings era editado neste incremento.
+artifactTarget em CognitiveActionCenterView é usado só internamente; retirado
+export desnecessário, preservando corpo/chamadas/budget. Correção do gate, sem UI nova.
+
+ATIVOS main/frontend: lint2 handle88916, build2 handle1629, cognitive-ui1 handle46073.
+Não publicar/qualificar até terminais; depois verify:frontend-dist, stage dos assets,
+build do par main28/install/prova byte-a-byte, distribuição/closure e recibo.
+Main venv ainda main25 STALE; nenhum teste Python de comportamento autorizado por
+esse install. Isolado next27 permanece íntegro, sem processos/WIP.
+Frontend WIP somente main Community; ledger WIP main Core. Não sobrescrever via FF.
+T37/T38 ainda pendentes no índice. T23/KG-10/retante C4 mantidos, sem entrega integral.
+
 ### 2026-10-07 — C4 T33–T36 qualificados no par next27
 T32 enviado Core8742898e/Communityec99ca23, pushes0, main integrado por FF.
 Par comportamental continua next27 byteprovado; main venv permanece stale e não
