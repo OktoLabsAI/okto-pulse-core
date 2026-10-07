@@ -117,7 +117,7 @@ def _architecture_body(title: str = "FU5-S1A Architecture") -> dict:
                             "type": "arrow",
                             "sourceElementId": "node-client",
                             "targetElementId": "shape-1",
-                            "linkedInterfaceId": "interface-payload",
+                            "linkedInterfaceIds": ["interface-payload"],
                             "connectionType": "elbow",
                         },
                     ],

@@ -188,7 +188,7 @@ def _architecture_payload(source_ref: str = "ideation:source") -> ArchitectureDe
                             "type": "arrow",
                             "sourceElementId": "node-repository",
                             "targetElementId": "node-payload",
-                            "linkedInterfaceId": "interface-diagram-store",
+                            "linkedInterfaceIds": ["interface-diagram-store"],
                             "connectionType": "elbow",
                         },
                     ],
@@ -949,3 +949,18 @@ async def test_refinement_architecture_create_emits_semantic_changed_event(db_fa
         assert event.actor_id == USER_ID
         assert event.payload_json["refinement_id"] == refinement_id
         assert event.payload_json["changed_fields"] == ["architecture_designs"]
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("nested", [False, True])
+@pytest.mark.parametrize("obsolete_value", [None, "interface-diagram-store"])
+async def test_retired_scalar_link_is_rejected_without_writes(db_factory, nested, obsolete_value):
+    _, ideation_id = await _seed_ideation(db_factory)
+    async with db_factory() as db:
+        repo = ArchitectureDesignRepository(db)
+        payload = _architecture_payload().model_dump(mode="json")
+        edge = payload["diagrams"][0]["adapter_payload"]["elements"][-1]
+        target = edge.setdefault("customData", {}) if nested else edge
+        target["linkedInterfaceId"] = obsolete_value
+        with pytest.raises(ValueError, match="linkedInterfaceId is not supported"):
+            await repo.create("ideation", ideation_id, payload, USER_ID)
+        assert not db.new

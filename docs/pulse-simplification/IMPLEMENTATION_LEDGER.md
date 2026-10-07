@@ -2,6 +2,40 @@
 
 ## Estado para retomada
 
+### 2026-10-06 — C1/C3 conexoes arquiteturais com array unico
+
+Bases Core 42290f76 / Community 106a80e1.
+Retirado linkedInterfaceId escalar: backend critica/recusa sua presenca
+inclusive null e customData; linkedInterfaceIds e o unico campo aceito.
+Editor/ArchitectureTab deixam de ler/escrever o escalar duplicado; exportacoes
+frontend/backend deixam de usa-lo. Fixtures de REST/UoW/repositorio/exportacao
+passam ao array; quatro negativos comprovam recusa sem novas escritas ORM.
+Array valida strings nao vazias e duplicatas. Nenhuma conversao de dados.
+
+Participants foi investigado e preservado: editor o deriva das duas pontas
+da conexao e backend confere consistencia. Nao e apenas importador de legado;
+remover essa validacao mudaria o contrato funcional. Prosa que o chama legacy
+nao prova um segundo caminho de execucao. Excalidraw customData continua sendo
+local nativo de metadados e nao alias de versao.
+
+Frontend native-interface-array-front1: 70 aprovados (editor, tab, exportacao).
+Build1 aprovado/sincronizado: 79 arquivos/78 assets, index-DB-6DjaZ.js,
+tree SHA 4d355b0384969375ad7e9f95b59a45218425620cae72471cbda56ef3bc574fea.
+Par dist-native-interface-array1 instalado, provenance correspondente:
+Core 843 Python/905 payload, Community 319/405 byte-identicos src/install/wheels.
+Core1:119 aprovados/duas falhas de Spec sem arquitetura adotada.
+Fixtures receberam ArchitectureAdoptionScope nativo; Core2:28 aprovados.
+Total distinto Core121. Community1:26 aprovados. Sem mudanca de produto
+apos build; somente setup dos testes. Closure-native-interface-array1:
+ok=true, findings/documentation_findings vazios, oito budgets current=limit=0.
+Ruff F/E9/diff aprovados. Handles encerrados.
+
+C1-C4 continuam abertos; T23/KG-10 aguardam decisao. Superficies frontend
+ja identificadas no escopo C3 (ResearchDecisionPanel legacyDecisions,
+PolicyCompliancePanel presentationMode e fallback de warnings ArchitectureTab)
+precisam classificacao antes de remocao. Nao iniciar projeto novo.
+Qualificacao integral do inventario e bump pareado 0.4.0 ainda pendentes.
+
 ### 2026-10-06 — C3 diagnostico de propagacao nativa sem contrato legacy
 
 Publicado: Core 659edeef / Community 106a80e1; pushes confirmados.

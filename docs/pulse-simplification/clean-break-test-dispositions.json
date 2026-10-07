@@ -2326,6 +2326,11 @@
       "path": "tests/test_architecture_propagation_report_and_gate.py (renamed), tests/test_af35_s4_mcp_inventory_gate.py, architecture REST/UoW/permission and offset suites",
       "disposition": "adapted",
       "reason": "Native snapshot source eligibility remains functional. Public report/port/adapter/status names no longer imply legacy storage; no old aliases. Native Spec fixture declares architecture adoption. AST inventory removes retired Knowledge-copy tool and follows the actual card-creation UoW helper while checking its coupling."
+    },
+    {
+      "path": "Architecture repository/REST/UoW suites; frontend ArchitectureTab, ArchitectureDiagramEditor and exportMarkdown",
+      "disposition": "adapted",
+      "reason": "Native connections use linkedInterfaceIds arrays. Old scalar rejected including null/customData with no writes. Frontend no longer emits duplicate scalar. Two copy fixtures declare current architecture adoption; existing copy/staleness/authority checks retained."
     }
   ],
   "removed_cases": [

@@ -101,7 +101,7 @@ def _architecture_body(title: str = "Scoped Architecture") -> dict[str, Any]:
                             "type": "arrow",
                             "sourceElementId": "node-client",
                             "targetElementId": "node-service",
-                            "linkedInterfaceId": "request",
+                            "linkedInterfaceIds": ["request"],
                         },
                     ],
                     "appState": {},

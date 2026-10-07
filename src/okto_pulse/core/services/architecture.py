@@ -921,7 +921,7 @@ def architecture_design_payload_schema() -> dict[str, Any]:
                     "Nodes should set linkedEntityId to an entity id or name.",
                     "Edges should set sourceElementId, targetElementId, linkedInterfaceIds and connectionType.",
                     "For conceptual diagrams, diagram.connectivity_justifications may suppress isolated_entity_node and disconnected_subgraph warnings only with valid explicit reasons.",
-                    "Use linkedInterfaceIds for one or more contracts on the same connection; linkedInterfaceId remains accepted for legacy single-contract edges.",
+                    "Use linkedInterfaceIds for one or more contracts on the same connection.",
                     "The source and target linkedEntityId values of the edge define the two endpoint entities for linked interfaces.",
                     "connectionType accepts only direct or elbow. Use elbow for routed/orthogonal connections. Do not use curved.",
                 ],
@@ -1085,34 +1085,33 @@ def _custom_or_top_level(item: dict[str, Any], key: str) -> Any:
 
 
 def _linked_interface_refs(item: dict[str, Any], path: str, issues: list[str] | None = None) -> list[Any]:
-    """Return legacy and multi-interface refs from a diagram connection element."""
+    """Read the current array contract; reject the retired scalar field."""
     refs: list[Any] = []
-    legacy_ref = _custom_or_top_level(item, "linkedInterfaceId")
-    if legacy_ref not in (None, ""):
-        refs.append(legacy_ref)
+    custom = item.get("customData")
+    if "linkedInterfaceId" in item or (isinstance(custom, dict) and "linkedInterfaceId" in custom):
+        if issues is not None:
+            issues.append(f"{path}.linkedInterfaceId is not supported; use linkedInterfaceIds.")
 
     multi_ref = _custom_or_top_level(item, "linkedInterfaceIds")
-    if multi_ref in (None, ""):
+    if multi_ref is None:
         return refs
     if not isinstance(multi_ref, list):
         if issues is not None:
             issues.append(f"{path}.linkedInterfaceIds must be a JSON array of interface ids or names.")
         return refs
 
-    legacy_keys: set[str] = set(_canonical_ref(ref) for ref in refs if _canonical_ref(ref))
-    seen: set[str] = set(legacy_keys)
+    seen: set[str] = set()
     for index, ref in enumerate(multi_ref):
-        ref_key = _canonical_ref(ref)
+        ref_key = _canonical_ref(ref) if isinstance(ref, str) else ""
         if not ref_key:
             if issues is not None:
                 issues.append(f"{path}.linkedInterfaceIds[{index}] must be a non-empty interface id or name.")
             continue
         if ref_key in seen:
             if issues is not None:
-                if ref_key not in legacy_keys:
-                    issues.append(
-                        f"{path}.linkedInterfaceIds[{index}] duplicates another linked interface on the same connection."
-                    )
+                issues.append(
+                    f"{path}.linkedInterfaceIds[{index}] duplicates another linked interface on the same connection."
+                )
             continue
         seen.add(ref_key)
         refs.append(ref)

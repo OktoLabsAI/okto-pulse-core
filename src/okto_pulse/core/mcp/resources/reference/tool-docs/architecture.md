@@ -89,8 +89,7 @@ Args:
         and connectionType. One connector can carry several interface
         contracts/endpoints, for example
         linkedInterfaceIds=["interface-create-order", "interface-get-order"].
-        linkedInterfaceId remains accepted for legacy single-contract
-        edges. connectionType accepts only "direct" and "elbow"; do not
+        The array is required even for a single contract. connectionType accepts only "direct" and "elbow"; do not
         send "curved". Example:
         [
           {

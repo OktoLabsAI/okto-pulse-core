@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import uuid
 
+from okto_pulse.core.domain.architecture_adoption import ArchitectureAdoptionScope
+
 import pytest_asyncio
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -78,7 +80,7 @@ def _architecture_body(title: str = "Runtime Architecture") -> dict:
                             "type": "arrow",
                             "sourceElementId": "node-client",
                             "targetElementId": "shape-1",
-                            "linkedInterfaceId": "interface-payload",
+                            "linkedInterfaceIds": ["interface-payload"],
                             "connectionType": "elbow",
                         },
                     ],
@@ -205,6 +207,7 @@ async def _client_and_entities():
         )
         db.add(
             Spec(
+                architecture_adoption=ArchitectureAdoptionScope(board_id=board_id, spec_id=spec_id, adopted_in_edition=1, actor_id=USER_ID, inherited_resource_ids=()).model_dump(mode="json"),
                 id=spec_id,
                 board_id=board_id,
                 title="Architecture REST Spec",
