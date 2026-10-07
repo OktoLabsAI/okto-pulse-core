@@ -40,22 +40,22 @@ def test_only_unambiguous_declared_requirements_are_emitted(case):
     assert len(intent.active_edges) == len(expected)
 
 
-def test_reordering_preserves_declared_identity_and_legacy_fr_index_is_supported():
+def test_reordering_preserves_declared_identity_and_rejects_positional_reference():
     source = spec()
     source['decisions'] = [{'id': 'dec_one', 'title': 'Choice', 'linked_requirements': ['fr_one', 'tr_one']}]
     before = relations(source)[1]
     source['functional_requirements'].reverse()
     assert relations(source)[1] == before
     source['decisions'][0]['linked_requirements'] = [0]
-    assert relations(source)[1] == {('spec:owner:fr:fr_two', 'derives_from/explicit_link@v2.1', 1.0)}
+    assert relations(source)[1] == set()
 
 
 @pytest.mark.parametrize('links,expected', [
-    (['First'], {'spec:owner:fr:fr_one'}),
-    (['Technical'], {'spec:owner:tr:tr_one'}),
-    (['First', 'Technical'], {'spec:owner:fr:fr_one', 'spec:owner:tr:tr_one'}),
+    (['First'], set()),
+    (['Technical'], set()),
+    (['First', 'Technical'], set()),
 ])
-def test_unique_legacy_requirement_text_matches_the_declared_domain_reference(links, expected):
+def test_requirement_text_does_not_replace_native_identity(links, expected):
     source = spec()
     source['decisions'] = [{'id': 'dec_one', 'title': 'Choice', 'linked_requirements': links}]
     assert {row[0] for row in relations(source)[1]} == expected

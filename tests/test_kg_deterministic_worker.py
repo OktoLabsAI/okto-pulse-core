@@ -44,7 +44,7 @@ def _spec_fixture() -> dict:
             {"id": "dec_badge", "title": "Badge rules as JSON in DB", "rationale": "Rule storage", "status": "active"},
         ],
         "functional_requirements": [
-            "User earns XP for eco-actions",
+            {"id": "fr_earn", "text": "User earns XP for eco-actions"},
             "User level increases based on XP threshold",
             "Badge awarded for achievements",
         ],
@@ -86,7 +86,7 @@ def _spec_fixture() -> dict:
                 "method": "GET",
                 "path": "/leaderboard",
                 "description": "Top 100 users",
-                "linked_requirements": ["User earns XP for eco-actions"],
+                "linked_requirements": ["fr_earn"],
             },
             {
                 "method": "POST",
@@ -339,7 +339,7 @@ def test_process_spec_child_source_refs_are_granular():
     assert spec_ref not in child_refs
     assert len(child_refs) == len(set(child_refs))
     assert {
-        f"spec:{spec['id']}:fr:0",
+        f"spec:{spec['id']}:fr:fr_earn",
         f"spec:{spec['id']}:fr:1",
         f"spec:{spec['id']}:tr:0",
         f"spec:{spec['id']}:tr:1",
@@ -875,49 +875,50 @@ def test_impl3_decision_derives_from_resolves_via_fr_id():
     )
 
 
-def test_impl3_legacy_text_resolution_still_works():
-    """Regression: specs written before IMPL-1 (no id on FR dict, text refs)
-    must still resolve the `implements` edge via text lookup.
-    """
+def test_api_requirement_text_does_not_replace_native_id():
+    """Display text cannot replace a native requirement ID."""
     spec = {
         "id": "legacy-spec-0000-1111-2222",
         "title": "Legacy spec",
         "description": "Pre-IMPL-1 spec with text-based linked_requirements",
         "context": "",
         "functional_requirements": [
-            "User can log in",  # plain string, no id field
+            {"id": "fr-login", "text": "User can log in"},
         ],
         "api_contracts": [
             {
                 "method": "POST",
                 "path": "/login",
                 "description": "Login endpoint",
+                "id": "api-login",
                 "linked_requirements": ["User can log in"],  # text ref
             },
         ],
     }
     result = DeterministicWorker().process_spec(spec)
     impl_edges = [e for e in result.edges if e.edge_type == "implements"]
-    assert len(impl_edges) == 1
-    assert impl_edges[0].confidence == 1.0
-    assert not [c for c in result.missing_link_candidates if c.edge_type == "implements"]
+    assert not impl_edges
+    spec["api_contracts"][0]["linked_requirements"] = ["fr-login"]
+    native_result = DeterministicWorker().process_spec(spec)
+    native_edges = [e for e in native_result.edges if e.edge_type == "implements"]
+    assert len(native_edges) == 1
+    assert native_edges[0].confidence == 1.0
 
 
-def test_impl3_legacy_int_index_resolution_still_works():
-    """Regression: specs written before IMPL-1 (no id on FR dict, int index
-    refs on decisions) must still resolve `derives_from` via positional int.
-    """
+def test_decision_requirement_position_does_not_replace_native_id():
+    """List position cannot replace a native requirement ID."""
     spec = {
         "id": "legacy-spec-int-3333-4444",
         "title": "Legacy int-index spec",
         "description": "Pre-IMPL-1 spec with int-index linked_requirements on decision",
         "context": "",
         "functional_requirements": [
-            "FR zero",
-            "FR one",
+            {"id": "fr-zero", "text": "FR zero"},
+            {"id": "fr-one", "text": "FR one"},
         ],
         "decisions": [
             {
+                "id": "decision-first",
                 "title": "Only link to first FR by int index",
                 "rationale": "Legacy int-index reference",
                 "status": "active",
@@ -927,7 +928,10 @@ def test_impl3_legacy_int_index_resolution_still_works():
     }
     result = DeterministicWorker().process_spec(spec)
     derives_edges = [e for e in result.edges if e.edge_type == "derives_from"]
-    # Only one edge (index 0 resolves to fr_0); fr_1 is skipped.
+    assert not derives_edges
+    spec["decisions"][0]["linked_requirements"] = ["fr-zero"]
+    native_result = DeterministicWorker().process_spec(spec)
+    derives_edges = [e for e in native_result.edges if e.edge_type == "derives_from"]
     assert len(derives_edges) == 1
     edge = derives_edges[0]
     assert edge.confidence == 1.0

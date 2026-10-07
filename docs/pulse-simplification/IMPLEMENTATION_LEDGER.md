@@ -2,6 +2,22 @@
 
 ## Estado para retomada
 
+### 2026-10-07 — FR/TR sem resolver textual/posicional; validação main33
+Core6715d7aa publicado; Communityf341d0c6 inalterado. Resolver compartilhado e
+API aceitam somente ID string exato e inequívoco; removidos mapas de texto.
+main33 build/install/prova53468 terminou0:843/905 Core+316/402 Community
+byte-idênticos antes dos testes. requirement-identity2 handle83165 terminou1:
+167pass/2fail/10.10s. Dois testes exigiam explicitamente suporte antigo a texto
+e índice; convertidos em recusa com controle positivo por ID nativo.
+requirement-grafx1 handle85619 terminou0:15pass/60.97s. closure-main33
+handle94852 terminou0. Worker3 terminou0:58pass/4.05s. XMLs e closure conferidos:169 Core resolvidos
+mais15 Grafx; não somar reexecuções. Recibo clean-break-acceptance-native-requirement-identity.json
+preserva reprodução e falhas iniciais. Oito budgets ZERO. Nenhum processo ativo.
+Não altera a decisão pendente KG-10 nem T23. A autorização Checklist reiterada
+já está implementada/qualificada na seção “Decisão Checklist autorizada”.
+Fonte _source_item_key ainda possui fallback posicional conhecido; não declarar
+remoção integral. Sem mudança de frontend neste incremento.
+
 ### 2026-10-07 — KG-01/02/03 qualificados; main32 sem processos ativos
 kg-materialized1 handle55557 terminou0:54pass/1116.14s. XML conferido:
 fila normal/reconstrução nativa, reordenação, remoção/restauração/replay e

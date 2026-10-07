@@ -1,0 +1,200 @@
+{
+  "scope": "C1/C4: native FR/TR reference identity, no legacy text or positional resolver",
+  "date": "2026-10-07",
+  "provenance": {
+    "checked_at": "2026-10-07T15:24:07.596308+00:00",
+    "python": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Scripts\\python.exe",
+    "packages": {
+      "core": {
+        "python_files": 843,
+        "origin": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages\\okto_pulse\\core\\__init__.py",
+        "repository_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_core",
+        "commit": "6715d7aa8c9d1f7edc46a8c271b9832c41a5f096",
+        "dirty": true,
+        "dirty_entry_count": 6,
+        "distribution": "okto-pulse-core",
+        "version": "0.4.0",
+        "wheel": {
+          "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\dist-native-main33\\okto_pulse_core-0.4.0-py3-none-any.whl",
+          "sha256": "5e5774f6f2e075e450cc9e7f1d8b77b6470d93a7ecdb6771e4b3c500d9904705",
+          "size": 3604317
+        },
+        "source_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_core\\src",
+        "site_packages_root": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages",
+        "package_prefix": "okto_pulse/core/",
+        "byte_identical_member_count": 905,
+        "byte_identical": true,
+        "aggregate_sha256": "4250c15c80e29c0d7387cd5242b9ed5eb5645894d73c1476e8cc06f94749d332",
+        "chain_hashes": {
+          "source": "4250c15c80e29c0d7387cd5242b9ed5eb5645894d73c1476e8cc06f94749d332",
+          "wheel": "4250c15c80e29c0d7387cd5242b9ed5eb5645894d73c1476e8cc06f94749d332",
+          "site_packages": "4250c15c80e29c0d7387cd5242b9ed5eb5645894d73c1476e8cc06f94749d332"
+        },
+        "critical_resource_sha256": {
+          "okto_pulse/core/mcp/resources/ska_resource_manifest.json": "4f6360d46eab0f9c8931d3fb5e8a50e0c04b0e6f3b164619a55ac381917ba34d",
+          "okto_pulse/core/mcp/resources/ska_tool_manifest.json": "3d3ecc80ab6b699b2021eddcf02b72bf48eddd06bf34dcf245f2b00fcc69b433"
+        },
+        "mismatches": []
+      },
+      "community": {
+        "python_files": 316,
+        "origin": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages\\okto_pulse\\community\\__init__.py",
+        "repository_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_community",
+        "commit": "f341d0c62081157424457fef0e0f2149b315cae5",
+        "dirty": false,
+        "dirty_entry_count": 0,
+        "distribution": "okto-pulse",
+        "version": "0.4.0",
+        "wheel": {
+          "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\dist-native-main33\\okto_pulse-0.4.0-py3-none-any.whl",
+          "sha256": "120d973d2a13f3b258d3cbcb1a88d78636dfd87474cf10b5e66db31784de9ad2",
+          "size": 4071254
+        },
+        "source_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_community\\src",
+        "site_packages_root": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages",
+        "package_prefix": "okto_pulse/community/",
+        "byte_identical_member_count": 402,
+        "byte_identical": true,
+        "aggregate_sha256": "af68a46df92008fb5cbd17dd274d85554a116d669d425591d4417f6a64e66ab7",
+        "chain_hashes": {
+          "source": "af68a46df92008fb5cbd17dd274d85554a116d669d425591d4417f6a64e66ab7",
+          "wheel": "af68a46df92008fb5cbd17dd274d85554a116d669d425591d4417f6a64e66ab7",
+          "site_packages": "af68a46df92008fb5cbd17dd274d85554a116d669d425591d4417f6a64e66ab7"
+        },
+        "critical_resource_sha256": {},
+        "mismatches": []
+      }
+    }
+  },
+  "campaigns": [
+    {
+      "name": "acceptance-native-requirement-refusal1",
+      "sha256": "baf98f23702c8c056f31748346c82bae2361c4b94582d5c1789903dd604c542e",
+      "tests": 20,
+      "failures": 10,
+      "errors": 0,
+      "seconds": 5.849
+    },
+    {
+      "name": "acceptance-native-requirement-identity2",
+      "sha256": "eae715a6947709f52691db465f481bc507f0be0ff7ef3d4d2c1d4078f8a9746a",
+      "tests": 169,
+      "failures": 2,
+      "errors": 0,
+      "seconds": 10.047
+    },
+    {
+      "name": "acceptance-native-requirement-worker3",
+      "sha256": "8d6aa1898cc52868ac163dc2937e3780aa2a146ad2cedaf310e391358b6e857e",
+      "tests": 58,
+      "failures": 0,
+      "errors": 0,
+      "seconds": 4.007
+    },
+    {
+      "name": "acceptance-native-requirement-grafx1",
+      "sha256": "3e320241691c71f4137f2a984e17f024a7a0cce913d71253b5c9be5eb0af9d7b",
+      "tests": 15,
+      "failures": 0,
+      "errors": 0,
+      "seconds": 60.968
+    }
+  ],
+  "closure": {
+    "ok": true,
+    "budgets": [
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "import_boundary_baseline",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every import_boundary_baseline allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "singleton_baseline",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every singleton_baseline allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "dependency_temporary_exceptions",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every dependency_temporary_exceptions allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "graph_runtime_compatibility",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every graph_runtime_compatibility allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "rebuild_artifact_compatibility",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every rebuild_artifact_compatibility allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "community_private_reach_ins",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every community_private_reach_ins allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "community_adapter_bridges",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every community_adapter_bridges allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "af35_relational_residue",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every af35_relational_residue allowance before F16 completion."
+      }
+    ],
+    "findings": [],
+    "documentation_findings": [],
+    "evidence": {
+      "af35_s5_ok": true,
+      "community_to_core_import_rows": 1110,
+      "conformance_matrix_ok": true,
+      "core_import_rows": 7632,
+      "dependency_rows": 25,
+      "distribution_report_ok": true,
+      "rebuild_storage_violation_count": 0,
+      "singleton_gate_status": "passed"
+    }
+  },
+  "result": "169 Core cases resolved by initial campaign plus affected-module rerun; 15 real Grafx cases passed. Reruns overlap; do not add their counts.",
+  "failure_disposition": "10 reproduction failures showed legacy fallback. Two later failures required the retired behavior; replaced with negative cases and native-ID positive controls.",
+  "limits": [
+    "No new acceptance row promoted by this receipt.",
+    "No frontend product change.",
+    "Positional source-item identity fallback is still a known residual, distinct from requirement reference lookup.",
+    "KG-10 and T23 authority decisions remain pending."
+  ]
+}

@@ -52,7 +52,7 @@ def full_spec_row():
             "- Cache recent streaks in Redis with 5min TTL\n"
         ),
         functional_requirements=[
-            "Player accumulates XP for each action",
+            {"id": "fr_earn", "text": "Player accumulates XP for each action"},
             "Player earns streak multiplier after 7 consecutive days",
         ],
         technical_requirements=[
@@ -80,7 +80,7 @@ def full_spec_row():
                 "method": "GET",
                 "path": "/leaderboard",
                 "description": "Top-100 users",
-                "linked_requirements": ["Player accumulates XP for each action"],
+                "linked_requirements": ["fr_earn"],
             },
         ],
         created_by="u",

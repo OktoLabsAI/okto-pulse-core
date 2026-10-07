@@ -58,12 +58,12 @@ def test_revoked_source_stops_current_relationship_without_claiming_history_dele
 
 
 @pytest.mark.parametrize('collection', ['business_rules', 'integration_requirements'])
-def test_unique_fr_text_is_supported_but_duplicate_text_does_not_choose_a_target(collection):
+def test_requirement_text_never_selects_a_target(collection):
     value = source()
     value[collection][0]['linked_requirements'] = ['Functional condition']
     result, _ = projected(value)
     namespace = 'business_rule_requirements' if collection == 'business_rules' else collection
-    assert len(next(intent for intent in result.relational_projection_active_set_intents if intent.namespace == namespace).active_edges) == 1
+    assert next(intent for intent in result.relational_projection_active_set_intents if intent.namespace == namespace).active_edges == ()
     value['functional_requirements'].append({'id': 'fr_other', 'text': 'Functional condition'})
     assert next(intent for intent in projected(value)[0].relational_projection_active_set_intents if intent.namespace == namespace).active_edges == ()
 
@@ -86,7 +86,7 @@ def test_partial_requirement_source_cannot_prune_either_target_family(collection
 
 
 @pytest.mark.parametrize('collection', ['integration_requirements', 'observability_requirements'])
-def test_requirement_text_is_unique_across_fr_tr_and_exact_id_takes_precedence(collection):
+def test_only_native_ids_resolve_across_fr_tr(collection):
     value = source()
     value['technical_requirements'] = [{'id': 'tr_one', 'text': 'Technical condition'}]
     value[collection][0]['linked_requirements'] = ['Technical condition']
@@ -95,7 +95,7 @@ def test_requirement_text_is_unique_across_fr_tr_and_exact_id_takes_precedence(c
         refs = {node.candidate_id: node.source_artifact_ref for node in result.nodes}
         intent = next(item for item in result.relational_projection_active_set_intents if item.namespace == collection)
         return {refs[edge.to_candidate_id] for edge in intent.active_edges}
-    assert active_targets() == {'spec:owner:tr:tr_one'}
+    assert active_targets() == set()
     value['functional_requirements'][0]['text'] = 'Technical condition'
     assert active_targets() == set()
     value[collection][0]['linked_requirements'] = ['tr_one']

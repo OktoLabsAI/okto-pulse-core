@@ -1114,34 +1114,19 @@ def _spec_link_endpoint(link: dict[str, Any]) -> tuple[str, str]:
 
 
 def _declared_requirement_targets(references, primary_rows, primary_nodes, secondary_rows=(), secondary_nodes=()):
-    """Resolve exact IDs, then unique legacy text; numeric compatibility is FR-only."""
+    """Resolve only exact, unambiguous authored requirement IDs."""
     identities: dict[str, list[str]] = {}
-    texts: dict[str, list[str]] = {}
     for rows, emitted in ((primary_rows, primary_nodes), (secondary_rows, secondary_nodes)):
         for item, (candidate_id, _text) in zip(rows, emitted):
-            text = str(item.get('text') or item.get('title') or item.get('description') or '') if isinstance(item, dict) else str(item)
-            if text.strip():
-                texts.setdefault(text.strip(), []).append(candidate_id)
-            if isinstance(item, dict) and item.get('id') not in (None, ''):
-                identities.setdefault(str(item['id']), []).append(candidate_id)
+            if isinstance(item, dict) and isinstance(item.get("id"), str) and item["id"]:
+                identities.setdefault(item["id"], []).append(candidate_id)
     targets: set[str] = set()
     for reference in references or ():
-        if isinstance(reference, bool) or reference is None:
+        if not isinstance(reference, str):
             continue
-        key = str(reference).strip()
-        matches = identities.get(key)
-        if matches is None and not key.startswith(('fr_', 'tr_')):
-            matches = texts.get(key)
-        if matches is not None:
-            if len(matches) == 1:
-                targets.add(matches[0])
-            continue  # Ambiguity cannot fall through into positional lookup.
-        try:
-            index = int(key)
-            if 0 <= index < len(primary_nodes):
-                targets.add(primary_nodes[index][0])
-        except ValueError:
-            pass
+        matches = identities.get(reference, ())
+        if len(matches) == 1:
+            targets.add(matches[0])
     return sorted(targets)
 
 
@@ -1314,11 +1299,6 @@ class DeterministicWorker:
 
         # 2. Functional requirements → Requirement (confidence 1.0, deterministic)
         fr_ids: list[tuple[str, str]] = []  # (candidate_id, text)
-        # fr_id_to_cid: maps the canonical fr_id (persisted by IMPL-1 on the
-        # FR dict) to its candidate_id so that linked_requirements references
-        # expressed as fr_ids (rather than positional ints or full text) can
-        # resolve deterministically in sections (a) and (b) below.
-        fr_id_to_cid: dict[str, str] = {}
         for i, req in enumerate(spec.get("functional_requirements") or []):
             text = (
                 req
@@ -1328,10 +1308,6 @@ class DeterministicWorker:
             raw_parts.append(text)
             cid = f"{prefix}_fr_{i}"
             fr_ids.append((cid, text))
-            if isinstance(req, dict):
-                fr_id = req.get("id")
-                if fr_id not in (None, ""):
-                    fr_id_to_cid[str(fr_id)] = cid
             result.nodes.append(
                 EmittedNode(
                     candidate_id=cid,
@@ -1346,7 +1322,6 @@ class DeterministicWorker:
 
         # 3. Technical requirements → Constraint
         tr_ids: list[tuple[str, str]] = []  # (candidate_id, text)
-        tr_id_to_cid: dict[str, str] = {}
         for i, req in enumerate(spec.get("technical_requirements") or []):
             if isinstance(req, dict):
                 text = req.get("text") or req.get("description") or json.dumps(req)
@@ -1355,10 +1330,6 @@ class DeterministicWorker:
             raw_parts.append(text)
             cid = f"{prefix}_tr_{i}"
             tr_ids.append((cid, text))
-            if isinstance(req, dict):
-                tr_id = req.get("id")
-                if tr_id not in (None, ""):
-                    tr_id_to_cid[str(tr_id)] = cid
             result.nodes.append(
                 EmittedNode(
                     candidate_id=cid,
@@ -1507,8 +1478,6 @@ class DeterministicWorker:
                 )
 
         # 7. APIContract + `implements` edges to Requirement/Constraint via linked_requirements.
-        fr_text_to_cid = {text.strip(): cid for cid, text in fr_ids}
-        tr_text_to_cid = {text.strip(): cid for cid, text in tr_ids}
         requirement_candidate_suggestions = [c for c, _ in fr_ids] + [
             c for c, _ in tr_ids
         ]
@@ -1554,15 +1523,11 @@ class DeterministicWorker:
             for idx, link in enumerate(linked):
                 if not isinstance(link, str):
                     continue
-                # (a) Resolve linked_requirements entry: try canonical FR/TR
-                # ids first, then fall back to full-text match for legacy refs.
-                stripped_link = link.strip()
-                target = (
-                    fr_id_to_cid.get(stripped_link)
-                    or tr_id_to_cid.get(stripped_link)
-                    or fr_text_to_cid.get(stripped_link)
-                    or tr_text_to_cid.get(stripped_link)
+                targets = _declared_requirement_targets(
+                    [link], spec.get("functional_requirements") or [], fr_ids,
+                    spec.get("technical_requirements") or [], tr_ids,
                 )
+                target = targets[0] if targets else None
                 if target is None:
                     result.missing_link_candidates.append(
                         MissingLinkCandidate(
