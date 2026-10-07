@@ -276,7 +276,7 @@ class TestSemanticGraphStore:
         # `precedes` pair without overloading cognitive `depends_on`, so the
         # schema 0.6 also adds the multi-endpoint `violates` declaration for
         # Bug -> Requirement/Criterion, alongside Bug -> Constraint.
-        assert len(info["stable_rel_types"]) == 21
+        assert len(info["stable_rel_types"]) == 22
         rel_names = {rel["name"] for rel in info["stable_rel_types"]}
         assert {"belongs_to", "originates_from", "covered_by", "precedes"} <= rel_names
         violates = [rel for rel in info["stable_rel_types"] if rel["name"] == "violates"]

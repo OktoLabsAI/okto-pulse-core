@@ -98,24 +98,9 @@ async def kg_rel_board(db_factory):
 # ---------------------------------------------------------------------------
 
 
-def test_ts29_schema_version_is_0_3_3():
-    """SCHEMA_VERSION remains monotonic after last_recomputed_at bootstrap."""
-    assert SCHEMA_VERSION in {
-        "0.3.2",
-        "0.3.3",
-        "0.3.4",
-        "0.3.5",
-        "0.3.6",
-        "0.3.7",
-        "0.3.8",
-        "0.3.9",
-        "0.3.10",
-        "0.3.11",
-        "0.3.12",
-        "0.4.0",
-        "0.5.0",
-        "0.6.0", "0.7.0",
-    }
+def test_ts29_schema_version_is_current():
+    """Current bootstrap exposes the single supported schema."""
+    assert SCHEMA_VERSION == "0.8.0"
 
 
 def test_ts29_last_recomputed_columns_constant_exposes_string_type():
@@ -722,7 +707,7 @@ def test_kg_hit_flushed_event_class_registered():
     # quality.clarification_changed.v1 for parent-consolidation invalidation;
     # Code Traceability subsequently added its governed classification events.
     # F3 retired sprint.created, sprint.moved and sprint.closed.
-    assert len(EVENT_TYPES) == 61
+    assert len(EVENT_TYPES) == 63
     assert not {"sprint.created", "sprint.moved", "sprint.closed"} & set(EVENT_TYPES)
     assert resolve_event_class("kg.hit_flushed") is KGHitFlushed
 
@@ -1382,7 +1367,7 @@ def test_impl_d_kg_daily_tick_event_class_registered():
     # Registry ratchet also includes the two research-decision events,
     # quality clarification, and the governed Code Traceability events.
     # F3 retired sprint.created, sprint.moved and sprint.closed.
-    assert len(EVENT_TYPES) == 61
+    assert len(EVENT_TYPES) == 63
     assert not {"sprint.created", "sprint.moved", "sprint.closed"} & set(EVENT_TYPES)
     assert resolve_event_class("kg.tick.daily") is KGDailyTick
 

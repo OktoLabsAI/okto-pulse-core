@@ -81,7 +81,10 @@ def test_query_contract_covers_layers_related_context_and_edge_endpoints():
         "edge_endpoints"
     ]["relates_to"]
     assert contract["edge_endpoints"]["precedes"] == [
-        {"from": "Entity", "to": "Entity"}
+        {"from": "Entity", "to": "Entity"},
+        {"from": "Entity", "to": "Bug"},
+        {"from": "Bug", "to": "Entity"},
+        {"from": "Bug", "to": "Bug"},
     ]
     assert contract["edge_endpoints"]["depends_on"] == [
         {"from": "Decision", "to": "Decision"}

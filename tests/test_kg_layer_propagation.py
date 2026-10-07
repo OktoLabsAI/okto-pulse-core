@@ -109,7 +109,7 @@ async def _subgraph(board_id, **kw):
             "kg-layer-test",
             "rest",
             board_id=board_id,
-            permissions=["board:read"],
+            permissions=["board.read", "kg.query.related_context"],
         ),
         uow=SimpleNamespace(),
     )

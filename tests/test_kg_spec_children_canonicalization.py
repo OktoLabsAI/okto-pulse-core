@@ -416,6 +416,7 @@ def _seed_decision(board_id, *, title, human_curated):
 
     def _attrs(title_, content, ref, curated, layer):
         return {
+            "generation": 0,
             "title": title_,
             "content": content,
             "context": "ORIGINAL CONTEXT",

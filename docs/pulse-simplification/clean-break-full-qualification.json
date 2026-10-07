@@ -2694,5 +2694,142 @@
     "scope": "Remove .lbug explicit erasure. Presence of old graph, sidecar or rollout is observed opaquely and refused before any Grafx/binding deletion. Native erasure fence and binding-last semantics retained; tests cover mixed/current+retired and retired-only storage.",
     "failure_disposition": "One preexisting test expected14 graph providers; native registry has15 including graph_query_execution. Replaced count with exact current provider set and reran entire affected module16 cases. Other56 cases passed in first campaign;72 distinct cases now qualified, not87.",
     "limits": "Core11 native fixture followup running separately. No frontend changes. Not overall completion."
+  },
+  "core_run11_native_followup": {
+    "proof_pair": "dist-native-privacy-refusal1",
+    "campaigns": [
+      {
+        "name": "core11-native-followup1",
+        "passed": 199,
+        "failed": 2,
+        "seconds": 567.8
+      },
+      {
+        "name": "core11-native-followup2",
+        "passed": 52,
+        "failed": 0,
+        "seconds": 54.12
+      }
+    ],
+    "distinct_qualified_cases": 201,
+    "xml_sha256": {
+      "core11-native-followup1": "b6ebfb21abfeb490aac8a2b1851beffe6dd25f09232050b8da81634c45bcc132",
+      "core11-native-followup2": "450ad732a368f082c65dc168a34f4b70368a9b6bef2f9dce1b9c764c6cc2d835"
+    },
+    "scope": "13 complete modules qualified against current schema/endpoints/events, explicit native generation and permissions. Negative narrative test refuses manufactured Decision links/mentions. Two column suites renamed native. Product gates unchanged.",
+    "limits": "Initial two failures were residual narrative mentions expectation and precise relationship order; full affected modules rerun52. No251 distinct claim."
+  },
+  "community_full_run9": {
+    "campaign": "clean-break-full-run9-community",
+    "exit_code": 1,
+    "passed": 524,
+    "failed": 17,
+    "errors": 3,
+    "skipped": 1,
+    "seconds": 522.65,
+    "xml_sha256": "847e8f2322f59f0da3a8b9278dce1ddeb2b6cb35fd24555c28292a78fc09e3e5",
+    "failures": [
+      {
+        "class": "tests.test_cognitive_fingerprint_reader",
+        "name": "test_selecting_birth_does_not_hide_corrupt_later_revision",
+        "message": "sqlalchemy.exc.IntegrityError: (sqlite3.IntegrityError) kg_cognitive_source_immutable\n[SQL: UPDATE kg_cognitive_source_revisions SET payload=? WHERE kg_cognitive_source_revisions.id = ?]\n[parameters: ('{\"content\": \"tampered\"}', '61e3eeb3-4b69-4884-8d77-45742f8b93a7')]\n(Background on this error at: https://sqlalche.me/e/20/gkpj)"
+      },
+      {
+        "class": "tests.test_community_cold_start_atomic_publication",
+        "name": "test_failed_community_cold_start_publishes_nothing_atomically[cross_edition_collision_validation]",
+        "message": "okto_pulse.community.adapters.current_relational_schema.StorageFormatError: storage_format_incompatible:version; Pulse 0.4.0 requires new storage or storage created by this schema. Existing data was not converted; select a new storage location."
+      },
+      {
+        "class": "tests.test_community_cold_start_atomic_publication",
+        "name": "test_failed_community_cold_start_publishes_nothing_atomically[instruction_freeze]",
+        "message": "okto_pulse.community.adapters.current_relational_schema.StorageFormatError: storage_format_incompatible:version; Pulse 0.4.0 requires new storage or storage created by this schema. Existing data was not converted; select a new storage location."
+      },
+      {
+        "class": "tests.test_community_cold_start_atomic_publication",
+        "name": "test_failed_community_cold_start_publishes_nothing_atomically[resource_freeze_manifest_generation]",
+        "message": "okto_pulse.community.adapters.current_relational_schema.StorageFormatError: storage_format_incompatible:version; Pulse 0.4.0 requires new storage or storage created by this schema. Existing data was not converted; select a new storage location."
+      },
+      {
+        "class": "tests.test_community_cold_start_atomic_publication",
+        "name": "test_failed_community_cold_start_publishes_nothing_atomically[post_freeze_app_assembly]",
+        "message": "okto_pulse.community.adapters.current_relational_schema.StorageFormatError: storage_format_incompatible:version; Pulse 0.4.0 requires new storage or storage created by this schema. Existing data was not converted; select a new storage location."
+      },
+      {
+        "class": "tests.test_community_cold_start_atomic_publication",
+        "name": "test_failed_community_cold_start_publishes_nothing_atomically[module_app_wrapper]",
+        "message": "okto_pulse.community.adapters.current_relational_schema.StorageFormatError: storage_format_incompatible:version; Pulse 0.4.0 requires new storage or storage created by this schema. Existing data was not converted; select a new storage location."
+      },
+      {
+        "class": "tests.test_community_cold_start_atomic_publication",
+        "name": "test_failed_community_cold_start_publishes_nothing_atomically[community_host_materialization]",
+        "message": "okto_pulse.community.adapters.current_relational_schema.StorageFormatError: storage_format_incompatible:version; Pulse 0.4.0 requires new storage or storage created by this schema. Existing data was not converted; select a new storage location."
+      },
+      {
+        "class": "tests.test_community_cold_start_atomic_publication",
+        "name": "test_failed_community_cold_start_publishes_nothing_atomically[serve_configuration]",
+        "message": "okto_pulse.community.adapters.current_relational_schema.StorageFormatError: storage_format_incompatible:version; Pulse 0.4.0 requires new storage or storage created by this schema. Existing data was not converted; select a new storage location."
+      },
+      {
+        "class": "tests.test_community_cold_start_atomic_publication",
+        "name": "test_failed_community_cold_start_publishes_nothing_atomically[shutdown_signal_setup]",
+        "message": "okto_pulse.community.adapters.current_relational_schema.StorageFormatError: storage_format_incompatible:version; Pulse 0.4.0 requires new storage or storage created by this schema. Existing data was not converted; select a new storage location."
+      },
+      {
+        "class": "tests.test_community_cold_start_atomic_publication",
+        "name": "test_failed_community_cold_start_publishes_nothing_atomically[heartbeat_task_launch]",
+        "message": "okto_pulse.community.adapters.current_relational_schema.StorageFormatError: storage_format_incompatible:version; Pulse 0.4.0 requires new storage or storage created by this schema. Existing data was not converted; select a new storage location."
+      },
+      {
+        "class": "tests.test_community_cold_start_atomic_publication",
+        "name": "test_failed_community_cold_start_publishes_nothing_atomically[api_listener_task_launch]",
+        "message": "okto_pulse.community.adapters.current_relational_schema.StorageFormatError: storage_format_incompatible:version; Pulse 0.4.0 requires new storage or storage created by this schema. Existing data was not converted; select a new storage location."
+      },
+      {
+        "class": "tests.test_community_cold_start_atomic_publication",
+        "name": "test_failed_community_cold_start_publishes_nothing_atomically[mcp_listener_task_launch]",
+        "message": "okto_pulse.community.adapters.current_relational_schema.StorageFormatError: storage_format_incompatible:version; Pulse 0.4.0 requires new storage or storage created by this schema. Existing data was not converted; select a new storage location."
+      },
+      {
+        "class": "tests.test_completion_authenticated_delivery",
+        "name": "test_signed_test_closeout_separates_product_proof_from_projection[False]",
+        "message": "okto_pulse.core.ports.guideline_policy.GuidelinePolicySubjectConflict: semantic_subject_authority_missing_or_stale"
+      },
+      {
+        "class": "tests.test_delivery_origin_acceptance",
+        "name": "test_origin_refusal_rolls_back_preceding_progress_in_mixed_batch[revoked_receipt]",
+        "message": "pydantic_core._pydantic_core.ValidationError: 1 validation error for CardDeliveryEvidenceBatchCommand\nentries.0.progress.material_change\n  Field required [type=missing, input_value={'source_state': {'worksp...ble source observation'}, input_type=dict]\n    For further information visit https://errors.pydantic.dev/2.13/v/missing"
+      },
+      {
+        "class": "tests.test_delivery_origin_acceptance",
+        "name": "test_origin_refusal_rolls_back_preceding_progress_in_mixed_batch[changed_selector]",
+        "message": "pydantic_core._pydantic_core.ValidationError: 1 validation error for CardDeliveryEvidenceBatchCommand\nentries.0.progress.material_change\n  Field required [type=missing, input_value={'source_state': {'worksp...ble source observation'}, input_type=dict]\n    For further information visit https://errors.pydantic.dev/2.13/v/missing"
+      },
+      {
+        "class": "tests.test_delivery_origin_acceptance",
+        "name": "test_two_targets_reuse_one_admitted_snapshot_without_new_challenge[composed0]",
+        "message": "AssertionError: {\n  \"population_complete\": true,\n  \"requirements\": [\n    {\n      \"requirement_type\": \"functional_requirement\",\n      \"requirement_id\": \"fr\",\n      \"title\": \"Functional\",\n      \"source_digest\": \"168b9d191f4b72d7fc1ff9ec82106bbeb20bdcb38ff06678a2af9e08e30f7c82\",\n      \"verification\": {\n        \"mode\": \"explicit\",\n        \"required_profiles\": [\n          \"functional\"\n        ],\n        \"inheritance\": [],\n        \"evidence_policy_ref\": \"pulse-verification/v1\"\n      },\n      \"qualification_origin\": \"authored\",\n      \"default_proposal\": {\n        \"version\": \"requirement-verification-defaults/v1\",\n        \"origin\": \"product\",\n        \"requires_author_acceptance\": true,\n        \"verification\": {\n          \"mode\": \"explicit\",\n          \"required_profiles\": [\n            \"functional\"\n          ],\n          \"inheritance\": [],\n          \"evidence_policy_ref\": \"pulse-verification/v1\"\n        }\n      },\n      \"criteria_paths\": [\n        {\n          \"criterion_id\": \"ac-functional\",\n          \"profile\": \"functional\",\n          \"path\": [\n            {\n              \"requirement_type\": \"functional_requirement\",\n              \"requirement_id\": \"fr\"\n            }\n          ],\n          \"aspects\": [\n            null\n          ],\n          \"source_digests\": [],\n          \"scenario_plans\": [\n            {\n              \"scenario_id\": \"scope-test\",\n              \"method\": \"automated_test\",\n              \"method_admitted\": false,\n              \"method_plan_complete\": false,\n              \"test_card_ids\": [\n                \"scope-test-card\"\n              ],\n              \"blockers\": [\n                \"verification_method_unsupported\"\n              ],\n              \"work_blockers\": []\n            }\n          ],\n          \"planning_blockers\": [],\n          \"method_plan_complete\": false,\n          \"verification_work_complete\": false\n        }\n      ],\n      \"blockers\": [],\n      \"qualification_resolved\": true,\n      \"method_plan_complete\": false,\n      \"verification_work_complete\": false\n    },\n    {\n      \"requirement_type\": \"technical_requirement\",\n      \"requirement_id\": \"tr\",\n      \"title\": \"Technical\",\n      \"source_digest\": \"a2242dc6823f146ea963749550967958912d3871307e7761d33f55ff71d7ba90\",\n      \"verification\": {\n        \"mode\": \"explicit\",\n        \"required_profiles\": [\n          \"functional\"\n        ],\n        \"inheritance\": [],\n        \"evidence_policy_ref\": \"pulse-verification/v1\"\n      },\n      \"qualification_origin\": \"authored\",\n      \"default_proposal\": {\n        \"version\": \"requirement-verification-defaults/v1\",\n        \"origin\": \"product\",\n        \"requires_author_acceptance\": true,\n        \"verification\": {\n          \"mode\": \"explicit\",\n          \"required_profiles\": [\n            \"technical\"\n          ],\n          \"inheritance\": [],\n          \"evidence_policy_ref\": \"pulse-verification/v1\"\n        }\n      },\n      \"criteria_paths\": [\n        {\n          \"criterion_id\": \"ac-technical\",\n          \"profile\": \"functional\",\n          \"path\": [\n            {\n              \"requirement_type\": \"technical_requirement\",\n              \"requirement_id\": \"tr\"\n            }\n          ],\n          \"aspects\": [\n            null\n          ],\n          \"source_digests\": [],\n          \"scenario_plans\": [\n            {\n              \"scenario_id\": \"scope-test\",\n              \"method\": \"automated_test\",\n              \"method_admitted\": false,\n              \"method_plan_complete\": false,\n              \"test_card_ids\": [\n                \"scope-test-card\"\n              ],\n              \"blockers\": [\n                \"verification_method_unsupported\"\n              ],\n              \"work_blockers\": []\n            }\n          ],\n          \"planning_blockers\": [],\n          \"method_plan_complete\": false,\n          \"verification_work_complete\": false\n        }\n      ],\n      \"blockers\": [],\n      \"qualification_resolved\": true,\n      \"method_plan_complete\": false,\n      \"verification_work_complete\": false\n    }\n  ],\n  \"issues\": [],\n  \"issue_count\": 0,\n  \"issues_truncated\": false,\n  \"criteria_resolution_complete\": true,\n  \"methods_evaluated\": true,\n  \"execution_evaluated\": false,\n  \"semantic_review_evaluated\": false,\n  \"delivery_evaluated\": false,\n  \"rollout_evaluated\": false,\n  \"verification_work_evaluated\": true,\n  \"method_plan_complete\": false,\n  \"verification_work_complete\": false,\n  \"planning_population_complete\": true,\n  \"planning_issues\": [\n    {\n      \"code\": \"verification_method_capability_unavailable\"\n    }\n  ],\n  \"planning_issue_count\": 1,\n  \"planning_issues_truncated\": false\n}"
+      },
+      {
+        "class": "tests.test_delivery_resume_limits",
+        "name": "test_multibyte_manifest_is_capped_without_skipping_progress_cursor",
+        "message": "assert (False)"
+      },
+      {
+        "class": "tests.test_exact_rebuild_relational_ack_adapter",
+        "name": "test_exact_ack_journals_effects_and_queue_delete_atomically",
+        "message": "failed on setup with \"sqlalchemy.exc.IntegrityError: (sqlite3.IntegrityError) NOT NULL constraint failed: boards.realm_id\n[SQL: INSERT INTO boards (id, name, description, owner_id, realm_id) VALUES (?, ?, ?, ?, ?) RETURNING created_at, updated_at]\n[parameters: ('exact-relational-board', 'Exact relational', None, 'tester', None)]\n(Background on this error at: https://sqlalche.me/e/20/gkpj)\""
+      },
+      {
+        "class": "tests.test_exact_rebuild_relational_ack_adapter",
+        "name": "test_exact_ack_accepts_compact_raw_admission_payload",
+        "message": "failed on setup with \"sqlalchemy.exc.IntegrityError: (sqlite3.IntegrityError) NOT NULL constraint failed: boards.realm_id\n[SQL: INSERT INTO boards (id, name, description, owner_id, realm_id) VALUES (?, ?, ?, ?, ?) RETURNING created_at, updated_at]\n[parameters: ('exact-relational-board', 'Exact relational', None, 'tester', None)]\n(Background on this error at: https://sqlalche.me/e/20/gkpj)\""
+      },
+      {
+        "class": "tests.test_exact_rebuild_relational_ack_adapter",
+        "name": "test_exact_ack_rejects_created_node_ref_count_drift_atomically[3]",
+        "message": "failed on setup with \"sqlalchemy.exc.IntegrityError: (sqlite3.IntegrityError) NOT NULL constraint failed: boards.realm_id\n[SQL: INSERT INTO boards (id, name, description, owner_id, realm_id) VALUES (?, ?, ?, ?, ?) RETURNING created_at, updated_at]\n[parameters: ('exact-relational-board', 'Exact relational', None, 'tester', None)]\n(Background on this error at: https://sqlalche.me/e/20/gkpj)\""
+      }
+    ],
+    "limits": "Stopped at20 failures/errors. Next followup: immutable corruption injection, isolated fresh cold-start database, native subject authority/material_change and source fixture, resume caps, realm on exact ack setup. No fix applied yet."
   }
 }

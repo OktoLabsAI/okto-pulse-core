@@ -92,9 +92,8 @@ def full_spec_row():
 # ===========================================================================
 
 
-def test_ts_7b6a1ec1_worker_emits_all_edge_types(full_spec_row):
-    """Complete spec → worker produces tests + implements + derives_from +
-    mentions edges, all tagged layer=deterministic with correct confidence."""
+def test_ts_7b6a1ec1_worker_preserves_links_without_narrative_decisions(full_spec_row):
+    """Linked requirements produce edges; narrative decisions invent no links."""
     result = _run_deterministic_worker(
         ConsolidationQueue(board_id="board-sprint1", artifact_type="spec",
                            artifact_id=full_spec_row.id),
@@ -105,14 +104,13 @@ def test_ts_7b6a1ec1_worker_emits_all_edge_types(full_spec_row):
     # tests + implements come from linked_* matches.
     assert "tests" in edge_types
     assert "implements" in edge_types
-    # derives_from from the ## Decisions section (2 decisions × 2 FRs = 4 edges)
+    # Narrative context is not a formal decision or declared requirement link.
     derives = [e for e in result.edges if e.edge_type == "derives_from"]
-    assert len(derives) == 4
-    assert all(e.confidence == 0.6 for e in derives)
-    # mentions from tech whitelist (PostgreSQL + Redis)
+    assert derives == []
+    assert not [node for node in result.nodes if node.node_type == "Decision"]
+    # Technology text in narrative context cannot manufacture Decision mentions.
     mentions = [e for e in result.edges if e.edge_type == "mentions"]
-    assert any("postgresql" in e.to_candidate_id for e in mentions)
-    assert any("redis" in e.to_candidate_id for e in mentions)
+    assert mentions == []
 
 
 def test_ts_7b6a1ec1_edges_metadata_complete(full_spec_row):

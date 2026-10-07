@@ -2,6 +2,35 @@
 
 ## Estado para retomada
 
+### 2026-10-07 — Core11 resolvido; Community9 terminal para próximo followup
+Core11 followup1 handle78972 terminou1:199aprovados,2falhas/567.80s.
+Residuais eram expectativa de mentions derivados de narrativa sem Decision formal
+e ordem exata da declaração multi-endpoint precedes. Após terminal, ajustados só
+esses dois testes; followup2 handle14906 terminou0:52aprovados/54.12s em módulos
+inteiros. Total201casos distintos nas13suítes, não251. Nenhum produto/gate alterado.
+Ruff/diff verdes. Renomeadas suítes de colunas para native, mantendo recusas.
+Recibo core_run11_native_followup preserva falhas/correções/hashes.
+Core12 preparada619módulos excluídos, NÃO iniciada; módulo tier_power agora inteiro
+qualificado. Todas as sessões anteriores terminais.
+
+Community9 handle79103 terminou1:524aprovados,17falhas,3erros,1skip/522.65s,
+parada maxfail20. XML/falhas/hashes em community_full_run9 do recibo global.
+Próximas correções delimitadas:
+- cognitive_fingerprint_reader: corrupção simulada tenta UPDATE impedido pelo
+  trigger de imutabilidade; preservar guard, instrumentar corrupção na fixture.
+- cold_start_atomic_publication:11casos atingem DB antigo antes do ponto injetado;
+  usar storage temporário novo por caso e preservar todas11fronteiras/rollback.
+- completion_authenticated_delivery: autoridade nativa ausente/stale.
+- delivery_origin_acceptance:material_change obrigatório ausente em progress e
+  configuração atual de segundo Target; investigar detalhes sem relaxar admissão.
+- delivery_resume_limits:cap com manifesto multibyte, investigar assertion.
+- exact_rebuild_relational_ack_adapter:Board fixture sem realm_id,3erros de setup;
+  manter atomidade/ACK/journal atuais.
+Não alterar semântica por pressupor fixture; reproduções completas disponíveis.
+Main pair instalado continua dist-native-privacy-refusal1,843/905+316/402.
+Benchmark nativo registrado e enviado Core5a3b1a00; limites permanecem.
+C1–C4/235critérios/benchmark comparativo/T23/KG-10 continuam abertos.
+
 ### 2026-10-07 — C4 fluxo nativo medido sem inferir economia
 native-mcp-flow-measurement1 handle29216 terminou0:6aprovados/43.35s, dois
 PytestAssertRewriteWarning de anyio já importado pelo medidor; nenhuma falha.

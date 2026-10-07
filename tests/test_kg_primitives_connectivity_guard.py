@@ -68,6 +68,7 @@ def _seed_node(
     maturity_status: str | None = None,
 ) -> None:
     attrs = {
+        "generation": 0,
         "title": f"Seed {node_type}",
         "content": "",
         "context": "",
