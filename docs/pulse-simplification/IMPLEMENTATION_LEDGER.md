@@ -2,6 +2,50 @@
 
 ## Estado para retomada
 
+### 2026-10-07 — KG-16/24: Card filhos e Evidence chain aprovados
+Card-children-parity2 (68238) terminou0:3pass/202.91s. Normal/Test/Bug removem
+todos os vínculos das oito famílias + cenário, restauram subconjunto e repetem
+fila sem duplicação. Oráculo cobre todos os11 endpoints iniciais por tipo/ref.
+Com Evidence-chain1 (98884):1pass/89.89s, recibo
+clean-break-native-card-evidence-parity.json sela quatro integrações reais.
+Ambos comparam snapshot relacional completo e multiset gráfico completo,
+incluindo regras/proveniência/maturidade. História superseded permanece working;
+sucessor ativo canonical, sem conversão ou remoção de história imutável.
+Ruff F/E9 e diff-check passaram. Somente testes/ledger/recibo alterados, main45
+byteprovado antes do comportamento e closure45 oitoZERO permanecem aplicáveis.
+Sem frontend alterado, nenhuma nova alegação de UI/E2E. Sem processos pendentes.
+Pronto para commits/pushes. Índice63/172/11 inalterado; KG-16/24 ainda abertos.
+Próximo delimitado: paridade por snapshots idênticos para dependências tipadas
+Card/Spec e proxies de origem Bug, cujas retrações já têm campanhas registradas.
+Não repetir as famílias qualificadas nem inventar unlink para relações imutáveis.
+
+### 2026-10-07 — Evidence chain aprovada; Card corrige oráculo de multiplicidade
+Evidence-chain1 (98884) terminou0:1pass/89.89s; fontes completas idênticas e
+multiset incremental/rebuild iguais, predecessor working e sucessor canonical,
+com replay e histórico preservados sob schema nativo.
+Card-children-parity1 (35441) terminou1:3fails/86.42s. Projeção inicial contém
+11 endpoints corretos: fixture tem dois FRs e dois ACs, não um por família.
+Oráculo antigo contava8+1; trocado por conjunto exato de tipo/ref de todos os
+filhos da fixture, incluindo cenário, e multiplicidade unitária.
+Card-children-parity2 (68238) em execução; produto main45 não mudou.
+Sem promover KG-16/24; aguardar terminal e revisar comparação final.
+
+### 2026-10-07 — KG-16/24: paridade Evidence e Card em execução
+Turno anterior foi progresso: Coredf69bf9c/Communityf95120b2 publicados,
+índice63/172/11. Árvores inicialmente limpas. Prova
+provenance-native-evidence-chain1 confirmou main45:837/899+316/402 bytes iguais.
+Code Evidence supersedence é imutável no schema atual; não criar remoção de
+história para satisfazer KG-16. Novo teste usa recibos nativos distintos,
+guarda de armazenamento real, predecessor superseded e sucessor active;
+compara fonte completa e grafo após fila/replay contra rebuild.
+Campaign evidence-chain1 (98884) em andamento, sem resultado terminal.
+Novo teste Card cobre oito famílias do registry mais cenários, para normal/test/bug:
+remoção total, restauração parcial, replay e snapshot igual ao rebuild, schema final.
+Campaign card-children-parity1 (35441) em andamento. Ruff F/E9 passou.
+Somente testes/ledger alterados; não há build/reinstall pendente.
+Aguardar mesmos handles e corrigir apenas falhas demonstradas. Sem promoção
+de KG-16/24 nem commit/push desse WIP antes dos terminais.
+
 ### 2026-10-07 — C1: matcher antigo retirado e qualificado; KG-61 verificado
 Core core2 (14964) terminou0:78pass/16.66s, após prova main45 terminal.
 Community community1 (30143) terminou0:5pass/67.13s: recusa antes de escrita,
