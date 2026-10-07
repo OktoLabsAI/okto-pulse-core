@@ -9,7 +9,7 @@ from okto_pulse.core.models.delivery_evidence import (
     DeliveryEvidenceCommand,
     DeliveryEvidenceInput,
 )
-from okto_pulse.core.services.delivery_evidence import delivery_inventory
+from okto_pulse.core.domain.delivery_inventory import delivery_inventory
 from okto_pulse.core.domain.delivery_evidence import _evaluate_delivery_facts as evaluate_delivery_coverage
 from test_delivery_evidence_domain import SNAPSHOT, IMPLEMENTATION, TEST
 
@@ -100,3 +100,21 @@ def test_constructed_spec_command_cannot_bypass_kind_guard(kind):
     command = DeliveryEvidenceCommand.model_construct(kind=kind)
     with pytest.raises(ValueError, match="delivery_card_scope_required"):
         command.require_exception_kind()
+
+
+@pytest.mark.parametrize("value", ["old requirement text", {"text": "Missing identity"},
+                                    {"id": None}, {"id": ""}, {"id": 1}])
+def test_inventory_refuses_old_shapes_without_synthesizing_identity(value):
+    from copy import deepcopy
+    spec = SimpleNamespace(id="spec", title="Delivery", functional_requirements=[value])
+    before = deepcopy(spec.functional_requirements)
+    with pytest.raises(ValueError, match="delivery_obligation_inventory_invalid"):
+        delivery_inventory(spec)
+    assert spec.functional_requirements == before
+
+
+@pytest.mark.parametrize("value", ["", False, 0, {}])
+def test_inventory_does_not_convert_invalid_collection_to_empty(value):
+    spec = SimpleNamespace(id="spec", title="Delivery", functional_requirements=value)
+    with pytest.raises(ValueError, match="delivery_obligation_inventory_invalid"):
+        delivery_inventory(spec)

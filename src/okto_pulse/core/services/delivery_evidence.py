@@ -2,14 +2,6 @@
 
 from collections.abc import Mapping
 
-# Compatibility names retain the established service API; policy lives only
-# in the domain and is consumed by edition adapters through its public port.
-from okto_pulse.core.domain.delivery_inventory import (
-    card_delivery_inventory as card_delivery_inventory,
-    delivery_digest as delivery_digest,
-    delivery_inventory as delivery_inventory,
-)
-
 from okto_pulse.core.domain.delivery_evidence import (
     CardDeliveryScope,
     DeliveryScope,

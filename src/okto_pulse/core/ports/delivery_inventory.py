@@ -27,10 +27,6 @@ class DeliveryInventoryPolicy(Protocol):
 
     def spec_obligations(self, spec: object) -> tuple[DeliveryObligation, ...]: ...
 
-    def card_obligations(
-        self, spec: object, card: object
-    ) -> tuple[DeliveryObligation, ...]: ...
-
     def payload_digest(self, value: object) -> str: ...
 
     def resolve_implementation_responsibility(

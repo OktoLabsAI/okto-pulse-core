@@ -4023,6 +4023,11 @@
       "path": "okto_labs_pulse_community/frontend/src/components/code-traceability/__tests__/DeliveryEvidencePanel.test.tsx::falls back to the blocking gate label when board settings fail to load",
       "disposition": "replaced",
       "reason": "Unavailable or invalid policy no longer fabricates Blocking; projection reports Unknown, including board switches, while factual coverage remains independent."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_card_delivery_inventory.py::title-only inventory cases and test_effective_delivery_inventory.py::legacy parity",
+      "disposition": "replaced",
+      "reason": "Removed unused title-only Card inventory API and legacy digest-preservation branch. Card allocation and unlinked scope now tested through the current effective inventory, including description/details sensitivity. Text requirements and missing identities are refused without synthesis."
     }
   ]
 }

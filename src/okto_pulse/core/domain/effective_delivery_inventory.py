@@ -1,4 +1,4 @@
-"""Complete prospective inventory; legacy credit remains under its adopted contract.
+"""Current complete inventory for the single execution contract.
 
 Qualified responsibility and the remaining relational obligations share this
 resolver. Missing allocation is visible, never removed to obtain readiness.
@@ -112,12 +112,12 @@ def resolve_effective_delivery_inventory(*, spec, cards, qualification):
             (), responsibilities, False, ("delivery_inventory_resolution_limit",)
         )
     try:
-        legacy = delivery_inventory(spec)
+        obligations = delivery_inventory(spec)
     except (ValueError, TypeError):
         return EffectiveDeliveryInventory(
             (), responsibilities, False, ("delivery_inventory_population_invalid",)
         )
-    if len(legacy) > 5000:
+    if len(obligations) > 5000:
         return EffectiveDeliveryInventory(
             (), responsibilities, False, ("delivery_inventory_resolution_limit",)
         )
@@ -139,9 +139,9 @@ def resolve_effective_delivery_inventory(*, spec, cards, qualification):
         and card.get("status") != "cancelled"
     }
     raw = {
-        f"{prefix}:{value.get('id') or f'index-{index}'}": value
+        f"{prefix}:{value['id']}": value
         for prefix, field in COLLECTIONS
-        for index, value in enumerate(collections[field])
+        for value in collections[field]
         if isinstance(value, Mapping)
     }
     allocated = set()
@@ -169,7 +169,7 @@ def resolve_effective_delivery_inventory(*, spec, cards, qualification):
             ),
         )
 
-    for obligation in legacy:
+    for obligation in obligations:
         ref = obligation.binding.obligation_ref
         prefix, identity = ref.split(":", 1)
         facts = ()
@@ -219,8 +219,7 @@ def resolve_effective_delivery_inventory(*, spec, cards, qualification):
         )
     for card_id in sorted(set(eligible) - allocated):
         card = eligible[card_id]
-        # F11 was reproduced against the legacy title-only digest. This is a
-        # prospective definition: it does not rewrite any sealed legacy binding.
+        # Bind every normative Card field; editing details changes its scope.
         normative = {
             key: card.get(key)
             for key in ("title", "description", "details", "card_type")

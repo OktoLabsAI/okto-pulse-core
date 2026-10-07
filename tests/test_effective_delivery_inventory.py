@@ -85,20 +85,12 @@ def test_supplemental_multi_card_link_does_not_invent_a_split():
     )
 
 
-def test_fallback_definition_binds_normative_details_without_rewriting_legacy():
+def test_unlinked_card_scope_binds_normative_details():
     before, spec = inventory(cards=[card(), card("loose", details="Before")])
     after, _ = inventory(cards=[card(), card("loose", details="After")])
     old = next(row for row in before.rows if row.binding.obligation_ref == "card:loose")
     new = next(row for row in after.rows if row.binding.obligation_ref == "card:loose")
     assert old.binding != new.binding
-    policy = default_delivery_inventory_policy()
-    legacy_before = policy.card_obligations(
-        spec, SimpleNamespace(id="loose", title="Task", details="Before")
-    )
-    legacy_after = policy.card_obligations(
-        spec, SimpleNamespace(id="loose", title="Task", details="After")
-    )
-    assert legacy_before == legacy_after
 
 
 def test_unrelated_allocation_does_not_change_requirement_definition_or_other_scope():

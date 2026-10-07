@@ -2,6 +2,40 @@
 
 ## Estado para retomada
 
+### 2026-10-06 — C1/C3 em andamento: aliases de inventario Delivery
+Bases Core e7da64ff / Community 30708407 limpas/publicadas.
+Retirados tres reexports de services/delivery_evidence; unicos callers eram
+testes, agora apontando ao dono atual domain/delivery_inventory. Retiradas duas
+declaracoes antigas de public_contract_manifest/adapter_provenance; domain ja e
+superficie publica autorizada. Nenhuma permissao/import privado foi acrescentado.
+Inventario e obrigacoes atuais preservados, inclusive Card sem links.
+Par dist-native-delivery-alias1 instalado/provado byte a byte. Core1: 32 aprovados;
+Community1: 4 aprovados. Closure1: somente matrizes README desatualizadas;
+regeneradas oficialmente. Oito budgets zero.
+Antes de publicar, rastreio confirmou normalizador ativo de texto/id sintetico
+index-N e variante Card title-only sem caller produtivo. Retirados em conjunto:
+inventario de Spec exige objeto/id; inventario efetivo usa IDs validados; removido
+card_delivery_inventory e metodo antigo da porta. Card sem vinculos continua
+coberto pelo escopo normativo atual (titulo/descricao/detalhes/tipo).
+Testes antigos de paridade foram adaptados ao inventario efetivo; fixture Impact
+Evidence fornece fatos tipados ao seam, sem depender da API antiga.
+Par final dist-native-inventory1 instalado; provenance-native-inventory1
+byte a byte aprovada (843 Python/905 payload Core; 319/405 Community).
+Core native-inventory-core1: 102 aprovados (tres avisos pytest asyncio preexistentes).
+Community native-inventory-community1: 47 aprovados, incluindo ledger real,
+waiver/revoke, provas assinadas, conflitos, rollup multicard e provenance.
+Closure-native-inventory1 aprovada: findings/documentation_findings vazios,
+oito budgets current=limit=0. Ruff F/E9 e diff aprovados. Handles encerrados.
+Frontend sem alteracoes neste incremento; assets previamente aprovados preservados.
+C1-C4 permanecem abertos; T23/KG-10 aguardam decisao especifica.
+Proximo candidato confirmado para investigar, dentro de C3: CardUpdate.status
+ainda publicado como campo reservado para compatibilidade de leitura, embora
+update_card recuse transicoes. Auditar callers/schema/UI antes de retirar campo
+e ramo obsoleto; move_card continua unico writer de transicoes.
+C4 exige auditoria integral dos criterios aplicaveis e bump coordenado 0.4.0;
+inventario historico de aceite nao equivale a qualificacao final.
+
+
 ### 2026-10-06 — C1 em andamento: uma porta para snapshot Delivery
 Publicado: Core fb66a804 / Community 30708407, pushes confirmados.
 Policy publicada: Core 044507b9 / Community 3e640821, pushes confirmados.

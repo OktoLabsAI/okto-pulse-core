@@ -278,9 +278,8 @@ async def test_require_exemptions_inherited_from_report_target(db_factory, monke
     from types import SimpleNamespace
     from unittest.mock import AsyncMock
     from okto_pulse.core.domain.delivery_evidence import (
-        DeliveryEvidenceSnapshot, DeliveryScope, ImplementationDeliveryFact, DeliveryContribution, ImplementationExecutionProof,
+        DeliveryBinding, DeliveryObligation, DeliveryEvidenceSnapshot, DeliveryScope, ImplementationDeliveryFact, DeliveryContribution, ImplementationExecutionProof,
     )
-    from okto_pulse.core.domain.delivery_inventory import card_delivery_inventory
     from okto_pulse.core.services import delivery_evidence as delivery_service
 
     await _seed_board(db_factory)
@@ -338,7 +337,7 @@ async def test_require_exemptions_inherited_from_report_target(db_factory, monke
         # through its public seam, keeping the real completion gate active in
         # both cases. Real receipt/storage admission is covered in Community.
         scope = DeliveryScope(BOARD_ID, specs[0].id, specs[0].edition)
-        obligations = card_delivery_inventory(specs[0], exec_card)
+        obligations = (DeliveryObligation(DeliveryBinding(f"card:{exec_card.id}", "a" * 64), exec_card.title),)
         proof = ImplementationDeliveryFact(
             id="impact-test-proof", scope=scope, card_id=exec_card.id,
             card_type=CardType.NORMAL, card_status=CardStatus.IN_PROGRESS,
