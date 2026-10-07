@@ -2,6 +2,37 @@
 
 ## Estado para retomada
 
+### 2026-10-07 — Retirada do recovery de claims migrados em qualificação
+Community11 followup handle76110 terminou0:47aprovados/43.20s após realm explícito
+e manifesto de37fontes/113triggers sem classification_events/heads removidos.
+Inspeção encontrou fallback real ainda ativo: list_stale_claims recuperava claim
+sem token e sem expiry de binário antigo via legacy_cutoff/stale_claim_minutes.
+Writers atuais sempre geram token+claim_timeout_at. Retirados parâmetro/constante,
+fallback e conversão automática nos dois repos; claim incompleto é recusado antes
+da seleção de recovery. Recuperação nativa usa somente prazo explícito expirado.
+Testes negativos ausente/vazio token ou expiry preservam filas inclusive válida
+expirada; teste positivo preserva boundary/live e seleciona apenas expired.
+Não altera DDL, permissões ou autorização de recovery offline exato.
+
+Produto WIP nos dois repos. Novo par dist-native-claim-recovery1 instalado/provado:
+handle49170 terminal0,843/905+316/402 byte-identical antes dos testes.
+Closure handle92345 terminal0, oito budgetsZERO, nenhum finding.
+Community native-claim-recovery1 handle57704 terminou1:46pass/4fail por colisão
+de artifact_id nas novas fixtures. Corrigidos IDs; recovery2 handle37359 terminou0:
+31aprovados/33.74s.50casos distintos nos dois módulos qualificados (19+31).
+Ruff/diff verdes. Core native-claim-recovery1 handle38621 ainda ATIVO.
+
+Installed4 handle92798 terminou1:materialização Grafx passou, setup do servidor
+parou em INSERT da fixture referindo agents.permissions já removido. Retirada
+coluna desse INSERT, sem conceder grants; installed5 handle28200 ATIVO sobre par
+dist-native-claim-recovery1. Não reinstalar/editar produto antes dos terminais.
+
+Outro resíduo confirmado para C3 após congelamento: sqlalchemy_runtime_settings_service
+ainda converte KG_MAX_QUEUE_DEPTH em kg_queue_alert_threshold através
+_resolve_legacy_env_aliases; possui consumidores de teste. Retirar em conjunto
+preservando configuração canônica. Não é nova meta, é alias de compatibilidade
+expressamente abrangido pela simplificação. Core13 cinco módulos seguem pendentes.
+
 ### 2026-10-07 — Community11 terminal, installed4 ainda ativo
 Poll confirmou Community11 handle61685 terminal1:151aprovados,3falhas,17erros
 /185.36s. XML e diagnósticos preservados em community_full_run11; followup pendente.

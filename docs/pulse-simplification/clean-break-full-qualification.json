@@ -3478,5 +3478,106 @@
       }
     ],
     "limits": "Stopped at20; affected modules need investigation/followup. Installed E2E runs separately handle92798 and is not qualified."
+  },
+  "native_claim_recovery_work_in_progress": {
+    "proof_pair": "dist-native-claim-recovery1",
+    "provenance": "provenance-native-claim-recovery1.json",
+    "campaigns": [
+      {
+        "campaign": "community11-native-recovery1",
+        "counts": {
+          "name": "pytest",
+          "errors": "0",
+          "failures": "0",
+          "skipped": "0",
+          "tests": "47",
+          "time": "43.169",
+          "timestamp": "2026-10-07T06:05:13.668939-03:00",
+          "hostname": "Alienware_m15"
+        },
+        "xml_sha256": "494932daa6f922400d3f4c017cf110b606251ff35141b2e9069e2027cddf36fd",
+        "failures": []
+      },
+      {
+        "campaign": "native-installed-recovery4",
+        "counts": {
+          "name": "pytest",
+          "errors": "1",
+          "failures": "0",
+          "skipped": "0",
+          "tests": "4",
+          "time": "143.213",
+          "timestamp": "2026-10-07T06:02:21.469730-03:00",
+          "hostname": "Alienware_m15"
+        },
+        "xml_sha256": "f2b0750307fe2dc72c1e3e3f314023473c5d8e4c89281c7eca745c99547f524a",
+        "failures": [
+          {
+            "class": "tests.test_global_discovery_recovery_installed_e2e",
+            "name": "test_installed_wheels_serve_exact_frozen_resource_manifest_over_real_http",
+            "message": "failed on setup with \"sqlite3.OperationalError: table agents has no column named permissions\""
+          }
+        ]
+      },
+      {
+        "campaign": "native-claim-recovery1-community",
+        "counts": {
+          "name": "pytest",
+          "errors": "0",
+          "failures": "4",
+          "skipped": "0",
+          "tests": "50",
+          "time": "51.634",
+          "timestamp": "2026-10-07T06:08:26.903447-03:00",
+          "hostname": "Alienware_m15"
+        },
+        "xml_sha256": "215ecf8ea8691d545116953359117c2ba7d5b32ca99113deac236fe42e9082ca",
+        "failures": [
+          {
+            "class": "tests.test_governed_queue_worker_fencing",
+            "name": "test_incompatible_claim_is_refused_without_recovery_writes[missing_token]",
+            "message": "sqlalchemy.exc.IntegrityError: (sqlite3.IntegrityError) UNIQUE constraint failed: consolidation_queue.board_id, consolidation_queue.artifact_type, consolidation_queue.artifact_id\n[SQL: INSERT INTO consolidation_queue (id, board_id, artifact_type, artifact_id, work_kind, generation, payload, delete_event_id, priority, source, status, triggered_by_event, claimed_by_session_id, claim_token, claimed_at, last_error, worker_id, claim_timeout_at, attempts, next_retry_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?), (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING triggered_at, id]\n[parameters: ('incompatible-claim', 'card4-worker-fence-board', 'spec', 'card4-deleted-spec', 'consolidate', 0, 'null', None, 'high', 'test', 'claimed', None, 'worker-card4', None, '2026-10-07 09:09:11.439798', None, 'worker-card4', '2026-10-07 09:14:11.439799', 0, None, 'native-expired', 'card4-worker-fence-board', 'spec', 'card4-deleted-spec', 'consolidate', 0, 'null', None, 'high', 'test', 'claimed', None, 'worker-card4', 'expired-token', '2026-10-07 09:09:11.439913', None, 'worker-card4', '2026-10-07 09:09:10.439754', 0, None)]\n(Background on this error at: https://sqlalche.me/e/20/gkpj)"
+          },
+          {
+            "class": "tests.test_governed_queue_worker_fencing",
+            "name": "test_incompatible_claim_is_refused_without_recovery_writes[empty_token]",
+            "message": "sqlalchemy.exc.IntegrityError: (sqlite3.IntegrityError) UNIQUE constraint failed: consolidation_queue.board_id, consolidation_queue.artifact_type, consolidation_queue.artifact_id\n[SQL: INSERT INTO consolidation_queue (id, board_id, artifact_type, artifact_id, work_kind, generation, payload, delete_event_id, priority, source, status, triggered_by_event, claimed_by_session_id, claim_token, claimed_at, last_error, worker_id, claim_timeout_at, attempts, next_retry_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?), (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING triggered_at, id]\n[parameters: ('incompatible-claim', 'card4-worker-fence-board', 'spec', 'card4-deleted-spec', 'consolidate', 0, 'null', None, 'high', 'test', 'claimed', None, 'worker-card4', '', '2026-10-07 09:09:13.517597', None, 'worker-card4', '2026-10-07 09:14:13.517598', 0, None, 'native-expired', 'card4-worker-fence-board', 'spec', 'card4-deleted-spec', 'consolidate', 0, 'null', None, 'high', 'test', 'claimed', None, 'worker-card4', 'expired-token', '2026-10-07 09:09:13.517690', None, 'worker-card4', '2026-10-07 09:09:12.517555', 0, None)]\n(Background on this error at: https://sqlalche.me/e/20/gkpj)"
+          },
+          {
+            "class": "tests.test_governed_queue_worker_fencing",
+            "name": "test_incompatible_claim_is_refused_without_recovery_writes[missing_expiry]",
+            "message": "sqlalchemy.exc.IntegrityError: (sqlite3.IntegrityError) UNIQUE constraint failed: consolidation_queue.board_id, consolidation_queue.artifact_type, consolidation_queue.artifact_id\n[SQL: INSERT INTO consolidation_queue (id, board_id, artifact_type, artifact_id, work_kind, generation, payload, delete_event_id, priority, source, status, triggered_by_event, claimed_by_session_id, claim_token, claimed_at, last_error, worker_id, claim_timeout_at, attempts, next_retry_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?), (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING triggered_at, id]\n[parameters: ('incompatible-claim', 'card4-worker-fence-board', 'spec', 'card4-deleted-spec', 'consolidate', 0, 'null', None, 'high', 'test', 'claimed', None, 'worker-card4', 'current-token', '2026-10-07 09:09:14.696683', None, 'worker-card4', None, 0, None, 'native-expired', 'card4-worker-fence-board', 'spec', 'card4-deleted-spec', 'consolidate', 0, 'null', None, 'high', 'test', 'claimed', None, 'worker-card4', 'expired-token', '2026-10-07 09:09:14.696758', None, 'worker-card4', '2026-10-07 09:09:13.696648', 0, None)]\n(Background on this error at: https://sqlalche.me/e/20/gkpj)"
+          },
+          {
+            "class": "tests.test_governed_queue_worker_fencing",
+            "name": "test_native_expiry_selects_only_expired_claims_without_mutation",
+            "message": "sqlalchemy.exc.IntegrityError: (sqlite3.IntegrityError) UNIQUE constraint failed: consolidation_queue.board_id, consolidation_queue.artifact_type, consolidation_queue.artifact_id\n[SQL: INSERT INTO consolidation_queue (id, board_id, artifact_type, artifact_id, work_kind, generation, payload, delete_event_id, priority, source, status, triggered_by_event, claimed_by_session_id, claim_token, claimed_at, last_error, worker_id, claim_tim ... 152 characters truncated ... ?, ?, ?, ?), (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING triggered_at, id]\n[parameters: ('expired', 'card4-worker-fence-board', 'spec', 'card4-deleted-spec', 'consolidate', 0, 'null', None, 'high', 'test', 'claimed', None, 'worker-card4', 'expired-token', '2026-10-07 09:09:15.885452', None, 'worker-card4', '2026-10-07 09:09:14.885413', 0, None, 'boundary', 'card4-worker-fence-board', 'spec', 'card4-deleted-spec', 'consolidate', 0, 'null', None, 'high', 'test', 'claimed', None, 'worker-card4', 'boundary-token', '2026-10-07 09:09:15.885534', None, 'worker-card4', '2026-10-07 09:09:15.885413', 0, None, 'live', 'card4-worker-fence-board', 'spec', 'card4-deleted-spec', 'consolidate', 0, 'null', None, 'high', 'test', 'claimed', None, 'worker-card4', 'live-token', '2026-10-07 09:09:15.885572', None, 'worker-card4', '2026-10-07 09:10:15.885413', 0, None)]\n(Background on this error at: https://sqlalche.me/e/20/gkpj)"
+          }
+        ]
+      },
+      {
+        "campaign": "native-claim-recovery2-community",
+        "counts": {
+          "name": "pytest",
+          "errors": "0",
+          "failures": "0",
+          "skipped": "0",
+          "tests": "31",
+          "time": "33.714",
+          "timestamp": "2026-10-07T06:10:09.523739-03:00",
+          "hostname": "Alienware_m15"
+        },
+        "xml_sha256": "44e42d91581b5f21d3e19693d0ad2c188c19c1ba571b0fd5656a5e849b057bc3",
+        "failures": []
+      }
+    ],
+    "community_distinct_qualified": 50,
+    "closure": "closure-native-claim-recovery1.json",
+    "eight_budgets_zero": true,
+    "pending": {
+      "core_native_claim_recovery1": 38621,
+      "native_installed_recovery5": 28200
+    },
+    "limits": "Remove compatibility cutoff and automatic tokenless recovery; current claims require token+expiry. Refuse incompatible claimed rows before returning recovery work. Community50distinct tests passed after unique artifact IDs corrected in new negative/expiry fixtures. Core and installed campaigns still active; not yet ready to declare full qualification."
   }
 }
