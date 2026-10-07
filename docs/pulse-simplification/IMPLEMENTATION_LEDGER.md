@@ -2,6 +2,28 @@
 
 ## Estado para retomada
 
+### 2026-10-07 — G6 paridade nativa e compensação verificadas; KG-11 qualificado
+Par inicial confirmado limpo/sincronizado:Core60ad3bb5 / Communityd9c9c5e4.
+Turno anterior teve progresso publicado; este fecha a reprodução de rebuild G6.
+Prova provenance-native-explicit-decision-parity1 terminou0 antes dos testes:
+main57,838/900+317/403 byte-identical. Produto/SPA não alterados neste turno.
+Parity1 handle4103 terminou0:2pass/121.65s, estados linked/removed.
+Compara fonte Board inteira, ledger cognitivo inteiro, Decision IDs/ref/content/
+generation/superseded_by/source_status/layer/maturity e multiset integral de relações.
+Exercita enumerador/reserva/fila reais, snapshot/restore, replay e restore idempotente.
+Compensation1 terminou0:2pass/2.98s, inclusive falha após duas exclusões reais,
+restauração exata e repetida, preservando writer/owner estrangeiros.
+Ruff F/E9 passou. Nenhum processo ativo. Closure57 e frontend27 do par publicado
+continuam evidências atuais de produto; sem execução redundante neste turno.
+Recibo clean-break-native-explicit-decision-parity.json referencia hashes dos
+dois recibos anteriores (projeção explícita e gerações/reabertura).
+KG-11 volta a verified com ambas semânticas cobertas; índice63/172/11.
+Não promover KG-16/24 em bloco: revisar a matriz fixa das demais famílias,
+especialmente a qualidade da prova atual das sete famílias Spec (recibo K2
+original sozinho continua histórico; não exigir refazer G6 já comprovado).
+Sem dados reais, sem migração, release, tag ou promoção física de candidato.
+Commit/push deste incremento de testes/evidência autorizado; objetivo segue ativo.
+
 ### 2026-10-07 — incremento G6 pronto para commit/push; rebuild ainda pendente
 Main57 prova59282 terminou0:838/900+317/403 byte-identical antes das campanhas.
 Churn3 66360 terminou0:1pass/54.95s (criação, leitura corrente, caminhada histórica,

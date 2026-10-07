@@ -1,6 +1,6 @@
 {
   "format": "pulse-040-family-review/v1",
-  "status": "incomplete_reproduced_original_scope_gap",
+  "status": "g6_gap_resolved_remaining_family_review_pending",
   "base_pair": {
     "core": "b03c666900f8d310d8e9aa54c3551a17d6de1185",
     "community": "6631aefd7631cdd1abd4a509c4ff27492f1e7e44"
@@ -77,12 +77,17 @@
       "No supersedes edge exists from declared successor to predecessor.",
       "Both nodes have superseded_by=NULL despite predecessor source status superseded."
     ],
-    "next_action": "Implement G6 through current public ownership/transaction contracts; preserve history and test explicit add/remove/replay and native rebuild. No converter or compatibility route.",
-    "qualification_correction": "KG-11 prior evidence only covered same-reference generations. Return to pending; retain prior receipt as partial evidence."
+    "next_action": "G6 resolved by linked/removal rebuild and native compensation evidence; continue the existing KG-16/24 family review.",
+    "qualification_correction": "KG-11 prior evidence only covered same-reference generations. Return to pending; retain prior receipt as partial evidence.",
+    "resolution": {
+      "artifact": "clean-break-native-explicit-decision-parity.json",
+      "proof_pair": "dist-native-main57"
+    },
+    "observation_correction": "superseded_by belongs to same-source generations; normative replacement uses explicit supersedes plus source_status. Original absent edge was also confirmed in the correct typed physical table."
   },
   "limits": [
-    "This matrix does not promote KG-16/24 or claim exhaustive completion from test counts.",
-    "Existing immutable/native history remains required; removing legacy does not authorize deleting it.",
-    "No product mutation, new authority or frontend change in this review. Failing regression remains WIP until correction."
+    "No full KG-16/24 or delivery qualification by this family receipt.",
+    "Initial reproduction retained with observation correction and explicit resolution evidence.",
+    "Native immutable history remains required; the user removed migration, not current history."
   ]
 }

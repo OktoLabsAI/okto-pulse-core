@@ -3258,16 +3258,16 @@
       "historical_review_status": "not_audited_in_this_inventory",
       "prior_reviewed_execution": null,
       "discovered_artifacts": [],
-      "current_qualification": "pending_current_pair_review",
+      "current_qualification": "verified_current_pair_review",
       "prior_partial_current_review": {
         "artifact": "clean-break-acceptance-native-decision-chain.json",
         "criterion_key": "KG:KG-11",
         "proof_pair": "dist-native-main36"
       },
       "current_review": {
-        "artifact": "clean-break-native-relationship-family-review.json",
+        "artifact": "clean-break-native-explicit-decision-parity.json",
         "criterion_key": "KG:KG-11",
-        "reason": "Explicit normative G6 replacement fails; same-reference generation test does not qualify entire criterion."
+        "proof_pair": "dist-native-main57"
       }
     },
     {
