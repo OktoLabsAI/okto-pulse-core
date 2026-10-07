@@ -2,6 +2,24 @@
 
 ## Estado para retomada
 
+### 2026-10-07 — Integração principal concluída; Core19 isolado em execução
+Core11567c74/Communitybdffa622 publicados (pushes0) e integrados por fast-forward
+nos dois diretórios principais, ambos limpos antes da integração.
+Main reconstruído/instalado: dist-native-main18; prova82812 terminou0,
+843/905 Core+316/402 Community byte-idênticos. Wheels SHA256:
+Core858a1d8cb68daf303b7c909dadb926d57f16f053aa6f0b2628273fe55c23b068;
+Community407f08ba939f347b1f9313c8a38ca88751d666d5c0b7d7a41f62ff643ea141c6.
+Closure main18 handle70816 ATIVO; aguardar terminal antes de mutações de produto.
+
+Core19 handle65299 ATIVO no worktree ISOLADO native-next sobre o par provado
+dist-native-counters18; seleção exclui911 módulos completos. Não editar/reinstalar
+esse worktree até terminal. Arquivos clean-break-full-run19.args/log/xml e
+clean-break-full-run19-selection.json. Community14 já terminal, nenhuma campanha
+comportamental principal ativa. Próximo trabalho no MAIN: após closure70816,
+tratar oito módulos Community14 listados acima; não restaurar conversão antiga.
+O par isolado difere de main só em bytes CRLF/LF e ledger; não confundir provas.
+E2E instalado e aceite C4 permanecem não qualificados. Nenhum bloqueio deste turno.
+
 ### 2026-10-07 — Core18 qualificado; Community14 terminal
 Core18 handle18388 terminou1:345pass/20fail/158.14s. Sete módulos completos
 qualificados após adaptação: fixtures1 handle55250 49pass/31.50s; lineage1
