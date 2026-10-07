@@ -2,6 +2,58 @@
 
 ## Estado para retomada
 
+### 2026-10-07 — C4 run8 resolvido com fixtures nativas
+
+Followup run8-native-fixtures1: 85 aprovados, zero falhas, 8.78s; quatro
+modulos integrais, inclusive contribution (ultimo parcial do run8). Baseline
+de metricas permanece inalterado; fixtures usam outcomes/reviewer atuais.
+Arquitetura adota explicitamente as raizes reais da linhagem, mantendo cobertura
+multihop/idempotencia. Contexto preserva quatro roles, exclusao de revogados,
+proveniencia e recusa None como outcome. Inventario MCP 282/policies279.
+Ruff F/E9/diff aprovados. Nenhum produto/frontend alterado; par
+dist-native-columns1 e closure-native-columns2 permanecem aplicaveis.
+Nenhum processo ativo. Proximo: retirada delimitada do diagnostico Sprint
+/health/integrity, seguida da qualificacao pendente. C1-C4/T23/KG-10 abertos.
+
+### 2026-10-07 — Core run8 terminal; followup pendente
+
+clean-break-full-run8 terminou:961 aprovados/20falhas641.61s; handle83697
+encerrado. Nenhum processo ativo.191modulos/stress excluidos corretamente.
+Falhas completas/hash no clean-break-full-qualification.json. Familias:
+test_code_traceability_mcp_surface (contagens e prose compat antiga),
+test_contextual_code_lifecycle_projection (None/role legado retirados),
+test_copy_architecture_root_coverage_06 (scope de arquitetura no seed),
+test_delivery_contribution_retirement (fixture/baseline de validacoes antigas;
+ultimo modulo parcial). Corrigir/qualificar esses modulos antes da proxima
+selecao. Nao repetir as suites lentas de default Board/materializacao concluidas.
+Candidato health Sprint confirmado na entrada abaixo ainda NAO implementado;
+KG short-row projection ainda em investigacao. Produto/par/closure inalterados.
+Coreb1ca01a3 / Communityb1c3dbcf publicados; WIP apenas recibos Core.
+
+
+### 2026-10-07 — C2/C3 candidato operacional confirmado durante run8
+
+Investigacao read-only: Community app.py /health/integrity ainda chama
+inspect_sprint_origin_integrity, que consulta somente tabela sprints e FKs
+de hotfix retiradas. Callers: app, suite exclusiva e README/ARCHITECTURE; nenhum
+frontend. Nao e health atual/recovery; e diagnostico exclusivo da entidade
+removida. Proximo incremento C2/C3 delimitado apos run8: retirar adapter/rota/docs
+operacionais e casos de schema/dados Sprint, preservar liveness /health sem
+consulta SQL e testar ausencia da rota antiga. Nenhuma alteracao implementada.
+KG _optional_row_projection ainda completa comNone linhas curtas chamadas
+legacy-shaped; dois callers usam templates que projetam propiedades atuais.
+Classificacao/consumidores a concluir antes de eventual edicao; nao e novo alvo
+funcional nem permissao para alterar gates. Produto permanece congelado em run8.
+
+### 2026-10-07 — C7 publicado; Core run8 ativo
+
+Coreb1ca01a3 / Communityb1c3dbcf publicados, pushes confirmados.
+Core clean-break-full-run8 ativo handle83697, selecao191modulos completos
+excluidos incluindo tests/stress/test_kg_ci_destructive_release.py.
+Renomeio da suite Card native wire mapeado na selecao. Aguardar terminal.
+Par dist-native-columns1/provenance e closure2 correspondem ao produto.
+Nao alterar/reinstalar produto durante a campanha. C1-C4/T23/KG-10 abertos.
+
 ### 2026-10-07 — C4 fixtures C7 atuais qualificadas
 
 Community full-run5 terminou:18 aprovados/7falhas/13erros60.69s; handle1227

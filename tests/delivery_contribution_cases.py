@@ -1,4 +1,4 @@
-"""Same-population contribution characterization, captured before F5 retirement."""
+"""Native contribution population with explicit validation outcomes."""
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
@@ -15,13 +15,13 @@ def cards():
     for actor, count in (("owner", 7), ("large", 6), ("small", 1)):
         for i in range(count):
             rows.append(SimpleNamespace(
-                id=f"{actor}-{i}", sprint_id="legacy", created_by=actor,
+                id=f"{actor}-{i}", created_by=actor,
                 status=CardStatus.DONE, created_at=NOW - timedelta(hours=2+i),
                 updated_at=NOW,
                 validations=([
                     {"outcome": "failed", "reviewer_id": "reviewer"},
-                    {"outcome": "success", "evaluator_id": "reviewer"},
-                ] if i % 2 else [{"outcome": "pass", "reviewer_id": actor}]),
+                    {"outcome": "success", "reviewer_id": "reviewer"},
+                ] if i % 2 else [{"outcome": "success", "reviewer_id": actor}]),
             ))
     return rows
 

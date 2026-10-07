@@ -37,7 +37,6 @@ from test_contextual_code_investigation_outcomes import (
     ("outcomes", "expected"),
     (
         ((), None),
-        ((None,), None),
         (
             (ContextualInvestigationOutcomeV2.NO_RELEVANT_EXISTING_IMPLEMENTATION,),
             ContextualInvestigationOutcomeV2.NO_RELEVANT_EXISTING_IMPLEMENTATION,
@@ -66,7 +65,7 @@ from test_contextual_code_investigation_outcomes import (
     ),
 )
 def test_current_outcome_aggregation_has_closed_precedence(
-    outcomes: tuple[ContextualInvestigationOutcomeV2 | None, ...],
+    outcomes: tuple[ContextualInvestigationOutcomeV2, ...],
     expected: ContextualInvestigationOutcomeV2 | None,
 ) -> None:
     assert aggregate_current_contextual_investigation_outcome_v2(outcomes) is expected
@@ -81,7 +80,7 @@ def test_refinement_and_spec_provenance_are_subject_typed() -> None:
     summary = build_source_context_summary_v2(
         delivery_context=DeliveryContext.GREENFIELD,
         delivery_context_provenance=refinement_provenance,
-        current_investigation_outcomes=(None,),
+        current_investigation_outcomes=(),
         evidence=(),
     )
     CodeTraceabilityContext(
@@ -132,17 +131,6 @@ async def test_source_context_counts_only_active_factual_roles() -> None:
         source_role=CodeEvidenceSourceRole.REFERENCE_PATTERN,
         interpretation_limit="Pattern only; it does not prove delivered behavior.",
     )
-    legacy = replace(
-        current,
-        id="legacy",
-        source_role=CodeEvidenceSourceRole.UNCATEGORIZED_LEGACY,
-        relevance_summary=None,
-        scope_relation=None,
-        source_origin=None,
-        interpretation_limit=None,
-        baseline_provenance=None,
-        context_contract_version=None,
-    )
     revoked = replace(
         current,
         id="revoked",
@@ -159,16 +147,15 @@ async def test_source_context_counts_only_active_factual_roles() -> None:
         delivery_context=DeliveryContext.HYBRID,
         delivery_context_provenance=provenance,
         current_investigation_outcomes=(receipt.contextual_outcome,),
-        evidence=(current, scaffold, constraint, pattern, legacy, revoked),
+        evidence=(current, scaffold, constraint, pattern, revoked),
     )
 
     assert summary.role_counts.current_implementation_count == 1
     assert summary.role_counts.existing_scaffold_count == 1
     assert summary.role_counts.existing_constraint_count == 1
     assert summary.role_counts.reference_pattern_count == 1
-    assert summary.role_counts.uncategorized_legacy_count == 1
-    assert summary.classification_state.classified_count == 4
-    assert summary.items_not_current_implementation_count == 4
+    assert summary.role_counts.total_count == 4
+    assert summary.items_not_current_implementation_count == 3
     assert summary.technical_details_available is True
 
 
@@ -264,11 +251,11 @@ def test_source_context_projection_is_profile_stable_for_every_subject(
     )
 
 
-def test_legacy_source_context_remains_explicit_without_inference() -> None:
+def test_empty_source_context_does_not_infer_unobserved_facts() -> None:
     summary = build_source_context_summary_v2(
         delivery_context=None,
         delivery_context_provenance=None,
-        current_investigation_outcomes=(None,),
+        current_investigation_outcomes=(),
         evidence=(),
     )
 
@@ -375,3 +362,8 @@ async def test_card_currentness_uses_effective_spec_provenance() -> None:
     )
 
     assert status == ("outdated", "code_evidence_receipt_mismatch")
+
+
+def test_null_investigation_outcome_is_refused() -> None:
+    with pytest.raises(CodeTraceabilityContractError, match="source_context_investigation_outcome_invalid"):
+        aggregate_current_contextual_investigation_outcome_v2((None,))

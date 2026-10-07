@@ -31,6 +31,7 @@ from sqlalchemy_test_models import (
     Spec,
 )
 from okto_pulse.core.services.resource_gate import ResourceGateService
+from okto_pulse.core.services.architecture_adoption import initial_spec_architecture_adoption
 
 USER_ID = "user-5c43a364"
 
@@ -87,9 +88,17 @@ async def _seed_copy_chain(db_factory) -> dict:
             source_design_id=root_id,
             source_ref=f"architecture_design:{root_id}",
         ))
-        # Legacy/manual spec: inherits, no direct architecture.
+        # Native Spec explicitly adopts the effective inherited root.
+        await db.flush()
+        adoption = await initial_spec_architecture_adoption(
+            db, board_id=ids["board"], spec_id=ids["spec"], actor_id=USER_ID,
+            selected_design_ids=None, source_parent_type="refinement",
+            source_parent_id=ids["ref"],
+        )
+        assert adoption["inherited_resource_ids"]
+
         db.add(Spec(id=ids["spec"], board_id=ids["board"], refinement_id=ids["ref"],
-                    ideation_id=ids["idea"], title="Legacy spec", created_by=USER_ID))
+                    ideation_id=ids["idea"], title="Native spec", created_by=USER_ID, architecture_adoption=adoption))
         db.add(Card(id=ids["card"], board_id=ids["board"], spec_id=ids["spec"],
                     title="impl card", status=CardStatus.IN_PROGRESS,
                     card_type=CardType.NORMAL, created_by=USER_ID))

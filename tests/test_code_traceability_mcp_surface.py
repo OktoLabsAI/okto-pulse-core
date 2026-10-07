@@ -55,7 +55,7 @@ def test_code_traceability_registers_exact_reviewed_inventory() -> None:
     assert server._CODE_TRACEABILITY_TOOL_NAMES == frozenset(EXPECTED_TOOLS)
     live = {tool.name for tool in server.mcp.iter_tools()}
     assert set(EXPECTED_TOOLS).issubset(live)
-    assert len(live) == 302  # Current inventory after legacy classification removal.
+    assert len(live) == 282  # Native 0.4 inventory.
 
 
 def test_every_code_traceability_tool_has_a_closed_specific_schema() -> None:
@@ -102,7 +102,7 @@ def test_code_traceability_tools_have_one_exact_granular_permission() -> None:
     }
     for tool_name, expected_flag in EXPECTED_TOOLS.items():
         assert policies[tool_name] == (expected_flag,)
-    assert len(MCP_TOOL_PERMISSION_POLICIES) == 299
+    assert len(MCP_TOOL_PERMISSION_POLICIES) == 279
 
 
 def test_code_traceability_lazy_docs_are_canonical_and_complete() -> None:
@@ -158,7 +158,7 @@ def test_code_traceability_guidance_is_operational_and_warns_on_advisory() -> No
     assert "`advisory` (default) or `blocking`" in normalized_transitions
     assert "`off` is no longer an authored policy" in normalized_transitions
     assert "In `off` mode no Code" not in transitions
-    assert "historical absent, `null`, or `off` settings resolve" in spec_gates
+    assert "historical absent" not in spec_gates
     assert "in `off` mode this gate is skipped" not in spec_gates
 
 

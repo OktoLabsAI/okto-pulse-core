@@ -1275,5 +1275,107 @@
     "product_changes": false,
     "scope": "Native architecture SQL seeds, current outcome/estimated validation projection fields, remove retired manual checklist reference in native receipt fixture. Preserve atomic first-pass aggregation, SQL budgets, redaction and erasure permits.",
     "limits": "C7 RDL last partial broad-run module now fully qualified. Remaining modules/criteria pending."
+  },
+  "core_full_run8": {
+    "campaign": "clean-break-full-run8",
+    "passed": 961,
+    "failed": 20,
+    "duration_seconds": 641.61,
+    "xml_sha256": "e4cae7b741cb5d73041da5b89c84c7dd954fd61c28d1a7cfc13f6c2484797f0d",
+    "selection": "clean-break-full-run8-selection.json",
+    "failures": [
+      {
+        "test": "tests.test_code_traceability_mcp_surface::test_code_traceability_registers_exact_reviewed_inventory",
+        "message": "AssertionError: assert 282 == 302\n +  where 282 = len({'okto_pulse_acknowledge_implementation_overlap', 'okto_pulse_activate_default_board_config_version', 'okto_pulse_add_...contract', 'okto_pulse_add_architecture_design', 'okto_pulse_add_business_rule', 'okto_pulse_add_card_dependency', ...})"
+      },
+      {
+        "test": "tests.test_code_traceability_mcp_surface::test_code_traceability_tools_have_one_exact_granular_permission",
+        "message": "AssertionError: assert 279 == 299\n +  where 279 = len((McpToolPermissionPolicy(tool_name='okto_pulse_acknowledge_implementation_overlap', permission_flags=('code_traceabili...cy', permission_flags=('card.entity.manage_dependencies',), admission_class=<McpAdmissionClass.WRITER: 'writer'>), ...))"
+      },
+      {
+        "test": "tests.test_code_traceability_mcp_surface::test_code_traceability_guidance_is_operational_and_warns_on_advisory",
+        "message": "assert 'historical absent, `null`, or `off` settings resolve' in '---\\nversion: \"1.2\"\\n---\\n\\n# Spec Validation Gate & Evaluation Gates\\n\\n## Delivery evidence gate at Done\\n\\nAllowed...bove remains separately applicable.\\n\\nRead `okto-pulse://reference/code-traceability` before operating this domain.\\n'"
+      },
+      {
+        "test": "tests.test_contextual_code_lifecycle_projection::test_current_outcome_aggregation_has_closed_precedence[outcomes1-None]",
+        "message": "okto_pulse.core.domain.code_traceability.CodeTraceabilityContractError: source_context_investigation_outcome_invalid"
+      },
+      {
+        "test": "tests.test_contextual_code_lifecycle_projection::test_refinement_and_spec_provenance_are_subject_typed",
+        "message": "okto_pulse.core.domain.code_traceability.CodeTraceabilityContractError: source_context_investigation_outcome_invalid"
+      },
+      {
+        "test": "tests.test_contextual_code_lifecycle_projection::test_source_context_counts_only_active_factual_roles",
+        "message": "AttributeError: type object 'CodeEvidenceSourceRole' has no attribute 'UNCATEGORIZED_LEGACY'"
+      },
+      {
+        "test": "tests.test_contextual_code_lifecycle_projection::test_legacy_source_context_remains_explicit_without_inference",
+        "message": "okto_pulse.core.domain.code_traceability.CodeTraceabilityContractError: source_context_investigation_outcome_invalid"
+      },
+      {
+        "test": "tests.test_copy_architecture_root_coverage_06::test_copy_architecture_multihop_chain_satisfies_task_coverage",
+        "message": "AssertionError: {'detail': \"could not resolve resource lineage for spec 'spec-edf63efedd08': The adopted architecture scope is unavail...': 'architecture_adoption_invalid', 'lineage_error_details': {'entity_id': 'spec-edf63efedd08', 'entity_type': 'spec'}}\nassert 'error' not in {'detail': \"could not resolve resource lineage for spec 'spec-edf63efedd08': The adopted architecture scope is unavail...': 'architecture_adoption_invalid', 'lineage_error_details': {'entity_id': 'spec-edf63efedd08', 'entity_type': 'spec'}}"
+      },
+      {
+        "test": "tests.test_copy_architecture_root_coverage_06::test_copy_architecture_multihop_is_idempotent_no_duplicate",
+        "message": "AssertionError: {'detail': \"could not resolve resource lineage for spec 'spec-08b4aa69406f': The adopted architecture scope is unavail...': 'architecture_adoption_invalid', 'lineage_error_details': {'entity_id': 'spec-08b4aa69406f', 'entity_type': 'spec'}}\nassert 'error' not in {'detail': \"could not resolve resource lineage for spec 'spec-08b4aa69406f': The adopted architecture scope is unavail...': 'architecture_adoption_invalid', 'lineage_error_details': {'entity_id': 'spec-08b4aa69406f', 'entity_type': 'spec'}}"
+      },
+      {
+        "test": "tests.test_copy_architecture_root_coverage_06::test_copy_architecture_design_ids_root_id_resolves_multihop",
+        "message": "AssertionError: {'detail': \"could not resolve resource lineage for spec 'spec-d4a7c57ba545': The adopted architecture scope is unavail...': 'architecture_adoption_invalid', 'lineage_error_details': {'entity_id': 'spec-d4a7c57ba545', 'entity_type': 'spec'}}\nassert 'error' not in {'detail': \"could not resolve resource lineage for spec 'spec-d4a7c57ba545': The adopted architecture scope is unavail...': 'architecture_adoption_invalid', 'lineage_error_details': {'entity_id': 'spec-d4a7c57ba545', 'entity_type': 'spec'}}"
+      },
+      {
+        "test": "tests.test_delivery_contribution_retirement::test_contributions_match_published_same_population_baseline[owner/False/self/all]",
+        "message": "AssertionError: assert {'contributio...ed_count': 0}} == {'contributio...ed_count': 0}}\n  \n  Omitting 1 identical items, use -vv to show\n  Differing items:\n  {'contributions': [{'done_count': 7, 'first_pass': {'denominator': 7, 'numerator': 0, 'reason': None, 'sample_size': 7... 'sample_size': 7, ...}, 'period': {'from': '2026-07-22T12:00:00.000000Z', 'to': '2026-08-21T12:00:00.000000Z'}, ...}]} != {'contributions': [{'done_count': 7, 'first_pass': {'denominator': 7, 'numerator': 4, 'reason': None, 'sample_size': 7... 'sample_size': 7, ...}, 'period': {'from': '2026-07-22T12:00:00.000000Z', 'to': '2026-08-21T12:00:00.000000Z'}, ...}]}\n  Use -v to get more diff"
+      },
+      {
+        "test": "tests.test_delivery_contribution_retirement::test_contributions_match_published_same_population_baseline[owner/False/self/implementation_+_validation]",
+        "message": "AssertionError: assert {'contributio...ed_count': 0}} == {'contributio...ed_count': 0}}\n  \n  Omitting 1 identical items, use -vv to show\n  Differing items:\n  {'contributions': [{'done_count': 7, 'first_pass': {'denominator': 7, 'numerator': 0, 'reason': None, 'sample_size': 7... 'sample_size': 7, ...}, 'period': {'from': '2026-07-22T12:00:00.000000Z', 'to': '2026-08-21T12:00:00.000000Z'}, ...}]} != {'contributions': [{'done_count': 7, 'first_pass': {'denominator': 7, 'numerator': 4, 'reason': None, 'sample_size': 7... 'sample_size': 7, ...}, 'period': {'from': '2026-07-22T12:00:00.000000Z', 'to': '2026-08-21T12:00:00.000000Z'}, ...}]}\n  Use -v to get more diff"
+      },
+      {
+        "test": "tests.test_delivery_contribution_retirement::test_contributions_match_published_same_population_baseline[owner/False/aggregates/all]",
+        "message": "AssertionError: assert {'contributio...ed_count': 2}} == {'contributio...ed_count': 2}}\n  \n  Omitting 1 identical items, use -vv to show\n  Differing items:\n  {'contributions': [{'done_count': 7, 'first_pass': {'denominator': 7, 'numerator': 0, 'reason': None, 'sample_size': 7... 'sample_size': 0, ...}, 'period': {'from': '2026-07-22T12:00:00.000000Z', 'to': '2026-08-21T12:00:00.000000Z'}, ...}]} != {'contributions': [{'done_count': 7, 'first_pass': {'denominator': 7, 'numerator': 4, 'reason': None, 'sample_size': 7... 'sample_size': 0, ...}, 'period': {'from': '2026-07-22T12:00:00.000000Z', 'to': '2026-08-21T12:00:00.000000Z'}, ...}]}\n  Use -v to get more diff"
+      },
+      {
+        "test": "tests.test_delivery_contribution_retirement::test_contributions_match_published_same_population_baseline[owner/False/aggregates/validation_agent]",
+        "message": "AssertionError: assert {'contributio...ed_count': 1}} == {'contributio...ed_count': 1}}\n  \n  Omitting 1 identical items, use -vv to show\n  Differing items:\n  {'contributions': [{'done_count': None, 'first_pass': {'denominator': None, 'numerator': None, 'reason': 'minimum_samp... 'sample_size': 0, ...}, 'period': {'from': '2026-07-22T12:00:00.000000Z', 'to': '2026-08-21T12:00:00.000000Z'}, ...}]} != {'contributions': [{'done_count': None, 'first_pass': {'denominator': None, 'numerator': None, 'reason': 'minimum_samp... 'sample_size': 0, ...}, 'period': {'from': '2026-07-22T12:00:00.000000Z', 'to': '2026-08-21T12:00:00.000000Z'}, ...}]}\n  Use -v to get more diff"
+      },
+      {
+        "test": "tests.test_delivery_contribution_retirement::test_contributions_match_published_same_population_baseline[owner/False/aggregates/implementation_+_validation]",
+        "message": "AssertionError: assert {'contributio...ed_count': 1}} == {'contributio...ed_count': 1}}\n  \n  Omitting 1 identical items, use -vv to show\n  Differing items:\n  {'contributions': [{'done_count': 7, 'first_pass': {'denominator': 7, 'numerator': 0, 'reason': None, 'sample_size': 7... 'sample_size': 7, ...}, 'period': {'from': '2026-07-22T12:00:00.000000Z', 'to': '2026-08-21T12:00:00.000000Z'}, ...}]} != {'contributions': [{'done_count': 7, 'first_pass': {'denominator': 7, 'numerator': 4, 'reason': None, 'sample_size': 7... 'sample_size': 7, ...}, 'period': {'from': '2026-07-22T12:00:00.000000Z', 'to': '2026-08-21T12:00:00.000000Z'}, ...}]}\n  Use -v to get more diff"
+      },
+      {
+        "test": "tests.test_delivery_contribution_retirement::test_contributions_match_published_same_population_baseline[owner/False/self_and_aggregates/all]",
+        "message": "AssertionError: assert {'contributio...ed_count': 2}} == {'contributio...ed_count': 2}}\n  \n  Omitting 1 identical items, use -vv to show\n  Differing items:\n  {'contributions': [{'done_count': 7, 'first_pass': {'denominator': 7, 'numerator': 0, 'reason': None, 'sample_size': 7... 'sample_size': 0, ...}, 'period': {'from': '2026-07-22T12:00:00.000000Z', 'to': '2026-08-21T12:00:00.000000Z'}, ...}]} != {'contributions': [{'done_count': 7, 'first_pass': {'denominator': 7, 'numerator': 4, 'reason': None, 'sample_size': 7... 'sample_size': 0, ...}, 'period': {'from': '2026-07-22T12:00:00.000000Z', 'to': '2026-08-21T12:00:00.000000Z'}, ...}]}\n  Use -v to get more diff"
+      },
+      {
+        "test": "tests.test_delivery_contribution_retirement::test_contributions_match_published_same_population_baseline[owner/False/self_and_aggregates/validation_agent]",
+        "message": "AssertionError: assert {'contributio...ed_count': 1}} == {'contributio...ed_count': 1}}\n  \n  Omitting 1 identical items, use -vv to show\n  Differing items:\n  {'contributions': [{'done_count': None, 'first_pass': {'denominator': None, 'numerator': None, 'reason': 'minimum_samp... 'sample_size': 0, ...}, 'period': {'from': '2026-07-22T12:00:00.000000Z', 'to': '2026-08-21T12:00:00.000000Z'}, ...}]} != {'contributions': [{'done_count': None, 'first_pass': {'denominator': None, 'numerator': None, 'reason': 'minimum_samp... 'sample_size': 0, ...}, 'period': {'from': '2026-07-22T12:00:00.000000Z', 'to': '2026-08-21T12:00:00.000000Z'}, ...}]}\n  Use -v to get more diff"
+      },
+      {
+        "test": "tests.test_delivery_contribution_retirement::test_contributions_match_published_same_population_baseline[owner/False/self_and_aggregates/implementation_+_validation]",
+        "message": "AssertionError: assert {'contributio...ed_count': 1}} == {'contributio...ed_count': 1}}\n  \n  Omitting 1 identical items, use -vv to show\n  Differing items:\n  {'contributions': [{'done_count': 7, 'first_pass': {'denominator': 7, 'numerator': 0, 'reason': None, 'sample_size': 7... 'sample_size': 7, ...}, 'period': {'from': '2026-07-22T12:00:00.000000Z', 'to': '2026-08-21T12:00:00.000000Z'}, ...}]} != {'contributions': [{'done_count': 7, 'first_pass': {'denominator': 7, 'numerator': 4, 'reason': None, 'sample_size': 7... 'sample_size': 7, ...}, 'period': {'from': '2026-07-22T12:00:00.000000Z', 'to': '2026-08-21T12:00:00.000000Z'}, ...}]}\n  Use -v to get more diff"
+      },
+      {
+        "test": "tests.test_delivery_contribution_retirement::test_contributions_match_published_same_population_baseline[owner/False/operator/all]",
+        "message": "AssertionError: assert {'contributio...ed_count': 2}} == {'contributio...ed_count': 2}}\n  \n  Omitting 1 identical items, use -vv to show\n  Differing items:\n  {'contributions': [{'done_count': 7, 'first_pass': {'denominator': 7, 'numerator': 0, 'reason': None, 'sample_size': 7... 'sample_size': 0, ...}, 'period': {'from': '2026-07-22T12:00:00.000000Z', 'to': '2026-08-21T12:00:00.000000Z'}, ...}]} != {'contributions': [{'done_count': 7, 'first_pass': {'denominator': 7, 'numerator': 4, 'reason': None, 'sample_size': 7... 'sample_size': 0, ...}, 'period': {'from': '2026-07-22T12:00:00.000000Z', 'to': '2026-08-21T12:00:00.000000Z'}, ...}]}\n  Use -v to get more diff"
+      },
+      {
+        "test": "tests.test_delivery_contribution_retirement::test_contributions_match_published_same_population_baseline[owner/False/operator/validation_agent]",
+        "message": "AssertionError: assert {'contributio...ed_count': 1}} == {'contributio...ed_count': 1}}\n  \n  Omitting 1 identical items, use -vv to show\n  Differing items:\n  {'contributions': [{'done_count': None, 'first_pass': {'denominator': None, 'numerator': None, 'reason': 'minimum_samp... 'sample_size': 0, ...}, 'period': {'from': '2026-07-22T12:00:00.000000Z', 'to': '2026-08-21T12:00:00.000000Z'}, ...}]} != {'contributions': [{'done_count': None, 'first_pass': {'denominator': None, 'numerator': None, 'reason': 'minimum_samp... 'sample_size': 0, ...}, 'period': {'from': '2026-07-22T12:00:00.000000Z', 'to': '2026-08-21T12:00:00.000000Z'}, ...}]}\n  Use -v to get more diff"
+      }
+    ],
+    "note": "maxfail20; last delivery contribution module partial.191 completed modules and stress explicitly excluded; many new modules including slow default configuration completed. Do not repeat completed modules."
+  },
+  "core_run8_native_followup": {
+    "campaign": "run8-native-fixtures1",
+    "passed": 85,
+    "failed": 0,
+    "duration_seconds": 8.78,
+    "xml_sha256": "e978d6a829c2a3de64f99b51d1587105588a2e805df99c44e2d99284f30d5e94",
+    "proof_pair": "dist-native-columns1",
+    "product_changes": false,
+    "scope": "Four complete modules: current MCP inventory/guidance; native contextual roles/outcomes; explicit inherited architecture adoption; native contribution records with unchanged authored metrics baseline.",
+    "limits": "All run8 failures resolved; remaining modules/criteria still pending."
   }
 }

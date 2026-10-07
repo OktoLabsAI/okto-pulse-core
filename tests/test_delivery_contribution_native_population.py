@@ -1,4 +1,4 @@
-"""F5 keeps contribution calculations and authority while retiring Sprint scope."""
+"""Native contribution calculations preserve authored population and authority."""
 import json
 from pathlib import Path
 
@@ -24,10 +24,7 @@ async def test_contributions_match_published_same_population_baseline(monkeypatc
         assert filters[0].value == 'board-1'
         assert filters[2].value == kwargs['query'].window.from_inclusive
         assert filters[3].value == NOW
-        population = cards()
-        for card in population:
-            del card.sprint_id  # no surviving dependency on legacy membership
-        return population
+        return cards()
 
     monkeypatch.setattr(analytics_service, '_analytics_list', read)
     payload = await analytics_service.compute_delivery_intelligence(object(), **kwargs)

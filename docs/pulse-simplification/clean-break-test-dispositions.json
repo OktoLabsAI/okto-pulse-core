@@ -4280,5 +4280,16 @@
       "okto_labs_pulse_community/tests/test_c7_rdl_erasure_contract.py"
     ],
     "reason": "C7 projections use outcome success/failed and estimated_completeness/estimated_drift; seed native architecture scopes and omit removed manual_checklist_ref. Keep all aggregation/order/count/redaction and erasure-permit/lifecycle assertions."
+  },
+  "native_run8_fixture_adaptations": {
+    "paths": [
+      "tests/test_code_traceability_mcp_surface.py",
+      "tests/test_contextual_code_lifecycle_projection.py",
+      "tests/test_copy_architecture_root_coverage_06.py",
+      "tests/test_delivery_contribution_native_population.py",
+      "tests/delivery_contribution_cases.py"
+    ],
+    "previous_path": "tests/test_delivery_contribution_retirement.py",
+    "reason": "Remove null outcome acceptance and uncategorized legacy classification; retain empty unobserved context and add null rejection. Keep four active roles/revoked exclusion, profile stability and provenance gates. Explicitly adopt actual inherited architecture roots, preserving multi-hop coverage/idempotency. Native contribution outcomes/reviewer IDs replace compatibility aliases; original expected metrics baseline unchanged. Exact traceability tool permissions retained with current overall registry counts."
   }
 }
