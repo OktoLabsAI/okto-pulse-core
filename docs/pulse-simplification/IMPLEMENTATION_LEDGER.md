@@ -2,6 +2,27 @@
 
 ## Estado para retomada
 
+### 2026-10-07 — C4 T16–T20 qualificados com fixtures nativas
+Core5f615071 publicado no isolado; main continua102acd3d enquanto E2E96950 ativo.
+Retirado teste positivo de coexistência com Sprint: test_f3_retired_sprint_admission
+vira test_f3_native_execution_admission, sem linhas Sprint, assignment ou matriz
+de estados antigos. Duas provas atuais preservam start/resume e bloqueio por Card
+pendente. É aplicação da regra do assessment §Resto do desenvolvimento, não escopo novo.
+Acrescentada aresta Rejected→InProgress ao teste vigente de precedência; produto
+já a implementava, nenhuma alteração semântica.
+
+No par next25 previamente provado, runs terminais:
+test-creation-current1 handle5644:22pass/49.03s (warning esperado de colisão).
+execution-current1 handle60735:2pass/10.24s; start-current1 handle18659:2pass/29.44s.
+lineage-dependencies1 handle49152:3pass/10.25s; dependency-gates1 handle38288:
+3pass/4.69s; dependency-rework1 handle65604:1pass/5.60s.
+32casos distintos; último reexecuta a aresta ampliada. Ruff F/E9 passou.
+Recibo clean-break-acceptance-native-execution-creation.json promove só T16–T20.
+Teste Core renomeado substitui a entrada correspondente no censo1053; contagens
+históricas de casos não são a coleta atual, nenhum teste retirado contado como passe.
+E2E7 ainda sem terminal; quatro primeiros casos aprovados. Próximos T21 em diante,
+T23/KG-10 continuam pendentes. Sem alteração frontend e sem nova execução ampla.
+
 ### 2026-10-07 — C4 T12–T15 qualificados; E2E instalado7 permanece ativo
 Turno anterior classificado como progresso (correção publicada,62passes,closure0).
 Revalidado handle96950 ativo. Quatro primeiros casos E2E7 passaram; quinto

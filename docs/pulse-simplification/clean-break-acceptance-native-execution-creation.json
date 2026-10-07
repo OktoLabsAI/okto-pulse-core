@@ -1,0 +1,97 @@
+{
+  "format": "pulse-040-reviewed-acceptance/v1",
+  "status": "verified_current_pair_review",
+  "proof_pair": "dist-native-next25",
+  "provenance_sha256": "3e0ba5869cd133f5b4dbce01186a3eb2e3cd6ebbb632161b7a116d5d339da422",
+  "runs": [
+    {
+      "name": "acceptance-native-test-creation-current1",
+      "xml_sha256": "262801cccfce664553cdf20eb754644cb65ca5d6e2c7bc337f75e6a4a9316123",
+      "passed": 22,
+      "cases": [
+        "tests.test_test_card_creation_atomicity::test_card_creation_and_bidirectional_scenario_links_are_atomic[commit]",
+        "tests.test_test_card_creation_atomicity::test_card_creation_and_bidirectional_scenario_links_are_atomic[explicit_id]",
+        "tests.test_test_card_creation_atomicity::test_card_creation_and_bidirectional_scenario_links_are_atomic[collision]",
+        "tests.test_test_card_creation_atomicity::test_card_creation_and_bidirectional_scenario_links_are_atomic[rollback]",
+        "tests.test_test_card_creation_atomicity::test_card_creation_and_bidirectional_scenario_links_are_atomic[foreign_spec]",
+        "tests.test_test_card_creation_atomicity::test_card_creation_and_bidirectional_scenario_links_are_atomic[foreign_board]",
+        "tests.test_test_card_creation_surfaces::test_public_create_rejects_foreign_scenarios_without_partial_writes[False-valid-rest]",
+        "tests.test_test_card_creation_surfaces::test_public_create_rejects_foreign_scenarios_without_partial_writes[False-valid-mcp]",
+        "tests.test_test_card_creation_surfaces::test_public_create_rejects_foreign_scenarios_without_partial_writes[False-foreign_spec-rest]",
+        "tests.test_test_card_creation_surfaces::test_public_create_rejects_foreign_scenarios_without_partial_writes[False-foreign_spec-mcp]",
+        "tests.test_test_card_creation_surfaces::test_public_create_rejects_foreign_scenarios_without_partial_writes[False-foreign_board-rest]",
+        "tests.test_test_card_creation_surfaces::test_public_create_rejects_foreign_scenarios_without_partial_writes[False-foreign_board-mcp]",
+        "tests.test_test_card_creation_surfaces::test_public_create_rejects_foreign_scenarios_without_partial_writes[False-denied-rest]",
+        "tests.test_test_card_creation_surfaces::test_public_create_rejects_foreign_scenarios_without_partial_writes[False-denied-mcp]",
+        "tests.test_test_card_creation_surfaces::test_public_create_rejects_foreign_scenarios_without_partial_writes[True-valid-rest]",
+        "tests.test_test_card_creation_surfaces::test_public_create_rejects_foreign_scenarios_without_partial_writes[True-valid-mcp]",
+        "tests.test_test_card_creation_surfaces::test_public_create_rejects_foreign_scenarios_without_partial_writes[True-foreign_spec-rest]",
+        "tests.test_test_card_creation_surfaces::test_public_create_rejects_foreign_scenarios_without_partial_writes[True-foreign_spec-mcp]",
+        "tests.test_test_card_creation_surfaces::test_public_create_rejects_foreign_scenarios_without_partial_writes[True-foreign_board-rest]",
+        "tests.test_test_card_creation_surfaces::test_public_create_rejects_foreign_scenarios_without_partial_writes[True-foreign_board-mcp]",
+        "tests.test_test_card_creation_surfaces::test_public_create_rejects_foreign_scenarios_without_partial_writes[True-denied-rest]",
+        "tests.test_test_card_creation_surfaces::test_public_create_rejects_foreign_scenarios_without_partial_writes[True-denied-mcp]"
+      ]
+    },
+    {
+      "name": "acceptance-native-execution-current1",
+      "xml_sha256": "f0af1857529c32f2e2dfb102b955acbe1e56a7f1f04ed7627820955a5daaa021",
+      "passed": 2,
+      "cases": [
+        "tests.test_f3_native_execution_admission::test_native_normal_start_preview_and_mutation_need_no_sprint",
+        "tests.test_f3_native_execution_admission::test_native_spec_completion_keeps_pending_task_gate"
+      ]
+    },
+    {
+      "name": "acceptance-native-start-current1",
+      "xml_sha256": "df447cacef738226f3348e321d48ff8db84d4adc8c02d9d7f51efdea0e27ebe8",
+      "passed": 2,
+      "cases": [
+        "tests.test_architecture_start_transition::test_pending_architecture_blocks_actual_start_without_workflow_mutation[3]",
+        "tests.test_architecture_start_transition::test_pending_architecture_blocks_actual_start_without_workflow_mutation[31]"
+      ]
+    },
+    {
+      "name": "acceptance-native-lineage-dependencies1",
+      "xml_sha256": "5323fe3ebce2d27734a5658ded5797d79c1ff3994445b216a3314892de3237cd",
+      "passed": 3,
+      "cases": [
+        "tests.test_spec_b_knowledge_propagation_e2e::test_ts_9e54d02f_tri_state_v2_end_to_end",
+        "tests.test_skm_spec_dependency_persistence::test_readiness_keeps_exact_blocker_categories_beyond_detail_limit",
+        "tests.test_skm_spec_dependency_persistence::test_sqlite_board_lock_serializes_reciprocal_adds_as_one_cycle"
+      ]
+    },
+    {
+      "name": "acceptance-native-dependency-gates1",
+      "xml_sha256": "68584ad8534225152f90dfd916acf1de0f7399c61349f037b3071a2b67616a8f",
+      "passed": 3,
+      "cases": [
+        "tests.test_spec_dependencies_core::test_done_is_the_only_satisfying_target_and_cycle_check_is_directed",
+        "tests.test_spec_dependencies_core::test_every_card_execution_start_or_resume_edge_uses_dependency_blocker",
+        "tests.test_spec_dependencies_core::test_only_validated_to_in_progress_starts_spec_execution"
+      ]
+    },
+    {
+      "name": "acceptance-native-dependency-rework1",
+      "xml_sha256": "90448c5a3553c4dbdebc7a41ed2ec22d8afc72ec3973e7159c0631285831751a",
+      "passed": 1,
+      "cases": [
+        "tests.test_spec_dependencies_core::test_every_card_execution_start_or_resume_edge_uses_dependency_blocker"
+      ]
+    }
+  ],
+  "criteria": {
+    "BASE:T16": "Native Core preview and Card start/resume succeed without Sprint assignment; pending Cards still block Spec completion. Real Community REST start requires all current architecture classifications and current-edition approval, then enters in_progress with no fictional proof.",
+    "BASE:T17": "Three MCP/REST derivations persist distinct Draft Specs sharing the same completed refinement and one immutable snapshot, with independent Knowledge scopes. No later derivation replaces prior Specs or changes source lifecycle.",
+    "BASE:T18": "Current relational readiness preserves 101 blockers including archived Done beyond the detail page. Concurrent reciprocal additions produce one durable edge/receipt and one cycle denial. Core decision covers eight start/resume edges including Rejected; only non-archived Done satisfies prerequisites.",
+    "BASE:T19": "Actual Community CardService atomically persists Card/scenario reverse links; separate-session observation proves commit, explicit IDs and collision refusal. Rollback removes Card, backlinks, events and activity.",
+    "BASE:T20": "REST and MCP create with absent/present Knowledge envelope accept valid scenarios and refuse missing grant or mixed valid/foreign Spec/Board scenarios without partial Card, backlinks, outbox or activity."
+  },
+  "removed_compatibility_test": "test_f3_retired_sprint_admission.py replaced by test_f3_native_execution_admission.py; historical Sprint rows and status/assignment compatibility matrix removed.",
+  "limits": [
+    "Core admission uses the existing SQL test adapter; actual start, creation, lineage and dependency persistence use production Community adapters.",
+    "Assessment outcomes/source completion and principals are fixture inputs; no claim that these cases exercise every completion or authentication gate.",
+    "REST creation uses ASGI, MCP invokes registered handlers; grouped scenario set is tested, not an invented multi-Card batch API.",
+    "No product/frontend change. Prior fixture failures and receipts remain engineering history."
+  ]
+}

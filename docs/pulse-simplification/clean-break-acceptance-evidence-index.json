@@ -1171,7 +1171,12 @@
           "case_references": []
         }
       ],
-      "current_qualification": "pending_current_pair_review"
+      "current_qualification": "verified_current_pair_review",
+      "current_review": {
+        "artifact": "clean-break-acceptance-native-execution-creation.json",
+        "criterion_key": "BASE:T16",
+        "proof_pair": "dist-native-next25"
+      }
     },
     {
       "key": "BASE:T17",
@@ -1193,7 +1198,12 @@
           "case_references": []
         }
       ],
-      "current_qualification": "pending_current_pair_review"
+      "current_qualification": "verified_current_pair_review",
+      "current_review": {
+        "artifact": "clean-break-acceptance-native-execution-creation.json",
+        "criterion_key": "BASE:T17",
+        "proof_pair": "dist-native-next25"
+      }
     },
     {
       "key": "BASE:T18",
@@ -1215,7 +1225,12 @@
           "case_references": []
         }
       ],
-      "current_qualification": "pending_current_pair_review"
+      "current_qualification": "verified_current_pair_review",
+      "current_review": {
+        "artifact": "clean-break-acceptance-native-execution-creation.json",
+        "criterion_key": "BASE:T18",
+        "proof_pair": "dist-native-next25"
+      }
     },
     {
       "key": "BASE:T19",
@@ -1237,7 +1252,12 @@
           "case_references": []
         }
       ],
-      "current_qualification": "pending_current_pair_review"
+      "current_qualification": "verified_current_pair_review",
+      "current_review": {
+        "artifact": "clean-break-acceptance-native-execution-creation.json",
+        "criterion_key": "BASE:T19",
+        "proof_pair": "dist-native-next25"
+      }
     },
     {
       "key": "BASE:T20",
@@ -1265,7 +1285,12 @@
           "case_references": []
         }
       ],
-      "current_qualification": "pending_current_pair_review"
+      "current_qualification": "verified_current_pair_review",
+      "current_review": {
+        "artifact": "clean-break-acceptance-native-execution-creation.json",
+        "criterion_key": "BASE:T20",
+        "proof_pair": "dist-native-next25"
+      }
     },
     {
       "key": "BASE:T21",

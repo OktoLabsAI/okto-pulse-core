@@ -1486,6 +1486,7 @@ def test_every_card_execution_start_or_resume_edge_uses_dependency_blocker() -> 
         (CardStatus.ON_HOLD, CardStatus.STARTED),
         (CardStatus.ON_HOLD, CardStatus.IN_PROGRESS),
         (CardStatus.VALIDATION, CardStatus.IN_PROGRESS),
+        (CardStatus.REJECTED, CardStatus.IN_PROGRESS),
         (CardStatus.DONE, CardStatus.IN_PROGRESS),
     }
     blocker = SimpleNamespace(
