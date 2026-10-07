@@ -490,8 +490,8 @@ def test_operation_capability_matrix_covers_public_closed_leaves() -> None:
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("entity_type", ("sprint", "card", "test_scenario"))
-async def test_non_edition_policy_subjects_preserve_legacy_version_fenced_flow(
+@pytest.mark.parametrize("entity_type", ("card", "test_scenario"))
+async def test_non_edition_policy_subjects_preserve_version_fenced_flow(
     entity_type: str,
 ) -> None:
     from okto_pulse.core.application.use_cases.policy_governance import (
@@ -1561,3 +1561,9 @@ async def test_unlink_use_cases_repeat_capability_check_before_uow_access(
 
     with pytest.raises(PermissionDeniedError):
         await use_case.execute(command, actor=actor, uow=UntouchableUow())
+
+
+def test_retired_sprint_policy_subject_is_refused():
+    from okto_pulse.core.domain.guideline_policy import PolicyEntityType
+    with pytest.raises(ValueError):
+        PolicyEntityType("sprint")

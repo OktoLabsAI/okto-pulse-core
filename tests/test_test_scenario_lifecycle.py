@@ -22,6 +22,7 @@ import logging
 import uuid
 
 import pytest
+from native_subject_testing import record_native_subject_authority
 import pytest_asyncio
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -76,7 +77,7 @@ async def _seed_spec(
             title="S",
             status=status,
             created_by=USER,
-            functional_requirements=["FR1"],
+            functional_requirements=[{"id": "fr_one", "text": "FR1"}],
             acceptance_criteria=acs
             if acs is not None
             else [{"id": "ac_one", "text": "AC one", "status": "active"}],
@@ -99,6 +100,24 @@ async def _seed_spec(
                     created_by=USER,
                     test_scenario_ids=card_scenarios,
                 )
+            )
+        await record_native_subject_authority(db)
+        # Scenarios are separate version-fenced policy subjects in the native
+        # contract; their authority is not inferred from the parent Spec.
+        from datetime import datetime, timezone
+        from okto_pulse.community.adapters.sqlalchemy_semantic_guideline_assessment import (
+            CommunitySqlAlchemySemanticGuidelineAssessment,
+        )
+        from okto_pulse.core.domain.guideline_policy import PolicyEntityType
+        from okto_pulse.core.domain.quality_canonicalization import canonical_sha256
+        adapter = CommunitySqlAlchemySemanticGuidelineAssessment(db)
+        for scenario in scenarios or []:
+            await adapter.record_semantic_subject_mutation(
+                board_id=board_id, entity_type=PolicyEntityType.TEST_SCENARIO,
+                subject_id=scenario["id"], actor_id=USER,
+                idempotency_key=f"native-scenario-fixture:{spec_id}:{scenario['id']}",
+                request_digest=canonical_sha256(scenario),
+                changed_at=datetime.now(timezone.utc),
             )
         await db.commit()
     return board_id, spec_id, card_id
@@ -236,7 +255,7 @@ async def test_update_spec_rejects_board_wide_test_scenario_identity_conflict(
                 title="Second",
                 status=SpecStatus.DRAFT,
                 created_by=USER,
-                functional_requirements=["FR1"],
+                functional_requirements=[{"id": "fr_one", "text": "FR1"}],
                 acceptance_criteria=[
                     {"id": "ac_two", "text": "AC two", "status": "active"}
                 ],
@@ -412,7 +431,10 @@ async def test_update_test_scenario_resolves_linked_criteria(db_factory):
     )
     async with db_factory() as db:
         svc = SpecService(db)
-        await svc.update_test_scenario(spec_id, USER, "ts_a", linked_criteria=["0"])
+        with pytest.raises(ValueError, match="unresolved_criteria"):
+            await svc.update_test_scenario(spec_id, USER, "ts_a", linked_criteria=["0"])
+        assert not (await svc.get_spec(spec_id)).test_scenarios[0].get("linked_criteria")
+        await svc.update_test_scenario(spec_id, USER, "ts_a", linked_criteria=["ac_one"])
         spec = await svc.get_spec(spec_id)
     assert spec.test_scenarios[0]["linked_criteria"] == ["ac_one"]
 

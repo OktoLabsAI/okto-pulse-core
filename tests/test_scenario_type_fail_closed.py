@@ -61,7 +61,7 @@ def _stub_ctx(board_id: str):
             "agent_id": USER_ID,
             "agent_name": USER_ID,
             "board_id": board_id,
-            "permissions": ["board:read", "specs:update"],
+            "permissions": ["board.read", "spec.tests.edit"],
         },
     )()
 

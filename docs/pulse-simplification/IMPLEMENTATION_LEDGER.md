@@ -2,6 +2,36 @@
 
 ## Estado para retomada
 
+### 2026-10-07 — Core19: contratos de cenário/governança qualificados
+Worktrees isolados avançados por fast-forward para Core0e266a85/Community238647c0
+antes das alterações (somente docs/testes desde prova counters18).
+core19-native-contracts1 handle85514 terminou1:122pass/8fail; quatro módulos
+completos75casos passaram (import isolation2,scenario type20,policy health5,
+policy governance48). O consumidor verification23 já passou, mas helper ainda
+precisava qualificação integral. scenarios2 handle85033 terminou1:48pass/7fail.
+scenarios3 handle66558 terminou0:55pass/14.17s, lifecycle32+verification23.
+Total130distintos em seis módulos. Ruff F/E9/diff-check0.
+
+Permissões de teste usam board.read/spec.tests.edit; porta requirement_lint
+retirada deve estar ausente e porta quality_assessment conserva import lazy.
+Subprocesso explicita ambos src. Policy não aceita Sprint, com negativo dedicado;
+Card/cenário mantêm version fence. Health usa contrato atual sem artifact_ref.
+Helper cria requisitos tipados, autoridade semântica do Spec e registros próprios
+de cada cenário (não inferidos do pai). Índice textual de critério é recusado sem
+mutação; ID estável funciona. Nenhum código de produção/gate foi alterado.
+Recibo acceptance-clean-break-core19-contracts.json preserva campanhas falhas.
+
+Core19 ainda pendente: rest_ideation_refinement_scope (fake cards ausente),
+s01_fake_saas_relational_adapter (faltam bug_clusters_read/spec_coverage_read;
+não retirar isinstance/Protocol), skm_spec_dependency_kg_projection (matriz de
+endpoints antiga), spec_coverage_graph/mcp/query (fixtures sem contexto efetivo).
+A lacuna do fake SaaS foi diagnosticada, ainda NÃO implementada.
+Community14 transfer handle79646 segue ATIVO no MAIN; última consulta confirmou
+execução, não reiniciar/editar main. WIP principal são dois arquivos de transfer.
+Demais pendências Community14 e E2E/C4/T23/KG-10 inalteradas.
+Próximo: publicar este Core isolado; após terminal transfer integrar main por
+fast-forward. Produto/provas/closures counters18/main18 continuam válidos.
+
 ### 2026-10-07 — Community14 SQL qualificado; Core19 terminal
 Closure main18 handle70816 terminou0:ok=true,findings/documentation_findings=[],
 oito ZERO. Produto/prova main18 inalterados. Fixtures SQL declaram realm_id local

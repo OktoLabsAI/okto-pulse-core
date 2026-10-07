@@ -216,7 +216,6 @@ async def test_readiness_derives_non_maskable_policy_dlq_from_health_domain(
             board_id,
             db,
             profile="summary",
-            artifact_ref="spec:unrelated",
         )
 
     signals = readiness["technical_signals"]
