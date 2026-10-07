@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from okto_pulse.core.domain.architecture_adoption import ArchitectureAdoptionScope
+
 import hashlib
 import json
 import uuid
@@ -314,6 +316,10 @@ async def scope_graph(db_factory):
             [
                 Spec(
                     id=ids["spec_a"],
+                    architecture_adoption=ArchitectureAdoptionScope(
+                        board_id=ids["board_a"], spec_id=ids["spec_a"],
+                        adopted_in_edition=1, actor_id=USER_ID, inherited_resource_ids=(),
+                    ).model_dump(mode="json"),
                     board_id=ids["board_a"],
                     ideation_id=ids["ideation_a"],
                     refinement_id=ids["refinement_a"],
@@ -324,6 +330,10 @@ async def scope_graph(db_factory):
                 ),
                 Spec(
                     id=ids["spec_b"],
+                    architecture_adoption=ArchitectureAdoptionScope(
+                        board_id=ids["board_b"], spec_id=ids["spec_b"],
+                        adopted_in_edition=1, actor_id=USER_ID, inherited_resource_ids=(),
+                    ).model_dump(mode="json"),
                     board_id=ids["board_b"],
                     ideation_id=ids["ideation_b"],
                     refinement_id=ids["refinement_b"],
@@ -942,7 +952,12 @@ async def test_same_board_copy_mockup_crud_and_lists_remain_functional(
             entity_type=entity_type,
             entity_id=entity_id,
         )
-        assert result["count"] == 1
+        expected_count = (
+            {"spec": 3, "card": 4}.get(entity_type, 1)
+            if tool_name == "okto_pulse_list_knowledge" else 1
+        )
+        assert result["count"] == expected_count, (tool_name, entity_type, result)
+        assert SECRET not in json.dumps(result)
 
     async with db_factory() as db:
         story = await db.get(Story, ids["story_a"])

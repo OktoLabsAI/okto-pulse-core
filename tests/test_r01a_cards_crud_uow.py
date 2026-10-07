@@ -10,6 +10,8 @@ check proving the endpoints take ``uow`` (not a raw ``AsyncSession``).
 
 from __future__ import annotations
 
+from okto_pulse.core.domain.architecture_adoption import ArchitectureAdoptionScope
+
 import inspect
 import uuid
 
@@ -55,7 +57,11 @@ async def _seed_card(title: str = "fu4-s1-card") -> str:
     cid = f"card-fu4s1-{uuid.uuid4().hex[:8]}"
     async with get_session_factory()() as db:
         db.add(Board(id=bid, name="fu4s1", owner_id=USER))
-        db.add(Spec(id=sid, board_id=bid, title="fu4s1-spec", created_by=USER))
+        db.add(Spec(id=sid, board_id=bid, title="fu4s1-spec", created_by=USER,
+            architecture_adoption=ArchitectureAdoptionScope(
+                board_id=bid, spec_id=sid, adopted_in_edition=1,
+                actor_id=USER, inherited_resource_ids=(),
+            ).model_dump(mode="json")))
         db.add(
             Card(
                 id=cid,

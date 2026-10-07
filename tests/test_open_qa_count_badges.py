@@ -2,7 +2,7 @@
 
 The frontend list cards render:
   * an "N open Q&A" badge driven by ``<Summary>.open_qa_count`` on ideation /
-    refinement / spec / sprint / card, and
+    refinement / spec / card, and
   * Domains/Ambiguity/Dependencies score badges driven by
     ``IdeationSummary.scope_assessment`` after evaluation.
 
@@ -52,6 +52,28 @@ def _id() -> str:
 
 def _now() -> datetime:
     return datetime.now(timezone.utc)
+
+
+@pytest.fixture(autouse=True)
+def native_application_projection(request):
+    from okto_pulse.community.adapters.sqlalchemy_application_persistence import (
+        CommunitySqlAlchemyApplicationPersistence,
+    )
+    from okto_pulse.core.ports.application_persistence import (
+        register_application_persistence_port,
+    )
+    register_application_persistence_port(CommunitySqlAlchemyApplicationPersistence())
+    from okto_pulse.core.domain.realm import RealmScope
+    factory = get_session_factory()
+    previous_info = dict(factory.kw.get("info", {}))
+    request.addfinalizer(lambda: factory.configure(info=previous_info))
+    factory.configure(info={**previous_info, "realm_scope": RealmScope.local()})
+    from okto_pulse.community.adapters.sqlalchemy_policy_subject_versioning import CommunitySemanticSession
+    previous_session_class = factory.kw.get("sync_session_class")
+    request.addfinalizer(lambda: factory.configure(sync_session_class=previous_session_class))
+    factory.configure(sync_session_class=CommunitySemanticSession)
+
+
 
 
 @pytest.mark.asyncio
