@@ -3597,7 +3597,7 @@ CardCreateResponse: TypeAlias = CardCreateKnowledgeMutationResponse
 
 
 class CardSummary(BaseSchema):
-    """Canonical lean card projection used by all three columns shapes.
+    """Canonical lean card projection used by native column batches and pages.
 
     Persisted fields are explicit at the transport boundary. Sensitive
     projections such as ``open_qa_count`` are omitted when the actor lacks
@@ -4554,46 +4554,7 @@ def _forbid_shape_fields(
     return value
 
 
-class ColumnsLegacyResponse(BaseSchema):
-    """Literal legacy columns response (no pagination metadata)."""
-
-    model_config = ConfigDict(
-        from_attributes=True,
-        extra="allow",
-        json_schema_extra={
-            "allOf": [
-                {
-                    "not": {
-                        "anyOf": [
-                            {"required": [field]}
-                            for field in (
-                                "columns_meta",
-                                "column",
-                                "items",
-                                "meta",
-                                "next_offset",
-                            )
-                        ]
-                    }
-                }
-            ]
-        },
-    )
-
-    board_id: str
-    columns: dict[str, list[CardSummary]]
-
-    @model_validator(mode="before")
-    @classmethod
-    def _exclude_other_shapes(cls, value: object) -> object:
-        return _forbid_shape_fields(
-            value,
-            forbidden=("columns_meta", "column", "items", "meta", "next_offset"),
-            shape="legacy",
-        )
-
-
-class ColumnsOptInResponse(BaseSchema):
+class ColumnsBatchResponse(BaseSchema):
     """Bounded windows for every column, with batch metadata and facets."""
 
     model_config = ConfigDict(
@@ -4623,7 +4584,7 @@ class ColumnsOptInResponse(BaseSchema):
         return _forbid_shape_fields(
             value,
             forbidden=("column", "items", "next_offset"),
-            shape="opt-in",
+            shape="column batch",
         )
 
 
@@ -4674,9 +4635,9 @@ def _publish_columns_one_of(schema: dict[str, Any]) -> None:
 
 
 class ColumnsResponseUnion(
-    RootModel[ColumnsLegacyResponse | ColumnsOptInResponse | ColumnPageResponse]
+    RootModel[ColumnsBatchResponse | ColumnPageResponse]
 ):
-    """OpenAPI-only union for the three mutually exclusive columns shapes."""
+    """OpenAPI union for native batch and single-column continuation."""
 
     model_config = ConfigDict(json_schema_extra=_publish_columns_one_of)
 

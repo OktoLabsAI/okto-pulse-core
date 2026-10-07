@@ -2,6 +2,46 @@
 
 ## Estado para retomada
 
+### 2026-10-07 — C3 columns unico qualificado
+
+Retirada concluida do ramo columns sem metadata/hidratacao integral e modelo
+ColumnsLegacyResponse. Contrato nativo: batch default25 ou continuacao de uma
+coluna; grants, Board scope, facets, totals, redaction e SQL budgets preservados.
+ColumnsBatchResponse substitui OptIn; overload booleano frontend removido.
+Core24, Community67 e frontend24/4arquivos aprovados. Fixtures SQL C6 qualificadas
+antes com23; nao somar essa rodada anterior como novos casos de aceite do produto.
+Frontend build/sync79arquivos78assets: index-DrMna20L.js, tree
+afd332f659b697b899c610b072a88fda4db6d5c7f79134552cf9661f1c838008.
+Par dist-native-columns1 instalado/provado byte-a-byte:Core843 Python/905payload,
+Community319/405. Closure1 recusou somente README matrix (imports1114→1113);
+oito budgetsZERO e findingsvazios. Fragmentos regenerados pelo render oficial.
+Closure2 terminal ok=true, findings/documentation_findingsvazios, oito current=limit=0.
+Ruff F/E9/diff aprovados. Testes gerados/logs/hashes no JSON.
+
+Continuacao Core full-run7 em execucao, handle23343, selecao177modulos excluidos.
+Aguardar terminal; nao alterar/reinstalar produto durante campanha.
+C1-C4, T23/KG-10, qualificacao integral/criterios/benchmark/bump0.4.0 pendentes.
+Sem release/tag/deploy. Registro de commits/pushes segue apos este recibo.
+
+
+### 2026-10-07 — C3 columns nativo em qualificacao
+
+Core530550c8 publicado/push confirmado; Community224e9911.
+Community full-run4 terminal:13 aprovados/20erros56.63s, ultimo modulo group_count
+parcial. C6 fixtures SQL agora declaram architecture_adoption; followup
+columns-native-fixtures1:23 aprovados42.04s, antes da mudanca de produto seguinte.
+Confirmado ramo REST columns sem janela que hidratava Board completo, mantinha
+wire sem metadata e coercao antiga. Frontend usa apenas paginacao; nenhum consumidor
+atual requer esse fallback. Retirada delimitada C3: parser sempre nativo/default25,
+batch/continuacao preservados; retirar ColumnsLegacyResponse e nome OptIn,
+remover overload booleano frontend sem callers. Testes negativos/SQL budgets/
+facets/redaction preservados e frontend inclui filtros entre batch/continuacao.
+WIP em ambos repos. Build frontend em andamento handle78648; depois stage assets,
+build/install/prova pareada ANTES de comportamento. Par antigo nao certifica WIP.
+Nenhuma campanha backend ativa. Nao declarar encerrado antes dos novos testes,
+closure, recibos e commits/pushes. C1-C4/T23/KG-10 pendentes.
+
+
 ### 2026-10-07 — C3/C4 Knowledge, lifecycle e fechamento cognitivo nativos
 
 Core base a94b57fa / Community224e9911. Full-run6 terminal:53 aprovados/20falhas,

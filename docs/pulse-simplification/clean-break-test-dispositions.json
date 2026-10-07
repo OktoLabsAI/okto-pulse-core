@@ -4245,5 +4245,13 @@
       "path": "tests/delivery_evidence_testing.py and tests/test_cognitive_closeout_service_wiring.py",
       "reason": "Trusted accepted Card fixture includes native effective responsibility/attestation context, without weakening delivery policy. Qualify its other consumer with architecture adoption, seeded authority and independent reviewer. Preserve cognitive debt/history/skip/readiness tests."
     }
-  ]
+  ],
+  "native_columns_contract": {
+    "paths": [
+      "tests/test_columns_response_union.py",
+      "okto_labs_pulse_community/tests/test_c6_columns_pagination.py",
+      "okto_labs_pulse_community/tests/test_c6_columns_query.py"
+    ],
+    "reason": "Retire legacy payload golden and alternate query branch; old response now negative schema case. Default native window equals explicit25; true/false parsing, filters, native batch/page exclusivity, scope/redaction and SQL statement budgets tested. Functional assertions retained; removed wire acceptance not counted as preserved."
+  }
 }

@@ -1090,5 +1090,53 @@
     "scope": "Native Knowledge registry, lifecycle/report/dependencies and cognitive closeout fixtures. Accepted Card delivery test port supplies effective responsibility context. Independent reviewer and explicit native authority in test composition; gates unchanged.",
     "limits": "Broad run6 stopped at20 failures; followups fully qualify both affected modules plus shared-fixture consumer. Remaining modules and C1-C4 still pending.",
     "runner_note": "fixtures3 pytest finished83passed9failed; wrapper stdout failed cp1252 rendering. XML/log inspected; use python -X utf8 for runner."
+  },
+  "community_full_run4": {
+    "campaign": "clean-break-full-run4-community",
+    "passed": 13,
+    "errors": 20,
+    "duration_seconds": 56.63,
+    "xml_sha256": "e44e3ad733e2b16693bc369199e0f2c5250a8d82d88369312dbe1da490e3bd64",
+    "selection": "clean-break-full-run4-community-selection.json",
+    "note": "maxfail20; C6 raw SQL Spec fixtures omit architecture_adoption. Last group-count module partial; native fixture followup pending."
+  },
+  "native_columns_contract": {
+    "campaigns": [
+      {
+        "name": "clean-break-columns-native-fixtures1",
+        "tests": 23,
+        "failed": 0,
+        "errors": 0,
+        "duration_seconds": 42.02,
+        "xml_sha256": "c39a5b3dd2c75ded8bb85be8f26a7beb24bda0a2ff23b9a4753d1bb4102e220e"
+      },
+      {
+        "name": "clean-break-native-columns-core1",
+        "tests": 24,
+        "failed": 0,
+        "errors": 0,
+        "duration_seconds": 21.546,
+        "xml_sha256": "92f8a75253a9df0f120ebaaf0e5d354e350ac90188c7ad12b482ed6d48fc2254"
+      },
+      {
+        "name": "clean-break-native-columns-community1",
+        "tests": 67,
+        "failed": 0,
+        "errors": 0,
+        "duration_seconds": 70.259,
+        "xml_sha256": "318399fbf6d3056c6cc325460879a2b09f03ac37d29f002a12394de13c4a8f8d"
+      }
+    ],
+    "core_passed": 24,
+    "community_passed": 67,
+    "frontend_passed": 24,
+    "frontend_files": 4,
+    "frontend_json_sha256": "168ed8a9166d9065c91be4ccf5f7159f8470a39213d75584742e207b2a36d9a9",
+    "proof_pair": "dist-native-columns1",
+    "closure": "closure-native-columns2.json",
+    "budgets_zero": 8,
+    "frontend_tree_sha256": "afd332f659b697b899c610b072a88fda4db6d5c7f79134552cf9661f1c838008",
+    "scope": "Retire unbounded columns compatibility branch and legacy response model. Native batch defaults25; continuation, filters, scope, redaction, query caps and facets preserved. Remove unused frontend boolean overload; clients use native query object.",
+    "limits": "First closure failed README matrix only, budgets0 and no findings; official render updates import count1114 to1113. Second closure fully green. Earlier fixture23 run predates product change and is not additional distinct acceptance."
   }
 }
