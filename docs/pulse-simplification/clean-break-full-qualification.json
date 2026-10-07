@@ -4552,5 +4552,80 @@
     "handle": 90773,
     "excluded_qualified_modules": 788,
     "pair": "dist-native-claim-recovery1"
+  },
+  "native_next_work_in_progress": {
+    "worktree_root": "PULSE_REFACTOR/.validation-v040/native-next",
+    "base_core": "c8e38fff",
+    "base_community": "b368217f",
+    "pair": "dist-native-next1",
+    "provenance": "provenance-native-next1.json",
+    "source_python_files": {
+      "core": 843,
+      "community": 316
+    },
+    "byte_identical": true,
+    "core": {
+      "handle": 38145,
+      "exit_code": 0,
+      "passed": 4,
+      "duration_seconds": 7.97
+    },
+    "community": {
+      "handle": 81552,
+      "status": "running"
+    },
+    "closure": {
+      "handle": 34533,
+      "status": "running"
+    },
+    "integration": "not yet merged into main feature worktrees; preserve active campaign sources"
+  },
+  "native_next_qualified": {
+    "pair": "dist-native-next1",
+    "campaigns": [
+      {
+        "campaign": "native-next1-core",
+        "counts": {
+          "name": "pytest",
+          "errors": "0",
+          "failures": "0",
+          "skipped": "0",
+          "tests": "4",
+          "time": "7.975",
+          "timestamp": "2026-10-07T06:51:33.020354-03:00",
+          "hostname": "Alienware_m15"
+        },
+        "xml_sha256": "2fa9be2195bc8206a7c0edea31d7770820e87858e63c8e23480cb18718bb1a23"
+      },
+      {
+        "campaign": "native-next1-community",
+        "counts": {
+          "name": "pytest",
+          "errors": "0",
+          "failures": "0",
+          "skipped": "0",
+          "tests": "30",
+          "time": "104.565",
+          "timestamp": "2026-10-07T06:51:23.858224-03:00",
+          "hostname": "Alienware_m15"
+        },
+        "xml_sha256": "ca1f16a9deac5b67c34b2673b34bdca277e3dcdcead422b8ad04cf8259bf973e"
+      }
+    ],
+    "passed": 34,
+    "provenance_sha256": "c4b49e7579a78a0d1b2efeb5522662628c255e7b861969190400870c041970de",
+    "closure_sha256": "aad667d99f4baa51e4528bf48b103470bf12d296c3b9098260292e191fdcdd1a",
+    "closure_ok": true,
+    "budgets": {
+      "import_boundary_baseline": 0,
+      "singleton_baseline": 0,
+      "dependency_temporary_exceptions": 0,
+      "graph_runtime_compatibility": 0,
+      "rebuild_artifact_compatibility": 0,
+      "community_private_reach_ins": 0,
+      "community_adapter_bridges": 0,
+      "af35_relational_residue": 0
+    },
+    "limits": "C2/C3 increment qualified in isolated current worktrees. Old broad campaigns remain on frozen previous pair; native-next is not full final acceptance. Main feature working trees can fast-forward only after active campaigns terminate."
   }
 }

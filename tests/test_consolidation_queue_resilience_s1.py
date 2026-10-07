@@ -66,48 +66,28 @@ def test_impl1_consolidation_dead_letter_table_exists():
 
 
 # ----------------------------------------------------------------------
-# AC8 — KG_MAX_QUEUE_DEPTH legacy env mapeia para alert_threshold + warning
+# Native startup values never convert the removed queue-depth environment alias.
 # ----------------------------------------------------------------------
 
 
-def test_ac8_legacy_env_maps_with_deprecation_warning(monkeypatch, caplog):
-    """AC8: KG_MAX_QUEUE_DEPTH=500 (env) sem KG_QUEUE_ALERT_THRESHOLD →
-    alert_threshold=500 + DeprecationWarning emitido."""
-    from sqlalchemy_test_runtime_settings_service import _resolve_legacy_env_aliases
+@pytest.mark.asyncio
+@pytest.mark.parametrize("persisted, expected", [({}, 321), ({"kg_queue_alert_threshold": 777}, 777)])
+async def test_removed_queue_depth_alias_does_not_override_native_settings(
+    monkeypatch, persisted, expected,
+):
+    from unittest.mock import AsyncMock
+    import sqlalchemy_test_runtime_settings_service as service
 
+    base = get_settings()
+    configure_settings(type(base)(**{**base.model_dump(), "kg_queue_alert_threshold": 321}))
     monkeypatch.setenv("KG_MAX_QUEUE_DEPTH", "500")
-
+    monkeypatch.setattr(service, "_load_persisted_rows", AsyncMock(return_value=persisted))
     with warnings.catch_warnings(record=True) as captured:
-        warnings.simplefilter("always")
-        resolved = _resolve_legacy_env_aliases()
-
-    assert resolved.get("kg_queue_alert_threshold") == 500
-    deprecation = [w for w in captured if issubclass(w.category, DeprecationWarning)]
-    assert len(deprecation) == 1
-    msg = str(deprecation[0].message)
-    assert "KG_MAX_QUEUE_DEPTH" in msg
-    assert "v0.5.0" in msg
-    assert "kg_queue_alert_threshold" in msg
-
-
-def test_ac8_legacy_env_yields_to_canonical(monkeypatch):
-    """Quando ambos KG_MAX_QUEUE_DEPTH e KG_QUEUE_ALERT_THRESHOLD estão
-    setados, canonical wins e legacy é ignorado (sem warning emitido para
-    o canonical)."""
-    from sqlalchemy_test_runtime_settings_service import _resolve_legacy_env_aliases
-
-    monkeypatch.setenv("KG_MAX_QUEUE_DEPTH", "500")
-    monkeypatch.setenv("KG_QUEUE_ALERT_THRESHOLD", "9999")
-
-    with warnings.catch_warnings(record=True) as captured:
-        warnings.simplefilter("always")
-        resolved = _resolve_legacy_env_aliases()
-
-    # Legacy alias is skipped because canonical env is set.
-    assert "kg_queue_alert_threshold" not in resolved
-    assert not any(
-        issubclass(w.category, DeprecationWarning) for w in captured
-    )
+        snapshot = await service.apply_persisted_settings_to_core_settings()
+    assert snapshot["kg_queue_alert_threshold"] == expected
+    assert get_settings().kg_queue_alert_threshold == expected
+    assert not hasattr(service, "_resolve_legacy_env_aliases")
+    assert not any("KG_MAX_QUEUE_DEPTH" in str(item.message) for item in captured)
 
 
 # ----------------------------------------------------------------------

@@ -2,6 +2,37 @@
 
 ## Estado para retomada
 
+### 2026-10-07 — C2/C3 native-next1 qualificado:34 casos e closureZERO
+Community native-next1 handle81552 terminou0:30pass/104.57s; Core4pass.
+Closure handle34533 terminou0:ok=true,findings/docs vazios e oito budgetsZERO.
+Novos negativos comprovam LSN/catalog/dados preservados; bootstrap vazio,
+cold reopen e recuperação de índice nativo completo passaram nos módulos atuais.
+Sem alteração frontend. Remoção de alias e recusa de catálogo parcial prontas
+para publicação a partir dos worktrees detached. As árvores principais ficam
+no par anterior até Core16 handle90773 e Community12 handle93670 terminarem;
+depois fazer fast-forward dos commits publicados, reconstruir/provar par principal.
+Isto fecha este incremento C2/C3, não o aceite integral C1–C4.
+
+### 2026-10-07 — C2/C3 em worktrees isolados, par native-next1 autenticado
+Para preservar as campanhas vivas, criados worktrees detached em
+PULSE_REFACTOR/.validation-v040/native-next/okto_labs_pulse_core (basec8e38fff)
+e okto_labs_pulse_community (baseb368217f). WIP está somente nesses diretórios.
+Retirado conversor KG_MAX_QUEUE_DEPTH e seu espelho de teste; valores canônicos
+e persistidos continuam. Inicializador Global recusa catálogo não vazio
+incompleto antes de índice/DDL. Bootstrap vazio e recuperação de índice após
+commit lógico completo permanecem; leitor validate_current mantém erro anterior.
+Negativos cobrem space-only, tabela com dados e relacionamento ausente.
+
+Par dist-native-next1 instalado em native-next/venv, sem tocar venv principal.
+verify_native_next handle2779 terminou0:843/905 Core+316/402 Community idênticos.
+Wheels SHA Coreaacec17cc89181d652336b68f96cbd5fd90500b9a5a7a26d25decd649677a0d6,
+Community8296cd5617e839cdda63726fdb1db590c4e4dca8ab1e2cb7af00fa3afd235728.
+Core native-next1 handle38145 terminou0:4pass/7.97s. Community handle81552
+e closure handle34533 ATIVOS. Campanhas principais Core16 handle90773 e
+Community12 handle93670 continuam no par anterior. Não misturar os recibos.
+Após qualificação, commitar alterações isoladas e integrar à feature/v0.4.0
+quando terminais principais permitirem; atualizar prova do par principal.
+
 ### 2026-10-07 — Continuação Core16 e estado exato das campanhas
 Core0797d4e2 e Communityb368217f publicados, árvores limpas antes deste recibo.
 Core16 handle90773 ATIVO:788 módulos completos excluídos; Community12
