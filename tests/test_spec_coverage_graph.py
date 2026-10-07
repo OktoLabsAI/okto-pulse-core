@@ -5,7 +5,7 @@ import pytest
 from okto_pulse.core.ports.spec_coverage_query import SpecCoverageGraphFacts
 from okto_pulse.core.services.spec_coverage_graph import build_spec_coverage_graph_scope
 from okto_pulse.core.services.spec_coverage_query import project_spec_coverage
-from test_spec_coverage_query import source, QUERY
+from test_spec_coverage_query import source, QUERY, native_delivery_snapshot
 
 QUERY = replace(QUERY, read_graph=True)
 
@@ -49,7 +49,7 @@ def test_same_endpoints_with_wrong_writer_remain_graph_only_and_missing_expected
 
 def test_graph_observation_never_upgrades_a_linked_test_card_to_passing():
     snapshot = observed()
-    snapshot = replace(snapshot, delivery=replace(snapshot.delivery, implementations=(), tests=()))
+    snapshot = replace(snapshot, delivery=native_delivery_snapshot(implementations=(), tests=()))
     result = project_spec_coverage(QUERY, snapshot)
     assert result['structure']['summary']['scenario_task_linkage_pct'] == 100
     assert result['delivery']['counts']['verification_proven'] == 0

@@ -2,6 +2,28 @@
 
 ## Estado para retomada
 
+### 2026-10-07 — Core19 cobertura concluída
+Coree1fba67a anterior enviado, push0. Três módulos de cobertura qualificados:
+core19-native-coverage1 handle13304 terminou1:51pass/1fail; coverage2 handle56244
+terminou0:52pass/8.04s. Fixtures agora declaram inventário nativo, responsabilidade
+por Card, atestado de escopo e população exata das provas; projeção do grafo não
+ganha autoridade nem transforma Test Card linked/done em teste aprovado.
+População duplicada é recusada com delivery_scoped_population_mismatch,
+sem linhas de prova nem contagem verde. Métodos/revisão/recibo, waiver distinto
+de prova, paginação, revogação e limites continuam verificados. Nenhum produto
+alterado; fonte/prova/closure do par isolado saas19 permanecem válidos.
+Ruff F/E9/diff-check0. Recibo acceptance-clean-break-core19-coverage.json.
+Todos os módulos falhos da rodada Core19 tiveram followup integral qualificado;
+isto NÃO qualifica o restante da suite nem entrega C4.
+
+Preparar Core20 só com módulos completos excluídos, incluindo contratos130,
+adapters84 e coverage52 (campanhas distintas; consumidores compartilhados
+qualificados sem somar reruns). Community14 transfer handle79646 ainda ATIVO no
+MAIN, confirmado por poll neste turno. Não integrar alterações isoladas nem
+reinstalar main antes do terminal. Próximos passos: Core20 isolado, terminal
+Community transfer, Learning/overlay Community14, instalado E2E e aceite C4.
+T23/KG-10 permanecem decisões pendentes; nenhuma autoridade alterada neste turno.
+
 ### 2026-10-07 — Core19: conformidade e fronteiras qualificadas
 Core36e8e1cb anterior publicado, push0. Isolado agora implementa no fake SaaS
 as duas factories públicas faltantes bug_clusters_read/spec_coverage_read;

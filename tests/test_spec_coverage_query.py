@@ -11,8 +11,40 @@ from okto_pulse.core.domain.enums import CardStatus, TestScenarioStatus as Scena
 from okto_pulse.core.ports.spec_coverage_query import SpecCoverageQuery, SpecCoverageSnapshot
 from okto_pulse.core.services.analytics_service import spec_coverage_summary
 from okto_pulse.core.services.spec_coverage_query import project_spec_coverage
-from test_delivery_evidence_domain import SNAPSHOT, SCOPE, BINDING, IMPLEMENTATION, TEST as VERIFIED_TEST
+from test_delivery_evidence_domain import SNAPSHOT as FACT_SNAPSHOT, SCOPE, BINDING, IMPLEMENTATION, TEST as VERIFIED_TEST
+from okto_pulse.core.domain.effective_delivery_coverage import DeliveryScopeAttestation, ScopedImplementationFact, ScopedTestFact
+from okto_pulse.core.domain.effective_delivery_inventory import EffectiveDeliveryInventory, EffectiveDeliveryObligation
+from okto_pulse.core.domain.implementation_responsibility import ImplementationResponsibilityPlan, RequirementContribution
 from test_effective_delivery_coverage import case as adopted_case
+
+def native_delivery_snapshot(**changes):
+    """Declare the native inventory and its exact admitted fact population."""
+    snapshot = replace(FACT_SNAPSHOT, **changes)
+    if "effective_context" in changes:
+        return snapshot
+    scope_hash = "b" * 64
+    contribution = RequirementContribution(
+        "task-1", "direct", "selected_criteria", ("ac",), None, (), scope_hash,
+    )
+    inventory = EffectiveDeliveryInventory(
+        tuple(EffectiveDeliveryObligation(row.binding, "fr", (contribution,), ())
+              for row in snapshot.obligations),
+        ImplementationResponsibilityPlan((), True, ()), True, (),
+    )
+    context = EffectiveDeliveryContext(
+        inventory,
+        tuple(ScopedImplementationFact(
+            fact, tuple(DeliveryScopeAttestation(binding, scope_hash)
+                        for binding in fact.bindings),
+        ) for fact in snapshot.implementations),
+        tuple(ScopedTestFact(fact, ("ac",), "automated_test") for fact in snapshot.tests),
+        frozenset({"automated_test"}),
+    )
+    return replace(snapshot, effective_context=context)
+
+
+SNAPSHOT = native_delivery_snapshot()
+
 
 NOW = datetime(2026, 10, 1, tzinfo=timezone.utc)
 QUERY = SpecCoverageQuery('board', 'spec', 'actor:one')
@@ -32,7 +64,7 @@ def source(delivery=SNAPSHOT, **changes):
 
 
 def test_kg58_linked_done_test_card_is_structural_coverage_without_delivery_proof():
-    facts = source(replace(SNAPSHOT, implementations=(), tests=()))
+    facts = source(native_delivery_snapshot(implementations=(), tests=()))
     result = project_spec_coverage(QUERY, facts)
     assert result['structure']['summary'] == spec_coverage_summary(facts.spec, cards=list(facts.cards))
     assert result['structure']['summary']['scenario_task_linkage_pct'] == 100
@@ -59,7 +91,7 @@ def test_current_admitted_implementation_and_test_remain_distinct():
     dict(card_status=CardStatus.IN_PROGRESS), dict(verified_implementation_ids=()),
     dict(bindings=(DeliveryBinding(BINDING.obligation_ref, 'f' * 64),))])
 def test_wrong_revision_reopened_failed_or_unauthenticated_tests_do_not_gain_credit(changes):
-    result = project_spec_coverage(QUERY, source(replace(SNAPSHOT, tests=(replace(VERIFIED_TEST, **changes),))))
+    result = project_spec_coverage(QUERY, source(native_delivery_snapshot(tests=(replace(VERIFIED_TEST, **changes),))))
     assert result['items'][0]['verification'] == 'missing'
     assert result['items'][0]['verification_record_refs'] == []
     assert result['delivery']['rejected_record_refs'] == ['test']
@@ -68,15 +100,15 @@ def test_wrong_revision_reopened_failed_or_unauthenticated_tests_do_not_gain_cre
 def test_waiver_satisfies_an_obligation_but_is_never_presented_as_proof():
     waiver = DeliveryWaiverFact('waiver', SCOPE, BINDING, DeliveryPhase.TEST,
         'Authorized exception', 'human', 'authorization-receipt', True)
-    result = project_spec_coverage(QUERY, source(replace(SNAPSHOT, tests=(), waivers=(waiver,))))
+    result = project_spec_coverage(QUERY, source(native_delivery_snapshot(tests=(), waivers=(waiver,))))
     assert result['items'][0]['verification'] == 'satisfied_with_waiver'
     assert result['items'][0]['verification_waiver_refs'] == ['waiver']
     assert result['delivery']['counts']['verification_proven'] == 0
 
 
-def test_adopted_partial_contribution_is_not_legacy_whole_requirement_credit():
+def test_partial_contribution_is_not_whole_requirement_credit():
     inventory, implementations, tests = adopted_case()
-    snapshot = replace(SNAPSHOT, implementations=(implementations[0].fact,), tests=(tests[0].fact,),
+    snapshot = native_delivery_snapshot(implementations=(implementations[0].fact,), tests=(tests[0].fact,),
         effective_context=EffectiveDeliveryContext(inventory, implementations[:1], tests[:1], frozenset({'automated_test'})))
     result = project_spec_coverage(QUERY, source(snapshot))
     row = result['items'][0]
@@ -98,7 +130,7 @@ def test_adopted_unavailable_authority_cannot_appear_as_complete_zero(damage):
         context = replace(context, admitted_methods=None)
     else:
         context = replace(context, implementations=())
-    snapshot = replace(SNAPSHOT, implementations=tuple(row.fact for row in implementations),
+    snapshot = native_delivery_snapshot(implementations=tuple(row.fact for row in implementations),
         tests=tuple(row.fact for row in tests), effective_context=context)
     result = project_spec_coverage(QUERY, source(snapshot))
     assert result['delivery']['complete_for_scope'] is False
@@ -124,12 +156,17 @@ def test_incomplete_source_does_not_use_zero_denominator_as_complete_coverage():
     assert result['delivery']['counts']['implementation_proven'] is None
 
 
-@pytest.mark.parametrize('delivery', [replace(SNAPSHOT, complete=False),
-    replace(SNAPSHOT, implementations=(IMPLEMENTATION, IMPLEMENTATION))])
+@pytest.mark.parametrize('delivery', [native_delivery_snapshot(complete=False),
+    native_delivery_snapshot(implementations=(IMPLEMENTATION, IMPLEMENTATION))])
 def test_incomplete_or_ambiguous_proof_never_becomes_green(delivery):
     result = project_spec_coverage(QUERY, source(delivery))
-    assert result['items'][0]['verification'] == 'unknown'
+    if delivery.complete:
+        assert result['items'] == []
+        assert 'delivery_scoped_population_mismatch' in result['delivery']['blockers']
+    else:
+        assert result['items'][0]['verification'] == 'unknown'
     assert result['delivery']['counts']['verification_proven'] is None
+    assert result['delivery']['complete_for_scope'] is False
 
 
 @pytest.mark.parametrize('field,value', [('board_id', 'foreign'), ('spec_id', 'foreign'), ('actor_scope_ref', 'other')])
@@ -140,7 +177,7 @@ def test_scope_mismatch_is_refused(field, value):
 
 def test_foreign_delivery_scope_and_foreign_card_are_refused():
     with pytest.raises(ValueError, match='delivery_scope_mismatch'):
-        project_spec_coverage(QUERY, source(replace(SNAPSHOT, scope=DeliveryScope('other', 'spec', 2))))
+        project_spec_coverage(QUERY, source(native_delivery_snapshot(scope=DeliveryScope('other', 'spec', 2))))
     facts = source()
     facts.cards[0].board_id = 'other'
     with pytest.raises(ValueError, match='card_outside_scope'):
@@ -149,7 +186,7 @@ def test_foreign_delivery_scope_and_foreign_card_are_refused():
 
 def paged():
     obligations = tuple(DeliveryObligation(DeliveryBinding(f'fr:{i}', 'a' * 64), f'Requirement {i}') for i in range(3))
-    return source(replace(SNAPSHOT, obligations=obligations, implementations=(), tests=()))
+    return source(native_delivery_snapshot(obligations=obligations, implementations=(), tests=()))
 
 
 def test_pagination_uses_whole_scope_counts_and_stable_observation_clock():
