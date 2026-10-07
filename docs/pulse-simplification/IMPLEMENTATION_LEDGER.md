@@ -2,6 +2,34 @@
 
 ## Estado para retomada
 
+### 2026-10-07 — C3 residual cognitivo em worktree; Core17 terminal
+Core17 handle32536 terminou1:158pass/20fail/197.98s. Não excluídos ainda:
+r4_imp1_gate_contracts,r4_imp3_test_card_flow,r4_test2_test_card_gate_behavior,
+r4_test3_readiness_policy_behavior,r4_tool_family_consolidation,
+r5_imp5_technical_blockers_and_metric,r5_test2_context_skip_overrides_readonly,
+r5_test3_human_controls_and_blocker_visibility,r6_imp4_lineage_root_immediate_and_counts,
+r6_test1_kb_propagation_context_counts. Predominam adoption ausente; demais erros
+de evidência, Q&A, envelope/telemetria exigem investigação, sem relaxar gates.
+Community14 handle64918 continua ATIVO no main1; main permanece congelado.
+
+No worktree native-next, atualizado por fast-forward para d65e4681/0a2c6c9d,
+C3 retirou os argumentos sem uso graph_state/resolve_graph_state do closeout,
+resolver de Health sem caller de produção e enum DEGRADED_KG_AUTO_SKIP mantido
+exclusivamente para leitura antiga. Mantidos fonte autoritativa, skip explícito,
+itens ativos, readiness, telemetria, negação antes de mutação; T23/KG-10 não alterados.
+Testes agora recusam argumento/razão retirados e verificam Health não chamado.
+Build dist-native-closeout2/prova76163 terminaram0:843/905+316/402 byte-idênticos.
+native-closeout2-core handle70500 terminou0:66pass/29.78s, seis módulos completos.
+Closure12547 terminou1 só por READMEs;findings=[],oitoZERO. Matrizes regeneradas
+pelo renderer oficial em ambos os worktrees. Par final dist-native-closeout-final
+construído/reinstalado; prova63292 terminou0 com mesmos contadores. Produto Python
+igual ao testado; final difere só nos READMEs. Closure final33415 ATIVO.
+Ruff F/E9/diff-check0. Nenhum processo comportamental no worktree isolado;
+não integrar/reinstalar main enquanto Community14 ativo. Próximo: terminal
+closurefinal, recibo/commits/push C3 isolado; integrar após terminal main.
+E2E instalado ainda pendente; investigação confirmou waits de480s no harness
+antes do orçamento nativo acabar. Não alterado nem reexecutado sob campanhas concorrentes.
+
 ### 2026-10-07 — Publicação e continuação das campanhas
 Core3045fba9 e Community0a2c6c9d publicados; commits/pushes terminaram0.
 Core17 handle32536 ATIVO (854 módulos completos excluídos);
