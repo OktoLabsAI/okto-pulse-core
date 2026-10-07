@@ -136,9 +136,9 @@ BASELINE_SCHEMA = {
 
 def test_callable_names_and_schema_keys_stable():
     tools = _tools()
-    # The v1.3 plan retires Sprint and maintenance capabilities. Preserve the
+    # v0.4.0 retires Sprint, maintenance and compatibility writers. Preserve the
     # reviewed surface pin; catalog drift also checks exact tool identities.
-    assert len(tools) == 301
+    assert len(tools) == 282
     for name, expected_keys in BASELINE_SCHEMA.items():
         assert name in tools
         props = set(tools[name].parameters.get("properties", {}))

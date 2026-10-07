@@ -68,12 +68,12 @@ BASELINE_TOOLS = {
 
 def test_tool_names_stable_after_compaction():
     names = set(_tools().keys())
-    # No tool dropped or renamed.
+    # Required native capabilities remain available.
     assert BASELINE_TOOLS.issubset(names)
     # Compaction only touched docstrings; every tool keeps the okto_pulse_ prefix.
-    # F3/F4 retire Sprint and public maintenance. Pin the resulting reviewed
+    # F3/F4 and clean-break retire Sprint, maintenance and compatibility writers. Pin the
     # surface; the generated catalog guard checks exact names independently.
-    assert len(names) == 301
+    assert len(names) == 282
     assert all(n.startswith("okto_pulse_") for n in names)
 
 

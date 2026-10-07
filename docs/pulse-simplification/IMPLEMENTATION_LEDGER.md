@@ -2,6 +2,44 @@
 
 ## Estado para retomada
 
+### 2026-10-07 — Par principal/closure qualificados; catálogo26casos
+Closure principal handle22006 terminou0:ok=true,findings/docs vazios, oito
+budgetsZERO (closure-native-next-main1.json). Prova do install já terminou0.
+Core catalog1 handle72506 terminou0:26pass/7.31s; r1_budget_gate,
+r1_tool_compaction e test_mcp_tools_catalog_drift completos. Pins301->282,
+fundamentados no registry/HTTP instalado; catálogo gerado não editado.
+
+Próximos: quatro módulos Core16 ainda falhos (specs_card_scenario_linking,
+r1_degraded_kg_fallback_gate, r3_imp2_copy_effective_fallback, r3_scenarios).
+Não relançar toda a campanha até seus followups e seleção incremental.
+Community13 handle85307 permanece ATIVO, worktrees native-next/par native-next1.
+Main está no par dist-native-next-main1; mudanças de produto futuras invalidam
+sua prova. E2E instalado de recovery continua pendente por falha de prazo.
+Nenhum frontend alterado neste incremento. Aceite integral permanece aberto.
+
+### 2026-10-07 — Integração principal concluída; Core16 terminal e prova refeita
+Core16 handle90773 terminou1:631pass/20fail/4skip/898.25s. Todos os processos
+principais do par anterior encerrados. Verificados docs locais idênticos ao
+commit1ef2fad6, restaurados só esses dois docs já preservados e feito fast-forward:
+Core53e33802 eCommunity94c6a120. Não há mais produto isolado por integrar.
+
+Reuso inicial dos wheels do worktree falhou na prova handle65544:425Core/135Community
+.py diferiam somente CRLF/LF (normalização confirmou zero diferenças de conteúdo).
+Nenhum teste comportamental rodou sob essa divergência. Construído/reinstalado
+dist-native-next-main1 das árvores principais. Prova handle97645 terminou0:
+843/905 Core+316/402 Community byte-idênticos; provenance-native-next-main1.json.
+Core SHA1c2a6f006cdf2756b97d15c552577efbe2b931f38571eb4b5d3598bc9e74fa08,
+Community SHA72595c62d4901e61a79574d557bf478904b409e8815f224cb6a6bfd54580045c.
+
+Core16 falhas em seis módulos: specs_card_scenario_linking (autoridade semântica
+da fixture), r1_budget_gate/r1_tool_compaction (301tools, atual282),
+r1_degraded_kg_fallback_gate (remediação antiga/adoption ausente),
+r3_imp2_copy_effective_fallback e r3_scenarios (copy Knowledge retirado,
+adoption ausente e stub mutável inadequado). Não corrigidos ainda. Investigar
+fixtures; não restaurar writer antigo nem enfraquecer gates. Community13
+handle85307 continua ATIVO nos worktrees native-next/par dist-native-next1.
+Installed E2E6 falhou por prazo, continua pendente. Aceite final não declarado.
+
 ### 2026-10-07 — Community13 iniciado no par novo
 Community94c6a120 publicado com69casos do followup. Community13 handle85307
 ATIVO via run_native_next_checks.py,324 módulos completos excluídos, maxfail20,

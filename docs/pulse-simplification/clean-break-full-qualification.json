@@ -4657,10 +4657,120 @@
     "limits": "Native arrays/options and permission leaves; no positional ID conversion. Explicit architecture adoption. Spec QA delete grant only in fixture via native PermissionSet composition; cross-board and zero-write assertions retained. Full Refinement projection checked independently from real retired-profile refusal."
   },
   "core_full_run16": {
-    "status": "running",
-    "handle": 90773,
-    "excluded_qualified_modules": 788,
-    "pair": "dist-native-claim-recovery1"
+    "campaign": "clean-break-full-run16",
+    "counts": {
+      "name": "pytest",
+      "errors": "0",
+      "failures": "20",
+      "skipped": "4",
+      "tests": "655",
+      "time": "897.829",
+      "timestamp": "2026-10-07T06:42:57.472971-03:00",
+      "hostname": "Alienware_m15"
+    },
+    "xml_sha256": "9df31b1b686ec4873428eff2359153523cf55da3db4ad63ddfa81ba4755f6559",
+    "failures": [
+      {
+        "class": "tests.test_r01a_specs_card_scenario_linking_uow",
+        "name": "test_update_test_scenario_status_200",
+        "message": "okto_pulse.core.ports.guideline_policy.GuidelinePolicySubjectConflict: semantic_subject_authority_missing_or_stale"
+      },
+      {
+        "class": "tests.test_r1_budget_gate",
+        "name": "test_callable_names_and_schema_keys_stable",
+        "message": "AssertionError: assert 282 == 301\n +  where 282 = len({'okto_pulse_acknowledge_implementation_overlap': CoreMcpTool(name='okto_pulse_acknowledge_implementation_overlap', fn... 'title', 'global_description']}, title=None, enabled=True, admission_class=<McpAdmissionClass.WRITER: 'writer'>), ...})"
+      },
+      {
+        "class": "tests.test_r1_degraded_kg_fallback_gate",
+        "name": "test_ts_6d088067_unconfirmed_block_message_carries_remediation",
+        "message": "AssertionError: error message must cite the skip_cognitive_consolidation board setting\nassert 'skip_cognitive_consolidation' in 'cognitive_status_unavailable: card-1 done transition blocked because the authoritative cognitive source could not be ...uire an authorized external support/release procedure. Health reports observation limits and has no repair action. (0)'"
+      },
+      {
+        "class": "tests.test_r1_degraded_kg_fallback_gate",
+        "name": "test_ts_dd9452a5_spec_done_allowed_on_degraded_board",
+        "message": "okto_pulse.core.services.resource_gate_contracts.ResourceGateViolation: Resource Gate could not resolve resource lineage for spec 'a46a8118-74fe-4b4b-a180-6f848ac83163': The adopted architecture scope is unavailable."
+      },
+      {
+        "class": "tests.test_r1_tool_compaction",
+        "name": "test_tool_names_stable_after_compaction",
+        "message": "AssertionError: assert 282 == 301\n +  where 282 = len({'okto_pulse_acknowledge_implementation_overlap', 'okto_pulse_activate_default_board_config_version', 'okto_pulse_add_...contract', 'okto_pulse_add_architecture_design', 'okto_pulse_add_business_rule', 'okto_pulse_add_card_dependency', ...})"
+      },
+      {
+        "class": "tests.test_r3_imp2_copy_effective_fallback",
+        "name": "test_copy_knowledge_falls_back_to_effective_and_gate_is_covered",
+        "message": "KeyError: 'okto_pulse_copy_knowledge_to_card'"
+      },
+      {
+        "class": "tests.test_r3_imp2_copy_effective_fallback",
+        "name": "test_copy_knowledge_ignores_ineffective_inherited_na_mark",
+        "message": "KeyError: 'okto_pulse_copy_knowledge_to_card'"
+      },
+      {
+        "class": "tests.test_r3_imp2_copy_effective_fallback",
+        "name": "test_all_copy_tools_ignore_ineffective_inherited_na_marks",
+        "message": "KeyError: 'okto_pulse_copy_knowledge_to_card'"
+      },
+      {
+        "class": "tests.test_r3_imp2_copy_effective_fallback",
+        "name": "test_copy_mockups_falls_back_to_effective",
+        "message": "AssertionError: {'detail': \"could not resolve resource lineage for spec 'spec-c39d75e40e9a': The adopted architecture scope is unavail...': 'architecture_adoption_invalid', 'lineage_error_details': {'entity_id': 'spec-c39d75e40e9a', 'entity_type': 'spec'}}\nassert None is True\n +  where None = <built-in method get of dict object at 0x0000020D3A97B6C0>('success')\n +    where <built-in method get of dict object at 0x0000020D3A97B6C0> = {'detail': \"could not resolve resource lineage for spec 'spec-c39d75e40e9a': The adopted architecture scope is unavail...': 'architecture_adoption_invalid', 'lineage_error_details': {'entity_id': 'spec-c39d75e40e9a', 'entity_type': 'spec'}}.get"
+      },
+      {
+        "class": "tests.test_r3_imp2_copy_effective_fallback",
+        "name": "test_copy_mockups_merges_partial_direct_and_effective_inherited",
+        "message": "AssertionError: {'detail': \"could not resolve resource lineage for spec 'spec-a545c499790e': The adopted architecture scope is unavail...': 'architecture_adoption_invalid', 'lineage_error_details': {'entity_id': 'spec-a545c499790e', 'entity_type': 'spec'}}\nassert None is True\n +  where None = <built-in method get of dict object at 0x0000020D3A94AAC0>('success')\n +    where <built-in method get of dict object at 0x0000020D3A94AAC0> = {'detail': \"could not resolve resource lineage for spec 'spec-a545c499790e': The adopted architecture scope is unavail...': 'architecture_adoption_invalid', 'lineage_error_details': {'entity_id': 'spec-a545c499790e', 'entity_type': 'spec'}}.get"
+      },
+      {
+        "class": "tests.test_r3_imp2_copy_effective_fallback",
+        "name": "test_copy_knowledge_rejects_mixed_valid_and_foreign_ids_atomically",
+        "message": "KeyError: 'okto_pulse_copy_knowledge_to_card'"
+      },
+      {
+        "class": "tests.test_r3_imp2_copy_effective_fallback",
+        "name": "test_copy_mockups_rejects_mixed_valid_and_foreign_ids_atomically",
+        "message": "AssertionError: {'detail': \"could not resolve resource lineage for spec 'spec-5ca51294f2ca': The adopted architecture scope is unavail...': 'architecture_adoption_invalid', 'lineage_error_details': {'entity_id': 'spec-5ca51294f2ca', 'entity_type': 'spec'}}\nassert 'resource_lin...lution_failed' == 'resource_selection_invalid'\n  \n  - resource_selection_invalid\n  + resource_lineage_resolution_failed"
+      },
+      {
+        "class": "tests.test_r3_imp2_copy_effective_fallback",
+        "name": "test_copy_architecture_falls_back_to_effective",
+        "message": "AssertionError: {'detail': \"could not resolve resource lineage for spec 'spec-b0421624a878': The adopted architecture scope is unavail...': 'architecture_adoption_invalid', 'lineage_error_details': {'entity_id': 'spec-b0421624a878', 'entity_type': 'spec'}}\nassert 'error' not in {'detail': \"could not resolve resource lineage for spec 'spec-b0421624a878': The adopted architecture scope is unavail...': 'architecture_adoption_invalid', 'lineage_error_details': {'entity_id': 'spec-b0421624a878', 'entity_type': 'spec'}}"
+      },
+      {
+        "class": "tests.test_r3_imp2_copy_effective_fallback",
+        "name": "test_copy_architecture_covers_multiple_inherited_effective_designs",
+        "message": "AssertionError: {'detail': \"could not resolve resource lineage for spec 'spec-c130d2a93c21': The adopted architecture scope is unavail...': 'architecture_adoption_invalid', 'lineage_error_details': {'entity_id': 'spec-c130d2a93c21', 'entity_type': 'spec'}}\nassert None is True\n +  where None = <built-in method get of dict object at 0x0000020D3DF01B80>('success')\n +    where <built-in method get of dict object at 0x0000020D3DF01B80> = {'detail': \"could not resolve resource lineage for spec 'spec-c130d2a93c21': The adopted architecture scope is unavail...': 'architecture_adoption_invalid', 'lineage_error_details': {'entity_id': 'spec-c130d2a93c21', 'entity_type': 'spec'}}.get"
+      },
+      {
+        "class": "tests.test_r3_imp2_copy_effective_fallback",
+        "name": "test_copy_knowledge_no_resource_required_is_clean_empty",
+        "message": "KeyError: 'okto_pulse_copy_knowledge_to_card'"
+      },
+      {
+        "class": "tests.test_r3_scenarios",
+        "name": "test_derive_spec_accepts_same_board_parent[ideation]",
+        "message": "AssertionError: legacy Knowledge test port does not support mutations"
+      },
+      {
+        "class": "tests.test_r3_scenarios",
+        "name": "test_derive_spec_accepts_same_board_parent[refinement]",
+        "message": "AssertionError: legacy Knowledge test port does not support mutations"
+      },
+      {
+        "class": "tests.test_r3_scenarios",
+        "name": "test_ts_6e228232_gate_summary_and_copy_share_effective_list",
+        "message": "okto_pulse.core.services.resource_gate_contracts.ResourceGateViolation: Resource Gate could not resolve resource lineage for spec 'spec-8e6a7006f2cf': The adopted architecture scope is unavailable."
+      },
+      {
+        "class": "tests.test_r3_scenarios",
+        "name": "test_ts_3524d4ce_card_receives_all_inherited_with_gate_identity",
+        "message": "KeyError: 'okto_pulse_copy_knowledge_to_card'"
+      },
+      {
+        "class": "tests.test_r3_scenarios",
+        "name": "test_ts_7cc0dcf9_no_auto_na_and_no_provenance_loss",
+        "message": "KeyError: 'okto_pulse_copy_knowledge_to_card'"
+      }
+    ]
   },
   "native_next_work_in_progress": {
     "worktree_root": "PULSE_REFACTOR/.validation-v040/native-next",
@@ -4765,5 +4875,43 @@
     "pair": "dist-native-next1",
     "worktree": "native-next",
     "installed_e2e": "separate, unqualified"
+  },
+  "native_next_main_integrated": {
+    "core_head": "53e33802",
+    "community_head": "94c6a120",
+    "pair": "dist-native-next-main1",
+    "provenance_sha256": "39e917e3a9a88289a8f7591c01a86fa8b883907258c4e78debbf6f42ed7b27b4",
+    "byte_identical": true,
+    "limits": "Initial reuse of isolated wheels failed strict comparison from CRLF/LF differences in425Core/135Community .py; normalized contents identical. Rebuilt from main working trees, reinstalled and authenticated before any behavior test. Community13 remains isolated on native-next1.",
+    "closure": {
+      "ok": true,
+      "sha256": "aad667d99f4baa51e4528bf48b103470bf12d296c3b9098260292e191fdcdd1a",
+      "budgets": {
+        "import_boundary_baseline": 0,
+        "singleton_baseline": 0,
+        "dependency_temporary_exceptions": 0,
+        "graph_runtime_compatibility": 0,
+        "rebuild_artifact_compatibility": 0,
+        "community_private_reach_ins": 0,
+        "community_adapter_bridges": 0,
+        "af35_relational_residue": 0
+      }
+    }
+  },
+  "core16_native_catalog_qualified": {
+    "campaign": "core16-native-catalog1",
+    "counts": {
+      "name": "pytest",
+      "errors": "0",
+      "failures": "0",
+      "skipped": "0",
+      "tests": "26",
+      "time": "7.264",
+      "timestamp": "2026-10-07T07:02:42.549301-03:00",
+      "hostname": "Alienware_m15"
+    },
+    "xml_sha256": "ba137ec1a16f90cbcd332106d48bd2df99fd51f4a5c0255ad3efdf806bb98fe9",
+    "pair": "dist-native-next-main1",
+    "limits": "26cases, three full modules including byte-for-byte generated catalog drift. Pins updated301->282 after installed live registry and realHTTP inventory proof; no generated catalog edit."
   }
 }
