@@ -1371,21 +1371,21 @@ class DeterministicWorker:
             )
             _add_belongs_to(cid, "tr", i)
 
-        # 4. IDs own canonical links. Text/index lookup is legacy compatibility;
-        # repeated text or IDs must never select an arbitrary criterion.
+        # 4. Persisted links use authored IDs only. Text and position are not
+        # identity, including when damaged input reaches the projection worker.
         ac_by_index: dict[int, str] = {}
         ac_by_id: dict[str, list[str]] = {}
-        ac_by_text: dict[str, list[str]] = {}
         for i, crit in enumerate(spec.get("acceptance_criteria") or []):
-            text = (
-                crit
-                if isinstance(crit, str)
-                else (crit.get("text") or crit.get("description") or json.dumps(crit))
-            )
+            if (
+                not isinstance(crit, dict)
+                or not isinstance(crit.get("id"), str)
+                or not crit["id"].strip()
+            ):
+                raise ValueError("spec_criterion_identity_required")
+            text = crit.get("text") or crit.get("description") or json.dumps(crit)
             raw_parts.append(text)
             cid = f"{prefix}_ac_{i}"
             ac_by_index[i] = cid
-            ac_by_text.setdefault(text.strip(), []).append(cid)
             if isinstance(crit, dict) and crit.get("id") not in (None, ""):
                 ac_by_id.setdefault(str(crit["id"]), []).append(cid)
             result.nodes.append(
@@ -1476,25 +1476,13 @@ class DeterministicWorker:
             for idx, link in enumerate(linked):
                 target_cid = None
                 ambiguous: list[str] = []
-                if isinstance(link, int) and link in ac_by_index:
-                    target_cid = ac_by_index[link]
-                elif isinstance(link, str):
-                    key = link.strip()
-                    matches = ac_by_id.get(key)
-                    # The canonical AC namespace must not be reinterpreted
-                    # as another criterion's legacy text when its ID is gone.
-                    if matches is None and not key.startswith("ac_"):
-                        matches = ac_by_text.get(key)
+                if isinstance(link, str):
+                    matches = ac_by_id.get(link)
                     if matches is not None:
                         if len(matches) == 1:
                             target_cid = matches[0]
                         else:
                             ambiguous = matches
-                    else:
-                        try:
-                            target_cid = ac_by_index.get(int(link))
-                        except (ValueError, TypeError):
-                            pass
                 if target_cid is None:
                     result.missing_link_candidates.append(
                         MissingLinkCandidate(

@@ -53,8 +53,8 @@ def _spec_fixture() -> dict:
             {"text": "Indexed leaderboard table"},
         ],
         "acceptance_criteria": [
-            "Level formula: level * 1000 XP",
-            "7-day streak gives 1.5x XP multiplier",
+            {"id": "ac_level", "text": "Level formula: level * 1000 XP"},
+            {"id": "ac_streak", "text": "7-day streak gives 1.5x XP multiplier"},
         ],
         "test_scenarios": [
             {
@@ -63,7 +63,7 @@ def _spec_fixture() -> dict:
                 "given": "User has 900 XP",
                 "when": "Earns 200 XP",
                 "then": "Level becomes 2",
-                "linked_criteria": ["Level formula: level * 1000 XP"],
+                "linked_criteria": ["ac_level"],
             },
             {
                 "id": "ts_2",
@@ -343,8 +343,8 @@ def test_process_spec_child_source_refs_are_granular():
         f"spec:{spec['id']}:fr:1",
         f"spec:{spec['id']}:tr:0",
         f"spec:{spec['id']}:tr:1",
-        f"spec:{spec['id']}:ac:0",
-        f"spec:{spec['id']}:ac:1",
+        f"spec:{spec['id']}:ac:ac_level",
+        f"spec:{spec['id']}:ac:ac_streak",
         f"spec:{spec['id']}:business_rule:br_xp_cap",
         f"spec:{spec['id']}:test_scenario:ts_1",
         f"spec:{spec['id']}:test_scenario:ts_2",
@@ -367,7 +367,7 @@ def test_process_spec_edges_carry_v2_metadata():
     assert result.deterministic_edge_ratio() == 1.0
 
 
-def test_process_spec_tests_edge_resolves_linked_criterion_by_text():
+def test_process_spec_tests_edge_resolves_linked_criterion_by_id():
     worker = DeterministicWorker()
     result = worker.process_spec(_spec_fixture())
     tests_edges = [e for e in result.edges if e.edge_type == "tests"]

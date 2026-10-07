@@ -90,7 +90,7 @@ def _spec_dict(spec_id, board_id, status):
         "description": "spec producing deterministic canonical children",
         "status": status, "board_id": board_id,
         "functional_requirements": ["FR alpha parity", "FR beta parity"],
-        "acceptance_criteria": ["AC alpha parity"],
+        "acceptance_criteria": [{"id": "ac_alpha", "text": "AC alpha parity"}],
     }
 
 
@@ -100,7 +100,7 @@ async def _insert_spec(db_factory, board_id, spec_id, *, status):
             id=spec_id, board_id=board_id, title="stale parity spec",
             status=status, created_by=USER_ID,
             functional_requirements=["FR alpha parity", "FR beta parity"],
-            acceptance_criteria=["AC alpha parity"],
+            acceptance_criteria=[{"id": "ac_alpha", "text": "AC alpha parity"}],
         ))
         await db.commit()
 

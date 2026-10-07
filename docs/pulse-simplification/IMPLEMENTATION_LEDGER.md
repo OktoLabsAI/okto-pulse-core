@@ -2,6 +2,72 @@
 
 ## Estado para retomada
 
+### 2026-10-07 — KG-01/02/03 qualificados; main32 sem processos ativos
+kg-materialized1 handle55557 terminou0:54pass/1116.14s. XML conferido:
+fila normal/reconstrução nativa, reordenação, remoção/restauração/replay e
+preservação de relações de outros donos. kg-criterion-consumers1 handle6503
+terminou1:33pass/1fail/387.56s. Falha em consulta de teste sem escopo: outra
+Spec no mesmo Board aparecia no conjunto global. Consultas passaram a filtrar
+o prefixo da Spec examinada; nenhuma regra produtiva alterada.
+kg-criterion-consumers2 handle22255 terminou0:5pass/42.92s, módulo completo.
+Somando a seleção Core resolvida180 + consumidores34 + Community54 =268casos
+distintos. Não somar as reexecuções. closure32 já0/oitoZERO. Diff-check0.
+
+Recibo clean-break-acceptance-native-criterion-identity.json promove somente
+KG-01/02/03. AC exige identidade nativa; vínculos não usam texto/posição.
+FR/TR continua resíduo comprovado: requirement-refusal1 10fail/10pass.
+Seu teste novo permanece fora do commit deste fechamento, para corrigir a seguir.
+Nenhum processo ativo; produto main32 congelado/testado, instalação byteprovada.
+Próximo: retirar resolver textual/posicional FR/TR, ajustar fixtures positivas
+antigas, rebuild/prova e testes dirigidos. T23/KG-10 seguem pendentes.
+
+### 2026-10-07 — C4 KG em validação; reprodução FR/TR registrada
+Produto congelado no par main32 byteprovado (prova27465 terminal0).
+kg-identities1 handle14406 terminou1:163pass/17fail/126.97s; todas17 falhas
+no mesmo fixture AC textual de test_kg_deterministic_worker. Convertido fixture
+para IDs ac_level/ac_streak e vínculo por ID, preservando asserções funcionais.
+kg-worker2 handle92490 terminou0:51pass/6.27s. Total180 casos distintos daquela
+seleção resolvidos, sem somar os13 de identidade novamente.
+closure-main32 handle15018 terminou0:ok/findings/documentation[], oitoZERO.
+
+AST dirigido a consumidores diretos de process_spec encontrou sete fixtures
+textuais adicionais em seis módulos. Fixtures convertidas para IDs explícitos
+e referências correspondentes; keyword ORM de mesmo cenário atualizado também.
+ATIVOS: kg-materialized1 handle55557 (três módulos Community, sem falha reportada
+no último poll, oito casos já exibidos) e kg-criterion-consumers1 handle6503
+(seis módulos Core com Grafx, cinco casos já exibidos). Esses números são só
+progresso parcial; aguardar XML/terminal para qualquer qualificação.
+Nenhum restart, nenhum produto alterado durante as campanhas.
+
+Reprodução independente requirement-refusal1 handle50091 terminou1:
+10fail/10pass/5.88s no main32. Confirma fallback textual em API/BR/IR/OR e
+posicional em BR/IR/OR. Novo test_kg_requirement_reference_identity.py está WIP
+negativo, deliberadamente vermelho até remoção. Esperar campanhas congeladas
+antes de alterar _declared_requirement_targets e resolução API FR/TR no mesmo
+deterministic_kg.py; então rebuild/install/prova e testes correspondentes.
+Não reintroduzir fallback para acomodar fixture antiga. Nenhuma nova autoridade
+ou mudança pendente de Decision aprovada por inferência: T23/KG-10 continuam
+pendentes. Diff-check0. Main WIP não publicado; último push Core716ec8aa,
+Communityf341d0c6 limpo. Isolado next27 STALE. Sem entrega integral.
+
+### 2026-10-07 — C4 KG-01/02: fallback de critério reproduzido e retirado — WIP
+Main Core716ec8aa/Communityf341d0c6 limpos/sincronizados no início.
+Inspeção do projetor determinístico encontrou suporte real a AC textual, índice
+e identidade inventada por posição. Contraria C1 e disposição KG-02 do clean break.
+criterion-refusal1 handle95805 terminou1:8fail/5pass, confirmando que texto/índice/
+booleano e AC sem ID ainda eram aceitos. Testes negativos nativos substituíram
+os testes positivos de compatibilidade; duplicidade de IDs mantém ambiguidade.
+
+Retirado fallback de linked_criteria no process_spec: apenas string ID exata;
+AC precisa de objeto com ID string não vazio. Nenhuma mudança de gate/authority.
+Par main32 build/install/prova27465 terminou0:843/905 Core+316/402 Community
+byte-idênticos. ATIVOS kg-identities1 handle14406 e kg-materialized1 handle55557.
+Primeiro já aponta fixtures antigas no módulo deterministic_worker; aguardar
+XML terminal antes de ajustar/reexecutar. Não promover critérios nem comitar
+como pronto antes de terminar validação. Demais resolvers FR/TR ainda possuem
+fallback textual/posicional: próximo resíduo conhecido, não alegar remoção integral.
+Main32 corresponde ao produto WIP; isolado next27 STALE. T23/KG-10 pendentes.
+
 ### 2026-10-07 — C4 T46: recursos atuais sem orientações de migração
 Core13f1143f publicado/push0; Communityf341d0c6 continua limpo/sincronizado.
 Corrigidos quality-assessments/policy-compliance/test-scenario e descrição MCP:

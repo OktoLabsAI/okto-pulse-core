@@ -397,11 +397,11 @@ def _full_done_spec() -> dict:
         "status": "done",
         "board_id": "ignored",
         "functional_requirements": ["FR alpha", "FR beta"],
-        "acceptance_criteria": ["AC alpha"],
+        "acceptance_criteria": [{"id": "ac_alpha", "text": "AC alpha"}],
         "api_contracts": [{"name": "GET /x", "description": "an api"}],
         "test_scenarios": [
             {"id": "ts_x", "title": "Scenario", "given": "g", "when": "w",
-             "then": "t", "linked_criteria": ["AC alpha"]},
+             "then": "t", "linked_criteria": ["ac_alpha"]},
         ],
     }
 

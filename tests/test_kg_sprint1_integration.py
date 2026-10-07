@@ -59,8 +59,8 @@ def full_spec_row():
             {"text": "XP write path < 50ms p95"},
         ],
         acceptance_criteria=[
-            "Level formula matches spec: 1000 XP per level",
-            "Streak multiplier caps at 2.0",
+            {"id": "ac_level", "text": "Level formula matches spec: 1000 XP per level"},
+            {"id": "ac_streak", "text": "Streak multiplier caps at 2.0"},
         ],
         business_rules=[
             {"title": "Daily XP Cap", "rule": "User cannot exceed 500 XP per day"},
@@ -72,7 +72,7 @@ def full_spec_row():
                 "given": "User has 950 XP",
                 "when": "User earns 150 XP",
                 "then": "Level increases",
-                "linked_criteria": ["Level formula matches spec: 1000 XP per level"],
+                "linked_criteria": ["ac_level"],
             },
         ],
         api_contracts=[
@@ -181,7 +181,7 @@ def test_ts_a278ec64_missing_linked_criteria_skips_tests_edge():
         "context": "",
         "functional_requirements": ["Nothing"],
         "technical_requirements": [],
-        "acceptance_criteria": ["Some criterion"],
+        "acceptance_criteria": [{"id": "ac_some", "text": "Some criterion"}],
         "business_rules": [],
         "test_scenarios": [
             {
@@ -208,7 +208,7 @@ def test_ts_a278ec64_missing_linked_criteria_enqueues_candidate():
         "context": "",
         "functional_requirements": [],
         "technical_requirements": [],
-        "acceptance_criteria": ["AC-1"],
+        "acceptance_criteria": [{"id": "ac_one", "text": "AC-1"}],
         "business_rules": [],
         "test_scenarios": [
             {"id": "ts_orphan", "title": "Orphan", "given": "g",

@@ -50,7 +50,7 @@ def _full_spec(status: str) -> dict:
         "context": "## Decisions\n- Use PostgreSQL\n",
         "functional_requirements": ["FR alpha", "FR beta"],
         "technical_requirements": [{"text": "TR alpha"}],
-        "acceptance_criteria": ["AC alpha"],
+        "acceptance_criteria": [{"id": "ac_alpha", "text": "AC alpha"}],
         "business_rules": ["BR alpha"],
         "test_scenarios": [
             {
@@ -59,7 +59,7 @@ def _full_spec(status: str) -> dict:
                 "given": "g",
                 "when": "w",
                 "then": "t",
-                "linked_criteria": ["AC alpha"],
+                "linked_criteria": ["ac_alpha"],
             }
         ],
         "api_contracts": [{"name": "GET /x", "description": "an api"}],
@@ -273,8 +273,9 @@ async def test_commit_materializes_api_contract_implements_tr_constraint(
         actual = set()
         for source_type, target_type, edge_type, rule, _source, _target in lineage_shapes:
             rows = graph.execute(f'MATCH (a:{source_type})-[r:{edge_type}]->(b:{target_type}) '
-                'WHERE r.rule_id=$rule RETURN a.source_artifact_ref,b.source_artifact_ref,r.rule_id,r.confidence,r.layer,r.created_by',
-                {'rule': f'{edge_type}/{rule}@v2.1'})
+                'WHERE r.rule_id=$rule AND a.source_artifact_ref STARTS WITH $prefix '
+                'RETURN a.source_artifact_ref,b.source_artifact_ref,r.rule_id,r.confidence,r.layer,r.created_by',
+                {'rule': f'{edge_type}/{rule}@v2.1', 'prefix': f'spec:{spec_id}:'})
             try:
                 while rows.has_next():
                     row = tuple(rows.get_next())
@@ -308,7 +309,9 @@ async def test_commit_materializes_api_contract_implements_tr_constraint(
             assert {f"spec:{spec_id}:fr:fr-login", f"spec:{spec_id}:tr:tr-audit-events"} <= checked.keys()
             links = graph.execute(
                 "MATCH (s:TestScenario)-[r:tests]->(c:Criterion) "
-                "RETURN s.source_artifact_ref, c.source_artifact_ref, r.confidence, r.rule_id"
+                "WHERE s.source_artifact_ref STARTS WITH $prefix "
+                "RETURN s.source_artifact_ref, c.source_artifact_ref, r.confidence, r.rule_id",
+                {"prefix": f"spec:{spec_id}:"},
             )
             try:
                 actual = set()
@@ -328,7 +331,9 @@ async def test_commit_materializes_api_contract_implements_tr_constraint(
             for kind in ('Requirement', 'Constraint'):
                 links = graph.execute(
                     f'MATCH (d:Decision)-[r:derives_from]->(t:{kind}) '
-                    'RETURN d.source_artifact_ref,t.source_artifact_ref,r.rule_id,r.confidence')
+                    'WHERE d.source_artifact_ref STARTS WITH $prefix '
+                    'RETURN d.source_artifact_ref,t.source_artifact_ref,r.rule_id,r.confidence',
+                    {'prefix': f'spec:{spec_id}:'})
                 try:
                     while links.has_next():
                         row = tuple(links.get_next())
@@ -375,13 +380,17 @@ async def test_commit_materializes_api_contract_implements_tr_constraint(
     def assert_removed():
         with open_board_connection(board_id) as (_db, graph):
             assert lineage_pairs(graph) == set()
-            links = graph.execute("MATCH (s:TestScenario)-[r:tests]->(c:Criterion) RETURN r.rule_id")
+            links = graph.execute("MATCH (s:TestScenario)-[r:tests]->(c:Criterion) "
+                "WHERE s.source_artifact_ref STARTS WITH $prefix RETURN r.rule_id",
+                {"prefix": f"spec:{spec_id}:"})
             try:
                 assert not links.has_next()
             finally:
                 links.close()
             for kind in ('Requirement', 'Constraint'):
-                links = graph.execute(f'MATCH (d:Decision)-[r:derives_from]->(t:{kind}) RETURN r.rule_id')
+                links = graph.execute(f'MATCH (d:Decision)-[r:derives_from]->(t:{kind}) '
+                    'WHERE d.source_artifact_ref STARTS WITH $prefix RETURN r.rule_id',
+                    {'prefix': f'spec:{spec_id}:'})
                 try:
                     assert not links.has_next()
                 finally:

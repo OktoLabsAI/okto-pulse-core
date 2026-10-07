@@ -102,11 +102,11 @@ def _spec_dict(spec_id, board_id, status):
         "status": status,
         "board_id": board_id,
         "functional_requirements": ["FR alpha requirement", "FR beta requirement"],
-        "acceptance_criteria": ["AC alpha criterion"],
+        "acceptance_criteria": [{"id": "ac_alpha", "text": "AC alpha criterion"}],
         "api_contracts": [{"name": "GET /x", "description": "an api"}],
         "test_scenarios": [
             {"id": "ts_x", "title": "Scenario", "given": "g", "when": "w",
-             "then": "t", "linked_criteria": ["AC alpha criterion"]},
+             "then": "t", "linked_criteria": ["ac_alpha"]},
         ],
     }
 
@@ -117,7 +117,7 @@ async def _insert_spec(db_factory, board_id, spec_id, *, status):
             id=spec_id, board_id=board_id, title="Stale demotion spec",
             status=status, created_by=USER_ID,
             functional_requirements=["FR alpha requirement", "FR beta requirement"],
-            acceptance_criteria=["AC alpha criterion"],
+            acceptance_criteria=[{"id": "ac_alpha", "text": "AC alpha criterion"}],
         ))
         await db.commit()
 

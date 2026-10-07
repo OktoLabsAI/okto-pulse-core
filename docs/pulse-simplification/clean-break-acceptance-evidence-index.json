@@ -2159,7 +2159,12 @@
           "case_references": []
         }
       ],
-      "current_qualification": "pending_current_pair_review"
+      "current_qualification": "verified_current_pair_review",
+      "current_review": {
+        "artifact": "clean-break-acceptance-native-criterion-identity.json",
+        "criterion_key": "KG:KG-01",
+        "proof_pair": "dist-native-main32"
+      }
     },
     {
       "key": "KG:KG-02",
@@ -2181,7 +2186,12 @@
           "case_references": []
         }
       ],
-      "current_qualification": "pending_current_pair_review"
+      "current_qualification": "verified_current_pair_review",
+      "current_review": {
+        "artifact": "clean-break-acceptance-native-criterion-identity.json",
+        "criterion_key": "KG:KG-02",
+        "proof_pair": "dist-native-main32"
+      }
     },
     {
       "key": "KG:KG-03",
@@ -2211,7 +2221,12 @@
           ]
         }
       ],
-      "current_qualification": "pending_current_pair_review"
+      "current_qualification": "verified_current_pair_review",
+      "current_review": {
+        "artifact": "clean-break-acceptance-native-criterion-identity.json",
+        "criterion_key": "KG:KG-03",
+        "proof_pair": "dist-native-main32"
+      }
     },
     {
       "key": "KG:KG-04",
