@@ -1,0 +1,85 @@
+{
+  "scope": "Community17 native contract and dependency receipt compatibility removal",
+  "runs": [
+    {
+      "name": "clean-break-full-run17-community",
+      "pair": "dist-native-main23",
+      "xml_sha256": "b6917f3bc89a2c944fa7a039f82d3ed4a85a0a6a94442172cf5b791efa8eec9e",
+      "tests": 229,
+      "failed": 20,
+      "skipped": 1,
+      "failed_cases": [
+        "tests.test_skb_b14_kg_health::test_b14_health_isolates_board_handler_and_delivery_buckets",
+        "tests.test_skb_b22_legacy_guideline_import_rest::test_legacy_guideline_import_denies_before_parsing_or_use_case",
+        "tests.test_skb_b22_legacy_guideline_import_rest::test_legacy_guideline_import_uses_authorized_principal",
+        "tests.test_skb_b22_legacy_guideline_import_rest::test_legacy_guideline_export_delegates_to_lossless_v3",
+        "tests.test_skm_spec_dependency_persistence::test_dependency_delete_guards_block_direct_erasure_and_allow_parent_cascades",
+        "tests.test_skm_spec_dependency_persistence::test_relational_authority_rejects_cross_board_edges_and_spec_reparenting",
+        "tests.test_skm_spec_dependency_persistence::test_incoming_lifecycle_guard_keeps_one_bounded_probe_row",
+        "tests.test_skm_spec_dependency_persistence::test_mutation_ledger_replays_exact_actor_type_and_preserves_audit",
+        "tests.test_skm_spec_dependency_persistence::test_legacy_mutation_receipt_without_satisfaction_remains_replayable",
+        "tests.test_skm_spec_dependency_persistence::test_ac19_add_rolls_back_every_sql_effect_after_injected_failure",
+        "tests.test_skm_spec_dependency_persistence::test_ac19_remove_rolls_back_every_sql_effect_after_injected_failure",
+        "tests.test_skm_spec_dependency_persistence::test_page_and_batch_are_bounded_and_archived_done_is_a_blocker",
+        "tests.test_skm_spec_dependency_persistence::test_sqlite_page_uses_one_snapshot_across_concurrent_commit[add]",
+        "tests.test_skm_spec_dependency_persistence::test_sqlite_page_uses_one_snapshot_across_concurrent_commit[remove]",
+        "tests.test_skm_spec_dependency_persistence::test_sqlite_uow_snapshot_starts_before_authorization_read",
+        "tests.test_skm_spec_dependency_persistence::test_readiness_keeps_exact_blocker_categories_beyond_detail_limit",
+        "tests.test_skm_spec_dependency_persistence::test_sqlite_board_lock_serializes_reciprocal_adds_as_one_cycle",
+        "tests.test_spec_coverage_transport::test_shared_authority_typed_response_pagination_and_policy",
+        "tests.test_spec_takedown_ts17_ts27::test_ts18_sweep_intent_uses_the_controlled_batch_clock",
+        "tests.test_spec_takedown_ts17_ts27::test_ts20_old_claim_cannot_ack_g1_or_g2_and_redrive_keys_are_fresh"
+      ]
+    },
+    {
+      "name": "community17-native-fixtures1",
+      "pair": "dist-native-main23",
+      "xml_sha256": "d12c864f067268eea43733d69c4cb8fef0b9e610e98e3ec927b12538135c5284",
+      "tests": 35,
+      "failed": 1,
+      "skipped": 0,
+      "failed_cases": [
+        "tests.test_skm_spec_dependency_persistence::test_page_and_batch_are_bounded_and_archived_done_is_a_blocker"
+      ]
+    },
+    {
+      "name": "community17-native-dependency2",
+      "pair": "dist-native-main24",
+      "xml_sha256": "77768b4dd7ddfa0ee5f58bce0401ac85ab3b53788e105b072a08c7ad77d2d6c6",
+      "tests": 16,
+      "failed": 0,
+      "skipped": 0,
+      "failed_cases": []
+    }
+  ],
+  "qualified_modules": {
+    "tests/test_skb_b14_kg_health.py": 1,
+    "tests/test_spec_coverage_transport.py": 15,
+    "tests/test_spec_takedown_ts17_ts27.py": 6,
+    "tests/test_skm_spec_dependency_persistence.py": 16
+  },
+  "qualified_distinct_cases": 38,
+  "provenance": "provenance-native-main24.json",
+  "closure": "closure-native-main24.json",
+  "closure_budgets": {
+    "import_boundary_baseline": 0,
+    "singleton_baseline": 0,
+    "dependency_temporary_exceptions": 0,
+    "graph_runtime_compatibility": 0,
+    "rebuild_artifact_compatibility": 0,
+    "community_private_reach_ins": 0,
+    "community_adapter_bridges": 0,
+    "af35_relational_residue": 0
+  },
+  "production_change": "Dependency replay requires a persisted boolean satisfied; missing/null/integer/string refuse without conversion, journal repair or new side effects. Native exact replay remains accepted.",
+  "retired_test_module": {
+    "path": "tests/test_skb_b22_legacy_guideline_import_rest.py",
+    "cases": 3,
+    "reason": "Tests only the removed compatibility import/export URLs; excluded scope, not passing tests."
+  },
+  "limitations": [
+    "PostgreSQL proof skipped because OKTO_PULSE_TEST_POSTGRES_DSN absent; explicitly unqualified and separated from next broad run.",
+    "Installed E2E and remaining C4 still pending.",
+    "No frontend or public command shape change."
+  ]
+}

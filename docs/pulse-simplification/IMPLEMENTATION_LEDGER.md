@@ -2,6 +2,38 @@
 
 ## Estado para retomada
 
+### 2026-10-07 — Community17 fechado; replay não interpreta mais recibo antigo
+Core82604df5 publicado e main sincronizado. Community17 handle74678 terminou1:
+208pass/18fail/2errors/1skip/173.31s. Cinco módulos falhos: health, antigo import/
+export guideline, dependências, coverage transport, takedown. Três testes exclusivos
+de endpoints compatíveis já retirados foram removidos (não são passes).
+Fixtures declaram realm/adoção, inventory+effective context nativo de coverage
+e composição real de Knowledge no relatório de dependências.
+
+community17-native-fixtures1 handle18322 terminou1:34pass/1fail/23.13s.
+Nesse par main23, teste antigo reproduziu replay de recibo sem satisfied;
+falha restante era porta Knowledge ausente na fixture de relatório.
+Removido fallback produtivo de satisfied para resolved_on_create. Agora ausência,
+null, inteiro e string são recusados por spec_dependency_receipt_satisfaction_invalid;
+quatro casos exigem recibo preservado após commit do chamador, contagens de efeitos
+inalteradas e replay nativo positivo. Nenhuma conversão/histórico alterado.
+community17-native-dependency2 handle68597 terminou0:16pass/17.42s.
+Quatro módulos completos qualificados,38casos distintos nos followups.
+
+Par main24 build/install0; prova49071 terminou0:843/905 Core+316/402 Community
+byte-idênticos. CoreSHA84322772901efad5bd25d5a6676624ccce69296096bb00b89fd2f500cd7e2a32;
+CommunitySHA8d9357d354178e3cf61ac952e905e229a20c819850559ab2890c13de3eebe77d.
+Closure45447 terminou0:ok=true,findings/documentation_findings=[],oitoZERO.
+Ruff F/E9 e diff-check0. Recibo acceptance-clean-break-community17.json.
+Sem alteração frontend ou formato público de comandos.
+
+Community18 preparado excluindo563módulos completos. PostgreSQL foi skipped
+por OKTO_PULSE_TEST_POSTGRES_DSN ausente, explicitamente NÃO qualificado e separado
+para evitar repetir skip como progresso. E2E instalado também permanece separado.
+Nenhum processo ativo neste checkpoint. Próximos: restante Community18,
+prova PostgreSQL quando ambiente disponível, E2E e reconciliação C4.
+T23/KG-10 permanecem decisões pendentes. Entrega integral não declarada.
+
 ### 2026-10-07 — C4 T09 qualificado; Community17 ativo
 Core d2cff58b e Community6f27af2c publicados com pushes0; ambos isolados
 sincronizados por FF. Main clean-break-full-run17-community handle74678 ATIVO,
