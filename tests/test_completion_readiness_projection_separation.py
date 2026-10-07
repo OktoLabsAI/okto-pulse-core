@@ -68,7 +68,6 @@ async def test_completion_uses_substantive_verdict_while_diagnostics_keep_projec
         # gate; the supplementary readiness gate owns expired skips.
         legacy = CognitiveCloseoutGate(store=store).evaluate(
             board_id='board', entity_type='bug', entity_id='bug', target_status='done',
-            graph_state='healthy',
         )
         assert not legacy.allowed and legacy.blocking_count == 1
     call = _evaluate_cognitive_readiness_or_raise(

@@ -17,7 +17,6 @@ import okto_pulse.core.kg.cognitive_closeout_gate as gate_mod
 import okto_pulse.core.services.kg_health_service as kg_health_service
 import okto_pulse.core.services.main as services_main
 from okto_pulse.core.infra.database import get_session_factory
-from okto_pulse.core.kg.backpressure import _RISK_STATE_HARD_REJECT
 from okto_pulse.core.kg.cognitive_closeout_gate import (
     CognitiveCloseoutGate,
     CognitiveCloseoutOutcome,
@@ -103,19 +102,12 @@ def _gate(store) -> CognitiveCloseoutGate:
 
 
 @pytest.mark.parametrize("degraded_state", ["recovery_needed", "quarantined"])
-def test_degraded_graph_does_not_override_confirmed_empty_source(degraded_state):
-    assert degraded_state in _RISK_STATE_HARD_REJECT
-    result = _gate(_FakeStore()).evaluate(
-        board_id="board-1",
-        entity_type="task",
-        entity_id="card-1",
-        target_status="done",
-        graph_state=degraded_state,
-    )
-    assert result.allowed is True
-    assert result.outcome == CognitiveCloseoutOutcome.ALLOWED.value
-    assert result.reason == CognitiveCloseoutReason.NO_ACTIVE_COGNITIVE_ITEMS.value
-
+def test_retired_graph_state_argument_is_refused(degraded_state):
+    with pytest.raises(TypeError, match="graph_state"):
+        _gate(_FakeStore()).evaluate(
+            board_id="board-1", entity_type="task", entity_id="card-1",
+            target_status="done", graph_state=degraded_state,
+        )
 
 
 
@@ -138,7 +130,6 @@ def test_explicit_skip_preserves_authority_over_pending_items():
         entity_id="card-1",
         target_status="done",
         board_skip_enabled=True,
-        graph_state="recovery_needed",
     )
     assert result.allowed is True
     assert result.outcome == CognitiveCloseoutOutcome.SKIPPED.value
@@ -153,25 +144,20 @@ def test_ts_4663630d_healthy_empty_stays_allowed():
         entity_type="task",
         entity_id="card-1",
         target_status="done",
-        graph_state="healthy",
     )
     assert result.allowed is True
     assert result.outcome == CognitiveCloseoutOutcome.ALLOWED.value
     assert result.reason == CognitiveCloseoutReason.NO_ACTIVE_COGNITIVE_ITEMS.value
 
 
-def test_non_hardreject_states_stay_allowed():
+def test_other_retired_health_arguments_are_refused():
     for state in ("at_risk", "backpressure"):
-        assert state not in _RISK_STATE_HARD_REJECT
-        result = _gate(_FakeStore()).evaluate(
-            board_id="board-1",
-            entity_type="task",
-            entity_id="card-1",
-            target_status="done",
-            graph_state=state,
-        )
-        assert result.allowed is True
-        assert result.outcome == CognitiveCloseoutOutcome.ALLOWED.value
+        with pytest.raises(TypeError, match="graph_state"):
+            _gate(_FakeStore()).evaluate(
+                board_id="board-1", entity_type="task", entity_id="card-1",
+                target_status="done", graph_state=state,
+            )
+
 
 
 def test_ts_6fa3e068_healthy_pending_stays_blocked():
@@ -181,7 +167,6 @@ def test_ts_6fa3e068_healthy_pending_stays_blocked():
         entity_type="task",
         entity_id="card-1",
         target_status="done",
-        graph_state="healthy",
     )
     assert result.allowed is False
     assert result.outcome == CognitiveCloseoutOutcome.BLOCKED.value
@@ -198,7 +183,6 @@ def test_known_empty_source_emits_allowed_without_automatic_skip():
         entity_type="task",
         entity_id="card-1",
         target_status="done",
-        graph_state="recovery_needed",
     )
     sample = get_closeout_gate_samples()[-1]
     assert sample["outcome"] == CognitiveCloseoutOutcome.ALLOWED.value
@@ -287,7 +271,7 @@ async def test_ts_3eda0dc9_async_plumbing_blocks_before_mutation(monkeypatch):
         await db.rollback()
 
     assert spy.calls, "the closeout gate was never reached"
-    assert spy.calls[0]["graph_state"] is None
+    assert "graph_state" not in spy.calls[0]
     assert spy.calls[0]["target_status"] == "done"
 
     async with get_session_factory()() as db:
@@ -296,14 +280,8 @@ async def test_ts_3eda0dc9_async_plumbing_blocks_before_mutation(monkeypatch):
     assert card.validations in (None, [])  # no validation/conclusion append
 
 
-@pytest.mark.asyncio
-async def test_resolve_graph_state_fail_safe_returns_none(monkeypatch):
-    async def _boom(board_id, db, scheduler_control=None):
-        raise kg_health_service.BoardNotFoundError("nope")
-
-    monkeypatch.setattr(kg_health_service, "get_kg_health", _boom)
-
-    result = await services_main._resolve_closeout_graph_state("b", object())
-    assert result is None
-
-
+def test_retired_closeout_health_resolver_is_absent():
+    assert not hasattr(services_main, "_resolve_closeout_graph_state")
+    assert "resolve_graph_state" not in inspect.signature(
+        services_main._evaluate_entity_cognitive_done_or_raise
+    ).parameters

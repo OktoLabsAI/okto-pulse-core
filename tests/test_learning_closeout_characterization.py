@@ -11,7 +11,6 @@ import pytest
 from okto_pulse.core.infra.config import get_settings
 from okto_pulse.core.infra.database import get_session_factory
 from okto_pulse.core.models.schemas import CardMove
-from okto_pulse.core.services import main as main_service
 from okto_pulse.core.services.main import CardService
 from sqlalchemy_test_models import CardStatus, CardType
 from test_cognitive_closeout_service_wiring import (
@@ -37,7 +36,8 @@ async def test_characterize_empty_queue_bug_done_without_learning(
     accepted_card_delivery,
 ):
     monkeypatch.setattr(get_settings(), "cognitive_readiness_blocking_enabled", global_enabled)
-    monkeypatch.setattr(main_service, "_resolve_closeout_graph_state", AsyncMock(return_value="healthy"))
+    from okto_pulse.core.services import kg_health_service
+    monkeypatch.setattr(kg_health_service, "get_kg_health", AsyncMock(return_value="healthy"))
     board_id, _, card_id = await _seed_card(
         CardType.BUG, CardStatus.VALIDATION,
         board_settings={

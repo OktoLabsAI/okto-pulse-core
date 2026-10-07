@@ -74,29 +74,16 @@ def _gate(store) -> CognitiveCloseoutGate:
 # ── ts_97797ff7: no new outcome enum member; exactly one new reason member ─────
 
 
-def test_ts_97797ff7_enum_member_counts():
-    """TC-D (AC8): CognitiveCloseoutOutcome keeps exactly 5 members (the F16
-    no-new-enum constraint). CognitiveCloseoutReason gains exactly one new
-    member (DEGRADED_KG_AUTO_SKIP) and ends up with 5 members total."""
-    outcome_members = list(CognitiveCloseoutOutcome)
-    assert len(outcome_members) == 5, (
-        f"CognitiveCloseoutOutcome must have exactly 5 members — found "
-        f"{[m.value for m in outcome_members]}"
-    )
-    reason_members = list(CognitiveCloseoutReason)
-    assert len(reason_members) == 5, (
-        f"CognitiveCloseoutReason must have exactly 5 members — found "
-        f"{[m.value for m in reason_members]}"
-    )
-    assert CognitiveCloseoutReason.DEGRADED_KG_AUTO_SKIP in reason_members, (
-        "DEGRADED_KG_AUTO_SKIP must be a member of CognitiveCloseoutReason"
-    )
-    assert CognitiveCloseoutReason.DEGRADED_KG_AUTO_SKIP.value == "degraded_kg_auto_skip"
-    # outcome reuses UNAVAILABLE — no new outcome member was added
-    outcome_values = {m.value for m in outcome_members}
-    assert "degraded_kg_auto_skip" not in outcome_values, (
-        "degraded_kg_auto_skip must NOT appear as an outcome value"
-    )
+def test_ts_97797ff7_only_current_closeout_reasons_are_accepted():
+    assert {item.value for item in CognitiveCloseoutOutcome} == {
+        "allowed", "blocked", "unavailable", "skipped", "invalid_target_status",
+    }
+    assert {item.value for item in CognitiveCloseoutReason} == {
+        "no_active_cognitive_items", "cognitive_consolidation_pending",
+        "cognitive_status_unavailable", "board_skip_enabled",
+    }
+    with pytest.raises(ValueError):
+        CognitiveCloseoutReason("degraded_kg_auto_skip")
 
 
 # ── ts_6d088067: unconfirmed-block message carries remediation clause ──────────
@@ -130,7 +117,6 @@ def test_ts_6d088067_unconfirmed_block_message_carries_remediation():
             entity_id="card-1",
             entity={},
             target_label="card-1",
-            graph_state=None,
         )
     msg = str(exc_info.value)
     assert "authorized external support/release procedure" in msg
@@ -167,7 +153,6 @@ def test_ts_e4dd279a_consolidation_pending_message_unchanged():
             entity_id="card-1",
             entity={},
             target_label="card-1",
-            graph_state="healthy",
         )
     msg = str(exc_info.value)
     assert "cognitive_consolidation_pending" in msg
@@ -202,7 +187,6 @@ def test_ts_47577f43_no_nonexistent_mcp_tools_named():
             entity_id="card-1",
             entity={},
             target_label="card-1",
-            graph_state=None,
         )
     msg = str(exc_info.value)
     # none of these non-existent tools should appear in the message
@@ -457,7 +441,7 @@ async def test_ts_dd9452a5_spec_done_uses_authoritative_absence_without_health(m
     samples = get_closeout_gate_samples()
     assert samples, "the completion gate must emit its actual decision"
     assert all(
-        sample["reason"] != CognitiveCloseoutReason.DEGRADED_KG_AUTO_SKIP.value
+        sample["reason"] != "degraded_kg_auto_skip"
         for sample in samples
     )
     assert any(

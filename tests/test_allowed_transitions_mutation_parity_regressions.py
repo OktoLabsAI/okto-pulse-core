@@ -753,7 +753,8 @@ async def test_card_cognitive_preview_uses_canonical_gate_without_graph_health(
         ),
     )
     probe = AsyncMock(return_value="healthy")
-    monkeypatch.setattr(main_service, "_resolve_closeout_graph_state", probe)
+    from okto_pulse.core.services import kg_health_service
+    monkeypatch.setattr(kg_health_service, "get_kg_health", probe)
     observed: dict = {}
 
     class AllowingGate:
@@ -779,7 +780,7 @@ async def test_card_cognitive_preview_uses_canonical_gate_without_graph_health(
 
     assert done.blocked_reason is None
     probe.assert_not_awaited()
-    assert observed["graph_state"] is None
+    assert "graph_state" not in observed
     assert observed["entity_id"] == card_id
     assert observed["target_status"] == "done"
 

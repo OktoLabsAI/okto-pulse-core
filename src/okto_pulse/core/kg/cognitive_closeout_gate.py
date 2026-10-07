@@ -34,8 +34,6 @@ class CognitiveCloseoutReason(str, Enum):
     COGNITIVE_CONSOLIDATION_PENDING = "cognitive_consolidation_pending"
     COGNITIVE_STATUS_UNAVAILABLE = "cognitive_status_unavailable"
     BOARD_SKIP_ENABLED = "board_skip_enabled"
-    # Historical reason retained for reading old records; no longer emitted.
-    DEGRADED_KG_AUTO_SKIP = "degraded_kg_auto_skip"
 
 
 class CognitiveCloseoutOutcome(str, Enum):
@@ -335,7 +333,6 @@ class CognitiveCloseoutGate:
         board_skip_enabled: bool = False,
         source_refs: Sequence[str] | None = None,
         kg_generation_id: str | None = None,
-        graph_state: str | None = None,
     ) -> CognitiveCloseoutResult:
         if target_status != "done":
             normalized_type = _normalize_closeout_entity_type(entity_type, entity)
@@ -405,9 +402,7 @@ class CognitiveCloseoutGate:
             )
             return result
 
-        # BASE F6E/T39/T40: graph_state is retained as a compatibility input,
-        # never as proof of cognitive availability or authority to skip items.
-        # The complete source observation above governs absence/unavailability.
+        # BASE F6E/T39/T40: complete source observation governs absence/unavailability.
 
         refs_set = frozenset(refs)
         active = tuple(

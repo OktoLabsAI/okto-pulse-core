@@ -2,6 +2,21 @@
 
 ## Estado para retomada
 
+### 2026-10-07 — Retirada C3 cognitiva qualificada no par isolado
+Closure final33415 terminou0:ok=true,findings/documentation_findings vazios,
+oito budgets ZERO. Recibo acceptance-clean-break-cognitive-compatibility-removal.json
+vincula66casos, falha documental anterior, renderer, prova final e hashes dos wheels.
+Nenhum frontend/catálogo MCP afetado; não repetir suites sem nova alteração/falha.
+Core source remove37linhas de compatibilidade sem trocar predicados de autoridade;
+tests recusam valores removidos e preservam lifecycle/readiness/skip explícito.
+
+Preparado para commits/push dos worktrees native-next; mainCore d55e3488 e
+mainCommunity0a2c6c9d mantêm main1 enquanto Community14 handle64918 ATIVO.
+Após seu terminal, integrar os commits isolados por fast-forward antes de retomar
+Core17/Community14. Rebuild/prova principal serão necessários por CRLF/LF de checkout;
+não reaproveitar wheel isolado como byte-idêntico ao main. E2E instalado permanece
+não qualificado; nenhuma mudança de budget/censo/runtime foi feita.
+
 ### 2026-10-07 — C3 residual cognitivo em worktree; Core17 terminal
 Core17 handle32536 terminou1:158pass/20fail/197.98s. Não excluídos ainda:
 r4_imp1_gate_contracts,r4_imp3_test_card_flow,r4_test2_test_card_gate_behavior,

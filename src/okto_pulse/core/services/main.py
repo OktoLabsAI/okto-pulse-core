@@ -1669,7 +1669,6 @@ def _evaluate_cognitive_closeout_or_raise(
     entity_id: str,
     entity: Any,
     target_label: str,
-    graph_state: str | None = None,
 ) -> None:
     """Evaluate the shared closeout gate and raise a stable service error.
 
@@ -1688,7 +1687,6 @@ def _evaluate_cognitive_closeout_or_raise(
             entity=entity,
             target_status="done",
             board_skip_enabled=skip_enabled,
-            graph_state=graph_state,
         )
     except Exception as exc:
         raise CompletionInfrastructureUnavailable(
@@ -1823,27 +1821,6 @@ async def _evaluate_cognitive_readiness_or_raise(
             )
 
 
-async def _resolve_closeout_graph_state(board_id: str, db: Any) -> str | None:
-    """Resolve the board's current ``graph_state`` for the cognitive closeout
-    gate (F16). Runs in the ASYNC caller where an ``Any`` is in scope
-    and threads the result into the SYNC ``gate.evaluate(...)`` so the gate stays
-    pure (no I/O).
-
-    Fail-safe (FR6): on ANY failure (e.g. ``BoardNotFoundError``) or a missing
-    ``graph_state`` key, return ``None`` â€” so the gate's ``resolved_generation``-
-    is-None liveness check still governs and a degraded signal is never swallowed
-    into ALLOWED. Reuses ``get_kg_health`` as-is (no new health-composition logic).
-    """
-    try:
-        from okto_pulse.core.services.kg_health_service import get_kg_health
-
-        health = await get_kg_health(board_id, db)
-        state = health.get("graph_state")
-    except Exception:
-        return None
-    return str(state) if state is not None else None
-
-
 async def _evaluate_entity_cognitive_done_or_raise(
     *,
     db: Any,
@@ -1855,7 +1832,6 @@ async def _evaluate_entity_cognitive_done_or_raise(
     entity_id: str,
     entity: Any,
     target_label: str,
-    resolve_graph_state: bool = True,
 ) -> None:
     """Run the canonical, read-only cognitive gates for a done transition.
 
@@ -1865,9 +1841,7 @@ async def _evaluate_entity_cognitive_done_or_raise(
     snapshots, status changes, histories, activities, or outbox writes.
     """
 
-    # Compatibility argument retained for internal callers; completion reads
-    # the authoritative cognitive snapshot and never invokes graph Health.
-    graph_state = None
+    # Completion reads the authoritative cognitive snapshot without graph Health.
     _evaluate_cognitive_closeout_or_raise(
         gate_factory=gate_factory,
         board=board,
@@ -1876,7 +1850,6 @@ async def _evaluate_entity_cognitive_done_or_raise(
         entity_id=entity_id,
         entity=entity,
         target_label=target_label,
-        graph_state=graph_state,
     )
     await _evaluate_cognitive_readiness_or_raise(
         service_factory=readiness_service_factory,
@@ -3311,9 +3284,6 @@ class CardService:
             entity_id=card.id,
             entity=card,
             target_label="card",
-            # Health composition is read-only and must match the mutation path.
-            # Skipping it in previews makes a healthy graph look unavailable.
-            resolve_graph_state=True,
         )
 
     @staticmethod
@@ -9060,7 +9030,6 @@ class SpecService:
             entity_id=spec.id,
             entity=spec,
             target_label="spec",
-            resolve_graph_state=True,
         )
 
     # ---- Status progression order ----
@@ -15558,7 +15527,6 @@ class RefinementService:
             entity_id=refinement.id,
             entity=refinement,
             target_label="refinement",
-            resolve_graph_state=True,
         )
 
     async def _enforce_ambiguity_gate(
