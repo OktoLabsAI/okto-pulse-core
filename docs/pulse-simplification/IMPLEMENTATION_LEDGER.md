@@ -4,6 +4,7 @@
 
 ### 2026-10-06 — C3 classificacao de tres superficies frontend; C4 geral
 
+Publicado: Core e07daf2c / Community 4bc2d79a; pushes confirmados.
 Bases Core 4831bea2 / Community d7727e25.
 Tres candidatos do ledger foram investigados com consumidores reais:
 1. PolicyCompliancePanel chamado por Ideation/Refinement/Spec usa edicao;
