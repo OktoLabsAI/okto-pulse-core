@@ -20,10 +20,10 @@ def relations(source):
         and nodes[edge.from_candidate_id].node_type == 'Decision'}
 
 
-@pytest.mark.parametrize('case', ['empty', 'unknown', 'legacy', 'explicit', 'duplicate'])
+@pytest.mark.parametrize('case', ['empty', 'unknown', 'narrative', 'explicit', 'duplicate'])
 def test_only_unambiguous_declared_requirements_are_emitted(case):
     source = spec()
-    if case == 'legacy':
+    if case == 'narrative':
         source['context'] = '## Decisions\n- Keep evidence local\n'
     else:
         links = ['fr_one', 'tr_one', 'fr_one'] if case == 'explicit' else ['fr_missing'] if case == 'unknown' else []
@@ -35,7 +35,7 @@ def test_only_unambiguous_declared_requirements_are_emitted(case):
     expected = {(f'spec:owner:{section}:{identity}', 'derives_from/explicit_link@v2.1', 1.0)
         for section, identity in [('fr', 'fr_one'), ('tr', 'tr_one')]} if case == 'explicit' else set()
     assert actual == expected
-    assert any(node.node_type == 'Decision' for node in result.nodes)
+    assert any(node.node_type == 'Decision' for node in result.nodes) == (case != 'narrative')
     intent = next(item for item in result.relational_projection_active_set_intents if item.namespace == 'decision_requirements')
     assert len(intent.active_edges) == len(expected)
 

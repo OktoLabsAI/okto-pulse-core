@@ -1,7 +1,7 @@
 """ITEM 19 — JSON import/export for admin catalogs (REST → use case → UoW).
 
 Generic catalogs use schema v1. Guidelines use the governed lossless V3
-codec, while still accepting explicitly bounded legacy envelopes. Per family:
+codec; old guideline envelopes are rejected without mutation. Per family:
 ROUNDTRIP (create via the normal API → export → import into a
 clean tenant/board → equivalent objects re-created through the normal creation
 path), dry-run mutates nothing, and an invalid item → 400 with NO mutation
@@ -27,6 +27,7 @@ from okto_pulse.community.api.design_systems import router as design_systems_rou
 from okto_pulse.community.api.deps import get_unit_of_work
 from okto_pulse.community.api.guidelines import router as guidelines_router
 from okto_pulse.community.api.presets import router as presets_router
+from okto_pulse.community.api.policy_governance import router as policy_governance_router
 from okto_pulse.core.infra.database import get_session_factory
 from okto_pulse.core.ports.authentication import Principal
 from okto_pulse.core.ports.permission_policy import registered_permission_flags
@@ -46,6 +47,7 @@ def _client(
     # Same registration order as api/router.py: default_board_config BEFORE
     # guidelines so literal /guidelines/* routes are not shadowed.
     app.include_router(default_board_config_router, prefix=PREFIX)
+    app.include_router(policy_governance_router, prefix=PREFIX)
     app.include_router(guidelines_router, prefix=PREFIX)
     app.include_router(presets_router, prefix=f"{PREFIX}/presets")
     app.include_router(design_systems_router, prefix=PREFIX)
@@ -67,8 +69,7 @@ def _client(
     claims: dict = {"roles": list(roles)}
     # Existing roundtrip cases represent an unrestricted local administrator.
     # Explicit permission documents below still exercise capability-only
-    # access.  The wildcard keeps the compatibility guideline endpoints
-    # authorized after SK-B closes their previously implicit write access.
+    # access. Unrestricted fixtures receive the registered current grants.
     if permissions is not None:
         claims["permissions"] = permissions
     elif "admin" in roles:
@@ -106,7 +107,7 @@ def _uid(prefix: str) -> str:
 
 
 @pytest.mark.asyncio
-async def test_guidelines_generic_export_delegates_to_lossless_v3():
+async def test_guidelines_board_export_uses_lossless_v3():
     user = _uid("impexp-guide-v3")
     client = _client(user)
     board = await _seed_board(user)
@@ -129,7 +130,7 @@ async def test_guidelines_generic_export_delegates_to_lossless_v3():
     )
     assert created_inline.status_code == 201, created_inline.text
 
-    exported = client.get(f"{PREFIX}/guidelines/export", params={"board_id": board})
+    exported = client.get(f"{PREFIX}/boards/{board}/guidelines/export")
     assert exported.status_code == 200, exported.text
     envelope = exported.json()
     assert envelope["contract_version"] == "guideline-export/v3"
@@ -152,7 +153,7 @@ async def test_guidelines_generic_export_delegates_to_lossless_v3():
 
 
 @pytest.mark.asyncio
-async def test_guidelines_legacy_v1_import_is_context_only_and_dry_run():
+async def test_guidelines_old_envelope_is_rejected_even_for_dry_run():
     user = _uid("impexp-guide-dry")
     client = _client(user)
     board = await _seed_board(user)
@@ -172,25 +173,23 @@ async def test_guidelines_legacy_v1_import_is_context_only_and_dry_run():
         ],
     }
     resp = client.post(
-        f"{PREFIX}/guidelines/import",
-        params={"board_id": board, "dry_run": "true"},
+        f"{PREFIX}/boards/{board}/guidelines/import",
+        params={"dry_run": "true"},
         json=envelope,
     )
-    assert resp.status_code == 200, resp.text
-    body = resp.json()
-    assert body["transaction_status"] == "dry_run"
-    assert body["created_count"] == 0
-    assert body["conflict_count"] == 0
-    assert body["overwritten_row_count"] == 0
-    assert body["dry_run"] is True
+    assert resp.status_code == 400, resp.text
+    assert resp.json()["detail"]["code"] == "validation_failed"
+    assert client.post(f"{PREFIX}/guidelines/import", json=envelope).status_code == 405
 
     assert client.get(f"{PREFIX}/guidelines").json() == []
     assert client.get(f"{PREFIX}/boards/{board}/guidelines").json() == []
 
 
-def test_guidelines_invalid_legacy_import_is_atomic_and_structured():
+@pytest.mark.asyncio
+async def test_guidelines_invalid_envelope_is_atomic_and_structured():
     user = _uid("impexp-guide-bad")
     client = _client(user)
+    board = await _seed_board(user)
 
     envelope = {
         "schema_version": "1",
@@ -200,7 +199,7 @@ def test_guidelines_invalid_legacy_import_is_atomic_and_structured():
             {"title": "", "content": "c", "scope": "global"},  # min_length=1
         ],
     }
-    resp = client.post(f"{PREFIX}/guidelines/import", json=envelope)
+    resp = client.post(f"{PREFIX}/boards/{board}/guidelines/import", json=envelope)
     assert resp.status_code == 400, resp.text
     detail = resp.json()["detail"]
     assert detail["code"] == "validation_failed"
@@ -210,13 +209,13 @@ def test_guidelines_invalid_legacy_import_is_atomic_and_structured():
 
     # Envelope guards remain closed and use the governed error contract.
     wrong_kind = client.post(
-        f"{PREFIX}/guidelines/import",
+        f"{PREFIX}/boards/{board}/guidelines/import",
         json={"schema_version": "1", "kind": "presets", "items": []},
     )
     assert wrong_kind.status_code == 400
     assert wrong_kind.json()["detail"]["code"] == "validation_failed"
     wrong_version = client.post(
-        f"{PREFIX}/guidelines/import",
+        f"{PREFIX}/boards/{board}/guidelines/import",
         json={"schema_version": "99", "kind": "guidelines", "items": []},
     )
     assert wrong_version.status_code == 400

@@ -2,6 +2,55 @@
 
 ## Estado para retomada
 
+### 2026-10-07 — Core run10 integralmente resolvido
+
+Followup run10-native-fixtures1:154 aprovados/uma falha149.73s. A fixture ACL
+omitira o grant administrativo ainda exigido pela policy atual; restaurado,
+sem mudar autoridade. Followup2:19 aprovados18.53s;155 distintos nas nove
+suites+AF04, incluindo toda KG foundation (ultimo modulo parcial do run10).
+Todas20falhas originais resolvidas. Ruff/diff verdes. Nenhum produto/frontend
+alterado; par dist-native-preflight2/provenance/closure2 atual, oito budgetsZERO.
+Nenhum handle ativo. Proximo Community run8: selecao107 preparada, nao iniciada.
+Proximo Core run11 incorpora run10/followups, mapeando cancellation_column_migration
+para cancellation_native_schema e excluindo stress explicitamente.
+C1-C4/criterios/benchmark/bump/T23/KG-10 permanecem abertos.
+
+
+### 2026-10-07 — Followup Core run10 em execucao
+
+run10-native-fixtures1 ativo handle34073: nove suites afetadas integrais mais
+AF04. WIP somente testes/recibos. Export Guideline usa rota atual por Board;
+envelopes antigos/URL retirada permanecem recusados. FR/AC e links TR usam IDs.
+Decision narrativa nao vira entidade; ACL usa grants atuais e testa recusa de
+alias removido. Snapshot cancellation preservado em test_kg_cancellation_native_schema.
+Modelo SQL de teste inclui reference_findings atual; schema esperado0.8.0.
+Fila ausente preserva retry/backoff/debt zero, com erro estruturado atual.
+Aguardar terminal e corrigir antes de publicar. Produto/par/closure2 inalterados.
+Investigacao read-only encontrou _node_generation com fallback descrito como legado;
+nenhuma alteracao: classificar escritores/recuperacao atual antes de decidir retirada.
+
+
+### 2026-10-07 — Core run10 terminal; followups pendentes
+
+Run10 terminou: 1018 aprovados/20 falhas, 1268.28s; handle13463 encerrado.
+408 modulos completos excluidos, stress incluido. Ultimo test_kg_foundation
+parcial; qualificar integralmente antes da proxima selecao. Resultados/hash
+registrados no JSON. Falhas concentradas em fixtures/contratos de import,
+requisitos/autoridade, Decision, schema e audit SQL. Correcao de expectativa
+schema cancellation 0.7→0.8 em WIP; produto nao alterado. Nenhum handle ativo.
+Par dist-native-preflight2/provenance/closure2 permanece atual, oito budgetsZERO.
+Frontend2451/269 completo. C1-C4/criterios/benchmark/bump/T23/KG-10 pendentes.
+
+
+### 2026-10-07 — Core run10 ativo
+
+Core6c181ab5 / Community082d1021 publicados; pushes confirmados.
+clean-break-full-run10 ativo handle13463;408modulos completos excluidos,
+incluindo stress explicitamente. selection.json incorpora run9 integralmente
+resolvido + preflight/followups. Aguardar terminal; nao modificar/reinstalar
+produto. dist-native-preflight2/provenance/closure2 atuais, oito budgetsZERO.
+Frontend2451/269 completo. Community proxima continuacao run8 aposrun7+telemetry29.
+
 ### 2026-10-07 — Community run7 resolvido; telemetria nativa qualificada
 
 Full-run7-community terminou:105 aprovados/20erros162.69s (96modulos excluidos).

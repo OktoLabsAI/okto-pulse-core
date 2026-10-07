@@ -98,12 +98,12 @@ def test_empty_derived_draft_emits_connected_backbone_not_inherited_decisions():
 
 def test_populated_refinement_derived_spec_does_not_duplicate_parent_decisions():
     spec = _derived_empty_draft()
-    spec["functional_requirements"] = ["The worker restores its transaction."]
+    spec["functional_requirements"] = [{"id": "fr_restore", "text": "The worker restores its transaction."}]
     spec["decisions"] = [{
         "id": "dec_spec_owned",
         "title": "Retry only after rollback",
         "rationale": "The next transaction must start from a clean session.",
-        "linked_requirements": ["0"],
+        "linked_requirements": ["fr_restore"],
         "status": "active",
     }]
 
@@ -121,18 +121,15 @@ def test_populated_refinement_derived_spec_does_not_duplicate_parent_decisions()
     )
 
 
-def test_ideation_derived_spec_keeps_legacy_decision_compatibility():
+def test_ideation_derived_spec_does_not_turn_narrative_into_decisions():
     spec = _derived_empty_draft()
     spec["refinement_id"] = None
-    spec["functional_requirements"] = ["The worker restores its transaction."]
+    spec["functional_requirements"] = [{"id": "fr_restore", "text": "The worker restores its transaction."}]
 
     result = DeterministicWorker().process_spec(spec)
 
-    decisions = [node for node in result.nodes if node.node_type == "Decision"]
-    assert [decision.title for decision in decisions] == [
-        "Reuse the transaction-lifecycle precedent.",
-        "Roll back through the persistence port.",
-    ]
+    assert not any(node.node_type == "Decision" for node in result.nodes)
+
 
 
 def test_true_orphan_entity_remains_rejected_by_connectivity_guard():

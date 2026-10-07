@@ -105,16 +105,11 @@ CANONICALIZED_EXISTING_READ_CASES = (
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "permission_form",
-    ("legacy", "canonical"),
-)
-@pytest.mark.parametrize(
     ("tool_name", "kwargs", "operation"),
     CANONICALIZED_EXISTING_READ_CASES,
 )
 async def test_existing_direct_reads_accept_exact_operation_authority(
     monkeypatch: pytest.MonkeyPatch,
-    permission_form: str,
     tool_name: str,
     kwargs: dict[str, object],
     operation: str,
@@ -125,15 +120,8 @@ async def test_existing_direct_reads_accept_exact_operation_authority(
         pass
 
     async def _board_context(_board_id: str):
-        permissions = (
-            ["board:read", "kg.admin.settings_read"]
-            if permission_form == "legacy"
-            else _permission_set(
-                "board.read",
-                operation,
-                "kg.admin.settings_read",
-            )
-        )
+        # The current operation policy also requires its administrative grant.
+        permissions = _permission_set("board.read", operation, "kg.admin.settings_read")
         return _context(permissions)
 
     def _authorized_uow_boundary():
@@ -148,3 +136,22 @@ async def test_existing_direct_reads_accept_exact_operation_authority(
 
     with pytest.raises(_ReachedAuthorizedIo):
         await _tool(server, tool_name)(board_id=BOARD_ID, **kwargs)
+
+
+@pytest.mark.asyncio
+async def test_removed_permission_alias_does_not_authorize_takedown_read(monkeypatch):
+    from okto_pulse.core.mcp import server
+
+    async def _board_context(_board_id):
+        return _context(["board:read", "kg.admin.settings_read"])
+
+    def _forbidden_uow():
+        raise AssertionError("removed permission alias opened a UnitOfWork")
+
+    monkeypatch.setattr(server, "_get_agent_ctx", _board_context)
+    monkeypatch.setattr(server, "get_unit_of_work_factory_for_mcp", _forbidden_uow)
+    raw = await _tool(server, "okto_pulse_kg_takedown_status")(
+        board_id=BOARD_ID, delete_event_id="delete-event-denied"
+    )
+    assert "permission" in raw.lower()
+    assert "board.read" in raw

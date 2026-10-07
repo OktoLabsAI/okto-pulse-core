@@ -1,4 +1,4 @@
-"""v0.3.11 reversible-cancellation schema coverage."""
+"""Native graph schema retains the reversible-cancellation snapshot."""
 
 from __future__ import annotations
 
@@ -32,7 +32,7 @@ def kg_tempdir(monkeypatch):
 
 
 def test_fresh_bootstrap_has_reversible_cancellation_snapshot(kg_tempdir):
-    assert SCHEMA_VERSION == "0.7.0"
+    assert SCHEMA_VERSION == "0.8.0"
     assert CANCELLATION_COLUMNS == (("pre_cancellation_relevance_score", "DOUBLE"),)
     assert "pre_cancellation_relevance_score" in STABLE_NODE_PROPERTIES
 

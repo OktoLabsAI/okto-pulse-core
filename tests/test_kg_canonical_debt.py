@@ -459,7 +459,7 @@ async def test_missing_artifact_queue_entry_stays_visible_without_canonical_debt
     db_factory,
 ):
     """RKG-04 AC3 (ts_317b11ef): a missing source artifact is a persistent
-    failure and must stay VISIBLE — the worker returns False, so the entry is
+    failure and must stay VISIBLE — source preparation fails, so the entry is
     failure-handled (attempts++, backoff, re-pending; DLQ only after
     ``kg_queue_max_attempts``) instead of silently acked. A missing artifact
     still never mints canonical debt rows.
@@ -506,7 +506,7 @@ async def test_missing_artifact_queue_entry_stays_visible_without_canonical_debt
         queue_row = await session.get(ConsolidationQueue, entry_id)
         listed = await list_canonical_debt(session, board_id=BOARD_ID)
 
-    # Not a success: False routes the entry through _mark_failed.
+    # Source preparation failure routes the entry through _mark_failed.
     assert processed == 0
     # The entry stays visible — re-pended with the failure recorded, bound
     # for the DLQ only after kg_queue_max_attempts consecutive failures.
@@ -514,7 +514,10 @@ async def test_missing_artifact_queue_entry_stays_visible_without_canonical_debt
     assert queue_row.status == "pending"
     assert queue_row.attempts == 1
     assert queue_row.next_retry_at is not None
-    assert queue_row.last_error == "processing returned False"
+    assert queue_row.last_error == (
+        "relational_projection_source_unavailable:"
+        "The fenced relational projection source could not be prepared."
+    )
     # A missing artifact never mints canonical debt.
     assert listed.total == 0
 

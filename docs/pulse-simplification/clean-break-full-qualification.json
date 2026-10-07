@@ -1781,5 +1781,120 @@
     "proof_pair": "dist-native-preflight2",
     "product_changes": false,
     "scope": "Explicit local realm and native Spec architecture in stale sweep/takedown telemetry fixtures; all3 modules complete. Preserve tombstone/recreated-source protection, CAS/checkpoint rollback/replay, original timestamps, debts, SLO and cross-board isolation."
+  },
+  "core_full_run10": {
+    "campaign": "clean-break-full-run10",
+    "passed": 1018,
+    "failed": 20,
+    "duration_seconds": 1268.28,
+    "xml_sha256": "76e4c72cad30d100d5e747a90e2582059409a396c7bda3153a391795c04516b1",
+    "failures": [
+      {
+        "test": "tests.test_import_export_api::test_guidelines_generic_export_delegates_to_lossless_v3",
+        "message": "AssertionError: {\"detail\":\"Guideline not found\"}\nassert 404 == 200\n +  where 404 = <Response [404 Not Found]>.status_code"
+      },
+      {
+        "test": "tests.test_import_export_api::test_guidelines_legacy_v1_import_is_context_only_and_dry_run",
+        "message": "AssertionError: {\"detail\":\"Method Not Allowed\"}\nassert 405 == 200\n +  where 405 = <Response [405 Method Not Allowed]>.status_code"
+      },
+      {
+        "test": "tests.test_import_export_api::test_guidelines_invalid_legacy_import_is_atomic_and_structured",
+        "message": "AssertionError: {\"detail\":\"Method Not Allowed\"}\nassert 405 == 400\n +  where 405 = <Response [405 Method Not Allowed]>.status_code"
+      },
+      {
+        "test": "tests.test_ir_or_requirements::test_ir_or_link_reference_validation",
+        "message": "AssertionError: Regex pattern did not match.\n Regex: 'linked_api_contracts'\n Input: 'incompatible_spec_requirement: stored children require id and text'"
+      },
+      {
+        "test": "tests.test_ir_or_requirements::test_ir_or_linked_requirements_accept_structured_tr_refs",
+        "message": "ValueError: Cannot update spec: 1 orphan link reference(s) found. OR 'or_1': linked_requirements reference 'Session timeout must be configurable' does not match an existing FR/TR id.. Use existing FR/AC IDs; FR/TR IDs for API contracts, IR/OR and decisions; BR.id for linked_rules, the api_contract.id / integration_requirement.id for cross-resource links, and an existing Card.id for linked_task_ids."
+      },
+      {
+        "test": "tests.test_ir_or_requirements::test_add_integration_requirement_accepts_external_service_mcp",
+        "message": "ValueError: incompatible_spec_requirement: stored children require id and text"
+      },
+      {
+        "test": "tests.test_ir_or_requirements::test_add_integration_requirement_accepts_mcp_tool_type",
+        "message": "ValueError: incompatible_spec_requirement: stored children require id and text"
+      },
+      {
+        "test": "tests.test_kg_03a_5_candidate_decision_commands::test_promote_writes_to_spec_decisions_and_links_candidate",
+        "message": "AssertionError: {\"detail\":{\"code\":\"spec_update_rejected\",\"message\":\"incompatible_spec_requirement: stored children require id and text\"}}\nassert 400 == 200\n +  where 400 = <Response [400 Bad Request]>.status_code"
+      },
+      {
+        "test": "tests.test_kg_03a_5_candidate_decision_commands::test_promote_uses_overridden_title_and_rationale",
+        "message": "AssertionError: {\"detail\":{\"code\":\"spec_update_rejected\",\"message\":\"incompatible_spec_requirement: stored children require id and text\"}}\nassert 400 == 200\n +  where 400 = <Response [400 Bad Request]>.status_code"
+      },
+      {
+        "test": "tests.test_kg_03a_5_candidate_decision_commands::test_promote_propagates_outcome_to_pending_item",
+        "message": "AssertionError: {\"detail\":{\"code\":\"spec_update_rejected\",\"message\":\"incompatible_spec_requirement: stored children require id and text\"}}\nassert 400 == 200\n +  where 400 = <Response [400 Bad Request]>.status_code"
+      },
+      {
+        "test": "tests.test_kg_03a_5_candidate_decision_commands::test_each_action_emits_exactly_one_bounded_counter_sample",
+        "message": "AssertionError: action 'promote' should have one success sample\nassert 0 == 1\n +  where 0 = get_candidate_event_count(action='promote', outcome='success')\n +    where 'success' = <CandidateDecisionOutcome.SUCCESS: 'success'>.value\n +      where <CandidateDecisionOutcome.SUCCESS: 'success'> = CandidateDecisionOutcome.SUCCESS"
+      },
+      {
+        "test": "tests.test_kg_cancellation_column_migration::test_fresh_bootstrap_has_reversible_cancellation_snapshot",
+        "message": "AssertionError: assert '0.8.0' == '0.7.0'\n  \n  - 0.7.0\n  ?   ^\n  + 0.8.0\n  ?   ^"
+      },
+      {
+        "test": "tests.test_kg_canonical_debt::test_missing_artifact_queue_entry_stays_visible_without_canonical_debt",
+        "message": "AssertionError: assert 'relational_p... be prepared.' == 'processing returned False'\n  \n  - processing returned False\n  + relational_projection_source_unavailable:The fenced relational projection source could not be prepared."
+      },
+      {
+        "test": "tests.test_kg_decision_declared_relationships::test_only_unambiguous_declared_requirements_are_emitted[legacy]",
+        "message": "assert False\n +  where False = any(<generator object test_only_unambiguous_declared_requirements_are_emitted.<locals>.<genexpr> at 0x000002A2A9701220>)"
+      },
+      {
+        "test": "tests.test_kg_derived_draft_bootstrap::test_ideation_derived_spec_keeps_legacy_decision_compatibility",
+        "message": "AssertionError: assert [] == ['Reuse the t...stence port.']\n  \n  Right contains 2 more items, first extra item: 'Reuse the transaction-lifecycle precedent.'\n  Use -v to get more diff"
+      },
+      {
+        "test": "tests.test_kg_direct_mcp_acl::test_existing_direct_reads_accept_exact_operation_authority[okto_pulse_kg_takedown_status-kwargs0-kg.operations.audit.read-legacy]",
+        "message": "Failed: DID NOT RAISE <class 'test_kg_direct_mcp_acl.test_existing_direct_reads_accept_exact_operation_authority.<locals>._ReachedAuthorizedIo'>"
+      },
+      {
+        "test": "tests.test_kg_foundation.TestBootstrapSchema::test_schema_version",
+        "message": "AssertionError: assert '0.8.0' in {'0.3.10', '0.3.11', '0.3.12', '0.3.2', '0.3.3', '0.3.4', ...}"
+      },
+      {
+        "test": "tests.test_kg_foundation.TestHappyPathDedup::test_full_commit_happy_path",
+        "message": "sqlalchemy.exc.OperationalError: (sqlite3.OperationalError) no such column: consolidation_audit.reference_findings\n[SQL: SELECT consolidation_audit.session_id, consolidation_audit.board_id, consolidation_audit.artifact_id, consolidation_audit.artifact_type, consolidation_audit.agent_id, consolidation_audit.started_at, consolidation_audit.committed_at, consolidation_audit.nodes_added, consolidation_audit.nodes_updated, consolidation_audit.nodes_superseded, consolidation_audit.edges_added, consolidation_audit.summary_text, consolidation_audit.content_hash, consolidation_audit.undo_status, consolidation_audit.undone_at, consolidation_audit.error_details, consolidation_audit.reference_findings \nFROM consolidation_audit \nWHERE consolidation_audit.board_id = ? AND consolidation_audit.artifact_id = ? AND consolidation_audit.artifact_type = ? AND consolidation_audit.committed_at IS NOT NULL AND consolidation_audit.undo_status = ? ORDER BY consolidation_audit.committed_at DESC\n LIMIT ? OFFSET ?]\n[parameters: ('board-test-001', 'spec-happy', 'spec', 'none', 1, 0)]\n(Background on this error at: https://sqlalche.me/e/20/e3q8)"
+      },
+      {
+        "test": "tests.test_kg_foundation.TestHappyPathDedup::test_sha256_dedup_nothing_changed",
+        "message": "sqlalchemy.exc.OperationalError: (sqlite3.OperationalError) no such column: consolidation_audit.reference_findings\n[SQL: SELECT consolidation_audit.session_id, consolidation_audit.board_id, consolidation_audit.artifact_id, consolidation_audit.artifact_type, consolidation_audit.agent_id, consolidation_audit.started_at, consolidation_audit.committed_at, consolidation_audit.nodes_added, consolidation_audit.nodes_updated, consolidation_audit.nodes_superseded, consolidation_audit.edges_added, consolidation_audit.summary_text, consolidation_audit.content_hash, consolidation_audit.undo_status, consolidation_audit.undone_at, consolidation_audit.error_details, consolidation_audit.reference_findings \nFROM consolidation_audit \nWHERE consolidation_audit.board_id = ? AND consolidation_audit.artifact_id = ? AND consolidation_audit.artifact_type = ? AND consolidation_audit.committed_at IS NOT NULL AND consolidation_audit.undo_status = ? ORDER BY consolidation_audit.committed_at DESC\n LIMIT ? OFFSET ?]\n[parameters: ('board-test-001', 'spec-dedup', 'spec', 'none', 1, 0)]\n(Background on this error at: https://sqlalche.me/e/20/e3q8)"
+      },
+      {
+        "test": "tests.test_kg_foundation.TestOwnershipHNSWIdempotency::test_hnsw_returns_similar",
+        "message": "sqlalchemy.exc.OperationalError: (sqlite3.OperationalError) no such column: consolidation_audit.reference_findings\n[SQL: SELECT consolidation_audit.session_id, consolidation_audit.board_id, consolidation_audit.artifact_id, consolidation_audit.artifact_type, consolidation_audit.agent_id, consolidation_audit.started_at, consolidation_audit.committed_at, consolidation_audit.nodes_added, consolidation_audit.nodes_updated, consolidation_audit.nodes_superseded, consolidation_audit.edges_added, consolidation_audit.summary_text, consolidation_audit.content_hash, consolidation_audit.undo_status, consolidation_audit.undone_at, consolidation_audit.error_details, consolidation_audit.reference_findings \nFROM consolidation_audit \nWHERE consolidation_audit.board_id = ? AND consolidation_audit.artifact_id = ? AND consolidation_audit.artifact_type = ? AND consolidation_audit.committed_at IS NOT NULL AND consolidation_audit.undo_status = ? ORDER BY consolidation_audit.committed_at DESC\n LIMIT ? OFFSET ?]\n[parameters: ('board-test-001', 'spec-hnsw-seed', 'spec', 'none', 1, 0)]\n(Background on this error at: https://sqlalche.me/e/20/e3q8)"
+      }
+    ],
+    "limits": "maxfail20;408 completed modules excluded, including stress. Last test_kg_foundation partial; followups pending."
+  },
+  "core_run10_native_followup": {
+    "campaigns": [
+      {
+        "campaign": "run10-native-fixtures1",
+        "passed": 154,
+        "failed": 1,
+        "duration_seconds": 149.73
+      },
+      {
+        "campaign": "run10-native-fixtures2",
+        "passed": 19,
+        "failed": 0,
+        "duration_seconds": 18.53
+      }
+    ],
+    "distinct_passed": 155,
+    "xml_sha256": {
+      "run10-native-fixtures1": "499c131f84dc7e6e77c1c07768695ea09dd8009b5f859fe28074d948ee6e1a07",
+      "run10-native-fixtures2": "286b31960ed9876791430674c9a9005cd63f809ef06d3cd8257da6c73812c82b"
+    },
+    "proof_pair": "dist-native-preflight2",
+    "product_changes": false,
+    "scope": "Nine affected modules complete, including previously partial KG foundation, plus AF04. Native Board guideline export and old-envelope rejection; FR/AC/TR identity fixtures; narrative not projected as Decision; current grants and removed-alias denial; schema0.8 cancellation snapshot; current audit reference_findings column in test mapping; structured missing-source retry error with backoff/debt guarantees retained.",
+    "limits": "All20 run10 failures resolved. Followup1 omitted still-required administrative grant from ACL fixture; restored current authority in followup2. No product/frontend change; full backend/criteria qualification remains open."
   }
 }

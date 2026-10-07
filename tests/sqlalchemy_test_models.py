@@ -3086,6 +3086,9 @@ class ConsolidationAudit(Base):
         DateTime(timezone=True), nullable=True
     )
     error_details: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    reference_findings: Mapped[dict | None] = mapped_column(
+        JSON(none_as_null=True), nullable=True
+    )
 
 
 class KuzuNodeRef(Base):

@@ -210,7 +210,7 @@ async def test_ir_or_coverage_requires_linked_tasks(db_factory):
             title="Spec with IR and OR",
             status=SpecStatus.APPROVED,
             created_by=actor_id,
-            functional_requirements=["Send metrics"],
+            functional_requirements=[{"id": "fr_metrics", "text": "Send metrics"}],
             integration_requirements=[
                 {"id": "ir_1", "title": "Send metric event", "status": "active"}
             ],
@@ -260,7 +260,7 @@ async def test_ir_or_link_reference_validation(db_factory):
                 title="Spec",
                 status=SpecStatus.DRAFT,
                 created_by=actor_id,
-                functional_requirements=["FR"],
+                functional_requirements=[{"id": "fr_one", "text": "FR"}],
                 api_contracts=[
                     {"id": "api_1", "method": "POST", "path": "/metrics"}
                 ],
@@ -359,7 +359,7 @@ async def test_ir_or_linked_requirements_accept_structured_tr_refs(db_factory):
                     {
                         "id": "or_1",
                         "title": "Timeout metric",
-                        "linked_requirements": ["Session timeout must be configurable"],
+                        "linked_requirements": ["tr_session"],
                     }
                 ],
             ),
@@ -367,9 +367,7 @@ async def test_ir_or_linked_requirements_accept_structured_tr_refs(db_factory):
         spec = await service.get_spec(spec_id)
 
     assert spec.integration_requirements[0]["linked_requirements"] == ["tr_audit"]
-    assert spec.observability_requirements[0]["linked_requirements"] == [
-        "Session timeout must be configurable"
-    ]
+    assert spec.observability_requirements[0]["linked_requirements"] == ["tr_session"]
 
 
 @pytest.mark.asyncio
@@ -387,7 +385,7 @@ async def test_add_integration_requirement_accepts_external_service_mcp(db_facto
                 title="Spec",
                 status=SpecStatus.DRAFT,
                 created_by=actor_id,
-                functional_requirements=["FR"],
+                functional_requirements=[{"id": "fr_one", "text": "FR"}],
                 integration_requirements=[],
                 observability_requirements=[],
             )
@@ -432,7 +430,7 @@ async def test_add_integration_requirement_accepts_mcp_tool_type(db_factory):
                 title="Spec",
                 status=SpecStatus.DRAFT,
                 created_by=actor_id,
-                functional_requirements=["FR"],
+                functional_requirements=[{"id": "fr_one", "text": "FR"}],
                 integration_requirements=[],
                 observability_requirements=[],
             )

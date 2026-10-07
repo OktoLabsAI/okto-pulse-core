@@ -1,7 +1,7 @@
 """Comprehensive test suite for the KG Foundation Layer (Sprint MVP Fase 0).
 
 Covers all 6 test cards:
-- 4a2d6fd7: Bootstrap schema + SQLite migration + Abandon
+- 4a2d6fd7: Bootstrap native schema + Abandon
 - 725c6d12: Happy path + SHA256 dedup + Reconciliation ADD
 - bc3a99c4: Reconciliation UPDATE/SUPERSEDE/NOOP
 - f029108d: TTL expiry + Grafx failure + invalid candidate
@@ -158,7 +158,7 @@ async def _commit_connected_learning_session(
 
 
 # ============================================================================
-# Card 4a2d6fd7: Bootstrap schema + SQLite migration + Abandon
+# Card 4a2d6fd7: Bootstrap native schema + Abandon
 # ============================================================================
 
 
@@ -183,24 +183,8 @@ class TestBootstrapSchema:
         }
 
     def test_schema_version(self):
-        # Monotonic additive bumps preserve the floor (0.3.7 = implements
-        # APIContract->Constraint endpoint pair) — assert known-version membership.
-        assert SCHEMA_VERSION in {
-            "0.3.2",
-            "0.3.3",
-            "0.3.4",
-            "0.3.5",
-            "0.3.6",
-            "0.3.7",
-            "0.3.8",
-            "0.3.9",
-            "0.3.10",
-            "0.3.11",
-            "0.3.12",
-            "0.4.0",
-            "0.5.0",
-            "0.6.0", "0.7.0",
-        }
+        assert SCHEMA_VERSION == "0.8.0"
+
 
     def test_implements_accepts_requirement_and_constraint_pairs(self):
         from kg_schema_testing import MULTI_REL_TYPES
