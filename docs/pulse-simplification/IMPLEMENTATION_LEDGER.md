@@ -3,6 +3,7 @@
 ## Estado para retomada
 
 ### 2026-10-06 — C3 em andamento: linhagem com raiz unica
+Publicado: Core 8c3ff671 / Community afb4d281, pushes confirmados.
 Bases Core 467e7fc6 / Community ee011cee.
 root_ideation era alias de cabecalho; root_entity ja era emitido por
 lineage/dependency/overlay. UI, tipos, adapter e fake Core agora usam somente
