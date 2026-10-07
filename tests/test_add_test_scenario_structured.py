@@ -1,12 +1,4 @@
-"""Integration tests for the okto_pulse_add_test_scenario MCP tool against
-STRUCTURED acceptance criteria.
-
-Spec aafcc73f / KB 26b0e005. These exercise the real MCP tool (not just the
-helper): write resolution is strict (index / ac_id / exact text), persists
-canonical ac_id strings, is fail-closed and atomic on unresolved tokens, and
-keeps the tolerant read resolver for coverage. Covers the 9 spec scenarios
-(TC-1..TC-5).
-"""
+"""Native scenario references: exact AC IDs, atomic rejection and coverage."""
 
 from __future__ import annotations
 
@@ -33,7 +25,6 @@ _STRUCTURED_ACS = [
     {"id": "ac_cccc3333", "text": "Invalid token is rejected", "status": "active"},
 ]
 
-_LEGACY_ACS = ["AC0 legacy behavior", "AC1 legacy behavior"]
 
 
 def _id(prefix: str) -> str:
@@ -107,56 +98,23 @@ async def _scenarios(db_factory, spec_id) -> list:
         return list(spec.test_scenarios or [])
 
 
-# --- TC-1: index / ac_id -> ac_id -----------------------------------------
+# --- Native AC IDs and removed reference aliases -----------------------------------------
 
-async def test_index_persists_ac_id(db_factory):
-    """ts_dba06b3b — structured AC + 0-based index -> [ac_id] as list[str]."""
+@pytest.mark.parametrize("obsolete", ["0", "User can log in with valid token", "User can log"])
+async def test_removed_reference_alias_is_rejected(db_factory, obsolete):
     board_id, spec_id = await _seed(db_factory, _STRUCTURED_ACS)
-    payload = await _add_scenario(db_factory, board_id, spec_id, linked_criteria="0")
-
-    assert payload.get("success") is True, payload
-    assert payload["scenario"]["linked_criteria"] == ["ac_aaaa1111"]
-    assert all(isinstance(x, str) for x in payload["scenario"]["linked_criteria"])
+    payload = await _add_scenario(db_factory, board_id, spec_id, linked_criteria=[obsolete])
+    assert "error" in payload
+    assert await _scenarios(db_factory, spec_id) == []
 
 
 async def test_ac_id_persists_ac_id(db_factory):
     """ts_ba7be759 — structured AC + ac_id token -> [ac_id] (no 'not found')."""
     board_id, spec_id = await _seed(db_factory, _STRUCTURED_ACS)
-    payload = await _add_scenario(db_factory, board_id, spec_id, linked_criteria="ac_bbbb2222")
+    payload = await _add_scenario(db_factory, board_id, spec_id, linked_criteria=["ac_bbbb2222"])
 
     assert payload.get("success") is True, payload
     assert payload["scenario"]["linked_criteria"] == ["ac_bbbb2222"]
-
-
-# --- TC-2: exact text -> ac_id; legacy regression -------------------------
-
-async def test_exact_text_persists_ac_id(db_factory):
-    """ts_51c8fe5e — exact AC text -> the ac_id, not the text nor the dict."""
-    board_id, spec_id = await _seed(db_factory, _STRUCTURED_ACS)
-    payload = await _add_scenario(
-        db_factory, board_id, spec_id, linked_criteria="Invalid token is rejected"
-    )
-
-    assert payload.get("success") is True, payload
-    assert payload["scenario"]["linked_criteria"] == ["ac_cccc3333"]
-
-
-async def test_legacy_string_ac_regression(db_factory):
-    """ts_abe407c5 — legacy string AC by index/text resolves to its text; no error."""
-    board_id, spec_id = await _seed(db_factory, _LEGACY_ACS)
-
-    by_index = await _add_scenario(db_factory, board_id, spec_id, linked_criteria="0")
-    assert by_index.get("success") is True, by_index
-    assert by_index["scenario"]["linked_criteria"] == ["AC0 legacy behavior"]
-
-    by_text = await _add_scenario(
-        db_factory, board_id, spec_id, linked_criteria="AC1 legacy behavior"
-    )
-    assert by_text.get("success") is True, by_text
-    # Adding a scenario is a partial spec write: it must not migrate an omitted
-    # legacy AC collection as an unrelated side effect. Until the collection is
-    # explicitly edited, both index and text lookup preserve the legacy text.
-    assert by_text["scenario"]["linked_criteria"] == ["AC1 legacy behavior"]
 
 
 # --- TC-3: fail-closed / atomic -------------------------------------------
@@ -164,7 +122,7 @@ async def test_legacy_string_ac_regression(db_factory):
 async def test_unresolved_token_structured_error(db_factory):
     """ts_b5a4dbbb — unresolved token -> structured error, nothing appended."""
     board_id, spec_id = await _seed(db_factory, _STRUCTURED_ACS)
-    payload = await _add_scenario(db_factory, board_id, spec_id, linked_criteria="99")
+    payload = await _add_scenario(db_factory, board_id, spec_id, linked_criteria=["99"])
 
     assert "error" in payload, payload
     assert "Available ac_ids" in payload["error"]
@@ -174,9 +132,9 @@ async def test_unresolved_token_structured_error(db_factory):
 
 
 async def test_mixed_valid_invalid_is_atomic(db_factory):
-    """ts_e87a5fc0 — '0|ghost' fails closed: error mentions ghost, nothing partial."""
+    """ts_e87a5fc0 — A native ID plus unknown ID fails closed: error mentions ghost, nothing partial."""
     board_id, spec_id = await _seed(db_factory, _STRUCTURED_ACS)
-    payload = await _add_scenario(db_factory, board_id, spec_id, linked_criteria="0|ghost")
+    payload = await _add_scenario(db_factory, board_id, spec_id, linked_criteria=["ac_aaaa1111", "ghost"])
 
     assert "error" in payload, payload
     assert "ghost" in payload["error"]
@@ -186,30 +144,28 @@ async def test_mixed_valid_invalid_is_atomic(db_factory):
 
 # --- TC-4: multi-value shapes + coverage round-trip -----------------------
 
-async def test_json_array_and_pipe_resolve_equal(db_factory):
-    """ts_69b44f10 — JSON-array and pipe inputs yield the same ordered list[str]."""
+async def test_native_array_preserves_order(db_factory):
     board_id, spec_id = await _seed(db_factory, _STRUCTURED_ACS)
+    payload = await _add_scenario(
+        db_factory, board_id, spec_id,
+        linked_criteria=["ac_aaaa1111", "ac_bbbb2222"],
+    )
+    assert payload["success"] is True
+    assert payload["scenario"]["linked_criteria"] == ["ac_aaaa1111", "ac_bbbb2222"]
 
-    via_json = await _add_scenario(
-        db_factory, board_id, spec_id, linked_criteria='["0","1"]', title="json"
-    )
-    via_pipe = await _add_scenario(
-        db_factory, board_id, spec_id, linked_criteria="0|1", title="pipe"
-    )
 
-    assert via_json.get("success") is True, via_json
-    assert via_pipe.get("success") is True, via_pipe
-    assert via_json["scenario"]["linked_criteria"] == ["ac_aaaa1111", "ac_bbbb2222"]
-    assert (
-        via_pipe["scenario"]["linked_criteria"]
-        == via_json["scenario"]["linked_criteria"]
-    )
+@pytest.mark.parametrize("obsolete", ["ac_aaaa1111", "0|1", '["ac_aaaa1111"]'])
+async def test_removed_wire_shape_is_rejected(db_factory, obsolete):
+    board_id, spec_id = await _seed(db_factory, _STRUCTURED_ACS)
+    with pytest.raises(ValueError, match="native array"):
+        await _add_scenario(db_factory, board_id, spec_id, linked_criteria=obsolete)
+    assert await _scenarios(db_factory, spec_id) == []
 
 
 async def test_coverage_round_trip_after_create(db_factory):
     """ts_8a4e5a5f — after creating via the tool, list_test_scenarios sees the AC covered."""
     board_id, spec_id = await _seed(db_factory, _STRUCTURED_ACS)
-    created = await _add_scenario(db_factory, board_id, spec_id, linked_criteria="ac_cccc3333")
+    created = await _add_scenario(db_factory, board_id, spec_id, linked_criteria=["ac_cccc3333"])
     assert created.get("success") is True, created
 
     register_mcp_test_runtime(db_factory)
@@ -224,17 +180,7 @@ async def test_coverage_round_trip_after_create(db_factory):
     assert listed["coverage"]["details"].get("2"), listed["coverage"]
 
 
-# --- TC-5: prefix is read-only --------------------------------------------
-
-async def test_prefix_unresolved_on_write_but_read_tolerant(db_factory):
-    """ts_32748b43 — prefix token is unresolved on write; read resolver still tolerates it."""
-    board_id, spec_id = await _seed(db_factory, _STRUCTURED_ACS)
-    payload = await _add_scenario(db_factory, board_id, spec_id, linked_criteria="User can log")
-
-    assert "error" in payload, payload
-    assert await _scenarios(db_factory, spec_id) == []
-
-    # read-path tolerance is intact (prefix still maps to index 0).
+async def test_read_coverage_does_not_infer_from_prefixes():
     from okto_pulse.core.services.analytics_service import resolve_linked_criteria_to_indices
 
-    assert resolve_linked_criteria_to_indices(["User can log"], _STRUCTURED_ACS) == {0}
+    assert resolve_linked_criteria_to_indices(["User can log"], _STRUCTURED_ACS) == set()

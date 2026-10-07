@@ -1,20 +1,7 @@
-"""Regression: structured ``linked_requirements`` must resolve canonically.
+"""Native requirement IDs across BR, API contracts, Decisions, IR and OR.
 
-Bug (found in the 0.2.3 live E2E): once FR/AC canonicalization made
-``functional_requirements`` a list of dicts ``{id,text,status}``, the inline
-index resolver in add/update_business_rule and add/update_api_contract did
-``req_list.append(frs[idx])`` — appending the whole FR dict — which violates
-``SpecUpdate.{business_rules,api_contracts}[].linked_requirements: list[str]``
-and crashed with ``Input should be a valid string ... input_type=dict``. The
-text path (``token in frs``) also always failed (a list of dicts never contains
-the bare text). FR->BR/contract linkage was therefore impossible, which blocked
-fr_coverage and the spec validation gate.
-
-IMPL-1 (spec 9d66847f): write-path now resolves to canonical requirement IDs
-(not indices). BR stays FR-scoped; Decision, API contracts, IR, and OR accept
-FR/TR references. Fail-closed: any unresolved token aborts before persistence.
-The tolerant read resolver (``resolve_linked_fr_indices``) is unchanged — it
-still handles both fr_ids and indices on read.
+References are arrays of stable IDs. Removed positional/text/wire aliases
+fail before persistence; unknown references remain atomic errors.
 """
 
 from __future__ import annotations
@@ -121,7 +108,7 @@ async def _read_spec(spec_id: str):
 # ====================================================================
 
 
-async def test_add_business_rule_index_structured_fr(db_factory):
+async def test_add_business_rule_first_native_fr(db_factory):
     board_id, spec_id = await _seed(db_factory)
     payload = await _call(
         "okto_pulse_add_business_rule",
@@ -131,19 +118,17 @@ async def test_add_business_rule_index_structured_fr(db_factory):
         rule="max 5",
         when="bad password",
         then="lock 15m",
-        linked_requirements="0",
+        linked_requirements=["fr_1111aaaa"],
     )
     assert payload.get("success") is True, payload  # no Pydantic crash
     spec = await _read_spec(spec_id)
     assert len(spec.business_rules) == 1
     linked = spec.business_rules[0]["linked_requirements"]
-    # IMPL-1: persisted as canonical fr_id, not index. Index "0" resolves to
-    # fr_1111aaaa. The tolerant read resolver still maps fr_ids back to indices.
     assert linked == ["fr_1111aaaa"], linked
     assert resolve_linked_fr_indices(linked, spec.functional_requirements) == {0}
 
 
-async def test_add_business_rule_text_structured_fr(db_factory):
+async def test_add_business_rule_text_reference_rejected(db_factory):
     board_id, spec_id = await _seed(db_factory)
     payload = await _call(
         "okto_pulse_add_business_rule",
@@ -153,15 +138,11 @@ async def test_add_business_rule_text_structured_fr(db_factory):
         rule="r",
         when="w",
         then="t",
-        linked_requirements="User can log in",
+        linked_requirements=["User can log in"],
     )
-    assert payload.get("success") is True, payload
+    assert "Unresolved" in payload["error"]
     spec = await _read_spec(spec_id)
-    linked = spec.business_rules[0]["linked_requirements"]
-    # IMPL-1: text token resolves to canonical fr_id "fr_1111aaaa".
-    # The tolerant read resolver maps fr_ids back to indices.
-    assert linked == ["fr_1111aaaa"], linked
-    assert resolve_linked_fr_indices(linked, spec.functional_requirements) == {0}
+    assert not spec.business_rules
 
 
 async def test_add_business_rule_fr_id_structured_fr(db_factory):
@@ -174,13 +155,11 @@ async def test_add_business_rule_fr_id_structured_fr(db_factory):
         rule="r",
         when="w",
         then="t",
-        linked_requirements="fr_2222bbbb",
+        linked_requirements=["fr_2222bbbb"],
     )
     assert payload.get("success") is True, payload
     spec = await _read_spec(spec_id)
     linked = spec.business_rules[0]["linked_requirements"]
-    # IMPL-1: fr_id token persisted as canonical fr_id directly.
-    # The tolerant read resolver maps fr_ids back to indices.
     assert linked == ["fr_2222bbbb"], linked
     assert resolve_linked_fr_indices(linked, spec.functional_requirements) == {1}
 
@@ -195,9 +174,8 @@ async def test_add_business_rule_index_out_of_range(db_factory):
         rule="r",
         when="w",
         then="t",
-        linked_requirements="9",
+        linked_requirements=["9"],
     )
-    # IMPL-1: fail-closed; unresolved token aborts before persistence.
     assert "error" in payload and "Unresolved" in payload["error"], payload
     # ...AND the write is ATOMIC: re-read the spec and prove the business_rule
     # was NOT persisted (a bug that returns the error but still appends the BR
@@ -214,7 +192,7 @@ async def test_add_business_rule_index_out_of_range(db_factory):
 # ====================================================================
 
 
-async def test_add_api_contract_index_structured_fr(db_factory):
+async def test_add_api_contract_native_fr(db_factory):
     board_id, spec_id = await _seed(db_factory)
     payload = await _call(
         "okto_pulse_add_api_contract",
@@ -222,14 +200,12 @@ async def test_add_api_contract_index_structured_fr(db_factory):
         spec_id=spec_id,
         method="POST",
         path="/api/login",
-        linked_requirements="1",
+        linked_requirements=["fr_2222bbbb"],
     )
     assert payload.get("success") is True, payload  # no Pydantic crash
     spec = await _read_spec(spec_id)
     assert len(spec.api_contracts) == 1
     linked = spec.api_contracts[0]["linked_requirements"]
-    # IMPL-1: index "1" resolves to canonical fr_id "fr_2222bbbb".
-    # The tolerant read resolver maps fr_ids back to indices.
     assert linked == ["fr_2222bbbb"], linked
     assert resolve_linked_fr_indices(linked, spec.functional_requirements) == {1}
 
@@ -242,7 +218,7 @@ async def test_add_api_contract_tr_id_structured_requirement(db_factory):
         spec_id=spec_id,
         method="POST",
         path="/api/login",
-        linked_requirements="tr_3333cccc",
+        linked_requirements=["tr_3333cccc"],
     )
     assert payload.get("success") is True, payload
     spec = await _read_spec(spec_id)
@@ -302,10 +278,10 @@ async def test_add_decision_linked_requirements_schema_accepts_native_list():
         and branch.get("items", {}).get("type") == "string"
         for branch in branches
     ), schema
-    assert any(branch.get("type") == "string" for branch in branches), schema
+    assert not any(branch.get("type") == "string" for branch in branches), schema
 
 
-async def test_add_decision_linked_requirements_native_list_and_pipe_are_equivalent(
+async def test_add_decision_native_list_persists_and_pipe_is_rejected(
     db_factory,
 ):
     board_id, spec_id = await _seed(db_factory)
@@ -316,7 +292,7 @@ async def test_add_decision_linked_requirements_native_list_and_pipe_are_equival
         spec_id=spec_id,
         title="Native requirement links",
         rationale="Exercise the native MCP wire shape",
-        linked_requirements=["0", "tr_3333cccc"],
+        linked_requirements=["fr_1111aaaa", "tr_3333cccc"],
     )
     pipe = await _call(
         "okto_pulse_add_decision",
@@ -328,14 +304,13 @@ async def test_add_decision_linked_requirements_native_list_and_pipe_are_equival
     )
 
     assert native.get("success") is True, native
-    assert pipe.get("success") is True, pipe
+    assert pipe.get("error") == "invalid_multi_value_input", pipe
     assert native["decision"]["linked_requirements"] == [
         "fr_1111aaaa",
         "tr_3333cccc",
     ]
-    assert pipe["decision"]["linked_requirements"] == native["decision"][
-        "linked_requirements"
-    ]
+    spec = await _read_spec(spec_id)
+    assert len(spec.decisions) == 1
 
 
 async def test_add_decision_linked_requirements_rejects_ambiguous_comma_input(
@@ -353,7 +328,7 @@ async def test_add_decision_linked_requirements_rejects_ambiguous_comma_input(
     )
 
     assert payload.get("error") == "invalid_multi_value_input", payload
-    assert "comma-separated input is rejected" in payload.get("detail", ""), payload
+    assert "expected a native array of strings" in payload.get("detail", ""), payload
     spec = await _read_spec(spec_id)
     assert not spec.decisions
 
@@ -366,7 +341,7 @@ async def test_add_decision_tr_id_structured_requirement(db_factory):
         spec_id=spec_id,
         title="Emit audit events from login API",
         rationale="Auditability is a technical requirement for the auth flow",
-        linked_requirements="tr_3333cccc",
+        linked_requirements=["tr_3333cccc"],
     )
     assert payload.get("success") is True, payload
     spec = await _read_spec(spec_id)
@@ -412,7 +387,7 @@ async def test_add_integration_requirement_tr_id_structured_requirement(db_facto
         spec_id=spec_id,
         title="Audit export",
         integration_type="external_service",
-        linked_requirements="tr_3333cccc",
+        linked_requirements=["tr_3333cccc"],
     )
     assert payload.get("success") is True, payload
     spec = await _read_spec(spec_id)
@@ -420,7 +395,7 @@ async def test_add_integration_requirement_tr_id_structured_requirement(db_facto
     assert linked == ["tr_3333cccc"], linked
 
 
-async def test_add_observability_requirement_tr_text_structured_requirement(db_factory):
+async def test_add_observability_requirement_native_tr(db_factory):
     board_id, spec_id = await _seed(db_factory)
     payload = await _call(
         "okto_pulse_add_observability_requirement",
@@ -428,7 +403,7 @@ async def test_add_observability_requirement_tr_text_structured_requirement(db_f
         spec_id=spec_id,
         title="Session timeout configuration metric",
         signal_type="metric",
-        linked_requirements="Session timeout must be configurable",
+        linked_requirements=["tr_4444dddd"],
     )
     assert payload.get("success") is True, payload
     spec = await _read_spec(spec_id)
@@ -444,7 +419,7 @@ async def test_add_integration_requirement_unknown_requirement_fails_closed(db_f
         spec_id=spec_id,
         title="Broken link",
         integration_type="api",
-        linked_requirements="tr_missing",
+        linked_requirements=["tr_missing"],
     )
     assert "error" in payload and "Unresolved" in payload["error"], payload
     assert "Available tr_ids" in payload["error"], payload

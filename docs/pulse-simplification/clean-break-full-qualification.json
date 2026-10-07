@@ -1,0 +1,256 @@
+{
+  "scope": "C3 mixed suite adaptation and C4 current pair qualification",
+  "pair": "dist-native-frontend-classification1",
+  "qualification_complete": false,
+  "campaigns": [
+    {
+      "repository": "core",
+      "name": "clean-break-full-run1",
+      "xml_sha256": "8565e3da1d61cfcaa101f999c5843915dae125588b888622bccbbe2f347dd253",
+      "statistics": {
+        "name": "pytest",
+        "errors": "0",
+        "failures": "20",
+        "skipped": "0",
+        "tests": "97",
+        "time": "293.778",
+        "timestamp": "2026-10-06T23:12:06.676956-03:00",
+        "hostname": "Alienware_m15"
+      },
+      "stop_condition": "--maxfail=20",
+      "failures": [
+        {
+          "test": "tests.test_acceptance_coverage_gate::test_move_spec_done_accepts_linked_criteria_by_index",
+          "kind": "failure",
+          "message": "ValueError: Cannot move spec to 'done': 2 acceptance criteria lack test scenarios. Uncovered: [0] AC1: first behavior is covered...; [1] AC2: second behavior is covered.... Create test scenarios for all criteria, or set skip_test_coverage flag in the spec."
+        },
+        {
+          "test": "tests.test_acceptance_coverage_gate::test_list_test_scenarios_coverage_accepts_linked_criteria_by_index",
+          "kind": "failure",
+          "message": "assert 0 == 2"
+        },
+        {
+          "test": "tests.test_add_business_rule_structured_fr::test_add_business_rule_index_structured_fr",
+          "kind": "failure",
+          "message": "AssertionError: {'error': 'expected a native array of strings'}\nassert None is True\n +  where None = <built-in method get of dict object at 0x000002BCCC9321C0>('success')\n +    where <built-in method get of dict object at 0x000002BCCC9321C0> = {'error': 'expected a native array of strings'}.get"
+        },
+        {
+          "test": "tests.test_add_business_rule_structured_fr::test_add_business_rule_text_structured_fr",
+          "kind": "failure",
+          "message": "AssertionError: {'error': 'expected a native array of strings'}\nassert None is True\n +  where None = <built-in method get of dict object at 0x000002BCCC948500>('success')\n +    where <built-in method get of dict object at 0x000002BCCC948500> = {'error': 'expected a native array of strings'}.get"
+        },
+        {
+          "test": "tests.test_add_business_rule_structured_fr::test_add_business_rule_fr_id_structured_fr",
+          "kind": "failure",
+          "message": "AssertionError: {'error': 'expected a native array of strings'}\nassert None is True\n +  where None = <built-in method get of dict object at 0x000002BCCC90FF40>('success')\n +    where <built-in method get of dict object at 0x000002BCCC90FF40> = {'error': 'expected a native array of strings'}.get"
+        },
+        {
+          "test": "tests.test_add_business_rule_structured_fr::test_add_business_rule_index_out_of_range",
+          "kind": "failure",
+          "message": "AssertionError: {'error': 'expected a native array of strings'}\nassert ('error' in {'error': 'expected a native array of strings'} and 'Unresolved' in 'expected a native array of strings')"
+        },
+        {
+          "test": "tests.test_add_business_rule_structured_fr::test_add_api_contract_index_structured_fr",
+          "kind": "failure",
+          "message": "ValueError: expected a native array of strings"
+        },
+        {
+          "test": "tests.test_add_business_rule_structured_fr::test_add_api_contract_tr_id_structured_requirement",
+          "kind": "failure",
+          "message": "ValueError: expected a native array of strings"
+        },
+        {
+          "test": "tests.test_add_business_rule_structured_fr::test_add_decision_linked_requirements_schema_accepts_native_list",
+          "kind": "failure",
+          "message": "AssertionError: {'anyOf': [{'items': {'type': 'string'}, 'type': 'array'}, {'type': 'null'}], 'default': None}\nassert False\n +  where False = any(<generator object test_add_decision_linked_requirements_schema_accepts_native_list.<locals>.<genexpr> at 0x000002BCCF255080>)"
+        },
+        {
+          "test": "tests.test_add_business_rule_structured_fr::test_add_decision_linked_requirements_native_list_and_pipe_are_equivalent",
+          "kind": "failure",
+          "message": "AssertionError: {'error': \"Unresolved linked_requirements token(s): ['0']. Valid FR indices: 0..1. Available fr_ids: ['fr_1111aaaa', 'fr_2222bbbb']. Available tr_ids: ['tr_3333cccc', 'tr_4444dddd']. No decision was appended.\"}\nassert None is True\n +  where None = <built-in method get of dict object at 0x000002BCCCFD9200>('success')\n +    where <built-in method get of dict object at 0x000002BCCCFD9200> = {'error': \"Unresolved linked_requirements token(s): ['0']. Valid FR indices: 0..1. Available fr_ids: ['fr_1111aaaa', 'fr_2222bbbb']. Available tr_ids: ['tr_3333cccc', 'tr_4444dddd']. No decision was appended.\"}.get"
+        },
+        {
+          "test": "tests.test_add_business_rule_structured_fr::test_add_decision_linked_requirements_rejects_ambiguous_comma_input",
+          "kind": "failure",
+          "message": "AssertionError: {'detail': 'expected a native array of strings', 'error': 'invalid_multi_value_input'}\nassert 'comma-separated input is rejected' in 'expected a native array of strings'\n +  where 'expected a native array of strings' = <built-in method get of dict object at 0x000002BCCC9192C0>('detail', '')\n +    where <built-in method get of dict object at 0x000002BCCC9192C0> = {'detail': 'expected a native array of strings', 'error': 'invalid_multi_value_input'}.get"
+        },
+        {
+          "test": "tests.test_add_business_rule_structured_fr::test_add_decision_tr_id_structured_requirement",
+          "kind": "failure",
+          "message": "AssertionError: {'detail': 'expected a native array of strings', 'error': 'invalid_multi_value_input'}\nassert None is True\n +  where None = <built-in method get of dict object at 0x000002BCCCFDC4C0>('success')\n +    where <built-in method get of dict object at 0x000002BCCCFDC4C0> = {'detail': 'expected a native array of strings', 'error': 'invalid_multi_value_input'}.get"
+        },
+        {
+          "test": "tests.test_add_business_rule_structured_fr::test_add_integration_requirement_tr_id_structured_requirement",
+          "kind": "failure",
+          "message": "ValueError: expected a native array of strings"
+        },
+        {
+          "test": "tests.test_add_business_rule_structured_fr::test_add_observability_requirement_tr_text_structured_requirement",
+          "kind": "failure",
+          "message": "ValueError: expected a native array of strings"
+        },
+        {
+          "test": "tests.test_add_business_rule_structured_fr::test_add_integration_requirement_unknown_requirement_fails_closed",
+          "kind": "failure",
+          "message": "ValueError: expected a native array of strings"
+        },
+        {
+          "test": "tests.test_add_test_scenario_structured::test_index_persists_ac_id",
+          "kind": "failure",
+          "message": "ValueError: expected a native array of strings"
+        },
+        {
+          "test": "tests.test_add_test_scenario_structured::test_ac_id_persists_ac_id",
+          "kind": "failure",
+          "message": "ValueError: expected a native array of strings"
+        },
+        {
+          "test": "tests.test_add_test_scenario_structured::test_exact_text_persists_ac_id",
+          "kind": "failure",
+          "message": "ValueError: expected a native array of strings"
+        },
+        {
+          "test": "tests.test_add_test_scenario_structured::test_legacy_string_ac_regression",
+          "kind": "failure",
+          "message": "ValueError: expected a native array of strings"
+        },
+        {
+          "test": "tests.test_add_test_scenario_structured::test_unresolved_token_structured_error",
+          "kind": "failure",
+          "message": "ValueError: expected a native array of strings"
+        }
+      ]
+    },
+    {
+      "repository": "community",
+      "name": "clean-break-full-run1-community",
+      "xml_sha256": "670cc69d384dab613ccc57ba24eb0b6df9a4eda6cdcb00718569e56fdd4c804d",
+      "statistics": {
+        "name": "pytest",
+        "errors": "5",
+        "failures": "15",
+        "skipped": "0",
+        "tests": "537",
+        "time": "349.940",
+        "timestamp": "2026-10-06T23:12:04.994300-03:00",
+        "hostname": "Alienware_m15"
+      },
+      "stop_condition": "--maxfail=20",
+      "failures": [
+        {
+          "test": "tests.test_af25_docs_truthfulness::test_af42_boundary_oracle_matches_executable_report",
+          "kind": "failure",
+          "message": "AssertionError: assert '| Current full Community->Core import inventory | `1114` |' in '# Architecture — Okto Pulse (Community edition)\\n\\nPackage layout, the core/edition ownership boundary, and every ada...kg_chaos_executor.py` drives fault injection\\nagainst the graph adapters.\\n\\n---\\n\\n[← Back to README](../README.md)\\n'"
+        },
+        {
+          "test": "tests.test_af29_s2_write_lock_quarantine_adapters::test_protocol_marker_from_crashed_recoverer_is_reclaimed_under_kernel_mutex",
+          "kind": "failure",
+          "message": "assert False\n +  where False = wait(20)\n +    where wait = <Event at 0x16bd00c2c10 unset>.wait"
+        },
+        {
+          "test": "tests.test_af29_s2_write_lock_quarantine_adapters::test_kernel_mutex_allows_only_one_multiprocess_stale_recoverer",
+          "kind": "failure",
+          "message": "_queue.Empty"
+        },
+        {
+          "test": "tests.test_af30_3c_relational_effects::test_af30_3c_community_relational_effects_register_and_persist",
+          "kind": "failure",
+          "message": "sqlalchemy.exc.IntegrityError: (sqlite3.IntegrityError) NOT NULL constraint failed: boards.realm_id\n[SQL: INSERT INTO boards (id, name, description, owner_id, realm_id) VALUES (?, ?, ?, ?, ?) RETURNING created_at, updated_at]\n[parameters: ('7402ce8c-52f1-4319-99b7-00385dec95f7', 'AF30-3cR', None, 'test-owner', None)]\n(Background on this error at: https://sqlalche.me/e/20/gkpj)"
+        },
+        {
+          "test": "tests.test_af35_s2_community_kg_operational_adapters::test_af35_s2_community_kg_operational_adapters_register_and_persist",
+          "kind": "failure",
+          "message": "sqlalchemy.exc.IntegrityError: (sqlite3.IntegrityError) NOT NULL constraint failed: boards.realm_id\n[SQL: INSERT INTO boards (id, name, description, owner_id, realm_id) VALUES (?, ?, ?, ?, ?) RETURNING created_at, updated_at]\n[parameters: ('af35-s2-community-board', 'AF35-S2', None, 'agent', None)]\n(Background on this error at: https://sqlalche.me/e/20/gkpj)"
+        },
+        {
+          "test": "tests.test_af35_s2_community_kg_operational_adapters::test_dlq_replay_classifies_and_deduplicates_active_claim",
+          "kind": "failure",
+          "message": "sqlalchemy.exc.IntegrityError: (sqlite3.IntegrityError) NOT NULL constraint failed: boards.realm_id\n[SQL: INSERT INTO boards (id, name, description, owner_id, realm_id) VALUES (?, ?, ?, ?, ?) RETURNING created_at, updated_at]\n[parameters: ('dlq-v2-board', 'DLQ V2', None, 'agent', None)]\n(Background on this error at: https://sqlalche.me/e/20/gkpj)"
+        },
+        {
+          "test": "tests.test_af35_s2_community_kg_operational_adapters::test_code_traceability_dlq_replay_is_explicit_board_scoped_and_idempotent",
+          "kind": "failure",
+          "message": "sqlalchemy.exc.IntegrityError: (sqlite3.IntegrityError) NOT NULL constraint failed: boards.realm_id\n[SQL: INSERT INTO boards (id, name, description, owner_id, realm_id) VALUES (?, ?, ?, ?, ?), (?, ?, ?, ?, ?) RETURNING created_at, updated_at, id]\n[parameters: ('ct-dlq-board', 'CT DLQ', None, 'agent', None, 'ct-dlq-foreign-board', 'Foreign CT DLQ', None, 'agent', None)]\n(Background on this error at: https://sqlalche.me/e/20/gkpj)"
+        },
+        {
+          "test": "tests.test_af41_serving_boundary::test_af41_serve_dual_builds_two_uvicorn_servers_with_community_trace",
+          "kind": "failure",
+          "message": "okto_pulse.community.adapters.current_relational_schema.StorageFormatError: storage_format_incompatible:version; Pulse 0.4.0 requires new storage or storage created by this schema. Existing data was not converted; select a new storage location."
+        },
+        {
+          "test": "tests.test_architecture_acceptance_witnesses::test_same_origin_has_independent_persisted_decisions_in_two_specs",
+          "kind": "failure",
+          "message": "sqlalchemy.exc.IntegrityError: (sqlite3.IntegrityError) NOT NULL constraint failed: specs.architecture_adoption\n[SQL: INSERT INTO specs (architecture_adoption, id, board_id, ideation_id, refinement_id, source_refinement_snapshot_id, source_refinement_version, delivery_context, source_context_sha256, title, description, context, skip_decisions_coverage, validation_threshold, require_task_validation, validation_min_confidence, validation_min_completeness, validation_max_drift, current_validation_id, pre_archive_status, cancellation_reason, cancelled_at, cancelled_by, status, edition, last_started_edition, version, assignee_id, created_by, test_scenario_policy_epoch, project_structure_revision, project_structure_digest) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING skip_test_coverage, skip_rules_coverage, skip_trs_coverage, skip_contract_coverage, skip_ir_coverage, skip_or_coverage, skip_code_evidence_coverage, skip_delivery_evidence, skip_qualitative_validation, archived, created_at, updated_at]\n[parameters: (None, 'second', 'board', None, None, None, None, None, None, 'Second', None, None, 0, None, None, None, None, None, None, None, None, None, None, 'draft', 2, None, 1, None, 'author', 1, 0, None)]\n(Background on this error at: https://sqlalche.me/e/20/gkpj)"
+        },
+        {
+          "test": "tests.test_architecture_acceptance_witnesses::test_association_preserves_pending_local_delivery_and_rejects_foreign_ir",
+          "kind": "failure",
+          "message": "sqlalchemy.exc.IntegrityError: (sqlite3.IntegrityError) NOT NULL constraint failed: specs.architecture_adoption\n[SQL: INSERT INTO specs (architecture_adoption, id, board_id, ideation_id, refinement_id, source_refinement_snapshot_id, source_refinement_version, delivery_context, source_context_sha256, title, description, context, integration_requirements, skip_decisions_coverage, validation_threshold, require_task_validation, validation_min_confidence, validation_min_completeness, validation_max_drift, current_validation_id, pre_archive_status, cancellation_reason, cancelled_at, cancelled_by, status, edition, last_started_edition, version, assignee_id, created_by, test_scenario_policy_epoch, project_structure_revision, project_structure_digest) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING skip_test_coverage, skip_rules_coverage, skip_trs_coverage, skip_contract_coverage, skip_ir_coverage, skip_or_coverage, skip_code_evidence_coverage, skip_delivery_evidence, skip_qualitative_validation, archived, created_at, updated_at]\n[parameters: (None, 'foreign-spec', 'board', None, None, None, None, None, None, 'Other scope', None, None, '[{\"id\": \"foreign-ir\", \"title\": \"Consume orders\", \"integration_type\": \"event\", \"status\": \"active\"}]', 0, None, None, None, None, None, None, None, None, None, None, 'draft', 1, None, 1, None, 'author', 1, 0, None)]\n(Background on this error at: https://sqlalche.me/e/20/gkpj)"
+        },
+        {
+          "test": "tests.test_architecture_acceptance_witnesses::test_embedded_gate_instructions_remain_data_after_promotion",
+          "kind": "failure",
+          "message": "AssertionError: Regex pattern did not match.\n Regex: 'spec_execution_contract_adoption_required'\n Input: 'spec_execution_contract_required'"
+        },
+        {
+          "test": "tests.test_architecture_start_transition::test_pending_architecture_blocks_actual_start_without_workflow_mutation[3]",
+          "kind": "failure",
+          "message": "AssertionError: {\"detail\":\"spec_evaluation_edition_required\"}\nassert 400 == 409\n +  where 400 = <Response [400 Bad Request]>.status_code"
+        },
+        {
+          "test": "tests.test_architecture_start_transition::test_pending_architecture_blocks_actual_start_without_workflow_mutation[31]",
+          "kind": "failure",
+          "message": "AssertionError: {\"detail\":\"spec_evaluation_edition_required\"}\nassert 400 == 409\n +  where 400 = <Response [400 Bad Request]>.status_code"
+        },
+        {
+          "test": "tests.test_architecture_start_transition::test_approved_spec_cannot_start_with_incomplete_decomposition[contribution]",
+          "kind": "failure",
+          "message": "AssertionError: {\"detail\":\"spec_evaluation_edition_required\"}\nassert 'spec_execution_plan_incomplete' in '{\"detail\":\"spec_evaluation_edition_required\"}'\n +  where '{\"detail\":\"spec_evaluation_edition_required\"}' = <Response [400 Bad Request]>.text"
+        },
+        {
+          "test": "tests.test_architecture_start_transition::test_approved_spec_cannot_start_with_incomplete_decomposition[test_owner]",
+          "kind": "failure",
+          "message": "AssertionError: {\"detail\":\"spec_evaluation_edition_required\"}\nassert 'spec_execution_plan_incomplete' in '{\"detail\":\"spec_evaluation_edition_required\"}'\n +  where '{\"detail\":\"spec_evaluation_edition_required\"}' = <Response [400 Bad Request]>.text"
+        },
+        {
+          "test": "tests.test_audit_reference_findings::test_receipt_rollback_commit_empty_closure_and_undo",
+          "kind": "error",
+          "message": "failed on setup with \"sqlalchemy.exc.IntegrityError: (sqlite3.IntegrityError) NOT NULL constraint failed: boards.realm_id\n[SQL: INSERT INTO boards (id, name, description, owner_id, realm_id) VALUES (?, ?, ?, ?, ?) RETURNING created_at, updated_at]\n[parameters: ('board', 'Board', None, 'owner', None)]\n(Background on this error at: https://sqlalche.me/e/20/gkpj)\""
+        },
+        {
+          "test": "tests.test_audit_reference_findings::test_rejects_cross_scope_or_cognitive_source_diagnostics_before_writes[board]",
+          "kind": "error",
+          "message": "failed on setup with \"sqlalchemy.exc.IntegrityError: (sqlite3.IntegrityError) NOT NULL constraint failed: boards.realm_id\n[SQL: INSERT INTO boards (id, name, description, owner_id, realm_id) VALUES (?, ?, ?, ?, ?) RETURNING created_at, updated_at]\n[parameters: ('board', 'Board', None, 'owner', None)]\n(Background on this error at: https://sqlalche.me/e/20/gkpj)\""
+        },
+        {
+          "test": "tests.test_audit_reference_findings::test_rejects_cross_scope_or_cognitive_source_diagnostics_before_writes[owner]",
+          "kind": "error",
+          "message": "failed on setup with \"sqlalchemy.exc.IntegrityError: (sqlite3.IntegrityError) NOT NULL constraint failed: boards.realm_id\n[SQL: INSERT INTO boards (id, name, description, owner_id, realm_id) VALUES (?, ?, ?, ?, ?) RETURNING created_at, updated_at]\n[parameters: ('board', 'Board', None, 'owner', None)]\n(Background on this error at: https://sqlalche.me/e/20/gkpj)\""
+        },
+        {
+          "test": "tests.test_audit_reference_findings::test_rejects_cross_scope_or_cognitive_source_diagnostics_before_writes[type]",
+          "kind": "error",
+          "message": "failed on setup with \"sqlalchemy.exc.IntegrityError: (sqlite3.IntegrityError) NOT NULL constraint failed: boards.realm_id\n[SQL: INSERT INTO boards (id, name, description, owner_id, realm_id) VALUES (?, ?, ?, ?, ?) RETURNING created_at, updated_at]\n[parameters: ('board', 'Board', None, 'owner', None)]\n(Background on this error at: https://sqlalche.me/e/20/gkpj)\""
+        },
+        {
+          "test": "tests.test_audit_reference_findings::test_rejects_cross_scope_or_cognitive_source_diagnostics_before_writes[writer]",
+          "kind": "error",
+          "message": "failed on setup with \"sqlalchemy.exc.IntegrityError: (sqlite3.IntegrityError) NOT NULL constraint failed: boards.realm_id\n[SQL: INSERT INTO boards (id, name, description, owner_id, realm_id) VALUES (?, ?, ?, ?, ?) RETURNING created_at, updated_at]\n[parameters: ('board', 'Board', None, 'owner', None)]\n(Background on this error at: https://sqlalche.me/e/20/gkpj)\""
+        }
+      ]
+    }
+  ],
+  "resolved_core_suites": {
+    "campaigns": [
+      "clean-break-native-reference-tests1",
+      "clean-break-native-reference-tests2"
+    ],
+    "distinct_passed": 29,
+    "files": [
+      "test_acceptance_coverage_gate.py",
+      "test_add_business_rule_structured_fr.py",
+      "test_add_test_scenario_structured.py"
+    ],
+    "note": "Native IDs/arrays replace removed positive aliases; atomicity and coverage remain. Full suite not rerun."
+  }
+}

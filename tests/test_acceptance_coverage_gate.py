@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
+from okto_pulse.core.domain.architecture_adoption import ArchitectureAdoptionScope
 from okto_pulse.core.domain.code_traceability import (
     DeliveryContext,
     DirectSpecDeliveryContextProvenance,
@@ -72,7 +73,7 @@ def _direct_spec_context_fields(spec_id: str) -> dict[str, object]:
     }
 
 
-async def _seed_spec_with_indexed_criteria(db_factory) -> tuple[str, str]:
+async def _seed_spec_with_identified_criteria(db_factory) -> tuple[str, str]:
     board_id = _id("coverage-board")
     spec_id = _id("coverage-spec")
     async with db_factory() as db:
@@ -86,6 +87,7 @@ async def _seed_spec_with_indexed_criteria(db_factory) -> tuple[str, str]:
         )
         db.add(
             Spec(
+                architecture_adoption=ArchitectureAdoptionScope(board_id=board_id, spec_id=spec_id, adopted_in_edition=1, actor_id=USER_ID, inherited_resource_ids=()).model_dump(mode="json"),
                 id=spec_id,
                 board_id=board_id,
                 title="Coverage Gate Spec",
@@ -95,8 +97,8 @@ async def _seed_spec_with_indexed_criteria(db_factory) -> tuple[str, str]:
                 skip_qualitative_validation=True,
                 functional_requirements=["FR1", "FR2"],
                 acceptance_criteria=[
-                    "AC1: first behavior is covered",
-                    "AC2: second behavior is covered",
+                    {"id": "ac_first", "text": "AC1: first behavior is covered", "status": "active"},
+                    {"id": "ac_second", "text": "AC2: second behavior is covered", "status": "active"},
                 ],
                 test_scenarios=[
                     {
@@ -106,7 +108,7 @@ async def _seed_spec_with_indexed_criteria(db_factory) -> tuple[str, str]:
                         "when": "The first action runs",
                         "then": "The first result is observed",
                         "scenario_type": "integration",
-                        "linked_criteria": ["0"],
+                        "linked_criteria": ["ac_first"],
                         "status": "passed",
                         "linked_task_ids": [],
                     },
@@ -117,7 +119,7 @@ async def _seed_spec_with_indexed_criteria(db_factory) -> tuple[str, str]:
                         "when": "The second action runs",
                         "then": "The second result is observed",
                         "scenario_type": "integration",
-                        "linked_criteria": [1],
+                        "linked_criteria": ["ac_second"],
                         "status": "passed",
                         "linked_task_ids": [],
                     },
@@ -131,8 +133,8 @@ async def _seed_spec_with_indexed_criteria(db_factory) -> tuple[str, str]:
     return board_id, spec_id
 
 
-async def test_move_spec_done_accepts_linked_criteria_by_index(db_factory):
-    board_id, spec_id = await _seed_spec_with_indexed_criteria(db_factory)
+async def test_move_spec_done_accepts_linked_criteria_by_id(db_factory):
+    board_id, spec_id = await _seed_spec_with_identified_criteria(db_factory)
 
     async with db_factory() as db:
         moved = await SpecService(db).move_spec(
@@ -147,8 +149,8 @@ async def test_move_spec_done_accepts_linked_criteria_by_index(db_factory):
     assert moved.status == SpecStatus.DONE
 
 
-async def test_list_test_scenarios_coverage_accepts_linked_criteria_by_index(db_factory):
-    board_id, spec_id = await _seed_spec_with_indexed_criteria(db_factory)
+async def test_list_test_scenarios_coverage_accepts_linked_criteria_by_id(db_factory):
+    board_id, spec_id = await _seed_spec_with_identified_criteria(db_factory)
     register_mcp_test_runtime(db_factory)
 
     with patch.object(mcp_server, "_get_agent_ctx", AsyncMock(return_value=_stub_ctx(board_id))), \

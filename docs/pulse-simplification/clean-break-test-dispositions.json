@@ -2331,6 +2331,11 @@
       "path": "Architecture repository/REST/UoW suites; frontend ArchitectureTab, ArchitectureDiagramEditor and exportMarkdown",
       "disposition": "adapted",
       "reason": "Native connections use linkedInterfaceIds arrays. Old scalar rejected including null/customData with no writes. Frontend no longer emits duplicate scalar. Two copy fixtures declare current architecture adoption; existing copy/staleness/authority checks retained."
+    },
+    {
+      "path": "test_acceptance_coverage_gate.py; test_add_business_rule_structured_fr.py; test_add_test_scenario_structured.py",
+      "disposition": "adapted",
+      "reason": "General campaign exposed positive expectations for retired index/text/prefix/string/pipe aliases. Native fixtures use canonical IDs and array transport; old aliases have negative tests. Atomic mixed references, BR/API/Decision/IR/OR persistence, scenario coverage and Done gate retained. Legacy string AC conversion test retired, not counted as passed. Coverage fixture supplies explicit architecture adoption."
     }
   ],
   "removed_cases": [

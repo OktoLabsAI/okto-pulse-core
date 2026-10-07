@@ -2,6 +2,38 @@
 
 ## Estado para retomada
 
+### 2026-10-06 — C3 suites de referencias nativas; resultado geral C4
+
+Bases Core afd5f6ab / Community4bc2d79a.
+As duas campanhas gerais encerraram, handles82269/71407 terminais:
+Core77 aprovados/20 falhas em293.85s; Community517 aprovados/15 falhas/
+cinco erros em350.17s. Ambas pararam no limite --maxfail=20, NAO sao aceite
+integral. Core executou o stress1000 iteracoes em tmp_path; nenhum release
+ou dado real alterado. Resultados e falhas completas com hash XML em
+clean-break-full-qualification.json; logs externos preservados.
+
+As20 falhas Core estavam em tres suites de referencias. Retiradas expectativas
+positivas de indice/texto/prefixo/pipe/string JSON; fixtures agora usam IDs
+canonicos e arrays. Mantidas persistencia por BR/API/Decision/IR/OR, atomicidade
+de erro misto, cobertura de cenarios e gate Done; aliases removidos sao negativos.
+Teste exclusivo de AC textual legado superado, sem contar exclusao como aprovado.
+Spec do coverage gate declara arquitetura adotada, sem relaxar gate.
+Native-reference-tests1:28 aprovados/uma falha de fixture de adocao;
+tests2:dois aprovados. Total distinto29, handles encerrados. Ruff F/E9/diff verdes.
+Somente testes/documentacao alterados; par instalado/provado da entrada anterior
+e closure com oito budgets ZERO permanecem correspondentes ao produto.
+
+PROXIMA ACAO FINITA: resolver as20 falhas/erros Community registradas no JSON.
+Grupos: docs boundary inventory desatualizado; dois mutex multiprocess com timeout
+(investigar child antes de relaxar); realm ausente em relational_effects,
+kg_operational e audit_reference_findings; serve_dual com formato de storage
+anterior; arquitetura com Spec sem adocao/avaliacao sem edition e expectativa
+de erro adoption_required ja removido. Arquivos/nomes e mensagens no JSON.
+Depois continuar campanha geral Core alem destes tres arquivos e Community
+alem das falhas corrigidas. Nao relancar stress ja aprovado sem mudanca relevante.
+T23/KG-10, qualificacao por criterio e bump pareado0.4.0 ainda pendentes.
+Nenhum processo desta campanha permanece em execucao.
+
 ### 2026-10-06 — C3 classificacao de tres superficies frontend; C4 geral
 
 Publicado: Core e07daf2c / Community 4bc2d79a; pushes confirmados.
