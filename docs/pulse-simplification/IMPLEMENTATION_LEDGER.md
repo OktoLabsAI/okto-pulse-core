@@ -2,6 +2,29 @@
 
 ## Estado para retomada
 
+### 2026-10-07 — Community run7 resolvido; telemetria nativa qualificada
+
+Full-run7-community terminou:105 aprovados/20erros162.69s (96modulos excluidos).
+Handle50759 encerrado. Causa: BoardORM sem realm_id; fixtures agora explicitas
+local e Spec recriada com architecture_adoption nativa. Followup
+native-telemetry-fixtures1:29 aprovados41.36s, tres modulos completos,
+incluindo ultimo telemetry_edges parcial. Mantidos todos os asserts de CAS,
+checkpoint/replay/rollback, tombstone e source recriada, original timestamps,
+SLO/debt e isolamento Board. Ruff/diff verdes. Nenhum produto/frontend alterado.
+dist-native-preflight2/provenance/closure2 aplicaveis, oito budgetsZERO.
+Frontend2451/269 completo. Nenhum handle ativo. Proximo Core run10 aposrun9,
+Community run8 aposrun7/followup29. C1-C4/criterios/benchmark/bump/T23/KG-10 abertos.
+
+### 2026-10-07 — Community run7 ativo
+
+Coreb2b040e6 / Communityc02857bd publicados; pushes confirmados.
+clean-break-full-run7-community ativo handle50759;96modulos completos excluidos
+conforme selection.json (run6 e followupC8/C9 completos). Aguardar terminal.
+Nao alterar/reinstalar produto durante a campanha: dist-native-preflight2/
+provenance/closure2 byte-identico, oito budgetsZERO. Frontend2451/269 completo.
+Proxima rodada Core run10 deve incorporar selecao run9+modulos completos XML
+run9 e followups, mantendo stress explicitamente excluido.
+
 ### 2026-10-07 — Core run9 integralmente resolvido
 
 Followup run9-native-fixtures1:193 aprovados/3falhas154.21s. Faltavam snapshot

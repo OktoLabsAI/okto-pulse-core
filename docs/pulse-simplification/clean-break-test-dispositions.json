@@ -4344,5 +4344,13 @@
       ],
       "reason": "Complete native Card DTO; canonical spec.tests grants; assert single graph schema0.8.0; worker result includes reference_findings. Retired direct link expectation409 replaced with native422/extra field and no adoption. Keep commit-refetch-project order, actor scoping, curated metadata and deletion race."
     }
-  ]
+  ],
+  "native_telemetry_fixture_adaptations": {
+    "paths": [
+      "okto_labs_pulse_community/tests/test_card8_stale_sweep_persistence.py",
+      "okto_labs_pulse_community/tests/test_card9_takedown_telemetry.py",
+      "okto_labs_pulse_community/tests/test_card9_takedown_telemetry_edges.py"
+    ],
+    "reason": "Explicit local realm and current architecture selection in ORM seeds. No assertions removed; create_all idempotency tests current schema restart, not upgrade."
+  }
 }
