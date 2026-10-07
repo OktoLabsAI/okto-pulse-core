@@ -2831,5 +2831,29 @@
       }
     ],
     "limits": "Stopped at20 failures/errors. Next followup: immutable corruption injection, isolated fresh cold-start database, native subject authority/material_change and source fixture, resume caps, realm on exact ack setup. No fix applied yet."
+  },
+  "community_run9_native_followup": {
+    "proof_pair": "dist-native-privacy-refusal1",
+    "product_changes": false,
+    "campaigns": [
+      {
+        "name": "community9-native-followup1",
+        "passed": 0,
+        "collection_errors": 1,
+        "seconds": 12.57
+      },
+      {
+        "name": "community9-native-followup2",
+        "passed": 47,
+        "failed": 0,
+        "seconds": 57.27
+      }
+    ],
+    "xml_sha256": {
+      "community9-native-followup1": "3ad500880211c515459d661dff4266fb606c94033e98339030da3abcb941360a",
+      "community9-native-followup2": "4d32c4602168d098cd66a160caad48c59bc607f84317e6317a011d34ae93194a"
+    },
+    "scope": "Six complete suites: native immutable history read integrity; all11 fresh-storage cold-start publication failure boundaries; explicit native Card authority for signed closeout; mandatory progress material_change and native verifier for reused source receipt; native persisted100-requirement multibyte resume bounds/cursor; explicit Board realm for exact rebuild ACK atomicity.",
+    "limits": "Initial collection error referenced a Core-only fixture helper; replaced with direct explicit native adapter seeding already used by Community fixtures. No product gate relaxed; no semantic authority inferred. Whole remaining backend campaigns and acceptance review pending."
   }
 }

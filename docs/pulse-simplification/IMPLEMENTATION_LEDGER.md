@@ -2,6 +2,37 @@
 
 ## Estado para retomada
 
+### 2026-10-07 — Continuações Core12 e Community10 em execução
+Core12: handle84664, clean-break-full-run12, seleção619módulos completos
+excluídos. Community10: handle26283, clean-break-full-run10-community,
+seleção206módulos completos excluídos. Ambos maxfail20; polls confirmam sessões
+ativas. Não reiniciar campanhas por timeout de observação.
+Par congelado dist-native-privacy-refusal1, prova byte-a-byte843/905+316/402.
+Nenhuma edição de produto/testes ou reinstalação enquanto campanhas estiverem
+ativas. Community08f642e1 publicado: seis módulos,47casos qualificados.
+Próximo: terminais, diagnóstico das falhas, aceite existente; sem ampliar escopo.
+
+### 2026-10-07 — Community9 falhas resolvidas em47casos nativos
+community9-native-followup1 terminou com1erro de coleta/12.57s: helper de fixtures
+Core não é importável pela suíte Community. Não houve teste comportamental nessa
+rodada. Substituído por seed explícito via adapter nativo, como fixtures Community
+já fazem. community9-native-followup2 handle47834 terminou0:47aprovados/57.27s,
+seis módulos inteiros; todos17fails/3erros Community9 têm followup qualificado.
+Ruff/diff verdes. Produto Python/SPA não alterado; par provado continua
+dist-native-privacy-refusal1. Não foi necessário relaxar nenhum gate.
+
+Correções: trigger de imutabilidade testado como recusa e corrupção injetada
+somente no resultado lido; cold-start usa DATA_DIR/DATABASE_URL/KG_BASE_DIR
+temporários por caso mantendo11fronteiras de falha; autoridade explícita dos Cards;
+progress.material_change e verifier real da fixture de origem;100requisitos
+nativos persistidos no teste multibyte/cursor; realm explícito no exact ACK.
+Recibo community_run9_native_followup preserva a coleta falha e execução final.
+
+Core12 preparada619exclusões; Community10 preparada com módulos completos da
+Community9,47followup e6cenários medidos. Nenhuma campanha está ativa agora.
+Próximo: iniciar continuações com o par atual congelado, depois aceite235critérios,
+benchmark comparável e decisões T23/KG-10 pendentes. Escopo não ampliado.
+
 ### 2026-10-07 — Core11 resolvido; Community9 terminal para próximo followup
 Core11 followup1 handle78972 terminou1:199aprovados,2falhas/567.80s.
 Residuais eram expectativa de mentions derivados de narrativa sem Decision formal
