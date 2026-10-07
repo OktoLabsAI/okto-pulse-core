@@ -4,6 +4,13 @@
 
 ### 2026-10-06 — C3 fixtures de autoridade; C4 detector relacional preservado
 
+Publicado em Core6b66fd75, push confirmado; Community5e8d73f4 limpo.
+Continuacao clean-break-full-run4 em execucao (handle78901), apenas suites
+ainda nao executadas. Selecao externa clean-break-full-run4-selection.json:
+exclui stress ja aprovado e54 modulos de full-run3; o ultimo modulo parcial
+foi executado integralmente em boundary-fixtures3. Nao recomeçar full-run3.
+Aguardar esse handle e registrar resultado antes de novas alteracoes de produto.
+
 Publicado antes deste incremento: Core11a05fa2 / Community5e8d73f4, pushes
 confirmados. Core full-run3 terminou:452 aprovados/20 falhas em256.44s,
 limite maxfail20, sem stress ja executado. XML/hash/falhas no JSON de qualificacao.
