@@ -49,8 +49,8 @@ async def require_spec_delivery(
 ) -> None:
     """Spec→done delivery gate (FR-4).
 
-    The gate consumes the card-ledger ROLLUP when the adapter exposes it —
-    the spec-level projection becomes a derivation, not a recording surface.
+    The public snapshot port derives the Spec rollup from the canonical Card
+    ledgers under the requested edition; no alternate adapter method is used.
     The same board setting (delivery_evidence_gate) governs this seam: in
     ``advisory`` the aggregated verdict is surfaced through the rollup read
     without blocking the transition.
@@ -66,11 +66,7 @@ async def require_spec_delivery(
     scope = DeliveryScope(spec.board_id, spec.id, int(spec.edition))
     if for_update:
         await store.lock_scope(scope)
-    load_rollup = getattr(store, "load_rollup_snapshot", None)
-    if load_rollup is not None:
-        snapshot = (await load_rollup(spec.board_id, spec.id))[0]
-    else:
-        snapshot = await store.load_snapshot(scope)
+    snapshot = await store.load_snapshot(scope)
     result = evaluate_delivery_coverage(snapshot)
     if not result.allowed:
         missing = [

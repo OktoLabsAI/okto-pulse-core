@@ -2,6 +2,32 @@
 
 ## Estado para retomada
 
+### 2026-10-06 — C1 em andamento: uma porta para snapshot Delivery
+Policy publicada: Core 044507b9 / Community 3e640821, pushes confirmados.
+require_spec_delivery passa somente por load_snapshot(DeliveryScope) da porta.
+Retirada introspeccao/load_rollup_snapshot concreto, que ignorava a verificacao
+de edition ja existente na porta implementada. Rollup e ledger permanecem os
+mesmos. Teste Community usa adapter real e Spec corrente, solicitando edition
+valida divergente; recusa antes de avaliar cobertura e preserva o estado.
+Frontend nao alterado neste incremento; assets aprovados do incremento anterior.
+Par dist-native-delivery-port1 instalado; provenance-native-delivery-port1
+byte a byte aprovada (843/905 Core; 319/405 Community).
+Core1: 45 aprovados. Community1: 41 aprovados/duas falhas do novo teste por usar
+edition=0 (recusada pelo value object antes do adapter). Fixture corrigida para
+edition valida divergente; Community2/3: dois aprovados, com e sem for_update.
+Ultima execucao tambem rele a Spec do banco e compara a edition capturada antes.
+Total distinto Community: 43 aprovados; produto nao alterado entre campanhas.
+Closure-native-delivery-port1 aprovada: findings/documentation_findings vazios
+e oito budgets current=limit=0. Ruff F/E9 e diff aprovados; handles encerrados.
+C1-C4 permanecem abertos. T23/KG-10 aguardam decisao.
+Rastreio para retomada: services/delivery_evidence.py ainda reexporta tres nomes
+do domain/delivery_inventory como compatibility names. Busca encontrou callers
+de inventario apenas nos testes, mas delivery_inventory tambem e listado no
+public_contract_manifest e adapter_provenance. Verificar a funcao desses registros
+antes de retirar alias; nao apagar a porta/dominio atual nem enfraquecer closure.
+Auditoria C4 integral e bump coordenado 0.4.0 continuam pendentes.
+
+
 ### 2026-10-06 — C1/C3 em andamento: Delivery policy sem conversao
 Bases Core accb6377 / Community 861edb7c limpas/publicadas.
 Resolver recusa policy fora do enum sem converte-la para blocking; default
