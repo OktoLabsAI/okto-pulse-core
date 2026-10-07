@@ -7,6 +7,10 @@ import uuid
 from unittest.mock import AsyncMock, patch
 
 import pytest
+from r3_scenario_helpers import (
+    native_knowledge_port,  # noqa: F401 -- shared autouse fixture
+    select_native_knowledge,
+)
 
 from okto_pulse.core.infra.database import get_session_factory
 from okto_pulse.core.mcp import server as mcp_server
@@ -45,7 +49,7 @@ def _stub_ctx(board_id: str):
             "agent_name": USER_ID,
             "board_id": board_id,
             "permissions": [
-                "board:read",
+                "board.read",
                 "code_traceability.investigation.read",
                 "code_traceability.evidence.read",
                 "code_traceability.target.read",
@@ -260,6 +264,10 @@ async def test_traceability_report_lists_sdlc_chain_without_duplicate_direct_spe
             )
         )
         await db.commit()
+
+    await select_native_knowledge(
+        db_factory, board_id, "card", task_id, [spec_kb_id], actor_id=USER_ID,
+    )
 
     with patch.object(mcp_server, "_get_agent_ctx", AsyncMock(return_value=_stub_ctx(board_id))), \
          patch.object(mcp_server, "check_permission", return_value=None):

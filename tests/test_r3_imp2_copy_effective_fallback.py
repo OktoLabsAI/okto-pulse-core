@@ -13,6 +13,10 @@ import uuid
 from unittest.mock import AsyncMock, patch
 
 import pytest
+from r3_scenario_helpers import (
+    native_knowledge_port,  # noqa: F401 -- shared autouse fixture
+    select_native_knowledge,
+)
 from sqlalchemy import select
 
 from okto_pulse.core.mcp import server as mcp_server
@@ -97,7 +101,7 @@ async def _knowledge_context(seed):
     return result.get("card_knowledge_bases", [])
 
 
-async def _native_spec_inheriting(db_factory, *, with_kb=False, with_mockup=False,
+async def _native_spec_inheriting(db_factory, *, with_kb=False, select_kb=True, with_mockup=False,
                                   with_architecture=False,
                                   with_ideation_architecture=False,
                                   with_kb_na_mark=False,
@@ -174,13 +178,18 @@ async def _native_spec_inheriting(db_factory, *, with_kb=False, with_mockup=Fals
                     status=CardStatus.IN_PROGRESS, card_type=CardType.NORMAL,
                     created_by=USER_ID))
         await db.commit()
+    if with_kb and select_kb:
+        for target_type, target_id in (("spec", spec_id), ("card", card_id)):
+            await select_native_knowledge(
+                db_factory, board_id, target_type, target_id, [ref_kb_id], actor_id=USER_ID,
+            )
     return {"board_id": board_id, "refinement_id": refinement_id, "spec_id": spec_id,
             "card_id": card_id, "ref_kb_id": ref_kb_id, "ref_mockup_id": ref_mockup_id,
             "ref_design_id": ref_design_id, "ideation_design_id": ideation_design_id}
 
 
 # ===========================================================================
-# AC: knowledge fallback to effective inherited + gate coverage flips satisfied
+# Explicit knowledge selection retains effective identity; KB remains advisory
 # ===========================================================================
 
 
@@ -489,6 +498,17 @@ async def test_copy_architecture_covers_multiple_inherited_effective_designs(db_
 # ===========================================================================
 # Point 6 — honest empty vs structured error (never generic "no resources")
 # ===========================================================================
+
+
+@pytest.mark.asyncio
+async def test_unselected_parent_knowledge_does_not_fan_out_to_task(db_factory):
+    seed = await _native_spec_inheriting(db_factory, with_kb=True, select_kb=False)
+    assert await _knowledge_context(seed) == []
+    async with db_factory() as db:
+        source = await db.get(RefinementKnowledgeBase, seed["ref_kb_id"])
+        card = await db.get(Card, seed["card_id"])
+        assert source.content == "ref content"
+        assert list(card.knowledge_bases or []) == []
 
 
 @pytest.mark.asyncio

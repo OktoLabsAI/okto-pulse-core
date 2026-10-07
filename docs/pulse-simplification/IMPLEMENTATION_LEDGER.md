@@ -2,6 +2,32 @@
 
 ## Estado para retomada
 
+### 2026-10-07 — Contexto Knowledge nativo requalificado
+Community16 handle64982 ATIVO no main, par main23; não editar/reinstalar
+esse ambiente antes do terminal. Core main8390bce1/Communityf5b1169a publicados.
+Isolado usa dist-native-reviewer22 já provado; só testes/documentação mudaram.
+
+As três regressões Core foram investigadas e fechadas com seleção explícita pelo
+KnowledgePropagationService e store Community real. Fixture compartilhada registra
+também CommunitySqlAlchemyResourceGateAdapter, restaurando factory anterior no
+teardown. O antigo adapter de testes inferia KB dos pais e podia esconder ausência
+de assignment; não foi alterada semântica produtiva. Helper foi renomeado de
+seed_legacy_spec_with_card para seed_native_spec_with_card, sem converter dados.
+Teste negativo comprova fonte existente sem seleção => contexto Task vazio,
+fonte intacta e nenhuma cópia física. Positivos preservam identidade, conteúdo,
+isolamento, cobertura advisory e operações próprias de mockup/architecture.
+
+selection1 handle29780 terminou0:31pass/12.31s. selection2 handle86011
+terminou1:95pass/1fail/25.12s; novo negativo revelou adapter de testes antigo.
+Após trocar somente a composição local da fixture, selection3 handle69867
+terminou0:32pass/13.56s nos três módulos completos. Cinco outros consumidores
+do helper passaram em selection2; não usam a fixture extraída. Ruff F/E9 e
+diff-check0. Recibo acceptance-clean-break-native-context.json preserva falhas
+e limites. As três reaberturas da matriz Core1053 estão fechadas por este followup,
+sem afirmar execução única da suite nem encerramento C4.
+Próximos: terminal/followups Community16, E2E instalado e reconciliação C4;
+T23/KG-10 continuam pendentes de autoridade, sem alteração silenciosa.
+
 ### 2026-10-07 — Community15 fechado; regressão adicional de contexto investigada
 Core0b6d33d5 publicado e integrado main por FF após terminal fixtures1.
 Community15fixtures1 handle64436 terminou1:21pass/19fail/72.52s.

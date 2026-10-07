@@ -14,6 +14,7 @@ from mcp_runtime_testing import register_mcp_test_runtime
 
 import json
 import uuid
+import pytest
 from unittest.mock import AsyncMock, patch
 
 from okto_pulse.core.mcp import server as mcp_server
@@ -45,6 +46,41 @@ from okto_pulse.core.ports.relational_application import (
 )
 
 USER_ID = "user-r3-scenarios"
+
+
+@pytest.fixture(autouse=True)
+def native_knowledge_port(_knowledge_propagation_empty_test_port, request):
+    from okto_pulse.core.infra.database import get_session_factory
+    from okto_pulse.community.adapters.sqlalchemy_knowledge_propagation import (
+        CommunitySqlAlchemyKnowledgePropagationStore,
+    )
+    from okto_pulse.core.ports.knowledge_propagation import (
+        register_knowledge_propagation_port, register_knowledge_mutation_audit_sink,
+        reset_knowledge_mutation_audit_sink_for_tests,
+    )
+    from okto_pulse.core.domain.realm import RealmScope
+
+    from okto_pulse.community.adapters.sqlalchemy_resource_gate_service import (
+        CommunitySqlAlchemyResourceGateAdapter,
+    )
+    from okto_pulse.core.ports.relational_services import (
+        register_resource_gate_adapter_factory, resolve_resource_gate_adapter_factory,
+    )
+
+    previous_gate_factory = resolve_resource_gate_adapter_factory()
+    request.addfinalizer(lambda: register_resource_gate_adapter_factory(previous_gate_factory))
+    register_resource_gate_adapter_factory(CommunitySqlAlchemyResourceGateAdapter)
+
+    factory = get_session_factory()
+    previous_info = dict(factory.kw.get("info", {}))
+    request.addfinalizer(lambda: factory.configure(info=previous_info))
+    factory.configure(info={**previous_info, "realm_scope": RealmScope.local()})
+    store = CommunitySqlAlchemyKnowledgePropagationStore(factory)
+    register_knowledge_propagation_port(store)
+    register_knowledge_mutation_audit_sink(store)
+    request.addfinalizer(reset_knowledge_mutation_audit_sink_for_tests)
+
+
 
 
 def sid(prefix: str) -> str:
@@ -192,7 +228,7 @@ async def seed_refinement(
             "kb_id": kb_id, "mockup_id": mockup_id, "design_id": design_id}
 
 
-async def seed_legacy_spec_with_card(db_factory, board_id, ref) -> dict:
+async def seed_native_spec_with_card(db_factory, board_id, ref) -> dict:
     """A native Spec with explicit architecture adoption and inherited resources."""
     spec_id = sid("spec")
     card_id = sid("card")
@@ -213,6 +249,11 @@ async def seed_legacy_spec_with_card(db_factory, board_id, ref) -> dict:
                     status=CardStatus.IN_PROGRESS, card_type=CardType.NORMAL,
                     created_by=USER_ID))
         await db.commit()
+    async with db_factory() as db:
+        has_knowledge = await db.get(RefinementKnowledgeBase, ref["kb_id"]) is not None
+    if has_knowledge:
+        for target_type, target_id in (("spec", spec_id), ("card", card_id)):
+            await select_native_knowledge(db_factory, board_id, target_type, target_id, [ref["kb_id"]])
     return {"spec_id": spec_id, "card_id": card_id}
 
 
@@ -224,3 +265,25 @@ async def add_card(db_factory, board_id, spec_id) -> str:
                     created_by=USER_ID))
         await db.commit()
     return card_id
+
+
+async def select_native_knowledge(db_factory, board_id, target_type, target_id, knowledge_ids, *, actor_id=USER_ID):
+    """Author explicit reference assignments through the native service/store."""
+    from okto_pulse.core.domain.knowledge_selection import KnowledgeSelection
+    from okto_pulse.core.ports.knowledge_propagation import KnowledgeTargetKey
+    from okto_pulse.core.services.knowledge_propagation import (
+        KnowledgeMutationCommand, KnowledgePropagationService,
+    )
+
+    async with db_factory() as db:
+        receipt = await KnowledgePropagationService().mutate(
+            db, KnowledgeMutationCommand(
+                target=KnowledgeTargetKey(board_id, target_type, target_id),
+                selection=KnowledgeSelection.explicit_ids(knowledge_ids, mode="reference"),
+                actor_id=actor_id, expected_revision=0,
+                idempotency_key=str(uuid.uuid4()),
+                justification="Explicit native fixture selection for resource context",
+            ),
+        )
+        assert receipt.revision == 1
+        await db.commit()

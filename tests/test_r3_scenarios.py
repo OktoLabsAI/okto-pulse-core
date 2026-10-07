@@ -25,7 +25,8 @@ from r3_scenario_helpers import (
     call_tool,
     freeze_refinement_completion_fixture,
     new_board,
-    seed_legacy_spec_with_card,
+    native_knowledge_port,  # noqa: F401 -- shared autouse fixture
+    seed_native_spec_with_card,
     seed_refinement,
 )
 
@@ -45,28 +46,6 @@ from sqlalchemy_test_models import (
 )
 from knowledge_governance_test_data import valid_governance_metadata
 from okto_pulse.core.services.resource_gate import ResourceGateService
-
-
-@pytest.fixture(autouse=True)
-def native_knowledge_port(_knowledge_propagation_empty_test_port, request):
-    from okto_pulse.core.infra.database import get_session_factory
-    from okto_pulse.community.adapters.sqlalchemy_knowledge_propagation import (
-        CommunitySqlAlchemyKnowledgePropagationStore,
-    )
-    from okto_pulse.core.ports.knowledge_propagation import (
-        register_knowledge_propagation_port, register_knowledge_mutation_audit_sink,
-        reset_knowledge_mutation_audit_sink_for_tests,
-    )
-    from okto_pulse.core.domain.realm import RealmScope
-
-    factory = get_session_factory()
-    previous_info = dict(factory.kw.get("info", {}))
-    request.addfinalizer(lambda: factory.configure(info=previous_info))
-    factory.configure(info={**previous_info, "realm_scope": RealmScope.local()})
-    store = CommunitySqlAlchemyKnowledgePropagationStore(factory)
-    register_knowledge_propagation_port(store)
-    register_knowledge_mutation_audit_sink(store)
-    request.addfinalizer(reset_knowledge_mutation_audit_sink_for_tests)
 
 
 @pytest.fixture(autouse=True)
@@ -272,7 +251,7 @@ async def test_ts_6e228232_gate_summary_and_copy_share_effective_list(db_factory
     falls back to that exact resource (no generic "No resources to copy")."""
     board_id = await new_board(db_factory)
     ref = await seed_refinement(db_factory, board_id, kb=True)
-    legacy = await seed_legacy_spec_with_card(db_factory, board_id, ref)
+    legacy = await seed_native_spec_with_card(db_factory, board_id, ref)
 
     # Gate summary sees the inherited KB as provided, keyed by the effective kb id.
     async with db_factory() as db:
@@ -311,7 +290,7 @@ async def test_ts_3524d4ce_card_receives_all_inherited_with_gate_identity(db_fac
     ref = await seed_refinement(
         db_factory, board_id, kb=True, mockup=True, architecture=True
     )
-    legacy = await seed_legacy_spec_with_card(db_factory, board_id, ref)
+    legacy = await seed_native_spec_with_card(db_factory, board_id, ref)
 
     for tool in (
         "okto_pulse_copy_mockups_to_card",
@@ -355,7 +334,7 @@ async def test_ts_7cc0dcf9_no_auto_na_and_no_provenance_loss(db_factory):
     loses provenance (the copied resource keeps a gate-readable source identity)."""
     board_id = await new_board(db_factory)
     ref = await seed_refinement(db_factory, board_id, kb=True)
-    legacy = await seed_legacy_spec_with_card(db_factory, board_id, ref)
+    legacy = await seed_native_spec_with_card(db_factory, board_id, ref)
 
     knowledge = await _effective_task_knowledge(board_id, legacy["card_id"])
     assert await _no_na_marks(db_factory, board_id)
@@ -727,7 +706,7 @@ async def test_ts_2e4169c2_native_mockups_fall_back_or_actionable_error(db_facto
     board_id = await new_board(db_factory)
     # (a) fallback path — refinement carries the KB.
     ref = await seed_refinement(db_factory, board_id, mockup=True)
-    legacy = await seed_legacy_spec_with_card(db_factory, board_id, ref)
+    legacy = await seed_native_spec_with_card(db_factory, board_id, ref)
     copy = await call_tool(
         "okto_pulse_copy_mockups_to_card",
         board_id=board_id,
@@ -739,7 +718,7 @@ async def test_ts_2e4169c2_native_mockups_fall_back_or_actionable_error(db_facto
 
     # (b) nothing required anywhere -> honest empty, never generic "No X to copy".
     bare_ref = await seed_refinement(db_factory, board_id)
-    bare = await seed_legacy_spec_with_card(db_factory, board_id, bare_ref)
+    bare = await seed_native_spec_with_card(db_factory, board_id, bare_ref)
     empty = await call_tool(
         "okto_pulse_copy_mockups_to_card",
         board_id=board_id,
