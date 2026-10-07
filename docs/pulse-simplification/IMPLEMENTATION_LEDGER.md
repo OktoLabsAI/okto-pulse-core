@@ -2,6 +2,35 @@
 
 ## Estado para retomada
 
+### 2026-10-07 — KG-26 qualificado; KG-10 reproduzido no schema atual e decisão solicitada
+Milestone G6 anterior enviado:Coref3276448 / Community5e22cbff; pushes0.
+Main57 permanece byte-idêntico; nenhum produto alterado neste incremento.
+Endpoint-pending1 handle83274 terminou0:3pass/3.61s (preflight sem escrita,
+sem durability/compensação desnecessária, retry sem consumir attempts).
+Endpoint-retry1 handle51087 terminou0:1pass/32.60s em schema nativo SQL/Grafx.
+Fila real conserva retry agendado/attempts0, não ACKa parcial, converge após
+projetar o endpoint; teste NÃO edita next_retry_at. Card/Spec mantêm status e
+contagens Card/QAItem/SpecQAItem/RefinementQAItem/IdeationQAItem permanecem iguais.
+Recibo clean-break-acceptance-native-endpoint-retry.json qualifica KG-26.
+Índice64 verificadas/171 pendentes/11 superadas; 246/235 permanece fixo.
+Caracterização KG10 agora usa initialize_current_schema nas duas bases:
+handle20730 terminou0,1pass/234.30s. PASS significa defeito reproduzido:
+incremental sem vínculos confirma; rebuild da mesma fonte recusa Decision
+por missing_required_edge. Não equivale a paridade aprovada.
+Recibo clean-break-native-kg10-guard-characterization.json mantém pendência.
+Pergunta assíncrona enviada ao usuário para a decisão KG-10 já existente:
+admitir belongs_to à Spec real SOMENTE para Decision estruturada de Spec,
+writer interno autenticado e identidade/dono validados; manter julgamento
+nas Decisions cognitivas genéricas. Exigência do plano §10.2/10.4 por efeito
+no guard. Resposta ainda não recebida; não aplicar mudança dependente.
+Não é novo alvo: falta já registrada na seção “Decisão KG-10 pendente”.
+Nenhum processo ativo. Ruff F/E9/diff-check passaram. Closure57/frontend27
+continuam válidos para o produto inalterado; sem alegar reexecução.
+Próximo trabalho independente: KG-27 em diante no índice fixo (pendências
+semânticas/policy e captura Learning), enquanto aguarda KG-10. KG-16/24
+dependem também desta resolução, não certificar só os casos com vínculos.
+BASE:T23 continua separado e sem autorização nova. Sem dados reais ou deploy.
+
 ### 2026-10-07 — G6 paridade nativa e compensação verificadas; KG-11 qualificado
 Par inicial confirmado limpo/sincronizado:Core60ad3bb5 / Communityd9c9c5e4.
 Turno anterior teve progresso publicado; este fecha a reprodução de rebuild G6.

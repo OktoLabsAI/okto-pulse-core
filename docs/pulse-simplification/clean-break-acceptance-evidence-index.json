@@ -3246,7 +3246,13 @@
       "historical_review_status": "not_audited_in_this_inventory",
       "prior_reviewed_execution": null,
       "discovered_artifacts": [],
-      "current_qualification": "pending_current_pair_review"
+      "current_qualification": "pending_current_pair_review",
+      "current_review": {
+        "artifact": "clean-break-native-kg10-guard-characterization.json",
+        "criterion_key": "KG:KG-10",
+        "proof_pair": "dist-native-main57",
+        "reason": "Defect reproduced; restricted guard change awaits explicit user decision."
+      }
     },
     {
       "key": "KG:KG-11",
@@ -3734,7 +3740,12 @@
       "historical_review_status": "not_audited_in_this_inventory",
       "prior_reviewed_execution": null,
       "discovered_artifacts": [],
-      "current_qualification": "pending_current_pair_review"
+      "current_qualification": "verified_current_pair_review",
+      "current_review": {
+        "artifact": "clean-break-acceptance-native-endpoint-retry.json",
+        "criterion_key": "KG:KG-26",
+        "proof_pair": "dist-native-main57"
+      }
     },
     {
       "key": "KG:KG-27",
