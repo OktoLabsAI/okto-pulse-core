@@ -1254,5 +1254,26 @@
     "product_changes": false,
     "scope": "Native Card policy reads, response contract, origin creation, relationship preflight, resequence and REST scope. Explicit native architecture/FR seeds; real Knowledge propagation store for creation. Migrated policy tests retired, current thresholds/access/zero writes retained.",
     "limits": "Last partial policy-read module now fully qualified. Broad remaining modules and C1-C4 criteria remain pending."
+  },
+  "community_full_run5": {
+    "campaign": "clean-break-full-run5-community",
+    "passed": 18,
+    "failed": 7,
+    "errors": 13,
+    "duration_seconds": 60.69,
+    "xml_sha256": "db3a89205dcfa39df378f9a8fc6b51241c02da6b60eadc52be1ff72eb104e4ca",
+    "selection": "clean-break-full-run5-community-selection.json",
+    "note": "maxfail20; last RDL erasure module partial. C7 SQL seeds and retired validation/checklist fixture fields; followup pending."
+  },
+  "community_c7_native_followup": {
+    "campaign": "clean-break-c7-native-fixtures1",
+    "passed": 26,
+    "failed": 0,
+    "duration_seconds": 44.02,
+    "xml_sha256": "7cc728a664db1ee5492d83e168da845562924eba762d39961d08ed0d517615c9",
+    "proof_pair": "dist-native-columns1",
+    "product_changes": false,
+    "scope": "Native architecture SQL seeds, current outcome/estimated validation projection fields, remove retired manual checklist reference in native receipt fixture. Preserve atomic first-pass aggregation, SQL budgets, redaction and erasure permits.",
+    "limits": "C7 RDL last partial broad-run module now fully qualified. Remaining modules/criteria pending."
   }
 }

@@ -4272,5 +4272,13 @@
       "path": "tests/test_card_origin_create_invariants.py, tests/test_card_resequence.py and tests/test_card_rest_scope_hardening.py",
       "reason": "Explicit native architecture/requirement/validation fixtures. Origin MCP uses real Community Knowledge port/current receipt and asserts persisted identity. Retired Knowledge write routes remain in no-effect/non-enumeration matrix with405 for every identity; current-route404/grant denials unchanged."
     }
-  ]
+  ],
+  "native_c7_fixture_adaptations": {
+    "paths": [
+      "okto_labs_pulse_community/tests/test_c7_card_projection.py",
+      "okto_labs_pulse_community/tests/test_c7_cards_route.py",
+      "okto_labs_pulse_community/tests/test_c7_rdl_erasure_contract.py"
+    ],
+    "reason": "C7 projections use outcome success/failed and estimated_completeness/estimated_drift; seed native architecture scopes and omit removed manual_checklist_ref. Keep all aggregation/order/count/redaction and erasure-permit/lifecycle assertions."
+  }
 }

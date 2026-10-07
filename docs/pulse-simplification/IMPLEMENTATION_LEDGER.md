@@ -2,6 +2,30 @@
 
 ## Estado para retomada
 
+### 2026-10-07 — C4 fixtures C7 atuais qualificadas
+
+Community full-run5 terminou:18 aprovados/7falhas/13erros60.69s; handle1227
+encerrado. Causas: architecture_adoption ausente no SQL seed, projection usando
+verdict/completeness/drift antigos e manual_checklist_ref retirado no receipt.
+Fixtures corrigidas para campos atuais. Followup c7-native-fixtures1:26
+aprovados44.02s, tres suites integrais; ultimo modulo RDL agora completo.
+Mantidos first-pass atomico/ultima conclusao, budgets SQL, filters, redaction,
+negativas de grants/escopo e purge somente com permit/exclusao na ordem correta.
+Ruff F/E9/diff verdes. Nenhum produto ou frontend alterado; dist-native-columns1
+byte-identico e closure2 com oito budgetsZERO aplicaveis. Nenhum handle ativo.
+Proximo: continuar Core aposrun7/Community aposrun5, sem repetir stress/modulos
+completos. C1-C4/T23/KG-10, criterios/benchmark/bump0.4.0 ainda pendentes.
+
+
+### 2026-10-07 — Fronteiras publicadas; Community run5 ativo
+
+Core29e28c27 / Communityc852b1e9 publicados, pushes confirmados.
+Community full-run5-community terminal handle1227:18 aprovados/7falhas/13erros,
+60.69s; selecao85modulos completos
+excluidos conforme selection.json. Followup C7 fixtures/projecao/erasure pendente.
+Par dist-native-columns1/provenance e closure2 continuam correspondentes.
+Nao modificar/reinstalar produto durante campanha. C1-C4/T23/KG-10 abertos.
+
 ### 2026-10-07 — C3/C4 fronteiras de Card sem policy migrada
 
 Core full-run7 terminou:140 aprovados/20falhas291.50s. Stress1000 repetido
