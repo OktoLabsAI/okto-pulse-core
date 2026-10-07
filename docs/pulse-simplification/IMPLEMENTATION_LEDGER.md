@@ -2,6 +2,30 @@
 
 ## Estado para retomada
 
+### 2026-10-07 — Censo Community reconciliado; E2E instalado7 em execução
+Publicados Core15543e68/Community84923f75, pushes0.
+599 módulos completos Community reconciliados pelos XMLs; seleção final exclui
+somente estes e os dois módulos separados (E2E instalado/PostgreSQL opt-in).
+clean-break-community-final-collection1 terminou com no tests collected/3.12s;
+não é passe comportamental nem nova campanha integral. Recibo de reconciliação
+lista todos os módulos e ressalvas.
+
+native-installed-recovery7 handle96950 ATIVO no main, par dist-native-main25,
+Grafx0.0.7 autenticado por SHA, novo diretório temporário e processos novos.
+Script run_native_installed_recovery7.py usa venv atual, não wheels claim antigos.
+WIP Community somente tests/test_global_discovery_recovery_installed_e2e.py:
+quatro observadores prepare agora660s (budget produtivo600s+60s margem), mantendo
+1500Boards, assertions e budget do produto. Corrige observador480s que encerrava
+a preparação ainda válida em recovery6. Não qualificar nem publicar como passe
+antes do XML terminal. Não editar/reinstalar main enquanto handle96950 ativo.
+Dois primeiros testes passaram no log; resultado global ainda desconhecido.
+
+Próxima reconciliação fixa: BASE:T12–T15. T13/T14/T15 fontes já relidas; XMLs
+clean-break-full-run5/12/9 têm respectivamente3/1/11passes. Não promovidos ainda:
+falta vincular revisões/proveniência atuais no recibo. Demais C4 e T23/KG-10
+mantidos no índice; nenhuma nova frente criada. Isolados ainda nos commits
+afbe4c41/d034ca68, pairnext24; sincronizar antes de nova validação isolada.
+
 ### 2026-10-07 — Community18 fechado; serialização de relatório autenticado corrigida
 T10 publicado Coreafbe4c41/Communityd034ca68 e main integrado por FF.
 Campanha18 handle29359 terminou1:374pass/15fail/1error/459.09s.
