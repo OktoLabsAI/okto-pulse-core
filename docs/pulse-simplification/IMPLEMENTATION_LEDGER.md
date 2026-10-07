@@ -2,6 +2,44 @@
 
 ## Estado para retomada
 
+### 2026-10-06 — C3 classificacao de tres superficies frontend; C4 geral
+
+Bases Core 4831bea2 / Community d7727e25.
+Tres candidatos do ledger foram investigados com consumidores reais:
+1. PolicyCompliancePanel chamado por Ideation/Refinement/Spec usa edicao;
+   CardModal e TestScenarioPolicyCompliance usam subject/version, sem snapshot
+   de edicao proprio. O nome legacy era enganoso, nao segundo contrato de
+   instalacao. Renomeado para subject-version e explicito nesses dois callers.
+   Mantidos leitura atual, escopo, permissao e negações, sem impor edicao a Card.
+2. RefinementCreate/Update ainda oferecem decisions list[str], alem do ledger
+   imutavel com autoridades distintas. Exibicao e prop passam a decisionNotes/
+   RefinementDecisionNote; nao ha conversor e nenhum dado e promovido a entry.
+   Mantidas as negacoes de leitura/escrita do Research Decision Ledger.
+3. ArchitectureDesignRepository gera warnings textuais atualmente junto aos
+   structured_warnings. Teste rotulado older backend foi corrigido para essa
+   responsabilidade nativa; nao excluir avisos atuais como se fossem upgrade.
+Essas classificacoes encerram os candidatos listados; nao reapresenta-los
+como remocoes pendentes apenas pelo nome antigo.
+
+Frontend native-frontend-classification-front1:93 aprovados; build1 aprovado.
+79 arquivos/78 assets, index-BSWGrCc3.js; tree SHA
+e72e5c99b5ff96e03270f00bc0e44928a2ed9bb1eccf23c3d225be76a91b6129.
+Par dist-native-frontend-classification1 instalado, provenance correspondente:
+Core 843 Python/905 payload, Community319/405 byte-identicos src/install/wheels.
+Closure correspondente: ok=true, findings/documentation_findings vazios;
+oito budgets current=limit=0. Nenhuma mudanca Python de produto neste incremento.
+
+Coleta geral clean-break-full-collect1: Core13821 testes;
+clean-break-full-collect1-community: Community6364, ambas sem erros.
+Coleta NAO e execucao/aprovacao funcional.
+Campanhas gerais clean-break-full-run1 (Core, handle 82269, PID 35588) e
+clean-break-full-run1-community (Community, handle 71407, PID 27376)
+em execucao com --maxfail=20,
+sobre o par provado, sem alteracao de produto. Aguardar handles existentes;
+nao reiniciar por timeout de observacao. Processos confirmados via Win32_Process. Community ja registra uma falha;
+resultado global ainda nao disponivel. Nao declarar suites gerais aprovadas.
+C1-C4/T23/KG-10 continuam abertos; bump coordenado e aceite integral pendentes.
+
 ### 2026-10-06 — C1/C3 conexoes arquiteturais com array unico
 
 Publicado: Core 5d3c92f2 / Community d7727e25; pushes confirmados.
