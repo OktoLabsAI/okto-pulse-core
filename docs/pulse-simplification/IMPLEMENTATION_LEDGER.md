@@ -2,6 +2,31 @@
 
 ## Estado para retomada
 
+### 2026-10-07 — instalação nativa sem LLM reproduzida; deadline de health identificado
+Turno anterior de confirmação sem implementação classificado sem progresso;
+retomada verificou worktrees limpas e publicação Core47be6152/Community4a992007.
+Main66 novamente provado byte a byte antes de comportamento (835/896+317/403).
+CLI instalado init em native-no-llm-init1 terminou0 (handle85783 terminal):
+Board/schema0.8.0 e Global Discovery materializados; chave por handoff privado,
+não publicada. DATA_DIR/DATABASE_URL/KG_BASE_DIR/uploads/metrics isolados.
+Sem PYTHONPATH/PYTHONHOME ou variáveis de providers; embedding stub384, demo OFF.
+Health em processo novo com composição relacional/coordenação/KG real confirmou
+source diagnostics available e global discovery healthy. Overall at_risk:
+consultas de métricas/camadas recusadas por graph_health_deadline_exceeded.
+Consulta direta Spec/relevance_score funciona (~0.84s); não concluir que faltam
+colunas pelo reason layer_columns_unavailable. Primeira tentativa -I falhou
+por SQLAlchemy em user-site; rerun usou ambiente do CLI instalado.
+Probes repetidos terminais0 são investigações, NÃO aprovação do health.
+Recibo clean-break-native-installed-no-llm-investigation.json preserva resultado,
+hashes e scripts completos; sem credenciais. Nenhum processo ativo.
+Descoberta adicional no mesmo fluxo: instalação NOVA emite reason
+global_discovery_legacy_primary_present. Tratar layout bootstrap/recovery nativo
+com investigação antes de remover, sem presumir que apagar ramo seja correto.
+Próximo: explicar/corrigir custo de observação dentro do deadline e acrescentar
+aceitação automatizada; não relaxar guards nem qualificar KG39 por erro não-LLM.
+Produto/frontend inalterados; closure66 anterior permanece, não reexecutado.
+Índice74/161/11 inalterado; objetivo completo ainda não atingido.
+
 ### 2026-10-07 — inferência genérica removida, main66 validado
 Todos handles terminais. Core1+Core2:75 distintos aprovados; Community1:
 11pass; health2 (93834):1pass/32.55s sobre o mesmo caso lifecycle ampliado.
