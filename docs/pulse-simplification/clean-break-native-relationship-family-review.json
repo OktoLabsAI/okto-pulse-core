@@ -1,0 +1,88 @@
+{
+  "format": "pulse-040-family-review/v1",
+  "status": "incomplete_reproduced_original_scope_gap",
+  "base_pair": {
+    "core": "b03c666900f8d310d8e9aa54c3551a17d6de1185",
+    "community": "6631aefd7631cdd1abd4a509c4ff27492f1e7e44"
+  },
+  "criteria": [
+    "KG:KG-11",
+    "KG:KG-16",
+    "KG:KG-24"
+  ],
+  "normative_source": "COMPLEMENTO_KG_RASTREABILIDADE.md §4.1 G6; KG-11/16/24",
+  "families": [
+    {
+      "family": "Spec: scenario criteria, Decision FR/TR, BR→FR, IR→FR/TR, OR→FR/TR/IR, API→BR",
+      "artifact": "clean-break-native-scenario-rule-removal.json",
+      "artifact_sha256": "df661e477aa55b85cc98048f83403e8486660c112d92e5bc150a891f19c3d275",
+      "review": "Current closed rule and seven-family active-set tests; historical K2 receipt is not an independent current acceptance."
+    },
+    {
+      "family": "Card: eight child collections and scenario; normal/test/bug",
+      "artifact": "clean-break-native-card-evidence-parity.json",
+      "artifact_sha256": "db9950fc8b4b864521553094eaf8deb08ded9d24be7cd6f39101940763517100",
+      "review": "Removal, subset restoration and replay; exact full native source and relationship multiset."
+    },
+    {
+      "family": "Card and Spec dependencies; Bug origin proxies",
+      "artifact": "clean-break-native-dependencies-parity.json",
+      "artifact_sha256": "ce460b433e512eb526589fa411b7383b241e1e677ef816d234ff921994b625d9",
+      "review": "Typed pairs, tombstone/replacement and six inferred proxy families; exact native parity."
+    },
+    {
+      "family": "Code Evidence links and Target receipt associations",
+      "artifact": "clean-break-native-target-evidence-retraction.json",
+      "artifact_sha256": "69b39d951b29a4c7a292431bba9e2bd279c4bc8c8f2cbe746ed9802a0006ace5",
+      "review": "Owned removal and compensation; native traceability snapshot parity."
+    },
+    {
+      "family": "Target overlaps",
+      "artifact": "clean-break-native-overlap-retraction.json",
+      "artifact_sha256": "9f3e7f145de8e6045bc6ee4c39eb73b792d7abab651fb8233a92365a8a4b9426",
+      "review": "Old/new owner invalidation, real rollback and native snapshot parity."
+    },
+    {
+      "family": "Evidence supersedence",
+      "artifact": "clean-break-native-card-evidence-parity.json",
+      "artifact_sha256": "db9950fc8b4b864521553094eaf8deb08ded9d24be7cd6f39101940763517100",
+      "review": "Immutable lineage; no unlink operation invented."
+    },
+    {
+      "family": "Amendment lineage",
+      "artifact": "clean-break-native-amendment-parity.json",
+      "artifact_sha256": "6650d9db4c54e97710046f0f599051aa87ddd8579ad25e0770c94b016238dbfb",
+      "review": "Append-only associations and maturity; no unlink or whole-Spec supersedence invented."
+    },
+    {
+      "family": "Decision generations within one source reference",
+      "artifact": "clean-break-native-decision-history-parity.json",
+      "artifact_sha256": "b731bb0716e53796938d265d4b7bb91def950f2fb614cd53b9441edff6a9ee0b",
+      "review": "Exact native history and provenance parity; does not implement explicit replacement across Decision IDs."
+    }
+  ],
+  "gap": {
+    "family": "Explicit normative Decision supersedence (G6)",
+    "authoritative_field": "decisions[].supersedes_decision_id",
+    "run": "acceptance-native-explicit-decision1",
+    "xml_sha256": "acb0684b0ea43221403decc7d98487eeeb241d1ae4707cc609e7d63395b7ce7c",
+    "proof": "provenance-native-explicit-decision1.json",
+    "proof_sha256": "78a481705263710ee83561bce1a98036678a6f0a66876b035f14187291958d6a",
+    "terminal_exit_code": 1,
+    "failed": 1,
+    "test": "tests/test_native_explicit_decision_supersedence.py::test_explicit_decision_successor_projects_normative_history",
+    "observed": [
+      "Native schema, real SQL source and Grafx queue; replacement processing ACK=1.",
+      "Both distinct Decision nodes exist and predecessor content remains Choice.",
+      "No supersedes edge exists from declared successor to predecessor.",
+      "Both nodes have superseded_by=NULL despite predecessor source status superseded."
+    ],
+    "next_action": "Implement G6 through current public ownership/transaction contracts; preserve history and test explicit add/remove/replay and native rebuild. No converter or compatibility route.",
+    "qualification_correction": "KG-11 prior evidence only covered same-reference generations. Return to pending; retain prior receipt as partial evidence."
+  },
+  "limits": [
+    "This matrix does not promote KG-16/24 or claim exhaustive completion from test counts.",
+    "Existing immutable/native history remains required; removing legacy does not authorize deleting it.",
+    "No product mutation, new authority or frontend change in this review. Failing regression remains WIP until correction."
+  ]
+}

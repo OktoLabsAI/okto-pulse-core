@@ -8,6 +8,7 @@ from dataclasses import dataclass
 
 SCENARIO_CRITERIA_NAMESPACE = "scenario_criteria"
 SCENARIO_CRITERIA_RULES = frozenset({"tests/ac_match@v2.1"})
+INACTIVE_NORMATIVE_DECISION_STATUSES = frozenset({'superseded', 'revoked'})
 
 
 @dataclass(frozen=True, slots=True)
@@ -34,6 +35,9 @@ class SpecRelationshipFamily:
 
 
 _FAMILIES = {
+    'decision_supersedence': SpecRelationshipFamily('decision_supersedence', 'supersedes',
+        'Decision', ('decision',), (('Decision', 'decision'),),
+        frozenset({'supersedes/explicit_decision@v2.1'})),
     SCENARIO_CRITERIA_NAMESPACE: SpecRelationshipFamily(SCENARIO_CRITERIA_NAMESPACE, 'tests',
         'TestScenario', ('test_scenario',), (('Criterion', 'ac'),), SCENARIO_CRITERIA_RULES),
     'decision_requirements': SpecRelationshipFamily('decision_requirements', 'derives_from',

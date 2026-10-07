@@ -112,6 +112,11 @@ async def test_all_spec_child_families_cannot_borrow_parent_chronology(status):
     )
     roots = [node for node in nodes if node.source_artifact_ref == root_ref]
     assert len(roots) == 1
-    assert set(metadata) == {roots[0].candidate_id}
+    decisions = [node for node in children if node.node_type == 'Decision']
+    assert set(metadata) == {roots[0].candidate_id, *(node.candidate_id for node in decisions)}
     assert metadata[roots[0].candidate_id].source_created_at == "2001-01-02T00:00:00+00:00"
-    assert all(node.candidate_id not in metadata for node in children)
+    assert all(node.candidate_id not in metadata for node in children if node.node_type != 'Decision')
+    for node in decisions:
+        child = metadata[node.candidate_id]
+        assert child.source_created_at is None and child.source_updated_at is None
+        assert child.source_status == 'active'

@@ -2,6 +2,93 @@
 
 ## Estado para retomada
 
+### 2026-10-07 — incremento G6 pronto para commit/push; rebuild ainda pendente
+Main57 prova59282 terminou0:838/900+317/403 byte-identical antes das campanhas.
+Churn3 66360 terminou0:1pass/54.95s (criação, leitura corrente, caminhada histórica,
+replay, remoção, remoção repetida, restauração e replay sem duplicação).
+Emitter2 48260 terminou0:20pass/4.77s. Vector3 terminou0:38pass/3.90s após
+adicionar source_status ao schema reduzido da fixture; dois casos novos cobrem
+exclusão antes do limite e histórico explícito em configurações ANN/exact.
+Read2 94942 terminou1:69pass/2fail/80.86s; falhas somente fixture vetorial antiga.
+Graph-store passou; G6 leitura corrente e chain passaram nessa campanha.
+Frontend UI1 terminou0:27pass/jsdom, sem promessa WebGL/E2E. Assets inalterados.
+Closure56-final 42893 e closure57 82019 terminaram0:ok=true, findings vazios,
+documentation_findings vazios e oito budgets ZERO. READMEs regenerados oficialmente.
+Churn1/2 falharam no primeiro replay: emitter removia derives_from declarado
+do predecessor, deixando-o sem proveniência válida. Diagnóstico tipado capturado
+sem dispensar guard. Correção preserva os vínculos ainda presentes na fonte,
+incluindo inativos; current status é responsabilidade dos leitores. Unit antigo
+que exigia apagar links históricos foi corrigido: não era obrigação do plano.
+Não usar superseded_by genérico como link entre IDs normativos diferentes.
+Recibo clean-break-native-explicit-decision-projection.json contém campanhas,
+seleções explícitas de casos verdes, hashes, limites e falhas preservadas.
+Nenhum processo ativo. Ruff F/E9 e diff-check passaram.
+Próxima etapa fixa antes de qualificar G6/KG-11/16/24: paridade de rebuild do
+mesmo snapshot com supersedência explícita, status e proveniência histórica;
+verificar compensação nativa da remoção. Índice62/173/11 mantido.
+Incremento publicável como projeção/leitura/replay verificados, não fechamento
+integral de G6 nem entrega final. Sem pausa autorizada do objetivo.
+
+### 2026-10-07 — G6 implementado parcialmente; leitura corrente em validação
+Progresso: família pública decision_supersedence (supersedes/explicit_decision@v2.1),
+emitter de link explícito e active-set próprio. Decisions inativas continuam
+projetadas para histórico/rebuild; somente active contribui derives_from corrente.
+prepare_root_metadata extrai status e datas próprias da Decision, sem herdar
+cronologia da Spec. Não usa superseded_by para representar link normativo:
+esse campo governa gerações da mesma source_ref no mecanismo cognitivo.
+Oráculo inicial superseded_by=successor foi corrigido após investigação dessa
+distinção; exige source_status e relação explícita, além de consulta corrente.
+Main55 prova12790 terminou0:838/900+316/402 byte-identical.
+Core1 9457 terminou1:61pass/2fail (teste antigo exigia ausência de qualquer
+metadado de filho); ajuste preserva prova de datas parentais não herdadas.
+Core2 64082 terminou0:30pass/5.06s, incluindo ownership/compensação nova família.
+Emitter1 terminou0:3pass/2.64s (link, remoção sem apagar história, alvo ausente).
+Native2 1165 terminou1:2pass/1fail/114.96s. Duas regressões Decision/rebuild
+passaram. Falha G6 era fixture consultando tabela base supersedes em vez de
+supersedes__Decision__Decision. Leitura do layout correto confirmou aresta no
+main55 e ausência no grafo da reprodução main54. Teste usa resolver oficial.
+Native3 66723 terminou0:1pass/28.77s (link e status normativos corretos).
+Read1 93323 terminou1:1fail/28.34s reproduziu predecessor Choice retornado por
+KGService.get_decision_history com leitura textual corrente. Correção WIP:
+porta pública expõe estados inativos; compilador Grafx no Community aplica
+predicado antes de LIMIT em busca textual e em ambos caminhos vetoriais.
+Nenhum dialeto adicionado ao Core, nem filtro alterado para outros node_types.
+Main56 build/install/prova28469 terminais0:838/900+317/403 byte-identical.
+ATIVOS read2 handle94942 (G6 + grafx_board_vector_search + grafx_graph_store)
+e closure56 handle20841. Não alterar produto/reinstalar até ambos terminais.
+Ainda pendentes neste mesmo G6: replay/remoção/rebuild nativos, histórico
+autorizado vs corrente em ambas buscas, regressões frontend relevantes e
+fechamento documental. Não qualificar KG-11/16/24 ainda; índice62/173/11.
+Sem commit/push novo; último par publicado b03c6669/6631aefd. Nenhuma base real
+alterada. Testes rodam somente armazenamento descartável.
+
+### 2026-10-07 — revisão de famílias confirma lacuna original G6
+Par publicado confirmado limpo no início:Core b03c6669 / Community 6631aefd.
+Turno anterior apenas esclareceu mensagem errada; este produz evidência nova.
+Prova provenance-native-explicit-decision1 terminou0 antes de comportamento:
+838/900 Core +316/402 Community byte-identical ao main54.
+Campanha acceptance-native-explicit-decision1 handle49040 terminou1:
+1failed/26.89s. SQL/Grafx nativos, ACK1; predecessor dec_one mantém Choice,
+successor dec_two existe, mas supersedes ausente e ambos superseded_by=NULL.
+Fonte declara dec_one superseded e dec_two.supersedes_decision_id=dec_one.
+Isto é G6 §4.1 do complemento KG, não escopo novo nem migração.
+Emitter filtra decisões não active e não lê supersedes_decision_id; o writer MCP
+grava o link/status na fonte, sem projeção equivalente demonstrada.
+Teste novo Community test_native_explicit_decision_supersedence.py permanece
+WIP vermelho deliberado, sem skip/xfail ou enfraquecimento. Produto não alterado.
+Recibo clean-break-native-relationship-family-review.json consolida oito grupos
+de evidência já existente e hashes; separa gerações da mesma identidade de
+substituição normativa entre IDs. KG-11 antes promovido apenas por gerações
+retorna a pendente:índice62 verificadas/173 pendentes/11 superadas (246/235 fixos).
+KG-16/24 permanecem pendentes pela falha concreta, não por alvo adicional.
+Próxima implementação: G6 pelo contrato público e UOW/compensação existentes,
+preservando predecessor, proveniência e replay; cobrir remoção e rebuild nativo.
+Não usar supersedência genérica para fundir referências normativas diferentes,
+não apagar história nem acrescentar dialeto ao Core. Nenhuma nova decisão de
+autoridade solicitada: projetar o link explícito já está prescrito no plano.
+Nenhum processo ativo. Nenhum build/reinstall necessário neste turno; frontend
+inalterado. Sem novo commit/push enquanto regressão/correção permanecem WIP.
+
 ### 2026-10-07 — correção histórica Decision verificada e pronta para publicação
 Main54 prova40203 terminou0:838/900+316/402 byte-identical.
 Core3 (22915) terminou0:17pass/3.46s; native1 (66929) terminou0:2pass/87.43s.

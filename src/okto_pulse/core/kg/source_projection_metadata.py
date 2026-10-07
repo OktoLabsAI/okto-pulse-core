@@ -88,6 +88,16 @@ async def prepare_root_metadata(context, source, artifact, nodes, persistence):
     root_ref = f"{source.artifact_type}:{source.artifact_id}"
     for node in nodes:
         if node.source_artifact_ref != root_ref:
+            if source.artifact_type == 'spec' and node.node_type == 'Decision':
+                decisions = (artifact.get('decisions') if isinstance(artifact, Mapping)
+                             else getattr(artifact, 'decisions', None)) or []
+                matches = [item for item in decisions if isinstance(item, Mapping)
+                           and node.source_artifact_ref == f"{root_ref}:decision:{item.get('id')}"]
+                if len(matches) != 1:
+                    raise ValueError('decision_source_metadata_ambiguous')
+                # Child chronology is its own, never borrowed from the Spec.
+                result[node.candidate_id] = SourceProjectionMetadata.from_source(
+                    {**matches[0], 'status': matches[0].get('status', 'active')}, is_bug=False)
             continue
         metadata = SourceProjectionMetadata.from_source(artifact, is_bug=node.node_type == "Bug")
         if node.node_type == "Bug":

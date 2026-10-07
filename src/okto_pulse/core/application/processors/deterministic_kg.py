@@ -1645,18 +1645,18 @@ class DeterministicWorker:
             architecture_designs=spec.get("architecture_designs") or [],
         )
 
-        # 8a. Formalized decisions from spec.decisions[] (spec b66d2562) —
-        #     structured entries win over the legacy markdown regex. Only
-        #     `active` decisions are emitted; superseded/revoked keep their
-        #     historical nodes from earlier commits (supersedence is written
-        #     on-state via subsequent commits).
+        # Native normative history is a source in its own right. Project its
+        # entries and their declared links even during a cold rebuild. Current
+        # reads use normative status; history keeps its provenance. Replacement is not a revision of
+        # another Decision's identity or authored content.
         formal_decisions = [
             d
             for d in (spec.get("decisions") or [])
             if isinstance(d, dict)
-            and d.get("status", "active") == "active"
             and d.get("title")
         ]
+        decision_candidates = {dec['id']: f'{prefix}_fdec_{i}'
+                               for i, dec in enumerate(formal_decisions)}
         tech_whitelist_version = _load_tech_whitelist()[1]
         for i, dec in enumerate(formal_decisions):
             dec_title = dec["title"]
@@ -1675,6 +1675,19 @@ class DeterministicWorker:
                 )
             )
             _add_belongs_to(dec_cid, "fdec", i)
+            predecessor = dec.get('supersedes_decision_id')
+            if predecessor:
+                target = decision_candidates.get(predecessor)
+                if target is None:
+                    result.missing_link_candidates.append(MissingLinkCandidate(
+                        edge_type='supersedes', from_candidate_id=dec_cid,
+                        from_candidate_title=dec_title, reason='decision_predecessor_missing',
+                        suggested_candidates=[], artifact_ref=artifact_ref))
+                else:
+                    result.edges.append(EmittedEdge(
+                        candidate_id=f'{dec_cid}_supersedes_{target}', edge_type='supersedes',
+                        from_candidate_id=dec_cid, to_candidate_id=target,
+                        confidence=1.0, rule_id='supersedes/explicit_decision@v2.1'))
             # Only declared FR/TR links justify derives_from. An absent or
             # unresolved link never authorizes co-occurrence with every FR.
             explicit_cids = _declared_requirement_targets(dec.get('linked_requirements'),
@@ -1754,6 +1767,7 @@ class DeterministicWorker:
                             rule_id=f'{edge_type}/{rule_slot}@v2.1',
                         ))
         for namespace, collections, rule_id in (
+            ('decision_supersedence', ('decisions',), 'supersedes/explicit_decision@v2.1'),
             ('business_rule_requirements', ('business_rules', 'functional_requirements'), 'derives_from/br_requirement@v2.1'),
             ('integration_requirements', ('integration_requirements', 'functional_requirements', 'technical_requirements'), 'derives_from/ir_requirement@v2.1'),
             ('observability_requirements', ('observability_requirements', 'functional_requirements', 'technical_requirements'), 'derives_from/or_requirement@v2.1'),

@@ -38,6 +38,7 @@ def test_member_cannot_be_owned_by_two_namespaces():
 
 
 @pytest.mark.parametrize('namespace,source_type,source_section,target_type,target_section,edge_type,rule', [
+    ('decision_supersedence', 'Decision', 'decision', 'Decision', 'decision', 'supersedes', 'supersedes/explicit_decision@v2.1'),
     ('scenario_criteria', 'TestScenario', 'test_scenario', 'Criterion', 'ac', 'tests', 'tests/ac_match@v2.1'),
     ('decision_requirements', 'Decision', 'decision', 'Constraint', 'tr', 'derives_from', 'derives_from/explicit_link@v2.1'),
     ('business_rule_requirements', 'Constraint', 'business_rule', 'Requirement', 'fr', 'derives_from', 'derives_from/br_requirement@v2.1'),
