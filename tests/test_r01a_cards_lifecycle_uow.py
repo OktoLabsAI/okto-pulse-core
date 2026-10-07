@@ -418,6 +418,21 @@ async def test_submit_validation_404_missing_card(client) -> None:
     assert resp.json()["detail"] == "Card not found"
 
 
+async def _validation_effects(card_id):
+    from copy import deepcopy
+    from sqlalchemy import select
+    from sqlalchemy_test_models import Card, ActivityLog, DomainEventRow
+
+    async with get_session_factory()() as db:
+        card = (await db.execute(select(Card.__table__).where(Card.id == card_id))).mappings().one()
+        effects = {'card': dict(card)}
+        for model in (ActivityLog, DomainEventRow):
+            rows = (await db.execute(select(model.__table__).where(
+                model.board_id == card['board_id']).order_by(model.id))).mappings().all()
+            effects[model.__tablename__] = [dict(row) for row in rows]
+        return deepcopy(effects)
+
+
 @pytest.mark.asyncio
 async def test_submit_validation_exact_retry_replays_after_rejected(client) -> None:
     from sqlalchemy_test_models import Card, CardStatus
@@ -439,6 +454,9 @@ async def test_submit_validation_exact_retry_replays_after_rejected(client) -> N
     first = client.post(f"{PREFIX}/{card_id}/validate", json=payload)
     assert first.status_code == 201, first.text
     assert first.json()["card_status"] == "rejected"
+    first_effects = await _validation_effects(card_id)
+    assert len(first_effects["card"]["validations"]) == 1
+    assert len(first_effects["card"]["rejection_records"]) == 1
     assert first.json()["replayed"] is False
     assert {"response", "request_digest", "idempotency_key"}.isdisjoint(first.json())
 
@@ -446,6 +464,7 @@ async def test_submit_validation_exact_retry_replays_after_rejected(client) -> N
     assert replay.status_code == 201, replay.text
     assert replay.json()["id"] == first.json()["id"]
     assert replay.json()["replayed"] is True
+    assert await _validation_effects(card_id) == first_effects
     assert {"response", "request_digest", "idempotency_key"}.isdisjoint(replay.json())
 
     listed = client.get(f"{PREFIX}/{card_id}/validations")
@@ -468,6 +487,7 @@ async def test_submit_validation_exact_retry_replays_after_rejected(client) -> N
         conflict.json()["detail"]["code"]
         == "task_validation_idempotency_conflict"
     )
+    assert await _validation_effects(card_id) == first_effects
 
 
 @pytest.mark.asyncio

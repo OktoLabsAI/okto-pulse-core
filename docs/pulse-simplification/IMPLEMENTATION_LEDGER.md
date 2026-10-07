@@ -2,6 +2,25 @@
 
 ## Estado para retomada
 
+### 2026-10-07 — C4 T12–T15 qualificados; E2E instalado7 permanece ativo
+Turno anterior classificado como progresso (correção publicada,62passes,closure0).
+Revalidado handle96950 ativo. Quatro primeiros casos E2E7 passaram; quinto
+internal recovery ainda em execução, sem XML terminal. Main congelado, somente
+WIP do observador de teste já registrado; não reinstalar nem integrar código.
+
+Isolados FF Core102acd3d/Community84923f75. Par dist-native-next25 instalado,
+prova36308 terminou0:843/905+316/402 byte-idênticos.
+CoreSHAbc8a0bf77c38b91987f3c5549efd33d39598dfe8f833a22aea3df99ccfc4f686;
+CommunitySHA25bed2fa85191aa4c5877f07839b07de810811e98349be36880d695b452b3f3c.
+Auth-current1 handle17960 terminou0:17pass/20.00s.
+T12 recebeu igualdade integral Card/activity/outbox após replay e conflito,
+além de exigir exatamente uma validação e uma rejeição. Replay-effects1
+handle48720 terminou0:1pass/6.50s. Ruff F/E9 passou.
+Recibo clean-break-acceptance-native-auth-replay.json promove apenas T12–T15,
+com limites explícitos (ASGI, extração de credencial e sentinel T15).
+Sem mudança produtiva. Próximos fixos: T16–T20, terminal E2E e restante C4.
+T23/KG-10 permanecem pendentes; nenhum novo escopo. Isolado sem teste ativo.
+
 ### 2026-10-07 — Censo Community reconciliado; E2E instalado7 em execução
 Publicados Core15543e68/Community84923f75, pushes0.
 599 módulos completos Community reconciliados pelos XMLs; seleção final exclui

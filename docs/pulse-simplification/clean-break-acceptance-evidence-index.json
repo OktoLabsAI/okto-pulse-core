@@ -1063,7 +1063,12 @@
           ]
         }
       ],
-      "current_qualification": "pending_current_pair_review"
+      "current_qualification": "verified_current_pair_review",
+      "current_review": {
+        "artifact": "clean-break-acceptance-native-auth-replay.json",
+        "criterion_key": "BASE:T12",
+        "proof_pair": "dist-native-next25"
+      }
     },
     {
       "key": "BASE:T13",
@@ -1085,7 +1090,12 @@
           "case_references": []
         }
       ],
-      "current_qualification": "pending_current_pair_review"
+      "current_qualification": "verified_current_pair_review",
+      "current_review": {
+        "artifact": "clean-break-acceptance-native-auth-replay.json",
+        "criterion_key": "BASE:T13",
+        "proof_pair": "dist-native-next25"
+      }
     },
     {
       "key": "BASE:T14",
@@ -1107,7 +1117,12 @@
           "case_references": []
         }
       ],
-      "current_qualification": "pending_current_pair_review"
+      "current_qualification": "verified_current_pair_review",
+      "current_review": {
+        "artifact": "clean-break-acceptance-native-auth-replay.json",
+        "criterion_key": "BASE:T14",
+        "proof_pair": "dist-native-next25"
+      }
     },
     {
       "key": "BASE:T15",
@@ -1129,7 +1144,12 @@
           "case_references": []
         }
       ],
-      "current_qualification": "pending_current_pair_review"
+      "current_qualification": "verified_current_pair_review",
+      "current_review": {
+        "artifact": "clean-break-acceptance-native-auth-replay.json",
+        "criterion_key": "BASE:T15",
+        "proof_pair": "dist-native-next25"
+      }
     },
     {
       "key": "BASE:T16",
