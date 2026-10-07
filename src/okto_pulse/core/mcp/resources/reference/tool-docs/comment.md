@@ -19,7 +19,7 @@ Args:
         label is a non-empty string; recommended defaults to false;
         tradeoff defaults to null. Strings and unknown fields are rejected.
     comment_type: "choice" for single-select (default) or "multi_choice" for multi-select
-    allow_free_text: "true" to allow a free-text response in addition to selections
+    allow_free_text: true to allow a free-text response in addition to selections
 
 Returns:
     JSON with the created choice comment

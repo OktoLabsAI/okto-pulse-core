@@ -109,8 +109,8 @@ Args:
         lineage below that ideation.
     spec_id: Optional spec filter. When provided, returns the spec and its
         parent ideation/refinement lineage when available.
-    include_artifacts: defaults to "false" (compact artifact counts) to keep
-        the agent-facing report small; pass "true" to expand the full
+    include_artifacts: defaults to false (compact artifact counts) to keep
+        the agent-facing report small; pass true to expand the full
         KB/mockup/architecture references.
 
 Returns:

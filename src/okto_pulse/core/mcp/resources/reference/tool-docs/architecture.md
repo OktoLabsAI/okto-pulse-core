@@ -467,7 +467,7 @@ Args:
     board_id: Board ID
     limit: Max items per page (1..200; default 100)
     offset: Pagination offset (default 0)
-    include_clean: "true" to also list snapshots whose source is currently eligible (default "false")
+    include_clean: true to also list snapshots whose source is currently eligible (default false)
     parent_type_filter: Optional parent_type filter (ideation | refinement | spec | card)
 
 Returns:

@@ -35,7 +35,7 @@ Args:
         label is a non-empty string; recommended defaults to false;
         tradeoff defaults to null. Strings and unknown fields are rejected.
     question_type: "choice" for single-select (default) or "multi_choice" for multi-select
-    allow_free_text: "true" to also allow a free-text response alongside selections
+    allow_free_text: true to also allow a free-text response alongside selections
 
 Returns:
     JSON with Q&A item including choices
@@ -145,10 +145,10 @@ to evaluate, review, or derive refinements/specs from this ideation.
 Args:
     board_id: Board ID
     ideation_id: Ideation ID
-    include_knowledge: Include knowledge base entries (default "true")
-    include_mockups: Include screen mockups (default "true")
-    include_qa: Include Q&A items (default "true")
-    include_architecture: Include Architecture Designs (default "true")
+    include_knowledge: Include knowledge base entries (default true)
+    include_mockups: Include screen mockups (default true)
+    include_qa: Include Q&A items (default true)
+    include_architecture: Include Architecture Designs (default true)
 
 Returns:
     JSON with complete ideation context: details + Q&A + mockups + KBs + refinements + specs + evaluation

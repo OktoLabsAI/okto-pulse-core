@@ -185,7 +185,7 @@ Args:
         label is a non-empty string; recommended defaults to false;
         tradeoff defaults to null. Strings and unknown fields are rejected.
     question_type: "choice" for single-select (default) or "multi_choice" for multi-select
-    allow_free_text: "true" to also allow a free-text response alongside selections
+    allow_free_text: true to also allow a free-text response alongside selections
 
 Returns:
     JSON with Q&A item including choices
@@ -359,13 +359,13 @@ ORs, screen mockups, knowledge bases, Q&A, evaluations, cards, and sprints.
 Args:
     board_id: Board ID
     spec_id: Spec ID
-    include_knowledge: Include knowledge base entries (default "true")
-    include_mockups: Include screen mockups (default "true")
-    include_qa: Include Q&A items (default "true")
-    include_architecture: Include Architecture Designs (default "true")
-    include_superseded: When "false" (default), the `decisions` array
+    include_knowledge: Include knowledge base entries (default true)
+    include_mockups: Include screen mockups (default true)
+    include_qa: Include Q&A items (default true)
+    include_architecture: Include Architecture Designs (default true)
+    include_superseded: When false (default), the `decisions` array
         returns only entries with status="active" — noise reduction for
-        the common "what rules today?" path. Set to "true" to get the
+        the common "what rules today?" path. Set to true to get the
         full history (active + superseded + revoked). A `decisions_stats`
         summary is always included so you can see what was filtered.
     profile: Response projection — one of: summary (default), detail, full. Use `summary` for exploration and `full` before evaluating,

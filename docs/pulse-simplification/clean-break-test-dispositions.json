@@ -4099,5 +4099,39 @@
       "path": "tests/test_knowledge_governance_surfaces.py",
       "reason": "Replaced obsolete two-mode propagation fakes with the one current Resource Gate projection, preserving metadata, bounded content and lineage assertions."
     }
+  ],
+  "native_mcp_boolean_adaptations": [
+    {
+      "path": "tests/test_mcp_native_booleans.py and Community tests/test_mcp_host_adapter.py",
+      "reason": "Native StrictBool flags and untyped filter validation replace textual boolean conversion; real MCP transport refuses strings and integers before authentication while true/false reach authentication."
+    },
+    {
+      "path": "tests/test_stories_service.py",
+      "reason": "Removed ignored mark_converted input and encoded collection/boolean fixtures; preserve standalone ideation and current Story workflow, granting exact mockup permissions required by the existing handlers."
+    },
+    {
+      "path": "tests/test_payload_compaction.py and tests/sqlalchemy_test_traceability_read_model.py",
+      "reason": "Current requirement IDs replace retired index/text references; unknown IDs remain diagnosed. Artifact drilldown emits a native boolean accepted by the tool."
+    },
+    {
+      "path": "tests/test_mcp_traceability_report.py",
+      "reason": "Native Spec/Card fixture removes Sprint and retired inline Card Knowledge writes, uses stable requirement IDs and explicit architecture adoption. Preserves SDLC deduplication, parent Spec knowledge, mockups, designs, structured references and bug/test lineage."
+    },
+    {
+      "path": "tests/test_mcp_context_projection.py",
+      "reason": "Explicit frozen OFF Checklist binding for edition 5 replaces missing fake adapter method; preserves snapshot gate without synthesizing OFF in production."
+    },
+    {
+      "path": "tests/test_agent_instructions_auto_copy.py",
+      "reason": "Assertions now require current replace/drop/refresh/get propagation operations and revision/replay controls instead of retired copy writer. Existing stale legacy fallback documentation test is tracked for subsequent C3 correction."
+    },
+    {
+      "path": "tests/test_architecture_mcp.py and tests/test_mcp_consolidated_list_handlers.py",
+      "reason": "Positive cases use native boolean values while existing operation/filter assertions are retained."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_af35_s1_community_adapters.py",
+      "reason": "Real SQLAlchemy round-trip verifies native boolean drilldown. Fixture supplies current realm_id, mandatory architecture adoption and real Knowledge propagation port; no production schema or gate is relaxed."
+    }
   ]
 }

@@ -29,8 +29,9 @@ def test_pre_flight_mentions_copy_mockups_to_card(text):
     assert "okto_pulse_copy_mockups_to_card" in text
 
 
-def test_pre_flight_mentions_copy_knowledge_to_card(text):
-    assert "okto_pulse_copy_knowledge_to_card" in text
+def test_pre_flight_mentions_native_knowledge_selection(text):
+    assert "okto_pulse_replace_card_knowledge_assignments" in text
+    assert "okto_pulse_copy_knowledge_to_card" not in text
 
 
 def test_pre_flight_mentions_copy_architecture_to_card(text):
@@ -66,13 +67,12 @@ def test_knowledge_governance_resource_is_linked_and_authoritative(text):
     assert "Stable Reference Test" in text
 
 
-def test_card_kb_lifecycle_section_documents_5_tools(text):
+def test_card_kb_selection_documents_current_operations(text):
     for name in (
-        "okto_pulse_add_card_knowledge",
-        "okto_pulse_list_knowledge",
-        "okto_pulse_get_card_knowledge",
-        "okto_pulse_update_card_knowledge",
-        "okto_pulse_delete_card_knowledge",
+        "okto_pulse_replace_card_knowledge_assignments",
+        "okto_pulse_drop_card_knowledge_assignments",
+        "okto_pulse_refresh_card_knowledge_assignments",
+        "okto_pulse_get_card_knowledge_propagation",
     ):
         assert name in text, f"agent_instructions must reference {name}"
 
@@ -166,7 +166,8 @@ def test_stories_topics_preflight_and_link_semantics_are_documented(text):
     assert "A Story can link to at most one Ideation" in text
     assert "linking the same Story to a different Ideation is rejected" in text
     assert "Multiple Stories may link to the same Ideation" in text
-    assert "mark_converted` argument is compatibility-only" in text
+    assert "There is no flag to preserve `ready`" in text
+    assert "mark_converted" not in text
     assert "always marks the Story as `converted`" in text
 
 
@@ -191,10 +192,10 @@ def test_common_errors_cover_resource_gate_and_story_topic_recoveries(text):
         assert recovery in text
 
 
-def test_rest_mirror_documented(text):
-    assert "okto_pulse_add_card_knowledge" in text
-    assert "okto_pulse_get_card_knowledge" in text
-    assert "okto_pulse_delete_card_knowledge" in text
+def test_knowledge_selection_revision_and_replay_documented(text):
+    assert "expected_revision" in text
+    assert "idempotency_key" in text
+    assert "knowledge_propagation_revision_conflict" in text
 
 
 def test_cognitive_kg_closeout_section_is_mandatory_for_specs_and_bugs(text):

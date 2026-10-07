@@ -101,13 +101,13 @@ an agent needs to understand what to build, how to test it, and what rules apply
 Args:
     board_id: Board ID
     card_id: Card ID
-    include_knowledge: Include spec knowledge base entries (default "true")
-    include_mockups: Include screen mockups from card and spec (default "true")
-    include_qa: Include Q&A items from card and spec (default "true")
-    include_comments: Include card comments (default "true")
-    include_architecture: Include Architecture Designs from card and spec (default "true")
-    include_superseded: When "false" (default), superseded/revoked decisions are
-        filtered out; set "true" for full decision history.
+    include_knowledge: Include spec knowledge base entries (default true)
+    include_mockups: Include screen mockups from card and spec (default true)
+    include_qa: Include Q&A items from card and spec (default true)
+    include_comments: Include card comments (default true)
+    include_architecture: Include Architecture Designs from card and spec (default true)
+    include_superseded: When false (default), superseded/revoked decisions are
+        filtered out; set true for full decision history.
     profile: Response projection — one of: summary (default), detail, full. Use `summary` for exploration, `detail` plus follow-ups for
         bounded body reads, and `full` + `context_scope="gate"` before
         status-changing moves. See okto-pulse://reference/projection-profiles.
@@ -207,11 +207,11 @@ Returns:
 ## `okto_pulse_list_my_mentions`
 
 List comments and Q&A items where you are mentioned via @name.
-By default only returns UNSEEN mentions. Use include_seen="true" to get all.
+By default only returns UNSEEN mentions. Use include_seen=true to get all.
 
 Args:
     board_id: Board ID to search within
-    include_seen: "true" to include already-seen mentions (default "false")
+    include_seen: true to include already-seen mentions (default false)
 
 Returns:
     JSON with unseen mentions, each with an item_id you can pass to mark_as_seen

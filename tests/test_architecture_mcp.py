@@ -259,7 +259,7 @@ async def test_mcp_add_list_get_import_and_dump_architecture(_seed_spec_card):
         "okto_pulse_get_architecture_design",
         board_id=board_id,
         design_id=design_id,
-        include_payloads="true",
+        include_payloads=True,
     )
     assert loaded.get("success") is True
     assert loaded["architecture_design"]["diagrams"][0]["adapter_payload"]["elements"][0]["id"] == "mcp-shape"
@@ -869,7 +869,7 @@ async def test_mcp_copy_architecture_to_card_and_task_context(_seed_spec_card):
         "okto_pulse_get_task_context",
         board_id=board_id,
         card_id=card_id,
-        include_architecture="true",
+        include_architecture=True,
     )
     assert "architecture_designs" in context["card"]
     assert context["card"]["architecture_designs"][0]["source_design_id"] == source_id
@@ -971,14 +971,14 @@ async def test_mcp_task_context_projects_architecture_findings_full_and_summary(
         "okto_pulse_get_task_context",
         board_id=board_id,
         card_id=card_id,
-        include_architecture="true",
+        include_architecture=True,
         profile="full",
     )
     summary_context = await _call(
         "okto_pulse_get_task_context",
         board_id=board_id,
         card_id=card_id,
-        include_architecture="true",
+        include_architecture=True,
     )
 
     for context in (full_context, summary_context):

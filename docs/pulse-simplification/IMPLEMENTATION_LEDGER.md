@@ -2,6 +2,50 @@
 
 ## Estado para retomada
 
+### 2026-10-06 — C3 em andamento: booleanos MCP nativos
+Bases Core f113e7b1 / Community b9710b61 publicadas.
+Retirados BoolInput/OptionalBoolInput e _flag_enabled: flags usam StrictBool,
+sem strings true/false, 1/0, yes/no ou inteiros. Filtros sem tipo validam booleanos
+nativos; defaults e omissao opcional preservados. Diagnosticos e drilldown de
+traceability anunciam valores booleanos nativos.
+Retirado mark_converted de link_story_to_ideation e campo ignored da resposta:
+parametro nao tinha efeito de dominio; vinculo continua marcando converted.
+Resources autorados ajustados; catalogo/manifesto regenerados sem drift.
+Fixtures atualizadas para IDs estruturados, Spec/Card sem Sprint e sem writer
+Knowledge inline; preservadas referencias, lineage, bugs/testes e deduplicacao.
+Checklist do teste fornece snapshot OFF explicito da edicao 5, sem mudar gate.
+Story recebe permissoes exatas de mockups, sem relaxar autorizacao produtiva.
+Disposicoes de testes registradas no JSON, incluindo falhas de fixtures.
+
+Bools1: prova bytes src/install/wheels; Core1 162 aprovados/11 falhas.
+Core2 86 aprovados/uma falha; Core3 23 e Core4 dois aprovados apos adaptacoes.
+Community1 29 aprovados. Closure1 aprovada, oito budgets zero.
+Bools2 instalado/provado; Core5 final: 173 aprovados. Closure2 aprovada.
+Community2: 30 aprovados/uma falha de fixture sem realm_id;
+Community3/4: um aprovado/uma falha cada, por architecture_adoption ausente
+e porta Knowledge nao registrada. Fixture agora usa schema e adapter atuais.
+Bools3 instalado/provado apos corrigir ultimo diagnostico supported:
+provenance-native-mcp-bools3 confirma Core 843 Python/905 payload e
+Community 319/405 byte a byte. Core6: 76 aprovados (revalidacao direcionada,
+nao somar como casos novos); Community5: dois aprovados no adapter SQL real.
+Total distinto qualificado: Core 173, Community 31. Ruff F/E9 e diff aprovados.
+Closure-native-mcp-bools3 aprovada: findings/documentation_findings vazios,
+oito budgets current=limit=0. Todos os handles encerrados.
+Frontend sem alteracoes: nenhum contrato REST ou payload persistido alterado.
+
+C1-C4 permanecem abertos; T23/KG-10 ainda aguardam decisao.
+Proxima cadeia confirmada C3: resources Knowledge anunciam legacy_all/fallback
+v1, mas models/knowledge_propagation.new_omitted_knowledge_selection e MCP derive
+ja usam uma unica selecao omitted sem fontes herdadas. Corrigir orientacao e
+teste test_legacy_fallback_and_active_v2_semantics_are_documented, mantendo
+tri-state, snapshot/reference/drop, revision e replay atuais.
+Investigar metadata_status=legacy_incomplete antes de retirar semantica de
+ausencia nativa. Nao inferir migracao apenas do nome.
+Traceability ainda usa colecoes relacionais diretas (e seu fake Core): investigar
+paridade de selecoes Knowledge com Resource Gate; teste nativo atual cobre
+Knowledge local da Spec, nao comprova selecao temporal por Card.
+C4 integral e bump coordenado 0.4.0 continuam pendentes; nao declarar entrega total.
+
 ### 2026-10-06 — C3 em andamento: objetos MCP nativos
 Publicado: Core 309b1e40 / Community b9710b61, pushes confirmados.
 Bases Core b236466e / Community 63aa833e limpas/publicadas.

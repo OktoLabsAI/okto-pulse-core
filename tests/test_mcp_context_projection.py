@@ -805,7 +805,7 @@ async def test_get_task_context_default_summary_and_full_passthrough():
             board_id=board_id,
             card_id=card_id,
             profile="full",
-            include_knowledge="false",
+            include_knowledge=False,
         )
         legacy = await _call(
             "okto_pulse_get_task_context",
@@ -1432,7 +1432,7 @@ def test_telemetry_sink_records_context_projection_fail_closed():
 
 
 @pytest.mark.asyncio
-async def test_get_spec_context_default_summary_full_and_unsupported():
+async def test_get_spec_context_default_summary_full_and_unsupported(monkeypatch):
     from unittest.mock import AsyncMock, patch
 
     db_factory = get_session_factory()
@@ -1461,6 +1461,28 @@ async def test_get_spec_context_default_summary_full_and_unsupported():
             )
         )
         await db.commit()
+
+    # This projection fixture represents an admitted edition with an explicit
+    # frozen OFF binding. It does not synthesize OFF from a missing snapshot.
+    from okto_pulse.core.domain.checklist import ChecklistBinding, ChecklistMode
+    from okto_pulse.core.ports.relational_application import require_relational_application_adapter
+
+    adapter = require_relational_application_adapter()
+    base_checklists = adapter.checklists
+    frozen_binding = ChecklistBinding(board_id=board_id, mode=ChecklistMode.OFF, version=1)
+
+    async def get_validation_binding(**kwargs):
+        assert (kwargs["board_id"], kwargs["spec_id"], kwargs["spec_edition"]) == (
+            board_id, spec_id, 5,
+        )
+        return frozen_binding
+
+    def checklists_with_snapshot(session):
+        persistence = base_checklists(session)
+        persistence.get_validation_binding = get_validation_binding
+        return persistence
+
+    monkeypatch.setattr(adapter, "checklists", checklists_with_snapshot)
 
     traceability_projection = AsyncMock(
         return_value={"subject_type": "spec", "subject_id": spec_id}

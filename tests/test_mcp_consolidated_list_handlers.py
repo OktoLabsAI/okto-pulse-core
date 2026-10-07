@@ -295,7 +295,7 @@ def test_validate_filters_valid_derivation_pending_key_ok():
 
     ok, err = validate_filters(
         "refinement",
-        {"ideation_id": "parent", "derivation_pending": "true"},
+        {"ideation_id": "parent", "derivation_pending": True},
         scope="by_board",
     )
     assert ok is True
@@ -1004,7 +1004,7 @@ async def test_list_by_board_filters_refinement_derivation_pending(
         filters={
             "ideation_id": ideation_id,
             "labels": label,
-            "derivation_pending": "true",
+            "derivation_pending": True,
         },
     )
     data = _parse(result)

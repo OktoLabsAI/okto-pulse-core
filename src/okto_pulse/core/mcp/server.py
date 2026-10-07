@@ -22,7 +22,7 @@ from importlib.resources import files as package_files
 from types import SimpleNamespace
 from typing import Annotated, Any, Callable, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, PlainValidator, WithJsonSchema
+from pydantic import BaseModel, ConfigDict, Field, PlainValidator, StrictBool, WithJsonSchema
 from pydantic_core import PydanticCustomError
 
 from okto_pulse.core import __version__ as _CORE_PACKAGE_VERSION
@@ -1605,8 +1605,6 @@ def _resource_gate_error_response(exc: ResourceGateError) -> str:
     )
 
 
-BoolInput = bool | Literal["true", "false", "1", "0", "yes", "no"]
-OptionalBoolInput = BoolInput | None
 
 _GATE_CONTENT_VALUE_MISSING = object()
 
@@ -1631,9 +1629,6 @@ _TASK_GATE_CARD_SELECT_FIELDS = (
     "origin_task_id",
     "linked_test_task_ids",
     "spec_id",
-    # Internal cutover guard only; never projected as a live Sprint relation.
-    # Deprecated migration-only policy is required to preserve the effective
-    # validation gate in this bounded read; it grants no executor write access.
     "current_rejection_kind",
     "current_rejection_id",
     "current_rejection_code",
@@ -1662,17 +1657,11 @@ _TASK_GATE_SPEC_SELECT_FIELDS = (
 _TASK_GATE_BOARD_SELECT_FIELDS = ("id", "settings")
 
 
-def _flag_enabled(value: BoolInput) -> bool:
-    """Parse the temporary string compatibility form without truthiness."""
-
-    if isinstance(value, bool):
-        return value
-    normalized = value.strip().lower()
-    if normalized in {"true", "1", "yes"}:
-        return True
-    if normalized in {"false", "0", "no"}:
-        return False
-    raise ValueError(f"invalid boolean literal {value!r}; expected true/false or 1/0")
+def _require_boolean(value: bool) -> bool:
+    """Require a native boolean, including on untyped filter boundaries."""
+    if not isinstance(value, bool):
+        raise ValueError("expected a native boolean")
+    return value
 
 
 def _card_subject_version(card: object) -> int:
@@ -2486,7 +2475,7 @@ async def okto_pulse_get_publish_health() -> str:
 
 @mcp.tool()
 async def okto_pulse_list_my_mentions(
-    board_id: str, include_seen: BoolInput = False
+    board_id: str, include_seen: StrictBool = False
 ) -> str:
     """
     List comments and Q&A items where you are mentioned via @name.
@@ -2506,7 +2495,7 @@ async def okto_pulse_list_my_mentions(
         result = await McpListMyMentionsUseCase().execute(
             McpListMyMentionsCommand(
                 board_id,
-                include_seen=_flag_enabled(include_seen),
+                include_seen=_require_boolean(include_seen),
             ),
             actor=actor,
             uow=uow,
@@ -3628,12 +3617,12 @@ async def okto_pulse_resolve_bug_regression_scenarios(
 async def okto_pulse_get_task_context(
     board_id: str,
     card_id: str,
-    include_knowledge: BoolInput = True,
-    include_mockups: BoolInput = True,
-    include_qa: BoolInput = True,
-    include_comments: BoolInput = True,
-    include_architecture: BoolInput = True,
-    include_superseded: BoolInput = False,
+    include_knowledge: StrictBool = True,
+    include_mockups: StrictBool = True,
+    include_qa: StrictBool = True,
+    include_comments: StrictBool = True,
+    include_architecture: StrictBool = True,
+    include_superseded: StrictBool = False,
     profile: Annotated[
         str,
         Field(
@@ -3698,12 +3687,12 @@ async def okto_pulse_get_task_context(
             )
         )
 
-    _inc_kb = _flag_enabled(include_knowledge)
-    _inc_mockups = _flag_enabled(include_mockups)
-    _inc_qa = _flag_enabled(include_qa)
-    _inc_comments = _flag_enabled(include_comments)
-    _inc_architecture = _flag_enabled(include_architecture)
-    _inc_superseded = _flag_enabled(include_superseded)
+    _inc_kb = _require_boolean(include_knowledge)
+    _inc_mockups = _require_boolean(include_mockups)
+    _inc_qa = _require_boolean(include_qa)
+    _inc_comments = _require_boolean(include_comments)
+    _inc_architecture = _require_boolean(include_architecture)
+    _inc_superseded = _require_boolean(include_superseded)
     _gate_scope = _resolved_context_scope == "gate"
     _gate_manifest_inventory: dict[str, dict[str, Any]] = {}
 
@@ -5222,7 +5211,7 @@ async def okto_pulse_list_spec_dependencies(
     limit: PageWindowInput = 25,
     active_state: Literal["active", "removed", "all"] = "active",
     satisfaction: Literal["satisfied", "unmet", "all"] = "all",
-    retrospective: OptionalBoolInput = None,
+    retrospective: StrictBool | None = None,
     related_statuses: list[str] | None = None,
     lineage: Literal["same_ideation", "cross_ideation", "all"] = "all",
 ) -> str:
@@ -5252,7 +5241,7 @@ async def okto_pulse_list_spec_dependencies(
             for value in validate_string_list(related_statuses)
         )
         retrospective_value = (
-            _flag_enabled(retrospective) if retrospective is not None else None
+            _require_boolean(retrospective) if retrospective is not None else None
         )
         lifecycle_filter = SpecDependencyLifecycleFilter(active_state)
         satisfaction_filter = (
@@ -5409,7 +5398,7 @@ async def okto_pulse_list_cards_by_status(
     spec_id: str = "",
     priority: str = "",
     assignee_id: str = "",
-    include_archived: BoolInput = False,
+    include_archived: StrictBool = False,
     offset: PageWindowInput = 0,
     limit: PageWindowInput = 50,
 ) -> str:
@@ -5438,9 +5427,9 @@ async def okto_pulse_list_cards_by_status(
             f"priority={priority!r} is not a valid card priority filter",
         )
     try:
-        include_archived_value = _flag_enabled(include_archived)
+        include_archived_value = _require_boolean(include_archived)
     except ValueError as exc:
-        return _structured_error("invalid_filter", ["true", "false"], None, str(exc))
+        return _structured_error("invalid_filter", [True, False], None, str(exc))
 
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
@@ -5719,7 +5708,7 @@ async def okto_pulse_add_choice_comment(
     question: str,
     options: list[ChoiceOptionInput],
     comment_type: str = "choice",
-    allow_free_text: BoolInput = False,
+    allow_free_text: StrictBool = False,
 ) -> str:
     """
         Add a choice board (poll) to a card. Responders can select from the options.
@@ -5763,7 +5752,7 @@ async def okto_pulse_add_choice_comment(
                 question,
                 comment_type,
                 choice_list,
-                _flag_enabled(allow_free_text),
+                _require_boolean(allow_free_text),
             ),
             actor=actor,
             uow=uow,
@@ -6683,7 +6672,6 @@ async def okto_pulse_link_story_to_ideation(
     board_id: str,
     story_id: str,
     ideation_id: str,
-    mark_converted: BoolInput = True,
 ) -> str:
     """Link a Story to one Ideation; multiple Stories may feed the same Ideation."""
     ctx = await _get_agent_ctx(board_id)
@@ -6722,7 +6710,6 @@ async def okto_pulse_link_story_to_ideation(
                         "ideation_id": link.ideation_id,
                     },
                     "story": _story_payload(story) if story else None,
-                    "mark_converted_input_ignored": not _flag_enabled(mark_converted),
                 },
                 default=str,
             )
@@ -6994,10 +6981,10 @@ async def okto_pulse_get_ideation(board_id: str, ideation_id: str) -> str:
 async def okto_pulse_get_ideation_context(
     board_id: str,
     ideation_id: str,
-    include_knowledge: BoolInput = True,
-    include_mockups: BoolInput = True,
-    include_qa: BoolInput = True,
-    include_architecture: BoolInput = True,
+    include_knowledge: StrictBool = True,
+    include_mockups: StrictBool = True,
+    include_qa: StrictBool = True,
+    include_architecture: StrictBool = True,
     profile: str = "full",
 ) -> str:
     """
@@ -7013,10 +7000,10 @@ async def okto_pulse_get_ideation_context(
     if perm_err:
         return _perm_error(perm_err)
 
-    _inc_kb = _flag_enabled(include_knowledge)
-    _inc_mockups = _flag_enabled(include_mockups)
-    _inc_qa = _flag_enabled(include_qa)
-    _inc_architecture = _flag_enabled(include_architecture)
+    _inc_kb = _require_boolean(include_knowledge)
+    _inc_mockups = _require_boolean(include_mockups)
+    _inc_qa = _require_boolean(include_qa)
+    _inc_architecture = _require_boolean(include_architecture)
 
     from okto_pulse.core.application.use_cases import (
         McpGetIdeationCommand,
@@ -7843,7 +7830,7 @@ async def okto_pulse_ask_ideation_choice_question(
     question: str,
     options: list[ChoiceOptionInput],
     question_type: str = "choice",
-    allow_free_text: BoolInput = False,
+    allow_free_text: StrictBool = False,
 ) -> str:
     """
         Ask a choice question (poll/form) on an ideation's Q&A board.
@@ -7885,7 +7872,7 @@ async def okto_pulse_ask_ideation_choice_question(
         if question_type in ("choice", "single_choice", "multi_choice")
         else "choice",
         choices=choice_list,
-        allow_free_text=_flag_enabled(allow_free_text),
+        allow_free_text=_require_boolean(allow_free_text),
     )
 
     from okto_pulse.core.application.use_cases import (
@@ -8230,10 +8217,10 @@ async def okto_pulse_get_refinement(board_id: str, refinement_id: str) -> str:
 async def okto_pulse_get_refinement_context(
     board_id: str,
     refinement_id: str,
-    include_knowledge: BoolInput = True,
-    include_mockups: BoolInput = True,
-    include_qa: BoolInput = True,
-    include_architecture: BoolInput = True,
+    include_knowledge: StrictBool = True,
+    include_mockups: StrictBool = True,
+    include_qa: StrictBool = True,
+    include_architecture: StrictBool = True,
     profile: str = "full",
 ) -> str:
     """
@@ -8249,10 +8236,10 @@ async def okto_pulse_get_refinement_context(
     if perm_err:
         return _perm_error(perm_err)
 
-    _inc_kb = _flag_enabled(include_knowledge)
-    _inc_mockups = _flag_enabled(include_mockups)
-    _inc_qa = _flag_enabled(include_qa)
-    _inc_architecture = _flag_enabled(include_architecture)
+    _inc_kb = _require_boolean(include_knowledge)
+    _inc_mockups = _require_boolean(include_mockups)
+    _inc_qa = _require_boolean(include_qa)
+    _inc_architecture = _require_boolean(include_architecture)
 
     from okto_pulse.core.application.use_cases import (
         McpGetRefinementCommand,
@@ -10143,7 +10130,7 @@ async def okto_pulse_ask_refinement_choice_question(
     question: str,
     options: list[ChoiceOptionInput],
     question_type: str = "choice",
-    allow_free_text: BoolInput = False,
+    allow_free_text: StrictBool = False,
 ) -> str:
     """
         Ask a choice question (poll/form) on a refinement's Q&A board.
@@ -10188,7 +10175,7 @@ async def okto_pulse_ask_refinement_choice_question(
         if question_type in ("choice", "single_choice", "multi_choice")
         else "choice",
         choices=choice_list,
-        allow_free_text=_flag_enabled(allow_free_text),
+        allow_free_text=_require_boolean(allow_free_text),
     )
 
     from okto_pulse.core.application.use_cases import (
@@ -10591,11 +10578,11 @@ async def okto_pulse_get_spec(board_id: str, spec_id: str) -> str:
 async def okto_pulse_get_spec_context(
     board_id: str,
     spec_id: str,
-    include_knowledge: BoolInput = True,
-    include_mockups: BoolInput = True,
-    include_qa: BoolInput = True,
-    include_architecture: BoolInput = True,
-    include_superseded: BoolInput = False,
+    include_knowledge: StrictBool = True,
+    include_mockups: StrictBool = True,
+    include_qa: StrictBool = True,
+    include_architecture: StrictBool = True,
+    include_superseded: StrictBool = False,
     profile: Annotated[
         str,
         Field(
@@ -10630,11 +10617,11 @@ async def okto_pulse_get_spec_context(
     if _resolved_profile is None:
         return json.dumps(_unsupported_projection_error(profile))
 
-    _inc_kb = _flag_enabled(include_knowledge)
-    _inc_mockups = _flag_enabled(include_mockups)
-    _inc_qa = _flag_enabled(include_qa)
-    _inc_architecture = _flag_enabled(include_architecture)
-    _inc_superseded = _flag_enabled(include_superseded)
+    _inc_kb = _require_boolean(include_knowledge)
+    _inc_mockups = _require_boolean(include_mockups)
+    _inc_qa = _require_boolean(include_qa)
+    _inc_architecture = _require_boolean(include_architecture)
+    _inc_superseded = _require_boolean(include_superseded)
 
     from okto_pulse.core.application.use_cases import (
         McpGetSpecContextCommand,
@@ -12601,7 +12588,7 @@ async def okto_pulse_list_architecture_designs(
     board_id: str,
     parent_type: str,
     parent_id: str,
-    include_payloads: BoolInput = False,
+    include_payloads: StrictBool = False,
 ) -> str:
     """
     List Architecture Designs for an ideation, refinement, spec, or card."""
@@ -12609,7 +12596,7 @@ async def okto_pulse_list_architecture_designs(
     if not ctx:
         return _auth_error()
 
-    action = "render" if _flag_enabled(include_payloads) else "read"
+    action = "render" if _require_boolean(include_payloads) else "read"
     perm_err = _mcp_check_architecture_permission(ctx.permissions, parent_type, action)
     if perm_err:
         return _perm_error(perm_err)
@@ -12628,7 +12615,7 @@ async def okto_pulse_list_architecture_designs(
                 ListArchitectureCommand(
                     parent_type,
                     parent_id,
-                    include_payloads=_flag_enabled(include_payloads),
+                    include_payloads=_require_boolean(include_payloads),
                     board_id=board_id,
                 ),
                 actor=actor,
@@ -12647,7 +12634,7 @@ async def okto_pulse_list_architecture_propagation_legacy(
     board_id: str,
     limit: int = 100,
     offset: int = 0,
-    include_clean: BoolInput = False,
+    include_clean: StrictBool = False,
     parent_type_filter: str = "",
 ) -> str:
     """List legacy Architecture Design snapshots whose SOURCE is now ineligible for
@@ -12689,7 +12676,7 @@ async def okto_pulse_list_architecture_propagation_legacy(
                 board_id,
                 limit=limit,
                 offset=offset,
-                include_clean=_flag_enabled(include_clean),
+                include_clean=_require_boolean(include_clean),
                 parent_type_filter=parent_type_filter,
                 surface="mcp",
             ),
@@ -12703,7 +12690,7 @@ async def okto_pulse_list_architecture_propagation_legacy(
 async def okto_pulse_get_architecture_design(
     board_id: str,
     design_id: str,
-    include_payloads: BoolInput = False,
+    include_payloads: StrictBool = False,
 ) -> str:
     """
     Get one Architecture Design by ID."""
@@ -12724,7 +12711,7 @@ async def okto_pulse_get_architecture_design(
             result = await GetArchitectureDesignUseCase().execute(
                 GetArchitectureDesignCommand(
                     design_id,
-                    include_payloads=_flag_enabled(include_payloads),
+                    include_payloads=_require_boolean(include_payloads),
                     board_id=board_id,
                 ),
                 actor=actor,
@@ -12732,7 +12719,7 @@ async def okto_pulse_get_architecture_design(
             )
     except EntityNotFoundError:
         return json.dumps({"error": "Architecture design not found"})
-    action = "render" if _flag_enabled(include_payloads) else "read"
+    action = "render" if _require_boolean(include_payloads) else "read"
     parent_type = getattr(result.response, "parent_type", None)
     perm_err = _mcp_check_architecture_permission(ctx.permissions, parent_type, action)
     if perm_err:
@@ -14193,7 +14180,7 @@ async def okto_pulse_add_business_rule(
 async def okto_pulse_list_integration_requirements(
     board_id: str,
     spec_id: str,
-    include_inactive: BoolInput = False,
+    include_inactive: StrictBool = False,
 ) -> str:
     """List Integration Requirements (IR) for a spec."""
     ctx = await _get_agent_ctx(board_id)
@@ -14220,7 +14207,7 @@ async def okto_pulse_list_integration_requirements(
         async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
             _r = await McpListIntegrationRequirementsUseCase().execute(
                 McpListIntegrationRequirementsCommand(
-                    spec_id, board_id, _flag_enabled(include_inactive)
+                    spec_id, board_id, _require_boolean(include_inactive)
                 ),
                 actor=actor,
                 uow=uow,
@@ -14445,7 +14432,7 @@ async def _link_task_to_integration_requirement_internal(
 async def okto_pulse_list_observability_requirements(
     board_id: str,
     spec_id: str,
-    include_inactive: BoolInput = False,
+    include_inactive: StrictBool = False,
 ) -> str:
     """List Observability Requirements (OR) for a spec."""
     ctx = await _get_agent_ctx(board_id)
@@ -14472,7 +14459,7 @@ async def okto_pulse_list_observability_requirements(
         async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
             _r = await McpListObservabilityRequirementsUseCase().execute(
                 McpListObservabilityRequirementsCommand(
-                    spec_id, board_id, _flag_enabled(include_inactive)
+                    spec_id, board_id, _require_boolean(include_inactive)
                 ),
                 actor=actor,
                 uow=uow,
@@ -14899,7 +14886,7 @@ async def _link_task_to_decision_internal(
 async def okto_pulse_list_business_rules(
     board_id: str,
     spec_id: str,
-    include_inactive: BoolInput = False,
+    include_inactive: StrictBool = False,
 ) -> str:
     """
     List all business rules for a spec with linked functional requirements resolved as text."""
@@ -14921,7 +14908,7 @@ async def okto_pulse_list_business_rules(
     async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
         try:
             _r = await McpListBusinessRulesUseCase().execute(
-                McpListBusinessRulesCommand(spec_id, _flag_enabled(include_inactive)),
+                McpListBusinessRulesCommand(spec_id, _require_boolean(include_inactive)),
                 actor=actor,
                 uow=uow,
             )
@@ -15277,7 +15264,7 @@ async def okto_pulse_remove_spec_entity(
 async def okto_pulse_list_api_contracts(
     board_id: str,
     spec_id: str,
-    include_inactive: BoolInput = False,
+    include_inactive: StrictBool = False,
 ) -> str:
     """
     List all API contracts for a spec with linked business rules resolved."""
@@ -15299,7 +15286,7 @@ async def okto_pulse_list_api_contracts(
     async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
         try:
             _r = await McpListApiContractsUseCase().execute(
-                McpListApiContractsCommand(spec_id, _flag_enabled(include_inactive)),
+                McpListApiContractsCommand(spec_id, _require_boolean(include_inactive)),
                 actor=actor,
                 uow=uow,
             )
@@ -16412,7 +16399,7 @@ async def okto_pulse_ask_spec_choice_question(
     question: str,
     options: list[ChoiceOptionInput],
     question_type: str = "choice",
-    allow_free_text: BoolInput = False,
+    allow_free_text: StrictBool = False,
 ) -> str:
     """Ask a choice question (poll/form) on a spec's Q&A board — the respondent
     picks from predefined options. Use for structured answers, e.g. "Which
@@ -16467,7 +16454,7 @@ async def okto_pulse_ask_spec_choice_question(
             if question_type in ("choice", "single_choice", "multi_choice")
             else "choice",
             choices=choice_list,
-            allow_free_text=_flag_enabled(allow_free_text),
+            allow_free_text=_require_boolean(allow_free_text),
         )
         try:
             qa = await service.create_question(spec_id, ctx.agent_id, data)
@@ -16627,7 +16614,7 @@ async def okto_pulse_get_traceability_report(
     board_id: str,
     ideation_id: str = "",
     spec_id: str = "",
-    include_artifacts: BoolInput = False,
+    include_artifacts: StrictBool = False,
     query: Annotated[BugClustersRequest | SpecCoverageRequest | DecisionImpactRequest | LineageRequest, Field(discriminator='view')] | None = None,
 ) -> str:
     """
@@ -16655,7 +16642,7 @@ async def okto_pulse_get_traceability_report(
     if perm_err:
         return _perm_error(perm_err)
 
-    _include_artifacts = _flag_enabled(include_artifacts)
+    _include_artifacts = _require_boolean(include_artifacts)
 
     if query is not None:
         if ideation_id or spec_id or _include_artifacts:
@@ -19674,11 +19661,11 @@ async def okto_pulse_list_by_board(
         if bool_key not in filters:
             continue
         try:
-            filters[bool_key] = _flag_enabled(filters[bool_key])
+            filters[bool_key] = _require_boolean(filters[bool_key])
         except (AttributeError, ValueError) as exc:
             return _structured_error(
                 "invalid_filter",
-                ["true", "false"],
+                [True, False],
                 None,
                 f"{bool_key}: {exc}",
             )
@@ -19690,11 +19677,9 @@ async def okto_pulse_list_by_board(
     if entity_type == "story":
 
         def _optional_bool_filter(value: Any) -> bool | None:
-            if value is None or value == "":
+            if value is None:
                 return None
-            if isinstance(value, bool):
-                return value
-            return _flag_enabled(str(value))
+            return _require_boolean(value)
 
         story_args = {
             "status_filter": filters.get("status") or None,

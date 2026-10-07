@@ -74,6 +74,11 @@ def _stub_ctx(board_id: str, actor_id: str):
                 "story.entity.create",
                 "story.entity.edit_fields",
                 "story.entity.label",
+                "story.mockups.read",
+                "story.mockups.create",
+                "story.mockups.edit",
+                "story.mockups.delete",
+                "story.mockups.annotate",
                 "story.entity.archive",
                 "story.entity.restore",
                 "story.move.draft_to_triage",
@@ -888,7 +893,7 @@ async def test_story_ideation_link_table_enforces_one_ideation_per_story(db_fact
 
 
 @pytest.mark.asyncio
-async def test_story_rest_contract_and_mcp_tools_keep_existing_data_unbackfilled(db_factory):
+async def test_story_rest_and_mcp_workflow_keeps_standalone_ideation(db_factory):
     board_id = _id("story-board")
     actor_id = _id("agent")
     await _seed_board(db_factory, board_id, actor_id)
@@ -897,7 +902,7 @@ async def test_story_rest_contract_and_mcp_tools_keep_existing_data_unbackfilled
         db.add(
             Ideation(
                 board_id=board_id,
-                title="Existing ideation before Stories rollout",
+                title="Native standalone ideation",
                 created_by=actor_id,
             )
         )
@@ -934,7 +939,7 @@ async def test_story_rest_contract_and_mcp_tools_keep_existing_data_unbackfilled
             topic_id=topic_id,
             title="MCP parity Story",
             description="As an agent, I need Stories exposed through MCP.",
-            labels='["mcp", "rest"]',
+            labels=["mcp", "rest"],
             status="draft",
         )
         assert story_payload["success"] is True
@@ -947,7 +952,7 @@ async def test_story_rest_contract_and_mcp_tools_keep_existing_data_unbackfilled
             board_id=board_id,
             story_id=story_id,
             title="MCP parity Story updated",
-            labels='["mcp", "updated"]',
+            labels=["mcp", "updated"],
         )
         assert updated_story["success"] is True
         assert updated_story["story"]["title"] == "MCP parity Story updated"
@@ -967,7 +972,7 @@ async def test_story_rest_contract_and_mcp_tools_keep_existing_data_unbackfilled
             "okto_pulse_list_by_board",
             board_id=board_id,
             entity_type="story",
-            filters={"include_archived": "true"},
+            filters={"include_archived": True},
         )
         assert any(item["id"] == story_id and item["archived"] is True for item in listed_archived_story["items"])
 
@@ -990,7 +995,7 @@ async def test_story_rest_contract_and_mcp_tools_keep_existing_data_unbackfilled
             screen_type="modal",
             html_content="<div onclick='bad()'><script>bad()</script>Story modal</div>",
         )
-        assert added_mockup["success"] is True
+        assert added_mockup.get("success") is True, added_mockup
         assert added_mockup["entity_type"] == "story"
         assert "<script>" not in added_mockup["screen"]["html_content"]
         screen_id = added_mockup["screen"]["id"]
@@ -1069,7 +1074,7 @@ async def test_story_rest_contract_and_mcp_tools_keep_existing_data_unbackfilled
             db_factory,
             "okto_pulse_convert_stories_to_ideation",
             board_id=board_id,
-            story_ids=json.dumps([story_id]),
+            story_ids=[story_id],
             title="Converted through MCP",
         )
         assert converted["success"] is True
@@ -1080,7 +1085,7 @@ async def test_story_rest_contract_and_mcp_tools_keep_existing_data_unbackfilled
             "okto_pulse_list_by_board",
             board_id=board_id,
             entity_type="story",
-            filters={"converted": "true", "include_archived": "true"},
+            filters={"converted": True, "include_archived": True},
         )
         assert listed["total"] == 1
         assert listed["items"][0]["status"] == "converted"
@@ -1121,7 +1126,6 @@ async def test_story_rest_contract_and_mcp_tools_keep_existing_data_unbackfilled
             board_id=board_id,
             story_id=link_story["story"]["id"],
             ideation_id=target_id,
-            mark_converted="false",
         )
         assert linked_story["success"] is True
         assert linked_story["story"]["status"] == "converted"
