@@ -19,6 +19,7 @@ CODE_TRACEABILITY_SPEC_ENDPOINTS = {
 
 @dataclass(frozen=True, slots=True)
 class CodeEvidenceLinkFamily:
+    owner_type: str = "code_evidence"
     edge_type: str = "supports"
     source_type: str = "Entity"
     rules: frozenset[str] = frozenset({CODE_EVIDENCE_LINK_RULE})
@@ -29,8 +30,8 @@ class CodeEvidenceLinkFamily:
             and created_by == "worker_layer1")
 
     def matches_rule_family(self, rule_id):
-        return isinstance(rule_id, str) and rule_id.startswith(
-            "supports/code_traceability_spec_link@")
+        return isinstance(rule_id, str) and any(rule_id.startswith(
+            rule.split("@", 1)[0] + "@") for rule in self.rules)
 
     def owns_endpoints(self, *, owner_id, source_type, target_type, source_ref, target_ref):
         if (source_type != "Entity" or source_ref != f"code_evidence:{owner_id}"
@@ -44,3 +45,38 @@ class CodeEvidenceLinkFamily:
 
 
 CODE_EVIDENCE_LINK_FAMILY = CodeEvidenceLinkFamily()
+
+
+TARGET_EVIDENCE_NAMESPACE = "implementation_target_evidence"
+TARGET_EVIDENCE_RULE = "derives_from/code_traceability_evidence@v2.0"
+
+
+@dataclass(frozen=True, slots=True)
+class TargetEvidenceFamily(CodeEvidenceLinkFamily):
+    owner_type: str = "implementation_target"
+    edge_type: str = "derives_from"
+    rules: frozenset[str] = frozenset({TARGET_EVIDENCE_RULE})
+    target_sections: tuple[tuple[str, str], ...] = (("Entity", ""),)
+
+    def owns_endpoints(self, *, owner_id, source_type, target_type, source_ref, target_ref):
+        if (source_type != "Entity" or target_type != "Entity"
+                or source_ref != f"implementation_target:{owner_id}"
+                or type(target_ref) is not str):
+            return False
+        parts = target_ref.split(":")
+        return (len(parts) == 2 and parts[0] == "code_evidence"
+            and bool(parts[1]) and parts[1].strip() == parts[1])
+
+
+_TRACEABILITY_FAMILIES = {
+    CODE_EVIDENCE_LINK_NAMESPACE: CODE_EVIDENCE_LINK_FAMILY,
+    TARGET_EVIDENCE_NAMESPACE: TargetEvidenceFamily(),
+}
+TRACEABILITY_RELATIONSHIP_NAMESPACES = frozenset(_TRACEABILITY_FAMILIES)
+
+
+def traceability_relationship_family(namespace):
+    try:
+        return _TRACEABILITY_FAMILIES[namespace]
+    except (KeyError, TypeError):
+        raise ValueError("traceability_relationship_namespace_invalid") from None

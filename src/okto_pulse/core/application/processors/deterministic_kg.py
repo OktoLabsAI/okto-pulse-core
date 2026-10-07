@@ -36,7 +36,7 @@ from typing import Any
 
 from okto_pulse.core.ports.code_evidence_projection import (
     CODE_EVIDENCE_LINK_NAMESPACE, CODE_EVIDENCE_LINK_RULE,
-    CODE_TRACEABILITY_SPEC_ENDPOINTS,
+    CODE_TRACEABILITY_SPEC_ENDPOINTS, TARGET_EVIDENCE_NAMESPACE, TARGET_EVIDENCE_RULE,
 )
 from okto_pulse.core.domain.code_traceability_kg import (
     CODE_INVESTIGATION_RECEIPT_KG_STATUSES,
@@ -2865,6 +2865,9 @@ class DeterministicWorker:
         card_node_type = str(target.get("card_node_type") or "Entity").strip()
         if card_node_type not in {"Entity", "Bug"}:
             raise ValueError("code_traceability_card_node_type_invalid")
+        if ("baseline_evidence_id" not in target or "evidence_links" not in target
+                or not isinstance(target["evidence_links"], (list, tuple))):
+            raise ValueError("code_traceability_target_evidence_incomplete")
         evidence_links = _traceability_sequence(target, "evidence_links", limit=200)
         overlap_target_ids = _traceability_id_sequence(
             target,
@@ -3041,10 +3044,21 @@ class DeterministicWorker:
                     ),
                     confidence=1.0,
                     rule_id=(
-                        f"derives_from/code_traceability_evidence@{WORKER_VERSION}"
+                        TARGET_EVIDENCE_RULE
                     ),
                 )
             )
+        result.relational_projection_active_set_intents = (
+            RelationalProjectionActiveSetIntent(
+                owner_type="implementation_target", owner_id=target_id,
+                namespace=TARGET_EVIDENCE_NAMESPACE, active_refs=(),
+                active_edges=tuple(RelationalProjectionActiveEdgeRef(
+                    candidate_id=edge.candidate_id, edge_type=edge.edge_type,
+                    from_candidate_id=edge.from_candidate_id,
+                    to_candidate_id=edge.to_candidate_id, rule_id=edge.rule_id,
+                ) for edge in result.edges if edge.rule_id == TARGET_EVIDENCE_RULE),
+            ),
+        )
         for overlap_target_id in overlap_target_ids:
             if overlap_target_id == target_id:
                 raise ValueError("code_traceability_overlap_self_reference")

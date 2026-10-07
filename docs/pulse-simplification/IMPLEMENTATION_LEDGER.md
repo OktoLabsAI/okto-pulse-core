@@ -2,6 +2,47 @@
 
 ## Estado para retomada
 
+### 2026-10-07 — Target→Evidence corrigido e validado no par main41
+Build/install/prova88923 terminou0:844/906 Core+316/402 Community byte-identical.
+Core target-contract1 (73185) terminou1:38pass/4fail,8.71s. Fixture de overlap
+omitira baseline_evidence_id; primeira tentativa de edição falhou por quoting
+antes de alterar arquivo. Fixture corrigida para None explícito. contract2 (13084)
+terminou0:25pass/5.49s, incluindo quatro casos de overlap e negativos de fonte
+incompleta/dono/tipo. Nenhuma lógica produtiva relaxada para aceitar fonte parcial.
+
+Community target-evidence2 (41086) terminou0:3pass/136.10s: novo Target e duas
+regressões Evidence (incluindo rollback). target-evidence3 (12656) terminou0:
+2pass/95.38s, positivo e falha após exclusão real. Grafo restaurado, fila pending,
+nenhum novo audit, retry convergente e conteúdo SQL do vizinho preservado.
+Recibo clean-break-native-target-evidence-retraction.json sela50 Python finais
+distintos (substitui caso anterior não parametrizado) +47 frontend target-ui1 (5942).
+Frontend jsdom/fallback acessível, assets sem mudança. Closure41 (69860) terminou0:
+ok=true, findings/documentation_findings=[], oito budgets ZERO. Ruff/diff-check0.
+
+Correção usa família pública fechada e compensador já existente; falta/None de
+coleção não vira autorização de prune. None explícito no baseline continua válido.
+Sem autoridade nova ou dialeto concreto no Core. Não qualifica KG-16/24 inteiros:
+restam outras famílias e prova de paridade completa. Índice permanece62/173/11.
+Nenhum processo ativo. Próximo: inventariar famílias remanescentes, overlap e paridade
+por snapshot nativo; depois DEI/ARQVER. BASE:T23/KG-10 separados. Next27 STALE.
+Pronto para commits/pushes pareados.
+
+### 2026-10-07 — KG-16/24: Target→Evidence reproduziu relação obsoleta
+Base publicada Core40c0f00a / Community389364ec, árvores limpas, turno anterior
+classificado como progresso. Prova provenance-native-target-evidence1 confirmou
+main40:844/906 Core+316/402 Community byte-identical antes da reprodução.
+target-evidence1 (53429) terminou1/46.01s: Target1 perdeu baseline e vínculo explícito,
+passou pela revisão2/CAS nativo, fila ACKed, mas derives_from permanecia. Target2,
+ligado à mesma Evidence, permaneceu intacto. Defeito real dentro de KG-16.
+
+WIP: família pública fechada implementation_target_evidence reutiliza o active set
+e a compensação de Evidence. Exige baseline explicitamente presente e coleção
+evidence_links completa antes de autorizar remoção; None/[] explícitos são válidos.
+Dono/tipo/source_ref/writer exatos; não modifica conteúdo/histórico ou permissões.
+Produto alterado ainda não testado. Próximo: build/install/prova main41; reprodução,
+regressões de traceability/overlap e rollback; frontend; closure; recibo/commits.
+KG-16/24 continuam pendentes, índice62/173/11. Nenhum processo anterior vivo.
+
 ### 2026-10-07 — C1/C4 KG-25 concluído no par main40
 Build/install/prova19773 terminou0:844/906 Core+316/402 Community byte-identical.
 Retirado pending_backfill de runtime/export; testes de health/rebuild comprovam

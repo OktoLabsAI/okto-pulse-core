@@ -69,6 +69,7 @@ def _target(target_id: str, peer_ids: list[str]) -> dict[str, object]:
         "resolution_state": "resolved",
         "payload_sha256": SHA_A,
         "content_hash": SHA_B,
+        "baseline_evidence_id": None,
         "evidence_links": [],
         "overlap_target_ids": peer_ids,
     }

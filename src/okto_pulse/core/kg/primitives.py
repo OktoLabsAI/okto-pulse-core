@@ -38,7 +38,7 @@ from okto_pulse.core.domain.learning_closeout import LearningCaptureSelection
 from okto_pulse.core.domain.learning_materialization import CapturedLearningProjection, LEARNING_CAPTURE_CANDIDATE_ID
 
 from okto_pulse.core.ports.code_evidence_projection import (
-    CODE_EVIDENCE_LINK_NAMESPACE, CODE_EVIDENCE_LINK_FAMILY,
+    TRACEABILITY_RELATIONSHIP_NAMESPACES, traceability_relationship_family,
 )
 from okto_pulse.core.domain.code_traceability_kg import (
     CODE_TRACEABILITY_DETERMINISTIC_WRITER_PATH,
@@ -624,7 +624,9 @@ async def begin_consolidation(
         active_refs = tuple(getattr(projection_intent, "active_refs", ()))
         active_edges = tuple(getattr(projection_intent, "active_edges", ()))
         supported_scope = (req.artifact_type, owner_type, namespace) in {
-            ("code_evidence", "code_evidence", CODE_EVIDENCE_LINK_NAMESPACE),
+            *((traceability_relationship_family(name).owner_type,
+               traceability_relationship_family(name).owner_type, name)
+              for name in TRACEABILITY_RELATIONSHIP_NAMESPACES),
             ("refinement", "refinement", "rdl"),
             ("spec", "spec", "dependencies"),
             ("card", "card", "card_scenarios"),
@@ -678,12 +680,12 @@ async def begin_consolidation(
                     "deterministic candidate identity.",
                     session_id=session_id,
                 )
-        if namespace == CODE_EVIDENCE_LINK_NAMESPACE:
-            family = CODE_EVIDENCE_LINK_FAMILY
+        if namespace in TRACEABILITY_RELATIONSHIP_NAMESPACES:
+            family = traceability_relationship_family(namespace)
             roots = [candidate for candidate in deterministic_candidates.values()
                      if _enum_value(candidate.node_type) == "Entity"
-                     and candidate.source_artifact_ref == f"code_evidence:{owner_id}"
-                     and candidate.kind_of == "code_evidence"]
+                     and candidate.source_artifact_ref == f"{owner_type}:{owner_id}"
+                     and candidate.kind_of == owner_type]
             if agent_id != "system:historical_consolidation" or active_refs or len(roots) != 1:
                 raise KGPrimitiveError("relational_projection_scope_invalid",
                     "Evidence links require their authenticated worker and exact owner.",
@@ -4313,7 +4315,7 @@ def _do_graph_commit(
             from okto_pulse.core.ports.card_projection import CARD_EDGE_NAMESPACES, card_edge_family
             from okto_pulse.core.ports.card_projection import CARD_DEPENDENCY_NAMESPACE, is_card_dependency_writer
             namespace = getattr(projection_intent, 'namespace', '')
-            family = (CODE_EVIDENCE_LINK_FAMILY if namespace == CODE_EVIDENCE_LINK_NAMESPACE
+            family = (traceability_relationship_family(namespace) if namespace in TRACEABILITY_RELATIONSHIP_NAMESPACES
                 else spec_relationship_family(namespace) if namespace in SPEC_RELATIONSHIP_NAMESPACES else None)
             emitted_projection_edge_ids = {
                 candidate_id for candidate_id, candidate in edge_candidates.items()

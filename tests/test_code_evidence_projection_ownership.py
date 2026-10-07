@@ -49,3 +49,39 @@ def test_complete_empty_source_declares_retraction_without_losing_evidence():
         "code_evidence", value["id"], "code_evidence_spec_links")
     assert intent.active_refs == intent.active_edges == ()
     assert any(node.source_artifact_ref == f"code_evidence:{value['id']}" for node in result.nodes)
+
+
+@pytest.mark.parametrize("case", ["baseline_missing", "links_missing", "links_null"])
+def test_partial_target_source_cannot_authorize_retraction(case):
+    from test_code_traceability_events_kg import _target
+    value = _target()
+    if case == "baseline_missing":
+        value.pop("baseline_evidence_id")
+    elif case == "links_missing":
+        value.pop("evidence_links")
+    else:
+        value["evidence_links"] = None
+    with pytest.raises(ValueError, match="code_traceability_target_evidence_incomplete"):
+        DeterministicWorker().process_implementation_target(value)
+
+
+def test_target_evidence_family_is_exact_and_empty_source_retracts_only_links():
+    from test_code_traceability_events_kg import _target
+    from okto_pulse.core.ports.code_evidence_projection import (
+        TARGET_EVIDENCE_NAMESPACE, traceability_relationship_family,
+    )
+    family = traceability_relationship_family(TARGET_EVIDENCE_NAMESPACE)
+    args = dict(owner_id="target", source_type="Entity", target_type="Entity",
+        source_ref="implementation_target:target", target_ref="code_evidence:evidence")
+    assert family.owns_endpoints(**args)
+    for field, value in (("source_ref", "implementation_target:target-other"),
+            ("source_ref", "code_evidence:target"), ("target_ref", "code_evidence:"),
+            ("target_ref", "code_evidence:evidence:extra"), ("target_type", "Decision")):
+        assert not family.owns_endpoints(**{**args, field: value})
+    result = DeterministicWorker().process_implementation_target({
+        **_target(), "baseline_evidence_id": None, "evidence_links": []})
+    intent, = result.relational_projection_active_set_intents
+    assert intent.namespace == TARGET_EVIDENCE_NAMESPACE
+    assert intent.owner_type == "implementation_target"
+    assert intent.active_refs == intent.active_edges == ()
+    assert any(edge.edge_type == "belongs_to" for edge in result.edges)
