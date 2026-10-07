@@ -3464,7 +3464,12 @@
       "historical_review_status": "not_audited_in_this_inventory",
       "prior_reviewed_execution": null,
       "discovered_artifacts": [],
-      "current_qualification": "pending_current_pair_review"
+      "current_qualification": "verified_current_pair_review",
+      "current_review": {
+        "artifact": "clean-break-acceptance-native-crash-replay.json",
+        "criterion_key": "KG:KG-19",
+        "proof_pair": "dist-native-main37"
+      }
     },
     {
       "key": "KG:KG-20",

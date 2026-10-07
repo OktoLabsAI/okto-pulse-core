@@ -2,6 +2,46 @@
 
 ## Estado para retomada
 
+### 2026-10-07 — C4 KG-19 qualificado com crash de processo real
+crash-replay4 (53193) terminou0:1 aprovado/58.16s. Subprocesso terminou73
+exatamente em before_relational_ack, após fence real e durability_applied.
+Reabertura nativa observou grafo atualizado e SQL ainda claimed, sem novo audit.
+Após expiração real do lease5s, recuperação existente adotou o claim vencido;
+revisão3 mais nova convergiu sem duplicação, e novo replay preservou multiset.
+Nenhum lock/marker apagado, nenhum guard relaxado; relógio injetado apenas para
+o deadline relacional e TTL curto admitido apenas no filho de teste.
+
+Recibo clean-break-acceptance-native-crash-replay.json preserva as três tentativas
+anteriores e seus limites. Ruff F/E9 passou; produto/SPA main37 continuam byteprovados,
+closure37 com oito ZERO permanece aplicável. WIP somente teste/helper/recibo/índice/ledger.
+Índice58 verificados,177 aplicáveis pendentes,11 superados. Nenhum processo ativo.
+Pronto para commits/pushes pareados. Próximo: KG-16/18/21/23/24/25, com atenção
+a consumidores após nova geração e troca de Spec; depois DEI/ARQVER conforme índice.
+BASE:T23/KG-10 continuam pendentes de decisão própria. Next27 isolado continua STALE.
+Nenhuma migração, dado real, release/tag/deploy ou entrega integral declarada.
+
+### 2026-10-07 — KG-19: processo real interrompido antes do ACK — em validação
+Base publicada Core4fe193f2 / Community99fa8446, main37 instalado/byteprovado.
+Turno anterior foi progresso: retirada do fallback IR/OR e KG-17/KG-20 qualificados.
+Novo teste Community/test_native_projection_crash_replay.py abre o mesmo storage
+em subprocesso e usa os._exit(73) no fence before_relational_ack, depois de conferir
+durability_applied. Reabre SQL/Grafx e verifica projeção persistida sem ACK; depois
+apresenta revisão mais nova, recupera claim pelo mecanismo real e repete o trabalho.
+
+crash-replay1 (30585) terminou1/31.40s: hook tentava função interna não exportada;
+substituído por GuardedWriteLease.ensure_owned, preservando sua verificação real.
+crash-replay2 (71607) terminou1/30.95s: startup recusou schema parcial do helper
+Base.metadata.create_all. Helper ganhou opção native_schema para este teste usar
+initialize_current_schema/current_schema_contract oficiais antes da primeira escrita.
+Nenhum marcador forjado/conversão/relaxamento da admissão.
+crash-replay3 (95284) terminou1/47.28s: crash73, leitura pós-crash e SQL sem ACK
+passaram; retry imediato foi corretamente negado pelo lease ainda válido de300s.
+Teste agora configura TTL5s (intervalo admitido) no escritor filho, mantém heartbeat
+real e aguarda6s após sua morte. Relógio da recuperação do claim avança pelo port
+existente; marker/lock não são apagados nem ignorados.
+crash-replay4 (53193) EM ANDAMENTO. Aguardar terminal; KG-19 ainda não qualificado.
+Produto e SPA inalterados. WIP somente novo teste, opção de helper e este ledger.
+
 ### 2026-10-07 — C1/C4 KG-17 e KG-20 concluídos no par main37
 Build/install/prova6039 terminou0: Core843 Python/905 payload e Community316/402
 byte-identical antes do comportamento. Core source-contract1 (4346) terminou0:
