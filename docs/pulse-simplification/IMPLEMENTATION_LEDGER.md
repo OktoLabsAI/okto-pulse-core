@@ -2,6 +2,26 @@
 
 ## Estado para retomada
 
+### 2026-10-07 — C4 T05 qualificado; Community16 followup ativo
+Core283a0a09 publicado e integrado main por FF após Community16 terminal.
+acceptance-native-resume-current1 handle63177 terminou0:11pass/27.85s,
+quatro módulos completos. Revisados sucessor em sessão SQL nova, histórico/autor,
+prova parcial/dirty work, testes relacionados, unknowns honestos, frozen states,
+concorrência e orçamento multibyte/cursor. Recibo clean-break-acceptance-native-resume.json
+promove somente T05, com limites e referência ao MCP real qualificado em T04.
+Produto/par reviewer22 inalterados; nenhum teste frontend adicional necessário.
+
+Main Community WIP corrige realm obrigatório em cinco módulos/helper de recovery,
+adoção explícita no teste DDL, failure_state nativo na fixture de telemetria com
+histórico de publicação, novo slot graph_query_execution no inventário esperado
+e composição scheduler em storage temporário. Removido apenas o teste exclusivo
+do cleanup do migrador retirado; exclusão de escopo, não teste verde.
+community16-native-fixtures1 handle24889 ATIVO, doze módulos completos.
+Não editar/reinstalar main até terminal. Ruff F/E9 já0.
+Módulo scenario_verification_method ainda não alterado: setup escreve cenários
+diretamente e deixa semantic subject stale; corrigir autoria nativa da fixture
+após terminal, sem alterar gate. E2E/C4 e T23/KG-10 continuam pendentes.
+
 ### 2026-10-07 — C4 T04/T06 qualificados; Community16 terminal
 Core9963a4c5 publicado com push0, main ainda8390bce1 durante a campanha.
 Revisadas asserções e fixtures atuais dos critérios T04 e T06, sem mudar produto.
