@@ -2,6 +2,67 @@
 
 ## Estado para retomada
 
+### 2026-10-07 — C2 journal/capture retirados, publicados e integrados
+Community de38ff80 commit/push0; main Community integrado por fast-forward após
+Core11 terminal. Inclui também o commit de data-home6d8beb6a antes isolado.
+Nenhum processo de teste/build desta rodada permanece ativo.
+native-graph-no-rollout2 terminou0:51 aprovados/536.20s. Primeiro bloco108/19.53s;
+composição se sobrepõe, NÃO159 casos distintos. Recuperação WAL, histórico nativo,
+privacy fence e recusa de restore danificado/later erasure preservados.
+Closure final0:ok=true, findings/documentation_findings vazios, oito budgetsZERO.
+READMEs pelo renderer oficial. Instalação final isolada após testes/prova final:
+Core843/905+Community316/402 bytes idênticos. Recibo/hashes no campo
+native_graph_without_migration_journal. Ruff/diff verdes. Frontend inalterado.
+
+Core11 já terminal com20 falhas; seleção Core12 apenas PREPARADA:
+606 módulos excluídos (493 anteriores +113 completos sem falha),13 módulos com
+falhas continuam no escopo. test_kg_tier_power parcial não foi excluído.
+Próximo: fechar branches Ladybug em binding/resolver dentro de C2, mantendo
+detecção opaca/recusa de armazenamento antigo; corrigir13 suites Core11 segundo
+contrato atual e preservar seus testes negativos. Não reinstalar/testar main
+antes de reconstruir e provar o par, pois venv principal ainda release2.
+Worktrees isolados continuam disponíveis; sua instalação final é no venv do
+release gate3. Main Core terá apenas README/recibos/ledger neste commit.
+C1–C4 integral, critérios,benchmark,T23/KG-10 permanecem abertos.
+
+### 2026-10-07 — Core11 terminal, falhas preservadas para followup
+Handle64730 terminou1:1790 aprovados,20 falhas,6 skips/3800.30s; parada maxfail20.
+XML/log completos e hashes/falhas registrados em core_full_run11 do recibo global.
+Não houve alteração de fontes/venv principal durante a campanha.
+Falhas: contagens/schema/endpoint atuais, permissões de consulta/visibilidade,
+generation ausente em seeds, contratos de eventos e derivações narrativas antigas.
+Diagnóstico detalhado e correções de cada suíte ainda pendentes; não presumir
+que todas sejam fixtures nem relaxar gates. Main Community já pode receber
+fast-forward após conferir limpeza; aguardar publicar o incremento isolado
+em qualificação para integrar seu HEAD de uma vez.
+
+### 2026-10-07 — C2 retirada do journal de migração em qualificação isolada
+No worktree Community isolado, retirados graph_rollout_journal e
+graph_rollout_capture, incluindo wiring e callbacks exclusivos de conversão
+Ladybug→Grafx. Transações mantêm pin/revalidação/cleanup; operações físicas mantêm
+fences e recibos nativos. Presença de boards/<id>/rollout é recusada opacamente
+antes de ler/publicar binding, sem converter ou remover os bytes antigos.
+Backend binding ainda contém branches Ladybug: continuação C2, NÃO retirada total.
+
+Suites exclusivamente de journal/capture removidas. Suites mistas preservam
+cleanup idempotente, roteamento, invalidação de Learning, privacy/retry e recusa
+de rota obsoleta. test_native_graph_privacy substitui a suíte mista de rollout.
+Par isolado dist-native-graph-no-rollout1 provado byte a byte antes dos testes:
+Core843/905 e Community316/402. native-graph-no-rollout1 terminal0:
+108 aprovados/19.53s. Ruff F/E9 e diff-check verdes.
+Closure inicial terminal1 SOMENTE matrizes README, findings vazios/oito budgetsZERO.
+READMEs isolados regenerados pelo renderer oficial; seu validador passou.
+
+native-graph-no-rollout2 ativo20120: composição (recusa adicionada também à
+inicialização), WAL recovery real, admissão de artifact e histórico/restore nativo.
+Sem mudança produtiva desde a primeira prova. Build final com READMEs pronto;
+closure final ativo45707. Aguardar terminais antes de reinstalar o par final,
+verificar provenance, registrar recibo, commit/push. Nenhum commit deste incremento.
+Main Core/Community src e venv principal permanecem congelados para Core11
+handle64730, ainda ativo. Não fast-forward main Community antes do terminal.
+Decisão Checklist recebida novamente já está implementada/qualificada; sem reabertura.
+T23/KG-10 e qualificação integral continuam pendentes.
+
 ### 2026-10-07 — C3 alias removido,81 testes aprovados,commit publicado
 Community6d8beb6a criado no worktree isolado e push HEAD:feature/v0.4.0 confirmado
 (fast-forward de6efad1c0). Main Community continua LOCALMENTE6efad1c0 para manter

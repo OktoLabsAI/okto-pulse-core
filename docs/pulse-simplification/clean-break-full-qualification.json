@@ -2506,5 +2506,151 @@
     },
     "scope": "Remove OKTO_PULSE_HOME runtime fallback and origin enum. Preserve explicit/DATA_DIR environment/dotenv/default identity, telemetry paths, terms and CLI isolation. Native subprocess fixtures use DATA_DIR; removed env has no effect and cannot create retired path. CLI init and Global recovery lifespan suites pass.",
     "limits": "Installed recovery E2E only test_installed_runtime_paths_override_parent_campaign qualified in this increment; no full E2E claim. No frontend code changed. Core11 continues against main trees/install frozen at previous product state. Main Community checkout awaits fast-forward to published6d8beb6a after Core11 terminal; do not run old removal script again on main."
+  },
+  "core_full_run11": {
+    "campaign": "clean-break-full-run11",
+    "exit_code": 1,
+    "passed": 1790,
+    "failed": 20,
+    "skipped": 6,
+    "seconds": 3800.3,
+    "xml_sha256": "70ed3101d86d66e101abf68a3ebb591fc106a1fdd1bf932271cbefebe76bf804",
+    "log_sha256": "b238fbbc79ba1ddd2847d4cc5e374b2ce7813de41e25ffba6217a1d1c1c68db8",
+    "failures": [
+      {
+        "class": "tests.test_kg_graph_store.TestSemanticGraphStore",
+        "name": "test_get_schema_info",
+        "message": "AssertionError: assert 22 == 21\n +  where 22 = len([{'from': 'Decision', 'name': 'supersedes', 'to': 'Decision'}, {'from': 'Decision', 'name': 'contradicts', 'to': 'Deci...m': 'Decision', 'name': 'mentions', 'to': 'Entity'}, {'from': 'Decision', 'name': 'depends_on', 'to': 'Decision'}, ...])"
+      },
+      {
+        "class": "tests.test_kg_integration_registry.TestBackwardCompat",
+        "name": "test_kg_init_re_exports",
+        "message": "AssertionError: assert '0.8.0' in {'0.3.10', '0.3.11', '0.3.12', '0.3.2', '0.3.3', '0.3.4', ...}"
+      },
+      {
+        "class": "tests.test_kg_layer_propagation",
+        "name": "test_subgraph_centered_default_and_canonical_excludes_working",
+        "message": "fastapi.exceptions.HTTPException: 403: {\"error\": \"permission_denied\", \"reason\": \"permission_missing\", \"required_permission\": \"board.read\", \"detail\": \"Permission denied: requires 'board.read'\"}"
+      },
+      {
+        "class": "tests.test_kg_layer_propagation",
+        "name": "test_subgraph_centered_working_returns_only_working",
+        "message": "fastapi.exceptions.HTTPException: 403: {\"error\": \"permission_denied\", \"reason\": \"permission_missing\", \"required_permission\": \"board.read\", \"detail\": \"Permission denied: requires 'board.read'\"}"
+      },
+      {
+        "class": "tests.test_kg_layer_propagation",
+        "name": "test_subgraph_centered_all_returns_both",
+        "message": "fastapi.exceptions.HTTPException: 403: {\"error\": \"permission_denied\", \"reason\": \"permission_missing\", \"required_permission\": \"board.read\", \"detail\": \"Permission denied: requires 'board.read'\"}"
+      },
+      {
+        "class": "tests.test_kg_layer_propagation",
+        "name": "test_subgraph_centered_on_working_anchor_keeps_anchor_canonical_expansion",
+        "message": "fastapi.exceptions.HTTPException: 403: {\"error\": \"permission_denied\", \"reason\": \"permission_missing\", \"required_permission\": \"board.read\", \"detail\": \"Permission denied: requires 'board.read'\"}"
+      },
+      {
+        "class": "tests.test_kg_operational_visibility",
+        "name": "test_cognitive_pending_payload_has_operational_fields",
+        "message": "KeyError: 'selected_kg_generation_id'"
+      },
+      {
+        "class": "tests.test_kg_operational_visibility",
+        "name": "test_operational_signals_stay_separate",
+        "message": "KeyError: 'counts'"
+      },
+      {
+        "class": "tests.test_kg_primitives_connectivity_guard",
+        "name": "test_source_artifact_ref_dedup_hit_with_existing_edge_counts_merge",
+        "message": "okto_pulse.core.kg.primitives.KGPrimitiveError: The current node generation must be a nonnegative integer."
+      },
+      {
+        "class": "tests.test_kg_provenance_columns_migration",
+        "name": "test_s1_fresh_bootstrap_has_all_new_columns_and_version",
+        "message": "AssertionError: assert '0.8.0' == '0.7.0'\n  \n  - 0.7.0\n  ?   ^\n  + 0.8.0\n  ?   ^"
+      },
+      {
+        "class": "tests.test_kg_query_contract_v1",
+        "name": "test_query_contract_covers_layers_related_context_and_edge_endpoints",
+        "message": "AssertionError: assert [{'from': 'En... 'to': 'Bug'}] == [{'from': 'En...o': 'Entity'}]\n  \n  Left contains 3 more items, first extra item: {'from': 'Entity', 'to': 'Bug'}\n  Use -v to get more diff"
+      },
+      {
+        "class": "tests.test_kg_r7_imp1",
+        "name": "test_ts4_provenance_only_learning_not_bug_derived_passes",
+        "message": "okto_pulse.core.kg.primitives.KGPrimitiveError: The current node generation must be a nonnegative integer."
+      },
+      {
+        "class": "tests.test_kg_relevance_dynamic",
+        "name": "test_ts29_schema_version_is_0_3_3",
+        "message": "AssertionError: assert '0.8.0' in {'0.3.10', '0.3.11', '0.3.12', '0.3.2', '0.3.3', '0.3.4', ...}"
+      },
+      {
+        "class": "tests.test_kg_relevance_dynamic",
+        "name": "test_kg_hit_flushed_event_class_registered",
+        "message": "AssertionError: assert 63 == 61\n +  where 63 = len(['learning.capture_admitted.v1', 'board.semantic_guideline_adoption_changed.v2', 'board.semantic_guideline_retirement_...mantic_policy_binding_materialized.v2', 'guideline.semantic_kg_projection_changed.v1', 'artifact.archive_changed', ...])"
+      },
+      {
+        "class": "tests.test_kg_relevance_dynamic",
+        "name": "test_impl_d_kg_daily_tick_event_class_registered",
+        "message": "AssertionError: assert 63 == 61\n +  where 63 = len(['learning.capture_admitted.v1', 'board.semantic_guideline_adoption_changed.v2', 'board.semantic_guideline_retirement_...mantic_policy_binding_materialized.v2', 'guideline.semantic_kg_projection_changed.v1', 'artifact.archive_changed', ...])"
+      },
+      {
+        "class": "tests.test_kg_spec_children_canonicalization",
+        "name": "test_promotion_curated_promotes_maturity_preserves_content",
+        "message": "okto_pulse.core.kg.primitives.KGPrimitiveError: The current node generation must be a nonnegative integer."
+      },
+      {
+        "class": "tests.test_kg_spec_children_canonicalization",
+        "name": "test_promotion_non_curated_promotes_and_updates_content",
+        "message": "okto_pulse.core.kg.primitives.KGPrimitiveError: The current node generation must be a nonnegative integer."
+      },
+      {
+        "class": "tests.test_kg_sprint1_integration",
+        "name": "test_ts_7b6a1ec1_worker_emits_all_edge_types",
+        "message": "assert 0 == 4\n +  where 0 = len([])"
+      },
+      {
+        "class": "tests.test_kg_subtype_column_migration",
+        "name": "test_s1_fresh_bootstrap_has_kind_of_and_version",
+        "message": "AssertionError: assert '0.8.0' == '0.7.0'\n  \n  - 0.7.0\n  ?   ^\n  + 0.8.0\n  ?   ^"
+      },
+      {
+        "class": "tests.test_kg_tier_power.TestSchemaInfo",
+        "name": "test_stable_types_count",
+        "message": "AssertionError: assert 22 == 21\n +  where 22 = len([{'from': 'Decision', 'name': 'supersedes', 'to': 'Decision'}, {'from': 'Decision', 'name': 'contradicts', 'to': 'Deci...m': 'Decision', 'name': 'mentions', 'to': 'Entity'}, {'from': 'Decision', 'name': 'depends_on', 'to': 'Decision'}, ...])"
+      }
+    ],
+    "limits": "Stopped at maxfail20; not a complete remaining-suite pass. Frozen main pair dist-v040-native-release2; no source or reinstall changes during campaign. Followup not yet applied."
+  },
+  "native_graph_without_migration_journal": {
+    "community_commit": "de38ff80",
+    "published_branch": "feature/v0.4.0",
+    "proof_pair": "dist-native-graph-no-rollout-final",
+    "provenance": "provenance-native-graph-no-rollout-final.json",
+    "closure": "closure-native-graph-no-rollout-final.json",
+    "closure_ok": true,
+    "all_eight_budgets_zero": true,
+    "campaigns": [
+      {
+        "name": "native-graph-no-rollout1",
+        "passed": 108,
+        "failed": 0,
+        "seconds": 19.53
+      },
+      {
+        "name": "native-graph-no-rollout2",
+        "passed": 51,
+        "failed": 0,
+        "seconds": 536.2
+      }
+    ],
+    "xml_sha256": {
+      "native-graph-no-rollout1": "e383c0dd2063f4e0b18f798d9cb6272ad961099dcb1b3cae99683d369e1ba7d6",
+      "native-graph-no-rollout2": "8a8ee49c06c8126329d9b23c773a00baa4922092f7b07e6573df2fdf832945bc"
+    },
+    "wheel_sha256": {
+      "okto_pulse-0.4.0-py3-none-any.whl": "a8b1f07a80e8b1d0ee1d75397bf86c008b9ed3d5c1cdcb528967071df0059b0a",
+      "okto_pulse_core-0.4.0-py3-none-any.whl": "e77e106ee4cfb221feeaec1f452499540f91da45cead976a359157dafcdac3a1"
+    },
+    "scope": "Remove migration-only journal/capture and wiring; preserve native transaction, route fences, privacy receipts, current recovery/history. Refuse opaque retired rollout files/directories before binding inspect/initialize without writes.",
+    "limits": "Counts overlap on composition suite; not159 distinct cases. Backend binding still contains Ladybug alternatives, next C2 step. No frontend change. Core11 terminal recorded separately with20 failures; no integral completion claim. Main Community fast-forwarded only after Core11 terminal."
   }
 }
