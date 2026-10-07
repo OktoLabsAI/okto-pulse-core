@@ -2,6 +2,61 @@
 
 ## Estado para retomada
 
+### 2026-10-07 — C3/C4 Community publicado; frontend geral em execucao
+
+Community e5811b70 publicado, push confirmado; Core produto81c3bdcf.
+community-current-fixtures2 terminou:47 aprovados/150 deselected em858.08s,
+handle2463 encerrado. Telemetry foi somente coletada para reproduzir o conflito
+de conftest; seus150 casos nao sao contabilizados como aprovados.
+Somados aos23 distintos de scope-history/lineage,70 testes neste incremento.
+Materializacao/replay/worker e recuperacao atual usaram SQL/Grafx descartaveis.
+Ruff F/E9/diff aprovados; nenhuma alteracao de produto ou budgets.
+
+Unica campanha ainda ativa: clean-break-full-frontend1, handle99481.
+Npm/Vitest geral com dois workers; aguardar terminal e ler log/JSON completos.
+Par produto dist-native-boundary-qualification1/provenance/closure permanece
+correspondente; nenhum build/reinstall efetuado durante as suites.
+Depois resolver apenas falhas materiais e continuar testes ainda nao executados.
+Core full-run3/full-run4 e Community full-run1/full-run2 nao foram suites integrais:
+limites e selecoes estao no JSON e logs, nao recomeçar as partes ja qualificadas.
+C1-C4 e decisoes T23/KG-10 continuam abertos, sem entrega integral declarada.
+
+### 2026-10-06 — C4 continuacao Community; fixtures de KG e SQL
+
+Core81c3bdcf publicado/push confirmado; Community base5e8d73f4.
+Community full-run2 terminou:109 aprovados/quatro falhas/16 erros em137.97s.
+60 modulos anteriormente qualificados excluidos conforme selection JSON.
+Falhas e hash XML preservados no JSON de qualificacao; nao e suite integral.
+
+WIP somente testes Community: bug_clusters_read declara ArchitectureAdoptionScope
+nativo nos quatro cenarios; C3 adapter seed300 Specs declara scope com identidade,
+actor e edicao via INSERT parametrizado. Mantidas600 Cards, paginas, contagens,
+query caps e EXPLAIN; sem alterar limites para fazer passar.
+Learning materialization importava CORE_REPO de conftest ambiguo: na coleta
+completa resolvia para tests/telemetry_behavioral/conftest.py. Usa agora resolver
+de checkout explicito com ancora local. Unico outro consumidor do mesmo import,
+source_records em test_learning_scope_history, corrigido junto; qualificar
+tambem seu consumidor test_learning_scope_lineage_storage.
+
+Coleta community-current-fixtures1:197 casos, sem erro (nao execucao).
+community-current-fixtures2 em execucao, handle2463: cinco suites de recuperacao,
+materializacao/worker, clusters e C3; telemetry_behavioral apenas coletada e
+deselecionada para reproduzir o conflito de nome sem repetir seus testes.
+Nenhum codigo de produto alterado/reinstalado; par native-boundary-qualification1
+permanece byte-identico com closure/oito budgets ZERO.
+Scope fixtures1 terminou:22 aprovados/uma falha/150 deselected em45.96s.
+A falha era injecao por UPDATE agora recusada pelo trigger de imutabilidade.
+Teste agora comprova essa recusa e preservacao do ledger, injeta corrupcao
+somente no loader em memoria e exige fingerprint_mismatch do reader; depois
+comprova armazenamento inalterado. Nenhum DDL/guard desativado.
+Scope fixtures2:um aprovado em5.51s; total23 distintos de history/lineage.
+Ruff F/E9/diff verdes. current-fixtures2 (handle2463) continua executando;
+aguardar antes de commit/push Community e recibo Core.
+Frontend geral clean-break-full-frontend1 iniciado com --maxWorkers=2
+(handle99481), log/JSON externos; nenhum build ou arquivo de produto alterado
+durante as campanhas. Aguardar ambos handles2463/99481.
+C1-C4, T23/KG-10, criterios/benchmark/bump0.4.0 ainda pendentes.
+
 ### 2026-10-06 — C3 metricas e fixtures de lifecycle sem upgrade
 
 Bases Core6622d9e7 / Community5e8d73f4. Core full-run4 terminou:
