@@ -1319,7 +1319,6 @@ class ConsolidationPersistencePort(Protocol):
         context: Any,
         *,
         now: datetime,
-        legacy_cutoff: datetime,
     ) -> tuple[ConsolidationQueueRecord, ...]: ...
 
     async def count_pending(self, context: Any) -> int: ...

@@ -3583,15 +3583,11 @@ async def _filter_administratively_reserved_entries(
 class ConsolidationProcessor:
     """Process consolidation commands without owning a runner or task."""
 
-    # Entries claimed longer than this (minutes) are considered stuck.
-    STALE_CLAIM_MINUTES: int = 30
-
     def __init__(
         self,
         relational_scope_factory=None,
         heartbeat_seconds: int = 30,
         batch_size: int = 5,
-        stale_claim_minutes: int | None = None,
         *,
         clock: WorkerClockPort | None = None,
         blocking_execution: BlockingExecutionPort | None = None,
@@ -3603,7 +3599,6 @@ class ConsolidationProcessor:
         self.relational_scope_factory = relational_scope_factory
         self.heartbeat_seconds = heartbeat_seconds
         self.batch_size = batch_size
-        self._stale_claim_minutes = stale_claim_minutes or self.STALE_CLAIM_MINUTES
         self._clock = clock
         self._blocking_execution = blocking_execution or _DirectBlockingExecution()
         self._last_attempted_count = 0
@@ -3647,20 +3642,16 @@ class ConsolidationProcessor:
         claim crashes or is killed, ``claim_timeout_at`` eventually elapses
         and the next recovery scan picks the row up.
 
-        Falls back to the legacy ``stale_claim_minutes`` cutoff for rows
-        claimed by an older binary that didn't populate ``claim_timeout_at``
-        (so partial migrations don't strand work). Returns the count of
-        rows reset to ``pending``.
+        Incompatible claims are refused by the persistence port before any
+        recovery write. Returns the count reset to pending.
         """
         now = self._now()
-        legacy_cutoff = now - timedelta(minutes=self._stale_claim_minutes)
         async with self.relational_scope_factory() as db:
             store = get_consolidation_persistence_port()
             stale = list(
                 await store.list_stale_claims(
                     db,
                     now=now,
-                    legacy_cutoff=legacy_cutoff,
                 )
             )
             if not stale:

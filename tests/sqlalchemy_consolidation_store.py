@@ -150,27 +150,28 @@ class TestSqlAlchemyConsolidationPersistence:
         return tuple((await context.execute(statement)).scalars().all())
 
     async def list_stale_claims(
-        self, context, *, now, legacy_cutoff
+        self, context, *, now
     ) -> tuple[ConsolidationQueueRecord, ...]:
-        rows = (
-            (
-                await context.execute(
-                    select(ConsolidationQueue).where(
-                        ConsolidationQueue.status == "claimed",
-                        or_(
-                            ConsolidationQueue.claim_token.is_(None),
-                            ConsolidationQueue.claim_timeout_at.is_not(None)
-                            & (ConsolidationQueue.claim_timeout_at < now),
-                            ConsolidationQueue.claim_timeout_at.is_(None)
-                            & ConsolidationQueue.claimed_at.is_not(None)
-                            & (ConsolidationQueue.claimed_at < legacy_cutoff),
-                        ),
-                    )
-                )
-            )
-            .scalars()
-            .all()
+        # A current claim always has an ownership token and an explicit expiry.
+        # Refuse incompatible rows without converting or re-pending them.
+        incompatible = await context.scalar(
+            select(ConsolidationQueue.id).where(
+                ConsolidationQueue.status == "claimed",
+                or_(
+                    ConsolidationQueue.claim_token.is_(None),
+                    ConsolidationQueue.claim_token == "",
+                    ConsolidationQueue.claim_timeout_at.is_(None),
+                ),
+            ).limit(1)
         )
+        if incompatible is not None:
+            raise ValueError("consolidation_claim_format_incompatible")
+        rows = (await context.execute(
+            select(ConsolidationQueue).where(
+                ConsolidationQueue.status == "claimed",
+                ConsolidationQueue.claim_timeout_at < now,
+            )
+        )).scalars().all()
         return tuple(_record(row) for row in rows)
 
     async def count_pending(self, context) -> int:

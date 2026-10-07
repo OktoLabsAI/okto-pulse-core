@@ -3579,5 +3579,219 @@
       "native_installed_recovery5": 28200
     },
     "limits": "Remove compatibility cutoff and automatic tokenless recovery; current claims require token+expiry. Refuse incompatible claimed rows before returning recovery work. Community50distinct tests passed after unique artifact IDs corrected in new negative/expiry fixtures. Core and installed campaigns still active; not yet ready to declare full qualification."
+  },
+  "native_claim_recovery_qualified": {
+    "proof_pair": "dist-native-claim-recovery1",
+    "core": {
+      "campaign": "native-claim-recovery1-core",
+      "counts": {
+        "name": "pytest",
+        "errors": "0",
+        "failures": "0",
+        "skipped": "0",
+        "tests": "100",
+        "time": "297.348",
+        "timestamp": "2026-10-07T06:08:39.215892-03:00",
+        "hostname": "Alienware_m15"
+      },
+      "xml_sha256": "47dc4cd84d394a39009d76605e2afdc92d0d6c3617afbf5b8d99bdd425187090",
+      "failures": []
+    },
+    "community_distinct_passed": 50,
+    "community_receipts": [
+      "native-claim-recovery1-community",
+      "native-claim-recovery2-community"
+    ],
+    "closure": "closure-native-claim-recovery1.json",
+    "eight_budgets_zero": true,
+    "scope": "Remove migrated/tokenless claim recovery and obsolete cutoff; native expiration/retry/takedown passes100Core+50Community. Community published593d116a.",
+    "limits": "No whole-product qualification; installed recovery5 reached real server then stale inventory count283 vs current282. Separate native recovery6 now tests exact current count and hash."
+  },
+  "native_installed_recovery5": {
+    "campaign": "native-installed-recovery5",
+    "counts": {
+      "name": "pytest",
+      "errors": "0",
+      "failures": "1",
+      "skipped": "0",
+      "tests": "4",
+      "time": "280.521",
+      "timestamp": "2026-10-07T06:09:30.588112-03:00",
+      "hostname": "Alienware_m15"
+    },
+    "xml_sha256": "8d9f05eddfe4fc50c406698bb5b14dcfc7a2f9dff446619f03219e33ce16141e",
+    "failures": [
+      {
+        "class": "tests.test_global_discovery_recovery_installed_e2e",
+        "name": "test_installed_wheels_serve_exact_frozen_resource_manifest_over_real_http",
+        "message": "AssertionError: assert 282 == 283\n +  where 282 = len(['okto_pulse_acknowledge_implementation_overlap', 'okto_pulse_activate_default_board_config_version', 'okto_pulse_add_...contract', 'okto_pulse_add_architecture_design', 'okto_pulse_add_business_rule', 'okto_pulse_add_card_dependency', ...])"
+      }
+    ]
+  },
+  "core13_surface_fixtures1": {
+    "campaign": "core13-native-surface-fixtures1",
+    "counts": {
+      "name": "pytest",
+      "errors": "0",
+      "failures": "30",
+      "skipped": "0",
+      "tests": "62",
+      "time": "40.895",
+      "timestamp": "2026-10-07T06:14:23.084844-03:00",
+      "hostname": "Alienware_m15"
+    },
+    "xml_sha256": "c5f1ac54b1be40793b01f6dc8f0a6c9762e776719d54b60199229ef8fd88a230",
+    "failures": [
+      {
+        "class": "tests.test_mcp_mockups_copy_lists_board_scope",
+        "name": "test_same_board_copy_mockup_crud_and_lists_remain_functional",
+        "message": "assert 3 == 1"
+      },
+      {
+        "class": "tests.test_open_qa_count_badges",
+        "name": "test_ideation_open_qa_count_counts_only_unanswered_and_exposes_scope",
+        "message": "okto_pulse.core.domain.realm.MissingRealmScope: realm_scope_required"
+      },
+      {
+        "class": "tests.test_open_qa_count_badges",
+        "name": "test_ideation_summary_scope_absent_and_zero_count_when_clean",
+        "message": "okto_pulse.core.domain.realm.MissingRealmScope: realm_scope_required"
+      },
+      {
+        "class": "tests.test_open_qa_count_badges",
+        "name": "test_spec_open_qa_count",
+        "message": "okto_pulse.core.domain.realm.MissingRealmScope: realm_scope_required"
+      },
+      {
+        "class": "tests.test_open_qa_count_badges",
+        "name": "test_card_columns_open_qa_count",
+        "message": "okto_pulse.core.domain.realm.MissingRealmScope: realm_scope_required"
+      },
+      {
+        "class": "tests.test_open_qa_count_badges",
+        "name": "test_inherited_answered_qa_does_not_inflate_open_qa_count",
+        "message": "okto_pulse.core.domain.realm.MissingRealmScope: realm_scope_required"
+      },
+      {
+        "class": "tests.test_r01a_boards_uow",
+        "name": "test_list_boards_200",
+        "message": "okto_pulse.core.domain.realm.MissingRealmScope: realm_scope_required"
+      },
+      {
+        "class": "tests.test_r01a_boards_uow",
+        "name": "test_get_board_200",
+        "message": "okto_pulse.core.domain.realm.MissingRealmScope: realm_scope_required"
+      },
+      {
+        "class": "tests.test_r01a_boards_uow",
+        "name": "test_get_board_compact_200",
+        "message": "okto_pulse.core.domain.realm.MissingRealmScope: realm_scope_required"
+      },
+      {
+        "class": "tests.test_r01a_boards_uow",
+        "name": "test_update_board_200_refetched_body",
+        "message": "okto_pulse.core.domain.realm.MissingRealmScope: realm_scope_required"
+      },
+      {
+        "class": "tests.test_r01a_boards_uow",
+        "name": "test_delete_board_204_then_404",
+        "message": "okto_pulse.core.domain.realm.MissingRealmScope: realm_scope_required"
+      },
+      {
+        "class": "tests.test_r01a_boards_uow",
+        "name": "test_get_board_columns_200",
+        "message": "okto_pulse.core.domain.realm.MissingRealmScope: realm_scope_required"
+      },
+      {
+        "class": "tests.test_r01a_boards_uow",
+        "name": "test_archive_then_restore_spec_200",
+        "message": "AssertionError: {\"detail\":\"realm_scope_required\"}\nassert 400 == 200\n +  where 400 = <Response [400 Bad Request]>.status_code"
+      },
+      {
+        "class": "tests.test_r01a_boards_uow",
+        "name": "test_tree_root_foreign_board_matches_missing_without_mutation[archive-False]",
+        "message": "assert 400 == 404\n +  where 400 = <Response [400 Bad Request]>.status_code"
+      },
+      {
+        "class": "tests.test_r01a_boards_uow",
+        "name": "test_tree_root_foreign_board_matches_missing_without_mutation[restore-True]",
+        "message": "assert 400 == 404\n +  where 400 = <Response [400 Bad Request]>.status_code"
+      },
+      {
+        "class": "tests.test_r01a_boards_uow",
+        "name": "test_shared_board_read_and_columns_follow_share_permission[viewer]",
+        "message": "okto_pulse.core.domain.realm.MissingRealmScope: realm_scope_required"
+      },
+      {
+        "class": "tests.test_r01a_boards_uow",
+        "name": "test_shared_board_read_and_columns_follow_share_permission[editor]",
+        "message": "okto_pulse.core.domain.realm.MissingRealmScope: realm_scope_required"
+      },
+      {
+        "class": "tests.test_r01a_boards_uow",
+        "name": "test_shared_board_read_and_columns_follow_share_permission[admin]",
+        "message": "okto_pulse.core.domain.realm.MissingRealmScope: realm_scope_required"
+      },
+      {
+        "class": "tests.test_r01a_boards_uow",
+        "name": "test_unshared_board_read_and_columns_are_same_not_found",
+        "message": "okto_pulse.core.domain.realm.MissingRealmScope: realm_scope_required"
+      },
+      {
+        "class": "tests.test_r01a_boards_uow",
+        "name": "test_viewer_share_cannot_mutate_board_or_archive_tree",
+        "message": "okto_pulse.core.domain.realm.MissingRealmScope: realm_scope_required"
+      },
+      {
+        "class": "tests.test_r01a_boards_uow",
+        "name": "test_editor_share_can_archive_but_not_update_board_metadata",
+        "message": "okto_pulse.core.domain.realm.MissingRealmScope: realm_scope_required"
+      },
+      {
+        "class": "tests.test_r01a_boards_uow",
+        "name": "test_share_board_201",
+        "message": "okto_pulse.core.domain.realm.MissingRealmScope: realm_scope_required"
+      },
+      {
+        "class": "tests.test_r01a_boards_uow",
+        "name": "test_share_board_with_self_403",
+        "message": "okto_pulse.core.domain.realm.MissingRealmScope: realm_scope_required"
+      },
+      {
+        "class": "tests.test_r01a_boards_uow",
+        "name": "test_list_board_shares_200",
+        "message": "okto_pulse.core.domain.realm.MissingRealmScope: realm_scope_required"
+      },
+      {
+        "class": "tests.test_r01a_boards_uow",
+        "name": "test_list_board_shares_no_access_404",
+        "message": "okto_pulse.core.domain.realm.MissingRealmScope: realm_scope_required"
+      },
+      {
+        "class": "tests.test_r01a_boards_uow",
+        "name": "test_update_board_share_200",
+        "message": "okto_pulse.core.domain.realm.MissingRealmScope: realm_scope_required"
+      },
+      {
+        "class": "tests.test_r01a_boards_uow",
+        "name": "test_update_board_share_missing_404",
+        "message": "okto_pulse.core.domain.realm.MissingRealmScope: realm_scope_required"
+      },
+      {
+        "class": "tests.test_r01a_boards_uow",
+        "name": "test_revoke_board_share_204",
+        "message": "okto_pulse.core.domain.realm.MissingRealmScope: realm_scope_required"
+      },
+      {
+        "class": "tests.test_r01a_boards_uow",
+        "name": "test_revoke_board_share_missing_404",
+        "message": "okto_pulse.core.domain.realm.MissingRealmScope: realm_scope_required"
+      },
+      {
+        "class": "tests.test_r01a_boards_uow",
+        "name": "test_share_id_cannot_cross_the_board_route_parent",
+        "message": "okto_pulse.core.domain.realm.MissingRealmScope: realm_scope_required"
+      }
+    ]
   }
 }

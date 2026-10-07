@@ -516,8 +516,7 @@ class _MemoryConsolidationStore:
             self.current_reservation_source = self.reservation_sources.pop(0)
         return self.current_reservation_source
 
-    async def list_stale_claims(self, _context, *, now, legacy_cutoff):
-        del legacy_cutoff
+    async def list_stale_claims(self, _context, *, now):
         return tuple(
             entry
             for entry in self.entries.values()

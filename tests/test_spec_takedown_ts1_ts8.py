@@ -199,11 +199,10 @@ class _TargetedConsolidationPersistence(CommunitySqlAlchemyConsolidationPersiste
         rows = await super().list_ready_pending(context, now=now)
         return tuple(row for row in rows if row.id in self.target_entry_ids)
 
-    async def list_stale_claims(self, context, *, now, legacy_cutoff):
+    async def list_stale_claims(self, context, *, now):
         rows = await super().list_stale_claims(
             context,
             now=now,
-            legacy_cutoff=legacy_cutoff,
         )
         return tuple(row for row in rows if row.id in self.target_entry_ids)
 

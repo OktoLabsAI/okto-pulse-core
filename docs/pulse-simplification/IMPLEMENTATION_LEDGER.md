@@ -2,6 +2,28 @@
 
 ## Estado para retomada
 
+### 2026-10-07 — Recovery sem migração qualificado150casos; continuações vivas
+Core native-claim-recovery1 handle38621 terminou0:100aprovados/297.43s.
+Community50distintos já qualificados. Closure oito budgetsZERO. Remoção do
+fallback de claims migrados publicada Community593d116a; Core acompanha.
+Recibo native_claim_recovery_qualified não declara aceite integral.
+
+Installed5 handle28200 terminou1:3aprovados/1falha/280.521s: runtime real expõe282
+tools, fixture ainda283/hash antigo. Registry instalado atual confirmou282,
+aliases={},SHA25656f558d610f1e7acc3794d0734ad850e1db6e2a652b83f06d89b5f8fcfb11c32.
+Expectativas atualizadas no E2E, sem editar catálogo gerado.
+Installed6 handle91252 ATIVO, mesmo par dist-native-claim-recovery1.
+Fixture E2E ainda WIP e não declarar módulo qualificado.
+
+Core13 fixtures1 handle72446 terminou1:32pass/30fail. Port nativo de projection
+exige realm explícito; factory das duas fixtures agora configura/restaura local.
+Spec/Card Knowledge nativo lista efetivo (3/4), não apenas1 direto; assertion
+ajustada preservando ausência do segredo de outro Board. Adoptions explícitas
+nos seeds; atores de delete tests têm board.admin.delete para alcançar a prova
+de ordenação/rollback; erro columns404 é estruturado. Fixtures2 handle43150 ATIVO
+nos quatro módulos completos. Planner_review_authority ainda não corrigido.
+Não editar/reinstalar par antes de installed6 terminal. Alias env C3 pendente.
+
 ### 2026-10-07 — Retirada do recovery de claims migrados em qualificação
 Community11 followup handle76110 terminou0:47aprovados/43.20s após realm explícito
 e manifesto de37fontes/113triggers sem classification_events/heads removidos.
