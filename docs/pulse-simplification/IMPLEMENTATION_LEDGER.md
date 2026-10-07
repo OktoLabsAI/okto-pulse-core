@@ -2,6 +2,16 @@
 
 ## Estado para retomada
 
+### 2026-10-07 — Publicação e continuação das campanhas
+Core3045fba9 e Community0a2c6c9d publicados; commits/pushes terminaram0.
+Core17 handle32536 ATIVO (854 módulos completos excluídos);
+Community14 handle64918 ATIVO (372 módulos completos excluídos, E2E instalado
+separado/não qualificado). Ambos usam main1 provado, PYTHONPATH dos dois src e
+processos novos. Poll dos dois handles confirmou execução neste turno.
+Não editar produto/testes/reinstalar enquanto estiverem ativos. Próximo: aguardar
+terminais e tratar falhas efetivas, sem ampliar escopo. Sem bloqueio: turno foi
+progresso,81 Core+62 Community qualificados/publicados e conjuntos novos iniciados.
+
 ### 2026-10-07 — Core16 e Community13: followups completos, próximos conjuntos preparados
 Core r3b13pass/4fail; r3c15pass/2fail; r3d16pass/1fail; r3e handle12027 terminou1:
 80pass/1fail, cinco módulos completos; último consumidor arquitetura ainda usava
