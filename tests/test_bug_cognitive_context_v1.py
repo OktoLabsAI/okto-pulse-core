@@ -427,7 +427,7 @@ async def test_legacy_worker_loader_requires_authored_capture() -> None:
         yield relational_context
 
     loader = build_closeout_input_loader(_scope)
-    with pytest.raises(ValueError, match="legacy_bug_closeout_requires_authored_capture"):
+    with pytest.raises(ValueError, match="bug_closeout_requires_authored_capture"):
         await loader(
             "board-1",
             SimpleNamespace(source_ref=f"bug:{BUG_ID}", artifact_type="bug"),

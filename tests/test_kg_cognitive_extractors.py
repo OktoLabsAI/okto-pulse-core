@@ -2,12 +2,8 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-
 from okto_pulse.core.kg.agent.extractors import (
-    LEARNING_MIN_ACTION_PLAN_CHARS,
     extract_alternatives,
-    extract_learning_from_bug,
 )
 
 
@@ -73,101 +69,3 @@ def test_alternatives_case_insensitive_header():
     ctx = "## ANALYSIS\nPoderia ter usado gRPC, mas descartamos por overhead."
     results = extract_alternatives(spec_context=ctx, source_ref="s:1")
     assert len(results) == 1
-
-
-# ===========================================================================
-# Learning extractor
-# ===========================================================================
-
-
-@dataclass
-class DummySummariser:
-    title: str
-    body: str
-    calls: int = 0
-
-    def summarise(self, *, bug_title, action_plan, context=None):
-        self.calls += 1
-        return self.title, self.body
-
-
-def test_learning_emitted_for_done_bug_with_long_action_plan():
-    summariser = DummySummariser(
-        title="Guard unsafe user input",
-        body="Always normalise encoding before regex matching.",
-    )
-    result = extract_learning_from_bug(
-        bug_node_id="bug_01",
-        bug_title="Regex misfires on é chars",
-        bug_status="done",
-        card_type="bug",
-        action_plan="Ran repro locally; normalised NFC; added test_regex_normalised.",
-        summariser=summariser,
-    )
-    assert result is not None
-    assert result.bug_node_id == "bug_01"
-    assert result.learning_title == "Guard unsafe user input"
-    assert result.confidence == 0.9
-    assert result.cognitive_evidence  # populated with action plan
-    assert summariser.calls == 1
-
-
-def test_learning_rejects_non_bug_card_type():
-    summariser = DummySummariser("T", "B")
-    assert extract_learning_from_bug(
-        bug_node_id="x", bug_title="y", bug_status="done",
-        card_type="normal", action_plan="X" * 100,
-        summariser=summariser,
-    ) is None
-    assert summariser.calls == 0
-
-
-def test_learning_rejects_non_done_status():
-    summariser = DummySummariser("T", "B")
-    assert extract_learning_from_bug(
-        bug_node_id="x", bug_title="y", bug_status="in_progress",
-        card_type="bug", action_plan="X" * 100,
-        summariser=summariser,
-    ) is None
-
-
-def test_learning_rejects_short_action_plan():
-    summariser = DummySummariser("T", "B")
-    plan = "x" * (LEARNING_MIN_ACTION_PLAN_CHARS - 1)
-    assert extract_learning_from_bug(
-        bug_node_id="x", bug_title="y", bug_status="done",
-        card_type="bug", action_plan=plan,
-        summariser=summariser,
-    ) is None
-
-
-def test_learning_rejects_when_summariser_returns_empty():
-    summariser = DummySummariser("", "")
-    result = extract_learning_from_bug(
-        bug_node_id="x", bug_title="y", bug_status="done",
-        card_type="bug", action_plan="X" * 100,
-        summariser=summariser,
-    )
-    assert result is None
-
-
-def test_learning_accepts_custom_min_action_plan_chars():
-    summariser = DummySummariser("T", "B")
-    result = extract_learning_from_bug(
-        bug_node_id="x", bug_title="y", bug_status="done",
-        card_type="bug", action_plan="x" * 30,
-        summariser=summariser,
-        min_action_plan_chars=20,
-    )
-    assert result is not None
-
-
-def test_learning_carries_linked_constraint_hint():
-    summariser = DummySummariser("T", "B")
-    result = extract_learning_from_bug(
-        bug_node_id="b1", bug_title="y", bug_status="done",
-        card_type="bug", action_plan="X" * 80,
-        summariser=summariser,
-        linked_constraint_hint="constraint_id_42",
-    )
-    assert result.linked_constraint_hint == "constraint_id_42"

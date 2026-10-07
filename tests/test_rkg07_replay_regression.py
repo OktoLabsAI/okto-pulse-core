@@ -8,7 +8,7 @@ graph.lbug and queryable by source_artifact_ref — not by a textual log.
 Coverage:
   TS1 ts_6ffcd8f9 (e2e): full replay of Alternative + Assumption + Learning persisted
      with edges + queryable; + classification no_material / not_applicable /
-     skipped_no_llm_config.
+     rejection of Bug inference without authored capture.
   TS2 ts_e7cfab63 (negative): a candidate with NO persistence and NO DLQ surfaces
      extractor_triggered_but_not_persisted — never a false success.
   TS3 ts_12a57048 (e2e): DLQ reprocess + reopen/replay preserve cognition (nodes
@@ -64,11 +64,6 @@ def _require_real_community_graph(_kg_registry_test_fakes):
     from kg_registry_testing import configure_real_graph_test_kg_registry
 
     configure_real_graph_test_kg_registry()
-
-
-class _Summ:
-    def summarise(self, *, bug_title, action_plan, context=None):
-        return "Guard encoding before regex", "Normalise NFC first."
 
 
 async def _not_quarantined(_b, _d):
@@ -256,54 +251,6 @@ async def test_ts1_spec_replay_persists_alternative_and_assumption_queryable(
 
 
 @pytest.mark.asyncio
-async def test_ts1_bug_replay_persists_learning_with_validates_edge(
-    board_id, agent_id, db_factory, board_handle
-):
-    bug_uuid = str(uuid.uuid4())
-    bug_ref = f"bug:{bug_uuid}"
-    await _run_test_graph_io(
-        lambda: _seed_node(board_id, "Bug", bug_ref, graph_layer="canonical"),
-        task_name="seed-canonical-bug",
-    )
-    persister = ccp.ConsolidationPipelinePersister(db_factory, agent_id=agent_id)
-
-    res = await ccp.run_cognitive_closeout(
-        board_id=board_id,
-        artifact_type="bug",
-        artifact_ref=bug_ref,
-        bug_card_id=bug_uuid,
-        bug_title="Regex misfires",
-        bug_action_plan="Repro; root cause missing NFC; fixed + added a regression test.",
-        llm_config={"provider": "openai"},
-        summariser=_Summ(),
-        bug_probe=(lambda u: u == bug_uuid),
-        persister=persister,
-    )
-
-    assert res.outcome == "persisted", res.detail
-    learning_ref = f"bug:{bug_uuid}"
-    assert (
-        await _run_test_graph_io(
-            lambda: _count(board_id, "Learning", learning_ref),
-            task_name="count-bug-learning",
-        )
-        == 1
-    )
-    assert (
-        await _run_test_graph_io(
-            lambda: _count_edge(
-                board_id,
-                "MATCH (l:Learning)-[:validates]->(b:Bug) "
-                "WHERE l.source_artifact_ref = $ref RETURN count(*)",
-                learning_ref,
-            ),
-            task_name="count-learning-validates-edge",
-        )
-        == 1
-    )
-
-
-@pytest.mark.asyncio
 async def test_ts1_classification_no_material_not_applicable_skipped(
     board_id, agent_id, db_factory, board_handle
 ):
@@ -320,35 +267,9 @@ async def test_ts1_classification_no_material_not_applicable_skipped(
     )
     assert r1.outcome == "no_material"
 
-    # bug with too-short action_plan -> not_applicable.
-    bug_uuid = str(uuid.uuid4())
-    r2 = await ccp.run_cognitive_closeout(
-        board_id=board_id,
-        artifact_type="bug",
-        artifact_ref=f"bug:{bug_uuid}",
-        bug_card_id=bug_uuid,
-        bug_action_plan="too short",
-        llm_config={"provider": "openai"},
-        summariser=_Summ(),
-        bug_probe=(lambda u: True),
-        persister=persister,
-    )
-    assert r2.outcome == "not_applicable"
-
-    # bug with material but NO llm_config -> skipped_no_llm_config (honest skip).
-    bug_uuid2 = str(uuid.uuid4())
-    r3 = await ccp.run_cognitive_closeout(
-        board_id=board_id,
-        artifact_type="bug",
-        artifact_ref=f"bug:{bug_uuid2}",
-        bug_card_id=bug_uuid2,
-        bug_action_plan="A real root cause and fix narrative long enough to pass the gate.",
-        llm_config=None,
-        summariser=None,
-        bug_probe=(lambda u: True),
-        persister=persister,
-    )
-    assert r3.outcome == "skipped_no_llm_config"
+    with pytest.raises(ValueError, match="bug_closeout_requires_authored_capture"):
+        await ccp.run_cognitive_closeout(board_id=board_id, artifact_type="bug",
+            artifact_ref="bug:missing-capture", persister=persister)
 
 
 # ---------------------------------------------------------------------------
@@ -465,8 +386,8 @@ async def test_ts3_dlq_reprocess_drains_to_graph_and_preserves_cognition(
                 title="reprocessable",
                 status=SpecStatus.DONE,
                 created_by="owner",
-                functional_requirements=["FR1: the system shall reprocess safely"],
-                acceptance_criteria=["AC1: given a DLQ then it drains to the graph"],
+                functional_requirements=[{"id": "fr-recovery", "text": "The system shall reprocess safely"}],
+                acceptance_criteria=[{"id": "ac-recovery", "text": "Given a DLQ then it drains to the graph"}],
                 test_scenarios=[],
                 business_rules=[],
                 api_contracts=[],

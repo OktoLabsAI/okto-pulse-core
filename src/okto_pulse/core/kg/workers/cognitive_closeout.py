@@ -78,8 +78,7 @@ def _lookup_spec_decision_node(board_id: str, spec_id: str) -> str | None:
 
 def build_closeout_input_loader(relational_scope_factory):
     """The production input loader: derives the closeout inputs for a pending
-    ledger item from SQL (Card/Spec/Board settings) + the live graph (bug probe,
-    related Decision)."""
+    ledger item from the current Spec and its related Decision in the graph."""
     from okto_pulse.core.ports.domain_event_delivery import (
         get_domain_event_fact_reader,
     )
@@ -89,7 +88,7 @@ def build_closeout_input_loader(relational_scope_factory):
         ident = item.source_ref.split(":", 1)[-1]
         reader = get_domain_event_fact_reader()
         if item.artifact_type == "bug" or kind == "bug":
-            raise ValueError('legacy_bug_closeout_requires_authored_capture')
+            raise ValueError('bug_closeout_requires_authored_capture')
         if item.artifact_type == "spec" or kind == "spec":
             async with relational_scope_factory() as db:
                 spec = await reader.load_cognitive_spec_facts(db, spec_id=ident)

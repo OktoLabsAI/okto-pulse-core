@@ -1,13 +1,4 @@
-"""RKG-03 — cognitive closeout production rules + candidate→persist (unit).
-
-Scenarios:
-  * ts_5cbf9193 / AC1 — spec done with a considered alternative persists an
-    Alternative (queryable) and is idempotent on replay.
-  * ts_208012a5 / AC2 — bug done with root cause/fix/evidence persists a Learning
-    with a validates edge to the canonical Bug (resolved via the RKG-02 resolver).
-  * ts_86939a76 / AC3 — absence + no_llm_config are classified honestly, separate
-    from technical failure, and never fabricate a node.
-"""
+"""Native Spec candidate closeout and rejection of unauthored Bug inference."""
 
 from __future__ import annotations
 
@@ -24,15 +15,6 @@ ANALYSIS_WITH_ALT = (
     "We considered using Redis instead of Postgres for the cache layer.\n"
     "Assuming that traffic stays under 1000 rps, a single node is enough.\n"
 )
-
-
-class _DummySummariser:
-    def __init__(self, title="Guard encoding before regex", body="Normalise NFC first."):
-        self.title = title
-        self.body = body
-
-    def summarise(self, *, bug_title, action_plan, context=None):
-        return self.title, self.body
 
 
 class _FakePersister:
@@ -72,10 +54,6 @@ class _OffLoopExistingPersister:
 
     async def persist(self, board_id, artifact_type, candidate):
         raise AssertionError("an existing candidate must not be persisted again")
-
-
-def _bug_probe(known):
-    return lambda uuid: uuid in known
 
 
 # ---------------------------------------------------------------------------
@@ -136,23 +114,6 @@ async def test_ac1_idempotency_probe_runs_off_event_loop():
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.asyncio
-async def test_ac2_bug_learning_persisted_with_validates_edge():
-    p = _FakePersister()
-    res = await ccp.run_cognitive_closeout(
-        board_id="b", artifact_type="bug", artifact_ref=f"card:{U}",
-        bug_card_id=U, bug_title="Regex misfires on accented chars",
-        bug_action_plan="Repro locally; root cause was missing NFC normalisation; fixed + added test.",
-        llm_config={"provider": "openai", "model": "gpt-4"},
-        summariser=_DummySummariser(), bug_probe=_bug_probe({U}),
-        persister=p)
-    assert res.outcome == "persisted"
-    learning = [c for c in p.persisted if c.node_type == "Learning"]
-    assert learning
-    edges = learning[0].edges
-    assert any(e.edge_type == "validates" and e.to_ref == f"card:{U}" for e in edges)
-
-
 # ---------------------------------------------------------------------------
 # AC3 — honest absence / config gap classification
 # ---------------------------------------------------------------------------
@@ -166,28 +127,6 @@ async def test_ac3_spec_no_material():
         spec_context="## Analysis\nWe implemented the feature as specified.\n", persister=p)
     assert res.outcome == "no_material"
     assert not p.persisted  # never fabricate a node
-
-
-@pytest.mark.asyncio
-async def test_ac3_bug_no_llm_config_skipped():
-    p = _FakePersister()
-    res = await ccp.run_cognitive_closeout(
-        board_id="b", artifact_type="bug", artifact_ref=f"card:{U}",
-        bug_card_id=U, bug_action_plan="Root cause found and fixed with a real long narrative here.",
-        llm_config=None, summariser=_DummySummariser(), persister=p)
-    assert res.outcome == "skipped_no_llm_config"
-    assert not p.persisted
-
-
-@pytest.mark.asyncio
-async def test_ac3_bug_short_action_plan_not_applicable():
-    p = _FakePersister()
-    res = await ccp.run_cognitive_closeout(
-        board_id="b", artifact_type="bug", artifact_ref=f"card:{U}",
-        bug_card_id=U, bug_action_plan="too short",
-        llm_config={"provider": "openai"}, summariser=_DummySummariser(), persister=p)
-    assert res.outcome == "not_applicable"
-    assert not p.persisted
 
 
 # ---------------------------------------------------------------------------
@@ -219,20 +158,6 @@ async def test_tr1_only_cognitive_node_types_are_persisted():
 
 
 @pytest.mark.asyncio
-async def test_non_bug_card_fails_closed_no_bug_ref_fabrication():
-    # #4 (codex): a card the probe does NOT confirm as a canonical bug must NOT
-    # produce a Learning with a fabricated bug:<id> ref — it fails closed.
-    p = _FakePersister()
-    res = await ccp.run_cognitive_closeout(
-        board_id="b", artifact_type="bug", artifact_ref=f"card:{U}",
-        bug_card_id=U, bug_action_plan="A real root cause and fix narrative long enough to pass.",
-        llm_config={"provider": "openai"}, summariser=_DummySummariser(),
-        bug_probe=_bug_probe(set()), persister=p)
-    assert res.outcome == "not_applicable"
-    assert not p.persisted  # no Learning, no bug:<id> fabrication
-
-
-@pytest.mark.asyncio
 async def test_card_not_bug_no_spec_is_extractor_not_triggered():
     # #5 (codex): a done card that is neither a bug nor spec-backed -> the
     # cognitive extractor never triggers for it.
@@ -241,21 +166,6 @@ async def test_card_not_bug_no_spec_is_extractor_not_triggered():
         board_id="b", artifact_type="card", artifact_ref=f"card:{U}", persister=p)
     assert res.outcome == "extractor_not_triggered"
     assert not p.persisted
-
-
-@pytest.mark.asyncio
-async def test_ac2_learning_validates_ref_is_canonical_card_form():
-    # The Learning's validates edge targets the RESOLVED canonical Bug (card:<uuid>),
-    # never a fabricated bug:<id> (the source_ref of the Learning stays bug:<id>).
-    p = _FakePersister()
-    await ccp.run_cognitive_closeout(
-        board_id="b", artifact_type="bug", artifact_ref=f"card:{U}",
-        bug_card_id=U, bug_action_plan="Root cause + fix narrative long enough to pass the gate.",
-        llm_config={"provider": "openai"}, summariser=_DummySummariser(),
-        bug_probe=_bug_probe({U}), persister=p)
-    learning = [c for c in p.persisted if c.node_type == "Learning"][0]
-    assert learning.edges[0].edge_type == "validates"
-    assert learning.edges[0].to_ref == f"card:{U}"  # canonical, not bug:<id>
 
 
 @pytest.mark.asyncio
@@ -268,3 +178,22 @@ async def test_spec_alternative_carries_relates_to_when_decision_known():
     alt = [c for c in p.persisted if c.node_type == "Alternative"][0]
     assert any(e.edge_type == "relates_to" and e.incoming and e.to_ref == "decision_node_1"
                for e in alt.edges)
+
+
+@pytest.mark.asyncio
+async def test_bug_closeout_requires_authored_capture_without_persistence():
+    persister = _FakePersister()
+    with pytest.raises(ValueError, match="bug_closeout_requires_authored_capture"):
+        await ccp.run_cognitive_closeout(board_id="b", artifact_type="bug",
+            artifact_ref="bug:b1", persister=persister)
+    assert persister.persisted == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("old_field", ["llm_config", "summariser", "bug_action_plan", "bug_probe"])
+async def test_old_inference_arguments_are_not_accepted(old_field):
+    persister = _FakePersister()
+    with pytest.raises(TypeError, match="unexpected keyword argument"):
+        await ccp.run_cognitive_closeout(board_id="b", artifact_type="bug",
+            artifact_ref="bug:b1", persister=persister, **{old_field: object()})
+    assert persister.persisted == []

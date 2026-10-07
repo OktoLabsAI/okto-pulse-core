@@ -2,6 +2,49 @@
 
 ## Estado para retomada
 
+### 2026-10-07 — inferência genérica removida, main66 validado
+Todos handles terminais. Core1+Core2:75 distintos aprovados; Community1:
+11pass; health2 (93834):1pass/32.55s sobre o mesmo caso lifecycle ampliado.
+Total86 casos distintos. Falhas iniciais de fixture/expectativa preservadas
+no recibo clean-break-native-no-inference.json; nenhuma pendência dessas campanhas.
+Main66 provado byte a byte antes de testes:835/896 Core,317/403 Community.
+Closure66-final ok=true,findings/documentation_findings vazios,oito budgets ZERO.
+READMEs regenerados oficialmente; Ruff F/E9 e diff-check verdes.
+Sem produto alterado após prova: só correções de testes e evidência/README.
+Arquivo extractor removido também ausente do wheel. Nenhum frontend alterado.
+Índice74/161/11: KG39 ainda não fechado. Próximo é composição completa de health,
+com caminho relacional e descoberta global corretos; não inferir saúde pelo
+sucesso do materializador local nem relaxar diagnóstico para qualificar critério.
+
+### 2026-10-07 — inferência genérica de Bug retirada; main66 em preparação
+Main66 instalado/prova terminal0:835 .py/896 payload Core+317/403 Community.
+Core1 (41557) terminal1:74pass/1fail/131.52s; fixture rkg07 ainda tinha FR/AC
+como strings. Ajustado para objetos com IDs, sem fallback no produto.
+Core2 (58923) terminal0:1pass/32.87s; os75 casos agora têm passagem.
+Community1 (87505) terminal0:11pass/61.68s. Closure53605 terminal1 somente
+README drift; renderer oficial atualizou ambos; closure17074 terminal0.
+Prova health1 (77974) terminal1: a composição lifecycle não tem binding global
+nem source database path registrado; assertion de saúde integral era indevida.
+Preservada caracterização explícita desses limites e ausência de erro LLM,
+sem alegar runtime saudável. KG39 continua pendente de composição completa.
+Produto não mudou após prova main66. Não remover guards por falha de fixture.
+Turno anterior progresso publicado Core90eebbd9/Communitya538142e, pushes0.
+Worktrees confirmadas limpas. Investigação de KG39 encontrou último consumidor
+do extractor Learning em run_cognitive_closeout: ramo bug já inacessível ao
+worker real, que preserva dívida não autoral e exige work ref de captura.
+Removidos ramo de inferência, argumentos bug_*/llm_config/summariser/context,
+_learning_candidate, enum/resultado skipped_no_llm_config e extractor
+kg/agent/extractors/learnings.py. Runner genérico recusa Bug explicitamente
+bug_closeout_requires_authored_capture; argumentos antigos falham TypeError.
+Limiar50 de diagnóstico atual permanece no cognitive_effectiveness_service,
+único consumidor remanescente; regra não mudou. Captura autoral/worker/gates
+atuais preservados, assim como restrições nativas não autorizadas para inferência.
+Suites mistas adaptadas: Spec/Alternative e recuperação permanecem; testes
+exclusivos de inferência removidos, negativos de recusa acrescentados.
+Build main66 pareado terminou0; instalação10436 ativa. Não executar testes
+comportamentais antes de terminal+prova byte a byte. Nenhum frontend alterado.
+Índice74/161/11 permanece; KG39 completo ainda depende de prova de health.
+
 ### 2026-10-07 — helpers antigos de Learning removidos e main65 validado
 Core7118 terminal0:78pass/10.50s; Community15393 terminal0:11pass/55.95s,
 incluindo ciclo de captura/revisão real/materialização/replay no novo par.

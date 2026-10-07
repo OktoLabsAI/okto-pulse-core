@@ -43,7 +43,7 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Protocol, runtime_checkable
 
-from okto_pulse.core.kg.agent.extractors import LEARNING_MIN_ACTION_PLAN_CHARS
+MIN_BUG_ACTION_PLAN_CHARS = 50
 from okto_pulse.core.kg.rebuild_audit import (
     CognitiveConsolidationItem,
     CognitiveConsolidationItemStore,
@@ -176,7 +176,7 @@ def _card_eligibility(card: CognitiveDoneCardFact) -> tuple[str | None, str]:
     NOT itself the cognitive artifact — its Alternative/Assumption closeout is
     keyed to the SPEC, classified under the spec ref instead."""
     if _card_type_value(card.card_type) == "bug":
-        if len((card.action_plan or "").strip()) >= LEARNING_MIN_ACTION_PLAN_CHARS:
+        if len((card.action_plan or "").strip()) >= MIN_BUG_ACTION_PLAN_CHARS:
             return "learning", "bug_with_action_plan"
         return None, "bug_without_sufficient_action_plan"
     return None, "non_bug_card_cognition_keyed_to_spec"

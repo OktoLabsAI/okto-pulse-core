@@ -1,0 +1,302 @@
+{
+  "scope": [
+    "C1",
+    "C3"
+  ],
+  "criteria_qualified": [],
+  "product_build": "dist-native-main66",
+  "base_pair": {
+    "core": "90eebbd9",
+    "community": "a538142e"
+  },
+  "provenance": {
+    "checked_at": "2026-10-07T23:44:25.642023+00:00",
+    "python": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Scripts\\python.exe",
+    "packages": {
+      "core": {
+        "python_files": 835,
+        "origin": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages\\okto_pulse\\core\\__init__.py",
+        "repository_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_core",
+        "commit": "90eebbd901243c5ce3549d5ab686fa1b7e9f010e",
+        "dirty": true,
+        "dirty_entry_count": 10,
+        "distribution": "okto-pulse-core",
+        "version": "0.4.0",
+        "wheel": {
+          "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\dist-native-main66\\okto_pulse_core-0.4.0-py3-none-any.whl",
+          "sha256": "c5197d478cfb9fc1590f30557337c810ea75304fa7b0cbba89bc616c2406fc8f",
+          "size": 3583212
+        },
+        "source_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_core\\src",
+        "site_packages_root": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages",
+        "package_prefix": "okto_pulse/core/",
+        "byte_identical_member_count": 896,
+        "byte_identical": true,
+        "aggregate_sha256": "f3a44a297e18a78cb29b0f0b5c059d63c75491ddd8616c00c066ecc14d2a365d",
+        "chain_hashes": {
+          "source": "f3a44a297e18a78cb29b0f0b5c059d63c75491ddd8616c00c066ecc14d2a365d",
+          "wheel": "f3a44a297e18a78cb29b0f0b5c059d63c75491ddd8616c00c066ecc14d2a365d",
+          "site_packages": "f3a44a297e18a78cb29b0f0b5c059d63c75491ddd8616c00c066ecc14d2a365d"
+        },
+        "critical_resource_sha256": {
+          "okto_pulse/core/mcp/resources/ska_resource_manifest.json": "4f6360d46eab0f9c8931d3fb5e8a50e0c04b0e6f3b164619a55ac381917ba34d",
+          "okto_pulse/core/mcp/resources/ska_tool_manifest.json": "3d3ecc80ab6b699b2021eddcf02b72bf48eddd06bf34dcf245f2b00fcc69b433"
+        },
+        "mismatches": []
+      },
+      "community": {
+        "python_files": 317,
+        "origin": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages\\okto_pulse\\community\\__init__.py",
+        "repository_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_community",
+        "commit": "a538142e6ebc6cd81fdd2fba4d54ade0859971a5",
+        "dirty": false,
+        "dirty_entry_count": 0,
+        "distribution": "okto-pulse",
+        "version": "0.4.0",
+        "wheel": {
+          "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\dist-native-main66\\okto_pulse-0.4.0-py3-none-any.whl",
+          "sha256": "f594b434cc990255d9b52c7f25d9887b6637ae80339df3ce387645155ae48c76",
+          "size": 4072769
+        },
+        "source_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_community\\src",
+        "site_packages_root": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages",
+        "package_prefix": "okto_pulse/community/",
+        "byte_identical_member_count": 403,
+        "byte_identical": true,
+        "aggregate_sha256": "2e507cacc375add721a36d1994a085e416acf36184ea5ec74247ff21ef6a6dc5",
+        "chain_hashes": {
+          "source": "2e507cacc375add721a36d1994a085e416acf36184ea5ec74247ff21ef6a6dc5",
+          "wheel": "2e507cacc375add721a36d1994a085e416acf36184ea5ec74247ff21ef6a6dc5",
+          "site_packages": "2e507cacc375add721a36d1994a085e416acf36184ea5ec74247ff21ef6a6dc5"
+        },
+        "critical_resource_sha256": {},
+        "mismatches": []
+      }
+    }
+  },
+  "removed": [
+    "Unreachable generic Bug inference branch and llm_config/summariser/bug input arguments",
+    "Learning summarization extractor and its exports, now without current consumers",
+    "skipped_no_llm_config outcome from generic closeout and obsolete branch-only tests"
+  ],
+  "preserved": [
+    "Current authored Learning admission, validation binding, worker materialization and recovery",
+    "Spec Alternative/Assumption candidate projection, replay and failure behavior",
+    "Existing diagnostic threshold50, now local to its remaining service consumer",
+    "Owned Bug restrictions are not waived, converted or inferred into authored capture"
+  ],
+  "campaigns": [
+    {
+      "name": "acceptance-native-no-inference-core1",
+      "sha256": "3ad98abcd0efd2007ad99b7cb96cab9762b6e73cc9bae708c01217ded1ebf04d",
+      "passed": [
+        "tests.test_cognitive_closeout_production_rkg03::test_ac1_spec_alternative_persisted",
+        "tests.test_cognitive_closeout_production_rkg03::test_ac1_idempotent_replay_does_not_duplicate",
+        "tests.test_cognitive_closeout_production_rkg03::test_ac1_idempotency_probe_runs_off_event_loop",
+        "tests.test_cognitive_closeout_production_rkg03::test_ac3_spec_no_material",
+        "tests.test_cognitive_closeout_production_rkg03::test_extractor_triggered_but_not_persisted_on_persist_failure",
+        "tests.test_cognitive_closeout_production_rkg03::test_tr1_only_cognitive_node_types_are_persisted",
+        "tests.test_cognitive_closeout_production_rkg03::test_card_not_bug_no_spec_is_extractor_not_triggered",
+        "tests.test_cognitive_closeout_production_rkg03::test_spec_alternative_carries_relates_to_when_decision_known",
+        "tests.test_cognitive_closeout_production_rkg03::test_bug_closeout_requires_authored_capture_without_persistence",
+        "tests.test_cognitive_closeout_production_rkg03::test_old_inference_arguments_are_not_accepted[llm_config]",
+        "tests.test_cognitive_closeout_production_rkg03::test_old_inference_arguments_are_not_accepted[summariser]",
+        "tests.test_cognitive_closeout_production_rkg03::test_old_inference_arguments_are_not_accepted[bug_action_plan]",
+        "tests.test_cognitive_closeout_production_rkg03::test_old_inference_arguments_are_not_accepted[bug_probe]",
+        "tests.test_kg_cognitive_extractors::test_alternatives_from_analysis_section_only",
+        "tests.test_kg_cognitive_extractors::test_alternatives_returns_empty_when_no_analysis_section",
+        "tests.test_kg_cognitive_extractors::test_alternatives_from_qa_texts",
+        "tests.test_kg_cognitive_extractors::test_alternatives_extracts_english_patterns",
+        "tests.test_kg_cognitive_extractors::test_alternatives_title_trimmed_to_120_chars",
+        "tests.test_kg_cognitive_extractors::test_alternatives_case_insensitive_header",
+        "tests.test_bug_cognitive_context_v1::test_semantic_source_qualification_fails_closed_without_changing_original[changes0-bug_source_version_unavailable]",
+        "tests.test_bug_cognitive_context_v1::test_semantic_source_qualification_fails_closed_without_changing_original[changes1-bug_source_version_unavailable]",
+        "tests.test_bug_cognitive_context_v1::test_semantic_source_qualification_fails_closed_without_changing_original[changes2-bug_source_version_unavailable]",
+        "tests.test_bug_cognitive_context_v1::test_semantic_source_qualification_fails_closed_without_changing_original[changes3-bug_source_type_invalid]",
+        "tests.test_bug_cognitive_context_v1::test_semantic_source_qualification_fails_closed_without_changing_original[changes4-bug_semantic_context_projection_mixed]",
+        "tests.test_bug_cognitive_context_v1::test_semantic_source_qualification_fails_closed_without_changing_original[changes5-bug_semantic_context_projection_mixed]",
+        "tests.test_bug_cognitive_context_v1::test_semantic_source_qualification_fails_closed_without_changing_original[changes6-bug_semantic_context_projection_mixed]",
+        "tests.test_bug_cognitive_context_v1::test_semantic_source_qualification_does_not_reinterpret_legacy_projection_context",
+        "tests.test_bug_cognitive_context_v1::test_semantic_source_fingerprint_covers_related_evidence_not_only_card_version",
+        "tests.test_bug_cognitive_context_v1::test_semantic_source_fingerprint_rejects_unrepresentable_evidence[nan]",
+        "tests.test_bug_cognitive_context_v1::test_semantic_source_fingerprint_rejects_unrepresentable_evidence[value1]",
+        "tests.test_bug_cognitive_context_v1::test_semantic_source_fingerprint_rejects_unrepresentable_evidence[value2]",
+        "tests.test_bug_cognitive_context_v1::test_semantic_source_fingerprint_normalizes_utc_and_bounds_full_snapshot",
+        "tests.test_bug_cognitive_context_v1::test_false_valued_dicts_are_not_cognitive_evidence",
+        "tests.test_bug_cognitive_context_v1::test_complete_canonical_context_classifies_content_and_state",
+        "tests.test_bug_cognitive_context_v1::test_bug_closeout_consumer_fails_closed_without_receipt_authenticator",
+        "tests.test_bug_cognitive_context_v1::test_bug_closeout_rejects_receipt_after_semantic_scenario_edit",
+        "tests.test_bug_cognitive_context_v1::test_caller_evidence_is_additive_and_cannot_delete_canonical_facts",
+        "tests.test_bug_cognitive_context_v1::test_passed_label_without_runtime_attestation_is_not_regression_proof",
+        "tests.test_bug_cognitive_context_v1::test_done_bug_without_work_item_fails_closed_with_bounded_status",
+        "tests.test_bug_cognitive_context_v1::test_create_learning_requires_real_canonical_bug_node",
+        "tests.test_bug_cognitive_context_v1::test_complete_context_and_pipeline_are_ready_to_commit",
+        "tests.test_bug_cognitive_context_v1::test_transport_operation_resolves_the_registered_shared_assembler",
+        "tests.test_bug_cognitive_context_v1::test_legacy_worker_loader_requires_authored_capture",
+        "tests.test_bug_cognitive_context_v1::test_core_bug_context_boundary_has_no_edition_or_orm_imports",
+        "tests.test_rkg07_replay_regression::test_ts1_spec_replay_persists_alternative_and_assumption_queryable",
+        "tests.test_rkg07_replay_regression::test_ts1_classification_no_material_not_applicable_skipped",
+        "tests.test_rkg07_replay_regression::test_ts2_candidate_without_persistence_is_extractor_triggered_but_not_persisted",
+        "tests.test_rkg07_replay_regression::test_aliases_resolver_canonical_and_negatives",
+        "tests.test_rkg03_closeout_persist_integration::test_real_pipeline_persists_alternative_and_is_queryable",
+        "tests.test_rkg03_closeout_persist_integration::test_new_candidate_graph_probes_run_off_event_loop",
+        "tests.test_rkg03_closeout_persist_integration::test_handler_opens_pending_without_graph_write",
+        "tests.test_rkg03_closeout_persist_integration::test_worker_drains_spec_pending_to_alternative_relates_to_and_ledger",
+        "tests.test_rkg03_closeout_persist_integration::test_worker_persist_failure_marks_ledger_failed",
+        "tests.test_rkg03_closeout_persist_integration::test_worker_preserves_legacy_bug_debt_without_inference",
+        "tests.test_rkg03_closeout_persist_integration::test_persister_failure_at_each_step_no_partial_graph[begin_consolidation]",
+        "tests.test_rkg03_closeout_persist_integration::test_persister_failure_at_each_step_no_partial_graph[add_node_candidate]",
+        "tests.test_rkg03_closeout_persist_integration::test_persister_failure_at_each_step_no_partial_graph[add_edge_candidate]",
+        "tests.test_rkg03_closeout_persist_integration::test_persister_failure_at_each_step_no_partial_graph[propose_reconciliation]",
+        "tests.test_rkg03_closeout_persist_integration::test_persister_failure_at_each_step_no_partial_graph[commit_consolidation]",
+        "tests.test_rkg03_closeout_persist_integration::test_cognitive_closeout_worker_real_loader_and_ledger_scan",
+        "tests.test_rkg03_closeout_persist_integration::test_spec_moved_done_opens_pending_without_card",
+        "tests.test_rkg03_closeout_persist_integration::test_spec_moved_non_done_opens_nothing",
+        "tests.test_cognitive_effectiveness_inventory_rkg01::test_ts1_dlq_invalidates_effectiveness",
+        "tests.test_cognitive_effectiveness_inventory_rkg01::test_ts2_extractor_triggered_but_not_persisted_inferred",
+        "tests.test_cognitive_effectiveness_inventory_rkg01::test_ts3_no_material_not_a_failure",
+        "tests.test_cognitive_effectiveness_inventory_rkg01::test_literal_candidate_source_replaces_inference",
+        "tests.test_cognitive_effectiveness_inventory_rkg01::test_persisted_node_classified_consolidated",
+        "tests.test_cognitive_effectiveness_inventory_rkg01::test_invalid_graph_layer_raises_400",
+        "tests.test_cognitive_effectiveness_inventory_rkg01::test_metric_unavailable_raises_503",
+        "tests.test_cognitive_effectiveness_inventory_rkg01::test_base_artifact_ref_correlation",
+        "tests.test_cognitive_effectiveness_inventory_rkg01::test_dlq_entry_has_contract_fields",
+        "tests.test_cognitive_effectiveness_inventory_rkg01::test_invalid_artifact_id_shape_raises_400",
+        "tests.test_cognitive_effectiveness_inventory_rkg01::test_done_spec_is_artifact_and_alt_assum_keyed_to_spec",
+        "tests.test_cognitive_effectiveness_inventory_rkg01::test_effectiveness_blockers_persistence_gap"
+      ],
+      "failed": [
+        "tests.test_rkg07_replay_regression::test_ts3_dlq_reprocess_drains_to_graph_and_preserves_cognition"
+      ]
+    },
+    {
+      "name": "acceptance-native-no-inference-core2",
+      "sha256": "c5e6bd42f6b351de85bd88635efb35d2c7c4d73b5fcc201b6a44ab51d9da2861",
+      "passed": [
+        "tests.test_rkg07_replay_regression::test_ts3_dlq_reprocess_drains_to_graph_and_preserves_cognition"
+      ],
+      "failed": []
+    },
+    {
+      "name": "acceptance-native-no-inference-community1",
+      "sha256": "691f50435aef658c0689abd7f82b48521ae97e15d1bd09e8e39190b87a3d3e72",
+      "passed": [
+        "tests.test_native_learning_lifecycle::test_capture_is_durable_before_actual_review_and_materializes_after_done[native_bug_lifecycle]",
+        "tests.test_native_learning_closeout::test_native_bug_closeout_requires_learning_policy_and_real_delivery[advisory-complete-False-native_bug]",
+        "tests.test_native_learning_closeout::test_native_bug_closeout_requires_learning_policy_and_real_delivery[advisory-complete-True-native_bug]",
+        "tests.test_native_learning_closeout::test_native_bug_closeout_requires_learning_policy_and_real_delivery[advisory-missing-False-native_bug]",
+        "tests.test_native_learning_closeout::test_native_bug_closeout_requires_learning_policy_and_real_delivery[advisory-missing-True-native_bug]",
+        "tests.test_native_learning_closeout::test_native_bug_closeout_requires_learning_policy_and_real_delivery[blocking-complete-False-native_bug]",
+        "tests.test_native_learning_closeout::test_native_bug_closeout_requires_learning_policy_and_real_delivery[blocking-complete-True-native_bug]",
+        "tests.test_native_learning_closeout::test_blocking_capture_and_delivery_close_atomically_before_graph_materialization[None-native_bug]",
+        "tests.test_native_learning_closeout::test_blocking_capture_and_delivery_close_atomically_before_graph_materialization[delivery-native_bug]",
+        "tests.test_native_learning_closeout::test_blocking_capture_and_delivery_close_atomically_before_graph_materialization[permission-native_bug]",
+        "tests.test_native_learning_closeout::test_blocking_capture_and_delivery_close_atomically_before_graph_materialization[evidence-native_bug]"
+      ],
+      "failed": []
+    },
+    {
+      "name": "acceptance-native-no-inference-health1",
+      "sha256": "affa6fd2d4b25efd44a980f98ad030906a673a75b397c2f72a9d3d38723dfe39",
+      "passed": [],
+      "failed": [
+        "tests.test_native_learning_lifecycle::test_capture_is_durable_before_actual_review_and_materializes_after_done[native_bug_lifecycle]"
+      ]
+    },
+    {
+      "name": "acceptance-native-no-inference-health2",
+      "sha256": "9521b7d356d21c51c7bef86e6285e90d8adf2bd19a4185cc982eaf9198c2e45a",
+      "passed": [
+        "tests.test_native_learning_lifecycle::test_capture_is_durable_before_actual_review_and_materializes_after_done[native_bug_lifecycle]"
+      ],
+      "failed": []
+    }
+  ],
+  "distinct_passed": 86,
+  "closure": {
+    "path": "closure-native-main66-final.json",
+    "sha256": "31cf8df176fdf2cc6a9ac5bdd1f13cfaa976f7ba06a4980aa62990581c94a0f5",
+    "ok": true,
+    "budgets": [
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "import_boundary_baseline",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every import_boundary_baseline allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "singleton_baseline",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every singleton_baseline allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "dependency_temporary_exceptions",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every dependency_temporary_exceptions allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "graph_runtime_compatibility",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every graph_runtime_compatibility allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "rebuild_artifact_compatibility",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every rebuild_artifact_compatibility allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "community_private_reach_ins",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every community_private_reach_ins allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "community_adapter_bridges",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every community_adapter_bridges allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "af35_relational_residue",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every af35_relational_residue allowance before F16 completion."
+      }
+    ]
+  },
+  "limits": [
+    "KG39 remains pending; the native lifecycle fixture lacks global-discovery binding and a registered relational source path. Health reports these real limits; it is not claimed globally healthy.",
+    "Initial health assertion demanded whole-runtime health from partial composition; replaced by explicit characterization of missing infrastructure and no LLM issue, not qualification of full KG39.",
+    "Core initial failure was legacy string FR/AC fixture; corrected to authored IDs without changing strict product admission.",
+    "No frontend behavior changed; paired wheel retains existing frontend payload. No new frontend execution claimed.",
+    "No migration, backfill or automatic storage deletion; removed file absence verified in wheel."
+  ]
+}

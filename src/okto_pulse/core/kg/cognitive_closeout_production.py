@@ -1,25 +1,8 @@
-"""RKG-03 — cognitive closeout production rules + candidate→persist path.
+"""Native cognitive closeout and governed authored-capture materialization.
 
-Closes the gap RKG-01 measured: cognitive candidates were only *logged* by
-``CognitiveExtractionHandler`` and never persisted (the downstream consumer was
-deferred). This module is that consumer: it extracts cognitive candidates from a
-done spec/bug, classifies the outcome HONESTLY, and persists applicable
-candidates to the graph through an injectable :class:`CognitiveCandidatePersister`
-(the real one wraps begin→add_node→add_edge→commit; tests use a fake).
-
-Invariants:
-  * TR1 — the cognitive path only ever produces Decision/Alternative/Assumption/
-    Learning. Criterion/Constraint deterministic materialization is never created
-    here.
-  * TR2 — source_artifact_ref is stable + idempotent per cognitive concept and is
-    resolved through the RKG-02 shared resolver (Learning→validates→canonical Bug).
-  * TR3 — a Decision is only produced when there is a real choice + a valid
-    judgement/provenance edge; isolated risk/uncertainty becomes Assumption/
-    Alternative, never an artificial Decision.
-  * BR2 — a candidate only counts as effective once persisted + queryable.
-  * BR3/FR3 — absence is classified honestly (no_material / not_applicable /
-    skipped_no_llm_config / extractor_not_triggered /
-    extractor_triggered_but_not_persisted) and NEVER fabricates a node.
+Spec candidates use the existing deterministic parsers and governed persister.
+Bug Learning is admitted as authored content before this worker projects it;
+the generic candidate runner cannot infer or waive that authored obligation.
 """
 
 from __future__ import annotations
@@ -32,12 +15,8 @@ from functools import partial
 from typing import Any, Protocol, runtime_checkable
 
 from okto_pulse.core.kg.agent.extractors import (
-    LEARNING_MIN_ACTION_PLAN_CHARS,
     extract_alternatives,
     extract_assumptions,
-)
-from okto_pulse.core.kg.cognitive_source_ref_resolver import (
-    resolve_cognitive_source_ref,
 )
 from okto_pulse.core.kg.blocking_io import run_blocking_graph_io
 from okto_pulse.core.kg.rebuild_audit import (
@@ -46,7 +25,6 @@ from okto_pulse.core.kg.rebuild_audit import (
     CognitivePendingOutcomeType,
     require_rebuild_audit_artifact_store,
 )
-from okto_pulse.core.ports.bug_cognitive_context import BugCognitiveContext
 
 # Stable generation id used to open cognitive-closeout pending work when a board
 # has no rebuild generation yet (#4: latest when it exists, this otherwise — one
@@ -81,7 +59,6 @@ class CloseoutOutcome(str, Enum):
     PERSISTED = "persisted"
     NO_MATERIAL = "no_material"
     NOT_APPLICABLE = "not_applicable"
-    SKIPPED_NO_LLM_CONFIG = "skipped_no_llm_config"
     EXTRACTOR_NOT_TRIGGERED = "extractor_not_triggered"
     EXTRACTOR_TRIGGERED_BUT_NOT_PERSISTED = "extractor_triggered_but_not_persisted"
     MATERIALIZATION_PENDING = 'materialization_pending'
@@ -175,36 +152,6 @@ def _spec_candidates(
     return out
 
 
-def _learning_candidate(
-    *,
-    bug_card_id: str,
-    bug_title: str,
-    action_plan: str,
-    summariser: Any,
-    validates_ref: str,
-) -> CloseoutCandidate | None:
-    """Learning from a done bug with root cause/fix/evidence. ``validates_ref`` is
-    the ALREADY-resolved canonical Bug ref (the caller fail-closes when no
-    canonical Bug resolves — #4, RKG-02); this never fabricates a bug-like ref."""
-    from okto_pulse.core.kg.agent.extractors import extract_learning_from_bug
-
-    bug_node_id = f"bug_{bug_card_id[:12]}"
-    extraction = extract_learning_from_bug(
-        bug_node_id=bug_node_id, bug_title=bug_title, bug_status="done",
-        card_type="bug", action_plan=action_plan, summariser=summariser,
-        min_action_plan_chars=LEARNING_MIN_ACTION_PLAN_CHARS,
-    )
-    if extraction is None:
-        return None
-    return CloseoutCandidate(
-        node_type="Learning",
-        title=extraction.learning_title,
-        content=getattr(extraction, "learning_body", None),
-        source_artifact_ref=f"bug:{bug_card_id}",
-        edges=(CloseoutEdge(edge_type="validates", to_ref=validates_ref),),
-    )
-
-
 # ---------------------------------------------------------------------------
 # Orchestration: classify → persist → honest outcome
 # ---------------------------------------------------------------------------
@@ -261,14 +208,7 @@ async def run_cognitive_closeout(
     artifact_ref: str,
     persister: CognitiveCandidatePersister,
     spec_context: str | None = None,
-    bug_card_id: str | None = None,
-    bug_title: str = "",
-    bug_action_plan: str | None = None,
-    llm_config: dict | None = None,
-    summariser: Any = None,
-    bug_probe: Any = None,
     decision_ref: str | None = None,
-    bug_context: BugCognitiveContext | None = None,
 ) -> CloseoutResult:
     """Produce + persist cognitive closeout for one done artifact, returning an
     honest outcome. ``persister`` owns the candidate→board graph→queryable step."""
@@ -287,52 +227,7 @@ async def run_cognitive_closeout(
         return result
 
     if artifact_type == "bug":
-        if bug_context is not None:
-            from okto_pulse.core.kg.bug_cognitive_closure import (
-                classify_bug_evidence,
-            )
-
-            evidence = classify_bug_evidence(None, context=bug_context)
-            if not evidence["evidence_ready"]:
-                result.outcome = (
-                    CloseoutOutcome.EXTRACTOR_TRIGGERED_BUT_NOT_PERSISTED.value
-                )
-                missing = ",".join(evidence["missing_categories"])
-                result.detail = (
-                    "bug cognitive context is not closeout-ready "
-                    f"(missing={missing or 'context_verification'})"
-                )
-                return result
-        action_plan = (bug_action_plan or "").strip()
-        if len(action_plan) < LEARNING_MIN_ACTION_PLAN_CHARS:
-            result.outcome = CloseoutOutcome.NOT_APPLICABLE.value
-            result.detail = "bug done has no root-cause/fix narrative (action_plan below threshold)"
-            return result
-        if not (llm_config or {}).get("provider"):
-            result.outcome = CloseoutOutcome.SKIPPED_NO_LLM_CONFIG.value
-            result.detail = "Learning needs Board.settings.cognitive_llm_config; skipped (config gap, not a failure)"
-            return result
-        # #3/#4 (codex): the Learning must validate a RESOLVED canonical Bug.
-        # Fail-closed whenever it is NOT bug-derived (a probe is mandatory on the
-        # bug path to prove the canonical Bug) — never fabricate a bug-like ref.
-        resolution = resolve_cognitive_source_ref(
-            f"card:{bug_card_id}", canonical_bug_probe=bug_probe)
-        if not resolution.is_bug_derived:
-            result.outcome = CloseoutOutcome.NOT_APPLICABLE.value
-            result.detail = ("no canonical Bug resolved for this card; a Learning cannot "
-                             "validate a non-existent Bug (fail-closed, RKG-02)")
-            return result
-        candidate = _learning_candidate(
-            bug_card_id=bug_card_id or "", bug_title=bug_title, action_plan=action_plan,
-            summariser=summariser, validates_ref=resolution.canonical_artifact_ref)
-        if candidate is None:
-            result.outcome = CloseoutOutcome.EXTRACTOR_TRIGGERED_BUT_NOT_PERSISTED.value
-            result.detail = "extractor triggered but produced no Learning (empty summary)"
-            return result
-        result.candidates_emitted = 1
-        await _persist_all(board_id=board_id, artifact_type=artifact_type,
-                     candidates=[candidate], persister=persister, result=result)
-        return result
+        raise ValueError("bug_closeout_requires_authored_capture")
 
     if artifact_type == "card":
         # #5 (codex): a done card that is neither a bug nor spec-backed has no
@@ -810,8 +705,6 @@ _LEDGER_STATUS: dict[str, tuple[str, str | None]] = {
         CognitiveItemStatus.SKIPPED.value, CognitivePendingOutcomeType.NO_ACTION_REQUIRED.value),
     CloseoutOutcome.NOT_APPLICABLE.value: (
         CognitiveItemStatus.SKIPPED.value, CognitivePendingOutcomeType.NO_ACTION_REQUIRED.value),
-    CloseoutOutcome.SKIPPED_NO_LLM_CONFIG.value: (
-        CognitiveItemStatus.SKIPPED.value, CognitivePendingOutcomeType.NO_ACTION_REQUIRED.value),
     CloseoutOutcome.EXTRACTOR_NOT_TRIGGERED.value: (
         CognitiveItemStatus.SKIPPED.value, CognitivePendingOutcomeType.NO_ACTION_REQUIRED.value),
     CloseoutOutcome.EXTRACTOR_TRIGGERED_BUT_NOT_PERSISTED.value: (
@@ -902,7 +795,7 @@ async def drain_cognitive_closeout_pending(
     pending→in_progress→consolidated/skipped/failed carrying the outcome.
 
     ``input_loader(board_id, item) -> dict`` returns the closeout inputs
-    (spec_context / bug_* / llm_config / bug_probe / decision_ref) for an item —
+    (spec_context / decision_ref) for an item —
     injectable so the worker is testable without the full SQL/graph load."""
     store = store or _default_store()
     persister = persister or ConsolidationPipelinePersister(
@@ -931,7 +824,7 @@ async def drain_cognitive_closeout_pending(
                 reason='learning_capture_work_reference_invalid')
             continue
         if capture_work is None and (item.artifact_type == 'bug' or item.source_ref.startswith('bug:')):
-            # Preserve legacy debt, reason and holds verbatim. Its absence of
+            # Preserve owned debt, reason and holds verbatim. Its absence of
             # authored work is not permission to infer Learning or waive it.
             continue
         if capture_work is not None and not _capture_work_owned_by_worker(item, agent_id):
