@@ -3702,7 +3702,12 @@
       "historical_review_status": "not_audited_in_this_inventory",
       "prior_reviewed_execution": null,
       "discovered_artifacts": [],
-      "current_qualification": "pending_current_pair_review"
+      "current_qualification": "verified_current_pair_review",
+      "current_review": {
+        "artifact": "clean-break-acceptance-native-orphan-census.json",
+        "criterion_key": "KG:KG-25",
+        "proof_pair": "dist-native-main40"
+      }
     },
     {
       "key": "KG:KG-26",

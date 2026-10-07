@@ -33,7 +33,6 @@ DEFAULT_ORPHAN_SAMPLE_LIMIT = 25
 ZERO_DEGREE_REASON = "zero_graph_degree"
 ALLOWLISTED_TECHNICAL_ROOT_REASON = "allowlisted_technical_root"
 ZERO_ORPHAN_VALIDATION_PASSED = "passed"
-ZERO_ORPHAN_VALIDATION_PENDING_BACKFILL = "pending_backfill"
 ZERO_ORPHAN_VALIDATION_FAILED = "failed_orphan_validation"
 ZERO_ORPHAN_VALIDATION_UNAVAILABLE = "unavailable"
 ZERO_ORPHAN_VALIDATION_NOT_EVALUATED = "not_evaluated"
@@ -249,7 +248,7 @@ def _run_async_blocking(coro):
 class _BoardGraphPortConnection:
     """Minimal connection-shaped adapter over the KG graph ports.
 
-    The scanner/backfill code predates the hexagonal ports and expects a
+    The scanner query interface expects a
     ``graph_scope.execute(...)`` object. This adapter preserves that local API without
     opening backend-specific graph connections from core.
     """
@@ -424,7 +423,7 @@ def build_orphan_integrity_projection(
             allowlisted_root_count=report.allowlisted_root_count,
             generation_id=report.generation_id,
             correlation_id=report.correlation_id,
-            zero_orphan_validation=ZERO_ORPHAN_VALIDATION_PENDING_BACKFILL,
+            zero_orphan_validation=ZERO_ORPHAN_VALIDATION_FAILED,
             reason="orphan_count_gt_zero",
         )
 
@@ -994,7 +993,6 @@ __all__ = [
     "ZERO_ORPHAN_VALIDATION_FAILED",
     "ZERO_ORPHAN_VALIDATION_NOT_EVALUATED",
     "ZERO_ORPHAN_VALIDATION_PASSED",
-    "ZERO_ORPHAN_VALIDATION_PENDING_BACKFILL",
     "ZERO_ORPHAN_VALIDATION_UNAVAILABLE",
     "build_orphan_integrity_projection",
     "get_orphan_audit_fields",

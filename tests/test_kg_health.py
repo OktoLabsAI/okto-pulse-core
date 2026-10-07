@@ -367,7 +367,7 @@ async def test_orphan_integrity_warning_is_at_risk_not_recovery_needed(
             "allowlisted_root_count": 0,
             "generation_id": "gen-test",
             "correlation_id": "corr-orphan-health",
-            "zero_orphan_validation": "pending_backfill",
+            "zero_orphan_validation": "failed_orphan_validation",
             "reason": "orphan_count_gt_zero",
             "internal_probe_extension": {"raw_payload": "never-publish"},
         },

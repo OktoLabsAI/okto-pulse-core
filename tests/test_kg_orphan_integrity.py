@@ -8,7 +8,7 @@ import pytest
 from okto_pulse.core.kg.orphan_integrity import (
     InMemoryOrphanAuditSink,
     SAFE_ORPHAN_SAMPLE_FIELDS,
-    ZERO_ORPHAN_VALIDATION_PENDING_BACKFILL,
+    ZERO_ORPHAN_VALIDATION_FAILED,
     build_orphan_integrity_projection,
     InMemoryOrphanMetricSink,
     OrphanNodeScanner,
@@ -442,7 +442,7 @@ def test_scanner_detects_only_zero_degree_learning_with_safe_samples() -> None:
     assert projection["orphan_count"] == 1
     assert (
         projection["zero_orphan_validation"]
-        == ZERO_ORPHAN_VALIDATION_PENDING_BACKFILL
+        == ZERO_ORPHAN_VALIDATION_FAILED
     )
     assert set(projection["samples"][0]) == set(SAFE_ORPHAN_SAMPLE_FIELDS)
 

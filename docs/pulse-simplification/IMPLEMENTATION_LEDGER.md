@@ -2,6 +2,49 @@
 
 ## Estado para retomada
 
+### 2026-10-07 — C1/C4 KG-25 concluído no par main40
+Build/install/prova19773 terminou0:844/906 Core+316/402 Community byte-identical.
+Retirado pending_backfill de runtime/export; testes de health/rebuild comprovam
+a mesma classificação at_risk, warning e bloqueio da geração com órfãos.
+Sem conversão, exclusão automática ou mudança de gate/autoridade.
+
+Core orphan-census1 (33802) terminou0:29pass/160.16s; scanners, guard de commit,
+conectividade por tipo/proveniência, raízes técnicas, health e recusa de rebuild.
+Community census2 (88873) terminou0:1pass/41.07s (positivo inicial).
+Caso ampliado census3 (24849) terminou1/29.85s: CREATE do órfão sintético foi
+corretamente recusado em transação read. Fixture passou a begin(write) explícito.
+census4 (60069) terminou0:1pass/30.39s. Cada nó projetado da Spec tem conteúdo
+esperado; census zero preserva snapshot completo. Órfão Learning deliberado
+resulta exatamente1, falha de validação e rejeição do guard; todos os conteúdos/
+relações permanecem idênticos. Sem apagar nó ou inventar belongs_to para aprovar.
+
+Frontend orphan-ui1 terminou0:10pass em KnowledgeGraphPage.diagnostics (jsdom).
+Nenhuma alteração nos assets/frontend produtivo. Closure40 (57913) terminou0:
+ok=true, findings/documentation_findings=[], oito budgets ZERO. Ruff/diff-check
+aprovados. Recibo clean-break-acceptance-native-orphan-census.json sela30 Python
+distintos +10 frontend; tentativas intermediárias preservadas com limites.
+KG-25 qualificado exclusivamente em fixtures nativas sintéticas; census de dados
+reais/históricos não executado. Índice62 verificados/173 aplicáveis pendentes/11
+superados. Não confundir com conclusão integral.
+
+Nenhum processo ativo. Próximo: KG-16/24 (cada família removida/paridade completa,
+incluindo demais relações de ImplementationTarget/Code Evidence), depois DEI/ARQVER.
+BASE:T23/KG-10 seguem pendentes de decisão própria. Next27 isolado STALE.
+Pronto para commits/pushes. A autorização Checklist permanece já implementada.
+
+### 2026-10-07 — C1/KG-25: retirado diagnóstico residual de backfill, em validação
+KG-18 publicado em Coreb86accce / Community0e531af7; pushes confirmados.
+Investigação do census encontrou pending_backfill emitido por orphan_integrity,
+embora rebuild_service já recuse a publicação pelo integrity_warning e use
+failed_orphan_validation como resultado terminal. O diagnóstico era contraditório
+com a instalação nova e com a retirada de conversores. Removida constante/export
+de pending_backfill; o relatório usa failed_orphan_validation já existente.
+Nenhum predicado de autorização/publicação alterado: contagem, warning, classificação
+e recusa permanecem iguais. Scanner não converte nem apaga dados. Três expectativas
+de testes atualizadas para o diagnóstico único. Fonte/frontend sem consumidor do
+valor antigo; contrato REST continua string. Validação e build/prova main40 pendentes.
+KG-25 continua aberto; não qualificar por troca de rótulo nem apenas por grau zero.
+
 ### 2026-10-07 — C4 KG-18 concluído; Code Evidence retira somente seu vínculo
 ownership3 (73608) terminou1:6pass/1fail,51.85s; oráculo usava rule v2.1, mas
 Code Traceability emite v2.0. Corrigido oráculo sem alterar worker.

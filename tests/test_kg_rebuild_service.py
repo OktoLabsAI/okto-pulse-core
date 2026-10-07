@@ -3906,7 +3906,7 @@ def test_completed_run_with_remaining_orphans_blocks_clean_success(tmp_path: Pat
     report = rep_store.load(result.report_ref or "")
     assert report is not None
     validation = report["drilldown"]["zero_orphan_validation"]
-    assert validation["zero_orphan_validation"] == "pending_backfill"
+    assert validation["zero_orphan_validation"] == "failed_orphan_validation"
     assert validation["orphan_count"] == 1
     assert set(validation["samples"][0]) == {
         "node_id",
