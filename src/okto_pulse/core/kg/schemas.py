@@ -130,8 +130,8 @@ class NodeCandidate(BaseModel):
     resolution_state: str | None = Field(None, min_length=1, max_length=32)
 
 
-class EdgeCandidate(BaseModel):
-    """An edge proposed by the agent during a session."""
+class PublicEdgeCandidate(BaseModel):
+    """A cognitive proposal; writer provenance is never client authority."""
 
     model_config = ConfigDict(use_enum_values=True, extra="forbid")
 
@@ -143,10 +143,16 @@ class EdgeCandidate(BaseModel):
     )
     to_candidate_id: str
     confidence: float = Field(0.7, ge=0.0, le=1.0)
-    # v0.2.0 provenance metadata (spec c48a5c33). Optional so legacy callers
-    # keep working — TransactionOrchestrator fills sensible defaults. When the
-    # Layer 1 deterministic worker feeds candidates in, these fields carry the
-    # rule_id/layer up to graph backend so /metrics can segment correctly.
+
+
+class EdgeCandidate(PublicEdgeCandidate):
+    """Internal candidate including provenance supplied by trusted writers.
+
+    Public proposals use the closed PublicEdgeCandidate contract. The internal
+    cognitive transaction supplies its own provenance when these fields are
+    absent; deterministic workers supply their explicit ownership metadata.
+    """
+
     layer: str | None = None
     rule_id: str | None = None
     created_by: str | None = None
@@ -235,6 +241,11 @@ class AddNodeCandidateResponse(BaseModel):
 class AddEdgeCandidateRequest(BaseModel):
     session_id: str
     candidate: EdgeCandidate
+
+
+class PublicAddEdgeCandidateRequest(BaseModel):
+    session_id: str
+    candidate: PublicEdgeCandidate
 
 
 class AddEdgeCandidateResponse(BaseModel):

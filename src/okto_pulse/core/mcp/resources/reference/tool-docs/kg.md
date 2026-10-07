@@ -66,8 +66,8 @@ Covered fully by the live tool description.
 Add an edge candidate to an open consolidation session.
 
 `candidate` is a strict object with `candidate_id`, `edge_type`,
-`from_candidate_id`, `to_candidate_id`, and optional `confidence`, `layer`,
-`rule_id`, `created_by`, and `fallback_reason`. Unknown fields are rejected
+`from_candidate_id`, `to_candidate_id`, and optional `confidence`. Writer metadata
+(`layer`, `rule_id`, `created_by`, `fallback_reason`) and unknown fields are rejected
 with `invalid_candidate`; they are never silently ignored. Edge confidence is
 named `confidence`, while node confidence is named `source_confidence`.
 

@@ -81,6 +81,7 @@ from okto_pulse.core.kg.schemas import (
     CommitConsolidationRequest,
     GetSimilarNodesRequest,
     ProposeReconciliationRequest,
+    PublicAddEdgeCandidateRequest,
 )
 
 _VALID_OUTCOME_TYPES: frozenset[str] = frozenset(
@@ -419,7 +420,10 @@ def register_kg_tools(
         if agent is None:
             return _err("unauthorized", "authentication required")
         try:
-            req = AddEdgeCandidateRequest(session_id=session_id, candidate=candidate)
+            public_request = PublicAddEdgeCandidateRequest(
+                session_id=session_id, candidate=candidate
+            )
+            req = AddEdgeCandidateRequest.model_validate(public_request.model_dump())
         except ValidationError as e:
             return _err("invalid_candidate", _validation_message(e))
         _session, access_error = await _authorized_session(

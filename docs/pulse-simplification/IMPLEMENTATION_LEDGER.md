@@ -2,6 +2,52 @@
 
 ## Estado para retomada
 
+### 2026-10-07 — KG31 corrigido e validado; publicação do contrato público fechado
+Main60 prova59462 terminou0 antes dos testes,838/900+317/403 byte-idênticos.
+Edge-provenance4 handle31458 terminou0:76pass/52s; regressão do endereço
+candidate.<campo> corrigida no produto. Surface1 falha permanece registrada.
+Edge-worker1 handle46078 terminou0:1pass/60.40s; worker interno continua
+projetando supersedência normativa e preservando histórico/replay/rebuild em
+SQL/Grafx nativos. Closure60 handle73495 terminou0:ok=true, findings=[],
+documentation_findings=[], oito budgets ZERO. Ruff F/E9/diff-check verdes.
+Recibo clean-break-acceptance-native-edge-authority.json contém 157 casos
+distintos aprovados nas campanhas, limites do fixture de autenticação e
+falhas anteriores. Contrato público sem metadados internos documentado nos
+dois pacotes; nenhum wrapper/conversor mantém payload antigo aceito.
+KG31 qualificado:índice67 verificadas/168 pendentes/11 superadas (246/235 fixos).
+Não implica KG30 entregue. Nenhum processo ativo; fontes estáveis após
+main60. Frontend inalterado. Commit/push pareados deste milestone autorizados.
+Próximo: KG30 (interpretação sem crédito normativo) e KG32+ (Learning),
+preservando as decisões pendentes KG10/KG28/T23, sem aguardar globalmente.
+Nenhuma nova resposta recebida. Sem migração real, release, tag, merge ou deploy.
+
+### 2026-10-07 — KG31: autoria interna forjável em candidato público, correção em validação
+Retomada confirmou par f1a2bda5/0457c3a5 limpo/sincronizado; turno anterior
+teve progresso publicado. Prova provenance-native-kg-authority1 terminal0
+sobre main58 antes de comportamento. Repro edge-provenance1 falhou coleção
+por import de teste incorreto; corrigido para porta interfaces.registry.
+Edge-provenance2 terminou1:4fail/3.60s, todos CONFIRMAM defeito: tool MCP
+autenticada aceita candidato com layer=deterministic, created_by=system:.../
+worker_layer1 ou rule_id de worker. Não se trata de nova permissão pedida:
+KG31 exige explicitamente recusar autoria determinística forjada.
+WIP separa PublicEdgeCandidate/PublicAddEdgeCandidateRequest fechados de
+EdgeCandidate interno. MCP valida contrato público antes de criar candidato
+interno. Campos internos não são ignorados/substituídos silenciosamente;
+invalid_candidate sem mutação da sessão. Workers conservam DTO interno.
+Main59 build/install/prova2422 terminaram0,838/900+317/403.
+Edge-provenance3 handle26020 terminou0:92pass/9.07s. Surface1 handle82131
+terminou1:24pass/1fail/6.82s, falha no prefixo de campo do envelope sanitizado
+(candidate.unknown_edge_field). Correção preserva prefixo usando request
+público aninhado; nenhum oráculo enfraquecido. Docs dos dois pacotes alinhadas.
+Closure59 handle29108 terminou0, oitoZERO. Produto final main60 build/install
+e prova59462 terminais0 (838/900+317/403).
+ATIVOS: edge-provenance4 handle31458 e closure60 handle73495.
+Aguardar terminal antes de produto/reinstall. SPA inalterada; não há feature
+frontend neste recorte MCP. Índice66/169/11 mantido até recibo final.
+KG10/KG28/T23 continuam pendentes; nenhuma resposta nova recebida.
+Próximo: confirmar envelope/consultas somente leitura, fechar recibo/commit/push;
+KG30 não qualificado por estes testes. Sem runtime/dados reais ou release.
+
 ### 2026-10-07 — KG27/29 qualificados no par nativo; KG28 separado
 Milestone de retirada do ledger legado enviado Coredc7aac89/Communityfba73e37,
 pushes0. Main58 continua instalado/comprovado; produto não mudou desde então.
