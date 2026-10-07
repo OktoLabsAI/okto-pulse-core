@@ -65,5 +65,11 @@
     "No product/frontend change; prior closure44 remains the product evidence, not rerun here.",
     "Initial parity1 failed only wrong rule version in test; current Amendment emitter uses v2.0.",
     "KG-16/24 remain open; no full delivery claim."
-  ]
+  ],
+  "criteria": {
+    "KG:KG-61": {
+      "review_status": "verified_current_pair_review",
+      "evidence": "Native draft-to-done Amendment association preserves original Spec and unrelated graph relationships, emits only scoped belongs_to lineage without fabricated supersedes, and matches clean rebuild. Core model regression separately checks original Spec persistence remains unchanged."
+    }
+  }
 }

@@ -7,7 +7,7 @@ belong to the projection. A similar prefix or a matching pair is insufficient.
 from dataclasses import dataclass
 
 SCENARIO_CRITERIA_NAMESPACE = "scenario_criteria"
-SCENARIO_CRITERIA_RULES = frozenset({"tests/ac_match@v2.0", "tests/ac_match@v2.1"})
+SCENARIO_CRITERIA_RULES = frozenset({"tests/ac_match@v2.1"})
 
 
 @dataclass(frozen=True, slots=True)

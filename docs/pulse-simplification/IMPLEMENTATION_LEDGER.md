@@ -2,6 +2,37 @@
 
 ## Estado para retomada
 
+### 2026-10-07 — C1: matcher antigo retirado e qualificado; KG-61 verificado
+Core core2 (14964) terminou0:78pass/16.66s, após prova main45 terminal.
+Community community1 (30143) terminou0:5pass/67.13s: recusa antes de escrita,
+preservação de writers alheios, compensação e paridade incremental/rebuild.
+Closure45 (8698) terminou0:ok=true, findings/documentation_findings=[] e oitoZERO.
+Recibo clean-break-native-scenario-rule-removal.json sela83 testes finais.
+Main45 mantém837/899+316/402 byte-identical. Ruff F/E9 passou; nenhum frontend
+produtivo alterado, nenhuma conversão/limpeza de grafo antigo implementada.
+Suporte retirado é somente tests/ac_match@v2.0; versões v2.0 atuais de outras
+famílias não são legado por terem esse número.
+Revisão da evidência Amendment do milestone anterior qualifica KG-61: a alteração
+parcial não supersede a Spec original e preserva suas relações e persistência.
+Recibo e índice atualizados:63 verificados/172 aplicáveis pendentes/11 superados.
+KG-16/24 continuam abertos, sem ampliação do escopo. Nenhum processo pendente.
+Pronto para commits/pushes; próxima frente é matriz restante de KG-16/24.
+
+### 2026-10-07 — C1: retirado suporte ao matcher antigo de cenário
+Milestone anterior publicado Core40ab2502 / Community6b4955dd; progresso confirmado.
+Busca de produtores/consumidores confirmou que o emissor atual produz somente
+tests/ac_match@v2.1; o único aceite v2.0 estava em ports/spec_projection.py.
+Retirada essa versão da família fechada; não alterar versões v2.0 de outras
+famílias atuais. Teste Grafx novo exige recusa do intent antigo antes de mutação.
+Sem conversor, limpeza histórica ou alteração de permissão.
+Main45 build/install/prova11782 terminou0:837/899+316/402 byte-identical.
+Campanha Core15796 terminou0:78pass/16.24s, mas foi iniciada antes de observar
+o terminal da prova; não usada como qualificação final. Repetição core2 (14964)
+em andamento após a prova. Primeira chamada Community colidiu com nome de log
+Core e não executou testes; nome corrigido community1 (30143) em andamento.
+Closure45 (8698) em andamento. Produto estável; aguardar mesmos handles.
+Nenhum commit/push deste WIP. Índice62/173/11 permanece, entrega aberta.
+
 ### 2026-10-07 — KG-24: Amendment nativo aprovado
 parity2 (59015) terminou0:1pass/81.86s. Fontes SQL completas idênticas,
 multiset de relações/proveniência/maturidade igual, replay sem duplicação e Spec

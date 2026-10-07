@@ -4443,7 +4443,12 @@
           "case_references": []
         }
       ],
-      "current_qualification": "pending_current_pair_review"
+      "current_qualification": "verified_current_pair_review",
+      "current_review": {
+        "artifact": "clean-break-native-amendment-parity.json",
+        "criterion_key": "KG:KG-61",
+        "proof_pair": "dist-native-main44"
+      }
     },
     {
       "key": "KG:KG-62",
