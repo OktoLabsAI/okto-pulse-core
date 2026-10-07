@@ -2,6 +2,25 @@
 
 ## Estado para retomada
 
+### 2026-10-07 — C4 fluxo nativo medido sem inferir economia
+native-mcp-flow-measurement1 handle29216 terminou0:6aprovados/43.35s, dois
+PytestAssertRewriteWarning de anyio já importado pelo medidor; nenhuma falha.
+Reutilizado scripts/measure_mcp_fixture.py sobre single-agent Spec execution
+(2variantes) e executor/reviewer handoff(4variantes), com par atual congelado e
+PYTHONPATH das duas árvores. Sem alteração de produto ou fixture para medir.
+Captura sintética gzip/hash e resumo benchmark-native-flows.json publicados:
+22sessões,77tools/call,22initialize,22tools/list,5.530.609bytes,
+1.309.717tokens cl100k_base. Custos por cenário separados; catálogo de cada
+sessão incluído. SQL/latência são janelas seriais, não causalidade global.
+
+Resultado NÃO prova economia50/30 nem equivalência com cenário legado.
+Fixture setup/implementação externa são excluídos; handoff não mede autoria
+integral de iniciativa. Versões atuais tiktoken0.14/mcp1.30 diferentes do recibo
+antigo0.12/1.29; limites explícitos. Benchmark comparativo integral permanece
+pendente conforme plano. Não restaurar fixture antiga nem suporte ao legado.
+Core11 followup78972 eCommunity9 79103 seguem ativos, confirmados por poll.
+Não editar/reinstalar par ou testes dessas campanhas até terminais.
+
 ### 2026-10-07 — C4 índice de aceite fixo e continuação Community9
 Criado clean-break-acceptance-evidence-index.json a partir do inventário vigente
 e recibos já existentes:246 critérios totais,235aplicáveis,11superados.
