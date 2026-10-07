@@ -27,7 +27,6 @@ from __future__ import annotations
 import asyncio
 import logging
 import threading
-import uuid
 from contextvars import copy_context
 from dataclasses import dataclass, field
 from typing import Any
@@ -59,7 +58,7 @@ STATUS_INTEGRITY_ERROR = "integrity_error"
 # current contract (failures -> unrestorable, never a guard bypass).
 _COGNITIVE_EDGE_TYPES: tuple[str, ...] = (
     "validates", "derives_from", "relates_to", "supersedes", "contradicts",
-    "depends_on", "mentions",
+    "depends_on", "mentions", "belongs_to",
 )
 
 
@@ -221,23 +220,23 @@ def _snapshot_edges(board_id: str, node_ids: set[str]) -> list[dict[str, Any]]:
     edges: list[dict[str, Any]] = []
     seen: set[tuple[str, str, str]] = set()
     ids = list(node_ids)
+    properties = ("confidence", "created_by_session_id", "created_at",
+                  "layer", "rule_id", "created_by", "fallback_reason")
     for etype in _COGNITIVE_EDGE_TYPES:
-        try:
-            rows = _execute_read_rows(
-                board_id,
-                f"MATCH (a)-[:{etype}]->(b) WHERE a.id IN $ids "
-                f"RETURN a.id, b.id",
-                {"ids": ids},
-            )
-        except Exception:
-            continue
+        rows = _execute_read_rows(
+            board_id,
+            f"MATCH (a)-[r:{etype}]->(b) WHERE a.id IN $ids "
+            "RETURN a.id, b.id, " + ", ".join(f"r.{name}" for name in properties),
+            {"ids": ids},
+        )
         for row in rows:
             from_id, to_id = str(row[0]), str(row[1])
             key = (etype, from_id, to_id)
             if key in seen:
                 continue
             seen.add(key)
-            edges.append({"edge_type": etype, "from_id": from_id, "to_id": to_id})
+            edges.append({"edge_type": etype, "from_id": from_id, "to_id": to_id,
+                          "attrs": dict(zip(properties, row[2:], strict=True))})
     return edges
 
 
@@ -313,22 +312,18 @@ def _create_edge(
     to_type: str,
     from_id: str,
     to_id: str,
-    session_id: str,
+    attrs: dict[str, Any],
 ) -> bool:
     from okto_pulse.core.kg.interfaces import get_kg_registry
 
+    required = {"confidence", "created_by_session_id", "created_at",
+                "layer", "rule_id", "created_by", "fallback_reason"}
+    if not isinstance(attrs, dict) or set(attrs) != required:
+        raise ValueError("cognitive_edge_snapshot_properties_required")
+    edge_attrs = dict(attrs)
     if _edge_present(board_id, edge_type, from_type, to_type, from_id, to_id):
         return False
 
-    edge_attrs: dict[str, Any] = {
-        "confidence": 0.7,
-        "created_by_session_id": session_id,
-        "created_at": _now_iso(),
-        "layer": "cognitive",
-        "rule_id": "",
-        "created_by": session_id,
-        "fallback_reason": "",
-    }
     store = get_kg_registry().graph_store
     if store is None:
         raise RuntimeError("semantic_graph_store_unavailable")
@@ -374,7 +369,6 @@ def restore_canonical_cognitive(board_id: str, snapshot: CognitiveSnapshot) -> R
 
     result = RestoreResult()
     try:
-        session_id = f"cogrestore_{uuid.uuid4().hex[:8]}"
         node_by_id = {n["id"]: n for n in snapshot.nodes}
         present: set[str] = set()
         for node in snapshot.nodes:
@@ -429,7 +423,7 @@ def restore_canonical_cognitive(board_id: str, snapshot: CognitiveSnapshot) -> R
                     to_label,
                     from_id,
                     to_id,
-                    session_id,
+                    edge.get("attrs"),
                 )
                 if created:
                     result.restored_edges += 1

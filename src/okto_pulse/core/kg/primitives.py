@@ -3110,6 +3110,7 @@ def _do_graph_commit(
     relational_projection_active_set_intents: tuple[object, ...] = (),
     learning_projection: CapturedLearningProjection | None = None,
     allow_known_removals: bool = False,
+    cognitive_rebuild_heads: dict | None = None,
 ) -> tuple[dict, object, list, datetime, dict, list[dict]] | GraphRemovalProgress:
     """Synchronous graph writes for ``commit_consolidation``.
 
@@ -3349,6 +3350,30 @@ def _do_graph_commit(
             op = _resolve_op(hint, cand.source_confidence)
             node_type = _enum_value(cand.node_type)
             is_relational_projection = cand_id in relational_projection_candidate_ids
+
+            recovered = (cognitive_rebuild_heads or {}).get(cand.source_artifact_ref)
+            if node_type == "Decision" and not is_relational_projection and recovered is not None:
+                from okto_pulse.core.kg.cognitive_rebuild import matches_literal_decision
+                present = _lookup_existing_node_identity_by_id(graph_scope, node_type, recovered.node_id)
+                if present is None:
+                    # The recovery session owns compensation; durable authorship
+                    # remains in created_by_agent and the unchanged source ledger.
+                    attrs = {key: value for key, value in recovered.payload.items()
+                             if key not in {"id", "board_id", "source_session_id"}}
+                    _apply_graph_node_create(orch, node_type, recovered.node_id, attrs)
+                else:
+                    from okto_pulse.core.kg.cognitive_rebuild import require_existing_decision_matches
+                    require_existing_decision_matches(recovered,
+                        _read_cognitive_source_node_attrs(graph_scope, node_type, recovered.node_id))
+                if matches_literal_decision(cand, recovered):
+                    # Recovery is not a fresh attestation or a new semantic revision.
+                    candidate_to_graph_id[cand_id] = recovered.node_id
+                    candidate_to_node_type[cand_id] = node_type
+                    if present is not None:
+                        orch.counters.nodes_noop += 1
+                    continue
+                # A newer authoritative source still follows the normal semantic
+                # supersedence path, now against its recovered predecessor.
 
             if op == ReconciliationOperation.NOOP:
                 # Spec eca49df9 (FR6): NOOP is a processed candidate too.
@@ -3674,6 +3699,15 @@ def _do_graph_commit(
                             graph_scope, node_type, new_node_id
                         ),
                     )
+                    # Supersedence changes both durable identities. Persist the
+                    # predecessor's retired state in the same relational batch.
+                    _queue_cognitive_source_record(
+                        node_id=superseded_id, node_type=node_type,
+                        generation=successor_generation - 1,
+                        attrs=_read_cognitive_source_node_attrs(
+                            graph_scope, node_type, superseded_id),
+                    )
+
                     logger.info(
                         "kg.consolidation.supersede_replayed candidate=%s "
                         "existing=%s target=%s type=%s session=%s",
@@ -3708,6 +3742,13 @@ def _do_graph_commit(
                     generation=successor_generation,
                     attrs=new_attrs,
                 )
+                _queue_cognitive_source_record(
+                    node_id=superseded_id, node_type=node_type,
+                    generation=successor_generation - 1,
+                    attrs=_read_cognitive_source_node_attrs(
+                        graph_scope, node_type, superseded_id),
+                )
+
                 logger.info(
                     "kg.consolidation.superseded candidate=%s new=%s old=%s "
                     "type=%s session=%s",
@@ -3834,6 +3875,13 @@ def _do_graph_commit(
                             generation=trail_generation,
                             attrs=trail_attrs,
                         )
+                        _queue_cognitive_source_record(
+                            node_id=existing_id, node_type=node_type,
+                            generation=trail_generation - 1,
+                            attrs=_read_cognitive_source_node_attrs(
+                                graph_scope, node_type, existing_id),
+                        )
+
                         logger.info(
                             "kg.consolidation.reuse_superseded candidate=%s "
                             "old=%s new=%s type=%s session=%s",
@@ -4646,6 +4694,7 @@ async def commit_consolidation(
     defer_session_finalization: bool = False,
     learning_capture: LearningCaptureSelection | None = None,
     allow_known_removals: bool = False,
+    rebuild_cognitive: bool = False,
 ) -> CommitConsolidationResponse | DeferredProjectionProgress:
     """Atomically write graph backend nodes/edges + audit + outbox event.
 
@@ -4672,6 +4721,11 @@ async def commit_consolidation(
         agent_id,
         allow_pending_commit=True,
     )
+    if rebuild_cognitive and (
+        agent_id != "system:historical_consolidation" or db is None
+        or not defer_session_finalization or req.agent_overrides
+    ):
+        raise ValueError("cognitive_rebuild_worker_transaction_required")
     if allow_known_removals and (
         agent_id != 'system:historical_consolidation' or session.artifact_type not in {'card', 'spec'}
         or not defer_session_finalization or db is None or req.agent_overrides
@@ -4751,6 +4805,14 @@ async def commit_consolidation(
                 },
             ) from exc
 
+    cognitive_rebuild_heads = {}
+    if rebuild_cognitive and cognitive_source_store is not None:
+        from okto_pulse.core.kg.cognitive_rebuild import select_decision_heads
+        cognitive_rebuild_heads = select_decision_heads(
+            session.board_id, dict(session.node_candidates),
+            await cognitive_source_store.enumerate(session.board_id),
+        )
+
     owns_deferred_claim = False
 
     async def _complete_commit(
@@ -4758,6 +4820,8 @@ async def commit_consolidation(
     ) -> CommitConsolidationResponse:
         nonlocal owns_deferred_claim
         request_payload = req.model_dump(mode="json")
+        if rebuild_cognitive:
+            request_payload["rebuild_cognitive"] = True
         learning_projection = None
         if learning_capture is not None:
             from okto_pulse.core.application.learning_materialization import prepare_captured_learning_commit
@@ -4883,6 +4947,7 @@ async def commit_consolidation(
                     executor=blocking_execution,
                     **({'learning_projection': learning_projection} if learning_projection else {}),
                     **({'allow_known_removals': True} if allow_known_removals else {}),
+                    **({"cognitive_rebuild_heads": cognitive_rebuild_heads} if cognitive_rebuild_heads else {}),
                 ),
             )
         except KGPrimitiveError:

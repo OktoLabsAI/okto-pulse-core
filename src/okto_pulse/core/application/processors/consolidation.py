@@ -1627,6 +1627,7 @@ async def _commit_consolidation_with_board_graph_lifecycle(
                 blocking_execution=blocking_execution,
                 defer_session_finalization=defer_session_finalization,
                 **({'allow_known_removals': True} if allow_known_removals else {}),
+                **({"rebuild_cognitive": True} if _queue_source(entry).startswith("rebuild:") else {}),
             )
         except KGPrimitiveError as exc:
             # The dependency endpoint barrier is deliberately read-only.  It

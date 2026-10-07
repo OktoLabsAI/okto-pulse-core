@@ -2,6 +2,194 @@
 
 ## Estado para retomada
 
+### 2026-10-07 — correção histórica Decision verificada e pronta para publicação
+Main54 prova40203 terminou0:838/900+316/402 byte-identical.
+Core3 (22915) terminou0:17pass/3.46s; native1 (66929) terminou0:2pass/87.43s.
+Frontend UI1 terminou0:27pass (GraphCanvas e DecisionImpactPanel, jsdom).
+Core1 final falhou somente fixture de override malformada; corrigida para hint
+válido. Core2 (90579)11pass precedeu os seis negativos/presente adicionados ao core3.
+Pending1 (5357)1pass/61.07s precedeu o replay exato acrescentado aos dois casos finais.
+Closure53/54 falharam apenas matriz README; renderer oficial atualizou ambos.
+Closure54-final (69813) terminou0:ok=true, findings/documentation_findings=[], oitoZERO.
+Ruff F/E9 e diff-check de ambos passaram. Nenhum processo ativo.
+Recibo clean-break-native-decision-history-parity.json reúne49 casos Python distintos
+(22predecessor main49+8arestas main50+17guardas main54+2nativos main54) e27UI.
+Paridade completa do snapshot exercitado e preservação de fonte pendente comprovadas.
+Não cobre promoção/troca física do candidato nem todos os itens KG-24.
+Índice63/172/11 mantido; próxima etapa é revisão da matriz fixa KG-16/24 com os
+recibos nativos acumulados, identificando somente lacunas reais antes de qualificar.
+Sem conversão, sem dados reais, sem novo poder do executor. Commit/push deste
+incremento autorizado; nenhum release/tag/promoção.
+
+### 2026-10-07 — paridade histórica Decision integrada aprovada
+Rebuild7 (38109) terminou0:1pass/53.33s no main53 comprovado. Comparações
+exatas passaram:BoardSourceReader, ledger cognitivo completo, identidades/conteúdo/
+gerações/superseded_by/layer e multiset integral de relações/proveniência.
+Restore repetido é idempotente. Não há processo ativo.
+Incremento teve progresso concreto: identidade vigente recuperada, ownership de
+compensação respeitado, belongs_to histórico preservado, sem revisão cognitiva
+extra por rebuild. Falhas anteriores permaneceram registradas, oráculo não reduzido.
+Antes de commit/push: revisão/negativos delimitados na entrada anterior, fonte
+pendente divergente, auditoria closure atual e recibo consolidado. Não anunciar
+KG-24 inteiro nem entrega integral por este caso único. Índice63/172/11 mantido.
+Main53 estável; WIP ainda contém alterações Core e teste nativo Community.
+
+### 2026-10-07 — identidade/ledger iguais; fechamento do vínculo histórico em validação
+Rebuild6 (36264) terminou1/56.15s. Igualdade de fonte SQL, ledger cognitivo
+completo e duas Decisions (conteúdo/generation/superseded_by/layer) PASSOU.
+Multiset divergiu em um belongs_to/fdec@v2.0 histórico: snapshot excluía
+a família belongs_to. Adicionada preservação dessa relação já existente, sem
+inferir vínculo novo nem descartar predecessor. Metadados originais mantidos.
+Main53 prova31916 terminou0:838/900+316/402 byte-identical.
+Campanha acceptance-native-decision-rebuild7 iniciada; aguardar terminal.
+Revisão pendente antes de qualificar: rejeitar identidade já presente que divirja
+do payload histórico escolhido; negativos de caller/override/head inválido e
+integração de fonte legitimamente divergente. Não basta o seletor puro aprovado.
+Sem novo commit/push; índice63/172/11.
+
+### 2026-10-07 — seleção pura aprovada; integração ajusta ownership da sessão
+Identity-core1 (14799) terminou0:7pass/4.13s. Rebuild5 (63193) terminou1/56.75s:
+head correto foi selecionado, mas create_node recusou source_session_id em attrs.
+Contrato do orchestrator injeta sessão atual para compensação; agora attrs de
+recuperação excluem id/board_id/source_session_id, preservam autoria original
+em created_by_agent e não alteram nenhum registro do ledger. Sem relaxar adapter.
+Main52 prova47148 terminou0:838/900+316/402 byte-identical. Campanha
+acceptance-native-decision-rebuild6 iniciada; aguardar terminal antes de alterar.
+Ainda faltam negativos da integração (caller/override/head conflitante) e
+caso de fonte divergente após reabertura; puro não prova wiring completo.
+WIP não commitado, índice63/172/11. Nenhuma entrega integral alegada.
+
+### 2026-10-07 — identidade vigente recuperada em WIP; main51 validando
+Nova seleção pura cognitive_rebuild usa latest_cognitive_source_records, escopo
+Board/tipo/ref e recusa head ativo ausente/ambíguo ou geração inconsistente.
+Worker reservado passa rebuild_cognitive ao commit interno; exige agente de
+consolidação, UOW, finalização diferida e ausência de overrides. A seleção usa
+a porta cognitiva pública antes de abrir writer gráfico. Nenhum SQL no Core.
+No commit, head ausente é criado literalmente. Fonte coincidente reutiliza identidade
+sem novo atestado/revisão; divergente prossegue pelo caminho normal contra o
+predecessor recuperado. Proteção human_curated permanece. Flag entra no fingerprint
+do pedido pendente. Esta implementação ainda requer revisão/negativos de wiring.
+Main51 prova20218 terminou0:838/900+316/402 byte-identical; Ruff F/E9 passou.
+Identity-core1 handle14799 e native-decision-rebuild5 handle63193 iniciados.
+Aguardar terminais antes de alterar produto. WIP não commitado; índice63/172/11.
+
+### 2026-10-07 — restauração literal de arestas:8 testes aprovados
+Cognitive-edge1 (99543) terminou0:8pass/243.90s. Validação inclui purge/restore
+real com igualdade exata dos sete campos da aresta, Decision/Alternative,
+idempotência, endpoint ausente, fallback delimitado e grafo ilegível. Main50
+comprovado, Ruff/diff-check passaram. Nenhum processo ativo.
+WIP ainda não fechado: falta identidade Decision no rebuild e paridade integrada.
+Próxima implementação delimitada: sob reserva exata, ler/validar fonte cognitiva
+pela porta pública, selecionar head por Board/tipo/ref com ambiguidades recusadas.
+Restaurar identidade literal antes de CREATE para impedir geração0 espúria;
+fonte coincidente não deve virar reatestado/autoria nova. Se fonte atual divergir,
+preservar predecessor e seguir supersedência normal, não recusar toda atualização
+legítima nem sobrescrever conteúdo. Conteúdo human_curated mantém proteção própria.
+Não inferir head apenas pelo maior número ou do grafo vazio; ledger íntegro governa
+a identidade recuperada. Histórico e arestas continuam no oráculo integral.
+Não há novo commit/push: correção histórica composta ainda em desenvolvimento.
+Índice63/172/11, sem qualificação geral KG-24.
+
+### 2026-10-07 — metadados originais das arestas preservados em WIP
+Após terminal das22regressões, canonical_cognitive_preservation passou a capturar
+e restaurar confidence/session/data/layer/rule/autor/fallback originais. Removidos
+os valores sintéticos confidence0.7, novo timestamp e regra vazia no restore.
+Shape antigo sem attrs é recusado; sem conversor/fallback. Falha ao ler uma família
+não vira mais snapshot parcial silencioso: propaga para readable=False existente.
+Teste nativo R2 usa confiança0.93 e regra/autor próprios e exige igualdade exata
+das arestas após purge/restore. Não enfraquecer a comparação de proveniência.
+Main50 build/install/prova47534 terminou0:837/899+316/402 byte-identical.
+Ruff F/E9 passou. Campanha acceptance-native-cognitive-edge1 handle99543 confirmada viva; log avançou a quatro casos. Produto estável, não editar/reinstalar antes do terminal.
+A correção da geração vigente de Decision ainda está pendente; não confundir
+a restauração de metadados com fechamento da paridade integral. Índice63/172/11.
+
+### 2026-10-07 — regressão predecessor concluída:22 aprovados
+Handle69172 terminou0:22pass/541.95s. Cobertura:durable-source commit, indisponibilidade
+e compensação, supersedência explícita/replay, NC8 trail e identidade determinística.
+Closure49 já terminou0/oitoZERO. Nenhum processo ativo; seguro prosseguir nas fontes.
+Turno anterior foi espera verificada; este obteve terminal e evidência que libera
+a próxima alteração. Main49 instalado/comprovado, WIP ainda não publicado.
+Próxima etapa continua sendo geração vigente no rebuild. Cuidado: apenas escolher
+maior geração não basta; devem ser respeitados fonte/ref, Board, integridade de
+todas as revisões, estado superseded e conteúdo humano. Rebuild deve preservar
+a identidade literal quando a fonte coincide e não converter replay em autoria.
+Também observado no código: snapshot_canonical_cognitive._snapshot_edges guarda
+apenas endpoints e _create_edge fabrica confidence0.7/layercognitive/rule vazio.
+Isso pode quebrar proveniência no oráculo integral; confirmar no teste após resolver
+a falha anterior. Não classificar paridade com filtro que ignore essas propriedades.
+Índice63/172/11. Nenhuma nova exceção, migração, autorização ou dados reais.
+
+### 2026-10-07 — closure49 aprovada; espera verificada da regressão
+Closure49 handle41835 terminou0; JSON inspecionado:ok=true, findings e
+documentation_findings vazios, oito budgets ZERO. Core69172 continua vivo
+(polling confirmado; log avançou de cinco para nove casos; processo pytest6960
+ativo). Não reiniciar por demora nem alterar fonte/build enquanto roda.
+Turno teve espera verificada e nova evidência arquitetural; correção completa segue
+pendente. Desenho delimitado da próxima parte: seleção literal da identidade
+cognitiva vigente na fonte durável, sob reserva de rebuild, antes do CREATE;
+sem tratar ausência no grafo como geração0 e sem inserir replay como nova autoria.
+Usar contratos públicos de leitura e fronteira transacional existente; restaurar
+predecessores e relações preservando os metadados originais. O teste deve continuar
+comparando fonte histórica, gerações, cadeia e relações completas.
+Nenhum novo commit/push nesta etapa; produto main49 e WIP permanecem estáveis.
+
+### 2026-10-07 — predecessor nativo validado; regressões gerais ainda ativas
+Main49 prova39924 terminou0:837/899+316/402 byte-identical.
+Decision-rebuild4 (74885) terminou1/84.67s. Novas assertions passaram: predecessor
+durável mantém Choice e aponta para sucessor, inclusive após replay/done. Falha
+permanece na segunda causa: rebuild acrescenta revision2 ao predecessor com novo
+conteúdo. Nada foi relaxado; não anunciar paridade nem milestone concluído.
+Core predecessor-core1 handle69172 confirmado vivo por polling; log tem cinco
+casos concluídos, sem relatório final. Não editar primitives/reinstalar enquanto
+essa campanha estiver ativa. Ruff F/E9 inicial passou. Closure49 handle41835 confirmada viva por polling. Nenhum dos dois handles está terminal.
+Próxima correção precisa resolver identidade/geração vigente usando fonte cognitiva
+verificada antes de CREATE em grafo vazio, sem recriar geração0, duplicar identidade,
+reanotar conteúdo histórico ou abrir reach-in. Comparar depois o multiset de relações.
+WIP Core primitives+ledger e Community native_decision_chain ainda não commitado.
+
+### 2026-10-07 — causa histórica confirmada; predecessor durável corrigido em WIP
+Leitura do Grafx descartável da campanha3 confirmou duas Decisions ativas:
+geração0 e geração1 ambas content=Revised native decision, superseded_by=NULL.
+Causas: CREATE em grafo vazio minta generation0; snapshot restore pula identidade
+já presente. Além disso, os três caminhos genéricos de supersedência em primitives
+registravam somente o sucessor no ledger: predecessor SQL conservava estado ativo.
+WIP acrescenta snapshot pós-supersedência do predecessor à mesma lista/batch UOW,
+sem mudar conteúdo anterior, autoridade ou regras de admissão. Teste nativo agora
+exige predecessor durável com conteúdo original e superseded_by correto em cada etapa.
+Segunda parte ainda pendente: identidade/geração no rebuild antes da restauração.
+Main49 build/install/prova39924 em andamento; aguardar terminal antes de testes.
+Nenhum teste ativo. Não commitado nem qualificado. Índice63/172/11 mantido.
+
+### 2026-10-07 — KG-24 divergência histórica reproduzida pelo rebuild reservado
+Decision-rebuild1 (55095) terminou1/68.56s: limpeza de fixture usou read transaction;
+corrigida para graph.begin(write), sem alteração produtiva. Rebuild2 (28380) terminou1/61.90s:
+reprojeção comum acrescentou revisão cognitiva. Para eliminar diferença de caminho,
+rebuild3 usou enumerador/digest reais, enqueue_sources e reserva offline exata.
+Rebuild3 (67949) terminou1/49.15s: mesmo acréscimo histórico apesar de ACK1 e restore.ok.
+Leitura SQLite read-only confirmou geração0 decision_b6d5c85f11ca28a525d9c00a nasceu
+com content=Choice, mas ganhou source_revision1 com content=Revised native decision,
+embedding/hash/last_attested_at novos. Geração1 decision_7fe27b8f4eab13a781f8d4e5
+continua no ledger. Fonte BoardSourceReader permaneceu igual; ledger cognitivo não.
+Teste exige igualdade histórica completa e não será enfraquecido. Ainda não avaliou
+a igualdade final de nós/arestas porque parou primeiro no ledger. Não classificar
+como perda definitiva de nó sem inspeção. Tentativa isolada com python -I não
+importou Grafx (fornecido pelo ambiente do runner); SQLite lido normalmente.
+Produto main48 permanece inalterado; nenhum processo ativo, WIP de teste/ledger
+não commitado. Próximo: investigar resolução de geração durante projeção em grafo
+vazio e uso da fonte durável antes de restaurar; preservar autoridades e histórico.
+Índice63/172/11; nenhuma qualificação adicional nem entrega completa.
+
+### 2026-10-07 — Decision histórica: reprodução integrada iniciada
+Turno anterior teve progresso:Core6d726466 publicado,99testes/closure48 aprovados.
+Teste native_decision_chain agora conserva fonte BoardSourceReader e ledger cognitivo
+completo, snapshot pelo efeito real, limpa somente grafo descartável, reprojeta Spec e
+restaura via CommunityRebuildEffects. Exige igualdade de fontes, generations/conteúdo/
+superseded_by/layer e multiset integral de relações, além de idempotência do restore.
+Não cobre promoção/troca física de geração: foco é a semântica de reconstrução histórica.
+Prova main48 decision-rebuild1 terminou0:837/899+316/402 byte-identical.
+Campanha acceptance-native-decision-rebuild1 handle55095 em andamento; produto inalterado.
+Índice63/172/11. Aguardar terminal para avaliar resultado, sem qualificar antecipadamente.
+
 ### 2026-10-07 — C1 aceite residual Sprint retirado e verificado
 Core1 (67043) terminou0:99pass/96.02s; closure48 (48123) terminou0.
 Oito budgets ZERO, findings/documentation_findings vazios. Main48 comprovado.
