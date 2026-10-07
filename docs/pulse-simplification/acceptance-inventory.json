@@ -31,6 +31,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-single-agent-completion.json",
         "criterion_key": "BASE:T01"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -44,6 +50,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-governed-lifecycle.json",
         "criterion_key": "BASE:T02"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -57,6 +69,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-planner-review-authority.json",
         "criterion_key": "BASE:T03"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -70,6 +88,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-executor-reviewer-handoff.json",
         "criterion_key": "BASE:T04"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -83,6 +107,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-planning-resume-boundaries.json",
         "criterion_key": "BASE:T05"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -96,6 +126,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-planning-resume-boundaries.json",
         "criterion_key": "BASE:T06"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -113,6 +149,12 @@
       "additional_reviewed_execution": {
         "artifact": "acceptance-single-agent-completion.json",
         "criterion_key": "BASE:T07"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -126,6 +168,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-governed-lifecycle.json",
         "criterion_key": "BASE:T08"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -139,6 +187,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-governed-lifecycle.json",
         "criterion_key": "BASE:T09"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -152,6 +206,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-governed-lifecycle.json",
         "criterion_key": "BASE:T10"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -165,6 +225,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-governed-lifecycle.json",
         "criterion_key": "BASE:T11"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -178,6 +244,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-governed-lifecycle.json",
         "criterion_key": "BASE:T12"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -191,6 +263,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-cached-mcp-revocation.json",
         "criterion_key": "BASE:T13"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -204,6 +282,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-concurrent-mcp-isolation.json",
         "criterion_key": "BASE:T14"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -217,6 +301,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-grouped-variant-permissions.json",
         "criterion_key": "BASE:T15"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -230,6 +320,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-execution-gates-review.json",
         "criterion_key": "BASE:T16"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -243,6 +339,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-multiple-spec-derivation.json",
         "criterion_key": "BASE:T17"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -256,6 +358,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-execution-gates-review.json",
         "criterion_key": "BASE:T18"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -269,6 +377,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-test-card-atomicity.json",
         "criterion_key": "BASE:T19"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -282,6 +396,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-test-card-surfaces.json",
         "criterion_key": "BASE:T20"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -295,6 +415,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-execution-gates-review.json",
         "criterion_key": "BASE:T21"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -308,6 +434,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-execution-gates-review.json",
         "criterion_key": "BASE:T22"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -321,6 +453,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-execution-gates-review.json",
         "criterion_key": "BASE:T23"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -334,6 +472,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-execution-gates-review.json",
         "criterion_key": "BASE:T24"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -347,6 +491,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-retirement-migration-review.json",
         "criterion_key": "BASE:T25"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -360,6 +510,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-retirement-migration-review.json",
         "criterion_key": "BASE:T26"
+      },
+      "clean_break_disposition": {
+        "status": "superado",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Upgrade de bases Sprint retirado.",
+        "qualification": "not_applicable"
       }
     },
     {
@@ -373,6 +529,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-retirement-migration-review.json",
         "criterion_key": "BASE:T27"
+      },
+      "clean_break_disposition": {
+        "status": "reescrito",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Resolver policies atuais de Spec/Board sem overrides ou proveniencia de Sprint; preservar autoridade e precedencia por campo.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -386,6 +548,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-retirement-migration-review.json",
         "criterion_key": "BASE:T28"
+      },
+      "clean_break_disposition": {
+        "status": "reescrito",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Grants removidos nao conferem autoridade; identidade e negacoes atuais preservadas, sem fixture de migracao.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -399,6 +567,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-retirement-final-replay-rollback.json",
         "criterion_key": "BASE:T29"
+      },
+      "clean_break_disposition": {
+        "status": "superado",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Reexecucao de migracao retirada.",
+        "qualification": "not_applicable"
       }
     },
     {
@@ -412,6 +586,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-retirement-final-replay-rollback.json",
         "criterion_key": "BASE:T30"
+      },
+      "clean_break_disposition": {
+        "status": "superado",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Cutover e rollback de migracao retirados; recuperacao nativa continua nos criterios funcionais.",
+        "qualification": "not_applicable"
       }
     },
     {
@@ -425,6 +605,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-retirement-migration-review.json",
         "criterion_key": "BASE:T31"
+      },
+      "clean_break_disposition": {
+        "status": "reescrito",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Integridade relacional atual e recusa de armazenamento incompativel sem escrita ou descarte; sem converter cardinalidade antiga.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -438,6 +624,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-retirement-mixed-projection.json",
         "criterion_key": "BASE:T32"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -451,6 +643,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-base-surfaces-execution.json",
         "criterion_key": "BASE:T33"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -464,6 +662,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-base-surfaces-execution.json",
         "criterion_key": "BASE:T34"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -477,6 +681,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-health-execution.json",
         "criterion_key": "BASE:T35"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -490,6 +700,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-health-execution.json",
         "criterion_key": "BASE:T36"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -503,6 +719,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-base-surfaces-execution.json",
         "criterion_key": "BASE:T37"
+      },
+      "clean_break_disposition": {
+        "status": "reescrito",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Navegacao e estado atuais validos; URL/estado removido descartado por fallback generico, sem requests Sprint nem conversao.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -516,6 +738,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-base-surfaces-execution.json",
         "criterion_key": "BASE:T38"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -529,6 +757,12 @@
       "reviewed_execution": {
         "artifact": "evidence-completion-authenticated.json",
         "criterion_key": "BASE:T39"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -542,6 +776,12 @@
       "reviewed_execution": {
         "artifact": "evidence-completion-authenticated.json",
         "criterion_key": "BASE:T40"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -555,6 +795,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-snapshot-currentness.json",
         "criterion_key": "BASE:T41"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -568,6 +814,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-snapshot-currentness.json",
         "criterion_key": "BASE:T42"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -577,7 +829,13 @@
       "id": "T43",
       "normative_text": "| T43 | Token benchmark com permissão ampla e sessões múltiplas | Ganho real capturado, gates equivalentes e payloads medidos integralmente. |",
       "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "test_text_references": [],
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
+      }
     },
     {
       "key": "BASE:T44",
@@ -590,6 +848,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-distribution-execution.json",
         "criterion_key": "BASE:T44"
+      },
+      "clean_break_disposition": {
+        "status": "reescrito",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Par Core/Community/frontend atual funciona; par ou armazenamento incompativel falha cedo, sem upgrade parcial.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -603,6 +867,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-historical-export.json",
         "criterion_key": "BASE:T45"
+      },
+      "clean_break_disposition": {
+        "status": "superado",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Import/export de historico de versoes anteriores retirado.",
+        "qualification": "not_applicable"
       }
     },
     {
@@ -616,6 +886,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-base-surfaces-execution.json",
         "criterion_key": "BASE:T46"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -758,6 +1034,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-k2-spec-parity.json",
         "criterion_key": "KG:KG-01"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -904,6 +1186,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-k2-spec-parity.json",
         "criterion_key": "KG:KG-02"
+      },
+      "clean_break_disposition": {
+        "status": "reescrito",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Identidade inequivoca dos criterios atuais e ambiguidade recusada; nenhuma conversao de AC textual antigo.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -1010,6 +1298,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-kg-reordered-identities.json",
         "criterion_key": "KG:KG-03"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -1023,6 +1317,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-card-child-projection.json",
         "criterion_key": "KG:KG-04"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -1036,6 +1336,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-card-child-projection.json",
         "criterion_key": "KG:KG-05"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -1045,7 +1351,13 @@
       "id": "KG-06",
       "normative_text": "| KG-06 | Fontes relacionais divergem | Divergência explícita e mesma autoridade do gate; união não fabrica cobertura aprovada. |",
       "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "test_text_references": [],
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
+      }
     },
     {
       "key": "KG:KG-07",
@@ -1058,6 +1370,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-card-dependency-projection.json",
         "criterion_key": "KG:KG-07"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -1071,6 +1389,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-card-dependency-projection.json",
         "criterion_key": "KG:KG-08"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -1084,6 +1408,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-bug-origin-proxy.json",
         "criterion_key": "KG:KG-09"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -1093,7 +1423,13 @@
       "id": "KG-10",
       "normative_text": "| KG-10 | Decision sem vínculos e com arestas antigas de coocorrência | Não emitir fan-out; retirar apenas coocorrência possuída; preservar história/proveniência. |",
       "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "test_text_references": [],
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
+      }
     },
     {
       "key": "KG:KG-11",
@@ -1102,7 +1438,13 @@
       "id": "KG-11",
       "normative_text": "| KG-11 | Superseder/reabrir/revisar Decision | Cadeia explícita, predecessor distinguível de atual e replay idempotente. |",
       "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "test_text_references": [],
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
+      }
     },
     {
       "key": "KG:KG-12",
@@ -1115,6 +1457,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-k2-spec-parity.json",
         "criterion_key": "KG:KG-12"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -1133,6 +1481,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-kg-chronology-execution.json",
         "criterion_key": "KG:KG-13"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -1151,6 +1505,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-kg-chronology-execution.json",
         "criterion_key": "KG:KG-14"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -1164,6 +1524,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-kg-child-chronology-execution.json",
         "criterion_key": "KG:KG-15"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -1177,6 +1543,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-k2-spec-parity.json",
         "criterion_key": "KG:KG-16"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -1190,6 +1562,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-k2-spec-parity.json",
         "criterion_key": "KG:KG-17"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -1203,6 +1581,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-k2-spec-parity.json",
         "criterion_key": "KG:KG-18"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -1212,7 +1596,13 @@
       "id": "KG-19",
       "normative_text": "| KG-19 | Crash depois de graph commit e antes de ACK | Replay converge sem duplicação e sem apagar relações novas. |",
       "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "test_text_references": [],
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
+      }
     },
     {
       "key": "KG:KG-20",
@@ -1221,7 +1611,13 @@
       "id": "KG-20",
       "normative_text": "| KG-20 | Evento antigo chega após revisão nova | Estado anterior não sobrescreve projeção mais recente. |",
       "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "test_text_references": [],
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
+      }
     },
     {
       "key": "KG:KG-21",
@@ -1230,7 +1626,13 @@
       "id": "KG-21",
       "normative_text": "| KG-21 | Remover último link/trocar Spec | Donos antigos e novos atualizados; sem resíduo na origem antiga. |",
       "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "test_text_references": [],
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
+      }
     },
     {
       "key": "KG:KG-22",
@@ -1243,6 +1645,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-bug-origin-proxy.json",
         "criterion_key": "KG:KG-22"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -1252,7 +1660,13 @@
       "id": "KG-23",
       "normative_text": "| KG-23 | Mudança de identidade/generation do endpoint | Consumidores convergem por identidade verificada, sem endpoint órfão ou placeholder. |",
       "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "test_text_references": [],
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
+      }
     },
     {
       "key": "KG:KG-24",
@@ -1265,6 +1679,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-k2-spec-parity.json",
         "criterion_key": "KG:KG-24"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -1274,7 +1694,13 @@
       "id": "KG-25",
       "normative_text": "| KG-25 | Census zero-órfão | Guard válido e conteúdo preservado; apagar nós ou inventar belongs_to não satisfaz. |",
       "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "test_text_references": [],
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
+      }
     },
     {
       "key": "KG:KG-26",
@@ -1283,7 +1709,13 @@
       "id": "KG-26",
       "normative_text": "| KG-26 | Endpoint válido aguarda projeção | Retry interno, sem pergunta ao usuário, task de manutenção ou gate de backlog. |",
       "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "test_text_references": [],
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
+      }
     },
     {
       "key": "KG:KG-27",
@@ -1292,7 +1724,13 @@
       "id": "KG-27",
       "normative_text": "| KG-27 | Dois destinos inválidos no mesmo campo/dono | Duas pendências distinguíveis, reavaliação idempotente e sem crescimento por replay. |",
       "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "test_text_references": [],
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
+      }
     },
     {
       "key": "KG:KG-28",
@@ -1301,7 +1739,13 @@
       "id": "KG-28",
       "normative_text": "| KG-28 | Missing-link semanticamente exigido, advisory versus blocking | Aviso ou bloqueio conforme policy atual; nenhum efeito de modo default indevido. |",
       "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "test_text_references": [],
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
+      }
     },
     {
       "key": "KG:KG-29",
@@ -1310,7 +1754,13 @@
       "id": "KG-29",
       "normative_text": "| KG-29 | Associação opcional ausente ou removida intencionalmente | Não criar pendência infinita; não reabrir item sem obrigação remanescente. |",
       "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "test_text_references": [],
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
+      }
     },
     {
       "key": "KG:KG-30",
@@ -1319,7 +1769,13 @@
       "id": "KG-30",
       "normative_text": "| KG-30 | Fallback interpretativo sem vínculo normativo | Navegação rotulada possível quando suportada; não satisfaz cobertura/entrega/gate. |",
       "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "test_text_references": [],
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
+      }
     },
     {
       "key": "KG:KG-31",
@@ -1328,7 +1784,13 @@
       "id": "KG-31",
       "normative_text": "| KG-31 | Tentativa de editar aresta/forjar `system:` por cliente | Recusa; sem rota genérica para repair ou escrita determinística privilegiada. |",
       "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "test_text_references": [],
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
+      }
     },
     {
       "key": "KG:KG-32",
@@ -1337,7 +1799,13 @@
       "id": "KG-32",
       "normative_text": "| KG-32 | Learning blocking com Bug ainda não canônico | Captura durável pode anteceder done; fechamento permitido só com provas/gates reais; materialização posterior sem ciclo. |",
       "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "test_text_references": [],
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
+      }
     },
     {
       "key": "KG:KG-33",
@@ -1346,7 +1814,13 @@
       "id": "KG-33",
       "normative_text": "| KG-33 | Learning advisory ausente | Bug pode concluir se outros gates passam; aviso não vira obrigação mecânica. |",
       "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "test_text_references": [],
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
+      }
     },
     {
       "key": "KG:KG-34",
@@ -1355,7 +1829,13 @@
       "id": "KG-34",
       "normative_text": "| KG-34 | Executor sem permissão cognitiva ou de avaliar | Operação composta não concede permissão nem ignora parte silenciosamente; fronteiras preservadas. |",
       "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "test_text_references": [],
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
+      }
     },
     {
       "key": "KG:KG-35",
@@ -1373,6 +1853,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-learning-fanin.json",
         "criterion_key": "KG:KG-35"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -1391,6 +1877,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-learning-fanin.json",
         "criterion_key": "KG:KG-36"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -1400,7 +1892,13 @@
       "id": "KG-37",
       "normative_text": "| KG-37 | Holds R7 técnicos e substantivos coexistem | Apenas causa técnica demonstrada é liberada automaticamente. |",
       "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "test_text_references": [],
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
+      }
     },
     {
       "key": "KG:KG-38",
@@ -1409,7 +1907,13 @@
       "id": "KG-38",
       "normative_text": "| KG-38 | Dívida histórica com/sem fonte original | Reconciliar a comprovada; sem fonte, registrar limitação sem inventar Learning retrospectiva. |",
       "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "test_text_references": [],
+      "clean_break_disposition": {
+        "status": "reescrito",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Divida/Learning produzidos na 0.4.0 preservam fonte e limites; nenhuma reconciliacao de divida historica importada.",
+        "qualification": "pending_current_pair_qualification"
+      }
     },
     {
       "key": "KG:KG-39",
@@ -1418,7 +1922,13 @@
       "id": "KG-39",
       "normative_text": "| KG-39 | Sem configuração de LLM no servidor | Fluxo de produto funciona; nenhum provider LLM é chamado/ativado ou health marca ausência como falha. |",
       "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "test_text_references": [],
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
+      }
     },
     {
       "key": "KG:KG-40",
@@ -1427,7 +1937,13 @@
       "id": "KG-40",
       "normative_text": "| KG-40 | Fila vazia, mas evento de projeção perdido | Resposta não prova completude por queue_depth=0; checkpoint detecta ou informa desconhecido. |",
       "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "test_text_references": [],
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
+      }
     },
     {
       "key": "KG:KG-41",
@@ -1436,7 +1952,13 @@
       "id": "KG-41",
       "normative_text": "| KG-41 | Anti-join sobre elemento nem sequer projetado | Inventário do escopo detecta incompletude; não afirmar sem cobertura como fato definitivo. |",
       "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "test_text_references": [],
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
+      }
     },
     {
       "key": "KG:KG-42",
@@ -1445,7 +1967,13 @@
       "id": "KG-42",
       "normative_text": "| KG-42 | Nova geração entre páginas | Cursor inválido ou snapshot preservado; sem mistura silenciosa de resultados. |",
       "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "test_text_references": [],
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
+      }
     },
     {
       "key": "KG:KG-43",
@@ -1458,6 +1986,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-query-consolidated-review.json",
         "criterion_key": "KG:KG-43"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -1471,6 +2005,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-query-consolidated-review.json",
         "criterion_key": "KG:KG-44"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -1484,6 +2024,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-query-consolidated-review.json",
         "criterion_key": "KG:KG-45"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -1493,7 +2039,13 @@
       "id": "KG-46",
       "normative_text": "| KG-46 | Credencial sem Code Traceability faz consulta agregada | Não vaza código, IDs, counts ou existência proibidos. |",
       "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "test_text_references": [],
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
+      }
     },
     {
       "key": "KG:KG-47",
@@ -1502,7 +2054,13 @@
       "id": "KG-47",
       "normative_text": "| KG-47 | `graph_layer=all` e acesso restrito | Todas as camadas autorizadas, não todos os boards ou fatos ocultos. |",
       "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "test_text_references": [],
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
+      }
     },
     {
       "key": "KG:KG-48",
@@ -1511,7 +2069,13 @@
       "id": "KG-48",
       "normative_text": "| KG-48 | Um agente com permissões suficientes | Pode usar todas as capacidades governadas sem segundo agente imposto. |",
       "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "test_text_references": [],
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
+      }
     },
     {
       "key": "KG:KG-49",
@@ -1520,7 +2084,13 @@
       "id": "KG-49",
       "normative_text": "| KG-49 | Vários agentes/sessões diferentes | Contexto suficiente, avaliação independente quando configurada, soma dos custos medida. |",
       "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "test_text_references": [],
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
+      }
     },
     {
       "key": "KG:KG-50",
@@ -1529,7 +2099,13 @@
       "id": "KG-50",
       "normative_text": "| KG-50 | Health repetido/refresh/UI aberta | Nenhum job, reparo, alteração semântica, score, schema, geração ou fila causado pela leitura. |",
       "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "test_text_references": [],
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
+      }
     },
     {
       "key": "KG:KG-51",
@@ -1538,7 +2114,13 @@
       "id": "KG-51",
       "normative_text": "| KG-51 | Chamadas antigas de manutenção via MCP/REST/UI/CLI | Ausentes ou tombstone sem execução; nenhum caminho alternativo. |",
       "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "test_text_references": [],
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
+      }
     },
     {
       "key": "KG:KG-52",
@@ -1547,7 +2129,13 @@
       "id": "KG-52",
       "normative_text": "| KG-52 | Fontes/queries/estado salvo com Sprint | Migração histórica preserva evidência; nenhum Sprint operacional reaparece; Q15 ajustado. |",
       "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "test_text_references": [],
+      "clean_break_disposition": {
+        "status": "reescrito",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Q15 e fontes/queries atuais sem Sprint; nenhum migrador de fonte ou estado salvo antigo.",
+        "qualification": "pending_current_pair_qualification"
+      }
     },
     {
       "key": "KG:KG-53",
@@ -1560,6 +2148,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-combined-upgrade-recovery.json",
         "criterion_key": "KG:KG-53"
+      },
+      "clean_break_disposition": {
+        "status": "superado",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Upgrade combinado e rollback de upgrade retirados; recuperacao da versao atual preservada.",
+        "qualification": "not_applicable"
       }
     },
     {
@@ -1569,7 +2163,13 @@
       "id": "KG-54",
       "normative_text": "| KG-54 | Schema alvo difere de outro 0.6.0 já existente | Conflito identificado; não sobrescrever fingerprint/versão em uso. |",
       "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "test_text_references": [],
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
+      }
     },
     {
       "key": "KG:KG-55",
@@ -1578,7 +2178,13 @@
       "id": "KG-55",
       "normative_text": "| KG-55 | UI vazio/atrasado/erro/sem permissão/troca de board | Estados corretos, sem stale response cruzada ou ação de manutenção. |",
       "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "test_text_references": [],
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
+      }
     },
     {
       "key": "KG:KG-56",
@@ -1587,7 +2193,13 @@
       "id": "KG-56",
       "normative_text": "| KG-56 | Fonte congelada com sugestão de vínculo | Não adotar normativamente via fallback; revisão/permissão de domínio mantidas. |",
       "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "test_text_references": [],
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
+      }
     },
     {
       "key": "KG:KG-57",
@@ -1600,6 +2212,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-decision-impact-public.json",
         "criterion_key": "KG:KG-57"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -1613,6 +2231,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-spec-coverage-public.json",
         "criterion_key": "KG:KG-58"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -1626,6 +2250,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-bug-clusters-public.json",
         "criterion_key": "KG:KG-59"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -1635,7 +2265,13 @@
       "id": "KG-60",
       "normative_text": "| KG-60 | Q12 com múltiplas atualizações/rebuild | Distinguir criação, última atualização e histórico; não inventar diff/as_of. |",
       "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "test_text_references": [],
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
+      }
     },
     {
       "key": "KG:KG-61",
@@ -1648,6 +2284,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-lineage-query-public.json",
         "criterion_key": "KG:KG-61"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -1661,6 +2303,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-lineage-query-public.json",
         "criterion_key": "KG:KG-62"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -1670,7 +2318,13 @@
       "id": "KG-63",
       "normative_text": "| KG-63 | Bug reaberto e ausência de histórico de incidentes | Duração nomeada corretamente; sem MTTR operacional fictício. |",
       "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "test_text_references": [],
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
+      }
     },
     {
       "key": "KG:KG-64",
@@ -1679,7 +2333,13 @@
       "id": "KG-64",
       "normative_text": "| KG-64 | Benchmark antes/depois com mesmos fatos/atores | Economia real sem reduzir dados, cobertura, prova ou permissões do cenário. |",
       "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "test_text_references": [],
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
+      }
     },
     {
       "key": "KG:KG-65",
@@ -1688,7 +2348,13 @@
       "id": "KG-65",
       "normative_text": "| KG-65 | Recursos, manifests e erros após pacote | Nenhuma URI/tool/remediação de manutenção ou Sprint removida é recomendada. |",
       "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "test_text_references": [],
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
+      }
     },
     {
       "key": "KG:KG-66",
@@ -1697,7 +2363,13 @@
       "id": "KG-66",
       "normative_text": "| KG-66 | Instalação de wheels/build frontend do par exato | Mesmo contrato e comportamento comprovados fora do dev server. |",
       "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "test_text_references": [],
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
+      }
     },
     {
       "key": "DEI:DEI-T01",
@@ -1710,6 +2382,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-progress-and-review-identities.json",
         "criterion_key": "DEI:DEI-T01"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -1723,6 +2401,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-progress-and-review-identities.json",
         "criterion_key": "DEI:DEI-T02"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -1736,6 +2420,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-dei-execution.json",
         "criterion_key": "DEI:DEI-T03"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -1745,7 +2435,13 @@
       "id": "DEI-T04",
       "normative_text": "| DEI-T04 | Executor sem permissão de criar Target | Relata fatos permitidos; não cria/altera Target implicitamente. |",
       "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "test_text_references": [],
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
+      }
     },
     {
       "key": "DEI:DEI-T05",
@@ -1754,7 +2450,13 @@
       "id": "DEI-T05",
       "normative_text": "| DEI-T05 | Testador sem permissão de implementation write | Registra teste no Test Card e associa provas autorizadas sem ganhar escrita no card de implementação. |",
       "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "test_text_references": [],
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
+      }
     },
     {
       "key": "DEI:DEI-T06",
@@ -1767,6 +2469,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-dei-execution.json",
         "criterion_key": "DEI:DEI-T06"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -1780,6 +2488,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-dei-execution.json",
         "criterion_key": "DEI:DEI-T07"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -1789,7 +2503,13 @@
       "id": "DEI-T08",
       "normative_text": "| DEI-T08 | Card muda de Spec ou edição durante append | Conflito detectado; nenhum registro associado à origem errada. |",
       "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "test_text_references": [],
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
+      }
     },
     {
       "key": "DEI:DEI-T09",
@@ -1802,6 +2522,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-dei-execution.json",
         "criterion_key": "DEI:DEI-T09"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -1815,6 +2541,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-dei-execution.json",
         "criterion_key": "DEI:DEI-T10"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -1828,6 +2560,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-dei-execution.json",
         "criterion_key": "DEI:DEI-T11"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -1841,6 +2579,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-dei-supplement-execution.json",
         "criterion_key": "DEI:DEI-T12"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -1854,6 +2598,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-dei-execution.json",
         "criterion_key": "DEI:DEI-T13"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -1867,6 +2617,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-dei-execution.json",
         "criterion_key": "DEI:DEI-T14"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -1880,6 +2636,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-dei-execution.json",
         "criterion_key": "DEI:DEI-T15"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -1893,6 +2655,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-dei-execution.json",
         "criterion_key": "DEI:DEI-T16"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -1906,6 +2674,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-dei-supplement-execution.json",
         "criterion_key": "DEI:DEI-T17"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -1919,6 +2693,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-dei-supplement-execution.json",
         "criterion_key": "DEI:DEI-T18"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -1932,6 +2712,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-dei-execution.json",
         "criterion_key": "DEI:DEI-T19"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -1945,6 +2731,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-dei-execution.json",
         "criterion_key": "DEI:DEI-T20"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -1958,6 +2750,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-dei-execution.json",
         "criterion_key": "DEI:DEI-T21"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -1971,6 +2769,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-dei-execution.json",
         "criterion_key": "DEI:DEI-T22"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -1984,6 +2788,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-dei-execution.json",
         "criterion_key": "DEI:DEI-T23"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -1997,6 +2807,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-dei-execution.json",
         "criterion_key": "DEI:DEI-T24"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -2015,6 +2831,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-dei-execution.json",
         "criterion_key": "DEI:DEI-T25"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -2028,6 +2850,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-dei-execution.json",
         "criterion_key": "DEI:DEI-T26"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -2041,6 +2869,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-dei-execution.json",
         "criterion_key": "DEI:DEI-T27"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -2054,6 +2888,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-dei-execution.json",
         "criterion_key": "DEI:DEI-T28"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -2067,6 +2907,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-dei-execution.json",
         "criterion_key": "DEI:DEI-T29"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -2080,6 +2926,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-dei-execution.json",
         "criterion_key": "DEI:DEI-T30"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -2089,7 +2941,13 @@
       "id": "DEI-T31",
       "normative_text": "| DEI-T31 | Cobertura conjunta por vários Test Cards | Pode cobrir o conjunto atual de implementações, sem exigir duplicação nem aceitar lacunas. |",
       "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "test_text_references": [],
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
+      }
     },
     {
       "key": "DEI:DEI-T32",
@@ -2098,7 +2956,13 @@
       "id": "DEI-T32",
       "normative_text": "| DEI-T32 | not_touched/superseded em Target | Disposição é preservada conforme contrato; não inventa código entregue para Delivery Evidence. |",
       "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "test_text_references": [],
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
+      }
     },
     {
       "key": "DEI:DEI-T33",
@@ -2111,6 +2975,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-dei-execution.json",
         "criterion_key": "DEI:DEI-T33"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -2124,6 +2994,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-dei-execution.json",
         "criterion_key": "DEI:DEI-T34"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -2137,6 +3013,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-dei-execution.json",
         "criterion_key": "DEI:DEI-T35"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -2150,6 +3032,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-dei-execution.json",
         "criterion_key": "DEI:DEI-T36"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -2163,6 +3051,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-dei-execution.json",
         "criterion_key": "DEI:DEI-T37"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -2176,6 +3070,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-dei-execution.json",
         "criterion_key": "DEI:DEI-T38"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -2189,6 +3089,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-dei-execution.json",
         "criterion_key": "DEI:DEI-T39"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -2202,6 +3108,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-dei-execution.json",
         "criterion_key": "DEI:DEI-T40"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -2215,6 +3127,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-dei-execution.json",
         "criterion_key": "DEI:DEI-T41"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -2228,6 +3146,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-dei-execution.json",
         "criterion_key": "DEI:DEI-T42"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -2241,6 +3165,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-dei-execution.json",
         "criterion_key": "DEI:DEI-T43"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -2250,7 +3180,13 @@
       "id": "DEI-T44",
       "normative_text": "| DEI-T44 | Checkout compartilhado e compatível | Resume snapshot fornece contexto suficiente até o último marco durável, sem reread integral obrigatório do histórico. |",
       "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "test_text_references": [],
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
+      }
     },
     {
       "key": "DEI:DEI-T45",
@@ -2263,6 +3199,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-dei-execution.json",
         "criterion_key": "DEI:DEI-T45"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -2276,6 +3218,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-dei-execution.json",
         "criterion_key": "DEI:DEI-T46"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -2289,6 +3237,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-dei-execution.json",
         "criterion_key": "DEI:DEI-T47"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -2302,6 +3256,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-dei-supplement-execution.json",
         "criterion_key": "DEI:DEI-T48"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -2311,7 +3271,13 @@
       "id": "DEI-T49",
       "normative_text": "| DEI-T49 | Impact delta conflita com receipt | Erro/achado ou reconciliação explícita; não prevalece silenciosamente um dos valores. |",
       "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "test_text_references": [],
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
+      }
     },
     {
       "key": "DEI:DEI-T50",
@@ -2320,7 +3286,13 @@
       "id": "DEI-T50",
       "normative_text": "| DEI-T50 | Impacto fora do plano | Fato pode ser registrado dentro da autoridade; desvio permanece visível e não é aprovado implicitamente. |",
       "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "test_text_references": [],
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
+      }
     },
     {
       "key": "DEI:DEI-T51",
@@ -2333,6 +3305,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-dei-execution.json",
         "criterion_key": "DEI:DEI-T51"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -2342,7 +3320,13 @@
       "id": "DEI-T52",
       "normative_text": "| DEI-T52 | Campo guideline_impact_evidence confundido com impacto de task | Famílias e critérios permanecem distintos; uma não satisfaz a outra. |",
       "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "test_text_references": [],
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
+      }
     },
     {
       "key": "DEI:DEI-T53",
@@ -2368,6 +3352,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-dei-supplement-execution.json",
         "criterion_key": "DEI:DEI-T53"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -2377,7 +3367,13 @@
       "id": "DEI-T54",
       "normative_text": "| DEI-T54 | Migração com registros nos dois ledgers e Test IDs vinculados | Mantém IDs/proveniência e vínculos corretos; nenhuma evidência duplica crédito. |",
       "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "test_text_references": [],
+      "clean_break_disposition": {
+        "status": "superado",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Migracao entre ledgers antigos retirada.",
+        "qualification": "not_applicable"
+      }
     },
     {
       "key": "DEI:DEI-T55",
@@ -2386,7 +3382,13 @@
       "id": "DEI-T55",
       "normative_text": "| DEI-T55 | Impacto histórico sem receipt técnico | Permanece claim legacy, não vira prova autenticada retroativa. |",
       "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "test_text_references": [],
+      "clean_break_disposition": {
+        "status": "superado",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Importacao de claims historicos retirada; claims atuais continuam distintos de prova.",
+        "qualification": "not_applicable"
+      }
     },
     {
       "key": "DEI:DEI-T56",
@@ -2399,6 +3401,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-dei-supplement-execution.json",
         "criterion_key": "DEI:DEI-T56"
+      },
+      "clean_break_disposition": {
+        "status": "superado",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Interpretacao compativel de registros antigos partial/complete retirada.",
+        "qualification": "not_applicable"
       }
     },
     {
@@ -2408,7 +3416,13 @@
       "id": "DEI-T57",
       "normative_text": "| DEI-T57 | Descrição/details muda em card fallback | Proteção semântica é caracterizada; alteração material não usa prova de outro escopo por coincidência do título. |",
       "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "test_text_references": [],
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
+      }
     },
     {
       "key": "DEI:DEI-T58",
@@ -2421,6 +3435,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-dei-supplement-execution.json",
         "criterion_key": "DEI:DEI-T58"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -2434,6 +3454,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-dei-execution.json",
         "criterion_key": "DEI:DEI-T59"
+      },
+      "clean_break_disposition": {
+        "status": "reescrito",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criacao limpa, reinicio da mesma versao, integridade e recusa de formato incompativel antes de escrita.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -2447,6 +3473,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-dei-execution.json",
         "criterion_key": "DEI:DEI-T60"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -2456,7 +3488,13 @@
       "id": "DEI-T61",
       "normative_text": "| DEI-T61 | Projeção de ImpactEvidenceTest.scenario_id migra de fonte | Relações card→cenário existentes não somem nem duplicam; active sets convergem. |",
       "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "test_text_references": [],
+      "clean_break_disposition": {
+        "status": "reescrito",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Projecao canonica Card para cenario e convergencia dos active sets nativos; sem migracao de fonte antiga.",
+        "qualification": "pending_current_pair_qualification"
+      }
     },
     {
       "key": "DEI:DEI-T62",
@@ -2469,6 +3507,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-dei-execution.json",
         "criterion_key": "DEI:DEI-T62"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -2482,6 +3526,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-dei-execution.json",
         "criterion_key": "DEI:DEI-T63"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -2495,6 +3545,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-dei-execution.json",
         "criterion_key": "DEI:DEI-T64"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -2508,6 +3564,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-architecture-execution.json",
         "criterion_key": "ARQVER:AC-ARQ-01"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -2517,7 +3579,13 @@
       "id": "AC-ARQ-02",
       "normative_text": "**AC-ARQ-02 — verifica RF-ARQ-02.** **Dado** Um Architecture Design válido em refinamento sem Spec derivada. **Quando** O autor conclui o trabalho de refinamento pelos mecanismos existentes. **Então** Não existe bloqueio novo de candidato/IR nem uma lista global de itens para aprovar; os demais controles continuam aplicados.",
       "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "test_text_references": [],
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
+      }
     },
     {
       "key": "ARQVER:AC-ARQ-03",
@@ -2530,6 +3598,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-architecture-execution.json",
         "criterion_key": "ARQVER:AC-ARQ-03"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -2543,6 +3617,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-architecture-execution.json",
         "criterion_key": "ARQVER:AC-ARQ-04"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -2561,6 +3641,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-architecture-execution.json",
         "criterion_key": "ARQVER:AC-ARQ-05"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -2574,6 +3660,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-architecture-execution.json",
         "criterion_key": "ARQVER:AC-ARQ-06"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -2592,6 +3684,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-architecture-execution.json",
         "criterion_key": "ARQVER:AC-ARQ-07"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -2605,6 +3703,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-architecture-execution.json",
         "criterion_key": "ARQVER:AC-ARQ-08"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -2618,6 +3722,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-architecture-delivery-boundaries.json",
         "criterion_key": "ARQVER:AC-ARQ-09"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -2631,6 +3741,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-architecture-delivery-boundaries.json",
         "criterion_key": "ARQVER:AC-ARQ-10"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -2644,6 +3760,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-architecture-delivery-boundaries.json",
         "criterion_key": "ARQVER:AC-ARQ-11"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -2657,6 +3779,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-architecture-execution.json",
         "criterion_key": "ARQVER:AC-ARQ-12"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -2670,6 +3798,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-architecture-execution.json",
         "criterion_key": "ARQVER:AC-ARQ-13"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -2683,6 +3817,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-architecture-source-withdrawal.json",
         "criterion_key": "ARQVER:AC-ARQ-14"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -2696,6 +3836,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-start-execution.json",
         "criterion_key": "ARQVER:AC-ARQ-15"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -2709,6 +3855,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-architecture-execution.json",
         "criterion_key": "ARQVER:AC-ARQ-16"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -2722,6 +3874,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-verification-start-execution.json",
         "criterion_key": "ARQVER:AC-VER-01"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -2735,6 +3893,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-verification-start-execution.json",
         "criterion_key": "ARQVER:AC-VER-02"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -2748,6 +3912,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-verification-start-execution.json",
         "criterion_key": "ARQVER:AC-VER-03"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -2761,6 +3931,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-verification-execution.json",
         "criterion_key": "ARQVER:AC-VER-04"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -2774,6 +3950,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-verification-start-execution.json",
         "criterion_key": "ARQVER:AC-VER-05"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -2787,6 +3969,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-verification-execution.json",
         "criterion_key": "ARQVER:AC-VER-06"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -2805,6 +3993,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-verification-start-execution.json",
         "criterion_key": "ARQVER:AC-VER-07"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -2818,6 +4012,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-verification-execution.json",
         "criterion_key": "ARQVER:AC-VER-08"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -2831,6 +4031,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-verification-execution.json",
         "criterion_key": "ARQVER:AC-VER-09"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -2844,6 +4050,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-verification-start-execution.json",
         "criterion_key": "ARQVER:AC-VER-10"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -2857,6 +4069,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-verification-start-execution.json",
         "criterion_key": "ARQVER:AC-VER-11"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -2870,6 +4088,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-profile-independence-and-or-authority.json",
         "criterion_key": "ARQVER:AC-VER-12"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -2883,6 +4107,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-verification-execution.json",
         "criterion_key": "ARQVER:AC-VER-13"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -2896,6 +4126,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-verification-execution.json",
         "criterion_key": "ARQVER:AC-VER-14"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -2909,6 +4145,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-verification-execution.json",
         "criterion_key": "ARQVER:AC-VER-15"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -2922,6 +4164,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-verification-execution.json",
         "criterion_key": "ARQVER:AC-VER-16"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -2935,6 +4183,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-profile-independence-and-or-authority.json",
         "criterion_key": "ARQVER:AC-VER-17"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -2948,6 +4202,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-verification-execution.json",
         "criterion_key": "ARQVER:AC-VER-18"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -2966,6 +4226,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-verification-execution.json",
         "criterion_key": "ARQVER:AC-INT-01"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -2979,6 +4245,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-verification-execution.json",
         "criterion_key": "ARQVER:AC-INT-02"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -2992,6 +4264,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-start-execution.json",
         "criterion_key": "ARQVER:AC-INT-03"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -3001,7 +4279,13 @@
       "id": "AC-INT-04",
       "normative_text": "**AC-INT-04 — verifica RF-INT-04.** **Dado** Uma identidade ampla e duas identidades com autoria/avaliação separadas. **Quando** A mesma iniciativa é operada nas duas configurações. **Então** O primeiro fluxo funciona quando a policy permite; o segundo respeita boundaries; uma identidade não aprova como outra nem contorna enforce por usar lote.",
       "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "test_text_references": [],
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
+      }
     },
     {
       "key": "ARQVER:AC-INT-05",
@@ -3010,7 +4294,13 @@
       "id": "AC-INT-05",
       "normative_text": "**AC-INT-05 — verifica RF-INT-05.** **Dado** Um agente abre candidatos e outro muda o contrato/IR antes do write. **Quando** O primeiro tenta promover ou iniciar. **Então** Há conflito ou resultado recalculado com decisão explícita, sem perda de atualização; a classificação anterior não cobre silenciosamente o novo contrato.",
       "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "test_text_references": [],
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
+      }
     },
     {
       "key": "ARQVER:AC-INT-06",
@@ -3019,7 +4309,13 @@
       "id": "AC-INT-06",
       "normative_text": "**AC-INT-06 — verifica RF-INT-06.** **Dado** Um ator health-only ou leitor restrito tenta obter contratos de outro escopo. **Quando** Ele consulta lista, busca reversa, erro, cache ou cursor antigo. **Então** O acesso não é ampliado e o conteúdo/contagem protegidos não vazam; nenhuma instrução contida no contrato é executada.",
       "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "test_text_references": [],
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
+      }
     },
     {
       "key": "ARQVER:AC-INT-07",
@@ -3028,7 +4324,13 @@
       "id": "AC-INT-07",
       "normative_text": "**AC-INT-07 — verifica RF-INT-07.** **Dado** Uma Spec com vários candidatos de contexto e requisitos com defaults adequados. **Quando** O autor resolve os itens conhecidos em lote e edita só as exceções. **Então** Não há aprovações duplicadas; o resumo mostra exatamente o que ficou pendente; o fluxo cabe nas superfícies existentes e funciona via MCP com a mesma autoridade.",
       "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "test_text_references": [],
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
+      }
     },
     {
       "key": "ARQVER:AC-INT-08",
@@ -3037,7 +4339,13 @@
       "id": "AC-INT-08",
       "normative_text": "**AC-INT-08 — verifica RF-INT-08.** **Dado** Um candidato muda de associação de IR e o KG está atrasado. **Quando** O contexto de planejamento/entrega é consultado. **Então** O relacional fornece a resposta atual; a projeção remove aresta obsoleta ao convergir; nenhuma tool de reparo ou polling é exigida para continuar.",
       "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "test_text_references": [],
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
+      }
     },
     {
       "key": "ARQVER:AC-INT-09",
@@ -3046,7 +4354,13 @@
       "id": "AC-INT-09",
       "normative_text": "**AC-INT-09 — verifica RF-INT-09.** **Dado** Uma base legada contém ACs em texto, BRs ligadas diretamente e Specs Done. **Quando** O upgrade é ensaiado em cópia. **Então** Histórico continua legível; relações inequívocas são migradas; ambíguas ficam explicitadas para revisão autorizada; não se apagam links legítimos nem convertem assinaturas antigas em aprovação das novas condições.",
       "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "test_text_references": [],
+      "clean_break_disposition": {
+        "status": "superado",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Upgrade de ACs textuais, links e assinaturas historicas retirado.",
+        "qualification": "not_applicable"
+      }
     },
     {
       "key": "ARQVER:AC-INT-10",
@@ -3055,7 +4369,13 @@
       "id": "AC-INT-10",
       "normative_text": "**AC-INT-10 — verifica RF-INT-10.** **Dado** Um cliente antigo envia campo ignorável e um cliente novo envia método desconhecido. **Quando** A aplicação instalada processa os pedidos. **Então** Compatibilidade não inventa a feature nova nem aceita método ignorado; os erros são explícitos; testes no pacote instalado confirmam o mesmo comportamento do checkout.",
       "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "test_text_references": [],
+      "clean_break_disposition": {
+        "status": "reescrito",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Campos removidos e metodos desconhecidos recusados explicitamente; paridade checkout/pacote sem adaptacao do cliente antigo.",
+        "qualification": "pending_current_pair_qualification"
+      }
     },
     {
       "key": "ARQVER:AC-INT-11",
@@ -3064,7 +4384,13 @@
       "id": "AC-INT-11",
       "normative_text": "**AC-INT-11 — verifica RF-INT-11.** **Dado** Uma OR exige observar saúde de um serviço e uma operação fica pendente. **Quando** O agente consulta os caminhos de remediação. **Então** O Pulse aponta a ação de domínio/autorização apropriada; não oferece repair/rebuild nem inicia agente; health continua read-only.",
       "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "test_text_references": [],
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
+      }
     },
     {
       "key": "ARQVER:AC-INT-12",
@@ -3073,7 +4399,13 @@
       "id": "AC-INT-12",
       "normative_text": "**AC-INT-12 — verifica RF-INT-12.** **Dado** Uma iniciativa com uma Spec simples, outra com muitos candidatos e dois agentes em sessões distintas. **Quando** Os fluxos equivalentes são executados e medidos. **Então** O relatório separa tokens/calls novos e evitados, filtros por permissão e resultados corretos; não usa menos links ou ocultação de ferramentas como única prova de simplificação.",
       "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "test_text_references": [],
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
+      }
     },
     {
       "key": "ARQVER:ADV-01",
@@ -3086,6 +4418,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-architecture-execution.json",
         "criterion_key": "ARQVER:ADV-01"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -3099,6 +4437,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-architecture-execution.json",
         "criterion_key": "ARQVER:ADV-02"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -3117,6 +4461,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-start-execution.json",
         "criterion_key": "ARQVER:ADV-03"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -3130,6 +4480,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-architecture-execution.json",
         "criterion_key": "ARQVER:ADV-04"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -3143,6 +4499,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-architecture-execution.json",
         "criterion_key": "ARQVER:ADV-05"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -3156,6 +4518,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-architecture-execution.json",
         "criterion_key": "ARQVER:ADV-06"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -3169,6 +4537,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-architecture-execution.json",
         "criterion_key": "ARQVER:ADV-07"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -3182,6 +4556,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-architecture-execution.json",
         "criterion_key": "ARQVER:ADV-08"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -3195,6 +4575,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-ir-disposition-authority.json",
         "criterion_key": "ARQVER:ADV-09"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -3208,6 +4594,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-inheritance-diamond.json",
         "criterion_key": "ARQVER:ADV-10"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -3226,6 +4618,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-three-criteria.json",
         "criterion_key": "ARQVER:ADV-11"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -3239,6 +4637,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-verification-execution.json",
         "criterion_key": "ARQVER:ADV-12"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -3252,6 +4656,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-post-run-requirement-link.json",
         "criterion_key": "ARQVER:ADV-13"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -3265,6 +4675,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-test-card-removal.json",
         "criterion_key": "ARQVER:ADV-14"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -3278,6 +4694,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-ir-implementer-cancellation.json",
         "criterion_key": "ARQVER:ADV-15"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -3291,6 +4713,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-contract-observation-dimensions.json",
         "criterion_key": "ARQVER:ADV-16"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -3304,6 +4732,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-inflight-review-policy.json",
         "criterion_key": "ARQVER:ADV-17"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -3317,6 +4751,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-independent-review-legacy-read.json",
         "criterion_key": "ARQVER:ADV-18"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -3330,6 +4770,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-architecture-execution.json",
         "criterion_key": "ARQVER:ADV-19"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -3343,6 +4789,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-combined-upgrade-recovery.json",
         "criterion_key": "ARQVER:ADV-20"
+      },
+      "clean_break_disposition": {
+        "status": "superado",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Upgrade parcial e rollback desse upgrade retirados.",
+        "qualification": "not_applicable"
       }
     },
     {
@@ -3352,7 +4804,13 @@
       "id": "ADV-21",
       "normative_text": "| ADV-21 | Grafo retorna sem relação antiga removida, mas relacional novo já está íntegro. | Gate usa fonte autoritativa; projeção corrige active set sem operação do agente. |",
       "review_status": "not_audited_in_this_inventory",
-      "test_text_references": []
+      "test_text_references": [],
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
+      }
     },
     {
       "key": "ARQVER:ADV-22",
@@ -3365,6 +4823,12 @@
       "reviewed_execution": {
         "artifact": "acceptance-independent-review-legacy-read.json",
         "criterion_key": "ARQVER:ADV-22"
+      },
+      "clean_break_disposition": {
+        "status": "superado",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Leitura especial de Done anterior sem metadados retirada.",
+        "qualification": "not_applicable"
       }
     },
     {
@@ -3378,6 +4842,12 @@
       "reviewed_execution": {
         "artifact": "benchmark-delivery-comparison.json",
         "criterion_key": "ARQVER:ADV-23"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     },
     {
@@ -3391,7 +4861,23 @@
       "reviewed_execution": {
         "artifact": "acceptance-architecture-delivery-boundaries.json",
         "criterion_key": "ARQVER:ADV-24"
+      },
+      "clean_break_disposition": {
+        "status": "mantido",
+        "basis": "CLEAN_BREAK_040_REASSESSMENT.md: Disposicao dos criterios e sequencia C1-C4",
+        "obligation": "Criterio funcional original mantido para objetos nativos 0.4.0; historico, replay, governanca e recuperacao atuais preservados.",
+        "qualification": "pending_current_pair_qualification"
       }
     }
-  ]
+  ],
+  "clean_break_review": {
+    "applied_on": "2026-10-06",
+    "authority": "CLEAN_BREAK_040_REASSESSMENT.md e autorizacao de instalacao nova com contrato unico",
+    "historical_execution": "review_status e reviewed_execution preservam evidencias anteriores; nao certificam o par final 0.4.0.",
+    "qualification": "A disposicao de escopo nao e resultado de teste. Criterios aplicaveis aguardam reconciliacao das evidencias com o par final.",
+    "pending_authority": [
+      "BASE:T23",
+      "KG:KG-10"
+    ]
+  }
 }

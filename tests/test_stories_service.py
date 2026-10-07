@@ -916,7 +916,7 @@ async def test_story_rest_and_mcp_workflow_keeps_standalone_ideation(db_factory)
     from okto_pulse.community.api.router import api_router
 
     paths = _route_paths(api_router.routes)
-    assert any(path.endswith("/boards/{board_id}/stories/convert") for path in paths)
+    assert not any(path.endswith("/boards/{board_id}/stories/convert") for path in paths)
     assert any(path.endswith("/boards/{board_id}/stories/convert-to-ideation") for path in paths)
     assert any(path.endswith("/ideations/{ideation_id}/stories") for path in paths)
 

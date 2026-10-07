@@ -2316,6 +2316,11 @@
     {
       "path": "okto_labs_pulse_community/frontend/src/components/guided-help/__tests__/telemetry.test.ts",
       "reason": "Migration toast and local_only send removed. Current On/Off, permissions and payload privacy preserved; unknown/retired mode cannot transmit and summary read never writes consent."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_r01a_stories_uow.py and tests/test_stories_service.py",
+      "disposition": "adapted",
+      "reason": "Story to Ideation remains a native domain operation at convert-to-ideation. Removed duplicate convert route; negative HTTP test proves 404 without invoking the writer. Canonical creation, missing Board and permission tests retained."
     }
   ],
   "removed_cases": [

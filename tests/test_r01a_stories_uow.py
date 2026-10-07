@@ -617,10 +617,26 @@ async def test_convert_stories_creates_ideation(client) -> None:
 @pytest.mark.asyncio
 async def test_convert_stories_missing_board_404(client) -> None:
     resp = client.post(
-        f"{PREFIX}/boards/{_missing()}/stories/convert", json={"story_ids": [_missing()]}
+        f"{PREFIX}/boards/{_missing()}/stories/convert-to-ideation", json={"story_ids": [_missing()]}
     )
     assert resp.status_code == 404
     assert resp.json()["detail"] == "Board not found"
+
+
+@pytest.mark.asyncio
+async def test_removed_conversion_alias_never_calls_writer(client) -> None:
+    from okto_pulse.core.application.use_cases.stories_crud import ConvertStoriesUseCase
+
+    bid = await _seed_board()
+    tid = await _seed_topic(bid)
+    sid = await _seed_story(bid, tid, status="ready")
+    writer = AsyncMock(side_effect=AssertionError("removed route must not execute"))
+    with patch.object(ConvertStoriesUseCase, "execute", writer):
+        response = client.post(
+            f"{PREFIX}/boards/{bid}/stories/convert", json={"story_ids": [sid]}
+        )
+    assert response.status_code == 404
+    writer.assert_not_awaited()
 
 
 # --- use case + AST ---------------------------------------------------------

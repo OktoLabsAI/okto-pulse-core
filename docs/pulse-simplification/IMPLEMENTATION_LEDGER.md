@@ -2,6 +2,40 @@
 
 ## Estado para retomada
 
+### 2026-10-06 — C3 Story com rota unica; disposicao finita do aceite C4
+
+Bases Core b4a26fd1 / Community afb4d281, limpas e publicadas.
+Retirado somente POST /boards/{board_id}/stories/convert; o frontend e
+o fluxo nativo continuam em convert-to-ideation. Story -> Ideation e operacao
+de dominio atual, nao conversao de base antiga. Novo negativo REST comprova
+404 sem executar o use case; testes de criacao, Board ausente e autoridade
+continuam pela rota canonica. Teste frontend verifica a chamada real do client.
+
+Par dist-native-story-route1 construido/instalado; provenance-native-story-route1
+comprova bytes src/install/wheels Core 843 Python/905 payload e Community
+319/405. Core1: 45 aprovados. Front1: 16 aprovados. Nenhum codigo frontend
+de produto alterado; assets existentes preservados. Closure-native-story-route1:
+ok=true, findings/documentation_findings vazios, oito budgets current=limit=0.
+Ruff F/E9/diff aprovados. Todos os handles encerrados.
+
+C4 item 1: acceptance-inventory.json agora explicita a disposicao autorizada
+de TODOS os 246 criterios: 224 mantidos, 11 reescritos, 11 superados.
+Cada reescrito declara a obrigacao final. Disposicao nao e teste aprovado:
+235 aplicaveis aguardam reconciliacao/qualificacao do par final; os 11 superados
+sao not_applicable. Textos normativos e evidencias historicas preservados,
+com igualdade estrutural conferida contra HEAD apos retirar somente os campos
+novos. Nenhum criterio funcional novo acrescentado.
+
+Classificacao da proxima superficie: architecture_propagation_legacy nao
+converte bases. O reader lista Designs copiados com source_design_id e o
+servico consulta elegibilidade atual da fonte; isso tambem ocorre com
+snapshots nativos da 0.4.0. Preservar essa responsabilidade readonly e seus
+grants. Nao excluir por nome nem inventar outro gate. Nomenclatura antiga
+ainda presente na porta/adapter/tool/rota/campo, consumidores mapeados.
+C1-C4 continuam abertos; T23/KG-10 ainda aguardam decisoes especificas.
+A autorizacao Checklist foi conferida na secao ja implementada; nao reaplicada.
+Bump coordenado e qualificacao integral seguem pendentes.
+
 ### 2026-10-06 — C3 em andamento: linhagem com raiz unica
 Publicado: Core 8c3ff671 / Community afb4d281, pushes confirmados.
 Bases Core 467e7fc6 / Community ee011cee.
