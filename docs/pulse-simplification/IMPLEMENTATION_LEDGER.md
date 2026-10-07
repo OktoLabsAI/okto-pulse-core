@@ -2,6 +2,33 @@
 
 ## Estado para retomada
 
+### 2026-10-07 — C4 T10 fechado com ciclo real de retrabalho
+Core d5b20b2a/Community5b54640b publicados. Community18 handle29359 terminou1:
+374pass/15fail/1error/459.09s,563 módulos excluídos, par main24.
+Falhas em tombstone fence, selector resource gate, verification report admission e
+verification start transition; preservar XML/log e investigar antes de qualificar.
+Nenhum processo de testes permanece ativo neste checkpoint.
+Isolados sincronizados por FF. Novo par dist-native-next24 build/install0,
+prova48162 terminou0:843/905+316/402 byte-idênticos. CoreSHA
+d33c2e86864f620234fcb3d33c46722b0e179235a503fded07925b01fb99766f;
+CommunitySHA25bed2fa85191aa4c5877f07839b07de810811e98349be36880d695b452b3f3c.
+
+acceptance-native-reopen-current1 handle27392 terminou0:6pass/23.78s.
+Handoff recebeu complemento T10: reviewer sem grant não pode abrir retrabalho;
+executor autorizado move Rejected→In Progress, nova conclusão seleciona prova
+existente, e revisor independente aprova a nova versão. Primeiro parecer,
+rejeição histórica, prefixo de conclusões e recibos permanecem iguais.
+acceptance-native-rework-current1 handle82522 terminou0:4pass/28.33s
+(duas variantes reject percorrem ciclo; duas approve preservam T04).
+Recibo clean-break-acceptance-native-rework.json promove apenas T10.
+Sem mudança produtiva; teste verifica lifecycle, não nova implementação externa.
+
+PostgreSQL: DSN não configurado, psql/pg_ctl ausentes, Docker CLI disponível mas
+daemon Linux indisponível (pipe inexistente). Teste é opt-in/SaaS isolation;
+Community runtime continua SQLite-only. Não foi iniciado container nem serviço.
+Manter prova explicitamente não qualificada até decidir execução do ambiente.
+E2E instalado/restante C4/T23/KG-10 pendentes. Isolado sem processos ativos.
+
 ### 2026-10-07 — Community17 fechado; replay não interpreta mais recibo antigo
 Core82604df5 publicado e main sincronizado. Community17 handle74678 terminou1:
 208pass/18fail/2errors/1skip/173.31s. Cinco módulos falhos: health, antigo import/

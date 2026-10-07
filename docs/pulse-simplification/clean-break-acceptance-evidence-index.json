@@ -781,7 +781,12 @@
           ]
         }
       ],
-      "current_qualification": "pending_current_pair_review"
+      "current_qualification": "verified_current_pair_review",
+      "current_review": {
+        "artifact": "clean-break-acceptance-native-rework.json",
+        "criterion_key": "BASE:T10",
+        "proof_pair": "dist-native-next24"
+      }
     },
     {
       "key": "BASE:T11",
