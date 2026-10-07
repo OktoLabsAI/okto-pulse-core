@@ -2,6 +2,54 @@
 
 ## Estado para retomada
 
+### 2026-10-07 — KG33 comprovado com gates e schema reais
+Closeout9 (51802) terminal0:10pass/18.14s. Produto main64 inalterado,
+byte-idêntico na prova provenance-native-learning-closeout1 anterior aos testes.
+Novo test_native_learning_closeout usa schema oficial, triggers, engine Community
+e listener PRAGMA por conexão, foreign_keys=1 afirmado. Gates de CardService,
+Delivery, policy e cognição reais, sem independent_gates.
+Advisory sem Learning conclui com contribuição completa; sem Delivery recusa.
+Blocking sem captura recusa mesmo com dispensa cognitiva. Casos repetidos com
+skip_cognitive_consolidation false/true. Sessão nova confirma estado/conclusão e
+manifesto exato, sem inventar Learning binding.
+Captura composta blocking+Delivery completa conclui atomicamente com cognição
+habilitada. Falta de Delivery, cenário não autenticado e permissão cognitiva
+negada não deixam relatório, captura, binding ou outbox parcial após commit externo.
+Critério KG33 qualificado; índice69 verificadas/166 pendentes/11 superadas.
+KG32 ainda exige materialização posterior no MESMO fluxo; KG34 requer completar
+a prova de autoridade do avaliador. Não promovidos por esta prova parcial.
+Falhas preservadas: closeout1 request consumido/expirado; closeout4 6 recusas
+do assert foreign_keys por listener não instalado (10 regressões ordinárias
+passaram); closeout6 constructor ActorContext errado; closeout7 versão da prova
+anterior à edição da fixture. Corrigidos preparação/fixtures, não produto/gates.
+Closeout5 6pass; closeout8 7pass; closeout9 cobre os10 finais. Sem processos ativos.
+Recibo clean-break-native-learning-closeout.json registra escopo, hashes e limites:
+code observation/execution são inputs controlados; require_task_validation=false
+e impact_evidence_mode=off são policies explícitas. Não equivale a execução de
+repositório externo nem a matriz inteira de configuração.
+Sem frontend/assets/metadata de produto alterados. Closure64 e oito budgets ZERO
+continuam a evidência do mesmo produto; não apresentados como nova execução.
+Próximo: ampliar o fluxo nativo para captura antes de Done/materialização KG32 e
+permissões de avaliação KG34. Decisões KG10/KG28/T23 continuam pendentes.
+
+### 2026-10-07 — prova nativa de fechamento Learning iniciada
+Turno anterior progresso publicado, par confirmado limpo/sincronizado:
+Coree7043897/Communityb3d3ee1c. Produto main64 inalterado; nova prova
+provenance-native-learning-closeout1.json terminou0 antes dos testes.
+Novo test_native_learning_closeout.py usa fixture Delivery com opção native_bug:
+schema oficial com triggers, Card Bug e gates reais, sem independent_gates.
+Primeiro alvo: advisory com implementação completa, advisory sem prova e
+blocking sem captura, antes de acrescentar captura/materialização para KG32.
+Primeira execução closeout1 (33034) terminal1:3 erros no preparo, nenhum gate
+executado. Fixture antiga inseria CodeInvestigationReceipt com request já
+consumed e data expirada (code_investigation_receipt_request_invalid).
+Para native_bug, fixture agora usa tempo atual e adapter real
+create_request + consume_request_append_receipt_and_advance_head, preservando
+guard e causalidade. Sem relaxamento de storage. Caminho histórico de outros
+testes não foi declarado prova nativa.
+Closeout2 handle64889 ativo. Nenhum produto/asset alterado; sem rebuild necessário.
+Ainda não há novo critério qualificado, recibo ou commit neste recorte.
+
 ### 2026-10-07 — Learning atual validado; KG35 qualificado
 Publicação confirmada: Core8ba2fdc7/Communityb3d3ee1c; ambos pushes
 origin/feature/v0.4.0 terminais0. Nenhum teste ativo.
