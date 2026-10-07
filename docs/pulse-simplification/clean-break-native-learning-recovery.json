@@ -1,0 +1,183 @@
+{
+  "criteria": [
+    "KG:KG-36",
+    "KG:KG-37"
+  ],
+  "base_pair": {
+    "core": "3d02c0b1",
+    "community": "8eb919fa"
+  },
+  "product_build": "dist-native-main64",
+  "product_changed": false,
+  "provenance": {
+    "checked_at": "2026-10-07T23:21:14.126190+00:00",
+    "python": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Scripts\\python.exe",
+    "packages": {
+      "core": {
+        "python_files": 837,
+        "origin": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages\\okto_pulse\\core\\__init__.py",
+        "repository_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_core",
+        "commit": "3d02c0b1018f208c929b542e1bbd51d23b02ae7f",
+        "dirty": false,
+        "dirty_entry_count": 0,
+        "distribution": "okto-pulse-core",
+        "version": "0.4.0",
+        "wheel": {
+          "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\dist-native-main64\\okto_pulse_core-0.4.0-py3-none-any.whl",
+          "sha256": "cced1bc708720c219d35b3b6143c944c60103433ded5b8efd4a2904ecab905d4",
+          "size": 3591258
+        },
+        "source_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_core\\src",
+        "site_packages_root": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages",
+        "package_prefix": "okto_pulse/core/",
+        "byte_identical_member_count": 898,
+        "byte_identical": true,
+        "aggregate_sha256": "c32da98d66db008726351f877f09c88a97a13a3c79caf7cd0547043f854bfed3",
+        "chain_hashes": {
+          "source": "c32da98d66db008726351f877f09c88a97a13a3c79caf7cd0547043f854bfed3",
+          "wheel": "c32da98d66db008726351f877f09c88a97a13a3c79caf7cd0547043f854bfed3",
+          "site_packages": "c32da98d66db008726351f877f09c88a97a13a3c79caf7cd0547043f854bfed3"
+        },
+        "critical_resource_sha256": {
+          "okto_pulse/core/mcp/resources/ska_resource_manifest.json": "4f6360d46eab0f9c8931d3fb5e8a50e0c04b0e6f3b164619a55ac381917ba34d",
+          "okto_pulse/core/mcp/resources/ska_tool_manifest.json": "3d3ecc80ab6b699b2021eddcf02b72bf48eddd06bf34dcf245f2b00fcc69b433"
+        },
+        "mismatches": []
+      },
+      "community": {
+        "python_files": 317,
+        "origin": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages\\okto_pulse\\community\\__init__.py",
+        "repository_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_community",
+        "commit": "8eb919fab34f8af8eb1db0a4d822c917e796c849",
+        "dirty": false,
+        "dirty_entry_count": 0,
+        "distribution": "okto-pulse",
+        "version": "0.4.0",
+        "wheel": {
+          "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\dist-native-main64\\okto_pulse-0.4.0-py3-none-any.whl",
+          "sha256": "699d577f656357f70f175c5393832ae62a03aafa40dac62613208eb2295ebac3",
+          "size": 4072770
+        },
+        "source_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_community\\src",
+        "site_packages_root": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages",
+        "package_prefix": "okto_pulse/community/",
+        "byte_identical_member_count": 403,
+        "byte_identical": true,
+        "aggregate_sha256": "2e507cacc375add721a36d1994a085e416acf36184ea5ec74247ff21ef6a6dc5",
+        "chain_hashes": {
+          "source": "2e507cacc375add721a36d1994a085e416acf36184ea5ec74247ff21ef6a6dc5",
+          "wheel": "2e507cacc375add721a36d1994a085e416acf36184ea5ec74247ff21ef6a6dc5",
+          "site_packages": "2e507cacc375add721a36d1994a085e416acf36184ea5ec74247ff21ef6a6dc5"
+        },
+        "critical_resource_sha256": {},
+        "mismatches": []
+      }
+    }
+  },
+  "campaigns": [
+    {
+      "name": "acceptance-native-learning-recovery-core1",
+      "sha256": "3b150136fe8778254bbc4795552e40acd54195936940bac65af5cec2f888a757",
+      "passed_count": 40,
+      "passed": [
+        "tests.test_learning_partition_reconciliation_scope::test_partition_reconciliation_preserves_mixed_restrictions[reconcile-target]",
+        "tests.test_learning_partition_reconciliation_scope::test_partition_reconciliation_preserves_mixed_restrictions[reconcile-reason]",
+        "tests.test_learning_partition_reconciliation_scope::test_partition_reconciliation_preserves_mixed_restrictions[reconcile-blocked]",
+        "tests.test_learning_partition_reconciliation_scope::test_partition_reconciliation_preserves_mixed_restrictions[reconcile-dlq]",
+        "tests.test_learning_partition_reconciliation_scope::test_partition_reconciliation_preserves_mixed_restrictions[detect-target]",
+        "tests.test_learning_partition_reconciliation_scope::test_partition_reconciliation_preserves_mixed_restrictions[detect-reason]",
+        "tests.test_learning_partition_reconciliation_scope::test_partition_reconciliation_preserves_mixed_restrictions[detect-blocked]",
+        "tests.test_learning_partition_reconciliation_scope::test_partition_reconciliation_preserves_mixed_restrictions[detect-dlq]",
+        "tests.test_learning_partition_reconciliation_scope::test_partition_requires_matching_current_evidence[wrong_origin]",
+        "tests.test_learning_partition_reconciliation_scope::test_partition_requires_matching_current_evidence[superseded_bug]",
+        "tests.test_learning_partition_reconciliation_scope::test_partition_requires_matching_current_evidence[superseded_learning]",
+        "tests.test_learning_partition_reconciliation_scope::test_partition_requires_matching_current_evidence[working_bug]",
+        "tests.test_learning_partition_reconciliation_scope::test_partition_requires_matching_current_evidence[missing_version]",
+        "tests.test_learning_scoped_supersedence_contract::test_current_request_always_serializes_explicit_scope[create]",
+        "tests.test_learning_scoped_supersedence_contract::test_current_request_always_serializes_explicit_scope[reuse]",
+        "tests.test_learning_scoped_supersedence_contract::test_current_request_always_serializes_explicit_scope[supersede]",
+        "tests.test_learning_scoped_supersedence_contract::test_current_create_refuses_incompatible_payload_without_conversion[old_format]",
+        "tests.test_learning_scoped_supersedence_contract::test_current_create_refuses_incompatible_payload_without_conversion[missing_scope]",
+        "tests.test_learning_scoped_supersedence_contract::test_v2_explicit_source_bug_scope_is_durable_but_not_a_literal_projection",
+        "tests.test_learning_scoped_supersedence_contract::test_scope_cannot_be_inferred_broadened_or_added_to_old_format[v1_scope]",
+        "tests.test_learning_scoped_supersedence_contract::test_scope_cannot_be_inferred_broadened_or_added_to_old_format[missing_scope]",
+        "tests.test_learning_scoped_supersedence_contract::test_scope_cannot_be_inferred_broadened_or_added_to_old_format[global]",
+        "tests.test_learning_scoped_supersedence_contract::test_scope_cannot_be_inferred_broadened_or_added_to_old_format[unknown_bug]",
+        "tests.test_learning_scoped_supersedence_contract::test_scope_cannot_be_inferred_broadened_or_added_to_old_format[reuse]",
+        "tests.test_learning_scoped_supersedence_contract::test_scope_cannot_be_inferred_broadened_or_added_to_old_format[extra]",
+        "tests.test_learning_scoped_supersedence_contract::test_other_intents_do_not_acquire_replacement_scope[create]",
+        "tests.test_learning_scoped_supersedence_contract::test_other_intents_do_not_acquire_replacement_scope[reuse]",
+        "tests.test_learning_scoped_supersedence_contract::test_capture_source_reference_round_trip_is_exact[node-0]",
+        "tests.test_learning_scoped_supersedence_contract::test_capture_source_reference_round_trip_is_exact[node:opaque/% \\xe7-7]",
+        "tests.test_learning_scoped_supersedence_contract::test_malformed_reserved_source_reference_fails_closed[node:01:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa]",
+        "tests.test_learning_scoped_supersedence_contract::test_malformed_reserved_source_reference_fails_closed[node:-1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa]",
+        "tests.test_learning_scoped_supersedence_contract::test_malformed_reserved_source_reference_fails_closed[node:true:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa]",
+        "tests.test_learning_scoped_supersedence_contract::test_malformed_reserved_source_reference_fails_closed[node:0:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA]",
+        "tests.test_learning_scoped_supersedence_contract::test_malformed_reserved_source_reference_fails_closed[%ZZ:0:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa]",
+        "tests.test_learning_scoped_supersedence_contract::test_malformed_reserved_source_reference_fails_closed[:0:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa]",
+        "tests.test_learning_scoped_supersedence_contract::test_malformed_reserved_source_reference_fails_closed[node:0:short]",
+        "tests.test_learning_scoped_supersedence_contract::test_malformed_reserved_source_reference_fails_closed[node:0:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:extra]",
+        "tests.test_learning_scoped_supersedence_contract::test_unknown_reference_version_is_not_reinterpreted_as_legacy_evidence",
+        "tests.test_learning_scoped_supersedence_contract::test_scoped_syntax_without_qualified_target_cannot_enter_commit",
+        "tests.test_learning_scoped_supersedence_contract::test_unscoped_supersede_is_refused_without_conversion"
+      ]
+    },
+    {
+      "name": "acceptance-native-learning-recovery-community1",
+      "sha256": "9870ca9b7b7a110358b073142f8be518f0ac2684df5b473ab41bfc14783c72b6",
+      "passed_count": 24,
+      "passed": [
+        "tests.test_learning_scoped_materialization::test_scoped_commit_preserves_other_origin_and_replays_joint_history",
+        "tests.test_learning_scoped_materialization::test_worker_restores_missing_nodes_without_recreating_replaced_origin",
+        "tests.test_learning_scoped_materialization::test_joint_append_failure_compensates_successor_and_restores_old_association",
+        "tests.test_learning_scoped_materialization::test_target_change_after_capture_cannot_be_overwritten[source_revision]",
+        "tests.test_learning_scoped_materialization::test_target_change_after_capture_cannot_be_overwritten[graph_curation]",
+        "tests.test_learning_scoped_materialization::test_late_relational_commit_failure_rolls_back_both_heads_and_graph",
+        "tests.test_learning_scoped_replay::test_replay_and_recovery_preserve_later_target_reuse_and_claim_history",
+        "tests.test_learning_supersedence_scope::test_scoped_capture_preserves_native_history_and_does_not_mutate_target",
+        "tests.test_learning_supersedence_scope::test_generic_supersedence_hides_all_origins_and_is_not_a_scoped_replacement",
+        "tests.test_r7_hold_preservation::test_technical_hold_does_not_replace_existing_substantive_or_terminal_state[pending]",
+        "tests.test_r7_hold_preservation::test_technical_hold_does_not_replace_existing_substantive_or_terminal_state[in_progress]",
+        "tests.test_r7_hold_preservation::test_technical_hold_does_not_replace_existing_substantive_or_terminal_state[skipped]",
+        "tests.test_r7_hold_preservation::test_technical_hold_does_not_replace_existing_substantive_or_terminal_state[consolidated]",
+        "tests.test_r7_hold_preservation::test_fresh_technical_hold_is_atomic_and_replay_preserves_the_original_session",
+        "tests.test_r7_hold_preservation::test_concurrent_substantive_write_wins_before_the_atomic_hold_transform",
+        "tests.test_authored_learning_debt_recovery::test_recovered_authored_projection_closes_its_technical_debt[None]",
+        "tests.test_authored_learning_debt_recovery::test_recovered_authored_projection_closes_its_technical_debt[authority]",
+        "tests.test_authored_learning_debt_recovery::test_recovered_authored_projection_closes_its_technical_debt[blocked]",
+        "tests.test_authored_learning_debt_recovery::test_recovered_authored_projection_closes_its_technical_debt[dlq]",
+        "tests.test_authored_learning_debt_recovery::test_recovered_authored_projection_closes_its_technical_debt[version]",
+        "tests.test_authored_learning_debt_recovery::test_recovered_authored_projection_closes_its_technical_debt[source_absent]",
+        "tests.test_authored_learning_debt_recovery::test_recovered_authored_projection_closes_its_technical_debt[other_learning]",
+        "tests.test_authored_learning_debt_recovery::test_recovered_authored_projection_closes_its_technical_debt[other_target]",
+        "tests.test_authored_learning_debt_recovery::test_debt_reconciliation_rolls_back_with_failed_relational_ack"
+      ]
+    }
+  ],
+  "evidence": [
+    "Current source_bug supersedence admits explicit capture; refuses v1, absent/null scope, invented global scope or forged scope_bug_id without conversion.",
+    "Governed materializer replaces association only for second Bug, preserves original Learning for first Bug, appends exact durable history and does not globally supersede original.",
+    "Replay and recovery preserve later authorized reuse and scope claim history; missing nodes do not recreate replaced origin.",
+    "Concurrent target source revision/curation refuses overwrite. Joint source append failure and outer relational failure compensate graph and preserve both histories.",
+    "New coexistence check creates an independent authority_denied blocked debt for the same Bug before worker recovery; technical debt alone commits, substantive debt remains byte-equivalent as a record.",
+    "Working-only hold cannot overwrite pending/in_progress/skipped/consolidated owned state; concurrent substantive write wins over technical observation.",
+    "Canonical presence alone cannot discharge wrong origin, superseded Bug/Learning, working Bug, unknown source version, quarantine target, authority reason or DLQ.",
+    "Recovered authored projection closes only exact technical debt identity; source_absent, other Learning/target, blocked/version/DLQ/authority restrictions remain unchanged."
+  ],
+  "limits": [
+    "Community scope materialization fixtures use current relational schema, real SQL/Grafx and signed evidence, with unrelated completion gates and health mocked explicitly. This is scope/recovery qualification, not another whole lifecycle claim.",
+    "Graph targets and fault conditions are controlled fixtures; no old database is imported or converted.",
+    "Core partition tests use existing db_factory and seeded graph identities. They qualify reconciliation predicates, not startup storage compatibility.",
+    "Community cognitive fixture initializes official schema but does not explicitly install SQLite foreign-key listener; these results are not claimed as foreign-key enforcement proof.",
+    "Generic global supersedence experiment characterizes its global limit and is not used to claim a scoped replacement.",
+    "No frontend/product edit; prior main64 frontend and architectural closure evidence retained, not rerun.",
+    "KG38 source-loss/absence and remaining original criteria are not inferred verified."
+  ],
+  "test_sources": {
+    "community/tests/test_authored_learning_debt_recovery.py": "d893fa7678af27ffb178088421f38775c4016a2998a94bc381669cb95d8a517e",
+    "community/tests/test_r7_hold_preservation.py": "faf0ed77eda24f89af36deb352f141e9c00ac3270eadb8d6ed12f18091efd66b",
+    "community/tests/test_learning_scoped_materialization.py": "0baa96c365fc9a81ee416761d37f7a6f5baf48067c8af58db328c1829d22260b",
+    "community/tests/test_learning_scoped_replay.py": "4405cd611161caea2a3bfbd50727d0e27bde14f414bcaad7f02e844ab9599778",
+    "community/tests/test_learning_supersedence_scope.py": "aead6f27032f138d457089f508cd18c62eb16fae0088af949a046c002ee19710"
+  }
+}

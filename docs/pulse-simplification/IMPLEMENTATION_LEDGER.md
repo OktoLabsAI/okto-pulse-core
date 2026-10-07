@@ -2,6 +2,39 @@
 
 ## Estado para retomada
 
+### 2026-10-07 — KG36/KG37: substituição delimitada e restrições preservadas
+Recovery-core1 (22887) terminal0:40pass/200.84s; recovery-community1 (44631)
+terminal0:24pass/473.10s. Nenhum processo de teste ativo. Produto main64
+inalterado; prova provenance-native-learning-recovery1 antecedeu comportamento.
+Supersedência source_bug não transfere validações de outras origens; mantém
+história, replay e recuperação, incluindo reuse posterior e falhas atômicas.
+Novo teste verifica dívida técnica e restrição authority_denied coexistindo
+no mesmo Bug: recuperação libera somente técnica exata, preserva substantiva.
+Matriz adicional preserva source_absent, versão, blocked, DLQ e outras identidades.
+Recibo clean-break-native-learning-recovery.json registra64 testes e limites.
+KG36/KG37 qualificados; índice73 verificadas/162 pendentes/11 superadas.
+Fixtures Community usam schema oficial mas não compõem explicitamente listener
+SQLite FK; não se afirma prova de enforcement FK. Gates de fechamento/health
+isolados nas suites de scope/recovery; ciclo real continua provado por lifecycle11.
+Sem mudança de produto/UI, sem nova compatibilidade ou conversão; closure64 e
+oito budgets ZERO preservados como evidência anterior, não nova execução.
+Próximo: KG38 e demais critérios fixos; decisões KG10/KG28/T23 pendentes.
+
+### 2026-10-07 — KG36/KG37: escopo e coexistência de dívida em validação
+Turno anterior progresso publicado; worktrees conferidas limpas/sincronizadas
+Core3d02c0b1/Community8eb919fa. Prova provenance-native-learning-recovery1
+terminal0 antes de comportamento: main64 837/898+317/403 byte-idênticos.
+Leitura do complemento §7.5/7.6 e suites confirmou escopo: substituição explícita
+por origem não transfere todos validates; somente dívida técnica demonstrada
+pode fechar automaticamente. Suporte a migração continua excluído.
+test_authored_learning_debt_recovery agora mantém segunda dívida substantiva
+de autoridade no MESMO Bug, em coexistência com a técnica, e verifica que não
+muda após worker recuperar a projeção. Nenhum produto/gate alterado.
+Ativos recovery-community1 (44631) e recovery-core1 (22887); não reinstalar
+nem editar produto até terminais. Índice71/164/11 ainda, nenhuma qualificação nova.
+Fixtures de materialização usam schema atual, SQL/Grafx e assinatura reais,
+mas isolam gates de fechamento/health; não tratadas como outra prova do ciclo KG32.
+
 ### 2026-10-07 — KG32/KG34: ciclo nativo e autoridade comprovados
 Publicação confirmada Core4abd7359/Community8eb919fa; pushes pareados
 origin/feature/v0.4.0 terminaram0.
