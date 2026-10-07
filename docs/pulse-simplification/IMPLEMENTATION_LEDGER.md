@@ -4,6 +4,7 @@
 
 ### 2026-10-06 — C3 suites de referencias nativas; resultado geral C4
 
+Publicado: Core5a665fe7, push confirmado; Community4bc2d79a inalterado.
 Bases Core afd5f6ab / Community4bc2d79a.
 As duas campanhas gerais encerraram, handles82269/71407 terminais:
 Core77 aprovados/20 falhas em293.85s; Community517 aprovados/15 falhas/
