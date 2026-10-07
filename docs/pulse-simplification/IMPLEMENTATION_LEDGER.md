@@ -3,6 +3,7 @@
 ## Estado para retomada
 
 ### 2026-10-06 — C3 em andamento: objetos MCP nativos
+Publicado: Core 309b1e40 / Community b9710b61, pushes confirmados.
 Bases Core b236466e / Community 63aa833e limpas/publicadas.
 Retirados decoders string de entradas dict/list[dict] em contratos API/IR,
 mutacao estruturada de Spec, arquitetura, governanca Knowledge e filtros.
