@@ -3,6 +3,8 @@
 ## Estado para retomada
 
 ### 2026-10-07 — KG32/KG34: ciclo nativo e autoridade comprovados
+Publicação confirmada Core4abd7359/Community8eb919fa; pushes pareados
+origin/feature/v0.4.0 terminaram0.
 Lifecycle11 (35539) terminal0:21pass/62.27s. Produto main64 inalterado;
 prova byte a byte provenance-native-learning-lifecycle1 anterior às campanhas.
 Captura durável em Validation; worker real aguarda Done. Executor que captura
