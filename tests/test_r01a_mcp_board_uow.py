@@ -481,7 +481,7 @@ async def test_get_board_guidelines_honors_mcp_board_grant_for_non_owner_board()
 
 
 @pytest.mark.asyncio
-async def test_update_board_guideline_priority_requires_preview_without_mutation():
+async def test_removed_board_guideline_priority_tool_cannot_mutate():
     from okto_pulse.core.infra.database import get_session_factory
     from sqlalchemy import select
 
@@ -514,16 +514,8 @@ async def test_update_board_guideline_priority_requires_preview_without_mutation
         await db.commit()
 
     try:
-        payload = await _call(
-            "okto_pulse_update_board_guideline_priority",
-            board_id=board_id,
-            guideline_id=guideline_id,
-            priority="30",
-        )
-
-        assert payload["error_code"] == "guideline_impact_preview_required"
-        assert payload["next_action"] == "preview_then_adopt"
-        assert payload["retryable"] is False
+        with pytest.raises(KeyError):
+            await mcp_server.mcp.get_tool("okto_pulse_update_board_guideline_priority")
         async with factory() as db:
             link = (
                 await db.execute(

@@ -36,6 +36,7 @@ from sqlalchemy.orm import Session
 
 from okto_pulse.core.mcp import server as mcp_server
 from okto_pulse.core.domain.enums import CardPriority, CardStatus
+from okto_pulse.core.domain.architecture_adoption import ArchitectureAdoptionScope
 from okto_pulse.core.models.schemas import CardResponse
 from sqlalchemy_test_models import ActivityLog, Board, Card, Spec, SpecStatus
 
@@ -44,7 +45,7 @@ BOARD_B = "r01a-mcpcard-b"
 USER_ID = "r01a-mcpcard-agent"
 
 _TOOL_USE_CASE = {
-    "create_card": "McpCreateCardUseCase",
+    "create_card": "_mcp_create_card_v2",
     "get_card": "McpGetCardUseCase",
     "update_card": "McpUpdateCardUseCase",
     "move_card": "McpMoveCardUseCase",
@@ -52,8 +53,23 @@ _TOOL_USE_CASE = {
     "add_card_dependency": "AddCardDependencyUseCase",
     "remove_card_dependency": "McpRemoveCardDependencyUseCase",
     "get_card_dependencies": "McpGetCardDependenciesUseCase",
-    "copy_knowledge_to_card": "McpCopyKnowledgeToCardUseCase",
 }
+
+
+@pytest.fixture(autouse=True)
+def native_knowledge_port(_knowledge_propagation_empty_test_port, request):
+    from okto_pulse.core.infra.database import get_session_factory
+    from okto_pulse.community.adapters.sqlalchemy_knowledge_propagation import (
+        CommunitySqlAlchemyKnowledgePropagationStore,
+    )
+    from okto_pulse.core.ports.knowledge_propagation import register_knowledge_propagation_port
+    from okto_pulse.core.domain.realm import RealmScope
+
+    factory = get_session_factory()
+    previous_info = dict(factory.kw.get("info", {}))
+    request.addfinalizer(lambda: factory.configure(info=previous_info))
+    factory.configure(info={**previous_info, "realm_scope": RealmScope.local()})
+    register_knowledge_propagation_port(CommunitySqlAlchemyKnowledgePropagationStore(factory))
 
 
 # --- AST proof (no DB) ------------------------------------------------------
@@ -80,6 +96,13 @@ def test_card_tools_strangled_and_delegate():
                 f"{short} must delegate to {_TOOL_USE_CASE[short]}"
             )
     assert seen == set(_TOOL_USE_CASE), f"missing tools: {set(_TOOL_USE_CASE) - seen}"
+    helper = next(n for n in ast.walk(tree)
+                  if isinstance(n, ast.AsyncFunctionDef) and n.name == "_mcp_create_card_v2")
+    helper_source = ast.get_source_segment(src, helper) or ""
+    assert "McpCreateCardUseCase().execute(" in helper_source
+    assert "get_unit_of_work_factory_for_mcp()" in helper_source
+    assert "CardService(" not in helper_source
+
 
 
 # --- runtime harness --------------------------------------------------------
@@ -118,6 +141,10 @@ async def _seed():
                 id=spec_id,
                 board_id=BOARD_A,
                 title="Spec A",
+                architecture_adoption=ArchitectureAdoptionScope(
+                    board_id=BOARD_A, spec_id=spec_id, adopted_in_edition=1,
+                    actor_id=USER_ID, inherited_resource_ids=(),
+                ).model_dump(mode="json"),
                 status=SpecStatus.APPROVED,
                 created_by=USER_ID,
                 functional_requirements=["FR1"],
@@ -251,7 +278,7 @@ async def test_move_card_refreshes_inside_transaction_before_commit() -> None:
         USER_ID,
         "mcp",
         board_id=BOARD_A,
-        permissions=["cards:move"],
+        permissions=["card.move.not_started_to_cancelled"],
     )
     successful = UnitOfWork()
     result = await McpMoveCardUseCase().execute(
@@ -266,6 +293,8 @@ async def test_move_card_refreshes_inside_transaction_before_commit() -> None:
     assert successful.events == ["synchronize", "reload", "commit"]
     assert result.card.policy_version == 4
 
+    # Exercise the same authorized transition with a reload failure.
+    card.status = CardStatus.NOT_STARTED
     failing = UnitOfWork(fail_reload=True)
     with pytest.raises(RuntimeError, match="refresh failed"):
         await McpMoveCardUseCase().execute(

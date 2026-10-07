@@ -2,6 +2,33 @@
 
 ## Estado para retomada
 
+### 2026-10-07 — Core14 followup completo:74 casos; installed6 falhou por prazo
+Core surfaces1 handle24233 terminou1:72pass/2fail/111.15s. Card2 handle36988
+terminou1:13pass/1fail/12.29s (segundo probe reutilizava estado cancelado).
+Fixture agora repõe estado inicial para testar a mesma transição autorizada
+antes da falha de reload. Card3 handle76973 terminou0:14pass/10.03s.
+74 casos distintos/quatro módulos completos qualificados; Ruff/diff verdes.
+Somente fixtures/assertions: adoption e reviews nativos, revisor independente,
+permissão folha atual, UoW obrigatório e ausência de writers retirados.
+
+Installed6 handle91252 terminou1:4pass/1fail/928.774s. Manifesto HTTP/wheels
+e materialização nativa passaram; recovery não qualificado. Segundo prepare
+parou na espera do teste480s,1052/1500 Boards, zero erros reportados, tentativa
+nativa ainda com budget600s. Havia carga concorrente no host; causa não provada.
+Investigar/repetir sem reduzir censo ou relaxar prazo de produção. Community12
+handle93670 permanece ativo. Produto ainda congelado dist-native-claim-recovery1.
+Alias env C3 e restante do aceite permanecem pendentes; não declarar entrega final.
+
+### 2026-10-07 — Core14 terminal; Community12 e installed6 em execução
+Core14 handle68531 terminou1:94 aprovados/20 falhas/55.59s. Quatro módulos
+afetados: cards_knowledge_activity, cards_lifecycle, mcp_board e mcp_card UoW.
+Diagnóstico: fixtures sem adoption nativa, reviews incompletos/mesmo criador,
+expectativas de writers Knowledge/priority retirados e stub read-only em create.
+Followup ajusta fixtures ao contrato atual sem relaxar gates; ainda não qualificado.
+Community12 handle93670 iniciado com256 módulos completos excluídos; installed6
+handle91252 continua separado e não conta como qualificado. Par congelado
+dist-native-claim-recovery1. Nenhuma entrega integral declarada.
+
 ### 2026-10-07 — Core13 todos os followups qualificados; Core14 iniciado
 API fixtures2 handle43150 terminou1:59pass/3fail por sessão ORM não composta.
 API fixtures3 handle5385 terminou0:47pass/12.07s após usar/restaurar

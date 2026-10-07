@@ -3862,5 +3862,120 @@
     "distinct_cases_qualified": 63,
     "complete_modules": 5,
     "limits": "Four API modules62distinct across full followups; planner1. Actor delete authority is explicit only in test setup; required denials/no-write checks retained. Native effective Knowledge includes parents and forbids cross-board leakage. No product changes."
+  },
+  "core_full_run14": {
+    "status": "failed",
+    "handle": 68531,
+    "exit_code": 1,
+    "passed": 94,
+    "failed": 20,
+    "duration_seconds": 55.59,
+    "xml_sha256": "4dd048a920bcdc3d0629844997a1bdbde0e08bcf52840d3515d5b22b5b0c0c4b",
+    "failed_modules": [
+      "tests.test_r01a_cards_knowledge_activity_uow",
+      "tests.test_r01a_cards_lifecycle_uow",
+      "tests.test_r01a_mcp_board_uow",
+      "tests.test_r01a_mcp_card_uow"
+    ],
+    "followup": "Four full modules need native-contract fixture qualification; no production gate relaxation."
+  },
+  "community_full_run12": {
+    "status": "running",
+    "handle": 93670,
+    "excluded_qualified_modules": 256,
+    "pair": "dist-native-claim-recovery1",
+    "installed_e2e_separate_handle": 91252
+  },
+  "core14_native_surfaces_qualified": {
+    "pair": "dist-native-claim-recovery1",
+    "campaigns": [
+      {
+        "campaign": "core14-native-surfaces1",
+        "counts": {
+          "name": "pytest",
+          "errors": "0",
+          "failures": "2",
+          "skipped": "0",
+          "tests": "74",
+          "time": "110.928",
+          "timestamp": "2026-10-07T06:29:50.695343-03:00",
+          "hostname": "Alienware_m15"
+        },
+        "xml_sha256": "83e515e5cb1ef42b132c43f133bf87316c217d72e03adaa17033c013e3d03aaa",
+        "failures": [
+          {
+            "class": "tests.test_r01a_mcp_card_uow",
+            "name": "test_move_card_refreshes_inside_transaction_before_commit",
+            "message": "okto_pulse.core.application.use_cases.base.PermissionDeniedError: {\"error\": \"permission_denied\", \"reason\": \"permission_missing\", \"required_permission\": \"card.move.not_started_to_cancelled\", \"detail\": \"Permission denied: requires 'card.move.not_started_to_cancelled'\"}"
+          },
+          {
+            "class": "tests.test_r01a_mcp_card_uow",
+            "name": "test_card_reads_expose_same_subject_version",
+            "message": "okto_pulse.core.services.resource_gate_contracts.ResourceGateViolation: Resource Gate could not resolve resource lineage for card '79fcc08c-c5e2-5bf7-965e-78c09824ed9c': The adopted architecture scope is unavailable."
+          }
+        ]
+      },
+      {
+        "campaign": "core14-native-card2",
+        "counts": {
+          "name": "pytest",
+          "errors": "0",
+          "failures": "1",
+          "skipped": "0",
+          "tests": "14",
+          "time": "12.243",
+          "timestamp": "2026-10-07T06:32:31.740706-03:00",
+          "hostname": "Alienware_m15"
+        },
+        "xml_sha256": "a489a2ebbffc0ac84d1e85c50614ba8313436837341a1dfb6250c7c28da85556",
+        "failures": [
+          {
+            "class": "tests.test_r01a_mcp_card_uow",
+            "name": "test_move_card_refreshes_inside_transaction_before_commit",
+            "message": "okto_pulse.core.application.use_cases.base.PermissionDeniedError: {\"error\": \"permission_denied\", \"reason\": \"permission_missing\", \"required_permission\": \"card.entity.edit_fields\", \"detail\": \"Permission denied: requires 'card.entity.edit_fields'\"}"
+          }
+        ]
+      },
+      {
+        "campaign": "core14-native-card3",
+        "counts": {
+          "name": "pytest",
+          "errors": "0",
+          "failures": "0",
+          "skipped": "0",
+          "tests": "14",
+          "time": "9.985",
+          "timestamp": "2026-10-07T06:33:18.899597-03:00",
+          "hostname": "Alienware_m15"
+        },
+        "xml_sha256": "eeec99cd429020dce4ccac1e76cb87a19ab320fc879a7cd3544b88eadf23e368",
+        "failures": []
+      }
+    ],
+    "distinct_cases_qualified": 74,
+    "complete_modules": 4,
+    "limits": "Only fixtures/assertions changed. Explicit architecture adoption and native review records; independent reviewer preserved. Native permission leaf grants transition; failed reload probes same initial transition. Retired writers stay absent; current creation delegates through helper and UoW."
+  },
+  "native_installed_recovery6": {
+    "campaign": "native-installed-recovery6",
+    "counts": {
+      "name": "pytest",
+      "errors": "0",
+      "failures": "1",
+      "skipped": "0",
+      "tests": "5",
+      "time": "928.774",
+      "timestamp": "2026-10-07T06:16:59.441822-03:00",
+      "hostname": "Alienware_m15"
+    },
+    "xml_sha256": "a9f4b6e1ac7de676c9bb9056e5a169af4a55d5a754c7eb63b0c9ff756bf89bcb",
+    "failures": [
+      {
+        "class": "tests.test_global_discovery_recovery_installed_e2e",
+        "name": "test_installed_internal_recovery_and_public_dlq_retirement",
+        "message": "AssertionError: timed out waiting for {'prepared'}; last={'run_id': 'gdr_3kXmD62gQzO6KcmZTrVNXiHx', 'actor_id': '1f50c698-4850-4cc4-92a9-b2e25aea6a12', 'epoch': 1, 'attempt_id': 'gdr_3kXmD62gQzO6KcmZTrVNXiHx/attempt-1', 'manifest_ref': None, 'preflight_hash': None, 'state': 'running', 'progress_seq': 13038, 'phase': 'preparing', 'preparation_state': 'preparing', 'confirmation_state': 'unconfirmed', 'status_operation': 'status', 'action_required': 'internal_status_observation', 'counts': {'boards_total': 1500, 'boards_scanned': 1052, 'sources_total': 0, 'sources_processed': 0, 'nodes_written': 1052, 'edges_written': 0, 'outbox_events_drained': 0, 'errors': 0}, 'heartbeat_at': '2026-10-07T09:32:15.581119+00:00', 'started_at': '2026-10-07T09:24:15.705792+00:00', 'updated_at': '2026-10-07T09:32:15.581119+00:00', 'active_elapsed_ms': 479847, 'active_deadline_at': '2026-10-07T09:34:15.705792+00:00', 'cumulative_active_ms': 479847, 'attempt_budget_ms': 600000, 'cancel_requested_at': None, 'terminal_outcome': None, 'reason_code': 'recovery_preparing', 'retryable': False, 'supersedes_epoch': None, 'superseded_by_epoch': None, 'prepared_at': None, 'expires_at': None, 'snapshot_fingerprint': None, 'confirmed_by_actor_id': None, 'confirmation_consumed_at': None, 'audit_reason': None, 'cancel_requested_by_actor_id': None, 'resume_requested_at': None, 'resume_requested_by_actor_id': None, 'resume_audit_reason': None, 'physical_truth': None}"
+      }
+    ],
+    "limits": "Terminal1 handle91252. Four first tests passed. Fifth timed out waiting480s at1052/1500 boards, no reported preparation errors; native attempt budget600s. Not a qualified full E2E. Concurrent host workload observed; cause not established. Do not relax product deadline or reduce census to manufacture pass."
   }
 }

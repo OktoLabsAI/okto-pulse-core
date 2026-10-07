@@ -3,7 +3,7 @@ gates on the UnitOfWork.
 
 The nine remaining ``api/cards.py`` lifecycle endpoints now route through the
 ``card_crud`` use cases + ``get_unit_of_work``; each adapter only maps the
-result/errors to HTTP. Oracles assert the legacy observable contract end-to-end
+result/errors to HTTP. Oracles assert the native observable contract end-to-end
 via TestClient (status codes + detail/body shape) for:
 
 * move_card           — 200 (re-fetched body), 404, 409 (archived → ValueError)
@@ -15,7 +15,7 @@ via TestClient (status codes + detail/body shape) for:
                            422 (card not in 'validation'), 404 (missing card)
 * list_task_validations  — 200 envelope, 404 (missing card → ValueError)
 * get_task_validation    — 200, 404 (unknown id), 404 (missing card)
-* delete_task_validation — 204, 404 (unknown id), 404 (missing card)
+* delete_task_validation — 409 (append-only history), 404 (missing card)
 
 Plus a use-case-level ``EntityNotFoundError`` probe and an AST signature check
 proving every migrated endpoint takes ``uow`` (not a raw ``AsyncSession``).
@@ -35,6 +35,8 @@ from okto_pulse.community.api.cards import router as cards_router
 from okto_pulse.community.api.deps import get_unit_of_work
 from okto_pulse.community.api.auth_deps import require_user
 from okto_pulse.core.infra.database import get_db, get_session_factory
+from okto_pulse.core.domain.architecture_adoption import ArchitectureAdoptionScope
+from task_validation_native_fixtures import native_entry
 
 USER = "r01a-fu4-s2-user"
 PREFIX = "/api/v1/cards"
@@ -86,7 +88,11 @@ async def _seed_board_spec() -> tuple[str, str]:
     sid = f"spec-fu4s2-{uuid.uuid4().hex[:8]}"
     async with get_session_factory()() as db:
         db.add(Board(id=bid, name="fu4s2", owner_id=USER))
-        db.add(Spec(id=sid, board_id=bid, title="fu4s2-spec", created_by=USER))
+        db.add(Spec(id=sid, board_id=bid, title="fu4s2-spec", created_by=USER,
+            architecture_adoption=ArchitectureAdoptionScope(
+                board_id=bid, spec_id=sid, adopted_in_edition=1,
+                actor_id=USER, inherited_resource_ids=(),
+            ).model_dump(mode="json")))
         await db.commit()
     return bid, sid
 
@@ -100,6 +106,7 @@ async def _seed_card(
     validations: list | None = None,
     title: str = "fu4-s2-card",
     position: int | None = None,
+    created_by: str = USER,
 ) -> str:
     # Seed Board + Spec + Card via raw models. We exercise the lifecycle/move/
     # dependency/validation endpoints, not create, so this deliberately bypasses
@@ -116,17 +123,22 @@ async def _seed_card(
             db.add(Board(id=board_id, name="fu4s2", owner_id=USER))
         if not await db.get(Spec, spec_id):
             db.add(
-                Spec(id=spec_id, board_id=board_id, title="fu4s2-spec", created_by=USER)
+                Spec(id=spec_id, board_id=board_id, title="fu4s2-spec", created_by=USER,
+            architecture_adoption=ArchitectureAdoptionScope(
+                board_id=board_id, spec_id=spec_id, adopted_in_edition=1,
+                actor_id=USER, inherited_resource_ids=(),
+            ).model_dump(mode="json"))
             )
         card = Card(
             id=cid,
             board_id=board_id,
             spec_id=spec_id,
             title=f"{title}-{uuid.uuid4().hex[:6]}",
-            created_by=USER,
+            created_by=created_by,
             archived=archived,
             status=status or CardStatus.NOT_STARTED,
-            validations=validations,
+            validations=[dict(entry, card_id=cid, board_id=board_id) for entry in validations]
+            if validations is not None else None,
         )
         if position is not None:
             card.position = position
@@ -410,7 +422,7 @@ async def test_submit_validation_404_missing_card(client) -> None:
 async def test_submit_validation_exact_retry_replays_after_rejected(client) -> None:
     from sqlalchemy_test_models import Card, CardStatus
 
-    card_id = await _seed_card()
+    card_id = await _seed_card(created_by="independent-task-creator")
     async with get_session_factory()() as db:
         card = await db.get(Card, card_id)
         card.status = CardStatus.VALIDATION
@@ -474,7 +486,7 @@ async def test_submit_validation_exact_retry_replays_after_done(
         "_task_completion_gate_failures",
         _no_completion_blockers,
     )
-    card_id = await _seed_card()
+    card_id = await _seed_card(created_by="independent-task-creator")
     async with get_session_factory()() as db:
         card = await db.get(Card, card_id)
         card.status = CardStatus.VALIDATION
@@ -519,7 +531,7 @@ async def test_list_validations_404_missing_card(client) -> None:
 @pytest.mark.asyncio
 async def test_get_validation_200_and_404(client) -> None:
     vid = f"val-{uuid.uuid4().hex[:8]}"
-    card_id = await _seed_card(validations=[{"id": vid, "recommendation": "approve"}])
+    card_id = await _seed_card(validations=[dict(native_entry(), id=vid)])
 
     found = client.get(f"{PREFIX}/{card_id}/validations/{vid}")
     assert found.status_code == 200, found.text
@@ -542,7 +554,7 @@ async def test_get_validation_404_missing_card(client) -> None:
 @pytest.mark.asyncio
 async def test_delete_validation_is_rejected_as_append_only_history(client) -> None:
     vid = f"val-{uuid.uuid4().hex[:8]}"
-    card_id = await _seed_card(validations=[{"id": vid, "recommendation": "approve"}])
+    card_id = await _seed_card(validations=[dict(native_entry(), id=vid)])
 
     removed = client.delete(f"{PREFIX}/{card_id}/validations/{vid}")
     assert removed.status_code == 409, removed.text

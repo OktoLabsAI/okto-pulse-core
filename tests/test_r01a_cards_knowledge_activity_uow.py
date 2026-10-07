@@ -2,13 +2,13 @@
 UnitOfWork. This card CLOSES ``api/cards.py``: afterwards no endpoint there binds
 ``get_db``.
 
-The eight remaining ``api/cards.py`` endpoints now route through the ``card_crud``
+The native read ``api/cards.py`` endpoints now route through the ``card_crud``
 use cases + ``get_unit_of_work``; each adapter only maps the result/errors to HTTP.
 The activity + seen SQL that ran inline on the request session moved to the
 transport-free readers ``compute_card_activity`` / ``compute_card_seen_status`` in
 ``services/main.py`` (the ``compute_*`` pattern) so the strangled use-case layer
 never touches ``select``/ORM (the relational ratchet gate). Oracles assert the
-legacy observable contract end-to-end via TestClient (status codes + body shape):
+native observable contract end-to-end via TestClient (status codes + body shape):
 
 * get_card_activity     — 200 (newest-first projection), empty list (unknown card),
                           ``limit`` honored
@@ -18,7 +18,7 @@ legacy observable contract end-to-end via TestClient (status codes + body shape)
 * get_card_knowledge    — 200 (entry), 404 (missing card), 404 (unknown kb id)
 * download_card_knowledge — 200 (markdown body + Content-Disposition), 404 (card),
                           404 (unknown kb id)
-* create/update/delete_card_knowledge — 409 (read-only governed snapshots, blocked)
+* create/update/delete_card_knowledge — 405 (writers absent from the native contract)
 
 Plus a use-case-level ``EntityNotFoundError`` probe (the ``entity_type`` "card" vs
 "card_knowledge" that drives get/download's two distinct 404 details), an AST
@@ -42,6 +42,7 @@ from okto_pulse.community.api.cards import router as cards_router
 from okto_pulse.community.api.deps import get_unit_of_work
 from okto_pulse.community.api.auth_deps import require_user
 from okto_pulse.core.infra.database import get_db, get_session_factory
+from okto_pulse.core.domain.architecture_adoption import ArchitectureAdoptionScope
 
 USER = "r01a-fu4-s4-user"
 PREFIX = "/api/v1/cards"
@@ -49,10 +50,7 @@ _ENDPOINTS = (
     "get_card_activity",
     "get_card_seen_status",
     "list_card_knowledge",
-    "create_card_knowledge",
     "get_card_knowledge",
-    "update_card_knowledge",
-    "delete_card_knowledge",
     "download_card_knowledge",
 )
 
@@ -92,7 +90,11 @@ async def _seed_card(*, knowledge_bases: list | None = None) -> tuple[str, str]:
     cid = f"card-fu4s4-{uuid.uuid4().hex[:8]}"
     async with get_session_factory()() as db:
         db.add(Board(id=bid, name="fu4s4", owner_id=USER))
-        db.add(Spec(id=sid, board_id=bid, title="fu4s4-spec", created_by=USER))
+        db.add(Spec(id=sid, board_id=bid, title="fu4s4-spec", created_by=USER,
+            architecture_adoption=ArchitectureAdoptionScope(
+                board_id=bid, spec_id=sid, adopted_in_edition=1,
+                actor_id=USER, inherited_resource_ids=(),
+            ).model_dump(mode="json")))
         db.add(
             Card(
                 id=cid,
@@ -319,31 +321,31 @@ async def test_download_knowledge_404s(client) -> None:
     assert missing_card.json()["detail"] == "Card not found"
 
 
-# --- knowledge: blocked writes (409) ----------------------------------------
+# --- knowledge: removed writes (405) ----------------------------------------
 
 
 @pytest.mark.asyncio
-async def test_create_knowledge_409_blocked(client) -> None:
+async def test_create_knowledge_405_removed(client) -> None:
     _, card_id = await _seed_card()
     resp = client.post(
         f"{PREFIX}/{card_id}/knowledge",
         json={"title": "t", "content": "c"},
     )
-    assert resp.status_code == 409, resp.text
+    assert resp.status_code == 405, resp.text
 
 
 @pytest.mark.asyncio
-async def test_update_knowledge_409_blocked(client) -> None:
+async def test_update_knowledge_405_removed(client) -> None:
     _, card_id = await _seed_card(knowledge_bases=[{"id": "kb-1", "title": "x", "content": "y"}])
     resp = client.patch(f"{PREFIX}/{card_id}/knowledge/kb-1", json={"title": "new"})
-    assert resp.status_code == 409, resp.text
+    assert resp.status_code == 405, resp.text
 
 
 @pytest.mark.asyncio
-async def test_delete_knowledge_409_blocked(client) -> None:
+async def test_delete_knowledge_405_removed(client) -> None:
     _, card_id = await _seed_card(knowledge_bases=[{"id": "kb-1", "title": "x", "content": "y"}])
     resp = client.delete(f"{PREFIX}/{card_id}/knowledge/kb-1")
-    assert resp.status_code == 409, resp.text
+    assert resp.status_code == 405, resp.text
 
 
 # --- use case + AST ---------------------------------------------------------
