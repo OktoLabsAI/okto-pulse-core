@@ -2,6 +2,28 @@
 
 ## Estado para retomada
 
+### 2026-10-07 — Community13 iniciado no par novo
+Community94c6a120 publicado com69casos do followup. Community13 handle85307
+ATIVO via run_native_next_checks.py,324 módulos completos excluídos, maxfail20,
+par dist-native-next1 e worktrees native-next. Installed E2E fica separado,
+ainda não qualificado (não está entre os324). Core16 handle90773 permanece
+no par antigo e nas árvores principais. Não misturar origens nos próximos testes.
+
+### 2026-10-07 — Community12 encerrado e seus três módulos corrigidos
+Incremento native-next publicado Core1ef2fad6/Community6666978c. Árvores
+principais ainda congeladas para Core16 handle90773, ATIVO. Docs WIP da árvore
+principal Core são byte-idênticos ao commit1ef2fad6: antes de fast-forward,
+verificar isso novamente e restaurar só esses dois docs para HEAD, pois o
+conteúdo está preservado no commit publicado. Nenhuma outra alteração local.
+
+Community12 handle93670 terminou1:1009pass/2fail/18erros/1973.88s.
+Grafx read lanes/Health ainda passavam coordenador de rollback retirado ao
+construtor. Manifesto layout esperava82pares, atual85/16tipos (schema0.8).
+Fixtures ajustadas somente nos worktrees isolados. Community followup1
+handle6408 terminou0:69pass/19.68s, três módulos completos incluindo prova
+Health sem manutenção, pool somente leitura, prazos e isolamento de contexto.
+Ruff/diff verdes. Par native-next1 continua sem alteração produtiva desde prova.
+
 ### 2026-10-07 — C2/C3 native-next1 qualificado:34 casos e closureZERO
 Community native-next1 handle81552 terminou0:30pass/104.57s; Core4pass.
 Closure handle34533 terminou0:ok=true,findings/docs vazios e oito budgetsZERO.

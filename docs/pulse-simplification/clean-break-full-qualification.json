@@ -3880,11 +3880,120 @@
     "followup": "Four full modules need native-contract fixture qualification; no production gate relaxation."
   },
   "community_full_run12": {
-    "status": "running",
-    "handle": 93670,
-    "excluded_qualified_modules": 256,
-    "pair": "dist-native-claim-recovery1",
-    "installed_e2e_separate_handle": 91252
+    "campaign": "clean-break-full-run12-community",
+    "counts": {
+      "name": "pytest",
+      "errors": "18",
+      "failures": "2",
+      "skipped": "0",
+      "tests": "1029",
+      "time": "1973.584",
+      "timestamp": "2026-10-07T06:22:09.788613-03:00",
+      "hostname": "Alienware_m15"
+    },
+    "xml_sha256": "71855c89cb7c81bf718ba1026d1fe161d6e7ab175f27f757c12f4211c4fe92a2",
+    "failures": [
+      {
+        "class": "tests.test_grafx_read_lanes",
+        "name": "test_composition_scope_passes_selected_lane_and_releases_on_resolution_failure",
+        "message": "TypeError: _GrafxBoardAccess.__init__() takes 4 positional arguments but 5 positional arguments (and 3 keyword-only arguments) were given"
+      },
+      {
+        "class": "tests.test_grafx_relationship_layout",
+        "name": "test_closed_pulse_authority_has_16_types_82_pairs_and_unique_names",
+        "message": "AssertionError: assert 85 == 82\n +  where 85 = len((RelationshipLayoutEntry(logical_type='supersedes', from_type='Decision', to_type='Decision', physical_table='supersed...cal_type='depends_on', from_type='Decision', to_type='Decision', physical_table='depends_on__Decision__Decision'), ...))\n +    where (RelationshipLayoutEntry(logical_type='supersedes', from_type='Decision', to_type='Decision', physical_table='supersed...cal_type='depends_on', from_type='Decision', to_type='Decision', physical_table='depends_on__Decision__Decision'), ...) = <okto_pulse.community.adapters.grafx_relationship_layout.RelationshipLayout object at 0x000001F06B4BEB40>.entries"
+      },
+      {
+        "class": "tests.test_health_graph_open_observation",
+        "name": "test_health_graph_query_does_not_checkpoint_or_close_rollback_on_read_join[graph_snapshot]",
+        "message": "failed on setup with \"TypeError: _GrafxBoardAccess.__init__() takes 4 positional arguments but 5 positional arguments (and 3 keyword-only arguments) were given\""
+      },
+      {
+        "class": "tests.test_health_graph_open_observation",
+        "name": "test_health_graph_query_does_not_checkpoint_or_close_rollback_on_read_join[parity_snapshot]",
+        "message": "failed on setup with \"TypeError: _GrafxBoardAccess.__init__() takes 4 positional arguments but 5 positional arguments (and 3 keyword-only arguments) were given\""
+      },
+      {
+        "class": "tests.test_health_graph_open_observation",
+        "name": "test_observation_context_restores_foreground_recovery_after_nested_failure",
+        "message": "failed on setup with \"TypeError: _GrafxBoardAccess.__init__() takes 4 positional arguments but 5 positional arguments (and 3 keyword-only arguments) were given\""
+      },
+      {
+        "class": "tests.test_health_graph_open_observation",
+        "name": "test_health_context_does_not_disable_another_threads_foreground_recovery",
+        "message": "failed on setup with \"TypeError: _GrafxBoardAccess.__init__() takes 4 positional arguments but 5 positional arguments (and 3 keyword-only arguments) were given\""
+      },
+      {
+        "class": "tests.test_health_graph_open_observation",
+        "name": "test_health_refuses_fences_before_mutation[write_fence]",
+        "message": "failed on setup with \"TypeError: _GrafxBoardAccess.__init__() takes 4 positional arguments but 5 positional arguments (and 3 keyword-only arguments) were given\""
+      },
+      {
+        "class": "tests.test_health_graph_open_observation",
+        "name": "test_health_refuses_fences_before_mutation[runtime_fence]",
+        "message": "failed on setup with \"TypeError: _GrafxBoardAccess.__init__() takes 4 positional arguments but 5 positional arguments (and 3 keyword-only arguments) were given\""
+      },
+      {
+        "class": "tests.test_health_graph_open_observation",
+        "name": "test_health_never_falls_back_to_a_writable_pool",
+        "message": "failed on setup with \"TypeError: _GrafxBoardAccess.__init__() takes 4 positional arguments but 5 positional arguments (and 3 keyword-only arguments) were given\""
+      },
+      {
+        "class": "tests.test_health_graph_open_observation",
+        "name": "test_health_writable_resolver_uses_only_reader",
+        "message": "failed on setup with \"TypeError: _GrafxBoardAccess.__init__() takes 4 positional arguments but 5 positional arguments (and 3 keyword-only arguments) were given\""
+      },
+      {
+        "class": "tests.test_health_graph_open_observation",
+        "name": "test_invalid_timeout_cannot_enter_observation[True]",
+        "message": "failed on setup with \"TypeError: _GrafxBoardAccess.__init__() takes 4 positional arguments but 5 positional arguments (and 3 keyword-only arguments) were given\""
+      },
+      {
+        "class": "tests.test_health_graph_open_observation",
+        "name": "test_invalid_timeout_cannot_enter_observation[False]",
+        "message": "failed on setup with \"TypeError: _GrafxBoardAccess.__init__() takes 4 positional arguments but 5 positional arguments (and 3 keyword-only arguments) were given\""
+      },
+      {
+        "class": "tests.test_health_graph_open_observation",
+        "name": "test_invalid_timeout_cannot_enter_observation[0]",
+        "message": "failed on setup with \"TypeError: _GrafxBoardAccess.__init__() takes 4 positional arguments but 5 positional arguments (and 3 keyword-only arguments) were given\""
+      },
+      {
+        "class": "tests.test_health_graph_open_observation",
+        "name": "test_invalid_timeout_cannot_enter_observation[-1]",
+        "message": "failed on setup with \"TypeError: _GrafxBoardAccess.__init__() takes 4 positional arguments but 5 positional arguments (and 3 keyword-only arguments) were given\""
+      },
+      {
+        "class": "tests.test_health_graph_open_observation",
+        "name": "test_invalid_timeout_cannot_enter_observation[5.1]",
+        "message": "failed on setup with \"TypeError: _GrafxBoardAccess.__init__() takes 4 positional arguments but 5 positional arguments (and 3 keyword-only arguments) were given\""
+      },
+      {
+        "class": "tests.test_health_graph_open_observation",
+        "name": "test_invalid_timeout_cannot_enter_observation[inf]",
+        "message": "failed on setup with \"TypeError: _GrafxBoardAccess.__init__() takes 4 positional arguments but 5 positional arguments (and 3 keyword-only arguments) were given\""
+      },
+      {
+        "class": "tests.test_health_graph_open_observation",
+        "name": "test_invalid_timeout_cannot_enter_observation[nan]",
+        "message": "failed on setup with \"TypeError: _GrafxBoardAccess.__init__() takes 4 positional arguments but 5 positional arguments (and 3 keyword-only arguments) were given\""
+      },
+      {
+        "class": "tests.test_health_graph_open_observation",
+        "name": "test_invalid_timeout_cannot_enter_observation[1]",
+        "message": "failed on setup with \"TypeError: _GrafxBoardAccess.__init__() takes 4 positional arguments but 5 positional arguments (and 3 keyword-only arguments) were given\""
+      },
+      {
+        "class": "tests.test_health_graph_open_observation",
+        "name": "test_nested_deadline_cannot_extend_parent_and_expiry_prevents_open",
+        "message": "failed on setup with \"TypeError: _GrafxBoardAccess.__init__() takes 4 positional arguments but 5 positional arguments (and 3 keyword-only arguments) were given\""
+      },
+      {
+        "class": "tests.test_health_graph_open_observation",
+        "name": "test_batch_shares_deadline_and_never_returns_a_partial_prefix",
+        "message": "failed on setup with \"TypeError: _GrafxBoardAccess.__init__() takes 4 positional arguments but 5 positional arguments (and 3 keyword-only arguments) were given\""
+      }
+    ]
   },
   "core14_native_surfaces_qualified": {
     "pair": "dist-native-claim-recovery1",
@@ -4627,5 +4736,34 @@
       "af35_relational_residue": 0
     },
     "limits": "C2/C3 increment qualified in isolated current worktrees. Old broad campaigns remain on frozen previous pair; native-next is not full final acceptance. Main feature working trees can fast-forward only after active campaigns terminate."
+  },
+  "community12_native_followup": {
+    "campaign": {
+      "campaign": "community12-native-followup1",
+      "counts": {
+        "name": "pytest",
+        "errors": "0",
+        "failures": "0",
+        "skipped": "0",
+        "tests": "69",
+        "time": "19.674",
+        "timestamp": "2026-10-07T06:56:23.657053-03:00",
+        "hostname": "Alienware_m15"
+      },
+      "xml_sha256": "f6ef0f828d978057c248f63b5efb09027c00e373009315b18ec315d5690cd169",
+      "failures": []
+    },
+    "qualified_cases": 69,
+    "full_modules": 3,
+    "pair": "dist-native-next1",
+    "limits": "Removed retired rollback coordinator argument/expectations; kept no-maintenance/deadline/read-only/context-isolation assertions. Manifest has85 pairs across16 types. No product change in this followup."
+  },
+  "community_full_run13": {
+    "status": "running",
+    "handle": 85307,
+    "excluded_qualified_modules": 324,
+    "pair": "dist-native-next1",
+    "worktree": "native-next",
+    "installed_e2e": "separate, unqualified"
   }
 }
