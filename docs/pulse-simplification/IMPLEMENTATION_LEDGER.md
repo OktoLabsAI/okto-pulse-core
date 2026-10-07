@@ -3,6 +3,7 @@
 ## Estado para retomada
 
 ### 2026-10-06 — C3 em andamento: traceability com Knowledge nativo
+Publicado: Core 0eb981c8 / Community ee011cee, pushes confirmados.
 Bases Core 5a933b9f / Community 2c34de6b.
 Reproducao real traceability-knowledge-repro1: reference/snapshot falham,
 drop passa. Card tem uma selecao efetiva, mas artifacts/compact contam zero.
