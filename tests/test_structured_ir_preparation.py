@@ -49,7 +49,7 @@ def payloads():
 
 
 @pytest.mark.asyncio
-async def test_ir_preparation_canonicalizes_legacy_requirements_and_remaps_references(
+async def test_ir_preparation_refuses_legacy_requirements_without_writes(
     db_factory,
 ):
     board_id, spec_id = str(uuid.uuid4()), str(uuid.uuid4())
@@ -72,14 +72,8 @@ async def test_ir_preparation_canonicalizes_legacy_requirements_and_remaps_refer
                 }
             ],
         )
-        assert isinstance(prepared, PreparedIntegrationRequirementCreates)
-        fr = prepared.update_data["functional_requirements"][0]
-        ac = prepared.update_data["acceptance_criteria"][0]
-        assert fr["id"].startswith("fr_") and fr["text"] == "Legacy order requirement"
-        assert ac["id"].startswith("ac_") and ac["text"] == "Legacy order criterion"
-        assert prepared.update_data["integration_requirements"][0][
-            "linked_requirements"
-        ] == [fr["id"]]
+        assert prepared.success is False
+        assert prepared.error_code == Error.VALIDATION_FAILED
         await db.commit()
         assert await _spec_json_snapshot(db, spec_id) == before
 

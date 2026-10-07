@@ -3,7 +3,7 @@ okto_pulse_delete_test_scenario (spec 6f1e75bf).
 
 The service methods are covered in test_test_scenario_lifecycle.py; these
 exercise the actual MCP tool wrappers via ``tool.fn`` (auth, param parsing,
-clear pipe-list, error mapping) — the layer that could not be exercised live
+native clear array, error mapping) — the layer that could not be exercised live
 because this Claude Code harness's deferred-tool index does not surface the two
 new tools (a harness staleness artifact; the server DOES register them).
 """
@@ -50,7 +50,7 @@ def _id(p: str) -> str:
 def _ctx(board_id: str):
     return type("Ctx", (), {
         "agent_id": USER, "agent_name": USER, "board_id": board_id,
-        "permissions": ["board:read", "specs:update"],
+        "permissions": ["board.read", "spec.tests.edit", "spec.tests.delete"],
     })()
 
 
@@ -64,7 +64,7 @@ async def _seed(*, status=SpecStatus.DRAFT, scenarios=None, locked=False,
         kw = dict(
             id=spec_id, board_id=board_id, title="S", status=status, created_by=USER,
             acceptance_criteria=[{"id": "ac_one", "text": "AC one", "status": "active"}],
-            test_scenarios=scenarios or [],
+            test_scenarios=[{"scenario_type": "integration", **item} for item in (scenarios or [])],
         )
         if locked:
             kw["validations"] = [{"id": "val_x", "outcome": "success"}]
@@ -103,7 +103,7 @@ async def test_update_tool_edits_body_and_clears(db_factory):
         "notes": "keepme", "status": "draft",
     }])
     out = await _call("okto_pulse_update_test_scenario", _b, spec_id=spec,
-                      scenario_id="ts_a", given="new g", title="S2", clear="notes")
+                      scenario_id="ts_a", given="new g", title="S2", clear=["notes"])
     assert out.get("success") is True, out
     assert set(out["updated_fields"]) >= {"given", "title", "notes"}
     sc = (await _scenarios(spec))[0]

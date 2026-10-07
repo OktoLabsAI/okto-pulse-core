@@ -2,6 +2,34 @@
 
 ## Estado para retomada
 
+### 2026-10-07 — Core20 contratos qualificados
+Transfer Community6ada7cc2/Core8f09830a publicados, pushes0.
+Closure main20 handle39523 terminou0:ok=true,findings/documentation_findings=[],
+oito budgets ZERO. Core20 handle64084 terminou1:821pass/20fail/505.84s,
+seis módulos falhos preservados no recibo. Isolado FF para8f09830a após terminal.
+
+Quatro módulos completos agora qualificados46casos: contracts1 handle97642
+44pass/2fail; contracts2 handle75835 11pass/1fail; contracts3 handle15711
+12pass/11.27s. As últimas duas rodadas repetem só REST evaluation.
+Fixtures declaram adoção arquitetural, execution contract e requisitos tipados;
+resource gate mantém KB advisory e bloqueios architecture/mockup.
+MCP cenário usa board.read/spec.tests.edit/spec.tests.delete e clear como array.
+IR preparação recusa requisitos antigos sem conversão e sem alterar snapshot,
+mesmo após commit do chamador. REST recusa status/evaluations/validations
+injetados com422 e sem escrita, e aceita edição legítima de título; mantém
+negação da execução sem parecer approve e da operação batch inválida.
+Nenhuma produção mudou, prova saas19/closure continuam válidas.
+Ruff F/E9 e diff-check0. Recibo acceptance-clean-break-core20-contracts.json.
+
+Core20 restante: spec_resource_auto_propagation ainda presume fanout físico KB
+e porta LegacyKnowledgeScope(v2_active=False); produto atual usa assignments.
+spec_rest_scope_hardening esbarra em open_qa_count faltante no adapter de testes
+sqlalchemy_application_persistence; adapter Community já implementa a projeção.
+Investigar/corrigir fixtures sem reintroduzir legado nem relaxar gates.
+Community followup65213 continua ATIVO no main, não modificar esse ambiente.
+C4/E2E e T23/KG-10 permanecem pendentes. Próximo: terminar Community followup,
+as duas pendências Core20 e selecionar apenas módulos restantes.
+
 ### 2026-10-07 — Transferência nativa qualificada; integração main20
 community14-native-transfer1 handle79646 terminou1:79pass/18fail/1293.90s.
 Cinco módulos completos passaram, incluindo todos os consumidores de recuperação

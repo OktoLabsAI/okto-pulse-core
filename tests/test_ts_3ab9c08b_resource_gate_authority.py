@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import uuid
+from okto_pulse.core.domain.architecture_adoption import ArchitectureAdoptionScope
 
 import pytest
 
@@ -144,6 +145,8 @@ async def test_ts_3ab9c08b_level2_kb_is_history_not_blocking_obligation(
     async with db_factory() as db:
         db.add(Board(id=board_id, name="Level 2 authority", owner_id=actor_id))
         spec = Spec(
+            architecture_adoption=ArchitectureAdoptionScope(board_id=board_id, spec_id=spec_id,
+                adopted_in_edition=1, actor_id=actor_id, inherited_resource_ids=()).model_dump(mode='json'),
             id=spec_id,
             board_id=board_id,
             title="Spec with all resource classes",

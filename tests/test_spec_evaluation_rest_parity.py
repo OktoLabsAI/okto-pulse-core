@@ -14,6 +14,8 @@ Findings do ciclo KGDL.01 (2026-06-10):
 from __future__ import annotations
 
 import uuid
+from okto_pulse.core.domain.architecture_adoption import ArchitectureAdoptionScope
+from okto_pulse.core.domain.execution_contract import SpecExecutionContract
 
 import pytest
 import pytest_asyncio
@@ -81,9 +83,14 @@ async def spec_eval_client(db_factory):
     async with db_factory() as db:
         db.add(Board(id=board_id, name="Spec Eval REST", owner_id=USER_ID))
         db.add(Spec(
+            architecture_adoption=ArchitectureAdoptionScope(board_id=board_id, spec_id=validated_spec_id,
+                adopted_in_edition=1, actor_id=USER_ID, inherited_resource_ids=()).model_dump(mode='json'),
+            execution_contract=SpecExecutionContract(board_id=board_id, spec_id=validated_spec_id,
+                adopted_in_edition=1, actor_id=USER_ID, origin='new_spec').model_dump(mode='json'),
             id=validated_spec_id, board_id=board_id, title="Validated Spec",
             status=SpecStatus.VALIDATED, created_by=USER_ID,
-            functional_requirements=["FR1"], acceptance_criteria=["AC1"],
+            functional_requirements=[{"id": "fr_one", "text": "FR1"}],
+            acceptance_criteria=[{"id": "ac_one", "text": "AC1"}],
             test_scenarios=[], business_rules=[], api_contracts=[],
             # Skips de cobertura: o teste isola o gate QUALITATIVO de
             # in_progress (evaluations) — os gates de cobertura têm suíte
@@ -100,9 +107,14 @@ async def spec_eval_client(db_factory):
             **_direct_spec_context_fields(validated_spec_id),
         ))
         db.add(Spec(
+            architecture_adoption=ArchitectureAdoptionScope(board_id=board_id, spec_id=draft_spec_id,
+                adopted_in_edition=1, actor_id=USER_ID, inherited_resource_ids=()).model_dump(mode='json'),
+            execution_contract=SpecExecutionContract(board_id=board_id, spec_id=draft_spec_id,
+                adopted_in_edition=1, actor_id=USER_ID, origin='new_spec').model_dump(mode='json'),
             id=draft_spec_id, board_id=board_id, title="Draft Spec",
             status=SpecStatus.DRAFT, created_by=USER_ID,
-            functional_requirements=["FR1"], acceptance_criteria=["AC1"],
+            functional_requirements=[{"id": "fr_one", "text": "FR1"}],
+            acceptance_criteria=[{"id": "ac_one", "text": "AC1"}],
             test_scenarios=[], business_rules=[], api_contracts=[],
         ))
         await db.commit()
@@ -190,6 +202,14 @@ def test_rest_content_and_move_cannot_forge_evaluation(spec_eval_client, monkeyp
     updated = client.patch(f'/api/v1/specs/{draft_id}', json={
         'title': 'Authorized planner content', 'status': 'validated',
         'evaluations': [_evaluation_payload()], 'validations': [{'recommendation': 'approve'}],
+    })
+    assert updated.status_code == 422, updated.text
+    assert {tuple(item['loc']) for item in updated.json()['detail']} == {
+        ('body', 'status'), ('body', 'evaluations'), ('body', 'validations'),
+    }
+    assert client.get(f'/api/v1/specs/{draft_id}').json() == before
+    updated = client.patch(f'/api/v1/specs/{draft_id}', json={
+        'title': 'Authorized planner content',
     })
     assert updated.status_code == 200, updated.text
     assert updated.json()['title'] == 'Authorized planner content'

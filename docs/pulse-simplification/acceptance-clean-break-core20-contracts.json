@@ -1,0 +1,50 @@
+{
+  "scope": "Core20 native REST/evaluation, scenario MCP, resource gate, IR preparation",
+  "pair": "dist-native-saas19",
+  "qualified_distinct_cases": 46,
+  "runs": [
+    {
+      "name": "clean-break-full-run20",
+      "sha256": "8484d9b349ab5ef26bdfce0dbd0034db0ce3fbd618c6f3bd27abbec521871b1d",
+      "tests": 841,
+      "failed": 20,
+      "failed_modules": [
+        "tests.test_spec_evaluation_rest_parity",
+        "tests.test_spec_resource_auto_propagation",
+        "tests.test_spec_rest_scope_hardening",
+        "tests.test_structured_ir_preparation",
+        "tests.test_ts_3ab9c08b_resource_gate_authority",
+        "tests.test_update_delete_test_scenario_mcp"
+      ]
+    },
+    {
+      "name": "core20-native-contracts1",
+      "sha256": "3abed01fbeec8ffe4848f58ede8ea75b57e786ce845eab7a6536d476b1a37576",
+      "tests": 46,
+      "failed": 2,
+      "failed_modules": [
+        "tests.test_spec_evaluation_rest_parity"
+      ]
+    },
+    {
+      "name": "core20-native-contracts2",
+      "sha256": "ad9f6d2fcf1599825fabb2ee6d9756dfcf3f1f80806b04ac43c21e27b5370c7a",
+      "tests": 12,
+      "failed": 1,
+      "failed_modules": [
+        "tests.test_spec_evaluation_rest_parity"
+      ]
+    },
+    {
+      "name": "core20-native-contracts3",
+      "sha256": "899dfbc1df43dbed1270fdd3bb57dc58b57397759979c709a83b24126b31bd72",
+      "tests": 12,
+      "failed": 0,
+      "failed_modules": []
+    }
+  ],
+  "limitations": [
+    "spec_resource_auto_propagation and spec_rest_scope_hardening remain pending",
+    "Community followup active; C4 and installed E2E incomplete"
+  ]
+}
