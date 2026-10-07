@@ -6213,7 +6213,6 @@ _CROSS_SESSION_PREFIXES: tuple[str, ...] = (
     "ideation_",
     "refinement_",
     "spec_",
-    "sprint_",
     "card_",
 )
 _SOURCE_REF_ENDPOINT_PREFIX = "kgref:"
@@ -6379,7 +6378,7 @@ def _cross_session_entity_source_prefix(endpoint: str) -> str | None:
         for prefix, ref_prefix in (
             ("story_", "story:"), ("ideation_", "ideation:"),
             ("refinement_", "refinement:"), ("spec_", "spec:"),
-            ("sprint_", "sprint:"), ("card_", "card:"),
+            ("card_", "card:"),
         ):
             if body.startswith(prefix):
                 return ref_prefix + body[len(prefix):]

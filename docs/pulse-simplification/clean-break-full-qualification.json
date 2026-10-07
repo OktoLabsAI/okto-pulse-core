@@ -2044,5 +2044,18 @@
     "scope": "Current writers persist explicit generation. Removed NULL/missing/read-error-to-zero interpretation and legacy coalesce ordering. Invalid identity/value rejected; read failure explicitly retryable. Native graph test proves missing value is unchanged; deterministic identity, cognitive durable source/replay, Decision history, NC8 and batch provenance remain intact.",
     "test_disposition": "Renamed generation_migration to native_generation; native bootstrap retained and old-row positive replaced with missing/invalid/read-failure rejection. Seven complete suites including AF04.",
     "limits": "No authority change for valid objects, no frontend change, no full backend/criteria completion claim."
+  },
+  "native_parent_references": {
+    "campaign": "native-parent-refs1",
+    "passed": 17,
+    "failed": 0,
+    "duration_seconds": 18.58,
+    "xml_sha256": "4ccbfbb832e75773d244135b23eb2e4fe809766a8dd62cafc0aa1cfc7d063b06",
+    "proof_pair": "dist-native-parent-refs1",
+    "provenance": "provenance-native-parent-refs1.json",
+    "closure": "closure-native-parent-refs1.json",
+    "closure_ok": true,
+    "all_eight_budgets_zero": true,
+    "scope": "Removed Sprint deferred Entity parent grammar from live and recovery parsers. Five current artifact prefixes unchanged; seven parser cases plus AF04 pass. No frontend change."
   }
 }

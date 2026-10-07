@@ -2,6 +2,31 @@
 
 ## Estado para retomada
 
+### 2026-10-07 — C3 referencias parentais qualificadas
+
+native-parent-refs1 terminal:17 aprovados18.58s (sete gramatica +AF04).
+Handle20785 encerrado. Closure-native-parent-refs1 terminal ok=true/findings/docs
+vazios/oito budgetsZERO; handle31791 encerrado. Par/provenance byte-identico
+843/905+318/404. Nenhum handle ativo. Sprint nao e mais referencia Entity
+parent diferida; story/ideation/refinement/spec/card preservados nos dois parsers.
+Frontend inalterado; Ruff/diff verdes. Core4d8243a6/Community2cc0f5ab publicados;
+este incremento sera publicado a seguir. C1-C4/criterios/benchmark/T23/KG-10 abertos.
+Proximo: bump coordenado0.4.0 previsto em C4, incluindo manifests/About/assets,
+prova pareada e testes de versao/packaging/frontend antes de continuar Core11/
+Community9. Selecoes preparadas ainda nao iniciadas; incorporar57+17 Core.
+
+
+### 2026-10-07 — C3 referencias parentais nativas em qualificacao
+
+Core4d8243a6 / Community2cc0f5ab publicados; pushes confirmados.
+Retirada Sprint da gramatica de Entity parent entre sessoes, em ambos parsers
+(live e comparacao de recuperacao). Cinco tipos atuais preservados, sem novo seam.
+WIP Core, nao publicado. Par dist-native-parent-refs1 instalado/provado byte-a-byte
+843/905+318/404 antes de comportamento. Native-parent-refs1 ativo handle20785
+(sete casos de gramatica +AF04); closure-native-parent-refs1 ativo handle31791.
+Aguardar terminais. C1-C4/criterios/benchmark/bump/T23/KG-10 ainda abertos.
+
+
 ### 2026-10-07 — C2 geracao explicita qualificada
 
 native-generation1 terminal:57 aprovados, zero falhas,597.59s; sete suites
