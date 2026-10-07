@@ -35,6 +35,7 @@ os.environ.setdefault("KG_BASE_DIR", tempfile.mkdtemp(prefix="okto_kg_failclosed
 
 from okto_pulse.community.api.kg_routes import get_subgraph
 from okto_pulse.core.application.use_cases.base import ActorContext
+from okto_pulse.core.domain.permissions import PermissionSet
 from okto_pulse.core.kg import cypher_templates as tpl
 from okto_pulse.core.kg.cypher_templates import (
     layer_filter_clause,
@@ -109,7 +110,7 @@ async def _subgraph(board_id: str, **kw):
             "kg-layer-test",
             "rest",
             board_id=board_id,
-            permissions=["board:read"],
+            permissions=PermissionSet({"board": {"read": True}, "kg": {"query": {"related_context": True}}}),
         ),
         uow=SimpleNamespace(),
     )

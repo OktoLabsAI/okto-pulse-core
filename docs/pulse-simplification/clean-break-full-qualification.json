@@ -1511,5 +1511,32 @@
     "proof_pair": "dist-native-health1",
     "product_changes": false,
     "scope": "Explicit realm and native architecture SQL seeds; retain Q&A mutation fences, filtering, deterministic pagination, compact lookup contracts and grants. All three modules complete."
+  },
+  "native_kg_projection": {
+    "campaigns": [
+      {
+        "campaign": "native-kg-projection1",
+        "passed": 60,
+        "failed": 1,
+        "duration_seconds": 113.64
+      },
+      {
+        "campaign": "native-kg-projection2",
+        "passed": 11,
+        "failed": 0,
+        "duration_seconds": 39.28
+      }
+    ],
+    "distinct_passed": 71,
+    "xml_sha256": {
+      "native-kg-projection1": "b2596f3b26d2fbce1f57764547cd4b0fe2ccc79a3792809697ae036af83a3294",
+      "native-kg-projection2": "6b7f50335c230eafe886ad5b3cb85c8f1507a8827438c284eec687f9d1127c99"
+    },
+    "proof_pair": "dist-native-kg-projection1",
+    "provenance": "provenance-native-kg-projection1.json",
+    "closure": "closure-native-kg-projection1.json",
+    "closure_ok": true,
+    "all_eight_budgets_zero": true,
+    "scope": "Remove short-row padding for KG CT projection; preserve full nullable projection. Negative listing/detail checks; current canonical isolation and cursor/pagination; MCP guidance and generated catalog. Sole fixture failure used retired board:read claim; explicit native board.read/kg.query.related_context resolves it without broad role."
   }
 }

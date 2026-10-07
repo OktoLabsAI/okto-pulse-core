@@ -41,8 +41,8 @@ edition.
 New Spec Evaluations record the server's `spec_edition` and technical
 `spec_version`. Reopening to Draft marks prior evaluations as Previous in the
 same transaction; their IDs, authors, scores, verdicts, explanations and dates
-remain intact. This includes legacy evaluations without edition metadata:
-their original edition stays unknown, and no backfill invents one.
+remain intact. Every evaluation records its native edition; reopening preserves
+that original edition.
 
 The new edition requires its own applicable approval before execution under
 the existing policy. An approval does not override an active rejection in the
@@ -378,7 +378,7 @@ evidence and do not define the canonical five-metric gate.
 
 **MCP tools for the gate:**
 - `okto_pulse_submit_spec_validation(...)` — requires spec in `approved` status.
-- `okto_pulse_list_spec_validations(board_id, spec_id)` — returns Current and Previous results by lifecycle edition; legacy SQL `NULL` editions are history-only under Previous.
+- `okto_pulse_list_spec_validations(board_id, spec_id)` — returns Current and Previous results by lifecycle edition; prior editions remain history-only under Previous.
 - `okto_pulse_move_spec(board_id, spec_id, status="draft")` — the single-hop reopen path. It starts a new edition, clears `current_validation_id`, and preserves earlier results under Previous.
 
 Current Spec Validation is owned by this human validation lifecycle. It stays
@@ -514,7 +514,7 @@ new conclusion, and hands off a new validation attempt. Every call carries
 `expected_subject_version` and `idempotency_key`; exact retries resolve before
 the mutable status check, while key reuse with a different payload fails.
 
-The `resolved_from` field in `validation_config` tells you which level provided the active configuration (`"board"`, `"spec"`, or `"sprint"`).
+The `resolved_from` field in `validation_config` tells you which level provided the active configuration (`"board"` or `"spec"`).
 
 **Independent reviewer policy:** `reviewer_separation_mode` is resolved from the board before any task-validation mutation. The full task context projects the current caller's `reviewer_separation` decision against card creator, assignee, and executor identities. `enforce` blocks with the action-required code `reviewer_separation_required`; `warn` and `off` proceed and persist the decision in the append-only validation. Omitted settings use the current `enforce` default with `source=board_default`; invalid policy values are refused. Community bootstrap Boards explicitly select `off`; authored Boards and new default-board template versions use `enforce` unless configured otherwise.
 
@@ -548,7 +548,7 @@ per-Spec skip is changed through the Code Evidence Matrix surface. Resolution
 matches the other coverage gates: `effective_skip = board_global OR spec_local`.
 Either flag bypasses only `code_evidence_disposition_required`; neither admits
 an incomplete bounded projection nor disables separately applicable
-traceability/currentness controls. Historical absent flags resolve to `false`.
+traceability/currentness controls. New authored flags default to `false`.
 An authenticated external agent performs source access checks and deterministic
 investigation before submission. Pulse Core validates the receipt and Community
 persists/projects it; neither reads a repository to satisfy the gate.

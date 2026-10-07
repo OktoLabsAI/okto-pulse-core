@@ -4304,5 +4304,12 @@
       "okto_labs_pulse_community/tests/test_c9_lookups_route.py"
     ],
     "reason": "Current SQL seeds declare realm and architecture selection. Preserve every functional assertion, including QA nonce/revision changes and lookup/pagination filters/privacy."
+  },
+  "native_kg_projection": {
+    "paths": [
+      "tests/test_kg_service_code_traceability_projection.py",
+      "tests/test_kg_canonical_only_fail_closed.py"
+    ],
+    "reason": "Replace readable legacy short-row test with nullable full-row current contract and negative truncated listing/detail. Current grants replace retired colon claim in subgraph fixture. Preserve canonical-only isolation, graph-layer classification and actual Grafx reads; no new dialect or permission policy."
   }
 }

@@ -93,19 +93,16 @@ def _cursor_timestamp_parameter(value: str) -> datetime:
     return parsed.astimezone(timezone.utc)
 
 
-def _optional_row_projection(
+def _traceability_row_projection(
     row: list[Any] | tuple[Any, ...],
     *,
     start_index: int,
 ) -> dict[str, Any]:
-    """Map additive semantic columns while accepting legacy-shaped rows."""
-
+    """Map the complete current projection; nullable column values remain valid."""
+    if len(row) < start_index + len(CODE_TRACEABILITY_READ_PROPERTIES):
+        raise ValueError("kg_node_projection_incomplete")
     return {
-        property_name: (
-            row[start_index + offset]
-            if len(row) > start_index + offset
-            else None
-        )
+        property_name: row[start_index + offset]
         for offset, property_name in enumerate(CODE_TRACEABILITY_READ_PROPERTIES)
     }
 
@@ -814,7 +811,7 @@ class KGService:
                         "created_at": _as_iso_timestamp(r[9]),
                         "superseded_by": r[10],
                         "node_type": ntype,
-                        **_optional_row_projection(r, start_index=11),
+                        **_traceability_row_projection(r, start_index=11),
                     }
             except Exception:
                 continue
@@ -889,9 +886,9 @@ class KGService:
                 "source_confidence": r[5],
                 "relevance_score": r[6] if r[6] is not None else 0.5,
                 "source_artifact_ref": r[7],
-                "graph_layer": r[8] if len(r) > 8 and r[8] else "legacy_unknown",
-                "maturity_status": r[9] if len(r) > 9 else None,
-                **_optional_row_projection(r, start_index=10),
+                "graph_layer": r[8] or "legacy_unknown",
+                "maturity_status": r[9],
+                **_traceability_row_projection(r, start_index=10),
             }
             for r in rows
         ]

@@ -2,6 +2,24 @@
 
 ## Estado para retomada
 
+### 2026-10-07 — C1/C3 projecao KG sem preenchimento de linha antiga
+
+Core d44c1959 / Community a99680b9 publicados. Retirado preenchimento comNone
+de colunas ausentes na projecao KG; templates atuais sempre selecionam a forma
+completa. Valores nulos reais nas colunas continuam validos. Listing recusa linha
+truncada e detalhe nao projeta node incompleto. Nenhum dialeto/grant/gate alterado.
+Docs spec_gates deixam de anunciar Sprint policy/avaliacao sem edicao.
+Followup native-kg-projection1:60 aprovados/uma falha113.64s; fixture subgraph
+ainda usava board:read. Substituida por PermissionSet nativo board.read e
+kg.query.related_context, sem admin. Followup2:11 aprovados39.28s, incluindo
+dez AF04; total distinto71. Preservados testes reais Grafx de isolamento
+canonical/working, cursor/paginacao, guidance e catalogo. Ruff/diff verdes.
+Par dist-native-kg-projection1 instalado/provado byte-a-byte:Core843/905,
+Community318/404. Closure terminal ok=true, findings/docs vazios, oito budgetsZERO.
+Sem impacto frontend. Nenhum processo ativo; proximo Core run9 (aposrun8),
+Community run7 (aposrun6); excluir modulos completos e stress. C1-C4,
+criterios/benchmark/bump0.4.0 e T23/KG-10 permanecem pendentes.
+
 ### 2026-10-07 — C4 C8/C9 integralmente qualificados
 
 Core4ebf09d5 / Community6933251c publicados. Community full-run6 terminou:
