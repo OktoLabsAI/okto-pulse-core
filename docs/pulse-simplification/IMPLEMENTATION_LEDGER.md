@@ -3,6 +3,8 @@
 ## Estado para retomada
 
 ### 2026-10-07 — KG33 comprovado com gates e schema reais
+Publicação confirmada: Corec4f2b778/Communitya42c33c5; pushes pareados
+origin/feature/v0.4.0 terminaram0. Sem processos de teste ativos.
 Closeout9 (51802) terminal0:10pass/18.14s. Produto main64 inalterado,
 byte-idêntico na prova provenance-native-learning-closeout1 anterior aos testes.
 Novo test_native_learning_closeout usa schema oficial, triggers, engine Community
