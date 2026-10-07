@@ -796,3 +796,16 @@ async def test_v2_resource_exclusion_preserves_non_knowledge_autocopy(
     assert not hasattr(card, "knowledge_bases")
     assert [item["id"] for item in card.screen_mockups] == ["screen-1"]
     assert store.audits[0]["details"]["resource_types"] == ["mockup"]
+
+
+@pytest.mark.parametrize("model,payload,removed_alias", [
+    (KnowledgePropagationEnvelopeV2,
+     {"selection_state": "omitted", "idempotency_key": "native"}, "linkage"),
+    (KnowledgeAssignmentReplaceRequest,
+     {"knowledge_ids": ["root-1"], "mode": "reference", "justification": "why",
+      "idempotency_key": "native", "expected_revision": 0}, "relevance_links"),
+])
+def test_knowledge_requests_refuse_alternative_field_names(model, payload, removed_alias):
+    assert model.model_validate(payload)
+    with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
+        model.model_validate({**payload, removed_alias: []})

@@ -42,7 +42,7 @@ Architecture Design is the first-class place for system structure. See the full 
 Card resources are read-only governed snapshots. Do not create, edit, annotate,
 import, or delete Knowledge Base, Mockup, or Architecture resources directly on a
 card; update the source ideation/refinement/spec resource and then run the
-matching copy tool to refresh the card snapshot while preserving the source
+matching copy tool for Mockup/Architecture, or the Knowledge assignment tools, to refresh the card snapshot while preserving the source
 identity used by the Resource Gate.
 
 **Copy versus reference:** a governed copy made by the official copy tool is
@@ -63,38 +63,35 @@ source cannot be selected by the tool, report the exact IDs as a lineage/copy
 problem rather than claiming that copying is forbidden.
 
 Read `okto-pulse://reference/knowledge-governance` before deciding that content
-belongs in a KB. When `knowledge_propagation` is absent from
-`okto_pulse_create_card`, the legacy v1 behavior remains unchanged:
-`auto_derive_spec_resources_enabled` and the existing copy path may attach all
-eligible spec Knowledge. Supplying the envelope opts that create into selective
-propagation v2 and bypasses the legacy Knowledge fan-out for that card.
+belongs in a KB. Creating a Card uses one Knowledge selection contract.
+Omitting `knowledge_propagation` creates an `omitted` selection with no inherited
+Knowledge and a fresh operation key.
 
-### Selective Knowledge propagation v2
+### Selective Knowledge propagation
 
-The envelope itself is the version switch. Do not infer intent from a missing
-field or an empty list:
+Select the intended state explicitly when providing an envelope:
 
 | Input on `okto_pulse_create_card` | Meaning |
 |---|---|
-| `knowledge_propagation` absent | Preserve the complete v1 create/copy behavior. |
-| `selection_state="omitted"`, no `mode`, no `knowledge_ids` | Authoritative v2 omission. This is NOT the legacy path merely because the selector is empty. |
+| `knowledge_propagation` absent | Create with no inherited Knowledge selection. Supply an envelope with a stable key when retry identity is needed. |
+| `selection_state="omitted"`, no `mode`, no `knowledge_ids` | Record no inherited Knowledge selection. |
 | `selection_state="explicit_empty"`, `mode="drop"`, empty `knowledge_ids` | Authoritative empty selection/drop-all. A non-empty `justification` is required. |
 | `selection_state="explicit_ids"`, non-empty `knowledge_ids`, `mode="reference"`, `"snapshot"`, or `"drop"` | Propagate only those stable roots, or explicitly drop the named roots. A non-empty `justification` is required. |
 
-Every v2 envelope has `contract_version=2` and a non-empty,
+Every envelope has `contract_version=2` and a non-empty,
 caller-stable `idempotency_key`. A create accepts `expected_revision` omitted
 or `0`; it rejects another value. Repeating the semantically identical request
 with the same key returns the original durable result with `replayed=true`.
 Never reuse that key for a different card payload, selection, actor, or parent.
 
-For cards, optional `relevance_links` (also accepted as the input alias
-`linkage`) explain why the selected Knowledge matters. Each item is
+For card creation, optional `relevance_links` explain why the selected Knowledge matters. Each item is
 `{entity_type, entity_id}` and `entity_type` is exactly one of
 `functional_requirement`, `acceptance_criterion`, or `test_scenario`. The
 referenced FR, AC, or scenario must belong to the card's linked spec; the whole
 operation fails before creation when any source or linkage is invalid.
 
-After creation, use the v2 assignment tools instead of the legacy copy tool:
+After creation, use the assignment tools. Replace accepts relevance links in
+its `linkage` field:
 
 - `okto_pulse_replace_card_knowledge_assignments` atomically replaces the
   selection with `reference` or `snapshot` assignments.
@@ -103,7 +100,7 @@ After creation, use the v2 assignment tools instead of the legacy copy tool:
 - `okto_pulse_refresh_card_knowledge_assignments` refreshes snapshot content by
   stable **root Knowledge ID**, never by assignment-row ID.
 - `okto_pulse_get_card_knowledge_propagation` reads the technical selection,
-  revision, assignments, stale state, legacy visibility, and history.
+  revision, assignments, stale state, and native assignment history.
 
 Replace/drop/refresh require the current `expected_revision`. Read the
 technical projection immediately before a mutation when the revision is not
@@ -188,7 +185,7 @@ Example: `[TEST] E2E — Valid OAuth2 token grants access`
 | Test card without `okto_pulse_link_task(target_type="scenario", ...)` | Scenario shows "no tasks" — no way to know which card validates it | Always call `okto_pulse_link_task(target_type="scenario", ...)` after creating a test card |
 | Starting work without `okto_pulse_get_task_context` | Implementing blind = guaranteed drift | ALWAYS call `okto_pulse_get_task_context` with `profile="full", context_scope="gate"` and all include flags BEFORE any work; use bounded detail/drilldowns for bodies |
 | Card still `not_started` while writing code | Board is inaccurate | Query `okto_pulse_get_allowed_transitions`; move normal cards to `started` and then `in_progress` (or use a directly advertised test/bug edge) BEFORE first line of code |
-| Treating an absent v2 envelope as `selection_state="omitted"` | Absence deliberately preserves v1, while an in-envelope omission is authoritative v2 state | Choose the version explicitly: omit the envelope for v1, or send a coherent v2 tri-state envelope |
+| Expecting an omitted selection to copy every KB | Omission selects no inherited Knowledge | Send the stable Knowledge IDs and intended mode explicitly |
 | Refreshing by assignment ID | Assignment rows are temporal and may be superseded | Pass stable root Knowledge IDs to `okto_pulse_refresh_card_knowledge_assignments` |
 | Reusing an idempotency key after changing payload or selection | Replay identity no longer represents the same semantic request | Reuse a key only for an exact retry; generate a new key for new intent |
 

@@ -344,9 +344,27 @@ async def test_delete_refinement_204_persists_and_404(client) -> None:
 
 
 @pytest.mark.asyncio
-async def test_derive_spec_400_when_refinement_not_done_and_404(client) -> None:
+async def test_derive_spec_400_when_refinement_not_done_and_404(client, monkeypatch) -> None:
     _, ideation_id = await _seed_ideation(status="done")
     rid = await _seed_refinement(ideation_id)  # draft
+
+    from okto_pulse.core.ports.knowledge_propagation import (
+        get_knowledge_propagation_port, KnowledgeParentEvidence,
+    )
+    from sqlalchemy_test_models import Refinement
+
+    async def load_parent_evidence(context, lookup):
+        parent = await context.get(Refinement, lookup.parent.parent_id)
+        return KnowledgeParentEvidence(
+            parent=lookup.parent, parent_exists=parent is not None,
+            same_board=parent is not None and parent.board_id == lookup.parent.board_id,
+            parent_state=parent.status.value if parent else None,
+        )
+    async def stage_attempt(_context, _attempt):
+        return None
+    port = get_knowledge_propagation_port()
+    monkeypatch.setattr(port, "load_parent_evidence", load_parent_evidence)
+    monkeypatch.setattr(port, "stage_attempt", stage_attempt)
 
     bad = client.post(f"{PREFIX}/refinements/{rid}/derive-spec")
     assert bad.status_code == 400, bad.text
@@ -464,7 +482,7 @@ async def test_refinement_knowledge_create_list_get_delete(client) -> None:
     )
     assert created.status_code == 201, created.text
     kid = created.json()["id"]
-    assert created.json()["governance"]["metadata_status"] == "legacy_incomplete"
+    assert created.json()["governance"]["metadata_status"] == "omitted"
 
     listed = client.get(f"{PREFIX}/refinements/{rid}/knowledge")
     assert listed.status_code == 200

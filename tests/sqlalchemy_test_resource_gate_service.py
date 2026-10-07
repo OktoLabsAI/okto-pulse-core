@@ -868,6 +868,7 @@ class TestSqlAlchemyResourceGateAdapter:
             "root_source_kb_id": kb.root_source_kb_id,
             "immediate_parent_kb_id": kb.immediate_parent_kb_id,
             "content_hash": resolve_knowledge_content_sha256(kb),
+            "governance_metadata": kb.governance_metadata,
             "created_by": kb.created_by,
             "created_at": self._isoformat(kb.created_at),
             "updated_at": self._isoformat(kb.updated_at),

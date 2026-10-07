@@ -1105,7 +1105,7 @@ async def test_v2_read_falls_back_to_root_and_keeps_reference_snapshot_semantics
 
 
 @pytest.mark.asyncio
-async def test_legacy_snapshot_without_governance_metadata_projects_incomplete() -> (
+async def test_native_snapshot_preserves_omitted_governance_metadata() -> (
     None
 ):
     content = b"legacy snapshot"
@@ -1145,7 +1145,7 @@ async def test_legacy_snapshot_without_governance_metadata_projects_incomplete()
     assert resolved.governance_metadata is None
     assert (
         project_knowledge_governance_from_resource(resolved)["metadata_status"]
-        == "legacy_incomplete"
+        == "omitted"
     )
 
 

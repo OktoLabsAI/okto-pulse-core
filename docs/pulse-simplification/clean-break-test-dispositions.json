@@ -4133,5 +4133,35 @@
       "path": "okto_labs_pulse_community/tests/test_af35_s1_community_adapters.py",
       "reason": "Real SQLAlchemy round-trip verifies native boolean drilldown. Fixture supplies current realm_id, mandatory architecture adoption and real Knowledge propagation port; no production schema or gate is relaxed."
     }
+  ],
+  "native_knowledge_contract_adaptations": [
+    {
+      "path": "tests/test_knowledge_governance.py and tests/test_knowledge_governance_surfaces.py",
+      "reason": "Replace historical partial/unknown-version read acceptance with typed refusal without mutation. Native optional metadata still reads as omitted across MCP, list, context and REST projections; complete metadata retains its canonical shape."
+    },
+    {
+      "path": "tests/test_knowledge_propagation_service.py",
+      "reason": "Retain snapshot omission despite metadata subsequently added to the source, now named native omission rather than legacy compatibility."
+    },
+    {
+      "path": "tests/test_imp4_knowledge_application.py",
+      "reason": "Verify alternative relevance/linkage names are refused. Canonical creation relevance_links and replace linkage retain selection and revision semantics."
+    },
+    {
+      "path": "tests/test_agent_instructions_auto_copy.py and tests/test_knowledge_governance_resources.py",
+      "reason": "Remove guards requiring v1/legacy_all fallback prose; require the one native selection contract and current optional/invalid metadata behavior."
+    },
+    {
+      "path": "tests/test_ideation_knowledge_rest.py, tests/test_r01a_refinements_uow.py and tests/test_r01a_specs_knowledge_qa_eval_uow.py",
+      "reason": "Omitted metadata created by native operations remains supported with omitted status. Refinement negative derivation fixture supplies actual parent state through the public port; production done and missing-parent gates remain unchanged."
+    },
+    {
+      "path": "tests/sqlalchemy_test_resource_gate_service.py",
+      "reason": "Test hydration now retains raw governance metadata, matching the current production adapter so a complete projection is not overwritten as omitted."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_knowledge_propagation_adapter.py and tests/test_spec_b_knowledge_propagation_e2e.py",
+      "reason": "Fixtures use explicit local realm and required architecture adoption. Adapter suite initializes current schema and binds local RealmScope; preserve real reference/snapshot/drop/replay/history tests without restoring schema migration."
+    }
   ]
 }

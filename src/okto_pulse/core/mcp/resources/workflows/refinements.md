@@ -102,21 +102,17 @@ keep the ledger provenance precise and independently readable.
 
 ### 2.2a Selective Knowledge propagation when deriving a spec
 
-`okto_pulse_derive_spec_from_refinement` has two intentionally separate
-Knowledge paths:
+`okto_pulse_derive_spec_from_refinement` uses one Knowledge selection contract.
+Omitting `knowledge_propagation` creates an `omitted` selection with no inherited
+Knowledge and a fresh operation key. Supply an envelope with a caller-stable
+key when the derivation must support exact retries.
 
-- Omit `knowledge_propagation` to preserve the legacy v1 derivation exactly.
-  Legacy `kb_ids` keeps its existing meaning on this path.
-- Supply `knowledge_propagation` to opt into contract v2. In this case,
-  `kb_ids` and `knowledge_propagation` are mutually exclusive; passing both
-  fails with `conflicting_propagation_parameters`.
-
-The v2 envelope has `contract_version=2`, a caller-stable
+The envelope has `contract_version=2`, a caller-stable
 `idempotency_key`, and one coherent tri-state selection:
 
 | `selection_state` | Required shape | Effect |
 |---|---|---|
-| `omitted` | no `mode`; empty `knowledge_ids`; justification optional | Records an authoritative v2 omission. It does not fall back to v1. |
+| `omitted` | no `mode`; empty `knowledge_ids`; justification optional | Records no inherited Knowledge selection. |
 | `explicit_empty` | `mode="drop"`; empty `knowledge_ids`; non-empty `justification` | Derives the spec with an authoritative empty Knowledge selection. |
 | `explicit_ids` | non-empty `knowledge_ids`; `mode="reference"`, `"snapshot"`, or `"drop"`; non-empty `justification` | Derives the spec with only the selected stable roots, or explicitly drops the named roots. |
 
@@ -128,7 +124,7 @@ original `spec_id`, operation, selection, and assignments with
 selection. A rare `knowledge_creation_race` is retryable and the MCP surface
 already performs one retry in a fresh unit of work before exposing it.
 
-Selective Knowledge v2 does not change mockup or Architecture Design
+Selective Knowledge does not change mockup or Architecture Design
 parameters. Continue to pass `mockup_ids`, `architecture_design_ids`, and
 `architecture_propagation_mode` independently.
 

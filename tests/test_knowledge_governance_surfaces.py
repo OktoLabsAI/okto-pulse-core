@@ -96,35 +96,24 @@ def test_mcp_lists_and_context_resolver_share_complete_projection() -> None:
     assert context_payload["content"] == "Body"
 
 
-@pytest.mark.parametrize(
-    "raw",
-    [None, {"contract_version": 7, "purpose": "historical partial value"}],
-    ids=["null-legacy", "partial-legacy"],
-)
-def test_cross_surface_legacy_reads_are_tolerant(raw: object | None) -> None:
-    kb = {
-        "id": "kb-legacy",
-        "title": "Legacy",
-        "content": "Untrusted body must not drive governance",
-        "governance_metadata": raw,
+@pytest.mark.parametrize("reader", [
+    serialize_mcp_knowledge_base,
+    serialize_list_knowledge_base,
+    lambda kb: resolve_artifact_references(
+        SimpleNamespace(knowledge_bases=[kb], screen_mockups=[]),
+        source_type="ideation", source_id="idea-1", source_title="Idea",
+    )["knowledge_bases"][0],
+])
+def test_cross_surface_metadata_is_optional_but_invalid_data_is_refused(reader):
+    from okto_pulse.core.domain.knowledge_governance import KnowledgeGovernanceInvalidMetadata
+    kb = {"id": "kb-1", "title": "Knowledge", "content": "Advisory data"}
+    assert reader(kb)["governance"] == {
+        "authority": "advisory", "metadata_status": "omitted",
+        "missing_fields": ["governance_metadata"], "metadata": None,
     }
-
-    projections = [
-        serialize_mcp_knowledge_base(kb)["governance"],
-        serialize_list_knowledge_base(kb)["governance"],
-        resolve_artifact_references(
-            SimpleNamespace(knowledge_bases=[kb], screen_mockups=[]),
-            source_type="ideation",
-            source_id="idea-1",
-            source_title="Idea",
-        )["knowledge_bases"][0]["governance"],
-    ]
-
-    assert projections[0] == projections[1] == projections[2]
-    assert projections[0]["authority"] == "advisory"
-    assert projections[0]["metadata_status"] == "legacy_incomplete"
-    assert projections[0]["metadata"] is raw
-    assert projections[0]["missing_fields"]
+    kb["governance_metadata"] = {"contract_version": 7, "purpose": "unsupported"}
+    with pytest.raises(KnowledgeGovernanceInvalidMetadata):
+        reader(kb)
 
 
 def test_rest_card_response_projects_inline_knowledge_governance() -> None:
@@ -339,7 +328,7 @@ async def test_spec_consolidated_list_keeps_effective_summary_bounded() -> None:
         ),
         "governance": {
             "authority": "advisory",
-            "metadata_status": "legacy_incomplete",
+            "metadata_status": "omitted",
             "missing_fields": [
                 "governance_metadata",
             ],

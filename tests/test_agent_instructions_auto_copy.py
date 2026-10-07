@@ -52,12 +52,13 @@ def test_bootstrap_explains_rejected_rework_handoff(text):
     assert "Test Cards retain their separate `validation` → `in_progress`" in text
 
 
-def test_legacy_fallback_and_active_v2_semantics_are_documented(text):
-    assert "legacy_all" in text
-    assert "propagation v2 is active and opt-in" in text
+def test_single_knowledge_selection_contract_is_documented(text):
+    assert "legacy_all" not in text
+    assert "preserve the legacy v1" not in text
+    assert "opts that create" not in text
     assert 'selection_state="omitted"' in text
-    assert "authoritative v2 state" in text
-    assert "copy-all" in text
+    assert "no inherited Knowledge" in text
+    assert "current revision" in text
 
 
 def test_knowledge_governance_resource_is_linked_and_authoritative(text):

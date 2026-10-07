@@ -63,7 +63,7 @@ def test_create_list_get_delete_ideation_knowledge(_client_and_ideation):
     created = created_resp.json()
     assert created["title"] == "Discovery notes"
     assert created["content"] == "Important ideation context"
-    assert created["governance"]["metadata_status"] == "legacy_incomplete"
+    assert created["governance"]["metadata_status"] == "omitted"
     assert created["governance"]["missing_fields"] == ["governance_metadata"]
 
     listing_resp = client.get(f"/api/v1/ideations/{ideation_id}/knowledge")

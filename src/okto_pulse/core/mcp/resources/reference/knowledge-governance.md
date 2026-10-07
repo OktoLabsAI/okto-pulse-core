@@ -62,7 +62,7 @@ It does not infer meaning from, classify, or execute the KB body.
 
 ## `KnowledgeGovernanceMetadataV1`
 
-`governance_metadata` is optional for backward compatibility. When supplied on
+`governance_metadata` is optional. When supplied on
 a new write, it is a closed object: every v1 field is required, unknown fields
 fail, strings are trimmed/non-empty, arrays preserve order, reject duplicates,
 and contain at most 64 items.
@@ -114,40 +114,35 @@ be non-empty; an `entity_id` cannot be an isolated ordinal such as `FR8`,
 Invalid supplied metadata fails atomically with
 `knowledge_governance_invalid_metadata` and sorted `issues` containing `path`,
 `code`, and `detail`, before persistence, propagation, fan-out, or success
-audit. Omitted/NULL legacy metadata remains readable as:
+audit. Omitted/NULL metadata is a native optional state, projected as:
 
 ```json
 {
   "authority": "advisory",
-  "metadata_status": "legacy_incomplete",
+  "metadata_status": "omitted",
   "missing_fields": ["governance_metadata"],
   "metadata": null
 }
 ```
 
-Historical partial/unknown-version JSON remains raw and is reported as
-`legacy_incomplete` with deterministic missing/invalid paths. Reads never
-backfill or mutate it. Complete metadata projects as `metadata_status=complete`.
+Invalid supplied metadata, including incomplete objects or unknown contract
+versions, is refused on reads with `knowledge_governance_invalid_metadata`.
+Reads never convert or repair it. Complete metadata projects as
+`metadata_status=complete`.
 
-## Inheritance and snapshots
+## Selection and snapshots
 
-Two mechanisms coexist and must not be confused:
+Knowledge uses one selection contract, identified by `contract_version=2`.
+Omitting the creation envelope records no inherited Knowledge selection with
+a fresh operation key. `selection_state="omitted"` also selects no inherited
+Knowledge. For exact retries, provide an envelope with a stable idempotency key.
 
-- **Virtual inheritance** lets the Resource Gate resolve effective ancestor
-  resources without creating another KB row.
-- **Physical snapshots** copy a KB through the existing derivation/card-copy
-  paths and preserve source identity and governance metadata.
+Select stable root IDs with `reference` to follow source content, or `snapshot`
+to retain the selected content. Use `drop` for explicit removal.
+Local Knowledge attachments remain available through the effective Resource
+Gate projection. Governance metadata is advisory and does not independently
+change selection, count, fan-out, Resource Gate, or lineage.
 
-The compatibility behavior remains **`legacy_all`** when the caller omits the
-v2 envelope: the existing path copies all selected resources. Selective
-propagation v2 is active and opt-in through a complete versioned envelope or
-the dedicated card-assignment tools. An in-envelope
-`selection_state="omitted"` is authoritative v2 state and never falls back to
-copy-all. Governance metadata remains passthrough and does not independently
-change selection, count, fan-out, Resource Gate, or lineage. Do not combine
-legacy selection parameters with a v2 envelope.
-
-When a governed Spec KB snapshot already exists on a Card, a metadata-only
-change refreshes that same snapshot id/source once. Repeating a semantically
-equivalent object is a no-op. Legacy absent/NULL metadata remains omitted from
-the Card JSON.
+After Card creation, replace/drop/refresh assignment operations require the
+current revision. Snapshots retain their captured governance metadata until
+explicitly refreshed; changing source metadata does not rewrite history.

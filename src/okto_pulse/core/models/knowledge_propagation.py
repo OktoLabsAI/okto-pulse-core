@@ -11,7 +11,6 @@ from typing import Annotated, Any, Literal
 from okto_pulse.core.domain.code_traceability import DeliveryContext
 
 from pydantic import (
-    AliasChoices,
     BaseModel,
     ConfigDict,
     Field,
@@ -83,7 +82,6 @@ class KnowledgePropagationEnvelopeV2(BaseModel):
     expected_revision: Literal[0] | None = None
     relevance_links: list[KnowledgeRelevanceLinkRequest] = Field(
         default_factory=list,
-        validation_alias=AliasChoices("relevance_links", "linkage"),
     )
 
     @field_validator("idempotency_key")
@@ -197,7 +195,6 @@ class KnowledgeAssignmentReplaceRequest(_KnowledgeMutationRequestBase):
     mode: Literal["reference", "snapshot"]
     linkage: list[KnowledgeRelevanceLinkRequest] = Field(
         default_factory=list,
-        validation_alias=AliasChoices("linkage", "relevance_links"),
     )
 
     def to_envelope(self) -> KnowledgePropagationEnvelopeV2:

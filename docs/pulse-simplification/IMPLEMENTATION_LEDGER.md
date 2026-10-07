@@ -2,6 +2,42 @@
 
 ## Estado para retomada
 
+### 2026-10-06 — C3 em andamento: contrato Knowledge sem fallback historico
+Bases Core 60c17632 / Community a999edf3 publicadas.
+Resources cards/refinements/governance e erros operacionais deixam de anunciar
+v1/legacy_all/copy-all: omissao ja cria selecao nativa sem fontes herdadas.
+Retirados aliases cruzados: criacao usa relevance_links; replace usa linkage,
+coerentes com os consumidores frontend atuais. Metadados opcionais continuam
+permitidos em criacoes nativas; projecao passa a omitted, completo continua complete.
+Leitura de metadados fornecidos invalidos recusa com erro de dominio em vez
+de devolver JSON historico parcial. Nenhuma conversao ou reparo de dados.
+Copia defensiva nas portas nao tem fallback para retornar objeto original.
+Snapshots preservam metadados capturados ate refresh explicito; autoridade
+advisory, historico, revisao, selecao tri-state e replay atuais preservados.
+
+dist-native-knowledge1 instalado; provenance-native-knowledge1 comprova bytes
+src/install/wheels: Core 843 Python/905 payload, Community 319/405.
+Core1: 341 aprovados/duas falhas em doubles anteriores. Hydration fake agora
+conserva governance_metadata como adapter real; teste de derivacao fornece
+fatos do parent pela porta publica. Core2: 54 aprovados, total distinto 343.
+Community1: 30 aprovados/duas falhas/16 erros de fixtures sem realm/adocao.
+Fixtures agora usam schema atual e realm local; Community2: 22 aprovados,
+total distinto Community 48. Nao houve mudanca de produto entre campanhas.
+Frontend native-knowledge-front1: 38 aprovados em API, CardKnowledgeTab,
+CreateCardModal e selector. Avisos act/navigation preexistentes, sem falhas.
+Nenhum arquivo frontend alterado; assets previamente qualificados preservados.
+Catalogo/manifesto regenerados oficialmente, sem diff.
+Closure-native-knowledge1 aprovada: findings/documentation_findings vazios,
+oito budgets current=limit=0. Handles encerrados. Disposicoes no JSON.
+
+C1-C4 continuam abertos e T23/KG-10 pendentes. Proxima cadeia ja registrada:
+paridade traceability/Resource Gate para selecao efetiva de Knowledge por Card;
+relatorio atual le colecoes relacionais diretas. Teste de linhagem Core usa
+adapter fake e nao comprova essa paridade. Investigar e reproduzir antes de
+alterar projecao. Sem ampliar para novo requisito ou relaxar permissoes.
+C4 integral, bump coordenado 0.4.0 e demais residuos do inventario continuam
+pendentes; este incremento nao certifica a entrega total.
+
 ### 2026-10-06 — C3 em andamento: booleanos MCP nativos
 Publicado: Core 0c68dd7f / Community a999edf3, pushes confirmados.
 Bases Core f113e7b1 / Community b9710b61 publicadas.

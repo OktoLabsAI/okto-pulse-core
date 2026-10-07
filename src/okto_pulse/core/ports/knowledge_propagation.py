@@ -217,25 +217,8 @@ def _canonical_stamp(
 
 
 def _copy_governance_metadata(value: object | None) -> object | None:
-    """Best-effort defensive copy of opaque governance evidence.
-
-    Selective propagation deliberately does not validate this payload.  Older
-    rows and future governance contract versions must remain readable so the
-    projection layer can classify them (for example as ``legacy_incomplete``).
-    JSON-compatible values are fully detached; unusual legacy values degrade
-    to the least surprising copy operation without making the propagation
-    boundary fail.
-    """
-
-    if value is None:
-        return None
-    try:
-        return copy.deepcopy(value)
-    except Exception:
-        try:
-            return copy.copy(value)
-        except Exception:
-            return value
+    """Detach native governance evidence without a compatibility fallback."""
+    return copy.deepcopy(value)
 
 
 @dataclass(frozen=True, slots=True)
