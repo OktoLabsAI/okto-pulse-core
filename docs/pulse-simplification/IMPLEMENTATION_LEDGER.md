@@ -2,6 +2,53 @@
 
 ## Estado para retomada
 
+### 2026-10-07 — KG27/29 qualificados no par nativo; KG28 separado
+Milestone de retirada do ledger legado enviado Coredc7aac89/Communityfba73e37,
+pushes0. Main58 continua instalado/comprovado; produto não mudou desde então.
+Campanha native-reference-findings3 handle37392 terminou0:1pass/37.54s.
+SQL/Grafx atuais, fila/worker/audit/reader reais: dois alvos inválidos no mesmo
+campo possuem identidades distintas e estáveis; reavaliação não cria novas
+identidades; remoção de um conserva o outro; associação opcional vazia fecha
+snapshot e não reabre após repetição. Contagens Card/QA/SpecQA preservadas.
+Primeiras campanhas falharam por oráculos de teste: findings1 confundia novas
+linhas legítimas de audit por evento com crescimento de pendências; findings2
+incluía finding anterior criado na inicialização da fixture. Corrigido escopo
+da comparação para eventos exercitados, sem apagar histórico ou mudar produto.
+Reference-domain1 handle7348 terminou0:27pass/4.18s; reference-storage1
+handle74851 terminou0:9pass/9.83s. Recibo
+clean-break-acceptance-native-reference-findings.json conserva falhas e limites.
+Índice66 verificadas/169 pendentes/11 superadas, total246/aplicáveis235 fixos.
+KG28 possui reprodução atual e proposta em “Decisão KG-28 pendente”;
+pergunta assíncrona enviada, sem resposta ainda. KG10/T23 também separados.
+Ruff/diff-check verdes; nenhum processo ativo. Closure58-final e frontend64
+permanecem aplicáveis ao produto inalterado, sem alegar reexecução.
+Próximo trabalho independente: KG30/31 e captura Learning do índice fixo;
+continuar investigação de consumidores sem confundir finding com aprovação.
+Commit/push dos testes/recibo autorizado; sem pausa de objetivo, deploy ou Nexus.
+
+### Decisão KG-28 pendente — gate semântico ausente na base atual
+Reprodução no main58 instalado/comprovado (missing-link-gate-characterization-main58.json,
+terminal0) confirma ausência de missing_link_gate em BoardSettings e descarte de
+entrada blocking. Busca nos dois produtos não encontra missing_link_gate nem
+missing_links_open; confirma investigação anterior já registrada neste ledger.
+KG§5.5/KG-28 exigem advisory|blocking, default advisory e escrita humana.
+Isto não é retirar conversor: ativar bloqueio configurável muda o efeito do gate
+ausente na base e exige decisão pelo plano §10.2/10.4.
+
+Proposta concreta: acrescentar policy tipada única missing_link_gate em
+Board/default config, advisory por padrão, edição humana pelos controles já
+vigentes (sem concessão ao executor). No fechamento, revalidar na fonte
+autoritativa as referências/obrigações atuais, sob a UOW/fences existentes.
+Advisory informa achados; blocking recusa apenas lacuna semântica aplicável.
+Não usar backlog, endpoint aguardando projeção, DLQ ou snapshot antigo como
+bloqueio. Associação opcional removida não produz obrigação. Fonte obrigatória
+indisponível retorna erro específico; nenhuma prova/aresta inventada.
+Não converter policy nem dados antigos; sem nova tool de manutenção.
+REST/MCP/preview/contexto e frontend/testes devem compartilhar esse contrato.
+Alternativa: manter o gate ausente e KG-28 explicitamente não entregue.
+Pergunta será enviada ao usuário; NÃO implementar alteração dependente sem
+resposta. KG27/29 e demais frentes independentes continuam. KG10/T23 separados.
+
 ### 2026-10-07 — contrato único do ledger cognitivo validado
 Main58 permanece estável/comprovado. Ledger3 handle65249 terminou1:
 161pass/5fail/54.09s; falhas exclusivamente fixture S1 gravando item incompleto.
