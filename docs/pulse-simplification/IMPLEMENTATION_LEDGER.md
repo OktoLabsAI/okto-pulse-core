@@ -2,6 +2,29 @@
 
 ## Estado para retomada
 
+### 2026-10-07 — C4 T04/T06 qualificados; Community16 terminal
+Core9963a4c5 publicado com push0, main ainda8390bce1 durante a campanha.
+Revisadas asserções e fixtures atuais dos critérios T04 e T06, sem mudar produto.
+acceptance-native-handoff-current1 handle50386 terminou0:4pass/29.62s
+(approve/reject × grant negado/separação enforce). Autenticação/grants persistidos,
+handoff e snapshots de negação reais; extração da credencial é injetada.
+acceptance-native-plan-gate-current1 handle28808 terminou0:3pass/17.80s,
+4deselected. Contribuição/test owner ausentes bloqueiam início apesar de avaliação
+aprovada; reparo pontual permite iniciar e exclusão autorizada do test Card torna
+o plano incompleto. Pareceres e identidade REST são fixtures; gate não substituído.
+Recibos clean-break-acceptance-native-handoff.json e
+clean-break-acceptance-native-plan-gate.json; índice promove apenas T04/T06.
+Par reviewer22 continua byte-idêntico, sem alterações frontend.
+
+Community16 handle64982 terminou1:628pass/18fail/2errors/807.44s, par main23.
+Falhas: registry graph_query_execution não esperado; fixtures Board sem realm,
+Spec sem adoção; telemetry failure_state ausente; app scheduler acessa storage
+antigo; teste ainda importa relational_schema_steps retirado; cenário HTTP com
+autoridade semântica stale. Treze módulos falhos, ainda NÃO qualificados.
+Nenhum processo ativo deste checkpoint. Main pode receber FF do Core publicado;
+corrigir/reexecutar módulos falhos sem conversão, relaxamento ou apagar storage.
+E2E instalado, restante C4 e decisões T23/KG-10 permanecem pendentes.
+
 ### 2026-10-07 — Contexto Knowledge nativo requalificado
 Community16 handle64982 ATIVO no main, par main23; não editar/reinstalar
 esse ambiente antes do terminal. Core main8390bce1/Communityf5b1169a publicados.

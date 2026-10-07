@@ -215,7 +215,12 @@
         "criterion_key": "BASE:T04"
       },
       "discovered_artifacts": [],
-      "current_qualification": "pending_current_pair_review"
+      "current_qualification": "verified_current_pair_review",
+      "current_review": {
+        "artifact": "clean-break-acceptance-native-handoff.json",
+        "criterion_key": "BASE:T04",
+        "proof_pair": "dist-native-reviewer22"
+      }
     },
     {
       "key": "BASE:T05",
@@ -295,7 +300,12 @@
           ]
         }
       ],
-      "current_qualification": "pending_current_pair_review"
+      "current_qualification": "verified_current_pair_review",
+      "current_review": {
+        "artifact": "clean-break-acceptance-native-plan-gate.json",
+        "criterion_key": "BASE:T06",
+        "proof_pair": "dist-native-reviewer22"
+      }
     },
     {
       "key": "BASE:T07",

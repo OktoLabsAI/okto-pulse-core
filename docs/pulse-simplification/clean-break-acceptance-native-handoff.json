@@ -1,0 +1,31 @@
+{
+  "format": "pulse-040-reviewed-acceptance/v1",
+  "criterion_key": "BASE:T04",
+  "disposition": "mantido",
+  "status": "verified_current_pair_review",
+  "proof_pair": "dist-native-reviewer22",
+  "provenance_sha256": "22c33f52f64f77fc26d23d7af345c266ec5440be44c7fa1d6677376508179af6",
+  "reviewed_coverage": [
+    "Real Community authenticator resolves persisted executor/reviewer grants in separate MCP clients.",
+    "Reviewer cannot publish implementation; executor without review grant cannot validate. With grant, enforce separation still denies self-review. Every denial preserves the full durable snapshot.",
+    "Reviewer reads unchanged executor proof and manifest, then approves to Done or rejects to Rejected. Fresh executor reads same proof without ownership transfer."
+  ],
+  "runs": [
+    {
+      "name": "acceptance-native-handoff-current1",
+      "xml_sha256": "fc1fe8289922fa0bfad5fcab1f6b2d8554d3faa8827b3bd165afe9371e4e5de9",
+      "passed": 4,
+      "cases": [
+        "tests.test_executor_reviewer_handoff::test_executor_and_reviewer_handoff_preserves_report_and_grant_boundaries[grant-denied-approve]",
+        "tests.test_executor_reviewer_handoff::test_executor_and_reviewer_handoff_preserves_report_and_grant_boundaries[grant-denied-reject]",
+        "tests.test_executor_reviewer_handoff::test_executor_and_reviewer_handoff_preserves_report_and_grant_boundaries[separation-enforced-approve]",
+        "tests.test_executor_reviewer_handoff::test_executor_and_reviewer_handoff_preserves_report_and_grant_boundaries[separation-enforced-reject]"
+      ]
+    }
+  ],
+  "limits": [
+    "Credential extraction injected; real authentication, grants, MCP host, use cases and Community SQL.",
+    "Entry contract and allocation seeded; external evidence producer used by fixture. Impact policy off, cognitive skip explicitly on, architecture/mockup explicit N/A.",
+    "Does not certify login transport or complete T01 lifecycle."
+  ]
+}
