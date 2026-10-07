@@ -513,7 +513,7 @@ async def test_board_create_and_list_role_realm_matrix(
         json={"title": "viewer denied", "delivery_context": "brownfield"},
     )
     assert viewer_list.status_code == 200, viewer_list.text
-    assert ids["viewer_spec"] in {row["id"] for row in viewer_list.json()}
+    assert ids["viewer_spec"] in {row["id"] for row in viewer_list.json()["items"]}
     assert viewer_create.status_code == 404
 
     for scope in ("owned", "editor", "admin"):
@@ -528,7 +528,7 @@ async def test_board_create_and_list_role_realm_matrix(
             },
         )
         assert listed.status_code == 200, (scope, listed.text)
-        assert ids[f"{scope}_spec"] in {row["id"] for row in listed.json()}
+        assert ids[f"{scope}_spec"] in {row["id"] for row in listed.json()["items"]}
         assert created.status_code == 201, (scope, created.text)
         assert created.json()["board_id"] == ids[f"{scope}_board"]
 

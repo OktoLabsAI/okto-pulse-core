@@ -291,6 +291,31 @@ def _projection_expression(model: Any, field_name: str) -> Any:
             .scalar_subquery()
             .label(field_name)
         )
+    open_qa_binding = {
+        models.Card: (models.QAItem, models.QAItem.card_id),
+        models.Ideation: (
+            models.IdeationQAItem,
+            models.IdeationQAItem.ideation_id,
+        ),
+        models.Refinement: (
+            models.RefinementQAItem,
+            models.RefinementQAItem.refinement_id,
+        ),
+        models.Spec: (models.SpecQAItem, models.SpecQAItem.spec_id),
+    }.get(model)
+    if field_name == "open_qa_count" and open_qa_binding is not None:
+        qa_model, parent_id = open_qa_binding
+        return (
+            select(func.count())
+            .select_from(qa_model)
+            .where(
+                parent_id == model.id,
+                qa_model.answered_at.is_(None),
+            )
+            .correlate(model)
+            .scalar_subquery()
+            .label(field_name)
+        )
     if model is models.Card and field_name == "validations_count":
         return func.json_array_length(
             func.coalesce(models.Card.validations, "[]")

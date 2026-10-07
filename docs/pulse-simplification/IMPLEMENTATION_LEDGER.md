@@ -2,6 +2,27 @@
 
 ## Estado para retomada
 
+### 2026-10-07 — Core20 propagação/paginação concluídas
+Core0e8427c9 publicado, push0. core20-native-propagation1 handle58393
+terminou1:21pass/2fail; propagation2 handle37383 terminou0:37pass/15.75s,
+três módulos completos (resource propagation, REST scope, pagination).
+Removida fixture LegacyKnowledgeScope; usa scope vazio nativo compartilhado.
+Testes exigem ausência de cópias físicas KB após criar/ligar Card, mudar setting,
+editar/excluir KB e atualizar metadata. Conteúdo/governança permanecem na fonte;
+mockup/architecture continuam propagados e auditados pelos contratos próprios.
+A persistência de assignments continua nas suites específicas, não certificada
+pelo double vazio destes testes. Nenhum fanout antigo foi restaurado.
+
+Adapter SQL de testes ganhou open_qa_count com subconsulta por pai/answered_at,
+já implementada no adapter Community. REST testa envelope items atual e mantém
+matriz de Board/realm/roles/negações e ausência de efeitos em acesso estrangeiro.
+Ruff F/E9/diff-check0. Recibo acceptance-clean-break-core20-propagation.json.
+Todos os módulos falhos Core20 agora qualificados; sem alterações de produção,
+prova saas19/closure inalteradas. Core21 preparado excluindo1047
+módulos completos; ainda não iniciado neste registro.
+Community followup65213 segue ATIVO no main; não editar/integrar até terminal.
+E2E/C4 e decisões T23/KG-10 pendentes; entrega integral não declarada.
+
 ### 2026-10-07 — Core20 contratos qualificados
 Transfer Community6ada7cc2/Core8f09830a publicados, pushes0.
 Closure main20 handle39523 terminou0:ok=true,findings/documentation_findings=[],
