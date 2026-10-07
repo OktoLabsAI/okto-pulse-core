@@ -36,7 +36,12 @@ class SemanticGraphStore(Protocol):
 
     def find_by_topic(
         self, board_id: str, node_type: str, topic: str, filters: QueryFilters
-    ) -> list[list]: ...
+    ) -> list[list]:
+        """Return eight columns: id, title, content, created_at, confidence,
+        relevance, superseded_by, source_artifact_ref. A nullable source value
+        is explicit; omitting its column is not a supported result contract.
+        """
+        ...
 
     def find_by_artifact(
         self,

@@ -1016,6 +1016,8 @@ class KGService:
         seen: set[str] = set()
         merged: list[list] = []
         for r in text_rows + semantic_rows:
+            if not isinstance(r, (list, tuple)) or len(r) != 8:
+                raise ValueError("decision_history_row_shape_invalid")
             if r[0] in seen:
                 continue
             seen.add(r[0])
@@ -1032,11 +1034,7 @@ class KGService:
                 "source_confidence": r[4],
                 "relevance_score": r[5] if r[5] is not None else 0.5,
                 "superseded_by": r[6],
-                # The decision-history surface is a provenance trace.  Keep
-                # backward compatibility with third-party stores that still
-                # emit the legacy seven-column row while projecting the
-                # canonical source ref whenever the store provides it.
-                "source_artifact_ref": r[7] if len(r) > 7 else None,
+                "source_artifact_ref": r[7],
             }
             for r in merged
         ]

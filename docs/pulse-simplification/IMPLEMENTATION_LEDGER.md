@@ -2,6 +2,36 @@
 
 ## Estado para retomada
 
+### 2026-10-07 — Histórico sem fallback de sete colunas validado em main36
+history-contract2 handle80222 terminou0:62pass/33.69s; history-store1 handle94205
+terminou0:34pass/41.65s; closure36 handle93566 terminou0, findings/documentation[],
+oitoZERO. XMLs conferidos; nenhum processo ativo. Recibo
+clean-break-acceptance-native-history-contract.json registra96passes distintos e
+a reprodução1fail/3pass, sem promover KG-11 por inferência.
+Main36 byteprovado, SPA de main35 inalterada. Pronto para commit/push Core;
+Community2e6b2f1d limpo. Próximo: revisar cadeia Decision (KG-11) e qualificar
+KG-12/13/14/15 reutilizando provas atuais pertinentes e ensaios que faltam.
+KG-12 já tem direção/remoção/rebuild no main34; KG-15 tem metadados dos nove filhos
+na campanha child-mapping1 e commit nativo em child-consumers1/2.
+Não repetir essas suites sem alteração/falha; conferir asserções e registrar seu alcance.
+T23/KG-10 pendentes. Índice ainda49/186/11. Plano integral continua ativo.
+
+### 2026-10-07 — C1 histórico de Decision sem contrato de sete colunas — WIP main36
+KG-06 enviado Core2057351b/Community2e6b2f1d, pushes0.
+history-refusal1 handle15724 terminou1:3pass/1fail/4.38s; reprodução confirma
+fallback explícito de sete colunas para proveniência None. Grafx e memory store
+atuais retornam oito colunas; documentado esse contrato na porta, sem adapter no Core.
+Leitor agora recusa formato incompatível antes de deduplicar/devolver história
+parcial; campo source_artifact_ref continua podendo ter ausência explícita no
+contrato atual. Enriquecimento semântico/ordenamento/budget/histórico preservados.
+Oito fixtures semânticas passaram ao shape nativo; novo caso cobre lote misto
+com mesmo ID para impedir que dedup esconda a incompatibilidade.
+main36 build/install/prova79719 terminou0:843/905 Core+316/402 Community
+byte-idênticos. ATIVOS history-contract2 handle80222, history-store1 handle94205
+e closure36 handle93566. Nenhuma alteração de frontend desde SPA main35.
+Aguardar terminais antes de publicar. Este incremento não qualifica KG-11 por
+si só; revisar cadeia/supersedência/replay depois. T23/KG-10 continuam pendentes.
+
 ### 2026-10-07 — KG-06 fechado no par main35; pronto para publicação pareada
 Grafx2 handle64961 terminou0:4pass/336.38s. XMLs conferidos; nenhum processo ativo.
 Recibo clean-break-acceptance-native-source-disagreement.json promove KG-06:
