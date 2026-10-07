@@ -14,6 +14,7 @@ from pydantic import (
     RootModel,
     computed_field,
     field_validator,
+    field_serializer,
     model_validator,
     model_serializer,
 )
@@ -414,6 +415,13 @@ class TestScenarioEvidence(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     verification_report: VerificationReport | None = None
+
+    @field_serializer("verification_report")
+    def serialize_verification_report(self, value):
+        # Receipts sign the report's canonical JSON representation. Preserve it
+        # through Python-mode dumps used by scoped and whole-Spec writers.
+        return value.model_dump(mode="json") if value is not None else None
+
     report_author_id: str | None = None
     scenario_sha256: str | None = None
     # Current file pointers and execution logs.

@@ -145,3 +145,21 @@ def test_specialized_evidence_requires_its_own_method_and_never_automated_status
     unsigned = dict(evidence)
     del unsigned['execution_receipt']
     assert not validate_test_scenario_evidence('passed', unsigned)[0]
+
+@pytest.mark.parametrize('method', ['inspection', 'static_analysis', 'demonstration'])
+def test_scenario_roundtrip_preserves_signed_report_json(method):
+    import json
+    from okto_pulse.core.models.schemas import TestScenarioEvidence, TestScenarioWrite
+
+    report = parse_verification_report(payload(method)).model_dump(mode='json')
+    envelope = {
+        'evidence_class': 'verification_report', 'verification_report': report,
+        'report_author_id': 'author', 'scenario_sha256': 'sha256:' + 'a' * 64,
+        'execution_receipt': 'ev2r.' + '0' * 32 + '.' + '0' * 64,
+    }
+    scoped = TestScenarioEvidence.model_validate(envelope).model_dump(mode='python', exclude_none=True)
+    bulk = TestScenarioWrite(id='ts', title='Observe', evidence=envelope).model_dump(
+        mode='python', exclude_none=True)['evidence']
+    canonical = lambda value: json.dumps(value, sort_keys=True, separators=(',', ':'))
+    assert canonical(scoped) == canonical(envelope)
+    assert canonical(bulk) == canonical(envelope)

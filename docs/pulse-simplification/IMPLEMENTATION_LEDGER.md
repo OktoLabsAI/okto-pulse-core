@@ -2,6 +2,29 @@
 
 ## Estado para retomada
 
+### 2026-10-07 — Community18 fechado; serialização de relatório autenticado corrigida
+T10 publicado Coreafbe4c41/Communityd034ca68 e main integrado por FF.
+Campanha18 handle29359 terminou1:374pass/15fail/1error/459.09s.
+Reprodução real: datetime do relatório tipado chegava ao hash JSON e lançava
+TypeError. Serializer do campo verification_report preserva JSON canônico em dumps
+Python de writers scoped/bulk, sem mudar assinatura, vínculo ou autoridade.
+Fixtures atuais declaram realm/adoção, usam FR.id e avaliação da edição reaberta;
+head semântico é selado após os dados finais de critérios/cenário.
+
+Par dist-native-main25 build/install0, prova95347 terminou0:
+843/905 Core+316/402 Community byte-idênticos.
+CoreSHA101b52128123ed4212ac76feac2d668f9f789d5a542c92f815cbbf0140c80fad;
+CommunitySHA8d9357d354178e3cf61ac952e905e229a20c819850559ab2890c13de3eebe77d.
+Closure98969 terminou0:ok=true/findings/documentation_findings=[],oitoZERO.
+fixtures1 handle86350 terminou1:25pass/4fail/61.71s; três módulos completos
+passaram; relatório expôs heads stale e expectativa antiga de erro genérico.
+reports2 handle67610 terminou0:11pass/22.88s. Quatro módulos,29casos distintos.
+Core report-schema1 handle24448 terminou0:33pass/3.43s, incluindo roundtrip
+canônico para inspection/static_analysis/demonstration. Ruff F/E9 e diff-check0.
+Recibo acceptance-clean-break-community18.json preserva falhas/followups.
+Sem processos ativos. E2E instalado, reconciliação C4, T23/KG-10 pendentes.
+Nenhuma entrega integral declarada; sem alteração frontend.
+
 ### 2026-10-07 — C4 T10 fechado com ciclo real de retrabalho
 Core d5b20b2a/Community5b54640b publicados. Community18 handle29359 terminou1:
 374pass/15fail/1error/459.09s,563 módulos excluídos, par main24.
