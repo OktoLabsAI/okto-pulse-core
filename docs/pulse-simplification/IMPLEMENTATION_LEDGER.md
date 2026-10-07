@@ -2,6 +2,20 @@
 
 ## Estado para retomada
 
+### 2026-10-07 — Core17 publicado; campanhas seguintes ativas
+Core0c5cca92 publicado, push0. Core18 handle18388 ATIVO no worktree native-next,
+par dist-native-closeout-final provado; seleção exclui880 módulos completos.
+Arquivos .validation-v040/clean-break-full-run18.{args,log,xml} e
+clean-break-full-run18-selection.json. Há falhas em progresso; aguardar XML
+terminal antes de classificar ou editar os módulos desta campanha.
+Community14 handle64918 permanece ATIVO no main1, com progresso confirmado.
+Não reiniciar campanhas nem reinstalar seus ambientes. Main continua congelado.
+Próxima retomada: consultar exatamente18388/64918; investigar somente falhas
+terminais. Depois do Community14 terminal, integrar main por fast-forward dos
+commits publicados e reconstruir/provar bytes antes dos testes nesse checkout.
+Este turno fez progresso concreto (55 casos/10 módulos publicados); não há
+impasse nem autorização para marcar objetivo como concluído ou bloqueado.
+
 ### 2026-10-07 — Core17 qualificado no worktree isolado
 C3 publicado: Core692fb7ca/Community2bdc5ca1, pushes0. Main permanece congelado
 em d55e3488/0a2c6c9d enquanto Community14 handle64918 segue ativo.
