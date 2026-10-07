@@ -2,6 +2,23 @@
 
 ## Estado para retomada
 
+### 2026-10-07 — C4 T25 qualificado no schema/presets reais
+Coree9730210 publicado. Isolado Community ampliou test_current_relational_schema:
+inspeção de TODAS as tabelas/colunas SQLite, mappers e alvos FK exige ausência de
+Sprint. Seed real exige presets não vazios sem Sprint e igualdade após nova seed.
+Mantidas 33 mutações negativas de formato e provas de preservação de arquivos/WAL,
+seed nunca chamado em base incompatível, corrida de formato e rollback de DDL novo.
+fresh-schema1 handle86548 terminou0:43pass/68.59s no parnext25; Ruff F/E9 passou.
+Recibo clean-break-acceptance-native-fresh-install.json promove somente T25.
+Nenhum conversor/backfill ou caminho produtivo novo.
+
+E2E instalado7 handle96950 continua ATIVO (último poll confirmado): quatro casos
+iniciais aprovados, quinto já avançou por fence-loss/resume e chegou a z2-tamper;
+log percorreu1500Boards. Sem XML terminal, não contar como passe nem reiniciar.
+Main segue congelado e nos commits102acd3d/84923f75; isolado sem processo ativo.
+Próximos fixos T27/T28/T31/T32–T34; T26/T29/T30 superados pelo clean break.
+T23/KG-10 seguem pendentes, C4 não concluído, sem nova frente.
+
 ### 2026-10-07 — C4 T21/T22/T24: Bug nativo sem fixture de lane histórica
 Turno anterior: progresso (T12–T20 publicados e compatibilidade de fixture retirada).
 Isolado Core11797d7a/Community84923f75, next25 byteprovado; main congelado para
