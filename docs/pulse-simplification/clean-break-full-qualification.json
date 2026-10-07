@@ -1896,5 +1896,138 @@
     "product_changes": false,
     "scope": "Nine affected modules complete, including previously partial KG foundation, plus AF04. Native Board guideline export and old-envelope rejection; FR/AC/TR identity fixtures; narrative not projected as Decision; current grants and removed-alias denial; schema0.8 cancellation snapshot; current audit reference_findings column in test mapping; structured missing-source retry error with backoff/debt guarantees retained.",
     "limits": "All20 run10 failures resolved. Followup1 omitted still-required administrative grant from ACL fixture; restored current authority in followup2. No product/frontend change; full backend/criteria qualification remains open."
+  },
+  "community_full_run8": {
+    "campaign": "clean-break-full-run8-community",
+    "passed": 298,
+    "failed": 20,
+    "duration_seconds": 202.67,
+    "xml_sha256": "d39ed208ca6d2354520df478d28bc972115d9b24f3db9b76385ccc4f01a545d5",
+    "failures": [
+      {
+        "test": "tests.test_card_rejected_rest_contract::test_submit_validation_exposes_typed_causal_response_and_alias",
+        "message": "assert 422 == 201\n +  where 422 = <Response [422 Unprocessable Content]>.status_code"
+      },
+      {
+        "test": "tests.test_card_rejected_rest_contract::test_validation_read_routes_are_typed_and_strip_internal_ledger",
+        "message": "pydantic_core._pydantic_core.ValidationError: 3 validation errors for TaskValidationResponse\nreviewer_name\n  Field required [type=missing, input_value={'id': 'validation-1', 'c...: 10, 'replayed': False}, input_type=dict]\n    For further information visit https://errors.pydantic.dev/2.13/v/missing\nreviewer_separation\n  Field required [type=missing, input_value={'id': 'validation-1', 'c...: 10, 'replayed': False}, input_type=dict]\n    For further information visit https://errors.pydantic.dev/2.13/v/missing\nexpected_subject_version\n  Field required [type=missing, input_value={'id': 'validation-1', 'c...: 10, 'replayed': False}, input_type=dict]\n    For further information visit https://errors.pydantic.dev/2.13/v/missing"
+      },
+      {
+        "test": "tests.test_card_rejected_rest_contract::test_validation_submit_projects_combined_submit_and_read_denial",
+        "message": "assert 422 == 403\n +  where 422 = <Response [422 Unprocessable Content]>.status_code"
+      },
+      {
+        "test": "tests.test_card_rejected_rest_contract::test_delete_validation_real_use_case_projects_append_only_conflict",
+        "message": "assert 404 == 409\n +  where 404 = HTTPException(status_code=404, detail=\"20 validation errors for TaskValidationResponse\\nreviewer_id\\n  Field required ...', 'replayed': False}, input_type=dict]\\n    For further information visit https://errors.pydantic.dev/2.13/v/missing\").status_code\n +    where HTTPException(status_code=404, detail=\"20 validation errors for TaskValidationResponse\\nreviewer_id\\n  Field required ...', 'replayed': False}, input_type=dict]\\n    For further information visit https://errors.pydantic.dev/2.13/v/missing\") = <ExceptionInfo HTTPException(status_code=404, detail=\"20 validation errors for TaskValidationResponse\\nreviewer_id\\n  ...yed': False}, input_type=dict]\\n    For further information visit https://errors.pydantic.dev/2.13/v/missing\") tblen=2>.value"
+      },
+      {
+        "test": "tests.test_card_resolution_history::test_history_is_bounded_scoped_and_preserves_unknown",
+        "message": "sqlalchemy.exc.IntegrityError: (sqlite3.IntegrityError) NOT NULL constraint failed: boards.realm_id\n[SQL: INSERT INTO boards (id, name, description, owner_id, realm_id) VALUES (?, ?, ?, ?, ?) RETURNING created_at, updated_at]\n[parameters: ('board-1', 'Board', None, 'agent', None)]\n(Background on this error at: https://sqlalche.me/e/20/gkpj)"
+      },
+      {
+        "test": "tests.test_card_validation_config_read::test_card_policy_read_preserves_values_scope_and_source_data[board]",
+        "message": "sqlalchemy.exc.IntegrityError: (sqlite3.IntegrityError) NOT NULL constraint failed: specs.architecture_adoption\n[SQL: INSERT INTO specs (architecture_adoption, id, board_id, ideation_id, refinement_id, source_refinement_snapshot_id, source_refinement_version, delivery_context, source_context_sha256, title, description, context, skip_decisions_coverage, validation_threshold, require_task_validation, validation_min_confidence, validation_min_completeness, validation_max_drift, current_validation_id, pre_archive_status, cancellation_reason, cancelled_at, cancelled_by, status, edition, last_started_edition, version, assignee_id, created_by, test_scenario_policy_epoch, project_structure_revision, project_structure_digest) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING skip_test_coverage, skip_rules_coverage, skip_trs_coverage, skip_contract_coverage, skip_ir_coverage, skip_or_coverage, skip_code_evidence_coverage, skip_delivery_evidence, skip_qualitative_validation, archived, created_at, updated_at]\n[parameters: (None, 'spec', 'board', None, None, None, None, None, None, 'Spec', None, None, 0, None, None, None, 92, None, None, None, None, None, None, 'draft', 1, None, 1, None, 'owner', 1, 0, None)]\n(Background on this error at: https://sqlalche.me/e/20/gkpj)"
+      },
+      {
+        "test": "tests.test_card_validation_config_read::test_card_policy_read_preserves_values_scope_and_source_data[spec-90]",
+        "message": "sqlalchemy.exc.IntegrityError: (sqlite3.IntegrityError) NOT NULL constraint failed: specs.architecture_adoption\n[SQL: INSERT INTO specs (architecture_adoption, id, board_id, ideation_id, refinement_id, source_refinement_snapshot_id, source_refinement_version, delivery_context, source_context_sha256, title, description, context, skip_decisions_coverage, validation_threshold, require_task_validation, validation_min_confidence, validation_min_completeness, validation_max_drift, current_validation_id, pre_archive_status, cancellation_reason, cancelled_at, cancelled_by, status, edition, last_started_edition, version, assignee_id, created_by, test_scenario_policy_epoch, project_structure_revision, project_structure_digest) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING skip_test_coverage, skip_rules_coverage, skip_trs_coverage, skip_contract_coverage, skip_ir_coverage, skip_or_coverage, skip_code_evidence_coverage, skip_delivery_evidence, skip_qualitative_validation, archived, created_at, updated_at]\n[parameters: (None, 'spec', 'board', None, None, None, None, None, None, 'Spec', None, None, 0, None, None, 90, 92, None, None, None, None, None, None, 'draft', 1, None, 1, None, 'owner', 1, 0, None)]\n(Background on this error at: https://sqlalche.me/e/20/gkpj)"
+      },
+      {
+        "test": "tests.test_card_validation_config_read::test_card_policy_read_preserves_values_scope_and_source_data[spec-60]",
+        "message": "sqlalchemy.exc.IntegrityError: (sqlite3.IntegrityError) NOT NULL constraint failed: specs.architecture_adoption\n[SQL: INSERT INTO specs (architecture_adoption, id, board_id, ideation_id, refinement_id, source_refinement_snapshot_id, source_refinement_version, delivery_context, source_context_sha256, title, description, context, skip_decisions_coverage, validation_threshold, require_task_validation, validation_min_confidence, validation_min_completeness, validation_max_drift, current_validation_id, pre_archive_status, cancellation_reason, cancelled_at, cancelled_by, status, edition, last_started_edition, version, assignee_id, created_by, test_scenario_policy_epoch, project_structure_revision, project_structure_digest) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING skip_test_coverage, skip_rules_coverage, skip_trs_coverage, skip_contract_coverage, skip_ir_coverage, skip_or_coverage, skip_code_evidence_coverage, skip_delivery_evidence, skip_qualitative_validation, archived, created_at, updated_at]\n[parameters: (None, 'spec', 'board', None, None, None, None, None, None, 'Spec', None, None, 0, None, None, 60, 92, None, None, None, None, None, None, 'draft', 1, None, 1, None, 'owner', 1, 0, None)]\n(Background on this error at: https://sqlalche.me/e/20/gkpj)"
+      },
+      {
+        "test": "tests.test_card_validation_config_read::test_card_policy_read_preserves_values_scope_and_source_data[missing]",
+        "message": "RuntimeError: resource_gate_relational_adapter_not_configured"
+      },
+      {
+        "test": "tests.test_card_validation_config_read::test_card_policy_read_preserves_values_scope_and_source_data[foreign]",
+        "message": "sqlalchemy.exc.IntegrityError: (sqlite3.IntegrityError) NOT NULL constraint failed: specs.architecture_adoption\n[SQL: INSERT INTO specs (architecture_adoption, id, board_id, ideation_id, refinement_id, source_refinement_snapshot_id, source_refinement_version, delivery_context, source_context_sha256, title, description, context, skip_decisions_coverage, validation_threshold, require_task_validation, validation_min_confidence, validation_min_completeness, validation_max_drift, current_validation_id, pre_archive_status, cancellation_reason, cancelled_at, cancelled_by, status, edition, last_started_edition, version, assignee_id, created_by, test_scenario_policy_epoch, project_structure_revision, project_structure_digest) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING skip_test_coverage, skip_rules_coverage, skip_trs_coverage, skip_contract_coverage, skip_ir_coverage, skip_or_coverage, skip_code_evidence_coverage, skip_delivery_evidence, skip_qualitative_validation, archived, created_at, updated_at]\n[parameters: (None, 'spec', 'foreign', None, None, None, None, None, None, 'Spec', None, None, 0, None, None, None, 92, None, None, None, None, None, None, 'draft', 1, None, 1, None, 'owner', 1, 0, None)]\n(Background on this error at: https://sqlalche.me/e/20/gkpj)"
+      },
+      {
+        "test": "tests.test_code_traceability_diagnostics_cli::test_policy_validation_upgrades_legacy_off_and_rejects_invalid_enum",
+        "message": "AttributeError: from_persisted"
+      },
+      {
+        "test": "tests.test_code_traceability_diagnostics_cli::test_diagnose_applies_open_limit_per_actor_and_ignores_expired",
+        "message": "AttributeError: from_persisted"
+      },
+      {
+        "test": "tests.test_code_traceability_event_effects::test_event_effect_is_transactional_idempotent_and_preserves_validation_history",
+        "message": "sqlalchemy.exc.IntegrityError: (sqlite3.IntegrityError) NOT NULL constraint failed: specs.architecture_adoption\n[SQL: INSERT INTO specs (id, board_id, title, status, version, validations, current_validation_id, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?)]\n[parameters: ('spec-1', 'board-1', 'Spec', 'approved', 3, '[{\"id\":\"validation-1\",\"outcome\":\"success\"}]', 'validation-1', 'owner-1')]\n(Background on this error at: https://sqlalche.me/e/20/gkpj)"
+      },
+      {
+        "test": "tests.test_code_traceability_event_effects::test_spec_entity_waiver_events_are_metadata_only_across_boards",
+        "message": "sqlalchemy.exc.IntegrityError: (sqlite3.IntegrityError) NOT NULL constraint failed: specs.architecture_adoption\n[SQL: INSERT INTO specs (id, board_id, title, status, version, functional_requirements, validations, current_validation_id, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)]\n[parameters: ('spec-1', 'board-1', 'Spec', 'approved', 3, '[{\"id\":\"fr-1\",\"text\":\"Requirement\"}]', '[{\"id\":\"validation-1\",\"outcome\":\"success\"}]', 'validation-1', 'owner-1')]\n(Background on this error at: https://sqlalche.me/e/20/gkpj)"
+      },
+      {
+        "test": "tests.test_code_traceability_kg_rebuild_e2e::test_rebuild_closes_historical_evidence_chain_without_counting_it_as_canonical",
+        "message": "sqlalchemy.exc.IntegrityError: (sqlite3.IntegrityError) NOT NULL constraint failed: specs.architecture_adoption\n[SQL: INSERT INTO specs (id, board_id, title, description, functional_requirements, skip_decisions_coverage, status, edition, version, created_by, test_scenario_policy_epoch, project_structure_revision) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)]\n[parameters: ('spec-1', 'board-1', 'Traceability spec', 'A deterministic rebuild fixture.', '[{\"id\": \"fr-1\", \"title\": \"FR-1\", \"text\": \"Persist accepted Code Evidence lineage.\"}]', 0, 'done', 1, 1, 'owner-1', 1, 0)]\n(Background on this error at: https://sqlalche.me/e/20/gkpj)"
+      },
+      {
+        "test": "tests.test_code_traceability_kg_rebuild_e2e::test_full_rebuild_materializes_traceability_with_zero_orphan_endpoints",
+        "message": "sqlalchemy.exc.IntegrityError: (sqlite3.IntegrityError) NOT NULL constraint failed: specs.architecture_adoption\n[SQL: INSERT INTO specs (id, board_id, title, description, functional_requirements, skip_decisions_coverage, status, edition, version, created_by, test_scenario_policy_epoch, project_structure_revision) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)]\n[parameters: ('spec-1', 'board-1', 'Traceability spec', 'A deterministic rebuild fixture.', '[{\"id\": \"fr-1\", \"title\": \"FR-1\", \"text\": \"Persist accepted Code Evidence lineage.\"}]', 0, 'done', 1, 1, 'owner-1', 1, 0)]\n(Background on this error at: https://sqlalche.me/e/20/gkpj)"
+      },
+      {
+        "test": "tests.test_code_traceability_persistence::test_spec_context_keeps_active_v3_evidence_in_v4_snapshot_denominator",
+        "message": "sqlalchemy.exc.IntegrityError: (sqlite3.IntegrityError) NOT NULL constraint failed: specs.architecture_adoption\n[SQL: INSERT INTO specs (id, board_id, ideation_id, refinement_id, source_refinement_snapshot_id, source_refinement_version, title, status, edition, version, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)]\n[parameters: ('spec-1', 'board-1', 'ideation-1', 'refinement-1', 'snapshot-v4', 4, 'Spec', 'draft', 1, 1, 'owner-1')]\n(Background on this error at: https://sqlalche.me/e/20/gkpj)"
+      },
+      {
+        "test": "tests.test_code_traceability_persistence::test_resolution_snapshot_is_unique_under_real_sqlite_race",
+        "message": "sqlalchemy.exc.IntegrityError: (sqlite3.IntegrityError) NOT NULL constraint failed: specs.architecture_adoption\n[SQL: INSERT INTO specs (id, board_id, title, status, version, created_by) VALUES (?, ?, ?, ?, ?, ?)]\n[parameters: ('spec-1', 'board-1', 'Spec', 'draft', 4, 'owner-1')]\n(Background on this error at: https://sqlalche.me/e/20/gkpj)"
+      },
+      {
+        "test": "tests.test_code_traceability_persistence::test_transaction_bound_stores_persist_only_submitted_attestations",
+        "message": "sqlalchemy.exc.IntegrityError: (sqlite3.IntegrityError) NOT NULL constraint failed: specs.architecture_adoption\n[SQL: INSERT INTO specs (id, board_id, title, status, version, created_by) VALUES (?, ?, ?, ?, ?, ?)]\n[parameters: ('spec-1', 'board-1', 'Spec', 'draft', 1, 'owner-1')]\n(Background on this error at: https://sqlalche.me/e/20/gkpj)"
+      },
+      {
+        "test": "tests.test_code_traceability_transport_parity::test_contextual_interpretation_limit_rejection_is_transport_identical_and_write_free[existing_scaffold]",
+        "message": "AttributeError: module 'okto_pulse.community.api.code_traceability' has no attribute 'CodeEvidenceBodyV2'. Did you mean: 'CodeEvidenceBody'?"
+      }
+    ],
+    "limits": "maxfail20;107 modules excluded; last transport parity module partial. Followups pending. Failed fixture setup leaked SQLite thread warning; do not infer runtime failure before corrected fixtures."
+  },
+  "community_run8_native_followup": {
+    "campaigns": [
+      {
+        "campaign": "community-run8-native-fixtures1",
+        "collection_errors": 5,
+        "duration_seconds": 12.41
+      },
+      {
+        "campaign": "community-run8-native-fixtures2",
+        "passed": 70,
+        "failed": 9,
+        "duration_seconds": 52.29
+      },
+      {
+        "campaign": "community-run8-native-fixtures3",
+        "passed": 49,
+        "failed": 2,
+        "duration_seconds": 34.92
+      },
+      {
+        "campaign": "community-run8-native-fixtures4",
+        "passed": 36,
+        "failed": 0,
+        "duration_seconds": 15.05
+      }
+    ],
+    "distinct_passed": 79,
+    "xml_sha256": {
+      "community-run8-native-fixtures1": "7e1018d108253ee72c870621791acdcc96a0e194249b7e0dccb6dc9a8702a777",
+      "community-run8-native-fixtures2": "719a9505a796441344b8199f9efbf1362d18ce7f9a5d7bf40c3b4f668d9d5130",
+      "community-run8-native-fixtures3": "16f140394d826776dc955578a13f83d639ef190276d521df8476e616bc64ce6e",
+      "community-run8-native-fixtures4": "7805d5a3e7a96a6e2c4969ef66c820dae6103d59ce5e509ddc2b797bf40d929e"
+    },
+    "proof_pair": "dist-native-diagnostics1",
+    "provenance": "provenance-native-diagnostics1.json",
+    "closure": "closure-native-diagnostics1.json",
+    "closure_ok": true,
+    "all_eight_budgets_zero": true,
+    "community_commit": "2cc0f5ab",
+    "scope": "CLI diagnostic validates current BoardSettings directly, no off-to-advisory conversion or legacy_default_applied result. No SQL writes. Nine affected/shared modules qualified: native task validation record and fence; realm/architecture/contextual evidence fixtures; real Knowledge/ResourceGate composition; native projection without legacy classification counters; preserve actor-kind403/zero effects, append-only history, transactional idempotency, SQLite race, graph lineage and REST/MCP parity.",
+    "disposition": "Card fixture with missing/foreign Spec is invalid native relational state; current composite read raises ResourceGateNotFound without exposing another Board or writing. Current product gate unchanged. Five collection errors in first attempt were erroneous test import location, corrected to domain.architecture_adoption. Failed-seed SQLite warning in broad run did not recur after fixture correction; datetime adapter deprecation warnings remain.",
+    "limits": "All20 Community run8 failures resolved including last partial transport module; broad backend/criteria qualification remains open. Product frontend unchanged; current2451/269 frontend receipt applies."
   }
 }

@@ -2,6 +2,76 @@
 
 ## Estado para retomada
 
+### 2026-10-07 — Community run8 resolvido; diagnostico publicado
+
+Community2cc0f5ab commit/push confirmado; Core8a245d8b publicado.
+Followup3:49 aprovados/2falhas34.92s (seed historico contextual incompleto e
+contador legado retirado). Followup4:36 aprovados15.05s;79 distintos nas nove
+suites completas, incluindo transport_parity e helper governed enqueue.
+Todas20falhas do run8 resolvidas. Preservados historico nativo, graph lineage,
+idempotencia/transacoes, race SQLite, grants actor-kind403 e paridade REST/MCP.
+CLI valida somente policy atual, off recusado sem conversao/escrita.
+Ruff/diff verdes. Par dist-native-diagnostics1 instalado/provado843/905+318/404;
+closure terminal ok=true, findings/docs vazios, oito budgetsZERO.
+Frontend2451/269 permanece atual; nenhum impacto frontend. Nenhum handle ativo.
+Proximo Core run11 aposrun10/followups; Community run9 aposrun8/followups79.
+C1-C4/criterios/benchmark/bump/T23/KG-10 ainda abertos. Investigacao generation
+registrada abaixo nao implementada; nao inferir retirada/novo gate ja concluido.
+
+
+### 2026-10-07 — Community followup3 em execucao
+
+Followup2 terminou:70 aprovados/9falhas52.29s; handle5631 encerrado.
+Diagnostico nativo e cinco suites completos aprovados. Corrigidas fixtures dos
+quatro modulos restantes: recibo/evidencia contextual nativos, composicao real
+Knowledge/ResourceGate, sem campo de classificacao legada na projecao simulada.
+Bodies REST completos alcancam o gate actor-kind (mantida recusa403/zero efeitos).
+Card com parent Spec ausente/foreign e estado invalido de fixture: leitura composta
+atual recusa ResourceGateNotFound antes de expor dados, em vez de configNone.
+Mantidas negações/escopo e zero escrita/commit. Nenhuma mudanca nesse gate de produto.
+community-run8-native-fixtures3 ativo handle30935, quatro suites integrais.
+Par/closure-native-diagnostics1 atuais e oito budgetsZERO. Aguardar terminal.
+
+
+### 2026-10-07 — Closure diagnostico verde; followup2 ativo
+
+Closure-native-diagnostics1 terminal ok=true, findings/documentation_findings
+vazios, oito budgets current=limit=0; handle91617 encerrado.
+community-run8-native-fixtures1 falhou em coleta (5 imports): ArchitectureAdoptionScope
+vive em domain.architecture_adoption, nao models.schemas. Corrigidos somente testes;
+nenhum comportamento foi executado nessa tentativa. Followup2 ativo handle5631,
+mesmas nove suites completas. Produto/provenance dist-native-diagnostics1 inalterados.
+Aguardar resultado; C1-C4/criterios/benchmark/bump/T23/KG-10 abertos.
+
+
+### 2026-10-07 — Community run8 followup e diagnostico nativo
+
+Full-run8-community terminal:298 aprovados/20falhas202.67s;107 modulos excluidos.
+Handle81111 encerrado; ultimo transport_parity parcial. Resultados/hash no JSON.
+Identificado caller real from_persisted removido no CLI code_traceability_diagnostics:
+retirada conversao off→advisory e campo legacy_default_applied. Schema atual valida
+diretamente; default nativo preservado, off/invalido recusados sem escrita.
+Fixtures corrigidas: TaskValidation completo/fence atual, realm/arquitetura explicitos,
+ResourceGate adapter real e CodeEvidenceBody atual. Gates/assercoes preservados.
+Ruff/diff verdes. Par dist-native-diagnostics1 instalado/provado byte-a-byte
+843/905+318/404 antes de comportamento. Produto frontend inalterado.
+community-run8-native-fixtures1 ativo handle16720; nove suites completas incluindo
+helper governed enqueue. Closure-native-diagnostics1 ativo handle91617.
+Tentativa nome run8-native-fixtures1 recusada por log existente Core; nenhum teste
+executado/sobrescrito, relancada com nome community. Aguardar ambos terminais.
+C1-C4/criterios/benchmark/bump/T23/KG-10 abertos.
+
+
+### 2026-10-07 — Community run8 ativo
+
+Core8a245d8b / Community082d1021 publicados; pushes confirmados.
+clean-break-full-run8-community ativo handle81111;107 modulos completos
+excluidos conforme selection.json. Aguardar terminal; nao alterar/reinstalar
+produto durante campanha. Par dist-native-preflight2/provenance/closure2 atual,
+oito budgetsZERO. Frontend2451/269 completo. Core proximo run11 aposrun10.
+C1-C4/criterios/benchmark/bump/T23/KG-10 abertos.
+
+
 ### 2026-10-07 — Core run10 integralmente resolvido
 
 Followup run10-native-fixtures1:154 aprovados/uma falha149.73s. A fixture ACL
