@@ -10,17 +10,17 @@ Domain and application engine for [Okto Pulse](https://github.com/OktoLabsAI/okt
 ## What's inside
 
 - **0 SQLAlchemy models** — Core owns no concrete relational mappings. This is checked by scanning for `__tablename__` assignments anywhere under `core/`; the Community edition owns the SQLAlchemy model and repository adapters.
-- **56 service classes** — Full business logic with governance rules, board agent governance, resource propagation + lineage, bug-regression workflow, archive/restore, traceability and board-level resource readiness. Source: classes ending in `Service` under `core/services`.
+- **54 service classes** — Full business logic with governance rules, board agent governance, resource propagation + lineage, bug-regression workflow, archive/restore, traceability and board-level resource readiness. Source: classes ending in `Service` under `core/services`.
 - **0 API route modules** — Core owns application contracts and use cases, not concrete FastAPI routers. The count scans `core/api/*.py`; Community owns the REST adapter and route modules.
 - **Governance gates** — Resource readiness, resource-to-task coverage, spec coverage, validation, evaluation, task completion, cognitive closeout, architecture-findings, evidence and bug traceability controls.
-- **301 MCP tools** — Complete Model Context Protocol command catalog for AI agent integration, counted from the transport-neutral Core catalog after importing the server, including:
+- **282 MCP tools** — Complete Model Context Protocol command catalog for AI agent integration, counted from the transport-neutral Core catalog after importing the server, including:
   - Pipeline CRUD (Ideation, Refinement, Spec, Card)
   - Q&A and choice questions across every entity
   - Mockups (HTML+Tailwind, sanitised) and Knowledge Bases at spec/refinement/card scope
   - Decisions with supersedence and coverage gates
   - Per-card Knowledge attachment lifecycle (`add_card_knowledge` and friends)
   - 32 Knowledge Graph tools: logical queries, cognitive consolidation, public schema, bounded Health and governed deletion status. Maintenance and recovery controls are internal.
-  - Community runtime exposure: 301 core MCP tools, 0 community-only MCP tools
+  - Community runtime exposure: 282 core MCP tools, 0 community-only MCP tools
 - **Application composition contracts** — edition-neutral runtime, auth, storage, persistence, graph, telemetry and transport ports; concrete app construction belongs to the edition
 - **Hexagonal backend ports** — runtime, telemetry, repository/UoW and KG provider seams, plus the adapter readiness ledger, documented in [`ARCHITECTURE.md`](./ARCHITECTURE.md)
 - **Knowledge Graph contracts and orchestration** — graph schema vocabulary, query/consolidation semantics, deterministic + cognitive workers, 11 node types and **16 relationship types**. Source: `len(KGEdgeType)` in `core/kg/schemas.py`; Community supplies the concrete Okto Grafx Board and Global runtimes through public ports.

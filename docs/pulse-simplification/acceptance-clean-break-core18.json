@@ -1,0 +1,92 @@
+{
+  "scope": "Core18 native fixture qualification and current documentation; Community14 terminal preserved",
+  "qualified_core_distinct_cases": 76,
+  "qualified_core_modules": 7,
+  "product_python_changed": false,
+  "runs": [
+    {
+      "name": "clean-break-full-run18",
+      "sha256": "2be66c9ca6ad48819696f73daf88780ce64a1372362f5bc52b1c7871a217421d",
+      "tests": 365,
+      "failed": 20,
+      "failed_modules": [
+        "tests.test_readme_live_counters_guard",
+        "tests.test_refinement_cognitive_done_integration",
+        "tests.test_repositories_unit_of_work_04",
+        "tests.test_research_decision_ledger_application_wiring",
+        "tests.test_resource_gate_api",
+        "tests.test_resource_gate_service",
+        "tests.test_resource_lineage_service"
+      ]
+    },
+    {
+      "name": "core18-native-fixtures1",
+      "sha256": "01015208d606db35a18fec65ba8f62898cd8b7ebd19a9b931c45a554257f416e",
+      "tests": 49,
+      "failed": 0,
+      "failed_modules": []
+    },
+    {
+      "name": "core18-native-lineage1",
+      "sha256": "5ad73dcb62425eca2880ad9e284df7a95a6399fba02882f6b8f830d0765b8b15",
+      "tests": 18,
+      "failed": 0,
+      "failed_modules": []
+    },
+    {
+      "name": "core18-native-wiring1",
+      "sha256": "549560294f41dd7a5f74f7927c072528f95420344ba12985bd44d3187f60e9b1",
+      "tests": 2,
+      "failed": 0,
+      "failed_modules": []
+    },
+    {
+      "name": "core18-native-counters1",
+      "sha256": "e77e2e06f6b38899789e9e8ab3ac683a9f9b56a7f099b8cea3bbb716eecb8f6a",
+      "tests": 7,
+      "failed": 1,
+      "failed_modules": [
+        "tests.test_readme_live_counters_guard"
+      ]
+    },
+    {
+      "name": "core18-native-counters2",
+      "sha256": "77fe6b3869311c7863df8ea9ef3c54c6d397bfeb334547274bebda3012203478",
+      "tests": 7,
+      "failed": 0,
+      "failed_modules": []
+    },
+    {
+      "name": "clean-break-full-run14-community",
+      "sha256": "829b0ee69a6206d964abb5598d011c33a836991f4350269883af59628a417891",
+      "tests": 462,
+      "failed": 20,
+      "failed_modules": [
+        "tests.test_learning_submission_writer",
+        "tests.test_lineage_query_read",
+        "tests.test_logical_transfer_factories.TestDriftIsRefused",
+        "tests.test_logical_transfer_factories.TestTheScopeContract",
+        "tests.test_logical_transfer_physical_matrix",
+        "tests.test_m4_non_public_vector_measurement_driver",
+        "tests.test_materialization_census_volume",
+        "tests.test_materialization_health_adapters",
+        "tests.test_mcp_resource_effective_overlay_sprint_b"
+      ]
+    }
+  ],
+  "proof": {
+    "file": "provenance-native-counters18.json",
+    "sha256": "d2a7fd527aecf10b95edd5492541549e02171ef768ef763f4c69dccf3dab2cd6"
+  },
+  "closure": {
+    "file": "closure-native-counters18.json",
+    "sha256": "b718ff07a68771e214325673e1b4e309e255b776b6c157959dc093437605d192",
+    "ok": true,
+    "all_eight_budgets": 0
+  },
+  "limitations": [
+    "Community14 failures unresolved",
+    "Installed E2E and C4 acceptance incomplete",
+    "BASE:T23 and KG:KG-10 pending decisions"
+  ]
+}

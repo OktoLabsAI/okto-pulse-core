@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import pytest
+from types import SimpleNamespace
+from okto_pulse.core.domain.architecture_adoption import ArchitectureAdoptionScope
 
 from okto_pulse.core.services.resource_lineage import (
     AmbiguousResourceOrigin,
@@ -16,6 +18,17 @@ from okto_pulse.core.services.resource_lineage import (
     get_resource_lineage_metric_samples,
     reset_resource_lineage_observability_for_tests,
 )
+
+
+def _native_spec(*, inherited_resource_ids=()) -> LineageEntityRef:
+    scope = ArchitectureAdoptionScope(
+        board_id="board-1", spec_id="spec-1", adopted_in_edition=1,
+        actor_id="lineage-test-author", inherited_resource_ids=inherited_resource_ids,
+    )
+    return LineageEntityRef(
+        "spec", "spec-1", "Spec",
+        entity=SimpleNamespace(edition=1, architecture_adoption=scope.model_dump(mode="json")),
+    )
 
 
 class FakeLineageProvider:
@@ -137,9 +150,9 @@ async def test_gate_profile_fails_closed_without_metadata_quartet() -> None:
 
 
 @pytest.mark.asyncio
-async def test_gate_profile_uses_complete_metadata_capability_without_legacy_reads() -> None:
+async def test_gate_profile_uses_complete_metadata_capability_without_body_reads() -> None:
     card = LineageEntityRef("card", "card-1", "Card")
-    spec = LineageEntityRef("spec", "spec-1", "Spec")
+    spec = _native_spec()
     calls: list[str] = []
 
     class MetadataProvider(FakeLineageProvider):
@@ -147,16 +160,16 @@ async def test_gate_profile_uses_complete_metadata_capability_without_legacy_rea
             return True
 
         async def load_entity_ref(self, *args, **kwargs):
-            raise AssertionError("legacy entity loader reached by gate profile")
+            raise AssertionError("body entity loader reached by gate profile")
 
         async def load_parent_refs(self, *args, **kwargs):
-            raise AssertionError("legacy parent loader reached by gate profile")
+            raise AssertionError("body parent loader reached by gate profile")
 
         async def collect_refs(self, *args, **kwargs):
-            raise AssertionError("legacy body ref loader reached by gate profile")
+            raise AssertionError("body ref loader reached by gate profile")
 
         async def filter_inherited_refs(self, *args, **kwargs):
-            raise AssertionError("legacy inherited ref filter reached by gate profile")
+            raise AssertionError("body inherited ref filter reached by gate profile")
 
         async def load_entity_ref_metadata(self, board_id, entity_type, entity_id):
             del board_id
@@ -221,8 +234,8 @@ async def test_gate_profile_uses_complete_metadata_capability_without_legacy_rea
 
 
 @pytest.mark.asyncio
-async def test_v2_scope_keeps_suppressed_legacy_attachments_only_as_history() -> None:
-    spec = LineageEntityRef("spec", "spec-1", "Spec")
+async def test_scope_keeps_inactive_native_assignments_only_as_history() -> None:
+    spec = _native_spec()
     refinement = LineageEntityRef("refinement", "ref-1", "Refinement")
     provider = FakeLineageProvider(
         roots={("spec", "spec-1"): spec},
@@ -231,12 +244,12 @@ async def test_v2_scope_keeps_suppressed_legacy_attachments_only_as_history() ->
             spec.ref: {
                 "knowledge_base": [
                     {
-                        "id": "legacy-direct",
-                        "title": "Legacy direct snapshot",
+                        "id": "inactive-direct",
+                        "title": "Inactive native direct snapshot",
                         "root_source_kb_id": "kb-root-direct",
                         "source_entity_type": "spec",
                         "source_entity_id": "spec-1",
-                        "origin_class": "legacy_all",
+                        "origin_class": "v2",
                         "effective": False,
                     }
                 ]
@@ -244,12 +257,12 @@ async def test_v2_scope_keeps_suppressed_legacy_attachments_only_as_history() ->
             refinement.ref: {
                 "knowledge_base": [
                     {
-                        "id": "legacy-inherited",
-                        "title": "Legacy inherited snapshot",
+                        "id": "inactive-inherited",
+                        "title": "Inactive native inherited snapshot",
                         "root_source_kb_id": "kb-root-inherited",
                         "source_entity_type": "refinement",
                         "source_entity_id": "ref-1",
-                        "origin_class": "legacy_all",
+                        "origin_class": "v2",
                         "effective": False,
                     }
                 ]
@@ -281,11 +294,11 @@ async def test_v2_scope_keeps_suppressed_legacy_attachments_only_as_history() ->
 
     assert len(resolved.attachments) == 2
     assert {item.resource_id for item in resolved.attachments} == {
-        "legacy-direct",
-        "legacy-inherited",
+        "inactive-direct",
+        "inactive-inherited",
     }
     assert all(item.effective is False for item in resolved.attachments)
-    assert {item.origin_class for item in resolved.attachments} == {"legacy_all"}
+    assert {item.origin_class for item in resolved.attachments} == {"v2"}
 
     counts = resolved.counts
     assert counts["attachment_count"] == 2
@@ -300,25 +313,25 @@ async def test_v2_scope_keeps_suppressed_legacy_attachments_only_as_history() ->
     assert counts["uncovered_required_resources_count"] == 0
 
     assert {item["origin_class"] for item in projected["attachments"]} == {
-        "legacy_all"
+        "v2"
     }
     assert all(item["effective"] is False for item in projected["attachments"])
     assert {
         item["origin_class"] for item in projected["provenance_labels"]
-    } == {"legacy_all"}
+    } == {"v2"}
 
 
 @pytest.mark.asyncio
-async def test_attachment_without_effective_flag_remains_effective_by_default() -> None:
-    spec = LineageEntityRef("spec", "spec-1", "Spec")
+async def test_direct_resource_is_effective_without_assignment_flag() -> None:
+    spec = _native_spec()
     provider = FakeLineageProvider(
         roots={("spec", "spec-1"): spec},
         refs={
             spec.ref: {
                 "knowledge_base": [
                     {
-                        "id": "legacy-kb",
-                        "title": "Pre-v2 attachment",
+                        "id": "local-kb",
+                        "title": "Locally authored resource",
                         "source_entity_type": "spec",
                         "source_entity_id": "spec-1",
                     }
@@ -351,7 +364,7 @@ async def test_attachment_without_effective_flag_remains_effective_by_default() 
 @pytest.mark.asyncio
 async def test_resolver_dedupes_direct_and_inherited_architecture_by_origin() -> None:
     reset_resource_lineage_observability_for_tests()
-    spec = LineageEntityRef("spec", "spec-1", "Spec")
+    spec = _native_spec(inherited_resource_ids=("architecture:arch-origin",))
     refinement = LineageEntityRef("refinement", "ref-1", "Refinement")
     provider = FakeLineageProvider(
         roots={("spec", "spec-1"): spec},
@@ -415,7 +428,7 @@ async def test_resolver_dedupes_direct_and_inherited_architecture_by_origin() ->
 
 @pytest.mark.asyncio
 async def test_direct_resource_shadows_only_the_same_inherited_root() -> None:
-    spec = LineageEntityRef("spec", "spec-1", "Spec")
+    spec = _native_spec()
     refinement = LineageEntityRef("refinement", "ref-1", "Refinement")
     provider = FakeLineageProvider(
         roots={("spec", "spec-1"): spec},
@@ -473,7 +486,7 @@ async def test_direct_resource_shadows_only_the_same_inherited_root() -> None:
 @pytest.mark.asyncio
 async def test_provider_can_suppress_unselected_inherited_knowledge_refs() -> None:
     card = LineageEntityRef("card", "card-1", "Card")
-    spec = LineageEntityRef("spec", "spec-1", "Spec")
+    spec = _native_spec()
 
     def filter_refs(_root, _parent, refs):
         return {
@@ -532,7 +545,7 @@ async def test_provider_can_suppress_unselected_inherited_knowledge_refs() -> No
 
 @pytest.mark.asyncio
 async def test_resolver_projects_inherited_na_as_not_applicable_attachment() -> None:
-    spec = LineageEntityRef("spec", "spec-1", "Spec")
+    spec = _native_spec()
     refinement = LineageEntityRef("refinement", "ref-1", "Refinement")
     provider = FakeLineageProvider(
         roots={("spec", "spec-1"): spec},
@@ -567,7 +580,7 @@ async def test_resolver_projects_inherited_na_as_not_applicable_attachment() -> 
 
 @pytest.mark.asyncio
 async def test_resolver_keeps_provided_resource_when_parent_has_na_mark() -> None:
-    spec = LineageEntityRef("spec", "spec-1", "Spec")
+    spec = _native_spec()
     refinement = LineageEntityRef("refinement", "ref-1", "Refinement")
     provider = FakeLineageProvider(
         roots={("spec", "spec-1"): spec},
@@ -633,7 +646,7 @@ async def test_resolver_rejects_unsupported_entity_type() -> None:
 
 @pytest.mark.asyncio
 async def test_resolver_allows_architecture_source_ref_hop_with_canonical_root() -> None:
-    spec = LineageEntityRef("spec", "spec-1", "Spec")
+    spec = _native_spec()
     provider = FakeLineageProvider(
         roots={("spec", "spec-1"): spec},
         refs={
@@ -665,7 +678,7 @@ async def test_resolver_allows_architecture_source_ref_hop_with_canonical_root()
 
 @pytest.mark.asyncio
 async def test_revision_stamp_uses_the_same_source_ref_fallback_as_dedup() -> None:
-    spec = LineageEntityRef("spec", "spec-1", "Spec")
+    spec = _native_spec()
     provider = FakeLineageProvider(
         roots={("spec", "spec-1"): spec},
         refs={
@@ -696,7 +709,7 @@ async def test_revision_stamp_uses_the_same_source_ref_fallback_as_dedup() -> No
 
 @pytest.mark.asyncio
 async def test_multihop_mockup_and_kb_snapshots_dedupe_on_canonical_root() -> None:
-    spec = LineageEntityRef("spec", "spec-1", "Spec")
+    spec = _native_spec()
     refinement = LineageEntityRef("refinement", "ref-1", "Refinement")
     ideation = LineageEntityRef("ideation", "idea-1", "Ideation")
     provider = FakeLineageProvider(
@@ -754,7 +767,7 @@ async def test_multihop_mockup_and_kb_snapshots_dedupe_on_canonical_root() -> No
 
 @pytest.mark.asyncio
 async def test_revision_v2_dedupes_one_root_and_preserves_divergent_stamps() -> None:
-    spec = LineageEntityRef("spec", "spec-1", "Spec")
+    spec = _native_spec()
     refinement = LineageEntityRef("refinement", "ref-1", "Refinement")
     provider = FakeLineageProvider(
         roots={("spec", "spec-1"): spec},
@@ -834,9 +847,9 @@ async def test_revision_v2_dedupes_one_root_and_preserves_divergent_stamps() -> 
     assert coverage["revision_stamp"] == attachment_payload["revision_stamp"]
     assert coverage["source_content_sha256"] == "b" * 64
 
-    legacy_projection = resolved.to_dict()
+    internal_projection = resolved.to_dict()
     public_projection = ResolvedResourceLineageProjection.project(resolved)
-    assert legacy_projection["contract_version"] == 2
+    assert internal_projection["contract_version"] == 2
     assert public_projection["contract_version"] == 2
     assert public_projection["attachments"][0]["revision_stamp"] == (
         attachment_payload["revision_stamp"]
@@ -845,11 +858,11 @@ async def test_revision_v2_dedupes_one_root_and_preserves_divergent_stamps() -> 
 
 
 @pytest.mark.asyncio
-async def test_revision_v2_keeps_legacy_null_evidence_readable() -> None:
-    spec = LineageEntityRef("spec", "spec-1", "Spec")
+async def test_direct_resource_has_no_invented_source_revision() -> None:
+    spec = _native_spec()
     provider = FakeLineageProvider(
         roots={("spec", "spec-1"): spec},
-        refs={spec.ref: {"knowledge_base": [{"id": "legacy-kb"}]}},
+        refs={spec.ref: {"knowledge_base": [{"id": "local-kb"}]}},
     )
 
     resolved = await ResolvedResourceLineageService(provider).resolve(
@@ -857,12 +870,12 @@ async def test_revision_v2_keeps_legacy_null_evidence_readable() -> None:
     )
 
     attachment = resolved.attachments[0].to_dict()
-    assert attachment["root_id"] == "legacy-kb"
+    assert attachment["root_id"] == "local-kb"
     assert attachment["immediate_parent_id"] is None
     assert attachment["source_revision"] is None
     assert attachment["source_content_sha256"] is None
     assert attachment["revision_stamp"] == {
-        "root_id": "legacy-kb",
+        "root_id": "local-kb",
         "immediate_parent_id": None,
         "source_revision": None,
         "source_content_sha256": None,
@@ -874,7 +887,7 @@ async def test_revision_v2_keeps_legacy_null_evidence_readable() -> None:
 
 @pytest.mark.asyncio
 async def test_resolver_rejects_conflicting_origin_evidence() -> None:
-    spec = LineageEntityRef("spec", "spec-1", "Spec")
+    spec = _native_spec()
     provider = FakeLineageProvider(
         roots={("spec", "spec-1"): spec},
         refs={
@@ -909,7 +922,7 @@ async def test_resolver_snapshot_id_with_hop_ref_and_root_design_id_no_ambiguity
     # The own ``id`` must NOT be conflated with the canonical origin and the
     # divergent ``source_ref`` is a provenance hop, so there is NO
     # AmbiguousResourceOrigin and the resource keys on the ROOT design id.
-    spec = LineageEntityRef("spec", "spec-1", "Spec")
+    spec = _native_spec()
     snapshot_id = "67f04914-bac7-433c-8209-cf81188d1122"
     intermediate = "cead91e9-3b29-4586-8311-588ad4d948fd"
     root_design_id = "345a132b-28e6-4dc0-81fa-ef59cb22a9ac"
@@ -943,7 +956,7 @@ async def test_resolver_snapshot_id_with_hop_ref_and_root_design_id_no_ambiguity
 
 @pytest.mark.asyncio
 async def test_projection_contract_exposes_lineage_without_raw_storage_rows() -> None:
-    spec = LineageEntityRef("spec", "spec-1", "Spec")
+    spec = _native_spec(inherited_resource_ids=("architecture:arch-origin",))
     refinement = LineageEntityRef("refinement", "ref-1", "Refinement")
     provider = FakeLineageProvider(
         roots={("spec", "spec-1"): spec},

@@ -2,6 +2,37 @@
 
 ## Estado para retomada
 
+### 2026-10-07 — Core18 qualificado; Community14 terminal
+Core18 handle18388 terminou1:345pass/20fail/158.14s. Sete módulos completos
+qualificados após adaptação: fixtures1 handle55250 49pass/31.50s; lineage1
+handle64117 18pass/4.36s; wiring1 handle57048 2pass/4.21s; counters2
+handle1287 7pass/20.91s. Total76 distintos. Counters1 preservado6pass/1fail
+por mapa Community sem seis adapters atuais; mapa corrigido, com retirada
+das instruções de migradores/retirement inexistentes. READMEs agora54 services
+Core e282 MCP tools. Linhagem declara adoption explícita, mantém histórico
+nativo inativo e não inventa revisão da fonte; derivação usa Knowledge atual
+e preserva somente decisões resolvidas. Produção Python não alterada.
+
+Build/par dist-native-counters18 instalado; prova29741 terminou0:
+843/905 Core+316/402 Community byte-idênticos. Closure96183 terminou0:
+ok=true,findings/documentation_findings vazios,oito ZERO. Doc ARCHITECTURE
+ajustada depois não é payload Python; Ruff F/E9 e diff-check0.
+Recibo acceptance-clean-break-core18.json contém hashes/limites/falhas.
+
+Community14 handle64918 terminou1:442pass/20fail/1953.95s. Oito módulos
+a investigar: learning_submission_writer,lineage_query_read,
+logical_transfer_factories,logical_transfer_physical_matrix,
+m4_non_public_vector_measurement_driver,materialization_census_volume,
+materialization_health_adapters,mcp_resource_effective_overlay_sprint_b.
+Causas observadas: fixture REST parcial/Delivery sem population; realm_id
+obrigatório ausente; contagens antigas de schema; path de dependência
+do driver; manifest frozen antigo. Não reclassificar como testes verdes.
+
+Nenhum processo destas rodadas permanece ativo. Publicar par isolado e
+integrar main por fast-forward (limpo), depois reconstruir/provar main
+antes dos próximos testes. Prosseguir Community14/Core19/E2E/C4;
+T23/KG-10 continuam pendentes. Turno foi progresso, sem impasse.
+
 ### 2026-10-07 — Core17 publicado; campanhas seguintes ativas
 Core0c5cca92 publicado, push0. Core18 handle18388 ATIVO no worktree native-next,
 par dist-native-closeout-final provado; seleção exclui880 módulos completos.

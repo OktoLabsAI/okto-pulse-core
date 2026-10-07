@@ -21,6 +21,7 @@ from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 import pytest
+from native_subject_testing import record_native_subject_authority
 
 from okto_pulse.core.infra.database import get_session_factory
 from okto_pulse.core.kg.rebuild_audit import (
@@ -105,7 +106,7 @@ async def seeded_refinement() -> tuple[str, str, str]:
                 delivery_context="brownfield",
             )
         )
-        await db.flush()
+        await record_native_subject_authority(db)
         resource_gate = ResourceGateService(db)
         for resource_type in ("architecture", "mockup", "knowledge_base"):
             await resource_gate.mark_not_applicable(

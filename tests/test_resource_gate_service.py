@@ -4,6 +4,7 @@ import inspect
 import uuid
 
 import pytest
+from native_subject_testing import record_native_subject_authority
 
 from okto_pulse.core.domain.architecture_adoption import ArchitectureAdoptionScope
 
@@ -1310,6 +1311,7 @@ async def test_resource_gate_blocks_done_transition_until_resources_provided_or_
                 status=IdeationStatus.EVALUATING,
             )
         )
+        await record_native_subject_authority(db)
         await db.commit()
 
         with pytest.raises(ResourceGateViolation):
