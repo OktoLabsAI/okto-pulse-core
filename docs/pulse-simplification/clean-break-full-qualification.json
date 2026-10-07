@@ -2029,5 +2029,20 @@
     "scope": "CLI diagnostic validates current BoardSettings directly, no off-to-advisory conversion or legacy_default_applied result. No SQL writes. Nine affected/shared modules qualified: native task validation record and fence; realm/architecture/contextual evidence fixtures; real Knowledge/ResourceGate composition; native projection without legacy classification counters; preserve actor-kind403/zero effects, append-only history, transactional idempotency, SQLite race, graph lineage and REST/MCP parity.",
     "disposition": "Card fixture with missing/foreign Spec is invalid native relational state; current composite read raises ResourceGateNotFound without exposing another Board or writing. Current product gate unchanged. Five collection errors in first attempt were erroneous test import location, corrected to domain.architecture_adoption. Failed-seed SQLite warning in broad run did not recur after fixture correction; datetime adapter deprecation warnings remain.",
     "limits": "All20 Community run8 failures resolved including last partial transport module; broad backend/criteria qualification remains open. Product frontend unchanged; current2451/269 frontend receipt applies."
+  },
+  "native_graph_generation": {
+    "campaign": "native-generation1",
+    "passed": 57,
+    "failed": 0,
+    "duration_seconds": 597.59,
+    "xml_sha256": "536b1e0d64f4afe2aaf2413445b2a07590d6d9eef3664d10bd8a1ca4a34bf263",
+    "proof_pair": "dist-native-generation1",
+    "provenance": "provenance-native-generation1.json",
+    "closure": "closure-native-generation1.json",
+    "closure_ok": true,
+    "all_eight_budgets_zero": true,
+    "scope": "Current writers persist explicit generation. Removed NULL/missing/read-error-to-zero interpretation and legacy coalesce ordering. Invalid identity/value rejected; read failure explicitly retryable. Native graph test proves missing value is unchanged; deterministic identity, cognitive durable source/replay, Decision history, NC8 and batch provenance remain intact.",
+    "test_disposition": "Renamed generation_migration to native_generation; native bootstrap retained and old-row positive replaced with missing/invalid/read-failure rejection. Seven complete suites including AF04.",
+    "limits": "No authority change for valid objects, no frontend change, no full backend/criteria completion claim."
   }
 }

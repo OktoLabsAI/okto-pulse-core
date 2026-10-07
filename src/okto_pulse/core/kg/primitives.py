@@ -5256,8 +5256,8 @@ def _lookup_existing_node(
     same ``source_artifact_ref``.  A bare ``LIMIT 1`` can therefore select a
     superseded generation and make an at-least-once replay mint its already
     materialized successor again.  Select only the active node and break ties
-    deterministically by highest generation, then id (legacy NULL generation
-    is generation zero).  Returns the graph node id if found, ``None``
+    deterministically by highest explicit generation, then id.
+    Returns the graph node id if found, ``None``
     otherwise.  Used when NOOP to find existing nodes so edges can still be
     resolved and by NC-8 to update/supersede the current assertion.
 
@@ -5289,7 +5289,7 @@ def _lookup_existing_node(
         "WHERE n.source_artifact_ref = $ref "
         "AND n.superseded_by IS NULL "
         "RETURN n.id "
-        "ORDER BY coalesce(n.generation, 0) DESC, n.id DESC "
+        "ORDER BY n.generation DESC, n.id DESC "
         "LIMIT 1"
     )
     try:
@@ -6177,24 +6177,35 @@ def _node_superseded_by(graph_scope, node_type: str, node_id: str) -> str | None
 
 
 def _node_generation(graph_scope, node_type: str, node_id: str) -> int:
-    """Read a node's supersedence generation (spec MKG-A-S1 FR3).
+    """Read the explicit native supersedence generation (MKG-A-S1 FR3).
 
-    Treats NULL as 0 — legacy nodes from before the generation column have
-    no value and start the deterministic chain at generation 0. Returns 0
-    on any read error so a supersede of a legacy node still mints
-    generation 1 deterministically instead of failing the commit.
+    Every current writer persists a nonnegative integer. Missing or malformed
+    state cannot establish the identity of a successor and must not mint one.
     """
     if not node_id:
-        return 0
+        raise KGPrimitiveError(
+            "kg_node_generation_invalid", "A node identity is required to read its generation."
+        )
     cypher = f"MATCH (n:{node_type}) WHERE n.id = $id RETURN n.generation LIMIT 1"
     try:
-        res = graph_scope.execute(cypher, {"id": node_id})
-        if res.rows:
-            value = res.rows[0][0]
-            return int(value) if value is not None else 0
-    except Exception:
-        pass
-    return 0
+        rows = graph_scope.execute(cypher, {"id": node_id}).rows
+    except Exception as exc:
+        raise KGPrimitiveError(
+            "kg_node_generation_unavailable",
+            "The current node generation could not be read.",
+            retryable=True,
+        ) from exc
+    if len(rows) != 1 or len(rows[0]) != 1:
+        raise KGPrimitiveError(
+            "kg_node_generation_invalid", "The current node generation is missing."
+        )
+    value = rows[0][0]
+    if type(value) is not int or value < 0:
+        raise KGPrimitiveError(
+            "kg_node_generation_invalid",
+            "The current node generation must be a nonnegative integer.",
+        )
+    return value
 
 
 _CROSS_SESSION_PREFIXES: tuple[str, ...] = (

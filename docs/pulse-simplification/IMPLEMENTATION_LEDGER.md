@@ -2,6 +2,44 @@
 
 ## Estado para retomada
 
+### 2026-10-07 — C2 geracao explicita qualificada
+
+native-generation1 terminal:57 aprovados, zero falhas,597.59s; sete suites
+integrais incluindo identidade/replay/supersedencia/cognitive source/NC8/AF04.
+Handle22956 encerrado. Ruff/diff verdes. Fallback de geracao antiga retirado;
+dados incompletos recusados sem conversao; falha de leitura explicitamente retryable.
+Par dist-native-generation1/provenance byte-identico843/905+318/404; closure terminal
+ok=true/findings/docs vazios/oito budgetsZERO. Nenhum handle ativo. Frontend atual.
+Selecoes futuras preparadas: Core11=490 (incorporar native-generation1 antes de
+iniciar); Community9=135. C1-C4/criterios/benchmark/bump/T23/KG-10 abertos.
+Investigacao C3 delimitada: _CROSS_SESSION_PREFIXES e
+_cross_session_entity_source_prefix ainda reconhecem Sprint, sem emissor atual.
+Retirada dessa gramatica de entidade aposentada pendente; nao e nova feature.
+
+
+### 2026-10-07 — C2 geracao KG nativa em qualificacao
+
+Core6ef92ee6 / Community2cc0f5ab publicados; pushes confirmados.
+Investigacao concluiu que escritores atuais de nodes (primitives, card boost e
+policy projection) informam generation; restauracao atual preserva payload.
+Retirado fallback antigo NULL/ausente→0 e coalesce no ordering da linhagem.
+Leitura exige inteiro nao negativo; identidade/linha incompleta recusa explicita;
+erro de leitura vira indisponibilidade retryable, sem fabricar sucessor.
+Nenhuma alteracao de grants/policy/semantica de nodes validos ou novo dialeto.
+Suite generation_migration renomeada native_generation, preservando bootstrap
+e acrescentando recusas sem conversao. WIP Core ainda nao publicado.
+Par dist-native-generation1 instalado/provado byte-a-byte843/905+318/404 antes
+de comportamento. native-generation1 ativo handle22956 (sete suites: geracao,
+deterministic identity, cognitive source commit, decision history, NC8,
+provenance batch e AF04); closure-native-generation1 ativo handle99302.
+Closure-native-generation1 terminal ok=true/findings/docs vazios/oito budgetsZERO;
+handle99302 encerrado. Testes native-generation1 ainda ativos handle22956.
+Selecoes futuras preparadas, NAO iniciadas: Core11=490 modulos completos excluidos
+(ainda incorporar generation apos resultado); Community9=135 modulos excluidos.
+Aguardar teste terminal, nao alterar/reinstalar produto. Frontend inalterado.
+C1-C4/criterios/benchmark/bump/T23/KG-10 pendentes; proximo broad Core11/Community9.
+
+
 ### 2026-10-07 — Community run8 resolvido; diagnostico publicado
 
 Community2cc0f5ab commit/push confirmado; Core8a245d8b publicado.
