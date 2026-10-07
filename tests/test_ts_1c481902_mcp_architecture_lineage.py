@@ -42,6 +42,28 @@ from okto_pulse.core.ports.relational_application import (
 )
 
 
+@pytest.fixture(autouse=True)
+def native_knowledge_port(_knowledge_propagation_empty_test_port, request):
+    from okto_pulse.core.infra.database import get_session_factory
+    from okto_pulse.community.adapters.sqlalchemy_knowledge_propagation import (
+        CommunitySqlAlchemyKnowledgePropagationStore,
+    )
+    from okto_pulse.core.ports.knowledge_propagation import (
+        register_knowledge_propagation_port, register_knowledge_mutation_audit_sink,
+        reset_knowledge_mutation_audit_sink_for_tests,
+    )
+    from okto_pulse.core.domain.realm import RealmScope
+
+    factory = get_session_factory()
+    previous_info = dict(factory.kw.get("info", {}))
+    request.addfinalizer(lambda: factory.configure(info=previous_info))
+    factory.configure(info={**previous_info, "realm_scope": RealmScope.local()})
+    store = CommunitySqlAlchemyKnowledgePropagationStore(factory)
+    register_knowledge_propagation_port(store)
+    register_knowledge_mutation_audit_sink(store)
+    request.addfinalizer(reset_knowledge_mutation_audit_sink_for_tests)
+
+
 async def _seed_done_ideation_with_architecture(db_factory) -> dict[str, str]:
     board_id = sid("board-ts-1c481902")
     ideation_id = sid("idea-ts-1c481902")
@@ -213,7 +235,7 @@ async def test_ts_1c481902_mcp_multihop_and_atomic_mixed_selection(
         architecture_propagation_mode="copy",
     )
     assert derived_spec.get("success") is True, derived_spec
-    spec_id = derived_spec["spec"]["id"]
+    spec_id = derived_spec["spec_id"]
 
     spec_designs = [
         row

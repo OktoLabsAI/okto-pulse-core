@@ -2,6 +2,53 @@
 
 ## Estado para retomada
 
+### 2026-10-07 — Core16 e Community13: followups completos, próximos conjuntos preparados
+Core r3b13pass/4fail; r3c15pass/2fail; r3d16pass/1fail; r3e handle12027 terminou1:
+80pass/1fail, cinco módulos completos; último consumidor arquitetura ainda usava
+porta de teste somente-leitura. r3f handle7731 terminou0:1pass/5.78s com porta
+Knowledge nativa, audit sink e spec_id atual; total81distintos/seis módulos.
+R3 preserva metadados/governança, IDs/root, seleção snapshot explícita, ausência
+de clone físico Spec/Card na derivação governada, negativas estrangeiras sem alvo
+parcial, mockup/arquitetura e gate. Board seed agora cria binding OFF nativo;
+fixture de execução congela a edição, não passa por ausência de snapshot.
+Create_spec manual conserva seu contrato existente; nenhuma mudança de produto.
+
+Community schema1 handle85706 terminou0:25pass/8.88s. history1 terminou1:17pass/1fail
+porque read_capture_history usa query própria (injeção no loader geral não atingiu
+o endpoint). history2 handle32522 terminou0:18pass/30.75s; agora assert confirma
+a revisão exata injetada, depois do banco recusar UPDATE e manter conteúdo.
+knowledge1 handle3855 terminou0:19pass/5.52s. Cinco módulos completos/62casos.
+Governança omitted atual e snapshot congelado preservados; inline Card ignorado
+sem conversão; reader exclusivo da cópia retirada ausente. Ruff F/E9/diff-check0.
+
+Recibo acceptance-clean-break-core16-community13.json inclui falhas, hashes e
+seleções. Core17 e Community14 preparados somente com módulos completos
+qualificados excluídos; E2E instalado explicitamente separado e não qualificado.
+Par instalado/prova/closure main1 permanecem válidos (testes/docs apenas).
+Nenhum processo desta rodada ativo; iniciar campanhas novas após commit/push.
+C4/E2E/aceite integral/T23/KG-10 ainda pendentes; não declarar entrega total.
+
+### 2026-10-07 — Community13 terminal; R3 em atualização coordenada
+Turno anterior foi progresso:Core e12633c7 enviado (12 casos), sem alteração de produto.
+Community13 handle85307 terminou1:465pass/20fail/1269.25s. Falhas em cinco
+módulos:kb_governance_metadata_projections (omitted vs legacy_incomplete/card
+inline),kb_lineage_adapters (porta removida/root legado),kg_artifact_namespace
+(15 atuais vs16),kg_schema_rest_failures (argumento include_internal retirado),
+learning_capture_history (injeção de corrupção bloqueada por trigger imutável).
+Nenhum processo isolado permanece ativo; preservar XML/log/selection.
+Não tratar falhas de fixture como autorização para restaurar suporte legado.
+
+Core r3a handle30743 terminou1:10pass/7fail. Leituras efetivas/Card sem clone e
+adoption tipada passaram; derivação ainda esperava envelope antigo spec/resource_propagation
+e kb_ids. Contrato atual retorna spec_id/assignments e recebe knowledge_propagation.
+Helper compartilhado R3 agora seeda adoption explícita; consumidores precisam rodada
+completa. Teste create_spec direto ainda materializa Knowledge; investigar como
+contrato atual, sem confundir snapshots nativos selecionados com migração antiga.
+WIP R3 ainda não qualificado/publicado. Community schema1 handle85706 ATIVO,
+dois módulos completos; testar provider público e recusa de argumento antigo
+sem I/O, preservar roundtrip literal dos15 namespaces atuais.
+Demais falhas Community13/C4/E2E instalado/T23/KG-10 permanecem pendentes.
+
 ### 2026-10-07 — Core16: Knowledge efetivo qualificado, sem writer antigo
 Core7f9169c8 publicado:39casos de autoridade/cognitive completion; push0.
 R3 IMP2 agora cobre get_task_context full com card_knowledge_bases efetivos,

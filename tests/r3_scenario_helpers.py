@@ -76,6 +76,13 @@ async def new_board(db_factory) -> str:
     board_id = sid("board")
     async with db_factory() as db:
         db.add(Board(id=board_id, name="r3 scenarios", owner_id=USER_ID))
+        await db.flush()
+        from okto_pulse.core.domain.checklist import ChecklistBinding, ChecklistMode
+        from okto_pulse.community.adapters.sqlalchemy_checklist import CommunitySqlAlchemyChecklist
+        await CommunitySqlAlchemyChecklist(db).apply_binding_cas(
+            ChecklistBinding(board_id=board_id, mode=ChecklistMode.OFF, version=1),
+            expected_version=0, expected_digest=None,
+        )
         await db.commit()
     return board_id
 
@@ -186,13 +193,21 @@ async def seed_refinement(
 
 
 async def seed_legacy_spec_with_card(db_factory, board_id, ref) -> dict:
-    """A manual/legacy spec (NO direct resources) linked to the refinement +
-    ideation, plus a normal task card. The effective-fallback case."""
+    """A native Spec with explicit architecture adoption and inherited resources."""
     spec_id = sid("spec")
     card_id = sid("card")
+    from okto_pulse.core.domain.architecture_adoption import ArchitectureAdoptionScope
+
     async with db_factory() as db:
+        design = await db.get(ArchitectureDesign, ref["design_id"])
+        adoption = ArchitectureAdoptionScope(
+            board_id=board_id, spec_id=spec_id, adopted_in_edition=1,
+            actor_id=USER_ID,
+            inherited_resource_ids=(() if design is None else (f"architecture:{design.id}",)),
+        )
         db.add(Spec(id=spec_id, board_id=board_id, refinement_id=ref["refinement_id"],
-                    ideation_id=ref["ideation_id"], title="Legacy manual spec",
+                    ideation_id=ref["ideation_id"], title="Native inherited spec",
+                    architecture_adoption=adoption.model_dump(mode="json"),
                     created_by=USER_ID))
         db.add(Card(id=card_id, board_id=board_id, spec_id=spec_id, title="impl card",
                     status=CardStatus.IN_PROGRESS, card_type=CardType.NORMAL,
