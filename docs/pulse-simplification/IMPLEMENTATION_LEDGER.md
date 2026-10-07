@@ -2,6 +2,44 @@
 
 ## Estado para retomada
 
+### 2026-10-06 — C3 fixtures Community alinhadas; continuacao geral C4
+
+Bases Core3e0599c8 / Community4bc2d79a.
+Resolvidas fixtures identificadas pela campanha geral:
+Board realm_id=local e session RealmScope.local em efeitos relacionais,
+KG operacional e reference findings; Specs com ArchitectureAdoptionScope;
+avaliacoes de planejamento com spec_edition explicita, inclusive apos reabrir.
+As mesmas assercoes de autoridade, atomicidade, falta de planejamento e
+classificacao fora da primeira pagina continuam intactas.
+Witness de contrato ausente exige spec_execution_contract_required, sem
+restaurar adoption_required. Serve_dual usa armazenamento temporario novo e
+composicao real, preservando ambas superficies/trace; nao usa base preexistente.
+docs/ARCHITECTURE.md deriva contagens do auditor:1114 public_contract, zero
+reach-ins. Nenhum codigo de produto alterado.
+
+Community fixtures1:27 aprovados; boundaries1:seis aprovados.
+Dois testes mutex passaram isoladamente em7.98s sem alterar timeout ou lock.
+A falha original sob carga nao foi reproduzida; causa nao presumida resolvida.
+Proximas campanhas gerais sequenciais para evitar sobreposicao de carga.
+Total35 aprovados nos followups, incluindo mais testes do que as20 falhas.
+Ruff F/E9/diff aprovados; par produto/SPA e proof/closure anteriores permanecem
+validos, pois nao houve alteracao de produto. Sem teste frontend adicional.
+
+Community publicado em 5e8d73f4, push confirmado.
+Core full-run2 terminou com um erro de coleta: consumidor da fixture renomeada
+ainda importava _seed_spec_with_indexed_criteria. Corrigidos import e tres calls
+em test_delivery_evidence_lifecycle, sem alias de compatibilidade.
+Followup consumer1: tres aprovados/uma falha; fixture removia o recibo sem
+remover seu contexto efetivo, provocando population_mismatch antes do gate alvo.
+Corrigida a populacao conjunta; consumer2: quatro aprovados em4.10s,
+preservando delivery_test_result_missing, rollback e rechecagem sob write fence.
+Ruff F/E9/diff aprovados. Nenhuma alteracao de produto.
+
+Core clean-break-full-run3 iniciado com --ignore=tests/stress --maxfail=20,
+handle21428. Stress1000 iteracoes ja aprovado em full-run1 e nao foi alterado.
+Aguardar handle existente; nao considerar followups como aceite de toda a suite.
+C1-C4/T23/KG-10 e bump pareado0.4.0 continuam pendentes.
+
 ### 2026-10-06 — C3 suites de referencias nativas; resultado geral C4
 
 Publicado: Core5a665fe7, push confirmado; Community4bc2d79a inalterado.

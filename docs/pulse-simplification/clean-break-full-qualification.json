@@ -252,5 +252,44 @@
       "test_add_test_scenario_structured.py"
     ],
     "note": "Native IDs/arrays replace removed positive aliases; atomicity and coverage remain. Full suite not rerun."
+  },
+  "community_followup": {
+    "campaigns": [
+      {
+        "name": "clean-break-community-fixtures1",
+        "passed": 27
+      },
+      {
+        "name": "clean-break-community-boundaries1",
+        "passed": 6
+      },
+      {
+        "name": "clean-break-mutex-repro1",
+        "passed": 2
+      }
+    ],
+    "changes": "Native realm/session scope, explicit architecture adoption, recorded review edition, fresh temporary server storage, current missing-contract diagnostic, executable import count documentation.",
+    "mutex": "Both original timeout failures passed in isolation without changing timeout or lock code. Cause not established; next broad campaigns run sequentially.",
+    "full_qualification": "Not complete; original campaign stopped at 20 failures/errors."
+  },
+  "core_reference_consumer_followup": {
+    "collection_campaign": "clean-break-full-run2",
+    "collection_errors": 1,
+    "cause": "Stale imported fixture helper in test_delivery_evidence_lifecycle; renamed consumer without compatibility alias.",
+    "campaigns": [
+      {
+        "name": "clean-break-reference-consumer1",
+        "passed": 3,
+        "failed": 1
+      },
+      {
+        "name": "clean-break-reference-consumer2",
+        "passed": 4,
+        "failed": 0
+      }
+    ],
+    "correction": "Remove receipt and its effective scoped context together, preserving the expected missing-test gate and rollback assertion.",
+    "product_changes": false,
+    "next_general_campaign": "clean-break-full-run3"
   }
 }
