@@ -3115,5 +3115,55 @@
     "closure_ok": true,
     "eight_budgets_zero": true,
     "limits": "Initial five failures were governed-deletion fixture Boards missing mandatory realm; explicit local realm fixed setup without relaxing atomicity/replay/refusal assertions. Four complete modules qualified across terminal runs, overlap not double counted. Core12 and remaining Community10 failures still pending."
+  },
+  "core12_community10_native_followup": {
+    "proof_pair": "dist-native-schema-contract1",
+    "product_changes": false,
+    "campaigns": [
+      {
+        "name": "core12-native-policy1",
+        "tests": 6,
+        "failures": 0,
+        "errors": 0,
+        "seconds": 14.398,
+        "xml_sha256": "3de2d40016252bd07d32bd57f25e325a1b19a2776f9c015b9bbb9087de5045a6"
+      },
+      {
+        "name": "core12-native-knowledge-service1",
+        "tests": 3,
+        "failures": 0,
+        "errors": 0,
+        "seconds": 3.315,
+        "xml_sha256": "109f4f4262e8700b68910219852276810453c0a5edb0451c1f56610c0becd014"
+      },
+      {
+        "name": "core12-native-reuse-card1",
+        "tests": 26,
+        "failures": 0,
+        "errors": 0,
+        "seconds": 5.839,
+        "xml_sha256": "7affa408a989efecd9c6e92b41b41a7c1c6fc346d33912f6fa979c085f8597ce"
+      },
+      {
+        "name": "community10-native-fences1",
+        "tests": 14,
+        "failures": 4,
+        "errors": 0,
+        "seconds": 25.651,
+        "xml_sha256": "0437581c4fefab877ca485333979f9279b32787db7aa974240a06d19d4a3ff56"
+      },
+      {
+        "name": "community10-native-fences2",
+        "tests": 19,
+        "failures": 0,
+        "errors": 0,
+        "seconds": 35.319,
+        "xml_sha256": "acab6620d40325fa1d36ff2df72625c0b919d8dc2876777cce069b4dfe95910c"
+      }
+    ],
+    "core_distinct_passed": 35,
+    "community_distinct_passed": 19,
+    "scope": "Core four modules: explicit reuse intent.scope; native Knowledge propagation adapter instead of mutation-refusing test double; remove two static requirements for already retired physical copy tool while keeping three native service tests; explicit adoption in current-policy fixture. Community three modules: explicit Board realm and Spec native contracts; explicit invalid shorthand and missing contract negatives; native project structure revision.",
+    "limits": "community10-native-fences1 had four setup failures due accidental realm keyword on non-Board fixtures; corrected before complete19case rerun. Original failures/hashes preserved. Installed E2E still running with explicit frozen Grafx and Pulse wheels. No authority/gate changed."
   }
 }

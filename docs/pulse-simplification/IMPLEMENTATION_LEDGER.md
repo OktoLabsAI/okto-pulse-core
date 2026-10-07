@@ -2,6 +2,28 @@
 
 ## Estado para retomada
 
+### 2026-10-07 — Core12/Community10 followups nativos qualificados
+35casos Core aprovados: policy1 handle60337 (6), knowledge-service1 handle68583 (3),
+reuse-card1 handle74166 (26), todos terminais0. Quatro módulos completos.
+Correction ao diagnóstico preliminar: copy_knowledge_to_card NÃO foi movido;
+tool/use case de cópia física já retirados e documentados no plano executado.
+Removidas duas assertions estáticas que exigiam tool aposentada; preservados três
+testes de ownership e persistência do serviço Knowledge nativo.
+Scope explícito no reuse; adapter Knowledge real substitui stub sem mutações;
+adoption explícita na fixture de policy. Nenhuma alteração de produto/autoridade.
+
+Community native-fences1 handle29618 terminou1:10aprovados/4falhas de setup,
+realm aplicado indevidamente a tipos não Board. Corrigido escopo do seed.
+native-fences2 handle40893 terminou0:19aprovados/35.33s em três módulos inteiros.
+Mantidas provas de atomicidade/retry, concorrência da Spec Done, recusa de
+shorthand, contrato ausente e plano de execução. Community6a492231 publicado.
+Ruff verde em sete módulos. Par instalado/provado dist-native-schema-contract1.
+
+Installed E2E native-installed-recovery1 iniciado handle94212, módulo inteiro
+com maxfail1, wheels Pulse atuais e Grafx0.0.7 congelado explícito (hashes no env),
+storage temporário privado. Não substituir processo vivo por nova campanha.
+Próximo: terminal instalado e continuações amplas pelos módulos ainda não cobertos.
+
 ### 2026-10-07 — Contrato relacional único qualificado e publicado
 Retirada comparação com metadata herdada do Core e divisão inherited/extensions.
 Agora o gate fixa SHA256 completo das151tabelas Community atuais. Schema DDL e

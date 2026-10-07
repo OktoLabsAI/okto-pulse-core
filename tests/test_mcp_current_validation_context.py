@@ -20,6 +20,7 @@ from okto_pulse.core.ports.relational_services import register_resource_gate_ada
 from okto_pulse.core.ports.application_persistence import register_application_persistence_port
 from okto_pulse.core.ports.relational_application import register_relational_application_adapter
 from okto_pulse.core.domain.realm import RealmScope
+from okto_pulse.core.domain.architecture_adoption import ArchitectureAdoptionScope
 from okto_pulse.core.domain.enums import CardStatus, CardType, SpecStatus
 from okto_pulse.core.domain.execution_contract import new_execution_contract
 from okto_pulse.core.mcp import server
@@ -54,6 +55,8 @@ async def test_spec_policy_is_identical_in_every_task_context(current_sessions, 
         db.add(Spec(id=spec_id, board_id=board_id, title="Spec", created_by="owner",
                     status=SpecStatus.IN_PROGRESS, require_task_validation=False,
                     validation_min_confidence=confidence, validation_min_completeness=0, validation_max_drift=0,
+                    architecture_adoption=ArchitectureAdoptionScope(board_id=board_id, spec_id=spec_id,
+                        adopted_in_edition=1, actor_id="owner", inherited_resource_ids=()).model_dump(mode="json"),
                     execution_contract=new_execution_contract(board_id=board_id, spec_id=spec_id,
                         edition=1, actor_id="owner", origin="new_spec")))
         db.add(Card(id=card_id, board_id=board_id, spec_id=spec_id, title="Task",

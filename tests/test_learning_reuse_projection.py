@@ -15,7 +15,7 @@ def reuse(previous, original, *, bug_id='another-bug', identity='reuse-1'):
             'context': 'New association context', 'applicability': 'Explicit new scope',
             'intent': {'kind': 'reuse', 'target_node_id': previous.node_id,
                 'target_generation': previous.generation, 'expected_fingerprint': previous.record_fingerprint,
-                'reason': 'Applies to the corrected new Bug'}})
+                'reason': 'Applies to the corrected new Bug', 'scope': None}})
     plan = CapturedLearningProjection(capture, capture, bug_id, previous)
     head = replace(capture, record_fingerprint='', source_revision=capture.source_revision + 1,
         payload=plan.literal_payload, evidence_refs=plan.evidence_refs)
