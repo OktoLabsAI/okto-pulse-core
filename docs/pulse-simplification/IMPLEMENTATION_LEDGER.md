@@ -2,6 +2,20 @@
 
 ## Estado para retomada
 
+### 2026-10-07 — Core16: Knowledge efetivo qualificado, sem writer antigo
+Core7f9169c8 publicado:39casos de autoridade/cognitive completion; push0.
+R3 IMP2 agora cobre get_task_context full com card_knowledge_bases efetivos,
+conteúdo/identidade da origem, Card sem clone inline, ausência do writer retirado,
+isolamento entre Boards, N/A ineficaz e ausência legítima de recurso.
+Copy de mockup/arquitetura preserva seleção, atomicidade, dedupe e coverage;
+Spec usa adoção tipada explícita com IDs architecture:<id>.
+effective1 terminou1:5pass/7fail por caminho incorreto no envelope do teste e
+IDs sem prefixo no seed; produto não alterado. effective2 handle69215 terminou0:
+12pass/6.08s, módulo completo. Recibo acceptance-clean-break-core16-effective.json.
+Par principal/prova/closure não mudaram. R3 scenarios/helper compartilhado ainda
+não editados; são o módulo restante do Core16. Community13 handle85307 ATIVO;
+E2E instalado, C4 e decisões T23/KG-10 permanecem abertos. Não declarar entrega total.
+
 ### 2026-10-07 — Core16: fixtures de autoridade e observação nativas em validação
 Par principal dist-native-next-main1 permanece provado; nenhuma alteração de produto.
 fences1 JUnit:37pass/2fail (wrapper CP1252 falhou ao imprimir Unicode; XML preservado).

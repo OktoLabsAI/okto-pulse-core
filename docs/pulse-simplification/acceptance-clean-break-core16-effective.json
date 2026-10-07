@@ -1,0 +1,26 @@
+{
+  "scope": "Core16 native inherited Knowledge and current resource copies",
+  "product_changed": false,
+  "passed": 12,
+  "qualified_modules": [
+    "tests/test_r3_imp2_copy_effective_fallback.py"
+  ],
+  "artifacts": {
+    "core16-native-effective1.xml": {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\core16-native-effective1.xml",
+      "sha256": "b3b9f7e752098198fdd7c7bea591cdb90d077f3669baf41031215fb06ad01361"
+    },
+    "core16-native-effective2.xml": {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\core16-native-effective2.xml",
+      "sha256": "8f07a281474d9d750292ff21f932694e026be62bd297bc6becf26e21399cf83f"
+    },
+    "provenance-native-next-main1.json": {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\provenance-native-next-main1.json",
+      "sha256": "39e917e3a9a88289a8f7591c01a86fa8b883907258c4e78debbf6f42ed7b27b4"
+    },
+    "closure-native-next-main1.json": {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\closure-native-next-main1.json",
+      "sha256": "aad667d99f4baa51e4528bf48b103470bf12d296c3b9098260292e191fdcdd1a"
+    }
+  }
+}

@@ -1,14 +1,7 @@
-"""R3-IMP2 (card 67eb2096) — copy tools fall back to the EFFECTIVE inherited
-resource when a manual/legacy spec has no direct resource, with an identity the
-Resource Gate reads; a provided-but-unresolvable resource yields a structured
-actionable error (never a generic "no resources to copy").
+"""Native inherited resources retain identity across MCP reads and Resource Gate.
 
-Anti-test-theater: the copy is the REAL MCP tool over a REAL spec→refinement
-lineage; the end-to-end teeth is that the Resource Gate's spec→task coverage flips
-to satisfied after the fallback copy (proving the copied identity is the one the
-gate matches), and that WITHOUT a resource the tool returns an honest empty (not a
-generic error) while a provided-but-unresolvable obligation returns the structured
-error.
+Knowledge is read effectively without copying into Cards. Mockup and architecture
+copy operations retain their current selection, deduplication and atomicity rules.
 """
 
 from __future__ import annotations
@@ -86,13 +79,31 @@ async def _call(name: str, **kwargs) -> dict:
     return json.loads(raw)
 
 
-async def _legacy_spec_inheriting(db_factory, *, with_kb=False, with_mockup=False,
+def _adoption(board_id, spec_id, inherited=()):
+    from okto_pulse.core.domain.architecture_adoption import ArchitectureAdoptionScope
+
+    return ArchitectureAdoptionScope(
+        board_id=board_id, spec_id=spec_id, adopted_in_edition=1,
+        actor_id=USER_ID, inherited_resource_ids=tuple(f"architecture:{item}" for item in inherited),
+    ).model_dump(mode="json")
+
+
+async def _knowledge_context(seed):
+    result = await _call(
+        "okto_pulse_get_task_context",
+        board_id=seed["board_id"], card_id=seed["card_id"], profile="full",
+    )
+    assert "error" not in result, result
+    return result.get("card_knowledge_bases", [])
+
+
+async def _native_spec_inheriting(db_factory, *, with_kb=False, with_mockup=False,
                                   with_architecture=False,
                                   with_ideation_architecture=False,
                                   with_kb_na_mark=False,
                                   with_mockup_na_mark=False,
                                   with_architecture_na_mark=False):
-    """A manual/legacy spec (NO direct resources) linked to a refinement that
+    """A native spec (NO direct resources) linked to a refinement that
     DOES carry the requested resource(s) — the effective inherited case."""
     board_id = _id("board")
     ideation_id = _id("idea")
@@ -152,7 +163,12 @@ async def _legacy_spec_inheriting(db_factory, *, with_kb=False, with_mockup=Fals
             ))
         # The spec is linked to the refinement but has NO direct resources.
         db.add(Spec(id=spec_id, board_id=board_id, refinement_id=refinement_id,
-                    ideation_id=ideation_id, title="Legacy manual spec",
+                    ideation_id=ideation_id, title="Native inherited spec",
+                    architecture_adoption=_adoption(board_id, spec_id, tuple(
+                        identity for enabled, identity in (
+                            (with_architecture, ref_design_id),
+                            (with_ideation_architecture, ideation_design_id),
+                        ) if enabled)),
                     created_by=USER_ID))
         db.add(Card(id=card_id, board_id=board_id, spec_id=spec_id, title="impl card",
                     status=CardStatus.IN_PROGRESS, card_type=CardType.NORMAL,
@@ -169,25 +185,16 @@ async def _legacy_spec_inheriting(db_factory, *, with_kb=False, with_mockup=Fals
 
 
 @pytest.mark.asyncio
-async def test_copy_knowledge_falls_back_to_effective_and_gate_is_covered(db_factory):
-    seed = await _legacy_spec_inheriting(db_factory, with_kb=True)
+async def test_effective_knowledge_preserves_identity_and_gate_coverage(db_factory):
+    seed = await _native_spec_inheriting(db_factory, with_kb=True)
+    knowledge = await _knowledge_context(seed)
+    assert {item["id"] for item in knowledge} == {seed["ref_kb_id"]}
+    assert knowledge[0]["content"] == "ref content"
 
-    result = await _call(
-        "okto_pulse_copy_knowledge_to_card",
-        board_id=seed["board_id"], spec_id=seed["spec_id"], card_id=seed["card_id"],
-    )
-    assert result.get("success") is True, result
-    assert result["fallback"] is True
-    assert result["copied"] >= 1
-
-    # The card KB carries the gate identity == the effective refinement kb id.
     async with db_factory() as db:
         card = await db.get(Card, seed["card_id"])
-        kbs = list(card.knowledge_bases or [])
-    assert any(kb.get("source_kb_id") == seed["ref_kb_id"] for kb in kbs), kbs
+        assert list(card.knowledge_bases or []) == []
 
-    # END-TO-END TEETH: the spec's inherited KB obligation is now covered by the
-    # card (the copied identity is exactly the one the gate matches).
     async with db_factory() as db:
         coverage = await ResourceGateService(db).validate_spec_resource_task_coverage(
             seed["board_id"], seed["spec_id"],
@@ -200,24 +207,12 @@ async def test_copy_knowledge_falls_back_to_effective_and_gate_is_covered(db_fac
 
 
 @pytest.mark.asyncio
-async def test_copy_knowledge_ignores_ineffective_inherited_na_mark(db_factory):
-    seed = await _legacy_spec_inheriting(
-        db_factory,
-        with_kb=True,
-        with_kb_na_mark=True,
+async def test_effective_knowledge_ignores_ineffective_inherited_na_mark(db_factory):
+    seed = await _native_spec_inheriting(
+        db_factory, with_kb=True, with_kb_na_mark=True,
     )
-
-    result = await _call(
-        "okto_pulse_copy_knowledge_to_card",
-        board_id=seed["board_id"],
-        spec_id=seed["spec_id"],
-        card_id=seed["card_id"],
-    )
-
-    assert result.get("success") is True, result
-    assert result.get("reason") != "not_applicable", result
-    assert result["fallback"] is True
-    assert result["copied"] >= 1
+    knowledge = await _knowledge_context(seed)
+    assert {item["id"] for item in knowledge} == {seed["ref_kb_id"]}
 
     async with db_factory() as db:
         coverage = await ResourceGateService(db).validate_spec_resource_task_coverage(
@@ -232,7 +227,7 @@ async def test_copy_knowledge_ignores_ineffective_inherited_na_mark(db_factory):
 
 @pytest.mark.asyncio
 async def test_all_copy_tools_ignore_ineffective_inherited_na_marks(db_factory):
-    seed = await _legacy_spec_inheriting(
+    seed = await _native_spec_inheriting(
         db_factory,
         with_kb=True,
         with_mockup=True,
@@ -242,12 +237,8 @@ async def test_all_copy_tools_ignore_ineffective_inherited_na_marks(db_factory):
         with_architecture_na_mark=True,
     )
 
-    knowledge = await _call(
-        "okto_pulse_copy_knowledge_to_card",
-        board_id=seed["board_id"],
-        spec_id=seed["spec_id"],
-        card_id=seed["card_id"],
-    )
+    knowledge = await _knowledge_context(seed)
+    assert {item["id"] for item in knowledge} == {seed["ref_kb_id"]}
     mockup = await _call(
         "okto_pulse_copy_mockups_to_card",
         board_id=seed["board_id"],
@@ -261,7 +252,7 @@ async def test_all_copy_tools_ignore_ineffective_inherited_na_marks(db_factory):
         card_id=seed["card_id"],
     )
 
-    for result in (knowledge, mockup, architecture):
+    for result in (mockup, architecture):
         assert result.get("success") is True, result
         assert result.get("reason") != "not_applicable", result
         assert int(result.get("total_on_card") or 0) >= 1, result
@@ -276,7 +267,7 @@ async def test_all_copy_tools_ignore_ineffective_inherited_na_marks(db_factory):
 
 @pytest.mark.asyncio
 async def test_copy_mockups_falls_back_to_effective(db_factory):
-    seed = await _legacy_spec_inheriting(db_factory, with_mockup=True)
+    seed = await _native_spec_inheriting(db_factory, with_mockup=True)
 
     result = await _call(
         "okto_pulse_copy_mockups_to_card",
@@ -345,6 +336,7 @@ async def test_copy_mockups_merges_partial_direct_and_effective_inherited(db_fac
                 refinement_id=refinement_id,
                 ideation_id=ideation_id,
                 title="partially propagated spec",
+                architecture_adoption=_adoption(board_id, spec_id),
                 created_by=USER_ID,
                 screen_mockups=[
                     {
@@ -399,35 +391,23 @@ async def test_copy_mockups_merges_partial_direct_and_effective_inherited(db_fac
 
 
 @pytest.mark.asyncio
-async def test_copy_knowledge_rejects_mixed_valid_and_foreign_ids_atomically(db_factory):
-    seed = await _legacy_spec_inheriting(db_factory, with_kb=True)
-    foreign_id = _id("foreign-kb")
-
-    result = await _call(
-        "okto_pulse_copy_knowledge_to_card",
-        board_id=seed["board_id"],
-        spec_id=seed["spec_id"],
-        card_id=seed["card_id"],
-        knowledge_ids=[seed["ref_kb_id"], foreign_id],
-    )
-
-    assert result["error"] == "resource_selection_invalid", result
-    assert result["resource_type"] == "knowledge_base"
-    assert result["requested"] == [seed["ref_kb_id"], foreign_id]
-    assert result["matched"] == [seed["ref_kb_id"]]
-    assert result["missing"] == [foreign_id]
-    assert result["retryable"] is False
-
-    # Validation happens before any card write: a mixed valid/foreign request
-    # cannot leave the valid half copied behind.
+async def test_retired_knowledge_writer_absent_and_effective_reads_are_isolated(db_factory):
+    seed = await _native_spec_inheriting(db_factory, with_kb=True)
+    foreign = await _native_spec_inheriting(db_factory, with_kb=True)
+    tools = await mcp_server.mcp.get_tools()
+    assert "okto_pulse_copy_knowledge_to_card" not in tools
+    knowledge = await _knowledge_context(seed)
+    assert {item["id"] for item in knowledge} == {seed["ref_kb_id"]}
+    assert foreign["ref_kb_id"] not in {item["id"] for item in knowledge}
     async with db_factory() as db:
-        card = await db.get(Card, seed["card_id"])
-        assert list(card.knowledge_bases or []) == []
+        for card_id in (seed["card_id"], foreign["card_id"]):
+            card = await db.get(Card, card_id)
+            assert list(card.knowledge_bases or []) == []
 
 
 @pytest.mark.asyncio
 async def test_copy_mockups_rejects_mixed_valid_and_foreign_ids_atomically(db_factory):
-    seed = await _legacy_spec_inheriting(db_factory, with_mockup=True)
+    seed = await _native_spec_inheriting(db_factory, with_mockup=True)
     foreign_id = _id("foreign-mockup")
 
     result = await _call(
@@ -452,7 +432,7 @@ async def test_copy_mockups_rejects_mixed_valid_and_foreign_ids_atomically(db_fa
 
 @pytest.mark.asyncio
 async def test_copy_architecture_falls_back_to_effective(db_factory):
-    seed = await _legacy_spec_inheriting(db_factory, with_architecture=True)
+    seed = await _native_spec_inheriting(db_factory, with_architecture=True)
 
     result = await _call(
         "okto_pulse_copy_architecture_to_card",
@@ -474,7 +454,7 @@ async def test_copy_architecture_falls_back_to_effective(db_factory):
 
 @pytest.mark.asyncio
 async def test_copy_architecture_covers_multiple_inherited_effective_designs(db_factory):
-    seed = await _legacy_spec_inheriting(
+    seed = await _native_spec_inheriting(
         db_factory,
         with_architecture=True,
         with_ideation_architecture=True,
@@ -512,25 +492,15 @@ async def test_copy_architecture_covers_multiple_inherited_effective_designs(db_
 
 
 @pytest.mark.asyncio
-async def test_copy_knowledge_no_resource_required_is_clean_empty(db_factory):
-    # Neither the spec nor the refinement has any KB -> no obligation.
-    seed = await _legacy_spec_inheriting(db_factory)  # no resources anywhere
-
-    result = await _call(
-        "okto_pulse_copy_knowledge_to_card",
-        board_id=seed["board_id"], spec_id=seed["spec_id"], card_id=seed["card_id"],
-    )
-    # Honest empty — NOT a generic "No knowledge bases to copy" error.
-    assert result.get("success") is True, result
-    assert result.get("copied") == 0
-    assert result.get("reason") == "no_resource_required"
-    assert "error" not in result
+async def test_effective_knowledge_no_resource_is_clean_empty(db_factory):
+    seed = await _native_spec_inheriting(db_factory)
+    assert await _knowledge_context(seed) == []
 
 
 def test_effective_empty_copy_response_branches():
     # N/A -> success not_applicable (no error).
     na = json.loads(_effective_empty_copy_response(
-        "knowledge_base", {"not_applicable": True, "has_obligation": True}))
+        "mockup", {"not_applicable": True, "has_obligation": True}))
     assert na["success"] is True and na["reason"] == "not_applicable"
 
     # No obligation -> honest empty success.
