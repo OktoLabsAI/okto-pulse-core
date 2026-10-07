@@ -1,0 +1,36 @@
+{
+  "format": "pulse-040-reviewed-acceptance/v1",
+  "criteria": {
+    "BASE:T08": {
+      "status": "verified_current_pair_review",
+      "covered": "Normal/Bug × in_progress/validation cannot move directly to Done when Spec requires review; outer commit preserves status, policy version and empty conclusions/validations."
+    },
+    "BASE:T11": {
+      "status": "verified_current_pair_review",
+      "covered": "After another real semantic SQL session edits the Card through CardService, a review of the old version is refused with task_validation_subject_version_conflict. Outer commit preserves the edited subject and adds no assessment, rejection, activity or domain event."
+    }
+  },
+  "proof_pair": "dist-native-reviewer22",
+  "provenance_sha256": "22c33f52f64f77fc26d23d7af345c266ec5440be44c7fa1d6677376508179af6",
+  "runs": [
+    {
+      "name": "acceptance-native-review-fences-current1",
+      "xml_sha256": "d323cefddb1a5006cb1f98adfbc98d92cd6ac4bb424c0ebf551afb4aacd5d9db",
+      "passed": 6,
+      "cases": [
+        "tests.test_task_review_currentness::test_review_rechecks_human_policy_changed_after_board_read",
+        "tests.test_task_review_currentness::test_review_cannot_approve_subject_edited_in_another_semantic_session",
+        "tests.test_task_review_currentness::test_direct_done_preserves_required_task_validation[in_progress-normal]",
+        "tests.test_task_review_currentness::test_direct_done_preserves_required_task_validation[in_progress-bug]",
+        "tests.test_task_review_currentness::test_direct_done_preserves_required_task_validation[validation-normal]",
+        "tests.test_task_review_currentness::test_direct_done_preserves_required_task_validation[validation-bug]"
+      ]
+    }
+  ],
+  "additional_observation": "A completed human Board policy change also overrides a stale in-flight board read and refuses self-review without writes; no additional criterion promoted by inference.",
+  "limits": [
+    "Calls actual CardService/Community UOW and semantic SQL sessions; actor passed explicitly rather than transport authentication.",
+    "Entry states/evidence/allocations seeded by native delivery fixture; cognitive skip configured and impact off.",
+    "No production changes, no claim of complete lifecycle or installed E2E."
+  ]
+}

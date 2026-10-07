@@ -2,6 +2,28 @@
 
 ## Estado para retomada
 
+### 2026-10-07 — C4 T08/T11 qualificados; followup Community16 em diagnóstico
+Core059cca7d publicado, main ainda283a0a09. acceptance-native-review-fences-current1
+handle87511 terminou0:6pass/17.34s no par reviewer22. Revisados quatro casos
+normal/bug × in_progress/validation negando Done direto quando revisão exigida,
+conflito de versão por edição em outra sessão sem escrita mesmo após commit, e
+troca concorrente da policy humana preservada. Recibo
+clean-break-acceptance-native-review-fences.json promove somente T08/T11.
+Nenhum produto alterado; gates não substituídos.
+
+Community16 fixtures1 handle24889 terminou1:86pass/16fail/161.26s.
+Oito módulos completos passaram; quatro restantes pediam Spec.architecture_adoption
+e watermark explícito de telemetria. Corrigidas fixtures e acrescentada autoridade
+semântica Spec/Scenario no módulo HTTP restante.
+fixtures2 handle38658 não concluiu:12dots, depois espera indefinida do teste mutex
+por evento emitido após ler o sujeito. Processo pytest PID32624/launcher15552
+identificados pelo argumento XML exato e encerrados; handle terminou1, sem XML
+final, NÃO qualificar os dots. A fixture agora sinaliza entrada antes da leitura
+e usa wait_for/finally para propagar falha e recolher writer, sem mudar mutex.
+fixtures3 handle91816 ATIVO no main, cinco módulos. Não editar/reinstalar até
+terminal. Main WIP não publicado; oito módulos já verdes permanecem qualificados.
+E2E instalado, restante C4 e decisões T23/KG-10 continuam pendentes.
+
 ### 2026-10-07 — C4 T05 qualificado; Community16 followup ativo
 Core283a0a09 publicado e integrado main por FF após Community16 terminal.
 acceptance-native-resume-current1 handle63177 terminou0:11pass/27.85s,

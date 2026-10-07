@@ -499,7 +499,12 @@
           ]
         }
       ],
-      "current_qualification": "pending_current_pair_review"
+      "current_qualification": "verified_current_pair_review",
+      "current_review": {
+        "artifact": "clean-break-acceptance-native-review-fences.json",
+        "criterion_key": "BASE:T08",
+        "proof_pair": "dist-native-reviewer22"
+      }
     },
     {
       "key": "BASE:T09",
@@ -907,7 +912,12 @@
           ]
         }
       ],
-      "current_qualification": "pending_current_pair_review"
+      "current_qualification": "verified_current_pair_review",
+      "current_review": {
+        "artifact": "clean-break-acceptance-native-review-fences.json",
+        "criterion_key": "BASE:T11",
+        "proof_pair": "dist-native-reviewer22"
+      }
     },
     {
       "key": "BASE:T12",
