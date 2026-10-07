@@ -2,6 +2,22 @@
 
 ## Estado para retomada
 
+### 2026-10-07 — C2/C3 health exclusivo de Sprint retirado
+
+Core52884987 publicado com run8 resolvido. Retirados adapter
+sprint_origin_integrity e /health/integrity; consultavam apenas entidade/FKs
+removidas. Documentacao operacional atualizada. /health preservado sem SQL,
+rota antiga404/ausente no OpenAPI. Quatro casos exclusivos de schema Sprint
+retirados; teste misto reescrito para liveness atual, sem remover recovery.
+Native-health1:8 aprovados24.33s (health/distribution). Ruff/diff aprovados.
+Par dist-native-health1 instalado: Core843Python/905payload e
+Community318Python/404payload byte-identicos. Closure-native-health1 terminal
+ok=true, findings/documentation_findings vazios, oito budgets current=limit=0.
+Sem impacto frontend. Nenhum processo ativo.
+Proximo: seguir qualificacao cumulativa (Core aposrun8, Community aposrun5);
+KG short-row confirmado como fallback exclusivo de formato antigo, retirada
+delimitada ainda pendente. C1-C4/criterios/benchmark/bump e T23/KG-10 abertos.
+
 ### 2026-10-07 — C4 run8 resolvido com fixtures nativas
 
 Followup run8-native-fixtures1: 85 aprovados, zero falhas, 8.78s; quatro

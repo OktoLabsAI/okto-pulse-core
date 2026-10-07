@@ -4291,5 +4291,10 @@
     ],
     "previous_path": "tests/test_delivery_contribution_retirement.py",
     "reason": "Remove null outcome acceptance and uncategorized legacy classification; retain empty unobserved context and add null rejection. Keep four active roles/revoked exclusion, profile stability and provenance gates. Explicitly adopt actual inherited architecture roots, preserving multi-hop coverage/idempotency. Native contribution outcomes/reviewer IDs replace compatibility aliases; original expected metrics baseline unchanged. Exact traceability tool permissions retained with current overall registry counts."
+  },
+  "native_health_contract": {
+    "previous_path": "okto_labs_pulse_community/tests/test_sprint_origin_integrity_health.py",
+    "path": "okto_labs_pulse_community/tests/test_health_liveness.py",
+    "reason": "Remove four exclusive Sprint schema/hotfix diagnostics cases with retired adapter. Mixed liveness case now verifies current /health without engine access and retired route404/absent from OpenAPI. No current storage integrity/recovery checks removed."
   }
 }

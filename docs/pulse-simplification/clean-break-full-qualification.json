@@ -1377,5 +1377,18 @@
     "product_changes": false,
     "scope": "Four complete modules: current MCP inventory/guidance; native contextual roles/outcomes; explicit inherited architecture adoption; native contribution records with unchanged authored metrics baseline.",
     "limits": "All run8 failures resolved; remaining modules/criteria still pending."
+  },
+  "native_health_contract": {
+    "campaign": "native-health1",
+    "passed": 8,
+    "failed": 0,
+    "duration_seconds": 24.33,
+    "xml_sha256": "777eabc491e84827d11a8177df43d2696549ab5bc690a6667b6a0e73456850fb",
+    "proof_pair": "dist-native-health1",
+    "provenance": "provenance-native-health1.json",
+    "closure": "closure-native-health1.json",
+    "closure_ok": true,
+    "all_eight_budgets_zero": true,
+    "scope": "Remove Sprint-only integrity route and adapter; preserve constant-time liveness without SQL, reject retired route and remove it from OpenAPI. Distribution contract verified. No frontend impact."
   }
 }
