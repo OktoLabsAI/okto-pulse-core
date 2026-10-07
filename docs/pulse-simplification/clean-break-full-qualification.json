@@ -2855,5 +2855,119 @@
     },
     "scope": "Six complete suites: native immutable history read integrity; all11 fresh-storage cold-start publication failure boundaries; explicit native Card authority for signed closeout; mandatory progress material_change and native verifier for reused source receipt; native persisted100-requirement multibyte resume bounds/cursor; explicit Board realm for exact rebuild ACK atomicity.",
     "limits": "Initial collection error referenced a Core-only fixture helper; replaced with direct explicit native adapter seeding already used by Community fixtures. No product gate relaxed; no semantic authority inferred. Whole remaining backend campaigns and acceptance review pending."
+  },
+  "community_full_run10": {
+    "campaign": "clean-break-full-run10-community",
+    "exit_code": 1,
+    "passed": 132,
+    "failed": 19,
+    "errors": 1,
+    "skipped": 1,
+    "seconds": 197.06,
+    "proof_pair": "dist-native-privacy-refusal1",
+    "xml_sha256": "9e6ce88f22be7bff97f16ce1140e23488f4f07ff1955a2bf95d7d094c17590e3",
+    "failures": [
+      {
+        "class": "tests.test_execution_contract_integration",
+        "name": "test_adopted_writer_requires_explicit_contribution_not_legacy_shorthand",
+        "message": "AssertionError: Regex pattern did not match.\n Regex: 'delivery_contribution_declaration_required'\n Input: 'delivery_obligation_not_found'"
+      },
+      {
+        "class": "tests.test_execution_contract_integration",
+        "name": "test_missing_contract_cannot_write_proof_or_use_old_snapshot_reader",
+        "message": "Failed: DID NOT RAISE <class 'ValueError'>"
+      },
+      {
+        "class": "tests.test_execution_contract_integration",
+        "name": "test_first_start_checks_real_shared_plan_without_requiring_execution",
+        "message": "TypeError: int() argument must be a string, a bytes-like object or a real number, not 'NoneType'"
+      },
+      {
+        "class": "tests.test_f01_community_orm_ownership",
+        "name": "test_community_metadata_matches_governed_inherited_schema_contract",
+        "message": "AssertionError: assert {'architectur...indings', ...} == frozenset({'a...ndings', ...})\n  \n  Extra items in the right set:\n  'code_evidence_classification_heads'\n  'code_evidence_classification_events'\n  Use -v to get more diff"
+      },
+      {
+        "class": "tests.test_f05_domain_event_delivery_adapter",
+        "name": "test_adapter_commits_handler_effect_and_completion_atomically",
+        "message": "sqlalchemy.exc.IntegrityError: (sqlite3.IntegrityError) NOT NULL constraint failed: boards.realm_id\n[SQL: INSERT INTO boards (id, name, description, owner_id, realm_id) VALUES (?, ?, ?, ?, ?) RETURNING created_at, updated_at]\n[parameters: ('board-f05', 'F05', None, 'owner-f05', None)]\n(Background on this error at: https://sqlalche.me/e/20/gkpj)"
+      },
+      {
+        "class": "tests.test_f05_domain_event_delivery_adapter",
+        "name": "test_adapter_rolls_back_handler_effect_before_retry_state",
+        "message": "sqlalchemy.exc.IntegrityError: (sqlite3.IntegrityError) NOT NULL constraint failed: boards.realm_id\n[SQL: INSERT INTO boards (id, name, description, owner_id, realm_id) VALUES (?, ?, ?, ?, ?) RETURNING created_at, updated_at]\n[parameters: ('board-f05', 'F05', None, 'owner-f05', None)]\n(Background on this error at: https://sqlalche.me/e/20/gkpj)"
+      },
+      {
+        "class": "tests.test_f05_domain_event_delivery_adapter",
+        "name": "test_full_rebuild_retry_success_ack_clears_stale_backoff",
+        "message": "sqlalchemy.exc.IntegrityError: (sqlite3.IntegrityError) NOT NULL constraint failed: boards.realm_id\n[SQL: INSERT INTO boards (id, name, description, owner_id, realm_id) VALUES (?, ?, ?, ?, ?) RETURNING created_at, updated_at]\n[parameters: ('board-f05', 'F05', None, 'owner-f05', None)]\n(Background on this error at: https://sqlalche.me/e/20/gkpj)"
+      },
+      {
+        "class": "tests.test_f05_domain_event_delivery_adapter",
+        "name": "test_adapter_recovers_processing_rows_idempotently",
+        "message": "sqlalchemy.exc.IntegrityError: (sqlite3.IntegrityError) NOT NULL constraint failed: boards.realm_id\n[SQL: INSERT INTO boards (id, name, description, owner_id, realm_id) VALUES (?, ?, ?, ?, ?) RETURNING created_at, updated_at]\n[parameters: ('board-f05', 'F05', None, 'owner-f05', None)]\n(Background on this error at: https://sqlalche.me/e/20/gkpj)"
+      },
+      {
+        "class": "tests.test_f05_domain_event_delivery_adapter",
+        "name": "test_cognitive_facts_match_rebuild_source_hashes",
+        "message": "sqlalchemy.exc.IntegrityError: (sqlite3.IntegrityError) NOT NULL constraint failed: boards.realm_id\n[SQL: INSERT INTO boards (id, name, description, owner_id, realm_id) VALUES (?, ?, ?, ?, ?) RETURNING created_at, updated_at]\n[parameters: ('board-hash', 'Hash', None, 'owner-hash', None)]\n(Background on this error at: https://sqlalche.me/e/20/gkpj)"
+      },
+      {
+        "class": "tests.test_f3_done_spec_content_fence",
+        "name": "test_normal_content_fence_revalidates_after_initial_read[none]",
+        "message": "sqlalchemy.exc.IntegrityError: (sqlite3.IntegrityError) NOT NULL constraint failed: specs.architecture_adoption\n[SQL: INSERT INTO specs (architecture_adoption, id, board_id, ideation_id, refinement_id, source_refinement_snapshot_id, source_refinement_version, delivery_context, source_context_sha256, title, description, context, skip_decisions_coverage, validation_th ... 709 characters truncated ... _coverage, skip_delivery_evidence, skip_qualitative_validation, archived, created_at, updated_at, id]\n[parameters: (None, 'spec', 'board', None, None, None, None, None, None, 'Open', None, None, 0, None, None, None, None, None, None, None, None, None, None, 'in_progress', 1, None, 1, None, 'owner', 1, 0, None, None, 'other', 'board', None, None, None, None, None, None, 'Other', None, None, 0, None, None, None, None, None, None, None, None, None, None, 'done', 1, None, 1, None, 'owner', 1, 0, None)]\n(Background on this error at: https://sqlalche.me/e/20/gkpj)"
+      },
+      {
+        "class": "tests.test_f3_done_spec_content_fence",
+        "name": "test_normal_content_fence_revalidates_after_initial_read[closed]",
+        "message": "sqlalchemy.exc.IntegrityError: (sqlite3.IntegrityError) NOT NULL constraint failed: specs.architecture_adoption\n[SQL: INSERT INTO specs (architecture_adoption, id, board_id, ideation_id, refinement_id, source_refinement_snapshot_id, source_refinement_version, delivery_context, source_context_sha256, title, description, context, skip_decisions_coverage, validation_th ... 709 characters truncated ... _coverage, skip_delivery_evidence, skip_qualitative_validation, archived, created_at, updated_at, id]\n[parameters: (None, 'spec', 'board', None, None, None, None, None, None, 'Open', None, None, 0, None, None, None, None, None, None, None, None, None, None, 'in_progress', 1, None, 1, None, 'owner', 1, 0, None, None, 'other', 'board', None, None, None, None, None, None, 'Other', None, None, 0, None, None, None, None, None, None, None, None, None, None, 'done', 1, None, 1, None, 'owner', 1, 0, None)]\n(Background on this error at: https://sqlalche.me/e/20/gkpj)"
+      },
+      {
+        "class": "tests.test_f3_done_spec_content_fence",
+        "name": "test_normal_content_fence_revalidates_after_initial_read[reparented]",
+        "message": "sqlalchemy.exc.IntegrityError: (sqlite3.IntegrityError) NOT NULL constraint failed: specs.architecture_adoption\n[SQL: INSERT INTO specs (architecture_adoption, id, board_id, ideation_id, refinement_id, source_refinement_snapshot_id, source_refinement_version, delivery_context, source_context_sha256, title, description, context, skip_decisions_coverage, validation_th ... 709 characters truncated ... _coverage, skip_delivery_evidence, skip_qualitative_validation, archived, created_at, updated_at, id]\n[parameters: (None, 'spec', 'board', None, None, None, None, None, None, 'Open', None, None, 0, None, None, None, None, None, None, None, None, None, None, 'in_progress', 1, None, 1, None, 'owner', 1, 0, None, None, 'other', 'board', None, None, None, None, None, None, 'Other', None, None, 0, None, None, None, None, None, None, None, None, None, None, 'done', 1, None, 1, None, 'owner', 1, 0, None)]\n(Background on this error at: https://sqlalche.me/e/20/gkpj)"
+      },
+      {
+        "class": "tests.test_f3_done_spec_content_fence",
+        "name": "test_real_resource_projection_preserves_freezes_and_eligible_targets[normal-done-done-normal_card_spec_done]",
+        "message": "sqlalchemy.exc.IntegrityError: (sqlite3.IntegrityError) NOT NULL constraint failed: specs.architecture_adoption\n[SQL: INSERT INTO specs (architecture_adoption, id, board_id, ideation_id, refinement_id, source_refinement_snapshot_id, source_refinement_version, delivery_context, source_context_sha256, title, description, context, skip_decisions_coverage, validation_threshold, require_task_validation, validation_min_confidence, validation_min_completeness, validation_max_drift, current_validation_id, pre_archive_status, cancellation_reason, cancelled_at, cancelled_by, status, edition, last_started_edition, version, assignee_id, created_by, test_scenario_policy_epoch, project_structure_revision, project_structure_digest) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING skip_test_coverage, skip_rules_coverage, skip_trs_coverage, skip_contract_coverage, skip_ir_coverage, skip_or_coverage, skip_code_evidence_coverage, skip_delivery_evidence, skip_qualitative_validation, archived, created_at, updated_at]\n[parameters: (None, 'spec', 'board', None, None, None, None, None, None, 'Spec', None, None, 0, None, None, None, None, None, None, None, None, None, None, 'done', 1, None, 1, None, 'owner', 1, 0, None)]\n(Background on this error at: https://sqlalche.me/e/20/gkpj)"
+      },
+      {
+        "class": "tests.test_f3_done_spec_content_fence",
+        "name": "test_real_resource_projection_preserves_freezes_and_eligible_targets[normal-rejected-in_progress-card_rejected_operational_freeze]",
+        "message": "sqlalchemy.exc.IntegrityError: (sqlite3.IntegrityError) NOT NULL constraint failed: specs.architecture_adoption\n[SQL: INSERT INTO specs (architecture_adoption, id, board_id, ideation_id, refinement_id, source_refinement_snapshot_id, source_refinement_version, delivery_context, source_context_sha256, title, description, context, skip_decisions_coverage, validation_threshold, require_task_validation, validation_min_confidence, validation_min_completeness, validation_max_drift, current_validation_id, pre_archive_status, cancellation_reason, cancelled_at, cancelled_by, status, edition, last_started_edition, version, assignee_id, created_by, test_scenario_policy_epoch, project_structure_revision, project_structure_digest) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING skip_test_coverage, skip_rules_coverage, skip_trs_coverage, skip_contract_coverage, skip_ir_coverage, skip_or_coverage, skip_code_evidence_coverage, skip_delivery_evidence, skip_qualitative_validation, archived, created_at, updated_at]\n[parameters: (None, 'spec', 'board', None, None, None, None, None, None, 'Spec', None, None, 0, None, None, None, None, None, None, None, None, None, None, 'in_progress', 1, None, 1, None, 'owner', 1, 0, None)]\n(Background on this error at: https://sqlalche.me/e/20/gkpj)"
+      },
+      {
+        "class": "tests.test_f3_done_spec_content_fence",
+        "name": "test_real_resource_projection_preserves_freezes_and_eligible_targets[bug-rejected-done-card_rejected_operational_freeze]",
+        "message": "sqlalchemy.exc.IntegrityError: (sqlite3.IntegrityError) NOT NULL constraint failed: specs.architecture_adoption\n[SQL: INSERT INTO specs (architecture_adoption, id, board_id, ideation_id, refinement_id, source_refinement_snapshot_id, source_refinement_version, delivery_context, source_context_sha256, title, description, context, skip_decisions_coverage, validation_threshold, require_task_validation, validation_min_confidence, validation_min_completeness, validation_max_drift, current_validation_id, pre_archive_status, cancellation_reason, cancelled_at, cancelled_by, status, edition, last_started_edition, version, assignee_id, created_by, test_scenario_policy_epoch, project_structure_revision, project_structure_digest) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING skip_test_coverage, skip_rules_coverage, skip_trs_coverage, skip_contract_coverage, skip_ir_coverage, skip_or_coverage, skip_code_evidence_coverage, skip_delivery_evidence, skip_qualitative_validation, archived, created_at, updated_at]\n[parameters: (None, 'spec', 'board', None, None, None, None, None, None, 'Spec', None, None, 0, None, None, None, None, None, None, None, None, None, None, 'done', 1, None, 1, None, 'owner', 1, 0, None)]\n(Background on this error at: https://sqlalche.me/e/20/gkpj)"
+      },
+      {
+        "class": "tests.test_f3_done_spec_content_fence",
+        "name": "test_real_resource_projection_preserves_freezes_and_eligible_targets[normal-not_started-in_progress-None]",
+        "message": "sqlalchemy.exc.IntegrityError: (sqlite3.IntegrityError) NOT NULL constraint failed: specs.architecture_adoption\n[SQL: INSERT INTO specs (architecture_adoption, id, board_id, ideation_id, refinement_id, source_refinement_snapshot_id, source_refinement_version, delivery_context, source_context_sha256, title, description, context, skip_decisions_coverage, validation_threshold, require_task_validation, validation_min_confidence, validation_min_completeness, validation_max_drift, current_validation_id, pre_archive_status, cancellation_reason, cancelled_at, cancelled_by, status, edition, last_started_edition, version, assignee_id, created_by, test_scenario_policy_epoch, project_structure_revision, project_structure_digest) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING skip_test_coverage, skip_rules_coverage, skip_trs_coverage, skip_contract_coverage, skip_ir_coverage, skip_or_coverage, skip_code_evidence_coverage, skip_delivery_evidence, skip_qualitative_validation, archived, created_at, updated_at]\n[parameters: (None, 'spec', 'board', None, None, None, None, None, None, 'Spec', None, None, 0, None, None, None, None, None, None, None, None, None, None, 'in_progress', 1, None, 1, None, 'owner', 1, 0, None)]\n(Background on this error at: https://sqlalche.me/e/20/gkpj)"
+      },
+      {
+        "class": "tests.test_f3_done_spec_content_fence",
+        "name": "test_real_resource_projection_preserves_freezes_and_eligible_targets[bug-not_started-done-None]",
+        "message": "sqlalchemy.exc.IntegrityError: (sqlite3.IntegrityError) NOT NULL constraint failed: specs.architecture_adoption\n[SQL: INSERT INTO specs (architecture_adoption, id, board_id, ideation_id, refinement_id, source_refinement_snapshot_id, source_refinement_version, delivery_context, source_context_sha256, title, description, context, skip_decisions_coverage, validation_threshold, require_task_validation, validation_min_confidence, validation_min_completeness, validation_max_drift, current_validation_id, pre_archive_status, cancellation_reason, cancelled_at, cancelled_by, status, edition, last_started_edition, version, assignee_id, created_by, test_scenario_policy_epoch, project_structure_revision, project_structure_digest) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING skip_test_coverage, skip_rules_coverage, skip_trs_coverage, skip_contract_coverage, skip_ir_coverage, skip_or_coverage, skip_code_evidence_coverage, skip_delivery_evidence, skip_qualitative_validation, archived, created_at, updated_at]\n[parameters: (None, 'spec', 'board', None, None, None, None, None, None, 'Spec', None, None, 0, None, None, None, None, None, None, None, None, None, None, 'done', 1, None, 1, None, 'owner', 1, 0, None)]\n(Background on this error at: https://sqlalche.me/e/20/gkpj)"
+      },
+      {
+        "class": "tests.test_f3_done_spec_content_fence",
+        "name": "test_real_resource_projection_preserves_freezes_and_eligible_targets[test-not_started-done-None]",
+        "message": "sqlalchemy.exc.IntegrityError: (sqlite3.IntegrityError) NOT NULL constraint failed: specs.architecture_adoption\n[SQL: INSERT INTO specs (architecture_adoption, id, board_id, ideation_id, refinement_id, source_refinement_snapshot_id, source_refinement_version, delivery_context, source_context_sha256, title, description, context, skip_decisions_coverage, validation_threshold, require_task_validation, validation_min_confidence, validation_min_completeness, validation_max_drift, current_validation_id, pre_archive_status, cancellation_reason, cancelled_at, cancelled_by, status, edition, last_started_edition, version, assignee_id, created_by, test_scenario_policy_epoch, project_structure_revision, project_structure_digest) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING skip_test_coverage, skip_rules_coverage, skip_trs_coverage, skip_contract_coverage, skip_ir_coverage, skip_or_coverage, skip_code_evidence_coverage, skip_delivery_evidence, skip_qualitative_validation, archived, created_at, updated_at]\n[parameters: (None, 'spec', 'board', None, None, None, None, None, None, 'Spec', None, None, 0, None, None, None, None, None, None, None, None, None, None, 'done', 1, None, 1, None, 'owner', 1, 0, None)]\n(Background on this error at: https://sqlalche.me/e/20/gkpj)"
+      },
+      {
+        "class": "tests.test_global_discovery_recovery_installed_e2e",
+        "name": "test_installed_grafx_candidate_materializes_board_and_global_routes",
+        "message": "AssertionError: the okto-grafx 0.0.7 artifact must be explicit: set OKTO_E2E_GRAFX_WHEEL to its wheel or OKTO_E2E_GRAFX_REPO to its source checkout\nassert ''"
+      },
+      {
+        "class": "tests.test_global_discovery_recovery_installed_e2e",
+        "name": "test_installed_wheels_serve_exact_frozen_resource_manifest_over_real_http",
+        "message": "failed on setup with \"AssertionError: the okto-grafx 0.0.7 artifact must be explicit: set OKTO_E2E_GRAFX_WHEEL to its wheel or OKTO_E2E_GRAFX_REPO to its source checkout\nassert ''\""
+      }
+    ],
+    "limits": "Stopped at20 failures/errors. Five affected modules; not yet qualified. Installed E2E requires explicit Grafx wheel; no gate disabled. Core12 remains running, product and campaign tests frozen."
   }
 }

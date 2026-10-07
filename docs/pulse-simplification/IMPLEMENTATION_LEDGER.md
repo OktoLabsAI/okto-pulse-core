@@ -2,6 +2,21 @@
 
 ## Estado para retomada
 
+### 2026-10-07 — Community10 terminal; T01/T07 revisados no par atual
+Community10 handle26283 terminou1:132aprovados,19falhas,1erro,1skip/197.06s.
+XML e diagnósticos preservados em community_full_run10. Cinco módulos afetados:
+execution_contract_integration (fixture/contrato/estrutura), f01 ORM (duas tabelas
+legadas removidas), f05 delivery (realm ausente), f3 Done fence (adoption ausente),
+installed recovery (wheel Grafx explícito ausente). Não declarar followup aprovado.
+Core12 handle84664 continua ativo; produto e testes congelados.
+
+Aceite T01/T07: revisadas assertions reais do fluxo MCP solo e XML terminal das
+duas variantes de native-mcp-flow-measurement1 no par atual. Recibo
+clean-break-acceptance-native-lifecycle.json fixa hashes, assertions e limites;
+índice atualizado somente nesses dois critérios. Não certifica autoria inicial
+via superfície pública, execução técnica externa, benchmark ou demais critérios.
+Próximo: concluir diagnóstico/followup dos cinco módulos após congelamento.
+
 ### 2026-10-07 — Continuações Core12 e Community10 em execução
 Core12: handle84664, clean-break-full-run12, seleção619módulos completos
 excluídos. Community10: handle26283, clean-break-full-run10-community,

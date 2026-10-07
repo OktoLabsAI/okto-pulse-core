@@ -34,7 +34,12 @@
           ]
         }
       ],
-      "current_qualification": "pending_current_pair_review"
+      "current_qualification": "verified_current_pair_review",
+      "current_review": {
+        "artifact": "clean-break-acceptance-native-lifecycle.json",
+        "criterion_key": "BASE:T01",
+        "proof_pair": "dist-native-privacy-refusal1"
+      }
     },
     {
       "key": "BASE:T02",
@@ -328,7 +333,12 @@
           ]
         }
       ],
-      "current_qualification": "pending_current_pair_review"
+      "current_qualification": "verified_current_pair_review",
+      "current_review": {
+        "artifact": "clean-break-acceptance-native-lifecycle.json",
+        "criterion_key": "BASE:T07",
+        "proof_pair": "dist-native-privacy-refusal1"
+      }
     },
     {
       "key": "BASE:T08",
