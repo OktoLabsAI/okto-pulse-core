@@ -2,6 +2,26 @@
 
 ## Estado para retomada
 
+### 2026-10-07 — C4 índice de aceite fixo e continuação Community9
+Criado clean-break-acceptance-evidence-index.json a partir do inventário vigente
+e recibos já existentes:246 critérios totais,235aplicáveis,11superados.
+178 critérios têm recibos descobertos por chave; referências de casos pertencem
+ao artifact inteiro e exigem revisão por critério. Nenhuma descoberta textual,
+status histórico ou teste antigo foi promovido a aceite atual.
+Este índice NÃO acrescenta requisitos nem substitui inventário/plano/recibos.
+
+Community9 iniciada handle79103, clean-break-full-run9-community, maxfail20.
+Seleção157módulos excluídos, incorporando apenas suítes completas já terminais
+(data-home, retirada journal, binding Grafx, privacidade e distribuição).
+Módulo installed recovery E2E continua no escopo: teste parcial anterior não
+qualifica o arquivo inteiro. Core11 followup handle78972 continua ativo.
+Ambos usam o mesmo par congelado dist-native-privacy-refusal1, prova843/905+
+316/402 já registrada. Não editar produto, testes em execução ou reinstalar
+venv antes dos terminais. Índice/ledger são documentação independente.
+Próximo: inspecionar falhas completas de cada terminal, corrigir somente gaps
+reproduzidos/fixtures antigas e continuar campanhas/aceite fixo/benchmark.
+T23 eKG-10 continuam decisões pendentes, sem alteração de autoridade.
+
 ### 2026-10-07 — C2 privacidade sem exclusão legada qualificada; Core11 followup vivo
 grafx_board_storage não exclui mais graph.lbug/sidecars. Observação opaca inclui
 rollout para não tratar armazenamento incompatível como ausente; qualquer presença
