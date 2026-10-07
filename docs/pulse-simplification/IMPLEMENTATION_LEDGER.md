@@ -2,6 +2,33 @@
 
 ## Estado para retomada
 
+### 2026-10-07 — C4 KG-22: fanout limitado comprovado no Grafx
+Par publicado antes deste incremento: Core832e3af6 / Communityf307d9ea.
+Autorização Checklist recebida novamente já consta implementada na seção própria;
+não reabrir a decisão nem mudar outros gates. Contrato nativo 0.4.0 preservado.
+Nova prova provenance-native-main36-invalidation.json terminou0:843/905 Core e
+316/402 Community byte-identical antes dos testes. Produto e SPA inalterados.
+
+Core acceptance-native-invalidation1 (74613) terminou0:28 aprovados/7.45s.
+Community acceptance-native-bug-fanout1 (57512) terminou1:4 aprovados/1 falha/34.06s.
+Falha de setup: nova Spec não relacionada sem architecture_adoption obrigatório.
+Corrigida somente a fixture nativa; fanout2 (62502) terminou0:1 aprovado/93.67s.
+Os quatro casos de parent adapter aprovados não foram repetidos.
+
+Teste materializado agora exige conjunto exato de quatro donos na fila em cada
+fase (Spec, Card origem, dois Bugs), mantendo Spec/Card/Bug não relacionados no
+mesmo Board fora da fila. Seis famílias de proxy convergem após adicionar,
+repetir, remover e restaurar; proveniência e multiplicidade conferidas no Grafx.
+Recibo clean-break-acceptance-native-bug-fanout.json preserva a falha inicial e
+qualifica SOMENTE KG-22. 33 casos distintos aprovados neste recorte. Índice:
+55 verificados,180 aplicáveis pendentes,11 superados. Não é entrega integral.
+
+Sem processos pendentes. WIP somente teste, recibo, índice e ledger; main36
+permanece instalado/provado e closure36 com oito budgets ZERO continua aplicável.
+Próximo: demais critérios KG-16–25, particularmente crash pós-commit/pré-ACK,
+evento antigo e identidade de endpoint; não promover esses itens só pelo adapter.
+BASE:T23 e KG:KG-10 continuam pendentes de decisão própria. Isolado next27 STALE.
+
 ### 2026-10-07 — C4 KG-11 a KG-15 qualificados sem nova semântica produtiva
 decision-chain1 handle68980 terminou0:1pass/35.33s; cadeia real/replay conferidos.
 Recibo clean-break-acceptance-native-decision-chain.json promove somente KG-11.

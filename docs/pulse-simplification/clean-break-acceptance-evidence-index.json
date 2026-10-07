@@ -3621,7 +3621,12 @@
           ]
         }
       ],
-      "current_qualification": "pending_current_pair_review"
+      "current_qualification": "verified_current_pair_review",
+      "current_review": {
+        "artifact": "clean-break-acceptance-native-bug-fanout.json",
+        "criterion_key": "KG:KG-22",
+        "proof_pair": "dist-native-main36"
+      }
     },
     {
       "key": "KG:KG-23",

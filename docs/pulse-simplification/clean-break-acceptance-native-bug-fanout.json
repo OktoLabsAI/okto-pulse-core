@@ -1,0 +1,84 @@
+{
+  "format": "pulse-040-reviewed-acceptance/v1",
+  "criterion_keys": [
+    "KG:KG-22"
+  ],
+  "status": "verified_current_pair_review",
+  "proof_pair": "dist-native-main36",
+  "provenance_file": "provenance-native-main36-invalidation.json",
+  "provenance_sha256": "02f30aa53a91e2bd48880a29b243dbf13bb28d38fcb96723e6705a5a9a12bcff",
+  "runs": [
+    {
+      "name": "acceptance-native-invalidation1",
+      "xml_sha256": "8159536e341685db9c9602a4ded018d40ec1a99cc45dddba65a547a0abbe77a6",
+      "passed": 28,
+      "failed": 0,
+      "cases": [
+        "tests.test_card_scenario_invalidation::test_removed_and_added_references_survive_as_bounded_event_metadata",
+        "tests.test_card_scenario_invalidation::test_spec_change_invalidates_card_side_consumers_and_old_links_with_board_fence[acceptance_criteria]",
+        "tests.test_card_scenario_invalidation::test_spec_change_invalidates_card_side_consumers_and_old_links_with_board_fence[api_contracts]",
+        "tests.test_card_scenario_invalidation::test_spec_change_invalidates_card_side_consumers_and_old_links_with_board_fence[business_rules]",
+        "tests.test_card_scenario_invalidation::test_spec_change_invalidates_card_side_consumers_and_old_links_with_board_fence[decisions]",
+        "tests.test_card_scenario_invalidation::test_spec_change_invalidates_card_side_consumers_and_old_links_with_board_fence[functional_requirements]",
+        "tests.test_card_scenario_invalidation::test_spec_change_invalidates_card_side_consumers_and_old_links_with_board_fence[integration_requirements]",
+        "tests.test_card_scenario_invalidation::test_spec_change_invalidates_card_side_consumers_and_old_links_with_board_fence[observability_requirements]",
+        "tests.test_card_scenario_invalidation::test_spec_change_invalidates_card_side_consumers_and_old_links_with_board_fence[technical_requirements]",
+        "tests.test_card_scenario_invalidation::test_spec_change_invalidates_card_side_consumers_and_old_links_with_board_fence[test_scenarios]",
+        "tests.test_card_scenario_invalidation::test_direct_card_mutation_invalidates_both_parents_without_duplicates[old-new]",
+        "tests.test_card_scenario_invalidation::test_direct_card_mutation_invalidates_both_parents_without_duplicates[old-None]",
+        "tests.test_card_scenario_invalidation::test_direct_card_mutation_invalidates_both_parents_without_duplicates[None-new]",
+        "tests.test_card_scenario_invalidation::test_direct_card_mutation_invalidates_both_parents_without_duplicates[same-same]",
+        "tests.test_card_scenario_invalidation::test_real_scenario_unlink_retains_removed_card_in_outbox",
+        "tests.test_card_scenario_invalidation::test_real_structured_child_unlink_retains_last_consumer",
+        "tests.test_card_scenario_invalidation::test_real_card_update_emits_one_durable_invalidation_and_no_event_for_noop",
+        "tests.test_card_scenario_invalidation::test_real_scenario_deletion_reenqueues_both_reference_sources_after_cascade",
+        "tests.test_projection_known_removals::test_lookup_failure_is_not_permission_to_remove",
+        "tests.test_projection_known_removals::test_pending_target_keeps_its_logical_identity_and_complete_source_set",
+        "tests.test_projection_known_removals::test_incomplete_source_declaration_cannot_be_pruned",
+        "tests.test_projection_known_removals::test_source_is_read_only_after_graph_lease_and_sql_claim_fence[True]",
+        "tests.test_projection_known_removals::test_source_is_read_only_after_graph_lease_and_sql_claim_fence[False]",
+        "tests.test_spec_projection_known_removals::test_pending_source_identity_is_retained_without_materializing_it",
+        "tests.test_spec_projection_known_removals::test_unmaterialized_owner_has_no_removal_work",
+        "tests.test_spec_projection_known_removals::test_provider_failure_does_not_authorize_removal",
+        "tests.test_spec_projection_known_removals::test_foreign_owner_cannot_supply_removal_authority",
+        "tests.test_spec_projection_known_removals::test_cancelled_spec_preserves_noop_after_source_fence"
+      ]
+    },
+    {
+      "name": "acceptance-native-bug-fanout1",
+      "xml_sha256": "47afd435dae6c3e4d4d31a3590781a4bf2f2e931b1f65b13bf64609fd60caa5a",
+      "passed": 4,
+      "failed": 1,
+      "cases": [
+        "tests.test_grafx_card_parent_projection::test_unlink_and_repeated_compensation_preserve_board_human_and_other_owner[Entity]",
+        "tests.test_grafx_card_parent_projection::test_unlink_and_repeated_compensation_preserve_board_human_and_other_owner[Bug]",
+        "tests.test_grafx_card_parent_projection::test_parent_change_and_retry_leave_exactly_one_owned_relation[Entity]",
+        "tests.test_grafx_card_parent_projection::test_parent_change_and_retry_leave_exactly_one_owned_relation[Bug]"
+      ]
+    },
+    {
+      "name": "acceptance-native-bug-fanout2",
+      "xml_sha256": "d533df7c1fb98f653b5bc0e773bf20ab209edaa57085aa5626c9759fb226372d",
+      "passed": 1,
+      "failed": 0,
+      "cases": [
+        "tests.test_projection_materialized_parity::test_bug_origin_proxies_reconcile_all_consumers_without_spec_fanout"
+      ]
+    }
+  ],
+  "distinct_passed_cases": 33,
+  "review": {
+    "KG:KG-22": "Real SQL source changes, production event handler, consolidation queue and Grafx project six origin-proxy families for both affected Bugs. Adding, replaying, removing and restoring links yields exact relation/provenance sets. Every phase asserts exactly four queued owners (Spec, origin Card, two Bugs); an unrelated Spec/Card/Bug in the same Board stays outside the queue. Core tests separately exercise bounded old/new consumer metadata and Board fences."
+  },
+  "supporting_evidence": {
+    "parent_replacement": "Four real Grafx cases passed for Entity/Bug: exact old/new owned parent replacement and replay, compensation preserves Board, human and adjacent-owner facts. This adapter evidence alone does not qualify the complete KG-21 pipeline.",
+    "source_refusal": "Ten current Core cases cover unavailable/incomplete sources, pending logical identity and SQL/graph fences. Full KG-17 checkpoint qualification remains pending."
+  },
+  "initial_failure": "fanout1: new unrelated Spec fixture omitted mandatory architecture_adoption; refused by SQL NOT NULL before fanout assertions. Fixture now supplies native typed adoption. No product guard changed. Four parent adapter cases passed in that campaign; the single failed case passed in fanout2.",
+  "changed_test_sha256": "2d4913fb15b30c65565cd4f21afd8076a7ebee0913100194d99de995c4ef8afa",
+  "limits": [
+    "Only KG-22 promoted. No blanket qualification of KG-16 through KG-25.",
+    "Source mutations are SQL fixtures; this proves event-to-projection behavior, not authorization to edit a Done Spec.",
+    "No product, frontend, schema or installed payload change; existing main36 closure evidence remains applicable."
+  ]
+}
