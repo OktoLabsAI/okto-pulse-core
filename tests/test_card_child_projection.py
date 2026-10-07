@@ -1,13 +1,11 @@
 """G2/G4: every declared Spec child link is projected from its Card owner."""
-import json
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
 
 from okto_pulse.core.ports.consolidation import ConsolidationProjectionInputs
-from okto_pulse.core.ports.deterministic_projection import DeterministicProjectionSource, make_deterministic_projection_planner
-from test_deterministic_projection_planner import spec
+from native_projection_test_support import spec, prepare_projection
 
 
 CHILDREN = (
@@ -37,9 +35,7 @@ async def test_every_declared_child_has_one_typed_card_support(card_type):
     port = SimpleNamespace(load_artifact=load, list_artifacts=AsyncMock(return_value=()),
         load_projection_inputs=AsyncMock(return_value=ConsolidationProjectionInputs()),
         latest_card_transitions=AsyncMock(return_value=()))
-    document = await make_deterministic_projection_planner(port).prepare(None,
-        DeterministicProjectionSource('board', 'card', 'card-one'))
-    projection = json.loads(document.document)['projection']
+    projection = await prepare_projection(None, port, 'board', 'card', 'card-one')
     nodes = {node['candidate_id']: node for node in projection['nodes']}
     edges = [edge for edge in projection['edges'] if edge['edge_type'] == 'supports']
     assert {edge['to_candidate_id'] for edge in edges} == {

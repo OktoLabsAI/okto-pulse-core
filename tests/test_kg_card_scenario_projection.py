@@ -1,13 +1,11 @@
 """KG G2/G4: authoritative Card/Spec links become one typed observed relation."""
-import json
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
 
 from okto_pulse.core.ports.consolidation import ConsolidationProjectionInputs
-from okto_pulse.core.ports.deterministic_projection import DeterministicProjectionSource, make_deterministic_projection_planner
-from test_deterministic_projection_planner import spec
+from native_projection_test_support import spec, prepare_projection
 
 
 @pytest.mark.asyncio
@@ -26,9 +24,7 @@ async def test_current_card_and_scenario_sources_converge_to_one_support(card_ty
     port = SimpleNamespace(load_artifact=load, list_artifacts=AsyncMock(return_value=()),
         load_projection_inputs=AsyncMock(return_value=ConsolidationProjectionInputs()),
         latest_card_transitions=AsyncMock(return_value=()))
-    document = await make_deterministic_projection_planner(port).prepare(None,
-        DeterministicProjectionSource('board', 'card', 'card-one'))
-    projection = json.loads(document.document)['projection']
+    projection = await prepare_projection(None, port, 'board', 'card', 'card-one')
     findings = projection['reference_findings']['findings']
     if link_origin == 'both':
         assert findings == []

@@ -1,12 +1,9 @@
 """KG G5: origin associations are scoped inference, never confirmed cause."""
-import json
 
 import pytest
 
 from sqlalchemy_test_models import Board, Card, Spec
-from okto_pulse.core.ports.deterministic_projection import (
-    DeterministicProjectionSource, make_deterministic_projection_planner,
-)
+from native_projection_test_support import prepare_projection
 from okto_pulse.community.adapters.sqlalchemy_consolidation import CommunitySqlAlchemyConsolidationPersistence
 
 
@@ -34,9 +31,8 @@ async def test_bug_proxy_uses_only_children_assigned_to_its_origin(db_factory):
                 origin_task_id=origin, created_by='owner', test_scenario_ids=[],
                 conclusions=[{'summary': 'Durable fixture'}]))
         await db.commit()
-        planner = make_deterministic_projection_planner(CommunitySqlAlchemyConsolidationPersistence())
-        result = await planner.prepare(db, DeterministicProjectionSource('proxy-board', 'card', 'bug-card'))
-        projection = json.loads(result.document)['projection']
+        port = CommunitySqlAlchemyConsolidationPersistence()
+        projection = await prepare_projection(db, port, 'proxy-board', 'card', 'bug-card')
         edges = [edge for edge in projection['edges'] if edge['edge_type'] == 'violates']
         assert {edge['to_candidate_id'] for edge in edges} == {
             f'kgref:{kind}:spec:proxy-spec:{section}:{section}-linked' for section, kind in collections.values()}
@@ -58,16 +54,16 @@ async def test_bug_proxy_uses_only_children_assigned_to_its_origin(db_factory):
             setattr(spec, field, [{**item, 'linked_task_ids': ['replacement-origin']}
                 if item['id'].endswith('-linked') else item for item in getattr(spec, field)])
         await db.commit()
-        changed = await planner.prepare(db, DeterministicProjectionSource('proxy-board', 'card', 'bug-card'))
-        replacements = [edge for edge in json.loads(changed.document)['projection']['edges']
+        changed = await prepare_projection(db, port, 'proxy-board', 'card', 'bug-card')
+        replacements = [edge for edge in changed['edges']
             if edge['edge_type'] == 'violates']
         assert len(replacements) == 6
         assert {edge['rule_id'] for edge in replacements}.isdisjoint(edge['rule_id'] for edge in edges)
         assert {edge['fallback_reason'] for edge in replacements} == {'inferred_origin_proxy:card:replacement-origin'}
         bug.origin_task_id = None
         await db.commit()
-        absent = await planner.prepare(db, DeterministicProjectionSource('proxy-board', 'card', 'bug-card'))
-        assert not [edge for edge in json.loads(absent.document)['projection']['edges'] if edge['edge_type'] == 'violates']
+        absent = await prepare_projection(db, port, 'proxy-board', 'card', 'bug-card')
+        assert not [edge for edge in absent['edges'] if edge['edge_type'] == 'violates']
 
 
 @pytest.mark.asyncio

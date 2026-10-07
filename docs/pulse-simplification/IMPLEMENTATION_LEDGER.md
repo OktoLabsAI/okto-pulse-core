@@ -2,6 +2,84 @@
 
 ## Estado para retomada
 
+### 2026-10-07 — C1: protocolo de projeção do retirement retirado e validado
+Prova final49878 terminou0:837/899 Core+316/402 Community byte-identical;
+Python dos wheels finais idêntico ao main42 usado no comportamento.
+Closure final13821 terminou0:ok=true, findings/documentation_findings=[],
+oito budgets ZERO. Recibo clean-break-native-retirement-projection-removal.json
+gerado após todos os terminais:74 Python finais e47 frontend, hashes de provas,
+wheels/XML/JSON e ausência dos sete módulos em src/site-packages/wheels.
+Ruff F/E9/diff-check passaram. Nenhum processo pendente.
+
+Removidos sete módulos exclusivos da preparação/comparação/qualificação/conclusão
+do retirement. Rebuild e worker nativos usam seus contratos atuais; nenhuma
+autoridade/gate/história nativa alterada. Testes funcionais preservados sem
+sustentar formato migratório. Prova de paridade Target/Evidence passa com fontes
+relacionais exatamente iguais, além de regressões Card/Spec e crash real.
+Não equivale a KG-16/24 completos nem à entrega integral. Índice62/173/11 mantido.
+Pronto para commits/pushes pareados. Próximo: famílias remanescentes KG-16/24,
+especialmente overlap; depois DEI/ARQVER conforme índice fixo. BASE:T23/KG-10
+permanecem separados; autorização Checklist já implementada. Next27 STALE.
+
+### 2026-10-07 — C1 integração main42 aprovada
+Community44892 terminou0:7pass/423.58s. Inclui paridade Target/Evidence com
+snapshots SQL completos iguais, Spec e três tipos Card após churn/replay,
+desvinculação e crash real com recuperação. Total desta campanha final:
+67 Core +7 Community +47 frontend. Sem processos de teste ainda ativos.
+READMEs regenerados oficialmente. Build/install/prova main42-final49878 em
+andamento; comparação ZIP já confirmou todo Python igual ao par comportamental.
+Falta terminal da prova, closure final, recibo/commits/pushes.
+
+### 2026-10-07 — C1 main42: Core/frontend aprovados; integração em curso
+Build/install/prova4599 terminou0:837 Python/899 payload Core e316/402 Community
+byte-identical. Core3948 terminou0:67pass/10.38s. Frontend48776 terminou0:
+47pass (jsdom/fallback; sem WebGL), assets produtivos inalterados.
+Community44892 segue em execução: sete casos de paridade/recuperação nativa.
+Não reconstruir/reinstalar enquanto esse processo estiver ativo.
+
+Primeira chamada closure usou caminho relativo duplicado e falhou antes de
+executar auditoria. Chamada corrigida69828 terminou1 somente por README:
+findings=[], oito budgets ZERO. Renderer oficial executado e seu validador
+aprovou fragmentos; nenhum Python produtivo mudou após as campanhas.
+Após terminal Community: build/install/prova main42-final, confirmar Python
+idêntico ao main42, closure final e record_native_retirement_seam.py (preparado,
+ainda não executado), depois commits/pushes. Índice62/173/11 sem promoção.
+
+### 2026-10-07 — C1: cadeia órfã do retirement removida, em validação
+parity2 (9983) terminou0:1pass/80.47s sobre main41. Snapshot relacional completo
+idêntico e multiset Target/Evidence incremental/rebuild iguais, sem duplicação.
+Inventário de imports e símbolos em src/tests/scripts dos dois repos confirmou
+cadeia exclusiva: deterministic_projection (port/application), projection_relations
+(port/application), projection_qualification (port/application), projection_completion.
+Ledger histórico identifica consumidores retirement já retirados; sete módulos
+removidos em conjunto, sem substituto/wire novo. Quatro testes exclusivos desse
+protocolo retirados. Quatro testes funcionais passam a preparar pelo worker vivo;
+seis casos preservam IR/OR, metadados temporais, cleanup Refinement e cancelamento.
+Portas de história/efeitos/recuperação nativos permanecem. Busca pós-edição sem
+imports pendentes. Ruff F/E9 e diff-check passaram.
+Build/install/prova main42 (4599) em andamento; ainda não executar comportamento
+antes do terminal. Próximo: testes adaptados, paridade nativa/regressões, closure,
+recibo e commits/pushes. Nenhum aceite amplo promovido; índice62/173/11.
+
+### 2026-10-07 — C1/KG-24: retirar dependência de teste no planner de migração
+Base publicada Core f2d57cd9 / Community 0234b64d; main41 instalado.
+Prova provenance-native-traceability-parity1 confirmou 844/906 +316/402
+byte-identical. parity1 (40942) terminou1/18.09s antes da projeção: o helper
+ainda usava planner do retirement sem resolvedor de Code Evidence.
+O helper passa a enumerar fontes atuais e usar o fechamento de dependências
+do rebuild Community existente, mantendo reserva/fences e processamento real.
+Novo teste compara snapshot relacional completo e multiset incremental/rebuild
+após retirada de Target→Evidence. Ainda não aprovado; nenhuma promoção no índice.
+
+Inventário adicional corrigiu a hipótese inicial de planner totalmente isolado:
+application/projection_relations importa require_terminal_cleanup e consome seu
+documento v3; qualification/completion dependem dos DTOs desse observador.
+Nenhum consumidor produtivo externo dessa cadeia foi encontrado na busca de
+src dos dois repos. Antes de excluir runtime, concluir inventário dessa cadeia
+e separar observadores de história nativa usados pelos mecanismos atuais.
+Nenhum módulo produtivo foi excluído neste registro. Não criar adaptador de
+migração para sustentar o teste. Autorização Checklist já implementada.
+
 ### 2026-10-07 — Target→Evidence corrigido e validado no par main41
 Build/install/prova88923 terminou0:844/906 Core+316/402 Community byte-identical.
 Core target-contract1 (73185) terminou1:38pass/4fail,8.71s. Fixture de overlap

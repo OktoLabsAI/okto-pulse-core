@@ -1,0 +1,376 @@
+{
+  "format": "pulse-040-reviewed-increment/v1",
+  "scope": [
+    "C1: remove orphaned retirement projection protocol",
+    "KG:KG-24 native Target/Evidence source-snapshot parity"
+  ],
+  "status": "increment_verified_not_full_delivery",
+  "proof_pair": "dist-native-main42-final",
+  "provenance_sha256": "8409054b42c698d316a694c41d37a02a680e702ecc7974f834f51f24e1216080",
+  "behavior_pair": "dist-native-main42",
+  "python_comparison_sha256": "00de8a242f9d1f1002c106ed8c6c53cee541258db2e6081d0ee4727bb4c764a5",
+  "behavior_provenance_sha256": "d2fe17a8e683917e4eb60110ec5cc9214610d009f584de476041addd57d902c1",
+  "removed_runtime_modules": [
+    "application/deterministic_projection.py",
+    "ports/deterministic_projection.py",
+    "application/projection_relations.py",
+    "ports/projection_relations.py",
+    "application/projection_qualification.py",
+    "ports/projection_qualification.py",
+    "ports/projection_completion.py"
+  ],
+  "absence_verified": [
+    "source_tree",
+    "installed_site_packages",
+    "final_wheels"
+  ],
+  "wheels": {
+    "okto_pulse-0.4.0-py3-none-any.whl": "9a6106bd41e2e68bef4f15f0450e18734caa29bcc19a5c9cd57313455d22c376",
+    "okto_pulse_core-0.4.0-py3-none-any.whl": "be8fb314c08ab756e323efd174527a2a3ab4e13562305fcd9197ed8c4796c5c7"
+  },
+  "runs": [
+    {
+      "name": "acceptance-native-retirement-seam-core1",
+      "xml_sha256": "68ecb8bfddf5678a122ab6eae0ccb482f57f62f6e97173a55674ad72c2b1d4b8",
+      "passed": 67,
+      "cases": [
+        {
+          "case": "tests.test_native_projection_preparation::test_declared_requirement_links_reach_live_admission[integration_requirements-integration_requirement-ir_requirement]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_native_projection_preparation::test_declared_requirement_links_reach_live_admission[observability_requirements-observability_requirement-or_requirement]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_native_projection_preparation::test_live_admission_preserves_source_dates_and_root_metadata",
+          "passed": true
+        },
+        {
+          "case": "tests.test_native_projection_preparation::test_terminal_refinement_cleans_only_its_owned_set_without_reviving_root[cancelled]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_native_projection_preparation::test_terminal_refinement_cleans_only_its_owned_set_without_reviving_root[archived]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_native_projection_preparation::test_cancelled_spec_is_explicitly_skipped_without_loading_projection_inputs",
+          "passed": true
+        },
+        {
+          "case": "tests.test_card_child_projection::test_every_declared_child_has_one_typed_card_support[normal]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_card_child_projection::test_every_declared_child_has_one_typed_card_support[test]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_card_child_projection::test_every_declared_child_has_one_typed_card_support[bug]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_card_child_projection::test_incomplete_child_source_cannot_authorize_any_replacement[missing_collection]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_card_child_projection::test_incomplete_child_source_cannot_authorize_any_replacement[invalid_collection]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_card_child_projection::test_incomplete_child_source_cannot_authorize_any_replacement[duplicate_id]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_card_child_projection::test_incomplete_child_source_cannot_authorize_any_replacement[missing_id]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_card_child_projection::test_registry_and_old_new_consumers_cover_all_declared_child_collections",
+          "passed": true
+        },
+        {
+          "case": "tests.test_kg_card_scenario_projection::test_current_card_and_scenario_sources_converge_to_one_support[card-normal]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_kg_card_scenario_projection::test_current_card_and_scenario_sources_converge_to_one_support[card-test]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_kg_card_scenario_projection::test_current_card_and_scenario_sources_converge_to_one_support[card-bug]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_kg_card_scenario_projection::test_current_card_and_scenario_sources_converge_to_one_support[spec-normal]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_kg_card_scenario_projection::test_current_card_and_scenario_sources_converge_to_one_support[spec-test]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_kg_card_scenario_projection::test_current_card_and_scenario_sources_converge_to_one_support[spec-bug]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_kg_card_scenario_projection::test_current_card_and_scenario_sources_converge_to_one_support[both-normal]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_kg_card_scenario_projection::test_current_card_and_scenario_sources_converge_to_one_support[both-test]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_kg_card_scenario_projection::test_current_card_and_scenario_sources_converge_to_one_support[both-bug]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_kg_card_scenario_projection::test_retired_card_plans_empty_owned_set_without_reviving_root[cancelled-False-normal]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_kg_card_scenario_projection::test_retired_card_plans_empty_owned_set_without_reviving_root[cancelled-False-test]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_kg_card_scenario_projection::test_retired_card_plans_empty_owned_set_without_reviving_root[cancelled-False-bug]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_kg_card_scenario_projection::test_retired_card_plans_empty_owned_set_without_reviving_root[done-True-normal]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_kg_card_scenario_projection::test_retired_card_plans_empty_owned_set_without_reviving_root[done-True-test]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_kg_card_scenario_projection::test_retired_card_plans_empty_owned_set_without_reviving_root[done-True-bug]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_kg_card_scenario_projection::test_incomplete_or_ambiguous_sources_do_not_authorize_empty_replacement[card_scope]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_kg_card_scenario_projection::test_incomplete_or_ambiguous_sources_do_not_authorize_empty_replacement[incomplete_card]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_kg_card_scenario_projection::test_incomplete_or_ambiguous_sources_do_not_authorize_empty_replacement[parent_scope]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_kg_card_scenario_projection::test_incomplete_or_ambiguous_sources_do_not_authorize_empty_replacement[duplicate_target]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_kg_card_scenario_projection::test_known_absence_produces_empty_owned_set_and_durable_diagnostic[parent]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_kg_card_scenario_projection::test_known_absence_produces_empty_owned_set_and_durable_diagnostic[target]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_kg_card_scenario_projection::test_known_absence_produces_empty_owned_set_and_durable_diagnostic[unlinked]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_kg_card_scenario_projection::test_source_provider_failure_does_not_become_absence_or_cleanup",
+          "passed": true
+        },
+        {
+          "case": "tests.test_bug_origin_proxy_projection::test_bug_proxy_uses_only_children_assigned_to_its_origin",
+          "passed": true
+        },
+        {
+          "case": "tests.test_bug_origin_proxy_projection::test_unavailable_origin_does_not_authorize_an_empty_proxy_snapshot",
+          "passed": true
+        },
+        {
+          "case": "tests.test_card_dependency_projection::test_domain_accepts_all_typed_card_dependency_pairs",
+          "passed": true
+        },
+        {
+          "case": "tests.test_card_dependency_projection::test_persisted_dependency_projects_prerequisite_to_dependent[normal-normal]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_card_dependency_projection::test_persisted_dependency_projects_prerequisite_to_dependent[normal-test]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_card_dependency_projection::test_persisted_dependency_projects_prerequisite_to_dependent[normal-bug]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_card_dependency_projection::test_persisted_dependency_projects_prerequisite_to_dependent[test-normal]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_card_dependency_projection::test_persisted_dependency_projects_prerequisite_to_dependent[test-test]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_card_dependency_projection::test_persisted_dependency_projects_prerequisite_to_dependent[test-bug]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_card_dependency_projection::test_persisted_dependency_projects_prerequisite_to_dependent[bug-normal]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_card_dependency_projection::test_persisted_dependency_projects_prerequisite_to_dependent[bug-test]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_card_dependency_projection::test_persisted_dependency_projects_prerequisite_to_dependent[bug-bug]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_card_dependency_projection::test_dependency_outbox_retains_removal_and_cycle_is_not_persisted",
+          "passed": true
+        },
+        {
+          "case": "tests.test_card_dependency_projection::test_inflight_dependency_rechecks_cycle_after_another_writer",
+          "passed": true
+        },
+        {
+          "case": "tests.test_card_dependency_projection::test_cross_board_dependency_is_refused_even_when_actor_owns_both",
+          "passed": true
+        },
+        {
+          "case": "tests.test_card_dependency_projection::test_prerequisite_change_enqueues_only_scoped_direct_consumers",
+          "passed": true
+        },
+        {
+          "case": "tests.test_projection_history::test_node_identity_and_relation_multiplicity_are_compared_independently",
+          "passed": true
+        },
+        {
+          "case": "tests.test_projection_history::test_ambiguous_or_unbounded_input_is_refused[node_duplicate]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_projection_history::test_ambiguous_or_unbounded_input_is_refused[edge_duplicate]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_projection_history::test_ambiguous_or_unbounded_input_is_refused[edge_overflow]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_projection_history::test_source_root_selection_matches_type_active_generation_and_existing_tie_break",
+          "passed": true
+        },
+        {
+          "case": "tests.test_projection_history::test_legacy_null_generation_is_zero_and_missing_active_root_is_not_zero_work",
+          "passed": true
+        },
+        {
+          "case": "tests.test_projection_history::test_existing_technical_root_policy_does_not_expand_to_ordinary_sources[board]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_projection_history::test_existing_technical_root_policy_does_not_expand_to_ordinary_sources[technology]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_projection_history::test_existing_technical_root_policy_does_not_expand_to_ordinary_sources[spec]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_projection_history::test_existing_technical_root_policy_does_not_expand_to_ordinary_sources[unknown_writer]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_projection_history::test_existing_technical_root_policy_does_not_expand_to_ordinary_sources[wrong_type]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_projection_history::test_existing_technical_root_policy_does_not_expand_to_ordinary_sources[final_report]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_projection_history::test_existing_technical_root_policy_does_not_expand_to_ordinary_sources[learning_spec]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_projection_history::test_existing_technical_root_policy_does_not_expand_to_ordinary_sources[invalid_actor]",
+          "passed": true
+        }
+      ]
+    },
+    {
+      "name": "acceptance-native-retirement-seam-community1",
+      "xml_sha256": "db1117ff814cf6e9ceaf9bf1ab9dbf8ed897b0bf59ba0fbc0fafb8c0d89af5b1",
+      "passed": 7,
+      "cases": [
+        {
+          "case": "tests.test_native_traceability_rebuild_parity::test_traceability_retraction_matches_rebuild_of_identical_native_sources",
+          "passed": true
+        },
+        {
+          "case": "tests.test_projection_materialized_parity::test_spec_relationships_converge_after_churn_and_clean_rebuild",
+          "passed": true
+        },
+        {
+          "case": "tests.test_projection_materialized_parity::test_card_scenario_links_match_native_rebuild_after_removal_and_replay[normal]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_projection_materialized_parity::test_card_scenario_links_match_native_rebuild_after_removal_and_replay[test]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_projection_materialized_parity::test_card_scenario_links_match_native_rebuild_after_removal_and_replay[bug]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_projection_materialized_parity::test_known_unlinked_source_rebuild_preserves_diagnostic_without_stale_edge",
+          "passed": true
+        },
+        {
+          "case": "tests.test_native_projection_crash_replay::test_real_crash_before_ack_replays_current_source_without_duplicate_relations",
+          "passed": true
+        }
+      ]
+    }
+  ],
+  "frontend": {
+    "json_sha256": "781e9fb0c4561e5750d715c068b3a610350d5176795b53447ccf803316d0d2dd",
+    "passed": 47,
+    "scope": "jsdom GraphCanvas selection and CodeTraceability panels; not WebGL/browser E2E"
+  },
+  "closure_sha256": "e280ec07fde203f9b85a57f94efe5fc0417d1b54c4f6234201857581c734f978",
+  "budgets": {
+    "import_boundary_baseline": 0,
+    "singleton_baseline": 0,
+    "dependency_temporary_exceptions": 0,
+    "graph_runtime_compatibility": 0,
+    "rebuild_artifact_compatibility": 0,
+    "community_private_reach_ins": 0,
+    "community_adapter_bridges": 0,
+    "af35_relational_residue": 0
+  },
+  "preserved": [
+    "native worker preparation",
+    "native projection history and effects",
+    "native offline recovery fences",
+    "live queue/ACK",
+    "native IR/OR and Card/Bug associations",
+    "source timestamps",
+    "terminal Refinement cleanup"
+  ],
+  "qualification_limits": [
+    "Seven current integrated cases plus Core regressions; not full product E2E.",
+    "KG-16/24 remain open for other relationship families; acceptance index unchanged.",
+    "No real storage conversion/deletion, runtime intervention, release or deploy.",
+    "Retired plan/qualification/completion tests removed only with their exclusive protocol.",
+    "Initial traceability parity1 failed in retired planner before projection; parity2 passed before runtime removal.",
+    "Initial closure42 failed only generated README fragments; all eight budgets already zero."
+  ]
+}

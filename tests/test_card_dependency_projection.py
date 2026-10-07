@@ -1,14 +1,11 @@
 """KG G3: persisted Card dependencies must preserve endpoint types and direction."""
 import itertools
-import json
 
 import pytest
 
 from sqlalchemy_test_models import Board, Card, Spec
 from okto_pulse.core.services.main import CardService
-from okto_pulse.core.ports.deterministic_projection import (
-    DeterministicProjectionSource, make_deterministic_projection_planner,
-)
+from native_projection_test_support import prepare_projection
 from okto_pulse.community.adapters.sqlalchemy_consolidation import CommunitySqlAlchemyConsolidationPersistence
 
 
@@ -48,10 +45,8 @@ async def test_persisted_dependency_projects_prerequisite_to_dependent(db_factor
             card.status = 'done'
             card.conclusions = [{'summary': 'Completed'}]
         await db.commit()
-        planner = make_deterministic_projection_planner(CommunitySqlAlchemyConsolidationPersistence())
-        document = await planner.prepare(db,
-            DeterministicProjectionSource(prefix, 'card', prefix + '-dep'))
-        projection = json.loads(document.document)['projection']
+        port = CommunitySqlAlchemyConsolidationPersistence()
+        projection = await prepare_projection(db, port, prefix, 'card', prefix + '-dep')
         edges = [edge for edge in projection['edges'] if edge['edge_type'] == 'precedes']
         assert len(edges) == 1
         edge = edges[0]

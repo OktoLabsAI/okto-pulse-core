@@ -3076,7 +3076,7 @@ def _cancelled_refinement_projection(artifact_id):
 
 
 async def _prepare_deterministic_projection(db, entry, *, persistence=None):
-    """Read the same authoritative inputs for live consolidation and offline planning.
+    """Read authoritative inputs for live consolidation and native rebuild.
 
     No queue mutation, graph session, reconciliation, ACK or cognitive extraction
     is performed here. True is the existing cancelled-source no-op; False means
