@@ -2,6 +2,42 @@
 
 ## Estado para retomada
 
+### 2026-10-07 — C3/C4 fronteiras de Card sem policy migrada
+
+Core full-run7 terminou:140 aprovados/20falhas291.50s. Stress1000 repetido
+por omissao do ignore: aprovado; excluir explicitamente tests/stress/
+test_kg_ci_destructive_release.py nas proximas selecoes. Handle23343 encerrado.
+Retirados seeds Sprint/policy migrada/detach e testes exclusivos de conversao.
+Suite test_card_sprint_wire_retirement renomeada test_card_native_wire_contract:
+negativos de input removido e ausencia no schema atual, sem sustentacao de legado.
+Policy read preserva Board/Spec90/60, proveniencia, acesso negado e zero commit.
+Relations preserva preflight/FK/ausencia de mutacao parcial. Resequence tem FR
+nativa ligada; testes de densidade, ordem, anchors e atomicidade preservados.
+REST mantem negações404 atuais e zero efeitos; writers Knowledge retirados
+retornam405 igualmente para identidades owned/foreign/missing/viewer.
+Origin MCP usa adapter Knowledge real, realm local restaurado no teardown,
+recibo atual e verificacao SQL da origem/Spec/Board persistidos.
+
+Followup card-boundaries1:69 aprovados/uma falha (expectativa antiga da resposta
+de criacao). Card-boundaries2:20 aprovados, incluindo dez AF04; total distinto80.
+Todas sete suites integralmente qualificadas; nenhum handle ativo.
+Ruff F/E9/diff aprovados. Nenhum produto/frontend alterado: par/provenance
+dist-native-columns1 e closure2/oito budgetsZERO permanecem aplicaveis.
+Proximo: continuar Community apos full-run4 ou Core apos full-run7, excluindo
+somente modulos completos/followups e stress explicitamente. C1-C4/T23/KG-10
+e qualificacao por criterio/benchmark/bump0.4.0 seguem pendentes.
+
+
+### 2026-10-07 — Columns publicado; Core run7 ativo
+
+Coree0f1126d / Communityc852b1e9 publicados com pushes confirmados.
+Run7 handle23343 encerrado:140 aprovados/20falhas291.50s; followup pendente. A selecao exclui177modulos, mas
+o comando omitiu --ignore=tests/stress/test_kg_ci_destructive_release.py.
+Confirmado tmp descartavel test_ci_destructive_release_ev0 em execucao; nao
+repetir a campanha para corrigir selecao. Registrar resultado real, excluir
+esse arquivo explicitamente das proximas continuacoes. Produto instalado
+inalterado desde dist-native-columns1; closure2 verde, oito budgetsZERO.
+
 ### 2026-10-07 — C3 columns unico qualificado
 
 Retirada concluida do ramo columns sem metadata/hidratacao integral e modelo

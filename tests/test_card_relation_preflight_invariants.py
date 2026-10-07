@@ -7,6 +7,7 @@ import uuid
 from unittest.mock import AsyncMock, patch
 
 import pytest
+from okto_pulse.core.domain.architecture_adoption import ArchitectureAdoptionScope
 from mcp_runtime_testing import register_mcp_test_runtime
 from sqlalchemy import func, select, text
 
@@ -22,7 +23,6 @@ from sqlalchemy_test_models import (
     CardDependency,
     Spec,
     SpecStatus,
-    Sprint,
 )
 from sqlalchemy_test_unit_of_work import SQLAlchemyUnitOfWorkFactory
 
@@ -63,6 +63,10 @@ async def _relation_graph():
         db.add_all(
             [
                 Spec(
+                    architecture_adoption=ArchitectureAdoptionScope(
+                        board_id=ids["board_a"], spec_id=ids["spec_a1"], adopted_in_edition=1,
+                        actor_id=USER_ID, inherited_resource_ids=(),
+                    ).model_dump(mode="json"),
                     id=ids["spec_a1"],
                     board_id=ids["board_a"],
                     title="Relation Spec A1",
@@ -75,6 +79,10 @@ async def _relation_graph():
                     api_contracts=[],
                 ),
                 Spec(
+                    architecture_adoption=ArchitectureAdoptionScope(
+                        board_id=ids["board_a"], spec_id=ids["spec_a2"], adopted_in_edition=1,
+                        actor_id=USER_ID, inherited_resource_ids=(),
+                    ).model_dump(mode="json"),
                     id=ids["spec_a2"],
                     board_id=ids["board_a"],
                     title="Relation Spec A2",
@@ -87,6 +95,10 @@ async def _relation_graph():
                     api_contracts=[],
                 ),
                 Spec(
+                    architecture_adoption=ArchitectureAdoptionScope(
+                        board_id=ids["board_b"], spec_id=ids["spec_b"], adopted_in_edition=1,
+                        actor_id=USER_ID, inherited_resource_ids=(),
+                    ).model_dump(mode="json"),
                     id=ids["spec_b"],
                     board_id=ids["board_b"],
                     title="Relation Spec B",
@@ -103,37 +115,10 @@ async def _relation_graph():
         await db.flush()
         db.add_all(
             [
-                Sprint(
-                    id=ids["sprint_a1"],
-                    board_id=ids["board_a"],
-                    spec_id=ids["spec_a1"],
-                    title="Relation Sprint A1",
-                    created_by=USER_ID,
-                ),
-                Sprint(
-                    id=ids["sprint_a2"],
-                    board_id=ids["board_a"],
-                    spec_id=ids["spec_a2"],
-                    title="Relation Sprint A2",
-                    created_by=USER_ID,
-                ),
-                Sprint(
-                    id=ids["sprint_b"],
-                    board_id=ids["board_b"],
-                    spec_id=ids["spec_b"],
-                    title="Relation Sprint B",
-                    created_by=USER_ID,
-                ),
-            ]
-        )
-        await db.flush()
-        db.add_all(
-            [
                 Card(
                     id=ids["update_card"],
                     board_id=ids["board_a"],
                     spec_id=ids["spec_a1"],
-                    sprint_id=ids["sprint_a1"],
                     title="Update sentinel",
                     created_by=USER_ID,
                 ),
@@ -311,7 +296,6 @@ async def test_service_update_rejects_relation_before_in_memory_mutation(
         stored_in_same_session = await db.get(Card, _relation_graph["update_card"])
         assert stored_in_same_session.title == "Update sentinel"
         assert stored_in_same_session.spec_id == _relation_graph["spec_a1"]
-        assert stored_in_same_session.sprint_id == _relation_graph["sprint_a1"]
 
     assert await _update_activity_count(_relation_graph) == 0
 
@@ -366,22 +350,11 @@ async def test_update_relation_preflight_rejects_without_partial_card_change(
     stored = await _stored_update_card(_relation_graph)
     assert stored.title == "Update sentinel"
     assert stored.spec_id == _relation_graph["spec_a1"]
-    assert stored.sprint_id == _relation_graph["sprint_a1"]
     assert await _update_activity_count(_relation_graph) == 0
-
-
-async def _prepare_detached_card(graph):
-    # Post-cutover fixture: policy/history capture is covered by migration tests.
-    # Runtime update must neither assign nor clear this retired persisted column.
-    async with graph["factory"]() as db:
-        card = await db.get(Card, graph["update_card"])
-        card.sprint_id = None
-        await db.commit()
 
 
 @pytest.mark.asyncio
 async def test_update_accepts_same_board_spec_without_sprint(_relation_graph):
-    await _prepare_detached_card(_relation_graph)
     result = await _run_update(_relation_graph, CardUpdate(
         title="Coherent update", spec_id=_relation_graph["spec_a2"],
     ))
@@ -389,14 +362,11 @@ async def test_update_accepts_same_board_spec_without_sprint(_relation_graph):
     stored = await _stored_update_card(_relation_graph)
     assert stored.title == "Coherent update"
     assert stored.spec_id == _relation_graph["spec_a2"]
-    assert stored.sprint_id is None
 
 
 @pytest.mark.asyncio
 async def test_update_can_clear_spec_without_sprint(_relation_graph):
-    await _prepare_detached_card(_relation_graph)
     result = await _run_update(_relation_graph, CardUpdate(spec_id=None))
     assert result.card.spec_id is None
     stored = await _stored_update_card(_relation_graph)
     assert stored.spec_id is None
-    assert stored.sprint_id is None

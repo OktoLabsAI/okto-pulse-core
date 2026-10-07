@@ -4253,5 +4253,24 @@
       "okto_labs_pulse_community/tests/test_c6_columns_query.py"
     ],
     "reason": "Retire legacy payload golden and alternate query branch; old response now negative schema case. Default native window equals explicit25; true/false parsing, filters, native batch/page exclusivity, scope/redaction and SQL statement budgets tested. Functional assertions retained; removed wire acceptance not counted as preserved."
-  }
+  },
+  "native_card_boundaries": [
+    {
+      "path": "tests/test_card_native_wire_contract.py",
+      "previous_path": "tests/test_card_sprint_wire_retirement.py",
+      "reason": "Remove migrated-policy preservation/double-source integrity and legacy-read conversion assertions. Preserve retired Sprint write rejection; reject migrated policy input and assert it absent from current response schemas."
+    },
+    {
+      "path": "tests/test_card_validation_config_read.py",
+      "reason": "Remove live/foreign Sprint and migrated90/60 fixtures; qualify Board inheritance and native Spec90/60 overrides with current provenance, denied unrelated actor, no commit and unchanged native storage."
+    },
+    {
+      "path": "tests/test_card_relation_preflight_invariants.py",
+      "reason": "Remove all three Sprint row seeds, persisted card link and detach helper. Keep retired-field rejection as negative inputs and native Spec/Board relationship preflight/zero partial mutation."
+    },
+    {
+      "path": "tests/test_card_origin_create_invariants.py, tests/test_card_resequence.py and tests/test_card_rest_scope_hardening.py",
+      "reason": "Explicit native architecture/requirement/validation fixtures. Origin MCP uses real Community Knowledge port/current receipt and asserts persisted identity. Retired Knowledge write routes remain in no-effect/non-enumeration matrix with405 for every identity; current-route404/grant denials unchanged."
+    }
+  ]
 }

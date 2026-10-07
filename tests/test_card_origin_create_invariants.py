@@ -7,6 +7,7 @@ import uuid
 from unittest.mock import AsyncMock, patch
 
 import pytest
+from okto_pulse.core.domain.architecture_adoption import ArchitectureAdoptionScope
 from mcp_runtime_testing import register_mcp_test_runtime
 from sqlalchemy import func, select
 
@@ -20,7 +21,7 @@ USER_ID = "card-origin-invariant-agent"
 
 
 @pytest.fixture
-async def _origin_graph():
+async def _origin_graph(_knowledge_propagation_empty_test_port, request):
     from okto_pulse.core.infra.database import get_session_factory
 
     token = uuid.uuid4().hex[:10]
@@ -32,6 +33,15 @@ async def _origin_graph():
     origin_b = f"card-origin-task-b-{token}"
     scenario_id = f"ts-card-origin-{token}"
     db_factory = get_session_factory()
+    from okto_pulse.community.adapters.sqlalchemy_knowledge_propagation import (
+        CommunitySqlAlchemyKnowledgePropagationStore,
+    )
+    from okto_pulse.core.ports.knowledge_propagation import register_knowledge_propagation_port
+    from okto_pulse.core.domain.realm import RealmScope
+    previous_info = dict(db_factory.kw.get("info", {}))
+    request.addfinalizer(lambda: db_factory.configure(info=previous_info))
+    db_factory.configure(info={**previous_info, "realm_scope": RealmScope.local()})
+    register_knowledge_propagation_port(CommunitySqlAlchemyKnowledgePropagationStore(db_factory))
 
     async with db_factory() as db:
         db.add_all(
@@ -44,6 +54,10 @@ async def _origin_graph():
         db.add_all(
             [
                 Spec(
+                    architecture_adoption=ArchitectureAdoptionScope(
+                        board_id=board_a, spec_id=spec_a, adopted_in_edition=1,
+                        actor_id=USER_ID, inherited_resource_ids=(),
+                    ).model_dump(mode="json"),
                     id=spec_a,
                     board_id=board_a,
                     title="Origin Spec A",
@@ -63,6 +77,10 @@ async def _origin_graph():
                     api_contracts=[],
                 ),
                 Spec(
+                    architecture_adoption=ArchitectureAdoptionScope(
+                        board_id=board_b, spec_id=spec_b, adopted_in_edition=1,
+                        actor_id=USER_ID, inherited_resource_ids=(),
+                    ).model_dump(mode="json"),
                     id=spec_b,
                     board_id=board_b,
                     title="Origin Spec B",
@@ -315,6 +333,12 @@ async def test_mcp_accepts_and_persists_same_board_bug_origin(_origin_graph) -> 
     )
 
     assert payload["success"] is True
-    assert payload["card"]["origin_task_id"] == _origin_graph["origin_a"]
-    assert payload["card"]["spec_id"] == _origin_graph["spec_a"]
+    assert payload["operation_id"]
+    assert payload["replayed"] is False
+    async with _origin_graph["db_factory"]() as db:
+        stored = await db.get(Card, payload["card"]["id"])
+        assert stored is not None
+        assert stored.origin_task_id == _origin_graph["origin_a"]
+        assert stored.spec_id == _origin_graph["spec_a"]
+        assert stored.board_id == _origin_graph["board_a"]
     assert await _count_cards_with_title(_origin_graph, title) == 1

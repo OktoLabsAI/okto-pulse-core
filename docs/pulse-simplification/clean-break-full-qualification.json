@@ -1138,5 +1138,121 @@
     "frontend_tree_sha256": "afd332f659b697b899c610b072a88fda4db6d5c7f79134552cf9661f1c838008",
     "scope": "Retire unbounded columns compatibility branch and legacy response model. Native batch defaults25; continuation, filters, scope, redaction, query caps and facets preserved. Remove unused frontend boolean overload; clients use native query object.",
     "limits": "First closure failed README matrix only, budgets0 and no findings; official render updates import count1114 to1113. Second closure fully green. Earlier fixture23 run predates product change and is not additional distinct acceptance."
+  },
+  "core_full_run7": {
+    "campaign": "clean-break-full-run7",
+    "passed": 140,
+    "failed": 20,
+    "duration_seconds": 291.5,
+    "xml_sha256": "5a0ea48f329f2debfd267f65c573b9909cc3e50134ae465bfe725f13762abd17",
+    "selection": "clean-break-full-run7-selection.json",
+    "failures": [
+      {
+        "test": "tests.test_card_origin_create_invariants::test_mcp_rejects_origin_for_non_bug_and_persists_zero[normal]",
+        "message": "AssertionError: legacy Knowledge test port does not support mutations"
+      },
+      {
+        "test": "tests.test_card_origin_create_invariants::test_mcp_rejects_origin_for_non_bug_and_persists_zero[test]",
+        "message": "AssertionError: legacy Knowledge test port does not support mutations"
+      },
+      {
+        "test": "tests.test_card_origin_create_invariants::test_mcp_accepts_and_persists_same_board_bug_origin",
+        "message": "AssertionError: legacy Knowledge test port does not support mutations"
+      },
+      {
+        "test": "tests.test_card_relation_preflight_invariants::test_update_accepts_same_board_spec_without_sprint",
+        "message": "okto_pulse.core.services.resource_gate_contracts.ResourceGateViolation: Resource Gate could not resolve resource lineage for card 'rel-update-82442cc4': The adopted architecture scope is unavailable."
+      },
+      {
+        "test": "tests.test_card_resequence::test_positional_move_resequences_both_columns",
+        "message": "okto_pulse.core.services.card_errors.CardOperationError: Cannot start task card: link it directly to at least one FR/TR/BR/IR/OR requirement, or use the human-only card/board skip."
+      },
+      {
+        "test": "tests.test_card_resequence::test_minus_one_and_none_append_to_end_of_active_range",
+        "message": "okto_pulse.core.services.card_errors.CardOperationError: Cannot start task card: link it directly to at least one FR/TR/BR/IR/OR requirement, or use the human-only card/board skip."
+      },
+      {
+        "test": "tests.test_card_resequence_contract::test_move_card_forwards_anchor_selectors",
+        "message": "okto_pulse.core.services.card_errors.CardOperationError: Cannot start task card: link it directly to at least one FR/TR/BR/IR/OR requirement, or use the human-only card/board skip."
+      },
+      {
+        "test": "tests.test_card_rest_scope_hardening::test_every_foreign_main_card_route_matches_missing_and_has_zero_effects",
+        "message": "AssertionError: ('POST', '{card}/knowledge', '{\"detail\":\"Method Not Allowed\"}', '{\"detail\":\"Method Not Allowed\"}')\nassert 405 == 404\n +  where 405 = <Response [405 Method Not Allowed]>.status_code"
+      },
+      {
+        "test": "tests.test_card_rest_scope_hardening::test_foreign_child_ids_match_missing_and_cannot_mutate_parent",
+        "message": "okto_pulse.core.services.resource_gate_contracts.ResourceGateViolation: Resource Gate could not resolve resource lineage for card 'card-rest-owned-5e9fa7a937': The adopted architecture scope is unavailable."
+      },
+      {
+        "test": "tests.test_card_rest_scope_hardening::test_viewer_reads_but_all_representative_writes_are_hidden",
+        "message": "okto_pulse.core.services.resource_gate_contracts.ResourceGateViolation: Resource Gate could not resolve resource lineage for card 'card-rest-viewer-85359ce928': The adopted architecture scope is unavailable."
+      },
+      {
+        "test": "tests.test_card_rest_scope_hardening::test_editor_and_admin_can_update_and_delete[editor]",
+        "message": "okto_pulse.core.services.resource_gate_contracts.ResourceGateViolation: Resource Gate could not resolve resource lineage for card 'card-rest-editor-7d85207bf3': The adopted architecture scope is unavailable."
+      },
+      {
+        "test": "tests.test_card_rest_scope_hardening::test_editor_and_admin_can_update_and_delete[admin]",
+        "message": "okto_pulse.core.services.resource_gate_contracts.ResourceGateViolation: Resource Gate could not resolve resource lineage for card 'card-rest-admin-a6862d2ea3': The adopted architecture scope is unavailable."
+      },
+      {
+        "test": "tests.test_card_sprint_wire_retirement::test_read_preserves_opaque_policy_provenance_without_live_link[False]",
+        "message": "KeyError: 'migrated_validation_policy'"
+      },
+      {
+        "test": "tests.test_card_sprint_wire_retirement::test_read_preserves_opaque_policy_provenance_without_live_link[True]",
+        "message": "KeyError: 'migrated_validation_policy'"
+      },
+      {
+        "test": "tests.test_card_sprint_wire_retirement::test_corrupt_double_source_is_rejected_before_sprint_field_is_dropped[False]",
+        "message": "Failed: DID NOT RAISE <class 'pydantic_core._pydantic_core.ValidationError'>"
+      },
+      {
+        "test": "tests.test_card_sprint_wire_retirement::test_corrupt_double_source_is_rejected_before_sprint_field_is_dropped[True]",
+        "message": "Failed: DID NOT RAISE <class 'pydantic_core._pydantic_core.ValidationError'>"
+      },
+      {
+        "test": "tests.test_card_validation_config_read::test_card_read_resolves_current_policy_without_committing[inherited]",
+        "message": "okto_pulse.core.services.resource_gate_contracts.ResourceGateViolation: Resource Gate could not resolve resource lineage for card 'card-6e9017df501d4dd8b9c88e8a8ee9be68': The adopted architecture scope is unavailable."
+      },
+      {
+        "test": "tests.test_card_validation_config_read::test_card_read_resolves_current_policy_without_committing[live]",
+        "message": "okto_pulse.core.services.resource_gate_contracts.ResourceGateViolation: Resource Gate could not resolve resource lineage for card 'card-ea83e219760d41fc8efaf9a4f86eb22e': The adopted architecture scope is unavailable."
+      },
+      {
+        "test": "tests.test_card_validation_config_read::test_card_read_resolves_current_policy_without_committing[migrated-90]",
+        "message": "okto_pulse.core.services.resource_gate_contracts.ResourceGateViolation: Resource Gate could not resolve resource lineage for card 'card-3cbd81b4cac043d0a780c83708bef1e1': The adopted architecture scope is unavailable."
+      },
+      {
+        "test": "tests.test_card_validation_config_read::test_card_read_resolves_current_policy_without_committing[migrated-60]",
+        "message": "okto_pulse.core.services.resource_gate_contracts.ResourceGateViolation: Resource Gate could not resolve resource lineage for card 'card-319f7fedf1e448a99714cc9354487e40': The adopted architecture scope is unavailable."
+      }
+    ],
+    "note": "maxfail20, partial final policy-read module; stress1000 unnecessarily repeated because ignore argument omitted (passed). Future selections explicitly exclude tests/stress/test_kg_ci_destructive_release.py."
+  },
+  "core_card_boundaries_followup": {
+    "campaigns": [
+      {
+        "name": "clean-break-card-boundaries1",
+        "tests": 70,
+        "failed": 1,
+        "errors": 0,
+        "duration_seconds": 19.36,
+        "xml_sha256": "62d37551ff153c8f85e0dde54ec2adb52e01160bf6234c69689298657f47f508"
+      },
+      {
+        "name": "clean-break-card-boundaries2",
+        "tests": 20,
+        "failed": 0,
+        "errors": 0,
+        "duration_seconds": 20.175,
+        "xml_sha256": "526ccb67954f40ec66d6f807c049f232705075a67f1d9234043cf53723de71a4"
+      }
+    ],
+    "distinct_passed": 80,
+    "proof_pair": "dist-native-columns1",
+    "product_changes": false,
+    "scope": "Native Card policy reads, response contract, origin creation, relationship preflight, resequence and REST scope. Explicit native architecture/FR seeds; real Knowledge propagation store for creation. Migrated policy tests retired, current thresholds/access/zero writes retained.",
+    "limits": "Last partial policy-read module now fully qualified. Broad remaining modules and C1-C4 criteria remain pending."
   }
 }
