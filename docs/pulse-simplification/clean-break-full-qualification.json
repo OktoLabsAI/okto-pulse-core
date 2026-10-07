@@ -2666,5 +2666,33 @@
     "xml_sha256": "4a05d30ac23dd006cebe1f187296370036ca5823dbb16ecaeb88877c9cc0a040",
     "scope": "Binding backend closed to Grafx. Remove Ladybug canonical path/page geometry branches, route candidate fallback, dead route branch, unused old generation helper and migration-only candidate preparation API. Native CAS and route revalidation retain atomicity/concurrency/current recovery contracts. Old documents/creation refused without byte changes at Board and Global scope.",
     "limits": "Native explicit privacy erasure still handles .lbug residues: next removal already identified. Core11 followups not yet applied. No frontend changes."
+  },
+  "native_privacy_refusal": {
+    "proof_pair": "dist-native-privacy-refusal1",
+    "provenance": "provenance-native-privacy-refusal1.json",
+    "closure": "closure-native-privacy-refusal1.json",
+    "closure_ok": true,
+    "all_eight_budgets_zero": true,
+    "campaigns": [
+      {
+        "name": "native-privacy-refusal1",
+        "passed": 71,
+        "failed": 1,
+        "seconds": 77.71
+      },
+      {
+        "name": "native-privacy-refusal2",
+        "passed": 16,
+        "failed": 0,
+        "seconds": 25.25
+      }
+    ],
+    "xml_sha256": {
+      "native-privacy-refusal1": "c8bdf9c6a7c0fa9201f874eacf2cb3ce9eee39f5ff39e6dd6dad048c67718ade",
+      "native-privacy-refusal2": "faa40187576200ef08c569ae05cf382417c2e4062fdb114f0b953b2675e17571"
+    },
+    "scope": "Remove .lbug explicit erasure. Presence of old graph, sidecar or rollout is observed opaquely and refused before any Grafx/binding deletion. Native erasure fence and binding-last semantics retained; tests cover mixed/current+retired and retired-only storage.",
+    "failure_disposition": "One preexisting test expected14 graph providers; native registry has15 including graph_query_execution. Replaced count with exact current provider set and reran entire affected module16 cases. Other56 cases passed in first campaign;72 distinct cases now qualified, not87.",
+    "limits": "Core11 native fixture followup running separately. No frontend changes. Not overall completion."
   }
 }

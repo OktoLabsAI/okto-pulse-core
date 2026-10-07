@@ -2,6 +2,32 @@
 
 ## Estado para retomada
 
+### 2026-10-07 — C2 privacidade sem exclusão legada qualificada; Core11 followup vivo
+grafx_board_storage não exclui mais graph.lbug/sidecars. Observação opaca inclui
+rollout para não tratar armazenamento incompatível como ausente; qualquer presença
+recusa antes de apagar bytes Grafx/binding. Testes cobrem mistura com dados atuais
+e resíduos isolados. Exclusão nativa preserva fence e binding removido por último.
+Par dist-native-privacy-refusal1/provenance843/905+316/402 byte-identical antes
+dos testes. Closure terminal0:ok=true/findings/docs vazios/oito budgetsZERO.
+native-privacy-refusal1 terminal1:71 aprovados,1falha/77.71s.
+Falha: teste antigo contava14providers; registro nativo tem15 com
+graph_query_execution. Expectativa passou a conjunto exato15; rerun integral do
+módulo native-privacy-refusal2 terminal0:16aprovados/25.25s. Outros56casos
+(directory quarantine, operational providers, native privacy) aprovados na primeira
+campanha;72 distintos qualificados. Ruff/diff verdes; frontend inalterado.
+
+Em paralelo, SOMENTE fixtures/oráculos Core11 foram editados (13 módulos):
+schema0.8, endpoints precedes atuais, total22 relações/63eventos, permissões
+dotted+consulta/cognitive, generation0 explícito em seeds positivos e narrativa
+sem derivações inventadas. Duas suítes de colunas renomeadas para native,
+preservando negativos. Nenhum gate/produto Core alterado. Ruff/diff verdes.
+core11-native-followup1 ATIVO handle78972; não editar fontes/testes dessa
+campanha nem reinstalar venv até terminal. Produto congelado no par acima.
+Essas alterações de testes Core NÃO serão incluídas no commit documental deste
+incremento até qualificação. Ledger/recibo podem ser commitados separadamente.
+Core12 preparada606 exclusões; aguardar followup e incorporar apenas módulos
+inteiros aprovados. T23/KG-10/aceite integral/benchmark permanecem pendentes.
+
 ### 2026-10-07 — C2 binding exclusivamente Grafx qualificado
 Alterações nas árvores PRINCIPAIS, após todas campanhas anteriores terminais.
 GraphBackend só grafx; removidos branches de paths/geometria Ladybug, fallback
