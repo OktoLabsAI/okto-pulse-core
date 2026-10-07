@@ -1,0 +1,119 @@
+{
+  "format": "pulse-040-reviewed-acceptance/v1",
+  "criterion_keys": [
+    "BASE:T39",
+    "BASE:T40",
+    "BASE:T41",
+    "BASE:T42"
+  ],
+  "status": "verified_current_pair_review",
+  "proof_pair": "dist-native-main29",
+  "provenance_sha256": "cac1a7642e98f21d890530fa181e3872b2677bc00c5bb2f26f885ab04ff3b945",
+  "runs": [
+    {
+      "name": "acceptance-native-substantive-closeout1",
+      "xml_sha256": "47e9ebcb9a1c348fe19fd0ef94a8b7e8619b94278af61107931955c7debe3667",
+      "passed": 2,
+      "cases": [
+        "tests.test_completion_authenticated_delivery::test_signed_test_closeout_separates_product_proof_from_projection[False]",
+        "tests.test_completion_authenticated_delivery::test_signed_test_closeout_separates_product_proof_from_projection[True]"
+      ]
+    },
+    {
+      "name": "acceptance-native-projection-separation1",
+      "xml_sha256": "00ad0d0da7decebc95805918c47a58750bf80da201a3e1d634366b015a07e232",
+      "passed": 8,
+      "cases": [
+        "tests.test_completion_readiness_projection_separation::test_completion_uses_substantive_verdict_while_diagnostics_keep_projection[None-None-dlq]",
+        "tests.test_completion_readiness_projection_separation::test_completion_uses_substantive_verdict_while_diagnostics_keep_projection[None-None-projection_debt]",
+        "tests.test_completion_readiness_projection_separation::test_completion_uses_substantive_verdict_while_diagnostics_keep_projection[pending-cognitive_active-dlq]",
+        "tests.test_completion_readiness_projection_separation::test_completion_uses_substantive_verdict_while_diagnostics_keep_projection[pending-cognitive_active-projection_debt]",
+        "tests.test_completion_readiness_projection_separation::test_completion_uses_substantive_verdict_while_diagnostics_keep_projection[failed-cognitive_active-dlq]",
+        "tests.test_completion_readiness_projection_separation::test_completion_uses_substantive_verdict_while_diagnostics_keep_projection[failed-cognitive_active-projection_debt]",
+        "tests.test_completion_readiness_projection_separation::test_completion_uses_substantive_verdict_while_diagnostics_keep_projection[skipped-skip_expired-dlq]",
+        "tests.test_completion_readiness_projection_separation::test_completion_uses_substantive_verdict_while_diagnostics_keep_projection[skipped-skip_expired-projection_debt]"
+      ]
+    },
+    {
+      "name": "acceptance-native-snapshot-currentness1",
+      "xml_sha256": "7e76d6950d428db8a16a6156c5022ec4b35d4d79a01f1e9b5d698fe77b56d2db",
+      "passed": 2,
+      "cases": [
+        "tests.test_spec_b_knowledge_propagation_e2e::test_ts_1e0f5761_reference_snapshot_temporal_semantics",
+        "tests.test_scenario_readiness_currentness::test_scenario_status_writer_invalidates_passing_rollup_without_spec_version_bump"
+      ]
+    },
+    {
+      "name": "acceptance-native-snapshot-contracts2",
+      "xml_sha256": "bf73515fa55cd7f4a96753ba01ad48fc7da8323a7a2e37f7abeb8ed536936edf",
+      "passed": 42,
+      "cases": [
+        "tests.test_knowledge_propagation_service::test_read_normalizes_persistence_port_error",
+        "tests.test_knowledge_propagation_service::test_identical_replay_precedes_revision_check_and_divergence_conflicts",
+        "tests.test_knowledge_propagation_service::test_rejected_canonical_result_replays_the_same_error_for_audit",
+        "tests.test_knowledge_propagation_service::test_revision_rejection_carries_a_post_rollback_ledger_attempt",
+        "tests.test_knowledge_propagation_service::test_partial_or_foreign_selection_reports_requested_matched_missing",
+        "tests.test_knowledge_propagation_service::test_reference_and_snapshot_each_stage_one_complete_plan[reference]",
+        "tests.test_knowledge_propagation_service::test_reference_and_snapshot_each_stage_one_complete_plan[snapshot]",
+        "tests.test_knowledge_propagation_service::test_omitted_is_persisted_distinct_and_explicit_empty_suppresses_globally",
+        "tests.test_knowledge_propagation_service::test_repeated_explicit_empty_supersedes_the_current_global_tombstone",
+        "tests.test_knowledge_propagation_service::test_drop_delta_closes_only_selected_root_and_preserves_other_assignment",
+        "tests.test_knowledge_propagation_service::test_drop_delta_closes_a_prior_global_tombstone_before_root_drop",
+        "tests.test_knowledge_propagation_service::test_invalid_source_or_hash_fails_before_any_stage",
+        "tests.test_knowledge_propagation_service::test_refresh_replaces_only_current_snapshot_and_closes_old_records",
+        "tests.test_knowledge_propagation_service::test_refresh_rejects_non_snapshot_or_non_current_assignment[reference]",
+        "tests.test_knowledge_propagation_service::test_refresh_rejects_non_snapshot_or_non_current_assignment[closed]",
+        "tests.test_knowledge_propagation_service::test_refresh_rejects_non_selected_missing_or_tombstoned_snapshot[omitted-True-no-tombstone]",
+        "tests.test_knowledge_propagation_service::test_refresh_rejects_non_selected_missing_or_tombstoned_snapshot[explicit_empty-True-no-tombstone]",
+        "tests.test_knowledge_propagation_service::test_refresh_rejects_non_selected_missing_or_tombstoned_snapshot[explicit_ids-False-no-tombstone]",
+        "tests.test_knowledge_propagation_service::test_refresh_rejects_non_selected_missing_or_tombstoned_snapshot[explicit_ids-True-root-1]",
+        "tests.test_knowledge_propagation_service::test_refresh_rejects_non_selected_missing_or_tombstoned_snapshot[explicit_ids-True-None]",
+        "tests.test_knowledge_propagation_service::test_native_read_resolution_preserves_snapshot_history",
+        "tests.test_knowledge_propagation_service::test_v2_read_falls_back_to_root_and_keeps_reference_snapshot_semantics",
+        "tests.test_knowledge_propagation_service::test_native_snapshot_preserves_omitted_governance_metadata",
+        "tests.test_knowledge_propagation_service::test_native_read_includes_local_attachments_without_activation",
+        "tests.test_knowledge_propagation_service::test_current_tombstones_are_authoritative_but_preserve_history[tombstones0-expected_dropped0]",
+        "tests.test_knowledge_propagation_service::test_current_tombstones_are_authoritative_but_preserve_history[tombstones1-expected_dropped1]",
+        "tests.test_knowledge_propagation_service::test_divergent_adapter_receipt_fails_closed_after_single_stage",
+        "tests.test_knowledge_propagation_service::test_relink_reset_closes_current_records_without_legacy_fallback",
+        "tests.test_knowledge_propagation_service::test_relink_reset_records_parent_change_for_omitted_selection",
+        "tests.test_knowledge_propagation_service::test_relink_reset_supports_unlink_spec_reparent_and_repair[target0-previous_parent0-None]",
+        "tests.test_knowledge_propagation_service::test_relink_reset_supports_unlink_spec_reparent_and_repair[target1-previous_parent1-next_parent1]",
+        "tests.test_knowledge_propagation_service::test_relink_reset_supports_unlink_spec_reparent_and_repair[target2-None-next_parent2]",
+        "tests.test_knowledge_propagation_service::test_relink_reset_command_rejects_incoherent_parent_scope[target0-previous_parent0-None-relink_parent_target_invalid]",
+        "tests.test_knowledge_propagation_service::test_relink_reset_command_rejects_incoherent_parent_scope[target1-previous_parent1-None-relink_parent_target_invalid]",
+        "tests.test_knowledge_propagation_service::test_relink_reset_command_rejects_incoherent_parent_scope[target2-None-None-relink_parents_missing]",
+        "tests.test_knowledge_propagation_service::test_creation_preflight_is_target_independent_revalidated_and_replay_safe",
+        "tests.test_knowledge_propagation_service::test_preflight_evidence_change_rejects_mutation_without_staging",
+        "tests.test_knowledge_propagation_service::test_public_refresh_resolves_root_and_inherits_assignment_semantics",
+        "tests.test_knowledge_propagation_service::test_public_refresh_invalid_resolution_is_zero_effect[reference]",
+        "tests.test_knowledge_propagation_service::test_public_refresh_invalid_resolution_is_zero_effect[missing]",
+        "tests.test_knowledge_propagation_service::test_public_refresh_invalid_resolution_is_zero_effect[ambiguous]",
+        "tests.test_knowledge_propagation_service::test_existing_card_mutation_revalidates_relevance_against_linked_spec"
+      ]
+    }
+  ],
+  "reviewed_coverage": {
+    "BASE:T39": [
+      "Actual HTTP-manifest executor probes the Community ASGI health route and real issuer signs the product proof. Failed substantive cognitive obligation under blocking policy still refuses actual Test Card closeout.",
+      "Refusal preserves Card status, proof and cognitive snapshot, rolls back partial test-credit insertion and emits no completion event even after caller commit. Eight-case supplemental matrix keeps active/expired-skip authority separate from DLQ/projection diagnostics."
+    ],
+    "BASE:T40": [
+      "Same real proof/lifecycle path accepts Test Card Done and Spec delivery rollup when only canonical projection debt is pending; identical replay retains the result and debt stays pending/observable."
+    ],
+    "BASE:T41": [
+      "Real MCP handler/REST function with Community UOW/SQL maintains two reference and two snapshot assignments. Source changes update references, while snapshot bytes and revision stamps remain frozen/stale until explicit refresh.",
+      "Refresh selects exact roots and source hashes/revision, closes prior records and persists replace/refresh ledger operations. Core contracts cover selected current snapshots, immutable content, tombstones, bad sources, revision conflict, replay divergence and zero-stage refusal."
+    ],
+    "BASE:T42": [
+      "Canonical scenario-status writer changes passed to ready without Spec.version bump or alteration of authenticated evidence/delivery history. Same store and new SQL session both refuse readiness with delivery_test_result_missing."
+    ]
+  },
+  "limits": [
+    "Membership/actor supplied by report fixture; authenticated refers to product evidence issuer/verifier, not full HTTP user-authentication coverage. Product probe uses ASGI without runtime lifespan/background workers.",
+    "Implementation proof is an accepted fixture; test closes its Test Card, not unfinished implementation work.",
+    "KB transport entry functions are invoked directly with real UOW; Core contract suite uses fake persistence port.",
+    "Initial snapshot-contracts1 collection failed because obsolete test_card_knowledge_snapshot_refresh.py no longer exists. No tests executed; file was not restored. Qualifying run2 contains only current module42 cases.",
+    "No production/frontend change in this increment. Earlier installed completion proof was not reclassified as current installed recovery."
+  ]
+}

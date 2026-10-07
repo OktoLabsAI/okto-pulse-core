@@ -2,6 +2,31 @@
 
 ## Estado para retomada
 
+### 2026-10-07 — C4 T39–T42 qualificados no par main29
+Frontend enviado Corede5d41f1/Communityf341d0c6, pushes0; main limpos ao iniciar.
+substantive-closeout1 handle17617 terminou0:2pass/11.23s, HTTP ASGI do produto,
+issuer/verifier/SQL/admissão/lifecycle reais. Obrigação substantiva bloqueia e
+rollback impede crédito/evento parcial; só projeção pendente permite Done/rollup/
+replay, mantendo dívida e diagnóstico. Membership e implementação aceitas são
+fixtures explícitas, não alegar autenticação HTTP de usuário por este teste.
+projection-separation1 terminou0:8pass/2.63s (matriz Core de diagnóstico/gates).
+
+snapshot-currentness1 handle88507 terminou0:2pass/9.73s. Fonte alterada não troca
+bytes/stamp de snapshot; refresh explícito preserva trilha e referencia revisão2.
+Writer de status de cenário muda passed→ready sem Spec.version e sem reescrever
+evidência; store atual e sessão nova recusam readiness.
+snapshot-contracts1 terminou1 na coleta por arquivo removido; zero testes, não é
+falha comportamental nem passe. Não restaurado teste antigo.
+snapshot-contracts2 handle9490 terminou0:42pass/5.45s no módulo nativo vigente.
+Recibo clean-break-acceptance-native-closeout-snapshots.json promove T39–T42;
+54passes distintos, produto/frontend/par main29 inalterados e byteprovados.
+
+Nenhum processo ativo. Isolados ainda precisam FF antes de uso; último instalado
+isolado next27, não corresponde a main29/frontend atual. Main install correto.
+Próximos fixos T43 benchmark/T44 distribuição/T46 recursos e demais C4.
+T23/KG-10 continuam decisões pendentes; não inferir autorização da decisão Checklist.
+Não há bloqueio de progresso nem entrega integral. Ledger atualizado para retomada.
+
 ### 2026-10-07 — C4 T37/T38 fechados; frontend sem exportador/fallback antigos
 Todos processos deste incremento terminaram. design-system-ui1 handle68829:
 81pass/14.87s; corrigida parametrização para não espalhar arrays no Vitest,

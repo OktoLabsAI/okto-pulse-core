@@ -1792,7 +1792,12 @@
         "criterion_key": "BASE:T39"
       },
       "discovered_artifacts": [],
-      "current_qualification": "pending_current_pair_review"
+      "current_qualification": "verified_current_pair_review",
+      "current_review": {
+        "artifact": "clean-break-acceptance-native-closeout-snapshots.json",
+        "criterion_key": "BASE:T39",
+        "proof_pair": "dist-native-main29"
+      }
     },
     {
       "key": "BASE:T40",
@@ -1807,7 +1812,12 @@
         "criterion_key": "BASE:T40"
       },
       "discovered_artifacts": [],
-      "current_qualification": "pending_current_pair_review"
+      "current_qualification": "verified_current_pair_review",
+      "current_review": {
+        "artifact": "clean-break-acceptance-native-closeout-snapshots.json",
+        "criterion_key": "BASE:T40",
+        "proof_pair": "dist-native-main29"
+      }
     },
     {
       "key": "BASE:T41",
@@ -1885,7 +1895,12 @@
           ]
         }
       ],
-      "current_qualification": "pending_current_pair_review"
+      "current_qualification": "verified_current_pair_review",
+      "current_review": {
+        "artifact": "clean-break-acceptance-native-closeout-snapshots.json",
+        "criterion_key": "BASE:T41",
+        "proof_pair": "dist-native-main29"
+      }
     },
     {
       "key": "BASE:T42",
@@ -1963,7 +1978,12 @@
           ]
         }
       ],
-      "current_qualification": "pending_current_pair_review"
+      "current_qualification": "verified_current_pair_review",
+      "current_review": {
+        "artifact": "clean-break-acceptance-native-closeout-snapshots.json",
+        "criterion_key": "BASE:T42",
+        "proof_pair": "dist-native-main29"
+      }
     },
     {
       "key": "BASE:T43",
