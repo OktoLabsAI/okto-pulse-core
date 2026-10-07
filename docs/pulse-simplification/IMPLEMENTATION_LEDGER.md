@@ -3,6 +3,7 @@
 ## Estado para retomada
 
 ### 2026-10-06 — C3 em andamento: CardUpdate sem campo status
+Publicado: Core 7045bfa0 / Community 6c1c6422, pushes confirmados.
 Bases Core ee5701ea / Community 75036322 limpas/publicadas.
 Retirado status de CardUpdate REST e UpdateCardRequest TypeScript. MCP update
 ja nao tinha esse parametro. move_card permanece writer de transicoes.
