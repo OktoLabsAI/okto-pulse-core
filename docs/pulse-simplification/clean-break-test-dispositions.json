@@ -1185,6 +1185,11 @@
       "path": "okto_labs_pulse_community/frontend/src/components/knowledge/__tests__/KGHealthView.test.tsx::TS5 legacy tick fallback (three cases)",
       "disposition": "superseded",
       "reason": "Removed local 24-hour reconstruction for missing scheduler diagnostics. Three negative cases now preserve unknown for absent diagnostics regardless of the old timestamp; native backend diagnostics remain covered."
+    },
+    {
+      "path": "okto_labs_pulse_core\\tests\\test_mcp_parse_multi_value.py",
+      "disposition": "superseded",
+      "reason": "Retired multi-format string decoder. Native punctuation/order/whitespace and rejection of string/scalar inputs covered by test_mcp_native_collections.py."
     }
   ],
   "adapted_suites": [
@@ -4033,6 +4038,36 @@
       "path": "okto_labs_pulse_core/tests/test_card_lifecycle.py::TestCardUpdates knowledge_bases writes and v2 switch",
       "disposition": "replaced",
       "reason": "Knowledge snapshot direct-write schema and v2 switch were already retired. Preserve governed mockup copy/read-only test; require removed knowledge_bases input rejection. Status rejection now occurs at the closed schema and keeps direct-service defense for untyped commands."
+    }
+  ],
+  "native_mcp_collection_adaptations": [
+    {
+      "path": "tests/test_mcp_choice_question_parser.py",
+      "reason": "Retained current cardinality, membership and typed-error cases. Old parser acceptance and fallback assertions replaced by test_mcp_native_collections.py."
+    },
+    {
+      "path": "tests/test_r5_impl2_options_json_param.py",
+      "reason": "Retained real handler persistence of option labels/recommended/tradeoff using one native options array. Superseded precedence/fallback cases; validation/defaults/closed schemas covered by test_mcp_native_collections.py."
+    },
+    {
+      "path": "tests/test_r3a_schema_honesty.py",
+      "reason": "Native array/null schemas and rejection replace string-union/parity/strict_mode checks; actual handler/error tests retained with current structured requirement fixtures."
+    },
+    {
+      "path": "tests/test_doc_multivalue_drift_guard.py",
+      "reason": "Preserve reference pointers, negative stale-prose guard and unrelated include grammar; replace old parser invariants with native-only contract."
+    },
+    {
+      "path": "tests/test_mcp_resources.py",
+      "reason": "Retain resource/authority/budget gates; choice docs use native options, aliases removed in prior increments stay absent, canonical impact-evidence pointer verified; count ratchet tightened 301 to current 282, token ceilings unchanged."
+    },
+    {
+      "path": "tests/test_af35_s4_mcp_profile_activity_parity.py",
+      "reason": "Native empty array yields no-items envelope, scalar string rejected; current service activity/authority behavior retained."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_mcp_host_adapter.py",
+      "reason": "Real transport proves native options reach authentication and old/invalid/mixed options_json inputs are rejected first. Closed-tool ratchet tightened to 44 after historical-context tool retirement (Core 204be338); host narrowing/schema checks retained."
     }
   ]
 }

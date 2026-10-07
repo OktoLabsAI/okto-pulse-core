@@ -153,7 +153,7 @@ def test_design_system_board_docs_match_live_single_link_schema() -> None:
     assert "no design_system_id argument" in unlink
 
 
-def test_tool_family_docs_distinguish_registry_short_names_from_mcp_aliases() -> None:
+def test_tool_family_docs_publish_only_canonical_names() -> None:
     for filename, short_name in (
         ("qa_ask.md", "ask"),
         ("spec_entity_remove.md", "remove_spec_entity"),
@@ -161,9 +161,8 @@ def test_tool_family_docs_distinguish_registry_short_names_from_mcp_aliases() ->
         content = (RESOURCES_DIR / "reference" / "tool-families" / filename).read_text(
             encoding="utf-8"
         )
-        assert f"Registry-only short name: `{short_name}`" in content
-        assert "not** an MCP" in content
-        assert "does not appear in `tools/list`" in content
+        assert f"`okto_pulse_{short_name}(" in content
+        assert "Registry-only short name:" not in content
 
 
 @pytest.mark.parametrize(
@@ -175,7 +174,7 @@ def test_tool_family_docs_distinguish_registry_short_names_from_mcp_aliases() ->
         ("spec.md", "okto_pulse_ask_spec_choice_question"),
     ),
 )
-def test_choice_tool_docs_explain_structured_options_json(
+def test_choice_tool_docs_explain_native_options(
     filename: str,
     tool_name: str,
 ) -> None:
@@ -184,10 +183,11 @@ def test_choice_tool_docs_explain_structured_options_json(
     )
     section = content.split(f"## `{tool_name}`", 1)[1].split("\n## `", 1)[0]
 
-    assert "options_json: Preferred structured options" in section
+    assert "options: Required native array of objects" in section
+    assert "options_json" not in section
     assert "native array" in section
     assert '"recommended":true' in section
-    assert "takes precedence over options" in section
+    assert "Strings and unknown fields are rejected" in section
 
 
 # ---------------------------------------------------------------------------
@@ -357,9 +357,11 @@ def test_guideline_resources_match_governed_lifecycle_and_priority_semantics() -
     normalized_guideline = " ".join(guideline.split())
     normalized_board = " ".join(board.split())
 
-    assert "Compatibility name for retiring a guideline" in normalized_guideline
-    assert normalized_guideline.count("Deprecated direct-adoption shim") == 2
-    assert "guideline_impact_preview_required" in normalized_guideline
+    assert "Compatibility name for retiring a guideline" not in normalized_guideline
+    assert "Deprecated direct-adoption shim" not in normalized_guideline
+    assert "okto_pulse_retire_guideline" in normalized_guideline
+    assert "okto-pulse://reference/policy-compliance" in normalized_guideline
+    assert "Create immutable impact evidence before an adoption" in normalized_guideline
     assert "ascending priority (lower values first)" in normalized_guideline
     assert "higher = more important" not in guideline
     assert "highest first" not in guideline
@@ -633,7 +635,7 @@ def test_initial_footprint_under_budget() -> None:
     # closed write contracts; reviewed bounds below include their explicit schemas.
     # Always-loaded prose remains within its unchanged 11,250-character budget.
     # Further growth needs explicit review; do not weaken closed schemas.
-    assert len(parts) == 301, "MCP tool-count ratchet changed"
+    assert len(parts) == 282, "MCP tool-count ratchet changed"
     # F4 also retires public maintenance tools (301 remain). Prior
     # measured metadata was 57,705 tokens (already over budget); keep the limits
     # and explicit schema/authority constraints unchanged during retirement.

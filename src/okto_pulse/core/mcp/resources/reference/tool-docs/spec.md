@@ -180,13 +180,10 @@ Args:
     board_id: Board ID
     spec_id: Spec ID
     question: The question text
-    options: Option labels — multi-value; formats:
-        okto-pulse://reference/multivalue.
-    options_json: Preferred structured options. Pass a native array such as
-        [{"label":"Safer path","recommended":true,"tradeoff":"More setup"}].
-        A JSON-array string is accepted for compatibility. Each item requires
-        label; recommended defaults to false and tradeoff to null. A non-empty
-        options_json takes precedence over options.
+    options: Required native array of objects, e.g.
+        [{"label":"A","recommended":true,"tradeoff":"Costs more"}].
+        label is a non-empty string; recommended defaults to false;
+        tradeoff defaults to null. Strings and unknown fields are rejected.
     question_type: "choice" for single-select (default) or "multi_choice" for multi-select
     allow_free_text: "true" to also allow a free-text response alongside selections
 
@@ -208,9 +205,9 @@ Args:
     title: Spec title
     description: High-level summary of what needs to be built (optional). Supports Markdown and Mermaid diagrams.
     context: Business context — why this spec exists, how it connects to the bigger picture (optional). Supports Markdown and Mermaid diagrams.
-    functional_requirements: Pipe-separated list of functional requirements (e.g. "User can login|User can reset password")
-    technical_requirements: Pipe-separated list of technical constraints (e.g. "Must use OAuth2|Response time < 200ms")
-    acceptance_criteria: Pipe-separated list of acceptance criteria (e.g. "All tests pass|No console errors")
+    functional_requirements: Native array of structured requirement objects; see tools/list.
+    technical_requirements: Native array of structured requirement objects; see tools/list.
+    acceptance_criteria: Native array of structured requirement objects; see tools/list.
     status: Spec status — one of: draft, review, approved, in_progress, done, cancelled (default: draft)
     assignee_id: User/agent ID to assign (optional)
     labels: Multi-value labels — formats: okto-pulse://reference/multivalue.
@@ -282,7 +279,7 @@ repository contents, source access, or an empty Evidence list.
 Args:
     board_id: Board ID
     ideation_id: Ideation ID (must be in 'done' status)
-    mockup_ids: Pipe-separated mockup IDs to propagate (optional, empty = all)
+    mockup_ids: Native string array of mockup IDs to propagate (optional, empty = all)
     knowledge_propagation: Governed selection envelope (same fields as refinement derivation below).
     architecture_design_ids: Multi-value Architecture Design IDs to propagate (optional, empty = all)
     architecture_propagation_mode: one of copy, derive, reference_only, none.
@@ -308,7 +305,7 @@ Knowledge selection. Omitted Knowledge selects no sources, never all sources.
 Args:
     board_id: Board ID
     refinement_id: Refinement ID (must be in 'done' status)
-    mockup_ids: Pipe-separated mockup IDs to propagate (optional, empty = all)
+    mockup_ids: Native string array of mockup IDs to propagate (optional, empty = all)
     architecture_design_ids: Multi-value Architecture Design IDs to propagate (optional, empty = all)
     architecture_propagation_mode: one of copy, derive, reference_only, none.
         "snapshot" is not accepted; copy/derive are the snapshot-copy modes,
@@ -676,9 +673,9 @@ Args:
     title: New title (optional, empty = no change)
     description: New description (optional, empty = no change)
     context: New context (optional, empty = no change)
-    functional_requirements: Pipe-separated list of functional requirements (optional, empty = no change)
-    technical_requirements: Pipe-separated list of technical constraints (optional, empty = no change)
-    acceptance_criteria: Pipe-separated list of acceptance criteria (optional, empty = no change)
+    functional_requirements: Native array of structured requirement objects; see tools/list.
+    technical_requirements: Native array of structured requirement objects; see tools/list.
+    acceptance_criteria: Native array of structured requirement objects; see tools/list.
     assignee_id: New assignee (optional, empty = no change)
     labels: Multi-value labels — formats: okto-pulse://reference/multivalue. (optional, empty = no change)
 

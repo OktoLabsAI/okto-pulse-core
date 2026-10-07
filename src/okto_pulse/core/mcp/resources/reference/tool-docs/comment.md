@@ -14,13 +14,10 @@ Args:
     board_id: Board ID
     card_id: Card ID
     question: The question or prompt text displayed above the options
-    options: Option labels — multi-value; formats:
-        okto-pulse://reference/multivalue.
-    options_json: Preferred structured options. Pass a native array such as
-        [{"label":"Safer path","recommended":true,"tradeoff":"More setup"}].
-        A JSON-array string is accepted for compatibility. Each item requires
-        label; recommended defaults to false and tradeoff to null. A non-empty
-        options_json takes precedence over options.
+    options: Required native array of objects, e.g.
+        [{"label":"A","recommended":true,"tradeoff":"Costs more"}].
+        label is a non-empty string; recommended defaults to false;
+        tradeoff defaults to null. Strings and unknown fields are rejected.
     comment_type: "choice" for single-select (default) or "multi_choice" for multi-select
     allow_free_text: "true" to allow a free-text response in addition to selections
 

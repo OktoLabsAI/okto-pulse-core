@@ -352,7 +352,7 @@ async def test_mark_as_seen_validation_envelopes_are_preserved(db_factory) -> No
         empty = json.loads(
             await mcp_server.okto_pulse_mark_as_seen.fn(
                 board_id="board-validation",
-                item_ids="",
+                item_ids=[],
             )
         )
         assert empty == {"error": "No item_ids provided"}
@@ -364,4 +364,4 @@ async def test_mark_as_seen_validation_envelopes_are_preserved(db_factory) -> No
             )
         )
         assert comma_only["error"].startswith("Invalid item_ids:")
-        assert "comma-separated input is rejected" in comma_only["error"]
+        assert "expected a native array of strings" in comma_only["error"]

@@ -50,11 +50,11 @@ def _anyof_branches(sch: dict) -> list[dict]:
     return sch.get("anyOf") or []
 
 
-def _is_anyof_array_string(sch: dict) -> bool:
+def _is_native_string_array(sch: dict) -> bool:
     b = _anyof_branches(sch)
     has_array = any(x.get("type") == "array" and x.get("items", {}).get("type") == "string" for x in b)
     has_string = any(x.get("type") == "string" for x in b)
-    return has_array and has_string
+    return has_array and not has_string
 
 
 def _is_anyof_object_string(sch: dict) -> bool:
@@ -82,7 +82,7 @@ def test_ac1_refinement_fields_anyof_array_string():
     for tool in ("okto_pulse_create_refinement", "okto_pulse_update_refinement"):
         for field in ("in_scope", "out_of_scope", "decisions"):
             sch = _field_schema(tool, field)
-            assert _is_anyof_array_string(sch), f"{tool}.{field} not anyOf[array,string]: {sch}"
+            assert _is_native_string_array(sch), f"{tool}.{field} not anyOf[array,string]: {sch}"
     # Control: a genuine single-value field stays a bare string (proves anyOf is field-specific).
     bid = _field_schema("okto_pulse_create_refinement", "board_id")
     assert bid.get("type") == "string" and "anyOf" not in bid, bid
@@ -98,7 +98,7 @@ def test_ac2_expanded_cluster_anyof_array_string():
         branches = _anyof_branches(_field_schema("okto_pulse_create_spec", field))
         assert {branch["type"] for branch in branches} == {"array", "null"}
         assert next(branch for branch in branches if branch["type"] == "array")["items"]["type"] == "object"
-    assert _is_anyof_array_string(_field_schema("okto_pulse_add_decision", "alternatives_considered"))
+    assert _is_native_string_array(_field_schema("okto_pulse_add_decision", "alternatives_considered"))
 
 
 # ---------------------------------------------------------------------------
@@ -152,7 +152,8 @@ async def _seed_spec():
         db.add(Spec(
             id=spec_id, board_id=BOARD_ID, title="R3a spec",
             status=SpecStatus.DRAFT, created_by=USER_ID,
-            functional_requirements=["FR1"], acceptance_criteria=["AC1"],
+            functional_requirements=[{"id": "fr_1", "text": "FR1"}],
+            acceptance_criteria=[{"id": "ac_1", "text": "AC1"}],
             test_scenarios=[], business_rules=[], api_contracts=[],
         ))
         await db.commit()
@@ -263,7 +264,7 @@ async def test_card_multi_value_errors_use_uniform_envelope(tool_name, kwargs):
 
 
 @pytest.mark.asyncio
-async def test_ac7_legacy_forms_equivalent_to_native(_seed_spec):
+async def test_ac7_native_values_persist_and_string_forms_are_rejected(_seed_spec):
     spec_id = _seed_spec
     forms = {
         "native_list": ["Postgres", "DuckDB"],
@@ -278,12 +279,14 @@ async def test_ac7_legacy_forms_equivalent_to_native(_seed_spec):
             title=f"Decision {label}", rationale="r",
             alternatives_considered=value,
         )
+        if label != "native_list":
+            assert res.get("error") == "invalid_multi_value_input", (label, res)
+            continue
         assert res.get("error") is None, (label, res)
         dec = res.get("decision") or res
         persisted[label] = dec.get("alternatives_considered")
     assert persisted["native_list"] == ["Postgres", "DuckDB"], persisted
-    assert persisted["pipe_string"] == ["Postgres", "DuckDB"], persisted
-    assert persisted["json_array_string"] == ["Postgres", "DuckDB"], persisted
+    assert set(persisted) == {"native_list"}
 
 
 # ---------------------------------------------------------------------------
@@ -306,7 +309,8 @@ def test_ac8_scope_guard_no_sweep_strict_mode_intact():
 
     # (c) strict_mode default is still True (not flipped) in helpers.py.
     helpers_src = HELPERS_PY.read_text(encoding="utf-8")
-    assert "strict_mode: bool = True" in helpers_src, "strict_mode default must remain True"
+    assert "strict_mode" not in helpers_src
+    assert "def validate_string_list" in helpers_src
 
     # (d) The uniform multi-value envelope is scoped, not a 353-site sweep: it is a
     # distinct code string from the auth/perm error-string family.

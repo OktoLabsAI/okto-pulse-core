@@ -172,9 +172,9 @@ Edit the BODY of a test scenario (title/given/when/then/scenario_type/
     `scenario_type` to preserve the current type; an empty string is not part
     of the closed enum and is rejected by FastMCP as ``validation_failed``
     before agent context, permissions, or UoW resolution. To
-    intentionally CLEAR a field, list it in `clear` (pipe-separated); only
+    intentionally CLEAR a field, list it in `clear` (native string array); only
     `notes` and `linked_criteria` are clearable. `linked_criteria` is a
-    pipe-separated list of AC index/id/text, resolved to AC ids (fail-closed on
+    native string array of AC references, resolved to AC ids (fail-closed on
     unresolved tokens).
 
     Editing a SEMANTIC field (given/when/then/scenario_type/linked_criteria) of a
@@ -192,8 +192,8 @@ Edit the BODY of a test scenario (title/given/when/then/scenario_type/
             negative. Empty string and every unsupported value are rejected by
             the closed FastMCP schema as ``validation_failed`` before context or
             UoW resolution, never normalized.
-        linked_criteria: Pipe-separated AC index/id/text (resolved to AC ids).
-        clear: Pipe-separated field names to empty (notes, linked_criteria).
+        linked_criteria: Native string array of AC index/id/text (resolved to AC ids).
+        clear: Native string array of field names to empty (notes, linked_criteria).
 
     Returns:
         JSON {success, scenario_id, updated_fields, evidence_invalidated} or

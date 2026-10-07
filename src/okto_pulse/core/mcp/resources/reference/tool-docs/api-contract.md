@@ -37,9 +37,9 @@ Args:
     request_body_json: JSON string for request body schema (optional). Example: '{"name": "string", "email": "string"}'
     response_success_json: JSON string for success response schema (optional)
     response_errors_json: JSON string for error responses array (optional). Example: '[{"status": 400, "detail": "..."}]'
-    linked_requirements: Pipe-separated exact FR/TR IDs.
-        Example: "fr_login|tr_audit_events"
-    linked_rules: Pipe-separated business rule IDs. Example: "br_abc123|br_def456"
+    linked_requirements: Native string array of exact FR/TR IDs.
+        Example: ["fr_login", "tr_audit_events"]
+    linked_rules: Native string array of business rule IDs.
     notes: Additional notes (optional)
 
 Returns:

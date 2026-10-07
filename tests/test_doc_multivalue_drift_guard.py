@@ -104,7 +104,7 @@ def test_ac1_strict_coercion_lines_reconciled() -> None:
             f"{fname}: missing the canonical resource pointer {CANONICAL_RESOURCE!r}."
         )
     canonical = _read(MULTIVALUE_REFERENCE)
-    assert "Comma-only string" in canonical and "REJECTED" in canonical
+    assert "String inputs" in canonical and "are rejected" in canonical
 
 
 # ---------------------------------------------------------------------------
@@ -145,8 +145,8 @@ def test_ac4_legitimate_usages_preserved() -> None:
             f"{fname}: legitimate usage {phrase!r} was wrongly removed."
         )
     canonical = _read(MULTIVALUE_REFERENCE)
-    assert "Pipe-separated strings" in canonical
-    assert "Comma-only string" in canonical and "REJECTED" in canonical
+    assert "native JSON arrays" in canonical
+    assert "String inputs" in canonical and "are rejected" in canonical
 
 
 # ---------------------------------------------------------------------------
@@ -171,7 +171,8 @@ def test_ac5_guard_is_load_bearing() -> None:
 
 def test_ac6_production_code_byte_unchanged() -> None:
     helpers = _read(HELPERS)
-    assert "def coerce_to_list_str" in helpers
-    assert "rejected by REJECT policy" in helpers  # the strict comma-REJECT logic
+    assert "def validate_string_list" in helpers
+    assert "def coerce_to_list_str" not in helpers
+    assert "strict_mode" not in helpers
     server = _read(SERVER)
     assert 'include.split(",")' in server  # the board include parser (server.py:1554)

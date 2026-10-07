@@ -73,9 +73,8 @@ from okto_pulse.core.mcp.filters import (
 from okto_pulse.core.mcp.helpers import (
     ChoiceOptionInput,
     _structured_error,
-    coerce_to_list_str,
-    parse_multi_value,
-    parse_options_json,
+    validate_string_list,
+    validate_choice_options,
 )
 from okto_pulse.core.mcp.kg_authorization import kg_permission_error
 from okto_pulse.core.mcp.outcome import McpToolOutcome
@@ -2525,7 +2524,7 @@ async def okto_pulse_list_my_mentions(
 
 
 @mcp.tool()
-async def okto_pulse_mark_as_seen(board_id: str, item_ids: list[str] | str) -> str:
+async def okto_pulse_mark_as_seen(board_id: str, item_ids: list[str]) -> str:
     """
     Mark one or more items as seen so they won't appear in list_my_mentions.
     Use this after processing mentions to avoid seeing them again."""
@@ -2534,7 +2533,7 @@ async def okto_pulse_mark_as_seen(board_id: str, item_ids: list[str] | str) -> s
         return _auth_error()
 
     try:
-        ids = coerce_to_list_str(item_ids)
+        ids = validate_string_list(item_ids)
     except ValueError as e:
         return json.dumps({"error": f"Invalid item_ids: {e}"})
     if not ids:
@@ -3318,10 +3317,10 @@ async def okto_pulse_create_card(
     status: Literal["not_started", "started"] = "not_started",
     priority: str = "none",
     assignee_id: str = "",
-    labels: list[str] | str = "",
-    test_scenario_ids: list[str] | str = "",
-    functional_requirement_ids: list[str] | str = "",
-    business_rule_ids: list[str] | str = "",
+    labels: list[str] | None = None,
+    test_scenario_ids: list[str] | None = None,
+    functional_requirement_ids: list[str] | None = None,
+    business_rule_ids: list[str] | None = None,
     card_type: str = "normal",
     origin_task_id: str = "",
     severity: str = "",
@@ -3428,10 +3427,10 @@ async def okto_pulse_create_card(
     _desc_v2 = description.replace("\\n", "\n") if description else None
     _details_v2 = details.replace("\\n", "\n") if details else None
     try:
-        scenario_ids_v2 = coerce_to_list_str(test_scenario_ids) or None
-        labels_v2 = coerce_to_list_str(labels) or None
-        fr_ids_v2 = coerce_to_list_str(functional_requirement_ids) or None
-        br_ids_v2 = coerce_to_list_str(business_rule_ids) or None
+        scenario_ids_v2 = validate_string_list(test_scenario_ids) or None
+        labels_v2 = validate_string_list(labels) or None
+        fr_ids_v2 = validate_string_list(functional_requirement_ids) or None
+        br_ids_v2 = validate_string_list(business_rule_ids) or None
     except ValueError as error:
         return json.dumps(
             {"error": "invalid_multi_value_input", "detail": str(error)}
@@ -3576,16 +3575,15 @@ async def okto_pulse_get_card(board_id: str, card_id: str) -> str:
 async def okto_pulse_resolve_bug_regression_scenarios(
     board_id: str,
     bug_id: str,
-    affected_task_ids: list[str] | str = "",
-    candidate_scenario_ids: list[str] | str = "",
+    affected_task_ids: list[str] | None = None,
+    candidate_scenario_ids: list[str] | None = None,
 ) -> str:
     """
     Preview reusable regression scenarios for a bug without mutating the spec.
 
     Provide ``affected_task_ids`` when the incident spans additional tasks.
     Provide ``candidate_scenario_ids`` to classify a proposed set, including
-    unrelated or cross-spec candidates. Both inputs accept a JSON array, a
-    pipe-delimited string, or a native MCP string list.
+    unrelated or cross-spec candidates. Both inputs require a native array of strings.
     """
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
@@ -3596,8 +3594,8 @@ async def okto_pulse_resolve_bug_regression_scenarios(
         return _perm_error(perm_err)
 
     try:
-        affected_ids = coerce_to_list_str(affected_task_ids)
-        candidate_ids = coerce_to_list_str(candidate_scenario_ids)
+        affected_ids = validate_string_list(affected_task_ids)
+        candidate_ids = validate_string_list(candidate_scenario_ids)
     except ValueError as exc:
         return json.dumps(
             {
@@ -4486,20 +4484,19 @@ async def okto_pulse_update_card(
     details: str = "",
     priority: str = "",
     assignee_id: str = "",
-    labels: list[str] | str = "",
-    test_scenario_ids: list[str] | str = "",
+    labels: list[str] | None = None,
+    test_scenario_ids: list[str] | None = None,
     severity: str = "",
     expected_behavior: str = "",
     observed_behavior: str = "",
     steps_to_reproduce: str = "",
     action_plan: str = "",
-    linked_test_task_ids: list[str] | str = "",
+    linked_test_task_ids: list[str] | None = None,
 ) -> str:
     """Update card details. Pass only the fields you want to change; omit the rest.
 
-    Multi-value fields (labels, test_scenario_ids, linked_test_task_ids): prefer
-    native list; legacy pipe-separated string is also accepted. Comma-only strings
-    are REJECTED. For bidirectional scenario linking, use
+    Multi-value fields (labels, test_scenario_ids, linked_test_task_ids) require
+    native arrays. String inputs are rejected. For bidirectional scenario linking, use
     okto_pulse_link_task(target_type='scenario', ...).
     """
     ctx = await _get_agent_ctx(board_id)
@@ -4541,14 +4538,14 @@ async def okto_pulse_update_card(
             update_data["assignee_id"] = assignee_id
         if labels:
             try:
-                update_data["labels"] = coerce_to_list_str(labels)
+                update_data["labels"] = validate_string_list(labels)
             except ValueError as e:
                 return json.dumps(
                     {"error": "invalid_multi_value_input", "detail": str(e)}
                 )
         if test_scenario_ids:
             try:
-                update_data["test_scenario_ids"] = coerce_to_list_str(test_scenario_ids)
+                update_data["test_scenario_ids"] = validate_string_list(test_scenario_ids)
             except ValueError as e:
                 return json.dumps(
                     {"error": "invalid_multi_value_input", "detail": str(e)}
@@ -4574,7 +4571,7 @@ async def okto_pulse_update_card(
             update_data["action_plan"] = action_plan.replace("\\n", "\n")
         if linked_test_task_ids:
             try:
-                update_data["linked_test_task_ids"] = coerce_to_list_str(
+                update_data["linked_test_task_ids"] = validate_string_list(
                     linked_test_task_ids
                 )
             except ValueError as e:
@@ -5226,7 +5223,7 @@ async def okto_pulse_list_spec_dependencies(
     active_state: Literal["active", "removed", "all"] = "active",
     satisfaction: Literal["satisfied", "unmet", "all"] = "all",
     retrospective: OptionalBoolInput = None,
-    related_statuses: str | list[str] | None = None,
+    related_statuses: list[str] | None = None,
     lineage: Literal["same_ideation", "cross_ideation", "all"] = "all",
 ) -> str:
     """List outgoing prerequisites or incoming dependents with an opaque cursor."""
@@ -5252,7 +5249,7 @@ async def okto_pulse_list_spec_dependencies(
     try:
         statuses = tuple(
             SpecStatus(value)
-            for value in coerce_to_list_str(related_statuses, strict_mode=True)
+            for value in validate_string_list(related_statuses)
         )
         retrospective_value = (
             _flag_enabled(retrospective) if retrospective is not None else None
@@ -5720,16 +5717,16 @@ async def okto_pulse_add_choice_comment(
     board_id: str,
     card_id: str,
     question: str,
-    options: list[str] | str = "",
+    options: list[ChoiceOptionInput],
     comment_type: str = "choice",
     allow_free_text: BoolInput = False,
-    options_json: list[ChoiceOptionInput] | str = "",
 ) -> str:
     """
         Add a choice board (poll) to a card. Responders can select from the options.
-
-    options_json (optional, takes precedence): JSON array of option objects, e.g. '[{"label":"A","recommended":true,"tradeoff":"costs more"}]'. When present and non-empty, options is ignored. Each object requires a non-empty label; recommended defaults to false; tradeoff defaults to null.
-    Multi-value params (options/selected): pass a JSON array (preferred — safe for labels containing commas) or a pipe-separated string. Full format rules: okto-pulse://reference/multivalue."""
+    options: Required native array of objects with a non-empty label, optional
+    recommended boolean (default false), and tradeoff string/null (default null).
+    Format: okto-pulse://reference/multivalue.
+"""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -5737,31 +5734,19 @@ async def okto_pulse_add_choice_comment(
     from okto_pulse.core.models.schemas import ChoiceOption
 
     try:
-        parsed_objects = parse_options_json(options_json or None)
+        parsed_objects = validate_choice_options(options)
     except ValueError as e:
-        return json.dumps({"error": f"Invalid options_json: {e}"})
+        return json.dumps({"error": f"Invalid options: {e}"})
 
-    if parsed_objects is not None:
-        choice_list = [
-            ChoiceOption(
-                id=f"opt_{i}",
-                label=obj["label"],
-                recommended=obj["recommended"],
-                tradeoff=obj["tradeoff"],
-            )
-            for i, obj in enumerate(parsed_objects)
-        ]
-    else:
-        try:
-            option_labels = coerce_to_list_str(options)
-        except ValueError as e:
-            return json.dumps({"error": "invalid_multi_value_input", "detail": str(e)})
-        if not option_labels:
-            return json.dumps({"error": "At least one option is required"})
-        choice_list = [
-            ChoiceOption(id=f"opt_{i}", label=label)
-            for i, label in enumerate(option_labels)
-        ]
+    choice_list = [
+        ChoiceOption(
+            id=f"opt_{i}",
+            label=obj["label"],
+            recommended=obj["recommended"],
+            tradeoff=obj["tradeoff"],
+        )
+        for i, obj in enumerate(parsed_objects)
+    ]
 
     from okto_pulse.core.application.use_cases.mcp_collaboration import (
         McpAddChoiceCommentCommand,
@@ -5790,19 +5775,19 @@ async def okto_pulse_add_choice_comment(
 async def okto_pulse_respond_to_choice(
     board_id: str,
     comment_id: str,
-    selected: list[str] | str,
+    selected: list[str],
     free_text: str = "",
 ) -> str:
     """
         Respond to a choice board comment by selecting one or more options.
 
-    Multi-value params (options/selected): pass a JSON array (preferred — safe for labels containing commas) or a pipe-separated string. Full format rules: okto-pulse://reference/multivalue."""
+    selected: Native array of option IDs. Strings are not accepted. Full format rules: okto-pulse://reference/multivalue."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
 
     try:
-        selected_ids = coerce_to_list_str(selected)
+        selected_ids = validate_string_list(selected)
     except ValueError as e:
         return json.dumps({"error": "invalid_multi_value_input", "detail": str(e)})
     if not selected_ids:
@@ -6466,7 +6451,7 @@ async def okto_pulse_create_story(
     actor: str = "",
     goal: str = "",
     benefit: str = "",
-    labels: list[str] | str = "",
+    labels: list[str] | None = None,
     status: str = "draft",
 ) -> str:
     """Create a lightweight Story before Ideation."""
@@ -6483,7 +6468,7 @@ async def okto_pulse_create_story(
 
     try:
         story_status = StoryStatus(status)
-        label_list = coerce_to_list_str(labels) or None
+        label_list = validate_string_list(labels) or None
     except ValueError as e:
         return json.dumps({"error": str(e)})
 
@@ -6530,7 +6515,7 @@ async def okto_pulse_update_story(
     actor: str = "",
     goal: str = "",
     benefit: str = "",
-    labels: list[str] | str = "",
+    labels: list[str] | None = None,
 ) -> str:
     """Update editable Story fields through MCP."""
     ctx = await _get_agent_ctx(board_id)
@@ -6551,9 +6536,9 @@ async def okto_pulse_update_story(
         update_data["goal"] = goal
     if benefit:
         update_data["benefit"] = benefit
-    if labels != "":
+    if labels is not None:
         try:
-            update_data["labels"] = coerce_to_list_str(labels) or []
+            update_data["labels"] = validate_string_list(labels) or []
         except ValueError as e:
             return json.dumps({"error": str(e)})
     if not update_data:
@@ -6748,13 +6733,13 @@ async def okto_pulse_link_story_to_ideation(
 @mcp.tool()
 async def okto_pulse_convert_stories_to_ideation(
     board_id: str,
-    story_ids: list[str] | str,
+    story_ids: list[str],
     ideation_id: str = "",
     title: str = "",
     description: str = "",
     problem_statement: str = "",
     proposed_approach: str = "",
-    mockup_ids: list[str] | str = "",
+    mockup_ids: list[str] | None = None,
 ) -> str:
     """Create a new Ideation or link an existing Ideation from selected Stories."""
     ctx = await _get_agent_ctx(board_id)
@@ -6768,8 +6753,8 @@ async def okto_pulse_convert_stories_to_ideation(
     from okto_pulse.core.models.schemas import StoryConversionRequest
 
     try:
-        story_id_list = coerce_to_list_str(story_ids)
-        mockup_id_list = coerce_to_list_str(mockup_ids) if mockup_ids else None
+        story_id_list = validate_string_list(story_ids)
+        mockup_id_list = validate_string_list(mockup_ids) if mockup_ids else None
     except ValueError as e:
         return json.dumps({"error": str(e)})
     if not story_id_list:
@@ -6852,7 +6837,7 @@ async def okto_pulse_create_ideation(
     problem_statement: str = "",
     proposed_approach: str = "",
     assignee_id: str = "",
-    labels: list[str] | str = "",
+    labels: list[str] | None = None,
 ) -> str:
     """
     Create a new ideation on the board. Ideations are the starting point — raw ideas that may be
@@ -6888,7 +6873,7 @@ async def okto_pulse_create_ideation(
         if proposed_approach
         else None,
         assignee_id=assignee_id or None,
-        labels=coerce_to_list_str(labels) or None,
+        labels=validate_string_list(labels) or None,
     )
     actor = MCPAdapterContract.actor(ctx, board_id=board_id)
     async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
@@ -7175,7 +7160,7 @@ async def okto_pulse_update_ideation(
     problem_statement: str = "",
     proposed_approach: str = "",
     assignee_id: str = "",
-    labels: list[str] | str = "",
+    labels: list[str] | None = None,
 ) -> str:
     """
     Update an ideation's fields. Content changes bump the version. Only non-empty fields are updated."""
@@ -7215,7 +7200,7 @@ async def okto_pulse_update_ideation(
         update_kwargs["assignee_id"] = assignee_id
     if labels:
         try:
-            update_kwargs["labels"] = coerce_to_list_str(labels)
+            update_kwargs["labels"] = validate_string_list(labels)
         except ValueError as e:
             return json.dumps({"error": f"Invalid labels: {e}"})
 
@@ -7509,8 +7494,8 @@ async def okto_pulse_evaluate_ideation(
 async def okto_pulse_derive_spec_from_ideation(
     board_id: str,
     ideation_id: str,
-    mockup_ids: str = "",
-    architecture_design_ids: list[str] | str = "",
+    mockup_ids: list[str] | None = None,
+    architecture_design_ids: list[str] | None = None,
     architecture_propagation_mode: str = "copy",
     delivery_context: str = "",
     knowledge_propagation: KnowledgePropagationEnvelopeInput = None,  # type: ignore[assignment]
@@ -7529,9 +7514,9 @@ async def okto_pulse_derive_spec_from_ideation(
     if perm_err:
         return _perm_error(perm_err)
 
-    _mockup_ids = parse_multi_value(mockup_ids) or None
+    _mockup_ids = validate_string_list(mockup_ids) or None
     try:
-        _architecture_ids = coerce_to_list_str(architecture_design_ids) or None
+        _architecture_ids = validate_string_list(architecture_design_ids) or None
     except ValueError as e:
         return json.dumps({"error": f"Invalid architecture_design_ids: {e}"})
     from okto_pulse.core.domain.code_traceability import DeliveryContext
@@ -7856,16 +7841,16 @@ async def okto_pulse_ask_ideation_choice_question(
     board_id: str,
     ideation_id: str,
     question: str,
-    options: list[str] | str = "",
+    options: list[ChoiceOptionInput],
     question_type: str = "choice",
     allow_free_text: BoolInput = False,
-    options_json: list[ChoiceOptionInput] | str = "",
 ) -> str:
     """
         Ask a choice question (poll/form) on an ideation's Q&A board.
-
-    options_json (optional, takes precedence): JSON array of option objects, e.g. '[{"label":"A","recommended":true,"tradeoff":"costs more"}]'. When present and non-empty, options is ignored. Each object requires a non-empty label; recommended defaults to false; tradeoff defaults to null.
-    Multi-value params (options/selected): pass a JSON array (preferred — safe for labels containing commas) or a pipe-separated string. Full format rules: okto-pulse://reference/multivalue."""
+    options: Required native array of objects with a non-empty label, optional
+    recommended boolean (default false), and tradeoff string/null (default null).
+    Format: okto-pulse://reference/multivalue.
+"""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -7880,31 +7865,19 @@ async def okto_pulse_ask_ideation_choice_question(
     from okto_pulse.core.models.schemas import IdeationQAChoiceOption, IdeationQACreate
 
     try:
-        parsed_objects = parse_options_json(options_json or None)
+        parsed_objects = validate_choice_options(options)
     except ValueError as e:
-        return json.dumps({"error": f"Invalid options_json: {e}"})
+        return json.dumps({"error": f"Invalid options: {e}"})
 
-    if parsed_objects is not None:
-        choice_list = [
-            IdeationQAChoiceOption(
-                id=f"opt_{i}",
-                label=obj["label"],
-                recommended=obj["recommended"],
-                tradeoff=obj["tradeoff"],
-            )
-            for i, obj in enumerate(parsed_objects)
-        ]
-    else:
-        try:
-            option_labels = coerce_to_list_str(options)
-        except ValueError as e:
-            return json.dumps({"error": "invalid_multi_value_input", "detail": str(e)})
-        if not option_labels:
-            return json.dumps({"error": "At least one option is required"})
-        choice_list = [
-            IdeationQAChoiceOption(id=f"opt_{i}", label=label)
-            for i, label in enumerate(option_labels)
-        ]
+    choice_list = [
+        IdeationQAChoiceOption(
+            id=f"opt_{i}",
+            label=obj["label"],
+            recommended=obj["recommended"],
+            tradeoff=obj["tradeoff"],
+        )
+        for i, obj in enumerate(parsed_objects)
+    ]
 
     data = IdeationQACreate(
         question=question,
@@ -7923,7 +7896,7 @@ async def okto_pulse_ask_ideation_choice_question(
 
     # MCP-FU6 strangler (ideation Q&A ask, ATOMIC activity-log): create + the
     # ideation_choice_question_added log + commit run atomically in the use case; the
-    # adapter parses options_json / coerces options into the IdeationQACreate.
+    # adapter validates native options into the IdeationQACreate.
     actor = MCPAdapterContract.actor(ctx, board_id=board_id)
     async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
         try:
@@ -7958,13 +7931,13 @@ async def okto_pulse_answer_ideation_question(
     ideation_id: str,
     qa_id: str,
     answer: str = "",
-    selected: list[str] | str = "",
+    selected: list[str] | None = None,
 ) -> str:
     """
         Answer a question on an ideation's Q&A board.
         For text questions, provide answer. For choice questions, provide selected option IDs.
 
-    Multi-value params (options/selected): pass a JSON array (preferred — safe for labels containing commas) or a pipe-separated string. Full format rules: okto-pulse://reference/multivalue."""
+    selected: Native array of option IDs. Strings are not accepted. Full format rules: okto-pulse://reference/multivalue."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -7979,7 +7952,7 @@ async def okto_pulse_answer_ideation_question(
     from okto_pulse.core.models.schemas import IdeationQAAnswer
 
     try:
-        selected_list = coerce_to_list_str(selected) if selected else None
+        selected_list = validate_string_list(selected) if selected else None
     except ValueError as e:
         return json.dumps({"error": "invalid_multi_value_input", "detail": str(e)})
 
@@ -8052,15 +8025,15 @@ async def okto_pulse_create_refinement(
     ideation_id: str,
     title: str,
     description: str = "",
-    in_scope: list[str] | str = "",
-    out_of_scope: list[str] | str = "",
+    in_scope: list[str] | None = None,
+    out_of_scope: list[str] | None = None,
     analysis: str = "",
-    decisions: list[str] | str = "",
+    decisions: list[str] | None = None,
     assignee_id: str = "",
-    labels: list[str] | str = "",
-    mockup_ids: str = "",
-    kb_ids: str = "",
-    architecture_design_ids: list[str] | str = "",
+    labels: list[str] | None = None,
+    mockup_ids: list[str] | None = None,
+    kb_ids: list[str] | None = None,
+    architecture_design_ids: list[str] | None = None,
     architecture_propagation_mode: str = "copy",
     delivery_context: str = "",
 ) -> str:
@@ -8098,11 +8071,11 @@ async def okto_pulse_create_refinement(
         )
 
     try:
-        in_scope_list = coerce_to_list_str(in_scope) or None
-        out_of_scope_list = coerce_to_list_str(out_of_scope) or None
-        decisions_list = coerce_to_list_str(decisions) or None
-        label_list = coerce_to_list_str(labels) or None
-        architecture_ids = coerce_to_list_str(architecture_design_ids) or None
+        in_scope_list = validate_string_list(in_scope) or None
+        out_of_scope_list = validate_string_list(out_of_scope) or None
+        decisions_list = validate_string_list(decisions) or None
+        label_list = validate_string_list(labels) or None
+        architecture_ids = validate_string_list(architecture_design_ids) or None
     except ValueError as e:
         return json.dumps({"error": "invalid_multi_value_input", "detail": str(e)})
 
@@ -8117,8 +8090,8 @@ async def okto_pulse_create_refinement(
         delivery_context=resolved_delivery_context,
         assignee_id=assignee_id or None,
         labels=label_list,
-        mockup_ids=parse_multi_value(mockup_ids) or None,
-        kb_ids=parse_multi_value(kb_ids) or None,
+        mockup_ids=validate_string_list(mockup_ids) or None,
+        kb_ids=validate_string_list(kb_ids) or None,
         architecture_design_ids=architecture_ids,
         architecture_propagation_mode=architecture_propagation_mode,
     )
@@ -8425,13 +8398,13 @@ async def okto_pulse_update_refinement(
     refinement_id: str,
     title: str = "",
     description: str = "",
-    in_scope: list[str] | str = "",
-    out_of_scope: list[str] | str = "",
+    in_scope: list[str] | None = None,
+    out_of_scope: list[str] | None = None,
     analysis: str = "",
-    decisions: list[str] | str = "",
+    decisions: list[str] | None = None,
     delivery_context: str = "",
     assignee_id: str = "",
-    labels: list[str] | str = "",
+    labels: list[str] | None = None,
 ) -> str:
     """
     Update a refinement's fields. Content changes bump the version. Only non-empty fields are updated."""
@@ -8475,19 +8448,19 @@ async def okto_pulse_update_refinement(
         update_kwargs["description"] = description.replace("\\n", "\n")
     if in_scope:
         try:
-            update_kwargs["in_scope"] = coerce_to_list_str(in_scope)
+            update_kwargs["in_scope"] = validate_string_list(in_scope)
         except ValueError as e:
             return json.dumps({"error": "invalid_multi_value_input", "detail": str(e)})
     if out_of_scope:
         try:
-            update_kwargs["out_of_scope"] = coerce_to_list_str(out_of_scope)
+            update_kwargs["out_of_scope"] = validate_string_list(out_of_scope)
         except ValueError as e:
             return json.dumps({"error": "invalid_multi_value_input", "detail": str(e)})
     if analysis:
         update_kwargs["analysis"] = analysis.replace("\\n", "\n")
     if decisions:
         try:
-            update_kwargs["decisions"] = coerce_to_list_str(decisions)
+            update_kwargs["decisions"] = validate_string_list(decisions)
         except ValueError as e:
             return json.dumps({"error": "invalid_multi_value_input", "detail": str(e)})
     if delivery_context:
@@ -8510,7 +8483,7 @@ async def okto_pulse_update_refinement(
         update_kwargs["assignee_id"] = assignee_id
     if labels:
         try:
-            update_kwargs["labels"] = coerce_to_list_str(labels)
+            update_kwargs["labels"] = validate_string_list(labels)
         except ValueError as e:
             return json.dumps({"error": "invalid_multi_value_input", "detail": str(e)})
 
@@ -8694,8 +8667,8 @@ async def okto_pulse_delete_refinement(board_id: str, refinement_id: str) -> str
 async def okto_pulse_derive_spec_from_refinement(
     board_id: str,
     refinement_id: str,
-    mockup_ids: str = "",
-    architecture_design_ids: list[str] | str = "",
+    mockup_ids: list[str] | None = None,
+    architecture_design_ids: list[str] | None = None,
     architecture_propagation_mode: str = "copy",
     knowledge_propagation: KnowledgePropagationEnvelopeInput = None,  # type: ignore[assignment]
 ) -> str:
@@ -8726,9 +8699,9 @@ async def okto_pulse_derive_spec_from_refinement(
             )
     except (TypeError, ValueError) as error:
         return _knowledge_propagation_request_error(error)
-    mockup_ids_v2 = parse_multi_value(mockup_ids) or None
+    mockup_ids_v2 = validate_string_list(mockup_ids) or None
     try:
-        architecture_ids_v2 = coerce_to_list_str(architecture_design_ids) or None
+        architecture_ids_v2 = validate_string_list(architecture_design_ids) or None
     except ValueError as error:
         return json.dumps({"error": f"Invalid architecture_design_ids: {error}"})
     return await _mcp_derive_spec_with_knowledge(
@@ -9949,8 +9922,8 @@ async def okto_pulse_append_research_decision(
     ],
     anchor_ref: str,
     status: Literal["open", "investigating", "resolved", "deferred"] = "open",
-    evidence_refs: list[str] | str = "",
-    alternatives: list[str] | str = "",
+    evidence_refs: list[str] | None = None,
+    alternatives: list[str] | None = None,
     decision: str = "",
     rationale: str = "",
     confidence: float | None = None,
@@ -10005,8 +9978,8 @@ async def okto_pulse_append_research_decision(
 
     actor = MCPAdapterContract.actor(ctx, board_id=board_id)
     try:
-        parsed_evidence_refs = coerce_to_list_str(evidence_refs)
-        parsed_alternatives = coerce_to_list_str(alternatives)
+        parsed_evidence_refs = validate_string_list(evidence_refs)
+        parsed_alternatives = validate_string_list(alternatives)
         operation_is_supersede = bool(ledger_id.strip() or supersedes_entry_id.strip())
         if operation_is_supersede and not (
             ledger_id.strip() and supersedes_entry_id.strip()
@@ -10168,16 +10141,16 @@ async def okto_pulse_ask_refinement_choice_question(
     board_id: str,
     refinement_id: str,
     question: str,
-    options: list[str] | str = "",
+    options: list[ChoiceOptionInput],
     question_type: str = "choice",
     allow_free_text: BoolInput = False,
-    options_json: list[ChoiceOptionInput] | str = "",
 ) -> str:
     """
         Ask a choice question (poll/form) on a refinement's Q&A board.
-
-    options_json (optional, takes precedence): JSON array of option objects, e.g. '[{"label":"A","recommended":true,"tradeoff":"costs more"}]'. When present and non-empty, options is ignored. Each object requires a non-empty label; recommended defaults to false; tradeoff defaults to null.
-    Multi-value params (options/selected): pass a JSON array (preferred — safe for labels containing commas) or a pipe-separated string. Full format rules: okto-pulse://reference/multivalue."""
+    options: Required native array of objects with a non-empty label, optional
+    recommended boolean (default false), and tradeoff string/null (default null).
+    Format: okto-pulse://reference/multivalue.
+"""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -10195,31 +10168,19 @@ async def okto_pulse_ask_refinement_choice_question(
     )
 
     try:
-        parsed_objects = parse_options_json(options_json or None)
+        parsed_objects = validate_choice_options(options)
     except ValueError as e:
-        return json.dumps({"error": f"Invalid options_json: {e}"})
+        return json.dumps({"error": f"Invalid options: {e}"})
 
-    if parsed_objects is not None:
-        choice_list = [
-            RefinementQAChoiceOption(
-                id=f"opt_{i}",
-                label=obj["label"],
-                recommended=obj["recommended"],
-                tradeoff=obj["tradeoff"],
-            )
-            for i, obj in enumerate(parsed_objects)
-        ]
-    else:
-        try:
-            option_labels = coerce_to_list_str(options)
-        except ValueError as e:
-            return json.dumps({"error": "invalid_multi_value_input", "detail": str(e)})
-        if not option_labels:
-            return json.dumps({"error": "At least one option is required"})
-        choice_list = [
-            RefinementQAChoiceOption(id=f"opt_{i}", label=label)
-            for i, label in enumerate(option_labels)
-        ]
+    choice_list = [
+        RefinementQAChoiceOption(
+            id=f"opt_{i}",
+            label=obj["label"],
+            recommended=obj["recommended"],
+            tradeoff=obj["tradeoff"],
+        )
+        for i, obj in enumerate(parsed_objects)
+    ]
 
     data = RefinementQACreate(
         question=question,
@@ -10272,13 +10233,13 @@ async def okto_pulse_answer_refinement_question(
     refinement_id: str,
     qa_id: str,
     answer: str = "",
-    selected: list[str] | str = "",
+    selected: list[str] | None = None,
 ) -> str:
     """
         Answer a question on a refinement's Q&A board.
         For text questions, provide answer. For choice questions, provide selected option IDs.
 
-    Multi-value params (options/selected): pass a JSON array (preferred — safe for labels containing commas) or a pipe-separated string. Full format rules: okto-pulse://reference/multivalue."""
+    selected: Native array of option IDs. Strings are not accepted. Full format rules: okto-pulse://reference/multivalue."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -10293,7 +10254,7 @@ async def okto_pulse_answer_refinement_question(
     from okto_pulse.core.models.schemas import RefinementQAAnswer
 
     try:
-        selected_list = coerce_to_list_str(selected) if selected else None
+        selected_list = validate_string_list(selected) if selected else None
     except ValueError as e:
         return json.dumps({"error": "invalid_multi_value_input", "detail": str(e)})
 
@@ -10371,7 +10332,7 @@ async def okto_pulse_create_spec(
     acceptance_criteria: list[dict[str, Any]] | None = None,
     status: str = "draft",
     assignee_id: str = "",
-    labels: list[str] | str = "",
+    labels: list[str] | None = None,
     ideation_id: str = "",
     refinement_id: str = "",
     delivery_context: str = "",
@@ -10424,7 +10385,7 @@ async def okto_pulse_create_spec(
         )
 
     try:
-        label_list = coerce_to_list_str(labels) or None
+        label_list = validate_string_list(labels) or None
     except ValueError as e:
         return json.dumps({"error": "invalid_multi_value_input", "detail": str(e)})
 
@@ -10995,7 +10956,7 @@ async def okto_pulse_update_spec(
     delivery_context: str = "",
     delivery_context_override_reason: str = "",
     assignee_id: str = "",
-    labels: list[str] | str = "",
+    labels: list[str] | None = None,
 ) -> str:
     """
     Update a spec's fields. Content changes (description, context, requirements, criteria) bump the version.
@@ -11082,7 +11043,7 @@ async def okto_pulse_update_spec(
         update_kwargs["assignee_id"] = assignee_id
     if labels:
         try:
-            update_kwargs["labels"] = coerce_to_list_str(labels)
+            update_kwargs["labels"] = validate_string_list(labels)
         except ValueError as e:
             return json.dumps({"error": "invalid_multi_value_input", "detail": str(e)})
 
@@ -11260,7 +11221,7 @@ async def okto_pulse_add_test_scenario(
         ScenarioType,
         Field(description=SCENARIO_TYPE_DESCRIPTION),
     ] = DEFAULT_SCENARIO_TYPE,
-    linked_criteria: str = "",
+    linked_criteria: list[str] | None = None,
     notes: str = "",
     verification_method: VerificationMethod | None = None,
 ) -> str:
@@ -11308,7 +11269,7 @@ async def okto_pulse_add_test_scenario(
                     then.replace("\\n", "\n"),
                     scenario_type=scenario_type,
                     linked_criteria_tokens=(
-                        parse_multi_value(linked_criteria) if linked_criteria else None
+                        validate_string_list(linked_criteria) if linked_criteria else None
                     ),
                     notes=notes.replace("\\n", "\n") if notes else None,
                     verification_method=verification_method,
@@ -11755,9 +11716,9 @@ async def okto_pulse_update_test_scenario(
             )
         ),
     ] = None,  # type: ignore[assignment]  # omitted sentinel; explicit null is invalid
-    linked_criteria: str = "",
+    linked_criteria: list[str] | None = None,
     notes: str = "",
-    clear: str = "",
+    clear: list[str] | None = None,
     verification_method: VerificationMethod | None = None,
     expected_spec_version: Annotated[int, Field(strict=True, ge=1)] | None = None,
 ) -> str:
@@ -11771,8 +11732,8 @@ async def okto_pulse_update_test_scenario(
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
-    clear_fields = parse_multi_value(clear) if clear else None
-    lc = parse_multi_value(linked_criteria) if linked_criteria else None
+    clear_fields = validate_string_list(clear) if clear else None
+    lc = validate_string_list(linked_criteria) if linked_criteria else None
 
     from okto_pulse.core.application.use_cases import (
         McpUpdateTestScenarioCommand,
@@ -13301,7 +13262,7 @@ async def okto_pulse_copy_architecture_to_card(
     board_id: str,
     spec_id: str,
     card_id: str,
-    design_ids: list[str] | str = "",
+    design_ids: list[str] | None = None,
     architecture_warning_acknowledgement: dict | str = "",
     profile: Annotated[
         str,
@@ -13337,7 +13298,7 @@ async def okto_pulse_copy_architecture_to_card(
         return json.dumps(unsupported_copy_profile_error(profile))
 
     try:
-        ids = coerce_to_list_str(design_ids) if design_ids else None
+        ids = validate_string_list(design_ids) if design_ids else None
     except ValueError as exc:
         return json.dumps({"error": f"Invalid design_ids: {exc}"})
     acknowledgement, err = _parse_json_arg(architecture_warning_acknowledgement, None)
@@ -13401,7 +13362,7 @@ async def okto_pulse_copy_architecture_to_card(
 
 @mcp.tool()
 async def okto_pulse_copy_mockups_to_card(
-    board_id: str, spec_id: str, card_id: str, screen_ids: list[str] | str = ""
+    board_id: str, spec_id: str, card_id: str, screen_ids: list[str] | None = None
 ) -> str:
     """
     Copy screen mockups from a spec to a card. Use this when creating implementation
@@ -13415,7 +13376,7 @@ async def okto_pulse_copy_mockups_to_card(
         return _auth_error()
 
     try:
-        id_filter = coerce_to_list_str(screen_ids) if screen_ids else None
+        id_filter = validate_string_list(screen_ids) if screen_ids else None
     except ValueError as e:
         return json.dumps({"error": f"Invalid screen_ids: {e}"})
 
@@ -14139,7 +14100,7 @@ async def okto_pulse_add_business_rule(
     rule: str,
     when: str,
     then: str,
-    linked_requirements: str = "",
+    linked_requirements: list[str] | None = None,
     notes: str = "",
 ) -> str:
     """
@@ -14182,7 +14143,7 @@ async def okto_pulse_add_business_rule(
                     when.replace("\\n", "\n"),
                     then.replace("\\n", "\n"),
                     notes.replace("\\n", "\n") if notes else None,
-                    parse_multi_value(linked_requirements)
+                    validate_string_list(linked_requirements)
                     if linked_requirements
                     else None,
                 ),
@@ -14294,8 +14255,8 @@ async def okto_pulse_add_integration_requirement(
     endpoint: str = "",
     method: str = "",
     data_contract_json: dict | str = "",
-    linked_requirements: str = "",
-    linked_api_contracts: list[str] | str = "",
+    linked_requirements: list[str] | None = None,
+    linked_api_contracts: list[str] | None = None,
     notes: str = "",
 ) -> str:
     """
@@ -14342,7 +14303,7 @@ async def okto_pulse_add_integration_requirement(
     linked_api_contracts_list = None
     if linked_api_contracts:
         try:
-            linked_api_contracts_list = coerce_to_list_str(linked_api_contracts) or None
+            linked_api_contracts_list = validate_string_list(linked_api_contracts) or None
         except ValueError as e:
             return json.dumps({"error": "invalid_multi_value_input", "detail": str(e)})
 
@@ -14375,7 +14336,7 @@ async def okto_pulse_add_integration_requirement(
                     method=method,
                     data_contract=data_contract,
                     linked_requirement_tokens=(
-                        parse_multi_value(linked_requirements)
+                        validate_string_list(linked_requirements)
                         if linked_requirements
                         else None
                     ),
@@ -14545,8 +14506,8 @@ async def okto_pulse_add_observability_requirement(
     threshold: str = "",
     severity: str = "",
     owner: str = "",
-    linked_requirements: str = "",
-    linked_integration_requirements: list[str] | str = "",
+    linked_requirements: list[str] | None = None,
+    linked_integration_requirements: list[str] | None = None,
     notes: str = "",
 ) -> str:
     """
@@ -14575,7 +14536,7 @@ async def okto_pulse_add_observability_requirement(
     if linked_integration_requirements:
         try:
             linked_irs_list = (
-                coerce_to_list_str(linked_integration_requirements) or None
+                validate_string_list(linked_integration_requirements) or None
             )
         except ValueError as e:
             return json.dumps({"error": "invalid_multi_value_input", "detail": str(e)})
@@ -14608,7 +14569,7 @@ async def okto_pulse_add_observability_requirement(
                     severity=severity,
                     owner=owner,
                     linked_requirement_tokens=(
-                        parse_multi_value(linked_requirements)
+                        validate_string_list(linked_requirements)
                         if linked_requirements
                         else None
                     ),
@@ -14728,9 +14689,9 @@ async def okto_pulse_add_decision(
     title: str,
     rationale: str,
     context: str = "",
-    alternatives_considered: list[str] | str = "",
+    alternatives_considered: list[str] | None = None,
     supersedes_decision_id: str = "",
-    linked_requirements: list[str] | str = "",
+    linked_requirements: list[str] | None = None,
     notes: str = "",
 ) -> str:
     """Add a formalized Decision to a spec.
@@ -14763,14 +14724,14 @@ async def okto_pulse_add_decision(
     alts = None
     if alternatives_considered:
         try:
-            alts = coerce_to_list_str(alternatives_considered) or None
+            alts = validate_string_list(alternatives_considered) or None
         except ValueError as e:
             return json.dumps({"error": "invalid_multi_value_input", "detail": str(e)})
 
     linked_requirement_tokens = None
     if linked_requirements:
         try:
-            linked_requirement_tokens = coerce_to_list_str(linked_requirements) or None
+            linked_requirement_tokens = validate_string_list(linked_requirements) or None
         except ValueError as e:
             return json.dumps({"error": "invalid_multi_value_input", "detail": str(e)})
 
@@ -15045,8 +15006,8 @@ async def okto_pulse_add_api_contract(
     request_body_json: dict | str = "",
     response_success_json: dict | str = "",
     response_errors_json: list[dict] | str = "",
-    linked_requirements: str = "",
-    linked_rules: list[str] | str = "",
+    linked_requirements: list[str] | None = None,
+    linked_rules: list[str] | None = None,
     notes: str = "",
     contract_type: Literal["http", "in_process", "grpc", "event"] = "http",
 ) -> str:
@@ -15114,7 +15075,7 @@ async def okto_pulse_add_api_contract(
     linked_rule_tokens = None
     if linked_rules:
         try:
-            linked_rule_tokens = coerce_to_list_str(linked_rules)
+            linked_rule_tokens = validate_string_list(linked_rules)
         except ValueError as e:
             return json.dumps({"error": "invalid_multi_value_input", "detail": str(e)})
 
@@ -15133,7 +15094,7 @@ async def okto_pulse_add_api_contract(
                     response_success=response_success,
                     response_errors=response_errors,
                     linked_requirement_tokens=(
-                        parse_multi_value(linked_requirements)
+                        validate_string_list(linked_requirements)
                         if linked_requirements
                         else None
                     ),
@@ -15938,7 +15899,7 @@ async def okto_pulse_create_guideline(
     board_id: str,
     title: str,
     content: str,
-    tags: list[str] | str = "",
+    tags: list[str] | None = None,
     scope: str = "global",
 ) -> str:
     """
@@ -15958,7 +15919,7 @@ async def okto_pulse_create_guideline(
     assert actor is not None
 
     try:
-        tag_list = coerce_to_list_str(tags) or None
+        tag_list = validate_string_list(tags) or None
     except ValueError as e:
         return json.dumps({"error": "invalid_multi_value_input", "detail": str(e)})
 
@@ -16473,20 +16434,17 @@ async def okto_pulse_ask_spec_choice_question(
     board_id: str,
     spec_id: str,
     question: str,
-    options: list[str] | str = "",
+    options: list[ChoiceOptionInput],
     question_type: str = "choice",
     allow_free_text: BoolInput = False,
-    options_json: list[ChoiceOptionInput] | str = "",
 ) -> str:
     """Ask a choice question (poll/form) on a spec's Q&A board — the respondent
     picks from predefined options. Use for structured answers, e.g. "Which
-    auth approach?". options_json (optional, takes precedence over options):
-    JSON array of option objects, each requiring a non-empty label;
-    recommended defaults to false, tradeoff to null. Multi-value params
-    (options/selected): JSON array (preferred — safe for labels containing
-    commas) or pipe-separated string. Format rules:
-    okto-pulse://reference/multivalue.
-    """
+    auth approach?".
+    options: Required native array of objects with a non-empty label, optional
+    recommended boolean (default false), and tradeoff string/null (default null).
+    Format: okto-pulse://reference/multivalue.
+"""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -16506,31 +16464,19 @@ async def okto_pulse_ask_spec_choice_question(
     from okto_pulse.core.models.schemas import SpecQAChoiceOption, SpecQACreate
 
     try:
-        parsed_objects = parse_options_json(options_json or None)
+        parsed_objects = validate_choice_options(options)
     except ValueError as e:
-        return json.dumps({"error": f"Invalid options_json: {e}"})
+        return json.dumps({"error": f"Invalid options: {e}"})
 
-    if parsed_objects is not None:
-        choice_list = [
-            SpecQAChoiceOption(
-                id=f"opt_{i}",
-                label=obj["label"],
-                recommended=obj["recommended"],
-                tradeoff=obj["tradeoff"],
-            )
-            for i, obj in enumerate(parsed_objects)
-        ]
-    else:
-        try:
-            option_labels = coerce_to_list_str(options)
-        except ValueError as e:
-            return json.dumps({"error": "invalid_multi_value_input", "detail": str(e)})
-        if not option_labels:
-            return json.dumps({"error": "At least one option is required"})
-        choice_list = [
-            SpecQAChoiceOption(id=f"opt_{i}", label=label)
-            for i, label in enumerate(option_labels)
-        ]
+    choice_list = [
+        SpecQAChoiceOption(
+            id=f"opt_{i}",
+            label=obj["label"],
+            recommended=obj["recommended"],
+            tradeoff=obj["tradeoff"],
+        )
+        for i, obj in enumerate(parsed_objects)
+    ]
 
     actor = MCPAdapterContract.actor(ctx, board_id=board_id)
     async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
@@ -16590,13 +16536,13 @@ async def okto_pulse_answer_spec_question(
     spec_id: str,
     qa_id: str,
     answer: str = "",
-    selected: list[str] | str = "",
+    selected: list[str] | None = None,
 ) -> str:
     """
         Answer a question on a spec's Q&A board.
         For text questions, provide answer. For choice questions, provide selected option IDs.
 
-    Multi-value params (options/selected): pass a JSON array (preferred — safe for labels containing commas) or a pipe-separated string. Full format rules: okto-pulse://reference/multivalue."""
+    selected: Native array of option IDs. Strings are not accepted. Full format rules: okto-pulse://reference/multivalue."""
     ctx = await _get_agent_ctx(board_id)
     if not ctx:
         return _auth_error()
@@ -16620,7 +16566,7 @@ async def okto_pulse_answer_spec_question(
     )
 
     try:
-        selected_list = coerce_to_list_str(selected) if selected else None
+        selected_list = validate_string_list(selected) if selected else None
     except ValueError as e:
         return json.dumps({"error": "invalid_multi_value_input", "detail": str(e)})
 

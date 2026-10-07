@@ -2,6 +2,51 @@
 
 ## Estado para retomada
 
+### 2026-10-06 — C3 em andamento: listas MCP nativas, sem conversores
+Bases Core f9b2c7dd / Community 6c1c6422 limpas/publicadas.
+Retirados parse_multi_value, coerce_to_list_str, parse_options_json, strict_mode
+e formatos string/pipe/JSON codificado dos seus consumidores. Uma validacao de
+lista nativa preserva limpeza de whitespace, ordem, duplicatas e pontuacao.
+Assinaturas distinguem lista obrigatoria e omissao/null; update_story conserva
+a diferenca entre omitir labels e enviar lista vazia, sem mudar os demais clears.
+Quatro tools de escolha usam somente options: lista obrigatoria de objetos
+label/recommended/tradeoff. Boolean/string tipados estritamente, campos extras
+recusados; mantidos IDs opt_N de novas opcoes, defaults atuais e permissao.
+Nenhuma regra de selecao, autoridade ou persistencia foi alterada.
+
+Resources autorados corrigidos; SK-A e catalogo regenerados oficialmente.
+Suites mistas preservam cardinalidade, membership, erro tipado e persistencia real
+dos metadados. Decoder antigo substituido por recusa/nativo; disposicoes no JSON.
+Requisitos de fixtures usam id/text atuais. Guards de resources adaptados para
+aliases ja retirados; ratchet de tools 301->282, sem elevar tetos de tokens.
+Host mantem estreitamento/schema, ratchet 45->44 pela retirada de historical
+context (Core 204be338). Nao houve nova retirada de tools neste incremento.
+
+Par final dist-native-mcp-lists3 instalado; provenance-native-mcp-lists3 comprova
+bytes src/install/wheels (843 Python/905 payload Core; 319/405 Community).
+Core1: 33 aprovados. Core2: 15 aprovados/8 falhas de expectativas antigas e
+fixture sem id/text. Core3: 203 aprovados/3 falhas de guards anteriores de
+aliases/contagem; Core4: 153 aprovados/1 referencia antiga de erro em docs.
+Core5 final: 210 aprovados. Tetos de footprint mantidos e aprovados.
+Community1: 24 aprovados/5 falhas (4 por construtor keyword-only do novo teste,
+1 contagem antiga); Community2: 29 aprovados. Community3: 4 casos de transporte
+ampliados aprovados, incluindo options_json junto de options valido recusado
+antes do handler. Sem alteracao de produto entre essas campanhas.
+Closure2 apontou somente matrizes README; regeneradas oficialmente.
+Closure-native-mcp-lists3 aprovada: findings/documentation_findings vazios,
+oito budgets current=limit=0. Ruff F/E9 e diff aprovados. Handles encerrados.
+Frontend sem alteracoes: formato persistido/lido das escolhas permanece igual.
+
+C1-C4 continuam abertos; T23/KG-10 aguardam decisao especifica. Proxima cadeia
+confirmada do mesmo C3: request_body_json/response_success_json/data_contract_json/
+payload_json/response_errors_json ainda aceitam objetos/arrays OU strings JSON.
+Mapear todos os consumidores dessa familia antes de retirar decoders e corrigir
+schemas, resources e testes; nao generalizar a gramatica de textos livres.
+rel_types no resource KG ainda anuncia delimitadores; investigar contrato real.
+Bump coordenado 0.4.0 e auditoria integral C4 continuam pendentes.
+Nao declarar entrega total a partir desta campanha parcial.
+
+
 ### 2026-10-06 — C3 em andamento: CardUpdate sem campo status
 Publicado: Core 7045bfa0 / Community 6c1c6422, pushes confirmados.
 Bases Core ee5701ea / Community 75036322 limpas/publicadas.

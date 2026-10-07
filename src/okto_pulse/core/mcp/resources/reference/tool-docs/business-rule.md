@@ -18,8 +18,8 @@ Args:
     rule: The business rule statement
     when: Condition that triggers the rule
     then: Expected behavior / outcome
-    linked_requirements: Pipe-separated functional requirement refs. Accepted forms:
-        0-based indices ("0|2|5"), canonical fr_... ids, or exact FR text.
+    linked_requirements: Native string array of functional requirement refs. Accepted forms:
+        0-based indices (["0", "2", "5"]), canonical fr_... ids, or exact FR text.
         Human labels such as "FR-1" are not accepted because they are display
         labels, not stable identifiers.
     notes: Additional notes (optional)

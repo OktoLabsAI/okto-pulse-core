@@ -33,13 +33,10 @@ Args:
     board_id: Board ID
     refinement_id: Refinement ID
     question: The question text
-    options: Option labels — multi-value; formats:
-        okto-pulse://reference/multivalue.
-    options_json: Preferred structured options. Pass a native array such as
-        [{"label":"Safer path","recommended":true,"tradeoff":"More setup"}].
-        A JSON-array string is accepted for compatibility. Each item requires
-        label; recommended defaults to false and tradeoff to null. A non-empty
-        options_json takes precedence over options.
+    options: Required native array of objects, e.g.
+        [{"label":"A","recommended":true,"tradeoff":"Costs more"}].
+        label is a non-empty string; recommended defaults to false;
+        tradeoff defaults to null. Strings and unknown fields are rejected.
     question_type: "choice" for single-select (default) or "multi_choice" for multi-select
     allow_free_text: "true" to also allow a free-text response alongside selections
 
@@ -71,14 +68,14 @@ Args:
     ideation_id: Ideation ID (must be in 'done' status)
     title: Refinement title
     description: Description of this refinement aspect (optional; parent ideation context is appended)
-    in_scope: Pipe-separated list of what IS in scope (e.g. "Auth flow|Token refresh|Session management")
-    out_of_scope: Pipe-separated list of what is NOT in scope (e.g. "UI changes|Email notifications")
+    in_scope: Native string array of what IS in scope
+    out_of_scope: Native string array of what is NOT in scope
     analysis: Detailed analysis text (optional)
-    decisions: Pipe-separated list of decisions made (e.g. "Use REST API|Cache with Redis") (optional)
+    decisions: Native string array of decisions made (optional)
     assignee_id: User/agent ID to assign (optional)
     labels: Multi-value labels — formats: okto-pulse://reference/multivalue. (optional)
-    mockup_ids: Pipe-separated mockup IDs to propagate from ideation (optional, empty = all)
-    kb_ids: Pipe-separated KB IDs to propagate from ideation (optional, empty = all)
+    mockup_ids: Native string array of mockup IDs to propagate from ideation (optional, empty = all)
+    kb_ids: Native string array of KB IDs to propagate from ideation (optional, empty = all)
     architecture_design_ids: Multi-value Architecture Design IDs to propagate (optional, empty = all)
     architecture_propagation_mode: one of copy, derive, reference_only, none.
         "snapshot" is not accepted; copy/derive are the snapshot-copy modes,
@@ -251,10 +248,10 @@ Args:
     refinement_id: Refinement ID
     title: New title (optional, empty = no change)
     description: New description (optional, empty = no change)
-    in_scope: Pipe-separated list of in-scope items (optional, empty = no change)
-    out_of_scope: Pipe-separated list of out-of-scope items (optional, empty = no change)
+    in_scope: Native string array of in-scope items (optional, empty = no change)
+    out_of_scope: Native string array of out-of-scope items (optional, empty = no change)
     analysis: New analysis (optional, empty = no change)
-    decisions: Pipe-separated list of decisions (optional, empty = no change)
+    decisions: Native string array of decisions (optional, empty = no change)
     assignee_id: New assignee (optional, empty = no change)
     labels: Multi-value labels — formats: okto-pulse://reference/multivalue. (optional, empty = no change)
 

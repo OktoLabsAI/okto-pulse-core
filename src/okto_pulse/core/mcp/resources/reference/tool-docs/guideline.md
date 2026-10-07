@@ -20,7 +20,7 @@ Args:
     board_id: Board ID (used for authentication; also used as guideline board_id if scope is "inline")
     title: Guideline title
     content: Guideline content (Markdown supported)
-    tags: Pipe-separated tags (e.g. "coding|architecture") — empty = no tags
+    tags: Native string array of tags — empty = no tags
     scope: "global" (catalog) or "inline" (board-specific)
 
 Returns:

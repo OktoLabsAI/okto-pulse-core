@@ -23,9 +23,9 @@ Args:
     title: Decision title (e.g. "Use an embedded graph database over Neo4j")
     rationale: Why this choice was made
     context: When/where this applies (optional)
-    alternatives_considered: Pipe-separated list of alternatives (e.g. "Neo4j|DuckDB")
+    alternatives_considered: Native string array of alternatives
     supersedes_decision_id: id of another Decision this one replaces; it auto-moves to status=superseded
-    linked_requirements: Pipe-separated requirement refs. Accepted forms:
+    linked_requirements: Native string array of requirement refs. Accepted forms:
         FR index/fr_id/text and structured TR id/text. Persisted values are
         canonical ids when the write path resolves them.
     notes: Additional notes
