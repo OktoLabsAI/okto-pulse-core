@@ -2,6 +2,22 @@
 
 ## Estado para retomada
 
+### 2026-10-07 — Community15 em execução
+Community834ff385 e Core0687efa6 publicados com pushes0.
+clean-break-full-run15-community handle29514 ATIVO no main:
+423 módulos completos excluídos, par dist-native-main20 provado,
+OKTO_E2E_GRAFX_REPO explícito, instalado E2E separado e não qualificado.
+Não editar produto/testes nem reinstalar main antes do terminal.
+Não há outra campanha ativa. Isolado Corebe24b0cd/Community238647c0,
+par saas19; diferenças posteriores são docs/testes e recurso operacional KG
+Community, portanto precisa sincronizar/reprovar payloads antes de testar esse
+recurso no isolado. Core1053 módulos reconciliados cumulativamente, T03 qualificado.
+Pendências: terminal/followups Community15; E2E instalado (observer480s menor que
+budget600s reproduzido; patch ainda NÃO feito); C4/T23/KG-10.
+Revisão somente leitura iniciada de T02: task_reviewer_separation testa conflito
+creator/assignee/executor, recusa enforce antes de escrever e remediation MCP;
+T02 ainda NÃO promovido, falta concluir mapeamento da obrigação inteira.
+
 ### 2026-10-07 — Community14 concluído; main sincronizado
 community14-native-final2 handle65213 terminou0:75pass/1267.35s:
 Learning47, MCP overlay10, projection parity18. Fixtures nativas declaram
