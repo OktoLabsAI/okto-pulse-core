@@ -2,6 +2,37 @@
 
 ## Estado para retomada
 
+### 2026-10-07 — C1 resíduo de autoria retirado; C4 BASE:T02 qualificado
+Inspeção T02 encontrou aliases históricos no reviewer_separation: actor_id,
+author_agent_id,author,created_by. Writer atual main.py só emite author_id.
+Retiradas leituras alternativas; conclusão sem autoria nativa ou com alias
+é recusada com reviewer_separation_conclusion_invalid, sem inventar independência,
+converter ou sobrescrever histórico. Policy off/warn/enforce não admite registro
+incompatível. Conflitos nativos creator/assignee/executor e política permanecem.
+Isto fecha o resíduo C1 dentro da retirada autorizada, não altera T23/KG-10.
+
+Isolado sincronizado Coreeadbeee0/Community834ff385 antes da alteração.
+Par dist-native-reviewer22 build/install0, prova83609 terminou0:
+843/905 Core+316/402 Community byte-idênticos. CoreSHA
+d33c2e86864f620234fcb3d33c46722b0e179235a503fded07925b01fb99766f,
+Community3fc3c5dee8d9b9d89aad926e4c9b0c6499152f429e9e2591e22dcc277c4a3c6b.
+native-reviewer22-contracts1 terminou4 de pytest/runner1, nenhum teste executado:
+seleção continha arquivo retirado test_task_review_currentness; corrigida seleção.
+contracts2 handle34833 terminou0:173pass/25.26s em cinco módulos completos.
+Inclui approve/reject bloqueados por executor sem conflito creator/assignee,
+32 casos novos de contrato inválido e ausência de escrita após commit do chamador.
+Closure64764 terminou0:ok=true,findings/documentation_findings=[],oitoZERO.
+Ruff F/E9/diff-check0. T02 promovido com limites no recibo
+clean-break-acceptance-native-reviewer.json. Nenhuma alteração frontend.
+
+Community15 handle29514 terminou1:241pass/20fail/191.09s, seis módulos falhos.
+Main WIP corrige fixtures de Q&A/attachments com adoção, realm de queue,
+app de composição em storage temporário e factory de retry na fixture REST403.
+community15-native-fixtures1 handle64436 ATIVO no main (já há falhas, aguardar
+terminal). Não integrar novo Core/reinstalar main enquanto roda.
+Isolado sem campanha ativa; pronto para publicar. Após terminal main, integrar
+Core e reconstruir/provar par antes do próximo comportamento. E2E/C4 continuam.
+
 ### 2026-10-07 — Community15 em execução
 Community834ff385 e Core0687efa6 publicados com pushes0.
 clean-break-full-run15-community handle29514 ATIVO no main:

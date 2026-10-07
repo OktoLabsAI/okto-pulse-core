@@ -49,9 +49,9 @@ def evaluate_reviewer_separation(
 ) -> ReviewerSeparationDecision:
     """Evaluate a reviewer against card authorship and execution facts.
 
-    Card executor facts come from append-only conclusion entries;
-    both the canonical ``author_id`` and historical ``actor_id`` forms are
-    understood.
+    Card executor facts come from native append-only conclusion entries.
+    An incompatible record is refused; missing authors must not imply that
+    the reviewer is independent.
     """
     mode, source = resolve_reviewer_separation_mode(board)
     conflicts: list[str] = []
@@ -60,15 +60,20 @@ def evaluate_reviewer_separation(
             conflicts.append(f"card_assignee:{getattr(card, 'id', '')}")
         if reviewer_id == str(getattr(card, "created_by", "") or ""):
             conflicts.append(f"card_creator:{getattr(card, 'id', '')}")
-        for conclusion in getattr(card, "conclusions", None) or ():
-            if isinstance(conclusion, Mapping) and reviewer_id == str(
-                conclusion.get("author_id")
-                or conclusion.get("actor_id")
-                or conclusion.get("author_agent_id")
-                or conclusion.get("author")
-                or conclusion.get("created_by")
-                or ""
+        conclusions = getattr(card, "conclusions", None)
+        if conclusions is None:
+            conclusions = ()
+        if not isinstance(conclusions, (list, tuple)):
+            raise ValueError("reviewer_separation_conclusion_invalid")
+        for conclusion in conclusions:
+            if (
+                not isinstance(conclusion, Mapping)
+                or {"actor_id", "author_agent_id", "author", "created_by"}.intersection(conclusion)
+                or not isinstance(conclusion.get("author_id"), str)
+                or not conclusion["author_id"].strip()
             ):
+                raise ValueError("reviewer_separation_conclusion_invalid")
+            if reviewer_id == conclusion["author_id"]:
                 conflicts.append(f"card_executor:{getattr(card, 'id', '')}")
     unique = tuple(dict.fromkeys(conflicts))
     conflict = bool(unique)

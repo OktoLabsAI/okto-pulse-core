@@ -110,7 +110,7 @@ def test_task_decision_evaluates_creator_assignee_and_executor_conflicts() -> No
                 "id": card_id,
                 "created_by": REVIEWER_ID,
                 "assignee_id": REVIEWER_ID,
-                "conclusions": [{"actor_id": REVIEWER_ID}],
+                "conclusions": [{"author_id": REVIEWER_ID}],
             },
         )(),
     )
@@ -375,3 +375,54 @@ def test_invalid_reviewer_policy_is_refused_without_relaxation(mode):
     with pytest.raises(ValueError, match="reviewer_separation_policy_invalid"):
         resolve_reviewer_separation_mode(board)
     assert board.settings == {"reviewer_separation_mode": mode}
+
+@pytest.mark.parametrize("record", [
+    {"actor_id": REVIEWER_ID},
+    {"author_agent_id": REVIEWER_ID},
+    {"author": REVIEWER_ID},
+    {"created_by": REVIEWER_ID},
+    {"author_id": "other", "actor_id": REVIEWER_ID},
+    {}, {"author_id": None}, {"author_id": True}, {"author_id": " "}, "invalid",
+])
+@pytest.mark.parametrize("mode", ["off", "warn", "enforce"])
+def test_incompatible_conclusion_is_refused_without_inventing_independence(record, mode):
+    from types import SimpleNamespace
+    with pytest.raises(ValueError, match="^reviewer_separation_conclusion_invalid$"):
+        evaluate_task_reviewer_separation(
+            board=SimpleNamespace(settings={"reviewer_separation_mode": mode}),
+            reviewer_id=REVIEWER_ID,
+            card=SimpleNamespace(id="card", created_by="other", assignee_id="other",
+                                 conclusions=[record]),
+        )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("recommendation", ["approve", "reject"])
+async def test_native_executor_alone_cannot_review_and_invalid_history_never_writes(
+    db_factory, recommendation,
+):
+    _, card_id = await _seed_conflicted_card(db_factory, mode="enforce")
+    async with db_factory() as db:
+        card = await db.get(Card, card_id)
+        card.created_by = "independent-creator"
+        card.assignee_id = "independent-assignee"
+        await db.commit()
+        payload = {**_validation_payload(), "recommendation": recommendation}
+        with pytest.raises(CardOperationError) as raised:
+            await CardService(db).submit_task_validation(
+                card_id, REVIEWER_ID, "Task Reviewer", payload,
+            )
+        assert raised.value.to_dict()["facts"]["reviewer_separation"]["conflicts"] == [
+            f"card_executor:{card_id}",
+        ]
+        assert not card.validations and card.status == CardStatus.VALIDATION
+        card.conclusions = [{"actor_id": REVIEWER_ID, "text": "Unsupported record"}]
+        await db.commit()
+        with pytest.raises(ValueError, match="^reviewer_separation_conclusion_invalid$"):
+            await CardService(db).submit_task_validation(
+                card_id, REVIEWER_ID, "Task Reviewer", payload,
+            )
+        await db.commit()
+        await db.refresh(card)
+        assert not card.validations and card.status == CardStatus.VALIDATION
+        assert card.conclusions == [{"actor_id": REVIEWER_ID, "text": "Unsupported record"}]
