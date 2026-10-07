@@ -2,6 +2,18 @@
 
 ## Estado para retomada
 
+### 2026-10-07 — Continuações atuais em execução
+Core2cce7d01 eCommunity6a492231 publicados. Nenhuma alteração local de produto.
+native-installed-recovery1 handle94212 permanece ativo, confirmado por poll;
+dois primeiros casos passaram e caso de materialização instalada iniciado.
+Core13 handle67468 iniciou com seleção677módulos completos excluídos; mesma
+prova/par dist-native-schema-contract1. Primeira tentativa do launcher falhou
+antes de criar pytest/log (WinError206, limite de argv); substituído por argfile
+pytest, não houve campanha comportamental duplicada. Não reiniciar handle vivo.
+Sessões atuais:94212 instalado e67468 Core13. Não editar/reinstalar produto ou
+testes em execução antes de terminal. Próximo: inspecionar terminais e continuar
+Community após E2E, incluindo só módulos inteiros qualificados nas exclusões.
+
 ### 2026-10-07 — Core12/Community10 followups nativos qualificados
 35casos Core aprovados: policy1 handle60337 (6), knowledge-service1 handle68583 (3),
 reuse-card1 handle74166 (26), todos terminais0. Quatro módulos completos.
