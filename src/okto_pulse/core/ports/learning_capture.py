@@ -86,7 +86,7 @@ class LearningCaptureIntent:
     expected_fingerprint: str | None = None
     reason: str | None = None
     # Explicitly replaces applicability for this capture's source Bug only.
-    # None grants no replacement scope; readers must never infer one.
+    # Create/reuse have no replacement scope; supersede requires source_bug.
     scope: str | None = None
 
     def __post_init__(self):
@@ -97,7 +97,7 @@ class LearningCaptureIntent:
             valid = (self.kind in ('reuse', 'supersede') and _text(self.target_node_id)
                 and type(self.target_generation) is int and self.target_generation >= 0
                 and _digest(self.expected_fingerprint) and _text(self.reason, 16384))
-        valid = valid and (self.scope is None or (self.kind == 'supersede' and self.scope == 'source_bug'))
+        valid = valid and (self.scope == 'source_bug' if self.kind == 'supersede' else self.scope is None)
         if not valid:
             raise ValueError('learning_capture_intent_invalid')
 
@@ -218,7 +218,7 @@ def validate_learning_capture_payload(payload, *, board_id, node_type, node_id, 
     intent_keys = {'kind', 'target_node_id', 'target_generation', 'expected_fingerprint', 'reason', 'scope'}
     if type(intent) is not dict or set(intent) != intent_keys:
         raise invalid
-    if intent['scope'] is not None and (intent['kind'] != 'supersede' or intent['scope'] != 'source_bug'):
+    if (intent['scope'] != 'source_bug' if intent['kind'] == 'supersede' else intent['scope'] is not None):
         raise invalid
     if intent['kind'] == 'create':
         if any(intent[key] is not None for key in ('target_node_id', 'target_generation', 'expected_fingerprint', 'reason')):

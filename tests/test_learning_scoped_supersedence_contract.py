@@ -23,8 +23,8 @@ def scoped_record():
 
 @pytest.mark.parametrize('kind', ['create', 'reuse', 'supersede'])
 def test_current_request_always_serializes_explicit_scope(kind):
-    intent = LearningCaptureIntent() if kind == 'create' else LearningCaptureIntent(kind, 'target', 0, 'a' * 64, 'Reason')
-    assert learning_capture_intent_payload(intent)['scope'] is None
+    intent = LearningCaptureIntent() if kind == 'create' else LearningCaptureIntent(kind, 'target', 0, 'a' * 64, 'Reason', 'source_bug' if kind == 'supersede' else None)
+    assert learning_capture_intent_payload(intent)['scope'] == ('source_bug' if kind == 'supersede' else None)
     assert set(learning_capture_intent_payload(intent)) == {
         'kind', 'target_node_id', 'target_generation', 'expected_fingerprint', 'reason', 'scope'}
 
@@ -107,12 +107,11 @@ def test_scoped_syntax_without_qualified_target_cannot_enter_commit():
         plan.require_scope_target()
 
 
-def test_unscoped_supersede_does_not_acquire_source_bug_authority():
-    from okto_pulse.core.domain.learning_materialization import CapturedLearningProjection
-    from okto_pulse.core.ports.kg_cognitive_source import CognitiveSourceRecord
+def test_unscoped_supersede_is_refused_without_conversion():
     raw = scoped_record()
-    raw['payload']['capture_format'] = 'learning-capture/v2'
     raw['payload']['intent']['scope'] = None
-    capture = CognitiveSourceRecord(**raw)
-    with pytest.raises(ValueError, match='learning_materialization_intent_unsupported'):
-        CapturedLearningProjection(capture, capture, 'bug-a').require_literal_head()
+    original = deepcopy(raw)
+    with pytest.raises(ValueError, match='learning_capture_payload_invalid'):
+        validate_learning_capture_payload(raw['payload'], **{key: raw[key] for key in (
+            'board_id', 'node_type', 'node_id', 'generation', 'evidence_refs')})
+    assert raw == original

@@ -108,7 +108,7 @@ def test_malformed_capture_is_not_hidden_by_a_later_valid_revision(change):
 def test_explicit_intent_preserves_target_cas_and_applicability_without_auto_linking(kind, target):
     source = capture_record()
     source['payload']['intent'] = {'kind': kind, 'target_node_id': target,
-        'target_generation': 0, 'expected_fingerprint': 'b' * 64, 'reason': 'explicit applicability decision', 'scope': None}
+        'target_generation': 0, 'expected_fingerprint': 'b' * 64, 'reason': 'explicit applicability decision', 'scope': 'source_bug' if kind == 'supersede' else None}
     assert validate_learning_capture_payload(source['payload'],
         **{key: source[key] for key in ('board_id', 'node_type', 'node_id', 'generation', 'evidence_refs')})
 

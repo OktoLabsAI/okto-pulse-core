@@ -51,13 +51,13 @@ async def test_partition_reconciliation_preserves_mixed_restrictions(db_factory,
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize('damage', ['wrong_origin', 'superseded_bug', 'superseded_learning', 'asserted_layer', 'missing_version'])
+@pytest.mark.parametrize('damage', ['wrong_origin', 'superseded_bug', 'superseded_learning', 'working_bug', 'missing_version'])
 async def test_partition_requires_matching_current_evidence(db_factory, damage):
     board = await _setup_board(db_factory)
     bug_id = str(uuid.uuid4())
     ref = f'bug:{bug_id}'
     learning_id, graph_bug = _seed_learning_validating_bug(board,
-        learning_source_ref=ref, bug_layer='working' if damage == 'asserted_layer' else 'canonical')
+        learning_source_ref=ref, bug_layer='working' if damage == 'working_bug' else 'canonical')
     from kg_schema_testing import open_board_connection
     with open_board_connection(board) as (_, connection):
         if damage == 'wrong_origin':
@@ -75,7 +75,5 @@ async def test_partition_requires_matching_current_evidence(db_factory, damage):
         await db.commit()
     async with db_factory() as db:
         result = await reconcile_canonical_learning_partition_debt(db, board_id=board,
-            actor_id='system:maintenance', extra_evidence=[{'source_ref': ref,
-                'content_hash': _stable_content_hash(ref, learning_id), 'evidence_layer': 'canonical',
-                'source_version': 'v2'}])
+            actor_id='system:maintenance')
         assert result['committed_count'] == 0

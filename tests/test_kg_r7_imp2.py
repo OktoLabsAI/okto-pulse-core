@@ -436,20 +436,6 @@ async def test_working_only_learning_keeps_debt_open_on_reconcile(db_factory):
         await db.commit()
     assert result["committed_count"] == 0
 
-    # Even with a hash-matching evidence row at the WORKING layer, the pre-filter
-    # drops it: working evidence can never close canonical debt.
-    forged = {
-        "source_ref": source_ref,
-        "content_hash": _stable_content_hash(source_ref, learning_id),
-        "evidence_layer": GRAPH_LAYER_WORKING,
-    }
-    async with db_factory() as db:
-        result2 = await reconcile_canonical_learning_partition_debt(
-            db, board_id=board_id, actor_id="claude-coder", extra_evidence=[forged]
-        )
-        await db.commit()
-    assert result2["committed_count"] == 0
-
     async with db_factory() as db:
         listed = await list_canonical_debt(db, board_id=board_id)
     assert listed.items[0]["canonical_state"] in OPEN_STATES
@@ -488,3 +474,14 @@ async def test_provenance_only_learning_no_false_positive_debt(db_factory):
     async with db_factory() as db:
         listed = await list_canonical_debt(db, board_id=board_id)
     assert listed.total == 0
+
+
+@pytest.mark.asyncio
+async def test_partition_reconciliation_refuses_removed_evidence_argument():
+    # The old argument was silently ignored. The current-only contract must
+    # reject it before touching a database, registry or graph.
+    with pytest.raises(TypeError, match="extra_evidence"):
+        await reconcile_canonical_learning_partition_debt(
+            object(), board_id="board", actor_id="author",
+            extra_evidence=[{"evidence_layer": "canonical"}],
+        )

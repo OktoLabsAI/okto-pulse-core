@@ -302,7 +302,6 @@ async def reconcile_canonical_learning_partition_debt(
     *,
     board_id: str,
     actor_id: str,
-    extra_evidence: list[dict[str, str]] | None = None,
 ) -> dict:
     """Close partition-integrity debt for Learnings that now have a canonical
     Bug validates edge.
@@ -310,8 +309,8 @@ async def reconcile_canonical_learning_partition_debt(
     Builds canonical-only evidence from the SATISFIED partition, pre-filters to
     the canonical layer (so working-layer evidence can never close debt), then
     calls the layer-blind ``reconcile_canonical_debt_with_evidence``.
-    The legacy ``extra_evidence`` argument cannot expand the scan or assert
-    source versions. Substantive debt and source absence require their own
+    Caller-supplied evidence cannot expand the scan or assert source versions.
+    Substantive debt and source absence require their own
     authoritative recovery; a matching graph edge is insufficient."""
     from okto_pulse.core.kg.interfaces.registry import get_kg_registry
 
@@ -320,8 +319,6 @@ async def reconcile_canonical_learning_partition_debt(
         _violating, satisfied = _scan_partition(scope)
 
     evidence = [_canonical_evidence_for(nid, ref) for nid, ref in satisfied]
-    # Keep the legacy call signature, but an evidence_layer string supplied by
-    # a caller cannot expand the authoritative graph scan or assert a version.
     canonical_evidence = _canonical_only_evidence(evidence)
 
     result = await reconcile_canonical_debt_with_evidence(

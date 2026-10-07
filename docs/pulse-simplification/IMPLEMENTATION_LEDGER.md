@@ -2,6 +2,69 @@
 
 ## Estado para retomada
 
+### 2026-10-07 — Learning atual validado; KG35 qualificado
+Todos os handles terminaram. Main64 core2:96pass/87.54s; community2:
+19pass/4fail, quatro fixtures ainda montavam supersede sem scope; helper
+atualizado para source_bug, sem relaxar recusa. Community3:17pass/27.68s.
+Os quatro casos falhos foram repetidos com sucesso. Total no par final:
+119 casos Python distintos aprovados. Regressões de reconciliação main63
+permanecem registradas separadamente, não como testes repetidos no main64.
+Frontend2:63pass; o caso que apresentava legado foi retirado, parser mantém
+teste de recusa sem alteração do input. Build/sync/verify:79 arquivos/78assets,
+tree391fc8e29503fa2a8195fcf2bcd064a8dec534dc198a8f2d61840f9cdce86d00.
+Closure64:ok=true, findings/documentation_findings vazios, oito budgets ZERO.
+Ruff e diff-check verdes. Produto idêntico à prova main64 antes dos testes;
+após a prova só se corrigiu helper de teste e registraram-se evidências.
+Recibo clean-break-native-learning-scope.json: cadeia dos wheels, XMLs, frontend, falhas e limites.
+KG35 comprovado: score1 não escreve; intenção explícita/autorização/evidência
+antecedem vínculo; materialização/replay preservam outras origens e histórico.
+Embeddings controlados e gates independentes mockados não provam KG32/33.
+Índice fixo:68 verificadas/167 pendentes/11 superadas, total246/aplicáveis235.
+Fechamento remove extra_evidence ignorado e supersede sem scope; sem converter
+ou excluir armazenamento. Nenhuma nova permissão, relaxamento de guard ou alias.
+Próximo: KG30/KG32–34 e demais critérios fixos; KG10/KG28/T23 sem decisão.
+
+### 2026-10-07 — retirada da substituição de Learning sem escopo em validação
+Main63 terminou: core1 39pass/3fail/336.77s; community1 5pass/101.26s;
+frontend1 64pass; closure63 ok=true, oito budgets ZERO. Nenhum handle63 ativo.
+Três falhas em test_kg_r7_imp3: fixture de rebuild não solicitava finalização
+adiada exigida pelo worker; um commit estava fora do async-with da sessão.
+Fixture corrigida para defer_session_finalization e commit antes de finalizar,
+incluindo fila com deferred_session_ids e finalizer real após commit.
+Guard cognitive_rebuild_worker_transaction_required intacto.
+Removida aceitação de supersede/scope=null no comando interno e payload durável,
+alinhando ao pedido público que já exige source_bug. Sem conversão; create/reuse
+mantêm scope null. Frontend recusa esse payload e remove apresentação específica
+do legado. Positivos usam escopo atual; negativos verificam recusa sem mutação.
+Comentário público deixou de prometer suporte ao v1. História nativa com escopo,
+reuso e evidências preservados.
+Frontend build85658 terminal0:79 arquivos/78assets, tree
+391fc8e29503fa2a8195fcf2bcd064a8dec534dc198a8f2d61840f9cdce86d00.
+Main64 build/install terminais0; prova97374 terminal0:837/898+317/403 idênticos.
+Ativos core71934, community62011, closure54238. Frontend2 terminal0 com reporter
+acceptance-native-learning-scope-ui2.json. Não editar produto nem reinstalar
+até os três terminais. Faltam recibo, qualificação KG35 quando provada e commits.
+
+### 2026-10-07 — Learning: reconciliação atual e KG35 em validação
+Turno anterior foi progresso: publicação confirmada e worktrees limpas/sincronizadas
+Core8fc08d56/Communityb66c1624. Removido argumento extra_evidence, mantido
+explicitamente por compatibilidade e ignorado pelo reconciliador; únicos
+consumidores eram dois testes. Contrato agora recusa argumento, sem mudar
+autoridade do scan, permissões nem fechamento de pendências substanciais.
+Testes positivos e negativos existentes preservam comportamento da reconciliação
+por evidência atual; antigo argumento tem recusa TypeError antes de I/O.
+Main63 build/install terminal0; prova42428 terminal0 (837/898+317/403 byte-idênticos)
+antes de comportamento. Ativos: core74873, community66662, closure6059.
+UI terminal0 com reporter acceptance-native-learning-fanin-ui1.json.
+Campanhas KG35 usam schema relacional oficial e Grafx real; embeddings controlados
+e gates independentes/health mockados limitam prova a sugestão, intenção, evidência,
+autorização e associação, não admissão completa de Done.
+Gap adicional encontrado para próximo recorte: CaptureIntent ainda admite
+supersede com scope null no formato v2 e frontend tem apresentação explícita de
+replacement legado sem escopo. Pedido público exige source_bug. Investigar
+consumidores e retirar suporte antigo sem inferir escopo nem apagar história
+nativa. Nenhuma alteração nesse gap enquanto campanhas atuais executam.
+
 ### 2026-10-07 — contrato gráfico único validado; instalação limpa corrigida
 Publicação confirmada: Core df5a73b5 e Community b66c1624, pushes
 origin/feature/v0.4.0 terminais0 nos dois repositórios.

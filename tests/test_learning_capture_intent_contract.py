@@ -8,7 +8,7 @@ from okto_pulse.core.ports.learning_capture import CreateLearningCapture, Learni
 @pytest.mark.parametrize('kind', ['create', 'reuse', 'supersede'])
 def test_typed_capture_intent_preserves_explicit_target_and_cas(kind):
     intent = (LearningCaptureIntent() if kind == 'create' else
-        LearningCaptureIntent(kind, 'target', 2, 'a' * 64, 'Explicit scoped reason'))
+        LearningCaptureIntent(kind, 'target', 2, 'a' * 64, 'Explicit scoped reason', 'source_bug' if kind == 'supersede' else None))
     request = CreateLearningCapture('board', 'bug', 'capture', 'b' * 64, 1,
         'Lesson', 'Context', 'Scope', ('scenario',), intent)
     assert request.intent.kind == kind
@@ -21,3 +21,9 @@ def test_intent_refuses_implicit_or_malformed_target(changes):
     original = LearningCaptureIntent('reuse', 'target', 0, 'a' * 64, 'Explicit scope')
     with pytest.raises(ValueError, match='intent_invalid'):
         replace(original, **changes)
+
+
+@pytest.mark.parametrize('scope', [None, '', 'global'])
+def test_replacement_requires_current_explicit_scope(scope):
+    with pytest.raises(ValueError, match='learning_capture_intent_invalid'):
+        LearningCaptureIntent('supersede', 'target', 0, 'a' * 64, 'Reason', scope)

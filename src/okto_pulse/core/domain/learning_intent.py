@@ -1,7 +1,7 @@
 """Explicit public Learning intent shared by standalone and compound authorship.
 
-Only new requests use this contract. Historical unscoped v1 replacements retain
-their original interpretation and are never silently upgraded to source_bug.
+Replacement requires explicit source_bug scope in the current contract.
+Incompatible requests and stored captures are refused without conversion.
 """
 from typing import Annotated, Literal
 
