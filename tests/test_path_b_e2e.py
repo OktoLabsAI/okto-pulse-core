@@ -45,9 +45,6 @@ from sqlalchemy_test_models import (
     CardType,
     Spec,
     SpecStatus,
-    Sprint,
-    SprintLaneType,
-    SprintStatus,
 )
 from okto_pulse.core.models.schemas import CardMove
 from okto_pulse.core.services.amendment_revision import AmendmentRevisionService
@@ -68,11 +65,10 @@ AMD = "amendment_hotfix_revision"
 # ---------------------------------------------------------------------------
 
 
-async def _seed_e2e(db, *, hotfix_lane: bool = False):
+async def _seed_e2e(db):
     """Seed an E2E Path B board: a bug on a DONE (locked) spec whose only
     regression evidence is a CROSS-SPEC scenario (on another spec) + a regression
-    test card. No amendment yet — Path B starts from here. ``hotfix_lane=True``
-    places the bug + test on an ACTIVE hotfix lane (Path C execution lane)."""
+    test card. No amendment yet — Path B starts from here."""
     suffix = uuid.uuid4().hex[:8]
     ids = {
         "board": f"pbe2e-board-{suffix}",
@@ -81,48 +77,40 @@ async def _seed_e2e(db, *, hotfix_lane: bool = False):
         "origin": f"pbe2e-origin-{suffix}",
         "bug": f"pbe2e-bug-{suffix}",
         "test": f"pbe2e-test-{suffix}",
-        "sprint": f"pbe2e-sprint-{suffix}",
         "foreign_scenario": f"ts-foreign-{suffix}",
     }
     now = datetime.now(timezone.utc)
-    sprint_id = ids["sprint"] if hotfix_lane else None
 
     db.add(Board(id=ids["board"], name="Path B E2E Board", owner_id=USER_ID))
     db.add(Spec(
         id=ids["spec"], board_id=ids["board"], title="Bug spec", status=SpecStatus.DONE,
-        created_by=USER_ID, functional_requirements=["FR1"], acceptance_criteria=["AC1"],
+        created_by=USER_ID, functional_requirements=[{"id": "fr-1", "text": "FR1"}], acceptance_criteria=[{"id": "ac-1", "text": "AC1"}],
         test_scenarios=[], business_rules=[], api_contracts=[],
     ))
     db.add(Spec(
         id=ids["other_spec"], board_id=ids["board"], title="Other spec",
         status=SpecStatus.DONE, created_by=USER_ID,
-        functional_requirements=["FR1"], acceptance_criteria=["AC1"],
+        functional_requirements=[{"id": "fr-1", "text": "FR1"}], acceptance_criteria=[{"id": "ac-1", "text": "AC1"}],
         test_scenarios=[{
             "id": ids["foreign_scenario"], "title": "Foreign scenario",
-            "linked_criteria": [0], "status": "passed",
+            "linked_criteria": ["ac-1"], "status": "passed",
         }],
         business_rules=[], api_contracts=[],
     ))
-    if hotfix_lane:
-        db.add(Sprint(
-            id=ids["sprint"], board_id=ids["board"], spec_id=ids["spec"],
-            title="Active hotfix lane", status=SprintStatus.ACTIVE,
-            lane_type=SprintLaneType.HOTFIX, created_by=USER_ID,
-        ))
     db.add(Card(
         id=ids["origin"], board_id=ids["board"], spec_id=ids["spec"], title="Origin",
         status=CardStatus.DONE, card_type=CardType.NORMAL, created_by=USER_ID,
         created_at=now - timedelta(minutes=5),
     ))
     db.add(Card(
-        id=ids["bug"], board_id=ids["board"], spec_id=ids["spec"], sprint_id=sprint_id,
+        id=ids["bug"], board_id=ids["board"], spec_id=ids["spec"],
         title="Bug needing cross-spec evidence", status=CardStatus.NOT_STARTED,
         card_type=CardType.BUG, origin_task_id=ids["origin"],
         severity=BugSeverity.MAJOR, expected_behavior="ok", observed_behavior="bad",
         linked_test_task_ids=[ids["test"]], created_by=USER_ID, created_at=now,
     ))
     db.add(Card(
-        id=ids["test"], board_id=ids["board"], spec_id=ids["spec"], sprint_id=sprint_id,
+        id=ids["test"], board_id=ids["board"], spec_id=ids["spec"],
         title="Regression test using foreign scenario", status=CardStatus.NOT_STARTED,
         card_type=CardType.TEST, test_scenario_ids=[ids["foreign_scenario"]],
         created_by=USER_ID, created_at=now + timedelta(seconds=1),
@@ -330,14 +318,12 @@ async def test_ts_38dc9e19_false_variants_stay_blocked(variant, reason):
         assert await _coverage_state(db, ids) != "path_b_ready"
 
 
-async def test_ts_38dc9e19_hotfix_lane_without_amendment_stays_blocked():
-    """Path C (hotfix lane) is execution-only and does NOT bypass Path B: a
-    cross-spec bug on an ACTIVE hotfix lane with NO amendment is still
-    fail-closed (missing_amendment_revision), never closure-ready."""
+async def test_ts_38dc9e19_native_cross_spec_without_amendment_stays_blocked():
+    """A native cross-Spec Bug without amendment is never closure-ready."""
     from okto_pulse.core.infra.database import get_session_factory
 
     async with get_session_factory()() as db:
-        ids = await _seed_e2e(db, hotfix_lane=True)
+        ids = await _seed_e2e(db)
         await _assert_gate_blocks(db, ids, "missing_amendment_revision")
         assert await _coverage_state(db, ids) == "not_applicable"
 
@@ -520,7 +506,7 @@ async def test_676b_eligible_amendment_unblocks_content_locked_bug_without_bypas
 
 # ---------------------------------------------------------------------------
 # Cross-spec regression keeps its formal amendment and validator coverage
-# requirements after operational Sprint retirement.
+# requirements in the native execution contract.
 # ---------------------------------------------------------------------------
 
 
@@ -573,7 +559,6 @@ async def test_confirmed_cross_spec_regression_can_start_bug_without_lane():
         )
         assert moved.status is CardStatus.IN_PROGRESS
         assert (await db.get(Card, ids["test"])).spec_id == ids["other_spec"]
-        assert (await db.get(Card, ids["test"])).sprint_id is None
 
 
 async def test_unconfirmed_cross_spec_regression_still_blocks_bug_start():
@@ -581,5 +566,3 @@ async def test_unconfirmed_cross_spec_regression_still_blocks_bug_start():
     async with get_session_factory()() as db:
         ids = await _prepare_cross_spec_regression(db, confirmed=False)
         await _assert_gate_blocks(db, ids, "coverage_pending")
-        assert (await db.get(Card, ids["bug"])).sprint_id is None
-        assert (await db.get(Card, ids["test"])).sprint_id is None

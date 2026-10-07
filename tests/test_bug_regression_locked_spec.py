@@ -23,9 +23,6 @@ from sqlalchemy_test_models import (
     DomainEventRow,
     Spec,
     SpecStatus,
-    Sprint,
-    SprintLaneType,
-    SprintStatus,
 )
 from okto_pulse.core.models.schemas import CardMove
 from okto_pulse.core.services.amendment_revision import AmendmentRevisionService
@@ -69,12 +66,12 @@ async def test_bug_gate_allows_existing_scenario_with_new_test_card():
             title="Validated regression spec",
             status=SpecStatus.IN_PROGRESS,
             created_by=USER_ID,
-            functional_requirements=["FR1"],
-            acceptance_criteria=["AC1"],
+            functional_requirements=[{"id": "fr-1", "text": "FR1"}],
+            acceptance_criteria=[{"id": "ac-1", "text": "AC1"}],
             test_scenarios=[{
                 "id": scenario_id,
                 "title": "Existing regression scenario",
-                "linked_criteria": [0],
+                "linked_criteria": ["ac-1"],
                 "linked_task_ids": [origin_id],
                 "status": "passed",
                 "evidence": {
@@ -133,8 +130,8 @@ async def test_bug_gate_allows_existing_scenario_with_new_test_card():
     assert moved.status == CardStatus.IN_PROGRESS
 
 
-async def test_active_hotfix_lane_allows_bug_with_new_regression_test_task():
-    """Active hotfix lane satisfies sprint ownership while bug gate still passes normally."""
+async def test_native_bug_start_requires_new_regression_test_task():
+    """Native Bug start requires its eligible regression test."""
     from okto_pulse.core.infra.database import get_session_factory
 
     factory = get_session_factory()
@@ -143,8 +140,6 @@ async def test_active_hotfix_lane_allows_bug_with_new_regression_test_task():
     origin_id = f"origin-{uuid.uuid4().hex[:8]}"
     bug_id = f"bug-{uuid.uuid4().hex[:8]}"
     test_id = f"test-{uuid.uuid4().hex[:8]}"
-    original_sprint_id = f"normal-sprint-{uuid.uuid4().hex[:8]}"
-    hotfix_sprint_id = f"hotfix-sprint-{uuid.uuid4().hex[:8]}"
     scenario_id = "ts-hotfix-regression"
     now = datetime.now(timezone.utc)
 
@@ -156,42 +151,22 @@ async def test_active_hotfix_lane_allows_bug_with_new_regression_test_task():
             title="Done hotfix spec",
             status=SpecStatus.DONE,
             created_by=USER_ID,
-            functional_requirements=["FR1"],
-            acceptance_criteria=["AC1"],
+            functional_requirements=[{"id": "fr-1", "text": "FR1"}],
+            acceptance_criteria=[{"id": "ac-1", "text": "AC1"}],
             test_scenarios=[{
                 "id": scenario_id,
                 "title": "Existing hotfix regression scenario",
-                "linked_criteria": [0],
+                "linked_criteria": ["ac-1"],
                 "linked_task_ids": [origin_id],
                 "status": "passed",
             }],
             business_rules=[],
             api_contracts=[],
         ))
-        db.add(Sprint(
-            id=original_sprint_id,
-            board_id=board_id,
-            spec_id=spec_id,
-            title="Original closed sprint",
-            status=SprintStatus.CLOSED,
-            lane_type=SprintLaneType.NORMAL,
-            created_by=USER_ID,
-        ))
-        db.add(Sprint(
-            id=hotfix_sprint_id,
-            board_id=board_id,
-            spec_id=spec_id,
-            title="Active hotfix lane",
-            status=SprintStatus.ACTIVE,
-            lane_type=SprintLaneType.HOTFIX,
-            origin_sprint_id=original_sprint_id,
-            created_by=USER_ID,
-        ))
         db.add(Card(
             id=origin_id,
             board_id=board_id,
             spec_id=spec_id,
-            sprint_id=original_sprint_id,
             title="Origin implementation",
             status=CardStatus.DONE,
             card_type=CardType.NORMAL,
@@ -202,7 +177,6 @@ async def test_active_hotfix_lane_allows_bug_with_new_regression_test_task():
             id=bug_id,
             board_id=board_id,
             spec_id=spec_id,
-            sprint_id=hotfix_sprint_id,
             title="Hotfix bug",
             status=CardStatus.NOT_STARTED,
             card_type=CardType.BUG,
@@ -218,7 +192,6 @@ async def test_active_hotfix_lane_allows_bug_with_new_regression_test_task():
             id=test_id,
             board_id=board_id,
             spec_id=spec_id,
-            sprint_id=hotfix_sprint_id,
             title="Hotfix regression test",
             status=CardStatus.NOT_STARTED,
             card_type=CardType.TEST,
@@ -233,24 +206,20 @@ async def test_active_hotfix_lane_allows_bug_with_new_regression_test_task():
             USER_ID,
             CardMove(status=CardStatus.IN_PROGRESS),
         )
-        original_sprint = await db.get(Sprint, original_sprint_id)
 
     assert moved is not None
     assert moved.status == CardStatus.IN_PROGRESS
-    assert moved.sprint_id == hotfix_sprint_id
     assert moved.linked_test_task_ids == [test_id]
-    assert original_sprint.status == SprintStatus.CLOSED
 
 
-async def test_active_hotfix_lane_does_not_bypass_missing_bug_test_task():
-    """Active hotfix lane is not a bypass for the bug regression test gate."""
+async def test_native_bug_start_refuses_missing_regression_test_task():
+    """Missing regression work blocks native Bug start."""
     from okto_pulse.core.infra.database import get_session_factory
 
     factory = get_session_factory()
     board_id = f"hotfix-no-bypass-board-{uuid.uuid4().hex[:8]}"
     spec_id = f"hotfix-no-bypass-spec-{uuid.uuid4().hex[:8]}"
     bug_id = f"bug-{uuid.uuid4().hex[:8]}"
-    hotfix_sprint_id = f"hotfix-sprint-{uuid.uuid4().hex[:8]}"
     now = datetime.now(timezone.utc)
 
     async with factory() as db:
@@ -261,26 +230,16 @@ async def test_active_hotfix_lane_does_not_bypass_missing_bug_test_task():
             title="Done hotfix spec",
             status=SpecStatus.DONE,
             created_by=USER_ID,
-            functional_requirements=["FR1"],
-            acceptance_criteria=["AC1"],
+            functional_requirements=[{"id": "fr-1", "text": "FR1"}],
+            acceptance_criteria=[{"id": "ac-1", "text": "AC1"}],
             test_scenarios=[],
             business_rules=[],
             api_contracts=[],
-        ))
-        db.add(Sprint(
-            id=hotfix_sprint_id,
-            board_id=board_id,
-            spec_id=spec_id,
-            title="Active hotfix lane",
-            status=SprintStatus.ACTIVE,
-            lane_type=SprintLaneType.HOTFIX,
-            created_by=USER_ID,
         ))
         db.add(Card(
             id=bug_id,
             board_id=board_id,
             spec_id=spec_id,
-            sprint_id=hotfix_sprint_id,
             title="Hotfix bug without test",
             status=CardStatus.NOT_STARTED,
             card_type=CardType.BUG,
@@ -338,12 +297,12 @@ async def test_bug_gate_rejects_same_spec_unrelated_scenario():
             title="Validated unrelated spec",
             status=SpecStatus.IN_PROGRESS,
             created_by=USER_ID,
-            functional_requirements=["FR1"],
-            acceptance_criteria=["AC1"],
+            functional_requirements=[{"id": "fr-1", "text": "FR1"}],
+            acceptance_criteria=[{"id": "ac-1", "text": "AC1"}],
             test_scenarios=[{
                 "id": scenario_id,
                 "title": "Unrelated existing scenario",
-                "linked_criteria": [0],
+                "linked_criteria": ["ac-1"],
                 "linked_task_ids": [],
                 "status": "passed",
             }],
@@ -456,8 +415,8 @@ async def test_bug_gate_rejects_cross_spec_scenario_reference():
             title="Bug spec",
             status=SpecStatus.IN_PROGRESS,
             created_by=USER_ID,
-            functional_requirements=["FR1"],
-            acceptance_criteria=["AC1"],
+            functional_requirements=[{"id": "fr-1", "text": "FR1"}],
+            acceptance_criteria=[{"id": "ac-1", "text": "AC1"}],
             test_scenarios=[],
             business_rules=[],
             api_contracts=[],
@@ -468,12 +427,12 @@ async def test_bug_gate_rejects_cross_spec_scenario_reference():
             title="Other spec",
             status=SpecStatus.IN_PROGRESS,
             created_by=USER_ID,
-            functional_requirements=["FR1"],
-            acceptance_criteria=["AC1"],
+            functional_requirements=[{"id": "fr-1", "text": "FR1"}],
+            acceptance_criteria=[{"id": "ac-1", "text": "AC1"}],
             test_scenarios=[{
                 "id": foreign_scenario_id,
                 "title": "Foreign scenario",
-                "linked_criteria": [0],
+                "linked_criteria": ["ac-1"],
                 "status": "passed",
             }],
             business_rules=[],
@@ -556,12 +515,12 @@ async def test_bug_gate_rejects_pre_bug_test_card_even_when_scenario_eligible():
             title="Validated stale test spec",
             status=SpecStatus.IN_PROGRESS,
             created_by=USER_ID,
-            functional_requirements=["FR1"],
-            acceptance_criteria=["AC1"],
+            functional_requirements=[{"id": "fr-1", "text": "FR1"}],
+            acceptance_criteria=[{"id": "ac-1", "text": "AC1"}],
             test_scenarios=[{
                 "id": scenario_id,
                 "title": "Eligible regression scenario",
-                "linked_criteria": [0],
+                "linked_criteria": ["ac-1"],
                 "linked_task_ids": [origin_id],
                 "status": "passed",
             }],
@@ -634,7 +593,7 @@ async def test_bug_gate_path_a_preserves_locked_spec_canonical_content():
     scenario = {
         "id": scenario_id,
         "title": "Preserve canonical regression scenario",
-        "linked_criteria": [0],
+        "linked_criteria": ["ac-1"],
         "given": "a locked spec",
         "when": "a post-bug regression test is linked",
         "then": "canonical scenario content is preserved",
@@ -650,8 +609,8 @@ async def test_bug_gate_path_a_preserves_locked_spec_canonical_content():
             title="Validated locked spec",
             status=SpecStatus.IN_PROGRESS,
             created_by=USER_ID,
-            functional_requirements=["FR1"],
-            acceptance_criteria=["AC1"],
+            functional_requirements=[{"id": "fr-1", "text": "FR1"}],
+            acceptance_criteria=[{"id": "ac-1", "text": "AC1"}],
             test_scenarios=[dict(scenario)],
             business_rules=[],
             api_contracts=[],
@@ -709,100 +668,6 @@ async def test_bug_gate_path_a_preserves_locked_spec_canonical_content():
     assert spec.test_scenarios == [scenario]
 
 
-@pytest.mark.parametrize(
-    "lane_status",
-    [
-        SprintStatus.DRAFT,
-        SprintStatus.REVIEW,
-        SprintStatus.CLOSED,
-        SprintStatus.CANCELLED,
-    ],
-    ids=["draft", "review", "closed", "cancelled"],
-)
-async def test_retired_lane_state_does_not_block_valid_regression(
-    lane_status: SprintStatus,
-):
-    """Old execution lane rows cannot block eligible post-delivery regression."""
-    from okto_pulse.core.infra.database import get_session_factory
-
-    factory = get_session_factory()
-    board_id = f"hotfix-inactive-board-{uuid.uuid4().hex[:8]}"
-    spec_id = f"hotfix-inactive-spec-{uuid.uuid4().hex[:8]}"
-    origin_id = f"origin-{uuid.uuid4().hex[:8]}"
-    bug_id = f"bug-{uuid.uuid4().hex[:8]}"
-    test_id = f"test-{uuid.uuid4().hex[:8]}"
-    hotfix_sprint_id = f"hotfix-sprint-{uuid.uuid4().hex[:8]}"
-    scenario_id = "ts-inactive-hotfix"
-    now = datetime.now(timezone.utc)
-
-    async with factory() as db:
-        db.add(Board(id=board_id, name="Inactive Hotfix Board", owner_id=USER_ID))
-        db.add(Spec(
-            id=spec_id,
-            board_id=board_id,
-            title="Done hotfix spec",
-            status=SpecStatus.DONE,
-            created_by=USER_ID,
-            functional_requirements=["FR1"],
-            acceptance_criteria=["AC1"],
-            test_scenarios=[{
-                "id": scenario_id,
-                "title": "Existing regression scenario",
-                "linked_criteria": [0],
-                "linked_task_ids": [origin_id],
-                "status": "passed",
-            }],
-            business_rules=[],
-            api_contracts=[],
-        ))
-        db.add(Sprint(
-            id=hotfix_sprint_id,
-            board_id=board_id,
-            spec_id=spec_id,
-            title=f"{lane_status.value.title()} hotfix lane",
-            status=lane_status,
-            lane_type=SprintLaneType.HOTFIX,
-            created_by=USER_ID,
-        ))
-        db.add(Card(id=origin_id, board_id=board_id, spec_id=spec_id,
-                    title="Delivered origin", status=CardStatus.DONE,
-                    card_type=CardType.NORMAL, created_by=USER_ID,
-                    created_at=now - timedelta(minutes=1)))
-        db.add(Card(
-            id=bug_id,
-            board_id=board_id,
-            spec_id=spec_id,
-            sprint_id=hotfix_sprint_id,
-            title="Hotfix bug",
-            origin_task_id=origin_id,
-            status=CardStatus.NOT_STARTED,
-            card_type=CardType.BUG,
-            severity=BugSeverity.MAJOR,
-            expected_behavior="request succeeds",
-            observed_behavior="request fails",
-            linked_test_task_ids=[test_id],
-            created_by=USER_ID,
-            created_at=now,
-        ))
-        db.add(Card(
-            id=test_id,
-            board_id=board_id,
-            spec_id=spec_id,
-            sprint_id=hotfix_sprint_id,
-            title="Regression test",
-            status=CardStatus.NOT_STARTED,
-            card_type=CardType.TEST,
-            test_scenario_ids=[scenario_id],
-            created_by=USER_ID,
-            created_at=now + timedelta(seconds=1),
-        ))
-        await db.flush()
-
-        moved = await CardService(db).move_card(
-            bug_id, USER_ID, CardMove(status=CardStatus.IN_PROGRESS),
-        )
-        assert moved.status == CardStatus.IN_PROGRESS
-        assert (await db.get(Sprint, hotfix_sprint_id)).status == lane_status
 
 
 
@@ -815,7 +680,6 @@ async def test_done_spec_bug_without_regression_still_blocked():
     spec_id = f"hotfix-missing-spec-{uuid.uuid4().hex[:8]}"
     origin_id = f"origin-{uuid.uuid4().hex[:8]}"
     bug_id = f"bug-{uuid.uuid4().hex[:8]}"
-    original_sprint_id = f"normal-sprint-{uuid.uuid4().hex[:8]}"
     now = datetime.now(timezone.utc)
 
     async with factory() as db:
@@ -826,26 +690,16 @@ async def test_done_spec_bug_without_regression_still_blocked():
             title="Done hotfix spec",
             status=SpecStatus.DONE,
             created_by=USER_ID,
-            functional_requirements=["FR1"],
-            acceptance_criteria=["AC1"],
+            functional_requirements=[{"id": "fr-1", "text": "FR1"}],
+            acceptance_criteria=[{"id": "ac-1", "text": "AC1"}],
             test_scenarios=[],
             business_rules=[],
             api_contracts=[],
-        ))
-        db.add(Sprint(
-            id=original_sprint_id,
-            board_id=board_id,
-            spec_id=spec_id,
-            title="Original closed sprint",
-            status=SprintStatus.CLOSED,
-            lane_type=SprintLaneType.NORMAL,
-            created_by=USER_ID,
         ))
         db.add(Card(
             id=origin_id,
             board_id=board_id,
             spec_id=spec_id,
-            sprint_id=original_sprint_id,
             title="Original delivered task",
             status=CardStatus.DONE,
             card_type=CardType.NORMAL,
@@ -856,7 +710,6 @@ async def test_done_spec_bug_without_regression_still_blocked():
             id=bug_id,
             board_id=board_id,
             spec_id=spec_id,
-            sprint_id=None,
             title="Unassigned post-closure bug",
             status=CardStatus.NOT_STARTED,
             card_type=CardType.BUG,
@@ -876,15 +729,13 @@ async def test_done_spec_bug_without_regression_still_blocked():
                 USER_ID,
                 CardMove(status=CardStatus.IN_PROGRESS),
             )
-        original_sprint = await db.get(Sprint, original_sprint_id)
 
     assert exc.value.code == "missing_regression_test_task"
     assert exc.value.workflow_remediation.next_action.value == "escalate_semantic_gap"
-    assert original_sprint.status == SprintStatus.CLOSED
     assert "reopen" not in str(exc.value).lower()
 
 
-async def test_post_closure_bug_executes_without_rewriting_historical_assignment():
+async def test_post_closure_bug_executes_preserving_spec_and_lineage():
     """Valid post-delivery regression needs no lane mutation or reopening."""
     from okto_pulse.core.infra.database import get_session_factory
 
@@ -894,7 +745,6 @@ async def test_post_closure_bug_executes_without_rewriting_historical_assignment
     origin_id = f"origin-{uuid.uuid4().hex[:8]}"
     bug_id = f"bug-{uuid.uuid4().hex[:8]}"
     test_id = f"test-{uuid.uuid4().hex[:8]}"
-    original_sprint_id = f"normal-sprint-{uuid.uuid4().hex[:8]}"
     scenario_id = "ts-post-closure-hotfix-flow"
     now = datetime.now(timezone.utc)
 
@@ -906,32 +756,22 @@ async def test_post_closure_bug_executes_without_rewriting_historical_assignment
             title="Done hotfix flow spec",
             status=SpecStatus.DONE,
             created_by=USER_ID,
-            functional_requirements=["FR1"],
-            acceptance_criteria=["AC1"],
+            functional_requirements=[{"id": "fr-1", "text": "FR1"}],
+            acceptance_criteria=[{"id": "ac-1", "text": "AC1"}],
             test_scenarios=[{
                 "id": scenario_id,
                 "title": "Existing post-closure regression scenario",
-                "linked_criteria": [0],
+                "linked_criteria": ["ac-1"],
                 "linked_task_ids": [origin_id],
                 "status": "passed",
             }],
             business_rules=[],
             api_contracts=[],
         ))
-        db.add(Sprint(
-            id=original_sprint_id,
-            board_id=board_id,
-            spec_id=spec_id,
-            title="Original closed delivery sprint",
-            status=SprintStatus.CLOSED,
-            lane_type=SprintLaneType.NORMAL,
-            created_by=USER_ID,
-        ))
         db.add(Card(
             id=origin_id,
             board_id=board_id,
             spec_id=spec_id,
-            sprint_id=original_sprint_id,
             title="Delivered implementation",
             status=CardStatus.DONE,
             card_type=CardType.NORMAL,
@@ -942,8 +782,7 @@ async def test_post_closure_bug_executes_without_rewriting_historical_assignment
             id=bug_id,
             board_id=board_id,
             spec_id=spec_id,
-            sprint_id=original_sprint_id,
-            title="Post-closure bug initially on original sprint",
+            title="Post-closure bug",
             status=CardStatus.NOT_STARTED,
             card_type=CardType.BUG,
             origin_task_id=origin_id,
@@ -958,7 +797,6 @@ async def test_post_closure_bug_executes_without_rewriting_historical_assignment
             id=test_id,
             board_id=board_id,
             spec_id=spec_id,
-            sprint_id=original_sprint_id,
             title="Post-closure regression test",
             status=CardStatus.NOT_STARTED,
             card_type=CardType.TEST,
@@ -967,6 +805,10 @@ async def test_post_closure_bug_executes_without_rewriting_historical_assignment
             created_at=now + timedelta(seconds=1),
         ))
         await db.flush()
+        spec_before = await db.get(Spec, spec_id)
+        from copy import deepcopy
+        preserved = deepcopy((spec_before.status, spec_before.test_scenarios,
+            spec_before.functional_requirements, spec_before.acceptance_criteria))
 
         card_service = CardService(db)
         moved = await card_service.move_card(
@@ -974,16 +816,17 @@ async def test_post_closure_bug_executes_without_rewriting_historical_assignment
             USER_ID,
             CardMove(status=CardStatus.IN_PROGRESS),
         )
-        original_sprint = await db.get(Sprint, original_sprint_id)
         bug = await db.get(Card, bug_id)
         regression = await db.get(Card, test_id)
+        spec_after = await db.get(Spec, spec_id)
+        assert (spec_after.status, spec_after.test_scenarios,
+            spec_after.functional_requirements, spec_after.acceptance_criteria) == preserved
+        assert bug.origin_task_id == origin_id and bug.linked_test_task_ids == [test_id]
+        assert regression.spec_id == spec_id and regression.test_scenario_ids == [scenario_id]
+        assert (await db.get(Card, origin_id)).status == CardStatus.DONE
 
     assert moved is not None
     assert moved.status == CardStatus.IN_PROGRESS
-    assert moved.sprint_id == original_sprint_id
-    assert bug.sprint_id == original_sprint_id
-    assert regression.sprint_id == original_sprint_id
-    assert original_sprint.status == SprintStatus.CLOSED
 
 
 # ---------------------------------------------------------------------------
@@ -1011,16 +854,16 @@ async def _seed_path_b_board(db, *, amendment_kwargs):
     db.add(Spec(
         id=ids["spec"], board_id=ids["board"], title="Bug spec",
         status=SpecStatus.IN_PROGRESS, created_by=USER_ID,
-        functional_requirements=["FR1"], acceptance_criteria=["AC1"],
+        functional_requirements=[{"id": "fr-1", "text": "FR1"}], acceptance_criteria=[{"id": "ac-1", "text": "AC1"}],
         test_scenarios=[], business_rules=[], api_contracts=[],
     ))
     db.add(Spec(
         id=ids["other_spec"], board_id=ids["board"], title="Other spec",
         status=SpecStatus.IN_PROGRESS, created_by=USER_ID,
-        functional_requirements=["FR1"], acceptance_criteria=["AC1"],
+        functional_requirements=[{"id": "fr-1", "text": "FR1"}], acceptance_criteria=[{"id": "ac-1", "text": "AC1"}],
         test_scenarios=[{
             "id": ids["foreign_scenario"], "title": "Foreign scenario",
-            "linked_criteria": [0], "status": "passed",
+            "linked_criteria": ["ac-1"], "status": "passed",
         }],
         business_rules=[], api_contracts=[],
     ))
@@ -1260,11 +1103,9 @@ async def test_create_strips_reserved_coverage_confirmation_key():
     assert metadata.get("keep") == "ok"
 
 
-async def test_hotfix_lane_does_not_bypass_cross_spec_without_amendment():
-    # ts_9a56cf73 (AC1): a cross-spec regression test task in an ACTIVE HOTFIX
-    # lane, with NO amendment lineage, is still fail-closed — the hotfix lane is
-    # NOT a Path B bypass. The gate blocks with missing_amendment_revision and the
-    # bug stays not_started.
+async def test_native_cross_spec_regression_requires_amendment():
+    # AC1: a cross-Spec regression without amendment lineage is refused.
+    # The Bug stays not_started with missing_amendment_revision.
     from okto_pulse.core.infra.database import get_session_factory
 
     factory = get_session_factory()
@@ -1276,7 +1117,6 @@ async def test_hotfix_lane_does_not_bypass_cross_spec_without_amendment():
         "origin": f"hl-origin-{suffix}",
         "bug": f"hl-bug-{suffix}",
         "test": f"hl-test-{suffix}",
-        "sprint": f"hl-sprint-{suffix}",
     }
     foreign_scenario_id = "ts-foreign-hotfix"
     now = datetime.now(timezone.utc)
@@ -1285,21 +1125,17 @@ async def test_hotfix_lane_does_not_bypass_cross_spec_without_amendment():
         db.add(Board(id=ids["board"], name="Hotfix XSpec Board", owner_id=USER_ID))
         db.add(Spec(
             id=ids["spec"], board_id=ids["board"], title="Bug spec", status=SpecStatus.DONE,
-            created_by=USER_ID, functional_requirements=["FR1"], acceptance_criteria=["AC1"],
+            created_by=USER_ID, functional_requirements=[{"id": "fr-1", "text": "FR1"}], acceptance_criteria=[{"id": "ac-1", "text": "AC1"}],
             test_scenarios=[], business_rules=[], api_contracts=[],
         ))
         db.add(Spec(
             id=ids["other_spec"], board_id=ids["board"], title="Other spec",
             status=SpecStatus.IN_PROGRESS, created_by=USER_ID,
-            functional_requirements=["FR1"], acceptance_criteria=["AC1"],
+            functional_requirements=[{"id": "fr-1", "text": "FR1"}], acceptance_criteria=[{"id": "ac-1", "text": "AC1"}],
             test_scenarios=[{
-                "id": foreign_scenario_id, "title": "Foreign", "linked_criteria": [0], "status": "passed",
+                "id": foreign_scenario_id, "title": "Foreign", "linked_criteria": ["ac-1"], "status": "passed",
             }],
             business_rules=[], api_contracts=[],
-        ))
-        db.add(Sprint(
-            id=ids["sprint"], board_id=ids["board"], spec_id=ids["spec"], title="Active hotfix lane",
-            status=SprintStatus.ACTIVE, lane_type=SprintLaneType.HOTFIX, created_by=USER_ID,
         ))
         db.add(Card(
             id=ids["origin"], board_id=ids["board"], spec_id=ids["spec"], title="Origin",
@@ -1307,14 +1143,14 @@ async def test_hotfix_lane_does_not_bypass_cross_spec_without_amendment():
             created_at=now - timedelta(minutes=5),
         ))
         db.add(Card(
-            id=ids["bug"], board_id=ids["board"], spec_id=ids["spec"], sprint_id=ids["sprint"],
+            id=ids["bug"], board_id=ids["board"], spec_id=ids["spec"],
             title="Bug in hotfix lane w/ cross-spec task", status=CardStatus.NOT_STARTED,
             card_type=CardType.BUG, origin_task_id=ids["origin"], severity=BugSeverity.MAJOR,
             expected_behavior="ok", observed_behavior="bad", linked_test_task_ids=[ids["test"]],
             created_by=USER_ID, created_at=now,
         ))
         db.add(Card(
-            id=ids["test"], board_id=ids["board"], spec_id=ids["spec"], sprint_id=ids["sprint"],
+            id=ids["test"], board_id=ids["board"], spec_id=ids["spec"],
             title="Cross-spec regression test in hotfix lane", status=CardStatus.NOT_STARTED,
             card_type=CardType.TEST, test_scenario_ids=[foreign_scenario_id],
             created_by=USER_ID, created_at=now + timedelta(seconds=1),

@@ -1312,7 +1312,12 @@
           "case_references": []
         }
       ],
-      "current_qualification": "pending_current_pair_review"
+      "current_qualification": "verified_current_pair_review",
+      "current_review": {
+        "artifact": "clean-break-acceptance-native-bug-governance.json",
+        "criterion_key": "BASE:T21",
+        "proof_pair": "dist-native-next25"
+      }
     },
     {
       "key": "BASE:T22",
@@ -1334,7 +1339,12 @@
           "case_references": []
         }
       ],
-      "current_qualification": "pending_current_pair_review"
+      "current_qualification": "verified_current_pair_review",
+      "current_review": {
+        "artifact": "clean-break-acceptance-native-bug-governance.json",
+        "criterion_key": "BASE:T22",
+        "proof_pair": "dist-native-next25"
+      }
     },
     {
       "key": "BASE:T23",
@@ -1378,7 +1388,12 @@
           "case_references": []
         }
       ],
-      "current_qualification": "pending_current_pair_review"
+      "current_qualification": "verified_current_pair_review",
+      "current_review": {
+        "artifact": "clean-break-acceptance-native-bug-governance.json",
+        "criterion_key": "BASE:T24",
+        "proof_pair": "dist-native-next25"
+      }
     },
     {
       "key": "BASE:T25",

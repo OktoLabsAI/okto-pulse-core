@@ -2,6 +2,27 @@
 
 ## Estado para retomada
 
+### 2026-10-07 — C4 T21/T22/T24: Bug nativo sem fixture de lane histórica
+Turno anterior: progresso (T12–T20 publicados e compatibilidade de fixture retirada).
+Isolado Core11797d7a/Community84923f75, next25 byteprovado; main congelado para
+native-installed-recovery7 handle96950, revalidado ativo, quatro casos iniciais
+aprovados e quinto ainda executando. Nenhum restart.
+
+test_bug_regression_locked_spec/test_path_b_e2e não criam mais Sprint/hotfix lane,
+não atribuem sprint_id nem testam preservação de assignment histórico. Matriz de
+quatro estados antigos retirada; mantidos positivos/negativos nativos, amendment,
+evidence/coverage e ausência de comandos retirados. FR/AC tipados e links por ID.
+Pós-conclusão exige Spec canônica intacta, origem Done e vínculos Bug/Test atuais.
+Produto não mudou; nenhuma decisão de autoridade adicionada.
+
+bug-lifecycle1 handle62731 terminou0:69pass/17.64s em cinco módulos.
+done-fence1 handle42434 terminou0:9pass/23.81s com adapters Community reais.
+Ruff F/E9 passou. Recibo clean-break-acceptance-native-bug-governance.json
+promove somente T21/T22/T24; T23 não foi inferido nem contornado.
+Sem mudança frontend (provas UI anteriores preservadas), sem processo isolado ativo.
+Próximos fixos: T25 e restantes aplicáveis; terminal E2E; T23/KG-10 pendentes.
+Não declarar entrega integral nem contar casos retirados como aprovados.
+
 ### 2026-10-07 — C4 T16–T20 qualificados com fixtures nativas
 Core5f615071 publicado no isolado; main continua102acd3d enquanto E2E96950 ativo.
 Retirado teste positivo de coexistência com Sprint: test_f3_retired_sprint_admission
