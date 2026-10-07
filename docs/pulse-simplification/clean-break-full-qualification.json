@@ -860,5 +860,24 @@
     "product_change": "Regenerated resource manifest hashes only. No runtime semantics changed.",
     "scope": "Native fixtures for permissions, architecture adoption, FR task linkage, immutable checklist edition, independent reviewer, typed options/arrays/booleans; native SQLite delivery UDF in test composition. Removed Sprint seeds from mixed pagination fixture.",
     "limits": "Remaining backend modules and criteria still pending. Latest full run stopped at maxfail20."
+  },
+  "community_full_run3": {
+    "campaign": "clean-break-full-run3-community",
+    "passed": 0,
+    "errors": 20,
+    "duration_seconds": 69.93,
+    "xml_sha256": "82444fb7429e1cccc5fd00df6e5aa02e4d8d91e9374a322745e8f220e0416de9",
+    "selection": "clean-break-full-run3-community-selection.json",
+    "note": "All errors shared C5 SQL seed missing architecture_adoption; maxfail20. No tests passed."
+  },
+  "community_pagination_followup": {
+    "campaign": "clean-break-community-pagination-fixture1",
+    "passed": 78,
+    "failed": 0,
+    "duration_seconds": 151.91,
+    "xml_sha256": "9bf398a2979c44bea0b7ccf93d2da3264985b061eb1f4b3f6f897c23c4d44785",
+    "proof_pair": "dist-native-collaboration-qualification1",
+    "product_changes": false,
+    "note": "Explicit native architecture scope in all31 SQL Spec seeds; preserved paging totals, scope denials, SQL caps."
   }
 }

@@ -2,6 +2,28 @@
 
 ## Estado para retomada
 
+### 2026-10-07 — C4 seed de paginacao; C3 contrato REST duplicado confirmado
+
+Core ed9d6e16 publicado/push confirmado. Community full-run3 terminou com20
+erros/zero aprovados em69.93s, handle91949 encerrado. Uma causa compartilhada:
+INSERT direto de31 Specs sem architecture_adoption. Fixture declara agora
+ArchitectureAdoptionScope com Board/Spec/actor e edicao (3 em p00,1 nos demais).
+Followup community-pagination-fixture1:78 aprovados em151.91s; handle70794
+encerrado. Par/provenance/closure native-collaboration-qualification1 aplicaveis,
+sem alteracao de produto. Nao contabilizar erros da campanha geral como verdes.
+
+Candidato C3 confirmado no uso: quatro GET lists (Story/Ideation/Refinement/Spec)
+oferecem array sem offset/limit e envelope quando presentes; codigo documenta
+o ramo como DR9/legacy compatibility. Frontend StoryModal/CreateCardModal/
+CreateRefinementModal ainda usa helpers listIdeations/listSpecs sem pagina.
+Nao remover funcionalidade desses seletores nem truncar suas opcoes.
+Proxima alteracao delimitada: envelope unico nas quatro rotas, defaults0/25 e
+validacao uniforme; consumidores de lista completa percorrem o mesmo contrato
+paginado. Preservar preflight, grants, filtros, totais e budgets SQL. Testes de
+ambos transportes/consumidores e frontend obrigatorios, rebuild/prova antes deles.
+Nao e migracao nem nova entidade/API: retirada de caminho alternativo prevista C3.
+Ainda nao implementado nesta entrada. C1-C4/T23/KG-10 continuam abertos.
+
 ### 2026-10-07 — C3/C4 colaboracao, paginacao e manifesto nativos
 
 Core full-run5 terminou:950 aprovados/20 falhas em397.42s; handle11960
