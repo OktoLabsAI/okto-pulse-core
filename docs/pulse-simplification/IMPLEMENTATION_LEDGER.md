@@ -2,6 +2,39 @@
 
 ## Estado para retomada
 
+### 2026-10-07 — C4 T44 qualificado; T46 encontrou documentação obsoleta
+release-main29-1 handle94039 terminou0:6pass/209.30s; XML conferido.
+Instalação Python3.11 nova dos três wheels; prova byte-a-byte antecedeu imports,
+CLI0.4.0/MCP HTTP282tools/54resources, reentry/concurrency/crash-resume nativos,
+recusa de storage incompatível sem alteração dos arquivos/sidecars.
+Recibo clean-break-acceptance-native-distribution.json contém evidência integral
+e promove somente T44, junto à recusa do frontend main29 já registrada.
+
+resource-guidance1 handle26086 terminou0:171pass/12.42s. Esses testes ainda
+exigiam prosa obsoleta em quality-assessments/policy-compliance/test-scenario:
+importação de spec_validation, resultados sem edição, Sprint como subject e filtro
+de tipo histórico. Portanto suite verde NÃO qualifica T46. Próximo: alinhar
+orientação/testes aos contratos nativos reais e revisar demais referências
+do mesmo recurso. Nenhuma semântica/autoridade foi alterada neste incremento.
+Recibo benchmark-native-flows-main29:28sessions,28initialize,28tools/list,
+85calls,6980645bytes,1651794tokens estimados. T43 sem ganho comparativo comprovado.
+Sem processos ativos; main29 continua byteprovado. T23/KG-10 permanecem pendentes.
+
+### 2026-10-07 — C4 T43: medição nativa atual, sem ganho comparativo presumido
+main Coree55ee8c9/Communityf341d0c6 limpos; main29 instalado/byteprovado,
+produto inalterado. measurement2 falhou coleta por cwd Core para testes Community;
+zero testes, não falha comportamental. measurement3 handle46255 terminou0:
+6pass/38.13s, XML conferido. Captura integral comprimida e recibo
+benchmark-native-flows-main29.json preservam payloads, versões, origens e hashes.
+Variantes de rejeição agora incluem retrabalho e aprovação: população mudou;
+não inferir economia/regressão percentual. T43 continua pendente de comparação
+equivalente; nenhum gate/tool foi ocultado para melhorar a métrica.
+
+ATIVO acceptance-native-release-main29-1 handle94039: instalação nova hermética,
+prova de payload antes de comportamento, CLI/MCP e recusa sem conversão.
+Não editar produto enquanto essa campanha estiver ativa. Próximos T44/T46 e
+restantes C4; T23/KG-10 permanecem decisões pendentes. Sem entrega integral.
+
 ### 2026-10-07 — C4 T39–T42 qualificados no par main29
 Frontend enviado Corede5d41f1/Communityf341d0c6, pushes0; main limpos ao iniciar.
 substantive-closeout1 handle17617 terminou0:2pass/11.23s, HTTP ASGI do produto,
