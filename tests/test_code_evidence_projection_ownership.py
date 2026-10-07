@@ -80,7 +80,8 @@ def test_target_evidence_family_is_exact_and_empty_source_retracts_only_links():
         assert not family.owns_endpoints(**{**args, field: value})
     result = DeterministicWorker().process_implementation_target({
         **_target(), "baseline_evidence_id": None, "evidence_links": []})
-    intent, = result.relational_projection_active_set_intents
+    intent, = [item for item in result.relational_projection_active_set_intents
+        if item.namespace == TARGET_EVIDENCE_NAMESPACE]
     assert intent.namespace == TARGET_EVIDENCE_NAMESPACE
     assert intent.owner_type == "implementation_target"
     assert intent.active_refs == intent.active_edges == ()

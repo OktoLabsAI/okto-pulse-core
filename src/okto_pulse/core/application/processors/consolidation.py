@@ -2396,7 +2396,7 @@ async def _materialize_authoritative_overlap_endpoint_nodes(
     an empty graph.  The first phase loads every declared peer through the
     authoritative relational SourceReader and runs the same deterministic
     target projector used by the peer's own live-event queue entry.  Its root
-    and non-overlap provenance edges are staged first (the connectivity guard
+    and its Card backbone are staged first (the connectivity guard
     requires every operational Entity to retain a ``belongs_to`` backbone);
     symmetric overlap relations remain the second phase.  This never fabricates
     a node from an ID and fails before ``begin_consolidation`` when closure is
@@ -2448,8 +2448,9 @@ async def _materialize_authoritative_overlap_endpoint_nodes(
         # The deterministic projector validates every bounded target field and
         # supplies the exact canonical root used when the peer is processed by
         # its own event/rebuild row.  Stage the peer's authoritative provenance
-        # edges, but never its symmetric overlaps: the current row owns the
-        # second-phase overlap edge and both endpoints are now present.
+        # backbone only. Evidence links belong to the peer's own active set;
+        # copying them here would let one owner's batch write another's facts.
+        # Both endpoints are then available for the overlap relation.
         peer_result = _run_deterministic_worker(entry, dict(peer), None)
         peer_roots = [
             node
@@ -2461,7 +2462,9 @@ async def _materialize_authoritative_overlap_endpoint_nodes(
             raise ValueError("code_traceability_overlap_peer_projection_invalid")
         result.nodes.append(peer_roots[0])
         result.edges.extend(
-            edge for edge in peer_result.edges if edge.edge_type != "overlaps"
+            edge for edge in peer_result.edges
+            if edge.edge_type == "belongs_to"
+            and edge.rule_id == "belongs_to/code_traceability_target_card@v2.0"
         )
         existing_refs.add(source_ref)
     return result

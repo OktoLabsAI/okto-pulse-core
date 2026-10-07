@@ -2,6 +2,109 @@
 
 ## Estado para retomada
 
+### 2026-10-07 — overlap nativo: retração, rollback e paridade aprovados
+Todas as campanhas terminaram. Rollback1 (64697):4pass/153.55s;
+service1 (24759):73pass/5.33s; regression1 (89844):5pass/219.36s;
+revoke1 (25306):1pass/64.56s; parity1 (58015):1pass/99.81s.
+Recibo clean-break-native-overlap-retraction.json consolida176 casos Python
+distintos finais e48 frontend; sobreposições entre campanhas não foram somadas.
+O caso antigo de intent único falhou em contract2 e passou corrigido em contract3.
+Paridade compara fontes SQL completas idênticas e multiset gráfico completo.
+Falhas injetadas após exclusão Grafx e staging real de evento provam compensação,
+rollback da UOW e retry; update/revoke usam serviço, outbox e handler reais.
+Resolução/replay têm cobertura unitária de orquestração, com autoridade isolada;
+não constitui prova nova de admissão integral. Frontend jsdom, não WebGL/E2E.
+
+Main44 permanece byteprovado:837/899 Core+316/402 Community; nenhum Python
+produtivo mudou desde a prova. Closure44 passou, oito budgets ZERO e findings
+vazios. Ruff F/E9 e diff-check finais passaram. Sem processos pendentes.
+Milestone de overlap pronto para commits/pushes pareados. Índice62/173/11
+mantido: KG-16/24 ainda dependem das famílias restantes e não são declarados
+integralmente concluídos. Depois seguem DEI/ARQVER no escopo fixo.
+A mensagem de instalação/inicialização do Nexus foi retirada pelo usuário;
+nenhuma ação Nexus executada. BASE:T23/KG-10 seguem separados; next27 STALE.
+
+### 2026-10-07 — overlap evento real e frontend aprovados; rollback em curso
+event2 (75433) terminou1/36.74s: caso de uso real mutou e persistiu evento; fixture
+tentou desserializar payload_json sem colunas comuns. Corrigida para incluir
+id/board/actor/occurred_at da própria linha, preservando envelope produtivo.
+event3 (63845) terminou0:1pass/44.44s; UOW/serviço/outbox reais, evento reentregue
+duas vezes, somente target1+target2 na fila e vizinho alheio/SQL preservados.
+Orchestration1 terminou0:15pass/2.46s, incluindo antes/depois de resolução,
+replay sem acesso à fonte atual e erro de fonte sem publicação/commit
+(autoridade/admissão explicitamente isoladas como fixture nesses três unitários).
+UI76635 terminou0:48pass, inclui caso novo de seleção/navegação após tirar overlap;
+jsdom/fallback, sem alegação WebGL. Assets produtivos não alterados.
+Closure44 (84832) terminou0:ok=true, findings/documentation_findings=[], oito ZERO.
+Sem regeneração README necessária. Produto permanece main44 byteprovado.
+Campanha rollback1 (64697) está em execução: teste de falha após exclusão gráfica
+real e falha após staging de evento, com recuperação/replay. Não alterar fixture
+desse módulo enquanto a campanha estiver ativa. Faltam paridade de fontes idênticas
+e cobertura de revoke, recibo/commits/pushes; milestone ainda aberto.
+
+### 2026-10-07 — overlap com dono único e invalidação causal em validação
+Main44 build/install/prova73188 terminou0:837/899+316/402 byte-identical.
+Família pública implementation_target_overlaps: dono é menor ID do par, como
+direção gráfica já existente; só ele emite/pruna. Worker exige coleção completa
+overlap_target_ids, inclusive[] explícito; compensador Grafx existente reutilizado.
+Eventos Updated/Revoked/ResolutionSubmitted exigem tuple tipado e limitado de
+overlap_projection_owner_ids, derivado antes/depois na mesma UOW por portas
+públicas. Enqueuer deduplica somente esses donos+Target mudado, sem sweep do Board.
+Replay de resolução já persistida não exige consulta de overlap atual nem publica
+novo evento. Nenhuma nova autorização ou fonte de policy.
+
+Core contract2 (34535) terminou1:88pass/1fail/8.31s. Oráculo Evidence ainda
+desempacotava intent único; atualizado para família exata, não afrouxado o guard.
+contract3 terminou0:33pass/3.36s (arquivo afetado +12 novos ownership/eventos).
+Native overlap4 (89494) terminou0:1pass/41.13s; retração e replay com dois endpoints.
+Novo teste de caso de uso real/evento persistido/handler limita fanout e preserva
+Target alheio. event1 (63680) terminou1/35.08s por adapter application não composto
+na fixture. Passou a usar fixture de registro Community real existente; event2
+(75433) em andamento. Produto estável main44; não editar/reinstalar durante campanha.
+Faltam negativos rollback/replay/resolução, paridade, frontend e closure final.
+Nenhum commit/push deste WIP. Índice62/173/11, entrega integral aberta.
+
+### 2026-10-07 — KG-16/24: bootstrap corrigido; overlap obsoleto confirmado
+Build/install/prova34759 main43 terminou0:837/899+316/402 byte-identical.
+Core overlap-contract1 (51527) terminou0:36pass/3.92s, incluindo bootstrap que
+preserva active sets e não copia Evidence do peer. Native overlap3 (64754)
+terminou1/34.99s: bootstrap completo agora passa; depois de invalidar resolução2,
+SQL overlap_report retorna(), ambos Targets ACKam, mas overlaps permanece.
+Falha real de retração, não preparação. Nenhum processo ainda ativo.
+
+WIP: consolidation.py limita bootstrap do peer a raiz+belongs_to Card; novo
+unitário e test_native_target_overlap_projection.py (fixture nativa e reprodução).
+Ainda não commitado/pushado, pois a correção completa da família está aberta.
+Par publicado continua00361b9b/2f9c6dbc; instalado main43, fontes correspondentes.
+Próxima ação: família overlap com dono determinístico (menor Target, já direção
+canônica da aresta), active set completo/obrigatório e compensação existente;
+invalidação exata de donos de pares antes/depois de update/revoke/resolution,
+pela porta pública uow.services.code_traceability_read.overlap_report e eventos
+tipados no mesmo UOW. Não deixar ambos donos podarem a mesma aresta nem relaxar
+active_set_mismatch. Investigar antes/depois sob os fences/CAS existentes.
+Usecases em application/use_cases/code_traceability.py; handlers/consolidation_enqueuer
+hoje só enfileiram target_id. Código de fanout/família ainda NÃO alterado.
+Depois testes de evento real, rollback/replay, vizinho não afetado e paridade,
+frontend/closure; só então fechar milestone e commits/pushes. Índice62/173/11.
+
+### 2026-10-07 — KG-16/24: reprodução overlap expôs mistura de donos
+Turno anterior foi progresso: C1 enviado Core00361b9b / Community2f9c6dbc;
+árvores limpas confirmadas. Prova provenance-native-overlap1 main42-final passou
+837/899+316/402 antes do comportamento.
+Nova fixture nativa com dois Cards/Targets, request/receipt/resolution por Card.
+overlap1 (45523) terminou1/14.79s: fixture clonava challenge_token_hash único;
+corrigida para desafio distinto, sem relaxar guard.
+overlap2 (76674) terminou1/35.02s: falha real ANTES da retirada. Bootstrap do
+peer copia derives_from Evidence do Target1 para lote Target2; guard de active
+set rejeita relational_projection_active_set_mismatch. Core helper agora copia
+apenas raiz e belongs_to/target_card necessários à conectividade, sem relação
+Evidence de outro dono. Novo teste unitário preserva esse limite.
+WIP ainda não validado/commitado. Próximo: main43 build/install/prova; unitários
+e repetir teste nativo. Retração de overlap e invalidação causal continuam
+pendentes: events target.updated/revoked/resolution_submitted enfileiram somente
+target_id, e worker ainda emite relação simétrica sem active set. Não afirmar
+retração corrigida pela correção de bootstrap. Nenhuma autoridade/gate alterada.
+
 ### 2026-10-07 — C1: protocolo de projeção do retirement retirado e validado
 Prova final49878 terminou0:837/899 Core+316/402 Community byte-identical;
 Python dos wheels finais idêntico ao main42 usado no comportamento.

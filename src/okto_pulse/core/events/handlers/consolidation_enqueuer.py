@@ -418,9 +418,11 @@ class ConsolidationEnqueuer:
             return targets
         if et in _IMPLEMENTATION_TARGET_EVENTS:
             target_id = getattr(event, "target_id", None)
-            if target_id:
-                targets.append(("implementation_target", target_id))
-            return targets
+            # Snapshot-derived owners are captured before/after mutation in the
+            # same UOW, including a pair which no longer exists in current SQL.
+            identities = (*getattr(event, "overlap_projection_owner_ids", ()), target_id)
+            return [("implementation_target", identity)
+                for identity in dict.fromkeys(identities) if identity]
         if et == "implementation_overlap.acknowledged":
             for attr in ("target_a_id", "target_b_id"):
                 target_id = getattr(event, attr, None)

@@ -341,3 +341,24 @@ async def test_overlap_peer_closure_fails_before_any_graph_session_or_placeholde
 
     assert _nodes_for_source(store, "implementation_target:target-b") == []
     assert store._board_edges(BOARD_ID) == []  # noqa: SLF001
+
+
+@pytest.mark.asyncio
+async def test_peer_bootstrap_does_not_import_evidence_owned_by_another_target():
+    from okto_pulse.core.ports.code_evidence_projection import TARGET_EVIDENCE_RULE
+
+    current = _target("target-b", ["target-a"])
+    peer = {**_target("target-a", ["target-b"]), "baseline_evidence_id": "peer-evidence"}
+    result = DeterministicWorker().process_implementation_target(current)
+    owned_intents = result.relational_projection_active_set_intents
+    projected = await _materialize_authoritative_overlap_endpoint_nodes(
+        None, _entry("target-b"), current, result,
+        persistence=_TargetPersistence({"target-a": peer, "target-b": current}))
+    assert projected.relational_projection_active_set_intents == owned_intents
+    assert {node.source_artifact_ref for node in projected.nodes} == {
+        "implementation_target:target-a", "implementation_target:target-b"}
+    assert not [edge for edge in projected.edges if edge.rule_id == TARGET_EVIDENCE_RULE]
+    assert {(edge.from_candidate_id, edge.to_candidate_id) for edge in projected.edges
+        if edge.rule_id == "belongs_to/code_traceability_target_card@v2.0"} == {
+            (node.candidate_id, "kgref:Entity:card:card-" + node.source_artifact_ref[-1])
+            for node in projected.nodes}

@@ -37,6 +37,7 @@ from typing import Any
 from okto_pulse.core.ports.code_evidence_projection import (
     CODE_EVIDENCE_LINK_NAMESPACE, CODE_EVIDENCE_LINK_RULE,
     CODE_TRACEABILITY_SPEC_ENDPOINTS, TARGET_EVIDENCE_NAMESPACE, TARGET_EVIDENCE_RULE,
+    TARGET_OVERLAP_NAMESPACE, TARGET_OVERLAP_RULE,
 )
 from okto_pulse.core.domain.code_traceability_kg import (
     CODE_INVESTIGATION_RECEIPT_KG_STATUSES,
@@ -2869,6 +2870,8 @@ class DeterministicWorker:
                 or not isinstance(target["evidence_links"], (list, tuple))):
             raise ValueError("code_traceability_target_evidence_incomplete")
         evidence_links = _traceability_sequence(target, "evidence_links", limit=200)
+        if not isinstance(target.get("overlap_target_ids"), (list, tuple)):
+            raise ValueError("code_traceability_target_overlaps_incomplete")
         overlap_target_ids = _traceability_id_sequence(
             target,
             "overlap_target_ids",
@@ -3063,6 +3066,8 @@ class DeterministicWorker:
             if overlap_target_id == target_id:
                 raise ValueError("code_traceability_overlap_self_reference")
             first_id, second_id = sorted((target_id, overlap_target_id))
+            if first_id != target_id:
+                continue  # The other Target owns this pair and its replacement.
             result.edges.append(
                 EmittedEdge(
                     candidate_id=(
@@ -3087,9 +3092,20 @@ class DeterministicWorker:
                         )
                     ),
                     confidence=1.0,
-                    rule_id=f"overlaps/code_traceability_current@{WORKER_VERSION}",
+                    rule_id=TARGET_OVERLAP_RULE,
                 )
             )
+        result.relational_projection_active_set_intents += (
+            RelationalProjectionActiveSetIntent(
+                owner_type="implementation_target", owner_id=target_id,
+                namespace=TARGET_OVERLAP_NAMESPACE, active_refs=(),
+                active_edges=tuple(RelationalProjectionActiveEdgeRef(
+                    candidate_id=edge.candidate_id, edge_type=edge.edge_type,
+                    from_candidate_id=edge.from_candidate_id,
+                    to_candidate_id=edge.to_candidate_id, rule_id=edge.rule_id,
+                ) for edge in result.edges if edge.rule_id == TARGET_OVERLAP_RULE),
+            ),
+        )
         graph_layer, maturity_status = _layer_attrs_for_artifact(
             "implementation_target",
             lifecycle_status,

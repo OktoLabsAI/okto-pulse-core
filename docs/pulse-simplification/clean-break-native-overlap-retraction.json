@@ -1,0 +1,981 @@
+{
+  "format": "pulse-040-reviewed-increment/v1",
+  "scope": [
+    "KG:KG-16 native overlap ownership and causal retraction",
+    "KG:KG-24 native overlap incremental/rebuild parity"
+  ],
+  "status": "increment_verified_not_full_delivery",
+  "proof_pair": "dist-native-main44",
+  "provenance_sha256": "fdc29eb30acbce0790a001e39bfcec11e4f60843e1a7844c7dfe21eff82f8d39",
+  "wheels": {
+    "okto_pulse-0.4.0-py3-none-any.whl": "9a6106bd41e2e68bef4f15f0450e18734caa29bcc19a5c9cd57313455d22c376",
+    "okto_pulse_core-0.4.0-py3-none-any.whl": "8eb03a1570fe62a780135040a5a52f9f21711323519c6be1ce1a1ec6f9ab533e"
+  },
+  "python_final_distinct_passed": 176,
+  "runs": [
+    {
+      "name": "acceptance-native-overlap-contract2",
+      "sha256": "8a75316e60dd1d64eea13a76500f0fd946fe49e64bb1d66a67b4a58c3c56900d",
+      "cases": [
+        {
+          "case": "tests.test_target_overlap_ownership::test_incomplete_overlap_source_cannot_authorize_retraction[absent]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_target_overlap_ownership::test_incomplete_overlap_source_cannot_authorize_retraction[null]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_target_overlap_ownership::test_incomplete_overlap_source_cannot_authorize_retraction[mapping]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_target_overlap_ownership::test_only_first_target_emits_and_owns_each_overlap",
+          "passed": true
+        },
+        {
+          "case": "tests.test_target_overlap_ownership::test_pair_owner_is_exact_and_cannot_prune_another_direction[Entity-implementation_target:target-2-True]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_target_overlap_ownership::test_pair_owner_is_exact_and_cannot_prune_another_direction[Entity-implementation_target:target-0-False]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_target_overlap_ownership::test_pair_owner_is_exact_and_cannot_prune_another_direction[Entity-implementation_target:target-1-False]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_target_overlap_ownership::test_pair_owner_is_exact_and_cannot_prune_another_direction[Bug-implementation_target:target-2-False]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_target_overlap_ownership::test_pair_owner_is_exact_and_cannot_prune_another_direction[Entity-code_evidence:target-2-False]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_target_overlap_ownership::test_pair_owner_is_exact_and_cannot_prune_another_direction[Entity-implementation_target:target-2:foreign-False]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_target_overlap_ownership::test_event_enqueues_old_and_new_pair_owners_once_without_a_board_sweep",
+          "passed": true
+        },
+        {
+          "case": "tests.test_target_overlap_ownership::test_owner_event_snapshot_is_required_bounded_and_immutable",
+          "passed": true
+        },
+        {
+          "case": "tests.test_code_traceability_overlap_rebuild::test_symmetric_overlap_rebuild_materializes_authoritative_roots_and_preserves_peer_ownership",
+          "passed": true
+        },
+        {
+          "case": "tests.test_code_traceability_overlap_rebuild::test_overlap_peer_closure_fails_before_any_graph_session_or_placeholder[None-code_traceability_overlap_peer_unresolved]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_code_traceability_overlap_rebuild::test_overlap_peer_closure_fails_before_any_graph_session_or_placeholder[peer1-code_traceability_overlap_peer_scope_mismatch]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_code_traceability_overlap_rebuild::test_overlap_peer_closure_fails_before_any_graph_session_or_placeholder[peer2-code_traceability_overlap_peer_not_materializable]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_code_traceability_overlap_rebuild::test_peer_bootstrap_does_not_import_evidence_owned_by_another_target",
+          "passed": true
+        },
+        {
+          "case": "tests.test_code_traceability_events_kg::test_event_registry_contains_exact_current_traceability_event_names",
+          "passed": true
+        },
+        {
+          "case": "tests.test_code_traceability_events_kg::test_event_schemas_have_no_operational_code_or_secret_fields",
+          "passed": true
+        },
+        {
+          "case": "tests.test_code_traceability_events_kg::test_event_payload_is_bounded_frozen_and_rejects_unknown_fields",
+          "passed": true
+        },
+        {
+          "case": "tests.test_code_traceability_events_kg::test_kg_schema_is_additive_semantic_subtyping_only",
+          "passed": true
+        },
+        {
+          "case": "tests.test_code_traceability_events_kg::test_kg_relationship_catalog_has_only_closed_physical_endpoint_pairs",
+          "passed": true
+        },
+        {
+          "case": "tests.test_code_traceability_events_kg::test_receipt_projection_is_deterministic_connected_and_never_dynamic",
+          "passed": true
+        },
+        {
+          "case": "tests.test_code_traceability_events_kg::test_conflicted_accepted_receipt_projects_as_typed_working_knowledge",
+          "passed": true
+        },
+        {
+          "case": "tests.test_code_traceability_events_kg::test_evidence_projection_uses_metadata_only_and_closed_relationships",
+          "passed": true
+        },
+        {
+          "case": "tests.test_code_traceability_events_kg::test_target_projects_current_resolution_as_properties_not_as_a_node",
+          "passed": true
+        },
+        {
+          "case": "tests.test_code_traceability_events_kg::test_projection_rejects_malformed_digest_before_graph_staging",
+          "passed": true
+        },
+        {
+          "case": "tests.test_code_traceability_events_kg::test_rebuild_identity_keeps_row_source_ref_separate_from_semantic_mapping",
+          "passed": true
+        },
+        {
+          "case": "tests.test_code_traceability_application::test_challenge_is_deterministic_single_use_and_replay_safe",
+          "passed": true
+        },
+        {
+          "case": "tests.test_code_traceability_application::test_partial_receipt_records_missing_capability_but_cannot_authorize_it",
+          "passed": true
+        },
+        {
+          "case": "tests.test_code_traceability_application::test_new_source_ref_is_server_allocated_and_start_race_replays_winner",
+          "passed": true
+        },
+        {
+          "case": "tests.test_code_traceability_application::test_open_request_cap_is_admitted_atomically_under_concurrency",
+          "passed": true
+        },
+        {
+          "case": "tests.test_code_traceability_application::test_receipt_head_cas_failure_has_zero_mutation",
+          "passed": true
+        },
+        {
+          "case": "tests.test_code_traceability_application::test_receipt_trust_requires_other_actor_and_conflict_fails_closed",
+          "passed": true
+        },
+        {
+          "case": "tests.test_code_traceability_application::test_first_receipt_in_new_scope_recovers_global_head_from_conflict",
+          "passed": true
+        },
+        {
+          "case": "tests.test_code_traceability_application::test_evidence_omission_reason_is_not_agent_controlled",
+          "passed": true
+        },
+        {
+          "case": "tests.test_code_traceability_application::test_evidence_is_server_owned_immutable_and_superseded_atomically",
+          "passed": true
+        },
+        {
+          "case": "tests.test_code_traceability_application::test_target_creation_requires_current_card_preflight_and_exact_scope",
+          "passed": true
+        },
+        {
+          "case": "tests.test_code_traceability_application::test_resolution_thresholds_are_closed_and_versioned",
+          "passed": true
+        },
+        {
+          "case": "tests.test_code_traceability_application::test_resolution_and_execution_replay_ignore_later_live_target_state",
+          "passed": true
+        },
+        {
+          "case": "tests.test_code_traceability_application::test_target_update_replaces_link_sets_without_silent_drops",
+          "passed": true
+        },
+        {
+          "case": "tests.test_code_traceability_application::test_target_update_uses_cas_and_resolution_is_agent_only",
+          "passed": true
+        },
+        {
+          "case": "tests.test_code_traceability_application::test_blocking_rejected_card_allows_preflight_and_resolution_only",
+          "passed": true
+        },
+        {
+          "case": "tests.test_code_traceability_application::test_target_create_permission_distinguishes_agent_suggestion_from_human",
+          "passed": true
+        },
+        {
+          "case": "tests.test_code_traceability_application::test_aggregate_projection_requires_every_leaf_read_permission",
+          "passed": true
+        },
+        {
+          "case": "tests.test_code_traceability_application::test_spec_projection_propagates_effective_code_evidence_coverage_skip[True-False]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_code_traceability_application::test_spec_projection_propagates_effective_code_evidence_coverage_skip[False-True]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_code_traceability_application::test_spec_evidence_rebase_preview_apply_cas_and_events_are_atomic",
+          "passed": true
+        },
+        {
+          "case": "tests.test_code_traceability_application::test_spec_evidence_rebase_preserves_or_normalizes_context_override[greenfield-Approved architecture exception.-True]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_code_traceability_application::test_spec_evidence_rebase_preserves_or_normalizes_context_override[hybrid-None-False]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_code_traceability_application::test_start_use_case_returns_safe_projection_and_commits_store",
+          "passed": true
+        },
+        {
+          "case": "tests.test_code_traceability_application::test_event_staging_failure_prevents_use_case_commit",
+          "passed": true
+        },
+        {
+          "case": "tests.test_code_traceability_application::test_receipt_use_case_observes_accepted_age_and_bounded_rejection",
+          "passed": true
+        },
+        {
+          "case": "tests.test_code_traceability_application::test_snapshot_does_not_swallow_internal_adapter_attribute_error",
+          "passed": true
+        },
+        {
+          "case": "tests.test_code_traceability_application::test_reopened_refinement_snapshot_inherits_prior_active_evidence",
+          "passed": true
+        },
+        {
+          "case": "tests.test_code_traceability_application::test_overlap_read_and_acknowledgement_are_bound_to_current_resolutions",
+          "passed": true
+        },
+        {
+          "case": "tests.test_code_traceability_application::test_waiver_mark_and_clear_are_explicit_monotonic_and_idempotent",
+          "passed": true
+        },
+        {
+          "case": "tests.test_code_traceability_application::test_application_layer_has_no_repository_reader_imports",
+          "passed": true
+        },
+        {
+          "case": "tests.test_code_evidence_projection_ownership::test_native_spec_endpoint_belongs_only_to_exact_evidence[Entity-]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_code_evidence_projection_ownership::test_native_spec_endpoint_belongs_only_to_exact_evidence[Requirement-fr]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_code_evidence_projection_ownership::test_native_spec_endpoint_belongs_only_to_exact_evidence[Constraint-tr]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_code_evidence_projection_ownership::test_native_spec_endpoint_belongs_only_to_exact_evidence[Criterion-ac]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_code_evidence_projection_ownership::test_native_spec_endpoint_belongs_only_to_exact_evidence[Constraint-business_rule]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_code_evidence_projection_ownership::test_native_spec_endpoint_belongs_only_to_exact_evidence[APIContract-api_contract]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_code_evidence_projection_ownership::test_native_spec_endpoint_belongs_only_to_exact_evidence[Requirement-integration_requirement]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_code_evidence_projection_ownership::test_native_spec_endpoint_belongs_only_to_exact_evidence[Constraint-observability_requirement]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_code_evidence_projection_ownership::test_native_spec_endpoint_belongs_only_to_exact_evidence[Decision-decision]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_code_evidence_projection_ownership::test_native_spec_endpoint_belongs_only_to_exact_evidence[TestScenario-test_scenario]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_code_evidence_projection_ownership::test_foreign_provenance_never_grants_cleanup[supports/code_traceability_spec_link@v9-deterministic-worker_layer1]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_code_evidence_projection_ownership::test_foreign_provenance_never_grants_cleanup[supports/code_traceability_spec_link@v2.0-cognitive-worker_layer1]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_code_evidence_projection_ownership::test_foreign_provenance_never_grants_cleanup[supports/code_traceability_spec_link@v2.0-deterministic-human]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_code_evidence_projection_ownership::test_incomplete_source_cannot_authorize_empty_active_set[missing]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_code_evidence_projection_ownership::test_incomplete_source_cannot_authorize_empty_active_set[null]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_code_evidence_projection_ownership::test_incomplete_source_cannot_authorize_empty_active_set[mapping]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_code_evidence_projection_ownership::test_complete_empty_source_declares_retraction_without_losing_evidence",
+          "passed": true
+        },
+        {
+          "case": "tests.test_code_evidence_projection_ownership::test_partial_target_source_cannot_authorize_retraction[baseline_missing]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_code_evidence_projection_ownership::test_partial_target_source_cannot_authorize_retraction[links_missing]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_code_evidence_projection_ownership::test_partial_target_source_cannot_authorize_retraction[links_null]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_code_evidence_projection_ownership::test_target_evidence_family_is_exact_and_empty_source_retracts_only_links",
+          "passed": false
+        },
+        {
+          "case": "tests.test_projection_active_set_session_cleanup::test_a_restored_projection_edge_survives_the_session_sweep",
+          "passed": true
+        },
+        {
+          "case": "tests.test_projection_active_set_session_cleanup::test_compensation_runs_before_the_generic_sweep",
+          "passed": true
+        },
+        {
+          "case": "tests.test_projection_active_set_session_cleanup::test_projection_edges_are_preserved_with_no_spec_lineage_at_all",
+          "passed": true
+        },
+        {
+          "case": "tests.test_projection_active_set_session_cleanup::test_two_reconciliations_preserve_only_the_state_the_session_started_from",
+          "passed": true
+        },
+        {
+          "case": "tests.test_projection_active_set_session_cleanup::test_a_scope_that_cannot_preserve_fails_typed_before_deleting_anything",
+          "passed": true
+        },
+        {
+          "case": "tests.test_projection_active_set_session_cleanup::test_a_session_without_projections_makes_the_call_it_always_made",
+          "passed": true
+        },
+        {
+          "case": "tests.test_projection_active_set_session_cleanup::test_two_removals_of_different_members_both_come_back",
+          "passed": true
+        },
+        {
+          "case": "tests.test_projection_active_set_session_cleanup::test_a_provider_that_only_swallows_kwargs_is_never_called",
+          "passed": true
+        },
+        {
+          "case": "tests.test_projection_active_set_session_cleanup::test_a_before_image_does_not_shelter_a_second_edge_of_the_same_identity",
+          "passed": true
+        },
+        {
+          "case": "tests.test_projection_active_set_session_cleanup::test_a_new_dependency_rule_does_not_cancel_the_old_one_it_shares_endpoints_with",
+          "passed": true
+        }
+      ]
+    },
+    {
+      "name": "acceptance-native-overlap-contract3",
+      "sha256": "65673992d66da646e4b831d196144a2e96a1da08471d7c3bd83b1b15ae505bbf",
+      "cases": [
+        {
+          "case": "tests.test_code_evidence_projection_ownership::test_native_spec_endpoint_belongs_only_to_exact_evidence[Entity-]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_code_evidence_projection_ownership::test_native_spec_endpoint_belongs_only_to_exact_evidence[Requirement-fr]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_code_evidence_projection_ownership::test_native_spec_endpoint_belongs_only_to_exact_evidence[Constraint-tr]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_code_evidence_projection_ownership::test_native_spec_endpoint_belongs_only_to_exact_evidence[Criterion-ac]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_code_evidence_projection_ownership::test_native_spec_endpoint_belongs_only_to_exact_evidence[Constraint-business_rule]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_code_evidence_projection_ownership::test_native_spec_endpoint_belongs_only_to_exact_evidence[APIContract-api_contract]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_code_evidence_projection_ownership::test_native_spec_endpoint_belongs_only_to_exact_evidence[Requirement-integration_requirement]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_code_evidence_projection_ownership::test_native_spec_endpoint_belongs_only_to_exact_evidence[Constraint-observability_requirement]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_code_evidence_projection_ownership::test_native_spec_endpoint_belongs_only_to_exact_evidence[Decision-decision]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_code_evidence_projection_ownership::test_native_spec_endpoint_belongs_only_to_exact_evidence[TestScenario-test_scenario]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_code_evidence_projection_ownership::test_foreign_provenance_never_grants_cleanup[supports/code_traceability_spec_link@v9-deterministic-worker_layer1]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_code_evidence_projection_ownership::test_foreign_provenance_never_grants_cleanup[supports/code_traceability_spec_link@v2.0-cognitive-worker_layer1]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_code_evidence_projection_ownership::test_foreign_provenance_never_grants_cleanup[supports/code_traceability_spec_link@v2.0-deterministic-human]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_code_evidence_projection_ownership::test_incomplete_source_cannot_authorize_empty_active_set[missing]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_code_evidence_projection_ownership::test_incomplete_source_cannot_authorize_empty_active_set[null]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_code_evidence_projection_ownership::test_incomplete_source_cannot_authorize_empty_active_set[mapping]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_code_evidence_projection_ownership::test_complete_empty_source_declares_retraction_without_losing_evidence",
+          "passed": true
+        },
+        {
+          "case": "tests.test_code_evidence_projection_ownership::test_partial_target_source_cannot_authorize_retraction[baseline_missing]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_code_evidence_projection_ownership::test_partial_target_source_cannot_authorize_retraction[links_missing]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_code_evidence_projection_ownership::test_partial_target_source_cannot_authorize_retraction[links_null]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_code_evidence_projection_ownership::test_target_evidence_family_is_exact_and_empty_source_retracts_only_links",
+          "passed": true
+        },
+        {
+          "case": "tests.test_target_overlap_ownership::test_incomplete_overlap_source_cannot_authorize_retraction[absent]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_target_overlap_ownership::test_incomplete_overlap_source_cannot_authorize_retraction[null]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_target_overlap_ownership::test_incomplete_overlap_source_cannot_authorize_retraction[mapping]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_target_overlap_ownership::test_only_first_target_emits_and_owns_each_overlap",
+          "passed": true
+        },
+        {
+          "case": "tests.test_target_overlap_ownership::test_pair_owner_is_exact_and_cannot_prune_another_direction[Entity-implementation_target:target-2-True]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_target_overlap_ownership::test_pair_owner_is_exact_and_cannot_prune_another_direction[Entity-implementation_target:target-0-False]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_target_overlap_ownership::test_pair_owner_is_exact_and_cannot_prune_another_direction[Entity-implementation_target:target-1-False]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_target_overlap_ownership::test_pair_owner_is_exact_and_cannot_prune_another_direction[Bug-implementation_target:target-2-False]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_target_overlap_ownership::test_pair_owner_is_exact_and_cannot_prune_another_direction[Entity-code_evidence:target-2-False]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_target_overlap_ownership::test_pair_owner_is_exact_and_cannot_prune_another_direction[Entity-implementation_target:target-2:foreign-False]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_target_overlap_ownership::test_event_enqueues_old_and_new_pair_owners_once_without_a_board_sweep",
+          "passed": true
+        },
+        {
+          "case": "tests.test_target_overlap_ownership::test_owner_event_snapshot_is_required_bounded_and_immutable",
+          "passed": true
+        }
+      ]
+    },
+    {
+      "name": "acceptance-native-overlap-orchestration1",
+      "sha256": "33767ac7f00a31b80850f28f0d92f8605b7214762568f777cf6657ee82ff6ba7",
+      "cases": [
+        {
+          "case": "tests.test_target_overlap_ownership::test_incomplete_overlap_source_cannot_authorize_retraction[absent]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_target_overlap_ownership::test_incomplete_overlap_source_cannot_authorize_retraction[null]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_target_overlap_ownership::test_incomplete_overlap_source_cannot_authorize_retraction[mapping]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_target_overlap_ownership::test_only_first_target_emits_and_owns_each_overlap",
+          "passed": true
+        },
+        {
+          "case": "tests.test_target_overlap_ownership::test_pair_owner_is_exact_and_cannot_prune_another_direction[Entity-implementation_target:target-2-True]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_target_overlap_ownership::test_pair_owner_is_exact_and_cannot_prune_another_direction[Entity-implementation_target:target-0-False]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_target_overlap_ownership::test_pair_owner_is_exact_and_cannot_prune_another_direction[Entity-implementation_target:target-1-False]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_target_overlap_ownership::test_pair_owner_is_exact_and_cannot_prune_another_direction[Bug-implementation_target:target-2-False]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_target_overlap_ownership::test_pair_owner_is_exact_and_cannot_prune_another_direction[Entity-code_evidence:target-2-False]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_target_overlap_ownership::test_pair_owner_is_exact_and_cannot_prune_another_direction[Entity-implementation_target:target-2:foreign-False]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_target_overlap_ownership::test_event_enqueues_old_and_new_pair_owners_once_without_a_board_sweep",
+          "passed": true
+        },
+        {
+          "case": "tests.test_target_overlap_ownership::test_owner_event_snapshot_is_required_bounded_and_immutable",
+          "passed": true
+        },
+        {
+          "case": "tests.test_target_overlap_ownership::test_resolution_event_uses_union_of_pair_owners_and_preserves_replay[mutation]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_target_overlap_ownership::test_resolution_event_uses_union_of_pair_owners_and_preserves_replay[replay]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_target_overlap_ownership::test_resolution_event_uses_union_of_pair_owners_and_preserves_replay[failed_source]",
+          "passed": true
+        }
+      ]
+    },
+    {
+      "name": "acceptance-native-overlap-service1",
+      "sha256": "345f462634f79275e0fdec1f7b00c67c24ac6e9c02b02ada1ea032de85df65c7",
+      "cases": [
+        {
+          "case": "tests.test_kg_service_code_traceability_projection::test_all_listing_templates_select_the_stable_traceability_projection",
+          "passed": true
+        },
+        {
+          "case": "tests.test_kg_service_code_traceability_projection::test_get_all_nodes_projects_subtype_and_traceability_metadata",
+          "passed": true
+        },
+        {
+          "case": "tests.test_kg_service_code_traceability_projection::test_get_all_nodes_binds_cursor_timestamp_as_a_typed_utc_value",
+          "passed": true
+        },
+        {
+          "case": "tests.test_kg_service_code_traceability_projection::test_get_node_detail_projects_same_metadata",
+          "passed": true
+        },
+        {
+          "case": "tests.test_kg_service_code_traceability_projection::test_current_rows_preserve_nullable_traceability_columns",
+          "passed": true
+        },
+        {
+          "case": "tests.test_kg_service_code_traceability_projection::test_incomplete_projection_does_not_return_a_node[get_all_nodes]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_kg_service_code_traceability_projection::test_incomplete_projection_does_not_return_a_node[get_node_detail]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_code_traceability_kg_authorization::test_all_four_code_traceability_leaves_are_required",
+          "passed": true
+        },
+        {
+          "case": "tests.test_code_traceability_kg_authorization::test_arbitrary_query_guard_denies_without_complete_ct_authority",
+          "passed": true
+        },
+        {
+          "case": "tests.test_code_traceability_kg_authorization::test_health_mask_removes_graph_counts_but_preserves_stop_rule",
+          "passed": true
+        },
+        {
+          "case": "tests.test_code_traceability_kg_authorization::test_health_mask_is_identity_for_complete_ct_authority",
+          "passed": true
+        },
+        {
+          "case": "tests.test_code_traceability_kg_authorization::test_generic_candidate_cannot_forge_any_ct_metadata_field[investigation_receipt_id]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_code_traceability_kg_authorization::test_generic_candidate_cannot_forge_any_ct_metadata_field[source_ref]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_code_traceability_kg_authorization::test_generic_candidate_cannot_forge_any_ct_metadata_field[attestor_actor_id]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_code_traceability_kg_authorization::test_generic_candidate_cannot_forge_any_ct_metadata_field[declared_revision]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_code_traceability_kg_authorization::test_generic_candidate_cannot_forge_any_ct_metadata_field[workspace_state_id]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_code_traceability_kg_authorization::test_generic_candidate_cannot_forge_any_ct_metadata_field[code_path]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_code_traceability_kg_authorization::test_generic_candidate_cannot_forge_any_ct_metadata_field[symbol_qualified_name]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_code_traceability_kg_authorization::test_generic_candidate_cannot_forge_any_ct_metadata_field[symbol_kind]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_code_traceability_kg_authorization::test_generic_candidate_cannot_forge_any_ct_metadata_field[selector_kind]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_code_traceability_kg_authorization::test_generic_candidate_cannot_forge_any_ct_metadata_field[selector_fingerprint]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_code_traceability_kg_authorization::test_generic_candidate_cannot_forge_any_ct_metadata_field[resolution_state]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_code_traceability_kg_authorization::test_ct_subtypes_are_reserved_but_internal_worker_is_admitted[code_investigation_receipt]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_code_traceability_kg_authorization::test_ct_subtypes_are_reserved_but_internal_worker_is_admitted[code_evidence]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_code_traceability_kg_authorization::test_ct_subtypes_are_reserved_but_internal_worker_is_admitted[implementation_target]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_code_traceability_kg_authorization::test_generic_begin_rejects_ct_candidate_before_session_staging",
+          "passed": true
+        },
+        {
+          "case": "tests.test_code_traceability_kg_authorization::test_generic_reconciliation_rejects_existing_ct_target_before_mutation",
+          "passed": true
+        },
+        {
+          "case": "tests.test_code_traceability_kg_authorization::test_bounded_query_templates_exclude_ct_before_limit_and_count",
+          "passed": true
+        },
+        {
+          "case": "tests.test_code_traceability_kg_authorization::test_session_graph_tools_deny_before_provider_without_ct_grants[okto_pulse_kg_get_similar_nodes-arguments0]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_code_traceability_kg_authorization::test_session_graph_tools_deny_before_provider_without_ct_grants[okto_pulse_kg_propose_reconciliation-arguments1]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_code_traceability_kg_authorization::test_session_graph_tools_deny_before_provider_without_ct_grants[okto_pulse_kg_commit_consolidation-arguments2]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_code_traceability_kg_authorization::test_session_similarity_runs_with_complete_ct_read_grant",
+          "passed": true
+        },
+        {
+          "case": "tests.test_code_traceability_kg_authorization::test_arbitrary_mcp_queries_stop_before_provider_without_ct_grants[okto_pulse_kg_query_cypher-arguments0]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_code_traceability_kg_authorization::test_arbitrary_mcp_queries_stop_before_provider_without_ct_grants[okto_pulse_kg_query_natural-arguments1]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_code_traceability_kg_authorization::test_arbitrary_mcp_queries_stop_before_provider_without_ct_grants[okto_pulse_kg_query_reflective-arguments2]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_code_traceability_kg_authorization::test_arbitrary_mcp_query_runs_with_complete_ct_read_grant",
+          "passed": true
+        },
+        {
+          "case": "tests.test_code_traceability_kg_authorization::test_related_context_and_export_filter_ct_for_explicit_deny",
+          "passed": true
+        },
+        {
+          "case": "tests.test_code_traceability_event_effects_observability::test_event_factory_is_closed_and_digest_only_for_free_text",
+          "passed": true
+        },
+        {
+          "case": "tests.test_code_traceability_event_effects_observability::test_publish_stages_in_caller_uow_and_suppresses_replays",
+          "passed": true
+        },
+        {
+          "case": "tests.test_code_traceability_event_effects_observability::test_every_traceability_event_has_consolidation_and_effect_handlers",
+          "passed": true
+        },
+        {
+          "case": "tests.test_code_traceability_event_effects_observability::test_every_traceability_event_preserves_spec_validation_authority[code_evidence.created]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_code_traceability_event_effects_observability::test_every_traceability_event_preserves_spec_validation_authority[code_evidence.disposition_changed]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_code_traceability_event_effects_observability::test_every_traceability_event_preserves_spec_validation_authority[code_evidence.linked]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_code_traceability_event_effects_observability::test_every_traceability_event_preserves_spec_validation_authority[code_evidence.revoked]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_code_traceability_event_effects_observability::test_every_traceability_event_preserves_spec_validation_authority[code_evidence.superseded]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_code_traceability_event_effects_observability::test_every_traceability_event_preserves_spec_validation_authority[code_evidence.unlinked]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_code_traceability_event_effects_observability::test_every_traceability_event_preserves_spec_validation_authority[code_investigation.receipt_revoked]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_code_traceability_event_effects_observability::test_every_traceability_event_preserves_spec_validation_authority[code_investigation.receipt_submitted]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_code_traceability_event_effects_observability::test_every_traceability_event_preserves_spec_validation_authority[code_investigation.requested]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_code_traceability_event_effects_observability::test_every_traceability_event_preserves_spec_validation_authority[code_traceability.waiver_cleared]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_code_traceability_event_effects_observability::test_every_traceability_event_preserves_spec_validation_authority[code_traceability.waiver_created]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_code_traceability_event_effects_observability::test_every_traceability_event_preserves_spec_validation_authority[implementation_overlap.acknowledged]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_code_traceability_event_effects_observability::test_every_traceability_event_preserves_spec_validation_authority[implementation_target.created]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_code_traceability_event_effects_observability::test_every_traceability_event_preserves_spec_validation_authority[implementation_target.execution_receipt_submitted]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_code_traceability_event_effects_observability::test_every_traceability_event_preserves_spec_validation_authority[implementation_target.resolution_submitted]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_code_traceability_event_effects_observability::test_every_traceability_event_preserves_spec_validation_authority[implementation_target.revoked]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_code_traceability_event_effects_observability::test_every_traceability_event_preserves_spec_validation_authority[implementation_target.updated]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_code_traceability_event_effects_observability::test_effect_handler_is_fail_closed_and_calls_edition_port",
+          "passed": true
+        },
+        {
+          "case": "tests.test_code_traceability_event_effects_observability::test_metric_catalog_and_labels_match_section_22_exactly",
+          "passed": true
+        },
+        {
+          "case": "tests.test_code_traceability_event_effects_observability::test_metric_sink_retains_only_safe_bounded_samples",
+          "passed": true
+        },
+        {
+          "case": "tests.test_code_traceability_event_effects_observability::test_metric_contract_rejects_high_cardinality_or_sensitive_labels[path]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_code_traceability_event_effects_observability::test_metric_contract_rejects_high_cardinality_or_sensitive_labels[symbol]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_code_traceability_event_effects_observability::test_metric_contract_rejects_high_cardinality_or_sensitive_labels[claim]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_code_traceability_event_effects_observability::test_metric_contract_rejects_high_cardinality_or_sensitive_labels[excerpt]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_code_traceability_event_effects_observability::test_metric_contract_rejects_high_cardinality_or_sensitive_labels[remote_url]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_code_traceability_event_effects_observability::test_metric_contract_rejects_high_cardinality_or_sensitive_labels[workspace_locator]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_code_traceability_event_effects_observability::test_metric_contract_rejects_high_cardinality_or_sensitive_labels[board_id]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_code_traceability_event_effects_observability::test_metric_contract_rejects_locator_shaped_allowed_label_values[relative-path]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_code_traceability_event_effects_observability::test_metric_contract_rejects_locator_shaped_allowed_label_values[absolute-path]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_code_traceability_event_effects_observability::test_metric_contract_rejects_locator_shaped_allowed_label_values[remote-url]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_code_traceability_event_effects_observability::test_metric_contract_rejects_locator_shaped_allowed_label_values[control-character]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_code_traceability_event_effects_observability::test_metric_duration_requires_finite_non_negative_value",
+          "passed": true
+        },
+        {
+          "case": "tests.test_code_traceability_event_effects_observability::test_created_event_factory_accepts_closed_native_context_metadata",
+          "passed": true
+        }
+      ]
+    },
+    {
+      "name": "acceptance-native-overlap-rollback1",
+      "sha256": "22ccfaf030ce56965d1f2c0a19720827e7ae82041bcc3f7eb1724e810fa51659",
+      "cases": [
+        {
+          "case": "tests.test_native_target_overlap_projection::test_overlap_retracts_after_current_resolution_is_invalidated[False]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_native_target_overlap_projection::test_overlap_retracts_after_current_resolution_is_invalidated[True]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_native_target_overlap_projection::test_update_event_preserves_disappeared_pair_owner_and_replays_exactly[False]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_native_target_overlap_projection::test_update_event_preserves_disappeared_pair_owner_and_replays_exactly[True]",
+          "passed": true
+        }
+      ]
+    },
+    {
+      "name": "acceptance-native-overlap-regression1",
+      "sha256": "36cb0397ae760cae354a58dbab2f8c0412cbf79afb48bd1e1370b39891aa0afc",
+      "cases": [
+        {
+          "case": "tests.test_native_target_evidence_projection::test_target_retracts_evidence_without_removing_neighbours_claim[False]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_native_target_evidence_projection::test_target_retracts_evidence_without_removing_neighbours_claim[True]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_native_traceability_rebuild_parity::test_traceability_retraction_matches_rebuild_of_identical_native_sources",
+          "passed": true
+        },
+        {
+          "case": "tests.test_native_code_evidence_ownership::test_unlink_one_evidence_preserves_adjacent_owner_and_source_content[False]",
+          "passed": true
+        },
+        {
+          "case": "tests.test_native_code_evidence_ownership::test_unlink_one_evidence_preserves_adjacent_owner_and_source_content[True]",
+          "passed": true
+        }
+      ]
+    },
+    {
+      "name": "acceptance-native-overlap-revoke1",
+      "sha256": "7413f83d9d07e442a34ac11c33439d1dbc8f5082930e54f181c9e2146185dcf5",
+      "cases": [
+        {
+          "case": "tests.test_native_target_overlap_projection::test_update_event_preserves_disappeared_pair_owner_and_replays_exactly[revoked]",
+          "passed": true
+        }
+      ]
+    },
+    {
+      "name": "acceptance-native-overlap-parity1",
+      "sha256": "61df3895772a8f5d365872beee0067eec08315e6a6cfd668e4be6d9cce9ac305",
+      "cases": [
+        {
+          "case": "tests.test_native_target_overlap_parity::test_overlap_retraction_matches_rebuild_of_exact_final_native_snapshot",
+          "passed": true
+        }
+      ]
+    }
+  ],
+  "frontend": {
+    "json_sha256": "5be22d520e5df2a88a8974d6173a22dcaa5f6a8c031fb7ffda80100595c1dacb",
+    "passed": 48,
+    "scope": "jsdom selection/navigation after overlap removal and CodeTraceability panels; not WebGL/browser E2E"
+  },
+  "closure_sha256": "49180d6410672df8792f3240f2aaef8b0002c1232122565aff5a6ed6e378c08b",
+  "budgets": {
+    "import_boundary_baseline": 0,
+    "singleton_baseline": 0,
+    "dependency_temporary_exceptions": 0,
+    "graph_runtime_compatibility": 0,
+    "rebuild_artifact_compatibility": 0,
+    "community_private_reach_ins": 0,
+    "community_adapter_bridges": 0,
+    "af35_relational_residue": 0
+  },
+  "verified": [
+    "Peer bootstrap copies root and Card backbone, not peer-owned Evidence facts.",
+    "Only canonical first Target owns pair; incomplete source refuses pruning.",
+    "Update and revoke capture disappeared owner before mutation in real UOW/outbox.",
+    "Repeated event delivery touches only exact owners and changed Target.",
+    "Failure after real graph deletion restores complete graph and pending queue; retry converges.",
+    "Failure after actual event staging rolls back SQL mutation/outbox; retry converges.",
+    "Incremental and native rebuild have identical complete SQL source snapshots and graph multisets."
+  ],
+  "qualification_limits": [
+    "KG-16/24 remain open for other families; fixed acceptance index unchanged.",
+    "Resolution before/after/replay orchestration has unit coverage with isolated authority; not a new full admission proof.",
+    "contract2 had one obsolete single-intent test oracle, corrected and passed in contract3.",
+    "rollback1 event parameters False/True were subsequently named updated/rollback with explicit active lifecycle; revoke tested separately.",
+    "No legacy conversion, real storage mutation, runtime intervention, release or deploy."
+  ]
+}

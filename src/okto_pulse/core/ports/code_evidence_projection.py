@@ -68,9 +68,31 @@ class TargetEvidenceFamily(CodeEvidenceLinkFamily):
             and bool(parts[1]) and parts[1].strip() == parts[1])
 
 
+TARGET_OVERLAP_NAMESPACE = "implementation_target_overlaps"
+TARGET_OVERLAP_RULE = "overlaps/code_traceability_current@v2.0"
+
+
+@dataclass(frozen=True, slots=True)
+class TargetOverlapFamily(TargetEvidenceFamily):
+    """The lexically first Target owns the canonical directed pair."""
+
+    edge_type: str = "overlaps"
+    rules: frozenset[str] = frozenset({TARGET_OVERLAP_RULE})
+
+    def owns_endpoints(self, *, owner_id, source_type, target_type, source_ref, target_ref):
+        if (source_type != "Entity" or target_type != "Entity"
+                or source_ref != f"implementation_target:{owner_id}"
+                or type(target_ref) is not str):
+            return False
+        parts = target_ref.split(":")
+        return (len(parts) == 2 and parts[0] == "implementation_target"
+            and bool(parts[1]) and parts[1].strip() == parts[1] and owner_id < parts[1])
+
+
 _TRACEABILITY_FAMILIES = {
     CODE_EVIDENCE_LINK_NAMESPACE: CODE_EVIDENCE_LINK_FAMILY,
     TARGET_EVIDENCE_NAMESPACE: TargetEvidenceFamily(),
+    TARGET_OVERLAP_NAMESPACE: TargetOverlapFamily(),
 }
 TRACEABILITY_RELATIONSHIP_NAMESPACES = frozenset(_TRACEABILITY_FAMILIES)
 

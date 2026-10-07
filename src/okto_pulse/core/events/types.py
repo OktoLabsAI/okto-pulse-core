@@ -1006,6 +1006,7 @@ class ImplementationTargetCreated(CodeTraceabilityDomainEvent):
 
 class ImplementationTargetUpdated(CodeTraceabilityDomainEvent):
     event_type: ClassVar[str] = "implementation_target.updated"
+    overlap_projection_owner_ids: Annotated[tuple[_TraceabilityId, ...], Field(max_length=400)]
     target_id: _TraceabilityId
     card_id: _TraceabilityId
     lifecycle_status: _TraceabilityState
@@ -1016,6 +1017,7 @@ class ImplementationTargetUpdated(CodeTraceabilityDomainEvent):
 
 class ImplementationTargetRevoked(CodeTraceabilityDomainEvent):
     event_type: ClassVar[str] = "implementation_target.revoked"
+    overlap_projection_owner_ids: Annotated[tuple[_TraceabilityId, ...], Field(max_length=400)]
     target_id: _TraceabilityId
     card_id: _TraceabilityId
     lifecycle_status: _TraceabilityState
@@ -1025,6 +1027,7 @@ class ImplementationTargetRevoked(CodeTraceabilityDomainEvent):
 
 class ImplementationTargetResolutionSubmitted(CodeTraceabilityDomainEvent):
     event_type: ClassVar[str] = "implementation_target.resolution_submitted"
+    overlap_projection_owner_ids: Annotated[tuple[_TraceabilityId, ...], Field(max_length=400)]
     target_id: _TraceabilityId
     resolution_id: _TraceabilityId
     investigation_receipt_id: _TraceabilityId

@@ -1851,6 +1851,20 @@ class CreateImplementationTargetUseCase:
         return result
 
 
+async def _overlap_projection_owners(*, board_id, target_id, uow):
+    """Read exact current pair owners through the transaction-bound public ports."""
+    target = await uow.services.code_traceability.get_target(
+        board_id=board_id, target_id=target_id)
+    if target is None or target.board_id != board_id:
+        raise ImplementationTargetInvalid(details={"target_id": target_id})
+    overlaps = await uow.services.code_traceability_read.overlap_report(
+        TargetOverlapQuery(board_id=board_id, card_id=target.card_id, include_informational=True))
+    if any(overlap.board_id != board_id for overlap in overlaps):
+        raise ImplementationTargetInvalid(details={"reason": "overlap_board_mismatch"})
+    return tuple(sorted({min(overlap.target_a_id, overlap.target_b_id)
+        for overlap in overlaps if target_id in (overlap.target_a_id, overlap.target_b_id)}))
+
+
 class UpdateImplementationTargetUseCase:
     def __init__(self, target_service: ImplementationTargetService) -> None:
         self._target_service = target_service
@@ -1876,6 +1890,8 @@ class UpdateImplementationTargetUseCase:
         )
         for link in command.spec_links or ():
             _require_spec_entity(spec, link.entity_type, link.entity_id)
+        overlap_owners_before = await _overlap_projection_owners(
+            board_id=command.board_id, target_id=command.target_id, uow=uow)
         result = await self._target_service.update(
             command,
             card_status=getattr(card, "status", ""),
@@ -1906,12 +1922,15 @@ class UpdateImplementationTargetUseCase:
                     command.change_reason
                 ),
             }
+        overlap_owners_after = await _overlap_projection_owners(
+            board_id=command.board_id, target_id=command.target_id, uow=uow)
         await _publish_mutation_event(
             uow,
             event_class,
             actor=actor,
             board_id=command.board_id,
             replayed=result.replayed,
+            overlap_projection_owner_ids=tuple(sorted(set(overlap_owners_before) | set(overlap_owners_after))),
             **event_metadata,
         )
         await commit(uow)
@@ -1947,6 +1966,13 @@ class SubmitImplementationTargetResolutionUseCase:
             uow,
             board_id=command.board_id,
         )
+        prior_resolution = await uow.services.code_traceability.resolve_resolution_replay(
+            board_id=command.board_id, submitted_by=actor.actor_id,
+            investigation_receipt_id=command.investigation_receipt_id,
+            target_id=command.target_id, idempotency_key=command.idempotency_key)
+        overlap_owners_before = (() if prior_resolution is not None else
+            await _overlap_projection_owners(
+                board_id=command.board_id, target_id=command.target_id, uow=uow))
         result = await self._target_service.submit_resolution(
             command,
             actor_id=actor.actor_id,
@@ -1963,12 +1989,16 @@ class SubmitImplementationTargetResolutionUseCase:
             store=uow.services.code_traceability,
         )
         resolution = result.resolution
+        overlap_owners_after = (() if result.replayed else
+            await _overlap_projection_owners(
+                board_id=command.board_id, target_id=command.target_id, uow=uow))
         await _publish_mutation_event(
             uow,
             ImplementationTargetResolutionSubmitted,
             actor=actor,
             board_id=command.board_id,
             replayed=result.replayed,
+            overlap_projection_owner_ids=tuple(sorted(set(overlap_owners_before) | set(overlap_owners_after))),
             target_id=resolution.target_id,
             resolution_id=resolution.id,
             investigation_receipt_id=resolution.investigation_receipt_id,
