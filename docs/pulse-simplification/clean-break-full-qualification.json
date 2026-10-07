@@ -1538,5 +1538,17 @@
     "closure_ok": true,
     "all_eight_budgets_zero": true,
     "scope": "Remove short-row padding for KG CT projection; preserve full nullable projection. Negative listing/detail checks; current canonical isolation and cursor/pagination; MCP guidance and generated catalog. Sole fixture failure used retired board:read claim; explicit native board.read/kg.query.related_context resolves it without broad role."
+  },
+  "frontend_full_current": {
+    "campaign": "clean-break-full-frontend2",
+    "passed": 2451,
+    "failed": 0,
+    "files_passed": 269,
+    "duration_seconds": 493.9,
+    "json_sha256": "aa57b8170ca6581ced50605a034cd6857d92bed5142ef39bf84c4334ee222f1e",
+    "community_commit": "a99680b9",
+    "proof_pair": "dist-native-kg-projection1",
+    "product_changes": false,
+    "limits": "Complete frontend suite after native list/columns changes; existing React act/duplicate fixture key and jsdom canvas warnings did not fail tests. Backend/current criterion qualification remains pending."
   }
 }

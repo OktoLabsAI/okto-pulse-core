@@ -2,6 +2,20 @@
 
 ## Estado para retomada
 
+### 2026-10-07 — Core run9 ativo
+
+Core73ef47c8 / Communitya99680b9 publicados; pushes confirmados.
+clean-break-full-run9 ativo handle29423;273modulos completos excluidos,
+incluindo stress explicitamente e renomeio contribution para native_population.
+Selecao em clean-break-full-run9-selection.json. Produto congelado:
+dist-native-kg-projection1/provenance/closure byte-identico e oito budgetsZERO.
+Aguardar terminal, nao reinstalar/alterar produto durante a campanha.
+Community proxima continuacao run7 aposrun6+C8/C9 completos.
+Frontend completo clean-break-full-frontend2 TERMINAL:2451 aprovados/269arquivos,
+493.90s; handle35394 encerrado. Recibo/hash no JSON. Qualifica conjunto atual
+apos listagens/columns. Warnings React/jsdom nao falharam os testes. Core run9
+continua ativo handle29423; nao confundir conclusao frontend com entrega integral.
+
 ### 2026-10-07 — C1/C3 projecao KG sem preenchimento de linha antiga
 
 Core d44c1959 / Community a99680b9 publicados. Retirado preenchimento comNone
