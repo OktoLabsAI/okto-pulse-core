@@ -1,9 +1,4 @@
-"""Deterministic mixed population for the F5 aggregate retirement baseline.
-
-The baseline was captured from the installed pre-retirement pair, not recomputed
-from the new implementation. This reader exercises the public analytics port;
-SQL and transport behavior remain covered by the relational integration tests.
-"""
+"""Native deterministic population for analytics aggregation and scoped reads."""
 
 from datetime import datetime, timedelta, timezone
 
@@ -16,6 +11,8 @@ from okto_pulse.core.domain.enums import (
     StoryStatus,
 )
 from okto_pulse.core.ports.analytics_read import AnalyticsFact
+from spec_validation_fixtures import native_validation
+from task_validation_native_fixtures import native_entry
 
 NOW = datetime(2026, 9, 21, 12, tzinfo=timezone.utc)
 
@@ -46,7 +43,6 @@ def population():
                 "technical_requirements": [],
                 "acceptance_criteria": [],
                 "spec_id": "spec-a",
-                "sprint_id": "old-a",
                 "ideation_id": None,
                 "refinement_id": None,
                 "topic_id": None,
@@ -54,33 +50,41 @@ def population():
             }
         )
 
-    failure = {
-        "outcome": "failed",
-        "confidence": 61,
-        "completeness": 70,
-        "assertiveness": 60,
-        "ambiguity": 30,
-        "drift": 14,
-        "recommendation": "reject",
-        "created_at": NOW.isoformat(),
-        "threshold_violations": ["confidence below minimum"],
-    }
-    success = {
-        **failure,
-        "outcome": "success",
-        "confidence": 95,
-        "completeness": 96,
-        "drift": 2,
-        "recommendation": "approve",
-        "threshold_violations": [],
-    }
+    def task_validation(card_id, *, success):
+        return {
+            **native_entry(),
+            "id": f"{card_id}-{'success' if success else 'failed'}",
+            "card_id": card_id, "board_id": "board-a",
+            "outcome": "success" if success else "failed",
+            "validation_outcome": "success" if success else "failed",
+            "completion_outcome": "completed" if success else "rejected",
+            "card_status": "done" if success else "rejected",
+            "confidence": 95 if success else 61,
+            "estimated_completeness": 96 if success else 70,
+            "estimated_drift": 2 if success else 14,
+            "recommendation": "approve" if success else "reject",
+            "created_at": NOW.isoformat(),
+            "threshold_violations": [] if success else ["confidence below minimum"],
+        }
+
+    spec_failure = native_validation(
+        "spec-failed", spec_id="spec-a", board_id="board-a",
+        confidence=61, clarity=72, decidability=91, assertiveness=60, ambiguity=30,
+        outcome="failed", recommendation="reject", created_at=NOW.isoformat(),
+        threshold_violations=["confidence below minimum"],
+    )
+    spec_success = native_validation(
+        "spec-success", spec_id="spec-a", board_id="board-a",
+        confidence=95, clarity=94, decidability=95, assertiveness=60, ambiguity=30,
+        created_at=NOW.isoformat(),
+    )
     spec = fact(
         "spec-a",
         status=SpecStatus.DONE,
-        validations=[failure, success],
+        validations=[spec_failure, spec_success],
         evaluations=[
-            {"recommendation": "request_changes", "overall_score": 65},
-            {"recommendation": "approve", "overall_score": 95},
+            {"recommendation": "request_changes", "overall_score": 65, "spec_edition": 1},
+            {"recommendation": "approve", "overall_score": 95, "spec_edition": 1},
         ],
         business_rules=[{"id": "br-1", "text": "Keep approval"}],
     )
@@ -101,7 +105,8 @@ def population():
                 "card-normal",
                 status=CardStatus.DONE,
                 card_type=CardType.NORMAL,
-                validations=[failure, success],
+                validations=[task_validation("card-normal", success=False),
+                             task_validation("card-normal", success=True)],
                 conclusions=[{"completeness": 88, "drift": 8}],
             ),
             fact(
@@ -109,7 +114,7 @@ def population():
                 status=CardStatus.DONE,
                 card_type=CardType.TEST,
                 created_at=NOW - timedelta(days=1),
-                validations=[success],
+                validations=[task_validation("card-test", success=True)],
             ),
             fact(
                 "card-bug",
@@ -117,7 +122,7 @@ def population():
                 card_type=CardType.BUG,
                 severity="critical",
                 linked_test_task_ids=["card-test"],
-                validations=[failure],
+                validations=[task_validation("card-bug", success=False)],
             ),
             fact(
                 "card-archived",
@@ -133,18 +138,11 @@ def population():
                 card_type=CardType.BUG,
             ),
         ],
-        "sprint": [fact("old-a", status="closed", evaluations=[{"overall_score": 30}])],
         "activity_log": [
             fact(
                 "event-spec",
                 action="spec_moved",
                 details={"new_status": "done"},
-                created_at=NOW,
-            ),
-            fact(
-                "event-old",
-                action="sprint_moved",
-                details={"new_status": "closed"},
                 created_at=NOW,
             ),
         ],
@@ -154,16 +152,14 @@ def population():
 
 
 class PopulationReader:
-    def __init__(self, *, forbid_retired=False):
+    def __init__(self):
         self.rows = population()
-        self.forbid_retired = forbid_retired
         self.queries = []
 
     async def list(self, context, query):
         self.queries.append(query)
-        if self.forbid_retired:
-            assert query.entity != "sprint", "live aggregate queried retired Sprint"
-            assert all(f.value != "sprint_moved" for f in query.filters)
+        assert query.entity != "sprint", "native aggregate queried retired Sprint"
+        assert all(f.value != "sprint_moved" for f in query.filters)
         rows = self.rows[query.entity]
         for clause in query.filters:
 
@@ -227,24 +223,14 @@ async def evaluate_case(service, reader, window):
     return await getattr(service, "compute_" + reader)(None, "board-a", **dates)
 
 
-def surviving_fields(value):
-    """The authorized delta is an explicit set of retired metric keys only."""
-    retired = {
-        "sprints",
-        "sprint",
-        "total_sprints",
-        "sprint_count",
-        "sprint_status_breakdown",
-        "sprint_evaluation",
-        "sprint_done",
-        "sprint_id",
-    }
+def assert_no_retired_fields(value):
+    """Removed metrics may not reappear even as synthetic zero counts."""
+    retired = {"sprints", "sprint", "total_sprints", "sprint_count",
+               "sprint_status_breakdown", "sprint_evaluation", "sprint_done", "sprint_id"}
     if isinstance(value, dict):
-        return {
-            key: surviving_fields(item)
-            for key, item in value.items()
-            if key not in retired
-        }
-    if isinstance(value, list):
-        return [surviving_fields(item) for item in value]
-    return value
+        assert not retired.intersection(value)
+        for item in value.values():
+            assert_no_retired_fields(item)
+    elif isinstance(value, list):
+        for item in value:
+            assert_no_retired_fields(item)

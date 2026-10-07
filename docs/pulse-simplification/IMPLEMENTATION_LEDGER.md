@@ -2,6 +2,39 @@
 
 ## Estado para retomada
 
+### 2026-10-06 — C3 metricas e fixtures de lifecycle sem upgrade
+
+Bases Core6622d9e7 / Community5e8d73f4. Core full-run4 terminou:
+467 aprovados/20 falhas/dois skips em86.85s; handle78901 terminal.
+Falhas e skips preservados com hash XML no JSON de qualificacao.
+Nao e aceite integral, nem motivo para repetir as suites ja completas.
+
+Retirados dois casos exclusivos de ADD COLUMN, antes ignorados por importorskip
+do migrador removido. Suite remanescente renomeada board_settings, preservando
+defaults, limites, persistencia REST e recusa422. Casos removidos explicitados
+em clean-break-test-dispositions.json, sem contabilizar como verdes.
+
+Fixtures de ambiguity registram autoridade semantica nativa; Board create usa
+board.admin.create. Findings/propagacao declaram ArchitectureAdoptionScope
+com actor, edicao e selecao vazia explicita; FR/AC da fixture possuem IDs.
+Mantidos bloqueio por finding, multihop, isolamento, atomicidade, REST/MCP,
+limites de authority e rechecagem de ambiguity apos fence.
+
+Analytics passa a populacao nativa: sem linha/campo/evento Sprint, sem strip
+de baseline anterior em runtime, sem comparaçao com install antigo.
+Records Spec/Task completos usam helpers nativos; expected JSON e explicito
+para o mesmo conjunto de metricas e janelas (Spec clarity83, decidability93,
+Task completeness83/drift8 calculados dos valores da fixture).
+Mantidas comparacoes completas, historico, negaçoes por Board e negativos Sprint.
+Baseline anterior permanece no historico Git, nao como segundo contrato de teste.
+
+Followups lifecycle-fixtures1:40 aprovados/13 falhas; fixtures2:23 aprovados/13
+falhas; fixtures3:13 aprovados. As13 falhas intermediarias foram erro nesta
+edicao de fixtures (campos de ArchitectureAdoptionScope incorretos), corrigido
+para adopted_in_edition/actor_id/inherited_resource_ids reais. Total distinto76.
+Nenhum produto alterado; par/provenance/closure native-boundary-qualification1
+continua correspondente. Frontend intacto. C4 integral e T23/KG-10 abertos.
+
 ### 2026-10-06 — C3 fixtures de autoridade; C4 detector relacional preservado
 
 Publicado em Core6b66fd75, push confirmado; Community5e8d73f4 limpo.

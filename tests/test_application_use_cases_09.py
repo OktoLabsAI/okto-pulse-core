@@ -185,7 +185,7 @@ async def test_create_board_use_case_persists_and_shapes(db_factory):
     async with db_factory() as db:
         result = await CreateBoardUseCase().execute(
             CreateBoardCommand(BoardCreate(name="UC09 Board")),
-            actor=ActorContext(ACTOR, "rest", permissions=["board.read"]),
+            actor=ActorContext(ACTOR, "rest", permissions=["board.admin.create"]),
             uow=_wrap_uow(db),
         )
         board = result.board

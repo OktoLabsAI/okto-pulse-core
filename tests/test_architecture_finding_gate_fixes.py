@@ -1,17 +1,11 @@
-"""Fixes da investigação 2026-06-10 — AFG inoperante em produção.
-
-Três furos: (1) findings só nasciam em saves pós-feature (83% dos designs
-sem run; tabela de findings vazia; gate nunca bloqueou) → backfill;
-(2) diagramas com adapter_payload_ref crus eram pulados pelo engine no
-update/import → re-hidratação sempre; (3) spec→done não passava pelo
-finding gate → validate_or_raise_architecture_findings.
-"""
+"""Native architecture findings block Done; external diagrams remain readable."""
 
 from __future__ import annotations
 
 import uuid
 
 import pytest
+from okto_pulse.core.domain.architecture_adoption import ArchitectureAdoptionScope
 
 
 from sqlalchemy_test_models import (
@@ -41,7 +35,7 @@ def _design_payload_with_orphan_entity() -> dict:
     warning (entity_without_diagram) garantido pelo TopologyWarningEngine."""
     return {
         "title": "Runtime boundary",
-        "global_description": "Validates the AFG backfill and gates.",
+        "global_description": "Validates current AFG findings and gates.",
         "entities": [
             {
                 "id": "ent-orphan",
@@ -64,6 +58,9 @@ async def _seed_spec_with_design(db_factory) -> tuple[str, str, str]:
                 id=spec_id,
                 board_id=board_id,
                 title="AFG Spec",
+                architecture_adoption=ArchitectureAdoptionScope(
+                    board_id=board_id, spec_id=spec_id, adopted_in_edition=1, actor_id=USER, inherited_resource_ids=(),
+                ).model_dump(mode="json"),
                 status=SpecStatus.IN_PROGRESS,
                 version=1,
                 created_by=USER,

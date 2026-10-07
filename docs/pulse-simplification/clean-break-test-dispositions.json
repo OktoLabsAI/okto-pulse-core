@@ -4058,6 +4058,16 @@
       "path": "okto_labs_pulse_core/tests/test_card_lifecycle.py::TestCardUpdates knowledge_bases writes and v2 switch",
       "disposition": "replaced",
       "reason": "Knowledge snapshot direct-write schema and v2 switch were already retired. Preserve governed mockup copy/read-only test; require removed knowledge_bases input rejection. Status rejection now occurs at the closed schema and keeps direct-service defense for untyped commands."
+    },
+    {
+      "path": "tests/test_ambiguity_gate_board_settings_and_migration.py::test_legacy_migration_adds_column_idempotent_reads_false",
+      "disposition": "superseded",
+      "reason": "Exclusive ADD COLUMN upgrade test. Current settings/default/range/REST tests retained in test_ambiguity_gate_board_settings.py; not counted as passed."
+    },
+    {
+      "path": "tests/test_ambiguity_gate_board_settings_and_migration.py::test_refinement_legacy_migration_adds_column_idempotent_reads_false",
+      "disposition": "superseded",
+      "reason": "Exclusive ADD COLUMN upgrade test. Current settings/default/range/REST tests retained in test_ambiguity_gate_board_settings.py; not counted as passed."
     }
   ],
   "native_mcp_collection_adaptations": [
@@ -4211,5 +4221,10 @@
       "path": "okto_labs_pulse_community/frontend/src/components/traceability/__tests__/LineageGraphModal.test.tsx and services/__tests__/api.traceability.test.ts",
       "reason": "Fixtures provide mandatory view and canonical typed root_entity without rolling-upgrade header. Keep UI navigation, dependency overlay, counts and refresh-race assertions."
     }
-  ]
+  ],
+  "native_analytics_population_adaptation": {
+    "path": "tests/test_analytics_native_population.py",
+    "previous_path": "tests/test_analytics_sprint_retirement.py",
+    "reason": "Replace runtime stripping of predecessor population/baseline with explicit native Spec/Task records and authored expected metrics. Preserve time windows, full dictionary assertions, inaccessible foreign entities, history and negative no-Sprint checks. Original baseline remains in Git history."
+  }
 }

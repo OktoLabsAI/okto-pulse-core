@@ -420,5 +420,151 @@
     "all_eight_budgets_zero": true,
     "xml_sha256": "90a106990a1032d494f667f54f08d966adc8417f34cfc8f641b55cadcc2ac5a1",
     "full_qualification": "Incomplete; continue unexecuted suites."
+  },
+  "core_general_run4": {
+    "campaign": "clean-break-full-run4",
+    "selection": "clean-break-full-run4-selection.json",
+    "passed": 467,
+    "failed": 20,
+    "skipped": 2,
+    "duration_seconds": 86.85,
+    "xml_sha256": "0ebef02ba5de5bbccd8ae285f6a3690da788d7e959f210c0e2021798b20cd642",
+    "failures": [
+      {
+        "test": "tests.test_ambiguity_gate_board_settings_and_migration::test_legacy_migration_adds_column_idempotent_reads_false",
+        "kind": "skipped",
+        "message": "could not import 'okto_pulse.community.adapters.relational_schema_steps': No module named 'okto_pulse.community.adapters.relational_schema_steps'"
+      },
+      {
+        "test": "tests.test_ambiguity_gate_board_settings_and_migration::test_refinement_legacy_migration_adds_column_idempotent_reads_false",
+        "kind": "skipped",
+        "message": "could not import 'okto_pulse.community.adapters.relational_schema_steps': No module named 'okto_pulse.community.adapters.relational_schema_steps'"
+      },
+      {
+        "test": "tests.test_ambiguity_gate_enforcement::test_equal_threshold_passes_gate_and_reaches_done",
+        "kind": "failure",
+        "message": "okto_pulse.core.ports.guideline_policy.GuidelinePolicySubjectConflict: semantic_subject_authority_missing_or_stale"
+      },
+      {
+        "test": "tests.test_ambiguity_gate_enforcement::test_skip_lets_done_complete_when_resources_satisfied",
+        "kind": "failure",
+        "message": "okto_pulse.core.ports.guideline_policy.GuidelinePolicySubjectConflict: semantic_subject_authority_missing_or_stale"
+      },
+      {
+        "test": "tests.test_ambiguity_gate_enforcement::test_disabled_gate_does_not_block_done",
+        "kind": "failure",
+        "message": "okto_pulse.core.ports.guideline_policy.GuidelinePolicySubjectConflict: semantic_subject_authority_missing_or_stale"
+      },
+      {
+        "test": "tests.test_ambiguity_gate_enforcement::test_legacy_board_without_settings_defaults_gate_off",
+        "kind": "failure",
+        "message": "okto_pulse.core.ports.guideline_policy.GuidelinePolicySubjectConflict: semantic_subject_authority_missing_or_stale"
+      },
+      {
+        "test": "tests.test_ambiguity_gate_enforcement::test_refinement_done_runs_ambiguity_resource_cognitive_in_order",
+        "kind": "failure",
+        "message": "okto_pulse.core.ports.guideline_policy.GuidelinePolicySubjectConflict: semantic_subject_authority_missing_or_stale"
+      },
+      {
+        "test": "tests.test_ambiguity_gate_enforcement::test_refinement_done_rechecks_ambiguity_after_lifecycle_fence",
+        "kind": "failure",
+        "message": "okto_pulse.core.ports.guideline_policy.GuidelinePolicySubjectConflict: semantic_subject_authority_missing_or_stale"
+      },
+      {
+        "test": "tests.test_analytics_sprint_retirement::test_surviving_metrics_match_installed_pre_retirement_baseline[overview-all]",
+        "kind": "failure",
+        "message": "ValueError: spec_validation_edition_required"
+      },
+      {
+        "test": "tests.test_analytics_sprint_retirement::test_surviving_metrics_match_installed_pre_retirement_baseline[overview-recent]",
+        "kind": "failure",
+        "message": "AssertionError: assert {'avg_complet...s': None, ...} == {'avg_complet...s': None, ...}\n  \n  Omitting 29 identical items, use -vv to show\n  Differing items:\n  {'spec_validation_gate': {'avg_attempts_per_spec': None, 'avg_scores': {'ambiguity': None, 'assertiveness': None, 'cla...above': 0, 'assertiveness_below': 0, 'clarity_below': 0, 'confidence_below': 0, ...}, 'specs_with_validation': 0, ...}} != {'spec_validation_gate': {'avg_attempts_per_spec': None, 'avg_scores': {'ambiguity': None, 'assertiveness': None, 'cla...ove': 0, 'assertiveness_below': 0, 'clarity_below': 0, 'completeness_below': 0, ...}, 'specs_with_validation': 0, ...}}\n  Use -v to get more diff"
+      },
+      {
+        "test": "tests.test_analytics_sprint_retirement::test_surviving_metrics_match_installed_pre_retirement_baseline[overview-empty]",
+        "kind": "failure",
+        "message": "AssertionError: assert {'avg_complet...s': None, ...} == {'avg_complet...s': None, ...}\n  \n  Omitting 29 identical items, use -vv to show\n  Differing items:\n  {'spec_validation_gate': {'avg_attempts_per_spec': None, 'avg_scores': {'ambiguity': None, 'assertiveness': None, 'cla...above': 0, 'assertiveness_below': 0, 'clarity_below': 0, 'confidence_below': 0, ...}, 'specs_with_validation': 0, ...}} != {'spec_validation_gate': {'avg_attempts_per_spec': None, 'avg_scores': {'ambiguity': None, 'assertiveness': None, 'cla...ove': 0, 'assertiveness_below': 0, 'clarity_below': 0, 'completeness_below': 0, ...}, 'specs_with_validation': 0, ...}}\n  Use -v to get more diff"
+      },
+      {
+        "test": "tests.test_analytics_sprint_retirement::test_surviving_metrics_match_installed_pre_retirement_baseline[validations-all]",
+        "kind": "failure",
+        "message": "ValueError: spec_validation_edition_required"
+      },
+      {
+        "test": "tests.test_analytics_sprint_retirement::test_surviving_metrics_match_installed_pre_retirement_baseline[validations-recent]",
+        "kind": "failure",
+        "message": "AssertionError: assert {'spec_evalua...: 100.0, ...}} == {'spec_evalua...: 100.0, ...}}\n  \n  Omitting 1 identical items, use -vv to show\n  Differing items:\n  {'task_validation_gate': {'avg_attempts_per_card': 1.0, 'avg_scores': {'completeness': 0.0, 'confidence': 95.0, 'drift': 0.0}, 'cards_with_validation': 1, 'first_pass_rate': 100.0, ...}} != {'task_validation_gate': {'avg_attempts_per_card': 1.0, 'avg_scores': {'completeness': 96.0, 'confidence': 95.0, 'drift': 2.0}, 'cards_with_validation': 1, 'first_pass_rate': 100.0, ...}}\n  {'spec_validation_gate': {'avg_attempts_per_spec': None, 'avg_scores': {'ambiguity': None, 'assertiveness': None, 'cla...ction_reasons': {'a...\n  \n  ...Full output truncated (2 lines hidden), use '-vv' to show"
+      },
+      {
+        "test": "tests.test_analytics_sprint_retirement::test_surviving_metrics_match_installed_pre_retirement_baseline[validations-empty]",
+        "kind": "failure",
+        "message": "AssertionError: assert {'spec_evalua...': None, ...}} == {'spec_evalua...': None, ...}}\n  \n  Omitting 2 identical items, use -vv to show\n  Differing items:\n  {'spec_validation_gate': {'avg_attempts_per_spec': None, 'avg_scores': {'ambiguity': None, 'assertiveness': None, 'cla...ction_reasons': {'ambiguity_above': 0, 'assertiveness_below': 0, 'clarity_below': 0, 'confidence_below': 0, ...}, ...}} != {'spec_validation_gate': {'avg_attempts_per_spec': None, 'avg_scores': {'ambiguity': None, 'assertiveness': None, 'cla...ion_reasons': {'ambiguity_above': 0, 'assertiveness_below': 0, 'clarity_below': 0, 'completeness_below': 0, ...}, ...}}\n  Use -v to get more diff"
+      },
+      {
+        "test": "tests.test_analytics_sprint_retirement::test_surviving_metrics_match_installed_pre_retirement_baseline[mcp-all]",
+        "kind": "failure",
+        "message": "ValueError: spec_validation_edition_required"
+      },
+      {
+        "test": "tests.test_analytics_sprint_retirement::test_surviving_metrics_match_installed_pre_retirement_baseline[mcp-recent]",
+        "kind": "failure",
+        "message": "AssertionError: assert {'avg_complet...board-a', ...} == {'avg_complet...board-a', ...}\n  \n  Omitting 9 identical items, use -vv to show\n  Differing items:\n  {'task_validation_gate': {'avg_attempts_per_card': 1.0, 'avg_scores': {'completeness': 0.0, 'confidence': 95.0, 'drift': 0.0}, 'cards_with_validation': 1, 'first_pass_rate': 100.0, ...}} != {'task_validation_gate': {'avg_attempts_per_card': 1.0, 'avg_scores': {'completeness': 96.0, 'confidence': 95.0, 'drift': 2.0}, 'cards_with_validation': 1, 'first_pass_rate': 100.0, ...}}\n  {'avg_drift': 0.0} != {'avg_drift': 2.0}\n  {'avg_completeness': 0.0} != {'avg_completeness': 96.0}\n  {'spec_validation_gate': {'avg_attempts_per_s...\n  \n  ...Full output truncated (2 lines hidden), use '-vv' to show"
+      },
+      {
+        "test": "tests.test_analytics_sprint_retirement::test_surviving_metrics_match_installed_pre_retirement_baseline[mcp-empty]",
+        "kind": "failure",
+        "message": "AssertionError: assert {'avg_complet...board-a', ...} == {'avg_complet...board-a', ...}\n  \n  Omitting 12 identical items, use -vv to show\n  Differing items:\n  {'spec_validation_gate': {'avg_attempts_per_spec': None, 'avg_scores': {'ambiguity': None, 'assertiveness': None, 'cla...above': 0, 'assertiveness_below': 0, 'clarity_below': 0, 'confidence_below': 0, ...}, 'specs_with_validation': 0, ...}} != {'spec_validation_gate': {'avg_attempts_per_spec': None, 'avg_scores': {'ambiguity': None, 'assertiveness': None, 'cla...ove': 0, 'assertiveness_below': 0, 'clarity_below': 0, 'completeness_below': 0, ...}, 'specs_with_validation': 0, ...}}\n  Use -v to get more diff"
+      },
+      {
+        "test": "tests.test_analytics_sprint_retirement::test_no_boards_does_not_fabricate_retired_zero_metrics",
+        "kind": "failure",
+        "message": "AssertionError: assert {'avg_triage_...nor': 0}, ...} == {'avg_triage_...nor': 0}, ...}\n  \n  Omitting 22 identical items, use -vv to show\n  Differing items:\n  {'spec_validation_gate': {'avg_attempts_per_spec': None, 'avg_scores': {'ambiguity': None, 'assertiveness': None, 'cla...above': 0, 'assertiveness_below': 0, 'clarity_below': 0, 'confidence_below': 0, ...}, 'specs_with_validation': 0, ...}} != {'spec_validation_gate': {'avg_attempts_per_spec': None, 'avg_scores': {'ambiguity': None, 'assertiveness': None, 'cla...ove': 0, 'assertiveness_below': 0, 'clarity_below': 0, 'completeness_below': 0, ...}, 'specs_with_validation': 0, ...}}\n  Use -v to get more diff"
+      },
+      {
+        "test": "tests.test_analytics_sprint_retirement::test_card_detail_requires_no_sprint_field_and_preserves_validation_history",
+        "kind": "failure",
+        "message": "pydantic_core._pydantic_core.ValidationError: 21 validation errors for TaskValidationResponse\nid\n  Field required [type=missing, input_value={'outcome': 'failed', 'co...d-a', 'replayed': False}, input_type=dict]\n    For further information visit https://errors.pydantic.dev/2.13/v/missing\nreviewer_id\n  Field required [type=missing, input_value={'outcome': 'failed', 'co...d-a', 'replayed': False}, input_type=dict]\n    For further information visit https://errors.pydantic.dev/2.13/v/missing\nreviewer_name\n  Field required [type=missing, input_value={'outcome': 'failed', 'co...d-a', 'replayed': False}, input_type=dict]\n    For further information visit https://errors.pydantic.dev/2.13/v/missing\nconfidence_justification\n  Field required [type=missing, input_value={'outcome': 'failed', 'co...d-a', 'replayed': False}, input_type=dict]\n    For further information visit https://errors.pydantic.dev/2.13/v/missing\nestimated_completeness\n  Field required [type=missing, input_value={'outcome': 'failed', 'co...d-a', 'replayed': False}, input_type=dict]\n    For further information visit https://errors.pydantic.dev/2.13/v/missing\ncompleteness_justification\n  Field required [type=missing, input_value={'outcome': 'failed', 'co...d-a', 'replayed': False}, input_type=dict]\n    For further information visit https://errors.pydantic.dev/2.13/v/missing\nestimated_drift\n  Field required [type=missing, input_value={'outcome': 'failed', 'co...d-a', 'replayed': False}, input_type=dict]\n    For further information visit https://errors.pydantic.dev/2.13/v/missing\ndrift_justification\n  Field required [type=missing, input_value={'outcome': 'failed', 'co...d-a', 'replayed': False}, input_type=dict]\n    For further information visit https://errors.pydantic.dev/2.13/v/missing\ngeneral_justification\n  Field required [type=missing, input_value={'outcome': 'failed', 'co...d-a', 'replayed': False}, input_type=dict]\n    For further information visit https://errors.pydantic.dev/2.13/v/missing\nvalidation_outcome\n  Field required [type=missing, input_value={'outcome': 'failed', 'co...d-a', 'replayed': False}, input_type=dict]\n    For further information visit https://errors.pydantic.dev/2.13/v/missing\ncompletion_outcome\n  Field required [type=missing, input_value={'outcome': 'failed', 'co...d-a', 'replayed': False}, input_type=dict]\n    For further information visit https://errors.pydantic.dev/2.13/v/missing\ncard_status\n  Field required [type=missing, input_value={'outcome': 'failed', 'co...d-a', 'replayed': False}, input_type=dict]\n    For further information visit https://errors.pydantic.dev/2.13/v/missing\nresolved_thresholds\n  Field required [type=missing, input_value={'outcome': 'failed', 'co...d-a', 'replayed': False}, input_type=dict]\n    For further information visit https://errors.pydantic.dev/2.13/v/missing\nreviewer_separation\n  Field required [type=missing, input_value={'outcome': 'failed', 'co...d-a', 'replayed': False}, input_type=dict]\n    For further information visit https://errors.pydantic.dev/2.13/v/missing\nexpected_subject_version\n  Field required [type=missing, input_value={'outcome': 'failed', 'co...d-a', 'replayed': False}, input_type=dict]\n    For further information visit https://errors.pydantic.dev/2.13/v/missing\ncompletion_gate_failures\n  Field required [type=missing, input_value={'outcome': 'failed', 'co...d-a', 'replayed': False}, input_type=dict]\n    For further information visit https://errors.pydantic.dev/2.13/v/missing\nsubject_version\n  Field required [type=missing, input_value={'outcome': 'failed', 'co...d-a', 'replayed': False}, input_type=dict]\n    For further information visit https://errors.pydantic.dev/2.13/v/missing\ncompleteness\n  Extra inputs are not permitted [type=extra_forbidden, input_value=70, input_type=int]\n    For further information visit https://errors.pydantic.dev/2.13/v/extra_forbidden\nassertiveness\n  Extra inputs are not permitted [type=extra_forbidden, input_value=60, input_type=int]\n    For further information visit https://errors.pydantic.dev/2.13/v/extra_forbidden\nambiguity\n  Extra inputs are not permitted [type=extra_forbidden, input_value=30, input_type=int]\n    For further information visit https://errors.pydantic.dev/2.13/v/extra_forbidden\ndrift\n  Extra inputs are not permitted [type=extra_forbidden, input_value=14, input_type=int]\n    For further information visit https://errors.pydantic.dev/2.13/v/extra_forbidden"
+      },
+      {
+        "test": "tests.test_application_use_cases_09::test_create_board_use_case_persists_and_shapes",
+        "kind": "failure",
+        "message": "okto_pulse.core.application.use_cases.base.PermissionDeniedError: {\"error\": \"permission_denied\", \"reason\": \"permission_missing\", \"required_permission\": \"board.admin.create\", \"detail\": \"Permission denied: requires 'board.admin.create'\"}"
+      },
+      {
+        "test": "tests.test_architecture_finding_gate_fixes::test_spec_done_architecture_findings_gate_blocks_and_releases",
+        "kind": "failure",
+        "message": "AssertionError: assert 'resource_lin...lution_failed' == 'architecture...gs_block_done'\n  \n  - architecture_findings_block_done\n  + resource_lineage_resolution_failed"
+      },
+      {
+        "test": "tests.test_architecture_propagation_enforcement::test_ts_b2_copy_paths_share_canonical_error",
+        "kind": "failure",
+        "message": "okto_pulse.core.services.effective_resource_propagation.ResourceLineageResolutionError: could not resolve resource lineage for spec 'propenf-spec-45149577-7daf-4f48-bc54-4e6f537dcff4': The adopted architecture scope is unavailable."
+      }
+    ],
+    "note": "Stopped at maxfail20; not complete. Skipped predecessor ADD COLUMN tests subsequently removed as superseded."
+  },
+  "core_lifecycle_followup": {
+    "campaigns": [
+      {
+        "name": "clean-break-lifecycle-fixtures1",
+        "passed": 40,
+        "failed": 13
+      },
+      {
+        "name": "clean-break-lifecycle-fixtures2",
+        "passed": 23,
+        "failed": 13
+      },
+      {
+        "name": "clean-break-lifecycle-fixtures3",
+        "passed": 13,
+        "failed": 0
+      }
+    ],
+    "distinct_passed": 76,
+    "intermediate_failures": "Incorrect construction of architecture adoption in test edits (spec_edition/edition instead of adopted_in_edition, missing actor); corrected to the actual native contract.",
+    "product_changes": false,
+    "proof_pair": "dist-native-boundary-qualification1",
+    "full_qualification": "Incomplete; continue remaining modules."
   }
 }

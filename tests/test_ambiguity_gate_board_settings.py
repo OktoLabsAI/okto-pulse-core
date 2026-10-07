@@ -1,19 +1,16 @@
 """Card 2c0483bb (ts_4d20c0d3, ts_6d9624ef) — board settings defaults,
-1-5 validation, normalization, and the legacy skip_ambiguity_gate migration.
+1-5 validation and current settings normalization.
 """
 
 from __future__ import annotations
 
 import uuid
-from unittest.mock import patch
 
 import pytest
 import pytest_asyncio
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
-from sqlalchemy import text
-from sqlalchemy.ext.asyncio import create_async_engine
 
 from okto_pulse.community.api.boards import router as boards_router
 from okto_pulse.community.api import auth_deps as _auth_mod
@@ -66,94 +63,30 @@ def test_board_settings_rejects_threshold_out_of_range(value):
 
 
 # ---------------------------------------------------------------------------
-# Normalization helper — legacy settings resolve to defaults (TR7, BR1)
+# Normalization helper — creation settings resolve to defaults (TR7, BR1)
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
-async def test_resolve_config_defaults_for_legacy_board(db_factory):
+async def test_resolve_config_defaults_for_new_board(db_factory):
     async with db_factory() as db:
-        board = Board(id=_id("board"), name="Legacy", owner_id=USER_ID, settings={})
+        board = Board(id=_id("board"), name="Defaults", owner_id=USER_ID, settings={})
         cfg = IdeationService(db)._resolve_ideation_ambiguity_config(board)
         assert cfg == {"require_ideation_ambiguity_gate": False, "max_ideation_ambiguity": 3}
 
 
 @pytest.mark.asyncio
-async def test_resolve_config_clamps_out_of_range_legacy_value(db_factory):
+async def test_resolve_config_defensively_clamps_out_of_range_value(db_factory):
     async with db_factory() as db:
         board = Board(
             id=_id("board"),
-            name="Legacy",
+            name="Defaults",
             owner_id=USER_ID,
             settings={"require_ideation_ambiguity_gate": True, "max_ideation_ambiguity": 99},
         )
         cfg = IdeationService(db)._resolve_ideation_ambiguity_config(board)
         assert cfg["require_ideation_ambiguity_gate"] is True
         assert cfg["max_ideation_ambiguity"] == 5  # defensively clamped to 1-5
-
-
-# ---------------------------------------------------------------------------
-# Legacy migration — idempotent ADD COLUMN, existing rows read false (ts_6d9624ef)
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.asyncio
-async def test_legacy_migration_adds_column_idempotent_reads_false(tmp_path):
-    steps = pytest.importorskip("okto_pulse.community.adapters.relational_schema_steps")
-
-    db_path = tmp_path / "legacy.db"
-    eng = create_async_engine(f"sqlite+aiosqlite:///{db_path}")
-    try:
-        # Legacy ideations table WITHOUT skip_ambiguity_gate.
-        async with eng.begin() as conn:
-            await conn.execute(text("CREATE TABLE ideations (id TEXT PRIMARY KEY, title TEXT)"))
-            await conn.execute(text("INSERT INTO ideations (id, title) VALUES ('i1', 'legacy')"))
-
-        with patch.object(steps, "get_engine", lambda: eng):
-            await steps._migrate_add_ideation_skip_ambiguity_gate()
-            # Idempotent: a second run must not raise.
-            await steps._migrate_add_ideation_skip_ambiguity_gate()
-
-        async with eng.begin() as conn:
-            rows = (await conn.execute(text("SELECT id, skip_ambiguity_gate FROM ideations"))).fetchall()
-        assert rows == [("i1", 0)]  # existing row reads false (0)
-    finally:
-        await eng.dispose()
-
-
-@pytest.mark.asyncio
-async def test_refinement_legacy_migration_adds_column_idempotent_reads_false(
-    tmp_path,
-):
-    steps = pytest.importorskip("okto_pulse.community.adapters.relational_schema_steps")
-
-    db_path = tmp_path / "legacy-refinement.db"
-    eng = create_async_engine(f"sqlite+aiosqlite:///{db_path}")
-    try:
-        async with eng.begin() as conn:
-            await conn.execute(
-                text("CREATE TABLE refinements (id TEXT PRIMARY KEY, title TEXT)")
-            )
-            await conn.execute(
-                text("INSERT INTO refinements (id, title) VALUES ('r1', 'legacy')")
-            )
-
-        with patch.object(steps, "get_engine", lambda: eng):
-            await steps._migrate_add_refinement_skip_ambiguity_gate()
-            await steps._migrate_add_refinement_skip_ambiguity_gate()
-
-        async with eng.begin() as conn:
-            rows = (
-                await conn.execute(
-                    text(
-                        "SELECT id, skip_ambiguity_gate "
-                        "FROM refinements"
-                    )
-                )
-            ).fetchall()
-        assert rows == [("r1", 0)]
-    finally:
-        await eng.dispose()
 
 
 # ---------------------------------------------------------------------------
