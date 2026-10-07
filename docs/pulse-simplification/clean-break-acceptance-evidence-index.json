@@ -2410,7 +2410,12 @@
           ]
         }
       ],
-      "current_qualification": "pending_current_pair_review"
+      "current_qualification": "verified_current_pair_review",
+      "current_review": {
+        "artifact": "clean-break-acceptance-native-card-links.json",
+        "criterion_key": "KG:KG-04",
+        "proof_pair": "dist-native-main34"
+      }
     },
     {
       "key": "KG:KG-05",
@@ -2594,7 +2599,12 @@
           ]
         }
       ],
-      "current_qualification": "pending_current_pair_review"
+      "current_qualification": "verified_current_pair_review",
+      "current_review": {
+        "artifact": "clean-break-acceptance-native-card-links.json",
+        "criterion_key": "KG:KG-05",
+        "proof_pair": "dist-native-main34"
+      }
     },
     {
       "key": "KG:KG-06",
@@ -2836,7 +2846,12 @@
           ]
         }
       ],
-      "current_qualification": "pending_current_pair_review"
+      "current_qualification": "verified_current_pair_review",
+      "current_review": {
+        "artifact": "clean-break-acceptance-native-card-links.json",
+        "criterion_key": "KG:KG-07",
+        "proof_pair": "dist-native-main34"
+      }
     },
     {
       "key": "KG:KG-08",
@@ -3066,7 +3081,12 @@
           ]
         }
       ],
-      "current_qualification": "pending_current_pair_review"
+      "current_qualification": "verified_current_pair_review",
+      "current_review": {
+        "artifact": "clean-break-acceptance-native-card-links.json",
+        "criterion_key": "KG:KG-08",
+        "proof_pair": "dist-native-main34"
+      }
     },
     {
       "key": "KG:KG-09",
@@ -3204,7 +3224,12 @@
           ]
         }
       ],
-      "current_qualification": "pending_current_pair_review"
+      "current_qualification": "verified_current_pair_review",
+      "current_review": {
+        "artifact": "clean-break-acceptance-native-card-links.json",
+        "criterion_key": "KG:KG-09",
+        "proof_pair": "dist-native-main34"
+      }
     },
     {
       "key": "KG:KG-10",

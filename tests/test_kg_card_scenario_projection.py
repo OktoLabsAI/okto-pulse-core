@@ -38,6 +38,9 @@ async def test_current_card_and_scenario_sources_converge_to_one_support(card_ty
     edges = [edge for edge in projection['edges'] if edge['edge_type'] == 'supports']
     assert len(edges) == 1
     edge = edges[0]
+    expected_origin = 'reciprocal' if link_origin == 'both' else link_origin
+    assert edge['rule_id'] == f'supports/card_scenario_observed_{expected_origin}@v2.1'
+    assert edge['confidence'] == 1.0
     source_node = nodes[edge['from_candidate_id']]
     assert (source_node['node_type'], source_node['source_artifact_ref']) == (
         'Bug' if card_type == 'bug' else 'Entity', 'card:card-one')

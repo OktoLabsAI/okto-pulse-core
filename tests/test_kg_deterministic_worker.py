@@ -45,12 +45,12 @@ def _spec_fixture() -> dict:
         ],
         "functional_requirements": [
             {"id": "fr_earn", "text": "User earns XP for eco-actions"},
-            "User level increases based on XP threshold",
-            "Badge awarded for achievements",
+            {"id": "fr_fixture_1", "text": "User level increases based on XP threshold"},
+            {"id": "fr_fixture_2", "text": "Badge awarded for achievements"},
         ],
         "technical_requirements": [
-            {"text": "XP calc <100ms"},
-            {"text": "Indexed leaderboard table"},
+            {"id": "tr_fixture_0", "text": "XP calc <100ms"},
+            {"id": "tr_fixture_1", "text": "Indexed leaderboard table"},
         ],
         "acceptance_criteria": [
             {"id": "ac_level", "text": "Level formula: level * 1000 XP"},
@@ -82,13 +82,13 @@ def _spec_fixture() -> dict:
             },
         ],
         "api_contracts": [
-            {
+            {"id": "api_fixture_0",
                 "method": "GET",
                 "path": "/leaderboard",
                 "description": "Top 100 users",
                 "linked_requirements": ["fr_earn"],
             },
-            {
+            {"id": "api_fixture_1",
                 "method": "POST",
                 "path": "/streaks",
                 "description": "Streak reset endpoint",
@@ -340,16 +340,16 @@ def test_process_spec_child_source_refs_are_granular():
     assert len(child_refs) == len(set(child_refs))
     assert {
         f"spec:{spec['id']}:fr:fr_earn",
-        f"spec:{spec['id']}:fr:1",
-        f"spec:{spec['id']}:tr:0",
-        f"spec:{spec['id']}:tr:1",
+        f"spec:{spec['id']}:fr:fr_fixture_1",
+        f"spec:{spec['id']}:tr:tr_fixture_0",
+        f"spec:{spec['id']}:tr:tr_fixture_1",
         f"spec:{spec['id']}:ac:ac_level",
         f"spec:{spec['id']}:ac:ac_streak",
         f"spec:{spec['id']}:business_rule:br_xp_cap",
         f"spec:{spec['id']}:test_scenario:ts_1",
         f"spec:{spec['id']}:test_scenario:ts_2",
-        f"spec:{spec['id']}:api_contract:0",
-        f"spec:{spec['id']}:api_contract:1",
+        f"spec:{spec['id']}:api_contract:api_fixture_0",
+        f"spec:{spec['id']}:api_contract:api_fixture_1",
         f"spec:{spec['id']}:decision:dec_pg",
         f"spec:{spec['id']}:decision:dec_redis",
         f"spec:{spec['id']}:decision:dec_badge",
@@ -765,7 +765,7 @@ def _spec_with_fr_ids() -> dict:
             },
         ],
         "api_contracts": [
-            {
+            {"id": "api_fixture_0",
                 "method": "POST",
                 "path": "/edge-resolution",
                 "description": "Endpoint that implements the first FR by id",
@@ -774,7 +774,7 @@ def _spec_with_fr_ids() -> dict:
             },
         ],
         "decisions": [
-            {
+            {"id": "dec_fixture_0",
                 "title": "Use fr_id for cross-section links",
                 "rationale": "Canonical ids are stable; text changes over time.",
                 "status": "active",

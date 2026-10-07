@@ -127,7 +127,7 @@ def _spec_dict(spec_id, board_id, status):
         "id": spec_id, "title": "sync spec",
         "description": "spec producing canonical children for GD sync",
         "status": status, "board_id": board_id,
-        "functional_requirements": [QUERY_TEXT, "FR beta parity sync"],
+        "functional_requirements": [{"id": "fr_alpha", "text": QUERY_TEXT}, {"id": "fr_fixture_1", "text": "FR beta parity sync"}],
         "acceptance_criteria": [{"id": "ac_alpha", "text": "AC alpha parity sync"}],
     }
 
@@ -137,7 +137,7 @@ async def _insert_spec(db_factory, board_id, spec_id, *, status):
         db.add(Spec(
             id=spec_id, board_id=board_id, title="sync spec", status=status,
             created_by=USER_ID,
-            functional_requirements=[QUERY_TEXT, "FR beta parity sync"],
+            functional_requirements=[{"id": "fr_alpha", "text": QUERY_TEXT}, {"id": "fr_fixture_1", "text": "FR beta parity sync"}],
             acceptance_criteria=[{"id": "ac_alpha", "text": "AC alpha parity sync"}],
         ))
         await db.commit()

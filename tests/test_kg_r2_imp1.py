@@ -101,9 +101,9 @@ def _spec_dict(spec_id, board_id, status):
         "description": "spec producing deterministic canonical children",
         "status": status,
         "board_id": board_id,
-        "functional_requirements": ["FR alpha requirement", "FR beta requirement"],
+        "functional_requirements": [{"id": "fr_fixture_0", "text": "FR alpha requirement"}, {"id": "fr_fixture_1", "text": "FR beta requirement"}],
         "acceptance_criteria": [{"id": "ac_alpha", "text": "AC alpha criterion"}],
-        "api_contracts": [{"name": "GET /x", "description": "an api"}],
+        "api_contracts": [{"id": "api_fixture_0", "name": "GET /x", "description": "an api"}],
         "test_scenarios": [
             {"id": "ts_x", "title": "Scenario", "given": "g", "when": "w",
              "then": "t", "linked_criteria": ["ac_alpha"]},
@@ -116,7 +116,7 @@ async def _insert_spec(db_factory, board_id, spec_id, *, status):
         db.add(Spec(
             id=spec_id, board_id=board_id, title="Stale demotion spec",
             status=status, created_by=USER_ID,
-            functional_requirements=["FR alpha requirement", "FR beta requirement"],
+            functional_requirements=[{"id": "fr_fixture_0", "text": "FR alpha requirement"}, {"id": "fr_fixture_1", "text": "FR beta requirement"}],
             acceptance_criteria=[{"id": "ac_alpha", "text": "AC alpha criterion"}],
         ))
         await db.commit()

@@ -48,10 +48,10 @@ def _full_spec(status: str) -> dict:
         "status": status,
         "board_id": "board-canon",
         "context": "## Decisions\n- Use PostgreSQL\n",
-        "functional_requirements": ["FR alpha", "FR beta"],
-        "technical_requirements": [{"text": "TR alpha"}],
+        "functional_requirements": [{"id": "fr_fixture_0", "text": "FR alpha"}, {"id": "fr_fixture_1", "text": "FR beta"}],
+        "technical_requirements": [{"id": "tr_fixture_0", "text": "TR alpha"}],
         "acceptance_criteria": [{"id": "ac_alpha", "text": "AC alpha"}],
-        "business_rules": ["BR alpha"],
+        "business_rules": [{"id": "br_fixture_0", "rule": "BR alpha"}],
         "test_scenarios": [
             {
                 "id": "ts_x",
@@ -62,7 +62,7 @@ def _full_spec(status: str) -> dict:
                 "linked_criteria": ["ac_alpha"],
             }
         ],
-        "api_contracts": [{"name": "GET /x", "description": "an api"}],
+        "api_contracts": [{"id": "api_fixture_0", "name": "GET /x", "description": "an api"}],
         "integration_requirements": [
             {"id": "ir_x", "title": "IR alpha", "description": "integ"}
         ],

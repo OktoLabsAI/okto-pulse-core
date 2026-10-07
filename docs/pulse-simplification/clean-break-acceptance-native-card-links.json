@@ -1,0 +1,207 @@
+{
+  "format": "pulse-040-reviewed-acceptance/v1",
+  "criterion_keys": [
+    "KG:KG-04",
+    "KG:KG-05",
+    "KG:KG-07",
+    "KG:KG-08",
+    "KG:KG-09"
+  ],
+  "status": "verified_current_pair_review",
+  "proof_pair": "dist-native-main34",
+  "provenance_sha256": "9b4d2651c39b1196bd09b2a7c8566989d9504d91abdf86292b881c40736c7bc5",
+  "runs": [
+    {
+      "name": "acceptance-native-card-links1",
+      "xml_sha256": "5c67af744a08808a30046a41992c403c907b3f59dde087e8b8094ac817742758",
+      "passed": 47,
+      "cases": [
+        "tests.test_card_child_projection::test_every_declared_child_has_one_typed_card_support[normal]",
+        "tests.test_card_child_projection::test_every_declared_child_has_one_typed_card_support[test]",
+        "tests.test_card_child_projection::test_every_declared_child_has_one_typed_card_support[bug]",
+        "tests.test_card_child_projection::test_incomplete_child_source_cannot_authorize_any_replacement[missing_collection]",
+        "tests.test_card_child_projection::test_incomplete_child_source_cannot_authorize_any_replacement[invalid_collection]",
+        "tests.test_card_child_projection::test_incomplete_child_source_cannot_authorize_any_replacement[duplicate_id]",
+        "tests.test_card_child_projection::test_incomplete_child_source_cannot_authorize_any_replacement[missing_id]",
+        "tests.test_card_child_projection::test_registry_and_old_new_consumers_cover_all_declared_child_collections",
+        "tests.test_kg_card_scenario_projection::test_current_card_and_scenario_sources_converge_to_one_support[card-normal]",
+        "tests.test_kg_card_scenario_projection::test_current_card_and_scenario_sources_converge_to_one_support[card-test]",
+        "tests.test_kg_card_scenario_projection::test_current_card_and_scenario_sources_converge_to_one_support[card-bug]",
+        "tests.test_kg_card_scenario_projection::test_current_card_and_scenario_sources_converge_to_one_support[spec-normal]",
+        "tests.test_kg_card_scenario_projection::test_current_card_and_scenario_sources_converge_to_one_support[spec-test]",
+        "tests.test_kg_card_scenario_projection::test_current_card_and_scenario_sources_converge_to_one_support[spec-bug]",
+        "tests.test_kg_card_scenario_projection::test_current_card_and_scenario_sources_converge_to_one_support[both-normal]",
+        "tests.test_kg_card_scenario_projection::test_current_card_and_scenario_sources_converge_to_one_support[both-test]",
+        "tests.test_kg_card_scenario_projection::test_current_card_and_scenario_sources_converge_to_one_support[both-bug]",
+        "tests.test_kg_card_scenario_projection::test_retired_card_plans_empty_owned_set_without_reviving_root[cancelled-False-normal]",
+        "tests.test_kg_card_scenario_projection::test_retired_card_plans_empty_owned_set_without_reviving_root[cancelled-False-test]",
+        "tests.test_kg_card_scenario_projection::test_retired_card_plans_empty_owned_set_without_reviving_root[cancelled-False-bug]",
+        "tests.test_kg_card_scenario_projection::test_retired_card_plans_empty_owned_set_without_reviving_root[done-True-normal]",
+        "tests.test_kg_card_scenario_projection::test_retired_card_plans_empty_owned_set_without_reviving_root[done-True-test]",
+        "tests.test_kg_card_scenario_projection::test_retired_card_plans_empty_owned_set_without_reviving_root[done-True-bug]",
+        "tests.test_kg_card_scenario_projection::test_incomplete_or_ambiguous_sources_do_not_authorize_empty_replacement[card_scope]",
+        "tests.test_kg_card_scenario_projection::test_incomplete_or_ambiguous_sources_do_not_authorize_empty_replacement[incomplete_card]",
+        "tests.test_kg_card_scenario_projection::test_incomplete_or_ambiguous_sources_do_not_authorize_empty_replacement[parent_scope]",
+        "tests.test_kg_card_scenario_projection::test_incomplete_or_ambiguous_sources_do_not_authorize_empty_replacement[duplicate_target]",
+        "tests.test_kg_card_scenario_projection::test_known_absence_produces_empty_owned_set_and_durable_diagnostic[parent]",
+        "tests.test_kg_card_scenario_projection::test_known_absence_produces_empty_owned_set_and_durable_diagnostic[target]",
+        "tests.test_kg_card_scenario_projection::test_known_absence_produces_empty_owned_set_and_durable_diagnostic[unlinked]",
+        "tests.test_kg_card_scenario_projection::test_source_provider_failure_does_not_become_absence_or_cleanup",
+        "tests.test_card_dependency_projection::test_domain_accepts_all_typed_card_dependency_pairs",
+        "tests.test_card_dependency_projection::test_persisted_dependency_projects_prerequisite_to_dependent[normal-normal]",
+        "tests.test_card_dependency_projection::test_persisted_dependency_projects_prerequisite_to_dependent[normal-test]",
+        "tests.test_card_dependency_projection::test_persisted_dependency_projects_prerequisite_to_dependent[normal-bug]",
+        "tests.test_card_dependency_projection::test_persisted_dependency_projects_prerequisite_to_dependent[test-normal]",
+        "tests.test_card_dependency_projection::test_persisted_dependency_projects_prerequisite_to_dependent[test-test]",
+        "tests.test_card_dependency_projection::test_persisted_dependency_projects_prerequisite_to_dependent[test-bug]",
+        "tests.test_card_dependency_projection::test_persisted_dependency_projects_prerequisite_to_dependent[bug-normal]",
+        "tests.test_card_dependency_projection::test_persisted_dependency_projects_prerequisite_to_dependent[bug-test]",
+        "tests.test_card_dependency_projection::test_persisted_dependency_projects_prerequisite_to_dependent[bug-bug]",
+        "tests.test_card_dependency_projection::test_dependency_outbox_retains_removal_and_cycle_is_not_persisted",
+        "tests.test_card_dependency_projection::test_inflight_dependency_rechecks_cycle_after_another_writer",
+        "tests.test_card_dependency_projection::test_cross_board_dependency_is_refused_even_when_actor_owns_both",
+        "tests.test_card_dependency_projection::test_prerequisite_change_enqueues_only_scoped_direct_consumers",
+        "tests.test_bug_origin_proxy_projection::test_bug_proxy_uses_only_children_assigned_to_its_origin",
+        "tests.test_bug_origin_proxy_projection::test_unavailable_origin_does_not_authorize_an_empty_proxy_snapshot"
+      ]
+    },
+    {
+      "name": "acceptance-native-card-provenance2",
+      "xml_sha256": "7769cf8a60896884beaa700fb6130009e64ecc80a5113a6271ff97b189fae5b6",
+      "passed": 9,
+      "cases": [
+        "tests.test_kg_card_scenario_projection::test_current_card_and_scenario_sources_converge_to_one_support[card-normal]",
+        "tests.test_kg_card_scenario_projection::test_current_card_and_scenario_sources_converge_to_one_support[card-test]",
+        "tests.test_kg_card_scenario_projection::test_current_card_and_scenario_sources_converge_to_one_support[card-bug]",
+        "tests.test_kg_card_scenario_projection::test_current_card_and_scenario_sources_converge_to_one_support[spec-normal]",
+        "tests.test_kg_card_scenario_projection::test_current_card_and_scenario_sources_converge_to_one_support[spec-test]",
+        "tests.test_kg_card_scenario_projection::test_current_card_and_scenario_sources_converge_to_one_support[spec-bug]",
+        "tests.test_kg_card_scenario_projection::test_current_card_and_scenario_sources_converge_to_one_support[both-normal]",
+        "tests.test_kg_card_scenario_projection::test_current_card_and_scenario_sources_converge_to_one_support[both-test]",
+        "tests.test_kg_card_scenario_projection::test_current_card_and_scenario_sources_converge_to_one_support[both-bug]"
+      ]
+    },
+    {
+      "name": "acceptance-native-card-ownership1",
+      "xml_sha256": "cbdb625bb7414663a98ee17019e3ba8dee6e925d64acbb2f96bee8c6ed45c873",
+      "passed": 22,
+      "cases": [
+        "tests.test_grafx_card_child_projection::test_child_ownership_pending_removal_and_compensation[family0-Entity]",
+        "tests.test_grafx_card_child_projection::test_child_ownership_pending_removal_and_compensation[family1-Bug]",
+        "tests.test_grafx_card_child_projection::test_child_ownership_pending_removal_and_compensation[family2-Entity]",
+        "tests.test_grafx_card_child_projection::test_child_ownership_pending_removal_and_compensation[family3-Bug]",
+        "tests.test_grafx_card_child_projection::test_child_ownership_pending_removal_and_compensation[family4-Entity]",
+        "tests.test_grafx_card_child_projection::test_child_ownership_pending_removal_and_compensation[family5-Bug]",
+        "tests.test_grafx_card_child_projection::test_child_ownership_pending_removal_and_compensation[family6-Entity]",
+        "tests.test_grafx_card_child_projection::test_child_ownership_pending_removal_and_compensation[family7-Bug]",
+        "tests.test_grafx_card_child_projection::test_child_ownership_pending_removal_and_compensation[family8-Entity]",
+        "tests.test_grafx_card_child_projection::test_child_ownership_pending_removal_and_compensation[family9-Bug]",
+        "tests.test_grafx_card_child_projection::test_child_ownership_pending_removal_and_compensation[family10-Entity]",
+        "tests.test_grafx_card_child_projection::test_child_ownership_pending_removal_and_compensation[family11-Bug]",
+        "tests.test_grafx_card_child_projection::test_child_ownership_pending_removal_and_compensation[family12-Entity]",
+        "tests.test_grafx_card_child_projection::test_child_ownership_pending_removal_and_compensation[family13-Bug]",
+        "tests.test_grafx_card_child_projection::test_child_ownership_pending_removal_and_compensation[family14-Entity]",
+        "tests.test_grafx_card_child_projection::test_child_ownership_pending_removal_and_compensation[family15-Bug]",
+        "tests.test_grafx_card_child_projection::test_child_ownership_pending_removal_and_compensation[family16-Bug]",
+        "tests.test_grafx_card_child_projection::test_child_ownership_pending_removal_and_compensation[family17-Bug]",
+        "tests.test_grafx_card_child_projection::test_child_ownership_pending_removal_and_compensation[family18-Bug]",
+        "tests.test_grafx_card_child_projection::test_child_ownership_pending_removal_and_compensation[family19-Bug]",
+        "tests.test_grafx_card_child_projection::test_child_ownership_pending_removal_and_compensation[family20-Bug]",
+        "tests.test_grafx_card_child_projection::test_child_ownership_pending_removal_and_compensation[family21-Bug]"
+      ]
+    }
+  ],
+  "distinct_cases": 69,
+  "review": {
+    "KG:KG-04": "Planner covers all nine registered child collections for normal/test/bug Cards with exact typed endpoints. Bug remains Bug. Grafx checks owned relation removal, foreign/human preservation and compensation.",
+    "KG:KG-05": "Card-only, Spec-only and reciprocal references each produce one support. Explicit rule_id assertion retains which sources declared it; reciprocal does not duplicate the edge. This is observed linkage, not execution proof.",
+    "KG:KG-07": "SQL service accepts all nine admitted Card-type pairs; planner emits prerequisite-to-dependent with the persisted dependency ID in provenance. Both Bug endpoints retain their type.",
+    "KG:KG-08": "Domain rejects cycle, including an interleaved writer, and cross-board association even for an owner of both Boards. No rejected relation persists; graph derives only from persisted domain source.",
+    "KG:KG-09": "Bug proxy emits six supported child families only for the linked origin Card; confidence 0.8 and inferred_origin_proxy marker are asserted. Origin replacement changes provenance; absence clears; provider failure does not authorize an empty set."
+  },
+  "closure": {
+    "ok": true,
+    "budgets": [
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "import_boundary_baseline",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every import_boundary_baseline allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "singleton_baseline",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every singleton_baseline allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "dependency_temporary_exceptions",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every dependency_temporary_exceptions allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "graph_runtime_compatibility",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every graph_runtime_compatibility allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "rebuild_artifact_compatibility",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every rebuild_artifact_compatibility allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "community_private_reach_ins",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every community_private_reach_ins allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "community_adapter_bridges",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every community_adapter_bridges allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "af35_relational_residue",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every af35_relational_residue allowance before F16 completion."
+      }
+    ],
+    "findings": [],
+    "documentation_findings": []
+  },
+  "limits": [
+    "Nine provenance tests repeat cases from the 47-case Core campaign; do not add them to distinct total.",
+    "Does not qualify KG-06 discrepancy semantics or pending KG-10 authority.",
+    "No frontend change; no new browser E2E claim.",
+    "Other main34 campaigns remain pending in the ledger; this receipt qualifies only the listed criteria."
+  ]
+}

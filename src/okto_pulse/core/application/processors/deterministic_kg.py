@@ -766,25 +766,15 @@ def _ref_token(value: Any) -> str:
     return token.replace(":", "_")
 
 
-def _source_item_key(item: Any, index: int) -> str:
-    if isinstance(item, dict):
-        for field_name in (
-            "id",
-            "decision_id",
-            "scenario_id",
-            "contract_id",
-            "rule_id",
-        ):
-            value = item.get(field_name)
-            if value not in (None, ""):
-                token = _ref_token(value)
-                if token:
-                    return token
-    return str(index)
-
-
-def _spec_child_ref(spec_id: str, section: str, item: Any, index: int) -> str:
-    return f"spec:{spec_id}:{section}:{_source_item_key(item, index)}"
+def _spec_child_ref(spec_id: str, section: str, item: Any) -> str:
+    """Persisted children have authored IDs; projection never invents identity."""
+    if (
+        not isinstance(item, dict)
+        or not isinstance(item.get("id"), str)
+        or not item["id"].strip()
+    ):
+        raise ValueError("spec_child_identity_required")
+    return f"spec:{spec_id}:{section}:{_ref_token(item['id'])}"
 
 
 def _arch_value(value: Any) -> str:
@@ -1314,7 +1304,7 @@ class DeterministicWorker:
                     node_type="Requirement",
                     title=text[:120],
                     content=text,
-                    source_artifact_ref=_spec_child_ref(spec_id, "fr", req, i),
+                    source_artifact_ref=_spec_child_ref(spec_id, "fr", req),
                     source_confidence=1.0,
                 )
             )
@@ -1336,7 +1326,7 @@ class DeterministicWorker:
                     node_type="Constraint",
                     title=text[:120],
                     content=text,
-                    source_artifact_ref=_spec_child_ref(spec_id, "tr", req, i),
+                    source_artifact_ref=_spec_child_ref(spec_id, "tr", req),
                     source_confidence=1.0,
                 )
             )
@@ -1365,7 +1355,7 @@ class DeterministicWorker:
                     node_type="Criterion",
                     title=text[:120],
                     content=text,
-                    source_artifact_ref=_spec_child_ref(spec_id, "ac", crit, i),
+                    source_artifact_ref=_spec_child_ref(spec_id, "ac", crit),
                     source_confidence=1.0,
                 )
             )
@@ -1392,7 +1382,7 @@ class DeterministicWorker:
                     title=title,
                     content=text,
                     source_artifact_ref=_spec_child_ref(
-                        spec_id, "business_rule", rule, i
+                        spec_id, "business_rule", rule
                     ),
                     source_confidence=1.0,
                 )
@@ -1423,7 +1413,7 @@ class DeterministicWorker:
                     title=title,
                     content=content,
                     source_artifact_ref=_spec_child_ref(
-                        spec_id, "test_scenario", ts, i
+                        spec_id, "test_scenario", ts
                     ),
                     source_confidence=1.0,
                 )
@@ -1498,7 +1488,7 @@ class DeterministicWorker:
                     title=title,
                     content=content,
                     source_artifact_ref=_spec_child_ref(
-                        spec_id, "api_contract", api, i
+                        spec_id, "api_contract", api
                     ),
                     source_confidence=1.0,
                 )
@@ -1586,7 +1576,7 @@ class DeterministicWorker:
                     title=title[:120],
                     content=content,
                     source_artifact_ref=_spec_child_ref(
-                        spec_id, "integration_requirement", ir, i
+                        spec_id, "integration_requirement", ir
                     ),
                     source_confidence=1.0,
                 )
@@ -1642,7 +1632,7 @@ class DeterministicWorker:
                     title=title[:120],
                     content=content,
                     source_artifact_ref=_spec_child_ref(
-                        spec_id, "observability_requirement", req, i
+                        spec_id, "observability_requirement", req
                     ),
                     source_confidence=1.0,
                 )
@@ -1686,7 +1676,7 @@ class DeterministicWorker:
                     title=dec_title[:120],
                     content=dec_text,
                     context=dec.get("context") or "",
-                    source_artifact_ref=_spec_child_ref(spec_id, "decision", dec, i),
+                    source_artifact_ref=_spec_child_ref(spec_id, "decision", dec),
                     source_confidence=1.0,
                 )
             )

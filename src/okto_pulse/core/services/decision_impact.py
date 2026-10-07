@@ -52,7 +52,7 @@ def _metadata(snapshot):
     metadata = {}
     for family in CARD_CHILD_FAMILIES:
         for index, value in enumerate(getattr(snapshot.spec, family.field) or []):
-            reference = _spec_child_ref(snapshot.scope.spec_id, family.section, value, index)
+            reference = _spec_child_ref(snapshot.scope.spec_id, family.section, value)
             if isinstance(value, dict):
                 title = value.get('title') or value.get('text') or value.get('description') or value.get('rule') or reference
                 status = value.get('status', 'active')
@@ -60,7 +60,7 @@ def _metadata(snapshot):
                 title, status = str(value), 'unknown'
             metadata[reference] = {'title': str(title)[:240], 'status': str(status)}
     for index, value in enumerate(snapshot.spec.test_scenarios or []):
-        reference = _spec_child_ref(snapshot.scope.spec_id, 'test_scenario', value, index)
+        reference = _spec_child_ref(snapshot.scope.spec_id, 'test_scenario', value)
         metadata[reference] = ({'title': str(value.get('title') or reference)[:240], 'status': str(value.get('status', 'unknown'))}
             if isinstance(value, dict) else {'title': str(value)[:240], 'status': 'unknown'})
     for card in snapshot.cards:

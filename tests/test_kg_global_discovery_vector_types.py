@@ -396,9 +396,9 @@ def _full_done_spec() -> dict:
         "description": "spec producing vector-type children",
         "status": "done",
         "board_id": "ignored",
-        "functional_requirements": ["FR alpha", "FR beta"],
+        "functional_requirements": [{"id": "fr_fixture_0", "text": "FR alpha"}, {"id": "fr_fixture_1", "text": "FR beta"}],
         "acceptance_criteria": [{"id": "ac_alpha", "text": "AC alpha"}],
-        "api_contracts": [{"name": "GET /x", "description": "an api"}],
+        "api_contracts": [{"id": "api_fixture_0", "name": "GET /x", "description": "an api"}],
         "test_scenarios": [
             {"id": "ts_x", "title": "Scenario", "given": "g", "when": "w",
              "then": "t", "linked_criteria": ["ac_alpha"]},

@@ -2453,7 +2453,7 @@ def _scenario_candidate_for_id(
             node_type="TestScenario",
             title=title,
             content=_test_scenario_content(ts),
-            source_artifact_ref=_spec_child_ref(spec.id, "test_scenario", ts, index),
+            source_artifact_ref=_spec_child_ref(spec.id, "test_scenario", ts),
             source_confidence=1.0,
         )
     return None

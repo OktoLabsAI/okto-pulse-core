@@ -464,7 +464,7 @@ def test_ir_or_coverage_summary_and_kg_mapping():
     spec = {
         "id": "spec_1",
         "title": "Metrics ingestion",
-        "functional_requirements": ["Receive metrics"],
+        "functional_requirements": [{"id": "fr_metrics", "text": "Receive metrics"}],
         "technical_requirements": [],
         "acceptance_criteria": [],
         "business_rules": [],
@@ -475,7 +475,7 @@ def test_ir_or_coverage_summary_and_kg_mapping():
                 "method": "POST",
                 "path": "/metrics",
                 "description": "Receive metric payload",
-                "linked_requirements": ["Receive metrics"],
+                "linked_requirements": ["fr_metrics"],
             }
         ],
         "integration_requirements": [

@@ -53,17 +53,17 @@ def full_spec_row():
         ),
         functional_requirements=[
             {"id": "fr_earn", "text": "Player accumulates XP for each action"},
-            "Player earns streak multiplier after 7 consecutive days",
+            {"id": "fr_fixture_1", "text": "Player earns streak multiplier after 7 consecutive days"},
         ],
         technical_requirements=[
-            {"text": "XP write path < 50ms p95"},
+            {"id": "tr_fixture_0", "text": "XP write path < 50ms p95"},
         ],
         acceptance_criteria=[
             {"id": "ac_level", "text": "Level formula matches spec: 1000 XP per level"},
             {"id": "ac_streak", "text": "Streak multiplier caps at 2.0"},
         ],
         business_rules=[
-            {"title": "Daily XP Cap", "rule": "User cannot exceed 500 XP per day"},
+            {"id": "br_fixture_0", "title": "Daily XP Cap", "rule": "User cannot exceed 500 XP per day"},
         ],
         test_scenarios=[
             {
@@ -76,7 +76,7 @@ def full_spec_row():
             },
         ],
         api_contracts=[
-            {
+            {"id": "api_fixture_0",
                 "method": "GET",
                 "path": "/leaderboard",
                 "description": "Top-100 users",
@@ -179,7 +179,7 @@ def test_ts_a278ec64_missing_linked_criteria_skips_tests_edge():
         "title": "Partial Spec",
         "description": "",
         "context": "",
-        "functional_requirements": ["Nothing"],
+        "functional_requirements": [{"id": "fr_fixture_0", "text": "Nothing"}],
         "technical_requirements": [],
         "acceptance_criteria": [{"id": "ac_some", "text": "Some criterion"}],
         "business_rules": [],
@@ -234,13 +234,13 @@ def test_ts_a278ec64_missing_linked_requirements_enqueues_candidate():
         "title": "Partial",
         "description": "",
         "context": "",
-        "functional_requirements": ["FR-A"],
+        "functional_requirements": [{"id": "fr_fixture_0", "text": "FR-A"}],
         "technical_requirements": [],
         "acceptance_criteria": [],
         "business_rules": [],
         "test_scenarios": [],
         "api_contracts": [
-            {"method": "GET", "path": "/x", "description": "d",
+            {"id": "api_fixture_0", "method": "GET", "path": "/x", "description": "d",
              "linked_requirements": []},
         ],
     }

@@ -2,6 +2,49 @@
 
 ## Estado para retomada
 
+### 2026-10-07 — Identidades nativas dos filhos fechadas; cinco critérios KG qualificados
+child-grafx1 handle45362 terminou0:32pass/920.70s. Todos XMLs conferidos,
+nenhum processo permanece ativo. Recibo clean-break-acceptance-native-child-identity.json
+registra396casos distintos resolvidos (281+49+34+32), reprodução81fail/7pass e
+duas falhas de fixture preservadas, sem somar rerun. Par main34 byteprovado;
+closure34 ok/oitoZERO. Diff-check0. Recibo separado de vínculos Card tem69casos
+distintos e promove somente KG-04/05/07/08/09. Índice agora48 verificados,
+187 aplicáveis pendentes,11 superados; isso não declara entrega integral.
+Pronto para commit/push. Communityf341d0c6 limpo e inalterado. Próximo KG-06:
+diagnóstico explícito de fontes unilaterais sem mudar gate ou reconciliar fonte.
+C3/C4 ainda deve adaptar helper de fixtures r2_scenario_helpers textual e seus
+consumidores mistos; não confundir essa pendência de testes com fallback produtivo.
+Isolado next27 continua STALE; manter main34 como par de referência.
+Autorização Checklist já aplicada, não reabrir. T23/KG-10 continuam pendentes.
+
+### 2026-10-07 — C1/C4 identidade dos filhos sem posição — WIP main34
+FR/TR enviado em cb886357, push0. Reprodução child-refusal1 handle88529:
+81fail/7pass/5.46s; 80 falhas confirmaram identidade inventada/aliases nas oito
+famílias além de AC. Uma falha era fixture positiva API sem método/path; corrigida
+com paths distintos. Removido _source_item_key e fallback, _spec_child_ref exige ID
+nativo string não vazio. Atualizados os consumidores internos consolidation e
+decision_impact para assinatura sem índice. Nenhuma autoridade nova.
+Fixtures de sete módulos passam a declarar IDs nativos; asserts funcionais mantidos.
+main34 prova7846 terminou0:843/905+316/402 byte-idênticos antes dos testes.
+child-identity2 handle69950 terminou0:281pass/17.22s; closure34 handle89709
+terminou0/oitoZERO. child-mapping1 handle74048 terminou0:49pass/8.45s.
+child-consumers1 handle13011 terminou1:32pass/2fail/309.26s; variável QUERY_TEXT
+ainda era FR textual no fixture R2-IMP5. Convertida para objeto id/text tanto no
+payload quanto no ORM; child-consumers2 handle9842 terminou0:2pass/52.05s.
+child-grafx1 handle45362 continua ATIVO (sem falha exibida no último poll).
+card-links1 handle27951 terminou0:47pass/9.26s; card-ownership1 handle27235
+terminou0:22pass/20.81s. Proveniência reciprocal/card/spec explicitamente conferida
+em card-provenance2 handle94165:9pass/3.22s (sobrepostos, não somar).
+Aguardar campanha Grafx antes de publicar. Recibo clean-break-acceptance-native-card-links.json
+promove KG-04/05/07/08/09 com69casos distintos. KG-06 permanece pendente: análise
+atual distingue origem por rule_id, mas snapshot/consulta opcional não emite achado
+para associação unilateral. Gate de conclusão continua usando card.test_scenario_ids
+com prova autenticada, sem consultar a união do grafo. Próxima revisão deve preservar
+essa autoridade e apenas tornar discrepância explícita conforme KG §4.3.
+Inspeção também encontrou defaults FR/AC textuais no helper de testes r2_scenario_helpers;
+revisar consumidores mistos no C3/C4, sem reintroduzir fallback produtivo. Isolado next27 STALE; main produto congelado durante suites.
+Não qualifica entrega integral, T23/KG-10 ainda pendentes.
+
 ### 2026-10-07 — FR/TR sem resolver textual/posicional; validação main33
 Core6715d7aa publicado; Communityf341d0c6 inalterado. Resolver compartilhado e
 API aceitam somente ID string exato e inequívoco; removidos mapas de texto.
