@@ -1,0 +1,51 @@
+{
+  "format": "pulse-040-reviewed-acceptance/v1",
+  "criterion_key": "BASE:T03",
+  "disposition": "mantido",
+  "status": "verified_current_pair_review",
+  "proof_pair": "dist-native-saas19",
+  "provenance_sha256": "1bc8cc7d460f4f3d0142ba2c6cce9d40e976e323c0a7d6da469f180cfc1d8fe1",
+  "reviewed_coverage": {
+    "submit": "Actual Community MCP host authenticates the persisted planner and denies evaluation/validation submit before mutation.",
+    "move": "Granted transition permissions do not substitute validation or evaluation; both bypass attempts preserve Spec and receipt snapshots.",
+    "update": "MCP unknown arguments and REST extra fields are refused with no writes. Separately authorized title edits succeed without review/status mutation.",
+    "batch": "Unsupported approve is denied at authorization in MCP and validation in REST; allowed create cannot include an evaluation payload.",
+    "alias": "Live catalog has no review alias; actual unknown-tool invocation preserves state.",
+    "REST": "Explicit denied spec.evaluations.submit returns403; authorized qualitative evaluation flow remains covered."
+  },
+  "runs": [
+    {
+      "name": "acceptance-native-planner-current1",
+      "xml_sha256": "deb23b2115fed25d641deec324c5e1039d6cbd20ce31612f77e85d40cca2e875",
+      "passed": 1,
+      "cases": [
+        "tests.test_planner_review_authority::test_authenticated_planner_review_boundary_across_mcp_variants"
+      ]
+    },
+    {
+      "name": "core20-native-contracts3",
+      "xml_sha256": "899dfbc1df43dbed1270fdd3bb57dc58b57397759979c709a83b24126b31bd72",
+      "passed": 12,
+      "cases": [
+        "tests.test_spec_evaluation_rest_parity::test_submit_and_list_spec_evaluation_via_rest",
+        "tests.test_spec_evaluation_rest_parity::test_planner_without_evaluation_grant_cannot_approve_via_rest",
+        "tests.test_spec_evaluation_rest_parity::test_rest_content_and_move_cannot_forge_evaluation",
+        "tests.test_spec_evaluation_rest_parity::test_rest_evaluation_satisfies_in_progress_gate",
+        "tests.test_spec_evaluation_rest_parity::test_evaluation_rejected_outside_validated_status",
+        "tests.test_spec_evaluation_rest_parity::test_evaluation_validates_scores_and_recommendation",
+        "tests.test_spec_evaluation_rest_parity::test_mcp_tool_shares_service_write_path",
+        "tests.test_spec_evaluation_rest_parity::test_ideation_complexity_invalid_value_is_422_not_500",
+        "tests.test_spec_evaluation_rest_parity::test_ideation_complexity_accepts_enum_values[small]",
+        "tests.test_spec_evaluation_rest_parity::test_ideation_complexity_accepts_enum_values[medium]",
+        "tests.test_spec_evaluation_rest_parity::test_ideation_complexity_accepts_enum_values[large]",
+        "tests.test_spec_evaluation_rest_parity::test_ideation_complexity_description_matches_enum"
+      ]
+    }
+  ],
+  "limits": [
+    "MCP credential extraction is injected; authentication, persisted grants, host validation, use cases and Community SQL are real.",
+    "Approved/validated states are seeded to isolate authority; does not certify the full lifecycle.",
+    "REST identity and permission resolution are supplied by the existing fixture; does not certify login.",
+    "No frontend changes in this criterion; existing frontend qualification remains separately recorded."
+  ]
+}

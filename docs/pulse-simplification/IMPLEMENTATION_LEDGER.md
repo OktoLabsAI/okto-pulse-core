@@ -2,6 +2,21 @@
 
 ## Estado para retomada
 
+### 2026-10-07 — C4 BASE:T03 qualificado no contrato nativo
+Coreadda2757 publicado, push0. Após revisão das asserções atuais de planner MCP
+e REST, acceptance-native-planner-current1 handle26330 terminou0:1pass/12.82s
+no par saas19. REST reutiliza core20-native-contracts3:12pass; sem repetir.
+Critério BASE:T03 agora verified_current_pair_review: submit/move/update/batch/
+alias/REST mantêm negações e snapshots sem escrita, com edição legítima separada.
+REST recusa campos extras422, não mantém antigo comportamento de ignorá-los.
+Batch MCP sem leaf concedida é negado antes de validar payload; operação create
+permitida com campo evaluation também recusada. Grantes efetivos persistidos
+são verificados no MCP; identidade REST injetada e entry states seeded são
+limites explícitos, não certificação de login/fluxo completo.
+Recibo clean-break-acceptance-native-planner.json, índice atualizado só T03.
+235 critérios aplicáveis continuam fixos; não promover os demais por inferência
+da suite. Community65213 ainda ATIVO. T23/KG-10 não alterados.
+
 ### 2026-10-07 — Varredura Core chegou ao fim; cobertura por módulo reconciliada
 Corefcb3d65c publicado, push0. Core21 handle60638 terminou1:125pass/2fail/19.13s.
 Falhas: hash antigo submit_spec_validation e fixture SpecResponse sem contrato

@@ -190,7 +190,12 @@
         "criterion_key": "BASE:T03"
       },
       "discovered_artifacts": [],
-      "current_qualification": "pending_current_pair_review"
+      "current_qualification": "verified_current_pair_review",
+      "current_review": {
+        "artifact": "clean-break-acceptance-native-planner.json",
+        "criterion_key": "BASE:T03",
+        "proof_pair": "dist-native-saas19"
+      }
     },
     {
       "key": "BASE:T04",
