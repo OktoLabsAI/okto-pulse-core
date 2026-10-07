@@ -2,6 +2,23 @@
 
 ## Estado para retomada
 
+### 2026-10-07 — E2E instalado7 terminal verde; liberação do main
+T27/T28/T31 publicados Corefe6ce9f6/Community61c3f524, pushes0.
+native-installed-recovery7 handle96950 terminou0:8pass/2304.39s, XML conferido
+sem falhas/errors/skips. Par main25/Grafx0.0.7, runtime novo, recursos HTTP exatos,
+materialização, recovery interno, inputs missing/corrupt e hard-kill com retomada.
+Observadores prepare660s publicados sem mudar orçamento produtivo600 ou1500Boards.
+Recibo acceptance-clean-break-installed-recovery7.json preserva hashes/limites.
+Nenhum processo desta campanha permanece ativo; main pode agora ser integrado.
+Resultado main25 não certifica automaticamente a admissão relacional next26.
+
+T32 revisão detectou branches executáveis GLOBAL_OUTBOX_RETIRED_SENTINEL (-2),
+superseded_by_historical_migration e instrução offline_cutover: resíduos do suporte
+à migração ainda presentes. Próximo passo dentro do escopo C1/C4: retirar caminhos
+exclusivos migrados, manter recuperação/outbox nativos e recusa de entrada inválida.
+Não promover T32 nem a entrega integral antes de resolver/testar esses consumidores.
+T33/T34 seguem depois; T23/KG-10 continuam pendentes. Sem processos ativos.
+
 ### 2026-10-07 — C4 T27/T28/T31: policy nativa e integridade antes de escrita
 Par anterior publicado Coread711133/Communitycc59fa37. T31 reproduziu gap real:
 schema/fingerprint atuais com FK órfã eram admitidos. Reproduction1 handle16417
