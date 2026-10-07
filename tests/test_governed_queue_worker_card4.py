@@ -1059,7 +1059,7 @@ async def test_stale_reconcile_claim_cas_runs_after_graph_writer(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_delete_between_extraction_and_publish_blocks_legacy_commit(monkeypatch):
+async def test_delete_between_extraction_and_publish_blocks_commit(monkeypatch):
     """AC6/TS3: a tombstone winning at the final re-check publishes nothing."""
 
     entry = _entry(status="claimed", claim_token="claim-before-delete")
@@ -1070,7 +1070,8 @@ async def test_delete_between_extraction_and_publish_blocks_legacy_commit(monkey
         nodes=[object()],
         edges=[],
         missing_link_candidates=[],
-        raw_content="legacy spec body",
+        raw_content="native spec body",
+        reference_findings=(),
         relational_projection_candidate_ids=(),
         relational_projection_active_set_intents=(),
     )

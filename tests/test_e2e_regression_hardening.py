@@ -3,6 +3,10 @@
 from __future__ import annotations
 
 import uuid
+from native_subject_testing import record_native_subject_authority
+from okto_pulse.community.adapters.sqlalchemy_checklist import CommunitySqlAlchemyChecklist
+from okto_pulse.core.domain.checklist import ChecklistBinding, ChecklistMode, ChecklistTargetType, ChecklistPhase
+from okto_pulse.core.domain.architecture_adoption import ArchitectureAdoptionScope
 
 import pytest
 
@@ -36,13 +40,16 @@ def _validation_payload() -> dict:
         "expected_validation_edition": 1,
         "expected_spec_version": 1,
         "expected_head_revision": 0,
-        "completeness": 95,
-        "completeness_justification": "All mandatory checks are satisfied.",
+        "confidence": 95,
+        "confidence_justification": "All mandatory checks are satisfied.",
+        "clarity": 95,
+        "clarity_justification": "The specification is clear and bounded.",
+        "decidability": 95,
+        "decidability_justification": "Every outcome is objectively decidable.",
         "assertiveness": 90,
         "assertiveness_justification": "Statements are deterministic.",
         "ambiguity": 5,
         "ambiguity_justification": "No blocking ambiguity remains.",
-        "general_justification": "Ready for execution.",
         "recommendation": "approve",
     }
 
@@ -62,6 +69,9 @@ def _install_current_external_requirement_lint(monkeypatch) -> None:
             return (object(), object())
 
     class Adapter:
+        def checklists(self, db):
+            return CommunitySqlAlchemyChecklist(db)
+
         def quality_assessments(self, _db):
             return CurrentExternalLint()
 
@@ -97,6 +107,10 @@ async def _seed_board_and_spec(
             id=spec_id,
             board_id=board_id,
             title=f"E2E hardening spec {spec_id}",
+            architecture_adoption=ArchitectureAdoptionScope(
+                board_id=board_id, spec_id=spec_id, actor_id=USER_ID,
+                adopted_in_edition=1, inherited_resource_ids=(),
+            ).model_dump(mode="json"),
             status=spec_status,
             created_by=USER_ID,
             functional_requirements=[],
@@ -124,7 +138,14 @@ async def _seed_board_and_spec(
             skip_decisions_coverage=True,
         )
     )
-    await db.flush()
+    await record_native_subject_authority(db)
+    checklist = CommunitySqlAlchemyChecklist(db)
+    binding = ChecklistBinding(board_id=board_id, mode=ChecklistMode.OFF, version=1)
+    await checklist.apply_binding_cas(binding, expected_version=0, expected_digest=None)
+    await checklist.freeze_validation_binding(
+        board_id=board_id, spec_id=spec_id, spec_edition=1,
+        target_type=ChecklistTargetType.SPEC, phase=ChecklistPhase.SPEC_VALIDATION,
+    )
     return board_id, spec_id
 
 

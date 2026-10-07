@@ -238,6 +238,8 @@ class _SpyGate:
 
 
 async def _seed_validation_card() -> tuple[str, str]:
+    from native_subject_testing import record_native_subject_authority
+    from okto_pulse.core.domain.architecture_adoption import ArchitectureAdoptionScope
     board_id = str(uuid.uuid4())
     spec_id = str(uuid.uuid4())
     card_id = str(uuid.uuid4())
@@ -245,10 +247,15 @@ async def _seed_validation_card() -> tuple[str, str]:
         db.add(Board(id=board_id, name="F16 wiring board", owner_id="f16-agent", settings={}))
         db.add(Spec(id=spec_id, board_id=board_id, title="F16 wiring spec",
                     status=SpecStatus.IN_PROGRESS, created_by="f16-agent",
+                    architecture_adoption=ArchitectureAdoptionScope(
+                        board_id=board_id, spec_id=spec_id, actor_id="f16-agent",
+                        adopted_in_edition=1, inherited_resource_ids=(),
+                    ).model_dump(mode="json"),
                     acceptance_criteria=[], test_scenarios=[]))
         db.add(Card(id=card_id, board_id=board_id, spec_id=spec_id, title="F16 card",
                     status=CardStatus.VALIDATION, card_type=CardType.NORMAL,
                     position=0, created_by="f16-agent"))
+        await record_native_subject_authority(db)
         await db.commit()
     return board_id, card_id
 
@@ -274,8 +281,8 @@ async def test_ts_3eda0dc9_async_plumbing_blocks_before_mutation(monkeypatch):
         service._cognitive_closeout_gate_factory = lambda: spy
         with pytest.raises(ValueError, match="cognitive_status_unavailable"):
             await service.submit_task_validation(
-                card_id=card_id, reviewer_id="f16-agent",
-                reviewer_name="f16-agent", data=validation_data,
+                card_id=card_id, reviewer_id="f16-reviewer",
+                reviewer_name="f16-reviewer", data=validation_data,
             )
         await db.rollback()
 

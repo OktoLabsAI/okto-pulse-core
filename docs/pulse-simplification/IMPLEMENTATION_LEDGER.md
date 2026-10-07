@@ -2,6 +2,34 @@
 
 ## Estado para retomada
 
+### 2026-10-07 — Core run9 integralmente resolvido
+
+Followup run9-native-fixtures1:193 aprovados/3falhas154.21s. Faltavam snapshot
+Checklist congelado e autoridade de TestScenario no seed; usados adapters reais.
+Followup2:19 aprovados23.12s;196 distintos nas onze suites+AF04. Com preflight130,
+todas20falhas do run9 resolvidas, inclusive ultimo imp5 agora integralmente verde.
+Retirados positivos v1 Knowledge/preservacao fisica legada e flags de ativacao.
+Mantidos projection/relink/replay/falha atomica; DTO completo e grants atuais.
+Spec validation usa cinco metricas, arquitetura explicita, snapshotOFF da edicao.
+Reviewer independente preserva bloqueio cognitivo. Guideline payload retirado
+recusado422 sem adocao; worker preserva tombstone/claim CAS, agora com findings.
+Ruff F/E9/diff aprovados. Nenhum produto/frontend alterado; dist-native-preflight2
+e closure2/oito budgetsZERO seguem aplicaveis. Frontend2451/269 verde.
+Nenhum handle ativo. Proximo Community run7 (aposrun6/C8C9) e Core run10
+(aposrun9/followups); nao repetir modulos completos/stress. C1-C4,
+criterios/benchmark/bump0.4.0 e T23/KG-10 pendentes. Registrar pushes seguintes.
+
+### 2026-10-07 — Followup run9 fixtures ativo
+
+Coree13255a5 / Communityc02857bd publicados; pushes confirmados.
+run9-native-fixtures1 ativo handle96968: onze suites afetadas remanescentes
+mais AF04. WIP somente testes: native_subject_testing aceita estados editados
+explicitamente, fixtures Evidence/Knowledge/arquitetura/grants atualizadas,
+teste positivo v1 Knowledge retirado. Aguardar terminal, corrigir falhas
+reais antes de publicar; ultimo modulo imp5 deve passar integralmente.
+Produto permanece dist-native-preflight2/provenance/closure2, oito budgetsZERO.
+Frontend2451/269 completo. C1-C4/T23/KG-10 ainda pendentes.
+
 ### 2026-10-07 — C4 preflight e UOW qualificados; run9 fixtures pendentes
 
 Core26fd4478 publicado; frontend2451/269 completo. Core full-run9 TERMINAL:

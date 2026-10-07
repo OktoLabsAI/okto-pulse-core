@@ -1,8 +1,13 @@
-"""Evidence V2 reuse across status, whole-spec, card and sprint gates."""
+"""Evidence V2 reuse across status, whole-spec, card gates."""
 
 from __future__ import annotations
 
 import uuid
+from datetime import datetime, UTC
+from okto_pulse.community.adapters.sqlalchemy_semantic_guideline_assessment import CommunitySqlAlchemySemanticGuidelineAssessment
+from okto_pulse.core.domain.guideline_policy import PolicyEntityType
+from okto_pulse.core.domain.quality_canonicalization import canonical_sha256
+from native_subject_testing import record_native_subject_authority
 
 import pytest
 from sqlalchemy.orm.attributes import flag_modified
@@ -122,7 +127,7 @@ async def _seed(db_factory, *, scenario_status: str = "ready", evidence=None):
                 status=SpecStatus.IN_PROGRESS,
                 created_by=ACTOR,
                 architecture_adoption={"contract_version": "architecture-adoption/v1", "board_id": board_id, "spec_id": spec_id, "adopted_in_edition": 1, "actor_id": ACTOR, "inherited_resource_ids": []},
-                functional_requirements=["FR1"],
+                functional_requirements=[{"id": "fr1", "text": "FR1"}],
                 acceptance_criteria=[{"id": "ac1", "text": "runtime is real"}],
                 test_scenarios=[
                     {
@@ -135,6 +140,16 @@ async def _seed(db_factory, *, scenario_status: str = "ready", evidence=None):
                     }
                 ],
             )
+        )
+        await record_native_subject_authority(db)
+        await db.commit()
+    async with db_factory() as db:
+        await CommunitySqlAlchemySemanticGuidelineAssessment(db).record_semantic_subject_mutation(
+            board_id=board_id, entity_type=PolicyEntityType.TEST_SCENARIO,
+            subject_id=scenario_id, actor_id=ACTOR,
+            idempotency_key=f"scenario-fixture:{scenario_id}",
+            request_digest=canonical_sha256({"scenario_id": scenario_id}),
+            changed_at=datetime.now(UTC),
         )
         await db.commit()
     return board_id, spec_id, scenario_id
@@ -156,6 +171,7 @@ async def test_status_and_whole_spec_paths_reject_same_runtime_false(db_factory)
     async with db_factory() as db:
         spec = await db.get(Spec, spec_id)
         spec.status = SpecStatus.DRAFT
+        await record_native_subject_authority(db, rows=[spec], revision="draft")
         await db.commit()
 
     async with db_factory() as db:
@@ -184,6 +200,7 @@ async def test_status_and_whole_spec_paths_reject_same_runtime_false(db_factory)
     async with db_factory() as db:
         spec = await db.get(Spec, spec_id)
         spec.status = SpecStatus.IN_PROGRESS
+        await record_native_subject_authority(db, rows=[spec], revision="execution")
         await db.commit()
 
     good = _evidence(scenario_id)
@@ -235,6 +252,7 @@ async def test_whole_spec_semantic_edit_cannot_replay_old_receipt(db_factory):
         # authoring fence instead of contradicting that lifecycle contract.
         spec.status = SpecStatus.DRAFT
         flag_modified(spec, "test_scenarios")
+        await record_native_subject_authority(db, rows=[spec], revision="draft")
         await db.commit()
 
     async with db_factory() as db:
@@ -280,6 +298,7 @@ async def test_card_done_reauthenticates_persisted_v2(
             created_by=ACTOR,
         )
         db.add(card)
+        await record_native_subject_authority(db)
         await db.commit()
         card_id = card.id
         resource_gate = ResourceGateService(db)
@@ -325,6 +344,7 @@ async def test_failed_test_execution_can_finish_without_claiming_product_passed(
             title="Report a real failure", status=CardStatus.IN_PROGRESS,
             card_type=CardType.TEST, test_scenario_ids=[scenario_id], created_by=ACTOR,
         ))
+        await record_native_subject_authority(db)
         await db.commit()
         gate = ResourceGateService(db)
         for resource_type in ("architecture", "mockup"):
@@ -345,6 +365,7 @@ async def test_failed_test_execution_can_finish_without_claiming_product_passed(
                 drift=0, drift_justification="No change to the planned test scope.",
             ),
         )
+        await record_native_subject_authority(db)
         await db.commit()
     async with db_factory() as db:
         assert (await db.get(Card, card_id)).status == CardStatus.DONE

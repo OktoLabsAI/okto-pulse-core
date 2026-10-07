@@ -1655,5 +1655,30 @@
     "closure_ok": true,
     "all_eight_budgets_zero": true,
     "limits": "Other15 run9 failures pending. First closure failed only generated README matrix, regenerated officially. dist-native-preflight1 built with a syntax error caught by Ruff, never installed/tested; corrected dist2 qualified."
+  },
+  "core_run9_native_fixtures": {
+    "campaigns": [
+      {
+        "campaign": "run9-native-fixtures1",
+        "passed": 193,
+        "failed": 3,
+        "duration_seconds": 154.21
+      },
+      {
+        "campaign": "run9-native-fixtures2",
+        "passed": 19,
+        "failed": 0,
+        "duration_seconds": 23.12
+      }
+    ],
+    "distinct_passed": 196,
+    "xml_sha256": {
+      "run9-native-fixtures1": "ba7d3faf8ce76ed51984fce3360e284dad93caa06d81acd1a2bc6a8ded39a4ab",
+      "run9-native-fixtures2": "999db9d8d64e4b2964fd6403c5cd7ab1e022a78316dfcb97a7fb8479093e308a"
+    },
+    "proof_pair": "dist-native-preflight2",
+    "product_changes": false,
+    "scope": "Eleven complete affected modules plus AF04. Native five-metric Spec validation, explicit architecture and frozen OFF checklist edition via real adapter; seeded test-scenario semantic authority; current Knowledge scope, Card DTO, graph schema, reviewer separation and permissions. Worker deletion fence has current reference_findings. Removed direct guideline link fails422 with no adoption.",
+    "limits": "All20 broad run9 failures resolved across preflight130 and this196; last imp5 module now complete. Full backend/acceptance inventory still pending."
   }
 }

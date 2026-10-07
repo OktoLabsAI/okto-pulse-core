@@ -1747,13 +1747,7 @@ def test_high_priority_events_unchanged_by_spec_4007e4a3():
 
 
 def test_human_curated_column_declared_in_schema():
-    """TS5: HUMAN_CURATED_COLUMNS exposes (human_curated, BOOLEAN).
-
-    The column is appended to _COMMON_NODE_ATTRS so every node type picks
-    it up via _build_node_ddl. Migration helper _ensure_human_curated_columns
-    handles legacy boards. Drift documented: column named human_curated
-    (not created_by_agent) because the latter is a STRING storing agent_id.
-    """
+    """The single current graph schema declares human-curated metadata."""
     from kg_schema_testing import (
         HUMAN_CURATED_COLUMNS,
         SCHEMA_VERSION,
@@ -1762,25 +1756,7 @@ def test_human_curated_column_declared_in_schema():
 
     assert HUMAN_CURATED_COLUMNS == (("human_curated", "BOOLEAN"),)
     assert "human_curated BOOLEAN" in _COMMON_NODE_ATTRS
-    # Schema bumped to 0.3.2 (Ideação #5) to mark this column on bootstrap;
-    # subsequent additive bumps (e.g. 0.3.3 for last_recomputed_at — Ideação
-    # #4) preserve the column, so we assert the floor with set membership.
-    assert SCHEMA_VERSION in {
-        "0.3.2",
-        "0.3.3",
-        "0.3.4",
-        "0.3.5",
-        "0.3.6",
-        "0.3.7",
-        "0.3.8",
-        "0.3.9",
-        "0.3.10",
-        "0.3.11",
-        "0.3.12",
-        "0.4.0",
-        "0.5.0",
-        "0.6.0", "0.7.0",
-    }
+    assert SCHEMA_VERSION == "0.8.0"
 
 
 

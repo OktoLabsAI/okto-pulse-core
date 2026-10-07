@@ -61,26 +61,10 @@ def _card() -> SimpleNamespace:
             {
                 "id": "legacy-copy",
                 "title": "Physical legacy history",
-                "content": "must not leak once v2 is active",
+                "content": "must not leak through the native projection",
             }
         ],
     )
-
-
-@pytest.mark.asyncio
-async def test_v1_read_keeps_physical_card_projection() -> None:
-    gate = _ResourceGate([])
-    services = SimpleNamespace(
-        knowledge_propagation=_KnowledgeRead(
-            SimpleNamespace(v2_active=False)
-        ),
-        resource_gate=gate,
-    )
-
-    result = await load_effective_card_knowledge(services, _card())
-
-    assert [item["id"] for item in result] == ["legacy-copy"]
-    assert gate.calls == []
 
 
 @pytest.mark.asyncio
@@ -100,7 +84,7 @@ async def test_missing_knowledge_port_is_not_downgraded_to_legacy() -> None:
 
 
 @pytest.mark.asyncio
-async def test_v2_read_uses_only_hydrated_effective_projection() -> None:
+async def test_native_read_uses_only_hydrated_effective_projection() -> None:
     gate = _ResourceGate(
         [
             {
@@ -123,7 +107,7 @@ async def test_v2_read_uses_only_hydrated_effective_projection() -> None:
     )
     services = SimpleNamespace(
         knowledge_propagation=_KnowledgeRead(
-            SimpleNamespace(v2_active=True)
+            SimpleNamespace()
         ),
         resource_gate=gate,
     )
@@ -142,10 +126,10 @@ async def test_v2_read_uses_only_hydrated_effective_projection() -> None:
 
 
 @pytest.mark.asyncio
-async def test_v2_unhydrated_effective_assignment_fails_closed() -> None:
+async def test_native_unhydrated_effective_assignment_fails_closed() -> None:
     services = SimpleNamespace(
         knowledge_propagation=_KnowledgeRead(
-            SimpleNamespace(v2_active=True)
+            SimpleNamespace()
         ),
         resource_gate=_ResourceGate(
             [
@@ -180,7 +164,7 @@ async def test_configured_scope_failure_is_not_downgraded_to_legacy() -> None:
 
 
 @pytest.mark.asyncio
-async def test_v2_spec_projection_excludes_physical_history_and_sets_parent() -> None:
+async def test_native_spec_projection_excludes_physical_history_and_sets_parent() -> None:
     spec = SimpleNamespace(
         id="spec-1",
         board_id="board-1",
@@ -217,7 +201,7 @@ async def test_v2_spec_projection_excludes_physical_history_and_sets_parent() ->
     )
     services = SimpleNamespace(
         knowledge_propagation=_KnowledgeRead(
-            SimpleNamespace(v2_active=True)
+            SimpleNamespace()
         ),
         resource_gate=gate,
     )

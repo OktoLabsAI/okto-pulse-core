@@ -83,7 +83,7 @@ def test_create_inline_board_guideline(_client_and_board):
     assert body[0]["guideline"]["board_id"] == board_id
 
 
-def test_link_global_board_guideline_requires_governed_preview(_client_and_board):
+def test_removed_direct_guideline_link_payload_is_rejected(_client_and_board):
     client, board_id = _client_and_board
 
     global_resp = client.post(
@@ -103,7 +103,9 @@ def test_link_global_board_guideline_requires_governed_preview(_client_and_board
         json={"guideline_id": guideline_id, "priority": 2},
     )
 
-    assert linked.status_code == 409, linked.text
-    detail = linked.json()["detail"]
-    assert detail["error_code"] == "guideline_impact_preview_required"
-    assert detail["next_action"] == "preview_then_adopt"
+    assert linked.status_code == 422, linked.text
+    issues = linked.json()["detail"]
+    assert any(item["type"] == "extra_forbidden" and item["loc"] == ["body", "guideline_id"] for item in issues)
+    listed = client.get(f"/api/v1/boards/{board_id}/guidelines")
+    assert listed.status_code == 200
+    assert guideline_id not in str(listed.json())

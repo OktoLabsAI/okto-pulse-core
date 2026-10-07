@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import uuid
+from native_subject_testing import record_native_subject_authority
 
 import pytest
 
@@ -33,6 +34,7 @@ def _id(prefix: str) -> str:
 async def _persist(db_factory, *rows: object) -> None:
     async with db_factory() as db:
         db.add_all(list(rows))
+        await record_native_subject_authority(db)
         await db.commit()
 
 

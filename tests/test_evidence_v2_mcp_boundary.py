@@ -296,7 +296,7 @@ async def test_mcp_status_adapter_projects_service_verification_status(
             agent_id="agent",
             agent_name="Agent",
             realm_id=None,
-            permissions=["specs:update"],
+            permissions=_evidence_execute_permissions(),
         )
 
     monkeypatch.setattr(mcp_server, "_get_agent_ctx", get_context)

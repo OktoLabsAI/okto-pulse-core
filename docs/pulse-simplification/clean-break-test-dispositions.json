@@ -4315,5 +4315,34 @@
   "native_f3_scope_fixture": {
     "path": "tests/test_f3_done_spec_admission.py",
     "reason": "Remove closed-Sprint seed and duplicate boolean parameter; all16 content operations retain native Done refusal with zero SQL writes, collaboration and Bug/Test exceptions. Gate expectation unchanged; product preflight moved before write fence."
-  }
+  },
+  "native_run9_fixture_adaptations": [
+    {
+      "paths": [
+        "tests/test_effective_knowledge_read.py",
+        "tests/test_imp5_relink_service_integration.py"
+      ],
+      "reason": "Remove positive v1 physical read and preservation, version-activation flags/expectation. Keep current effective projection, unselected physical-copy exclusion, parent preflight, relink replay, failure atomicity and delete handling."
+    },
+    {
+      "paths": [
+        "tests/test_e2e_regression_hardening.py",
+        "tests/test_evidence_v2_gate_integration.py",
+        "tests/test_gate_remediation_provenance.py",
+        "tests/test_f16_f17_health_aware_gates.py",
+        "tests/native_subject_testing.py"
+      ],
+      "reason": "Explicit native architecture, five-dimensional validation, frozen edition OFF checklist and semantic authority for subjects/scenarios. Independent reviewer reaches cognitive denial. Preserve all real gates; test helper supports explicitly named edited fixture state only."
+    },
+    {
+      "paths": [
+        "tests/test_effective_knowledge_write_projection_order.py",
+        "tests/test_evidence_v2_mcp_boundary.py",
+        "tests/test_events.py",
+        "tests/test_governed_queue_worker_card4.py",
+        "tests/test_guidelines_api.py"
+      ],
+      "reason": "Complete native Card DTO; canonical spec.tests grants; assert single graph schema0.8.0; worker result includes reference_findings. Retired direct link expectation409 replaced with native422/extra field and no adoption. Keep commit-refetch-project order, actor scoping, curated metadata and deletion race."
+    }
+  ]
 }
