@@ -6,16 +6,14 @@ Cenários cobertos (Cognitive Closure S1, spec 2012f38d):
     reconcilia ``card:<uuid>`` e ``bug:<uuid>`` no MESMO ``artifact_id``,
     preservando ``source_ref_original`` como aliases distintos auditáveis;
     outros tipos de ref permanecem distintos; determinístico.
-  * ts_2517ecd6 (test card 957c34e5) — o store evoluído lê itens ANTIGOS (sem
-    ``reason_code``/``artifact_id``/``source_ref_original``) com defaults seguros
-    E itens NOVOS preservando todos os campos; nenhum enum persistido novo
-    (só CognitiveItemStatus/CognitivePendingOutcomeType); a leitura NÃO muta o
-    disco (tr_3db366b6).
+  * Contrato nativo único: item incompleto é recusado sem defaults ou conversão.
   * ``update_item`` persiste os campos novos e os PRESERVA quando o caller os
     omite numa atualização posterior (tr_3d6b29fe).
 """
 
 from __future__ import annotations
+
+import pytest
 
 from okto_pulse.core.kg.rebuild_audit import (
     CognitiveConsolidationItem,
@@ -92,6 +90,7 @@ def test_item_aliases_share_artifact_id_with_distinct_originals():
 
 
 def _write_record(store, board_id, gen, items):
+    items = [CognitiveConsolidationItem(**item).to_dict() for item in items]
     record = {
         "board_id": board_id,
         "kg_generation_id": gen,
@@ -111,74 +110,47 @@ def _write_record(store, board_id, gen, items):
 
 
 # ---------------------------------------------------------------------------
-# ts_2517ecd6 — store lê item antigo (defaults seguros) e novo (campos completos)
+# Contrato nativo — leitura integral e recusa de formato incompleto
 # ---------------------------------------------------------------------------
 
 
-def test_store_reads_legacy_and_new_items_without_disk_mutation(tmp_path):
+def test_native_item_roundtrip_preserves_all_metadata(tmp_path):
     store = CognitiveConsolidationItemStore(base_dir=tmp_path)
-    board, gen = "b1", "gen-1"
-    legacy = {  # SEM reason_code/artifact_id/source_ref_original
-        "item_id": "leg",
-        "board_id": board,
-        "kg_generation_id": gen,
-        "source_ref": f"card:{UUID_A}",
-        "artifact_type": "card",
-        "status": CognitiveItemStatus.PENDING.value,
-        "recorded_at": "2026-06-17T00:00:00+00:00",
-    }
-    new = {  # COM todos os campos novos
-        "item_id": "new",
-        "board_id": board,
-        "kg_generation_id": gen,
-        "source_ref": f"bug:{UUID_A}",
-        "artifact_type": "bug",
-        "status": CognitiveItemStatus.CONSOLIDATED.value,
-        "recorded_at": "2026-06-17T00:00:00+00:00",
-        "outcome_type": CognitivePendingOutcomeType.NO_ACTION_REQUIRED.value,
-        "reason_code": "no_action_required",
-        "justification": "nothing to consolidate",
-        "actor": "agent-x",
-        "revisit_at": "2026-07-01T00:00:00+00:00",
-        "source_ref_original": f"bug:{UUID_A}",
-        "artifact_id": f"card:{UUID_A}",
-        "evidence_refs": ["e1", "e2"],
-    }
-    key = _write_record(store, board, gen, [legacy, new])
+    item = CognitiveConsolidationItem(
+        item_id="native", board_id="b1", kg_generation_id="gen-1",
+        source_ref=f"bug:{UUID_A}", artifact_type="bug",
+        status=CognitiveItemStatus.CONSOLIDATED.value,
+        recorded_at="2026-06-17T00:00:00+00:00",
+        outcome_type=CognitivePendingOutcomeType.NO_ACTION_REQUIRED.value,
+        reason_code="no_action_required", justification="nothing to consolidate",
+        actor="agent-x", revisit_at="2026-07-01T00:00:00+00:00",
+        evidence_refs=("e1", "e2"),
+    )
+    key = _write_record(store, "b1", "gen-1", [item.to_dict()])
     before = store.artifact_store.read_json(key)
-
-    items = {i.item_id: i for i in store.list_items(board, gen)}
-
-    # Item ANTIGO: defaults seguros, sem mutar o que está em disco.
-    leg = items["leg"]
-    assert leg.artifact_id == f"card:{UUID_A}"        # derivado da normalização
-    assert leg.source_ref_original == f"card:{UUID_A}"
-    assert leg.reason_code is None
-    assert leg.justification is None
-    assert leg.actor is None
-    assert leg.revisit_at is None
-    assert leg.evidence_refs == ()
-
-    # Item NOVO: todos os campos preservados.
-    nw = items["new"]
-    assert nw.reason_code == "no_action_required"
-    assert nw.justification == "nothing to consolidate"
-    assert nw.actor == "agent-x"
-    assert nw.revisit_at == "2026-07-01T00:00:00+00:00"
-    assert nw.artifact_id == f"card:{UUID_A}"
-    assert nw.source_ref_original == f"bug:{UUID_A}"
-    assert nw.evidence_refs == ("e1", "e2")
-
-    # Reconciliação: antigo (card:) e novo (bug:) caem no MESMO artifact_id.
-    assert leg.artifact_id == nw.artifact_id
-
-    # ac_86d6cd67 — nenhum enum persistido novo: status/outcome_type continuam
-    # dentro dos enums existentes.
-    assert {leg.status, nw.status} <= {s.value for s in CognitiveItemStatus}
-    assert nw.outcome_type in {o.value for o in CognitivePendingOutcomeType}
-
-    # tr_3db366b6 — a leitura NÃO reescreve o registro persistido.
+    assert store.list_items("b1", "gen-1") == [item]
     assert store.artifact_store.read_json(key) == before
+
+
+@pytest.mark.parametrize("missing", ["status", "reason_code", "artifact_id", "source_ref_original",
+                                      "evidence_refs", "recorded_at"])
+def test_incomplete_persisted_item_refused_without_defaults(tmp_path, missing):
+    store = CognitiveConsolidationItemStore(base_dir=tmp_path)
+    item = CognitiveConsolidationItem(
+        item_id="native", board_id="b1", kg_generation_id="gen-1",
+        source_ref=f"bug:{UUID_A}", artifact_type="bug",
+        status=CognitiveItemStatus.PENDING.value, recorded_at="2026-06-17T00:00:00+00:00",
+    )
+    key = _write_record(store, "b1", "gen-1", [item.to_dict()])
+    record = store.artifact_store.read_json(key)
+    del record["items"][0][missing]
+    store.artifact_store.write_json_atomic(key, record)
+    for read in (lambda: store.list_items("b1", "gen-1"),
+                 lambda: store.read_completion_snapshot("b1", "gen-1"),
+                 lambda: store.latest_generation("b1")):
+        with pytest.raises(ValueError, match="cognitive_item_incompatible"):
+            read()
+    assert store.artifact_store.read_json(key) == record
 
 
 # ---------------------------------------------------------------------------
@@ -251,7 +223,7 @@ def test_update_item_persists_and_preserves_new_fields(tmp_path):
 def test_projections_echo_persisted_reason_code(tmp_path):
     """Rework F1: project_item_for_api e project_item_for_update_api projetam
     item.reason_code (não mais hardcode None) quando o store o carrega; item
-    legacy sem reason_code continua projetando None; e a shape API NÃO expõe
+    novo com reason_code=None continua projetando None; e a shape API NÃO expõe
     artifact_id/source_ref_original (carry-forward do S3 Action Center)."""
     store = CognitiveConsolidationItemStore(base_dir=tmp_path)
     board, gen = "b3", "gen-3"
@@ -280,7 +252,7 @@ def test_projections_echo_persisted_reason_code(tmp_path):
     assert project_item_for_api(updated)["reason_code"] == "revisit_required"
     assert project_item_for_update_api(updated)["reason_code"] == "revisit_required"
 
-    # item legacy/sem reason_code → projeção continua None (nunca inventado)
+    # item novo/sem reason_code → projeção continua None (nunca inventado)
     legacy = CognitiveConsolidationItem(
         item_id="leg",
         board_id=board,

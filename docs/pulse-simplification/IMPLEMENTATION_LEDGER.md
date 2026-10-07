@@ -2,6 +2,57 @@
 
 ## Estado para retomada
 
+### 2026-10-07 — contrato único do ledger cognitivo validado
+Main58 permanece estável/comprovado. Ledger3 handle65249 terminou1:
+161pass/5fail/54.09s; falhas exclusivamente fixture S1 gravando item incompleto.
+Fixture corrigida por construção nativa, sem compatibilidade no produto.
+Ledger4 handle13301 terminou0:109pass/128s, incluindo refusas REST/MCP com
+geração explícita/implícita, campos ausentes, preservação nativa de metadata,
+readiness/hold e drift do catálogo gerado. Admission1 handle80413 terminou0:
+5pass/3.47s: JSON inválido/array/null/aggregate recusados em leitura, latest,
+snapshot e materialização sem alterar bytes; adapter sem revisão atômica
+recusado antes de qualquer acesso/escrita substituta.
+Recibo clean-break-native-cognitive-ledger-contract.json registra 200 casos
+Python distintos aprovados, falhas iniciais preservadas e64 testes frontend.
+Closure58 inicial25988 terminou1 SOMENTE matrizes README; renderer oficial
+atualizou ambas. Closure58-final57146 terminou0:ok=true, findings e
+documentation_findings vazios, oito budgets ZERO. Ruff F/E9/diff-check verdes.
+Nenhum processo de testes/build/auditoria permanece ativo. Milestone pronto
+para commit/push pareados; não declarar iniciativa finalizada. Índice64/171/11.
+Próximo passo permanece KG27–29 do índice fixo: idempotência de pendências
+por alvo/campo e policy atual, sem reintroduzir conversão. KG10/T23 continuam
+sem autorização nova. Nenhuma ação Nexus, dado real, tag ou deploy.
+
+### 2026-10-07 — remoção do ledger cognitivo legado em validação
+Retomada confirmou Core18665f51/Communityac2be938 limpos e sincronizados.
+Mensagem Nexus desconsiderada; objetivo Pulse permanece ativo. Turno anterior
+foi esclarecimento sem progresso de código; esta retomada produziu reprodução
+e alteração concreta dentro de C1–C3, sem acrescentar critério ao inventário.
+Prova provenance-native-cognitive-ledger2 terminou0 sobre main57 antes da
+caracterização acceptance-native-cognitive-legacy-characterization2:
+1pass/2.66s CONFIRMA comportamento incompatível com clean break, não aceite:
+list_items ainda sintetizava itens de arquivo aggregate-only; update_item
+também convertia, e REST/MCP/UI expunham legacy_mode. Writer atual já produz
+items completos, sem etapa transitória aggregate-only.
+WIP retira síntese/conversão, flag pública e badge; exige campos nativos
+persistidos, propaga erro de leitura e recusa adapter sem replace revisionado.
+Validação ocorre também dentro do transform cercado para não sobrescrever
+arquivo incompatível entre leitura e escrita. Histórico nativo/carry-forward
+não foi removido; construtor de item novo mantém derivação de identidade.
+Latest/prior usam observação completa pela porta existente, sem SQL/FS no Core.
+Main58 build/install terminais0; prova40193 terminal0 (838/900+317/403).
+Frontend64pass; build38430 terminal0, SPA79/78assets
+a929f78bda211683e5de033f088f7a93e26e77e5715a37329278c5468b6e1d2f.
+Lint26334 terminal0:316warnings, sem erro e dentro do ratchet402.
+ATIVOS: testes acceptance-native-cognitive-ledger3 handle65249 e
+closure-native-main58 handle25988. Aguardar ambos antes de editar produto
+ou reinstalar. Não afirmar milestone fechado nem emitir novo commit ainda.
+Próximo: resolver falhas reais/fixtures obsoletas sem relaxar recusa,
+cobrir formato incompleto/corrompido e APIs com geração implícita, revisar
+testes de hold/replay e arquitetura/distribuição; registrar evidências finais.
+KG10 e T23 seguem pendências de autoridade; nenhuma nova resposta recebida.
+Índice64/171/11 permanece inalterado. Nenhuma base ou runtime real alterado.
+
 ### 2026-10-07 — KG-26 qualificado; KG-10 reproduzido no schema atual e decisão solicitada
 Milestone G6 anterior enviado:Coref3276448 / Community5e22cbff; pushes0.
 Main57 permanece byte-idêntico; nenhum produto alterado neste incremento.

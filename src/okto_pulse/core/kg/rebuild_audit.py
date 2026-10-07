@@ -1790,8 +1790,7 @@ class CognitiveConsolidationItem:
     revisit_at: str | None = None
     # source_ref_original preserves the untouched ref for audit; artifact_id is
     # the canonical per-artifact grouping key (fr_43ea6e97 / ac_50e4d48e). Both
-    # default safely from source_ref in __post_init__ so legacy rows stay
-    # readable WITHOUT a silent disk mutation (tr_3db366b6).
+    # are derived for new items before persistence; stored rows must supply them.
     source_ref_original: str | None = None
     artifact_id: str = ""
 
@@ -1839,10 +1838,24 @@ class CognitiveConsolidationItem:
 
     @staticmethod
     def from_dict(payload: Mapping[str, Any]) -> "CognitiveConsolidationItem":
+        from dataclasses import fields
+
+        required = {field.name for field in fields(CognitiveConsolidationItem)}
+        identity = ("item_id", "board_id", "kg_generation_id", "source_ref",
+                    "artifact_type", "status", "recorded_at", "source_ref_original", "artifact_id")
+        lists = ("evidence_refs", "generated_candidate_decision_ids", "promoted_formal_decision_ids")
+        if (set(payload) != required
+                or any(not isinstance(payload[name], str) or not payload[name] for name in identity)
+                or payload["status"] not in {status.value for status in CognitiveItemStatus}
+                or any(not isinstance(payload[name], list)
+                       or any(not isinstance(value, str) or not value for value in payload[name])
+                       for name in lists)
+                or any(payload[name] is not None and not isinstance(payload[name], str)
+                       for name in required - set(identity) - set(lists))):
+            raise ValueError("cognitive_item_incompatible")
+
         def _tuple_or_empty(value: Any) -> tuple[str, ...]:
-            if isinstance(value, (list, tuple)):
-                return tuple(str(item) for item in value if item)
-            return ()
+            return tuple(value)
 
         return CognitiveConsolidationItem(
             item_id=str(payload.get("item_id", "")),
@@ -1866,9 +1879,6 @@ class CognitiveConsolidationItem:
                 payload.get("promoted_formal_decision_ids")
             ),
             content_hash=payload.get("content_hash"),
-            # S1: new readiness fields. Absent on legacy rows → safe defaults
-            # (artifact_id/source_ref_original derived in __post_init__) without
-            # rewriting the stored payload (tr_3db366b6).
             reason_code=payload.get("reason_code"),
             justification=payload.get("justification"),
             actor=payload.get("actor"),
@@ -1884,7 +1894,7 @@ class CognitiveConsolidationItemStore:
     records (dec_580b6933 + tr_53caab33).
 
     Layout (extends the existing aggregate file, keeping one JSON per
-    board+generation so backward compat with KG-02 readers is preserved):
+    board+generation):
 
         <base>/rebuild/audit/cognitive_pending/<board>/<gen>.json
         ├── pending_count  (aggregate, KG-02.7)
@@ -1931,26 +1941,18 @@ class CognitiveConsolidationItemStore:
             not callable(revisioned_replace)
             or implementation is RebuildAuditArtifactStore.replace_json_with_revision
         ):
-            # Backward-compatible normal ledger operation for an older edition
-            # adapter.  Mark the overlay explicitly *unfenced* so Global
-            # Discovery recovery remains fail-closed until the adapter is
-            # upgraded; never misrepresent three separate writes as atomic.
-            revision_key = _cognitive_overlay_revision_key()
-            pending, _stable = _next_cognitive_overlay_revision(
-                self.artifact_store.read_json(revision_key)
-            )
-            unfenced = {
-                **pending,
-                "state": "unfenced",
-                "reason": "revisioned_replace_unavailable",
-            }
-            self.artifact_store.write_json_atomic(revision_key, unfenced)
-            target = self.artifact_store.replace_json(key, transform)
-            self.artifact_store.write_json_atomic(revision_key, unfenced)
-            return dict(target)
+            raise ValueError("cognitive_revisioned_replace_unavailable")
+
+        def native_transform(current):
+            if current is not None:
+                self.items_from_record(current, key.board_id, key.kg_generation_id)
+            updated = transform(current)
+            self.items_from_record(updated, key.board_id, key.kg_generation_id)
+            return updated
+
         target, _committed_revision = revisioned_replace(
             key=key,
-            transform=transform,
+            transform=native_transform,
             revision_key=_cognitive_overlay_revision_key(),
             revision_transition=_next_cognitive_overlay_revision,
         )
@@ -1967,21 +1969,13 @@ class CognitiveConsolidationItemStore:
     def load_record(
         self, board_id: str, kg_generation_id: str
     ) -> dict[str, Any] | None:
-        """Read the aggregate + items record. Returns None if not found
-        or unparseable."""
-
-        try:
-            return self.artifact_store.read_json(
-                self._record_key(board_id, kg_generation_id)
-            )
-        except Exception as exc:
-            logger.error(
-                "kg.cognitive_item_store.read_failed board=%s gen=%s err=%s",
-                board_id,
-                kg_generation_id,
-                exc,
-            )
-            return None
+        """Read the native ledger; incompatible/unreadable records fail closed."""
+        record = self.artifact_store.read_json(self._record_key(board_id, kg_generation_id))
+        if record is not None:
+            self.items_from_record(record, board_id, kg_generation_id)
+        elif self.record_exists(board_id, kg_generation_id):
+            raise ValueError("cognitive_record_incompatible")
+        return record
 
     def record_exists(self, board_id: str, kg_generation_id: str) -> bool:
         """True iff a ledger file is on disk for this generation. Used
@@ -1989,18 +1983,6 @@ class CognitiveConsolidationItemStore:
         an empty-but-extant record (api_ae3a932a + api_cce40fa6)."""
 
         return self.artifact_store.exists(self._record_key(board_id, kg_generation_id))
-
-    def is_legacy_record(self, board_id: str, kg_generation_id: str) -> bool:
-        """True iff the persisted record predates KG-03.1 — i.e. it has
-        the KG-02 aggregate ``pending_refs`` but lacks the ``items``
-        array. Adapters surface this as ``legacy_mode=true`` so the UI
-        can hint that statuses are synthesized rather than agent-tracked.
-        """
-
-        record = self.load_record(board_id, kg_generation_id)
-        if record is None:
-            return False
-        return not isinstance(record.get("items"), list)
 
     def list_items(
         self,
@@ -2012,11 +1994,6 @@ class CognitiveConsolidationItemStore:
         offset: int = 0,
     ) -> list[CognitiveConsolidationItem]:
         """List items for a generation, optionally filtered by status.
-
-        Backward compat (br_3d985533 + FR10 + AC7): if the record lacks
-        an explicit ``items`` array (legacy KG-02 aggregate-only file),
-        synthesize a list from ``pending_refs`` so MCP/REST callers
-        receive a coherent view without crashing.
 
         Pagination is contract-aligned with api_ae3a932a / api_cce40fa6.
         ``offset`` is applied AFTER the status filter so the caller's
@@ -2039,38 +2016,12 @@ class CognitiveConsolidationItemStore:
     ) -> list[CognitiveConsolidationItem]:
         """Shared interpretation for ordinary reads and health observations."""
         items_raw = record.get("items")
-        if items_raw is None:
-            # Legacy aggregate-only — synthesize from pending_refs.
-            recorded_at = str(record.get("recorded_at", ""))
-            event_ref = record.get("event_ref")
-            synth: list[CognitiveConsolidationItem] = []
-            for source_ref in record.get("pending_refs") or []:
-                # Best-effort artifact_type extraction from source_ref
-                # ("spec:1" → "spec"). Falls back to "unknown".
-                artifact_type = "unknown"
-                if isinstance(source_ref, str) and ":" in source_ref:
-                    artifact_type = source_ref.split(":", 1)[0]
-                synth.append(
-                    CognitiveConsolidationItem(
-                        item_id=compute_cognitive_item_id(
-                            board_id, kg_generation_id, str(source_ref)
-                        ),
-                        board_id=board_id,
-                        kg_generation_id=kg_generation_id,
-                        source_ref=str(source_ref),
-                        artifact_type=artifact_type,
-                        status=CognitiveItemStatus.PENDING.value,
-                        recorded_at=recorded_at,
-                        event_ref=event_ref,
-                    )
-                )
-            items = synth
-        else:
-            items = [
-                CognitiveConsolidationItem.from_dict(it)
-                for it in items_raw
-                if isinstance(it, Mapping)
-            ]
+        if (record.get("board_id") != board_id
+                or record.get("kg_generation_id") != kg_generation_id
+                or not isinstance(items_raw, list)
+                or any(not isinstance(item, Mapping) for item in items_raw)):
+            raise ValueError("cognitive_record_incompatible")
+        items = [CognitiveConsolidationItem.from_dict(item) for item in items_raw]
         if status_filter is not None:
             items = [i for i in items if i.status == status_filter]
         if offset:
@@ -2119,16 +2070,6 @@ class CognitiveConsolidationItemStore:
             return None, []
         # Preserve the established timestamp + generation-id tie breaker.
         record = max(records, key=lambda row: (row["recorded_at"], row["kg_generation_id"]))
-        raw = record.get("items")
-        if raw is None:
-            refs = record.get("pending_refs")
-            if not isinstance(refs, list) or not all(isinstance(ref, str) and ref for ref in refs):
-                raise ValueError("cognitive_observation_invalid")
-        elif (not isinstance(raw, list) or any(
-            not isinstance(item, Mapping) or item.get("status") not in {status.value for status in CognitiveItemStatus}
-            for item in raw
-        )):
-            raise ValueError("cognitive_observation_invalid")
         return record["kg_generation_id"], self.items_from_record(record, board_id, record["kg_generation_id"])
 
     def _previous_terminal_state_by_source_ref(
@@ -2153,14 +2094,16 @@ class CognitiveConsolidationItemStore:
         }
 
         entries: list[tuple[str, str, dict[str, Any]]] = []
-        records = self.artifact_store.list_json(
+        records = self.artifact_store.observe_health_json(
             RebuildAuditKey(
                 namespace="cognitive_pending",
                 board_id=board_id,
-            )
+            ),
+            budget=RebuildAuditObservationBudget(timeout_seconds=5),
         )
         for record in records:
             gen_id = str(record.get("kg_generation_id", ""))
+            self.items_from_record(record, board_id, gen_id)
             if not gen_id or gen_id == exclude_generation_id:
                 continue
             recorded_at = str(record.get("recorded_at", ""))
@@ -2199,13 +2142,15 @@ class CognitiveConsolidationItemStore:
         """
 
         best: tuple[str, str] | None = None
-        for record in self.artifact_store.list_json(
+        for record in self.artifact_store.observe_health_json(
             RebuildAuditKey(
                 namespace="cognitive_pending",
                 board_id=board_id,
-            )
+            ),
+            budget=RebuildAuditObservationBudget(timeout_seconds=5),
         ):
             gen_id = str(record.get("kg_generation_id", ""))
+            self.items_from_record(record, board_id, gen_id)
             if not gen_id:
                 continue
             recorded_at = str(record.get("recorded_at", ""))
@@ -2529,30 +2474,6 @@ class CognitiveConsolidationItemStore:
                     return None
                 original_record = deepcopy(record)
             items_raw = record.get("items")
-            if items_raw is None:
-                # Legacy aggregate-only — synthesize items first so the
-                # update can land somewhere (br_3d985533 — we MUST stay
-                # readable AND mutable on legacy records).
-                items_raw = []
-                for source_ref in record.get("pending_refs") or []:
-                    artifact_type = "unknown"
-                    if isinstance(source_ref, str) and ":" in source_ref:
-                        artifact_type = source_ref.split(":", 1)[0]
-                    items_raw.append(
-                        {
-                            "item_id": compute_cognitive_item_id(
-                                board_id, kg_generation_id, str(source_ref)
-                            ),
-                            "board_id": board_id,
-                            "kg_generation_id": kg_generation_id,
-                            "source_ref": str(source_ref),
-                            "artifact_type": artifact_type,
-                            "status": CognitiveItemStatus.PENDING.value,
-                            "recorded_at": str(record.get("recorded_at", "")),
-                            "event_ref": record.get("event_ref"),
-                        }
-                    )
-
             target_idx = None
             for idx, it in enumerate(items_raw):
                 if it.get("item_id") == item_id:
@@ -2665,7 +2586,7 @@ class CognitiveConsolidationItemStore:
     ) -> CognitiveConsolidationItem | None:
         """Record new technical work without reauthoring an existing decision.
 
-        The source-only legacy key cannot establish that a new observation
+        The source-only key cannot establish that a new observation
         supersedes a prior restriction, receipt or session. Preserve every
         existing item until qualified reconciliation proves its exact cause.
         Selection and insertion share the edition's atomic revision fence.
@@ -2753,7 +2674,7 @@ def record_cognitive_working_only_hold(
 
     Reuses the existing CognitiveConsolidationItemStore: it atomically inserts
     one pending row only when that source has no existing owned state. A prior
-    hold, outcome or legacy aggregate is preserved without reopening it.
+    hold or outcome is preserved without reopening it.
     The edition owns storage (rebuild base dir), so this needs
     no SQL db and is safe to call from any caller that catches the structured
     ``KGPrimitiveError`` (MCP commit tool, live consolidation, adapters).
@@ -2762,8 +2683,7 @@ def record_cognitive_working_only_hold(
     promotes the ``current`` pointer because of a live hold:
     ``RebuildAuditKGGenerationRepository.get_current`` ->
     ``store.latest_generation`` -> ``generate_kg_generation_id`` (first live
-    ledger). A legacy ``KGGenerationRepository`` fallback remains only when the
-    runtime registry is unavailable in tests/legacy callsites.
+    ledger).
 
     Returns ``{generation_id, item_id, artifact_type}`` on insertion, or None
     when existing history must be preserved, the payload is unusable, the

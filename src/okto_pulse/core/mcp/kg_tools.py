@@ -817,65 +817,67 @@ offset >= 0. Full args: okto-pulse://reference/tool-docs/kg."""
                 provided=offset,
             )
 
-        store = CognitiveConsolidationItemStore(
-            artifact_store=require_rebuild_audit_artifact_store()
-        )
-
-        explicit_generation = bool(kg_generation_id)
-        resolved_generation = (
-            kg_generation_id
-            if explicit_generation
-            else store.latest_generation(board_id)
-        )
-
-        if explicit_generation and not store.record_exists(
-            board_id, resolved_generation
-        ):
-            # Codex audit val_ead80fbd: explicit gen + missing record =
-            # typed generation_not_found, not silent empty success.
-            _emit_list_sample(
-                surface=CognitiveItemListSurface.MCP.value,
-                board_id=board_id,
-                outcome=CognitiveItemListOutcome.NOT_FOUND.value,
-                status_filter_present=status_present,
-                reason_code=CognitiveItemListReasonCode.NO_GENERATION_FOUND.value,
-                item_count=0,
-            )
-            return _err(
-                "generation_not_found",
-                "no cognitive pending record exists for the requested generation",
-                board_id=board_id,
-                kg_generation_id=resolved_generation,
-                reason_code=CognitiveItemListReasonCode.NO_GENERATION_FOUND.value,
+        try:
+            store = CognitiveConsolidationItemStore(
+                artifact_store=require_rebuild_audit_artifact_store()
             )
 
-        if resolved_generation is None:
-            # No explicit gen + no latest = empty board (safe empty per
-            # Codex audit: keep the friendly response for THIS case).
-            _emit_list_sample(
-                surface=CognitiveItemListSurface.MCP.value,
-                board_id=board_id,
-                outcome=CognitiveItemListOutcome.NOT_FOUND.value,
-                status_filter_present=status_present,
-                reason_code=CognitiveItemListReasonCode.NO_GENERATION_FOUND.value,
-                item_count=0,
+            explicit_generation = bool(kg_generation_id)
+            resolved_generation = (
+                kg_generation_id
+                if explicit_generation
+                else store.latest_generation(board_id)
             )
-            return json.dumps({
-                "board_id": board_id,
-                "selected_kg_generation_id": None,
-                "legacy_mode": False,
-                "counts": empty_status_counts(),
-                "items": [],
-            }, default=str)
 
-        legacy_mode = store.is_legacy_record(board_id, resolved_generation)
-        page_items = store.list_items(
-            board_id,
-            resolved_generation,
-            status_filter=effective_status,
-            limit=limit,
-            offset=offset,
-        )
+            if explicit_generation and not store.record_exists(
+                board_id, resolved_generation
+            ):
+                # Codex audit val_ead80fbd: explicit gen + missing record =
+                # typed generation_not_found, not silent empty success.
+                _emit_list_sample(
+                    surface=CognitiveItemListSurface.MCP.value,
+                    board_id=board_id,
+                    outcome=CognitiveItemListOutcome.NOT_FOUND.value,
+                    status_filter_present=status_present,
+                    reason_code=CognitiveItemListReasonCode.NO_GENERATION_FOUND.value,
+                    item_count=0,
+                )
+                return _err(
+                    "generation_not_found",
+                    "no cognitive pending record exists for the requested generation",
+                    board_id=board_id,
+                    kg_generation_id=resolved_generation,
+                    reason_code=CognitiveItemListReasonCode.NO_GENERATION_FOUND.value,
+                )
+
+            if resolved_generation is None:
+                # No explicit gen + no latest = empty board (safe empty per
+                # Codex audit: keep the friendly response for THIS case).
+                _emit_list_sample(
+                    surface=CognitiveItemListSurface.MCP.value,
+                    board_id=board_id,
+                    outcome=CognitiveItemListOutcome.NOT_FOUND.value,
+                    status_filter_present=status_present,
+                    reason_code=CognitiveItemListReasonCode.NO_GENERATION_FOUND.value,
+                    item_count=0,
+                )
+                return json.dumps({
+                    "board_id": board_id,
+                    "selected_kg_generation_id": None,
+                    "counts": empty_status_counts(),
+                    "items": [],
+                }, default=str)
+
+            page_items = store.list_items(
+                board_id,
+                resolved_generation,
+                status_filter=effective_status,
+                limit=limit,
+                offset=offset,
+            )
+
+        except Exception:
+            return _err("cognitive_pending_unavailable", "item store could not be read")
 
         counts = compute_status_counts(page_items)
         item_count = counts["total"]
@@ -898,7 +900,6 @@ offset >= 0. Full args: okto-pulse://reference/tool-docs/kg."""
         return json.dumps({
             "board_id": board_id,
             "selected_kg_generation_id": resolved_generation,
-            "legacy_mode": legacy_mode,
             "counts": counts,
             "items": [project_item_for_api(item) for item in page_items],
         }, default=str)
