@@ -88,8 +88,8 @@ class SemanticGraphStore(Protocol):
         """Return detail, origins and Bug associations.
 
         Association rows carry id, title, confidence, rule_id, layer,
-        created_by and fallback_reason. Legacy id/title-only rows remain
-        unclassified; a reader must never derive causality from confidence.
+        created_by and fallback_reason. Short rows are incompatible, not
+        unclassified associations. A reader must never derive causality from confidence.
         """
         ...
 

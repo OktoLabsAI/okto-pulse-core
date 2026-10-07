@@ -7,10 +7,9 @@ pulse.db fields is Layer 1's exclusive responsibility. This file is the
 authoritative catalog — referenced by:
 
 - `primitives.add_edge_candidate` which enforces it server-side.
-- The agent prompt (see `prompts/cognitive_agent_v1.md`) which documents
-  the contract for the LLM so it doesn't waste turns on refused edges.
+- The canonical MCP tool documentation, which describes the current public contract.
 
-Outcome when the agent violates: 403 `layer_violation` with a structured
+Outcome when the agent violates: `layer_violation` with a structured
 error payload listing the allowed edges so the next turn can recover.
 """
 

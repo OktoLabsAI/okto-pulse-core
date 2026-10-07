@@ -1,0 +1,309 @@
+{
+  "scope": "C1-C3 current-only graph association contract and removal of unused versioned prompt",
+  "base_pair": {
+    "core": "75201768",
+    "community": "9f2c3b6a"
+  },
+  "final_build": "dist-native-main62",
+  "provenance": {
+    "checked_at": "2026-10-07T22:27:45.278612+00:00",
+    "python": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Scripts\\python.exe",
+    "packages": {
+      "core": {
+        "python_files": 837,
+        "origin": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages\\okto_pulse\\core\\__init__.py",
+        "repository_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_core",
+        "commit": "752017685ff8a9207f47f76a6f61d96c0d226bc9",
+        "dirty": true,
+        "dirty_entry_count": 9,
+        "distribution": "okto-pulse-core",
+        "version": "0.4.0",
+        "wheel": {
+          "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\dist-native-main62\\okto_pulse_core-0.4.0-py3-none-any.whl",
+          "sha256": "6b4360b3d2184e76a4e74caad12c7aca3516e821cb5c28263fe1823149c987fe",
+          "size": 3591407
+        },
+        "source_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_core\\src",
+        "site_packages_root": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages",
+        "package_prefix": "okto_pulse/core/",
+        "byte_identical_member_count": 898,
+        "byte_identical": true,
+        "aggregate_sha256": "60a1178ca550e00f0c73de38f4f7a3bb26181c12e5781fe91dfb918967d9d9e4",
+        "chain_hashes": {
+          "source": "60a1178ca550e00f0c73de38f4f7a3bb26181c12e5781fe91dfb918967d9d9e4",
+          "wheel": "60a1178ca550e00f0c73de38f4f7a3bb26181c12e5781fe91dfb918967d9d9e4",
+          "site_packages": "60a1178ca550e00f0c73de38f4f7a3bb26181c12e5781fe91dfb918967d9d9e4"
+        },
+        "critical_resource_sha256": {
+          "okto_pulse/core/mcp/resources/ska_resource_manifest.json": "4f6360d46eab0f9c8931d3fb5e8a50e0c04b0e6f3b164619a55ac381917ba34d",
+          "okto_pulse/core/mcp/resources/ska_tool_manifest.json": "3d3ecc80ab6b699b2021eddcf02b72bf48eddd06bf34dcf245f2b00fcc69b433"
+        },
+        "mismatches": []
+      },
+      "community": {
+        "python_files": 317,
+        "origin": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages\\okto_pulse\\community\\__init__.py",
+        "repository_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_community",
+        "commit": "9f2c3b6aa1eb8caebe5d6c3d0633ca36ba10c89e",
+        "dirty": true,
+        "dirty_entry_count": 1,
+        "distribution": "okto-pulse",
+        "version": "0.4.0",
+        "wheel": {
+          "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\dist-native-main62\\okto_pulse-0.4.0-py3-none-any.whl",
+          "sha256": "62fc16b43509e6fd955b72f786d075135e530a2227ac345621f89f1015bfb4f6",
+          "size": 4072819
+        },
+        "source_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_community\\src",
+        "site_packages_root": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages",
+        "package_prefix": "okto_pulse/community/",
+        "byte_identical_member_count": 403,
+        "byte_identical": true,
+        "aggregate_sha256": "668cbf625cb57130d496aa676bfadbac57414a01534600ae3162fb73687eed13",
+        "chain_hashes": {
+          "source": "668cbf625cb57130d496aa676bfadbac57414a01534600ae3162fb73687eed13",
+          "wheel": "668cbf625cb57130d496aa676bfadbac57414a01534600ae3162fb73687eed13",
+          "site_packages": "668cbf625cb57130d496aa676bfadbac57414a01534600ae3162fb73687eed13"
+        },
+        "critical_resource_sha256": {},
+        "mismatches": []
+      }
+    }
+  },
+  "campaigns": [
+    {
+      "name": "acceptance-native-constraint-core1",
+      "sha256": "ac568fcd1a40395c752caa8e85c207b0f72480574f8117c7b6106d5b1f872689",
+      "suites": [
+        {
+          "name": "pytest",
+          "errors": "0",
+          "failures": "0",
+          "skipped": "0",
+          "tests": "40",
+          "time": "6.980",
+          "timestamp": "2026-10-07T19:28:13.336051-03:00",
+          "hostname": "Alienware_m15"
+        }
+      ],
+      "passed": [
+        "tests.test_bug_proxy_read_semantics::test_constraint_explanation_keeps_origin_proxy_classification",
+        "tests.test_bug_proxy_read_semantics::test_proxy_label_requires_matching_closed_provenance",
+        "tests.test_bug_proxy_read_semantics::test_constraint_explanation_refuses_incompatible_association_rows[row0]",
+        "tests.test_bug_proxy_read_semantics::test_constraint_explanation_refuses_incompatible_association_rows[row1]",
+        "tests.test_bug_proxy_read_semantics::test_constraint_explanation_refuses_incompatible_association_rows[row2]",
+        "tests.test_bug_proxy_read_semantics::test_constraint_explanation_refuses_incompatible_association_rows[row3]",
+        "tests.test_kg_cognitive_policy::test_deterministic_edges_catalog_matches_spec",
+        "tests.test_kg_cognitive_policy::test_cognitive_edges_catalog_matches_spec",
+        "tests.test_kg_cognitive_policy::test_catalogs_are_disjoint",
+        "tests.test_kg_cognitive_policy::test_check_raises_on_deterministic_edge[belongs_to]",
+        "tests.test_kg_cognitive_policy::test_check_raises_on_deterministic_edge[covered_by]",
+        "tests.test_kg_cognitive_policy::test_check_raises_on_deterministic_edge[derives_from]",
+        "tests.test_kg_cognitive_policy::test_check_raises_on_deterministic_edge[implements]",
+        "tests.test_kg_cognitive_policy::test_check_raises_on_deterministic_edge[mentions]",
+        "tests.test_kg_cognitive_policy::test_check_raises_on_deterministic_edge[originates_from]",
+        "tests.test_kg_cognitive_policy::test_check_raises_on_deterministic_edge[overlaps]",
+        "tests.test_kg_cognitive_policy::test_check_raises_on_deterministic_edge[precedes]",
+        "tests.test_kg_cognitive_policy::test_check_raises_on_deterministic_edge[supports]",
+        "tests.test_kg_cognitive_policy::test_check_raises_on_deterministic_edge[tests]",
+        "tests.test_kg_cognitive_policy::test_check_raises_on_deterministic_edge[violates]",
+        "tests.test_kg_cognitive_policy::test_check_allows_cognitive_edge[contradicts]",
+        "tests.test_kg_cognitive_policy::test_check_allows_cognitive_edge[depends_on]",
+        "tests.test_kg_cognitive_policy::test_check_allows_cognitive_edge[relates_to]",
+        "tests.test_kg_cognitive_policy::test_check_allows_cognitive_edge[supersedes]",
+        "tests.test_kg_cognitive_policy::test_check_allows_cognitive_edge[validates]",
+        "tests.test_kg_cognitive_policy::test_clamp_fallback_below_cap_unchanged",
+        "tests.test_kg_cognitive_policy::test_clamp_fallback_above_cap_clamps",
+        "tests.test_kg_cognitive_policy::test_clamp_nonfallback_layer_never_clamps",
+        "tests.test_kg_public_edge_provenance::test_public_candidate_refuses_internal_writer_metadata[metadata0]",
+        "tests.test_kg_public_edge_provenance::test_public_candidate_refuses_internal_writer_metadata[metadata1]",
+        "tests.test_kg_public_edge_provenance::test_public_candidate_refuses_internal_writer_metadata[metadata2]",
+        "tests.test_kg_public_edge_provenance::test_public_candidate_refuses_internal_writer_metadata[metadata3]",
+        "tests.test_kg_public_edge_provenance::test_public_candidate_refuses_internal_writer_metadata[metadata4]",
+        "tests.test_kg_public_edge_provenance::test_public_candidate_refuses_internal_writer_metadata[metadata5]",
+        "tests.test_kg_public_edge_provenance::test_public_candidate_refuses_internal_writer_metadata[metadata6]",
+        "tests.test_mcp_tools_catalog_drift::test_every_live_tool_is_classified",
+        "tests.test_mcp_tools_catalog_drift::test_catalog_file_matches_live_registry",
+        "tests.test_mcp_tools_catalog_drift::test_public_schema_tool_does_not_offer_internal_storage_view",
+        "tests.test_mcp_tools_catalog_drift::test_every_live_tool_has_one_exact_tool_doc_heading",
+        "tests.test_mcp_tools_catalog_drift::test_catalog_covers_exact_tool_set"
+      ]
+    },
+    {
+      "name": "acceptance-native-constraint-community1",
+      "sha256": "a88a2ebde3f8c1f90a74bb43f152bdf8ca49b123a326998b9327b685776457de",
+      "suites": [
+        {
+          "name": "pytest",
+          "errors": "0",
+          "failures": "0",
+          "skipped": "1",
+          "tests": "39",
+          "time": "78.251",
+          "timestamp": "2026-10-07T19:28:11.333938-03:00",
+          "hostname": "Alienware_m15"
+        }
+      ],
+      "passed": [
+        "tests.test_bug_proxy_read_semantics::test_graph_read_distinguishes_inferred_proxy_from_parallel_unclassified_edge",
+        "tests.test_bug_proxy_read_semantics::test_native_constraint_read_preserves_proxy_provenance",
+        "tests.test_grafx_graph_store::test_snapshot_reads_retry_on_an_independent_reader_resolver",
+        "tests.test_grafx_graph_store::test_grafx_timestamps_match_the_current_legacy_boundary_shape",
+        "tests.test_grafx_graph_store::test_the_provider_implements_the_exact_24_method_core_surface",
+        "tests.test_grafx_graph_store::test_each_core_port_method_is_a_public_callable[bootstrap]",
+        "tests.test_grafx_graph_store::test_each_core_port_method_is_a_public_callable[capabilities]",
+        "tests.test_grafx_graph_store::test_each_core_port_method_is_a_public_callable[create_edge]",
+        "tests.test_grafx_graph_store::test_each_core_port_method_is_a_public_callable[create_node]",
+        "tests.test_grafx_graph_store::test_each_core_port_method_is_a_public_callable[delete_edges_by_session]",
+        "tests.test_grafx_graph_store::test_each_core_port_method_is_a_public_callable[delete_nodes_by_session]",
+        "tests.test_grafx_graph_store::test_each_core_port_method_is_a_public_callable[edge_exists]",
+        "tests.test_grafx_graph_store::test_each_core_port_method_is_a_public_callable[find_active_by_source_ref]",
+        "tests.test_grafx_graph_store::test_each_core_port_method_is_a_public_callable[find_by_artifact]",
+        "tests.test_grafx_graph_store::test_each_core_port_method_is_a_public_callable[find_by_topic]",
+        "tests.test_grafx_graph_store::test_each_core_port_method_is_a_public_callable[find_contradictions]",
+        "tests.test_grafx_graph_store::test_each_core_port_method_is_a_public_callable[find_node_types]",
+        "tests.test_grafx_graph_store::test_each_core_port_method_is_a_public_callable[get_alternatives]",
+        "tests.test_grafx_graph_store::test_each_core_port_method_is_a_public_callable[get_constraint_detail]",
+        "tests.test_grafx_graph_store::test_each_core_port_method_is_a_public_callable[get_learnings_for_area]",
+        "tests.test_grafx_graph_store::test_each_core_port_method_is_a_public_callable[get_schema_info]",
+        "tests.test_grafx_graph_store::test_each_core_port_method_is_a_public_callable[get_schema_version]",
+        "tests.test_grafx_graph_store::test_each_core_port_method_is_a_public_callable[increment_attestation]",
+        "tests.test_grafx_graph_store::test_each_core_port_method_is_a_public_callable[list_node_properties]",
+        "tests.test_grafx_graph_store::test_each_core_port_method_is_a_public_callable[list_schema_objects]",
+        "tests.test_grafx_graph_store::test_each_core_port_method_is_a_public_callable[mark_superseded]",
+        "tests.test_grafx_graph_store::test_each_core_port_method_is_a_public_callable[traverse_supersedence]",
+        "tests.test_grafx_graph_store::test_each_core_port_method_is_a_public_callable[update_node]",
+        "tests.test_grafx_graph_store::test_each_core_port_method_is_a_public_callable[vector_search]",
+        "tests.test_grafx_graph_store::test_a_write_resolves_once_and_fences_immediately_before_effect_and_commit",
+        "tests.test_grafx_graph_store::test_every_port_method_roundtrips_over_one_real_grafx_board",
+        "tests.test_grafx_graph_store::test_a_lost_fence_discards_or_prevents_the_real_write[create_node]",
+        "tests.test_grafx_graph_store::test_a_lost_fence_discards_or_prevents_the_real_write[commit]",
+        "tests.test_grafx_graph_store::test_a_post_durable_commit_failure_is_explicit_and_not_retryable",
+        "tests.test_grafx_graph_store::test_backend_failure_is_mapped_without_leaking_a_grafx_exception",
+        "tests.test_grafx_graph_store::test_catalog_failure_during_vector_coercion_is_also_normalized",
+        "tests.test_f14_distribution_packaging::test_community_declares_every_runtime_dependency_directly",
+        "tests.test_f14_distribution_packaging::test_build_script_bootstraps_build_frontend_before_wheels"
+      ]
+    },
+    {
+      "name": "acceptance-native-constraint-wheel3",
+      "sha256": "8a30e232882947cc04179abcf2248eb2f476015db79e248279b1d1940e2dded5",
+      "suites": [
+        {
+          "name": "pytest",
+          "errors": "0",
+          "failures": "0",
+          "skipped": "0",
+          "tests": "3",
+          "time": "88.749",
+          "timestamp": "2026-10-07T19:36:29.304336-03:00",
+          "hostname": "Alienware_m15"
+        }
+      ],
+      "passed": [
+        "tests.test_f14_distribution_packaging::test_community_declares_every_runtime_dependency_directly",
+        "tests.test_f14_distribution_packaging::test_build_script_bootstraps_build_frontend_before_wheels",
+        "tests.test_f14_distribution_packaging::test_community_wheel_builds_the_local_app_from_declared_metadata"
+      ]
+    }
+  ],
+  "distinct_passed": 79,
+  "closure": {
+    "ok": true,
+    "budgets": [
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "import_boundary_baseline",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every import_boundary_baseline allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "singleton_baseline",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every singleton_baseline allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "dependency_temporary_exceptions",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every dependency_temporary_exceptions allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "graph_runtime_compatibility",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every graph_runtime_compatibility allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "rebuild_artifact_compatibility",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every rebuild_artifact_compatibility allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "community_private_reach_ins",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every community_private_reach_ins allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "community_adapter_bridges",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every community_adapter_bridges allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "af35_relational_residue",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every af35_relational_residue allowance before F16 completion."
+      }
+    ],
+    "findings": [],
+    "documentation_findings": []
+  },
+  "prior_failures": [
+    "main61 build failed on removed prompt force-include; no install occurred; pyproject entry removed.",
+    "wheel1: 2 passed / 1 failed. Test used unsupported OKTO_DATA_DIR; startup refused incompatible storage. Replaced by DATA_DIR, cleared path overrides and asserted resolved paths before app import.",
+    "wheel2: 2 passed / 1 skipped. Shell quoting prevented opt-in env assignment; this is not wheel acceptance. wheel3 supplied environment via subprocess and all 3 passed."
+  ],
+  "frontend": {
+    "tests": [
+      "GraphCanvas.selection.test.tsx",
+      "KnowledgeGraphPage.diagnostics.test.tsx"
+    ],
+    "passed": 27,
+    "evidence": "Previous turn terminal console; no persisted reporter. Frontend product and assets unchanged.",
+    "limits": "jsdom, not visual WebGL or E2E"
+  },
+  "limits": [
+    "No KG30 completion claim; durable interpretive fallback remains to investigate.",
+    "Wheel smoke proves import/composition/OpenAPI, not full lifespan or end-to-end operation.",
+    "Acceptance index unchanged: 67 verified / 168 pending / 11 N/A."
+  ]
+}

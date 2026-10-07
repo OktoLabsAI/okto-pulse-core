@@ -2,6 +2,64 @@
 
 ## Estado para retomada
 
+### 2026-10-07 — contrato gráfico único validado; instalação limpa corrigida
+Retomada após mensagem Nexus desconsiderada: turno anterior sem progresso de
+implementação; worktrees conferidas antes de continuar.
+Todos os handles anteriores terminaram: constraint-core1 40pass; community1
+38pass/1skip; closure-native-main62-final ok=true, oito budgets ZERO, sem
+findings. README regenerados pelo renderer oficial. Main62 mantém prova
+byte a byte: 837 Python/898 payload Core, 317/403 Community.
+O smoke de wheel ainda fixava 0.3.3: agora resolve a versão atual do manifest,
+aceita caminhos exatos dos wheels e prova os .py instalados antes de importar
+produto em processo novo e isolado (-I).
+wheel1: 2pass/1fail; OKTO_DATA_DIR não é a variável lida pelo produto.
+Startup recusou armazenamento incompatível. Corrigido SOMENTE o fixture:
+DATA_DIR descartável, overrides de caminhos vazios e asserts dos caminhos
+resolvidos antes da composição. Nenhum conversor, exclusão ou relaxamento
+do guard foi introduzido.
+wheel2: erro de quoting do launcher, 2pass/1skip; não vale como aceite.
+wheel3 (handle54760) terminou0: 3pass/88.76s em novo venv, wheels main62,
+dependências declaradas instaladas, import/composição/OpenAPI aprovados.
+Recibo clean-break-native-constraint-contract.json registra campanhas,
+hashes, limites e falhas. São 79 casos Python distintos; frontend teve
+27pass em GraphCanvas.selection/KnowledgeGraphPage.diagnostics no turno
+anterior, console terminal sem reporter persistido; sem mudança de assets.
+Ruff F/E9 verde. Produto não mudou depois da prova main62; somente fixture,
+README e rastreabilidade. Sem processo de teste ativo neste recorte.
+Fechamento C1–C3: recusa de linhas gráficas antigas/incompletas e retirada
+do loader/prompt versionado sem consumidor. Não qualifica KG30 nem altera
+gates/autoridade. Índice permanece67/168/11. KG10/KG28/T23 aguardam decisões.
+Próximo trabalho: KG30 e Learning conforme os critérios fixos do pacote;
+não declarar objetivo global entregue.
+
+### 2026-10-07 — retirando linhas gráficas antigas e prompt sem consumidor
+Par publicado confirmado limpo:Core75201768/Community9f2c3b6a; milestone
+anterior foi progresso. KG30 continua sem qualificação global.
+Inspeção encontrou compatibilidade explícita em get_constraint_detail:
+Core aceitava linhas id/title sem proveniência e protocolo documentava isso.
+Adapter Grafx atual retorna sete campos. Repro constraint-legacy1 terminou0:
+2pass/3.15s confirma aceitação antiga no teste, não cumprimento clean break.
+WIP remove esse branch; linha com tamanho diferente de7 retorna
+graph_contract_incompatible, sem classificação ou confiança inferida.
+Mantida associação nativa não classificada com payload completo; labels do
+proxy continuam exigindo proveniência fechada, não causalidade por confiança.
+Outro resíduo: kg.agent.prompts só possui consumidor em teste; prompt_v1
+manda enviar cognitive_evidence/layer=fallback e emitir missing_link_candidate,
+sem contrato público que os aceite. Retirados prompt e loader versionado,
+sem adicionar segunda versão/wrapper. Orientação corrente fica no resource
+MCP canônico dos dois pacotes: correção pela operação de domínio, hipótese
+não normativa e nenhum reparo público do grafo. Teste do prompt morto retirado;
+catálogo de policy e testes de fronteira continuam.
+Build main61 falhou por force-include ainda apontando ao prompt removido;
+nenhum install ocorreu. Entrada removida do pyproject. Main62 builds/install
+terminais0; prova90144 terminal0:837/898 Core+317/403 Community byte-idênticos.
+ATIVOS constraint-core1 handle37375, constraint-community1 handle82240 e
+closure62 handle96694. Não alterar produto/reinstalar até todos terminais.
+Ainda faltam terminais, recibo e commit/push deste recorte C1–C3.
+Não declarar KG30 entregue: afirmação fallback durável com replay continua
+limite a investigar, sem transformar proxy de origem em prova normativa.
+Índice67/168/11, pendências KG10/KG28/T23 sem resposta. Sem dados reais/Nexus.
+
 ### 2026-10-07 — KG31 corrigido e validado; publicação do contrato público fechado
 Main60 prova59462 terminou0 antes dos testes,838/900+317/403 byte-idênticos.
 Edge-provenance4 handle31458 terminou0:76pass/52s; regressão do endereço

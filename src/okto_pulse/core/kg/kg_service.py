@@ -1419,10 +1419,15 @@ class KGService:
         from okto_pulse.core.ports.card_projection import bug_origin_proxy_read_metadata
         violations = []
         for row in violation_rows:
-            metadata = (bug_origin_proxy_read_metadata(rule_id=row[3], layer=row[4],
-                created_by=row[5], fallback_reason=row[6]) if len(row) >= 7 else {})
+            if not isinstance(row, (list, tuple)) or len(row) != 7:
+                raise KGToolError(
+                    code="graph_contract_incompatible",
+                    message="Constraint associations require the current provenance contract.",
+                )
+            metadata = bug_origin_proxy_read_metadata(rule_id=row[3], layer=row[4],
+                created_by=row[5], fallback_reason=row[6])
             violations.append({'id': row[0], 'title': row[1], **metadata,
-                **({'confidence': row[2]} if len(row) >= 3 else {})})
+                'confidence': row[2]})
         return {
             "id": r[0],
             "title": r[1],

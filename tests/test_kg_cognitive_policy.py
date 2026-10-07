@@ -61,15 +61,3 @@ def test_clamp_nonfallback_layer_never_clamps():
     clamped, was_clamped = clamp_fallback_confidence(0.99, layer="cognitive")
     assert clamped == 0.99
     assert was_clamped is False
-
-
-def test_active_prompt_loads_and_mentions_forbidden_set():
-    from okto_pulse.core.kg.agent.prompts import ACTIVE_PROMPT_VERSION, load_prompt
-    text = load_prompt(ACTIVE_PROMPT_VERSION)
-    assert "tests, implements, violates" in text
-    assert "originates_from" in text
-    assert "covered_by" in text
-    assert "precedes" in text
-    assert "contradicts" in text
-    assert "supersedes" in text
-    assert "Cognitive Fallback Confidence Cap" in text

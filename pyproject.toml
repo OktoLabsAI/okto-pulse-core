@@ -68,7 +68,6 @@ packages = ["src/okto_pulse"]
 [tool.hatch.build.targets.wheel.force-include]
 "src/okto_pulse/core/mcp/agent_instructions.md" = "okto_pulse/core/mcp/agent_instructions.md"
 "src/okto_pulse/core/application/processors/tech_entities.yml" = "okto_pulse/core/application/processors/tech_entities.yml"
-"src/okto_pulse/core/kg/agent/prompts/cognitive_agent_v1.md" = "okto_pulse/core/kg/agent/prompts/cognitive_agent_v1.md"
 "src/okto_pulse/core/mcp/resources/workflows/stories.md" = "okto_pulse/core/mcp/resources/workflows/stories.md"
 "src/okto_pulse/core/mcp/resources/workflows/ideations.md" = "okto_pulse/core/mcp/resources/workflows/ideations.md"
 "src/okto_pulse/core/mcp/resources/workflows/refinements.md" = "okto_pulse/core/mcp/resources/workflows/refinements.md"
