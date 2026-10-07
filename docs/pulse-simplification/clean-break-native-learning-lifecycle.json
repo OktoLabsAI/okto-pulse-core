@@ -1,0 +1,140 @@
+{
+  "criteria": [
+    "KG:KG-32",
+    "KG:KG-34"
+  ],
+  "base_pair": {
+    "core": "6e499279",
+    "community": "a42c33c5"
+  },
+  "product_build": "dist-native-main64",
+  "product_changed": false,
+  "provenance": {
+    "checked_at": "2026-10-07T23:08:30.852708+00:00",
+    "python": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Scripts\\python.exe",
+    "packages": {
+      "core": {
+        "python_files": 837,
+        "origin": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages\\okto_pulse\\core\\__init__.py",
+        "repository_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_core",
+        "commit": "6e4992791d05a1ee04d26320e441ba7df1d769f1",
+        "dirty": false,
+        "dirty_entry_count": 0,
+        "distribution": "okto-pulse-core",
+        "version": "0.4.0",
+        "wheel": {
+          "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\dist-native-main64\\okto_pulse_core-0.4.0-py3-none-any.whl",
+          "sha256": "cced1bc708720c219d35b3b6143c944c60103433ded5b8efd4a2904ecab905d4",
+          "size": 3591258
+        },
+        "source_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_core\\src",
+        "site_packages_root": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages",
+        "package_prefix": "okto_pulse/core/",
+        "byte_identical_member_count": 898,
+        "byte_identical": true,
+        "aggregate_sha256": "c32da98d66db008726351f877f09c88a97a13a3c79caf7cd0547043f854bfed3",
+        "chain_hashes": {
+          "source": "c32da98d66db008726351f877f09c88a97a13a3c79caf7cd0547043f854bfed3",
+          "wheel": "c32da98d66db008726351f877f09c88a97a13a3c79caf7cd0547043f854bfed3",
+          "site_packages": "c32da98d66db008726351f877f09c88a97a13a3c79caf7cd0547043f854bfed3"
+        },
+        "critical_resource_sha256": {
+          "okto_pulse/core/mcp/resources/ska_resource_manifest.json": "4f6360d46eab0f9c8931d3fb5e8a50e0c04b0e6f3b164619a55ac381917ba34d",
+          "okto_pulse/core/mcp/resources/ska_tool_manifest.json": "3d3ecc80ab6b699b2021eddcf02b72bf48eddd06bf34dcf245f2b00fcc69b433"
+        },
+        "mismatches": []
+      },
+      "community": {
+        "python_files": 317,
+        "origin": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages\\okto_pulse\\community\\__init__.py",
+        "repository_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_community",
+        "commit": "a42c33c514e7d81d55b818f0293e62cc956daeca",
+        "dirty": true,
+        "dirty_entry_count": 1,
+        "distribution": "okto-pulse",
+        "version": "0.4.0",
+        "wheel": {
+          "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\dist-native-main64\\okto_pulse-0.4.0-py3-none-any.whl",
+          "sha256": "699d577f656357f70f175c5393832ae62a03aafa40dac62613208eb2295ebac3",
+          "size": 4072770
+        },
+        "source_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_community\\src",
+        "site_packages_root": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages",
+        "package_prefix": "okto_pulse/community/",
+        "byte_identical_member_count": 403,
+        "byte_identical": true,
+        "aggregate_sha256": "2e507cacc375add721a36d1994a085e416acf36184ea5ec74247ff21ef6a6dc5",
+        "chain_hashes": {
+          "source": "2e507cacc375add721a36d1994a085e416acf36184ea5ec74247ff21ef6a6dc5",
+          "wheel": "2e507cacc375add721a36d1994a085e416acf36184ea5ec74247ff21ef6a6dc5",
+          "site_packages": "2e507cacc375add721a36d1994a085e416acf36184ea5ec74247ff21ef6a6dc5"
+        },
+        "critical_resource_sha256": {},
+        "mismatches": []
+      }
+    }
+  },
+  "campaign": {
+    "name": "acceptance-native-learning-lifecycle11",
+    "sha256": "ac35d8a90ce6ed1f7025b8fb18ef2fb46d4a4dce247d2e56d7bc66a83faab951",
+    "passed_count": 21,
+    "passed": [
+      "tests.test_native_learning_lifecycle::test_capture_is_durable_before_actual_review_and_materializes_after_done[native_bug_lifecycle]",
+      "tests.test_native_learning_closeout::test_native_bug_closeout_requires_learning_policy_and_real_delivery[advisory-complete-False-native_bug]",
+      "tests.test_native_learning_closeout::test_native_bug_closeout_requires_learning_policy_and_real_delivery[advisory-complete-True-native_bug]",
+      "tests.test_native_learning_closeout::test_native_bug_closeout_requires_learning_policy_and_real_delivery[advisory-missing-False-native_bug]",
+      "tests.test_native_learning_closeout::test_native_bug_closeout_requires_learning_policy_and_real_delivery[advisory-missing-True-native_bug]",
+      "tests.test_native_learning_closeout::test_native_bug_closeout_requires_learning_policy_and_real_delivery[blocking-complete-False-native_bug]",
+      "tests.test_native_learning_closeout::test_native_bug_closeout_requires_learning_policy_and_real_delivery[blocking-complete-True-native_bug]",
+      "tests.test_native_learning_closeout::test_blocking_capture_and_delivery_close_atomically_before_graph_materialization[None-native_bug]",
+      "tests.test_native_learning_closeout::test_blocking_capture_and_delivery_close_atomically_before_graph_materialization[delivery-native_bug]",
+      "tests.test_native_learning_closeout::test_blocking_capture_and_delivery_close_atomically_before_graph_materialization[permission-native_bug]",
+      "tests.test_native_learning_closeout::test_blocking_capture_and_delivery_close_atomically_before_graph_materialization[evidence-native_bug]",
+      "tests.test_adopted_delivery_report::test_atomic_done_cannot_commit_without_complete_selected_contribution[missing]",
+      "tests.test_adopted_delivery_report::test_atomic_done_cannot_commit_without_complete_selected_contribution[partial]",
+      "tests.test_adopted_delivery_report::test_atomic_done_uses_its_last_complete_binding_without_granting_spec_test_credit",
+      "tests.test_adopted_delivery_report::test_report_cannot_borrow_complete_proof_outside_its_selection[False]",
+      "tests.test_adopted_delivery_report::test_report_cannot_borrow_complete_proof_outside_its_selection[True]",
+      "tests.test_adopted_delivery_report::test_direct_done_obeys_delivery_policy_without_human_validation[False-blocking]",
+      "tests.test_adopted_delivery_report::test_direct_done_obeys_delivery_policy_without_human_validation[False-advisory]",
+      "tests.test_adopted_delivery_report::test_direct_done_obeys_delivery_policy_without_human_validation[True-blocking]",
+      "tests.test_adopted_delivery_report::test_direct_done_obeys_delivery_policy_without_human_validation[True-advisory]",
+      "tests.test_adopted_delivery_report::test_concurrent_adopted_done_submissions_share_one_report"
+    ]
+  },
+  "evidence": [
+    "Current official SQL schema, triggers and Community SQLite connection pragmas; Bug origin and regression scenario created before investigation/execution proof.",
+    "Same Bug captures authored Learning while in Validation; fresh session confirms capture durable, no evaluation or Done binding.",
+    "Actual graph read confirms canonical Bug absent. Real worker leaves capture pending awaiting Done, then awaiting canonical Bug after independent review.",
+    "Actual CardService completion gates, regression eligibility and signed evidence admission; blocking Learning plus complete selected Delivery reaches Done with current binding.",
+    "Executor has cognitive creation permission but lacks task validation permission; review command refuses before evaluation or Done binding; explicit outer commit and fresh session prove no partial writes.",
+    "Negative compound capture case lacks cognitive permission and preserves Card/report/capture/binding/outbox atomically; included from native closeout suite.",
+    "Empty disposable Grafx official schema, real health/queue readers and ConsolidationProcessor materialize Spec then Bug; no manually fabricated canonical Bug or healthy override.",
+    "Real cognitive worker materializes Learning and validates edge to actual canonical Bug. Capture birth preserved in two-record durable history; replay produces no new work/history."
+  ],
+  "limits": [
+    "Application use cases and UOW fixture; Board membership lookup is admitted by shared setup stub, not REST/MCP authentication acceptance.",
+    "Implementation observation/execution facts and stub embeddings are controlled fixture inputs; no claim of external repository execution.",
+    "Board impact_evidence_mode=off; require_task_validation=true and skip_cognitive_consolidation=false for lifecycle. Other policy combinations only as explicitly covered by included closeout cases.",
+    "Outbox rows are delivered by real handler invoked from test helper, not full event transport scheduler.",
+    "No product or frontend edits; main64 architectural closure and frontend evidence retained, not claimed rerun.",
+    "Qualification applies only to KG32 and KG34; remaining original criteria are not inferred complete."
+  ],
+  "prior_failures": [
+    "lifecycle1: invalid fixture model_copy string status; now typed CardStatus.",
+    "lifecycle2: missing real Amendment store registration.",
+    "lifecycle3/4: real regression gate correctly refused missing origin; native lifecycle fixture supplies lineage before proofs.",
+    "lifecycle6: test corpus scope incorrectly used Board ID; corrected to board schema scope.",
+    "lifecycle7: missing canonical resolver port; registered concrete reader.",
+    "lifecycle8/9: health guard refused missing KG/queue health ports; registered concrete readers, no healthy mock."
+  ],
+  "preliminary_passes": {
+    "lifecycle5": "capture/review/Done only, 1 passed",
+    "lifecycle10": "full materialization/replay, 1 passed"
+  },
+  "test_sources": {
+    "tests/test_native_learning_lifecycle.py": "ebc06ad2d07e3babf6bcc0f8068305b11046db5001c5cebe576c45752297c15b",
+    "tests/test_native_learning_closeout.py": "1f350d23c6f963ebc10c5a3469ff59c876ebf0a1e7033971d7463de00e3d6ec1",
+    "tests/test_delivery_evidence_integration.py": "fd240eac9e4b3d1e993814cb56d77a2b4bbca79ec0adc0bf4712a12e459c2a1e"
+  }
+}

@@ -2,6 +2,46 @@
 
 ## Estado para retomada
 
+### 2026-10-07 — KG32/KG34: ciclo nativo e autoridade comprovados
+Lifecycle11 (35539) terminal0:21pass/62.27s. Produto main64 inalterado;
+prova byte a byte provenance-native-learning-lifecycle1 anterior às campanhas.
+Captura durável em Validation; worker real aguarda Done. Executor que captura
+não consegue avaliar: recusa PermissionDenied sem avaliação/binding parcial
+após commit externo, verificado por sessão nova. Revisor independente conclui
+com gates reais, regressão elegível e provas atuais. Worker então aguarda Bug
+canônico; ConsolidationProcessor projeta Spec/Bug em Grafx inicialmente vazio.
+Worker materializa Learning, aresta validates aponta ao Bug canônico real,
+preserva captura original e replay não acrescenta trabalho nem história.
+Health/queue ports reais, nenhum override healthy e nenhum gate mockado.
+Lifecycle6 corrigiu scope de corpus;7 porta canonical resolver;8/9 portas
+KG health/queue ausentes fizeram guard recusar. Registradas implementações
+Community concretas. Lifecycle10 passou1;11 acrescentou worker antes de Done,
+recusa do executor e leitura da aresta +20 regressões de fechamento/Delivery.
+Recibo clean-break-native-learning-lifecycle.json registra hashes, limites e
+falhas. KG32/KG34 qualificados:71 verificadas/164 pendentes/11 superadas.
+Sem mudança de produto, frontend, semântica, autoridade ou storage real.
+Closure64/oito budgets ZERO e UI64 são provas anteriores do produto inalterado,
+não novas execuções. Sem processos de teste ativos.
+Próximo: continuar critérios fixos pendentes; decisões KG10/KG28/T23 preservadas.
+
+### 2026-10-07 — KG32: captura e revisão reais, materialização em validação
+Retomada após mensagem Nexus ignorada: turno anterior sem progresso de implementação.
+Worktrees confirmadas Core limpo/Community somente teste lifecycle não rastreado.
+Prova provenance-native-learning-lifecycle1.json do main64 antecede comportamento;
+produto continua inalterado. Lifecycle1 (91734) terminal1: status string montado
+por model_copy sem validação; corrigido para CardStatus.VALIDATION.
+Lifecycle2 (85699) terminal1: porta Amendment não registrada no fixture; conectado
+CommunitySqlAlchemyAmendmentRevisionStore real, sem substituir gate.
+Lifecycle3/4 (60572/3516) terminais1: gate real recusou origin_task_missing.
+Fixture native_bug_lifecycle agora inclui origem normal e cenário relacionado
+ANTES da geração das provas. Sem alteração de versão/estado após a atestação.
+Lifecycle5 (39417) terminal0:1pass/7.61s; captura durável em Validation, revisão
+independente, gates reais e binding Done no mesmo fluxo. Isso ainda NÃO comprova
+todo KG32. Lifecycle6 (90735) ativo: acrescenta Grafx vazio, ausência canônica
+explícita, worker pendente, projeção pelo ConsolidationProcessor e replay.
+Índice permanece69/166/11; nenhum critério novo qualificado. Sem edição de produto,
+frontend ou dados reais. Próximo: verificar terminal6 e concluir materialização.
+
 ### 2026-10-07 — KG33 comprovado com gates e schema reais
 Publicação confirmada: Corec4f2b778/Communitya42c33c5; pushes pareados
 origin/feature/v0.4.0 terminaram0. Sem processos de teste ativos.
