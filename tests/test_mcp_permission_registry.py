@@ -210,7 +210,7 @@ EXPECTED_CONDITIONAL_PERMISSION_POLICIES = {
         "spec.architecture.render",
         "card.architecture.render",
     ),
-    "okto_pulse_list_architecture_propagation_legacy": ("spec.architecture.read",),
+    "okto_pulse_list_architecture_propagation_report": ("spec.architecture.read",),
     "okto_pulse_move_card": _reviewed_transition_flags("card"),
     "okto_pulse_move_ideation": _reviewed_transition_flags("ideation"),
     "okto_pulse_move_refinement": _reviewed_transition_flags("refinement"),

@@ -1001,7 +1001,7 @@ class CoreApplicationServiceCatalog:
 
         return await compute_card_seen_status(self.__relational_context, card_id)
 
-    async def build_propagation_legacy_report(
+    async def build_propagation_report(
         self,
         *,
         board_id: str,
@@ -1011,11 +1011,11 @@ class CoreApplicationServiceCatalog:
         parent_type_filter: str | None = None,
         surface: str = "service",
     ) -> dict[str, object]:
-        from okto_pulse.core.services.architecture_propagation_legacy import (
-            build_propagation_legacy_report,
+        from okto_pulse.core.services.architecture_propagation_report import (
+            build_propagation_report,
         )
 
-        return await build_propagation_legacy_report(
+        return await build_propagation_report(
             self.__relational_context,
             board_id=board_id,
             limit=limit,

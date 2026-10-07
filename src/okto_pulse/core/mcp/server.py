@@ -12630,16 +12630,16 @@ async def okto_pulse_list_architecture_designs(
 
 
 @mcp.tool()
-async def okto_pulse_list_architecture_propagation_legacy(
+async def okto_pulse_list_architecture_propagation_report(
     board_id: str,
     limit: int = 100,
     offset: int = 0,
     include_clean: StrictBool = False,
     parent_type_filter: str = "",
 ) -> str:
-    """List legacy Architecture Design snapshots whose SOURCE is now ineligible for
+    """List propagated Architecture Design snapshots whose SOURCE is now ineligible for
     propagation (Spec C). READ-ONLY / forward-only: never backfills, resolves findings,
-    mutates snapshots, or changes SDLC status. Each item carries legacy_status
+    mutates snapshots, or changes SDLC status. Each item carries source_status
     (source_blocked|verdict_missing|source_unavailable), source identity, finding_keys and
     remediation. architecture_warning_acknowledgement is audit-only and is NOT a
     propagation bypass."""
@@ -12652,7 +12652,7 @@ async def okto_pulse_list_architecture_propagation_legacy(
         return _perm_error(perm_err)
 
     try:
-        # Reject an offset above int64 before it reaches the legacy report's
+        # Reject an offset above int64 before it reaches the propagation report's
         # SQL OFFSET binding, which would otherwise raise a raw OverflowError.
         offset = bounded_page_offset(offset)
     except (TypeError, ValueError):
@@ -12664,15 +12664,15 @@ async def okto_pulse_list_architecture_propagation_legacy(
         )
 
     from okto_pulse.core.application.use_cases.architecture_crud import (
-        ArchitecturePropagationLegacyReportCommand,
-        ArchitecturePropagationLegacyReportUseCase,
+        ArchitecturePropagationReportCommand,
+        ArchitecturePropagationReportUseCase,
     )
     from okto_pulse.core.inbound.mcp_adapter import MCPAdapterContract
 
     actor = MCPAdapterContract.actor(ctx, board_id=board_id)
     async with get_unit_of_work_factory_for_mcp()(actor=actor) as uow:
-        result = await ArchitecturePropagationLegacyReportUseCase().execute(
-            ArchitecturePropagationLegacyReportCommand(
+        result = await ArchitecturePropagationReportUseCase().execute(
+            ArchitecturePropagationReportCommand(
                 board_id,
                 limit=limit,
                 offset=offset,
@@ -20159,7 +20159,7 @@ _TOOLS_WITH_LAZY_COMPACT_DESCRIPTION = frozenset(
         "okto_pulse_list_default_guideline_candidates",
         "okto_pulse_kg_explain_constraint",
         "okto_pulse_move_ideation",
-        "okto_pulse_list_architecture_propagation_legacy",
+        "okto_pulse_list_architecture_propagation_report",
         "okto_pulse_kg_begin_consolidation",
         "okto_pulse_submit_spec_validation",
         "okto_pulse_submit_task_validation",

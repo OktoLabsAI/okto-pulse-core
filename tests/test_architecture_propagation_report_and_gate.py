@@ -1,11 +1,11 @@
-"""Spec C — Resource Gate fail-closed, remediation, and read-only legacy diagnostic.
+"""Spec C — Resource Gate fail-closed, remediation, and read-only propagated diagnostic.
 
 Covers:
 - TS-C1 (negative): Resource Gate surfaces an inherited-source-ineligible block + remediation,
   WITHOUT marking architecture N/A.
 - TS-C2 (integration): the blocked copy payload is the canonical structured error (all fields).
 - TS-C3 (manual->doc): docs state acknowledgement is audit-only / not a propagation bypass.
-- TS-C4 (integration): the legacy diagnostic lists problematic snapshots read-only (no mutation).
+- TS-C4 (integration): the propagated diagnostic lists problematic snapshots read-only (no mutation).
 - TS-C5 (e2e): correcting the source unblocks propagation and preserves source identity.
 - TS-C6 (unit): resolved/superseded findings and valid suppressed warnings do not block (AFG.01).
 """
@@ -29,6 +29,7 @@ from sqlalchemy_test_models import (
     Spec,
     SpecStatus,
 )
+from okto_pulse.core.domain.architecture_adoption import ArchitectureAdoptionScope
 from okto_pulse.core.models.schemas import (
     ArchitectureDesignCreate,
     ArchitectureDesignUpdate,
@@ -41,13 +42,13 @@ from okto_pulse.core.services.architecture import (
     ArchitecturePropagationService,
     build_propagation_eligibility,
 )
-from okto_pulse.core.services.architecture_propagation_legacy import (
-    LEGACY_STATUS_SOURCE_BLOCKED,
-    build_propagation_legacy_report,
+from okto_pulse.core.services.architecture_propagation_report import (
+    SOURCE_STATUS_SOURCE_BLOCKED,
+    build_propagation_report,
 )
 from okto_pulse.core.services.resource_gate import ResourceGateService
 
-USER_ID = "arch-propagation-legacy-user"
+USER_ID = "arch-propagation-propagated-user"
 _CORE = pathlib.Path(__file__).resolve().parents[1] / "src" / "okto_pulse" / "core"
 
 
@@ -123,8 +124,9 @@ async def _seed_spec_card(db_factory) -> tuple[str, str, str]:
     spec_id = _id("propc-spec")
     card_id = _id("propc-card")
     async with db_factory() as db:
-        db.add(Board(id=board_id, name="Propagation Legacy Board", owner_id=USER_ID))
+        db.add(Board(id=board_id, name="Propagation Propagated Board", owner_id=USER_ID))
         db.add(Spec(id=spec_id, board_id=board_id, title="spec", status=SpecStatus.APPROVED,
+                    architecture_adoption=ArchitectureAdoptionScope(board_id=board_id, spec_id=spec_id, adopted_in_edition=1, actor_id=USER_ID, inherited_resource_ids=()).model_dump(mode="json"),
                     created_by=USER_ID, functional_requirements=["FR"], acceptance_criteria=["AC"],
                     test_scenarios=[], business_rules=[], api_contracts=[]))
         db.add(Card(id=card_id, board_id=board_id, spec_id=spec_id, title="card",
@@ -202,20 +204,20 @@ def test_ts_c3_docs_state_ack_is_not_a_propagation_bypass():
 
     assert "audit-only" in tool_docs.lower()
     assert "NOT a propagation bypass" in tool_docs
-    assert "okto_pulse_list_architecture_propagation_legacy" in tool_docs
+    assert "okto_pulse_list_architecture_propagation_report" in tool_docs
 
 
 # --------------------------------------------------------------------------- #
-# TS-C4: the legacy diagnostic lists problematic snapshots read-only (no mutation).
+# TS-C4: the propagated diagnostic lists problematic snapshots read-only (no mutation).
 # --------------------------------------------------------------------------- #
 @pytest.mark.asyncio
-async def test_ts_c4_legacy_report_is_read_only(db_factory):
+async def test_ts_c4_propagated_report_is_read_only(db_factory):
     board_id, spec_id, card_id = await _seed_spec_card(db_factory)
     async with db_factory() as db:
         repo = ArchitectureDesignRepository(db)
         source = await repo.create("spec", spec_id, _clean_create(), USER_ID)
         source_id = source.id
-        # Copy the (clean) source to the card → a legacy snapshot with source_design_id.
+        # Copy the (clean) source to the card → a propagated snapshot with source_design_id.
         copied = await ArchitecturePropagationService(db).copy_spec_to_card(spec_id, card_id, USER_ID)
         target_id = copied[0].id
         await db.commit()
@@ -227,14 +229,15 @@ async def test_ts_c4_legacy_report_is_read_only(db_factory):
 
     before = await _count_arch_designs(db_factory, board_id)
     async with db_factory() as db:
-        report = await build_propagation_legacy_report(db, board_id=board_id)
+        report = await build_propagation_report(db, board_id=board_id)
     after = await _count_arch_designs(db_factory, board_id)
 
     assert report["mutation_performed"] is False
     assert before == after  # read-only: no rows created/removed
     item = next(i for i in report["items"] if i["target_design_id"] == target_id)
     assert item["source_design_id"] == source_id
-    assert item["legacy_status"] == LEGACY_STATUS_SOURCE_BLOCKED
+    assert item["source_status"] == SOURCE_STATUS_SOURCE_BLOCKED
+    assert "legacy_status" not in item
     assert item["finding_keys"]
     assert item["mutation_performed"] is False
 
@@ -320,7 +323,7 @@ async def _count_arch_designs(db_factory, board_id: str) -> int:
         )).scalar_one()
 
 
-async def _seed_legacy_snapshot(db_factory) -> tuple[str, str, str]:
+async def _seed_propagated_snapshot(db_factory) -> tuple[str, str, str]:
     """Board + spec + card with a card snapshot whose source is now ineligible."""
     board_id, spec_id, card_id = await _seed_spec_card(db_factory)
     async with db_factory() as db:
@@ -336,37 +339,37 @@ async def _seed_legacy_snapshot(db_factory) -> tuple[str, str, str]:
 
 
 # --------------------------------------------------------------------------- #
-# TS-C4 (IR-C1 / api contract): the MCP + REST legacy report twins.
+# TS-C4 (IR-C1 / api contract): the MCP + REST propagated report twins.
 # --------------------------------------------------------------------------- #
 @pytest.mark.asyncio
-async def test_ts_c4_mcp_legacy_report_twin(db_factory):
+async def test_ts_c4_mcp_propagated_report_twin(db_factory):
     import json
     from unittest.mock import AsyncMock, patch
 
     from okto_pulse.core.infra.database import get_session_factory
     from okto_pulse.core.mcp import server as mcp_server
 
-    board_id, _spec_id, source_id = await _seed_legacy_snapshot(db_factory)
+    board_id, _spec_id, source_id = await _seed_propagated_snapshot(db_factory)
 
-    ctx = type("Ctx", (), {"agent_id": USER_ID, "agent_name": "legacy-agent",
+    ctx = type("Ctx", (), {"agent_id": USER_ID, "agent_name": "propagated-agent",
                            "board_id": board_id, "permissions": ["board:read"]})()
     register_mcp_test_runtime(get_session_factory())
     with patch.object(mcp_server, "_get_agent_ctx", AsyncMock(return_value=ctx)), \
          patch.object(mcp_server, "_mcp_check_architecture_permission", return_value=None):
-        tool = await mcp_server.mcp.get_tool("okto_pulse_list_architecture_propagation_legacy")
+        tool = await mcp_server.mcp.get_tool("okto_pulse_list_architecture_propagation_report")
         raw = await tool.fn(board_id=board_id)
     payload = json.loads(raw)
 
     assert payload["success"] is True
     assert payload["mutation_performed"] is False
     assert any(
-        i["source_design_id"] == source_id and i["legacy_status"] == LEGACY_STATUS_SOURCE_BLOCKED
+        i["source_design_id"] == source_id and i["source_status"] == SOURCE_STATUS_SOURCE_BLOCKED
         for i in payload["items"]
     )
 
 
 @pytest.mark.asyncio
-async def test_ts_c4_rest_legacy_report_twin(db_factory):
+async def test_ts_c4_rest_propagated_report_twin(db_factory):
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
 
@@ -374,7 +377,7 @@ async def test_ts_c4_rest_legacy_report_twin(db_factory):
     from okto_pulse.community.api.auth_deps import require_user
     from okto_pulse.core.infra.database import get_db
 
-    board_id, _spec_id, source_id = await _seed_legacy_snapshot(db_factory)
+    board_id, _spec_id, source_id = await _seed_propagated_snapshot(db_factory)
 
     app = FastAPI()
     app.include_router(architecture_router, prefix="/api/v1")
@@ -387,11 +390,23 @@ async def test_ts_c4_rest_legacy_report_twin(db_factory):
     app.dependency_overrides[require_user] = lambda: USER_ID
     client = TestClient(app)
 
-    resp = client.get("/api/v1/architecture/propagation-legacy-report", params={"board_id": board_id})
+    resp = client.get("/api/v1/architecture/propagation-report", params={"board_id": board_id})
     assert resp.status_code == 200
     body = resp.json()
     assert body["mutation_performed"] is False
     assert any(
-        i["source_design_id"] == source_id and i["legacy_status"] == LEGACY_STATUS_SOURCE_BLOCKED
+        i["source_design_id"] == source_id and i["source_status"] == SOURCE_STATUS_SOURCE_BLOCKED
         for i in body["items"]
     )
+
+@pytest.mark.asyncio
+async def test_removed_diagnostic_names_are_not_registered():
+    from okto_pulse.core.mcp import server as mcp_server
+    from okto_pulse.community.api.architecture import router
+
+    tools = await mcp_server.mcp.get_tools()
+    assert "okto_pulse_list_architecture_propagation_report" in tools
+    assert "okto_pulse_list_architecture_propagation_legacy" not in tools
+    paths = {route.path for route in router.routes}
+    assert "/architecture/propagation-report" in paths
+    assert "/architecture/propagation-legacy-report" not in paths

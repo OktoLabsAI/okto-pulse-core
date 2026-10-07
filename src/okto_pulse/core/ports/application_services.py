@@ -263,7 +263,7 @@ class ApplicationServiceCatalog(Protocol):
 
     async def compute_card_seen_status(self, card_id: str) -> object: ...
 
-    async def build_propagation_legacy_report(
+    async def build_propagation_report(
         self,
         *,
         board_id: str,

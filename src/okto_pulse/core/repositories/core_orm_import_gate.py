@@ -227,7 +227,7 @@ RETIRED_CORE_ORM_IMPORT_ALLOWLIST: dict[str, str] = {
     "src/okto_pulse/core/services/amendment_revision_api.py": "service",
     "src/okto_pulse/core/services/analytics_service.py": "service",
     "src/okto_pulse/core/services/architecture.py": "service",
-    "src/okto_pulse/core/services/architecture_propagation_legacy.py": "service",
+    "src/okto_pulse/core/services/architecture_propagation_report.py": "service",
     "src/okto_pulse/core/services/board_governance.py": "service",
     "src/okto_pulse/core/services/bug_regression_preview.py": "service",
     "src/okto_pulse/core/services/bug_regression_scenarios.py": "service",

@@ -2,6 +2,40 @@
 
 ## Estado para retomada
 
+### 2026-10-06 — C3 diagnostico de propagacao nativa sem contrato legacy
+
+Bases Core c54bf9f6 / Community 6655ebbd.
+Classificacao confirmada: snapshots copiados na propria 0.4.0 podem ter fonte
+que depois se torna inelegivel. Preservada essa leitura limitada, seus grants,
+proveniencia, paginacao, classificacao e ausencia de mutacao.
+Retirados nomes architecture_legacy/propagation_legacy da cadeia executavel.
+Porta architecture_snapshot e adapter SQLAlchemy correspondente; servico
+architecture_propagation_report, use case/catalog e composicao atualizados.
+REST usa /architecture/propagation-report; MCP usa
+okto_pulse_list_architecture_propagation_report; item emite source_status.
+Nenhum alias antigo mantido. Negativo garante ausencia de rota/tool antigas
+e de legacy_status no resultado. Sem consumidor frontend encontrado.
+Nenhum gate ou autoridade alterado. Resources e erros operacionais atualizados;
+catalogo/manifest oficial regenerados, sem edicao manual do catalogo.
+
+Par dist-native-architecture-report1 instalado, provenance correspondente:
+Core 843 Python/905 payload, Community 319/405, todos byte-identicos
+src/install/wheels. Core1: 72 aprovados e duas falhas de fixtures/inventario
+antigos. Spec do teste agora declara ArchitectureAdoptionScope nativo.
+Inventario AST retira tool copy_knowledge_to_card ja removida e verifica sua
+ausencia; creation helper atual e auditado pela mesma regra de UoW/acoplamento,
+sem isencao de boundary. Core2: 12 aprovados/uma falha AST no helper;
+Core3: quatro aprovados. Total distinto Core 74, Community1 seis aprovados.
+Closure-native-architecture-report1: ok=true, findings/documentation_findings
+vazios, oito budgets current=limit=0. Ruff F/E9/diff aprovados. Handles encerrados.
+Nenhuma mudanca de produto apos build/prova; correcoes posteriores so em testes.
+
+Proximo no escopo C1/C3: documento de arquitetura ainda anuncia participants
+e linkedInterfaceId de compatibilidade; investigar modelos, writers e frontend
+antes de retirar. Essa e uma cadeia concreta do contrato, nao nova feature.
+C4: 224 criterios mantidos/11 reescritos/11 superados; qualificacao do par final
+e bump 0.4.0 pendentes. T23/KG-10 continuam sem decisao; entrega nao concluida.
+
 ### 2026-10-06 — C3 Story com rota unica; disposicao finita do aceite C4
 
 Publicado: Core 2fc1b786 / Community 6655ebbd; pushes confirmados.

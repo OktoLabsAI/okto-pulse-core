@@ -94,7 +94,7 @@ F05_SERVICE_SLICES: tuple[ServiceSlice, ...] = (
         "architecture_and_resources",
         (
             "services/architecture.py",
-            "services/architecture_propagation_legacy.py",
+            "services/architecture_propagation_report.py",
             "services/design_system.py",
             "services/effective_resource_propagation.py",
             "services/spec_resource_propagation.py",

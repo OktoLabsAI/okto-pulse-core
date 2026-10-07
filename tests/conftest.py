@@ -2082,20 +2082,20 @@ def _parent_artifact_test_reader():
 
 
 @pytest.fixture(autouse=True)
-def _architecture_legacy_test_reader():
-    from okto_pulse.core.ports.architecture_legacy import (
-        register_architecture_legacy_snapshot_read_port,
-        reset_architecture_legacy_snapshot_read_port_for_tests,
+def _architecture_snapshot_test_reader():
+    from okto_pulse.core.ports.architecture_snapshot import (
+        register_architecture_snapshot_snapshot_read_port,
+        reset_architecture_snapshot_snapshot_read_port_for_tests,
     )
-    from sqlalchemy_architecture_legacy_reader import (
-        TestSqlAlchemyArchitectureLegacySnapshotReader,
+    from sqlalchemy_architecture_snapshot_reader import (
+        TestSqlAlchemyArchitectureSnapshotReader,
     )
 
-    register_architecture_legacy_snapshot_read_port(
-        TestSqlAlchemyArchitectureLegacySnapshotReader()
+    register_architecture_snapshot_snapshot_read_port(
+        TestSqlAlchemyArchitectureSnapshotReader()
     )
     yield
-    reset_architecture_legacy_snapshot_read_port_for_tests()
+    reset_architecture_snapshot_snapshot_read_port_for_tests()
 
 
 @pytest.fixture(autouse=True)

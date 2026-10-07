@@ -13,7 +13,7 @@ from okto_pulse.core.ports.application_persistence import PAGE_OFFSET_MAX
 
 
 _OPERATIONAL_OFFSET_TOOLS = (
-    "okto_pulse_list_architecture_propagation_legacy",
+    "okto_pulse_list_architecture_propagation_report",
 )
 
 _DISTINCT_RANGE_ERROR_TOOLS = frozenset(_OPERATIONAL_OFFSET_TOOLS[:-1])
@@ -97,8 +97,8 @@ async def test_dead_letter_service_uses_native_page_without_materializing_prefix
 
 @pytest.mark.asyncio
 async def test_services_reject_offset_above_sqlite_int64_before_storage() -> None:
-    from okto_pulse.core.services.architecture_propagation_legacy import (
-        build_propagation_legacy_report,
+    from okto_pulse.core.services.architecture_propagation_report import (
+        build_propagation_report,
     )
     from okto_pulse.core.services.dead_letter_inspector_service import (
         list_dead_letter_rows,
@@ -111,8 +111,8 @@ async def test_services_reject_offset_above_sqlite_int64_before_storage() -> Non
             "get_kg_worker_queue_port"
         ) as dlq_reader,
         patch(
-            "okto_pulse.core.services.architecture_propagation_legacy."
-            "get_architecture_legacy_snapshot_read_port"
+            "okto_pulse.core.services.architecture_propagation_report."
+            "get_architecture_snapshot_snapshot_read_port"
         ) as architecture_reader,
     ):
         with pytest.raises(ValueError, match="offset exceeds"):
@@ -122,7 +122,7 @@ async def test_services_reject_offset_above_sqlite_int64_before_storage() -> Non
                 offset=too_large,
             )
         with pytest.raises(ValueError, match="offset exceeds"):
-            await build_propagation_legacy_report(
+            await build_propagation_report(
                 object(),
                 board_id="board-offset-boundary",
                 offset=too_large,

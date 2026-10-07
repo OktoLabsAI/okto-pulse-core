@@ -2,10 +2,10 @@
 
 Five further ``api/architecture.py`` endpoints that drove off the request session —
 ``get`` / ``update`` / ``delete`` of a single Architecture Design, the dry-run
-payload ``validate``, and the read-only ``propagation-legacy-report`` — now route
+payload ``validate``, and the read-only ``propagation-report`` — now route
 through ``GetArchitectureDesignUseCase`` / ``UpdateArchitectureDesignUseCase`` /
 ``DeleteArchitectureDesignUseCase`` / ``ValidateArchitecturePayloadUseCase`` /
-``ArchitecturePropagationLegacyReportUseCase`` + ``get_unit_of_work``; each adapter
+``ArchitecturePropagationReportUseCase`` + ``get_unit_of_work``; each adapter
 only maps the result/errors to HTTP.
 
 Oracles exercise the migrated status codes + bodies (get 200 / 404 "Architecture
@@ -44,7 +44,7 @@ _ENDPOINTS = (
     "update_architecture_design",
     "delete_architecture_design",
     "validate_architecture_payload",
-    "architecture_propagation_legacy_report",
+    "architecture_propagation_report",
 )
 
 
@@ -448,7 +448,7 @@ def test_validate_architecture_payload_200_design_id_enriches_finding_key(
 async def test_propagation_legacy_report_200_empty(client) -> None:
     ids = await _seed_parents()
     resp = client.get(
-        f"{PREFIX}/architecture/propagation-legacy-report",
+        f"{PREFIX}/architecture/propagation-report",
         params={"board_id": ids["board"]},
     )
     assert resp.status_code == 200, resp.text

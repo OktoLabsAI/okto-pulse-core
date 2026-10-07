@@ -90,7 +90,7 @@ MCP_READER_TOOL_NAMES = frozenset(
         "okto_pulse_list_agents",
         "okto_pulse_list_amendment_revisions",
         "okto_pulse_list_api_contracts",
-        "okto_pulse_list_architecture_propagation_legacy",
+        "okto_pulse_list_architecture_propagation_report",
         "okto_pulse_list_attachments",
         "okto_pulse_list_blockers",
         "okto_pulse_list_board_members",
@@ -578,7 +578,7 @@ MCP_TOOL_PERMISSION_POLICIES: tuple[McpToolPermissionPolicy, ...] = (
         "card.architecture.render",
     ),
     _policy(
-        "okto_pulse_list_architecture_propagation_legacy",
+        "okto_pulse_list_architecture_propagation_report",
         "spec.architecture.read",
     ),
     _policy("okto_pulse_list_attachments", "card.attachments.read"),

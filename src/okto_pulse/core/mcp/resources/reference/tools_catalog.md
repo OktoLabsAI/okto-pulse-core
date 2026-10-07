@@ -333,7 +333,7 @@ Semantic guideline protocol:
 - `okto_pulse_list_architecture_candidates` — docs: `okto-pulse://reference/tool-docs/architecture`
 - `okto_pulse_list_architecture_classifications` — docs: `okto-pulse://reference/tool-docs/architecture`
 - `okto_pulse_list_architecture_designs` — docs: `okto-pulse://reference/tool-docs/architecture`
-- `okto_pulse_list_architecture_propagation_legacy` — docs: `okto-pulse://reference/tool-docs/architecture`
+- `okto_pulse_list_architecture_propagation_report` — docs: `okto-pulse://reference/tool-docs/architecture`
 - `okto_pulse_update_architecture_design` — docs: `okto-pulse://reference/tool-docs/architecture`
 - `okto_pulse_validate_architecture_design_payload` — docs: `okto-pulse://reference/tool-docs/architecture`
 

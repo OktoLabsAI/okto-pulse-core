@@ -340,10 +340,10 @@ class CreateArchitectureUseCase:
 # Transport-free reimplementations of five further ``api/architecture.py``
 # endpoints that drove off the request session: ``get`` / ``update`` / ``delete``
 # of a single Architecture Design, the dry-run payload ``validate``, and the
-# read-only ``propagation-legacy-report``. The legacy mechanism is preserved
+# read-only ``propagation-report``. The legacy mechanism is preserved
 # EXACTLY — the ``select``/``db.get``/ORM lives in ``ArchitectureDesignRepository``
 # (get/update/delete/critique/to_response) and in
-# ``build_propagation_legacy_report``; this layer only reproduces the
+# ``build_propagation_report``; this layer only reproduces the
 # lookup → gate → mutate → commit envelope.
 
 
@@ -758,10 +758,10 @@ class McpValidateArchitecturePayloadUseCase:
         return McpValidateArchitecturePayloadResult(envelope, parent_type)
 
 
-# --- propagation legacy report (read-only diagnostic) -----------------------
+# --- propagation report (read-only diagnostic) -----------------------
 
 
-class ArchitecturePropagationLegacyReportCommand:
+class ArchitecturePropagationReportCommand:
     __slots__ = (
         "board_id",
         "limit",
@@ -789,27 +789,26 @@ class ArchitecturePropagationLegacyReportCommand:
         self.surface = surface
 
 
-class ArchitecturePropagationLegacyReportResult:
+class ArchitecturePropagationReportResult:
     __slots__ = ("report",)
 
     def __init__(self, report: dict[str, Any]) -> None:
         self.report = report
 
 
-class ArchitecturePropagationLegacyReportUseCase:
-    """Build the bounded, read-only legacy propagation diagnostic (read, no
-    commit). Delegates wholesale to ``build_propagation_legacy_report`` (the scan +
+class ArchitecturePropagationReportUseCase:
+    """Build the bounded, read-only propagation diagnostic (read, no
+    commit). Delegates wholesale to ``build_propagation_report`` (the scan +
     eligibility classification + observability stay in the service), forwarding
-    ``surface="rest"`` and normalizing ``parent_type_filter`` to ``None`` exactly as
-    the legacy endpoint did. Never mutates anything."""
+    the caller surface and the optional parent filter. Never mutates anything."""
 
     async def execute(
         self,
-        command: ArchitecturePropagationLegacyReportCommand,
+        command: ArchitecturePropagationReportCommand,
         *,
         actor: ActorContext,
         uow: PulseUnitOfWork,
-    ) -> ArchitecturePropagationLegacyReportResult:
+    ) -> ArchitecturePropagationReportResult:
         await _require_board_access(
             uow,
             actor,
@@ -818,7 +817,7 @@ class ArchitecturePropagationLegacyReportUseCase:
             entity_id=command.board_id,
             expected_board_id=command.board_id,
         )
-        report = await uow.services.build_propagation_legacy_report(
+        report = await uow.services.build_propagation_report(
             board_id=command.board_id,
             limit=command.limit,
             offset=command.offset,
@@ -826,7 +825,7 @@ class ArchitecturePropagationLegacyReportUseCase:
             parent_type_filter=command.parent_type_filter or None,
             surface=command.surface,
         )
-        return ArchitecturePropagationLegacyReportResult(report)
+        return ArchitecturePropagationReportResult(report)
 
 
 # === FU5-S1C: diagram payload get/update + excalidraw import + diff + copy ====

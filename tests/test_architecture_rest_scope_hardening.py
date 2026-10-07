@@ -292,11 +292,11 @@ async def test_foreign_propagation_report_is_byte_equivalent_to_missing_board(
 ) -> None:
     ids = await _seed_graph()
     denied = client.get(
-        f"{PREFIX}/architecture/propagation-legacy-report",
+        f"{PREFIX}/architecture/propagation-report",
         params={"board_id": ids["board"]},
     )
     missing = client.get(
-        f"{PREFIX}/architecture/propagation-legacy-report",
+        f"{PREFIX}/architecture/propagation-report",
         params={"board_id": _missing("board")},
     )
 

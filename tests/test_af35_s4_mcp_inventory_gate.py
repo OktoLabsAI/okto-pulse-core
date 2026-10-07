@@ -131,7 +131,6 @@ AF35_S4_MIGRATED_MCP_WRAPPERS = frozenset(
         "okto_pulse_update_card",
         "okto_pulse_delete_card",
         "okto_pulse_add_card_dependency",
-        "okto_pulse_copy_knowledge_to_card",
         "okto_pulse_get_ideation",
         "okto_pulse_update_my_profile",
         "okto_pulse_list_my_boards",
@@ -170,7 +169,7 @@ AF35_S4_MIGRATED_MCP_WRAPPERS = frozenset(
         "okto_pulse_kg_health",
         "okto_pulse_list_by_board",
         "okto_pulse_list_architecture_designs",
-        "okto_pulse_list_architecture_propagation_legacy",
+        "okto_pulse_list_architecture_propagation_report",
         "okto_pulse_get_architecture_design",
         "okto_pulse_validate_architecture_design_payload",
         "okto_pulse_add_architecture_design",
@@ -357,6 +356,7 @@ def test_af35_s4_residual_ledger_has_metadata() -> None:
 
 def test_af35_s4_migrated_wrapper_gate_blocks_raw_mcp_db() -> None:
     nodes = _function_nodes()
+    assert "okto_pulse_copy_knowledge_to_card" not in nodes
     missing = AF35_S4_MIGRATED_MCP_WRAPPERS - set(nodes)
     assert not missing, f"missing migrated MCP wrappers: {sorted(missing)}"
 
@@ -365,6 +365,10 @@ def test_af35_s4_migrated_wrapper_gate_blocks_raw_mcp_db() -> None:
     # canonical MCP provider, then accept either factory at the tool wrapper.
     validation_factory = nodes["_validation_mcp_uow_factory"]
     assert _calls(validation_factory, "get_unit_of_work_factory_for_mcp")
+    # Native Knowledge selection delegates creation to this single UoW helper.
+    creation_helper = nodes["_mcp_create_card_v2"]
+    assert _calls(creation_helper, "get_unit_of_work_factory_for_mcp")
+    assert not _wrapper_coupling_issues(creation_helper)
 
     missing_uow = [
         name
@@ -372,6 +376,7 @@ def test_af35_s4_migrated_wrapper_gate_blocks_raw_mcp_db() -> None:
         if not (
             _calls(nodes[name], "get_unit_of_work_factory_for_mcp")
             or _calls(nodes[name], "_validation_mcp_uow_factory")
+            or (name == "okto_pulse_create_card" and _calls(nodes[name], "_mcp_create_card_v2"))
         )
     ]
     coupling_issues = {

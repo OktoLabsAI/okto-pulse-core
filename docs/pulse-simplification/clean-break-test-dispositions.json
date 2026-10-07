@@ -2321,6 +2321,11 @@
       "path": "okto_labs_pulse_core/tests/test_r01a_stories_uow.py and tests/test_stories_service.py",
       "disposition": "adapted",
       "reason": "Story to Ideation remains a native domain operation at convert-to-ideation. Removed duplicate convert route; negative HTTP test proves 404 without invoking the writer. Canonical creation, missing Board and permission tests retained."
+    },
+    {
+      "path": "tests/test_architecture_propagation_report_and_gate.py (renamed), tests/test_af35_s4_mcp_inventory_gate.py, architecture REST/UoW/permission and offset suites",
+      "disposition": "adapted",
+      "reason": "Native snapshot source eligibility remains functional. Public report/port/adapter/status names no longer imply legacy storage; no old aliases. Native Spec fixture declares architecture adoption. AST inventory removes retired Knowledge-copy tool and follows the actual card-creation UoW helper while checking its coupling."
     }
   ],
   "removed_cases": [

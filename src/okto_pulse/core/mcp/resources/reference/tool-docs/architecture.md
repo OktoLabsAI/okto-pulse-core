@@ -457,7 +457,7 @@ Classification records a local decision. `pending_checks` explicitly leaves
 requirement readiness and Spec start admission to their gates. It is not an
 approval to execute or a waiver of verification.
 
-## `okto_pulse_list_architecture_propagation_legacy`
+## `okto_pulse_list_architecture_propagation_report`
 
 Read-only, forward-only diagnostic. Lists Architecture Design snapshots that were copied
 before the propagation-eligibility rule and whose SOURCE is now ineligible. It NEVER
@@ -472,7 +472,7 @@ Args:
 
 Returns:
     JSON: `{ success, board_id, items: [{ target_design_id, target_parent{type,id},
-    source_design_id, source_ref, source_version, legacy_status
+    source_design_id, source_ref, source_version, source_status
     (source_blocked | verdict_missing | source_unavailable), verdict_status, finding_keys,
     remediation, mutation_performed: false }], scanned_total, limit, offset,
     mutation_performed: false }`. No mutation is ever performed.
