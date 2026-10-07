@@ -1,0 +1,69 @@
+{
+  "format": "pulse-040-reviewed-increment/v1",
+  "scope": [
+    "KG:KG-24 native Amendment lineage parity"
+  ],
+  "status": "increment_verified_not_full_delivery",
+  "proof_pair": "dist-native-main44",
+  "provenance_sha256": "676b0974b01557e792e5e800bb1d6b90b9fb38028fac3af1aff4b7c9c79044b1",
+  "runs": [
+    {
+      "name": "acceptance-native-amendment-contract1",
+      "sha256": "6c4524cd327f902f33841ac20259cf7318d299514aa09fa92ef70d17ee8d5e4e",
+      "passed": 28,
+      "cases": [
+        "tests.test_amendment_revision_model::test_eligibility_matrix",
+        "tests.test_amendment_revision_model::test_amendment_status_is_blocking",
+        "tests.test_amendment_revision_model::test_create_round_trips_all_fr1_fields",
+        "tests.test_amendment_revision_model::test_create_does_not_mutate_original_spec",
+        "tests.test_amendment_revision_model::test_status_and_lineage_transitions_emit_audit",
+        "tests.test_amendment_revision_model::test_done_complete_is_canonicalization_candidate",
+        "tests.test_amendment_revision_model::test_unknown_status_fails_closed",
+        "tests.test_amendment_revision_model::test_terminal_revision_rejects_every_subsequent_mutation[cancelled]",
+        "tests.test_amendment_revision_model::test_terminal_revision_rejects_every_subsequent_mutation[superseded]",
+        "tests.test_amendment_namespace_authorization::test_amendment_use_cases_reject_substitutes_before_writer[amendment.revision.create]",
+        "tests.test_amendment_namespace_authorization::test_amendment_use_cases_reject_substitutes_before_writer[amendment.revision.read0]",
+        "tests.test_amendment_namespace_authorization::test_amendment_use_cases_reject_substitutes_before_writer[amendment.revision.read1]",
+        "tests.test_amendment_namespace_authorization::test_amendment_use_cases_reject_substitutes_before_writer[amendment.revision.associate]",
+        "tests.test_amendment_namespace_authorization::test_amendment_use_cases_reject_substitutes_before_writer[amendment.revision.transition]",
+        "tests.test_amendment_namespace_authorization::test_confirm_coverage_denies_before_writer_and_binds_expected_board",
+        "tests.test_amendment_kg_rebuild::test_amendment_is_registered_in_type_tuples",
+        "tests.test_amendment_kg_rebuild::test_amendment_source_maturity_matrix",
+        "tests.test_amendment_kg_rebuild::test_process_amendment_done_complete_canonical_with_edges",
+        "tests.test_amendment_kg_rebuild::test_process_amendment_working_only_before_done",
+        "tests.test_amendment_kg_rebuild::test_process_amendment_done_incomplete_is_working",
+        "tests.test_amendment_kg_rebuild::test_expected_layers_counts_amendment_canonical",
+        "tests.test_amendment_kg_rebuild::test_board_source_store_enumerates_amendment",
+        "tests.test_amendment_kg_rebuild::test_board_source_store_amendment_working_when_not_done",
+        "tests.test_amendment_kg_rebuild::test_board_without_amendment_table_is_incomplete_fail_closed",
+        "tests.test_amendment_kg_rebuild::test_content_hash_is_lineage_exact",
+        "tests.test_amendment_kg_rebuild::test_amendment_source_is_really_enqueued_not_filtered",
+        "tests.test_amendment_kg_rebuild::test_ac4_amendment_no_materialized_layer_mismatch",
+        "tests.test_amendment_kg_rebuild::test_ac4_guard_fails_if_amendment_counted_but_not_materialized"
+      ]
+    },
+    {
+      "name": "acceptance-native-amendment-parity2",
+      "sha256": "86298720ba1df70aab6e949f9683fd088e99945663a247d4674331a08cbed07f",
+      "passed": 1,
+      "cases": [
+        "tests.test_native_amendment_rebuild_parity::test_append_only_amendment_matches_rebuild_of_identical_native_snapshot"
+      ]
+    }
+  ],
+  "test_sha256": "2502ee74b4183a5806166948fac4ef1168edff5a3d091055db63b6e9e1de8fbe",
+  "verified": [
+    "Complete source snapshots identical before full relationship multiset comparison.",
+    "Real domain service/store appends associations; repeated and empty input retain existing associations.",
+    "Draft/incomplete projects working; done/complete projects canonical.",
+    "Original Spec and unrelated graph relationships unchanged; no fabricated Spec supersedence.",
+    "Ordinary queue replay produces no duplicate edges."
+  ],
+  "limits": [
+    "Transport authorization covered by separate Core tests; integration case does not prove full authorized lifecycle.",
+    "Amendment associations are append-only in the current service; no unlink operation invented.",
+    "No product/frontend change; prior closure44 remains the product evidence, not rerun here.",
+    "Initial parity1 failed only wrong rule version in test; current Amendment emitter uses v2.0.",
+    "KG-16/24 remain open; no full delivery claim."
+  ]
+}

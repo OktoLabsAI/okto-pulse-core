@@ -2,6 +2,38 @@
 
 ## Estado para retomada
 
+### 2026-10-07 — KG-24: Amendment nativo aprovado
+parity2 (59015) terminou0:1pass/81.86s. Fontes SQL completas idênticas,
+multiset de relações/proveniência/maturidade igual, replay sem duplicação e Spec
+original preservada. Somado aos28 testes Core, recibo
+clean-break-native-amendment-parity.json sela29 casos desta campanha.
+Nenhum produto/frontend alterado, sem novo build necessário; prova main44
+renovada antes dos testes, closure44 mantém oitoZERO. Ruff F/E9 passou.
+Associação cumulativa é contrato existente: entrada vazia não significa unlink.
+Milestone de qualificação pronto para commits/pushes. Índice62/173/11 mantido.
+Próximo: completar matriz KG-16/24, incluindo supersedência de Code Evidence e
+paridade das famílias Card já cobertas por retração. Inspeção identificou ainda
+admissão simultânea tests/ac_match@v2.0/v2.1 em ports/spec_projection.py, embora
+emissor atual use somente v2.1; investigar consumidores antes de retirar o
+suporte antigo no escopo C1. Não confundir com WORKER_VERSION v2.0 de outras
+famílias atuais. Nenhum processo pendente.
+
+### 2026-10-07 — KG-24: paridade nativa de Amendment em validação
+Overlap publicado Corebfd3140a / Community0e12042e; árvores limpas confirmadas.
+Turno anterior teve progresso verificável: testes terminais, recibo e pushes.
+Prova provenance-native-amendment1 passou837/899+316/402 no main44.
+Investigação de AmendmentRevisionService confirmou associações cumulativas,
+sem operação de remoção, e revisão terminal imutável. Não criar unlink para
+satisfazer uma matriz artificial; história nativa permanece no escopo.
+Novo teste Community usa schema final, serviço/adapter reais para associação,
+replay e promoção draft→done com linhagem completa; compara fontes SQL inteiras
+e multiset gráfico com rebuild novo. Não certifica autorização de transporte.
+Core amendment-contract1 (70286) terminou0:28pass/11.83s.
+Community parity1 (20271) terminou1/43.17s: associação/promoção passaram, mas
+oráculo esperava rule v2.1; WORKER_VERSION efetivo da família é v2.0. Corrigida
+somente a expectativa. parity2 (59015) segue vivo; aguardar mesmo handle.
+Nenhum produto alterado; índice62/173/11 mantido, KG-16/24 abertos.
+
 ### 2026-10-07 — overlap nativo: retração, rollback e paridade aprovados
 Todas as campanhas terminaram. Rollback1 (64697):4pass/153.55s;
 service1 (24759):73pass/5.33s; regression1 (89844):5pass/219.36s;
