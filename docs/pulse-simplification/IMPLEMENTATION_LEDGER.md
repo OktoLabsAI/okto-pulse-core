@@ -2,6 +2,26 @@
 
 ## Estado para retomada
 
+### 2026-10-07 — Core17 qualificado no worktree isolado
+C3 publicado: Core692fb7ca/Community2bdc5ca1, pushes0. Main permanece congelado
+em d55e3488/0a2c6c9d enquanto Community14 handle64918 segue ativo.
+Core17: dez módulos completos,55 testes distintos qualificados. Fixtures agora
+declaram adoption/autoridade nativas e Checklist OFF explícito; permissões tipadas
+preservam todas as autoridades exigidas. Evidência sem classe válida continua
+recusada; ponteiro automatizado válido libera o gate específico de Test Card.
+Envelope MCP usa structured_content atual. Dívida de projeção permanece visível
+sem virar impedimento substantivo de conclusão (BASE F6E/T39/T40).
+Nenhum gate, permissão ou código de produção alterado.
+
+Campanhas preservadas: contexts1 25pass/2fail; followup2 52pass/3fail;
+followup3 5pass/3fail; followup4 6pass/2fail; followup5 5pass/0fail.
+Qualificação: oito módulos completos em followup2, Test Card em followup4,
+human-controls em followup5. Não somar reruns como casos distintos.
+Recibo acceptance-clean-break-core17.json inclui hashes e limites.
+Ruff F/E9 e diff-check0; par/prova/closure dist-native-closeout-final inalterados.
+Próximo: Core18 isolado, terminal Community14; então fast-forward main e novo
+build/prova por diferença CRLF/LF. C4/E2E/T23/KG-10 permanecem abertos.
+
 ### 2026-10-07 — Retirada C3 cognitiva qualificada no par isolado
 Closure final33415 terminou0:ok=true,findings/documentation_findings vazios,
 oito budgets ZERO. Recibo acceptance-clean-break-cognitive-compatibility-removal.json

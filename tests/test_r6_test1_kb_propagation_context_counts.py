@@ -16,6 +16,9 @@ of the REAL MCP context tools.
 
 from __future__ import annotations
 
+from okto_pulse.core.domain.architecture_adoption import ArchitectureAdoptionScope
+from test_r4_imp4_gate_readiness import explicit_checklist_policy  # noqa: F401
+
 from mcp_runtime_testing import register_mcp_test_runtime
 
 import json
@@ -83,7 +86,7 @@ async def _seed_chain(db_factory):
                         created_by=USER_ID, version=1))
         db.add(Refinement(id=refinement_id, board_id=board, ideation_id=ideation_id,
                           title="Refinement", created_by=USER_ID, version=2))
-        db.add(Spec(id=spec_id, board_id=board, title="Spec", status=SpecStatus.IN_PROGRESS,
+        db.add(Spec(architecture_adoption=ArchitectureAdoptionScope(board_id=board, spec_id=spec_id, adopted_in_edition=1, actor_id=USER_ID, inherited_resource_ids=()).model_dump(mode="json"), id=spec_id, board_id=board, title="Spec", status=SpecStatus.IN_PROGRESS,
                     created_by=USER_ID, functional_requirements=[], acceptance_criteria=[],
                     test_scenarios=[], business_rules=[], api_contracts=[], version=3))
         db.add(IdeationKnowledgeBase(

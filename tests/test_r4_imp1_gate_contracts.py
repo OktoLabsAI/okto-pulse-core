@@ -10,6 +10,9 @@ the "no auto-promotion" teeth assert the entity status is UNCHANGED after a bloc
 
 from __future__ import annotations
 
+from okto_pulse.core.domain.architecture_adoption import ArchitectureAdoptionScope
+from test_r4_imp4_gate_readiness import explicit_checklist_policy  # noqa: F401
+
 from mcp_runtime_testing import register_mcp_test_runtime
 
 import json
@@ -154,7 +157,7 @@ async def _seed_board_spec(db_factory, *, spec_status, require_validation=True):
         # 4028ebd4) so the moves below reach the spec_validation gate contract
         # actually under test; Decision->Task coverage is skipped because that
         # gate has its own suite and would fire first otherwise.
-        db.add(Spec(id=spec_id, board_id=board_id, title="spec", status=spec_status,
+        db.add(Spec(architecture_adoption=ArchitectureAdoptionScope(board_id=board_id, spec_id=spec_id, adopted_in_edition=1, actor_id=USER_ID, inherited_resource_ids=()).model_dump(mode="json"), id=spec_id, board_id=board_id, title="spec", status=spec_status,
                     created_by=USER_ID, functional_requirements=[], acceptance_criteria=[],
                     test_scenarios=[], business_rules=[], api_contracts=[],
                     technical_requirements=[],
@@ -241,7 +244,7 @@ async def test_move_card_done_test_card_with_draft_scenario_blocks_with_contract
     scenario_id = "ts_draft_one"
     async with db_factory() as db:
         db.add(Board(id=board_id, name="r4", owner_id=USER_ID))
-        db.add(Spec(id=spec_id, board_id=board_id, title="spec", status=SpecStatus.IN_PROGRESS,
+        db.add(Spec(architecture_adoption=ArchitectureAdoptionScope(board_id=board_id, spec_id=spec_id, adopted_in_edition=1, actor_id=USER_ID, inherited_resource_ids=()).model_dump(mode="json"), id=spec_id, board_id=board_id, title="spec", status=SpecStatus.IN_PROGRESS,
                     created_by=USER_ID, functional_requirements=[], acceptance_criteria=[],
                     test_scenarios=[{"id": scenario_id, "title": "Draft scenario", "given": "g",
                                      "when": "w", "then": "t", "status": "draft"}],

@@ -11,6 +11,9 @@ over a REAL spec/test-card; the block reflects the live scenario statuses.
 
 from __future__ import annotations
 
+from okto_pulse.core.domain.architecture_adoption import ArchitectureAdoptionScope
+from test_r4_imp4_gate_readiness import explicit_checklist_policy  # noqa: F401
+
 from mcp_runtime_testing import register_mcp_test_runtime
 
 import inspect
@@ -77,7 +80,7 @@ async def _seed_test_card(
     scenario_ids = [s["id"] for s in scenarios]
     async with db_factory() as db:
         db.add(Board(id=board_id, name="r4 imp3", owner_id=USER_ID))
-        db.add(Spec(id=spec_id, board_id=board_id, title="spec", status=SpecStatus.IN_PROGRESS,
+        db.add(Spec(architecture_adoption=ArchitectureAdoptionScope(board_id=board_id, spec_id=spec_id, adopted_in_edition=1, actor_id=USER_ID, inherited_resource_ids=()).model_dump(mode="json"), id=spec_id, board_id=board_id, title="spec", status=SpecStatus.IN_PROGRESS,
                     created_by=USER_ID, functional_requirements=[], acceptance_criteria=[],
                     test_scenarios=scenarios, business_rules=[], api_contracts=[]))
         db.add(Card(id=card_id, board_id=board_id, spec_id=spec_id, title="test card",
@@ -128,13 +131,14 @@ def test_operational_flow_block_blocked_and_ready():
     ev = {s["id"]: s["evidence_present"] for s in blocked["linked_scenarios"]}
     assert ev["ts2"] is True and ev["ts1"] is False
 
-    # Nested evidence object (Pulse stores evidence under scenario["evidence"]).
+    # Old unclassified run metadata is not executable evidence in 0.4.0.
     nested = operational_flow_for_test_card(
         card_id="c1", board_id="b1", spec_id="s1", current_status="in_progress",
         linked_scenarios=[{"id": "ts3", "title": "C", "status": "passed",
                            "evidence": {"last_run_at": "2026-01-01", "test_run_id": "r1"}}],
     )
-    assert nested["linked_scenarios"][0]["evidence_present"] is True
+    assert nested["linked_scenarios"][0]["evidence_present"] is False
+    assert nested["would_block_done"] is True
 
     ready = operational_flow_for_test_card(
         card_id="c1", board_id="b1", spec_id="s1", current_status="in_progress",

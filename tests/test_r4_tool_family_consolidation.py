@@ -12,6 +12,8 @@ the six heterogeneous families are kept separate with a rejected_reason.
 
 from __future__ import annotations
 
+from okto_pulse.core.domain.permissions import PermissionSet
+
 from mcp_runtime_testing import register_mcp_test_runtime
 
 import json
@@ -62,7 +64,11 @@ def _stub_ctx(board_id: str, permissions=None):
             "agent_id": USER_ID,
             "agent_name": USER_ID,
             "board_id": board_id,
-            "permissions": permissions or ["board:read", "specs:update", "qa:create"],
+            "permissions": permissions if permissions is not None else PermissionSet({
+                "board": {"read": True}, "card": {"qa": {"ask": True}},
+                "ideation": {"qa": {"ask": True}}, "refinement": {"qa": {"ask": True}},
+                "spec": {"qa": {"ask": True}},
+            }),
         },
     )()
 
@@ -258,7 +264,8 @@ async def test_canonical_ask_creates_scoped_questions_and_rejects_unknown_target
         bad = await _call("okto_pulse_ask", board_id=board_id, target_type="bogus", parent_id=card_id, question="Q")
 
     # card ask parity: identical key shape, both create a qa.
-    assert consol["success"] is True and consol["qa"]["question"] == "Q consolidated"
+    assert consol.get("success") is True, consol
+    assert consol["qa"]["question"] == "Q consolidated"
     assert spec_consol["success"] is True
     # unsupported target_type → structured error, no qa.
     assert bad["error"] == "unsupported_target_type"
@@ -284,7 +291,7 @@ async def test_ask_uses_target_specific_permission_for_card_and_spec():
     with patch.object(
         mcp_server,
         "_get_agent_ctx",
-        AsyncMock(return_value=_stub_ctx(board_id, permissions=["board:read"])),
+        AsyncMock(return_value=_stub_ctx(board_id, permissions=PermissionSet({"board": {"read": True}, "card": {"qa": {"ask": False}}, "spec": {"qa": {"ask": False}}}))),
     ):
         card_res = await _call("okto_pulse_ask", board_id=board_id, target_type="card", parent_id=card_id, question="Q")
         spec_res = await _call("okto_pulse_ask", board_id=board_id, target_type="spec", parent_id=spec_id, question="Q")
@@ -416,7 +423,7 @@ async def test_ask_non_card_parents_are_board_scoped_before_create_or_log():
             for entity_type, parent_id in local_ids.items()
         }
 
-    assert all(result.get("success") is True for result in same_board.values())
+    assert all(result.get("success") is True for result in same_board.values()), same_board
     after = await _counts()
     assert tuple(after[i] - before[i] for i in range(4)) == (1, 1, 1, 3)
 

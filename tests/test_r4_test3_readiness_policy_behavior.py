@@ -1,23 +1,15 @@
-"""R4-TEST3 (card 2e3c0b1a) — readiness/gate transparency policy behavior, proven
-through the REAL MCP context tools (R4-IMP4 surface).
+"""Native readiness transparency through real MCP context tools.
 
-Maps the spec R4 scenarios:
-* ts_2828f2d6: get_spec_context / get_task_context expose enforcement_active,
-  enforcement_mode (advisory|enforced), would_block_done and the central
-  CognitiveReadinessService reason — coherent with the runtime policy. Advisory
-  never blocks done; enforced blocks ONLY when the tier is in GATE_BLOCKING_TIERS.
-* ts_6b3a8048: the transparency creates NO artificial cognitive pending, does NOT
-  make cognitive blocking by default, does NOT change the state machine and does
-  NOT auto-promote a spec/card.
-
-Anti-test-theater: the blocking verdict is a REAL one — an OPEN ``CanonicalDebt``
-for the card's artifact (a technical tier that blocks regardless of the task/test
-advisory carve-out). ``would_block_done`` then flips solely with the board's
-two-key enforcement policy (board ``cognitive_readiness_policy=blocking`` + global
-flag), exactly like the done-gate. No verdict is mocked.
+Projection debt remains visible in the diagnostic verdict under advisory and
+enforced policies, but BASE F6E/T39/T40 keep it separate from completion.
+These read-only tools create no cognitive pending and never promote a Card.
+The tests seed real CanonicalDebt and use the real readiness service.
 """
 
 from __future__ import annotations
+
+from okto_pulse.core.domain.architecture_adoption import ArchitectureAdoptionScope
+from test_r4_imp4_gate_readiness import explicit_checklist_policy  # noqa: F401
 
 from mcp_runtime_testing import register_mcp_test_runtime
 
@@ -101,7 +93,7 @@ async def _seed(db_factory, *, board_settings=None, spec_status=SpecStatus.IN_PR
     async with db_factory() as db:
         db.add(Board(id=board_id, name="r4 test3", owner_id=USER_ID,
                      settings=board_settings or {}))
-        db.add(Spec(id=spec_id, board_id=board_id, title="spec", status=spec_status,
+        db.add(Spec(architecture_adoption=ArchitectureAdoptionScope(board_id=board_id, spec_id=spec_id, adopted_in_edition=1, actor_id=USER_ID, inherited_resource_ids=()).model_dump(mode="json"), id=spec_id, board_id=board_id, title="spec", status=spec_status,
                     created_by=USER_ID, functional_requirements=[], acceptance_criteria=[],
                     test_scenarios=[], business_rules=[], api_contracts=[]))
         db.add(Card(id=card_id, board_id=board_id, spec_id=spec_id, title="card",
@@ -152,7 +144,7 @@ async def test_ts_2828f2d6_advisory_policy_blocking_verdict_does_not_block_done(
 
 
 @pytest.mark.asyncio
-async def test_ts_2828f2d6_enforced_policy_blocking_tier_blocks_done(db_factory, monkeypatch):
+async def test_ts_2828f2d6_enforced_policy_keeps_projection_debt_separate_from_completion(db_factory, monkeypatch):
     _enable_enforcement(monkeypatch)
     board_id, spec_id, card_id = await _seed(
         db_factory, board_settings={"cognitive_readiness_policy": "blocking"},
@@ -167,17 +159,11 @@ async def test_ts_2828f2d6_enforced_policy_blocking_tier_blocks_done(db_factory,
     cog = gr["cognitive_readiness"]
     assert cog["blocking"] is True
     assert cog["tier"] == "canonical_debt_open"
-    # Enforced + blocking tier -> would_block_done True.
-    assert cog["would_block_done"] is True
-    gate = gr["active_gate"]
-    assert gate is not None
-    assert gate["gate_type"] == "cognitive_readiness"
-    assert gate["would_block_done"] is True
-    assert gate["blocked_transition"] == "in_progress->done"
-    assert gate["required_status"] == "done"
-    # The actionable tool is EVALUATE — never a skip/no_action (codex restriction).
-    assert gate["required_tool"] == "okto_pulse_kg_evaluate_cognitive_readiness"
-    assert "skip" not in gate["required_tool"] and "no_action" not in gate["required_tool"]
+    # BASE F6E/T39/T40: projection debt remains visible but cannot become a
+    # substantive completion blocker, even with enforcement enabled.
+    assert cog["would_block_done"] is False
+    assert gr["active_gate"] is None
+    assert gr["mutation_allowed"] is False
     assert gr["consistency"]["mismatch"] is False
 
 

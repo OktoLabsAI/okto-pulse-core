@@ -20,9 +20,11 @@ UNCHANGED after a block. R4 does not change the state machine.
 
 from __future__ import annotations
 
+from okto_pulse.core.domain.architecture_adoption import ArchitectureAdoptionScope
+from native_subject_testing import record_native_subject_authority
+
 from mcp_runtime_testing import register_mcp_test_runtime
 
-import json
 import uuid
 from unittest.mock import AsyncMock, patch
 
@@ -69,7 +71,8 @@ async def _call(name: str, **kwargs) -> dict:
     ):
         tool = await mcp_server.mcp.get_tool(name)
         raw = await tool.fn(**kwargs)
-    return json.loads(raw)
+    from okto_pulse.core.mcp.outcome import coerce_mcp_tool_outcome
+    return coerce_mcp_tool_outcome(raw, tool_name=name).structured_content(tool_name=name)
 
 
 async def _seed_test_card(db_factory, *, scenarios, card_status=CardStatus.IN_PROGRESS):
@@ -82,6 +85,10 @@ async def _seed_test_card(db_factory, *, scenarios, card_status=CardStatus.IN_PR
             Spec(
                 id=spec_id,
                 board_id=board_id,
+                architecture_adoption=ArchitectureAdoptionScope(
+                    board_id=board_id, spec_id=spec_id, adopted_in_edition=1,
+                    actor_id=USER_ID, inherited_resource_ids=(),
+                ).model_dump(mode="json"),
                 title="spec",
                 status=SpecStatus.IN_PROGRESS,
                 created_by=USER_ID,
@@ -104,6 +111,7 @@ async def _seed_test_card(db_factory, *, scenarios, card_status=CardStatus.IN_PR
                 test_scenario_ids=[s["id"] for s in scenarios],
             )
         )
+        await record_native_subject_authority(db)
         await db.commit()
     return board_id, spec_id, card_id
 
@@ -145,8 +153,8 @@ async def test_ts_154b86fb_move_card_done_blocked_lists_pending_and_points_to_up
     )
 
     # Returned envelope (MCP wrapper serialized the GateContractError).
-    assert result.get("code") == "test_card_completion_blocked", result
-    d = result["details"]
+    assert result.get("error_code") == "test_card_completion_blocked", result
+    d = result["data"]["details"]
     assert d["gate_type"] == "test_card_completion"
     assert d["required_tool"] == "okto_pulse_update_test_scenario_status"
     assert d["follow_up_tool"] == "okto_pulse_move_card"
@@ -208,7 +216,7 @@ async def test_ts_154b86fb_gate_releases_once_scenarios_passed(db_factory):
     blocked = await _call(
         "okto_pulse_move_card", board_id=board_id, card_id=card_id, status="done"
     )
-    assert blocked.get("code") == "test_card_completion_blocked"
+    assert blocked.get("error_code") == "test_card_completion_blocked"
 
     # Remediate: mark both linked scenarios passed with persisted run evidence
     # (the authoritative state the gate reads). Done at the spec level to keep
@@ -220,8 +228,9 @@ async def test_ts_154b86fb_gate_releases_once_scenarios_passed(db_factory):
                 **s,
                 "status": "passed",
                 "evidence": {
-                    "last_run_at": "2026-06-18T00:00:00Z",
-                    "test_run_id": "r4-test2",
+                    "evidence_class": "automated_test_pointer",
+                    "test_file_path": "tests/test_r4_test2_test_card_gate_behavior.py",
+                    "test_function": "test_ts_154b86fb_gate_releases_once_scenarios_passed",
                 },
             }
             for s in spec.test_scenarios
@@ -243,7 +252,8 @@ async def test_ts_154b86fb_gate_releases_once_scenarios_passed(db_factory):
     # linked scenarios are passed. Any subsequent block is a DIFFERENT, independent
     # completion gate (e.g. the resource N/A gate), which proves the SUT gate cleared
     # rather than masking it. We assert specifically on the test-card gate.
-    assert released.get("code") != "test_card_completion_blocked", released
+    assert released.get("error_code") != "test_card_completion_blocked", released
+    assert released.get("error_code") not in {"internal_error", "domain_error"}, released
 
 
 # ===========================================================================
@@ -289,8 +299,8 @@ async def test_ts_ab364e51_submit_task_validation_on_test_card_redirects_not_nor
         recommendation="approve",
     )
 
-    assert result.get("code") == "test_card_not_subject_to_task_validation", result
-    d = result["details"]
+    assert result.get("error_code") == "test_card_not_subject_to_task_validation", result
+    d = result["data"]["details"]
     assert d["gate_type"] == "test_card_completion"
     assert d["required_tool"] == "okto_pulse_update_test_scenario_status"
     assert d["follow_up_tool"] == "okto_pulse_move_card"
