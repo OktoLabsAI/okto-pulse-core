@@ -3,6 +3,8 @@
 ## Estado para retomada
 
 ### 2026-10-07 — Learning atual validado; KG35 qualificado
+Publicação confirmada: Core8ba2fdc7/Communityb3d3ee1c; ambos pushes
+origin/feature/v0.4.0 terminais0. Nenhum teste ativo.
 Todos os handles terminaram. Main64 core2:96pass/87.54s; community2:
 19pass/4fail, quatro fixtures ainda montavam supersede sem scope; helper
 atualizado para source_bug, sem relaxar recusa. Community3:17pass/27.68s.
