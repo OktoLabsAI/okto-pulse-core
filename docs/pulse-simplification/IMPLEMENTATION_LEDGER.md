@@ -4,6 +4,7 @@
 
 ### 2026-10-06 — C3 Story com rota unica; disposicao finita do aceite C4
 
+Publicado: Core 2fc1b786 / Community 6655ebbd; pushes confirmados.
 Bases Core b4a26fd1 / Community afb4d281, limpas e publicadas.
 Retirado somente POST /boards/{board_id}/stories/convert; o frontend e
 o fluxo nativo continuam em convert-to-ideation. Story -> Ideation e operacao
