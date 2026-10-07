@@ -949,5 +949,146 @@
     "budgets_zero": 8,
     "scope": "Single page envelope/default window for four REST lists; current selector clients collect all native pages. Preserve grants, QA redaction, exact totals, scope and SQL budgets. Cold-export ratchet59 after prior retirements.",
     "limits": "Targeted frontend regression after earlier2444-test baseline. Broad backend and criterion qualification remain incomplete."
+  },
+  "core_full_run6": {
+    "campaign": "clean-break-full-run6",
+    "passed": 53,
+    "failed": 20,
+    "duration_seconds": 69.79,
+    "xml_sha256": "18a34de091ed8349c0f5900a158c8607a8a8cbca3beb5a1b713724969c1cf07d",
+    "selection": "clean-break-full-run6-selection.json",
+    "failures": [
+      {
+        "test": "tests.test_card_knowledge_mcp::test_list_returns_copied_card_kb",
+        "message": "okto_pulse.core.services.resource_gate_contracts.ResourceGateViolation: Resource Gate could not resolve resource lineage for card 'eb6f3130-a2e4-4cfa-bba2-f75c19671e01': The adopted architecture scope is unavailable."
+      },
+      {
+        "test": "tests.test_card_knowledge_mcp::test_get_returns_full_content",
+        "message": "okto_pulse.core.services.resource_gate_contracts.ResourceGateViolation: Resource Gate could not resolve resource lineage for card '21f6387f-94be-4dfa-97fb-e46281d1571f': The adopted architecture scope is unavailable."
+      },
+      {
+        "test": "tests.test_card_knowledge_mcp::test_direct_add_update_delete_are_read_only",
+        "message": "KeyError: 'okto_pulse_add_card_knowledge'"
+      },
+      {
+        "test": "tests.test_card_knowledge_mcp::test_get_404_when_kb_absent",
+        "message": "okto_pulse.core.services.resource_gate_contracts.ResourceGateViolation: Resource Gate could not resolve resource lineage for card '8f210fc8-9c01-40bd-b57a-8c0ef2192149': The adopted architecture scope is unavailable."
+      },
+      {
+        "test": "tests.test_card_lifecycle.TestCardStatusTransitionMatrix::test_transition_not_started_to_started",
+        "message": "okto_pulse.core.services.card_errors.CardOperationError: Cannot start task card: link it directly to at least one FR/TR/BR/IR/OR requirement, or use the human-only card/board skip."
+      },
+      {
+        "test": "tests.test_card_lifecycle.TestCardStatusTransitionMatrix::test_transition_started_to_in_progress",
+        "message": "okto_pulse.core.services.card_errors.CardOperationError: Cannot start task card: link it directly to at least one FR/TR/BR/IR/OR requirement, or use the human-only card/board skip."
+      },
+      {
+        "test": "tests.test_card_lifecycle.TestCardStatusTransitionMatrix::test_successful_task_validation_does_not_duplicate_executor_report",
+        "message": "okto_pulse.core.services.resource_gate_contracts.ResourceGateViolation: Resource Gate could not resolve resource lineage for card 'af1f3834-db79-4eaf-9836-f560dc0ab17b': The adopted architecture scope is unavailable."
+      },
+      {
+        "test": "tests.test_card_lifecycle.TestCardStatusTransitionMatrix::test_validation_config_tracks_mixed_override_sources",
+        "message": "AssertionError: assert {'max_drift':...': False, ...} == {'max_drift':...': False, ...}\n  \n  Omitting 3 identical items, use -vv to show\n  Differing items:\n  {'min_completeness': 80} != {'min_completeness': 88}\n  {'min_confidence': 75} != {'min_confidence': 90}\n  {'resolved_sources': {'max_drift': 'spec', 'min_completeness': 'board', 'min_confidence': 'spec', 'required': 'spec'}} != {'resolved_sources': {'max_drift': 'spec', 'min_completeness': 'card_compatibility', 'min_confidence': 'card_compatibility', 'required': 'spec'}}\n  Use -v to get more diff"
+      },
+      {
+        "test": "tests.test_card_lifecycle.TestCardStatusTransitionMatrix::test_transition_validation_to_done_with_required_fields",
+        "message": "okto_pulse.core.services.resource_gate_contracts.ResourceGateViolation: Resource Gate could not resolve resource lineage for card '9e6f3780-144b-48ed-859f-a3b0e324c688': The adopted architecture scope is unavailable."
+      },
+      {
+        "test": "tests.test_card_lifecycle.TestCardStatusTransitionMatrix::test_invalid_transition_not_started_to_done_raises",
+        "message": "okto_pulse.core.ports.guideline_policy.GuidelinePolicySubjectConflict: semantic_subject_authority_missing_or_stale"
+      },
+      {
+        "test": "tests.test_card_lifecycle.TestCardStatusTransitionMatrix::test_missing_conclusion_raises",
+        "message": "okto_pulse.core.ports.guideline_policy.GuidelinePolicySubjectConflict: semantic_subject_authority_missing_or_stale"
+      },
+      {
+        "test": "tests.test_card_lifecycle.TestCardStatusTransitionMatrix::test_missing_completeness_raises",
+        "message": "okto_pulse.core.ports.guideline_policy.GuidelinePolicySubjectConflict: semantic_subject_authority_missing_or_stale"
+      },
+      {
+        "test": "tests.test_card_lifecycle.TestCardStatusTransitionMatrix::test_completeness_out_of_range_raises",
+        "message": "okto_pulse.core.ports.guideline_policy.GuidelinePolicySubjectConflict: semantic_subject_authority_missing_or_stale"
+      },
+      {
+        "test": "tests.test_card_lifecycle.TestCardStatusTransitionMatrix::test_missing_drift_raises",
+        "message": "okto_pulse.core.ports.guideline_policy.GuidelinePolicySubjectConflict: semantic_subject_authority_missing_or_stale"
+      },
+      {
+        "test": "tests.test_card_lifecycle.TestCardStatusTransitionMatrix::test_drift_out_of_range_raises",
+        "message": "okto_pulse.core.ports.guideline_policy.GuidelinePolicySubjectConflict: semantic_subject_authority_missing_or_stale"
+      },
+      {
+        "test": "tests.test_card_lifecycle.TestCardStatusTransitionMatrix::test_multiple_conclusions_accumulate",
+        "message": "okto_pulse.core.services.resource_gate_contracts.ResourceGateViolation: Resource Gate could not resolve resource lineage for card 'dd80436a-5be1-439e-9345-ebb09eb9ed8a': The adopted architecture scope is unavailable."
+      },
+      {
+        "test": "tests.test_card_lifecycle.TestCardValidationReportGate::test_successful_validation_does_not_duplicate_executor_report",
+        "message": "okto_pulse.core.services.resource_gate_contracts.ResourceGateViolation: Resource Gate could not resolve resource lineage for card 'a1bce756-16db-4bfe-a11b-022e1fd3f251': The adopted architecture scope is unavailable."
+      },
+      {
+        "test": "tests.test_card_lifecycle.TestCardDependencies::test_block_forward_move_on_unmet_dependency",
+        "message": "AssertionError: assert 'task_require...link_required' == 'dependencies_incomplete'\n  \n  - dependencies_incomplete\n  + task_requirement_link_required"
+      },
+      {
+        "test": "tests.test_card_lifecycle.TestCardDependencies::test_forward_move_unblocked_after_dependency_done",
+        "message": "okto_pulse.core.services.resource_gate_contracts.ResourceGateViolation: Resource Gate could not resolve resource lineage for card '3f522130-8491-4314-ab94-74043f548499': The adopted architecture scope is unavailable."
+      },
+      {
+        "test": "tests.test_card_lifecycle.TestBugCardCreation::test_v2_bug_creation_fences_origin_parent_change",
+        "message": "TypeError: CardService.create_card() got an unexpected keyword argument 'knowledge_propagation_v2'"
+      }
+    ],
+    "note": "Stopped at maxfail20; last lifecycle module partial; failures pending native fixture followup."
+  },
+  "core_card_native_followup": {
+    "campaigns": [
+      {
+        "name": "clean-break-card-native-fixtures1",
+        "tests": 76,
+        "failed": 25,
+        "errors": 0,
+        "duration_seconds": 25.34,
+        "xml_sha256": "70d70fdcfeec889d9f4e2cb0da56c70572c4f3b9e521a849f00a0cfa09cf606a"
+      },
+      {
+        "name": "clean-break-card-native-fixtures2",
+        "tests": 76,
+        "failed": 6,
+        "errors": 0,
+        "duration_seconds": 18.574,
+        "xml_sha256": "c2d7e185f170787912c53d973876a8244024651f2ca69c44cdf497df42a55cc8"
+      },
+      {
+        "name": "clean-break-card-native-fixtures3",
+        "tests": 92,
+        "failed": 9,
+        "errors": 0,
+        "duration_seconds": 19.838,
+        "xml_sha256": "e7b21daf5de7680f709458565cf75d0c635711ac143d923285eb6bf8f6caf0f6"
+      },
+      {
+        "name": "clean-break-card-native-fixtures4",
+        "tests": 16,
+        "failed": 0,
+        "errors": 0,
+        "duration_seconds": 6.229,
+        "xml_sha256": "2518c9d95ffd2636ae074dc0a277d3e7d678c5ef63df7704e05b2dd05f99d4d5"
+      },
+      {
+        "name": "clean-break-card-native-import1",
+        "tests": 10,
+        "failed": 0,
+        "errors": 0,
+        "duration_seconds": 17.149,
+        "xml_sha256": "8fde32a40b2f4d912774f6974e7ef28dfa810c79b794cb5d187b1351e7896ba3"
+      }
+    ],
+    "distinct_passed": 102,
+    "proof_pair": "dist-native-list-envelope1",
+    "product_changes": false,
+    "scope": "Native Knowledge registry, lifecycle/report/dependencies and cognitive closeout fixtures. Accepted Card delivery test port supplies effective responsibility context. Independent reviewer and explicit native authority in test composition; gates unchanged.",
+    "limits": "Broad run6 stopped at20 failures; followups fully qualify both affected modules plus shared-fixture consumer. Remaining modules and C1-C4 still pending.",
+    "runner_note": "fixtures3 pytest finished83passed9failed; wrapper stdout failed cp1252 rendering. XML/log inspected; use python -X utf8 for runner."
   }
 }

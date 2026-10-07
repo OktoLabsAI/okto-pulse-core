@@ -2,6 +2,45 @@
 
 ## Estado para retomada
 
+### 2026-10-07 — C3/C4 Knowledge, lifecycle e fechamento cognitivo nativos
+
+Core base a94b57fa / Community224e9911. Full-run6 terminal:53 aprovados/20falhas,
+69.79s; ultimo modulo lifecycle agora integralmente qualificado nos followups.
+Knowledge verifica ausencia das tres tools de escrita retiradas e preserva reads.
+Lifecycle usa scope de arquitetura, FR ligada, autoridade explicita na composicao
+de teste e linhagem preflight do Bug; remove flag v2 e override migrado Sprint,
+mantendo proveniencia Spec/Board, fences, dependencias e relatorio sem duplicacao.
+Fixture de delivery aceita inclui contexto efetivo de responsabilidade/atestacao.
+Seu outro consumidor, fechamento cognitivo, usa reviewer independente e seeds
+nativos; preservados debt, historico, skip e recusas. Nenhum gate/produto alterado.
+
+Followups fixtures1:51 aprovados/25falhas; fixtures2:70/6; fixtures3:83/9
+(inclui Knowledge/lifecycle completos verdes; nove falhas do outro consumidor).
+O wrapper de fixtures3 falhou ao imprimir Unicode em cp1252 APOS pytest terminal;
+XML/log lidos, sem contabilizar o wrapper como sucesso. Fixtures4:16 aprovados.
+AF04 import gate:10 aprovados. Total distinto102; todos handles encerrados.
+Ruff F/E9/diff verdes. Nenhum impacto frontend.
+Par/provenance/closure dist-native-list-envelope1 permanece aplicavel: sem
+alteracao de produto desde a prova byte-a-byte; oito budgets ZERO.
+Proximo: continuar Community apos full-run3, excluindo modulos integrais ja
+qualificados; depois Core apos full-run6. C1-C4/T23/KG-10 e bump0.4.0 pendentes.
+Nao ha qualificacao integral nem entrega final declarada.
+
+
+### 2026-10-07 — Par de listagens publicado; continuacao Core
+
+Core a94b57fa / Community224e9911 publicados, pushes confirmados.
+clean-break-full-run6 terminou:53 aprovados/20 falhas em69.79s; handle51131 encerrado.
+Excluiu170 modulos previamente completos
+conforme clean-break-full-run6-selection.json e stress1000 ja aprovado.
+Par dist-native-list-envelope1/provenance/closure corresponde ao produto atual.
+Falhas registradas no JSON; followup das fixtures Knowledge/lifecycle pendente.
+Nenhum processo ativo. Ultimo modulo lifecycle ainda nao qualificado integralmente.
+Community continuacao seguinte deve excluir a selecao full-run3-community mais
+C5 completo e demais suites integralmente qualificadas, sem confundir testes
+isolados dos arquivos r01a com execucao completa desses arquivos.
+C1-C4 e T23/KG-10 permanecem abertos.
+
 ### 2026-10-07 — C3 quatro listagens REST com contrato unico
 
 Bases Core5619a9fb / Communityc0063d19 publicados/pushes confirmados.

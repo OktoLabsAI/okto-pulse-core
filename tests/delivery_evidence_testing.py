@@ -8,7 +8,6 @@ from dataclasses import replace
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
-from test_delivery_evidence_domain import SNAPSHOT
 
 
 def install_complete_delivery_port(monkeypatch):
@@ -43,12 +42,28 @@ def install_complete_card_delivery_port(monkeypatch):
     from okto_pulse.core.domain.delivery_evidence import DeliveryScope
     from okto_pulse.core.services import delivery_evidence
 
+    from test_execution_contract import adopted_snapshot
+
+    snapshot = adopted_snapshot()
+    context = snapshot.effective_context
+
     async def load(scope, *, prospective_report=None):
         assert prospective_report is None or "delivery_manifest" not in prospective_report
         delivery_scope = DeliveryScope(scope.board_id, scope.spec_id, scope.spec_edition)
-        return replace(SNAPSHOT, scope=delivery_scope, implementations=tuple(
-            replace(row, scope=delivery_scope, card_id=scope.card_id) for row in SNAPSHOT.implementations
-        ), tests=())
+        # A native Card projection includes its effective responsibility scope.
+        contribution = replace(context.inventory.rows[0].contributions[0], card_id=scope.card_id)
+        inventory = replace(context.inventory, rows=(
+            replace(context.inventory.rows[0], contributions=(contribution,)),
+        ))
+        implementation = replace(context.implementations[0], fact=replace(
+            context.implementations[0].fact, scope=delivery_scope, card_id=scope.card_id,
+        ))
+        return replace(
+            snapshot, scope=delivery_scope, implementations=(implementation.fact,), tests=(),
+            effective_context=replace(
+                context, inventory=inventory, implementations=(implementation,), tests=(),
+            ),
+        )
 
     store = SimpleNamespace(load_card_snapshot=AsyncMock(side_effect=load))
     monkeypatch.setattr(delivery_evidence, "card_delivery_store", lambda _session: store)

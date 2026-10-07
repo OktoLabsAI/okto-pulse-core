@@ -8,6 +8,8 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from native_subject_testing import record_native_subject_authority
+from okto_pulse.core.domain.architecture_adoption import ArchitectureAdoptionScope
 from sqlalchemy import select
 
 from okto_pulse.core.domain.code_traceability import (
@@ -121,6 +123,10 @@ async def _seed_spec(
         )
         db.add(
             Spec(
+                architecture_adoption=ArchitectureAdoptionScope(
+                    board_id=board_id, spec_id=spec_id, adopted_in_edition=1,
+                    actor_id=USER_ID, inherited_resource_ids=(),
+                ).model_dump(mode="json"),
                 id=spec_id,
                 board_id=board_id,
                 title="CCG service wiring spec",
@@ -132,6 +138,7 @@ async def _seed_spec(
                 **_direct_spec_context_fields(spec_id),
             )
         )
+        await record_native_subject_authority(db)
         await db.commit()
     return board_id, spec_id
 
@@ -235,6 +242,10 @@ async def _seed_card(
         )
         db.add(
             Spec(
+                architecture_adoption=ArchitectureAdoptionScope(
+                    board_id=board_id, spec_id=spec_id, adopted_in_edition=1,
+                    actor_id=USER_ID, inherited_resource_ids=(),
+                ).model_dump(mode="json"),
                 id=spec_id,
                 board_id=board_id,
                 title="CCG card spec",
@@ -257,6 +268,7 @@ async def _seed_card(
                 created_by=USER_ID,
             )
         )
+        await record_native_subject_authority(db)
         await db.commit()
     return board_id, spec_id, card_id
 
@@ -302,8 +314,8 @@ async def test_submit_task_validation_records_cognitive_rejection() -> None:
         service._cognitive_closeout_gate_factory = lambda: gate
         result = await service.submit_task_validation(
             card_id=card_id,
-            reviewer_id=USER_ID,
-            reviewer_name=USER_ID,
+            reviewer_id="independent-reviewer",
+            reviewer_name="Independent Reviewer",
             data=validation_data,
         )
         await db.commit()
@@ -548,7 +560,7 @@ async def test_done_preserves_validation_with_only_projection_debt(
         service = CardService(db)
         service._cognitive_closeout_gate_factory = lambda: _AllowGate()
         result = await service.submit_task_validation(
-            card_id=card_id, reviewer_id=USER_ID, reviewer_name=USER_ID,
+            card_id=card_id, reviewer_id="independent-reviewer", reviewer_name="Independent Reviewer",
             data=_APPROVE_VALIDATION,
         )
         await db.commit()
@@ -617,7 +629,7 @@ async def test_advisory_default_board_does_not_block_on_open_debt(
         service = CardService(db)
         service._cognitive_closeout_gate_factory = lambda: _AllowGate()
         result = await service.submit_task_validation(
-            card_id=card_id, reviewer_id=USER_ID, reviewer_name=USER_ID,
+            card_id=card_id, reviewer_id="independent-reviewer", reviewer_name="Independent Reviewer",
             data=_APPROVE_VALIDATION,
         )
         await db.commit()
@@ -647,7 +659,7 @@ async def test_blocking_policy_no_debt_passes(
         service = CardService(db)
         service._cognitive_closeout_gate_factory = lambda: _AllowGate()
         result = await service.submit_task_validation(
-            card_id=card_id, reviewer_id=USER_ID, reviewer_name=USER_ID,
+            card_id=card_id, reviewer_id="independent-reviewer", reviewer_name="Independent Reviewer",
             data=_APPROVE_VALIDATION,
         )
         await db.commit()
@@ -686,7 +698,7 @@ async def test_blocking_active_fails_closed_when_readiness_service_errors(
         service._cognitive_readiness_service_factory = lambda: _ExplodingReadiness()
         with pytest.raises(ValueError, match="cognitive_readiness_unavailable"):
             await service.submit_task_validation(
-                card_id=card_id, reviewer_id=USER_ID, reviewer_name=USER_ID,
+                card_id=card_id, reviewer_id="independent-reviewer", reviewer_name="Independent Reviewer",
                 data=_APPROVE_VALIDATION,
             )
         await db.rollback()
@@ -719,7 +731,7 @@ async def test_advisory_default_does_not_instantiate_readiness_service(
         service._cognitive_closeout_gate_factory = lambda: _AllowGate()
         service._cognitive_readiness_service_factory = _boom_factory
         result = await service.submit_task_validation(
-            card_id=card_id, reviewer_id=USER_ID, reviewer_name=USER_ID,
+            card_id=card_id, reviewer_id="independent-reviewer", reviewer_name="Independent Reviewer",
             data=_APPROVE_VALIDATION,
         )
         await db.commit()
@@ -756,7 +768,7 @@ async def test_blocking_active_fails_closed_when_source_ref_resolution_errors(
         service._cognitive_closeout_gate_factory = lambda: _AllowGate()
         with pytest.raises(ValueError, match="cognitive_readiness_unavailable"):
             await service.submit_task_validation(
-                card_id=card_id, reviewer_id=USER_ID, reviewer_name=USER_ID,
+                card_id=card_id, reviewer_id="independent-reviewer", reviewer_name="Independent Reviewer",
                 data=_APPROVE_VALIDATION,
             )
         await db.rollback()

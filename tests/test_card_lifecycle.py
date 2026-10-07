@@ -18,6 +18,9 @@ import uuid
 from datetime import datetime, timezone
 
 import pytest
+from okto_pulse.core.domain.quality_canonicalization import canonical_sha256
+from native_subject_testing import record_native_subject_authority
+from okto_pulse.core.domain.architecture_adoption import ArchitectureAdoptionScope
 from sqlalchemy import select
 
 from sqlalchemy_test_models import (
@@ -47,6 +50,22 @@ from okto_pulse.core.services.resource_gate import ResourceGateService
 BOARD_ID = "card-lifecycle-board-001"
 AGENT_ID = "card-lifecycle-agent-001"
 USER_ID = AGENT_ID
+
+
+async def _record_card_fixture_state(db, card, status):
+    """Seal explicit fixture state; the test persistence double has no authority writer."""
+    from okto_pulse.community.adapters.sqlalchemy_semantic_guideline_assessment import (
+        CommunitySqlAlchemySemanticGuidelineAssessment,
+    )
+    from okto_pulse.core.domain.guideline_policy import PolicyEntityType
+    from okto_pulse.core.ports.application_persistence import get_application_persistence_port
+    await get_application_persistence_port().flush(db)
+    await CommunitySqlAlchemySemanticGuidelineAssessment(db).record_semantic_subject_mutation(
+        board_id=BOARD_ID, entity_type=PolicyEntityType.CARD, subject_id=card.id,
+        actor_id=USER_ID, idempotency_key=f"fixture-state:{card.id}",
+        request_digest=canonical_sha256({"card_id": card.id, "status": status.value}),
+        changed_at=datetime.now(timezone.utc),
+    )
 
 
 async def _mark_all_resources_na(db, entity_type: str, entity_id: str) -> None:
@@ -94,6 +113,10 @@ async def _seed_board(db_factory) -> None:
 
         spec_id = str(uuid.uuid4())
         spec = Spec(
+            architecture_adoption=ArchitectureAdoptionScope(
+                board_id=BOARD_ID, spec_id=spec_id, adopted_in_edition=1,
+                actor_id=USER_ID, inherited_resource_ids=(),
+            ).model_dump(mode="json"),
             id=spec_id,
             board_id=BOARD_ID,
             title="Lifecycle Spec",
@@ -146,6 +169,7 @@ async def _seed_board(db_factory) -> None:
         )
         db.add(card2)
 
+        await record_native_subject_authority(db)
         await db.commit()
 
 
@@ -327,6 +351,11 @@ class TestCardStatusTransitionMatrix:
             # The transition suite needs fixtures at every source state. Seed
             # that state directly so production creation stays fail-closed.
             card.status = status
+            specs[0].functional_requirements = [{
+                "id": "fr-transition", "text": "Transition requirement",
+                "linked_task_ids": [card.id],
+            }]
+            await _record_card_fixture_state(db, card, status)
             await db.commit()
             return card, actual_spec_id
 
@@ -474,11 +503,7 @@ class TestCardStatusTransitionMatrix:
 
         async with db_factory() as db:
             config = CardService(db)._resolve_validation_config(
-                SimpleNamespace(id="card", board_id="board", migrated_validation_policy={
-                    "contract_version": "card-validation-compatibility/v1",
-                    "card_id": "card", "board_id": "board", "source_sprint_id": "historical",
-                    "migration_id": "offline", "overrides": {"min_confidence": 90, "min_completeness": 88},
-                }),
+                SimpleNamespace(id="card", board_id="board"),
                 SimpleNamespace(
                     require_task_validation=False,
                     validation_min_confidence=75,
@@ -495,14 +520,14 @@ class TestCardStatusTransitionMatrix:
 
         assert config == {
             "required": False,
-            "min_confidence": 90,
-            "min_completeness": 88,
+            "min_confidence": 75,
+            "min_completeness": 80,
             "max_drift": 30,
             "resolved_from": "spec",
             "resolved_sources": {
                 "required": "spec",
-                "min_confidence": "card_compatibility",
-                "min_completeness": "card_compatibility",
+                "min_confidence": "spec",
+                "min_completeness": "board",
                 "max_drift": "spec",
             },
         }
@@ -736,6 +761,7 @@ class TestCardValidationReportGate:
                 ),
             )
             card.status = CardStatus.IN_PROGRESS
+            await _record_card_fixture_state(db, card, CardStatus.IN_PROGRESS)
             await db.commit()
             return card
 
@@ -1042,7 +1068,13 @@ class TestCardDependencies:
                 position=0,
                 created_by=USER_ID,
             )
+            spec.require_task_validation = True
             db.add_all([card_a, card_b])
+            spec.functional_requirements = [{
+                "id": "fr-dependency", "text": "Dependency requirement",
+                "linked_task_ids": [card_a.id, card_b.id],
+            }]
+            await record_native_subject_authority(db)
             await db.commit()
             return card_a, card_b
 
@@ -1411,7 +1443,7 @@ class TestBugCardCreation:
             assert card.expected_behavior == data.expected_behavior
             assert card.observed_behavior == data.observed_behavior
 
-    async def test_v2_bug_creation_fences_origin_parent_change(self, db_factory):
+    async def test_bug_creation_fences_origin_parent_change(self, db_factory):
         """A stale preflight parent cannot be replaced during target staging."""
 
         await _seed_board(db_factory)
@@ -1457,14 +1489,13 @@ class TestBugCardCreation:
                         spec_id=original_spec.id,
                     ),
                     target_id=str(uuid.uuid4()),
-                    knowledge_propagation_v2=True,
                 )
 
             assert raised.value.code == "knowledge_propagation_parent_changed"
             assert raised.value.details["expected_spec_id"] == original_spec.id
             assert raised.value.details["actual_spec_id"] == current_spec.id
 
-    async def test_v2_bug_creation_fails_closed_when_origin_fence_loses(
+    async def test_bug_creation_fails_closed_when_origin_fence_loses(
         self,
         db_factory,
         monkeypatch,
@@ -1512,7 +1543,6 @@ class TestBugCardCreation:
                         spec_id=spec.id,
                     ),
                     target_id=str(uuid.uuid4()),
-                    knowledge_propagation_v2=True,
                 )
 
             assert raised.value.code == "knowledge_propagation_parent_changed"
@@ -1588,6 +1618,7 @@ class TestBugCardCreation:
                     title="Bug: inherited traceability",
                     card_type="bug",
                     origin_task_id=origin_card.id,
+                    spec_id=spec_id,
                     severity="major",
                     expected_behavior="Traceability should follow the origin task",
                     observed_behavior="Traceability is missing on the bug",
@@ -1656,6 +1687,7 @@ class TestBugCardCreation:
                 title="Bad Bug",
                 card_type="bug",
                 origin_task_id=origin_card.id,
+                spec_id=spec_id,
                 # missing severity
             )
             with pytest.raises(ValueError, match="severity"):
@@ -1689,6 +1721,7 @@ class TestBugCardCreation:
                 title="Bad Bug",
                 card_type="bug",
                 origin_task_id=origin_card.id,
+                spec_id=spec_id,
                 severity="critical",
                 # missing expected_behavior
                 observed_behavior="Broken",
@@ -1724,6 +1757,7 @@ class TestBugCardCreation:
                 title="Bad Bug",
                 card_type="bug",
                 origin_task_id=origin_card.id,
+                spec_id=spec_id,
                 severity="critical",
                 expected_behavior="Should work",
                 # missing observed_behavior
@@ -1938,6 +1972,12 @@ class TestActivityLog:
             # require an execution-ready spec, rather than relying on an
             # earlier test to have promoted the shared fixture.
             spec.status = SpecStatus.IN_PROGRESS
+            spec.require_task_validation = True
+            spec.functional_requirements = [{
+                "id": "fr-activity", "text": "Activity requirement",
+                "linked_task_ids": [card.id],
+            }]
+            await _record_card_fixture_state(db, card, CardStatus.NOT_STARTED)
             if status != CardStatus.NOT_STARTED:
                 await svc.move_card(
                     card.id,
