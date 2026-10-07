@@ -1,0 +1,99 @@
+{
+  "format": "pulse-040-reviewed-acceptance/v1",
+  "criterion_keys": [
+    "KG:KG-12",
+    "KG:KG-15"
+  ],
+  "status": "verified_current_pair_review",
+  "proof_pair": "dist-native-main34",
+  "provenance_sha256": "9b4d2651c39b1196bd09b2a7c8566989d9504d91abdf86292b881c40736c7bc5",
+  "runs": [
+    {
+      "name": "acceptance-native-child-identity2",
+      "xml_sha256": "b0a684307afaaa4cf1c03e6aee392d59c38cbd723df4a7e62c8ce4249bca3e2f",
+      "selected_passed": 22,
+      "selected_cases": [
+        "tests.test_kg_spec_declared_lineage::test_declared_lineage_and_explicit_empty_active_set[business_rules-linked_requirements-business_rule-br_one-derives_from-fr-fr_one-business_rule_requirements]",
+        "tests.test_kg_spec_declared_lineage::test_declared_lineage_and_explicit_empty_active_set[integration_requirements-linked_requirements-integration_requirement-ir_one-derives_from-fr-fr_one-integration_requirements]",
+        "tests.test_kg_spec_declared_lineage::test_declared_lineage_and_explicit_empty_active_set[observability_requirements-linked_integration_requirements-observability_requirement-or_one-derives_from-integration_requirement-ir_one-observability_integrations]",
+        "tests.test_kg_spec_declared_lineage::test_declared_lineage_and_explicit_empty_active_set[api_contracts-linked_rules-api_contract-api_one-implements-business_rule-br_one-api_business_rules]",
+        "tests.test_kg_spec_declared_lineage::test_revoked_source_stops_current_relationship_without_claiming_history_deleted[business_rules-linked_requirements-business_rule-br_one-derives_from-fr-fr_one-business_rule_requirements]",
+        "tests.test_kg_spec_declared_lineage::test_revoked_source_stops_current_relationship_without_claiming_history_deleted[integration_requirements-linked_requirements-integration_requirement-ir_one-derives_from-fr-fr_one-integration_requirements]",
+        "tests.test_kg_spec_declared_lineage::test_revoked_source_stops_current_relationship_without_claiming_history_deleted[observability_requirements-linked_integration_requirements-observability_requirement-or_one-derives_from-integration_requirement-ir_one-observability_integrations]",
+        "tests.test_kg_spec_declared_lineage::test_revoked_source_stops_current_relationship_without_claiming_history_deleted[api_contracts-linked_rules-api_contract-api_one-implements-business_rule-br_one-api_business_rules]",
+        "tests.test_kg_spec_declared_lineage::test_requirement_text_never_selects_a_target[business_rules]",
+        "tests.test_kg_spec_declared_lineage::test_requirement_text_never_selects_a_target[integration_requirements]",
+        "tests.test_kg_spec_declared_lineage::test_duplicate_exact_target_ids_are_not_arbitrarily_selected[business_rules-api_business_rules]",
+        "tests.test_kg_spec_declared_lineage::test_duplicate_exact_target_ids_are_not_arbitrarily_selected[integration_requirements-observability_integrations]",
+        "tests.test_kg_spec_declared_lineage::test_partial_requirement_source_cannot_prune_either_target_family[functional_requirements-integration_requirements]",
+        "tests.test_kg_spec_declared_lineage::test_partial_requirement_source_cannot_prune_either_target_family[functional_requirements-observability_requirements]",
+        "tests.test_kg_spec_declared_lineage::test_partial_requirement_source_cannot_prune_either_target_family[technical_requirements-integration_requirements]",
+        "tests.test_kg_spec_declared_lineage::test_partial_requirement_source_cannot_prune_either_target_family[technical_requirements-observability_requirements]",
+        "tests.test_kg_spec_declared_lineage::test_only_native_ids_resolve_across_fr_tr[integration_requirements]",
+        "tests.test_kg_spec_declared_lineage::test_only_native_ids_resolve_across_fr_tr[observability_requirements]",
+        "tests.test_kg_spec_declared_lineage::test_observability_requirement_and_integration_namespaces_remain_independent",
+        "tests.test_kg_spec_declared_lineage::test_declared_requirement_lineage_includes_supported_fr_tr_targets[integration_requirements-integration_requirement-ir_one-tr-tr_one]",
+        "tests.test_kg_spec_declared_lineage::test_declared_requirement_lineage_includes_supported_fr_tr_targets[observability_requirements-observability_requirement-or_one-fr-fr_one]",
+        "tests.test_kg_spec_declared_lineage::test_declared_requirement_lineage_includes_supported_fr_tr_targets[observability_requirements-observability_requirement-or_one-tr-tr_one]"
+      ]
+    },
+    {
+      "name": "acceptance-native-child-mapping1",
+      "xml_sha256": "c1383227cda0747903a0b6592cc340996bc113435a98defb6b271c90d597fb02",
+      "selected_passed": 12,
+      "selected_cases": [
+        "tests.test_kg_source_projection_metadata::test_source_chronology_preserves_instant_and_raw_status",
+        "tests.test_kg_source_projection_metadata::test_client_cannot_supply_source_metadata[source_created_at]",
+        "tests.test_kg_source_projection_metadata::test_client_cannot_supply_source_metadata[source_updated_at]",
+        "tests.test_kg_source_projection_metadata::test_client_cannot_supply_source_metadata[source_status]",
+        "tests.test_kg_source_projection_metadata::test_client_cannot_supply_source_metadata[severity]",
+        "tests.test_kg_source_projection_metadata::test_client_cannot_supply_source_metadata[resolved_at]",
+        "tests.test_kg_source_projection_metadata::test_client_cannot_supply_source_metadata[_source_projection_metadata]",
+        "tests.test_kg_source_projection_metadata::test_internal_metadata_survives_session_request_without_entering_wire_contract",
+        "tests.test_kg_source_projection_metadata::test_non_worker_cannot_submit_internal_attestation",
+        "tests.test_kg_source_projection_metadata::test_resolution_uses_last_done_and_clears_on_reopen",
+        "tests.test_kg_source_projection_metadata::test_all_spec_child_families_cannot_borrow_parent_chronology[draft]",
+        "tests.test_kg_source_projection_metadata::test_all_spec_child_families_cannot_borrow_parent_chronology[done]"
+      ]
+    },
+    {
+      "name": "acceptance-native-child-consumers1",
+      "xml_sha256": "bcec5e6f093f3c40f7674a1f7b2e68a7b4e5c1a0b74cf17c5d57c3da6662c570",
+      "selected_passed": 1,
+      "selected_cases": [
+        "tests.test_kg_spec_children_canonicalization::test_commit_materializes_api_contract_implements_tr_constraint"
+      ]
+    },
+    {
+      "name": "acceptance-native-child-grafx1",
+      "xml_sha256": "76368051235179c78cb3354149e00ba72a09e542e6ad018df77c6a541641fb28",
+      "selected_passed": 15,
+      "selected_cases": [
+        "tests.test_projection_materialized_parity::test_spec_relationships_converge_after_churn_and_clean_rebuild",
+        "tests.test_grafx_spec_declared_lineage::test_cleanup_and_repeated_compensation_preserve_parallel_and_foreign_facts[projection0]",
+        "tests.test_grafx_spec_declared_lineage::test_cleanup_and_repeated_compensation_preserve_parallel_and_foreign_facts[projection1]",
+        "tests.test_grafx_spec_declared_lineage::test_cleanup_and_repeated_compensation_preserve_parallel_and_foreign_facts[projection2]",
+        "tests.test_grafx_spec_declared_lineage::test_cleanup_and_repeated_compensation_preserve_parallel_and_foreign_facts[projection3]",
+        "tests.test_grafx_spec_declared_lineage::test_cleanup_and_repeated_compensation_preserve_parallel_and_foreign_facts[projection4]",
+        "tests.test_grafx_spec_declared_lineage::test_cleanup_and_repeated_compensation_preserve_parallel_and_foreign_facts[projection5]",
+        "tests.test_grafx_spec_declared_lineage::test_cleanup_and_repeated_compensation_preserve_parallel_and_foreign_facts[projection6]",
+        "tests.test_grafx_spec_declared_lineage::test_failure_after_delete_restores_exact_owned_fact[projection0]",
+        "tests.test_grafx_spec_declared_lineage::test_failure_after_delete_restores_exact_owned_fact[projection1]",
+        "tests.test_grafx_spec_declared_lineage::test_failure_after_delete_restores_exact_owned_fact[projection2]",
+        "tests.test_grafx_spec_declared_lineage::test_failure_after_delete_restores_exact_owned_fact[projection3]",
+        "tests.test_grafx_spec_declared_lineage::test_failure_after_delete_restores_exact_owned_fact[projection4]",
+        "tests.test_grafx_spec_declared_lineage::test_failure_after_delete_restores_exact_owned_fact[projection5]",
+        "tests.test_grafx_spec_declared_lineage::test_failure_after_delete_restores_exact_owned_fact[projection6]"
+      ]
+    }
+  ],
+  "review": {
+    "KG:KG-12": "Reviewed current declared-lineage cases assert BR→FR, IR→FR, OR→IR and API→BR direction, typed owner namespace and explicit removal. Real Grafx preserves unrelated owners, handles compensation, and the ordinary queue converges to the same complete native-rebuild relationship multiset after churn/replay.",
+    "KG:KG-15": "Both draft and done Spec fixtures give source metadata only to their root, never borrowing parent creation/update dates for any of the nine children. Real Grafx commit checks null source dates for emitted children, distinct real root chronology, and stable native child IDs through reorder/removal/restoration."
+  },
+  "limits": [
+    "Reuses inspected, successful cases already executed on main34; no redundant test run or new product change.",
+    "The consumers1 campaign had two failures in another module; its selected chronology case passed. Full campaign disposition is retained in clean-break-acceptance-native-child-identity.json.",
+    "Does not qualify the remaining KG-11/13/14 criteria or complete C4."
+  ]
+}

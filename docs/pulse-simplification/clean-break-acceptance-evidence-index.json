@@ -3258,7 +3258,12 @@
       "historical_review_status": "not_audited_in_this_inventory",
       "prior_reviewed_execution": null,
       "discovered_artifacts": [],
-      "current_qualification": "pending_current_pair_review"
+      "current_qualification": "verified_current_pair_review",
+      "current_review": {
+        "artifact": "clean-break-acceptance-native-decision-chain.json",
+        "criterion_key": "KG:KG-11",
+        "proof_pair": "dist-native-main36"
+      }
     },
     {
       "key": "KG:KG-12",
@@ -3280,7 +3285,12 @@
           "case_references": []
         }
       ],
-      "current_qualification": "pending_current_pair_review"
+      "current_qualification": "verified_current_pair_review",
+      "current_review": {
+        "artifact": "clean-break-acceptance-native-spec-lineage-chronology.json",
+        "criterion_key": "KG:KG-12",
+        "proof_pair": "dist-native-main34"
+      }
     },
     {
       "key": "KG:KG-13",
@@ -3307,7 +3317,12 @@
           ]
         }
       ],
-      "current_qualification": "pending_current_pair_review"
+      "current_qualification": "verified_current_pair_review",
+      "current_review": {
+        "artifact": "clean-break-acceptance-native-chronology.json",
+        "criterion_key": "KG:KG-13",
+        "proof_pair": "dist-native-main36"
+      }
     },
     {
       "key": "KG:KG-14",
@@ -3334,7 +3349,12 @@
           ]
         }
       ],
-      "current_qualification": "pending_current_pair_review"
+      "current_qualification": "verified_current_pair_review",
+      "current_review": {
+        "artifact": "clean-break-acceptance-native-chronology.json",
+        "criterion_key": "KG:KG-14",
+        "proof_pair": "dist-native-main36"
+      }
     },
     {
       "key": "KG:KG-15",
@@ -3356,7 +3376,12 @@
           "case_references": []
         }
       ],
-      "current_qualification": "pending_current_pair_review"
+      "current_qualification": "verified_current_pair_review",
+      "current_review": {
+        "artifact": "clean-break-acceptance-native-spec-lineage-chronology.json",
+        "criterion_key": "KG:KG-15",
+        "proof_pair": "dist-native-main34"
+      }
     },
     {
       "key": "KG:KG-16",

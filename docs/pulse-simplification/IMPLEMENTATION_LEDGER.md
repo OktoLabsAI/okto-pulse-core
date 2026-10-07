@@ -2,6 +2,49 @@
 
 ## Estado para retomada
 
+### 2026-10-07 — C4 KG-11 a KG-15 qualificados sem nova semântica produtiva
+decision-chain1 handle68980 terminou0:1pass/35.33s; cadeia real/replay conferidos.
+Recibo clean-break-acceptance-native-decision-chain.json promove somente KG-11.
+Junto aos recibos anteriores desta rodada, KG-11/12/13/14/15 fechados com provas
+nativas e reutilização explícita de casos pertinentes. Índice54 verificados,
+181 aplicáveis pendentes e11 superados. Nenhuma entrega integral alegada.
+Nenhum processo ativo. Produto/SPA main36 inalterados e byteprovados; closure36
+já aprovado/oitoZERO. WIP é somente testes/recibos/ledger. Pronto para commits/pushes
+pareados. Próximos critérios fixos KG-16 em diante (invalidação, leitura incompleta,
+propriedade e replay) e demais DEI/ARQVER. T23/KG-10 continuam aguardando decisão.
+Pendência de fixtures r2_scenario_helpers permanece registrada; não reintroduzir
+compatibilidade produtiva para acomodá-las. Isolado next27 STALE.
+
+### 2026-10-07 — Cronologia KG-13/14 qualificada; cadeia KG-11 em validação
+chronology1 handle36947 terminou0:3pass/47.41s. Revisão exigiu datas da fonte
+anteriores ao rebuild inicial, não somente antes da fila: helper de testes ganhou
+callback seed opcional e chronology2 handle56824 terminou0:1pass/33.92s.
+Mesmo caso fortalecido, não contar como quarto caso. Sem alteração de produto.
+Recibo clean-break-acceptance-native-chronology.json promove KG-13/14, com os
+metadados Core já testados em main34. Fonte SQL/histórico e Graph criados no contrato
+nativo; nenhuma conversão/retirement. Índice53 verificados/182 pendentes/11 superados.
+ATIVO decision-chain1 handle68980: novo cenário KG-11 percorre rebuild inicial,
+Spec revisada/reaberta, Decision sucessora, predecessor, leitura pública da cadeia
+e replay, depois promoção Done. Estados de lifecycle são fixtures, não nova autoridade.
+Ainda NÃO qualificar KG-11 antes de terminal/revisão. Produto main36 byteprovado,
+Core45cb3f5c/Community2e6b2f1d são os últimos publicados; WIP apenas testes/recibos.
+T23/KG-10 continuam pendentes; demais critérios C4 permanecem no escopo fechado.
+
+### 2026-10-07 — C4 KG-12/KG-15 revisados; cronologia nativa em validação
+Core45cb3f5c/Community2e6b2f1d publicados e limpos ao iniciar.
+Turno anterior: progresso concreto, commits/pushes e provas concluídos; sem bloqueio.
+Recibo clean-break-acceptance-native-spec-lineage-chronology.json reutiliza somente
+casos aprovados e asserções inspecionadas do main34, promovendo KG-12/KG-15.
+Nenhuma suite repetida sem necessidade. Índice51 verificados/184 pendentes/11 superados.
+KG-13/14 tinham prova antiga apoiada em teste de retirement removido. Novo teste
+nativo usa rebuild inicial, fila real, fonte SQL e Grafx para done→reopen→done/replay,
+datas históricas da fonte, status/severidade e preservação dos eventos.
+ATIVO chronology1 handle36947: testes Card resolution existentes+novo fluxo.
+Produto main36 inalterado, instalação byteprovada; nenhum frontend alterado.
+Aguardar terminal antes de qualificar KG-13/14. KG-11 continua revisão separada,
+T23/KG-10 decisões pendentes. Helper r2_scenario_helpers ainda necessita adaptação
+das fixtures textuais na qualificação remanescente, sem fallback produtivo.
+
 ### 2026-10-07 — Histórico sem fallback de sete colunas validado em main36
 history-contract2 handle80222 terminou0:62pass/33.69s; history-store1 handle94205
 terminou0:34pass/41.65s; closure36 handle93566 terminou0, findings/documentation[],
