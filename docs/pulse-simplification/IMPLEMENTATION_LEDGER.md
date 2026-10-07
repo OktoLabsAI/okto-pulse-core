@@ -2,6 +2,28 @@
 
 ## Estado para retomada
 
+### 2026-10-07 — Core16: fixtures de autoridade e observação nativas em validação
+Par principal dist-native-next-main1 permanece provado; nenhuma alteração de produto.
+fences1 JUnit:37pass/2fail (wrapper CP1252 falhou ao imprimir Unicode; XML preservado).
+fences2:23pass/16fail; cenário faltava autoridade semântica e mistura de mappers
+exigia flush do Board antes da Spec Community. scenarios3:30pass/1fail;
+flush corrigiu FK, mas CommunitySemanticSession sozinha não materializa autoria.
+Fixture agora vincula ActorContext e materializa mutations pelo bridge da edição,
+na mesma transação do seed, sem inventar heads nem desativar policy.
+
+Spec Done tinha expectativa antiga de DEGRADED_KG_AUTO_SKIP. Investigação confirmou
+BASE F6E já implementado: completion usa snapshot da fonte e não consulta Health.
+Teste agora exige Health não chamado, ausência autoritativa, status Done persistido
+e telemetria ALLOWED/no_active_cognitive_items/skip=false, sem emissão de auto-skip.
+Fixture Delivery usa inventário público/contexto efetivo e waivers explícitos;
+adoção arquitetural vazia tipada. Nenhum gate/policy de produção alterado.
+fences4 handle37354 terminou0:39pass/23.54s, dois módulos completos.
+Ruff F/E9 e diff-check passaram. Recibo acceptance-clean-break-core16-fences.json
+vincula hashes das tentativas, prova e closure; produto e par não mudaram.
+Community13 handle85307 continua ATIVO no par/worktrees isolados; não editar ali.
+R3 effective Knowledge e R3 scenarios continuam pendentes, assim como E2E instalado.
+T23/KG-10 continuam decisões distintas pendentes; esta correção não as resolve.
+
 ### 2026-10-07 — Par principal/closure qualificados; catálogo26casos
 Closure principal handle22006 terminou0:ok=true,findings/docs vazios, oito
 budgetsZERO (closure-native-next-main1.json). Prova do install já terminou0.

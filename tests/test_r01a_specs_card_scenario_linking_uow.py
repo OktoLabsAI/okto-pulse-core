@@ -37,7 +37,8 @@ from okto_pulse.core.domain.quality_canonicalization import (
 )
 from okto_pulse.core.infra.database import get_db, get_session_factory
 from semantic_spec_testing import semantic_spec_payload
-from sqlalchemy_test_models import Board, Card, Spec, SpecStatus
+from sqlalchemy_test_models import Board, Card, SpecStatus
+from okto_pulse.community.adapters.sqlalchemy_models import Spec
 
 USER = "r01a-fu3c-s2-user"
 OTHER = "r01a-fu3c-s2-other"
@@ -49,6 +50,23 @@ _ENDPOINTS = (
     "unlink_task_from_scenario",
     "update_test_scenario_status",
 )
+
+
+@pytest.fixture(autouse=True)
+def native_semantic_session(request):
+    from okto_pulse.community.adapters.sqlalchemy_policy_subject_versioning import CommunitySemanticSession
+    from okto_pulse.core.domain.realm import RealmScope
+
+    factory = get_session_factory()
+    previous_info = dict(factory.kw.get("info", {}))
+    previous_class = factory.kw.get("sync_session_class")
+    request.addfinalizer(lambda: factory.configure(
+        info=previous_info, sync_session_class=previous_class,
+    ))
+    factory.configure(
+        info={**previous_info, "realm_scope": RealmScope.local()},
+        sync_session_class=CommunitySemanticSession,
+    )
 
 
 @pytest.fixture
@@ -83,7 +101,14 @@ async def _seed(
     bid = f"board-fu3cs2-{uuid.uuid4().hex[:8]}"
     sid = f"spec-fu3cs2-{uuid.uuid4().hex[:8]}"
     cid = f"card-fu3cs2-{uuid.uuid4().hex[:8]}"
+    from okto_pulse.core.application.use_cases.base import ActorContext
+    from okto_pulse.community.adapters.sqlalchemy_policy_subject_versioning import (
+        bind_semantic_subject_actor,
+        materialize_pending_semantic_subject_mutations,
+    )
+
     async with get_session_factory()() as db:
+        bind_semantic_subject_actor(db, ActorContext(owner, "rest", board_id=bid))
         db.add(
             Board(
                 id=bid,
@@ -92,6 +117,7 @@ async def _seed(
                 settings={"skip_test_evidence_global": True},
             )
         )
+        await db.flush()
         db.add(
             Spec(
                 id=sid,
@@ -106,6 +132,7 @@ async def _seed(
                 api_contracts=[],
             )
         )
+        await db.flush()
         db.add(
             Card(
                 id=cid,
@@ -116,6 +143,8 @@ async def _seed(
                 test_scenario_ids=card_scenarios or [],
             )
         )
+        await db.flush()
+        await materialize_pending_semantic_subject_mutations(db)
         await db.commit()
     return bid, sid, cid
 

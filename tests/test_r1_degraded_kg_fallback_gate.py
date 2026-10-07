@@ -106,8 +106,8 @@ def test_ts_6d088067_unconfirmed_block_message_carries_remediation():
     """TC-E: when the gate produces UNAVAILABLE (unconfirmed path, allowed=False),
     the service-layer error message surfaced to callers (via
     _evaluate_cognitive_closeout_or_raise) must mention:
-      (a) skip_cognitive_consolidation board setting
-      (b) the KG Health recovery flow reference
+      (a) authorized external support/release recovery
+      (b) Health observation without a repair action
       (c) no non-existent MCP tool names (AC11)."""
     from okto_pulse.core.services.main import _evaluate_cognitive_closeout_or_raise
 
@@ -133,14 +133,10 @@ def test_ts_6d088067_unconfirmed_block_message_carries_remediation():
             graph_state=None,
         )
     msg = str(exc_info.value)
-    # (a) must cite skip_cognitive_consolidation
-    assert "skip_cognitive_consolidation" in msg, (
-        "error message must cite the skip_cognitive_consolidation board setting"
-    )
-    # (b) must cite the KG Health recovery flow
-    assert "KG Health recovery flow" in msg or "kg-health" in msg or "okto_pulse_kg_health" in msg, (
-        "error message must reference the KG Health recovery flow"
-    )
+    assert "authorized external support/release procedure" in msg
+    assert "Health reports observation limits and has no repair action" in msg
+    assert "skip_cognitive_consolidation" not in msg
+
 
 
 # ── ts_e4dd279a: consolidation-pending message is unchanged (not a remediation msg) ─
@@ -282,6 +278,15 @@ def _install_waived_delivery_evidence(monkeypatch) -> None:
         DeliveryWaiverFact,
     )
     from okto_pulse.core.services import delivery_evidence as delivery_module
+    from okto_pulse.core.ports.delivery_inventory import default_delivery_inventory_policy
+    from okto_pulse.core.domain.effective_delivery_coverage import EffectiveDeliveryContext
+    from okto_pulse.core.domain.effective_delivery_inventory import (
+        EffectiveDeliveryInventory, EffectiveDeliveryObligation,
+    )
+    from okto_pulse.core.domain.implementation_responsibility import (
+        ImplementationResponsibilityPlan, RequirementContribution,
+    )
+
 
     original = delivery_module.delivery_store
 
@@ -292,7 +297,7 @@ def _install_waived_delivery_evidence(monkeypatch) -> None:
 
             async def load_snapshot(self, scope):
                 # A single scope-level obligation, waived for both phases.
-                obligations = delivery_module.delivery_inventory(
+                obligations = default_delivery_inventory_policy().spec_obligations(
                     _store.spec  # type: ignore[attr-defined]
                 )
                 waivers = tuple(
@@ -314,6 +319,21 @@ def _install_waived_delivery_evidence(monkeypatch) -> None:
                     obligations=obligations,
                     waivers=waivers,
                     complete=True,
+                    effective_context=EffectiveDeliveryContext(
+                        inventory=EffectiveDeliveryInventory(
+                            tuple(EffectiveDeliveryObligation(
+                                obligation.binding, obligation.title,
+                                (RequirementContribution(
+                                    "waived-scope-task", "direct", "selected_criteria",
+                                    ("waived-scope-criterion",), None, (), "a" * 64,
+                                ),), (),
+                            ) for obligation in obligations),
+                            ImplementationResponsibilityPlan((), True, ()),
+                            True, (),
+                        ),
+                        implementations=(), tests=(),
+                        admitted_methods=frozenset({"automated_test"}),
+                    ),
                 )
 
         _ = session, original
@@ -336,11 +356,12 @@ def _install_waived_delivery_evidence(monkeypatch) -> None:
 
 
 @pytest.mark.asyncio
-async def test_ts_dd9452a5_spec_done_allowed_on_degraded_board(monkeypatch):
-    """TC-J (AC14): a spec→done transition on a board whose KG is in
-    recovery_needed must succeed (allowed=True, NC-1 auto-skip) without
-    requiring skip_cognitive_consolidation=True.  The gate emits outcome=
-    UNAVAILABLE + reason=DEGRADED_KG_AUTO_SKIP but does NOT raise."""
+async def test_ts_dd9452a5_spec_done_uses_authoritative_absence_without_health(monkeypatch):
+    """BASE F6E supersedes the old automatic degraded-graph bypass.
+
+    A native Spec with no cognitive items completes from authoritative absence.
+    Health is not consulted and no automatic-skip telemetry may be emitted.
+    """
     import okto_pulse.core.services.kg_health_service as kg_health_service
     from okto_pulse.core.domain.code_traceability import (
         DeliveryContext,
@@ -350,9 +371,10 @@ async def test_ts_dd9452a5_spec_done_allowed_on_degraded_board(monkeypatch):
     from okto_pulse.core.kg.cognitive_closeout_gate import reset_closeout_gate_samples, get_closeout_gate_samples
     from okto_pulse.core.services import main as main_service
     from sqlalchemy_test_models import Board, Spec, SpecStatus
+    from okto_pulse.core.domain.architecture_adoption import ArchitectureAdoptionScope
 
     async def _stub_degraded(board_id, db, scheduler_control=None):
-        return {"graph_state": "recovery_needed"}
+        pytest.fail("completion must not use graph Health as authority")
 
     monkeypatch.setattr(kg_health_service, "get_kg_health", _stub_degraded)
 
@@ -376,13 +398,17 @@ async def test_ts_dd9452a5_spec_done_allowed_on_degraded_board(monkeypatch):
             id=board_id,
             name="R1 degraded E2E board",
             owner_id="r1-agent",
-            # skip_cognitive_consolidation is NOT enabled — NC-1 must auto-allow
+            # Completion must establish absence without a policy skip.
             settings={"skip_cognitive_consolidation": False},
         ))
         db.add(Spec(
             id=spec_id,
             board_id=board_id,
             title="R1 degraded E2E spec",
+            architecture_adoption=ArchitectureAdoptionScope(
+                board_id=board_id, spec_id=spec_id, adopted_in_edition=1,
+                actor_id="r1-agent", inherited_resource_ids=(),
+            ).model_dump(mode="json"),
             status=SpecStatus.IN_PROGRESS,
             created_by="r1-agent",
             delivery_context=DeliveryContext.BROWNFIELD,
@@ -406,8 +432,7 @@ async def test_ts_dd9452a5_spec_done_allowed_on_degraded_board(monkeypatch):
 
     async with get_session_factory()() as db:
         svc = SpecService(db)
-        # NC-1: degraded board must not raise for the done transition
-        # even with no active ledger items and no board skip setting
+        # The native source snapshot confirms no active cognitive items.
         result = await svc.move_spec(
             spec_id=spec_id,
             user_id="r1-agent",
@@ -426,20 +451,21 @@ async def test_ts_dd9452a5_spec_done_allowed_on_degraded_board(monkeypatch):
         spec = await db.get(Spec, spec_id)
         assert spec is not None
         assert spec.status == SpecStatus.DONE, (
-            f"spec must be done after NC-1 auto-skip, got {spec.status!r}"
+            f"spec must be done after authoritative absence, got {spec.status!r}"
         )
 
-    # verify telemetry captured the degraded auto-skip
     samples = get_closeout_gate_samples()
-    degraded_samples = [
-        s for s in samples
-        if s.get("reason") == CognitiveCloseoutReason.DEGRADED_KG_AUTO_SKIP.value
-    ]
-    assert degraded_samples, (
-        "expected at least one telemetry sample with reason=degraded_kg_auto_skip"
+    assert samples, "the completion gate must emit its actual decision"
+    assert all(
+        sample["reason"] != CognitiveCloseoutReason.DEGRADED_KG_AUTO_SKIP.value
+        for sample in samples
     )
-    for s in degraded_samples:
-        assert s["outcome"] == CognitiveCloseoutOutcome.UNAVAILABLE.value
+    assert any(
+        sample["reason"] == CognitiveCloseoutReason.NO_ACTIVE_COGNITIVE_ITEMS.value
+        and sample["outcome"] == CognitiveCloseoutOutcome.ALLOWED.value
+        and sample["skip_enabled"] == "false"
+        for sample in samples
+    )
 
 
 # ── ts_a377ed81: errors.md documents the KG graph-availability error keys ──────

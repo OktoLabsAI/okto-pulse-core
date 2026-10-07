@@ -1,0 +1,37 @@
+{
+  "scope": "Core16 semantic authority and source-only completion fixtures",
+  "product_changed": false,
+  "terminal_campaign": "core16-native-fences4",
+  "passed": 39,
+  "failed": 0,
+  "qualified_modules": [
+    "tests/test_r01a_specs_card_scenario_linking_uow.py",
+    "tests/test_r1_degraded_kg_fallback_gate.py"
+  ],
+  "artifacts": {
+    "core16-native-fences1.xml": {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\core16-native-fences1.xml",
+      "sha256": "848415d67cd220cc6764a1e07b676335722ef8c01ee1c992553b050f67450e86"
+    },
+    "core16-native-fences2.xml": {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\core16-native-fences2.xml",
+      "sha256": "46cd84f3fcc44a6d6b897f8dc705bc817c717a693773136f45e87047c04686fa"
+    },
+    "core16-native-scenarios3.xml": {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\core16-native-scenarios3.xml",
+      "sha256": "601977f5de53057bfd8c4a5e812cd1ea75c01918f38d9a5ecacb05a89d5348df"
+    },
+    "core16-native-fences4.xml": {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\core16-native-fences4.xml",
+      "sha256": "902b68f9fba7509390c9711220b21acd5c555d153ea7c8b361870c9aa40c9819"
+    },
+    "provenance-native-next-main1.json": {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\provenance-native-next-main1.json",
+      "sha256": "39e917e3a9a88289a8f7591c01a86fa8b883907258c4e78debbf6f42ed7b27b4"
+    },
+    "closure-native-next-main1.json": {
+      "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\closure-native-next-main1.json",
+      "sha256": "aad667d99f4baa51e4528bf48b103470bf12d296c3b9098260292e191fdcdd1a"
+    }
+  }
+}
