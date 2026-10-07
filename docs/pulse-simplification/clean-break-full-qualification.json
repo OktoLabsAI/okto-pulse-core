@@ -2652,5 +2652,19 @@
     },
     "scope": "Remove migration-only journal/capture and wiring; preserve native transaction, route fences, privacy receipts, current recovery/history. Refuse opaque retired rollout files/directories before binding inspect/initialize without writes.",
     "limits": "Counts overlap on composition suite; not159 distinct cases. Backend binding still contains Ladybug alternatives, next C2 step. No frontend change. Core11 terminal recorded separately with20 failures; no integral completion claim. Main Community fast-forwarded only after Core11 terminal."
+  },
+  "grafx_only_binding": {
+    "proof_pair": "dist-grafx-only-binding1",
+    "provenance": "provenance-grafx-only-binding1.json",
+    "closure": "closure-grafx-only-binding1.json",
+    "closure_ok": true,
+    "all_eight_budgets_zero": true,
+    "campaign": "grafx-only-binding1",
+    "passed": 118,
+    "failed": 0,
+    "seconds": 62.58,
+    "xml_sha256": "4a05d30ac23dd006cebe1f187296370036ca5823dbb16ecaeb88877c9cc0a040",
+    "scope": "Binding backend closed to Grafx. Remove Ladybug canonical path/page geometry branches, route candidate fallback, dead route branch, unused old generation helper and migration-only candidate preparation API. Native CAS and route revalidation retain atomicity/concurrency/current recovery contracts. Old documents/creation refused without byte changes at Board and Global scope.",
+    "limits": "Native explicit privacy erasure still handles .lbug residues: next removal already identified. Core11 followups not yet applied. No frontend changes."
   }
 }

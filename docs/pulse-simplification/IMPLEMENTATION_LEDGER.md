@@ -2,6 +2,33 @@
 
 ## Estado para retomada
 
+### 2026-10-07 — C2 binding exclusivamente Grafx qualificado
+Alterações nas árvores PRINCIPAIS, após todas campanhas anteriores terminais.
+GraphBackend só grafx; removidos branches de paths/geometria Ladybug, fallback
+do candidato de rota, branches mortos de snapshot, helper de geração antiga
+sem consumidores e prepare_board_binding_candidate exclusivo de migração.
+CAS nativo mantém concorrência, publicação/readback autenticado e contrato usado
+na recuperação atual. Não introduzida conversão nem nova permissão.
+
+Fixtures positivas agora usam gerações Grafx; negam backend/documento antigo
+em Board e Global, conferindo bytes preservados. Retirado teste skipped exclusivo
+de cutover Ladybug. Fsync/falhas de publicação, adulteração, conflito, exactly-one
+winner e isolamento de escopo mantidos. grafx-only-binding1 terminou0:
+118 aprovados/62.58s (foundation, CAS, publication window, resolver,
+composições Board e Global).
+dist-grafx-only-binding1/provenance no venv PRINCIPAL:843/905 Core e316/402
+Community byte-identical ANTES da campanha. Build/install/proof terminais.
+Closure-grafx-only-binding1 terminou0:ok=true, findings/docs vazios,8budgetsZERO.
+Ruff F/E9/diff verdes; nenhum frontend alterado. Recibo grafx_only_binding
+em clean-break-full-qualification.json. Nenhuma sessão desta rodada viva.
+
+Próximo dentro de C2: grafx_board_storage ainda apaga resíduos .lbug no sweep
+explícito de privacidade. Retirar suporte à exclusão antiga, manter observação
+opaca que não confunda resíduos com ausência e recusar antes de apagar Grafx.
+Depois followup13 suites Core11; seleção Core12 preparada606, não iniciada.
+Worktrees isolados/venv isolado agora estão atrás deste incremento; não usá-los
+como fonte corrente. C1–C4/critério/benchmark/T23/KG-10 continuam pendentes.
+
 ### 2026-10-07 — C2 journal/capture retirados, publicados e integrados
 Community de38ff80 commit/push0; main Community integrado por fast-forward após
 Core11 terminal. Inclui também o commit de data-home6d8beb6a antes isolado.
