@@ -2,6 +2,63 @@
 
 ## Estado para retomada
 
+### 2026-10-07 — C4 KG-21/KG-23 concluídos; invalidação causal atômica
+Frontend endpoint-ui1 (31855) terminou0:16 aprovados no GraphCanvas,
+incluindo Entity/Bug após remoção de parent edge e mudança de seleção. É regressão
+jsdom/fallback acessível; avisos Canvas esperados, não prova WebGL/E2E de navegador.
+Fontes e assets frontend inalterados; recibo sela JSON e casos, sem somar aos108 Python.
+
+Main38 build/install/prova16132 terminou0:843/905 Core+316/402 Community byte-identical
+antes dos testes. Core endpoint-invalidation1 (64945) terminou0:103pass/132.75s.
+Community endpoint-generation3 (97867) terminou1:4pass/1fail/242.81s. Positivo de
+geração, troca de Spec, história Decision e crash real passaram. Negativo parou
+após Card: fila avança um dono do Board por turno. Fixture passou a executar o
+segundo turno para alcançar a Spec/injeção; nenhuma asserção de rollback removida.
+Closure38 (25939) terminou1 somente READMEs; findings=[] e oitoZERO.
+
+READMEs regenerados pelo renderer oficial. Build/install/prova main38-final (86127)
+terminou0 com os mesmos843/905+316/402 e Python produtivo inalterado. Negativo focado
+endpoint-generation4 (56026) terminou0:1pass/34.69s (1deselected); injeção atingida
+após escrita real, fila/SQL e grafo compensados como exigido. Closure final37234
+terminou0:ok=true, findings/documentation_findings vazios e oitoZERO.
+Ruff F/E9 e diff-check aprovados. Nenhum processo pendente.
+
+Recibo clean-break-acceptance-native-endpoint-invalidation.json sela108 casos
+distintos finais e preserva falhas/reprodução. Qualifica KG-21/KG-23 somente.
+Correção usa portas públicas, escopo Board/Spec/origem e mesma UOW do ACK;
+coalesce_active preserva claims/paused/rebuild. Não fabrica história/domínio e
+não depende da ordem da fila. Fonte completa da Decision e predecessor preservados.
+Índice60 verificados,175 aplicáveis pendentes,11 superados. Próximo: KG-16/18/24/25
+(remoção/propriedade, multiset incremental/rebuild e census), depois DEI/ARQVER.
+BASE:T23/KG-10 seguem pendentes de decisão própria. Isolado next27 STALE.
+Sem mudança frontend, migração, dados reais, release/tag/deploy ou conclusão integral.
+Pronto para commits/pushes pareados; objetivo permanece ativo.
+
+### 2026-10-07 — KG-21 passou; KG-23 reproduziu consumidor preso à geração anterior
+Base publicada Core8060d1c8 / Community8f1a1201, main37 provado. Turno anterior foi
+progresso (KG-19 real-process validado/enviado). Nenhum processo anterior ativo.
+parent-change1 (42665) terminou0:1 aprovado/52.14s. Fila real troca Spec, remove último
+vínculo e repete eventos; todas famílias de suporte e dono convergem, fontes/nós antigos
+preservados. Ainda falta selar recibo/índice de KG-21.
+endpoint-generation1 (41080) terminou1/26.80s: consulta física do novo oráculo não
+cobria layout supports. Leitor lógico confirmou relação inicial; corrigido teste.
+endpoint-generation2 (41527) terminou1/27.04s: falha real após criação da geração1.
+Card ainda apontava para geração0 superseded. Audit SQL confirmou ordem Card→Spec:
+Card ACK03/04s, Spec ACK05/07s, e fila vazia. Resolver de endpoint já seleciona
+superseded_by NULL, mas não é chamado de novo depois da supersedência da Spec.
+
+WIP corretivo: após commit gráfico de Spec com nodes_superseded, staged consumers
+(Card da Spec + Bugs ligados a esses Cards, todos sob Board) na MESMA UOW do ACK.
+Usa somente application_persistence/relational_effects públicos. coalesce_active=True
+preserva claims pendentes e membership de rebuild; causa operacional específica.
+Não é manutenção best-effort pós-ACK, não fabrica evento semântico e não faz sweep.
+Rebuild exato mantém seu protocolo próprio. Teste agora força Card primeiro e inclui
+falha depois da escrita do novo work item para provar rollback SQL/compensação gráfica.
+Três testes Core novos verificam escopo, dedup/coalescência, vazio e propagação de erro.
+Nenhum teste do produto alterado foi executado ainda. Próximo: build/install/prova
+main38 antes de comportamento, testes positivos/rollback, closure, recibos/commits.
+Sem frontend alterado. BASE:T23/KG-10 permanecem pendentes; não há nova autoridade.
+
 ### 2026-10-07 — C4 KG-19 qualificado com crash de processo real
 crash-replay4 (53193) terminou0:1 aprovado/58.16s. Subprocesso terminou73
 exatamente em before_relational_ack, após fence real e durability_applied.

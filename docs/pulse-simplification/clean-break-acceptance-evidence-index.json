@@ -3498,7 +3498,12 @@
       "historical_review_status": "not_audited_in_this_inventory",
       "prior_reviewed_execution": null,
       "discovered_artifacts": [],
-      "current_qualification": "pending_current_pair_review"
+      "current_qualification": "verified_current_pair_review",
+      "current_review": {
+        "artifact": "clean-break-acceptance-native-endpoint-invalidation.json",
+        "criterion_key": "KG:KG-21",
+        "proof_pair": "dist-native-main38-final"
+      }
     },
     {
       "key": "KG:KG-22",
@@ -3653,7 +3658,12 @@
       "historical_review_status": "not_audited_in_this_inventory",
       "prior_reviewed_execution": null,
       "discovered_artifacts": [],
-      "current_qualification": "pending_current_pair_review"
+      "current_qualification": "verified_current_pair_review",
+      "current_review": {
+        "artifact": "clean-break-acceptance-native-endpoint-invalidation.json",
+        "criterion_key": "KG:KG-23",
+        "proof_pair": "dist-native-main38-final"
+      }
     },
     {
       "key": "KG:KG-24",

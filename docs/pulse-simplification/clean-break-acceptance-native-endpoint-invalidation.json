@@ -1,0 +1,292 @@
+{
+  "format": "pulse-040-reviewed-acceptance/v1",
+  "criterion_keys": [
+    "KG:KG-21",
+    "KG:KG-23"
+  ],
+  "status": "verified_current_pair_review",
+  "proof_pair": "dist-native-main38-final",
+  "provenance_sha256": "b6cac7431cc09c3f3b00b392dd01754d233c8657fc01a1adf486352d0c520c6c",
+  "behavioral_pair": "dist-native-main38; identical product Python to final; only generated README fragments changed before final build.",
+  "runs": [
+    {
+      "name": "acceptance-native-endpoint-invalidation1",
+      "xml_sha256": "9b4422bf6ba580a94819ba282f365cef18a25ba2ee438a302fe499712ebe24b6",
+      "passed": 103,
+      "failed": 0,
+      "cases": [
+        "tests.test_spec_endpoint_consumer_invalidation::test_endpoint_consumers_are_scoped_deduplicated_and_preserve_active_claims[False]",
+        "tests.test_spec_endpoint_consumer_invalidation::test_endpoint_consumers_are_scoped_deduplicated_and_preserve_active_claims[True]",
+        "tests.test_spec_endpoint_consumer_invalidation::test_notification_failure_propagates_to_the_caller_uow",
+        "tests.test_card_scenario_invalidation::test_removed_and_added_references_survive_as_bounded_event_metadata",
+        "tests.test_card_scenario_invalidation::test_spec_change_invalidates_card_side_consumers_and_old_links_with_board_fence[acceptance_criteria]",
+        "tests.test_card_scenario_invalidation::test_spec_change_invalidates_card_side_consumers_and_old_links_with_board_fence[api_contracts]",
+        "tests.test_card_scenario_invalidation::test_spec_change_invalidates_card_side_consumers_and_old_links_with_board_fence[business_rules]",
+        "tests.test_card_scenario_invalidation::test_spec_change_invalidates_card_side_consumers_and_old_links_with_board_fence[decisions]",
+        "tests.test_card_scenario_invalidation::test_spec_change_invalidates_card_side_consumers_and_old_links_with_board_fence[functional_requirements]",
+        "tests.test_card_scenario_invalidation::test_spec_change_invalidates_card_side_consumers_and_old_links_with_board_fence[integration_requirements]",
+        "tests.test_card_scenario_invalidation::test_spec_change_invalidates_card_side_consumers_and_old_links_with_board_fence[observability_requirements]",
+        "tests.test_card_scenario_invalidation::test_spec_change_invalidates_card_side_consumers_and_old_links_with_board_fence[technical_requirements]",
+        "tests.test_card_scenario_invalidation::test_spec_change_invalidates_card_side_consumers_and_old_links_with_board_fence[test_scenarios]",
+        "tests.test_card_scenario_invalidation::test_direct_card_mutation_invalidates_both_parents_without_duplicates[old-new]",
+        "tests.test_card_scenario_invalidation::test_direct_card_mutation_invalidates_both_parents_without_duplicates[old-None]",
+        "tests.test_card_scenario_invalidation::test_direct_card_mutation_invalidates_both_parents_without_duplicates[None-new]",
+        "tests.test_card_scenario_invalidation::test_direct_card_mutation_invalidates_both_parents_without_duplicates[same-same]",
+        "tests.test_card_scenario_invalidation::test_real_scenario_unlink_retains_removed_card_in_outbox",
+        "tests.test_card_scenario_invalidation::test_real_structured_child_unlink_retains_last_consumer",
+        "tests.test_card_scenario_invalidation::test_real_card_update_emits_one_durable_invalidation_and_no_event_for_noop",
+        "tests.test_card_scenario_invalidation::test_real_scenario_deletion_reenqueues_both_reference_sources_after_cascade",
+        "tests.test_events::test_publish_rolled_back_does_not_persist",
+        "tests.test_events::test_publish_committed_inserts_event_and_execution",
+        "tests.test_events::test_clean_tables_preserves_restricted_events_from_other_boards",
+        "tests.test_events::test_registry_includes_authored_learning_after_sprint_retirement",
+        "tests.test_events::test_high_priority_events_unchanged_by_spec_eaf78891",
+        "tests.test_events::test_ideation_moved_reenqueues_ideation_projection",
+        "tests.test_events::test_quality_assessment_recorded_reenqueues_subject_projection",
+        "tests.test_events::test_quality_clarification_changed_reenqueues_subject_projection[ideation]",
+        "tests.test_events::test_quality_clarification_changed_reenqueues_subject_projection[refinement]",
+        "tests.test_events::test_quality_clarification_changed_reenqueues_subject_projection[spec]",
+        "tests.test_events::test_research_decision_events_reenqueue_refinement_projection[research_decision.appended-ResearchDecisionAppended]",
+        "tests.test_events::test_research_decision_events_reenqueue_refinement_projection[research_decision.superseded-ResearchDecisionSuperseded]",
+        "tests.test_events::test_consolidation_admission_skips_terminal_source_even_for_old_queue[cancelled-False]",
+        "tests.test_events::test_consolidation_admission_skips_terminal_source_even_for_old_queue[draft-True]",
+        "tests.test_events::test_dispatcher_drain_creates_consolidation_queue_row",
+        "tests.test_events::test_dedup_same_entity_only_one_queue_row",
+        "tests.test_events::test_dedup_allows_distinct_entities",
+        "tests.test_events::test_card_cancelled_gets_priority_high",
+        "tests.test_events::test_spec_version_bumped_gets_priority_high",
+        "tests.test_events::test_startup_recovery_resets_processing_to_pending",
+        "tests.test_events::test_retry_then_dlq_after_max_attempts",
+        "tests.test_events::test_publish_latency_under_15ms",
+        "tests.test_events::test_event_processor_does_not_own_asyncio_task",
+        "tests.test_events::test_payload_for_storage_excludes_top_level_fields",
+        "tests.test_events::test_spec_semantic_changed_enqueues_spec_normal",
+        "tests.test_events::test_refinement_semantic_changed_enqueues_refinement",
+        "tests.test_events::test_card_linked_to_spec_enqueues_spec_and_card",
+        "tests.test_events::test_card_unlinked_from_spec_enqueues_spec",
+        "tests.test_events::test_semantic_burst_dedup_to_single_queue_row",
+        "tests.test_events::test_story_linked_to_ideation_enqueues_story_and_ideation",
+        "tests.test_events::test_refinement_artifact_materializes_lineage_in_worker",
+        "tests.test_events::test_card_moved_dual_target_enqueues_card_and_spec",
+        "tests.test_events::test_card_conclusion_added_dual_target_enqueues_card_and_spec",
+        "tests.test_events::test_card_moved_burst_dedup_to_single_pair",
+        "tests.test_events::test_card_moved_orphan_skips_spec_enqueue",
+        "tests.test_events::test_card_moved_emits_reenqueue_fired_log",
+        "tests.test_events::test_card_conclusion_orphan_skips_spec_enqueue",
+        "tests.test_events::test_high_priority_events_unchanged_by_spec_4007e4a3",
+        "tests.test_events::test_human_curated_column_declared_in_schema",
+        "tests.test_events::test_node_is_human_curated_treats_null_as_false",
+        "tests.test_events::test_update_branch_preserves_curated_node_without_override",
+        "tests.test_events::test_begin_consolidation_has_nothing_changed_log_site",
+        "tests.test_events::test_agent_instructions_documents_new_triggers",
+        "tests.test_events::test_card_moved_publish_latency_under_5ms_p99",
+        "tests.test_events::test_decay_handlers_registered",
+        "tests.test_events::test_decay_applied",
+        "tests.test_events::test_decay_clamp_floor",
+        "tests.test_events::test_decay_restore_round_trip_preserves_score_below_penalty",
+        "tests.test_events::test_source_lifecycle_covers_owner_family_children_and_aliases[spec:spec-owner-family-projected_refs0]",
+        "tests.test_events::test_source_lifecycle_covers_owner_family_children_and_aliases[card:card-owner-family-projected_refs1]",
+        "tests.test_events::test_archive_restore_keeps_cancelled_source_revoked",
+        "tests.test_events::test_cancellation_restore_keeps_archived_source_revoked",
+        "tests.test_events::test_late_cancel_retry_converges_to_current_restored_state",
+        "tests.test_events::test_late_restore_retry_converges_to_current_recancelled_state",
+        "tests.test_events::test_late_restore_after_hard_delete_stays_revoked",
+        "tests.test_events::test_decay_does_not_overwrite_another_revocation_reason",
+        "tests.test_events::test_decay_idempotent",
+        "tests.test_events::test_decay_reverted",
+        "tests.test_events::test_restore_selective_by_reason",
+        "tests.test_events::test_decay_zero_nodes",
+        "tests.test_events::test_handler_isolation_on_failure",
+        "tests.test_consolidation_queue_resilience_s2::test_ac1_enqueuer_never_rejects_above_alert_threshold",
+        "tests.test_consolidation_queue_resilience_s2::test_ac10_alert_fires_only_on_crossing",
+        "tests.test_consolidation_queue_resilience_s2::test_ac16_priority_high_for_cancelled_cards",
+        "tests.test_consolidation_queue_resilience_s2::test_ac17_attempt_entry_schema_includes_recovery_contract",
+        "tests.test_consolidation_queue_resilience_s2::test_ac17_attempt_entry_truncates_message_to_500_chars",
+        "tests.test_consolidation_queue_resilience_s2::test_ac17_attempt_entry_traceback_only_when_requested",
+        "tests.test_consolidation_queue_resilience_s2::test_worker_commit_uses_safe_write_guard_and_lifecycle",
+        "tests.test_consolidation_queue_resilience_s2::test_worker_commit_refuses_ack_when_checkpoint_fails",
+        "tests.test_consolidation_queue_resilience_s2::test_worker_commit_error_still_drains_possible_autocommit",
+        "tests.test_consolidation_queue_resilience_s2::test_ac7_route_to_dead_letter_moves_row_with_history",
+        "tests.test_consolidation_queue_resilience_s2::test_ac2_recovery_re_pendings_orphaned_claims",
+        "tests.test_projection_active_set_session_cleanup::test_a_restored_projection_edge_survives_the_session_sweep",
+        "tests.test_projection_active_set_session_cleanup::test_compensation_runs_before_the_generic_sweep",
+        "tests.test_projection_active_set_session_cleanup::test_projection_edges_are_preserved_with_no_spec_lineage_at_all",
+        "tests.test_projection_active_set_session_cleanup::test_two_reconciliations_preserve_only_the_state_the_session_started_from",
+        "tests.test_projection_active_set_session_cleanup::test_a_scope_that_cannot_preserve_fails_typed_before_deleting_anything",
+        "tests.test_projection_active_set_session_cleanup::test_a_session_without_projections_makes_the_call_it_always_made",
+        "tests.test_projection_active_set_session_cleanup::test_two_removals_of_different_members_both_come_back",
+        "tests.test_projection_active_set_session_cleanup::test_a_provider_that_only_swallows_kwargs_is_never_called",
+        "tests.test_projection_active_set_session_cleanup::test_a_before_image_does_not_shelter_a_second_edge_of_the_same_identity",
+        "tests.test_projection_active_set_session_cleanup::test_a_new_dependency_rule_does_not_cancel_the_old_one_it_shares_endpoints_with"
+      ]
+    },
+    {
+      "name": "acceptance-native-endpoint-generation3",
+      "xml_sha256": "c344da30e907a1600b1618efdf4d6a41770eaa39e5f9503f37aa17d14590bf95",
+      "passed": 4,
+      "failed": 1,
+      "cases": [
+        "tests.test_native_projection_endpoint_generation::test_card_consumer_follows_decision_generation_without_orphan_or_placeholder[False]",
+        "tests.test_native_projection_parent_change::test_spec_reassignment_then_last_unlink_cleans_old_owned_relations",
+        "tests.test_native_decision_chain::test_native_decision_revision_keeps_predecessor_and_idempotent_chain",
+        "tests.test_native_projection_crash_replay::test_real_crash_before_ack_replays_current_source_without_duplicate_relations"
+      ]
+    },
+    {
+      "name": "acceptance-native-endpoint-generation4",
+      "xml_sha256": "268f89da4ca1d51b46bc395a09850850f3649157d0649a9fd9e4b00ffaf15d50",
+      "passed": 1,
+      "failed": 0,
+      "cases": [
+        "tests.test_native_projection_endpoint_generation::test_card_consumer_follows_decision_generation_without_orphan_or_placeholder[True]"
+      ]
+    }
+  ],
+  "distinct_passed_cases": 108,
+  "initial_runs": [
+    {
+      "name": "acceptance-native-parent-change1",
+      "xml_sha256": "21163d6f9fe7ed06a89f0d4098551c812323f8cc6a0f9c2aef36919e1c51e01b",
+      "passed": 1,
+      "failed": 0,
+      "cases": [
+        "tests.test_native_projection_parent_change::test_spec_reassignment_then_last_unlink_cleans_old_owned_relations"
+      ]
+    },
+    {
+      "name": "acceptance-native-endpoint-generation1",
+      "xml_sha256": "20246689ac2165d1368829a7eef47b3dedbddf8ae48286dc1837ca7cc8cc9bc9",
+      "passed": 0,
+      "failed": 1,
+      "cases": []
+    },
+    {
+      "name": "acceptance-native-endpoint-generation2",
+      "xml_sha256": "f6d2bb1f4fcc56cdf17338a315a9bc082d2d66e2db6d6f274f370d271ff8434f",
+      "passed": 0,
+      "failed": 1,
+      "cases": []
+    }
+  ],
+  "review": {
+    "KG:KG-21": "Real native SQL/Grafx processing asserts the exact old/new owner queue set, moves a Card to another Spec, removes its last Spec binding, then replays both events. Registered child/parent rules leave the old owner and converge to the new owner without duplicates; final unlink empties the queried owned set. Both source Specs, their declarations and Card graph root remain.",
+    "KG:KG-23": "With the consumer deliberately processed first, a Spec creates a Decision successor at generation+1. Staged causal work refreshes the Card to the successor's physical identity and declared source reference. Exactly two Decision generations remain, predecessor content is preserved, no placeholder appears, and repeat processing preserves physical links plus complete relationship multiset.",
+    "atomicity": "Injected failure after actually writing the downstream Card queue row propagates before ACK: SQL rolls back that row, the Spec stays pending with the exact injected error, and graph compensation restores original Decision identities/content/generation and Card link."
+  },
+  "correction": "When a live Spec consolidation supersedes graph nodes, enqueue its current Cards and directly linked Bug proxies through public application_persistence/relational_effects ports, under the same UOW and graph fence before ACK. Board/Spec/origin filters bound the set. Deduplication and coalesce_active=True preserve active claims/paused work and exact rebuild membership. No new semantic event, Board sweep, queue ordering rule or best-effort post-ACK dependency.",
+  "failure_disposition": [
+    "endpoint-generation1: physical supports query did not cover the logical layout; diagnostic snapshot confirmed the initial relation. Switched the test oracle to the existing logical graph reader.",
+    "endpoint-generation2: real stale endpoint reproduced on main37. SQL audit confirmed Card ACK before Spec supersedence; queue drained while Card still referenced generation 0.",
+    "endpoint-generation3: positive generation, parent change, Decision history and real crash passed. Negative fixture ran only one fair-queue turn, stopping after Card before its injection point. Corrected the fixture to process the Spec in a second turn; endpoint-generation4 passed that exact case.",
+    "Initial closure38 had only README matrix mismatches, with all eight budgets zero. Official renderer regenerated both fragments; rebuilt/proved final pair and closure38-final passed."
+  ],
+  "closure": {
+    "ok": true,
+    "budgets": [
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "import_boundary_baseline",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every import_boundary_baseline allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "singleton_baseline",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every singleton_baseline allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "dependency_temporary_exceptions",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every dependency_temporary_exceptions allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "graph_runtime_compatibility",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every graph_runtime_compatibility allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "rebuild_artifact_compatibility",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every rebuild_artifact_compatibility allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "community_private_reach_ins",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every community_private_reach_ins allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "community_adapter_bridges",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every community_adapter_bridges allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "af35_relational_residue",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every af35_relational_residue allowance before F16 completion."
+      }
+    ],
+    "findings": [],
+    "documentation_findings": []
+  },
+  "source_sha256": "e4250ee9d4ed51a7c3948554cbeacae30996db83c1b56270fd920b3b41180671",
+  "limits": [
+    "Source lifecycle changes are SQL fixtures; no permission to edit a Done Spec or change decision authority is asserted.",
+    "Behavioral campaigns overlap earlier proofs; 108 is the distinct final case count, not the sum of every historical run.",
+    "No frontend changes, real-data operation, release/tag/deploy or migration. Other fixed acceptance criteria remain open."
+  ],
+  "frontend": {
+    "name": "acceptance-native-endpoint-ui1",
+    "json_sha256": "4505a47a127692948b58fd83fe1ae09c570d84b70624ff0d7bf55f318e281d79",
+    "passed": 16,
+    "cases": [
+      "GraphCanvas — selection wiring (S4.1 / AC-4) labels origin associations without claiming common cause and clears the note after removal",
+      "GraphCanvas — selection wiring (S4.1 / AC-4) does not infer origin provenance from a confidence of 0.8",
+      "GraphCanvas — selection wiring (S4.1 / AC-4) keeps the selected Entity navigable after its parent edge is removed",
+      "GraphCanvas — selection wiring (S4.1 / AC-4) keeps the selected Bug navigable after its parent edge is removed",
+      "GraphCanvas — selection wiring (S4.1 / AC-4) keeps observed Entity-to-scenario endpoints independently navigable",
+      "GraphCanvas — selection wiring (S4.1 / AC-4) keeps observed Bug-to-scenario endpoints independently navigable",
+      "GraphCanvas — selection wiring (S4.1 / AC-4) starts with no selection when initialSelectedNodeId is null",
+      "GraphCanvas — selection wiring (S4.1 / AC-4) reflects initialSelectedNodeId on mount",
+      "GraphCanvas — selection wiring (S4.1 / AC-4) updates when initialSelectedNodeId prop changes",
+      "GraphCanvas — selection wiring (S4.1 / AC-4) does not invoke onSelect for a single click (single-click is reserved for toggle)",
+      "GraphCanvas — selection wiring (S4.1 / AC-4) single-click toggles selection on and off (AC-4)",
+      "GraphCanvas — selection wiring (S4.1 / AC-4) double-click fires onSelect with the KG node (AC-4)",
+      "GraphCanvas — selection wiring (S4.1 / AC-4) renders the accessible fallback (not a crash) when WebGL is unavailable",
+      "GraphCanvas — selection wiring (S4.1 / AC-4) renders the empty-state fallback when filters exclude every node",
+      "GraphCanvas — selection wiring (S4.1 / AC-4) filters and styles Code Traceability Entity subtypes by kind_of",
+      "GraphCanvas — selection wiring (S4.1 / AC-4) prop-driven selection can be cleared externally by passing null"
+    ],
+    "scope": "Existing GraphCanvas selection/navigation regression, including Entity/Bug parent-edge removal and selected identity updates. jsdom accessible fallback, not WebGL browser E2E; frontend source/assets unchanged."
+  }
+}

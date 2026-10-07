@@ -929,6 +929,47 @@ async def _persist_exact_disposition(
     return result
 
 
+async def _enqueue_superseded_spec_consumers(db: Any, *, board_id: str, spec_id: str) -> int:
+    """Stage bounded consumers in the same UOW as the new endpoint and its ACK.
+
+    A consumer may have run before this Spec in the fair queue. Its logical
+    source reference is unchanged, but its physical endpoint is now obsolete.
+    Active claims coalesce: the board writer fence makes them read the new
+    endpoint after this transaction. Already-ACKed consumers need a new row.
+    """
+    from okto_pulse.core.ports.application_persistence import (
+        ApplicationFilter, ApplicationQuery, get_application_persistence_port,
+    )
+    from okto_pulse.core.ports.relational_effects import (
+        ConsolidationQueueUpsert, get_relational_effects_port,
+    )
+
+    persistence = get_application_persistence_port()
+    cards = await persistence.list(db, ApplicationQuery(entity="card", filters=(
+        ApplicationFilter("board_id", "eq", board_id),
+        ApplicationFilter("spec_id", "eq", spec_id),
+    )))
+    owners = list(dict.fromkeys(card.id for card in cards))
+    if not owners:
+        return 0
+    bugs = await persistence.list(db, ApplicationQuery(entity="card", filters=(
+        ApplicationFilter("board_id", "eq", board_id),
+        ApplicationFilter("card_type", "eq", "bug"),
+        ApplicationFilter("origin_task_id", "in", tuple(owners)),
+    )))
+    owners = list(dict.fromkeys((*owners, *(bug.id for bug in bugs))))
+    effects = get_relational_effects_port()
+    for owner in owners:
+        await effects.upsert_consolidation_queue_unless_tombstoned(
+            db, ConsolidationQueueUpsert(
+                board_id=board_id, artifact_type="card", artifact_id=owner,
+                priority="normal", source="projection:spec_endpoint_superseded",
+                triggered_by_event="kg.spec_endpoint_superseded", coalesce_active=True,
+            ),
+        )
+    return len(owners)
+
+
 def _observe_spec_dependency_projection_lag_after_ack(
     entry: ConsolidationQueueRecord,
     *,
@@ -3356,6 +3397,14 @@ async def _process_queue_entry(
 
     if isinstance(commit_resp, DeferredProjectionProgress):
         return commit_resp
+
+    if (entry.artifact_type == "spec" and commit_resp.nodes_superseded
+            and not _queue_source(entry).startswith("rebuild:")):
+        # Required causal work, not best-effort post-ACK maintenance. Any failure
+        # rolls back this UOW and compensates the deferred graph mutation.
+        await _enqueue_superseded_spec_consumers(
+            db, board_id=entry.board_id, spec_id=entry.artifact_id,
+        )
 
     logger.info(
         "consolidated %s:%s â†’ nodes_added=%d edges_added=%d",
