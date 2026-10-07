@@ -714,5 +714,17 @@
     "proof_pair": "dist-native-boundary-qualification1",
     "scope": "Real SQL/Grafx authored Learning recovery, materialization/worker, Bug clusters, C3 SQL statement budgets/planner. Telemetry collected but deselected to reproduce conftest collision.",
     "full_qualification": "Incomplete; frontend campaign active, remaining backend modules pending."
+  },
+  "frontend_full": {
+    "campaign": "clean-break-full-frontend1",
+    "passed": 2444,
+    "failed": 0,
+    "files_passed": 269,
+    "duration_seconds": 573.66,
+    "json_sha256": "70ad19784a6e676c6197ead7453fc094044cfd20e617ea20f96bfc1bd9bb300e",
+    "community_commit": "e5811b70",
+    "product_changes": false,
+    "proof_pair": "dist-native-boundary-qualification1",
+    "limits": "Frontend suite complete; remaining backend modules and criterion qualification pending."
   }
 }
