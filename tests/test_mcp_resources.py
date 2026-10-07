@@ -343,9 +343,9 @@ def test_test_scenario_resource_documents_write_omission_and_raw_legacy_filter()
     assert "omit `scenario_type` to preserve the current type" in normalized_update
     assert "an empty string is not part of the closed enum" in normalized_update
     assert 'scenario_type/notes: New value, or "" to leave as-is' not in update_section
-    assert "raw persisted value" in normalized_list
-    assert "Historical values such as regression" in normalized_list
-    assert "read-only compatibility filter" in normalized_list
+    assert "closed native enum" in normalized_list
+    assert "Unsupported values are rejected" in normalized_list
+    assert "read-only compatibility filter" not in normalized_list
 
 
 def test_guideline_resources_match_governed_lifecycle_and_priority_semantics() -> None:
@@ -409,8 +409,10 @@ def test_spec_quality_guidance_routes_lifecycle_without_contract_duplication() -
     assert "finding count and severity are advisory" in normalized_specs
     assert "Previous validation results are history" in normalized_specs
     assert "Current result for this lifecycle edition" in normalized_specs
-    assert "System legacy import" in normalized_quality
-    assert "is migrated audit evidence" in normalized_quality
+    assert "System legacy import" not in normalized_quality
+    assert "migrated audit evidence" not in normalized_quality
+    assert "Quality results require a positive subject edition" in normalized_quality
+    assert "Use the Validation surface for those results" in normalized_quality
     assert (
         "This resource intentionally does not repeat those lifecycle steps"
         in normalized_quality
@@ -419,7 +421,7 @@ def test_spec_quality_guidance_routes_lifecycle_without_contract_duplication() -
     # Shared operational details have one canonical home to control token use.
     for detail in (
         "limits `25|50|100`",
-        "edition is SQL `NULL`",
+        "missing editions are invalid",
         "`{subject}.quality.read`",
     ):
         assert detail in quality
@@ -705,3 +707,46 @@ def test_smoke_detects_synthetic_broken_link() -> None:
         "Pattern + effective-catalog lookup must surface the broken URI; "
         f"got {found!r}."
     )
+
+def test_scenario_evidence_guidance_uses_current_taxonomy_without_legacy_readers() -> None:
+    from okto_pulse.core.services.test_scenario_lifecycle import EVIDENCE_CLASSES
+
+    body = (RESOURCES_DIR / "reference/tool-docs/test-scenario.md").read_text(
+        encoding="utf-8"
+    )
+    documented = set(re.findall(r"^\s*- `([a-z_]+)`(?: \([^\n]+\))?:", body, re.MULTILINE))
+    assert set(EVIDENCE_CLASSES) <= documented
+    assert "unsupported and rejected on reads and writes" in body
+    for stale_promise in (
+        "reader-only legacy alias",
+        "pre-hardening records",
+        "Legacy execution contracts",
+        "sprint gate",
+        "grandfathered",
+    ):
+        assert stale_promise not in body
+
+def test_served_resources_reference_only_live_tools_and_resource_uris() -> None:
+    import asyncio
+    from okto_pulse.core.mcp import server
+
+    catalog = server.effective_resource_catalog().specs()
+    uris = {spec.uri for spec in catalog}
+    tools = set(asyncio.run(server.mcp.get_tools()))
+    # Resolve the three documented family shorthands before checking exact names.
+    expansions = {
+        "okto_pulse_move_*": "okto_pulse_move_card",
+        "okto_pulse_kg_*": "okto_pulse_kg_health",
+        "okto_pulse_get_{ideation,refinement,spec}_context": (
+            "okto_pulse_get_ideation_context okto_pulse_get_refinement_context "
+            "okto_pulse_get_spec_context"
+        ),
+    }
+    for spec in catalog:
+        body = spec.read()
+        for shorthand, expanded in expansions.items():
+            body = body.replace(shorthand, expanded)
+        referenced_tools = set(re.findall(r"okto_pulse_[a-z0-9_]+", body))
+        referenced_uris = set(_RESOURCE_URI_PATTERN.findall(body))
+        assert referenced_tools <= tools, (spec.uri, sorted(referenced_tools - tools))
+        assert referenced_uris <= uris, (spec.uri, sorted(referenced_uris - uris))

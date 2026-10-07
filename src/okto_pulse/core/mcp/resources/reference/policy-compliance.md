@@ -44,8 +44,8 @@ then seals immutable evidence.
 Before recording:
 
 Ideation, Refinement, and Spec use the lifecycle-edition cycle described here.
-Sprint, Card, and Test Scenario remain legacy version-fenced subjects: omit
-`expected_subject_edition` for those three types, and do not infer an edition.
+Card and Test Scenario use version fences: omit `expected_subject_edition`
+for those two types, and do not infer an edition.
 
 1. Read the entity's full current context and the exact adopted guideline
    revision. Use the current subject version, lifecycle edition, binding
@@ -144,10 +144,8 @@ use signed opaque keyset cursors. Preserve every filter, projection and
 
 Use semantic assessment reads to inspect immutable results grouped as Current
 and Previous; use the finding list to address one failed metric without
-reconstructing it from free text. Legacy results whose subject edition is SQL
-`NULL` are history-only under Previous and can never become Current. Technical
-compatibility filters apply only to assessment lists; finding and waiver lists
-do not accept them.
+reconstructing it from free text. Lifecycle subjects require their current
+edition; Previous results retain the edition in which they were recorded.
 
 Waiver collection and singular reads evaluate expiry as of their required
 `evaluated_at`. Reuse the exact collection snapshot when opening one result.
@@ -185,7 +183,7 @@ waiver and skip lineage. These are semantic `Entity` projections, never
 deterministic `Constraint` nodes and never gate authority. Unlink, retirement,
 supersedence and exception closure terminate the corresponding active
 projection with a tombstone; rebuild must converge to the same relational
-state and explicitly terminate legacy rule nodes. Health reports projection
+state. Health reports projection
 availability; it does not offer a rebuild workflow. Internal workers reconcile
 projection debt. Corruption requiring intervention belongs to an authorized
 external support/release procedure; never edit the graph directly.

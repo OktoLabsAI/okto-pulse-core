@@ -22,14 +22,12 @@ Executable guideline findings are a separate evidence family governed by
 |---|---|---|---|
 | Ideation | `ambiguity` | REST/MCP ambiguity command | `evaluating` |
 | Refinement | `ambiguity` | REST/MCP ambiguity command | `approved` |
-| Spec | `spec_validation` | System legacy import | One-shot migration; audit only |
 | Spec | `requirement_lint` | REST/MCP external agent command | `approved` |
 
 The live Spec Validation transaction remains authoritative and writes the
-Spec's validation history. A `spec_validation` Quality result, when present,
-is migrated audit evidence. Requirement Lint is independently recorded by the
-agent at `approved`; Core and Community never inspect a local repository or
-run internal cognition.
+Spec's validation history. Use the Validation surface for those results.
+Requirement Lint is independently recorded by the agent at `approved`;
+Core and Community never inspect a local repository or run internal cognition.
 
 ## Mandatory pre-flight for a write
 
@@ -80,14 +78,12 @@ mutation.
 
 Human validity is edition-based. A result matching the subject's current
 edition is `current`; returning the subject to `draft` increments the edition
-and makes earlier results `previous`. Legacy rows whose edition is SQL `NULL`
-are `history_only`: they remain readable under Previous, are never backfilled,
-and can never become Current.
+and makes earlier results `previous`. Quality results require a positive
+subject edition; missing editions are invalid, with no backfill or import path.
 
 Version and semantic digest differences remain available as technical audit
 metadata. They do not create human-facing staleness inside one edition.
-Imported `spec_validation` results remain audit-only; use the live Spec
-Validation record and gate for readiness.
+Use the live Spec Validation record and gate for readiness.
 
 ## Reads, projections, and pagination
 
@@ -101,7 +97,6 @@ assessment kind. Each summary contains `edition`, `state`
 `current_result` is absent for `not_started` and contains only `score` and
 `scale` for `current`; it never exposes receipt or head mechanics.
 Permission denial omits the entire field; it is never represented by `{}`.
-Legacy array lists remain byte-equivalent.
 
 REST detail lists use offset PageEnvelope pagination and limits `25|50|100`.
 Core/MCP accept `offset >= 0`, limit `1..200`, and return a real opaque keyset

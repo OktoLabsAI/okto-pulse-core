@@ -11453,7 +11453,7 @@ async def okto_pulse_execute_test_scenario_evidence(
         str,
         Field(
             description=(
-                "Legacy/advanced mode: relative JSON path under the installation "
+                "Installation-managed mode: relative JSON path under the installation "
                 "evidence/manifests root; leave empty when replay is supplied"
             )
         ),
@@ -11474,7 +11474,7 @@ async def okto_pulse_execute_test_scenario_evidence(
     can provide only bounded GET/assertion steps: the edition runtime validates
     them, adds board/spec/scenario/semantic bindings, persists a canonical
     manifest atomically, executes it, and issues the receipt. ``manifest_ref``
-    remains compatible for installation-managed manifests. Exactly one source
+    selects an installation-managed manifest. Exactly one source
     is required. Pass returned ``evidence`` unchanged to
     ``okto_pulse_update_test_scenario_status``. Traversal, duplicate JSON keys,
     malformed/oversized input, unreachable runtime and unsigned observations

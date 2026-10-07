@@ -2,6 +2,31 @@
 
 ## Estado para retomada
 
+### 2026-10-07 — C4 T46: recursos atuais sem orientações de migração
+Core13f1143f publicado/push0; Communityf341d0c6 continua limpo/sincronizado.
+Corrigidos quality-assessments/policy-compliance/test-scenario e descrição MCP:
+sem import de avaliação, histórico sem edição, subject Sprint, filtro de tipo
+histórico, leitura de alias retirado ou recibo pré-hardening. Manifesto nativo
+gerenciado continua sendo entrada do mesmo executor autenticado. Nenhum gate,
+permissão, histórico nativo ou comportamento foi modificado.
+
+main30 intermediário provado51816; guidance2=176pass/10.81s, closure0.
+Finalmain31 build/install/prova35184 terminou0:843/905 Core+316/402 Community
+byte-idênticos. guidance3=176pass/1fail: parser do novo teste não tolerava anotação
+Evidence V2 no título. Parser corrigido sem alterar produto; guidance4 handle74614
+terminou0:177pass/11.27s; resource-links1 handle13280=1pass/5.15s.
+Novo teste percorre todos resources e compara tools/URIs ao registry vivo,
+expandindo somente três abreviações documentadas. Catálogo gerado passou sem
+edição manual. Audit de strings de serviços: quatro bindings de Discovery locais
+possuem dispatch real e não são destinos removidos de remediation.
+closure-main31 handle55745 terminou0:ok/findings/documentation[], oitoZERO.
+Diff-check0. Recibo clean-break-acceptance-native-resource-guidance.json promove T46
+com suporte dos recibos atuais de saúde/superfícies/frontend, sem alegar novo E2E.
+
+Sem processo ativo. Main instalado correto main31; isolado next27 continua STALE.
+Próximos: restantes critérios fixos C4 e T43 comparação equivalente; decisões
+T23/KG-10 continuam pendentes. Plano integral ainda não concluído.
+
 ### 2026-10-07 — C4 T44 qualificado; T46 encontrou documentação obsoleta
 release-main29-1 handle94039 terminou0:6pass/209.30s; XML conferido.
 Instalação Python3.11 nova dos três wheels; prova byte-a-byte antecedeu imports,
