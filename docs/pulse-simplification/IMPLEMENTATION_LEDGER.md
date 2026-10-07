@@ -3,6 +3,8 @@
 ## Estado para retomada
 
 ### 2026-10-07 — contrato gráfico único validado; instalação limpa corrigida
+Publicação confirmada: Core df5a73b5 e Community b66c1624, pushes
+origin/feature/v0.4.0 terminais0 nos dois repositórios.
 Retomada após mensagem Nexus desconsiderada: turno anterior sem progresso de
 implementação; worktrees conferidas antes de continuar.
 Todos os handles anteriores terminaram: constraint-core1 40pass; community1
