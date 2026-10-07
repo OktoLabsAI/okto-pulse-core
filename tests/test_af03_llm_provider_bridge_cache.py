@@ -32,10 +32,6 @@ class _Provider:
 
 
 INVENTORIED_PROVIDER_BRIDGE_MODULES = (
-    (
-        "events.handlers.learning_summariser",
-        "okto_pulse.core.events.handlers.llm_provider_bridges",
-    ),
     ("kg.adaptive_hops", "okto_pulse.core.kg.adaptive_hops.llm_provider_bridges"),
     ("kg.agent.heuristics", "okto_pulse.core.kg.agent.heuristics.llm_provider_bridges"),
     ("kg.context_compress", "okto_pulse.core.kg.context_compress.llm_provider_bridges"),

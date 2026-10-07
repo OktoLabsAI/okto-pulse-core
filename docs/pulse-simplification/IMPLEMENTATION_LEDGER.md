@@ -2,6 +2,44 @@
 
 ## Estado para retomada
 
+### 2026-10-07 — helpers antigos de Learning removidos e main65 validado
+Core7118 terminal0:78pass/10.50s; Community15393 terminal0:11pass/55.95s,
+incluindo ciclo de captura/revisão real/materialização/replay no novo par.
+Main65 byte-idêntico antes dos testes:836 .py/897 payload Core,317/403 Community.
+Módulo events/handlers/llm_provider_bridges.py ausente também do wheel.
+Closure63542 terminal1 apenas por README matrix mismatch; findings vazio,
+oito budgets ZERO. Renderer oficial regenerou ambos READMEs; closure85979
+terminal0:ok=true,findings/documentation_findings vazios, oito budgets ZERO.
+Nenhum processo de validação ativo. Nenhum código alterado após a prova main65;
+somente READMEs/evidência. Sem mudança de frontend ou schema.
+Recibo clean-break-native-extraction-removal.json registra89 testes e limites.
+Não qualifica KG39 inteiro: falta revisar health e demais caminhos LLM ativos;
+índice permanece74 verificadas/161 pendentes/11 superadas.
+Remoção C1/C3 exclui cerca de480 linhas líquidas de suporte antigo; handler
+atual e extractor compartilhado preservados. Nenhum wrapper/alias substituto.
+Próximo: KG39 conforme escopo fixo, sem remover portas compartilhadas por suposição.
+
+### 2026-10-07 — retirada da extração Learning antiga, main65 em preparação
+Main65 instalado/provado terminal0: Core836 .py/897 payload e Community317/403
+byte-idênticos entre fonte/wheel/site-packages. Campanhas ativas:
+core7118, community15393, closure63542. Não editar produto/reinstalar.
+Turno anterior progresso publicado Core393cb65a/Community334163bf; ambos pushes
+terminais0 e worktrees confirmadas limpas. Removidos helpers sem consumidor
+_maybe_extract_learning, _load_board_settings, probe Learning antiga, ID gráfico
+derivado, _card_type_value e summariser/stub OpenAI do handler. Removido módulo
+events/handlers/llm_provider_bridges.py e namespace exclusivo do bridge cache.
+CognitiveExtractionHandler permanece para SpecMoved e candidatos Alternative/
+Assumption. Extractor compartilhado extract_learning_from_bug PRESERVADO:
+cognitive_closeout_production ainda o consome; não foi presumido morto.
+Testes exclusivos de stub/bridge/probe retirados; suites mistas preservam
+grounding/heuristics/cache ativo e fronteiras de evento. Ruff F/E9 verde;
+busca src/tests não encontra import restante dos símbolos removidos.
+Sem frontend alterado. Build main65 Core/Community terminais0; instalação
+handle79450 ativa. Não executar comportamento antes de instalação terminal e
+prova byte a byte. Índice74/161/11 permanece; KG39 ainda não qualificado.
+Próximo: prova main65, suites afetadas + ciclo nativo, closure oito budgets ZERO,
+recibo, commits e pushes. Nenhuma mudança de authority/gates ou dados reais.
+
 ### 2026-10-07 — KG38 nativo comprovado; extração antiga localizada
 Source-loss1 (32780) terminal1:10pass/1fail/169.95s. Falha era preparação:
 trocar factory do adapter não muda contexto recebido pelo reader transacional.

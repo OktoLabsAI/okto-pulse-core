@@ -1,14 +1,4 @@
-"""Spec 3d907a87 (FR5 / D3 / TS3) — idempotency probes for cognitive extraction.
-
-The handler short-circuits when Kùzu already holds the equivalent node:
-- Learning: a (Learning)-[:validates]->(Bug {id: $bug_node_id}) match
-- Alternative / Assumption: a node with the same source_artifact_ref
-
-Both probes are best-effort — they catch any exception (graph not yet
-bootstrapped, schema drift, missing column) and return False. These tests
-patch the ``cypher_executor`` port to assert the behavior without standing up a
-real Kùzu graph (kept hermetic for the unit run).
-"""
+"""Native candidate idempotency and absence of inferred Learning on Done."""
 
 from __future__ import annotations
 
@@ -20,9 +10,7 @@ import pytest
 
 from okto_pulse.core.events.handlers.cognitive_extraction import (
     CognitiveExtractionHandler,
-    _learning_already_exists,
     _node_with_source_ref_exists,
-    _summariser_factory,
 )
 from okto_pulse.core.events.types import CardMoved
 from okto_pulse.core.kg.interfaces import get_kg_registry
@@ -54,23 +42,10 @@ class _BoomCypherExecutor:
         raise RuntimeError(self._message)
 
 
-def test_learning_already_exists_true_when_count_positive(monkeypatch):
-    monkeypatch.setattr(get_kg_registry(), "cypher_executor", _StubCypherExecutor(1))
-    assert _learning_already_exists("board-1", "bug_xyz") is True
 
 
-def test_learning_already_exists_false_when_count_zero(monkeypatch):
-    monkeypatch.setattr(get_kg_registry(), "cypher_executor", _StubCypherExecutor(0))
-    assert _learning_already_exists("board-1", "bug_xyz") is False
 
 
-def test_learning_already_exists_false_on_exception(monkeypatch):
-    monkeypatch.setattr(
-        get_kg_registry(),
-        "cypher_executor",
-        _BoomCypherExecutor("graph not bootstrapped"),
-    )
-    assert _learning_already_exists("board-1", "bug_xyz") is False
 
 
 def test_node_with_source_ref_exists_true(monkeypatch):
@@ -117,17 +92,3 @@ async def test_done_replay_does_not_infer_or_reinterpret_existing_learning(caplo
     with caplog.at_level(logging.DEBUG, logger="okto_pulse.core.events.cognitive_extraction"):
         await handler.handle(event, sess)
     assert not any("learning" in r.message for r in caplog.records)
-
-
-def test_summariser_factory_returns_openai_for_openai_provider():
-    s = _summariser_factory({"provider": "openai", "model": "gpt-4o"})
-    assert s is not None
-    title, body = s.summarise(bug_title="bug X", action_plan="plan Y" * 100)
-    assert "bug X" in title
-    assert "plan Y" in body
-
-
-def test_summariser_factory_returns_none_for_unknown_provider():
-    assert _summariser_factory({"provider": "anthropic"}) is None
-    assert _summariser_factory({}) is None
-    assert _summariser_factory({"provider": ""}) is None

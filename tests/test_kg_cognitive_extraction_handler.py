@@ -1,17 +1,4 @@
-"""Spec 3d907a87 (FR1-FR7) — CognitiveExtractionHandler unit tests.
-
-Cards covered:
-    - TC-1 (TS1): bug done com action_plan rico → log learning candidate
-    - TC-2 (TS2): bug done com action_plan curto → skip
-    - TC-4 (TS4): card spec done → log alternative + assumption candidates
-    - TC-5 (TS5): board sem cognitive_llm_config → skip Learning, run others
-
-The handler emits structured logs as the "candidate enqueue" surface
-(per spec design — actual graph persistence goes through a downstream
-worker registered in the umbrella ideation's out-of-scope list). Tests
-assert against ``caplog.records`` since that is the authoritative output
-for v1.
-"""
+"""Current event routing: authored Learning and Spec candidates stay distinct."""
 
 from __future__ import annotations
 
@@ -121,15 +108,13 @@ async def test_bug_done_short_action_plan_skips_learning(caplog):
 async def test_bug_done_no_llm_config_does_not_infer_learning(caplog, monkeypatch):
     """KG7.7/L-H: absence of experimental configuration is not an error."""
     handler = CognitiveExtractionHandler()
-    infer = AsyncMock(side_effect=AssertionError("No internal Learning inference"))
-    monkeypatch.setattr(handler, "_maybe_extract_learning", infer)
+    assert not hasattr(handler, "_maybe_extract_learning")
     sess = _make_session(
         card=_bug_card(action_plan="x" * 200),
         board=_board(llm_config=None),
     )
     with caplog.at_level(logging.INFO, logger="okto_pulse.core.events.cognitive_extraction"):
         await handler.handle(_moved_event(), sess)
-    infer.assert_not_called()
     assert not any("learning" in r.message for r in caplog.records)
 
 
@@ -139,9 +124,8 @@ async def test_bug_done_with_llm_config_neither_infers_nor_enqueues(caplog, monk
     from unittest.mock import Mock
     from okto_pulse.core.kg import cognitive_closeout_production
     handler = CognitiveExtractionHandler()
-    infer = AsyncMock(side_effect=AssertionError("No internal Learning inference"))
     enqueue = Mock(side_effect=AssertionError("Done alone is not authored admission"))
-    monkeypatch.setattr(handler, "_maybe_extract_learning", infer)
+    assert not hasattr(handler, "_maybe_extract_learning")
     monkeypatch.setattr(cognitive_closeout_production, "open_cognitive_closeout_pending", enqueue)
     sess = _make_session(
         card=_bug_card(action_plan="x" * 200),
@@ -149,7 +133,6 @@ async def test_bug_done_with_llm_config_neither_infers_nor_enqueues(caplog, monk
     )
     with caplog.at_level(logging.INFO, logger="okto_pulse.core.events.cognitive_extraction"):
         await handler.handle(_moved_event(), sess)
-    infer.assert_not_called()
     enqueue.assert_not_called()
     assert not any("learning" in r.message for r in caplog.records)
 
