@@ -1,6 +1,5 @@
 """BASE F2C/F3: live pipelines cannot resurrect archived Sprint materialization."""
 
-from copy import deepcopy
 from types import SimpleNamespace
 
 import pytest
@@ -35,15 +34,11 @@ def test_worker_rejects_sprint_instead_of_recreating_nodes():
         worker.process_artifact("sprint", {"id": "s", "title": "Historical"})
 
 
-def test_card_projection_is_independent_of_historical_sprint_metadata():
+def test_native_card_projection_preserves_its_spec_relation():
     card = {"id": "card-1234", "board_id": "b", "spec_id": "spec-1234",
             "title": "Task", "priority": "high", "card_type": "normal"}
-    legacy = {**card, "sprint_id": "sprint-old"}
-    before = deepcopy(legacy)
     worker = DeterministicWorker()
-    result = worker.process_card(legacy)
-    assert result == worker.process_card(card)
-    assert legacy == before
+    result = worker.process_card(card)
     assert any(edge.to_candidate_id == "spec_spec-123_entity" for edge in result.edges)
     assert not any("sprint" in edge.to_candidate_id for edge in result.edges)
 
@@ -53,7 +48,7 @@ def test_card_projection_is_independent_of_historical_sprint_metadata():
 async def test_legacy_queue_work_cannot_access_graph_or_acknowledge_success(work_kind):
     # Bare objects fail on any adapter access; no provider is required for refusal.
     entry = SimpleNamespace(artifact_type="sprint", work_kind=work_kind)
-    with pytest.raises(ValueError, match="retired_sprint_work_requires_offline_cutover"):
+    with pytest.raises(ValueError, match="unsupported_artifact_type"):
         await _process_queue_entry(object(), entry)
 
 
@@ -67,11 +62,26 @@ async def test_historical_archive_event_cannot_restore_or_mutate_sprint_graph(ar
     # still refuses an internal caller bypassing typed deserialization.
     event = SimpleNamespace(event_type="artifact.archive_changed", **payload)
     assert ConsolidationEnqueuer()._map_targets(event) == []
-    with pytest.raises(ValueError, match="retired_sprint_work_requires_offline_cutover"):
+    with pytest.raises(ValueError, match="unsupported_artifact_type"):
         await SourceArchiveLifecycleHandler().handle(event, object())
 
 
-def test_legacy_mixed_card_event_still_projects_card():
+def test_native_card_event_projects_card():
     event = types.CardCreated.model_validate({"board_id": "b", "card_id": "c",
-        "spec_id": "spec", "sprint_id": "s"})
+        "spec_id": "spec"})
     assert ConsolidationEnqueuer()._map_targets(event) == [("card", "c")]
+
+
+def test_mixed_native_events_preserve_card_and_spec_targets():
+    events = [
+        types.CardCreated(board_id="b", card_id="c", spec_id="spec"),
+        types.SpecCreated(board_id="b", spec_id="spec"),
+        types.CardMoved(board_id="b", card_id="c", spec_id="spec",
+                        from_status="in_progress", to_status="validation"),
+    ]
+    before = [event.model_dump() for event in events]
+    enqueuer = ConsolidationEnqueuer()
+    assert [enqueuer._map_targets(event) for event in events] == [
+        [("card", "c")], [("spec", "spec")], [("card", "c"), ("spec", "spec")],
+    ]
+    assert [event.model_dump() for event in events] == before

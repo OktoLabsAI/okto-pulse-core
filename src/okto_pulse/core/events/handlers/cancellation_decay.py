@@ -453,9 +453,7 @@ class SourceArchiveLifecycleHandler:
         session: object,
     ) -> None:
         if event.artifact_type == "sprint":
-            # Historical executions require archived, fenced offline retirement.
-            # A replay must never restore Sprint projections or claim delivery.
-            raise ValueError("retired_sprint_work_requires_offline_cutover")
+            raise ValueError("unsupported_artifact_type")
         source_ref = f"{event.artifact_type}:{event.artifact_id}"
         affected, action, authority = await _converge_source_lifecycle(
             session,

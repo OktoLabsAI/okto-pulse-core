@@ -3205,9 +3205,7 @@ async def _process_queue_entry(
     Returns True on success, False on failure."""
 
     if entry.artifact_type == "sprint":
-        # Only the fenced offline migration may supersede historical work.
-        # Never run a stale sweep/reconcile or create a new graph projection.
-        raise ValueError("retired_sprint_work_requires_offline_cutover")
+        raise ValueError("unsupported_artifact_type")
 
     if _work_kind(entry) == "stale_sweep":
         return await _process_stale_sweep_entry(

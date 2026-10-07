@@ -14,10 +14,6 @@ from okto_pulse.core.runtime_context import (
 
 
 GLOBAL_OUTBOX_DEAD_LETTER_SENTINEL = -1
-# Only the fenced historical migration may assign this terminal state. It is
-# neither a delivery ACK nor an operator-requeueable failure. Original retries
-# and errors belong to the retained migration evidence, never a new payload.
-GLOBAL_OUTBOX_RETIRED_SENTINEL = -2
 GLOBAL_OUTBOX_MAX_RETRIES = 5
 
 
@@ -33,6 +29,14 @@ class GlobalOutboxEventRecord:
     processed_at: datetime | None
     created_at: datetime
     event_type: str = "consolidation_committed"
+
+    def __post_init__(self) -> None:
+        self.validate_retry_count()
+
+    def validate_retry_count(self) -> None:
+        """Only native retry counters and the terminal failure state are valid."""
+        if type(self.retry_count) is not int or self.retry_count < GLOBAL_OUTBOX_DEAD_LETTER_SENTINEL:
+            raise ValueError("global_outbox_retry_count_invalid")
 
 
 @dataclass(frozen=True, slots=True)
@@ -124,7 +128,6 @@ def reset_global_outbox_store_for_tests() -> None:
 
 __all__ = [
     "GLOBAL_OUTBOX_DEAD_LETTER_SENTINEL",
-    "GLOBAL_OUTBOX_RETIRED_SENTINEL",
     "GLOBAL_OUTBOX_MAX_RETRIES",
     "GlobalOutboxDeadLetterCursor",
     "GlobalOutboxEventRecord",

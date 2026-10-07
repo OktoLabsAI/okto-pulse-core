@@ -1610,7 +1610,12 @@
           "case_references": []
         }
       ],
-      "current_qualification": "pending_current_pair_review"
+      "current_qualification": "verified_current_pair_review",
+      "current_review": {
+        "artifact": "clean-break-acceptance-native-outbox-projection.json",
+        "criterion_key": "BASE:T32",
+        "proof_pair": "dist-native-next27"
+      }
     },
     {
       "key": "BASE:T33",

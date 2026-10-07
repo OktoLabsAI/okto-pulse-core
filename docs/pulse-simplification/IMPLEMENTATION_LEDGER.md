@@ -2,6 +2,35 @@
 
 ## Estado para retomada
 
+### 2026-10-07 — C4 T32 fechado: outbox sem estado de migração
+Último par publicado Coreeb52387f/Community42d4a8e3. Main integrado por FF depois
+do terminal E2E7; WIP do observador preservado exatamente no commit antes do restore.
+Main venv continua main25 e não corresponde ao Community atual: NÃO validar
+comportamento no main sem novo build/install/prova.
+
+Isolado retirou GLOBAL_OUTBOX_RETIRED_SENTINEL, estado/reason de supersedência por
+migração e branches dedicados. Contrato nativo admite retry inteiro>=0 ou DLQ=-1;
+inválidos recusados, sem interpretar -2 como arquivo migrado. Leitura, worker e
+escrita validam antes dos efeitos. Adapter usa guard de estado atual e rollback
+integral se corrupção ocorrer depois da leitura. Mensagens offline_cutover
+substituídas por unsupported_artifact_type; nenhuma conversão sugerida.
+Testes positivos de metadata Sprint histórica viraram projeção/eventos nativos;
+test_global_outbox_retired_work substituído por test_global_outbox_retry_contract.
+
+Par next27 instalado, prova80086 terminal0:843/905+316/402 byte-idênticos.
+CoreSHA4c5de1c489336c433c179a21912b0c0f0dadde302e806dde32c700e34fddbc4b;
+CommunitySHA2e0d00796761cddf0c8c0a5ea8e27f0b55c238e547114f1f57692dd785eb3ee2.
+outbox-core1 handle81862=61pass/11.68s; outbox-community1 handle76101=8pass/5.09s;
+projection-events1 handle18971=36pass/21.82s; shared-projection1 handle30182=
+22pass/20.63s. 116 distintos, sem somar repetição do módulo de pipeline.
+Grafx real preservou relações Board/humano/outro Card, pai e cenários; compensação
+repetida e retry sem duplicar. closure41207 terminou0:ok/findings/documentation[],
+oito ZERO; Ruff F/E9 e diff-check0. Nenhuma mudança frontend.
+Recibo clean-break-acceptance-native-outbox-projection.json promove somente T32.
+
+Sem processo ativo. Próximos fixos T33/T34 e restantes C4; novo par instalado final
+após integrar alterações. T23/KG-10 pendentes. Não declarar entrega integral.
+
 ### 2026-10-07 — E2E instalado7 terminal verde; liberação do main
 T27/T28/T31 publicados Corefe6ce9f6/Community61c3f524, pushes0.
 native-installed-recovery7 handle96950 terminou0:8pass/2304.39s, XML conferido
