@@ -1550,5 +1550,110 @@
     "proof_pair": "dist-native-kg-projection1",
     "product_changes": false,
     "limits": "Complete frontend suite after native list/columns changes; existing React act/duplicate fixture key and jsdom canvas warnings did not fail tests. Backend/current criterion qualification remains pending."
+  },
+  "core_full_run9": {
+    "campaign": "clean-break-full-run9",
+    "passed": 1677,
+    "failed": 20,
+    "skipped": 1,
+    "duration_seconds": 1082.08,
+    "xml_sha256": "f7dc25765d2fa563ff57eab5e8d468e53cd4449b36bc2284a5dbf913408f348e",
+    "failures": [
+      {
+        "test": "tests.test_e2e_regression_hardening::test_spec_validation_blocks_missing_architecture_when_policy_requires_it",
+        "message": "ValueError: Unknown spec validation fields: completeness, completeness_justification, general_justification"
+      },
+      {
+        "test": "tests.test_e2e_regression_hardening::test_spec_validation_accepts_architecture_na_and_policy_off",
+        "message": "okto_pulse.core.services.resource_gate_contracts.ResourceGateViolation: Resource Gate could not resolve resource lineage for spec 'spec-f845243045db': The adopted architecture scope is unavailable."
+      },
+      {
+        "test": "tests.test_effective_knowledge_read::test_v1_read_keeps_physical_card_projection",
+        "message": "AssertionError: assert [] == ['legacy-copy']\n  \n  Right contains one more item: 'legacy-copy'\n  Use -v to get more diff"
+      },
+      {
+        "test": "tests.test_effective_knowledge_write_projection_order::test_commit_precedes_refetch_and_effective_knowledge_projection[update-card]",
+        "message": "pydantic_core._pydantic_core.ValidationError: 14 validation errors for CardResponse\nboard_id\n  Field required [type=missing, input_value=namespace(id='entity-1', projected_for='card'), input_type=SimpleNamespace]\n    For further information visit https://errors.pydantic.dev/2.13/v/missing\ntitle\n  Field required [type=missing, input_value=namespace(id='entity-1', projected_for='card'), input_type=SimpleNamespace]\n    For further information visit https://errors.pydantic.dev/2.13/v/missing\ndescription\n  Field required [type=missing, input_value=namespace(id='entity-1', projected_for='card'), input_type=SimpleNamespace]\n    For further information visit https://errors.pydantic.dev/2.13/v/missing\ndetails\n  Field required [type=missing, input_value=namespace(id='entity-1', projected_for='card'), input_type=SimpleNamespace]\n    For further information visit https://errors.pydantic.dev/2.13/v/missing\nstatus\n  Field required [type=missing, input_value=namespace(id='entity-1', projected_for='card'), input_type=SimpleNamespace]\n    For further information visit https://errors.pydantic.dev/2.13/v/missing\nsubject_version\n  Field required [type=missing, input_value=namespace(id='entity-1', projected_for='card'), input_type=SimpleNamespace]\n    For further information visit https://errors.pydantic.dev/2.13/v/missing\npriority\n  Field required [type=missing, input_value=namespace(id='entity-1', projected_for='card'), input_type=SimpleNamespace]\n    For further information visit https://errors.pydantic.dev/2.13/v/missing\nposition\n  Field required [type=missing, input_value=namespace(id='entity-1', projected_for='card'), input_type=SimpleNamespace]\n    For further information visit https://errors.pydantic.dev/2.13/v/missing\nassignee_id\n  Field required [type=missing, input_value=namespace(id='entity-1', projected_for='card'), input_type=SimpleNamespace]\n    For further information visit https://errors.pydantic.dev/2.13/v/missing\ncreated_by\n  Field required [type=missing, input_value=namespace(id='entity-1', projected_for='card'), input_type=SimpleNamespace]\n    For further information visit https://errors.pydantic.dev/2.13/v/missing\ncreated_at\n  Field required [type=missing, input_value=namespace(id='entity-1', projected_for='card'), input_type=SimpleNamespace]\n    For further information visit https://errors.pydantic.dev/2.13/v/missing\nupdated_at\n  Field required [type=missing, input_value=namespace(id='entity-1', projected_for='card'), input_type=SimpleNamespace]\n    For further information visit https://errors.pydantic.dev/2.13/v/missing\ndue_date\n  Field required [type=missing, input_value=namespace(id='entity-1', projected_for='card'), input_type=SimpleNamespace]\n    For further information visit https://errors.pydantic.dev/2.13/v/missing\nlabels\n  Field required [type=missing, input_value=namespace(id='entity-1', projected_for='card'), input_type=SimpleNamespace]\n    For further information visit https://errors.pydantic.dev/2.13/v/missing"
+      },
+      {
+        "test": "tests.test_events::test_human_curated_column_declared_in_schema",
+        "message": "AssertionError: assert '0.8.0' in {'0.3.10', '0.3.11', '0.3.12', '0.3.2', '0.3.3', '0.3.4', ...}"
+      },
+      {
+        "test": "tests.test_evidence_v2_gate_integration::test_status_and_whole_spec_paths_reject_same_runtime_false",
+        "message": "okto_pulse.core.ports.guideline_policy.GuidelinePolicySubjectConflict: semantic_subject_authority_missing_or_stale"
+      },
+      {
+        "test": "tests.test_evidence_v2_gate_integration::test_whole_spec_semantic_edit_cannot_replay_old_receipt",
+        "message": "AssertionError: Regex pattern did not match.\n Regex: 'scenario_semantic_binding_mismatch'\n Input: 'incompatible_spec_requirement: stored children require id and text'"
+      },
+      {
+        "test": "tests.test_evidence_v2_gate_integration::test_failed_test_execution_can_finish_without_claiming_product_passed",
+        "message": "okto_pulse.core.ports.guideline_policy.GuidelinePolicySubjectConflict: semantic_subject_authority_missing_or_stale"
+      },
+      {
+        "test": "tests.test_evidence_v2_mcp_boundary::test_mcp_status_adapter_projects_service_verification_status",
+        "message": "KeyError: 'evidence_verification_status'"
+      },
+      {
+        "test": "tests.test_f02_uow_session_boundary::test_f02_application_use_cases_have_no_session_escape",
+        "message": "AssertionError: {'budget': 0, 'error': 'uow_session_escape', 'offenders': [{'file': 'src/okto_pulse/core/application/use_cases/bug_clu.../application/use_cases/allowed_transitions.py', 'src/okto_pulse/core/application/use_cases/analytics_helpers.py', ...]}\nassert 'blocking' == 'passed'\n  \n  - passed\n  + blocking"
+      },
+      {
+        "test": "tests.test_f16_f17_health_aware_gates::test_ts_3eda0dc9_async_plumbing_blocks_before_mutation",
+        "message": "AssertionError: Regex pattern did not match.\n Regex: 'cognitive_status_unavailable'\n Input: 'Task validator must be independent from the task creator, assignee, and executor.'"
+      },
+      {
+        "test": "tests.test_f3_done_spec_admission::test_done_spec_blocks_normal_content_without_writes[add_dependency-False]",
+        "message": "AssertionError: assert ['UPDATE boar...oards.id = ?'] == []\n  \n  Left contains one more item: 'UPDATE boards SET id=boards.id, updated_at=boards.updated_at WHERE boards.id = ?'\n  Use -v to get more diff"
+      },
+      {
+        "test": "tests.test_f3_done_spec_admission::test_done_spec_blocks_normal_content_without_writes[add_dependency-True]",
+        "message": "AssertionError: assert ['UPDATE boar...oards.id = ?'] == []\n  \n  Left contains one more item: 'UPDATE boards SET id=boards.id, updated_at=boards.updated_at WHERE boards.id = ?'\n  Use -v to get more diff"
+      },
+      {
+        "test": "tests.test_f3_done_spec_admission::test_done_spec_blocks_normal_content_without_writes[remove_dependency-False]",
+        "message": "AssertionError: assert ['UPDATE boar...oards.id = ?'] == []\n  \n  Left contains one more item: 'UPDATE boards SET id=boards.id, updated_at=boards.updated_at WHERE boards.id = ?'\n  Use -v to get more diff"
+      },
+      {
+        "test": "tests.test_f3_done_spec_admission::test_done_spec_blocks_normal_content_without_writes[remove_dependency-True]",
+        "message": "AssertionError: assert ['UPDATE boar...oards.id = ?'] == []\n  \n  Left contains one more item: 'UPDATE boards SET id=boards.id, updated_at=boards.updated_at WHERE boards.id = ?'\n  Use -v to get more diff"
+      },
+      {
+        "test": "tests.test_gate_remediation_provenance::test_test_card_done_gate_fails_closed_for_missing_scenario_linkage[scenario_ids0]",
+        "message": "okto_pulse.core.ports.guideline_policy.GuidelinePolicySubjectConflict: semantic_subject_authority_missing_or_stale"
+      },
+      {
+        "test": "tests.test_gate_remediation_provenance::test_test_card_done_gate_fails_closed_for_missing_scenario_linkage[scenario_ids1]",
+        "message": "okto_pulse.core.ports.guideline_policy.GuidelinePolicySubjectConflict: semantic_subject_authority_missing_or_stale"
+      },
+      {
+        "test": "tests.test_governed_queue_worker_card4::test_delete_between_extraction_and_publish_blocks_legacy_commit",
+        "message": "AttributeError: 'types.SimpleNamespace' object has no attribute 'reference_findings'"
+      },
+      {
+        "test": "tests.test_guidelines_api::test_link_global_board_guideline_requires_governed_preview",
+        "message": "AssertionError: {\"detail\":[{\"type\":\"missing\",\"loc\":[\"body\",\"title\"],\"msg\":\"Field required\",\"input\":{\"guideline_id\":\"4406cc70-757e-4e93-ad00-f6998f93ceea\",\"priority\":2}},{\"type\":\"missing\",\"loc\":[\"body\",\"content\"],\"msg\":\"Field required\",\"input\":{\"guideline_id\":\"4406cc70-757e-4e93-ad00-f6998f93ceea\",\"priority\":2}},{\"type\":\"extra_forbidden\",\"loc\":[\"body\",\"guideline_id\"],\"msg\":\"Extra inputs are not permitted\",\"input\":\"4406cc70-757e-4e93-ad00-f6998f93ceea\"}]}\nassert 422 == 409\n +  where 422 = <Response [422 Unprocessable Content]>.status_code"
+      },
+      {
+        "test": "tests.test_imp5_relink_service_integration::test_card_update_resets_v2_before_reparenting",
+        "message": "TypeError: KnowledgePropagationScope.__init__() got an unexpected keyword argument 'v2_active'"
+      }
+    ],
+    "limits": "maxfail20; last test_imp5_relink_service_integration partial. Followups pending. Excluded273 completed modules including stress."
+  },
+  "native_preflight_followup": {
+    "campaign": "native-preflight1",
+    "passed": 130,
+    "failed": 0,
+    "duration_seconds": 21.86,
+    "xml_sha256": "21c7c55c651237551a829c8f562d67998c5ff94de7d95636ff547909578672da",
+    "proof_pair": "dist-native-preflight2",
+    "provenance": "provenance-native-preflight2.json",
+    "closure": "closure-native-preflight2.json",
+    "scope": "Ten UOW parameters typed with PulseUnitOfWork; dependency content preflight before write fence with post-fence check retained. F3 native no-Sprint matrix, dependency cycles/idempotency/projection and lifecycle all pass.",
+    "closure_ok": true,
+    "all_eight_budgets_zero": true,
+    "limits": "Other15 run9 failures pending. First closure failed only generated README matrix, regenerated officially. dist-native-preflight1 built with a syntax error caught by Ruff, never installed/tested; corrected dist2 qualified."
   }
 }

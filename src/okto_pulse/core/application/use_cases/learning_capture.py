@@ -1,5 +1,6 @@
 """Authorized staging of a new Learning capture in the caller's UOW."""
 
+from okto_pulse.core.repositories.interfaces.unit_of_work import PulseUnitOfWork
 from okto_pulse.core.application.use_cases.authorization import PermissionRequirement, require_all
 from okto_pulse.core.application.use_cases.board_access import load_accessible_card
 from okto_pulse.core.application.use_cases.base import EntityNotFoundError, commit
@@ -16,7 +17,7 @@ LEARNING_CAPTURE_CREATE_PERMISSIONS = (
 LEARNING_CAPTURE_HISTORY_PERMISSIONS = (*LEARNING_CAPTURE_READ_PERMISSIONS, 'kg.query.learning_from_bugs')
 
 
-async def authorize_learning_submission(move, *, actor, uow, board_id):
+async def authorize_learning_submission(move, *, actor, uow: PulseUnitOfWork, board_id):
     """Shared authority for REST, MCP and compound Delivery report writers."""
     if getattr(move, 'learning_submission', None) is not None:
         await require_all(actor,
@@ -29,7 +30,7 @@ async def authorize_learning_submission(move, *, actor, uow, board_id):
 
 
 class StageLearningCaptureUseCase:
-    async def execute(self, command: CreateLearningCapture, *, actor, uow):
+    async def execute(self, command: CreateLearningCapture, *, actor, uow: PulseUnitOfWork):
         if type(command) is not CreateLearningCapture:
             raise ValueError('learning_capture_request_invalid')
         await require_all(actor, *(PermissionRequirement(flag) for flag in LEARNING_CAPTURE_CREATE_PERMISSIONS),
@@ -47,14 +48,14 @@ class StageLearningCaptureUseCase:
 
 class CreateLearningCaptureUseCase:
     """Standalone submission; the staged variant remains available for Done."""
-    async def execute(self, command: CreateLearningCapture, *, actor, uow):
+    async def execute(self, command: CreateLearningCapture, *, actor, uow: PulseUnitOfWork):
         record = await StageLearningCaptureUseCase().execute(command, actor=actor, uow=uow)
         await commit(uow)
         return record
 
 
 class GetLearningCaptureSourceUseCase:
-    async def execute(self, *, board_id: str, bug_id: str, actor, uow, candidate_query=None):
+    async def execute(self, *, board_id: str, bug_id: str, actor, uow: PulseUnitOfWork, candidate_query=None):
         await require_all(actor, *(PermissionRequirement(flag) for flag in LEARNING_CAPTURE_READ_PERMISSIONS),
             uow=uow, board_id=board_id)
         if candidate_query is not None:
@@ -67,7 +68,7 @@ class GetLearningCaptureSourceUseCase:
 
 
 class ListLearningCapturesUseCase:
-    async def execute(self, *, board_id: str, bug_id: str, actor, uow, cursor=None, limit=20):
+    async def execute(self, *, board_id: str, bug_id: str, actor, uow: PulseUnitOfWork, cursor=None, limit=20):
         await require_all(actor, *(PermissionRequirement(flag) for flag in LEARNING_CAPTURE_HISTORY_PERMISSIONS),
             uow=uow, board_id=board_id)
         card = await load_accessible_card(uow, bug_id, actor, expected_board_id=board_id)

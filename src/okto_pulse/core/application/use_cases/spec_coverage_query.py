@@ -1,6 +1,7 @@
 """Authorize source coverage and proof visibility before reading any facts."""
 from dataclasses import dataclass
 
+from okto_pulse.core.repositories.interfaces.unit_of_work import PulseUnitOfWork
 from okto_pulse.core.application.use_cases.authorization import (
     PermissionRequirement, require_all, resolve_actor_permissions, decide_authorization,
 )
@@ -21,7 +22,7 @@ class SpecCoverageCommand:
 
 
 class SpecCoverageUseCase:
-    async def execute(self, command, *, actor, uow):
+    async def execute(self, command, *, actor, uow: PulseUnitOfWork):
         board = await load_accessible_board(uow, command.board_id, actor)
         if board is None:
             raise EntityNotFoundError('board', command.board_id)

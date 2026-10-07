@@ -2,6 +2,7 @@
 import logging
 import json
 
+from okto_pulse.core.repositories.interfaces.unit_of_work import PulseUnitOfWork
 from okto_pulse.core.application.use_cases.authorization import PermissionRequirement, require_all
 from okto_pulse.core.application.use_cases.base import PermissionDeniedError
 from okto_pulse.core.application.use_cases.board_access import load_accessible_board
@@ -23,7 +24,7 @@ class GetCardScenarioReferenceContextUseCase:
     UOW. Provider errors and unreadable/foreign scope never mean zero findings.
     The fingerprint describes this read, not a promise about a later mutation.
     """
-    async def execute(self, *, board_id: str, card_id: str, actor, uow):
+    async def execute(self, *, board_id: str, card_id: str, actor, uow: PulseUnitOfWork):
         try:
             await require_all(actor, *(PermissionRequirement(flag) for flag in CARD_REFERENCE_CONTEXT_PERMISSIONS),
                 uow=uow, board_id=board_id)

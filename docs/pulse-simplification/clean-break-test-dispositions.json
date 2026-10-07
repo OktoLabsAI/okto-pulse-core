@@ -4311,5 +4311,9 @@
       "tests/test_kg_canonical_only_fail_closed.py"
     ],
     "reason": "Replace readable legacy short-row test with nullable full-row current contract and negative truncated listing/detail. Current grants replace retired colon claim in subgraph fixture. Preserve canonical-only isolation, graph-layer classification and actual Grafx reads; no new dialect or permission policy."
+  },
+  "native_f3_scope_fixture": {
+    "path": "tests/test_f3_done_spec_admission.py",
+    "reason": "Remove closed-Sprint seed and duplicate boolean parameter; all16 content operations retain native Done refusal with zero SQL writes, collaboration and Bug/Test exceptions. Gate expectation unchanged; product preflight moved before write fence."
   }
 }

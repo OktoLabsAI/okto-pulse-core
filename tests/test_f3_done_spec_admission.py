@@ -4,7 +4,7 @@ from uuid import uuid4
 import pytest
 from sqlalchemy import event
 
-from sqlalchemy_test_models import Attachment, Board, Card, CardDependency, CardStatus, CardType, Spec, SpecStatus, Sprint, SprintStatus
+from sqlalchemy_test_models import Attachment, Board, Card, CardDependency, CardStatus, CardType, Spec, SpecStatus
 from okto_pulse.core.infra.database import get_session_factory
 from okto_pulse.core.models.schemas import CardCreate, CardMove, CardUpdate
 from okto_pulse.core.services.main import AttachmentService, CardOperationError, CardService, SpecService
@@ -74,11 +74,10 @@ async def test_done_spec_normative_content_requires_revision_before_any_write(ha
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("has_closed_sprint", (False, True))
 @pytest.mark.parametrize("operation", ("create", "edit", "unlink", "link_out", "link_in", "reparent_out", "reparent_in",
     "delete", "upload", "delete_attachment", "add_dependency", "remove_dependency",
     "knowledge_drop", "knowledge_replace", "knowledge_refresh", "architecture_copy"))
-async def test_done_spec_blocks_normal_content_without_writes(has_closed_sprint, operation, monkeypatch):
+async def test_done_spec_blocks_normal_content_without_writes(operation, monkeypatch):
     suffix = uuid4().hex[:8]
     board_id, spec_id, open_id, owner = f"board-{suffix}", f"done-{suffix}", f"open-{suffix}", "f3-owner"
     async with get_session_factory()() as db:
@@ -93,8 +92,6 @@ async def test_done_spec_blocks_normal_content_without_writes(has_closed_sprint,
         if operation == "delete_attachment":
             db.add(Attachment(id=f"attachment-{suffix}", card_id=f"card-{suffix}", filename="f.txt",
                 original_filename="f.txt", path="never-read", mime_type="text/plain", size=1, uploaded_by=owner))
-        if has_closed_sprint:
-            db.add(Sprint(id=f"sprint-{suffix}", board_id=board_id, spec_id=spec_id, title="Historical sprint", status=SprintStatus.CLOSED, created_by=owner))
         await db.commit()
         statements = []
 

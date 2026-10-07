@@ -4139,6 +4139,15 @@ class CardService:
         card = await self.get_card(card_id)
         if card is None:
             raise ValueError('Card not found')
+        # Reject a new content mutation before acquiring the write fence.
+        # Existing edges remain idempotent; re-read under the fence below.
+        prior_edges = await _application_list(
+            self.db, "card_dependency",
+            filters=(_apf("card_id", "eq", card_id), _apf("depends_on_id", "eq", depends_on_id)),
+            limit=1,
+        )
+        if not prior_edges:
+            await self.require_content_mutation_allowed(card, operation="add_dependency")
         if not await _application_fence(self.db, 'board', card.board_id, expected_values={}):
             raise CardOperationError('card_dependency_conflict', 'Dependency source became unavailable.')
         card = await _application_refresh(self.db, card)
@@ -4181,6 +4190,13 @@ class CardService:
 
     async def remove_dependency(self, card_id: str, depends_on_id: str, *, actor_id: str | None = None) -> bool:
         card = await self.get_card(card_id)
+        prior_edges = await _application_list(
+            self.db, "card_dependency",
+            filters=(_apf("card_id", "eq", card_id), _apf("depends_on_id", "eq", depends_on_id)),
+            limit=1,
+        )
+        if card is not None and prior_edges:
+            await self.require_content_mutation_allowed(card, operation="remove_dependency")
         if card is not None:
             if not await _application_fence(self.db, 'board', card.board_id, expected_values={}):
                 raise CardOperationError('card_dependency_conflict', 'Dependency source became unavailable.')

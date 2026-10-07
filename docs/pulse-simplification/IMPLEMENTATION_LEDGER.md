@@ -2,6 +2,25 @@
 
 ## Estado para retomada
 
+### 2026-10-07 — C4 preflight e UOW qualificados; run9 fixtures pendentes
+
+Core26fd4478 publicado; frontend2451/269 completo. Core full-run9 TERMINAL:
+1677 aprovados/20falhas/1skip1082.08s. Handle29423 encerrado; ultimo modulo
+test_imp5_relink_service_integration parcial. Resultados completos/hash no JSON.
+F02 identificou dez parametros uow SEM TIPAGEM (nenhum acesso direto a sessao);
+agora usam PulseUnitOfWork. Dependencias recusam mutacao nova em Spec Done
+antes do write fence, preservando rechecagem apos lock e idempotencia.
+Matriz F3 remove seed/parametro Sprint, preserva16operacoes e zero SQL.
+Followup native-preflight1:130 aprovados21.86s, incluindo lifecycle/dependency
+projection/relation. Ruff/diff verdes. Primeiro wheel preflight1 continha erro
+de sintaxe detectado por Ruff; nunca instalado/testado. Corrigido em dist2.
+Par dist-native-preflight2 instalado/provado843/905+318/404. Closure1 falhou
+somente matriz README gerada; regenerada oficialmente. Closure2 terminal
+ok=true/findings vazios/oito budgetsZERO. Nenhum handle ativo.
+Ainda15falhas run9 em fixtures/expectativas Knowledge/Evidence/arquitetura/
+guidelines/worker/health; WIP testes em andamento, nao declarar run9 resolvido.
+C1-C4/criterios/benchmark/bump/T23/KG-10 abertos. Produto frontend inalterado.
+
 ### 2026-10-07 — Core run9 ativo
 
 Core73ef47c8 / Communitya99680b9 publicados; pushes confirmados.
