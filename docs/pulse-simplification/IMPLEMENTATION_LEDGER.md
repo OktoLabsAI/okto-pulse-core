@@ -2,6 +2,134 @@
 
 ## Estado para retomada
 
+### 2026-10-07 — dependências/proxy nativos verificados; fechamento do incremento
+Dependencies-parity5 (18410) terminou0:1pass/158.39s no main47 comprovado.
+Fontes completas e multiset completo iguais; filas vazias, replay sem duplicação.
+Correção de ordenação Community comprovada com tipos reais e negativos sem escrita.
+Recibo clean-break-native-dependencies-parity.json reúne27 casos Python distintos
+(25contrato+1Bug proxy de parity4+1dependência de parity5) e17frontend já aprovados.
+Falha de dependência de parity4 explicitamente excluída, não contada como verde.
+Closure47 aprovado/oitoZERO; Ruff F/E9 e diff-check passaram. Nenhum processo ativo.
+Índice63/172/11: não qualifica integralmente KG-16/24 nem a entrega completa.
+Próximos itens delimitados: remover aceite residual Sprint no registry/rank de rebuild
+(C1, mantendo task/test/bug/card atuais); paridade Decision com fonte histórica durável.
+Sem alteração de autoridade, CAS/head, dados reais, migração ou frontend produtivo.
+
+### 2026-10-07 — fixture temporal corrigida; paridade final em execução
+7299 terminou1: dependência falhou somente na igualdade de updated_at; Bug proxy passou.
+Fixture fixa updated_at dos três Cards reprojetados após os triggers, nos dois caminhos;
+fontes e oráculo completos preservados. Produto main47 inalterado.
+Nova prova provenance-native-dependencies-parity5 terminou0:837/899+316/402 byte-identical.
+Campanha acceptance-native-dependencies-parity5, handle18410, em execução somente
+para dependências. Closure47 inspecionado:ok=true, findings/documentation_findings=[],
+oito budgets ZERO. Ruff F/E9 e diff-check passaram. Aguardar terminal antes de recibo/commit.
+Turno anterior apenas confirmou mensagem equivocada (sem progresso); este retomou
+a correção concreta e a validação integrada. Índice63/172/11 mantido.
+
+### 2026-10-07 — ordem main47 converge; diferença de fixture temporal identificada
+Read-only em dependencies-parity4 confirmou incremental e rebuild com fila vazia:
+ordem topológica de tipos reais resolveu bloqueio. Primeiro caso falhou depois,
+na comparação de fontes. BoardSourceReader em ambos bancos completos mostrou
+única diferença em updated_at dos Cards card/dep-normal/dep-test: trigger de
+CardDependency usa relógio real ao inserir/remover dependência. Ambas execuções
+usam datas distintas apesar de created_at das dependências estar fixado.
+Ajuste de fixture pendente: ao final de remove(), fixar updated_at somente desses
+três donos em final_time (são exatamente os reprojetados), nos dois caminhos.
+Não remover updated_at do oráculo nem alterar trigger. 7299 continua vivo no
+caso Bug proxy; aguardar terminal antes de editar o módulo/rodar novo caso.
+Main47 produtivo permanece inalterado. Nenhum commit/push deste WIP.
+
+### 2026-10-07 — main47 contrato e closure aprovados; integração segue
+Prova19612 terminou0:837/899+316/402 byte-identical.
+Contract2 (77542) terminou1:24pass/1fail/11.27s. Tipos mistos passaram;
+fixture isolada AF04 tinha somente fila, sem tabela/fonte Card. Fixture passou
+a prover cards/card_dependencies e o Card real declarado, sem fallback produtivo.
+Contract3 (2997) terminou0:25pass/10.92s. Closure47 (47018) terminou0.
+Dependencies-parity4 (7299) segue vivo no main47; observação read-only mostra
+fila incremental vazia. Aguardar terminal antes de qualificar/commit/push.
+UI17 do main46 permanece pertinente: assets e contrato UI inalterados no main47.
+Faltam terminal integrado, recibo e revisão final. Índice63/172/11 mantido.
+
+### 2026-10-07 — tipos reais incluídos; main47 em preparação
+Dependencies-parity3 (41914) terminou1:1fail/1pass/369.92s. Bug proxy permaneceu
+verde; dependência confirmou seleção incorreta de tipos na correção inicial.
+Após terminal, seleção de IDs/rank passou a usar queue_artifact_type público
+para task/test/bug/card. Teste unitário agora parametriza fontes homogêneas e
+mistas, evitando repetir o falso positivo do main46. Sem mudança em CAS/head.
+Main47 build/install/prova19612 em andamento; nenhum teste anterior ativo.
+Aguardar prova antes de campanhas. Milestone não qualificado/commitado.
+
+### 2026-10-07 — main46 não corrigiu fontes tipadas; ajuste seguinte delimitado
+Inspeção read-only da fila dependencies-parity3 confirmou mesmos Cards presos.
+Payload membership tem source_ref bug:card; enumerador usa task/test/bug e só a
+fila usa card. _card_topological_positions está correto isoladamente, mas a
+seleção/inserção de ranks em _ordered_rebuild_sources filtra apenas artifact_type
+card. Correção pendente: usar queue_artifact_type(source_type)==card nas duas
+condições; mapeamento público já importado. Rank existente é50 para os quatro.
+Acrescentar positivo misto task/test/bug no teste unitário; não alterar CAS/head.
+41914 segue vivo, aguardar terminal antes de editar produto/reinstalar. Contratos Community e
+frontend passaram, closure46 passou, mas isso NÃO qualifica correção integrada.
+Outra constatação delimitada C1: core/kg/board_rebuild_adapter.py ainda inclui
+sprint no registry e rank; investigar e retirar esse aceite residual depois,
+sem tratar task/test/bug atuais como legado. Não misturar histórico nativo.
+
+### 2026-10-07 — main46 instalado; contrato/frontend/closure aprovados
+Build/install/prova66387 terminou0:837/899+316/402 byte-identical.
+Dependencies-contract1 (46912) terminou0:23pass/11.13s, incluindo negativos
+de ordem, escopo, ciclo e fonte ausente; regressões de ingestão e Evidence closure.
+Frontend dependencies-ui1 terminou0:17pass (GraphCanvas seleção/navegação,
+jsdom/fallback acessível; sem WebGL/browser E2E). Assets produtivos inalterados.
+Closure46 (51816) terminou0:ok=true, findings/documentation_findings=[], oitoZERO.
+Ruff F/E9 e diff-check Community passaram.
+Dependencies-parity3 (41914) segue vivo: dependências+Bug proxy sobre main46.
+Não concluir a correção nem fazer commit/push antes desse terminal/revisão.
+Nenhum outro processo pendente; índice63/172/11 mantido.
+
+### 2026-10-07 — KG-24: bloqueio real por ordem de Cards identificado e corrigido em WIP
+Dependencies-parity2 (46537) terminou1/253.26s: retry natural não resolve.
+Leitura read-only da fila descartável confirmou primeiro Card dependente pending,
+pré-requisitos posteriores nunca iniciados. Reserva exata deliberadamente usa
+head estrito (list_ready_pending_exact e CAS); não relaxar essa proteção.
+board_rebuild_ingestion ordena Specs/Evidence topologicamente, mas Cards só por ID.
+Correção Community acrescenta ordenação topológica scoped por Board/Card antes
+criação da fila; fonte/pré-requisito ausente e ciclo falham antes de escrita.
+Sem SQL/mecânica no Core, sem mudança de autoridade, gate ou histórico.
+Novo teste focado cobre ordem estável, ciclo, cross-board, fonte incompleta e
+nenhuma mutação na recusa. Helper-regression1 (65454) terminou0:2pass/200.53s
+no main45 (Spec+Bug proxy); exige repetição pertinente após correção produtiva.
+Main46 build/install/prova66387 em andamento. Aguardar terminal antes de testes.
+Nenhum processo de teste anterior vivo. Índice63/172/11, WIP não commitado.
+
+### 2026-10-07 — Bug proxy aprovado; helper agora acompanha retry real
+Bug-proxy-parity1 (97209) terminou0:1pass/96.75s. Retração/restauração de seis
+famílias em dois Bugs mantém proxy inferido0.8 e iguala rebuild/fonte completa.
+Após todos os processos anteriores terminarem, helper materialize passou a
+processar até fila vazia com prazo180s, backoff natural e total exato de ACKs.
+Nenhum timestamp/prioridade/policy produtiva alterado. CardDependency.created_at
+foi fixado na fixture para permitir comparar fontes realmente idênticas.
+Dependencies-parity2 (46537) e helper-regression1 (65454, Spec+Bug proxy)
+estão em andamento no mesmo main45. Não editar helper ou reinstalar até terminais.
+A paridade de Decision com gerações históricas é distinta do teste KG-11 já
+aprovado: exige carregar também fonte cognitiva durável, não apenas clonar a
+última Spec. Registrar essa dependência ao fechar a matriz; não apagar história
+nem trocar a exigência por comparação só de nós atuais.
+
+### 2026-10-07 — KG-24: dependências/proxy nativos em validação
+Par publicado Coree564d87d / Communitya49bca08, árvores inicialmente limpas.
+Turno anterior teve progresso: quatro integrações, recibo e pushes.
+Prova provenance-native-dependencies-parity1 confirmou main45:837/899+316/402.
+Novos testes: dependências Card nos quatro pares físicos e Spec com tombstone;
+Bug proxies das seis famílias, dois consumidores, retirada/restauração parcial.
+Ambos exigem fonte completa idêntica e multiset completo após rebuild.
+Dependencies-parity1 (95530) terminou1/103.59s: criação/remoção/replay incremental
+passaram, rebuild chegou ao dependente antes do pré-requisito e retornou retry.
+Helper compartilhado exige ACK imediato uma vez por fonte, hipótese insuficiente
+para dependências entre Cards; precisa dirigir retry natural delimitado, sem
+mexer em timestamp/prioridade/backoff. Manter total de ACKs e fila final vazia.
+Timestamp de CardDependency também fixado na fixture para fontes idênticas.
+Bug-proxy-parity1 (97209) segue vivo; não editar helper compartilhado até terminar.
+Produto main45 estável; Ruff F/E9 inicial passou. Índice63/172/11 sem promoção.
+
 ### 2026-10-07 — KG-16/24: Card filhos e Evidence chain aprovados
 Card-children-parity2 (68238) terminou0:3pass/202.91s. Normal/Test/Bug removem
 todos os vínculos das oito famílias + cenário, restauram subconjunto e repetem
