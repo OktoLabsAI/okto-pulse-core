@@ -4,6 +4,7 @@
 
 ### 2026-10-06 — C1/C3 conexoes arquiteturais com array unico
 
+Publicado: Core 5d3c92f2 / Community d7727e25; pushes confirmados.
 Bases Core 42290f76 / Community 106a80e1.
 Retirado linkedInterfaceId escalar: backend critica/recusa sua presenca
 inclusive null e customData; linkedInterfaceIds e o unico campo aceito.
