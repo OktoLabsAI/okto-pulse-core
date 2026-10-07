@@ -726,5 +726,139 @@
     "product_changes": false,
     "proof_pair": "dist-native-boundary-qualification1",
     "limits": "Frontend suite complete; remaining backend modules and criterion qualification pending."
+  },
+  "core_full_run5": {
+    "campaign": "clean-break-full-run5",
+    "passed": 950,
+    "failed": 20,
+    "duration_seconds": 397.42,
+    "xml_sha256": "de8ac7e1a71817b610a5b1552a6c74af805a28c9d29c7248f09a271c35d790cf",
+    "selection": "clean-break-full-run5-selection.json",
+    "failures": [
+      {
+        "test": "tests.test_attachment_audit_validation::test_rest_upload_and_delete_emit_each_activity_exactly_once",
+        "message": "okto_pulse.core.application.use_cases.base.PermissionDeniedError: {\"error\": \"permission_denied\", \"reason\": \"permission_missing\", \"required_permission\": \"card.attachments.upload\", \"detail\": \"Permission denied: requires 'card.attachments.upload'\"}"
+      },
+      {
+        "test": "tests.test_attachment_audit_validation::test_long_filename_stops_both_surfaces_before_storage_writer",
+        "message": "okto_pulse.core.application.use_cases.base.PermissionDeniedError: {\"error\": \"permission_denied\", \"reason\": \"permission_missing\", \"required_permission\": \"card.attachments.upload\", \"detail\": \"Permission denied: requires 'card.attachments.upload'\"}"
+      },
+      {
+        "test": "tests.test_attachment_audit_validation::test_storage_oserror_is_translated_without_local_path",
+        "message": "okto_pulse.core.application.use_cases.base.PermissionDeniedError: {\"error\": \"permission_denied\", \"reason\": \"permission_missing\", \"required_permission\": \"card.attachments.upload\", \"detail\": \"Permission denied: requires 'card.attachments.upload'\"}"
+      },
+      {
+        "test": "tests.test_board_governance_critical_context_wiring::test_card_move_resolves_full_context_before_status_mutation",
+        "message": "okto_pulse.core.services.card_errors.CardOperationError: Cannot start task card: link it directly to at least one FR/TR/BR/IR/OR requirement, or use the human-only card/board skip."
+      },
+      {
+        "test": "tests.test_board_governance_critical_context_wiring::test_guard_disabled_records_decision_without_context_fingerprint",
+        "message": "okto_pulse.core.services.card_errors.CardOperationError: Cannot start task card: link it directly to at least one FR/TR/BR/IR/OR requirement, or use the human-only card/board skip."
+      },
+      {
+        "test": "tests.test_board_governance_critical_context_wiring::test_full_context_failure_blocks_card_move_before_mutation",
+        "message": "okto_pulse.core.services.card_errors.CardOperationError: Cannot start task card: link it directly to at least one FR/TR/BR/IR/OR requirement, or use the human-only card/board skip."
+      },
+      {
+        "test": "tests.test_board_governance_critical_context_wiring::test_mcp_spec_evaluation_resolves_full_context_and_appends_evaluation",
+        "message": "okto_pulse.core.services.resource_gate_contracts.ResourceGateViolation: Resource Gate could not resolve resource lineage for spec 'bg-wiring-spec-634f007b': The adopted architecture scope is unavailable."
+      },
+      {
+        "test": "tests.test_board_governance_critical_context_wiring::test_mcp_spec_evaluation_failure_does_not_append_evaluation",
+        "message": "okto_pulse.core.services.resource_gate_contracts.ResourceGateViolation: Resource Gate could not resolve resource lineage for spec 'bg-wiring-spec-e918446f': The adopted architecture scope is unavailable."
+      },
+      {
+        "test": "tests.test_board_governance_critical_context_wiring::test_read_only_mcp_paths_do_not_invoke_critical_context_guard",
+        "message": "okto_pulse.core.services.resource_gate_contracts.ResourceGateViolation: Resource Gate could not resolve resource lineage for spec 'bg-wiring-spec-c3c2c5c4': The adopted architecture scope is unavailable."
+      },
+      {
+        "test": "tests.test_bug_regression_preview::test_mcp_preview_tool_matches_rest_shape",
+        "message": "KeyError: 'eligible_scenarios'"
+      },
+      {
+        "test": "tests.test_c11_mcp_pagination_goldens::test_list_by_board_archived_contract_for_all_sdlc_families_is_paged",
+        "message": "KeyError: 'include_archived'"
+      },
+      {
+        "test": "tests.test_c9_quality_mcp_regression::test_checked_in_ska_resource_manifest_is_current_and_drift_fails",
+        "message": "ValueError: agent resource manifest drift: regenerate with `python -m okto_pulse.core.mcp.ska_resource_manifest`"
+      },
+      {
+        "test": "tests.test_cancellation_reason::test_mcp_full_entity_reads_expose_cancellation_audit_fields",
+        "message": "okto_pulse.core.services.resource_gate_contracts.ResourceGateViolation: Resource Gate could not resolve resource lineage for spec '9f352d56-948c-4457-82a8-e8efbda78f3b': The adopted architecture scope is unavailable."
+      },
+      {
+        "test": "tests.test_card6_delivery_worker_integration::test_graph_commit_crash_recovers_to_one_atomic_attempt_zero",
+        "message": "assert 0 == 1\n +  where 0 = len([])"
+      },
+      {
+        "test": "tests.test_card_activity_rest::test_card_update_rest_exposes_real_before_after_contract",
+        "message": "okto_pulse.core.services.resource_gate_contracts.ResourceGateViolation: Resource Gate could not resolve resource lineage for card '45852dc7-93ec-480b-bc61-4e4848a539a6': The adopted architecture scope is unavailable."
+      },
+      {
+        "test": "tests.test_card_collaboration_scope_hardening::test_viewer_share_is_read_only_while_editor_can_collaborate",
+        "message": "okto_pulse.core.application.use_cases.base.PermissionDeniedError: {\"error\": \"permission_denied\", \"reason\": \"permission_missing\", \"required_permission\": \"card.comments.create\", \"detail\": \"Permission denied: requires 'card.comments.create'\"}"
+      },
+      {
+        "test": "tests.test_card_cross_board_hardening::test_qa_choice_comment_and_upload_children_are_parent_card_scoped",
+        "message": "AssertionError: assert {'error': 'In...t at index 0'} == {'error': 'Fa...d not found)'}\n  \n  Differing items:\n  {'error': 'Invalid options: expected option object at index 0'} != {'error': 'Failed to create choice comment (card not found)'}\n  Use -v to get more diff"
+      },
+      {
+        "test": "tests.test_card_cross_board_hardening::test_qa_and_comment_child_flows_keep_same_board_success_envelopes",
+        "message": "KeyError: 'comment'"
+      },
+      {
+        "test": "tests.test_card_cross_board_hardening::test_same_board_card_children_keep_legacy_success_envelopes",
+        "message": "KeyError: 'total'"
+      },
+      {
+        "test": "tests.test_card_cross_board_hardening::test_mcp_task_validation_submit_list_and_get_hide_ledger_plumbing",
+        "message": "KeyError: 'id'"
+      }
+    ],
+    "note": "Stopped at maxfail20; not full qualification."
+  },
+  "core_collaboration_followup": {
+    "campaigns": [
+      {
+        "name": "clean-break-collaboration-fixtures1",
+        "tests": 145,
+        "failed": 5,
+        "errors": 0,
+        "duration_seconds": 57.791,
+        "xml_sha256": "9901604363cceaccfc92c929c1a094bee14be930bea3ecb79a2187ca39c02056"
+      },
+      {
+        "name": "clean-break-collaboration-submit1",
+        "tests": 1,
+        "failed": 1,
+        "errors": 0,
+        "duration_seconds": 10.164,
+        "xml_sha256": "ff8ed11c41cfb0d656a51609d521c8c070e049eaa13c0164e9cc2091b85d65ff"
+      },
+      {
+        "name": "clean-break-collaboration-fixtures2",
+        "tests": 29,
+        "failed": 0,
+        "errors": 0,
+        "duration_seconds": 53.318,
+        "xml_sha256": "b666ce33723f5843f64343ee4872c1a8af193f92c23f61213daf7b4c25b31384"
+      },
+      {
+        "name": "clean-break-collaboration-distribution1",
+        "tests": 102,
+        "failed": 0,
+        "errors": 0,
+        "duration_seconds": 33.358,
+        "xml_sha256": "bc6cb11944a7229259a25e461e34f910fd7ff0aa725da91cf5f852142aa4e9f7"
+      }
+    ],
+    "distinct_passed": 180,
+    "proof_pair": "dist-native-collaboration-qualification1",
+    "closure": "closure-native-collaboration-qualification1.json",
+    "budgets_zero": 8,
+    "product_change": "Regenerated resource manifest hashes only. No runtime semantics changed.",
+    "scope": "Native fixtures for permissions, architecture adoption, FR task linkage, immutable checklist edition, independent reviewer, typed options/arrays/booleans; native SQLite delivery UDF in test composition. Removed Sprint seeds from mixed pagination fixture.",
+    "limits": "Remaining backend modules and criteria still pending. Latest full run stopped at maxfail20."
   }
 }

@@ -341,6 +341,11 @@ def _build_test_relational_runtime(url: str, *, echo: bool = False):
 
         @event.listens_for(engine.sync_engine, "connect")
         def _install_test_sqlite_pragmas(dbapi_conn, _conn_record):  # noqa: ANN001
+            from okto_pulse.community.adapters.sqlite_delivery_contract import (
+                install_delivery_contract_function,
+            )
+
+            install_delivery_contract_function(dbapi_conn)
             cursor = dbapi_conn.cursor()
             try:
                 cursor.execute("PRAGMA journal_mode=WAL")

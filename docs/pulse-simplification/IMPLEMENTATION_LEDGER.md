@@ -2,6 +2,41 @@
 
 ## Estado para retomada
 
+### 2026-10-07 — C3/C4 colaboracao, paginacao e manifesto nativos
+
+Core full-run5 terminou:950 aprovados/20 falhas em397.42s; handle11960
+encerrado, selecao excluiu95 modulos ja qualificados. Falhas/hash no JSON.
+Nao representa suite geral integral.
+
+Fixtures REST usam grants publicos atuais; Spec declara ArchitectureAdoptionScope.
+Movimento de Card possui FR ligada; read de contexto usa snapshot Checklist OFF
+explicitamente na edicao1, sem relaxar snapshot ausente. Choice MCP usa objetos
+label; preview usa array; validacao possui record completo e reviewer independente.
+Negacoes cross-board, auditoria exatamente uma vez e ausencia de writer preservadas.
+Paginacao usa booleanos nativos e recusa os quatro antigos literais textuais.
+Retirados seeds Sprint sem consumidor dessa fixture mista, mantendo totais/paginas
+de Spec/Ideation/Refinement e os negativos existentes.
+
+Recuperacao de crash reproduziu DELIVERY_DEBT porque a composicao SQLite de teste
+nao registrava pulse_current_delivery_identity; adapter falhava fechado ao consultar.
+Conftest instala agora a funcao pelo instalador Community usado no runtime.
+Teste real SQL/Grafx passou sem mudar circuito, ownership, atomicidade ou produto.
+Manifesto de resources regenerado pelo modulo oficial ska_resource_manifest:
+somente hashes de resources ja alterados, nenhuma edicao manual.
+
+Followups fixtures1:140 aprovados/cinco falhas; submit1 confirmou separacao de
+reviewer (uma falha); fixtures2:29 aprovados; distribution1:102 aprovados.
+Total distinto nos followups:180. Todos handles encerrados.
+Distribuicao inclui manifesto, catalogo MCP, gate de imports e paginacao.
+Par dist-native-collaboration-qualification1 instalado/provado:Core843 Python/905
+payload, Community319/405 byte-identicos src/install/wheels. Closure correspondente
+ok=true, findings/documentation_findings vazios, oito budgets current=limit=0.
+Ruff F/E9/diff verdes. Frontend inalterado;2444 aprovados continuam aplicaveis.
+
+Proximo: continuar backend Community apos full-run2 e Core apos full-run5,
+sem repetir modulos completos; ultimo modulo parcial Core foi qualificado inteiro
+em fixtures2. C1-C4/T23/KG-10 e bump pareado0.4.0 continuam abertos.
+
 ### 2026-10-07 — C4 frontend geral concluido
 
 clean-break-full-frontend1 terminou com exit0:269 arquivos e2444 testes

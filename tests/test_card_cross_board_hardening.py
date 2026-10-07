@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from task_validation_native_fixtures import native_entry
+
+from okto_pulse.core.domain.architecture_adoption import ArchitectureAdoptionScope
+
 import json
 import uuid
 from types import SimpleNamespace
@@ -139,6 +143,10 @@ async def _graph(db_factory):
         db.add_all(
             [
                 Spec(
+                    architecture_adoption=ArchitectureAdoptionScope(
+                        board_id=ids["board_a"], spec_id=ids["spec_a"],
+                        adopted_in_edition=1, actor_id=USER_ID, inherited_resource_ids=(),
+                    ).model_dump(mode="json"),
                     id=ids["spec_a"],
                     board_id=ids["board_a"],
                     title="Card scope spec A",
@@ -157,6 +165,10 @@ async def _graph(db_factory):
                     api_contracts=[],
                 ),
                 Spec(
+                    architecture_adoption=ArchitectureAdoptionScope(
+                        board_id=ids["board_b"], spec_id=ids["spec_b"],
+                        adopted_in_edition=1, actor_id=USER_ID, inherited_resource_ids=(),
+                    ).model_dump(mode="json"),
                     id=ids["spec_b"],
                     board_id=ids["board_b"],
                     title="Card scope spec B",
@@ -187,7 +199,10 @@ async def _graph(db_factory):
                     created_by=USER_ID,
                     validations=[
                         {
+                            **native_entry(),
                             "id": ids["validation_a"],
+                            "card_id": ids["source_a"],
+                            "board_id": ids["board_a"],
                             "reviewer_id": "reviewer-a",
                             "recommendation": "approve",
                         }
@@ -278,14 +293,14 @@ async def _graph(db_factory):
     return ids
 
 
-async def _call(db_factory, tool_name: str, **kwargs) -> dict:
+async def _call(db_factory, tool_name: str, *, actor_id: str = USER_ID, **kwargs) -> dict:
     board_id = kwargs["board_id"]
     ctx = type(
         "Ctx",
         (),
         {
-            "agent_id": USER_ID,
-            "agent_name": USER_ID,
+            "agent_id": actor_id,
+            "agent_name": actor_id,
             "board_id": board_id,
             "permissions": ["*"],
         },
@@ -595,7 +610,7 @@ async def test_qa_choice_comment_and_upload_children_are_parent_card_scoped(
         board_id=ids["board_b"],
         card_id=ids["source_a"],
         question="must not create a foreign choice",
-        options=["one"],
+        options=[{"label": "one"}],
     )
     respond = await _call(
         db_factory,
@@ -725,7 +740,7 @@ async def test_qa_and_comment_child_flows_keep_same_board_success_envelopes(
         board_id=ids["board_a"],
         card_id=ids["source_a"],
         question="same-board choice",
-        options=["ship", "wait"],
+        options=[{"label": "ship"}, {"label": "wait"}],
     )
     new_choice_id = add_choice["comment"]["id"]
     respond = await _call(
@@ -981,7 +996,7 @@ async def test_collaboration_commands_reject_actor_command_board_spoof_before_ch
 
 
 @pytest.mark.asyncio
-async def test_same_board_card_children_keep_legacy_success_envelopes(
+async def test_same_board_card_children_keep_native_success_envelopes(
     db_factory, _graph
 ):
     ids = _graph
@@ -1066,6 +1081,7 @@ async def test_mcp_task_validation_submit_list_and_get_hide_ledger_plumbing(
         board_id=ids["board_a"],
         card_id=ids["source_a"],
         expected_subject_version=expected_subject_version,
+        actor_id="independent-reviewer",
         idempotency_key=f"mcp-public-projection-{ids['source_a']}",
         confidence=90,
         confidence_justification="Independent review established high confidence.",
@@ -1082,6 +1098,7 @@ async def test_mcp_task_validation_submit_list_and_get_hide_ledger_plumbing(
         board_id=ids["board_a"],
         card_id=ids["source_a"],
     )
+    assert "id" in submitted, submitted
     fetched = await _call(
         db_factory,
         "okto_pulse_get_task_validation",

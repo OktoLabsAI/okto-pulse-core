@@ -22,6 +22,8 @@ Integration (service move flows over the test DB):
 
 from __future__ import annotations
 
+from okto_pulse.core.domain.architecture_adoption import ArchitectureAdoptionScope
+
 import json
 import uuid
 from datetime import datetime, timezone
@@ -244,6 +246,10 @@ async def _seed_spec(db_factory) -> str:
     spec_id = str(uuid.uuid4())
     async with db_factory() as db:
         db.add(Spec(
+            architecture_adoption=ArchitectureAdoptionScope(
+                board_id=BOARD_ID, spec_id=spec_id,
+                adopted_in_edition=1, actor_id=USER_ID, inherited_resource_ids=(),
+            ).model_dump(mode="json"),
             id=spec_id, board_id=BOARD_ID, title="Cancellable Spec",
             status=SpecStatus.DRAFT, created_by=USER_ID,
         ))

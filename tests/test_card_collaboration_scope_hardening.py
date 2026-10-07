@@ -39,14 +39,14 @@ ACTOR = ActorContext(
     board_id="foreign-board",
     realm_id=LOCAL_REALM_ID,
     permissions=(
-        "qa:create",
-        "qa:answer",
-        "qa:delete",
-        "comments:create",
-        "comments:update",
-        "comments:delete",
-        "attachments:upload",
-        "attachments:delete",
+        "card.qa.ask",
+        "card.qa.answer",
+        "card.qa.delete",
+        "card.comments.create",
+        "card.comments.edit",
+        "card.comments.delete",
+        "card.attachments.upload",
+        "card.attachments.delete",
     ),
 )
 CARD_ID = "foreign-card"

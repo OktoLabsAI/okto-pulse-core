@@ -408,7 +408,7 @@ async def test_mcp_preview_tool_matches_rest_shape(db_factory, bug_preview_seed)
                 board_id=bug_preview_seed["board_id"],
                 bug_id=bug_preview_seed["bug_id"],
                 affected_task_ids=[bug_preview_seed["affected_id"]],
-                candidate_scenario_ids="ts-affected-linked|ts-missing",
+                candidate_scenario_ids=["ts-affected-linked", "ts-missing"],
             )
         )
 

@@ -34,9 +34,6 @@ from sqlalchemy_test_models import (
     RefinementStatus,
     Spec,
     SpecStatus,
-    Sprint,
-    SprintLaneType,
-    SprintStatus,
     Story,
     StoryStatus,
     Topic,
@@ -86,8 +83,6 @@ async def c11_graph(db_factory):
             "refinement_done",
             "spec",
             "spec_done",
-            "sprint",
-            "sprint_done",
             "card_cancelled",
             "card_done",
             "card_progress",
@@ -271,38 +266,6 @@ async def c11_graph(db_factory):
         )
         await db.flush()
 
-        db.add_all(
-            [
-                Sprint(
-                    id=ids["sprint"],
-                    board_id=ids["board"],
-                    spec_id=ids["spec"],
-                    title="Draft sprint",
-                    description="Sprint body",
-                    status=SprintStatus.DRAFT,
-                    lane_type=SprintLaneType.NORMAL,
-                    spec_version=4,
-                    test_scenario_ids=["ts-c11"],
-                    business_rule_ids=["br-c11"],
-                    labels=["golden"],
-                    created_by=ACTOR_ID,
-                    created_at=STAMP,
-                    updated_at=STAMP,
-                ),
-                Sprint(
-                    id=ids["sprint_done"],
-                    board_id=ids["board"],
-                    spec_id=ids["spec"],
-                    title="Done sprint",
-                    status=SprintStatus.CLOSED,
-                    lane_type=SprintLaneType.NORMAL,
-                    created_by=ACTOR_ID,
-                    created_at=STAMP,
-                    updated_at=STAMP,
-                ),
-            ]
-        )
-        await db.flush()
 
         card_rows = (
             ("card_cancelled", CardStatus.CANCELLED, 0, False),
@@ -898,11 +861,11 @@ async def test_list_by_board_archived_contract_for_all_sdlc_families_is_paged(
     mcp_call,
     db_factory,
 ):
-    """False literals stay false; true returns mixed pages with archive metadata."""
+    """Native booleans control mixed pages with archive metadata."""
     suffix = uuid.uuid4().hex[:8]
     archived_ids = {
         entity: _id(f"{entity}_archived", suffix)
-        for entity in ("spec", "ideation", "refinement", "sprint")
+        for entity in ("spec", "ideation", "refinement")
     }
     async with db_factory() as db:
         db.add_all(
@@ -944,20 +907,6 @@ async def test_list_by_board_archived_contract_for_all_sdlc_families_is_paged(
                     created_at=STAMP,
                     updated_at=STAMP,
                 ),
-                Sprint(
-                    id=archived_ids["sprint"],
-                    board_id=c11_graph["board"],
-                    spec_id=c11_graph["spec"],
-                    title="Archived golden sprint",
-                    status=SprintStatus.DRAFT,
-                    lane_type=SprintLaneType.NORMAL,
-                    labels=["golden"],
-                    archived=True,
-                    pre_archive_status="draft",
-                    created_by=ACTOR_ID,
-                    created_at=STAMP,
-                    updated_at=STAMP,
-                ),
             ]
         )
         await db.commit()
@@ -984,14 +933,12 @@ async def test_list_by_board_archived_contract_for_all_sdlc_families_is_paged(
         ),
     ]
 
-    for (entity_type, base_filters, active_id), false_literal in (
-        (case, literal) for case in cases for literal in (False, "false", "0", "no")
-    ):
+    for entity_type, base_filters, active_id in cases:
         active_only = await mcp_call(
             "okto_pulse_list_by_board",
             board_id=c11_graph["board"],
             entity_type=entity_type,
-            filters={**base_filters, "include_archived": false_literal},
+            filters={**base_filters, "include_archived": False},
             limit=10,
         )
         assert active_only["include_archived"] is False
@@ -1005,7 +952,7 @@ async def test_list_by_board_archived_contract_for_all_sdlc_families_is_paged(
                 "okto_pulse_list_by_board",
                 board_id=c11_graph["board"],
                 entity_type=entity_type,
-                filters={**base_filters, "include_archived": "true"},
+                filters={**base_filters, "include_archived": True},
                 offset=offset,
                 limit=1,
             )
@@ -1076,6 +1023,7 @@ async def test_list_by_board_labels_are_exact_json_members(
         ("ideation", {"derivation_pending": "not-a-boolean"}),
         ("story", {"linked": "not-a-boolean"}),
         ("topic", {"include_archived": "not-a-boolean"}),
+        *[("spec", {"include_archived": value}) for value in ("false", "0", "no", "true")],
         ("spec", {"include_archived": "off"}),
         ("ideation", {"include_archived": []}),
         (
