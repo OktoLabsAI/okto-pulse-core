@@ -1,0 +1,120 @@
+{
+  "scope": "Community16 native fixtures; migration-only cleanup test removed",
+  "pair": "dist-native-main23",
+  "provenance": "provenance-native-main23.json",
+  "closure": "closure-native-main23.json",
+  "runs": [
+    {
+      "name": "clean-break-full-run16-community",
+      "xml_sha256": "46332bd90cd1a6273db78534631e284984fc470113da2e63604af50da65edcc0",
+      "tests": 648,
+      "failed": 20,
+      "failed_cases": [
+        "tests.test_r05c_kg_adapters::test_ts_f7b7374d_base_registry_supplies_community_graph_slots",
+        "tests.test_r05d_data_adapters::test_ts4_audit_commit_get_undone_purge_contract",
+        "tests.test_r05d_data_adapters::test_ts4_latest_audit_lookup_scopes_same_id_by_artifact_type",
+        "tests.test_r05d_data_adapters::test_ts8_smoke_kg_healthy_through_community_data_and_graph",
+        "tests.test_r10c_telemetry_sender_adapter::test_ts_312bfd67_conformance_and_handshake_usage",
+        "tests.test_r10c_telemetry_sender_adapter::test_ts_b2a15459_reason_code_matrix_preserved",
+        "tests.test_r10c_telemetry_sender_adapter::test_ts_60f2c35c_unknown_install_rehandshake_events_not_lost",
+        "tests.test_r16b_relational_schema_migrator::test_fresh_create_all_installs_canonical_lifecycle_edition_guards",
+        "tests.test_r_p2_02_relational_parity::test_p2_02_audit_commit_rows_match_normalized_contract",
+        "tests.test_r_p2_06b_community_scheduler_wiring::test_community_app_exposes_composition_owned_scheduler_control",
+        "tests.test_recovery_storage_references::test_current_schema_and_real_attachment_writer_reconcile",
+        "tests.test_relational_recovery_snapshot::test_current_full_schema_recovers_into_same_native_format",
+        "tests.test_relational_schema_transaction::test_legacy_filesystem_cleanup_cannot_escape_the_relational_transaction",
+        "tests.test_resource_gate_metadata_only_adapter::test_gate_profile_projects_only_persisted_metadata",
+        "tests.test_resource_gate_metadata_only_adapter::test_missing_persisted_hash_is_not_computed_from_content",
+        "tests.test_resource_gate_metadata_only_adapter::test_gate_profile_filters_v2_snapshot_from_persisted_stamps_only",
+        "tests.test_resource_gate_metadata_only_adapter::test_every_metadata_collection_fails_closed_on_limit_plus_one",
+        "tests.test_scenario_verification_method::test_real_http_replay_receipt_binds_method_and_rejects_reinterpretation",
+        "tests.test_skb_b08_policy_snapshot_mutex::test_subject_write_waits_for_policy_snapshot_board_mutex",
+        "tests.test_skb_b08_policy_subject_relations::test_relational_mutations_bump_parent_once_per_uow_and_rollback[ideation_qa]"
+      ]
+    },
+    {
+      "name": "community16-native-fixtures1",
+      "xml_sha256": "b36833ab43023e1b1f3a9b498b9464642832821ed0c0e8591849af0cab0dcb1a",
+      "tests": 102,
+      "failed": 16,
+      "failed_cases": [
+        "tests.test_r10c_telemetry_sender_adapter::test_ts_312bfd67_conformance_and_handshake_usage",
+        "tests.test_r10c_telemetry_sender_adapter::test_ts_b2a15459_reason_code_matrix_preserved",
+        "tests.test_r10c_telemetry_sender_adapter::test_ts_60f2c35c_unknown_install_rehandshake_events_not_lost",
+        "tests.test_resource_gate_metadata_only_adapter::test_gate_profile_projects_only_persisted_metadata",
+        "tests.test_resource_gate_metadata_only_adapter::test_missing_persisted_hash_is_not_computed_from_content",
+        "tests.test_resource_gate_metadata_only_adapter::test_gate_profile_filters_v2_snapshot_from_persisted_stamps_only",
+        "tests.test_resource_gate_metadata_only_adapter::test_every_metadata_collection_fails_closed_on_limit_plus_one",
+        "tests.test_skb_b08_policy_snapshot_mutex::test_subject_write_waits_for_policy_snapshot_board_mutex",
+        "tests.test_skb_b08_policy_subject_relations::test_relational_mutations_bump_parent_once_per_uow_and_rollback[ideation_qa]",
+        "tests.test_skb_b08_policy_subject_relations::test_relational_mutations_bump_parent_once_per_uow_and_rollback[ideation_kb]",
+        "tests.test_skb_b08_policy_subject_relations::test_relational_mutations_bump_parent_once_per_uow_and_rollback[refinement_kb]",
+        "tests.test_skb_b08_policy_subject_relations::test_relational_mutations_bump_parent_once_per_uow_and_rollback[spec_kb]",
+        "tests.test_skb_b08_policy_subject_relations::test_relational_writer_takes_board_mutex_before_subject_fact_write[ideation_qa]",
+        "tests.test_skb_b08_policy_subject_relations::test_relational_writer_takes_board_mutex_before_subject_fact_write[ideation_kb]",
+        "tests.test_skb_b08_policy_subject_relations::test_relational_writer_takes_board_mutex_before_subject_fact_write[refinement_kb]",
+        "tests.test_skb_b08_policy_subject_relations::test_relational_writer_takes_board_mutex_before_subject_fact_write[spec_kb]"
+      ]
+    },
+    {
+      "name": "community16-native-mutex-diagnostic1",
+      "xml_sha256": "a34ec068bfd140a1fa5edcf4b945d0cd09382f59bd56345b51eaac569d22104f",
+      "tests": 1,
+      "failed": 1,
+      "failed_cases": [
+        "tests.test_skb_b08_policy_snapshot_mutex::test_subject_write_waits_for_policy_snapshot_board_mutex"
+      ]
+    },
+    {
+      "name": "community16-native-fixtures4",
+      "xml_sha256": "4435c8d5244b53334a9524e008a8b88006a5440ed72ca9b7ff1d77a7bea5c497",
+      "tests": 26,
+      "failed": 0,
+      "failed_cases": []
+    }
+  ],
+  "aborted_runs": [
+    {
+      "name": "community16-native-fixtures2",
+      "status": "terminated_hung_fixture_no_final_xml",
+      "log_sha256": "fb3a85cd297aacb976a843a7a21df19eec92701e4e67a41d1a406e0498c7d307",
+      "qualification": false
+    },
+    {
+      "name": "community16-native-fixtures3",
+      "status": "terminated_hung_fixture_no_final_xml",
+      "log_sha256": "2aa0ceffa2dabb488574ff2f0b72af711fd9ef84e89ed2cfa26f78fd740f5e30",
+      "qualification": false
+    }
+  ],
+  "qualified_modules": {
+    "tests/test_r05c_kg_adapters.py": 11,
+    "tests/test_r05d_data_adapters.py": 12,
+    "tests/test_r16b_relational_schema_migrator.py": 5,
+    "tests/test_r_p2_02_relational_parity.py": 3,
+    "tests/test_r_p2_06b_community_scheduler_wiring.py": 1,
+    "tests/test_recovery_storage_references.py": 19,
+    "tests/test_relational_recovery_snapshot.py": 16,
+    "tests/test_relational_schema_transaction.py": 13,
+    "tests/test_r10c_telemetry_sender_adapter.py": 8,
+    "tests/test_resource_gate_metadata_only_adapter.py": 4,
+    "tests/test_skb_b08_policy_snapshot_mutex.py": 1,
+    "tests/test_skb_b08_policy_subject_relations.py": 9,
+    "tests/test_scenario_verification_method.py": 4
+  },
+  "qualified_distinct_cases": 106,
+  "removed_case": {
+    "name": "tests.test_relational_schema_transaction::test_legacy_filesystem_cleanup_cannot_escape_the_relational_transaction",
+    "reason": "Exclusive behavior of removed migration cleanup; explicitly out of clean-break scope, not a passing test"
+  },
+  "next_selection": {
+    "name": "clean-break-full-run17-community",
+    "excluded_complete_modules": 537
+  },
+  "limits": [
+    "Tests only; no source/payload changes since byte proof main23 and zero-budget closure.",
+    "Two interrupted campaigns yield no qualification; final XML fixtures4 covers all affected complete modules.",
+    "Storage/permission gates unchanged; native initialization used before concurrent connections.",
+    "Installed E2E, remaining C4 and authority decisions remain open."
+  ]
+}

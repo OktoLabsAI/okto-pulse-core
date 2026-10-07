@@ -2,6 +2,34 @@
 
 ## Estado para retomada
 
+### 2026-10-07 — Community16 fechado no formato nativo
+Corefae5a7c6 publicado e integrado main por FF após terminal. Community ainda
+f5b1169a, doze arquivos de testes prontos para publicar. Produto/par main23
+permanecem byte-idênticos; closure5830 ok=true/findings=[]/oitoZERO vigente.
+
+fixtures3 handle91816 também foi encerrado por espera indefinida do módulo
+relations (pytest PID32176/launcher1840 vinculados ao XML exato); sem XML final,
+não conta qualificação. Diagnóstico separado community16-native-mutex-diagnostic1
+terminou1:1fail/4.65s, expôs StorageFormatError na conexão concorrente.
+Causa: fixtures criavam Base.metadata sem registro do formato; conexão posterior
+era corretamente recusada. Usam agora initialize_current_schema e contract atual.
+Eventos têm espera limitada/finally, falha do writer é propagada, ordenação
+UPDATE Board antes do fato e exclusão mútua continuam exigidas. Nenhum guard relaxado.
+
+community16-native-fixtures4 handle27732 terminou0:26pass/35.49s, cinco módulos.
+Com os oito módulos completos de fixtures1,106casos distintos/13módulos
+qualificados. Cenário HTTP sela autoridade tanto da Spec quanto do Scenario.
+Telemetria declara bloco de status e cursor nativos no histórico simulado.
+Realm, adoção, registry e scheduler isolado são correções de fixture.
+Somente um teste exclusivo do cleanup de migração foi retirado; não é passe.
+Ruff F/E9 e diff-check0. Recibo acceptance-clean-break-community16.json preserva
+falhas e interrupções. Nenhuma alteração frontend/produtiva.
+
+Community17 preparado excluindo537módulos completos; E2E instalado segue
+separado/não qualificado. Nenhum processo ativo neste checkpoint.
+Próximos: executar restante Community, E2E instalado e critérios C4 remanescentes.
+T23/KG-10 continuam pendentes de autoridade; não declarar entrega integral.
+
 ### 2026-10-07 — C4 T08/T11 qualificados; followup Community16 em diagnóstico
 Core059cca7d publicado, main ainda283a0a09. acceptance-native-review-fences-current1
 handle87511 terminou0:6pass/17.34s no par reviewer22. Revisados quatro casos
