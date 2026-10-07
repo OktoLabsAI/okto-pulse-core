@@ -3,6 +3,7 @@
 ## Estado para retomada
 
 ### 2026-10-06 — C1/C3 em andamento: aliases de inventario Delivery
+Publicado: Core 52145635 / Community 75036322, pushes confirmados.
 Bases Core e7da64ff / Community 30708407 limpas/publicadas.
 Retirados tres reexports de services/delivery_evidence; unicos callers eram
 testes, agora apontando ao dono atual domain/delivery_inventory. Retiradas duas
