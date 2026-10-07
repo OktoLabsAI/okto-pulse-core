@@ -2969,5 +2969,151 @@
       }
     ],
     "limits": "Stopped at20 failures/errors. Five affected modules; not yet qualified. Installed E2E requires explicit Grafx wheel; no gate disabled. Core12 remains running, product and campaign tests frozen."
+  },
+  "core_full_run12": {
+    "campaign": "clean-break-full-run12",
+    "exit_code": 1,
+    "passed": 1035,
+    "failed": 20,
+    "errors": 0,
+    "skipped": 0,
+    "seconds": 325.31,
+    "proof_pair": "dist-native-privacy-refusal1",
+    "xml_sha256": "7fb39f823b74ed5c0d514632baf5c3016d9176a812eafc9b0b6604692d602aa8",
+    "failures": [
+      {
+        "class": "tests.test_learning_reuse_projection",
+        "name": "test_earlier_capture_recovery_proves_multiple_reuse_revisions_without_regressing_head",
+        "message": "ValueError: learning_capture_payload_invalid"
+      },
+      {
+        "class": "tests.test_learning_reuse_projection",
+        "name": "test_recovery_does_not_treat_evidence_refs_as_revision_authority[unrelated]",
+        "message": "AssertionError: Regex pattern did not match.\n Regex: 'learning_materialization_projection_'\n Input: 'learning_capture_payload_invalid'"
+      },
+      {
+        "class": "tests.test_learning_reuse_projection",
+        "name": "test_recovery_does_not_treat_evidence_refs_as_revision_authority[content]",
+        "message": "AssertionError: Regex pattern did not match.\n Regex: 'learning_materialization_projection_'\n Input: 'learning_capture_payload_invalid'"
+      },
+      {
+        "class": "tests.test_learning_reuse_projection",
+        "name": "test_recovery_does_not_treat_evidence_refs_as_revision_authority[birth]",
+        "message": "AssertionError: Regex pattern did not match.\n Regex: 'learning_materialization_projection_'\n Input: 'learning_capture_payload_invalid'"
+      },
+      {
+        "class": "tests.test_learning_reuse_projection",
+        "name": "test_recovery_does_not_treat_evidence_refs_as_revision_authority[origin]",
+        "message": "AssertionError: Regex pattern did not match.\n Regex: 'learning_materialization_projection_'\n Input: 'learning_capture_payload_invalid'"
+      },
+      {
+        "class": "tests.test_learning_reuse_projection",
+        "name": "test_recovery_does_not_treat_evidence_refs_as_revision_authority[evidence]",
+        "message": "AssertionError: Regex pattern did not match.\n Regex: 'learning_materialization_projection_'\n Input: 'learning_capture_payload_invalid'"
+      },
+      {
+        "class": "tests.test_learning_reuse_projection",
+        "name": "test_recovery_does_not_treat_evidence_refs_as_revision_authority[missing_target]",
+        "message": "AssertionError: Regex pattern did not match.\n Regex: 'learning_materialization_projection_'\n Input: 'learning_capture_payload_invalid'"
+      },
+      {
+        "class": "tests.test_learning_reuse_projection",
+        "name": "test_recovery_does_not_treat_evidence_refs_as_revision_authority[pending]",
+        "message": "AssertionError: Regex pattern did not match.\n Regex: 'learning_materialization_projection_'\n Input: 'learning_capture_payload_invalid'"
+      },
+      {
+        "class": "tests.test_learning_reuse_projection",
+        "name": "test_recovery_keeps_proved_scope_refs_without_changing_other_origins[True]",
+        "message": "ValueError: learning_capture_payload_invalid"
+      },
+      {
+        "class": "tests.test_mcp_card_type_validation",
+        "name": "test_create_test_card_rejects_over_board_scenario_cap",
+        "message": "AssertionError: legacy Knowledge test port does not support mutations"
+      },
+      {
+        "class": "tests.test_mcp_card_type_validation",
+        "name": "test_create_card_accepts_valid_normal",
+        "message": "AssertionError: legacy Knowledge test port does not support mutations"
+      },
+      {
+        "class": "tests.test_mcp_card_type_validation",
+        "name": "test_create_test_card_links_existing_scenario_on_validated_spec",
+        "message": "AssertionError: legacy Knowledge test port does not support mutations"
+      },
+      {
+        "class": "tests.test_mcp_copy_knowledge_to_card_fix",
+        "name": "test_handler_source_uses_spec_knowledge_service",
+        "message": "ValueError: substring not found"
+      },
+      {
+        "class": "tests.test_mcp_copy_knowledge_to_card_fix",
+        "name": "test_handler_copies_kb_into_card_knowledge_bases_not_comments",
+        "message": "assert 'CardUpdate(knowledge_bases=existing)' in '\"\"\"MCP-scoped card CRUD use cases (SaaS Refactor spec R01A MCP-FU6, family: card).\\n\\nThe MCP card tools diverge from..., command.depends_on_id\\n        )\\n        await commit(uow)\\n        return McpRemoveCardDependencyResult(removed)\\n'"
+      },
+      {
+        "class": "tests.test_mcp_current_validation_context",
+        "name": "test_spec_policy_is_identical_in_every_task_context[90-summary-all]",
+        "message": "sqlalchemy.exc.IntegrityError: (sqlite3.IntegrityError) NOT NULL constraint failed: specs.architecture_adoption\n[SQL: INSERT INTO specs (architecture_adoption, execution_contract, id, board_id, ideation_id, refinement_id, source_refinement_snapshot_id, source_refinement_version, delivery_context, source_context_sha256, title, description, context, skip_decisions_coverage, validation_threshold, require_task_validation, validation_min_confidence, validation_min_completeness, validation_max_drift, current_validation_id, pre_archive_status, cancellation_reason, cancelled_at, cancelled_by, status, edition, last_started_edition, version, assignee_id, created_by, test_scenario_policy_epoch, project_structure_revision, project_structure_digest) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING skip_test_coverage, skip_rules_coverage, skip_trs_coverage, skip_contract_coverage, skip_ir_coverage, skip_or_coverage, skip_code_evidence_coverage, skip_delivery_evidence, skip_qualitative_validation, archived, created_at, updated_at]\n[parameters: (None, '{\"contract_version\": \"spec-execution-contract/v1\", \"board_id\": \"board-2dd19006e5c840ceb8c00fd07abfc83e\", \"spec_id\": \"spec-2dd19006e5c840ceb8c00fd07abfc83e\", \"adopted_in_edition\": 1, \"actor_id\": \"owner\", \"origin\": \"new_spec\"}', 'spec-2dd19006e5c840ceb8c00fd07abfc83e', 'board-2dd19006e5c840ceb8c00fd07abfc83e', None, None, None, None, None, None, 'Spec', None, None, 0, None, 0, 90, 0, 0, None, None, None, None, None, 'in_progress', 1, None, 1, None, 'owner', 1, 0, None)]\n(Background on this error at: https://sqlalche.me/e/20/gkpj)"
+      },
+      {
+        "class": "tests.test_mcp_current_validation_context",
+        "name": "test_spec_policy_is_identical_in_every_task_context[90-full-all]",
+        "message": "sqlalchemy.exc.IntegrityError: (sqlite3.IntegrityError) NOT NULL constraint failed: specs.architecture_adoption\n[SQL: INSERT INTO specs (architecture_adoption, execution_contract, id, board_id, ideation_id, refinement_id, source_refinement_snapshot_id, source_refinement_version, delivery_context, source_context_sha256, title, description, context, skip_decisions_coverage, validation_threshold, require_task_validation, validation_min_confidence, validation_min_completeness, validation_max_drift, current_validation_id, pre_archive_status, cancellation_reason, cancelled_at, cancelled_by, status, edition, last_started_edition, version, assignee_id, created_by, test_scenario_policy_epoch, project_structure_revision, project_structure_digest) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING skip_test_coverage, skip_rules_coverage, skip_trs_coverage, skip_contract_coverage, skip_ir_coverage, skip_or_coverage, skip_code_evidence_coverage, skip_delivery_evidence, skip_qualitative_validation, archived, created_at, updated_at]\n[parameters: (None, '{\"contract_version\": \"spec-execution-contract/v1\", \"board_id\": \"board-5a6a2fbc130b4958880ba6e9c9fcdf27\", \"spec_id\": \"spec-5a6a2fbc130b4958880ba6e9c9fcdf27\", \"adopted_in_edition\": 1, \"actor_id\": \"owner\", \"origin\": \"new_spec\"}', 'spec-5a6a2fbc130b4958880ba6e9c9fcdf27', 'board-5a6a2fbc130b4958880ba6e9c9fcdf27', None, None, None, None, None, None, 'Spec', None, None, 0, None, 0, 90, 0, 0, None, None, None, None, None, 'in_progress', 1, None, 1, None, 'owner', 1, 0, None)]\n(Background on this error at: https://sqlalche.me/e/20/gkpj)"
+      },
+      {
+        "class": "tests.test_mcp_current_validation_context",
+        "name": "test_spec_policy_is_identical_in_every_task_context[90-full-gate]",
+        "message": "sqlalchemy.exc.IntegrityError: (sqlite3.IntegrityError) NOT NULL constraint failed: specs.architecture_adoption\n[SQL: INSERT INTO specs (architecture_adoption, execution_contract, id, board_id, ideation_id, refinement_id, source_refinement_snapshot_id, source_refinement_version, delivery_context, source_context_sha256, title, description, context, skip_decisions_coverage, validation_threshold, require_task_validation, validation_min_confidence, validation_min_completeness, validation_max_drift, current_validation_id, pre_archive_status, cancellation_reason, cancelled_at, cancelled_by, status, edition, last_started_edition, version, assignee_id, created_by, test_scenario_policy_epoch, project_structure_revision, project_structure_digest) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING skip_test_coverage, skip_rules_coverage, skip_trs_coverage, skip_contract_coverage, skip_ir_coverage, skip_or_coverage, skip_code_evidence_coverage, skip_delivery_evidence, skip_qualitative_validation, archived, created_at, updated_at]\n[parameters: (None, '{\"contract_version\": \"spec-execution-contract/v1\", \"board_id\": \"board-2e149c2326ad415191370910e79c8d0e\", \"spec_id\": \"spec-2e149c2326ad415191370910e79c8d0e\", \"adopted_in_edition\": 1, \"actor_id\": \"owner\", \"origin\": \"new_spec\"}', 'spec-2e149c2326ad415191370910e79c8d0e', 'board-2e149c2326ad415191370910e79c8d0e', None, None, None, None, None, None, 'Spec', None, None, 0, None, 0, 90, 0, 0, None, None, None, None, None, 'in_progress', 1, None, 1, None, 'owner', 1, 0, None)]\n(Background on this error at: https://sqlalche.me/e/20/gkpj)"
+      },
+      {
+        "class": "tests.test_mcp_current_validation_context",
+        "name": "test_spec_policy_is_identical_in_every_task_context[60-summary-all]",
+        "message": "sqlalchemy.exc.IntegrityError: (sqlite3.IntegrityError) NOT NULL constraint failed: specs.architecture_adoption\n[SQL: INSERT INTO specs (architecture_adoption, execution_contract, id, board_id, ideation_id, refinement_id, source_refinement_snapshot_id, source_refinement_version, delivery_context, source_context_sha256, title, description, context, skip_decisions_coverage, validation_threshold, require_task_validation, validation_min_confidence, validation_min_completeness, validation_max_drift, current_validation_id, pre_archive_status, cancellation_reason, cancelled_at, cancelled_by, status, edition, last_started_edition, version, assignee_id, created_by, test_scenario_policy_epoch, project_structure_revision, project_structure_digest) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING skip_test_coverage, skip_rules_coverage, skip_trs_coverage, skip_contract_coverage, skip_ir_coverage, skip_or_coverage, skip_code_evidence_coverage, skip_delivery_evidence, skip_qualitative_validation, archived, created_at, updated_at]\n[parameters: (None, '{\"contract_version\": \"spec-execution-contract/v1\", \"board_id\": \"board-05564a60940841498239882ddc649a2e\", \"spec_id\": \"spec-05564a60940841498239882ddc649a2e\", \"adopted_in_edition\": 1, \"actor_id\": \"owner\", \"origin\": \"new_spec\"}', 'spec-05564a60940841498239882ddc649a2e', 'board-05564a60940841498239882ddc649a2e', None, None, None, None, None, None, 'Spec', None, None, 0, None, 0, 60, 0, 0, None, None, None, None, None, 'in_progress', 1, None, 1, None, 'owner', 1, 0, None)]\n(Background on this error at: https://sqlalche.me/e/20/gkpj)"
+      },
+      {
+        "class": "tests.test_mcp_current_validation_context",
+        "name": "test_spec_policy_is_identical_in_every_task_context[60-full-all]",
+        "message": "sqlalchemy.exc.IntegrityError: (sqlite3.IntegrityError) NOT NULL constraint failed: specs.architecture_adoption\n[SQL: INSERT INTO specs (architecture_adoption, execution_contract, id, board_id, ideation_id, refinement_id, source_refinement_snapshot_id, source_refinement_version, delivery_context, source_context_sha256, title, description, context, skip_decisions_coverage, validation_threshold, require_task_validation, validation_min_confidence, validation_min_completeness, validation_max_drift, current_validation_id, pre_archive_status, cancellation_reason, cancelled_at, cancelled_by, status, edition, last_started_edition, version, assignee_id, created_by, test_scenario_policy_epoch, project_structure_revision, project_structure_digest) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING skip_test_coverage, skip_rules_coverage, skip_trs_coverage, skip_contract_coverage, skip_ir_coverage, skip_or_coverage, skip_code_evidence_coverage, skip_delivery_evidence, skip_qualitative_validation, archived, created_at, updated_at]\n[parameters: (None, '{\"contract_version\": \"spec-execution-contract/v1\", \"board_id\": \"board-120ffcd7ca3344a9b259d27334eef86b\", \"spec_id\": \"spec-120ffcd7ca3344a9b259d27334eef86b\", \"adopted_in_edition\": 1, \"actor_id\": \"owner\", \"origin\": \"new_spec\"}', 'spec-120ffcd7ca3344a9b259d27334eef86b', 'board-120ffcd7ca3344a9b259d27334eef86b', None, None, None, None, None, None, 'Spec', None, None, 0, None, 0, 60, 0, 0, None, None, None, None, None, 'in_progress', 1, None, 1, None, 'owner', 1, 0, None)]\n(Background on this error at: https://sqlalche.me/e/20/gkpj)"
+      },
+      {
+        "class": "tests.test_mcp_current_validation_context",
+        "name": "test_spec_policy_is_identical_in_every_task_context[60-full-gate]",
+        "message": "sqlalchemy.exc.IntegrityError: (sqlite3.IntegrityError) NOT NULL constraint failed: specs.architecture_adoption\n[SQL: INSERT INTO specs (architecture_adoption, execution_contract, id, board_id, ideation_id, refinement_id, source_refinement_snapshot_id, source_refinement_version, delivery_context, source_context_sha256, title, description, context, skip_decisions_coverage, validation_threshold, require_task_validation, validation_min_confidence, validation_min_completeness, validation_max_drift, current_validation_id, pre_archive_status, cancellation_reason, cancelled_at, cancelled_by, status, edition, last_started_edition, version, assignee_id, created_by, test_scenario_policy_epoch, project_structure_revision, project_structure_digest) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING skip_test_coverage, skip_rules_coverage, skip_trs_coverage, skip_contract_coverage, skip_ir_coverage, skip_or_coverage, skip_code_evidence_coverage, skip_delivery_evidence, skip_qualitative_validation, archived, created_at, updated_at]\n[parameters: (None, '{\"contract_version\": \"spec-execution-contract/v1\", \"board_id\": \"board-b35c7f338b6145f2a6407c58d892481b\", \"spec_id\": \"spec-b35c7f338b6145f2a6407c58d892481b\", \"adopted_in_edition\": 1, \"actor_id\": \"owner\", \"origin\": \"new_spec\"}', 'spec-b35c7f338b6145f2a6407c58d892481b', 'board-b35c7f338b6145f2a6407c58d892481b', None, None, None, None, None, None, 'Spec', None, None, 0, None, 0, 60, 0, 0, None, None, None, None, None, 'in_progress', 1, None, 1, None, 'owner', 1, 0, None)]\n(Background on this error at: https://sqlalche.me/e/20/gkpj)"
+      }
+    ],
+    "limits": "Stopped at20. Four affected modules: native learning capture recovery payload; legacy Knowledge mutation test port; moved Knowledge copy handler assumptions; native architecture adoption missing in policy context fixture. No followup yet."
+  },
+  "native_complete_schema_contract": {
+    "proof_pair": "dist-native-schema-contract1",
+    "provenance": "provenance-native-schema-contract1.json",
+    "scope": "Remove frozen legacy Core metadata hash, inherited/extension table split and migration provenance comments. Pin all151current Community tables, columns, constraints and ordered indexes; no DDL or runtime behavior change.",
+    "current_schema_sha256": "6dcbf913aea0ae223ab0f884f8df4fb7d1a84b304e5d7364f6b85973f658c27e",
+    "campaigns": [
+      {
+        "name": "native-schema-contract1",
+        "exit_code": 1,
+        "passed": 24,
+        "failed": 5,
+        "seconds": 31.44
+      },
+      {
+        "name": "native-schema-contract2",
+        "exit_code": 0,
+        "passed": 16,
+        "failed": 0,
+        "seconds": 11.25
+      }
+    ],
+    "distinct_cases_qualified": 29,
+    "complete_modules_qualified": 4,
+    "xml_sha256": {
+      "native-schema-contract1": "31b843dd0ef2d466c3d39f5d71fb52611838f612b0939026e813a912a749d368",
+      "native-schema-contract2": "dc961e5380d0f58ad2c5c5726c19858a8c9a8b243aa286fe5dd83df4a07acc01"
+    },
+    "closure": "closure-native-schema-contract1.json",
+    "closure_ok": true,
+    "eight_budgets_zero": true,
+    "limits": "Initial five failures were governed-deletion fixture Boards missing mandatory realm; explicit local realm fixed setup without relaxing atomicity/replay/refusal assertions. Four complete modules qualified across terminal runs, overlap not double counted. Core12 and remaining Community10 failures still pending."
   }
 }

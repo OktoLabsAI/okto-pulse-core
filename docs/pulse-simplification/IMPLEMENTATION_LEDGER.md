@@ -2,6 +2,43 @@
 
 ## Estado para retomada
 
+### 2026-10-07 — Contrato relacional único qualificado e publicado
+Retirada comparação com metadata herdada do Core e divisão inherited/extensions.
+Agora o gate fixa SHA256 completo das151tabelas Community atuais. Schema DDL e
+gates de execução não mudaram; nenhum dado convertido. Produto/testes publicados.
+native-schema-contract1 handle95365 terminou1:24aprovados,5falhas/31.44s,
+todas por realm obrigatório ausente na fixture governed_deletion. Corrigido seed
+com realm local explícito. native-schema-contract2 handle82358 terminou0:
+16aprovados/11.25s em dois módulos.29casos distintos/quatro módulos qualificados.
+Ruff/diff verdes; closure handle58052 terminou0, oito budgetsZERO e nenhum finding.
+Recibo native_complete_schema_contract registra hashes/limites/prova do par.
+
+Par instalado atual: dist-native-schema-contract1; provenance-native-schema-contract1.json
+com843/905Core+316/402Community byte-identical. Nenhum processo de teste ativo.
+Próximo: resolver quatro módulos Core12 e quatro restantes Community10, incluindo
+configuração explícita do wheel Grafx no installed E2E. Depois continuações amplas,
+aceite235critérios e benchmark conforme plano. T23/KG-10 ainda aguardam decisões;
+não inferir autoridade nem declarar entrega integral. T01/T07 têm revisão do par
+anterior explicitamente registrada; mudança corrente afeta só manifesto de schema.
+
+### 2026-10-07 — Core12 terminal; contrato relacional integral em qualificação
+Core12 handle84664 terminou1:1035aprovados,20falhas/325.31s; quatro módulos,
+diagnósticos e hash em core_full_run12. Community10 também terminal.
+Nenhuma campanha ampla permanece ativa. Falhas Core ainda sem followup:
+learning_reuse_projection (payload), mcp_card_type_validation (porta Knowledge
+de fixture sem mutações), mcp_copy_knowledge_to_card_fix (handler movido),
+mcp_current_validation_context (adoption nativa ausente).
+
+Gap confirmado no sqlalchemy_schema_contract: constantes de migração herdada e
+separação inherited/extensions ainda listavam tabelas já removidas. Substituído
+por SHA256 integral das151tabelas atuais; mantida canonicalização de colunas,
+constraints e ordem de índices. Não muda DDL, dados ou gates operacionais.
+Teste F01 agora verifica schema inteiro e ausência de tabelas retiradas; três
+consumidores de teste consultam metadata atual, sem lista de extensões herdadas.
+Par dist-native-schema-contract1 construído/instalado; prova handle91155 terminou0,
+843/905+316/402 byte-identical. Qualificação quatro módulos handle95365;
+closure handle58052. Não reinstalar/editar essas superfícies até terminais.
+
 ### 2026-10-07 — Community10 terminal; T01/T07 revisados no par atual
 Community10 handle26283 terminou1:132aprovados,19falhas,1erro,1skip/197.06s.
 XML e diagnósticos preservados em community_full_run10. Cinco módulos afetados:
