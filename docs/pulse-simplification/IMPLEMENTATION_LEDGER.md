@@ -3,6 +3,7 @@
 ## Estado para retomada
 
 ### 2026-10-06 — C1 em andamento: uma porta para snapshot Delivery
+Publicado: Core fb66a804 / Community 30708407, pushes confirmados.
 Policy publicada: Core 044507b9 / Community 3e640821, pushes confirmados.
 require_spec_delivery passa somente por load_snapshot(DeliveryScope) da porta.
 Retirada introspeccao/load_rollup_snapshot concreto, que ignorava a verificacao
