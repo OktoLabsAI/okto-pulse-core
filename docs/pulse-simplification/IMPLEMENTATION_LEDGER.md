@@ -2,6 +2,23 @@
 
 ## Estado para retomada
 
+### 2026-10-07 — C4 T09 qualificado; Community17 ativo
+Core d2cff58b e Community6f27af2c publicados com pushes0; ambos isolados
+sincronizados por FF. Main clean-break-full-run17-community handle74678 ATIVO,
+537 módulos completos excluídos, E2E instalado separado. Par main23 inalterado.
+Não editar/reinstalar main até terminal.
+
+acceptance-native-test-card-current1 handle63961 terminou0:10pass/7.40s,
+dois módulos completos. Revisadas recusa de task validation em Test Card sem
+parecer falso, recusa de cenários draft/ready, orientação MCP/contexto atual e
+liberação do gate próprio com cenário seeded. Demais gates permanecem soberanos;
+não certificar execução autenticada nem closeout integral por este teste.
+Recibo clean-break-acceptance-native-test-card.json promove apenas T09.
+Tentativa preliminar de retirar alias de grant em fixture falhou na sintaxe do
+comando antes de editar; nenhum teste/fonte foi alterado, campanha cobriu o estado
+já existente. Isolado só docs WIP. Próximos: terminal Community17, E2E/C4.
+T23/KG-10 continuam pendentes de autoridade.
+
 ### 2026-10-07 — Community16 fechado no formato nativo
 Corefae5a7c6 publicado e integrado main por FF após terminal. Community ainda
 f5b1169a, doze arquivos de testes prontos para publicar. Produto/par main23

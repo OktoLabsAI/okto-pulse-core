@@ -640,7 +640,12 @@
           ]
         }
       ],
-      "current_qualification": "pending_current_pair_review"
+      "current_qualification": "verified_current_pair_review",
+      "current_review": {
+        "artifact": "clean-break-acceptance-native-test-card.json",
+        "criterion_key": "BASE:T09",
+        "proof_pair": "dist-native-reviewer22"
+      }
     },
     {
       "key": "BASE:T10",
