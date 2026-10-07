@@ -2,6 +2,27 @@
 
 ## Estado para retomada
 
+### 2026-10-07 — C1 aceite residual Sprint retirado e verificado
+Core1 (67043) terminou0:99pass/96.02s; closure48 (48123) terminou0.
+Oito budgets ZERO, findings/documentation_findings vazios. Main48 comprovado.
+Recibo clean-break-sprint-rebuild-removal.json registra casos e hashes.
+Sprint não integra registry/rank nem gera fila; tipos Card atuais preservados.
+Teste de enumerador confirma Sprint não materializável. Este recorte não substitui
+a validação separada de recusa de storage incompatível. Nenhuma migração adicionada.
+Sem alteração frontend; nenhuma campanha ativa. Ruff F/E9 e diff-check passaram.
+Índice63/172/11 mantido. Próximo trabalho: paridade de gerações Decision com fonte
+histórica durável, preservando conteúdo e cadeia (KG-24); evitar reduzir ao estado atual.
+
+### 2026-10-07 — retirada residual Sprint em validação
+Incremento anterior publicado:Corecd86dd51/Community9219fdf4; árvores limpas antes deste trabalho.
+Core board_rebuild_adapter ainda aceitava Sprint no registry/rank, contrariando
+o enumerador que já classifica Sprint como desconhecido. Removidas as duas entradas;
+mapeamento task/test/bug/card permanece atual. Teste integrado mantém entrada Sprint
+para exigir ausência na fila e fornece fontes Card reais para o contrato de ordenação.
+Main48 build/install/prova98800 terminou0:837/899+316/402 byte-identical.
+Campanha core1 handle67043 e closure48 handle48123 em execução. Ruff/diff-check passaram.
+Sem mudança de gate/autoridade, conversão ou dados reais. Índice63/172/11 mantido.
+
 ### 2026-10-07 — dependências/proxy nativos verificados; fechamento do incremento
 Dependencies-parity5 (18410) terminou0:1pass/158.39s no main47 comprovado.
 Fontes completas e multiset completo iguais; filas vazias, replay sem duplicação.

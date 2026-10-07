@@ -63,13 +63,17 @@ def test_enqueue_sources_maps_cards_and_preserves_working_artifacts(
     tmp_path: Path,
 ) -> None:
     """task/test/bug sources are card-derived rows and must be queued
-    through the legacy worker artifact type ``card``. Pre-spec working
+    through the current worker artifact type ``card``. Pre-spec working
     artifacts stay first-class so explicit rebuild restores working graph
     lineage instead of rebuilding an empty board."""
 
     db_path = tmp_path / "pulse.db"
     with sqlite3.connect(str(db_path)) as conn:
         _create_consolidation_queue(conn)
+        conn.execute("CREATE TABLE cards(id TEXT PRIMARY KEY, board_id TEXT NOT NULL)")
+        conn.execute("CREATE TABLE card_dependencies(card_id TEXT, depends_on_id TEXT)")
+        conn.executemany("INSERT INTO cards VALUES (?, 'b1')",
+                         [('t1',), ('tc1',), ('bug1',)])
         conn.commit()
 
     adapter = BoardRebuildIngestionAdapter(db_path=db_path)
@@ -89,7 +93,7 @@ def test_enqueue_sources_maps_cards_and_preserves_working_artifacts(
         ],
     )
 
-    assert counts == _enqueue_counts(inserted=8)
+    assert counts == _enqueue_counts(inserted=7)
     with sqlite3.connect(str(db_path)) as conn:
         rows = conn.execute(
             "SELECT artifact_type, artifact_id, priority FROM consolidation_queue "
@@ -102,9 +106,18 @@ def test_enqueue_sources_maps_cards_and_preserves_working_artifacts(
         ("ideation", "i1", "high"),
         ("refinement", "r1", "high"),
         ("spec", "s1", "high"),
-        ("sprint", "sp1", "high"),
         ("story", "st1", "high"),
     ]
+
+
+def test_retired_sprint_has_no_ingestion_contract_or_dependency_rank():
+    from okto_pulse.core.kg.board_rebuild_adapter import (
+        DETERMINISTIC_SOURCE_ARTIFACT_TYPES, REBUILD_SOURCE_DEPENDENCY_RANK,
+    )
+
+    assert "sprint" not in DETERMINISTIC_SOURCE_ARTIFACT_TYPES
+    assert "sprint" not in REBUILD_SOURCE_DEPENDENCY_RANK
+    assert {"task", "test", "bug", "card"} <= DETERMINISTIC_SOURCE_ARTIFACT_TYPES
 
 
 @pytest.mark.parametrize(
