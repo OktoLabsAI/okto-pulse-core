@@ -68,6 +68,10 @@ def test_s01_saas_adapter_exposes_quality_assessment_seam_fail_closed() -> None:
     assert not hasattr(adapter, "delivery_forecast_read")
     with pytest.raises(NotImplementedError, match="Board KG Analytics evidence"):
         adapter.board_kg_analytics_read(object())
+    with pytest.raises(NotImplementedError, match="Bug cluster projections"):
+        adapter.bug_clusters_read(object())
+    with pytest.raises(NotImplementedError, match="Spec coverage projections"):
+        adapter.spec_coverage_read(object())
 
 
 @pytest.mark.asyncio

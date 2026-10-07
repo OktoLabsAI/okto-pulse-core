@@ -210,7 +210,9 @@ def test_worker_projects_distinct_operational_precedence_relation() -> None:
     assert precedence[0].from_candidate_id == (f"kgref:Entity:spec:{PREREQUISITE_ID}")
     assert precedence[0].to_candidate_id == "spec_aaaaaaaa_entity"
     assert precedence[0].rule_id.startswith("precedes/spec_dependency/")
-    assert relationship_endpoint_pairs("precedes") == (("Entity", "Entity"),)
+    assert relationship_endpoint_pairs("precedes") == (
+        ("Entity", "Entity"), ("Entity", "Bug"), ("Bug", "Entity"), ("Bug", "Bug"),
+    )
     assert relationship_endpoint_pairs("depends_on") == (("Decision", "Decision"),)
 
     intent = result.relational_projection_active_set_intents[0]

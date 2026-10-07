@@ -460,6 +460,18 @@ class FakeSaaSRelationalApplicationAdapter:
             "The SaaS fake does not model Board KG Analytics evidence."
         )
 
+    def bug_clusters_read(self, session: Any) -> Any:
+        _ = session
+        raise NotImplementedError(
+            "The SaaS fake does not model Bug cluster projections."
+        )
+
+    def spec_coverage_read(self, session: Any) -> Any:
+        _ = session
+        raise NotImplementedError(
+            "The SaaS fake does not model Spec coverage projections."
+        )
+
     def research_decisions(self, session: Any) -> Any:
         _ = session
         from okto_pulse.core.ports.research_decision_ledger import (

@@ -1,0 +1,32 @@
+{
+  "scope": "Core19 fake edition conformance, foreign REST scope and current precedence endpoints",
+  "qualified_distinct_cases": 84,
+  "runs": [
+    {
+      "name": "core19-native-adapters1",
+      "sha256": "332ac325439619bc671ed6b73944bcde1022fe0d3cee45a54ffd72166e12a28f",
+      "tests": 84,
+      "modules": [
+        "tests.test_rest_ideation_refinement_scope",
+        "tests.test_s01_fake_saas_relational_adapter",
+        "tests.test_skm_spec_dependency_kg_projection"
+      ]
+    }
+  ],
+  "pair": "dist-native-saas19",
+  "proof": {
+    "file": "provenance-native-saas19.json",
+    "sha256": "1bc8cc7d460f4f3d0142ba2c6cce9d40e976e323c0a7d6da469f180cfc1d8fe1"
+  },
+  "closure": {
+    "file": "closure-native-saas19.json",
+    "sha256": "c290cf5bc3aa388dc3b806362135c776626eb8eb0e3549479708ecc239a396a4",
+    "ok": true,
+    "all_eight_budgets": 0
+  },
+  "limitations": [
+    "Spec coverage query/graph/MCP still unqualified in Core19",
+    "Community transfer campaign active on main18",
+    "C4 and installed E2E incomplete"
+  ]
+}

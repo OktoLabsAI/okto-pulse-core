@@ -1,13 +1,6 @@
 {
   "scope": "Core19 current permission, scenario, health and non-Sprint contracts",
   "qualified_distinct_cases": 130,
-  "modules": [
-    "tests/test_scenario_type_fail_closed.py",
-    "tests/test_services_import_isolation.py",
-    "tests/test_skb_b14_policy_constraint_projection_health.py",
-    "tests/test_skb_b14_policy_governance_mcp.py",
-    "tests/test_test_scenario_lifecycle.py"
-  ],
   "runs": [
     {
       "name": "core19-native-contracts1",
@@ -34,5 +27,20 @@
     "Remaining Core19 modules unresolved",
     "Community transfer campaign active",
     "C4 and installed E2E incomplete"
+  ],
+  "changed_test_modules": [
+    "tests/test_scenario_type_fail_closed.py",
+    "tests/test_services_import_isolation.py",
+    "tests/test_skb_b14_policy_constraint_projection_health.py",
+    "tests/test_skb_b14_policy_governance_mcp.py",
+    "tests/test_test_scenario_lifecycle.py"
+  ],
+  "qualified_modules": [
+    "tests/test_scenario_type_fail_closed.py",
+    "tests/test_scenario_verification_method.py",
+    "tests/test_services_import_isolation.py",
+    "tests/test_skb_b14_policy_constraint_projection_health.py",
+    "tests/test_skb_b14_policy_governance_mcp.py",
+    "tests/test_test_scenario_lifecycle.py"
   ]
 }

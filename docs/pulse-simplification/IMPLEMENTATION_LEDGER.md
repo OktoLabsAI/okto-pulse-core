@@ -2,6 +2,34 @@
 
 ## Estado para retomada
 
+### 2026-10-07 — Core19: conformidade e fronteiras qualificadas
+Core36e8e1cb anterior publicado, push0. Isolado agora implementa no fake SaaS
+as duas factories públicas faltantes bug_clusters_read/spec_coverage_read;
+ambas recusam explicitamente a operação não modelada, como as outras factories.
+Teste mantém isinstance(RelationalApplicationAdapter) e verifica as recusas.
+Não adicionada infraestrutura concreta ao Core nem implementada edição SaaS.
+REST negativo usa sessão real para statement budget e exige404 em todos os
+pais estrangeiros; entity_pages.list não pode ser chamado. Precedes mantém
+pares Entity/Entity,Entity/Bug,Bug/Entity,Bug/Bug já vigentes no schema.
+
+Par isolado dist-native-saas19 reconstruído/instalado; prova44660 terminal0:
+843/905 Core+316/402 Community byte-idênticos. SHA Core
+f908cdb5ceed8f2bde0440bfe43a14ff4a673fff9c587f6f81b3ad49debe094f;
+Community0b79db82e027379ad00652bc12600e9422c5429a69c229d7df289954f81c41db.
+core19-native-adapters1 handle73254 terminal0:84pass/14.63s,três módulos.
+Closure83976 terminal0:ok=true,findings/documentation_findings=[],oitoZERO.
+Ruff F/E9/diff-check0 após retirar import TestClient não usado.
+Recibo acceptance-clean-break-core19-adapters.json; recibo contracts distingue
+arquivos alterados dos seis módulos qualificados, incluindo consumidor inalterado.
+
+Core19 restante: spec_coverage_query, spec_coverage_graph e spec_coverage_mcp;
+fixtures do primeiro ainda usam SNAPSHOT sem contexto efetivo; investigar conjunto
+antes de alterar semântica. Nenhum processo isolado ativo. Publicar Core isolado.
+MAIN continua congelado na campanha community14-native-transfer1 handle79646,
+consultado vivo neste turno, avançando. Não reiniciar nem integrar código novo
+antes do terminal. Main18 permanece provado; novo fake está só no par isolado.
+Community14 Learning/overlay, E2E/C4 e T23/KG-10 permanecem pendentes.
+
 ### 2026-10-07 — Core19: contratos de cenário/governança qualificados
 Worktrees isolados avançados por fast-forward para Core0e266a85/Community238647c0
 antes das alterações (somente docs/testes desde prova counters18).
