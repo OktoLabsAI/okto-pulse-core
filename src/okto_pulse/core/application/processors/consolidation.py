@@ -1710,10 +1710,10 @@ def _spec_to_dict(spec: Any) -> dict:
         "business_rules": spec.business_rules or [],
         "test_scenarios": spec.test_scenarios or [],
         "api_contracts": spec.api_contracts or [],
-        "integration_requirements": getattr(spec, "integration_requirements", None)
-        or [],
-        "observability_requirements": getattr(spec, "observability_requirements", None)
-        or [],
+        # The native source must expose both collections. Missing attributes
+        # are incomplete reads, never authority to retract their graph relations.
+        "integration_requirements": spec.integration_requirements or [],
+        "observability_requirements": spec.observability_requirements or [],
         "decisions": spec.decisions or [],
         "architecture_designs": [
             _architecture_design_to_dict(design)

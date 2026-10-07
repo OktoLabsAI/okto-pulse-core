@@ -2,6 +2,64 @@
 
 ## Estado para retomada
 
+### 2026-10-07 — C1/C4 KG-17 e KG-20 concluídos no par main37
+Build/install/prova6039 terminou0: Core843 Python/905 payload e Community316/402
+byte-identical antes do comportamento. Core source-contract1 (4346) terminou0:
+96 aprovados/15.15s. Community source-refusal3 (82548) terminou0:4 aprovados/101.47s,
+incluindo recusa de provider, IR/OR ausentes e evento real de versão antiga.
+Closure37 (25235) terminou0: ok=true, findings/documentation_findings vazios,
+oito budgets ZERO. Ruff F/E9 e diff-check passaram. Nenhum processo pendente.
+
+Correção produtiva restrita: _spec_to_dict exige atributos IR/OR atuais em vez de
+fabricar [] quando ausentes. Falso ACK reproduzido em main36 não ocorre em main37;
+fila/erro preservados, sem novo recibo nem alteração do multiset gráfico.
+Campos presentes None/[] preservam a semântica nativa. Não mudou policy/gate.
+Novo evento atrasado (1→2), após convergência 3, não restaura relações antigas e
+replay mantém SQL e grafo atuais. Recibo clean-break-acceptance-native-source-refusal-replay.json
+sela os 100 casos finais distintos e preserva campanhas falhas de setup/reprodução.
+
+Índice57 verificados,178 aplicáveis pendentes,11 superados. Qualificados somente
+KG-17/KG-20; demais critérios fixos permanecem abertos. Próximo: KG-16/18/19/21/23/24/25
+(remoção, propriedade, crash pré-ACK, troca de donos, identidade e census/paridade),
+depois demais DEI/ARQVER conforme índice. BASE:T23/KG-10 ainda aguardam decisão
+própria, não inferir da autorização Checklist já implementada. Isolado next27 STALE.
+Sem frontend alterado, migração, dados reais, tag/release/deploy. Pronto para
+commits e pushes pareados; objetivo integral continua ativo.
+
+### 2026-10-07 — KG-17: falso ACK de fonte incompleta reproduzido e corrigido
+source-refusal2 (40150) terminou1:1 aprovado/2 falhas/62.06s. Indisponibilidade
+preserva fila/grafo; ausência de integration_requirements ou observability_requirements
+retornou processed=1 (falso ACK), contrariando KG-17. _spec_to_dict preenchia [] via
+getattr para esses dois campos, embora o contrato nativo exija ambos.
+Retirado somente esse fallback: acesso obrigatório como nas demais coleções.
+None/lista vazia explicitamente fornecidos mantêm o comportamento vigente.
+Fixture unitária de serialização passa a expor IR/OR nativos. Nenhuma authority,
+permissão ou gate funcional alterado; correção de leitura técnica incompleta.
+Próximo: construir/instalar/provar main37 antes de comportamento, rodar casos
+reprodutores e regressões do worker/replay, closure e selar recibos. Não há
+processo ativo da reprodução. WIP ainda não enviado.
+
+### 2026-10-07 — KG-20 nativo validado; KG-17 em reprodução
+Base publicada Corea5290db6 / Community349e41dc; main36 segue byteprovado, sem
+alteração produtiva. Turno anterior foi progresso (KG-22 qualificado/enviado).
+Novo teste usa evento SpecVersionBumped real 1→2 entregue após fonte/projeção 3,
+duas vezes, conferindo multiset completo e versão/conteúdo SQL atual.
+event-order1 (74753) terminou1 por prefixos incorretos de refs no novo oráculo;
+corrigidos para ac/fr nativos. event-order2 (84956) terminou0:1pass/33.89s.
+Ainda falta selar recibo/índice deste critério.
+
+Investigação KG-17: _spec_to_dict usa getattr(...,None) para IR/OR e pode transformar
+leitura incompleta em coleção vazia. Hipótese ainda não confirmada em runtime.
+Novo teste real injeta provider indisponível e ausência de IR/OR depois da projeção
+inicial, exige grafo/recibos intactos e trabalho não reconhecido como concluído.
+source-refusal1 (92632) terminou1:3 falhas de setup por uso de audit.id; chave real
+é session_id. Fixture corrigida sem alterar produto. source-refusal2 (40150)
+EM ANDAMENTO; aguardar terminal antes de alterar produto/instalação. Não declarar
+KG-17 satisfeito nem bug confirmado antes das asserções. Testes em
+Community/tests/test_native_projection_{event_order,source_refusal}.py.
+Nenhuma UI alterada; não houve teste frontend novo. KG-19/21/23/24/25 e demais
+critérios continuam pendentes, sem extensão do escopo normativo.
+
 ### 2026-10-07 — C4 KG-22: fanout limitado comprovado no Grafx
 Par publicado antes deste incremento: Core832e3af6 / Communityf307d9ea.
 Autorização Checklist recebida novamente já consta implementada na seção própria;

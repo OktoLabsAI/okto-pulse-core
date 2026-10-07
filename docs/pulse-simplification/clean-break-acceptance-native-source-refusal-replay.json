@@ -1,0 +1,260 @@
+{
+  "format": "pulse-040-reviewed-acceptance/v1",
+  "criterion_keys": [
+    "KG:KG-17",
+    "KG:KG-20"
+  ],
+  "status": "verified_current_pair_review",
+  "proof_pair": "dist-native-main37",
+  "provenance_sha256": "359f6a6d3e08e159111c54dc932d1c2ba06960486fe9125ff1de9fa56c3a382a",
+  "runs": [
+    {
+      "name": "acceptance-native-source-contract1",
+      "xml_sha256": "92373914d48597bf0607c6e25f217f96dbfa23f6dea7cacf1c6657639f00ef58",
+      "passed": 96,
+      "failed": 0,
+      "cases": [
+        "tests.test_kg_consolidation_adapters::test_spec_to_dict_serializes_formal_decisions",
+        "tests.test_kg_consolidation_adapters::test_card_to_dict_serializes_linked_test_task_ids",
+        "tests.test_kg_consolidation_adapters::test_resolve_missing_links_emits_bug_covered_by_edges",
+        "tests.test_kg_consolidation_adapters::test_resolve_missing_bug_links_uses_entity_projection_for_bug_targets",
+        "tests.test_kg_sprint1_integration::test_ts_7b6a1ec1_worker_preserves_links_without_narrative_decisions",
+        "tests.test_kg_sprint1_integration::test_ts_7b6a1ec1_edges_metadata_complete",
+        "tests.test_kg_sprint1_integration::test_ts_7b6a1ec1_edge_candidates_preserve_provenance",
+        "tests.test_kg_sprint1_integration::test_ts_7b6a1ec1_deterministic_ratio_is_100pct",
+        "tests.test_kg_sprint1_integration::test_ts_7b6a1ec1_node_candidates_translation_roundtrip",
+        "tests.test_kg_sprint1_integration::test_ts_a278ec64_missing_linked_criteria_skips_tests_edge",
+        "tests.test_kg_sprint1_integration::test_ts_a278ec64_missing_linked_criteria_enqueues_candidate",
+        "tests.test_kg_sprint1_integration::test_ts_a278ec64_missing_linked_requirements_enqueues_candidate",
+        "tests.test_kg_sprint1_integration::test_ts_77f3539e_content_hash_stable_across_runs",
+        "tests.test_kg_sprint1_integration::test_ts_77f3539e_content_hash_differs_on_mutation",
+        "tests.test_kg_sprint1_integration::test_ts_77f3539e_node_and_edge_counts_are_stable",
+        "tests.test_kg_sprint1_integration::test_ts_77f3539e_begin_consolidation_noops_on_repeat_content_hash",
+        "tests.test_kg_sprint1_integration::test_spec_to_dict_mirrors_spec_api_shape",
+        "tests.test_create_spec_lineage_preflight::test_create_spec_valid_parent_matrix_persists[no_parent]",
+        "tests.test_create_spec_lineage_preflight::test_create_spec_valid_parent_matrix_persists[ideation]",
+        "tests.test_create_spec_lineage_preflight::test_create_spec_valid_parent_matrix_persists[refinement]",
+        "tests.test_create_spec_lineage_preflight::test_create_spec_valid_parent_matrix_persists[both]",
+        "tests.test_create_spec_lineage_preflight::test_create_spec_invalid_parent_matrix_is_governed_and_writes_nothing[missing_ideation]",
+        "tests.test_create_spec_lineage_preflight::test_create_spec_invalid_parent_matrix_is_governed_and_writes_nothing[missing_refinement]",
+        "tests.test_create_spec_lineage_preflight::test_create_spec_invalid_parent_matrix_is_governed_and_writes_nothing[cross_board_ideation]",
+        "tests.test_create_spec_lineage_preflight::test_create_spec_invalid_parent_matrix_is_governed_and_writes_nothing[cross_board_refinement]",
+        "tests.test_create_spec_lineage_preflight::test_create_spec_invalid_parent_matrix_is_governed_and_writes_nothing[cross_board_ancestor_refinement]",
+        "tests.test_create_spec_lineage_preflight::test_create_spec_invalid_parent_matrix_is_governed_and_writes_nothing[parent_mismatch]",
+        "tests.test_create_spec_lineage_preflight::test_create_spec_parent_lifecycle_is_checked_before_write[draft_ideation-spec_ideation_not_done]",
+        "tests.test_create_spec_lineage_preflight::test_create_spec_parent_lifecycle_is_checked_before_write[medium_without_refinement-spec_refinement_required]",
+        "tests.test_create_spec_lineage_preflight::test_create_spec_parent_lifecycle_is_checked_before_write[large_without_refinement-spec_refinement_required]",
+        "tests.test_create_spec_lineage_preflight::test_create_spec_parent_lifecycle_is_checked_before_write[large_with_draft_refinement-spec_refinement_not_done]",
+        "tests.test_create_spec_lineage_preflight::test_create_spec_complex_lineage_accepts_done_refinement[idea_medium-refinement_medium_done]",
+        "tests.test_create_spec_lineage_preflight::test_create_spec_complex_lineage_accepts_done_refinement[idea_large-refinement_large_done]",
+        "tests.test_create_spec_lineage_preflight::test_create_spec_refinement_only_validates_and_accepts_done_ancestor[refinement_a]",
+        "tests.test_create_spec_lineage_preflight::test_create_spec_refinement_only_validates_and_accepts_done_ancestor[refinement_medium_done]",
+        "tests.test_create_spec_lineage_preflight::test_create_spec_refinement_only_validates_and_accepts_done_ancestor[refinement_large_done]",
+        "tests.test_create_spec_lineage_preflight::test_create_spec_refinement_only_rejects_draft_ancestor_before_any_write",
+        "tests.test_create_spec_lineage_preflight::test_refinement_derive_rechecks_reopened_ideation_before_preflights",
+        "tests.test_create_spec_lineage_preflight::test_derive_spec_entrypoints_accept_valid_shared_lineage[ideation]",
+        "tests.test_create_spec_lineage_preflight::test_derive_spec_entrypoints_accept_valid_shared_lineage[refinement]",
+        "tests.test_create_spec_lineage_preflight::test_refinement_only_missing_ancestor_uses_typed_lineage_error",
+        "tests.test_create_spec_lineage_preflight::test_update_spec_lineage_preflight_is_typed_and_atomic[missing_ideation-spec_ideation_not_found]",
+        "tests.test_create_spec_lineage_preflight::test_update_spec_lineage_preflight_is_typed_and_atomic[cross_board_ideation-spec_ideation_board_mismatch]",
+        "tests.test_create_spec_lineage_preflight::test_update_spec_lineage_preflight_is_typed_and_atomic[draft_ideation-spec_ideation_not_done]",
+        "tests.test_create_spec_lineage_preflight::test_update_spec_lineage_preflight_is_typed_and_atomic[medium_without_refinement-spec_refinement_required]",
+        "tests.test_create_spec_lineage_preflight::test_update_spec_lineage_preflight_is_typed_and_atomic[draft_refinement-spec_refinement_not_done]",
+        "tests.test_create_spec_lineage_preflight::test_update_spec_lineage_preflight_is_typed_and_atomic[draft_ancestor_refinement-spec_ideation_not_done]",
+        "tests.test_create_spec_lineage_preflight::test_update_spec_lineage_preflight_is_typed_and_atomic[cross_board_ancestor_refinement-spec_ideation_board_mismatch]",
+        "tests.test_create_spec_lineage_preflight::test_update_spec_lineage_preflight_is_typed_and_atomic[parent_mismatch-spec_parent_lineage_mismatch]",
+        "tests.test_create_spec_lineage_preflight::test_update_spec_accepts_valid_effective_lineage[idea_a-None]",
+        "tests.test_create_spec_lineage_preflight::test_update_spec_accepts_valid_effective_lineage[idea_medium-refinement_medium_done]",
+        "tests.test_create_spec_lineage_preflight::test_update_spec_accepts_valid_effective_lineage[idea_large-refinement_large_done]",
+        "tests.test_create_spec_lineage_preflight::test_update_spec_accepts_refinement_only_with_done_ancestor[refinement_a]",
+        "tests.test_create_spec_lineage_preflight::test_update_spec_accepts_refinement_only_with_done_ancestor[refinement_medium_done]",
+        "tests.test_create_spec_lineage_preflight::test_update_spec_accepts_refinement_only_with_done_ancestor[refinement_large_done]",
+        "tests.test_create_spec_lineage_preflight::test_lineage_only_relink_emits_one_semantic_reenqueue_and_switches_worker_edge",
+        "tests.test_create_spec_lineage_preflight::test_update_spec_non_lineage_write_is_unchanged",
+        "tests.test_create_spec_lineage_preflight::test_direct_spec_create_persists_typed_context_and_manifest",
+        "tests.test_create_spec_lineage_preflight::test_legacy_direct_spec_requires_explicit_context_bootstrap",
+        "tests.test_create_spec_lineage_preflight::test_spec_advance_requires_coherent_source_context_manifest",
+        "tests.test_create_spec_lineage_preflight::test_legacy_refinement_spec_context_bootstrap_pins_exact_snapshot",
+        "tests.test_create_spec_lineage_preflight::test_snapshot_pinned_spec_rejects_generic_refinement_relink",
+        "tests.test_create_spec_lineage_preflight::test_spec_context_override_requires_reason_and_reconciles_explicitly",
+        "tests.test_create_spec_lineage_preflight::test_update_spec_idempotent_lineage_resend_does_not_revalidate_ancestor",
+        "tests.test_kg_spec_declared_lineage::test_declared_lineage_and_explicit_empty_active_set[business_rules-linked_requirements-business_rule-br_one-derives_from-fr-fr_one-business_rule_requirements]",
+        "tests.test_kg_spec_declared_lineage::test_declared_lineage_and_explicit_empty_active_set[integration_requirements-linked_requirements-integration_requirement-ir_one-derives_from-fr-fr_one-integration_requirements]",
+        "tests.test_kg_spec_declared_lineage::test_declared_lineage_and_explicit_empty_active_set[observability_requirements-linked_integration_requirements-observability_requirement-or_one-derives_from-integration_requirement-ir_one-observability_integrations]",
+        "tests.test_kg_spec_declared_lineage::test_declared_lineage_and_explicit_empty_active_set[api_contracts-linked_rules-api_contract-api_one-implements-business_rule-br_one-api_business_rules]",
+        "tests.test_kg_spec_declared_lineage::test_revoked_source_stops_current_relationship_without_claiming_history_deleted[business_rules-linked_requirements-business_rule-br_one-derives_from-fr-fr_one-business_rule_requirements]",
+        "tests.test_kg_spec_declared_lineage::test_revoked_source_stops_current_relationship_without_claiming_history_deleted[integration_requirements-linked_requirements-integration_requirement-ir_one-derives_from-fr-fr_one-integration_requirements]",
+        "tests.test_kg_spec_declared_lineage::test_revoked_source_stops_current_relationship_without_claiming_history_deleted[observability_requirements-linked_integration_requirements-observability_requirement-or_one-derives_from-integration_requirement-ir_one-observability_integrations]",
+        "tests.test_kg_spec_declared_lineage::test_revoked_source_stops_current_relationship_without_claiming_history_deleted[api_contracts-linked_rules-api_contract-api_one-implements-business_rule-br_one-api_business_rules]",
+        "tests.test_kg_spec_declared_lineage::test_requirement_text_never_selects_a_target[business_rules]",
+        "tests.test_kg_spec_declared_lineage::test_requirement_text_never_selects_a_target[integration_requirements]",
+        "tests.test_kg_spec_declared_lineage::test_duplicate_exact_target_ids_are_not_arbitrarily_selected[business_rules-api_business_rules]",
+        "tests.test_kg_spec_declared_lineage::test_duplicate_exact_target_ids_are_not_arbitrarily_selected[integration_requirements-observability_integrations]",
+        "tests.test_kg_spec_declared_lineage::test_partial_requirement_source_cannot_prune_either_target_family[functional_requirements-integration_requirements]",
+        "tests.test_kg_spec_declared_lineage::test_partial_requirement_source_cannot_prune_either_target_family[functional_requirements-observability_requirements]",
+        "tests.test_kg_spec_declared_lineage::test_partial_requirement_source_cannot_prune_either_target_family[technical_requirements-integration_requirements]",
+        "tests.test_kg_spec_declared_lineage::test_partial_requirement_source_cannot_prune_either_target_family[technical_requirements-observability_requirements]",
+        "tests.test_kg_spec_declared_lineage::test_only_native_ids_resolve_across_fr_tr[integration_requirements]",
+        "tests.test_kg_spec_declared_lineage::test_only_native_ids_resolve_across_fr_tr[observability_requirements]",
+        "tests.test_kg_spec_declared_lineage::test_observability_requirement_and_integration_namespaces_remain_independent",
+        "tests.test_kg_spec_declared_lineage::test_declared_requirement_lineage_includes_supported_fr_tr_targets[integration_requirements-integration_requirement-ir_one-tr-tr_one]",
+        "tests.test_kg_spec_declared_lineage::test_declared_requirement_lineage_includes_supported_fr_tr_targets[observability_requirements-observability_requirement-or_one-fr-fr_one]",
+        "tests.test_kg_spec_declared_lineage::test_declared_requirement_lineage_includes_supported_fr_tr_targets[observability_requirements-observability_requirement-or_one-tr-tr_one]",
+        "tests.test_projection_known_removals::test_lookup_failure_is_not_permission_to_remove",
+        "tests.test_projection_known_removals::test_pending_target_keeps_its_logical_identity_and_complete_source_set",
+        "tests.test_projection_known_removals::test_incomplete_source_declaration_cannot_be_pruned",
+        "tests.test_projection_known_removals::test_source_is_read_only_after_graph_lease_and_sql_claim_fence[True]",
+        "tests.test_projection_known_removals::test_source_is_read_only_after_graph_lease_and_sql_claim_fence[False]",
+        "tests.test_spec_projection_known_removals::test_pending_source_identity_is_retained_without_materializing_it",
+        "tests.test_spec_projection_known_removals::test_unmaterialized_owner_has_no_removal_work",
+        "tests.test_spec_projection_known_removals::test_provider_failure_does_not_authorize_removal",
+        "tests.test_spec_projection_known_removals::test_foreign_owner_cannot_supply_removal_authority",
+        "tests.test_spec_projection_known_removals::test_cancelled_spec_preserves_noop_after_source_fence"
+      ]
+    },
+    {
+      "name": "acceptance-native-source-refusal3",
+      "xml_sha256": "3fc9a19a5d4959a5160c5f204bc59045ab81ad173a25cf184e1bbd11c18b3651",
+      "passed": 4,
+      "failed": 0,
+      "cases": [
+        "tests.test_native_projection_source_refusal::test_incomplete_source_preserves_graph_and_does_not_ack[unavailable]",
+        "tests.test_native_projection_source_refusal::test_incomplete_source_preserves_graph_and_does_not_ack[missing_ir]",
+        "tests.test_native_projection_source_refusal::test_incomplete_source_preserves_graph_and_does_not_ack[missing_or]",
+        "tests.test_native_projection_event_order::test_delayed_old_version_event_cannot_restore_previous_spec_relations"
+      ]
+    }
+  ],
+  "distinct_cases": 100,
+  "initial_runs": [
+    {
+      "name": "acceptance-native-event-order1",
+      "xml_sha256": "199c087255ec35f9695820b6e6a4ef4c9799582ea5248bf9454bea5225deccb0",
+      "passed": 0,
+      "failed": 1,
+      "cases": []
+    },
+    {
+      "name": "acceptance-native-event-order2",
+      "xml_sha256": "31c0836f3b555fbd374518e525da8cf39c7dfe8e06ad22f56d845608a49bd109",
+      "passed": 1,
+      "failed": 0,
+      "cases": [
+        "tests.test_native_projection_event_order::test_delayed_old_version_event_cannot_restore_previous_spec_relations"
+      ]
+    },
+    {
+      "name": "acceptance-native-source-refusal1",
+      "xml_sha256": "85db436fd404136658defff41e0558653d1f7710a235e9f494ac0f7ff82a28a2",
+      "passed": 0,
+      "failed": 3,
+      "cases": []
+    },
+    {
+      "name": "acceptance-native-source-refusal2",
+      "xml_sha256": "8d7215490b4f694bdbc4355ab85d04c800652145ca233f011873fdcb0cdb6790",
+      "passed": 1,
+      "failed": 2,
+      "cases": [
+        "tests.test_native_projection_source_refusal::test_incomplete_source_preserves_graph_and_does_not_ack[unavailable]"
+      ]
+    }
+  ],
+  "review": {
+    "KG:KG-17": "Real SQL/Grafx worker tests inject an unavailable source provider and partial native Spec reads omitting IR or OR. All refuse successful acknowledgement: queue remains with attempt/error; prior audit session IDs and complete relationship/provenance/maturity multisets remain unchanged. Core regression covers Spec/worker adapters, lineage, known removal and source fences.",
+    "KG:KG-20": "After native revision 3 changes seven declared relationship rules from revision 2, deliver the actual older SpecVersionBumped(1->2) payload twice through the production enqueuer and worker. Complete relationship multiset remains equal to revision 3, superseded targets stay absent and SQL version/content stays current."
+  },
+  "correction": "Removed absent-attribute-to-empty-list fallbacks for integration_requirements and observability_requirements from _spec_to_dict. Both are mandatory native source attributes, as are the other Spec collections. Explicit None/empty-list semantics are unchanged.",
+  "failure_disposition": [
+    "event-order1: incorrect test reference prefixes acceptance_criterion/functional_requirement; corrected to native ac/fr. event-order2 passed on main36 and the same case passed again on main37.",
+    "source-refusal1: test used nonexistent ConsolidationAudit.id before injecting failures; corrected to the actual session_id primary key.",
+    "source-refusal2: unavailable provider passed; two missing-collection cases reproduced processed=1 false acknowledgement on main36. Main37 removes the fallbacks; all three pass in source-refusal3."
+  ],
+  "closure": {
+    "ok": true,
+    "budgets": [
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "import_boundary_baseline",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every import_boundary_baseline allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "singleton_baseline",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every singleton_baseline allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "dependency_temporary_exceptions",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every dependency_temporary_exceptions allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "graph_runtime_compatibility",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every graph_runtime_compatibility allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "rebuild_artifact_compatibility",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every rebuild_artifact_compatibility allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "community_private_reach_ins",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every community_private_reach_ins allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "community_adapter_bridges",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every community_adapter_bridges allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "af35_relational_residue",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every af35_relational_residue allowance before F16 completion."
+      }
+    ],
+    "findings": [],
+    "documentation_findings": []
+  },
+  "closure_sha256": "2a956cbd88f7b13516f546f7e79f94fc1fc41bc590d9fec06b874a08ec48035e",
+  "source_sha256": "6edce0c917fc051e0e0f37ccc4710437830f1d8eefad8eddf2e01923f45d7197",
+  "limits": [
+    "Fault injection affects the source adapter read only; queue, graph, persistence and worker are real.",
+    "No authorization to mutate Done Spec is claimed: source revisions in the event-order test are fixtures.",
+    "No frontend changes; SPA unchanged. No production data, deployment, release or migration.",
+    "Does not qualify post-commit/pre-ACK hard crash, all-family removal or whole-project completion."
+  ]
+}

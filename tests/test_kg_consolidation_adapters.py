@@ -68,6 +68,8 @@ def test_spec_to_dict_serializes_formal_decisions():
         business_rules=[],
         test_scenarios=[],
         api_contracts=[],
+        integration_requirements=[],
+        observability_requirements=[],
         decisions=decisions,
         architecture_designs=[],
     )
