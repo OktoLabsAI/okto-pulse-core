@@ -1,0 +1,125 @@
+{
+  "criteria": [
+    "KG:KG-38"
+  ],
+  "product_build": "dist-native-main64",
+  "product_changed": false,
+  "base_pair": {
+    "core": "656fb0e2",
+    "community": "4e23629e"
+  },
+  "provenance": {
+    "checked_at": "2026-10-07T23:31:37.598213+00:00",
+    "python": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Scripts\\python.exe",
+    "packages": {
+      "core": {
+        "python_files": 837,
+        "origin": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages\\okto_pulse\\core\\__init__.py",
+        "repository_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_core",
+        "commit": "656fb0e2f99a94fb7a4f26bd477040f31af5e2e3",
+        "dirty": false,
+        "dirty_entry_count": 0,
+        "distribution": "okto-pulse-core",
+        "version": "0.4.0",
+        "wheel": {
+          "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\dist-native-main64\\okto_pulse_core-0.4.0-py3-none-any.whl",
+          "sha256": "cced1bc708720c219d35b3b6143c944c60103433ded5b8efd4a2904ecab905d4",
+          "size": 3591258
+        },
+        "source_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_core\\src",
+        "site_packages_root": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages",
+        "package_prefix": "okto_pulse/core/",
+        "byte_identical_member_count": 898,
+        "byte_identical": true,
+        "aggregate_sha256": "c32da98d66db008726351f877f09c88a97a13a3c79caf7cd0547043f854bfed3",
+        "chain_hashes": {
+          "source": "c32da98d66db008726351f877f09c88a97a13a3c79caf7cd0547043f854bfed3",
+          "wheel": "c32da98d66db008726351f877f09c88a97a13a3c79caf7cd0547043f854bfed3",
+          "site_packages": "c32da98d66db008726351f877f09c88a97a13a3c79caf7cd0547043f854bfed3"
+        },
+        "critical_resource_sha256": {
+          "okto_pulse/core/mcp/resources/ska_resource_manifest.json": "4f6360d46eab0f9c8931d3fb5e8a50e0c04b0e6f3b164619a55ac381917ba34d",
+          "okto_pulse/core/mcp/resources/ska_tool_manifest.json": "3d3ecc80ab6b699b2021eddcf02b72bf48eddd06bf34dcf245f2b00fcc69b433"
+        },
+        "mismatches": []
+      },
+      "community": {
+        "python_files": 317,
+        "origin": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages\\okto_pulse\\community\\__init__.py",
+        "repository_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_community",
+        "commit": "4e23629ef10aa69f8fdce5ddd7610f65bec4d9e4",
+        "dirty": true,
+        "dirty_entry_count": 1,
+        "distribution": "okto-pulse",
+        "version": "0.4.0",
+        "wheel": {
+          "path": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\dist-native-main64\\okto_pulse-0.4.0-py3-none-any.whl",
+          "sha256": "699d577f656357f70f175c5393832ae62a03aafa40dac62613208eb2295ebac3",
+          "size": 4072770
+        },
+        "source_root": "D:\\Projetos\\Techridy\\okto_labs_pulse_community\\src",
+        "site_packages_root": "D:\\Projetos\\Techridy\\PULSE_REFACTOR\\.validation-v040\\venv\\Lib\\site-packages",
+        "package_prefix": "okto_pulse/community/",
+        "byte_identical_member_count": 403,
+        "byte_identical": true,
+        "aggregate_sha256": "2e507cacc375add721a36d1994a085e416acf36184ea5ec74247ff21ef6a6dc5",
+        "chain_hashes": {
+          "source": "2e507cacc375add721a36d1994a085e416acf36184ea5ec74247ff21ef6a6dc5",
+          "wheel": "2e507cacc375add721a36d1994a085e416acf36184ea5ec74247ff21ef6a6dc5",
+          "site_packages": "2e507cacc375add721a36d1994a085e416acf36184ea5ec74247ff21ef6a6dc5"
+        },
+        "critical_resource_sha256": {},
+        "mismatches": []
+      }
+    }
+  },
+  "campaigns": [
+    {
+      "name": "acceptance-native-learning-source-loss1",
+      "sha256": "e5fd0ecb637b2b18f415111866fe44fabb57487fd5b8ccd1f725bfef99c8df75",
+      "passed": [
+        "tests.test_learning_materialization_source_outage::test_worker_distinguishes_source_outage_from_integrity[operational]",
+        "tests.test_learning_materialization_source_outage::test_worker_distinguishes_source_outage_from_integrity[integrity]",
+        "tests.test_learning_materialization_source_outage::test_transient_append_failure_compensates_then_worker_retries",
+        "tests.test_learning_materialization_source_outage::test_unavailable_projection_probe_does_not_attempt_graph_repair",
+        "tests.test_learning_materialization_source_outage::test_missing_native_source_records_never_generate_retrospective_learning[bug]",
+        "tests.test_learning_materialization_recovery::test_worker_restores_lost_projection_without_new_authorship[node]",
+        "tests.test_learning_materialization_recovery::test_worker_restores_lost_projection_without_new_authorship[edge]",
+        "tests.test_learning_materialization_recovery::test_projection_recovery_preserves_human_work_decisions[consolidated]",
+        "tests.test_learning_materialization_recovery::test_projection_recovery_preserves_human_work_decisions[pending]",
+        "tests.test_learning_materialization_recovery::test_projection_recovery_preserves_human_work_decisions[skipped]"
+      ],
+      "failed": [
+        "tests.test_learning_materialization_source_outage::test_missing_native_source_records_never_generate_retrospective_learning[capture]"
+      ]
+    },
+    {
+      "name": "acceptance-native-learning-source-loss2",
+      "sha256": "d258fedf81a17a398750d705875917436af2d296f7aecc038986a440a320f8ac",
+      "passed": [
+        "tests.test_learning_materialization_source_outage::test_missing_native_source_records_never_generate_retrospective_learning[capture]",
+        "tests.test_learning_materialization_source_outage::test_missing_native_source_records_never_generate_retrospective_learning[bug]"
+      ],
+      "failed": []
+    }
+  ],
+  "distinct_passed": 11,
+  "related_evidence": "clean-break-native-learning-recovery.json",
+  "evidence": [
+    "Admitted native capture and genuine outbox work are persisted before source-loss fault injection.",
+    "Missing capture: exact fingerprint reader uses a separate empty current-schema SQL database; work fails with learning_capture_work_source_mismatch, keeps identity/fingerprint, and is not automatically retried.",
+    "Missing Bug: real semantic assembler reads empty current-schema SQL database; work remains pending with learning_capture_source_unavailable and no invented evidence.",
+    "In both cases persister invocation would fail the test; original native history is unchanged and empty source remains empty.",
+    "With source present, actual worker restores a lost Learning node or validates edge without new authorship/history; replay is inert.",
+    "Temporary source-read outage remains retryable; fingerprint integrity failure is failed. Append outage compensates graph before retry; unavailable projection probe never asserts absence.",
+    "Human reviewed restrictions survive projection loss; prior technical-debt receipt qualifies exact technical reconciliation without clearing unrelated restrictions."
+  ],
+  "limits": [
+    "KG38 applies to native 0.4.0 history under the approved clean-break reassessment; no older database, migration, six historical legacy incidents or backfill is claimed.",
+    "Missing-source fault injection redirects only a reader context to real empty SQL; it does not simulate physical disk loss or recovery of a whole database.",
+    "Graph recovery fixtures isolate unrelated completion and health gates. Actual lifecycle coverage remains in clean-break-native-learning-lifecycle.json.",
+    "No frontend/product changes. Main64 closure and frontend results remain prior evidence, not rerun.",
+    "Initial missing-capture test replaced adapter factory but kept original UOW; corrected fault injection honors context-bound reads. Product unchanged."
+  ],
+  "test_source_sha256": "d9e8108798cc5a0bd2e5fb1ed427a5387f6bb15bea74c3c43f3da2dd0d1d5afd"
+}

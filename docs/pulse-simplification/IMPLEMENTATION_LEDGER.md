@@ -2,6 +2,46 @@
 
 ## Estado para retomada
 
+### 2026-10-07 — KG38 nativo comprovado; extração antiga localizada
+Source-loss1 (32780) terminal1:10pass/1fail/169.95s. Falha era preparação:
+trocar factory do adapter não muda contexto recebido pelo reader transacional.
+Corrigido teste para direcionar read_fingerprint_in_context com sessão da base
+vazia. Source-loss2 (83524) terminal0:2pass/10.09s,4deselected.
+São11 testes distintos aprovados no produto main64 inalterado; nenhuma falha
+remanescente dessa campanha. Fonte ausente registra limitação sem materializar,
+fabricar conteúdo/evidência ou reescrever história. Fonte presente recupera
+nó/aresta perdidos via worker. Recibo clean-break-native-learning-source-loss.json
+registra escopo, hashes e limites; não se afirma migração dos seis casos antigos.
+KG38 qualificado:74 verificadas/161 pendentes/11 superadas. Nenhum teste ativo.
+Ruff F/E9 verde; frontend não alterado, closure64 preservado como evidência anterior.
+
+Próximo recorte C1/C3/KG39: investigação localizou suporte explicitamente mantido
+por compatibilidade em events/handlers/cognitive_extraction.py:
+_maybe_extract_learning, LearningSummariser, _OpenAILearningSummariser,
+_summariser_factory. handle() já não chama a extração Learning. Bridge em
+events/handlers/llm_provider_bridges.py importa factory legada; buscas em src/tests
+dos DOIS repos não encontraram consumidor de produção de make_learning_summariser
+ou summariser_from_config fora do próprio módulo. Há testes mistos r13d e cache
+af03 que precisam preservar heuristics/grounding/outros bridges ativos.
+Não remover handler inteiro: SpecMoved ainda abre trabalho atual e CardMoved
+ainda trata Alternative/Assumption. Ler consumidores completos e retirar somente
+resíduo confirmado, sem afetar portas LLM compartilhadas ou outras features.
+Nenhuma edição de produto efetuada ainda; próximo build deve ser main65.
+
+### 2026-10-07 — KG38: ausência de fonte nativa em validação
+Turno anterior progresso publicado: Core656fb0e2/Community4e23629e,
+pushes pareados terminais0; worktrees conferidas limpas antes do novo recorte.
+Prova provenance-native-learning-source-loss1 terminal0 antecede testes:
+main64 byte-idêntico, produto sem alteração.
+Adicionados casos capture/bug ausentes no worker. Injeção de falha direciona
+somente a leitura da fonte a uma base SQL vazia inicializada no schema oficial,
+sem excluir história imutável ou carregar formatos antigos. Afirma razão de
+limitação, ausência de materialização/evidência inventada e história original
+preservada. Casos existentes cobrem recuperação com fonte e perda de projeção.
+Source-loss1 handle32780 ativo. Índice73/162/11 permanece; KG38 não qualificado.
+Nenhum produto/frontend alterado. Próximo: terminal, corrigir eventuais falhas,
+registrar resultado e publicar após provas. Não reinstalar durante a campanha.
+
 ### 2026-10-07 — KG36/KG37: substituição delimitada e restrições preservadas
 Recovery-core1 (22887) terminal0:40pass/200.84s; recovery-community1 (44631)
 terminal0:24pass/473.10s. Nenhum processo de teste ativo. Produto main64
