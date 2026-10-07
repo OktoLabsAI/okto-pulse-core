@@ -4,6 +4,7 @@
 
 ### 2026-10-06 — C3 diagnostico de propagacao nativa sem contrato legacy
 
+Publicado: Core 659edeef / Community 106a80e1; pushes confirmados.
 Bases Core c54bf9f6 / Community 6655ebbd.
 Classificacao confirmada: snapshots copiados na propria 0.4.0 podem ter fonte
 que depois se torna inelegivel. Preservada essa leitura limitada, seus grants,
