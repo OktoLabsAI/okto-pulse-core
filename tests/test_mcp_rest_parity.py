@@ -571,24 +571,14 @@ class TestValidationGateParity:
         ]
 
     class _FakeSpec:
+        from spec_validation_fixtures import native_validation
+
         validations = [
-            {
-                "outcome": "success",
-                "confidence": 90,
-                "clarity": 88,
-                "assertiveness": 85,
-                "decidability": 86,
-                "ambiguity": 15,
-                "recommendation": "approve",
-            },
-            {
-                "outcome": "failed",
-                "completeness": 60,
-                "assertiveness": 70,
-                "ambiguity": 45,
-                "recommendation": "reject",
-                "threshold_violations": ["completeness below 80", "ambiguity above 30"],
-            },
+            native_validation("success", confidence=90, clarity=88,
+                assertiveness=85, decidability=86, ambiguity=15, outcome="success"),
+            native_validation("failed", confidence=60, clarity=68,
+                assertiveness=70, decidability=66, ambiguity=45, outcome="failed",
+                recommendation="reject", threshold_violations=["confidence below 80", "ambiguity above 30"]),
         ]
 
     def test_task_gate_has_all_expected_keys(self):
@@ -617,21 +607,19 @@ class TestValidationGateParity:
         assert set(out["rejection_reasons"].keys()) == {
             "confidence_below",
             "clarity_below",
-            "completeness_below",
             "assertiveness_below",
             "decidability_below",
             "ambiguity_above",
             "reject_recommendation",
         }
 
-    def test_spec_gate_aggregates_canonical_and_legacy_dimensions_separately(self):
+    def test_spec_gate_aggregates_native_five_dimensions(self):
         out = aggregate_spec_validation_gate([self._FakeSpec()])
         assert out["avg_scores"] == {
-            "confidence": 90.0,
-            "clarity": 88.0,
-            "completeness": 60.0,
+            "confidence": 75.0,
+            "clarity": 78.0,
             "assertiveness": 77.5,
-            "decidability": 86.0,
+            "decidability": 76.0,
             "ambiguity": 30.0,
         }
 
@@ -654,11 +642,11 @@ class TestValidationGateParity:
 
     def test_classify_spec_multi_count(self):
         reasons = classify_spec_violation(
-            ["completeness below 80", "ambiguity above 30"],
+            ["confidence below 80", "ambiguity above 30"],
             "reject",
         )
         assert set(reasons) == {
-            "completeness_below",
+            "confidence_below",
             "ambiguity_above",
             "reject_recommendation",
         }

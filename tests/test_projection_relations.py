@@ -112,7 +112,7 @@ def test_raw_id_ambiguity_is_not_confused_with_a_typed_local_candidate():
     assert compare(nodes=(ROOT, CHILD, other), plan=document('kg:root')).unresolved_count == 1
 
 
-@pytest.mark.parametrize('kind', ['story', 'ideation', 'refinement', 'spec', 'sprint', 'card'])
+@pytest.mark.parametrize('kind', ['story', 'ideation', 'refinement', 'spec', 'card'])
 def test_shared_prefix_parser_preserves_the_live_lookup_and_parameters(kind):
     endpoint = kind + '_12345678_entity'
     assert _cross_session_entity_source_prefix(endpoint) == kind + ':12345678'
@@ -122,6 +122,10 @@ def test_shared_prefix_parser_preserves_the_live_lookup_and_parameters(kind):
         return SimpleNamespace(rows=(('existing',),))
     assert _resolve_endpoint(endpoint, {}, graph_scope=SimpleNamespace(execute=execute)) == ('existing', 'Entity')
     assert calls == [{'ref': kind + ':12345678'}]
+
+
+def test_retired_sprint_prefix_has_no_live_entity_lookup():
+    assert _cross_session_entity_source_prefix("sprint_12345678_entity") is None
 
 
 def test_dangling_and_duplicate_inventory_records_are_refused():

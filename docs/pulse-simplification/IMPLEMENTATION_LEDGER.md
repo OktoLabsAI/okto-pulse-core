@@ -2,6 +2,29 @@
 
 ## Estado para retomada
 
+### 2026-10-07 — Core13 terminal e59casos qualificados; duas campanhas vivas
+Core13 handle67468 terminou1:1331aprovados,20falhas,1xfail/132.76s.
+Sete módulos afetados. core13-native-analytics-relations1 handle35991 terminou0:
+59aprovados/8.16s, dois módulos inteiros. Métricas Spec usam histórico nativo
+de cinco dimensões/edição explícita; Task mantém dimensões próprias. Prefixo
+Sprint retirado dos positivos e verificado como recusado no lookup vivo.
+Nenhum gate/produto alterado. Restam cinco módulos Core13:
+mcp_mockups_copy_lists_board_scope e r01a_cards_crud_uow (adoption fixture),
+open_qa_count_badges (porta de projeção vazia), planner_review_authority
+(negação antes da validação), r01a_boards_uow (permissão/projeção/erro estruturado).
+
+Installed native1 handle94212 terminou1:2aprovados/1falha por schema0.7 esperado;
+native2 handle46468 terminou1:2aprovados/1falha por contagem interna94;
+native3 handle69807 terminou1:2aprovados/1falha por contagem externa94.
+Expectativas agora exatas0.8.0/97, confirmadas no manifesto atual instalado.
+native-installed-recovery4 handle92798 ATIVO; módulo inteiro com wheels congelados.
+Testes Community E2E alterados ainda sem commit até qualificação terminal.
+
+Community11 handle61685 ATIVO; seleção233módulos completos qualificados excluídos.
+Installed E2E excluído somente por execução separada, NÃO marcado qualificado.
+Par congelado dist-native-schema-contract1/prova843/905+316/402.
+Recibos preservam falhas, XML/hashes e limites; nada declara entrega integral.
+
 ### 2026-10-07 — Continuações atuais em execução
 Core2cce7d01 eCommunity6a492231 publicados. Nenhuma alteração local de produto.
 native-installed-recovery1 handle94212 permanece ativo, confirmado por poll;

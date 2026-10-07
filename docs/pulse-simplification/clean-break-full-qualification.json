@@ -3165,5 +3165,206 @@
     "community_distinct_passed": 19,
     "scope": "Core four modules: explicit reuse intent.scope; native Knowledge propagation adapter instead of mutation-refusing test double; remove two static requirements for already retired physical copy tool while keeping three native service tests; explicit adoption in current-policy fixture. Community three modules: explicit Board realm and Spec native contracts; explicit invalid shorthand and missing contract negatives; native project structure revision.",
     "limits": "community10-native-fences1 had four setup failures due accidental realm keyword on non-Board fixtures; corrected before complete19case rerun. Original failures/hashes preserved. Installed E2E still running with explicit frozen Grafx and Pulse wheels. No authority/gate changed."
+  },
+  "core_full_run13": {
+    "campaign": "clean-break-full-run13",
+    "counts": {
+      "name": "pytest",
+      "errors": "0",
+      "failures": "20",
+      "skipped": "1",
+      "tests": "1352",
+      "time": "132.118",
+      "timestamp": "2026-10-07T05:57:08.375311-03:00",
+      "hostname": "Alienware_m15"
+    },
+    "xml_sha256": "433671d80127de3e0579caf2171e556d9b1b342c3b72988d4c8d2addb7e5741d",
+    "failures": [
+      {
+        "class": "tests.test_mcp_mockups_copy_lists_board_scope",
+        "name": "test_list_card_knowledge_is_bounded_no_content_leak",
+        "message": "okto_pulse.core.services.resource_gate_contracts.ResourceGateViolation: Resource Gate could not resolve resource lineage for card 'mock-card-b-e01613ad': The adopted architecture scope is unavailable."
+      },
+      {
+        "class": "tests.test_mcp_mockups_copy_lists_board_scope",
+        "name": "test_same_board_copy_mockup_crud_and_lists_remain_functional",
+        "message": "assert {'detail': 'c...ype': 'spec'}} == {'copied': 3,...l_on_card': 3}\n  \n  Left contains 4 more items:\n  {'detail': 'could not resolve resource lineage for spec '\n             \"'mock-spec-a-effdd254': The adopted architecture scope is \"\n             'unavailable.',\n   'error': 'resource_lineage_resolution_failed',\n   'lineage_error_code': 'architecture_adoption_invalid',...\n  \n  ...Full output truncated (5 lines hidden), use '-vv' to show"
+      },
+      {
+        "class": "tests.test_mcp_rest_parity.TestValidationGateParity",
+        "name": "test_spec_gate_has_all_expected_keys",
+        "message": "ValueError: spec_validation_edition_required"
+      },
+      {
+        "class": "tests.test_mcp_rest_parity.TestValidationGateParity",
+        "name": "test_spec_gate_empty_input",
+        "message": "AssertionError: assert {'ambiguity_a...commendation'} == {'ambiguity_a...y_below', ...}\n  \n  Extra items in the right set:\n  'completeness_below'\n  Use -v to get more diff"
+      },
+      {
+        "class": "tests.test_mcp_rest_parity.TestValidationGateParity",
+        "name": "test_spec_gate_aggregates_canonical_and_legacy_dimensions_separately",
+        "message": "ValueError: spec_validation_edition_required"
+      },
+      {
+        "class": "tests.test_mcp_rest_parity.TestValidationGateParity",
+        "name": "test_classify_spec_multi_count",
+        "message": "AssertionError: assert {'ambiguity_a...commendation'} == {'ambiguity_a...commendation'}\n  \n  Extra items in the right set:\n  'completeness_below'\n  Use -v to get more diff"
+      },
+      {
+        "class": "tests.test_open_qa_count_badges",
+        "name": "test_card_columns_open_qa_count",
+        "message": "ValueError: unsupported_application_projection:open_qa_count"
+      },
+      {
+        "class": "tests.test_planner_review_authority",
+        "name": "test_authenticated_planner_review_boundary_across_mcp_variants",
+        "message": "AssertionError: {'ack_token': None, 'changed_fields': [], 'child_ref': None, 'details': None, ...}\nassert 'authorization_denied' == 'validation_failed'\n  \n  - validation_failed\n  + authorization_denied"
+      },
+      {
+        "class": "tests.test_projection_relations",
+        "name": "test_shared_prefix_parser_preserves_the_live_lookup_and_parameters[sprint]",
+        "message": "AssertionError: assert None == ('sprint' + ':12345678')\n +  where None = _cross_session_entity_source_prefix('sprint_12345678_entity')"
+      },
+      {
+        "class": "tests.test_r01a_boards_uow",
+        "name": "test_delete_board_commits_relational_erasure_before_external_stores",
+        "message": "okto_pulse.core.application.use_cases.base.PermissionDeniedError: {\"error\": \"permission_denied\", \"reason\": \"permission_missing\", \"required_permission\": \"board.admin.delete\", \"detail\": \"Permission denied: requires 'board.admin.delete'\"}"
+      },
+      {
+        "class": "tests.test_r01a_boards_uow",
+        "name": "test_delete_board_relational_erasure_failure_skips_commit_and_physical_purge",
+        "message": "okto_pulse.core.application.use_cases.base.PermissionDeniedError: {\"error\": \"permission_denied\", \"reason\": \"permission_missing\", \"required_permission\": \"board.admin.delete\", \"detail\": \"Permission denied: requires 'board.admin.delete'\"}"
+      },
+      {
+        "class": "tests.test_r01a_boards_uow",
+        "name": "test_delete_board_external_failure_occurs_only_after_source_commit",
+        "message": "okto_pulse.core.application.use_cases.base.PermissionDeniedError: {\"error\": \"permission_denied\", \"reason\": \"permission_missing\", \"required_permission\": \"board.admin.delete\", \"detail\": \"Permission denied: requires 'board.admin.delete'\"}"
+      },
+      {
+        "class": "tests.test_r01a_boards_uow",
+        "name": "test_delete_board_resumes_durable_erasure_after_source_is_absent",
+        "message": "okto_pulse.core.application.use_cases.base.PermissionDeniedError: {\"error\": \"permission_denied\", \"reason\": \"permission_missing\", \"required_permission\": \"board.admin.delete\", \"detail\": \"Permission denied: requires 'board.admin.delete'\"}"
+      },
+      {
+        "class": "tests.test_r01a_boards_uow",
+        "name": "test_delete_board_cancellation_drains_terminal_erasure",
+        "message": "TimeoutError"
+      },
+      {
+        "class": "tests.test_r01a_boards_uow",
+        "name": "test_get_board_columns_200",
+        "message": "ValueError: unsupported_application_projection:open_qa_count"
+      },
+      {
+        "class": "tests.test_r01a_boards_uow",
+        "name": "test_get_board_columns_404",
+        "message": "AssertionError: assert {'error': 'board_not_found'} == 'Board not found'"
+      },
+      {
+        "class": "tests.test_r01a_boards_uow",
+        "name": "test_shared_board_read_and_columns_follow_share_permission[viewer]",
+        "message": "ValueError: unsupported_application_projection:open_qa_count"
+      },
+      {
+        "class": "tests.test_r01a_boards_uow",
+        "name": "test_shared_board_read_and_columns_follow_share_permission[editor]",
+        "message": "ValueError: unsupported_application_projection:open_qa_count"
+      },
+      {
+        "class": "tests.test_r01a_boards_uow",
+        "name": "test_shared_board_read_and_columns_follow_share_permission[admin]",
+        "message": "ValueError: unsupported_application_projection:open_qa_count"
+      },
+      {
+        "class": "tests.test_r01a_cards_crud_uow",
+        "name": "test_get_card_200",
+        "message": "okto_pulse.core.services.resource_gate_contracts.ResourceGateViolation: Resource Gate could not resolve resource lineage for card 'card-fu4s1-3159a56f': The adopted architecture scope is unavailable."
+      }
+    ]
+  },
+  "core13_native_analytics_relations": {
+    "campaign": "core13-native-analytics-relations1",
+    "counts": {
+      "name": "pytest",
+      "errors": "0",
+      "failures": "0",
+      "skipped": "0",
+      "tests": "59",
+      "time": "8.096",
+      "timestamp": "2026-10-07T06:01:26.659647-03:00",
+      "hostname": "Alienware_m15"
+    },
+    "xml_sha256": "2db29f547b2539a8ff820885a4898e58b87545971598e96a04c28642527fb7bb",
+    "failures": [],
+    "scope": "Two complete modules,59passed. Native five-metric Spec histories replace retired completeness dimension; Sprint removed from live entity prefix lookup and explicitly rejected. No product changes."
+  },
+  "installed_native_schema_followup": {
+    "proof_pair": "dist-native-schema-contract1",
+    "campaigns": [
+      {
+        "campaign": "native-installed-recovery1",
+        "counts": {
+          "name": "pytest",
+          "errors": "0",
+          "failures": "1",
+          "skipped": "0",
+          "tests": "3",
+          "time": "105.705",
+          "timestamp": "2026-10-07T05:55:09.794718-03:00",
+          "hostname": "Alienware_m15"
+        },
+        "xml_sha256": "2b1d348d50db3d6b01f557c351c609c4f6e3c348a502828b5b33f1854605c4f3",
+        "failures": [
+          {
+            "class": "tests.test_global_discovery_recovery_installed_e2e",
+            "name": "test_installed_grafx_candidate_materializes_board_and_global_routes",
+            "message": "AssertionError: command failed (1): ['C:\\\\Users\\\\jpamb\\\\AppData\\\\Local\\\\Temp\\\\pulse-v040-native-installed-recovery1\\\\test_installed_grafx_candidate0\\\\installed-grafx\\\\venv\\\\Scripts\\\\python.exe', '-I', '-c', '\\nimport json\\nimport os\\nimport sys\\nfrom importlib.metadata import distribution, version\\nfrom pathlib import Path\\n\\nimport google_crc32c\\nimport numpy\\nimport okto_grafx\\nimport okto_pulse.community\\nfrom okto_grafx import connect\\nfrom okto_pulse.community.adapters.graph_backend_binding import (\\n    CommunityGraphBackendBindingStore,\\n)\\nfrom okto_pulse.community.config import CommunitySettings\\nfrom okto_pulse.community.adapters.grafx_schema_manifest import PULSE_GRAFX_SCHEMA_MANIFEST\\n\\nvenv = Path(sys.prefix).resolve()\\nworkspace = Path(os.environ[\"E2E_WORKSPACE_ROOT\"]).resolve()\\nfor module in (okto_grafx, okto_pulse.community):\\n    origin = Path(module.__file__).resolve()\\n    assert venv in origin.parents, (venv, origin)\\n    assert workspace not in origin.parents, (workspace, origin)\\n\\nsettings = CommunitySettings(_env_file=None)\\nassert settings.kg_graph_backend == \"grafx\"\\nassert settings.kg_global_graph_backend == \"grafx\"\\nassert settings.kg_grafx_page_size == 8192\\nstore = CommunityGraphBackendBindingStore(settings.kg_base_dir)\\nboard = store.acquire_board_binding(os.environ[\"E2E_BOARD_ID\"])\\nglobal_route = store.acquire_global_binding()\\nassert board.backend == \"grafx\"\\nassert global_route.backend == \"grafx\"\\nassert board.page_size == global_route.page_size == 8192\\n\\ndef inspect(binding):\\n    # Pulse\\'s productive pool uses the normal Grafx open, which performs the\\n    # same bounded recovery/checkpoint admission that a fresh server process\\n    # performs.  A forensic read-only open has a stricter checkpoint-complete\\n    # precondition and is not the installed runtime path this smoke certifies.\\n    with connect(binding.physical_path) as database:\\n        assert database.identity.page_size == binding.page_size\\n        return sorted(table.name for table in database.catalog.catalog.tables())\\n\\nboard_tables = inspect(board)\\nglobal_tables = inspect(global_route)\\nassert PULSE_GRAFX_SCHEMA_MANIFEST.schema_version == \"0.7.0\"\\nassert board_tables == sorted(table.name for table in PULSE_GRAFX_SCHEMA_MANIFEST.tables)\\nassert len(board_tables) == 94, board_tables\\nassert {\"BoardMeta\", \"Entity\", \"Decision\"} <= set(board_tables)\\nassert {\"violates__Bug__Requirement\", \"violates__Bug__Criterion\"} <= set(board_tables)\\nassert len(global_tables) == 11, global_tables\\nassert {\\n    \"Board\",\\n    \"Topic\",\\n    \"Entity\",\\n    \"DecisionDigest\",\\n    \"HAS_TOPIC\",\\n    \"CONTAINS_DECISION\",\\n} <= set(global_tables)\\n\\ngrafx_distribution = distribution(\"okto-grafx\")\\ngrafx_direct_url = json.loads(grafx_distribution.read_text(\"direct_url.json\") or \"{}\")\\nassert grafx_direct_url[\"url\"] == os.environ[\"E2E_GRAFX_WHEEL_URI\"]\\nrequirements = [\\n    str(requirement).lower().replace(\" \", \"\")\\n    for requirement in (distribution(\"okto-pulse\").requires or ())\\n]\\nassert \"okto-grafx[accel]==\" + os.environ[\"E2E_EXPECTED_GRAFX_VERSION\"] in requirements, requirements\\nprint(json.dumps({\\n    \"backends\": {\"board\": board.backend, \"global\": global_route.backend},\\n    \"board_table_count\": len(board_tables),\\n    \"global_table_count\": len(global_tables),\\n    \"grafx_version\": version(\"okto-grafx\"),\\n    \"grafx_direct_url\": grafx_direct_url[\"url\"],\\n    \"accelerators\": {\\n        \"google-crc32c\": version(\"google-crc32c\"),\\n        \"numpy\": version(\"numpy\"),\\n    },\\n    \"grafx_origin\": str(Path(okto_grafx.__file__).resolve()),\\n}, sort_keys=True))\\n']\n  stdout:\n  \n  stderr:\n  Traceback (most recent call last):\n    File \"<string>\", line 48, in <module>\n      assert PULSE_GRAFX_SCHEMA_MANIFEST.schema_version == \"0.7.0\"\n             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  AssertionError\n  \nassert 1 == 0\n +  where 1 = CompletedProcess(args=['C:\\\\Users\\\\jpamb\\\\AppData\\\\Local\\\\Temp\\\\pulse-v040-native-installed-recovery1\\\\test_installed_...ANIFEST.schema_version == \"0.7.0\"\\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\\nAssertionError\\n').returncode"
+          }
+        ]
+      },
+      {
+        "campaign": "native-installed-recovery2",
+        "counts": {
+          "name": "pytest",
+          "errors": "0",
+          "failures": "1",
+          "skipped": "0",
+          "tests": "3",
+          "time": "80.520",
+          "timestamp": "2026-10-07T05:58:33.224502-03:00",
+          "hostname": "Alienware_m15"
+        },
+        "xml_sha256": "e890afa55450e32332f5d8d46bb4ce8d0ed3ce325a112c821cd25dd84bf627b6",
+        "failures": [
+          {
+            "class": "tests.test_global_discovery_recovery_installed_e2e",
+            "name": "test_installed_grafx_candidate_materializes_board_and_global_routes",
+            "message": "AssertionError: command failed (1): ['C:\\\\Users\\\\jpamb\\\\AppData\\\\Local\\\\Temp\\\\pulse-v040-native-installed-recovery2\\\\test_installed_grafx_candidate0\\\\installed-grafx\\\\venv\\\\Scripts\\\\python.exe', '-I', '-c', '\\nimport json\\nimport os\\nimport sys\\nfrom importlib.metadata import distribution, version\\nfrom pathlib import Path\\n\\nimport google_crc32c\\nimport numpy\\nimport okto_grafx\\nimport okto_pulse.community\\nfrom okto_grafx import connect\\nfrom okto_pulse.community.adapters.graph_backend_binding import (\\n    CommunityGraphBackendBindingStore,\\n)\\nfrom okto_pulse.community.config import CommunitySettings\\nfrom okto_pulse.community.adapters.grafx_schema_manifest import PULSE_GRAFX_SCHEMA_MANIFEST\\n\\nvenv = Path(sys.prefix).resolve()\\nworkspace = Path(os.environ[\"E2E_WORKSPACE_ROOT\"]).resolve()\\nfor module in (okto_grafx, okto_pulse.community):\\n    origin = Path(module.__file__).resolve()\\n    assert venv in origin.parents, (venv, origin)\\n    assert workspace not in origin.parents, (workspace, origin)\\n\\nsettings = CommunitySettings(_env_file=None)\\nassert settings.kg_graph_backend == \"grafx\"\\nassert settings.kg_global_graph_backend == \"grafx\"\\nassert settings.kg_grafx_page_size == 8192\\nstore = CommunityGraphBackendBindingStore(settings.kg_base_dir)\\nboard = store.acquire_board_binding(os.environ[\"E2E_BOARD_ID\"])\\nglobal_route = store.acquire_global_binding()\\nassert board.backend == \"grafx\"\\nassert global_route.backend == \"grafx\"\\nassert board.page_size == global_route.page_size == 8192\\n\\ndef inspect(binding):\\n    # Pulse\\'s productive pool uses the normal Grafx open, which performs the\\n    # same bounded recovery/checkpoint admission that a fresh server process\\n    # performs.  A forensic read-only open has a stricter checkpoint-complete\\n    # precondition and is not the installed runtime path this smoke certifies.\\n    with connect(binding.physical_path) as database:\\n        assert database.identity.page_size == binding.page_size\\n        return sorted(table.name for table in database.catalog.catalog.tables())\\n\\nboard_tables = inspect(board)\\nglobal_tables = inspect(global_route)\\nassert PULSE_GRAFX_SCHEMA_MANIFEST.schema_version == \"0.8.0\"\\nassert board_tables == sorted(table.name for table in PULSE_GRAFX_SCHEMA_MANIFEST.tables)\\nassert len(board_tables) == 94, board_tables\\nassert {\"BoardMeta\", \"Entity\", \"Decision\"} <= set(board_tables)\\nassert {\"violates__Bug__Requirement\", \"violates__Bug__Criterion\"} <= set(board_tables)\\nassert len(global_tables) == 11, global_tables\\nassert {\\n    \"Board\",\\n    \"Topic\",\\n    \"Entity\",\\n    \"DecisionDigest\",\\n    \"HAS_TOPIC\",\\n    \"CONTAINS_DECISION\",\\n} <= set(global_tables)\\n\\ngrafx_distribution = distribution(\"okto-grafx\")\\ngrafx_direct_url = json.loads(grafx_distribution.read_text(\"direct_url.json\") or \"{}\")\\nassert grafx_direct_url[\"url\"] == os.environ[\"E2E_GRAFX_WHEEL_URI\"]\\nrequirements = [\\n    str(requirement).lower().replace(\" \", \"\")\\n    for requirement in (distribution(\"okto-pulse\").requires or ())\\n]\\nassert \"okto-grafx[accel]==\" + os.environ[\"E2E_EXPECTED_GRAFX_VERSION\"] in requirements, requirements\\nprint(json.dumps({\\n    \"backends\": {\"board\": board.backend, \"global\": global_route.backend},\\n    \"board_table_count\": len(board_tables),\\n    \"global_table_count\": len(global_tables),\\n    \"grafx_version\": version(\"okto-grafx\"),\\n    \"grafx_direct_url\": grafx_direct_url[\"url\"],\\n    \"accelerators\": {\\n        \"google-crc32c\": version(\"google-crc32c\"),\\n        \"numpy\": version(\"numpy\"),\\n    },\\n    \"grafx_origin\": str(Path(okto_grafx.__file__).resolve()),\\n}, sort_keys=True))\\n']\n  stdout:\n  \n  stderr:\n  Traceback (most recent call last):\n    File \"<string>\", line 50, in <module>\n      assert len(board_tables) == 94, board_tables\n             ^^^^^^^^^^^^^^^^^^^^^^^\n  AssertionError: ['APIContract', 'Alternative', 'Assumption', 'BoardMeta', 'Bug', 'Constraint', 'Criterion', 'Decision', 'Entity', 'Learning', 'Requirement', 'TestScenario', 'belongs_to__APIContract__Entity', 'belongs_to__Alternative__Entity', 'belongs_to__Assumption__Entity', 'belongs_to__Bug__Entity', 'belongs_to__Constraint__Entity', 'belongs_to__Criterion__Entity', 'belongs_to__Decision__Entity', 'belongs_to__Entity__Bug', 'belongs_to__Entity__Entity', 'belongs_to__Learning__Entity', 'belongs_to__Requirement__Entity', 'belongs_to__TestScenario__Entity', 'contradicts__Decision__Decision', 'covered_by__Bug__Entity', 'covered_by__Bug__TestScenario', 'depends_on__Decision__Decision', 'derives_from__Constraint__Constraint', 'derives_from__Constraint__Requirement', 'derives_from__Decision__Constraint', 'derives_from__Decision__Requirement', 'derives_from__Entity__Entity', 'derives_from__Requirement__Constraint', 'derives_from__Requirement__Requirement', 'implements__APIContract__Constraint', 'implements__APIContract__Requirement', 'mentions__Decision__Entity', 'originates_from__Bug__Entity', 'overlaps__Entity__Entity', 'precedes__Bug__Bug', 'precedes__Bug__Entity', 'precedes__Entity__Bug', 'precedes__Entity__Entity', 'relates_to__Alternative__APIContract', 'relates_to__Alternative__Constraint', 'relates_to__Alternative__Criterion', 'relates_to__Alternative__Decision', 'relates_to__Alternative__Entity', 'relates_to__Alternative__Requirement', 'relates_to__Alternative__TestScenario', 'relates_to__Assumption__APIContract', 'relates_to__Assumption__Constraint', 'relates_to__Assumption__Criterion', 'relates_to__Assumption__Decision', 'relates_to__Assumption__Entity', 'relates_to__Assumption__Requirement', 'relates_to__Assumption__TestScenario', 'relates_to__Decision__Alternative', 'relates_to__Decision__Bug', 'relates_to__Decision__Entity', 'relates_to__Learning__APIContract', 'relates_to__Learning__Constraint', 'relates_to__Learning__Criterion', 'relates_to__Learning__Decision', 'relates_to__Learning__Entity', 'relates_to__Learning__Requirement', 'relates_to__Learning__TestScenario', 'supersedes__APIContract__APIContract', 'supersedes__Alternative__Alternative', 'supersedes__Assumption__Assumption', 'supersedes__Bug__Bug', 'supersedes__Constraint__Constraint', 'supersedes__Criterion__Criterion', 'supersedes__Decision__Decision', 'supersedes__Entity__Entity', 'supersedes__Learning__Learning', 'supersedes__Requirement__Requirement', 'supersedes__TestScenario__TestScenario', 'supports__Bug__APIContract', 'supports__Bug__Constraint', 'supports__Bug__Criterion', 'supports__Bug__Decision', 'supports__Bug__Requirement', 'supports__Bug__TestScenario', 'supports__Entity__APIContract', 'supports__Entity__Constraint', 'supports__Entity__Criterion', 'supports__Entity__Decision', 'supports__Entity__Entity', 'supports__Entity__Requirement', 'supports__Entity__TestScenario', 'tests__TestScenario__Criterion', 'validates__Learning__Bug', 'violates__Bug__Constraint', 'violates__Bug__Criterion', 'violates__Bug__Requirement']\n  \nassert 1 == 0\n +  where 1 = CompletedProcess(args=['C:\\\\Users\\\\jpamb\\\\AppData\\\\Local\\\\Temp\\\\pulse-v040-native-installed-recovery2\\\\test_installed_...ates__Learning__Bug\\', \\'violates__Bug__Constraint\\', \\'violates__Bug__Criterion\\', \\'violates__Bug__Requirement\\']\\n').returncode"
+          }
+        ]
+      },
+      {
+        "campaign": "native-installed-recovery3",
+        "counts": {
+          "name": "pytest",
+          "errors": "0",
+          "failures": "1",
+          "skipped": "0",
+          "tests": "3",
+          "time": "81.598",
+          "timestamp": "2026-10-07T06:00:27.448511-03:00",
+          "hostname": "Alienware_m15"
+        },
+        "xml_sha256": "2c5cd19b53b79bc96d160fa5923b8659418f7e4e4f61ccb7172aa3b98356a015",
+        "failures": [
+          {
+            "class": "tests.test_global_discovery_recovery_installed_e2e",
+            "name": "test_installed_grafx_candidate_materializes_board_and_global_routes",
+            "message": "assert 97 == 94"
+          }
+        ]
+      }
+    ],
+    "limits": "Each terminal1 after2passes and one schema fixture assertion failure. Round1 schema0.7, round2 internal count94, round3 outer report count94. All three stale assertions now use exact native0.8/97; fourth full module campaign running. No installed acceptance claim yet."
   }
 }
