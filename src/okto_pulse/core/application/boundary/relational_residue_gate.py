@@ -21,6 +21,9 @@ CORE_TARGET_FILES: tuple[str, ...] = (
 )
 
 COMMUNITY_TARGET_FILES: tuple[str, ...] = (
+    "adapters/relational_schema_lifecycle.py",
+    "adapters/current_relational_schema.py",
+    "adapters/sqlalchemy_database.py",
 )
 
 _PRODUCTIVE_EXCLUDED_PREFIXES: tuple[str, ...] = (

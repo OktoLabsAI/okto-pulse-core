@@ -24,6 +24,9 @@ class _Store:
     def list_items(self, board_id: str, generation_id: str) -> list[Any]:
         return []
 
+    def read_completion_snapshot(self, board_id: str, generation_id: str | None = None):
+        return None, []
+
 
 class _ReadModel:
     def __init__(self) -> None:

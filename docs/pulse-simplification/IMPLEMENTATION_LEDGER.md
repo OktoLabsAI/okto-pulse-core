@@ -2,6 +2,41 @@
 
 ## Estado para retomada
 
+### 2026-10-06 — C3 fixtures de autoridade; C4 detector relacional preservado
+
+Publicado antes deste incremento: Core11a05fa2 / Community5e8d73f4, pushes
+confirmados. Core full-run3 terminou:452 aprovados/20 falhas em256.44s,
+limite maxfail20, sem stress ja executado. XML/hash/falhas no JSON de qualificacao.
+Nao e aceite integral. Todos os handles das campanhas anteriores encerrados.
+
+Fixtures passam a registrar autoridade semantica nativa para entidades criadas
+diretamente, via adapter real, antes de exercitar o preview. Mantidas assercoes de
+redacao por grant, viewer, resource gates, bloqueios e paridade de transicao.
+Import de Design System usa design_system.import, sem ampliar grants no produto.
+Doubles KG implementam read_completion_snapshot e o campo de autoria atual;
+latest_generation/list_items continuam necessarios ao action center atual.
+Oito expectativas positivas da classificacao legada retirada viram negativos
+nas mesmas rotas de instrucoes. Nao restaurar tool nem permissao antigas.
+Teste de preview cognitivo agora exige gate canonico e nenhuma leitura de
+Health: esse comportamento ja existe no produto; nao usar saude como prova.
+
+Lacuna real revelada por AF30: a retirada do migrador deixou COMMUNITY_TARGET_FILES
+vazio, tornando inoperante a inspecao especifica de getattr no database privado.
+O detector continua igual, mas agora inspeciona os tres donos atuais:
+relational_schema_lifecycle, current_relational_schema e sqlalchemy_database.
+Negativo parametrizado exige dynamic_private_database_access em cada um;
+teste real exige lista nao vazia e arquivos existentes, sem budget/excecao novo.
+
+Followups fixtures1:69 aprovados/cinco falhas; fixtures2:29 aprovados/uma falha.
+Correcoes subsequentes mantem o contexto de autoridade de Card e autoria inicial
+da Ideation; nao relaxam os gates. Fixtures3 terminou:78 aprovados em20.25s; handle6634 encerrado.
+Par dist-native-boundary-qualification1 instalado; provenance correspondente
+confirma Core843 Python/905 payload e Community319/405 byte-identicos
+src/install/wheels. Frontend intacto; nao ha impacto visual neste incremento.
+Closure-native-boundary-qualification1 terminou:ok=true, findings e
+documentation_findings vazios, oito budgets current=limit=0. Ruff F/E9/diff
+aprovados. C4 integral e T23/KG-10 abertos.
+
 ### 2026-10-06 — C3 fixtures Community alinhadas; continuacao geral C4
 
 Bases Core3e0599c8 / Community4bc2d79a.

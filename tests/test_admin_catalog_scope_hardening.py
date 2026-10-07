@@ -250,7 +250,7 @@ async def test_design_system_import_normalizes_inline_source_without_board_acces
             "attacker",
             "rest",
             realm_id="local",
-            permissions=["spec.architecture.import"],
+            permissions=["design_system.import"],
         ),
         uow=uow,
     )

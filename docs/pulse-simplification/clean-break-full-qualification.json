@@ -291,5 +291,134 @@
     "correction": "Remove receipt and its effective scoped context together, preserving the expected missing-test gate and rollback assertion.",
     "product_changes": false,
     "next_general_campaign": "clean-break-full-run3"
+  },
+  "core_general_continuation": {
+    "campaign": "clean-break-full-run3",
+    "passed": 452,
+    "failed": 20,
+    "duration_seconds": 256.44,
+    "xml_sha256": "cd8c5fd57ee43870c9bdad53a730451e32f0d14119ae0dfb5865f2198a3e96c3",
+    "failures": [
+      {
+        "test": "tests.test_admin_catalog_scope_hardening::test_design_system_import_normalizes_inline_source_without_board_access",
+        "kind": "failure",
+        "message": "okto_pulse.core.application.use_cases.base.PermissionDeniedError: {\"error\": \"permission_denied\", \"reason\": \"permission_missing\", \"required_permission\": \"design_system.import\", \"detail\": \"Permission denied: requires 'design_system.import'\"}"
+      },
+      {
+        "test": "tests.test_af23_allowed_transitions::test_entity_scoped_read_model_previews_resource_gate_blocker",
+        "kind": "failure",
+        "message": "okto_pulse.core.ports.guideline_policy.GuidelinePolicySubjectConflict: semantic_subject_authority_missing_or_stale"
+      },
+      {
+        "test": "tests.test_af23_allowed_transitions::test_rest_viewer_share_can_read_allowed_transitions",
+        "kind": "failure",
+        "message": "okto_pulse.core.ports.guideline_policy.GuidelinePolicySubjectConflict: semantic_subject_authority_missing_or_stale"
+      },
+      {
+        "test": "tests.test_af23_allowed_transitions::test_policy_preview_is_redacted_without_assessment_leaf_and_full_with_it",
+        "kind": "failure",
+        "message": "okto_pulse.core.ports.guideline_policy.GuidelinePolicySubjectConflict: semantic_subject_authority_missing_or_stale"
+      },
+      {
+        "test": "tests.test_af29_durable_artifact_boundary::test_af29_closeout_scan_keeps_policy_in_core_and_discovery_in_port",
+        "kind": "failure",
+        "message": "AttributeError: '_Item' object has no attribute 'updated_by_agent_id'"
+      },
+      {
+        "test": "tests.test_af30_3c_relational_residue_gate::test_af30_3c_synthetic_final_relational_residues_fail_closed",
+        "kind": "failure",
+        "message": "AssertionError: assert {'ad_hoc_meta..._dsn_default'} <= {'ad_hoc_meta..._dsn_default'}\n  \n  Extra items in the left set:\n  'dynamic_private_database_access'"
+      },
+      {
+        "test": "tests.test_af35_s2_kg_operational_ports::test_cognitive_readiness_uses_port_signals_for_technical_precedence",
+        "kind": "failure",
+        "message": "AttributeError: '_Store' object has no attribute 'read_completion_snapshot'"
+      },
+      {
+        "test": "tests.test_af35_s2_kg_operational_ports::test_cognitive_action_center_gathers_debt_and_dlq_via_port",
+        "kind": "failure",
+        "message": "AttributeError: '_Store' object has no attribute 'read_completion_snapshot'"
+      },
+      {
+        "test": "tests.test_agent_instruction_contracts::test_each_legacy_guidance_route_names_authorized_tool_without_old_ban[workflows/preflight]",
+        "kind": "failure",
+        "message": "assert 'okto_pulse_classify_legacy_code_evidence' in '--- version: \"1.3\" --- # Pre-Flight Checklist (READ FIRST) Every time you start a session or pick up a new task, foll...receipt/job ID, attempts and the exact missing authority/action. Never include tokens, challenges or sensitive bodies.'"
+      },
+      {
+        "test": "tests.test_agent_instruction_contracts::test_each_legacy_guidance_route_names_authorized_tool_without_old_ban[workflows/cards]",
+        "kind": "failure",
+        "message": "assert 'okto_pulse_classify_legacy_code_evidence' in '--- version: \"1.2\" --- # Cards Workflow — Implementation, Bug & Test Execution ### Mandatory delivery handoff Tasks/b...or an explicit human waiver according to board policy. Canonical protocol: `okto-pulse://reference/code-traceability`.'"
+      },
+      {
+        "test": "tests.test_agent_instruction_contracts::test_each_legacy_guidance_route_names_authorized_tool_without_old_ban[workflows/specs]",
+        "kind": "failure",
+        "message": "assert 'okto_pulse_classify_legacy_code_evidence' in '--- version: \"1.3\" --- Knowledge Base placement, authority, and safe promotion are governed by `okto-pulse://referenc...pted. Earlier formats are rejected without conversion. Canonical protocol: `okto-pulse://reference/code-traceability`.'"
+      },
+      {
+        "test": "tests.test_agent_instruction_contracts::test_each_legacy_guidance_route_names_authorized_tool_without_old_ban[workflows/refinements]",
+        "kind": "failure",
+        "message": "assert 'okto_pulse_classify_legacy_code_evidence' in '--- version: \"1.1\" --- Knowledge Base placement and promotion are governed by `okto-pulse://reference/knowledge-gover... Spec already derived from this snapshot. There is no `decoupled_mode`. Pulse and Community never inspect source code.'"
+      },
+      {
+        "test": "tests.test_agent_instruction_contracts::test_each_legacy_guidance_route_names_authorized_tool_without_old_ban[reference/tool-docs/spec]",
+        "kind": "failure",
+        "message": "assert 'okto_pulse_classify_legacy_code_evidence' in '--- version: \"1.3\" --- # Tool docs — `spec` Before `move_spec` to `done`, read `okto_pulse_get_delivery_evidence` and... preview/apply, surface the authorized UI/REST action. Canonical protocol: `okto-pulse://reference/code-traceability`.'"
+      },
+      {
+        "test": "tests.test_agent_instruction_contracts::test_each_legacy_guidance_route_names_authorized_tool_without_old_ban[reference/tool-docs/refinement]",
+        "kind": "failure",
+        "message": "assert 'okto_pulse_classify_legacy_code_evidence' in '--- version: \"1.1\" --- # Tool docs — `refinement` Lifecycle ordering and RDL usage rules: `okto-pulse://workflows/ref...one, search, or resolve the repository. Full procedure and typed outcomes: `okto-pulse://reference/code-traceability`.'"
+      },
+      {
+        "test": "tests.test_agent_instruction_contracts::test_each_legacy_guidance_route_names_authorized_tool_without_old_ban[reference/code-traceability]",
+        "kind": "failure",
+        "message": "assert 'okto_pulse_classify_legacy_code_evidence' in '--- version: \"1.2\" --- # Agent-mediated Code Traceability ## Refinement citation updates and versions Finish the anal...e proof. These are separate closed schemas. Do not collapse them into a heterogeneous `target_type + payload` command.'"
+      },
+      {
+        "test": "tests.test_agent_instruction_contracts::test_each_legacy_guidance_route_names_authorized_tool_without_old_ban[reference/tool-docs/code-traceability]",
+        "kind": "failure",
+        "message": "assert 'okto_pulse_classify_legacy_code_evidence' in '--- version: \"1.3\" --- # Tool docs — Code Traceability ## `okto_pulse_get_delivery_evidence` Inputs: `board_id`, `spe... waiver. These are separate closed schemas. Do not collapse them into a heterogeneous `target_type + payload` command.'"
+      },
+      {
+        "test": "tests.test_allowed_transitions_mutation_parity_regressions::test_spec_code_evidence_coverage_preview_matches_validated_mutation",
+        "kind": "failure",
+        "message": "okto_pulse.core.ports.guideline_policy.GuidelinePolicySubjectConflict: semantic_subject_authority_missing_or_stale"
+      },
+      {
+        "test": "tests.test_allowed_transitions_mutation_parity_regressions::test_spec_code_evidence_skip_does_not_mask_technical_failure_parity",
+        "kind": "failure",
+        "message": "okto_pulse.core.ports.guideline_policy.GuidelinePolicySubjectConflict: semantic_subject_authority_missing_or_stale"
+      },
+      {
+        "test": "tests.test_allowed_transitions_mutation_parity_regressions::test_refinement_done_preview_uses_canonical_cognitive_gate",
+        "kind": "failure",
+        "message": "okto_pulse.core.ports.guideline_policy.GuidelinePolicySubjectConflict: semantic_subject_authority_missing_or_stale"
+      },
+      {
+        "test": "tests.test_allowed_transitions_mutation_parity_regressions::test_ideation_done_preview_does_not_apply_unsupported_cognitive_gate",
+        "kind": "failure",
+        "message": "okto_pulse.core.ports.guideline_policy.GuidelinePolicySubjectConflict: semantic_subject_authority_missing_or_stale"
+      }
+    ],
+    "note": "Stopped at maxfail=20. Prior stress excluded; not full acceptance."
+  },
+  "core_boundary_followup": {
+    "campaign": "clean-break-boundary-fixtures3",
+    "passed": 78,
+    "failed": 0,
+    "duration_seconds": 20.25,
+    "changes": [
+      "Native semantic authority recorded explicitly for directly seeded subjects; preview denial/redaction checks preserved.",
+      "Native KG snapshot and actor fields supplied by doubles.",
+      "Removed legacy classifier guidance is a negative assertion.",
+      "AF30 dynamic-private-database detector scans current lifecycle/initializer/database owners; each has synthetic rejection test and targets must exist."
+    ],
+    "wheel_dir": "dist-native-boundary-qualification1",
+    "provenance": "provenance-native-boundary-qualification1.json",
+    "closure": "closure-native-boundary-qualification1.json",
+    "closure_ok": true,
+    "all_eight_budgets_zero": true,
+    "xml_sha256": "90a106990a1032d494f667f54f08d966adc8417f34cfc8f641b55cadcc2ac5a1",
+    "full_qualification": "Incomplete; continue unexecuted suites."
   }
 }

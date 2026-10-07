@@ -11,9 +11,10 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from types import SimpleNamespace
 import uuid
-from unittest.mock import ANY, AsyncMock, Mock
+from unittest.mock import AsyncMock, Mock
 
 import pytest
+from native_subject_testing import record_native_subject_authority
 
 from okto_pulse.core.application.use_cases.allowed_transitions import (
     ListAllowedTransitionsCommand,
@@ -106,6 +107,7 @@ def _direct_spec_context_fields(
 async def _persist(db_factory, *rows: object) -> None:
     async with db_factory() as db:
         db.add_all(list(rows))
+        await record_native_subject_authority(db)
         await db.commit()
 
 
@@ -663,7 +665,7 @@ async def test_ideation_evaluating_done_bypasses_cognitive_closeout_and_derives_
                 created_by=USER_ID,
             )
         )
-        await db.flush()
+        await record_native_subject_authority(db)
 
         resource_gate = ResourceGateService(db)
         for resource_type in ("architecture", "mockup", "knowledge_base"):
@@ -721,7 +723,7 @@ async def test_ideation_evaluating_done_bypasses_cognitive_closeout_and_derives_
 
 
 @pytest.mark.asyncio
-async def test_card_cognitive_preview_reads_same_graph_health_as_mutation(
+async def test_card_cognitive_preview_uses_canonical_gate_without_graph_health(
     db_factory,
     monkeypatch,
 ) -> None:
@@ -776,8 +778,10 @@ async def test_card_cognitive_preview_reads_same_graph_health_as_mutation(
         )
 
     assert done.blocked_reason is None
-    probe.assert_awaited_once_with(board_id, ANY)
-    assert observed["graph_state"] == "healthy"
+    probe.assert_not_awaited()
+    assert observed["graph_state"] is None
+    assert observed["entity_id"] == card_id
+    assert observed["target_status"] == "done"
 
 
 @pytest.mark.asyncio
