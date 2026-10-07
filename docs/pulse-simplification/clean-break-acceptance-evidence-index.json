@@ -1637,7 +1637,12 @@
           "case_references": []
         }
       ],
-      "current_qualification": "pending_current_pair_review"
+      "current_qualification": "verified_current_pair_review",
+      "current_review": {
+        "artifact": "clean-break-acceptance-native-public-surfaces.json",
+        "criterion_key": "BASE:T33",
+        "proof_pair": "dist-native-next27"
+      }
     },
     {
       "key": "BASE:T34",
@@ -1659,7 +1664,12 @@
           "case_references": []
         }
       ],
-      "current_qualification": "pending_current_pair_review"
+      "current_qualification": "verified_current_pair_review",
+      "current_review": {
+        "artifact": "clean-break-acceptance-native-public-surfaces.json",
+        "criterion_key": "BASE:T34",
+        "proof_pair": "dist-native-next27"
+      }
     },
     {
       "key": "BASE:T35",
@@ -1681,7 +1691,12 @@
           "case_references": []
         }
       ],
-      "current_qualification": "pending_current_pair_review"
+      "current_qualification": "verified_current_pair_review",
+      "current_review": {
+        "artifact": "clean-break-acceptance-native-health.json",
+        "criterion_key": "BASE:T35",
+        "proof_pair": "dist-native-next27"
+      }
     },
     {
       "key": "BASE:T36",
@@ -1703,7 +1718,12 @@
           "case_references": []
         }
       ],
-      "current_qualification": "pending_current_pair_review"
+      "current_qualification": "verified_current_pair_review",
+      "current_review": {
+        "artifact": "clean-break-acceptance-native-health.json",
+        "criterion_key": "BASE:T36",
+        "proof_pair": "dist-native-next27"
+      }
     },
     {
       "key": "BASE:T37",

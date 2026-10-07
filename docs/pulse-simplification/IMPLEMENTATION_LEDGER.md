@@ -2,6 +2,29 @@
 
 ## Estado para retomada
 
+### 2026-10-07 — C4 T33–T36 qualificados no par next27
+T32 enviado Core8742898e/Communityec99ca23, pushes0, main integrado por FF.
+Par comportamental continua next27 byteprovado; main venv permanece stale e não
+deve ser usado até novo build/install/prova.
+
+health-core1 handle37771 terminou0:135pass/28.76s, onze módulos atuais.
+health-community1 handle89580 terminou0:116pass/117.02s, quinze módulos atuais.
+Recibo clean-break-acceptance-native-health.json promove apenas T35/T36:
+observação limitada, unknown distinto de zero, falta de provider/timeout, escopo
+por request/thread, sem checkpoint/writable fallback/efeitos de manutenção.
+Grafx Global real e contratos com clocks/providers injetados explicitamente separados.
+Nenhuma mudança produtiva/UI nesta qualificação.
+
+public-catalog1 handle53483 terminou0:49pass/8.18s. public-surfaces1 handle12757
+terminou0:194pass/378.76s, seis módulos Community incluindo console instalado em
+diretório temporário sem PYTHONPATH. Recibo clean-break-acceptance-native-public-
+surfaces.json promove T33/T34: ferramentas/rotas/CLI retirados recusam antes de
+efeito, arquivos/mtimes preservados, schemas/manifest/catálogo coerentes.
+Nenhum processo permanece ativo. T33–T36 somam494 passes distintos em rodadas
+separadas (243interfaces+251health); não são nova suíte integral do produto.
+Próximos fixos T37/T38 frontend, demais C4 e par instalado final.
+T23/KG-10 continuam pendentes; entrega integral não concluída.
+
 ### 2026-10-07 — C4 T32 fechado: outbox sem estado de migração
 Último par publicado Coreeb52387f/Community42d4a8e3. Main integrado por FF depois
 do terminal E2E7; WIP do observador preservado exatamente no commit antes do restore.
