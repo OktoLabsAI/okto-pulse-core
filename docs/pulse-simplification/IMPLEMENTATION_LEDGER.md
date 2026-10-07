@@ -2,6 +2,34 @@
 
 ## Estado para retomada
 
+### 2026-10-07 — Community14 SQL qualificado; Core19 terminal
+Closure main18 handle70816 terminou0:ok=true,findings/documentation_findings=[],
+oito ZERO. Produto/prova main18 inalterados. Fixtures SQL declaram realm_id local
+e adoption tipada edição1; guards NOT NULL e isolamento por Board preservados.
+realms1 handle84409 9pass/6fail (adoption ausente); realms2 handle59787
+8pass/5fail (import de fixture ausente); realms3 handle71142 5pass/0fail.
+Três módulos completos: lineage2 em realms1,health8 em realms2,census5 em
+realms3;15 distintos. Driver M4 passou1caso/3.59s sem alteração de código,
+configurando OKTO_E2E_GRAFX_REPO=D:/Projetos/Techridy/okto_grafx; configurar
+também próxima campanha ampla. Recibo acceptance-clean-break-community14-realms.json.
+
+Communitydb734154 publicado com os três módulos SQL. Ruff F/E9 passou;
+diff-check encontrou whitespace em uma linha e foi corrigido depois desse
+commit; incluir correção no checkpoint seguinte. Nenhuma semântica mudou.
+
+WIP NÃO qualificado: logical_transfer_factories e logical_transfer_matrix_support
+fixam85 layouts e corpus24nodes/86relations/1690properties/11vectors,
+conforme schema atual (uma relação adicional do corpus é self-loop repetido).
+community14-native-transfer1 handle79646 ATIVO, seis módulos incluindo todos
+os cinco consumidores do helper. Não editar/reinstalar main enquanto ativo.
+Pendentes Community14: terminal transfer,learning_submission_writer e
+mcp_resource_effective_overlay_sprint_b.
+
+Core19 handle65299 TERMINAL1:961pass/20fail/333.49s no worktree isolado.
+XML/log/selection preservados; módulos falhos no recibo, ainda não corrigidos.
+Não reiniciar esse handle nem qualificar módulos parcialmente executados.
+E2E/C4/T23/KG-10 continuam abertos. Turno foi progresso, sem impasse.
+
 ### 2026-10-07 — Integração principal concluída; Core19 isolado em execução
 Core11567c74/Communitybdffa622 publicados (pushes0) e integrados por fast-forward
 nos dois diretórios principais, ambos limpos antes da integração.
