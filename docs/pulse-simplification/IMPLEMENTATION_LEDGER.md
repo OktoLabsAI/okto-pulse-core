@@ -3,6 +3,7 @@
 ## Estado para retomada
 
 ### 2026-10-06 — C3 em andamento: booleanos MCP nativos
+Publicado: Core 0c68dd7f / Community a999edf3, pushes confirmados.
 Bases Core f113e7b1 / Community b9710b61 publicadas.
 Retirados BoolInput/OptionalBoolInput e _flag_enabled: flags usam StrictBool,
 sem strings true/false, 1/0, yes/no ou inteiros. Filtros sem tipo validam booleanos
