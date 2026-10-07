@@ -2,6 +2,35 @@
 
 ## Estado para retomada
 
+### 2026-10-06 — C3 em andamento: CardUpdate sem campo status
+Bases Core ee5701ea / Community 75036322 limpas/publicadas.
+Retirado status de CardUpdate REST e UpdateCardRequest TypeScript. MCP update
+ja nao tinha esse parametro. move_card permanece writer de transicoes.
+Defesa do servico contra comando nao tipado com status preservada; nao e uma
+segunda rota de escrita. Testes cobrem schema fechado, null/status recusados
+antes do use case e defesa direta, alem dos fluxos de CardModal.
+Frontend native-card-update-front1: 79 aprovados. Build aprovado, assets identicos
+ao incremento anterior (79 arquivos/78 assets, tree SHA
+405a056af8fd2bbae0d1c3e787e79f8f96964412f08f86cdf65b53d175751b26).
+Par dist-native-card-update1 instalado; provenance-native-card-update1 comprova
+bytes src/install/wheels (843/905 Core; 319/405 Community).
+Core1: 14 aprovados/duas falhas em fixtures de knowledge_bases/v2 ja retirados.
+Adaptadas para copy atual de screen_mockups e recusa do campo antigo, removendo
+o fake de dois modos. Core2: 11 aprovados; mais cinco casos catalog drift aprovados
+em Core1. Community1: 19 aprovados, inclusive status/null recusados no PATCH.
+Closure-native-card-update1 aprovada: findings/documentation_findings vazios,
+oito budgets current=limit=0. Ruff F/E9 e diff aprovados. Handles encerrados.
+C1-C4 permanecem abertos, T23/KG-10 aguardam decisao especifica.
+Proxima cadeia confirmada de C3: mcp/helpers.py coerce_to_list_str/parse_multi_value
+mantem pipe/comma strings como caminhos legados para listas; server.py anuncia
+list[str]|str em cerca de 49 chamadas. Investigar conjunto dos consumidores,
+retirar conversores/assinaturas/docs antigos, preservar listas nativas e semantica
+de omissao/limpeza; regenerar SK-A/catalogo oficialmente e testar MCP.
+parse_options_json tambem documenta fallback para options antigo; analisar essa
+dependencia junto para nao deixar uma segunda superficie de compatibilidade.
+Nenhuma edicao dessas cadeias neste incremento.
+
+
 ### 2026-10-06 — C1/C3 em andamento: aliases de inventario Delivery
 Publicado: Core 52145635 / Community 75036322, pushes confirmados.
 Bases Core e7da64ff / Community 30708407 limpas/publicadas.

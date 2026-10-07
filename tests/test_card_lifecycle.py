@@ -32,8 +32,6 @@ from sqlalchemy_test_models import (
     SpecStatus,
 )
 from okto_pulse.core.models.schemas import CardCreate, CardMove, CardUpdate
-from okto_pulse.core.domain.knowledge_selection import KnowledgeSelectionState
-from okto_pulse.core.ports.knowledge_propagation import KnowledgePropagationScope
 from okto_pulse.core.services import main as main_service
 from okto_pulse.core.services.main import (
     CardOperationError,
@@ -49,21 +47,6 @@ from okto_pulse.core.services.resource_gate import ResourceGateService
 BOARD_ID = "card-lifecycle-board-001"
 AGENT_ID = "card-lifecycle-agent-001"
 USER_ID = AGENT_ID
-
-
-class _CardKnowledgeScopePort:
-    def __init__(self, *, v2_active: bool) -> None:
-        self.v2_active = v2_active
-
-    async def load_scope(self, _context, request):
-        return KnowledgePropagationScope(
-            target=request.target,
-            scope_revision=1 if self.v2_active else 0,
-            v2_active=self.v2_active,
-            selection_state=(
-                KnowledgeSelectionState.OMITTED if self.v2_active else None
-            ),
-        )
 
 
 async def _mark_all_resources_na(db, entity_type: str, entity_id: str) -> None:
@@ -857,8 +840,16 @@ class TestCardUpdates:
             assert updated.title == "Updated Title"
             assert updated.description == "Updated description text"
 
+    @pytest.mark.parametrize("value", [None, "done", "in_progress"])
+    async def test_update_contract_rejects_status(self, value):
+        from pydantic import ValidationError
+        assert "status" not in CardUpdate.model_json_schema()["properties"]
+        with pytest.raises(ValidationError, match="status"):
+            CardUpdate.model_validate({"status": value})
+
     async def test_update_card_rejects_direct_status_change(self, db_factory):
-        """CRUD updates cannot bypass move_card transition gates."""
+        """An untyped command cannot bypass move_card transition gates."""
+        from types import SimpleNamespace
         await _seed_board(db_factory)
         async with db_factory() as db:
             card = (
@@ -870,7 +861,7 @@ class TestCardUpdates:
                 await CardService(db).update_card(
                     card.id,
                     USER_ID,
-                    CardUpdate(status=CardStatus.DONE),
+                    SimpleNamespace(model_dump=lambda **_: {"status": CardStatus.DONE}),
                 )
 
             assert exc_info.value.code == "card_status_update_requires_move"
@@ -907,71 +898,30 @@ class TestCardUpdates:
             assert updated.labels == ["new-label-1", "new-label-2"]
 
     async def test_direct_resource_field_update_is_read_only_without_internal_flag(self, db_factory):
-        """Card KB/mockup snapshots can only be refreshed by propagation/copy paths."""
+        """Mockup snapshots can only be refreshed by governed copy paths."""
         await _seed_board(db_factory)
         async with db_factory() as db:
-            svc = CardService(
-                db,
-                knowledge_propagation_port=_CardKnowledgeScopePort(
-                    v2_active=False
-                ),
-            )
+            svc = CardService(db)
             card = (await db.execute(
-                __import__("sqlalchemy").select(Card).where(Card.board_id == BOARD_ID)
+                select(Card).where(Card.board_id == BOARD_ID)
             )).scalars().first()
+            mockup = {"id": "sm_copied", "title": "Copied context"}
 
             with pytest.raises(CardResourceReadOnlyError):
                 await svc.update_card(
-                    card.id,
-                    USER_ID,
-                    CardUpdate(knowledge_bases=[{"id": "cardkb_direct"}]),
+                    card.id, USER_ID, CardUpdate(screen_mockups=[mockup]),
                 )
 
             updated = await svc.update_card(
-                card.id,
-                USER_ID,
-                CardUpdate(knowledge_bases=[{"id": "cardkb_copied"}]),
+                card.id, USER_ID, CardUpdate(screen_mockups=[mockup]),
                 allow_card_resource_write=True,
             )
-            assert updated.knowledge_bases == [{"id": "cardkb_copied"}]
+            assert [row["id"] for row in updated.screen_mockups] == ["sm_copied"]
 
-    async def test_internal_resource_write_is_forbidden_for_v2_target(
-        self,
-        db_factory,
-    ):
-        await _seed_board(db_factory)
-        async with db_factory() as db:
-            svc = CardService(
-                db,
-                knowledge_propagation_port=_CardKnowledgeScopePort(
-                    v2_active=True
-                ),
-            )
-            card = (
-                await db.execute(
-                    __import__("sqlalchemy")
-                    .select(Card)
-                    .where(Card.board_id == BOARD_ID)
-                )
-            ).scalars().first()
-            before = list(card.knowledge_bases or [])
-
-            with pytest.raises(KnowledgePropagationServiceError) as caught:
-                await svc.update_card(
-                    card.id,
-                    USER_ID,
-                    CardUpdate(
-                        knowledge_bases=[{"id": "cardkb_forbidden"}]
-                    ),
-                    allow_card_resource_write=True,
-                )
-
-            assert (
-                caught.value.code
-                == "knowledge_propagation_legacy_write_forbidden"
-            )
-            await db.refresh(card)
-            assert list(card.knowledge_bases or []) == before
+    async def test_update_contract_rejects_removed_knowledge_snapshot(self):
+        from pydantic import ValidationError
+        with pytest.raises(ValidationError, match="knowledge_bases"):
+            CardUpdate.model_validate({"knowledge_bases": [{"id": "cardkb_forbidden"}]})
 
     async def test_update_assignee(self, db_factory):
         """Change card assignee."""

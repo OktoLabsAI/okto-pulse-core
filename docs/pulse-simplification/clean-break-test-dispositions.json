@@ -4028,6 +4028,11 @@
       "path": "okto_labs_pulse_core/tests/test_card_delivery_inventory.py::title-only inventory cases and test_effective_delivery_inventory.py::legacy parity",
       "disposition": "replaced",
       "reason": "Removed unused title-only Card inventory API and legacy digest-preservation branch. Card allocation and unlinked scope now tested through the current effective inventory, including description/details sensitivity. Text requirements and missing identities are refused without synthesis."
+    },
+    {
+      "path": "okto_labs_pulse_core/tests/test_card_lifecycle.py::TestCardUpdates knowledge_bases writes and v2 switch",
+      "disposition": "replaced",
+      "reason": "Knowledge snapshot direct-write schema and v2 switch were already retired. Preserve governed mockup copy/read-only test; require removed knowledge_bases input rejection. Status rejection now occurs at the closed schema and keeps direct-service defense for untyped commands."
     }
   ]
 }

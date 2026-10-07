@@ -2985,13 +2985,6 @@ class CardUpdate(BaseModel):
     details: str | None = Field(
         None, description="Novos detalhes tecnicos do card (opcional)."
     )
-    status: CardStatus | None = Field(
-        None,
-        description=(
-            "Reservado para compatibilidade de leitura; update_card rejeita "
-            "alteracoes de status. Use move_card para toda transicao."
-        ),
-    )
     priority: CardPriority | None = Field(
         None,
         description="Nova prioridade: none, low, medium, high, very_high, critical.",
