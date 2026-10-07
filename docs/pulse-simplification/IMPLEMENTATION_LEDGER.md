@@ -2,6 +2,23 @@
 
 ## Estado para retomada
 
+### 2026-10-07 — Core13 todos os followups qualificados; Core14 iniciado
+API fixtures2 handle43150 terminou1:59pass/3fail por sessão ORM não composta.
+API fixtures3 handle5385 terminou0:47pass/12.07s após usar/restaurar
+CommunitySemanticSession nas duas fixtures.62casos distintos/quatro módulos
+qualificados, publicados Core5f6a843f. Planner1 handle24424 terminou0:1pass/13.46s.
+Batch com operação inventada é negado por autorização antes da validação;
+assertion fixa required_permission sem conceder nova folha. Create permitido
+ainda recusa campos de review e snapshots comprovam zero escrita indevida.
+Todos sete módulos falhos Core13 têm agora followup completo(59+62+1 casos).
+
+Core14 iniciou handle68531, seleção767módulos completos excluídos, maxfail20.
+Par dist-native-claim-recovery1 permanece congelado/provado. Installed6 handle91252
+continua ativo. Fonte E2E Community ainda WIP até terminal; não declarar aceite.
+Core removal de claims migrados publicado aac912c8 eCommunity593d116a.
+Próximos: terminais atuais, continuação Community, alias env C3 após congelamento,
+aceite e benchmark fixos. Nenhuma entrega integral declarada.
+
 ### 2026-10-07 — Recovery sem migração qualificado150casos; continuações vivas
 Core native-claim-recovery1 handle38621 terminou0:100aprovados/297.43s.
 Community50distintos já qualificados. Closure oito budgetsZERO. Remoção do

@@ -3793,5 +3793,74 @@
         "message": "okto_pulse.core.domain.realm.MissingRealmScope: realm_scope_required"
       }
     ]
+  },
+  "core13_native_surface_qualification": {
+    "proof_pair": "dist-native-claim-recovery1",
+    "campaigns": [
+      {
+        "campaign": "core13-native-surface-fixtures2",
+        "counts": {
+          "name": "pytest",
+          "errors": "0",
+          "failures": "3",
+          "skipped": "0",
+          "tests": "62",
+          "time": "23.599",
+          "timestamp": "2026-10-07T06:16:21.719994-03:00",
+          "hostname": "Alienware_m15"
+        },
+        "xml_sha256": "691632894be8c81e8c52db7da4b503a67961293efd125db7e625ade3e309ec86",
+        "failures": [
+          {
+            "class": "tests.test_open_qa_count_badges",
+            "name": "test_inherited_answered_qa_does_not_inflate_open_qa_count",
+            "message": "RuntimeError: semantic_subject_session_not_composed"
+          },
+          {
+            "class": "tests.test_r01a_boards_uow",
+            "name": "test_archive_then_restore_spec_200",
+            "message": "RuntimeError: semantic_subject_session_not_composed"
+          },
+          {
+            "class": "tests.test_r01a_boards_uow",
+            "name": "test_editor_share_can_archive_but_not_update_board_metadata",
+            "message": "RuntimeError: semantic_subject_session_not_composed"
+          }
+        ]
+      },
+      {
+        "campaign": "core13-native-surface-fixtures3",
+        "counts": {
+          "name": "pytest",
+          "errors": "0",
+          "failures": "0",
+          "skipped": "0",
+          "tests": "47",
+          "time": "12.015",
+          "timestamp": "2026-10-07T06:18:24.381949-03:00",
+          "hostname": "Alienware_m15"
+        },
+        "xml_sha256": "0763dee8db5bb0e302716fca436b7a8109886e7af07bcd4db289ae066f0af700",
+        "failures": []
+      },
+      {
+        "campaign": "core13-native-planner1",
+        "counts": {
+          "name": "pytest",
+          "errors": "0",
+          "failures": "0",
+          "skipped": "0",
+          "tests": "1",
+          "time": "13.435",
+          "timestamp": "2026-10-07T06:19:33.920598-03:00",
+          "hostname": "Alienware_m15"
+        },
+        "xml_sha256": "ca2fda30bd3f672360c232a0ebf54dac1d71e4c3ee7d3762fa53e87c10fabef2",
+        "failures": []
+      }
+    ],
+    "distinct_cases_qualified": 63,
+    "complete_modules": 5,
+    "limits": "Four API modules62distinct across full followups; planner1. Actor delete authority is explicit only in test setup; required denials/no-write checks retained. Native effective Knowledge includes parents and forbids cross-board leakage. No product changes."
   }
 }

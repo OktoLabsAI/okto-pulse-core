@@ -172,7 +172,10 @@ async def test_authenticated_planner_review_boundary_across_mcp_variants(
         }, raise_on_error=False)
         assert batch.is_error, batch.content
         batch_error = json.loads(batch.content[0].text)['data']
-        assert batch_error['error_code'] == 'validation_failed', batch_error
+        # An unknown batch operation has no granted permission leaf. Refusal
+        # precedes payload validation and cannot turn content access into review.
+        assert batch_error['error_code'] == 'authorization_denied', batch_error
+        assert batch_error['required_permission'] == 'spec.structured_entity.project_structure_node.batch'
         assert await _snapshot(factory) == after_edit
 
         # Even a permitted create operation cannot smuggle a review field.
