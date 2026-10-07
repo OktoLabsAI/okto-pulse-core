@@ -2,6 +2,46 @@
 
 ## Estado para retomada
 
+### 2026-10-06 — C3 em andamento: objetos MCP nativos
+Bases Core b236466e / Community 63aa833e limpas/publicadas.
+Retirados decoders string de entradas dict/list[dict] em contratos API/IR,
+mutacao estruturada de Spec, arquitetura, governanca Knowledge e filtros.
+Assinaturas publicam objetos/arrays nativos; omissao/null e empty collections
+preservam a semantica nativa anterior (incluindo clears de arquitetura).
+Importacao atual de cenas Excalidraw permanece, recebendo objeto nativo.
+Validadores de filtros conservam chaves desconhecidas para recusa por entidade.
+Resources autorados e gerados atualizados; testes mistos adaptados sem conversao
+de fixtures persistidas nem relaxamento de autoridade. Disposicoes no JSON.
+
+Par dist-native-mcp-objects1 instalado/provado byte a byte antes dos testes.
+Core1: 180 aprovados/uma falha de fake antigo de Knowledge com v2_active=False,
+sem Resource Gate. Fake adaptado para a projecao efetiva atual, sem dois modos;
+Core2: oito aprovados, total distinto da campanha 181. Community1: 25 aprovados,
+incluindo transporte real: string JSON/empty/null-string/bool recusados antes
+de auth, payload nativo chega a auth. Fixtures de arquitetura e entidades
+estruturadas preservam assercoes de permissoes, warnings, locks e persistencia.
+Closure1: somente drift de matrizes README; regeneradas oficialmente.
+Par objects2 apenas construido, substituido apos revisao de exemplos/docs.
+Par final dist-native-mcp-objects3 instalado; provenance-native-mcp-objects3
+confirma bytes src/install/wheels: Core 843/905, Community 319/405.
+Core3: 155 aprovados em resources/catalogo (150 casos adicionais; cinco de
+catalogo repetidos). Total distinto Core: 331. Produto Python nao mudou entre
+essas campanhas; par final inclui apenas correcoes finais de resources/README.
+Closure-native-mcp-objects3 aprovada, findings/documentation_findings vazios
+e oito budgets current=limit=0. Ruff F/E9 e diff aprovados; handles encerrados.
+Frontend sem alteracoes: contratos REST e payloads persistidos permanecem iguais.
+
+C1-C4 seguem abertos, T23/KG-10 aguardam decisao. Proximo ramo de C3 confirmado:
+BoolInput/OptionalBoolInput e _flag_enabled anunciam e convertem true/false,
+1/0 e yes/no strings como temporary string compatibility form (server.py).
+Mapear consumidores antes de remover, mantendo defaults, omissao, booleanos
+nativos, permissoes e efeitos das flags. Ha comentarios orfaos de cutover/policy
+migrada em _TASK_GATE_CARD_SELECT_FIELDS, embora os campos restantes sejam
+atuais; limpar texto sem retirar os campos de rejeicao/historico nativos.
+Knowledge metadata_status=legacy_incomplete ainda e exercitado por teste;
+investigar se ausencia e nativa antes de retirar/renomear, sem supor migracao.
+C4 integral e bump coordenado 0.4.0 permanecem pendentes; nao declarar entrega total.
+
 ### 2026-10-06 — C3 em andamento: listas MCP nativas, sem conversores
 Publicado: Core 1a7bde28 / Community 63aa833e. Push Community confirmado;
 Core teve reset TLS na resposta, mas ls-remote confirmou HEAD remoto exato.

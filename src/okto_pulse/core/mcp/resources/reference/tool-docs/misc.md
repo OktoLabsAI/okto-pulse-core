@@ -226,7 +226,7 @@ List Q&A items for a spec, ideation, or refinement.
         board_id: Board ID
         entity_type: One of: spec, ideation, refinement
         entity_id: ID of the entity (spec_id, ideation_id, or refinement_id)
-        filters: Optional filter dict OR JSON string.
+        filters: Optional native filter object.
             status: filter by answer status
             asked_by: filter by agent/user who asked
 

@@ -57,20 +57,20 @@ def _is_native_string_array(sch: dict) -> bool:
     return has_array and not has_string
 
 
-def _is_anyof_object_string(sch: dict) -> bool:
+def _is_native_object(sch: dict) -> bool:
     b = _anyof_branches(sch)
     has_object = any(x.get("type") == "object" for x in b)
     has_string = any(x.get("type") == "string" for x in b)
-    return has_object and has_string
+    return has_object and not has_string
 
 
-def _is_anyof_arrayobject_string(sch: dict) -> bool:
+def _is_native_object_array(sch: dict) -> bool:
     b = _anyof_branches(sch)
     has_array_obj = any(
         x.get("type") == "array" and x.get("items", {}).get("type") == "object" for x in b
     )
     has_string = any(x.get("type") == "string" for x in b)
-    return has_array_obj and has_string
+    return has_array_obj and not has_string
 
 
 # ---------------------------------------------------------------------------
@@ -108,14 +108,14 @@ def test_ac2_expanded_cluster_anyof_array_string():
 
 def test_ac3_json_fields_object_and_array_asymmetry():
     # OBJECT-typed
-    assert _is_anyof_object_string(_field_schema("okto_pulse_add_api_contract", "request_body_json"))
-    assert _is_anyof_object_string(_field_schema("okto_pulse_add_api_contract", "response_success_json"))
-    assert _is_anyof_object_string(_field_schema("okto_pulse_add_integration_requirement", "data_contract_json"))
-    assert _is_anyof_object_string(_field_schema("okto_pulse_update_spec_entity", "payload_json"))
+    assert _is_native_object(_field_schema("okto_pulse_add_api_contract", "request_body_json"))
+    assert _is_native_object(_field_schema("okto_pulse_add_api_contract", "response_success_json"))
+    assert _is_native_object(_field_schema("okto_pulse_add_integration_requirement", "data_contract_json"))
+    assert _is_native_object(_field_schema("okto_pulse_update_spec_entity", "payload_json"))
     # LIST-typed (the asymmetry): response_errors_json is array-of-object, NOT object
     resp = _field_schema("okto_pulse_add_api_contract", "response_errors_json")
-    assert _is_anyof_arrayobject_string(resp), f"response_errors_json must be anyOf[array-of-object,string]: {resp}"
-    assert not _is_anyof_object_string(resp), "response_errors_json must NOT be object-typed (asymmetry)"
+    assert _is_native_object_array(resp), f"response_errors_json must be anyOf[array-of-object,string]: {resp}"
+    assert not _is_native_object(resp), "response_errors_json must NOT be object-typed (asymmetry)"
 
 
 # ---------------------------------------------------------------------------
@@ -298,8 +298,8 @@ def test_ac8_scope_guard_no_sweep_strict_mode_intact():
     # (a) Asymmetry preserved in the real schema.
     req = _field_schema("okto_pulse_add_api_contract", "request_body_json")
     resp = _field_schema("okto_pulse_add_api_contract", "response_errors_json")
-    assert _is_anyof_object_string(req), req
-    assert _is_anyof_arrayobject_string(resp), resp
+    assert _is_native_object(req), req
+    assert _is_native_object_array(resp), resp
 
     # (b) _auth_error / _perm_error untouched — still the bare error-string shape.
     server_src = SERVER_PY.read_text(encoding="utf-8")

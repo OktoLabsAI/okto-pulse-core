@@ -32,7 +32,7 @@ Args:
     parent_id: Parent entity ID
     title: Design title
     global_description: Required global architecture description
-    entities: JSON array or native list of entity descriptions. Use concrete
+    entities: Native JSON array of entity descriptions. Use concrete
         names and categorical types, for example:
         [
           {
@@ -60,7 +60,7 @@ Args:
         Do not use entity name == entity_type, such as name="API" and
         entity_type="api"; the API rejects that because ownership and task
         boundaries become ambiguous.
-    interfaces: JSON array or native list of interface/contract descriptions.
+    interfaces: Native JSON array of interface/contract descriptions.
         endpoint is optional but recommended for API paths, RPC methods,
         event names, queue names, or operations. Interfaces do not own
         source/target; diagram connections define endpoint entities through
@@ -79,7 +79,7 @@ Args:
             "response_schema": {"type": "object", "required": ["order_id"]}
           }
         ]
-    diagrams: JSON array or native list of diagrams; adapter_payload is stored
+    diagrams: Native JSON array of diagrams; adapter_payload is stored
         separately. Only format="excalidraw_json" is accepted. Mermaid,
         PlantUML, C4, SVG, and raw snippets may be included only as
         descriptive text in entity responsibility, boundaries, notes, or
@@ -206,7 +206,7 @@ Args:
     board_id: Board ID
     design_id: Architecture Design ID
     title: Diagram title
-    payload_json: Excalidraw JSON object or JSON string
+    payload_json: Native Excalidraw JSON object
     diagram_type: context/container/component/sequence/deployment/data_flow/other
     replace_diagram_id: Existing diagram ID to replace; empty appends a new diagram
     description: Optional diagram description
@@ -263,9 +263,9 @@ Args:
     design_id: Architecture Design ID
     title: Optional new title
     global_description: Optional new global description
-    entities: Optional JSON array/native list
-    interfaces: Optional JSON array/native list
-    diagrams: Optional JSON array/native list
+    entities: Optional native JSON array
+    interfaces: Optional native JSON array
+    diagrams: Optional native JSON array
     change_summary: Optional version summary
 
 Returns:
@@ -305,9 +305,9 @@ Args:
     design_id: Update mode Architecture Design ID
     title: Candidate title
     global_description: Candidate global description
-    entities: Candidate JSON array/native list, or omitted to keep existing in update mode
-    interfaces: Candidate JSON array/native list, or omitted to keep existing in update mode
-    diagrams: Candidate JSON array/native list, or omitted to keep existing in update mode
+    entities: Candidate native JSON array, or omitted to keep existing in update mode
+    interfaces: Candidate native JSON array, or omitted to keep existing in update mode
+    diagrams: Candidate native JSON array, or omitted to keep existing in update mode
 
 Returns:
     JSON dry-run critique; this tool does not write anything.

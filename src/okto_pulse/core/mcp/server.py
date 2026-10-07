@@ -68,7 +68,7 @@ from okto_pulse.core.mcp.filters import (
     KnowledgeEntityType,
     QaEntityType,
     SnapshotEntityType,
-    parse_filter_payload,
+    validate_filter_payload,
 )
 from okto_pulse.core.mcp.helpers import (
     ChoiceOptionInput,
@@ -1945,26 +1945,26 @@ def _saturation_response(coverage_dict: dict[str, Any]) -> dict[str, Any]:
 
 
 
-def _parse_json_arg(value: Any, default: Any) -> tuple[Any, str | None]:
-    if value is None or value == "":
+def _validate_native_json_arg(
+    value: Any, default: Any, kind: Literal["object", "array"],
+) -> tuple[Any, str | None]:
+    """Validate native structured inputs without decoding strings."""
+    if value is None:
         return default, None
-    if isinstance(value, (dict, list)):
-        return value, None
-    try:
-        return json.loads(value), None
-    except Exception as exc:
-        return None, f"Invalid JSON argument: {exc}"
+    expected = dict if kind == "object" else list
+    if not isinstance(value, expected):
+        return None, f"expected a native {kind}"
+    if kind == "array" and any(not isinstance(item, dict) for item in value):
+        return None, "expected native object items"
+    return value, None
 
 
-def _parse_knowledge_governance_arg(
-    value: dict[str, Any] | str | None,
+def _validate_knowledge_governance_arg(
+    value: dict[str, Any] | None,
 ) -> tuple[Any, str | None]:
     if value is None or isinstance(value, dict):
         return value, None
-    try:
-        return json.loads(value), None
-    except (TypeError, ValueError, json.JSONDecodeError) as exc:
-        error = f"Invalid JSON argument: {exc}"
+    error = "governance_metadata must be a native object"
     return None, json.dumps(
         {
             "code": "knowledge_governance_invalid_metadata",
@@ -7731,7 +7731,7 @@ async def okto_pulse_add_ideation_knowledge(
     description: str = "",
     mime_type: str = "text/markdown",
     content_reference: str | None = None,
-    governance_metadata: dict[str, Any] | str | None = None,
+    governance_metadata: dict[str, Any] | None = None,
 ) -> str:
     """
     Add a knowledge base item to an ideation.
@@ -7750,7 +7750,7 @@ async def okto_pulse_add_ideation_knowledge(
     if err:
         return json.dumps({"error": err})
 
-    parsed_governance, governance_error = _parse_knowledge_governance_arg(
+    parsed_governance, governance_error = _validate_knowledge_governance_arg(
         governance_metadata
     )
     if governance_error:
@@ -12774,10 +12774,10 @@ async def okto_pulse_validate_architecture_design_payload(
     design_id: str = "",
     title: str = "",
     global_description: str = "",
-    entities: list[dict] | str = "",
-    interfaces: list[dict] | str = "",
-    diagrams: list[dict] | str = "",
-    architecture_warning_acknowledgement: dict | str = "",
+    entities: list[dict] | None = None,
+    interfaces: list[dict] | None = None,
+    diagrams: list[dict] | None = None,
+    architecture_warning_acknowledgement: dict | None = None,
     commit: bool = False,
     include_design: bool = False,
 ) -> str:
@@ -12798,12 +12798,12 @@ async def okto_pulse_validate_architecture_design_payload(
         ("interfaces", interfaces),
         ("diagrams", diagrams),
     ):
-        parsed, err = _parse_json_arg(raw, None)
+        parsed, err = _validate_native_json_arg(raw, None, "array")
         if err:
             return json.dumps({"error": f"Invalid {field_name}: {err}"})
         if parsed is not None:
             parsed_fields[field_name] = parsed
-    acknowledgement, err = _parse_json_arg(architecture_warning_acknowledgement, None)
+    acknowledgement, err = _validate_native_json_arg(architecture_warning_acknowledgement, None, "object")
     if err:
         return json.dumps(
             {"error": f"Invalid architecture_warning_acknowledgement: {err}"}
@@ -12887,10 +12887,10 @@ async def okto_pulse_add_architecture_design(
     parent_id: str,
     title: str,
     global_description: str,
-    entities: list[dict] | str = "",
-    interfaces: list[dict] | str = "",
-    diagrams: list[dict] | str = "",
-    architecture_warning_acknowledgement: dict | str = "",
+    entities: list[dict] | None = None,
+    interfaces: list[dict] | None = None,
+    diagrams: list[dict] | None = None,
+    architecture_warning_acknowledgement: dict | None = None,
 ) -> str:
     """Create an Architecture Design on an ideation, refinement, or spec (card
     designs are read-only governed snapshots — use
@@ -12914,16 +12914,16 @@ async def okto_pulse_add_architecture_design(
     if perm_err:
         return _perm_error(perm_err)
 
-    ents, err = _parse_json_arg(entities, [])
+    ents, err = _validate_native_json_arg(entities, [], "array")
     if err:
         return json.dumps({"error": f"Invalid entities: {err}"})
-    ifaces, err = _parse_json_arg(interfaces, [])
+    ifaces, err = _validate_native_json_arg(interfaces, [], "array")
     if err:
         return json.dumps({"error": f"Invalid interfaces: {err}"})
-    diags, err = _parse_json_arg(diagrams, [])
+    diags, err = _validate_native_json_arg(diagrams, [], "array")
     if err:
         return json.dumps({"error": f"Invalid diagrams: {err}"})
-    acknowledgement, err = _parse_json_arg(architecture_warning_acknowledgement, None)
+    acknowledgement, err = _validate_native_json_arg(architecture_warning_acknowledgement, None, "object")
     if err:
         return json.dumps(
             {"error": f"Invalid architecture_warning_acknowledgement: {err}"}
@@ -12977,11 +12977,11 @@ async def okto_pulse_update_architecture_design(
     design_id: str,
     title: str = "",
     global_description: str = "",
-    entities: list[dict] | str = "",
-    interfaces: list[dict] | str = "",
-    diagrams: list[dict] | str = "",
+    entities: list[dict] | None = None,
+    interfaces: list[dict] | None = None,
+    diagrams: list[dict] | None = None,
     change_summary: str = "",
-    architecture_warning_acknowledgement: dict | str = "",
+    architecture_warning_acknowledgement: dict | None = None,
 ) -> str:
     """Update an Architecture Design; omitted fields are left unchanged. For large or
     generated updates, call okto_pulse_get_architecture_design_schema once per session
@@ -13004,14 +13004,14 @@ async def okto_pulse_update_architecture_design(
         ("interfaces", interfaces),
         ("diagrams", diagrams),
     ):
-        parsed, err = _parse_json_arg(raw, None)
+        parsed, err = _validate_native_json_arg(raw, None, "array")
         if err:
             return json.dumps({"error": f"Invalid {field_name}: {err}"})
         if parsed is not None:
             patch[field_name] = parsed
     if change_summary:
         patch["change_summary"] = change_summary
-    acknowledgement, err = _parse_json_arg(architecture_warning_acknowledgement, None)
+    acknowledgement, err = _validate_native_json_arg(architecture_warning_acknowledgement, None, "object")
     if err:
         return json.dumps(
             {"error": f"Invalid architecture_warning_acknowledgement: {err}"}
@@ -13120,7 +13120,7 @@ async def okto_pulse_import_excalidraw_architecture_diagram(
     board_id: str,
     design_id: str,
     title: str,
-    payload_json: dict | str,
+    payload_json: dict,
     diagram_type: str = "other",
     replace_diagram_id: str = "",
     description: str = "",
@@ -13133,7 +13133,7 @@ async def okto_pulse_import_excalidraw_architecture_diagram(
     if not ctx:
         return _auth_error()
 
-    payload, err = _parse_json_arg(payload_json, None)
+    payload, err = _validate_native_json_arg(payload_json, None, "object")
     if err or payload is None:
         return json.dumps(
             {"error": f"Invalid payload_json: {err or 'payload is required'}"}
@@ -13263,7 +13263,7 @@ async def okto_pulse_copy_architecture_to_card(
     spec_id: str,
     card_id: str,
     design_ids: list[str] | None = None,
-    architecture_warning_acknowledgement: dict | str = "",
+    architecture_warning_acknowledgement: dict | None = None,
     profile: Annotated[
         str,
         Field(
@@ -13301,7 +13301,7 @@ async def okto_pulse_copy_architecture_to_card(
         ids = validate_string_list(design_ids) if design_ids else None
     except ValueError as exc:
         return json.dumps({"error": f"Invalid design_ids: {exc}"})
-    acknowledgement, err = _parse_json_arg(architecture_warning_acknowledgement, None)
+    acknowledgement, err = _validate_native_json_arg(architecture_warning_acknowledgement, None, "object")
     if err:
         return json.dumps(
             {"error": f"Invalid architecture_warning_acknowledgement: {err}"}
@@ -13920,7 +13920,7 @@ async def _mcp_apply_structured_spec_entity(
     entity_type: StructuredSpecEntityType | Literal["api_contract"],
     operation: StructuredSpecOperation,
     entity_id: str = "",
-    payload_json: dict[str, Any] | str = "",
+    payload_json: dict[str, Any] | None = None,
     expected_spec_version: int | str | None = None,
     expected_structure_revision: int | str | None = None,
     task_id: str = "",
@@ -13950,17 +13950,9 @@ async def _mcp_apply_structured_spec_entity(
             {"error": f"Unsupported structured spec entity type: {entity_type}"}
         )
 
-    if isinstance(payload_json, dict):
-        payload = payload_json
-    elif payload_json:
-        try:
-            payload = json.loads(payload_json)
-        except json.JSONDecodeError as exc:
-            return json.dumps({"error": f"Invalid payload_json: {exc}"})
-    else:
-        payload = {}
-    if not isinstance(payload, dict):
-        return json.dumps({"error": "payload_json must decode to an object."})
+    payload, payload_error = _validate_native_json_arg(payload_json, {}, "object")
+    if payload_error:
+        return json.dumps({"error": f"Invalid payload_json: {payload_error}"})
     try:
         expected = _parse_expected_spec_version(expected_spec_version)
         expected_revision = _parse_expected_structure_revision(
@@ -14020,7 +14012,7 @@ async def okto_pulse_update_spec_entity(
     entity_type: StructuredSpecEntityType,
     operation: StructuredSpecOperation,
     entity_id: str = "",
-    payload_json: dict[str, Any] | str = "",
+    payload_json: dict[str, Any] | None = None,
     expected_spec_version: int | str | None = None,
     expected_structure_revision: int | str | None = None,
     task_id: str = "",
@@ -14067,7 +14059,7 @@ async def okto_pulse_update_spec_api_contract(
     spec_id: str,
     contract_id: str,
     operation: StructuredSpecOperation = "update",
-    payload_json: dict[str, Any] | str = "",
+    payload_json: dict[str, Any] | None = None,
     expected_spec_version: int | str | None = None,
     task_id: str = "",
     ack_token: str = "",
@@ -14254,7 +14246,7 @@ async def okto_pulse_add_integration_requirement(
     contract_ref: str = "",
     endpoint: str = "",
     method: str = "",
-    data_contract_json: dict | str = "",
+    data_contract_json: dict | None = None,
     linked_requirements: list[str] | None = None,
     linked_api_contracts: list[str] | None = None,
     notes: str = "",
@@ -14295,8 +14287,8 @@ async def okto_pulse_add_integration_requirement(
     import uuid as _uuid
 
     data_contract = None
-    if data_contract_json:
-        data_contract, json_err = _parse_json_arg(data_contract_json, None)
+    if data_contract_json is not None:
+        data_contract, json_err = _validate_native_json_arg(data_contract_json, None, "object")
         if json_err:
             return json.dumps({"error": json_err})
 
@@ -14334,7 +14326,7 @@ async def okto_pulse_add_integration_requirement(
                     contract_ref=contract_ref,
                     endpoint=endpoint,
                     method=method,
-                    data_contract=data_contract,
+                    data_contract=data_contract or None,
                     linked_requirement_tokens=(
                         validate_string_list(linked_requirements)
                         if linked_requirements
@@ -15003,9 +14995,9 @@ async def okto_pulse_add_api_contract(
     method: str = "",
     path: str = "",
     description: str = "",
-    request_body_json: dict | str = "",
-    response_success_json: dict | str = "",
-    response_errors_json: list[dict] | str = "",
+    request_body_json: dict | None = None,
+    response_success_json: dict | None = None,
+    response_errors_json: list[dict] | None = None,
     linked_requirements: list[str] | None = None,
     linked_rules: list[str] | None = None,
     notes: str = "",
@@ -15042,35 +15034,19 @@ async def okto_pulse_add_api_contract(
     # the JSON parse, the multi-value coercion, _canonical_api_contract_error (F10)
     # and the envelopes (it renders unresolved with the use case's available ids,
     # never re-reading the spec).
-    request_body = None
-    if request_body_json:
-        if isinstance(request_body_json, dict):
-            request_body = request_body_json
-        else:
-            try:
-                request_body = json.loads(request_body_json)
-            except json.JSONDecodeError as e:
-                return json.dumps({"error": f"Invalid request_body_json: {e}"})
-
-    response_success = None
-    if response_success_json:
-        if isinstance(response_success_json, dict):
-            response_success = response_success_json
-        else:
-            try:
-                response_success = json.loads(response_success_json)
-            except json.JSONDecodeError as e:
-                return json.dumps({"error": f"Invalid response_success_json: {e}"})
-
-    response_errors = None
-    if response_errors_json:
-        if isinstance(response_errors_json, list):
-            response_errors = response_errors_json
-        else:
-            try:
-                response_errors = json.loads(response_errors_json)
-            except json.JSONDecodeError as e:
-                return json.dumps({"error": f"Invalid response_errors_json: {e}"})
+    structured_fields = {}
+    for field_name, raw, kind in (
+        ("request_body_json", request_body_json, "object"),
+        ("response_success_json", response_success_json, "object"),
+        ("response_errors_json", response_errors_json, "array"),
+    ):
+        value, error = _validate_native_json_arg(raw, None, kind)
+        if error:
+            return json.dumps({"error": f"Invalid {field_name}: {error}"})
+        structured_fields[field_name] = value or None
+    request_body = structured_fields["request_body_json"]
+    response_success = structured_fields["response_success_json"]
+    response_errors = structured_fields["response_errors_json"]
 
     linked_rule_tokens = None
     if linked_rules:
@@ -16802,7 +16778,7 @@ async def okto_pulse_add_spec_knowledge(
     description: str = "",
     mime_type: str = "text/markdown",
     content_reference: str | None = None,
-    governance_metadata: dict[str, Any] | str | None = None,
+    governance_metadata: dict[str, Any] | None = None,
 ) -> str:
     """
     Add a knowledge base item to a spec. Use this to attach reference documents,
@@ -16826,7 +16802,7 @@ async def okto_pulse_add_spec_knowledge(
     if err:
         return json.dumps({"error": err})
 
-    parsed_governance, governance_error = _parse_knowledge_governance_arg(
+    parsed_governance, governance_error = _validate_knowledge_governance_arg(
         governance_metadata
     )
     if governance_error:
@@ -17033,7 +17009,7 @@ async def okto_pulse_add_refinement_knowledge(
     description: str = "",
     mime_type: str = "text/markdown",
     content_reference: str | None = None,
-    governance_metadata: dict[str, Any] | str | None = None,
+    governance_metadata: dict[str, Any] | None = None,
 ) -> str:
     """
     Add a knowledge base item to a refinement. Use this to attach reference documents,
@@ -17057,7 +17033,7 @@ async def okto_pulse_add_refinement_knowledge(
     if err:
         return json.dumps({"error": err})
 
-    parsed_governance, governance_error = _parse_knowledge_governance_arg(
+    parsed_governance, governance_error = _validate_knowledge_governance_arg(
         governance_metadata
     )
     if governance_error:
@@ -19583,10 +19559,10 @@ async def okto_pulse_list_by_board(
     board_id: str,
     entity_type: Annotated[BoardEntityType, Field(description="Entity family")],
     filters: Annotated[
-        dict[str, Any] | str | None,
+        dict[str, Any] | None,
         Field(
             description=(
-                "Native per-type filter object; legacy JSON object string accepted. "
+                "Native per-type filter object. "
                 "Unknown keys are preserved for fail-closed handler validation."
             )
         ),
@@ -19610,7 +19586,7 @@ async def okto_pulse_list_by_board(
     )
 
     try:
-        filters = parse_filter_payload(filters)
+        filters = validate_filter_payload(filters)
     except ValueError as exc:
         return _structured_error("invalid_filter", [], None, str(exc))
 
@@ -19927,7 +19903,7 @@ async def okto_pulse_list_qa(
     board_id: str,
     entity_type: QaEntityType,
     entity_id: str,
-    filters: dict[str, Any] | str | None = None,
+    filters: dict[str, Any] | None = None,
 ) -> str:
     """List Q&A items for a spec, ideation, or refinement.
 
@@ -19939,7 +19915,7 @@ async def okto_pulse_list_qa(
     )
 
     try:
-        filters = parse_filter_payload(filters)
+        filters = validate_filter_payload(filters)
     except ValueError as exc:
         return _structured_error("invalid_filter", [], None, str(exc))
 
@@ -20014,7 +19990,7 @@ async def okto_pulse_list_knowledge(
     board_id: str,
     entity_type: KnowledgeEntityType,
     entity_id: str,
-    filters: dict[str, Any] | str | None = None,
+    filters: dict[str, Any] | None = None,
 ) -> str:
     """List knowledge base items for a spec, ideation, refinement, or card.
 
@@ -20027,7 +20003,7 @@ async def okto_pulse_list_knowledge(
     )
 
     try:
-        filters = parse_filter_payload(filters)
+        filters = validate_filter_payload(filters)
     except ValueError as exc:
         return _structured_error("invalid_filter", [], None, str(exc))
 

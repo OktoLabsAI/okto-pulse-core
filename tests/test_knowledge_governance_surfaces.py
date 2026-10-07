@@ -183,14 +183,22 @@ class _KnowledgeService:
         return [self.kb]
 
 
-class _LegacyPropagationRead:
+class _PropagationRead:
     async def read(self, _target: object) -> SimpleNamespace:
-        return SimpleNamespace(v2_active=False)
+        return SimpleNamespace()
 
 
-class _V2PropagationRead:
-    async def read(self, _target: object) -> SimpleNamespace:
-        return SimpleNamespace(v2_active=True)
+class _EffectiveKnowledgeRead:
+    def __init__(self, kb: SimpleNamespace) -> None:
+        self.kb = kb
+
+    async def get_effective_resources(
+        self, board_id: str, entity_type: str, entity_id: str,
+    ) -> dict:
+        assert (board_id, entity_type, entity_id) == ("board-1", "spec", "entity-1")
+        return {"resources": {"knowledge_base": [
+            {"id": self.kb.id, "hydrated": True, "resource": vars(self.kb)},
+        ]}}
 
 
 @pytest.mark.asyncio
@@ -213,7 +221,8 @@ async def test_consolidated_list_projects_governance_for_each_entity_type(
         spec_knowledge=knowledge_service,
         ideation_knowledge=knowledge_service,
         refinement_knowledge=knowledge_service,
-        knowledge_propagation=_LegacyPropagationRead(),
+        knowledge_propagation=_PropagationRead(),
+        resource_gate=_EffectiveKnowledgeRead(kb),
     )
     result = await McpListKnowledgeUseCase().execute(
         McpListKnowledgeCommand(
@@ -240,7 +249,7 @@ async def test_consolidated_list_projects_governance_for_each_entity_type(
 
 
 @pytest.mark.asyncio
-async def test_spec_consolidated_list_keeps_v2_summary_bounded() -> None:
+async def test_spec_consolidated_list_keeps_effective_summary_bounded() -> None:
     parent = SimpleNamespace(
         id="spec-1",
         board_id="board-1",
@@ -294,7 +303,7 @@ async def test_spec_consolidated_list_keeps_v2_summary_bounded() -> None:
 
     services = SimpleNamespace(
         specs=parent_service,
-        knowledge_propagation=_V2PropagationRead(),
+        knowledge_propagation=_PropagationRead(),
         resource_gate=_ResourceGate(),
     )
 

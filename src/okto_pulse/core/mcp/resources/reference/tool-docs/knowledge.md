@@ -30,7 +30,7 @@ Args:
     content_reference: Runtime-specific reference resolved by the active edition
     description: Short description of what this document contains (optional)
     mime_type: Content type, default "text/markdown"
-    governance_metadata: Optional v1 object or JSON string; follow the complete
+    governance_metadata: Optional native v1 object; follow the complete
         closed contract at okto-pulse://reference/knowledge-governance
 
 ## `okto_pulse_add_refinement_knowledge`
@@ -48,7 +48,7 @@ Args:
     content_reference: Runtime-specific reference resolved by the active edition
     description: Short description of what this document contains (optional)
     mime_type: Content type, default "text/markdown"
-    governance_metadata: Optional v1 object or JSON string; follow the complete
+    governance_metadata: Optional native v1 object; follow the complete
         closed contract at okto-pulse://reference/knowledge-governance
 
 Returns:
@@ -69,7 +69,7 @@ Args:
     content_reference: Runtime-specific reference resolved by the active edition
     description: Short description of what this document contains (optional)
     mime_type: Content type, default "text/markdown"
-    governance_metadata: Optional v1 object or JSON string; follow the complete
+    governance_metadata: Optional native v1 object; follow the complete
         closed contract at okto-pulse://reference/knowledge-governance
 
 Returns:
@@ -238,7 +238,7 @@ List knowledge base items for a spec, ideation, refinement, or card.
         board_id: Board ID
         entity_type: One of: spec, ideation, refinement, card
         entity_id: ID of the entity
-        filters: Optional filter dict OR JSON string.
+        filters: Optional native filter object.
             mime_type: filter by MIME type
 
     Returns:

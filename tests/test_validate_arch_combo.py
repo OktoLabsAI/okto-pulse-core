@@ -1,80 +1,34 @@
-"""Unit tests for Story 4 validate_and_persist combo helpers.
-
-Focus on pure helpers + signature contracts. End-to-end behavior of
-`okto_pulse_validate_architecture_design_payload` (commit/include_design
-flags, dry-run shape, persist flow, lock check) is covered by integration
-smoke (TC6a/TC6b, see ts_5b4f6570/ts_97cccbf8/ts_98f69dd0/ts_9a57e8cd/
-ts_281494d5/ts_ed3530bc).
-
-These tests target the pure JSON-parsing helper that drives input
-normalization and the public tool signature that exposes the combo flags.
-"""
-
+"""Native architecture inputs and unchanged dry-run/commit flags."""
 from __future__ import annotations
-
 import inspect
-
+import pytest
 from okto_pulse.core.mcp import server
-from okto_pulse.core.mcp.server import _parse_json_arg
+from okto_pulse.core.mcp.server import _validate_native_json_arg
 
 
-# ---------------------------------------------------------------------------
-# _parse_json_arg — input normalization helper (used by 3 fields:
-# entities, interfaces, diagrams)
-# ---------------------------------------------------------------------------
-
-
-def test_parse_json_arg_none_returns_default():
-    """None input falls back to the supplied default with no error."""
-    result, err = _parse_json_arg(None, ["fallback"])
-    assert result == ["fallback"]
-    assert err is None
-
-
-def test_parse_json_arg_empty_string_returns_default():
-    """Empty string is treated as 'not provided' — preserve dry-run default."""
-    result, err = _parse_json_arg("", None)
+@pytest.mark.parametrize(("kind", "value"), [
+    ("object", ""), ("object", "{}"), ("object", []), ("object", False),
+    ("array", ""), ("array", "[]"), ("array", {}), ("array", [1]),
+])
+def test_native_argument_rejects_other_shapes(kind, value):
+    result, error = _validate_native_json_arg(value, None, kind)
     assert result is None
-    assert err is None
+    assert error
 
 
-def test_parse_json_arg_native_list_passes_through():
-    """Already-decoded list input must not be re-parsed."""
-    payload = [{"id": "e1", "name": "X"}]
-    result, err = _parse_json_arg(payload, None)
-    assert result is payload  # same object — no copy
-    assert err is None
+@pytest.mark.parametrize(("kind", "value"), [
+    ("object", {}), ("object", {"key": "value"}),
+    ("array", []), ("array", [{"name": "entity"}]),
+])
+def test_native_argument_preserves_payload(kind, value):
+    result, error = _validate_native_json_arg(value, None, kind)
+    assert result is value
+    assert error is None
 
 
-def test_parse_json_arg_native_dict_passes_through():
-    """Same as list — native dict is accepted as-is."""
-    payload = {"k": 1}
-    result, err = _parse_json_arg(payload, None)
-    assert result is payload
-    assert err is None
-
-
-def test_parse_json_arg_valid_json_string_decodes():
-    """JSON string is decoded into the corresponding Python object."""
-    result, err = _parse_json_arg('[{"a": 1}, {"b": 2}]', None)
-    assert result == [{"a": 1}, {"b": 2}]
-    assert err is None
-
-
-def test_parse_json_arg_invalid_json_returns_error_message():
-    """Bad JSON returns (None, '<error message>') — caller surfaces it."""
-    result, err = _parse_json_arg("not valid json", None)
-    assert result is None
-    assert err is not None
-    assert "Invalid JSON argument" in err
-
-
-def test_parse_json_arg_invalid_json_does_not_raise():
-    """Helper must NOT raise — error path is returned tuple-second."""
-    # If this raises, the test fails (pytest catches exceptions as failures).
-    _parse_json_arg("{malformed", None)
-    _parse_json_arg("[1, 2,", None)
-    _parse_json_arg("'single quotes'", None)
+def test_native_argument_omission_uses_creation_or_update_default():
+    assert _validate_native_json_arg(None, [], "array") == ([], None)
+    assert _validate_native_json_arg(None, None, "array") == (None, None)
 
 
 # ---------------------------------------------------------------------------

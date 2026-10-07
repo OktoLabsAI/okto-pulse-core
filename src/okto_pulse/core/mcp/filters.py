@@ -26,7 +26,6 @@ unless the service signature changes.
 
 from __future__ import annotations
 
-import json
 from typing import Any, Literal, Optional, TypeAlias
 
 from typing_extensions import TypedDict
@@ -142,26 +141,13 @@ _SCOPE_MAP: dict[str, dict[str, list[str]]] = {
 # ---------------------------------------------------------------------------
 
 
-def parse_filter_payload(raw: dict[str, Any] | str | None) -> dict[str, Any]:
-    """Decode the explicit legacy JSON form and require an object payload."""
-
+def validate_filter_payload(raw: dict[str, Any] | None) -> dict[str, Any]:
+    """Require a native object without dropping unknown keys."""
     if raw is None:
         return {}
-    decoded: Any = raw
-    if isinstance(raw, str):
-        if not raw.strip():
-            return {}
-        try:
-            decoded = json.loads(raw)
-        except json.JSONDecodeError as exc:
-            raise ValueError(
-                f"Invalid JSON filter object: {exc.msg} (at pos {exc.pos})"
-            ) from exc
-    if not isinstance(decoded, dict):
-        raise ValueError(
-            f"filters must be an object, got {type(decoded).__name__}"
-        )
-    return dict(decoded)
+    if not isinstance(raw, dict):
+        raise ValueError(f"filters must be a native object, got {type(raw).__name__}")
+    return dict(raw)
 
 
 def validate_filters(

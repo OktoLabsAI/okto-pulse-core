@@ -463,10 +463,8 @@ async def test_list_knowledge_invalid_filter_key():
 
 
 @pytest.mark.asyncio
-async def test_list_by_board_accepts_filters_as_json_string():
-    """Regression for bug eb782ae4: filters passed as JSON string must be
-    auto-decoded by the handler. MCP transports often serialise complex
-    parameters as strings."""
+async def test_list_by_board_rejects_filters_as_json_string():
+    """String filters are rejected without decoding or treating them as omitted."""
     result = await _call_tool(
         "okto_pulse_list_by_board",
         board_id=BOARD_ID,
@@ -474,21 +472,14 @@ async def test_list_by_board_accepts_filters_as_json_string():
         filters='{"status": "draft"}',
     )
     data = _parse(result)
-    # The handler must not return a Pydantic dict_type validation error.
-    # It may return items, an empty list, or a permission/auth error —
-    # but NOT 'Input should be a valid dictionary'.
-    assert "Input should be a valid dictionary" not in str(data)
-    # If it returns a structured error, it should NOT be about filter shape.
-    if data.get("error_code"):
-        assert data["error_code"] != "invalid_filter" or "Invalid JSON" not in data.get(
-            "detail", ""
-        )
+    assert data.get("error_code") == "invalid_filter"
+    assert "native object" in data.get("error", "")
+
 
 
 @pytest.mark.asyncio
 async def test_list_by_board_rejects_malformed_filters_json():
-    """Regression for bug eb782ae4: an invalid JSON string must produce a
-    structured_error with error_code='invalid_filter', not crash Pydantic."""
+    """String filters are rejected without decoding or treating them as omitted."""
     result = await _call_tool(
         "okto_pulse_list_by_board",
         board_id=BOARD_ID,
@@ -497,14 +488,13 @@ async def test_list_by_board_rejects_malformed_filters_json():
     )
     data = _parse(result)
     assert data.get("error_code") == "invalid_filter"
-    assert "Invalid JSON" in data.get("detail", "") or "Invalid JSON" in data.get(
-        "error", ""
-    )
+    assert "native object" in data.get("error", "")
+
 
 
 @pytest.mark.asyncio
-async def test_list_qa_accepts_filters_as_json_string():
-    """Regression for bug eb782ae4: list_qa must also accept filters as JSON string."""
+async def test_list_qa_rejects_filters_as_json_string():
+    """String filters are rejected without decoding or treating them as omitted."""
     result = await _call_tool(
         "okto_pulse_list_qa",
         board_id=BOARD_ID,
@@ -513,7 +503,9 @@ async def test_list_qa_accepts_filters_as_json_string():
         filters='{"asked_by": "anyone"}',
     )
     data = _parse(result)
-    assert "Input should be a valid dictionary" not in str(data)
+    assert data.get("error_code") == "invalid_filter"
+    assert "native object" in data.get("error", "")
+
 
 
 # ---------------------------------------------------------------------------
@@ -623,8 +615,8 @@ async def test_list_qa_invalid_status_value_returns_structured_error():
 
 
 @pytest.mark.asyncio
-async def test_list_knowledge_accepts_filters_as_json_string():
-    """Regression for bug eb782ae4: list_knowledge must also accept filters as JSON string."""
+async def test_list_knowledge_rejects_filters_as_json_string():
+    """String filters are rejected without decoding or treating them as omitted."""
     result = await _call_tool(
         "okto_pulse_list_knowledge",
         board_id=BOARD_ID,
@@ -633,13 +625,14 @@ async def test_list_knowledge_accepts_filters_as_json_string():
         filters='{"mime_type": "text/markdown"}',
     )
     data = _parse(result)
-    assert "Input should be a valid dictionary" not in str(data)
+    assert data.get("error_code") == "invalid_filter"
+    assert "native object" in data.get("error", "")
+
 
 
 @pytest.mark.asyncio
-async def test_list_by_board_accepts_empty_string_filters():
-    """Regression for bug eb782ae4: an empty/whitespace filters string must be
-    treated as no filter, not as a JSON parse error."""
+async def test_list_by_board_rejects_empty_string_filters():
+    """String filters are rejected without decoding or treating them as omitted."""
     result = await _call_tool(
         "okto_pulse_list_by_board",
         board_id=BOARD_ID,
@@ -647,8 +640,9 @@ async def test_list_by_board_accepts_empty_string_filters():
         filters="   ",
     )
     data = _parse(result)
-    assert "Invalid JSON" not in str(data)
-    assert "Input should be a valid dictionary" not in str(data)
+    assert data.get("error_code") == "invalid_filter"
+    assert "native object" in data.get("error", "")
+
 
 
 # ---------------------------------------------------------------------------

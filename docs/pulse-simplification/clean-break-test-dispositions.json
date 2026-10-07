@@ -4069,5 +4069,35 @@
       "path": "okto_labs_pulse_community/tests/test_mcp_host_adapter.py",
       "reason": "Real transport proves native options reach authentication and old/invalid/mixed options_json inputs are rejected first. Closed-tool ratchet tightened to 44 after historical-context tool retirement (Core 204be338); host narrowing/schema checks retained."
     }
+  ],
+  "native_mcp_object_adaptations": [
+    {
+      "path": "tests/test_architecture_mcp.py",
+      "reason": "Native object/array arguments replace json.dumps inputs; existing critique, permission, warning acknowledgement and persistence assertions retained."
+    },
+    {
+      "path": "tests/test_spec_structured_entities.py",
+      "reason": "Structured mutation payloads passed as native objects; domain operation/authority assertions unchanged."
+    },
+    {
+      "path": "tests/test_validate_arch_combo.py",
+      "reason": "Decoder/empty-string compatibility cases replaced by strict native type, omission and empty collection tests; dry-run/commit flags retained."
+    },
+    {
+      "path": "tests/test_mcp_consolidated_list_handlers.py",
+      "reason": "String filters now explicitly refused, including whitespace; native filter behavior and unknown-key checks retained."
+    },
+    {
+      "path": "tests/test_r3a_schema_honesty.py",
+      "reason": "Native object/array schemas exclude string branch; object-versus-array distinction, actual handlers and error envelope coverage retained."
+    },
+    {
+      "path": "okto_labs_pulse_community/tests/test_mcp_host_adapter.py",
+      "reason": "Real transport rejection of encoded JSON, empty string, null string and boolean before auth; native structured input reaches auth."
+    },
+    {
+      "path": "tests/test_knowledge_governance_surfaces.py",
+      "reason": "Replaced obsolete two-mode propagation fakes with the one current Resource Gate projection, preserving metadata, bounded content and lineage assertions."
+    }
   ]
 }

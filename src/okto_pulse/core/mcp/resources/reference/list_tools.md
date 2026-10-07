@@ -50,9 +50,8 @@ okto_pulse_list_by_board(board_id, entity_type="ideation", filters={"derivation_
 okto_pulse_list_by_board(board_id, entity_type="refinement", filters={"ideation_id": "...", "derivation_pending": true})
 ```
 
-Send `filters` as a native object. The JSON string form
-(`'{"status": "draft"}'`) is an explicit legacy compatibility path: it must
-decode to an object and malformed/non-object JSON is rejected.
+Send `filters` as a native object. Strings and non-object inputs are rejected;
+unknown keys remain visible to per-entity fail-closed validation.
 
 ## Q&A and knowledge filters
 

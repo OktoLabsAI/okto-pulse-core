@@ -16,9 +16,9 @@ Full long-form documentation (args, returns, examples, enum prose) for `okto_pul
 **Non-HTTP interactions:** pass `contract_type="in_process"`, `"grpc"`, or `"event"` explicitly. Method tokens never infer or convert the interaction type.
 
 **Per-field JSON shapes are ASYMMETRIC by design (documented, not normalized):**
-- `request_body_json` → an OBJECT, e.g. `'{"name": "string"}'`.
-- `response_success_json` → an OBJECT, e.g. `'{"id": "uuid"}'`.
-- `response_errors_json` → a LIST, e.g. `'[{"status": 400, "detail": "..."}]'`. In short: **`response_errors` is a LIST while `request_body` and `response_success` are OBJECTs.**
+- `request_body_json` → an OBJECT, e.g. `{"name": "string"}`.
+- `response_success_json` → an OBJECT, e.g. `{"id": "uuid"}`.
+- `response_errors_json` → a LIST, e.g. `[{"status": 400, "detail": "..."}]`. In short: **`response_errors` is a LIST while `request_body` and `response_success` are OBJECTs.**
 
 **Errors:** a malformed contract shape returns the canonical `invalid_api_contract` error — never a raw Pydantic / `errors.pydantic.dev` surface. Reads and writes enforce the same shape. Invalid stored contracts are refused without conversion or repair.
 
@@ -34,9 +34,9 @@ Args:
     method: Real HTTP verb when contract_type=http; optional for non-HTTP interactions.
     path: Endpoint path (required for http) or identifier; optional for non-http contracts (e.g. "/api/v1/users")
     description: What this endpoint does (optional)
-    request_body_json: JSON string for request body schema (optional). Example: '{"name": "string", "email": "string"}'
-    response_success_json: JSON string for success response schema (optional)
-    response_errors_json: JSON string for error responses array (optional). Example: '[{"status": 400, "detail": "..."}]'
+    request_body_json: Native object for request body schema (optional). Example: {"name": "string", "email": "string"}
+    response_success_json: Native object for success response schema (optional)
+    response_errors_json: Native array of objects for error responses (optional). Example: [{"status": 400, "detail": "..."}]
     linked_requirements: Native string array of exact FR/TR IDs.
         Example: ["fr_login", "tr_audit_events"]
     linked_rules: Native string array of business rule IDs.

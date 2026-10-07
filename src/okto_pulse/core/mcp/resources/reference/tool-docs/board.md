@@ -210,7 +210,7 @@ List top-level entities of a board by type.
     Args:
         board_id: Board ID
         entity_type: One of: spec, ideation, refinement, story, topic
-        filters: Optional filter dict OR JSON string; validated server-side per entity_type.
+        filters: Optional native filter object; validated server-side per entity_type.
             spec: status, labels, assignee_id
             ideation: status, labels, derivation_pending
             refinement: status, labels, ideation_id, derivation_pending

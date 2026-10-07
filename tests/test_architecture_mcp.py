@@ -241,7 +241,7 @@ async def test_mcp_add_list_get_import_and_dump_architecture(_seed_spec_card):
         parent_id=spec_id,
         title="Spec Architecture",
         global_description="Architecture exposed through MCP.",
-        diagrams=json.dumps(_architecture_diagrams()),
+        diagrams=_architecture_diagrams(),
     )
     assert created.get("success") is True, created
     design_id = created["architecture_design"]["id"]
@@ -269,15 +269,13 @@ async def test_mcp_add_list_get_import_and_dump_architecture(_seed_spec_card):
         board_id=board_id,
         design_id=design_id,
         title="Imported via MCP",
-        payload_json=json.dumps(
-            {
+        payload_json={
                 "type": "excalidraw",
                 "version": 2,
                 "elements": [{"id": "imported-shape", "type": "text", "text": "MCP"}],
                 "appState": {},
                 "files": {},
-            }
-        ),
+            },
     )
     assert imported.get("success") is True
     assert len(imported["architecture_design"]["diagrams"]) == 2
@@ -303,25 +301,21 @@ async def test_mcp_rejects_invalid_architecture_payload_with_context(_seed_spec_
         parent_id=spec_id,
         title="Invalid Spec Architecture",
         global_description="This payload should be critiqued before persistence.",
-        entities=json.dumps(
-            [
+        entities=[
                 {
                     "id": "entity-api",
                     "name": "API",
                     "entity_type": "api",
                 }
-            ]
-        ),
-        interfaces=json.dumps(
-            [
+            ],
+        interfaces=[
                 {
                     "id": "interface-invalid",
                     "name": "Invalid interface",
                     "participants": ["entity-api", "entity-missing"],
                     "direction": "both ways",
                 }
-            ]
-        ),
+            ],
     )
 
     assert "error" in created
@@ -344,9 +338,8 @@ async def test_mcp_save_requires_acknowledgement_for_structured_topology_warning
         parent_id=spec_id,
         title="Warning-bearing MCP Architecture",
         global_description="MCP create must reject warning-bearing saves without ack.",
-        entities=json.dumps(_topology_entities()),
-        interfaces=json.dumps(
-            [
+        entities=_topology_entities(),
+        interfaces=[
                 {
                     "id": "interface-web-api",
                     "name": "Call Pulse API",
@@ -358,9 +351,8 @@ async def test_mcp_save_requires_acknowledgement_for_structured_topology_warning
                     "request_schema": {"type": "object"},
                     "response_schema": {"type": "object"},
                 }
-            ]
-        ),
-        diagrams=json.dumps(warning_diagrams),
+            ],
+        diagrams=warning_diagrams,
     )
 
     assert created.get("success") is False, created
@@ -429,9 +421,9 @@ async def test_rest_and_mcp_save_acknowledgement_required_payloads_match_semanti
         parent_id=spec_id,
         title=payload["title"],
         global_description=payload["global_description"],
-        entities=json.dumps(payload["entities"]),
-        interfaces=json.dumps(interfaces),
-        diagrams=json.dumps(warning_diagrams),
+        entities=payload["entities"],
+        interfaces=interfaces,
+        diagrams=warning_diagrams,
     )
 
     def _warning_semantics(warning: dict) -> dict:
@@ -475,7 +467,7 @@ async def test_mcp_add_architecture_rejects_non_excalidraw_diagram_format(_seed_
         parent_id=spec_id,
         title="Mermaid Architecture",
         global_description="Mermaid text belongs in entity descriptions, not diagram format.",
-        diagrams=json.dumps(_mermaid_diagrams()),
+        diagrams=_mermaid_diagrams(),
     )
 
     assert "error" in created
@@ -526,17 +518,14 @@ async def test_mcp_validate_architecture_payload_reports_issues_warnings_and_fix
         parent_id=spec_id,
         title="Invalid Architecture",
         global_description="Dry-run should return contextual feedback.",
-        entities=json.dumps(
-            [
+        entities=[
                 {
                     "id": "entity-api",
                     "name": "API",
                     "entity_type": "api",
                 }
-            ]
-        ),
-        interfaces=json.dumps(
-            [
+            ],
+        interfaces=[
                 {
                     "id": "interface-invalid",
                     "name": "Invalid interface",
@@ -544,10 +533,8 @@ async def test_mcp_validate_architecture_payload_reports_issues_warnings_and_fix
                     "participants": ["entity-api", "entity-missing"],
                     "direction": "both ways",
                 }
-            ]
-        ),
-        diagrams=json.dumps(
-            [
+            ],
+        diagrams=[
                 {
                     "id": "diagram-invalid",
                     "title": "Invalid diagram",
@@ -570,8 +557,7 @@ async def test_mcp_validate_architecture_payload_reports_issues_warnings_and_fix
                         "files": {},
                     },
                 }
-            ]
-        ),
+            ],
     )
 
     assert critique.get("success") is True, critique
@@ -597,7 +583,7 @@ async def test_mcp_validate_architecture_payload_rejects_non_excalidraw_diagram_
         parent_id=spec_id,
         title="Mermaid Architecture",
         global_description="Mermaid text belongs in entity descriptions, not diagram format.",
-        diagrams=json.dumps(_mermaid_diagrams()),
+        diagrams=_mermaid_diagrams(),
     )
 
     assert critique.get("success") is True, critique
@@ -624,8 +610,8 @@ async def test_mcp_validate_architecture_payload_matches_backend_structured_warn
         parent_id=spec_id,
         title="Topology Contract",
         global_description="MCP and REST share the backend critic result.",
-        entities=json.dumps(entities),
-        interfaces=json.dumps([
+        entities=entities,
+        interfaces=[
             {
                 "id": "interface-web-api",
                 "name": "Call Pulse API",
@@ -638,8 +624,8 @@ async def test_mcp_validate_architecture_payload_matches_backend_structured_warn
                 "request_schema": {"type": "object"},
                 "response_schema": {"type": "object"},
             }
-        ]),
-        diagrams=json.dumps(diagrams),
+        ],
+        diagrams=diagrams,
     )
 
     db_factory = get_session_factory()
@@ -733,9 +719,9 @@ async def test_rest_and_mcp_validate_architecture_payload_return_identical_warni
         parent_id=spec_id,
         title=payload["title"],
         global_description=payload["global_description"],
-        entities=json.dumps(entities),
-        interfaces=json.dumps(interfaces),
-        diagrams=json.dumps(diagrams),
+        entities=entities,
+        interfaces=interfaces,
+        diagrams=diagrams,
     )
 
     assert mcp.get("success") is True, mcp
@@ -831,9 +817,9 @@ async def test_mcp_validate_architecture_payload_accepts_complete_payload_withou
         parent_id=spec_id,
         title="Checkout Architecture",
         global_description="Customer Portal calls Checkout API to create orders.",
-        entities=json.dumps(entities),
-        interfaces=json.dumps(interfaces),
-        diagrams=json.dumps(diagrams),
+        entities=entities,
+        interfaces=interfaces,
+        diagrams=diagrams,
     )
     listed = await _call(
         "okto_pulse_list_architecture_designs",
@@ -863,7 +849,7 @@ async def test_mcp_copy_architecture_to_card_and_task_context(_seed_spec_card):
         parent_id=spec_id,
         title="Spec Architecture",
         global_description="Architecture copied into card context.",
-        diagrams=json.dumps(_architecture_diagrams()),
+        diagrams=_architecture_diagrams(),
     )
     source_id = created["architecture_design"]["id"]
 

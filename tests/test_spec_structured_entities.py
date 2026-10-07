@@ -2048,7 +2048,7 @@ async def test_mcp_polymorphic_tool_and_api_contract_wrapper_delegate_to_service
             spec_id=spec_id,
             entity_type=entity_type,
             operation="create",
-            payload_json=json.dumps(payload),
+            payload_json=payload,
             expected_spec_version=str(expected_version),
         )
         body = json.loads(raw)
@@ -2066,13 +2066,13 @@ async def test_mcp_polymorphic_tool_and_api_contract_wrapper_delegate_to_service
         spec_id=spec_id,
         contract_id="api_mcp",
         operation="create",
-        payload_json=json.dumps({
+        payload_json={
             "id": "api_mcp",
             "contract_type": "in_process",
             "method": None,
             "path": "StructuredSpecEntityService.apply",
             "description": "Wrapper delegates to the service",
-        }),
+        },
         expected_spec_version=str(expected_version),
     )
     wrapper = json.loads(raw)
@@ -2087,7 +2087,7 @@ async def test_mcp_polymorphic_tool_and_api_contract_wrapper_delegate_to_service
         spec_id=spec_id,
         entity_type="business_rule",
         operation="create",
-        payload_json=json.dumps(_payload_for("business_rule")),
+        payload_json=_payload_for("business_rule"),
         expected_spec_version="1",
     )
     stale_body = json.loads(stale)
@@ -2099,7 +2099,7 @@ async def test_mcp_polymorphic_tool_and_api_contract_wrapper_delegate_to_service
         spec_id=spec_id,
         entity_type="business_rule",
         operation="create",
-        payload_json=json.dumps({"id": "br_invalid"}),
+        payload_json={"id": "br_invalid"},
         expected_spec_version=str(expected_version),
     )
     invalid_body = json.loads(invalid)
@@ -2126,7 +2126,7 @@ async def test_mcp_polymorphic_tool_and_api_contract_wrapper_delegate_to_service
         spec_id=spec_id,
         entity_type="functional_requirement",
         operation="create",
-        payload_json=json.dumps({"text": "blocked by MCP permissions"}),
+        payload_json={"text": "blocked by MCP permissions"},
         expected_spec_version=str(expected_version),
     )
     denied_body = json.loads(denied)
@@ -2142,7 +2142,7 @@ async def test_mcp_polymorphic_tool_and_api_contract_wrapper_delegate_to_service
         entity_type="api_contract",
         operation="update",
         entity_id="api_mcp",
-        payload_json=json.dumps({"description": "blocked"}),
+        payload_json={"description": "blocked"},
     )
     assert "dedicated okto_pulse_update_spec_api_contract wrapper" in blocked
     assert len(apply_calls) == call_count_before_blocked_api_contract
