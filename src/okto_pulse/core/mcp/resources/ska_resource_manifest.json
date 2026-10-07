@@ -42,7 +42,7 @@
     ],
     "source": "okto_pulse/core/mcp/agent_instructions.md"
   },
-  "manifest_sha256": "193f400c50c58f1092e314123822aaf69ed1862f58736a96bb20f158959675d9",
+  "manifest_sha256": "d9a16975779c23a7a877d8da78fe97c43d3a95936fa68e6b175873f4cf991a17",
   "manifest_version": "agent-resources/v2",
   "resource_count": 22,
   "resources": [
@@ -198,7 +198,7 @@
       "uri": "okto-pulse://reference/quality-assessments"
     },
     {
-      "content_sha256": "52e4a0dab8d478ed1c5b0733ab76a536889d51670dbe22ac8b8ebc7698d6c368",
+      "content_sha256": "62c3fbeb73f4bed209158c413c8429a6f6e3d29c759c999a5a8ff615225690e7",
       "cross_links": [
         "okto-pulse://reference/code-traceability",
         "okto-pulse://reference/project-structure",

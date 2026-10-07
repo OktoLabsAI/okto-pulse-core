@@ -2,6 +2,72 @@
 
 ## Estado para retomada
 
+### 2026-10-07 — C4 incremento de distribuição0.4.0 validado
+Release gate3 terminal:6 aprovados198.40s. Handles82166/68746 encerrados.
+Closure-v040-native-release2 ok=true, findings/docs vazios e oito budgetsZERO.
+Instalação isolada comprovou fontes/wheels/install antes das sondas; Core/Community
+0.4.0, Grafx0.0.7, CLI/About, manifests e MCP HTTP real:282 canônicas/zero aliases/54 resources.
+Matrix nativa: fresh/restart, recusa incompatível byte-identical/sidecars intactos,
+crash após presets atuais e recuperação, dois cold starts concorrentes e paridade
+determinística das cinco famílias. Não materializa/purga grafo produtivo nessa sonda.
+81 aprovações/1 skip da distribuição inicial preservados; duas falhas resolvidas
+no followup integral de seis casos. Frontend39 Header aprovados e build/sync atual;
+campanha ampla anterior2451/269 não foi repetida por mudança só da versão.
+Ruff/diff verdes. Recibo completo/hash em clean-break-full-qualification.json,
+native_v040_distribution. Community commit7a2dcd6; commit Core e pushes deste incremento a seguir.
+Próximo: Core11 seleção493 e Community9 (incorporar módulos da distribuição já
+qualificados); revisar referências operacionais antigas em README Community373/401.
+C1-C4 integral/235 critérios/benchmark/T23/KG-10 continuam abertos, sem nova meta.
+Nenhum processo desta campanha ativo; nenhuma tag/release/deploy/dado real alterado.
+
+### 2026-10-07 — C4 par0.4.0 recomposto e comprovado
+Instalação57881 terminal; provenance-v040-native-release2 confirmou bytes iguais
+843/905+318/404. Release gate3 ativo82166 (cinco casos rápidos aprovados, smoke
+isolado ainda em execução); closure-v040-native-release2 ativo68746.
+Ruff/diff verdes. Core11 seleção incorporou native-generation1/native-parent-refs1;
+não iniciado. Não editar produto/reinstalar durante esta campanha.
+
+### 2026-10-07 — C4 harness de release nativo em qualificação
+v040-release-gate2 terminal:4 aprovados/2 falhas141.75s. Registro vivo tem282
+tools canônicas/zero aliases; harness tinha283 e teste301/294/7. Manifest
+de resources derivado apresentou drift; regenerados os três artefatos oficiais.
+Apenas ska_resource_manifest.json mudou. Harness e testes alinhados ao contrato
+0.4.0 e ao inventário observado, sem remoção de ferramentas neste incremento.
+Runtime matrix ainda importava migrator/bootstrapper removidos e exigia upgrade.
+Substituído por recusa de base incompatível byte-identical e sem novos sidecars;
+crash injetado após seeds nativos de presets, retomada/concorrência/paridade mantidas.
+Par dist-v040-native-release2 construído (Core eb0712e93f73b9009647730e02203b330fb48f94cbec2f5c36338979e5935fe7;
+Community 7c8d6a43b9ba2ba72d34a112aac9237a55eb73a2b3a3813b34b0bbdc7bae3643).
+Instalação handle57881; provar bytes antes de retestar. Nada deste WIP publicado.
+C1-C4/qualificação integral/benchmark/T23/KG-10 abertos.
+
+### 2026-10-07 — C4 qualificação do par 0.4.0
+Build/sync frontend concluído: 79 arquivos/78 assets, tree SHA
+7ee75fcf97b13e00dcd5d3a4928f32b7484ffe2d741ef5d0c0c68b7aed6e0a14.
+Par dist-v040-native-release1 instalado; provenance byte-identical Core843/905,
+Community318/404 antes dos testes. Closure-v040-native-release1 terminal:
+ok=true, findings/documentation_findings vazios e oito budgets current=limit=0.
+Header frontend:39 aprovados; campanha v040-distribution1:81 aprovados,
+2 falhas,1 skip em125.61s. Handles47783/56792/33893 encerrados.
+Falhas: EXPECTED_VERSION do harness ainda0.3.4 e Grafx não indicado explicitamente
+no ambiente do smoke isolado. Corrigindo harness para0.4.0 e preparando Grafx.
+Nenhuma qualificação integral/release declarada; C1-C4/T23/KG-10 continuam abertos.
+Autorização Checklist por snapshot já implementada e registrada abaixo.
+
+### 2026-10-07 — C4 bump coordenado0.4.0 em andamento
+
+Coreee13ad76 / Community2cc0f5ab publicados; pushes confirmados.
+WIP: pyprojects/init versions Core/Community0.4.0, pin Core exato0.4.0,
+Docker ARG0.4.0, package/lock frontend0.4.0 e assert About com versao injetada.
+Frontend build/sync ativo handle68591. Aguardar terminal, stage frontend_dist
+antes dos wheels (Hatch usa Git), construir/instalar/provar par0.4.0 ANTES
+dos testes comportamentais. Install atual ainda0.3.4; provas anteriores NAO
+certificam este WIP. Helpers externos verify_pair/check_current_closure agora
+selecionam exatamente um wheel por distribuicao, sem hardcode0.3.4.
+Qualificar CLI/version/packaging e Header frontend; oito budgetsZERO obrigatorios.
+C1-C4/criterios/benchmark/T23/KG-10 e campanhas Core11/Community9 pendentes.
+
+
 ### 2026-10-07 — C3 referencias parentais qualificadas
 
 native-parent-refs1 terminal:17 aprovados18.58s (sete gramatica +AF04).
