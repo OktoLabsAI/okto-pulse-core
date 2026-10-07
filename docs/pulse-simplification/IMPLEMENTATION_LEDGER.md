@@ -2,6 +2,17 @@
 
 ## Estado para retomada
 
+### 2026-10-07 — C4 C8/C9 integralmente qualificados
+
+Core4ebf09d5 / Community6933251c publicados. Community full-run6 terminou:
+34 aprovados/uma falha/19erros55.73s,90modulos excluidos. Seeds SQL omitiam
+realm_id/architecture_adoption. Followup c8-c9-native-fixtures1:41 aprovados
+69.63s; tres modulos completos, inclusive ultimo C9 parcial. Mantidas todas
+assercoes de nonce/revisao Q&A, filtros, grants, SQL e paginacao deterministica.
+Ruff/diff verdes. Nenhum produto/frontend alterado; dist-native-health1/proof/
+closure seguem aplicaveis. Nenhum handle ativo. Prosseguir qualificacao
+Community aposrun6/Core aposrun8. C1-C4/T23/KG-10 permanecem abertos.
+
 ### 2026-10-07 — C2/C3 health exclusivo de Sprint retirado
 
 Core52884987 publicado com run8 resolvido. Retirados adapter

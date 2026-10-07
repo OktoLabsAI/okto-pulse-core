@@ -1390,5 +1390,126 @@
     "closure_ok": true,
     "all_eight_budgets_zero": true,
     "scope": "Remove Sprint-only integrity route and adapter; preserve constant-time liveness without SQL, reject retired route and remove it from OpenAPI. Distribution contract verified. No frontend impact."
+  },
+  "community_full_run6": {
+    "campaign": "clean-break-full-run6-community",
+    "passed": 34,
+    "failed": 1,
+    "errors": 19,
+    "duration_seconds": 55.73,
+    "xml_sha256": "b1ebf980e9fa33fb42dd60b67bdcdf2129a7f4c88e9b5d32b4c8c4fed70f5788",
+    "failures": [
+      {
+        "test": "tests.test_c8_gdsr_qa_manifest::test_each_qa_insert_update_delete_rotates_revision_and_nonce",
+        "kind": "failure",
+        "message": "sqlite3.IntegrityError: NOT NULL constraint failed: boards.realm_id"
+      },
+      {
+        "test": "tests.test_c8_refinements_board_route::test_all_filters_are_pre_window_and_adjacent_pages_are_deterministic",
+        "kind": "error",
+        "message": "failed on setup with \"sqlalchemy.exc.IntegrityError: (sqlite3.IntegrityError) NOT NULL constraint failed: specs.architecture_adoption\n[SQL: INSERT INTO specs (id, board_id, ideation_id, refinement_id, title, status, version, created_by, archived) VALUES ('sp-active', 'b1', 'i-main', 'd-derived', 'Active',  'draft', 1, 'owner', 0), ('sp-cancelled', 'b1', 'i-main', 'r000', 'Cancelled',  'cancelled', 1, 'owner', 0), ('sp-archived', 'b1', 'i-main', 'r001', 'Archived',  'draft', 1, 'owner', 1)]\n(Background on this error at: https://sqlalche.me/e/20/gkpj)\""
+      },
+      {
+        "test": "tests.test_c8_refinements_board_route::test_labels_are_any_exact_and_all_four_search_fields_participate",
+        "kind": "error",
+        "message": "failed on setup with \"sqlalchemy.exc.IntegrityError: (sqlite3.IntegrityError) NOT NULL constraint failed: specs.architecture_adoption\n[SQL: INSERT INTO specs (id, board_id, ideation_id, refinement_id, title, status, version, created_by, archived) VALUES ('sp-active', 'b1', 'i-main', 'd-derived', 'Active',  'draft', 1, 'owner', 0), ('sp-cancelled', 'b1', 'i-main', 'r000', 'Cancelled',  'cancelled', 1, 'owner', 0), ('sp-archived', 'b1', 'i-main', 'r001', 'Archived',  'draft', 1, 'owner', 1)]\n(Background on this error at: https://sqlalche.me/e/20/gkpj)\""
+      },
+      {
+        "test": "tests.test_c8_refinements_board_route::test_labels_match_exact_json_members_for_unicode_and_like_metacharacters",
+        "kind": "error",
+        "message": "failed on setup with \"sqlalchemy.exc.IntegrityError: (sqlite3.IntegrityError) NOT NULL constraint failed: specs.architecture_adoption\n[SQL: INSERT INTO specs (id, board_id, ideation_id, refinement_id, title, status, version, created_by, archived) VALUES ('sp-active', 'b1', 'i-main', 'd-derived', 'Active',  'draft', 1, 'owner', 0), ('sp-cancelled', 'b1', 'i-main', 'r000', 'Cancelled',  'cancelled', 1, 'owner', 0), ('sp-archived', 'b1', 'i-main', 'r001', 'Archived',  'draft', 1, 'owner', 1)]\n(Background on this error at: https://sqlalche.me/e/20/gkpj)\""
+      },
+      {
+        "test": "tests.test_c8_refinements_board_route::test_derivation_pending_counts_only_active_child_specs",
+        "kind": "error",
+        "message": "failed on setup with \"sqlalchemy.exc.IntegrityError: (sqlite3.IntegrityError) NOT NULL constraint failed: specs.architecture_adoption\n[SQL: INSERT INTO specs (id, board_id, ideation_id, refinement_id, title, status, version, created_by, archived) VALUES ('sp-active', 'b1', 'i-main', 'd-derived', 'Active',  'draft', 1, 'owner', 0), ('sp-cancelled', 'b1', 'i-main', 'r000', 'Cancelled',  'cancelled', 1, 'owner', 0), ('sp-archived', 'b1', 'i-main', 'r001', 'Archived',  'draft', 1, 'owner', 1)]\n(Background on this error at: https://sqlalche.me/e/20/gkpj)\""
+      },
+      {
+        "test": "tests.test_c8_refinements_board_route::test_archived_policy_drives_both_totals_and_out_of_range_is_an_empty_page",
+        "kind": "error",
+        "message": "failed on setup with \"sqlalchemy.exc.IntegrityError: (sqlite3.IntegrityError) NOT NULL constraint failed: specs.architecture_adoption\n[SQL: INSERT INTO specs (id, board_id, ideation_id, refinement_id, title, status, version, created_by, archived) VALUES ('sp-active', 'b1', 'i-main', 'd-derived', 'Active',  'draft', 1, 'owner', 0), ('sp-cancelled', 'b1', 'i-main', 'r000', 'Cancelled',  'cancelled', 1, 'owner', 0), ('sp-archived', 'b1', 'i-main', 'r001', 'Archived',  'draft', 1, 'owner', 1)]\n(Background on this error at: https://sqlalche.me/e/20/gkpj)\""
+      },
+      {
+        "test": "tests.test_c8_refinements_board_route::test_each_page_stays_deterministic_when_a_write_occurs_between_requests",
+        "kind": "error",
+        "message": "failed on setup with \"sqlalchemy.exc.IntegrityError: (sqlite3.IntegrityError) NOT NULL constraint failed: specs.architecture_adoption\n[SQL: INSERT INTO specs (id, board_id, ideation_id, refinement_id, title, status, version, created_by, archived) VALUES ('sp-active', 'b1', 'i-main', 'd-derived', 'Active',  'draft', 1, 'owner', 0), ('sp-cancelled', 'b1', 'i-main', 'r000', 'Cancelled',  'cancelled', 1, 'owner', 0), ('sp-archived', 'b1', 'i-main', 'r001', 'Archived',  'draft', 1, 'owner', 1)]\n(Background on this error at: https://sqlalche.me/e/20/gkpj)\""
+      },
+      {
+        "test": "tests.test_c8_refinements_board_route::test_transport_returns_typed_400[offset=wat-offset_invalid]",
+        "kind": "error",
+        "message": "failed on setup with \"sqlalchemy.exc.IntegrityError: (sqlite3.IntegrityError) NOT NULL constraint failed: specs.architecture_adoption\n[SQL: INSERT INTO specs (id, board_id, ideation_id, refinement_id, title, status, version, created_by, archived) VALUES ('sp-active', 'b1', 'i-main', 'd-derived', 'Active',  'draft', 1, 'owner', 0), ('sp-cancelled', 'b1', 'i-main', 'r000', 'Cancelled',  'cancelled', 1, 'owner', 0), ('sp-archived', 'b1', 'i-main', 'r001', 'Archived',  'draft', 1, 'owner', 1)]\n(Background on this error at: https://sqlalche.me/e/20/gkpj)\""
+      },
+      {
+        "test": "tests.test_c8_refinements_board_route::test_transport_returns_typed_400[offset=-1-offset_out_of_bounds]",
+        "kind": "error",
+        "message": "failed on setup with \"sqlalchemy.exc.IntegrityError: (sqlite3.IntegrityError) NOT NULL constraint failed: specs.architecture_adoption\n[SQL: INSERT INTO specs (id, board_id, ideation_id, refinement_id, title, status, version, created_by, archived) VALUES ('sp-active', 'b1', 'i-main', 'd-derived', 'Active',  'draft', 1, 'owner', 0), ('sp-cancelled', 'b1', 'i-main', 'r000', 'Cancelled',  'cancelled', 1, 'owner', 0), ('sp-archived', 'b1', 'i-main', 'r001', 'Archived',  'draft', 1, 'owner', 1)]\n(Background on this error at: https://sqlalche.me/e/20/gkpj)\""
+      },
+      {
+        "test": "tests.test_c8_refinements_board_route::test_transport_returns_typed_400[limit=37-limit_not_allowed]",
+        "kind": "error",
+        "message": "failed on setup with \"sqlalchemy.exc.IntegrityError: (sqlite3.IntegrityError) NOT NULL constraint failed: specs.architecture_adoption\n[SQL: INSERT INTO specs (id, board_id, ideation_id, refinement_id, title, status, version, created_by, archived) VALUES ('sp-active', 'b1', 'i-main', 'd-derived', 'Active',  'draft', 1, 'owner', 0), ('sp-cancelled', 'b1', 'i-main', 'r000', 'Cancelled',  'cancelled', 1, 'owner', 0), ('sp-archived', 'b1', 'i-main', 'r001', 'Archived',  'draft', 1, 'owner', 1)]\n(Background on this error at: https://sqlalche.me/e/20/gkpj)\""
+      },
+      {
+        "test": "tests.test_c8_refinements_board_route::test_transport_returns_typed_400[include_archived=wat-include_archived_invalid]",
+        "kind": "error",
+        "message": "failed on setup with \"sqlalchemy.exc.IntegrityError: (sqlite3.IntegrityError) NOT NULL constraint failed: specs.architecture_adoption\n[SQL: INSERT INTO specs (id, board_id, ideation_id, refinement_id, title, status, version, created_by, archived) VALUES ('sp-active', 'b1', 'i-main', 'd-derived', 'Active',  'draft', 1, 'owner', 0), ('sp-cancelled', 'b1', 'i-main', 'r000', 'Cancelled',  'cancelled', 1, 'owner', 0), ('sp-archived', 'b1', 'i-main', 'r001', 'Archived',  'draft', 1, 'owner', 1)]\n(Background on this error at: https://sqlalche.me/e/20/gkpj)\""
+      },
+      {
+        "test": "tests.test_c8_refinements_board_route::test_transport_returns_typed_400[derivation_pending=wat-derivation_pending_invalid]",
+        "kind": "error",
+        "message": "failed on setup with \"sqlalchemy.exc.IntegrityError: (sqlite3.IntegrityError) NOT NULL constraint failed: specs.architecture_adoption\n[SQL: INSERT INTO specs (id, board_id, ideation_id, refinement_id, title, status, version, created_by, archived) VALUES ('sp-active', 'b1', 'i-main', 'd-derived', 'Active',  'draft', 1, 'owner', 0), ('sp-cancelled', 'b1', 'i-main', 'r000', 'Cancelled',  'cancelled', 1, 'owner', 0), ('sp-archived', 'b1', 'i-main', 'r001', 'Archived',  'draft', 1, 'owner', 1)]\n(Background on this error at: https://sqlalche.me/e/20/gkpj)\""
+      },
+      {
+        "test": "tests.test_c8_refinements_board_route::test_transport_returns_typed_400[status=wat-status_invalid]",
+        "kind": "error",
+        "message": "failed on setup with \"sqlalchemy.exc.IntegrityError: (sqlite3.IntegrityError) NOT NULL constraint failed: specs.architecture_adoption\n[SQL: INSERT INTO specs (id, board_id, ideation_id, refinement_id, title, status, version, created_by, archived) VALUES ('sp-active', 'b1', 'i-main', 'd-derived', 'Active',  'draft', 1, 'owner', 0), ('sp-cancelled', 'b1', 'i-main', 'r000', 'Cancelled',  'cancelled', 1, 'owner', 0), ('sp-archived', 'b1', 'i-main', 'r001', 'Archived',  'draft', 1, 'owner', 1)]\n(Background on this error at: https://sqlalche.me/e/20/gkpj)\""
+      },
+      {
+        "test": "tests.test_c8_refinements_board_route::test_missing_and_denied_board_are_indistinguishable_404[/api/v1/boards/missing/refinements]",
+        "kind": "error",
+        "message": "failed on setup with \"sqlalchemy.exc.IntegrityError: (sqlite3.IntegrityError) NOT NULL constraint failed: specs.architecture_adoption\n[SQL: INSERT INTO specs (id, board_id, ideation_id, refinement_id, title, status, version, created_by, archived) VALUES ('sp-active', 'b1', 'i-main', 'd-derived', 'Active',  'draft', 1, 'owner', 0), ('sp-cancelled', 'b1', 'i-main', 'r000', 'Cancelled',  'cancelled', 1, 'owner', 0), ('sp-archived', 'b1', 'i-main', 'r001', 'Archived',  'draft', 1, 'owner', 1)]\n(Background on this error at: https://sqlalche.me/e/20/gkpj)\""
+      },
+      {
+        "test": "tests.test_c8_refinements_board_route::test_missing_and_denied_board_are_indistinguishable_404[/api/v1/boards/b2/refinements]",
+        "kind": "error",
+        "message": "failed on setup with \"sqlalchemy.exc.IntegrityError: (sqlite3.IntegrityError) NOT NULL constraint failed: specs.architecture_adoption\n[SQL: INSERT INTO specs (id, board_id, ideation_id, refinement_id, title, status, version, created_by, archived) VALUES ('sp-active', 'b1', 'i-main', 'd-derived', 'Active',  'draft', 1, 'owner', 0), ('sp-cancelled', 'b1', 'i-main', 'r000', 'Cancelled',  'cancelled', 1, 'owner', 0), ('sp-archived', 'b1', 'i-main', 'r001', 'Archived',  'draft', 1, 'owner', 1)]\n(Background on this error at: https://sqlalche.me/e/20/gkpj)\""
+      },
+      {
+        "test": "tests.test_c8_refinements_board_route::test_effective_refinement_sql_avoids_table_level_temp_sort",
+        "kind": "error",
+        "message": "failed on setup with \"sqlalchemy.exc.IntegrityError: (sqlite3.IntegrityError) NOT NULL constraint failed: specs.architecture_adoption\n[SQL: INSERT INTO specs (id, board_id, ideation_id, refinement_id, title, status, version, created_by, archived) VALUES ('sp-active', 'b1', 'i-main', 'd-derived', 'Active',  'draft', 1, 'owner', 0), ('sp-cancelled', 'b1', 'i-main', 'r000', 'Cancelled',  'cancelled', 1, 'owner', 0), ('sp-archived', 'b1', 'i-main', 'r001', 'Archived',  'draft', 1, 'owner', 1)]\n(Background on this error at: https://sqlalche.me/e/20/gkpj)\""
+      },
+      {
+        "test": "tests.test_c8_refinements_board_route::test_openapi_exposes_board_refinement_contract",
+        "kind": "error",
+        "message": "failed on setup with \"sqlalchemy.exc.IntegrityError: (sqlite3.IntegrityError) NOT NULL constraint failed: specs.architecture_adoption\n[SQL: INSERT INTO specs (id, board_id, ideation_id, refinement_id, title, status, version, created_by, archived) VALUES ('sp-active', 'b1', 'i-main', 'd-derived', 'Active',  'draft', 1, 'owner', 0), ('sp-cancelled', 'b1', 'i-main', 'r000', 'Cancelled',  'cancelled', 1, 'owner', 0), ('sp-archived', 'b1', 'i-main', 'r001', 'Archived',  'draft', 1, 'owner', 1)]\n(Background on this error at: https://sqlalche.me/e/20/gkpj)\""
+      },
+      {
+        "test": "tests.test_c9_lookups_route::test_default_lookup_has_exact_compact_wire_contract[specs-s]",
+        "kind": "error",
+        "message": "failed on setup with \"sqlalchemy.exc.IntegrityError: (sqlite3.IntegrityError) NOT NULL constraint failed: specs.architecture_adoption\n[SQL: INSERT INTO specs (id, board_id, title, status, version, created_by, archived) VALUES (?, ?, ?, ?, 1, ?, ?)]\n[parameters: [('s00', 'b1', 'Needle Spec 00', 'draft', 'owner', False), ('s01', 'b1', 'Needle Spec 01', 'review', 'owner', False), ('s02', 'b1', 'Needle Spec 02', 'cancelled', 'owner', False), ('s03', 'b1', 'Needle Spec 03', 'draft', 'owner', False), ('s04', 'b1', 'Needle Spec 04', 'review', 'owner', False), ('s05', 'b1', 'Needle Spec 05', 'cancelled', 'owner', False), ('s06', 'b1', 'Needle Spec 06', 'draft', 'owner', False), ('s07', 'b1', 'Needle Spec 07', 'review', 'owner', False)  ... displaying 10 of 26 total bound parameter sets ...  ('s-archived', 'b1', 'Needle Spec Archived', 'draft', 'owner', True), ('s-foreign', 'b2', 'Needle Spec Foreign', 'draft', 'other', False)]]\n(Background on this error at: https://sqlalche.me/e/20/gkpj)\""
+      },
+      {
+        "test": "tests.test_c9_lookups_route::test_default_lookup_has_exact_compact_wire_contract[ideations-i]",
+        "kind": "error",
+        "message": "failed on setup with \"sqlalchemy.exc.IntegrityError: (sqlite3.IntegrityError) NOT NULL constraint failed: specs.architecture_adoption\n[SQL: INSERT INTO specs (id, board_id, title, status, version, created_by, archived) VALUES (?, ?, ?, ?, 1, ?, ?)]\n[parameters: [('s00', 'b1', 'Needle Spec 00', 'draft', 'owner', False), ('s01', 'b1', 'Needle Spec 01', 'review', 'owner', False), ('s02', 'b1', 'Needle Spec 02', 'cancelled', 'owner', False), ('s03', 'b1', 'Needle Spec 03', 'draft', 'owner', False), ('s04', 'b1', 'Needle Spec 04', 'review', 'owner', False), ('s05', 'b1', 'Needle Spec 05', 'cancelled', 'owner', False), ('s06', 'b1', 'Needle Spec 06', 'draft', 'owner', False), ('s07', 'b1', 'Needle Spec 07', 'review', 'owner', False)  ... displaying 10 of 26 total bound parameter sets ...  ('s-archived', 'b1', 'Needle Spec Archived', 'draft', 'owner', True), ('s-foreign', 'b2', 'Needle Spec Foreign', 'draft', 'other', False)]]\n(Background on this error at: https://sqlalche.me/e/20/gkpj)\""
+      },
+      {
+        "test": "tests.test_c9_lookups_route::test_status_set_is_pre_count_and_adjacent_pages_do_not_overlap[specs-s]",
+        "kind": "error",
+        "message": "failed on setup with \"sqlalchemy.exc.IntegrityError: (sqlite3.IntegrityError) NOT NULL constraint failed: specs.architecture_adoption\n[SQL: INSERT INTO specs (id, board_id, title, status, version, created_by, archived) VALUES (?, ?, ?, ?, 1, ?, ?)]\n[parameters: [('s00', 'b1', 'Needle Spec 00', 'draft', 'owner', False), ('s01', 'b1', 'Needle Spec 01', 'review', 'owner', False), ('s02', 'b1', 'Needle Spec 02', 'cancelled', 'owner', False), ('s03', 'b1', 'Needle Spec 03', 'draft', 'owner', False), ('s04', 'b1', 'Needle Spec 04', 'review', 'owner', False), ('s05', 'b1', 'Needle Spec 05', 'cancelled', 'owner', False), ('s06', 'b1', 'Needle Spec 06', 'draft', 'owner', False), ('s07', 'b1', 'Needle Spec 07', 'review', 'owner', False)  ... displaying 10 of 26 total bound parameter sets ...  ('s-archived', 'b1', 'Needle Spec Archived', 'draft', 'owner', True), ('s-foreign', 'b2', 'Needle Spec Foreign', 'draft', 'other', False)]]\n(Background on this error at: https://sqlalche.me/e/20/gkpj)\""
+      }
+    ],
+    "note": "maxfail20; excluded90 completed modules. Last c9 lookups module partial. Followup pending native realm/architecture SQL seeds."
+  },
+  "community_c8_c9_native_followup": {
+    "campaign": "c8-c9-native-fixtures1",
+    "passed": 41,
+    "failed": 0,
+    "duration_seconds": 69.63,
+    "xml_sha256": "36cd4757ef101774f3ac2edcef7fb41e2809d28fd7cacd217f5d259905087a30",
+    "proof_pair": "dist-native-health1",
+    "product_changes": false,
+    "scope": "Explicit realm and native architecture SQL seeds; retain Q&A mutation fences, filtering, deterministic pagination, compact lookup contracts and grants. All three modules complete."
   }
 }
