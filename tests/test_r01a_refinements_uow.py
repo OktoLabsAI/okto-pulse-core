@@ -222,15 +222,17 @@ async def test_create_refinement_404_missing_ideation(client) -> None:
 
 
 @pytest.mark.asyncio
-async def test_list_refinements_200_and_404_missing_ideation(client) -> None:
+async def test_list_refinements_200_and_404_missing_ideation(client, community_page_persistence) -> None:
     _, ideation_id = await _seed_ideation(status="done")
     rid = await _seed_refinement(ideation_id)
 
-    ok = client.get(f"{PREFIX}/ideations/{ideation_id}/refinements")
+    with community_page_persistence():
+        ok = client.get(f"{PREFIX}/ideations/{ideation_id}/refinements")
     assert ok.status_code == 200, ok.text
-    assert rid in {r["id"] for r in ok.json()}
+    assert rid in {r["id"] for r in ok.json()["items"]}
 
-    miss = client.get(f"{PREFIX}/ideations/{_missing()}/refinements")
+    with community_page_persistence():
+        miss = client.get(f"{PREFIX}/ideations/{_missing()}/refinements")
     assert miss.status_code == 404
     assert miss.json()["detail"] == "Ideation not found"
 

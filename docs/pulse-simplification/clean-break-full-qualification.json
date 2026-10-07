@@ -879,5 +879,75 @@
     "proof_pair": "dist-native-collaboration-qualification1",
     "product_changes": false,
     "note": "Explicit native architecture scope in all31 SQL Spec seeds; preserved paging totals, scope denials, SQL caps."
+  },
+  "native_list_envelope": {
+    "campaigns": [
+      {
+        "name": "clean-break-native-list-community1",
+        "tests": 108,
+        "failed": 1,
+        "errors": 0,
+        "duration_seconds": 184.879,
+        "xml_sha256": "105d65c0cb245c22645949e94eeed0b9bfa3a22d2b10a30294d6eb5d1189f008"
+      },
+      {
+        "name": "clean-break-native-list-core1",
+        "tests": 4,
+        "failed": 3,
+        "errors": 0,
+        "duration_seconds": 13.795,
+        "xml_sha256": "47c1fdaf8d4477ddac379bb5e0b876b01b20d363b078a73392d2bd865e902be2"
+      },
+      {
+        "name": "clean-break-native-list-core2",
+        "tests": 14,
+        "failed": 4,
+        "errors": 0,
+        "duration_seconds": 32.774,
+        "xml_sha256": "5912e90f8532740392ead6d95616553fc801c580d309f60ba85539093e19dad9"
+      },
+      {
+        "name": "clean-break-native-list-core3",
+        "tests": 4,
+        "failed": 3,
+        "errors": 0,
+        "duration_seconds": 15.828,
+        "xml_sha256": "29b86828b0dda5f016a4c64116bb9bb6b8325aa9146b2c9cb449cf806e659a29"
+      },
+      {
+        "name": "clean-break-native-list-core4",
+        "tests": 4,
+        "failed": 0,
+        "errors": 0,
+        "duration_seconds": 10.189,
+        "xml_sha256": "4bb07c99f7f8a39b824974688d3b1dca10c5aef5c6ffac222a9619c2df8202fb"
+      },
+      {
+        "name": "clean-break-native-list-distribution2",
+        "tests": 1,
+        "failed": 1,
+        "errors": 0,
+        "duration_seconds": 10.956,
+        "xml_sha256": "a7e2b6e3eb9a8cb06ea04ff3f408300b7f8afb65b52239661cfbeb759df8d4c9"
+      },
+      {
+        "name": "clean-break-native-list-distribution3",
+        "tests": 1,
+        "failed": 0,
+        "errors": 0,
+        "duration_seconds": 11.664,
+        "xml_sha256": "3444992d707588d8ba0046b3b175ae37500fe8408f911991e2a6a1c16f51e666"
+      }
+    ],
+    "distinct_community_passed": 108,
+    "distinct_core_passed": 14,
+    "frontend_passed": 28,
+    "frontend_json_sha256": "9e712eb9c5fe1dcfe1234cae028605983a4fb5cafa8f30fd5c78fba7ea7cbdb0",
+    "frontend_tree_sha256": "5c8e6f23237f56cbdba96d3daace8982013bca5f4f170bd55e6d97ffd5fe8db2",
+    "proof_pair": "dist-native-list-envelope1",
+    "closure": "closure-native-list-envelope1.json",
+    "budgets_zero": 8,
+    "scope": "Single page envelope/default window for four REST lists; current selector clients collect all native pages. Preserve grants, QA redaction, exact totals, scope and SQL budgets. Cold-export ratchet59 after prior retirements.",
+    "limits": "Targeted frontend regression after earlier2444-test baseline. Broad backend and criterion qualification remain incomplete."
   }
 }

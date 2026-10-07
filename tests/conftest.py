@@ -2783,3 +2783,32 @@ def heartbeat():
         tracker.heartbeat()
 
     return _heartbeat
+
+
+@pytest.fixture
+def community_page_persistence():
+    """Use real page reads; keep unrelated CRUD setup in its existing harness."""
+    from contextlib import contextmanager
+    from okto_pulse.community.adapters.sqlalchemy_application_persistence import (
+        CommunitySqlAlchemyApplicationPersistence,
+    )
+    from okto_pulse.core.domain.realm import RealmScope
+    from okto_pulse.core.ports.application_persistence import (
+        get_application_persistence_port,
+        register_application_persistence_port,
+    )
+
+    @contextmanager
+    def native_reads():
+        previous = get_application_persistence_port()
+        factory = get_session_factory()
+        previous_info = dict(factory.kw.get("info") or {})
+        factory.configure(info={**previous_info, "realm_scope": RealmScope.local()})
+        register_application_persistence_port(CommunitySqlAlchemyApplicationPersistence())
+        try:
+            yield
+        finally:
+            register_application_persistence_port(previous)
+            factory.configure(info=previous_info)
+
+    return native_reads

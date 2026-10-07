@@ -2336,6 +2336,11 @@
       "path": "test_acceptance_coverage_gate.py; test_add_business_rule_structured_fr.py; test_add_test_scenario_structured.py",
       "disposition": "adapted",
       "reason": "General campaign exposed positive expectations for retired index/text/prefix/string/pipe aliases. Native fixtures use canonical IDs and array transport; old aliases have negative tests. Atomic mixed references, BR/API/Decision/IR/OR persistence, scenario coverage and Done gate retained. Legacy string AC conversion test retired, not counted as passed. Coverage fixture supplies explicit architecture adoption."
+    },
+    {
+      "path": "Community tests/test_c5_list_routes_pagination.py; Core tests/test_r01a_{spec_crud,ideations,refinements,stories}_uow.py; frontend services/__tests__/api.pagination.test.ts",
+      "disposition": "adapted",
+      "reason": "One paginated REST envelope replaces DR9 array compatibility for four lists. Default-window assertions replace legacy-shape/ignored-filter/422 expectations; OpenAPI has a single response. Preserve total counts, QA redaction, cross-board denials, SQL caps and lean columns. Selectors consume all native pages; frontend covers 101 candidates and rejects old arrays/incomplete results. No deleted compatibility assertion counted as an approved old contract."
     }
   ],
   "removed_cases": [

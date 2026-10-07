@@ -346,7 +346,7 @@ async def test_merge_foreign_target_matches_missing_without_mutating_source(clie
 
 
 @pytest.mark.asyncio
-async def test_story_create_get_list(client) -> None:
+async def test_story_create_get_list(client, community_page_persistence) -> None:
     bid = await _seed_board()
     tid = await _seed_topic(bid)
 
@@ -361,9 +361,10 @@ async def test_story_create_get_list(client) -> None:
     assert got.status_code == 200, got.text
     assert got.json()["id"] == sid
 
-    listed = client.get(f"{PREFIX}/boards/{bid}/stories")
+    with community_page_persistence():
+        listed = client.get(f"{PREFIX}/boards/{bid}/stories")
     assert listed.status_code == 200
-    assert sid in {s["id"] for s in listed.json()}
+    assert sid in {s["id"] for s in listed.json()["items"]}
 
 
 @pytest.mark.asyncio

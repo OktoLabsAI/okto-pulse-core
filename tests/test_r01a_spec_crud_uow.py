@@ -138,13 +138,15 @@ async def test_create_spec_201_persists_and_404_for_missing_board() -> None:
 
 
 @pytest.mark.asyncio
-async def test_list_specs_200_and_404_missing_board() -> None:
+async def test_list_specs_200_and_404_missing_board(community_page_persistence) -> None:
     board_id = await _seed_board()
     spec_id = await _seed_spec(board_id)
-    ok = _client().get(f"{PREFIX}/boards/{board_id}/specs")
+    with community_page_persistence():
+        ok = _client().get(f"{PREFIX}/boards/{board_id}/specs")
     assert ok.status_code == 200, ok.text
-    assert spec_id in {s["id"] for s in ok.json()}
-    miss = _client().get(f"{PREFIX}/boards/missing-{uuid.uuid4().hex[:6]}/specs")
+    assert spec_id in {s["id"] for s in ok.json()["items"]}
+    with community_page_persistence():
+        miss = _client().get(f"{PREFIX}/boards/missing-{uuid.uuid4().hex[:6]}/specs")
     assert miss.status_code == 404
     assert miss.json()["detail"] == "Board not found"
 

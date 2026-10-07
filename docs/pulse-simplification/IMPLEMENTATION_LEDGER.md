@@ -2,6 +2,45 @@
 
 ## Estado para retomada
 
+### 2026-10-07 — C3 quatro listagens REST com contrato unico
+
+Bases Core5619a9fb / Communityc0063d19 publicados/pushes confirmados.
+Retirados ramo array sem janela, uniao de response models e helper de opt-in
+das listagens Story/Ideation/Refinement/Spec. Agora sempre PageEnvelope, defaults
+offset0/limit25. Filtros e validacao HTTP se aplicam igualmente sem janela explicita.
+Mantidos preflight de Board/parent, grants, QA/quality redaction, escopo, totais,
+ordenacao, consultas limitadas e projeçao enxuta. Removido helper de redacao
+mutante usado apenas pela resposta anterior. Nenhuma autoridade/gate alterado.
+
+Frontend listSpecs/listIdeations e demais helpers de lista completa coletam as
+paginas nativas de100 itens; nao truncam seletores nem aceitam array antigo como
+fallback. Testes cobrem101 candidatos, filtros entre paginas, recusa de array e
+pagina incompleta. Build aprovado/sincronizado:79 arquivos/78 assets,
+index-DGF3eXfA.js, tree SHA
+5c8e6f23237f56cbdba96d3daace8982013bca5f4f170bd55e6d97ffd5fe8db2.
+Frontend native-list-front1:28 aprovados em tres arquivos. Suite geral2444 foi
+baseline anterior; nao se alega reexecucao integral apos esta mudanca.
+
+Community native-list-community1:107 aprovados/uma falha (ratchet antigo71 exports).
+Exports nativos sao59; ratchet reduzido e negativo para nomes de migracao/retirement.
+Distribution2 ainda falhou no segundo literal71 esquecido; distribution3 aprovado.
+Total distinto Community108. Core1:um aprovado/tres falhas em test adapter sem
+open_qa_count; Core2:10 aprovados/quatro falhas por realm; Core3:um aprovado/tres
+falhas de composicao de escrita. Fixture opt-in final compoe somente a leitura
+REST com adapter real/RealmScope.local, preservando setup CRUD existente e
+restaurando ambos ao sair; nenhum guard relaxado. Core4:quatro aprovados.
+Total distinto Core14, incluindo dez casos do gate de imports de testes.
+
+Par dist-native-list-envelope1 instalado; provenance confirma Core843 Python/905
+payload e Community319/405 byte-identicos src/install/wheels. Closure correspondente
+ok=true, sem findings/documentation_findings; oito budgets current=limit=0.
+Ruff F/E9/diff verdes. Todos handles deste incremento encerrados.
+Disposicao das assercoes de compatibilidade reescritas registrada, nao contada como
+aprovacao do contrato antigo. Sem tag/release/deploy ou dados reais alterados.
+Proximo: continuar modulos backend ainda nao executados apos Core full-run5 e
+Community full-run3. Ultima suite C5 completa; nao repetir as partes qualificadas.
+C1-C4/T23/KG-10, qualificacao por criterio, benchmark e bump0.4.0 pendentes.
+
 ### 2026-10-07 — C4 seed de paginacao; C3 contrato REST duplicado confirmado
 
 Core ed9d6e16 publicado/push confirmado. Community full-run3 terminou com20

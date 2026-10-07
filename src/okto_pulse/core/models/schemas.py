@@ -644,10 +644,9 @@ _PageItemT = TypeVar("_PageItemT")
 
 
 class PageEnvelope(BaseSchema, Generic[_PageItemT]):
-    """Paginated list envelope (spec 8b33f9a8, FR1/DR9).
+    """Single native list envelope (spec 8b33f9a8, FR1).
 
-    Returned by the list routes ONLY when the caller opts in with
-    ``offset``/``limit``; without them the legacy shapes stay byte-identical.
+    List routes always return this envelope, including with default windows.
     Both totals are ALWAYS server-computed, window-independent (KG
     dec-s05-01): ``total_filtered`` counts the filtered scope that produced
     ``items``; ``total_overall`` counts the base scope (board + archived
