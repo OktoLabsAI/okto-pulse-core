@@ -2,6 +2,32 @@
 
 ## Estado para retomada
 
+### 2026-10-07 — Transferência nativa qualificada; integração main20
+community14-native-transfer1 handle79646 terminou1:79pass/18fail/1293.90s.
+Cinco módulos completos passaram, incluindo todos os consumidores de recuperação
+do corpus compartilhado: factories22, physical20, retained7, snapshot25, window5.
+Corpus atual declara85 layouts,24nodes/86relations/1690properties/11vectors;
+recusa de manifest divergente permanece. Dezoito falhas de projection parity
+têm origem na fixture Spec sem architecture_adoption obrigatório. Não são
+qualificadas; followup corrige explicitamente a adoção de todos os Specs.
+Recibo acceptance-clean-break-community14-transfer.json preserva o terminal falho.
+
+Após terminal, main Core avançou por FF de0e266a85 para765f775b.
+Core20 isolado handle64084 está ATIVO,988 módulos completos excluídos,
+par saas19; não editar/reinstalar isolado enquanto executa.
+Main WIP: fixture Learning declara inventário completo e reviews vazios antes
+do source fence; recurso Community KG recebe as três seções Learning públicas
+já vigentes no Core; nenhuma autoridade/gate/contrato de produção mudou.
+Novo par dist-native-main20 instalado e prova50660 terminou0:
+843/905 Core+316/402 Community byte-idênticos. SHA Core
+d8cc2d125d60aedafd6aec4d89e8ace238f154ed3122a7239b48d3f32c0b0e8d;
+Community37f81e569589ba7f19c10906707f96eb75f7de6d36f0b9affcf7153f4727831c.
+community14-native-final2 handle65213 ATIVO:Learning/overlay/projection.
+Closure main20 handle39523 ATIVO. Não alterar produto/ambiente main até terminal.
+Ruff F/E9 dos quatro testes modificados0; diff-check0 antes do checkpoint.
+Próximos passos: terminais/followups, seleção Community restante, E2E instalado
+e reconciliação C4. T23/KG-10 seguem pendentes; entrega integral não declarada.
+
 ### 2026-10-07 — Core19 cobertura concluída
 Coree1fba67a anterior enviado, push0. Três módulos de cobertura qualificados:
 core19-native-coverage1 handle13304 terminou1:51pass/1fail; coverage2 handle56244
