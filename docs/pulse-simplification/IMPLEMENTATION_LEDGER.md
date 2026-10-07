@@ -2,6 +2,27 @@
 
 ## Estado para retomada
 
+### 2026-10-07 — Community14 concluído; main sincronizado
+community14-native-final2 handle65213 terminou0:75pass/1267.35s:
+Learning47, MCP overlay10, projection parity18. Fixtures nativas declaram
+inventário completo antes do source fence, reviews vazios e adoção explícita
+de cada Spec. Recurso operacional Community inclui as três ferramentas públicas
+Learning faltantes, copiadas das definições atuais Core, sem editar catálogo gerado.
+Par main20/prova50660/closure39523 já incluem o recurso empacotado;
+bytes Python e payloads confirmados, findings=[]/oitoZERO.
+Ruff F/E9 e diff-check0. Recibo acceptance-clean-break-community14-final.json.
+
+Após terminal, main Core avançou FF8f09830a→be24b0cd (só testes/docs).
+Community pronto para commit das três correções finais, mantendo6ada7cc2 anterior.
+Todos os módulos falhos Community14 tiveram followup integral qualificado.
+Preparada Community15 excluindo423 módulos completos; instalado E2E
+permanece explicitamente separado e NÃO qualificado. Runner de engenharia
+configura OKTO_E2E_GRAFX_REPO para o teste de driver, conforme diagnóstico anterior.
+Campanha seguinte ainda não iniciada neste registro; nenhum processo ativo.
+Próximos: Community15, E2E com observer compatível com budget produtivo vigente,
+reconciliação C4. Não reduzir census1500 nem budget produtivo para fazer E2E passar.
+T23/KG-10 pendentes; implementação integral ainda não declarada.
+
 ### 2026-10-07 — C4 BASE:T03 qualificado no contrato nativo
 Coreadda2757 publicado, push0. Após revisão das asserções atuais de planner MCP
 e REST, acceptance-native-planner-current1 handle26330 terminou0:1pass/12.82s
