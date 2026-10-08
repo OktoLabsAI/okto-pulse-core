@@ -33,12 +33,16 @@ async def test_real_card_and_mcp_read_follow_source_correction_without_waiting_f
     async with SQLAlchemyUnitOfWorkFactory(factory)(actor=actor) as uow:
         result = await GetCardUseCase().execute(GetCardCommand(card_id), actor=actor, uow=uow)
         reference = result.card.scenario_reference_context
+        semantic = result.card.missing_link_context
+        assert semantic.status == 'available' and semantic.finding_count == 1
+        assert semantic.mode == 'advisory' and semantic.would_block_done is False
         assert reference.status == 'available' and reference.finding_count == 1
         assert reference.findings[0].target_ref == f'spec:{spec_id}:test_scenario:missing'
     async with SQLAlchemyUnitOfWorkFactory(factory)(actor=actor) as uow:
         updated = await UpdateCardUseCase().execute(UpdateCardCommand(card_id, CardUpdate(title='Updated')),
             actor=actor, uow=uow)
         assert updated.card.scenario_reference_context == reference
+        assert updated.card.missing_link_context == semantic
     monkeypatch.setattr(server, '_get_agent_ctx', AsyncMock(return_value=SimpleNamespace(
         agent_id='owner', agent_name='owner', board_id=board_id, permissions=['*'])))
     monkeypatch.setattr(server, 'check_permission', lambda *args: None)
@@ -48,6 +52,7 @@ async def test_real_card_and_mcp_read_follow_source_correction_without_waiting_f
         return json.loads(await tool.fn(board_id=board_id, card_id=card_id, profile=profile, context_scope=scope))
     before = await context()
     assert before['scenario_reference_context'] == reference.model_dump(mode='json')
+    assert before['missing_link_context'] == semantic.model_dump(mode='json')
     async with factory() as session:
         spec = await session.get(Spec, spec_id)
         spec.test_scenarios = [{'id': 'missing', 'title': 'Now present', 'status': 'not_run', 'linked_task_ids': [card_id]}]
@@ -58,5 +63,7 @@ async def test_real_card_and_mcp_read_follow_source_correction_without_waiting_f
     update_tool = await server.mcp.get_tool('okto_pulse_update_card')
     mutation = json.loads(await update_tool.fn(board_id=board_id, card_id=card_id, test_scenario_ids=['missing']))
     assert mutation.get('success'), mutation
+    assert mutation['missing_link_context']['status'] == 'available'
+    assert mutation['missing_link_context']['finding_count'] == 0
     assert mutation['scenario_reference_context']['status'] == 'available'
     assert mutation['scenario_reference_context']['finding_count'] == 0

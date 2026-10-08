@@ -21,6 +21,9 @@ from sqlalchemy import select
     ({"skip_cognitive_consolidation": True}, None),
     ({"cognitive_readiness_policy": "blocking"}, None),
     ({}, {"bug_learning_closeout": "blocking"}),
+    ({}, {"missing_link_gate": "blocking"}),
+    ({"missing_link_gate": "blocking"}, {"missing_link_gate": "advisory"}),
+    ({"missing_link_gate": "blocking"}, None),
     ({"bug_learning_closeout": "blocking"}, {"bug_learning_closeout": "advisory"}),
     ({"bug_learning_closeout": "blocking"}, None),
     ({}, {"kg_query_timeout_ms": 30000}),
@@ -51,6 +54,8 @@ async def test_executor_cannot_change_board_cognitive_policy(client, actor_kind,
 @pytest.mark.parametrize("actor_kind,patch", [
     ("human", {"skip_cognitive_consolidation": True}),
     ("human", {"bug_learning_closeout": "blocking"}),
+    ("human", {"missing_link_gate": "blocking"}),
+    ("human", {"missing_link_gate": "advisory"}),
     ("human", {"bug_learning_closeout": "advisory"}),
     ("human", {"kg_query_timeout_ms": 800}),
     ("agent", {"kg_query_timeout_ms": 15000}),
@@ -72,7 +77,7 @@ async def test_human_authoring_and_executor_non_policy_edits_remain_available(cl
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("key,value", [("skip_cognitive_consolidation", True), ("skip_cognitive_consolidation", False), ("bug_learning_closeout", "advisory"), ("bug_learning_closeout", "blocking"), ("kg_query_timeout_ms", 15000), ("kg_query_timeout_ms", 30000)])
+@pytest.mark.parametrize("key,value", [("skip_cognitive_consolidation", True), ("skip_cognitive_consolidation", False), ("bug_learning_closeout", "advisory"), ("bug_learning_closeout", "blocking"), ("kg_query_timeout_ms", 15000), ("kg_query_timeout_ms", 30000), ("missing_link_gate", "advisory"), ("missing_link_gate", "blocking")])
 async def test_executor_cannot_author_cognitive_policy_during_board_creation(client, key, value):
     client.app.dependency_overrides[require_principal] = lambda: Principal(
         subject=USER, realm_id=LOCAL_REALM_ID, actor_kind="agent",

@@ -2,6 +2,106 @@
 
 ## Estado para retomada
 
+### 2026-10-08 — KG28 concluído: policy humana, gate atual e contexto autorizado
+main98/session10307 terminou0: SPA build/sync, par instalado e proof byte-a-byte
+842/317Python,903/403payloads ANTES dos testes. Core209casos distintos:
+contexto/paridade135, autoridade90 (sobreposições deduplicadas), validação3,
+SpecREST/MCP1 e catálogo5. NativeCommunity1; frontend132 (41componentes,
+91modais). main97 gates119 e frontend33 preservados como evidência intermediária.
+Falhas de fixtures e probes preservadas nos XMLs: ator sem permissão, perfil
+gate inadmissível, DTO nativo incompleto e grant amplo acionando stub Checklist.
+Fixtures corrigidas sem relaxar produto. Último Spectransport83926 passou1/4.11s.
+
+Gates Spec/Card Done, task validation e preview usam fonte atual pela porta
+pública. Advisory conclui; blocking recusa lacuna; indisponibilidade não cria
+rejeição histórica. Cross-Spec legítimo preservado. Diagnóstico REST/MCP/UI
+guarda todas as permissões de fonte, conserva IDs inteiros, contagem total e
+ausência de observação. Erro de transição não vaza conteúdo de seção privada.
+Policy humana também nas versões/defaults e formulário; executor não a muda.
+Sem entrada de runtime/fila/DLQ, conversão, manutenção pública ou segunda versão.
+
+Closure17053 falhou só README; renderer oficial regenerou ambos;
+35839 final passou0, oitoZERO, findings/documentation_findings vazios.
+Ruff F/E9 e diff-check passaram. Todos os processos terminais.
+Recibo clean-break-native-missing-link-policy-main98-20261008.json;
+KG28 verificado; índice234verificados/1pendente/11superados.
+Milestone pronto para commit/push pareado autorizado.
+Próximos fixos: KG30 disposição limitada explicitamente permitida KG§5.4,
+sem alegar fallback durável implementado; C4 qualificação final e handoff.
+Nada de release/tag/deploy ou alteração de dados/processos do usuário.
+
+### 2026-10-08 — KG28: gates validados main97; contextos em validação main98
+Autorização KG28 preservada; sem nova decisão. Serviço sobre a porta pública
+avalia referências declaradas atuais; nenhum KG/backlog/DLQ como input.
+Ligado a move_spec, move_card, conclusão por task validation e preview.
+Indisponibilidade bloqueante aborta sem fabricar rejeição de avaliador.
+main97 build51893/proof31086 terminaram0 antes de comportamento:
+841/317Python,902/403payloads idênticos. Campanha25577 terminou0:
+119passed/63s, incluindo preview+mutação real, fonte corrigida, ausência
+opcional, indisponibilidade específica e cross-Spec legítimo no mesmo Board.
+Frontend config6938 build0;33testes no JSON kg28-frontend-settings-main97.
+Nenhum commit/push de KG28 ainda: integração não qualificada como milestone.
+
+WIP adicional depois de main97: MissingLinkContext tipado, use case com guards
+de TODAS as fontes antes da leitura, REST Get/Update/Move Spec/Card, MCP context
+Spec/Card e updates relevantes, preservação na projeção/budget e aviso nas
+modais; formulário Board/default config. Findings limitados por20/3000bytes,
+omitindo entrada completa sem truncar ID. Erro genérico de transição não expõe
+IDs de filhos de seções sem autoridade de leitura: encaminha ao contexto
+autorizado. Operação normativa correta é update_spec_entity (tool existente).
+Nenhum novo endpoint de manutenção, conversor ou permissão de executor.
+
+ATIVO build10307 main98 (SPA+par+install+verify_pair sequenciais); aguardar terminal.
+Main97 já não corresponde a esse WIP. Depois do proof98, executar
+test_missing_link_context + gates/paridade/authority, testes das notices e
+modais afetadas; não mutar produto durante campanhas. Faltam revisão dos
+demais vínculos normativos/gates obrigatórios existentes, teste da conclusão
+por task validation, paridade/guards REST/MCP completos, documentação gerada,
+closure oitoZERO e recibo. Índice233/2/11 inalterado; KG28 continua pendente.
+Depois KG30 limite permitido KG§5.4 e C4 final. Sem release/deploy/dados reais.
+
+### 2026-10-08 — KG28 em implementação: contrato/policy validados, gate ainda não ligado
+Turno anterior foi progresso: T23 publicado Core054a59cb/Communitybe2557eb,
+repos conferidos limpos antes deste incremento. KG28 já autorizado, não perguntar.
+WIP somente Core: BoardSettings.missing_link_gate advisory|blocking/defaultadvisory;
+create_board/boards_crud e default_board_configuration preservam edição humana
+e herança da policy omitida por executor. Novo domain/missing_link_gate.py:
+diagnóstico puro de referências declaradas dos filhos da Spec (dez campos,
+inclui IR→API), sem inferir associação obrigatória quando vazia e sem ler KG.
+Fonte incompleta falha como missing_link_source_unavailable; alvo ausente/
+ambíguo traz seletor/ID. Este helper AINDA NÃO está ligado ao fechamento.
+
+main96 build/install83461 terminou0; proof36844 terminou0 ANTES de comportamento:
+840/317Python,901/403payloads fonte/wheel/install byte-idênticos.
+Campanha74588 native-missing-link-contract-main96-20261008 terminou0:
+99passed/73.71s, contrato puro, Boardcreate/update humano/agente/desconhecido,
+defaultversions/create/activate/deactivate/import e herança sem relaxar policy.
+Ruff F/E9 verde. Nenhum processo ativo. WIP não publicado como feature pronta;
+índice233/2/11 inalterado, KG28 pendente. Community produto/SPA intocados.
+
+Próximos necessários dentro de KG28:
+- ligar avaliação autoritativa delimitada ao fechamento de Spec e Card/Bug,
+  task validation e preview; advisory informa e blocking recusa, sem backlog/
+  DLQ/projeção/finding antigo como autoridade;
+- preservar gates obrigatórios existentes e Path B cross-Spec já legítimo,
+  sem tratar ausência opcional nem todo vínculo unilateral como bloqueio novo;
+- acrescentar configuração e diagnóstico em UI/contextos REST/MCP com guards
+  de leitura, testes frontend, catálogo/manifestos gerados e validação pareada.
+Pontos inspecionados: services/main.py _validate_spec_linked_refs (~8163) já
+valida links declarados, criterion/inheritance/plan e project_structure por
+portas; seu docstring antigo não descreve comportamento nativo (código exigeIDs).
+Não confundir esse validador read-only com sweep/reparo, nem duplicar regras de
+obrigações. _task_completion_gate_failures (~4559), move_card(~6294),
+move_spec done(~11585); allowed_transitions usa preview separado.
+GetCardScenarioReferenceContextUseCase é leitura autorizada de cenário local:
+analyze_card_scenario_references distingue source_disagreement; isso NÃO prova
+sozinho que o vínculo é inválido para Path B e não deve virar gate indiscriminado.
+Correção normativa existente passa por StructuredSpecEntityService; não criar
+editor de aresta. Recursos de Core podem depender somente de portas públicas.
+Milestone KG28 só deve ser commit/push após integração, não apenas settings.
+Depois KG30: limite explicitamente permitido KG§5.4, sem alegar fallback
+durável implementado; fechar C4 do par final. Nada de novo alvo ou segunda versão.
+
 ### 2026-10-08 — T23: confirmação vinculada à fonte/prova atuais
 KG anterior publicado Core05b0865d/Community77bf0041. Implementação T23 acrescenta
 CoverageBasis tipada e resolver compartilhado via porta pública de persistência.

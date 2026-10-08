@@ -346,6 +346,7 @@ class UpdateBoardUseCase:
                     ("skip_cognitive_consolidation", False),
                     ("cognitive_readiness_policy", "advisory"),
                     ("bug_learning_closeout", "advisory"),
+                    ("missing_link_gate", "advisory"),
                     ("kg_query_timeout_ms", 15000),
                 )
             ):

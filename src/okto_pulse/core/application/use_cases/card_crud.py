@@ -189,6 +189,8 @@ class GetCardUseCase:
         from okto_pulse.core.application.use_cases.card_reference_context import GetCardScenarioReferenceContextUseCase
         response.scenario_reference_context = await GetCardScenarioReferenceContextUseCase().execute(
             board_id=card.board_id, card_id=card.id, actor=actor, uow=uow)
+        from okto_pulse.core.application.use_cases.missing_link_context import attach_missing_link_context
+        response = await attach_missing_link_context(response, entity_type="card", actor=actor, uow=uow)
         return GetCardResult(response)
 
 
@@ -277,6 +279,8 @@ class UpdateCardUseCase:
         from okto_pulse.core.application.use_cases.card_reference_context import GetCardScenarioReferenceContextUseCase
         response.scenario_reference_context = await GetCardScenarioReferenceContextUseCase().execute(
             board_id=refreshed.board_id, card_id=refreshed.id, actor=actor, uow=uow)
+        from okto_pulse.core.application.use_cases.missing_link_context import attach_missing_link_context
+        response = await attach_missing_link_context(response, entity_type="card", actor=actor, uow=uow)
         return UpdateCardResult(response)
 
 
@@ -434,6 +438,8 @@ class MoveCardUseCase:
             refreshed,
             target_type="card",
         )
+        from okto_pulse.core.application.use_cases.missing_link_context import attach_missing_link_context
+        projected = await attach_missing_link_context(projected, entity_type="card", actor=actor, uow=uow)
         return MoveCardResult(
             await project_card_validation_visibility(
                 projected,

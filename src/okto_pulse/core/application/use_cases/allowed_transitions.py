@@ -917,6 +917,14 @@ class ListAllowedTransitionsUseCase:
                     return self._exception_reason(exc)
 
         if target_status == "done":
+            from okto_pulse.core.services.missing_link_gate import (
+                evaluate_missing_links, require_missing_links_closed,
+            )
+
+            require_missing_links_closed(
+                await evaluate_missing_links(services.specs.db, subject=spec, entity_type="spec", settings=board_settings),
+                entity_type="spec", subject=spec,
+            )
             skip_global = bool(board_settings.get("skip_test_coverage_global", False))
             if not bool(getattr(spec, "skip_test_coverage", False)) and not skip_global:
                 from okto_pulse.core.services.main import (
@@ -1221,6 +1229,15 @@ class ListAllowedTransitionsUseCase:
         )
         board = await services.boards.get_board(card.board_id)
         board_settings = (getattr(board, "settings", None) or {}) if board else {}
+        if target == CardStatus.DONE:
+            from okto_pulse.core.services.missing_link_gate import (
+                evaluate_missing_links, require_missing_links_closed,
+            )
+
+            require_missing_links_closed(
+                await evaluate_missing_links(services.cards.db, subject=card, entity_type="card", settings=board_settings),
+                entity_type="card", subject=card,
+            )
         spec = (
             await services.specs.get_spec(card.spec_id)
             if getattr(card, "spec_id", None)

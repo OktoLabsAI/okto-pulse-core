@@ -1,0 +1,70 @@
+{
+  "format": "pulse-040-reviewed-increment/v1",
+  "status": "verified_current_pair_review",
+  "criterion_keys": [
+    "KG:KG-28"
+  ],
+  "proof_pair": "dist-native-main98",
+  "tested_source": {
+    "core_base": "054a59cb",
+    "community_base": "be2557eb",
+    "qualification": "KG28 working-tree product diff built before behavioral checks; source/wheel/install and full packaged payloads byte-identical. Tests and generated README changes followed without further product mutation."
+  },
+  "authorization": "User explicitly authorized human-only advisory default / optional blocking over current authoritative semantic sources; projection lag, backlog and DLQ are not maintenance gates.",
+  "results": {
+    "core_distinct_tests": 209,
+    "native_persistence_tests": 1,
+    "frontend_tests": 132,
+    "closure_ok": true,
+    "architecture_budgets": {
+      "import_boundary_baseline": 0,
+      "singleton_baseline": 0,
+      "dependency_temporary_exceptions": 0,
+      "graph_runtime_compatibility": 0,
+      "rebuild_artifact_compatibility": 0,
+      "community_private_reach_ins": 0,
+      "community_adapter_bridges": 0,
+      "af35_relational_residue": 0
+    }
+  },
+  "verified": [
+    "Board and default-version policy authority protects create, update/reset, activation and deactivation. Omitted executor fields inherit the human policy.",
+    "Current declared Spec child references and Card parent/scenario/task references are evaluated through the public persistence port; optional absence is valid, cross-Spec scenarios within the Board remain valid, foreign Board targets do not satisfy the reference.",
+    "Spec/Card Done mutations and transition previews enforce blocking. Task validation preserves successful reviewer outcome but refuses completion on a semantic gap; advisory permits Done. Technical unavailability aborts without fabricating a rejected review.",
+    "Current source correction removes the blocker on the next read; no persisted finding, graph runtime, queue or projection lag is an input.",
+    "Authorized REST-use-case models and real MCP context/update paths expose bounded exact source/target IDs. Every source permission is checked before optional diagnostic reads. Generic transition denial does not reveal child IDs from unreadable sections.",
+    "Read-only notices preserve unknown versus zero and follow current responses. Human policy selector and Spec/Card modal regressions pass. SPA rebuilt and synchronized into the paired wheel.",
+    "Native DDL and Community persistence adapter verify advisory/blocking, immutable read, and resolution from the source without graph repair.",
+    "Generated tools catalog drift tests passed unchanged; executable closure README matrices regenerated with official renderer."
+  ],
+  "qualification_notes": [
+    "Existing mandatory-association gates remain independent; the policy does not invent optional links or waive coverage, maturity, evidence or resource requirements.",
+    "Diagnostics are bounded to 20 entries / 3000 bytes of complete entries; total count remains exact. No new public graph maintenance surface, converter, backfill or migration lane.",
+    "Initial context failures were fixtures: actor lacked permission, unsupported summary/detail gate scope, incomplete native Spec DTO, and overly broad mock grant invoked an unrelated incomplete checklist stub. Final fixture declares actual source read flags and passes without product gate changes.",
+    "Core tests use the established SQL test mirror; native schema adapter test is separate. Full installed-runtime final qualification remains C4 after this milestone."
+  ],
+  "artifacts": {
+    "build-native-main98-20261008.log": "51e3aa05b9907277542af4cabc9fe3f9ac8f42517a6b8ffa929bf3efe89bda5b",
+    "closure-native-missing-link-main98-20261008.json": "db66544f01637d154b267f3bc137d429c90a56fd096e9b669693630a627ec02e",
+    "closure-native-missing-link-main98-final-20261008.json": "150378f7a2e1c29a02e8095e805ddf9ca8fb3b601517f2f1556771889471f825",
+    "kg28-frontend-build-main97-20261008.log": "bf9ea8b1db590e85c9585ed0623b6f40044c2faa6ded8586b81d34237702b54d",
+    "kg28-frontend-context-main98-20261008.json": "da78aebd09c4d2d7be755c0e542035391c593c2940e195d5bc7c77344038dbf3",
+    "kg28-frontend-modals-main98-20261008.json": "dedf38c70c2c2da98abb4b90ccd77c64108ace00486ca7558c1dbb711e21af22",
+    "kg28-frontend-settings-main97-20261008.json": "cf61bc2ca1b379f9978476684c5428dec27f73805cd9f69466bce91f10615522",
+    "native-missing-link-adapter-main98-20261008.xml": "c41626ec8ba263df54680f893ee22fdbb9b8874106d4d862e539fb678312ba7a",
+    "native-missing-link-authority-main98-20261008.xml": "86a6d11efd98f130229539dd9ee58736475833fcd71e77bba27cabf054fe462e",
+    "native-missing-link-context-main98-20261008-r2.xml": "db3690a9f1a54286410e4c4dd7f2730b3da8979b6eef809443136794149f8ba3",
+    "native-missing-link-context-main98-20261008.xml": "38cec6056c3c5f17e80746ed1d0f2ae0fc6a7429f54110f96b16e88e3194dc60",
+    "native-missing-link-gates-main97-20261008.xml": "70024c50fee91f24d00fb751b3d08ebbe11d41248aae24e80415925388aae447",
+    "native-missing-link-spec-transport-main98-20261008-probe.xml": "bee1918f9c3b6f35130bd904f02fe0269848a88bf700de03d8d23c511a0c5185",
+    "native-missing-link-spec-transport-main98-20261008-r2.xml": "75e41300d86bcc3ba3789f53b04a62a9b801f34057b8c6d7cff95879bd54013f",
+    "native-missing-link-spec-transport-main98-20261008-r3.xml": "c11a1e6101fece1c3f53ca09b1fa35dbb1af5c28dedc4212deb11eba6baad17f",
+    "native-missing-link-spec-transport-main98-20261008-r4.xml": "5e2dbec20df0821089591c332564e4f3770992b7dfdb6dfffda028dcf7343edb",
+    "native-missing-link-spec-transport-main98-20261008-r5.xml": "49498eff6c6b8aedfd40e39766f5f597c7730f63a99dc396071d015b8d58cd7f",
+    "native-missing-link-spec-transport-main98-20261008.xml": "d0f3817e0bc86cb1648e830dbe82812bb665b8f1ab8f5c7b18645e81c718821e",
+    "native-missing-link-validation-main98-20261008-r2.xml": "1b484be376718ac47790b44c9338d54f1a3161111059bb20bd2122f7e814a553",
+    "native-missing-link-validation-main98-20261008.xml": "358e68cb474c2f5def12c603664266b9e6954891291f1e759d7abce52f989843",
+    "provenance-native-missing-link-context-main98-20261008.json": "b6538592ef0cbbe1130576d975f58931500796d890bb46107f009a5ec46292eb",
+    "provenance-native-missing-link-gates-main97-20261008.json": "009e669aeae4cfea4dbb2dd6ffe03b18754dedacd4dfb9188c5c9997945ec7c3"
+  }
+}

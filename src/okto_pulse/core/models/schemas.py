@@ -29,7 +29,7 @@ from okto_pulse.core.domain.learning_submission import LearningSubmission
 from okto_pulse.core.domain.execution_contract import SpecExecutionContract
 from okto_pulse.core.domain.task_validation_policy import ResolvedTaskValidationConfig
 from okto_pulse.core.models.delivery_selection import DeliverySelectionInput, DeliverySelectionManifest
-from okto_pulse.core.models.reference_context import CardScenarioReferenceContext
+from okto_pulse.core.models.reference_context import CardScenarioReferenceContext, MissingLinkContext
 from okto_pulse.core.domain.card_completion import (
     REJECTION_CODE_MAX_LENGTH,
     REJECTION_ID_MAX_LENGTH,
@@ -2760,6 +2760,8 @@ class CardSummaryForSpec(BaseSchema):
 class SpecResponse(BaseSchema):
     """Schema for full spec response."""
 
+    missing_link_context: MissingLinkContext | None = Field(default=None, json_schema_extra={"readOnly": True})
+
     @field_validator("functional_requirements", "technical_requirements", "acceptance_criteria")
     @classmethod
     def require_current_requirement_identity(cls, items: list[dict] | None) -> list[dict] | None:
@@ -3498,6 +3500,8 @@ class CardRejectionCauseResponse(BaseModel):
 
 class CardResponse(BaseSchema):
     """Schema for card response."""
+
+    missing_link_context: MissingLinkContext | None = Field(default=None, json_schema_extra={"readOnly": True})
 
     id: str
     board_id: str
@@ -4298,6 +4302,8 @@ class BoardSettings(BaseModel):
     # KG §7.4: human policy for durable capture, independent of graph readiness.
     # Missing legacy values remain advisory; no upgrade activates blocking.
     bug_learning_closeout: Literal["advisory", "blocking"] = "advisory"
+    # KG §5.5: authoritative semantic references, never graph projection debt.
+    missing_link_gate: Literal["advisory", "blocking"] = "advisory"
     # KG6.5/D18: human-authored query policy, never a runtime repair control.
     kg_query_timeout_ms: int = Field(default=15000, ge=1, le=30000, strict=True)
     allow_agent_self_answering: bool = (

@@ -82,6 +82,7 @@ _COGNITIVE_POLICY_DEFAULTS = {
     "skip_cognitive_consolidation": False,
     "cognitive_readiness_policy": "advisory",
     "bug_learning_closeout": "advisory",
+    "missing_link_gate": "advisory",
     "kg_query_timeout_ms": 15000,
 }
 _ALLOWED_STATUSES = ("draft", "active", "inactive")
@@ -766,6 +767,7 @@ class DefaultBoardConfigurationService:
         if actor_kind != "human":
             supplied.setdefault("skip_cognitive_consolidation", previous.get("skip_cognitive_consolidation", False))
             supplied.setdefault("bug_learning_closeout", previous.get("bug_learning_closeout", "advisory"))
+            supplied.setdefault("missing_link_gate", previous.get("missing_link_gate", "advisory"))
             supplied.setdefault("kg_query_timeout_ms", previous.get("kg_query_timeout_ms", 15000))
         supplied.setdefault("code_traceability", {"mode": "advisory"})
         validated = self._validate_settings(supplied)

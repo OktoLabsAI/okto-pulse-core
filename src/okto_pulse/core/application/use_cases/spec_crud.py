@@ -268,7 +268,8 @@ class GetSpecUseCase:
                     spec_id=str(spec.id),
                 )
             )
-        return GetSpecResult(projected)
+        from okto_pulse.core.application.use_cases.missing_link_context import attach_missing_link_context
+        return GetSpecResult(await attach_missing_link_context(projected, entity_type="spec", actor=actor, uow=uow))
 
 
 # --- move (status transition) -----------------------------------------------
@@ -324,7 +325,8 @@ class MoveSpecUseCase:
             refreshed,
             target_type="spec",
         )
-        return MoveSpecResult(projected)
+        from okto_pulse.core.application.use_cases.missing_link_context import attach_missing_link_context
+        return MoveSpecResult(await attach_missing_link_context(projected, entity_type="spec", actor=actor, uow=uow))
 
 
 # --- delete -----------------------------------------------------------------
@@ -616,7 +618,8 @@ class UpdateSpecUseCase:
             refreshed,
             target_type="spec",
         )
-        return UpdateSpecResult(projected)
+        from okto_pulse.core.application.use_cases.missing_link_context import attach_missing_link_context
+        return UpdateSpecResult(await attach_missing_link_context(projected, entity_type="spec", actor=actor, uow=uow))
 
 
 # --- structured spec entities (REST-FU3b-S1) --------------------------------

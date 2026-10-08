@@ -4318,6 +4318,9 @@ async def okto_pulse_get_task_context(
         from okto_pulse.core.application.use_cases.card_reference_context import GetCardScenarioReferenceContextUseCase
         result["scenario_reference_context"] = (await GetCardScenarioReferenceContextUseCase().execute(
             board_id=board_id, card_id=card.id, actor=actor, uow=uow)).model_dump(mode='json')
+        from okto_pulse.core.application.use_cases.missing_link_context import GetMissingLinkContextUseCase
+        result["missing_link_context"] = (await GetMissingLinkContextUseCase().execute(
+            board_id=board_id, entity_type="card", entity_id=card.id, actor=actor, uow=uow)).model_dump(mode='json')
         result["code_traceability"] = await _mcp_code_traceability_projection(
             uow=uow,
             actor=actor,
@@ -4585,6 +4588,9 @@ async def okto_pulse_update_card(
             return json.dumps({"error": str(e)})
 
         reference_context = {}
+        from okto_pulse.core.application.use_cases.missing_link_context import GetMissingLinkContextUseCase
+        reference_context['missing_link_context'] = (await GetMissingLinkContextUseCase().execute(
+            board_id=board_id, entity_type="card", entity_id=updated.id, actor=actor, uow=uow)).model_dump(mode='json')
         if "test_scenario_ids" in update_data:
             from okto_pulse.core.application.use_cases.card_reference_context import GetCardScenarioReferenceContextUseCase
             reference_context['scenario_reference_context'] = (await GetCardScenarioReferenceContextUseCase().execute(
@@ -10926,6 +10932,10 @@ async def okto_pulse_get_spec_context(
 
         from okto_pulse.core.mcp.context_projection import project_spec_context
 
+        from okto_pulse.core.application.use_cases.missing_link_context import GetMissingLinkContextUseCase
+        result["missing_link_context"] = (await GetMissingLinkContextUseCase().execute(
+            board_id=board_id, entity_type="spec", entity_id=spec.id, actor=actor, uow=uow)).model_dump(mode='json')
+
         projected = project_spec_context(result, profile=profile)
         return json.dumps(projected, default=str)
 
@@ -11064,9 +11074,13 @@ async def okto_pulse_update_spec(
                     McpUpdateSpecCommand(spec_id, spec_update), actor=actor, uow=uow
                 )
             ).spec
+            from okto_pulse.core.application.use_cases.missing_link_context import GetMissingLinkContextUseCase
+            diagnostic = await GetMissingLinkContextUseCase().execute(
+                board_id=board_id, entity_type="spec", entity_id=spec.id, actor=actor, uow=uow)
             return json.dumps(
                 {
                     "success": True,
+                    "missing_link_context": diagnostic.model_dump(mode='json'),
                     "spec": {
                         "id": spec.id,
                         "title": spec.title,

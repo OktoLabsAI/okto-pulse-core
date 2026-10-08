@@ -4565,6 +4565,23 @@ class CardService:
         """Evaluate known domain gates without turning technical errors into rejection."""
 
         failures: list[CompletionGateFailure] = []
+        from okto_pulse.core.services.missing_link_gate import evaluate_missing_links
+
+        link_evaluation = await evaluate_missing_links(
+            self.db, subject=card, entity_type="card",
+            settings=(board.settings or {}) if board else {},
+        )
+        if link_evaluation.blocked:
+            # Technical unavailability is not a negative validator judgment.
+            if link_evaluation.status != "available":
+                from okto_pulse.core.services.missing_link_gate import require_missing_links_closed
+
+                require_missing_links_closed(link_evaluation, entity_type="card", subject=card)
+            failures.append(CompletionGateFailure(
+                code="missing_links_open",
+                summary="Current declared references must be corrected before completion.",
+                reason_codes=("missing_links_open",),
+            ))
         bug_regression_failure = await self._bug_regression_completion_failure(
             card=card,
             board=board,
@@ -6292,6 +6309,14 @@ class CardService:
         skip_global = board_settings.get("skip_test_coverage_global", False)
 
         if data.status is CardStatus.DONE:
+            from okto_pulse.core.services.missing_link_gate import (
+                evaluate_missing_links, require_missing_links_closed,
+            )
+
+            require_missing_links_closed(
+                await evaluate_missing_links(self.db, subject=card, entity_type="card", settings=board_settings),
+                entity_type="card", subject=card,
+            )
             from okto_pulse.core.domain.bug_learning_policy import (
                 LEARNING_CAPTURE_REQUIRED, requires_bug_learning_capture,
             )
@@ -11610,6 +11635,15 @@ class SpecService:
 
         # Enforce all linked tasks (non-bug) must be done/cancelled before spec can be done
         if data.status == SpecStatus.DONE:
+            from okto_pulse.core.services.missing_link_gate import (
+                evaluate_missing_links, require_missing_links_closed,
+            )
+
+            require_missing_links_closed(
+                await evaluate_missing_links(self.db, subject=spec, entity_type="spec",
+                                             settings=(board.settings or {}) if board else {}),
+                entity_type="spec", subject=spec,
+            )
             pending_tasks = await _application_list(
                 self.db,
                 "card",

@@ -34,24 +34,25 @@ def test_capture_policy_only_applies_to_bugs_and_legacy_skip_cannot_waive_it(car
         'skip_cognitive_consolidation': True}, card_type) == (card_type is CardType.BUG)
 
 
+@pytest.mark.parametrize('policy_key', ['bug_learning_closeout', 'missing_link_gate'])
 @pytest.mark.parametrize('operation', ['create', 'activate', 'deactivate', 'import'])
-def test_template_lifecycle_cannot_weaken_human_capture_policy(client, operation):
+def test_template_lifecycle_cannot_weaken_human_capture_policy(client, operation, policy_key):
     client.app.include_router(router, prefix='/api/v1')
     baseline = client.post(f'{BASE}/versions', json={
-        'settings_payload': {'bug_learning_closeout': 'blocking'}, 'activate': True})
+        'settings_payload': {policy_key: 'blocking'}, 'activate': True})
     assert baseline.status_code == 200, baseline.text
     target = client.post(f'{BASE}/versions', json={
-        'settings_payload': {'bug_learning_closeout': 'advisory'}})
+        'settings_payload': {policy_key: 'advisory'}})
     assert target.status_code == 200, target.text
     before = client.get(f'{BASE}/versions').json()
     _agent(client)
     if operation == 'create':
         response = client.post(f'{BASE}/versions', json={
-            'settings_payload': {'bug_learning_closeout': 'advisory'}, 'activate': True})
+            'settings_payload': {policy_key: 'advisory'}, 'activate': True})
     elif operation == 'import':
         response = client.post(f'{BASE}/import', json={'schema_version': '1', 'kind': 'board_config',
             'items': [{'settings_payload': {'max_scenarios_per_card': 4}},
-                {'settings_payload': {'bug_learning_closeout': 'advisory'}, 'is_active': True}]})
+                {'settings_payload': {policy_key: 'advisory'}, 'is_active': True}]})
         assert response.json()['detail']['created'] == 0, response.text
     else:
         identity = target.json()['id'] if operation == 'activate' else baseline.json()['id']
@@ -60,16 +61,17 @@ def test_template_lifecycle_cannot_weaken_human_capture_policy(client, operation
     assert client.get(f'{BASE}/versions').json() == before
 
 
-def test_executor_new_template_inherits_omitted_human_capture_policy(client):
+@pytest.mark.parametrize('policy_key', ['bug_learning_closeout', 'missing_link_gate'])
+def test_executor_new_template_inherits_omitted_human_capture_policy(client, policy_key):
     client.app.include_router(router, prefix='/api/v1')
     baseline = client.post(f'{BASE}/versions', json={
-        'settings_payload': {'bug_learning_closeout': 'blocking'}, 'activate': True})
+        'settings_payload': {policy_key: 'blocking'}, 'activate': True})
     assert baseline.status_code == 200, baseline.text
     _agent(client)
     result = client.post(f'{BASE}/versions', json={
         'settings_payload': {'max_scenarios_per_card': 4}, 'activate': True})
     assert result.status_code == 200, result.text
-    assert result.json()['settings_payload']['bug_learning_closeout'] == 'blocking'
+    assert result.json()['settings_payload'][policy_key] == 'blocking'
 
 
 @pytest.mark.asyncio
