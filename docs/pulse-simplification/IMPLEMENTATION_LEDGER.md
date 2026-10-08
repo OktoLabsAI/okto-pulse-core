@@ -2,6 +2,28 @@
 
 ## Estado para retomada
 
+### 2026-10-08 — VER entrega técnica por relatório especializado (main86)
+Basefd470163/cc3affc0 conferida. Proof provenance-native-technical-reports1
+terminal0 antes dos testes:835/317 Python e896/403 payloads byte a byte.
+Dois novos witnesses SQL static_analysis/inspection: technical-reports1/
+session22629,2pass em12.52s. Ruff/diff check verdes; todos handles terminais.
+
+TR nativo de dependências públicas, critério técnico e cenário manual usam
+implementação do Card normal + prova do Test Card. Gate real bloqueia só
+implementação, permite após relatório assinado válido e volta a bloquear após
+observação failed. Os dois payloads históricos permanecem byte-equivalentes.
+Reutilizada campanha methods main86 (hashes conferidos): dados obrigatórios,
+autoridade antes de receipt, transporte de status e frontend já comprovados.
+Não repetir/contar novamente testes inalterados. Fatos de implementação e
+persistência inicial de cenário seedados; não alegar único E2E instalado.
+Relatório externo autenticado não é execução interna nem avaliação por LLM.
+
+Recibo clean-break-native-technical-reports.json; AC-VER-14 qualificado.
+Índice172verificados/63pendentes/11superados. Nenhum produto/SPA alterado;
+closure main86 e oito budgets ZERO. WIP KG10 preservado fora do commit.
+Commit/push do teste e evidências; sem promoção/dados reais.
+Continuar cobertura parcial, herança e aplicabilidade de provas pendentes.
+
 ### 2026-10-08 — VER métodos e admissão de relatórios (main86)
 Basec3f4416a/ff8978f4 conferida; proof provenance-native-verification-methods1
 terminal0 antes dos testes:835/317 Python e896/403 payloads byte a byte.
