@@ -5240,7 +5240,12 @@
           "case_references": []
         }
       ],
-      "current_qualification": "pending_current_pair_review"
+      "current_qualification": "verified_current_pair_review",
+      "current_review": {
+        "artifact": "clean-break-native-delivery-successor.json",
+        "criterion_key": "DEI:DEI-T22",
+        "proof_pair": "dist-native-main86"
+      }
     },
     {
       "key": "DEI:DEI-T23",
@@ -5387,7 +5392,12 @@
           "case_references": []
         }
       ],
-      "current_qualification": "pending_current_pair_review"
+      "current_qualification": "verified_current_pair_review",
+      "current_review": {
+        "artifact": "clean-break-native-delivery-successor.json",
+        "criterion_key": "DEI:DEI-T28",
+        "proof_pair": "dist-native-main86"
+      }
     },
     {
       "key": "DEI:DEI-T29",

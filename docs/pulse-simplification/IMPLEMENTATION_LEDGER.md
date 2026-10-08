@@ -2,6 +2,29 @@
 
 ## Estado para retomada
 
+### 2026-10-08 — DEI-T22/T28: E2 não herda E1 (main86)
+Baseb7eaf510/de390a33. Acrescentados dois cenários SQL reais: E2 declara
+FRapenas ou FR+AC, após E1/teste1 terem permitido entrega. E2 aponta para
+nova observação/revisão; prova de origem aceita é fixture delimitada, não
+teste de autenticação de repositório. Testes assinados usam produtor/verificador
+reais. Fonte/instalação main86 comprovadas antes da campanha pelo proof
+provenance-native-delivery-successor1:835/317 Python,896/403 payloads.
+
+successor1/session18328 terminal1:8pass/2fail em24.58s; novos casos passaram
+obligation_refs junto de bindings e foram corretamente recusados no schema.
+Corrigido somente o payload da fixture para obrigação via bindings.
+successor2/session46677 terminal0:2pass em11.99s. Total10 distintos, sem
+repetir oito casos inalterados. Ruff/diff check verdes.
+E2 não recebe AC omitido nem crédito de teste1; reenviar teste antigo paraE2
+é recusado. E2completo + teste novo posterior permite entrega; payloads de
+E1/teste1 ficam preservados. Recibo clean-break-native-delivery-successor.json.
+
+DEI-T22/T28 qualificados; índice121verificados/114pendentes/11superados.
+Nenhum runtime/SPA modificado; closure main86 e frontend de readiness/histórico
+permanecem vigentes. Oito budgets ZERO. Sem conversor, gate novo ou dado real.
+Todos handles terminais; WIP KG10 preservado fora do commit.
+Commit/push do teste e evidências; seguir critérios pendentes do índice.
+
 ### 2026-10-08 — DEI-T25/26/27/29: resultado autenticado e crédito (main86)
 Basee03f9168/de390a33. Revisados _test, admissão de resultados e suites SQL
 assinadas; frontend revisto nos casos de outcomes históricos e registro

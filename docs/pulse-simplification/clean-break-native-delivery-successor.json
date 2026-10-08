@@ -1,0 +1,40 @@
+{
+  "scope": "DEI-T22/T28: successor execution does not inherit old bindings or signed test credit",
+  "proof_pair": "dist-native-main86",
+  "criteria": {
+    "DEI:DEI-T22": [
+      "test_successor_execution_never_inherits_prior_bindings_or_test_credit[False]",
+      "test_successor_execution_never_inherits_prior_bindings_or_test_credit[True]"
+    ],
+    "DEI:DEI-T28": [
+      "test_successor_execution_never_inherits_prior_bindings_or_test_credit[False]",
+      "test_successor_execution_never_inherits_prior_bindings_or_test_credit[True]"
+    ]
+  },
+  "evidence": [
+    "E1 plus signed test initially permit delivery. A later E2 for same Target uses a different declared revision and observation after the old test.",
+    "E2 with FR-only declaration does not inherit the old AC binding; E2 with complete scope replaces current implementation identity explicitly.",
+    "Both variants lose old test credit; old signed run cannot be attached to new E2.",
+    "Complete E2 plus later signed test restores delivery using only the new test IDs. E1/test1 payloads remain byte-equivalent JSON throughout."
+  ],
+  "tests": {
+    "existing_regression_passed": 8,
+    "new_cases_passed": 2,
+    "distinct_passed": 10,
+    "initial_campaign": "8pass/2fail in24.58s: new fixture supplied both obligation_refs and bindings; closed native schema correctly refused it.",
+    "corrected_campaign": "2pass in11.99s after clearing redundant obligation_refs, with no product change."
+  },
+  "limits": [
+    "Successor source observation is seeded as an accepted origin fact in actual SQL; this test does not authenticate an external repository. Signed test receipts use real producer/verifier.",
+    "No runtime or frontend code changed; main86 closure remains applicable with eight budgets ZERO.",
+    "Existing frontend evidence for exact per-binding readiness and historical test outcomes remains valid; no new UI claim or unnecessary rerun.",
+    "No legacy reader, automatic association, gate relaxation, promotion or real-data operation."
+  ],
+  "artifacts": {
+    "provenance-native-delivery-successor1.json": "ad69081419c00d72e465242e082797cc6ddaceb48879bce7695b98853930ac7a",
+    "native-delivery-successor1.xml": "9cba4fcd158e8ae58e43d0bbff0e1b946439420201bec423ac8e0582427230b9",
+    "native-delivery-successor2.xml": "e270bea88250abb2ac24a48a8416d7cbb73340344ce327a3fa029abb46b4045a",
+    "native-delivery-envelope-frontend1.json": "a751880c26e35030dc6efc27dfb79d81a4f937cd3ffa9d2bf7f490e31f2d146d",
+    "closure-native-main86.json": "c34d8bd862c5a6e5dc99fc0aa968dbfa2b9718d5a4c98ef5bd6f2704885e3249"
+  }
+}
