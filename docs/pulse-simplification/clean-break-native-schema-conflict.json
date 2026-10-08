@@ -1,0 +1,54 @@
+{
+  "criterion": "KG:KG-54",
+  "qualification": "verified_current_pair_review",
+  "proof_pair": "dist-native-main72",
+  "actual_schema": {
+    "version": "0.8.0",
+    "logical_fingerprint": "97a5ed31dfaf4d479b8d7810638ad3f07f3955894168a03b437a5533352b618b",
+    "unchanged": true
+  },
+  "plan_interpretation": "Complement D5/section schema evolution requires using actual baseline rather than reusing 0.6.0. Same-version incompatibility is tested against current 0.8.0.",
+  "changes": [
+    "Removed unused legacy DDL rendering helpers and rendered attribute constant from Community; product manifest retains structured current column definitions.",
+    "Removed historical rendered-DDL checksum acceptance test; tests now inspect current manifest and typed columns.",
+    "Added real Grafx database with all current tables/spaces and same BoardMeta version but a different title-column type."
+  ],
+  "evidence": [
+    "Repeated bootstrap refuses table_shape_mismatch before begin; catalog, transaction observations, BoardMeta, WAL metadata and WAL bytes unchanged.",
+    "Reopened conflicting store remains rejected, with its stored version unchanged.",
+    "Existing bootstrap tests verify exact/no-op/reopen, shape and vector-space mismatches, metadata version mismatch and rollback without stamping version.",
+    "Current metadata/provenance and Code Traceability column tests remain green."
+  ],
+  "tests": {
+    "community_passed": 43,
+    "core_passed": 6,
+    "total_distinct_passed": 49,
+    "warnings": "402 existing Python3.12+ sqlite datetime adapter deprecation warnings in Code Traceability persistence."
+  },
+  "closure": {
+    "ok": true,
+    "budgets": {
+      "import_boundary_baseline": 0,
+      "singleton_baseline": 0,
+      "dependency_temporary_exceptions": 0,
+      "graph_runtime_compatibility": 0,
+      "rebuild_artifact_compatibility": 0,
+      "community_private_reach_ins": 0,
+      "community_adapter_bridges": 0,
+      "af35_relational_residue": 0
+    },
+    "findings": [],
+    "documentation_findings": []
+  },
+  "limits": [
+    "No schema version/fingerprint changes or migration introduced.",
+    "No production runtime or user data modified.",
+    "Frontend unchanged from main71; separate 76-test KG55 campaign is not included in KG54 count."
+  ],
+  "artifacts": {
+    "provenance-native-main72.json": "b94351011935b1fe90dedefdc3415d9cb3fd89d734afc5357c9cad68cab5a3e5",
+    "native-schema-conflict2.xml": "ac6b163845e9d3cd3558ea8a0fbf0b5a890e710a1a33b3b4c9f1ad7d22afcc06",
+    "native-schema-columns1.xml": "59264b27f6622c8ab7eb82d9451255084ba98b77ebd968f374ee85414ef01683",
+    "closure-native-main72.json": "50921d66df86b2107b9922f2e6eba86c2c08b8a7a7d1d914742bdef7acc87640"
+  }
+}

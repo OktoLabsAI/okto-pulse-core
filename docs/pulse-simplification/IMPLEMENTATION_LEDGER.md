@@ -2,6 +2,37 @@
 
 ## Estado para retomada
 
+### 2026-10-07 — KG54 qualificado; renderizador DDL legado removido (main72)
+Basee4fd1832/1b9f3927 limpa confirmada. Complemento D5/§schema determina evoluir
+da base real; schema atual0.8.0, não0.6.0. Nenhuma versão/fingerprint alterada.
+Fingerprint97a5ed31dfaf4d479b8d7810638ad3f07f3955894168a03b437a5533352b618b.
+
+graph_ddl.py mantinha3 builders antigos e COMMON_NODE_ATTRIBUTES usados só por
+testes, incluindo checksum que preservava DDL legado excluindo pares atuais.
+Removidos esses helpers/exports e obrigação histórica. Mantidas definições de
+colunas usadas pelo manifesto Grafx. Testes agora inspecionam colunas/manifesto
+atuais. Busca de referências confirmou ausência de consumidor produtivo.
+
+Novo testemunho Grafx real: catálogo completo com mesma versão0.8.0 mas coluna
+title incompatível; duas recusas table_shape_mismatch sem begin, sem mudar catálogo,
+transações, BoardMeta, WAL ou bytes. Reopen continua recusado e versão preservada.
+Testes existentes cobrem demais formas, espaços, versão e rollback de bootstrap.
+
+Wheels72 construídos; install54032 terminal0; provenance-native-main72 byte-idêntico
+835/896+317/403 antes dos testes. Core20705 terminal0:6pass/35.54s.
+Community60319 terminal0:43pass/190.63s (402 avisos de datetime sqlite deprecated).
+Processo acompanhado sem reinício; todos terminais. Total49 distintos KG54.
+Closure24831 terminal0:ok=true, findings/documentation vazios, oito budgets0.
+Ruff F/E9 e diff-check verdes. SPA permanece main71. Recibo
+clean-break-native-schema-conflict.json; índice89 verificadas/146 pendentes/11 N/A.
+
+KG55 iniciado durante espera: native-kg-ui-states1.json terminal0,76pass nos
+KnowledgeGraphPage.diagnostics,KGHealthView,KGSyncIndicator,
+GraphControlsPanel.maintenance,GlobalSearchView. NÃO qualificado ainda:
+revisar cobertura de resposta atrasada Discovery ao trocar Board (runIntent).
+Próximo: reprodução de race se não coberta, depois completar KG55 sem novos alvos.
+Nenhuma promoção, runtime real, conversão ou exclusão de dados.
+
 ### 2026-10-07 — KG52 qualificado: Discovery sem conversão de parâmetros (main71)
 Base6f5a7efc/fcc83a4f limpa confirmada. Byteproof main70 antes da reprodução.
 Fallback explícito legacy de params_schema sem type encontrado no Core e SPA;

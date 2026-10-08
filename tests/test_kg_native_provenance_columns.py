@@ -48,13 +48,13 @@ def test_s1_fresh_bootstrap_has_all_new_columns_and_version(kg_tempdir):
 
 
 def test_s8_legacy_names_never_reactivated(kg_tempdir):
-    from okto_pulse.community.adapters.graph_ddl import COMMON_NODE_ATTRIBUTES
+    from okto_pulse.community.adapters.graph_ddl import COMMON_NODE_COLUMNS
 
     # The retired names never appear in the new tuples, stable props or DDL.
     for legacy in LEGACY_NODE_COLUMNS:
         assert legacy not in NEW_COLUMNS
         assert legacy not in STABLE_NODE_PROPERTIES
-        assert legacy not in COMMON_NODE_ATTRIBUTES
+        assert legacy not in dict(COMMON_NODE_COLUMNS)
     # LEGACY_NODE_COLUMNS itself is byte-identical to the audited value.
     assert LEGACY_NODE_COLUMNS == ("validation_status", "corroboration_count")
 

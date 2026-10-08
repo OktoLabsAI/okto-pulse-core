@@ -1751,11 +1751,11 @@ def test_human_curated_column_declared_in_schema():
     from kg_schema_testing import (
         HUMAN_CURATED_COLUMNS,
         SCHEMA_VERSION,
-        _COMMON_NODE_ATTRS,
+        COMMON_NODE_COLUMNS,
     )
 
     assert HUMAN_CURATED_COLUMNS == (("human_curated", "BOOLEAN"),)
-    assert "human_curated BOOLEAN" in _COMMON_NODE_ATTRS
+    assert ("human_curated", "BOOLEAN") in COMMON_NODE_COLUMNS
     assert SCHEMA_VERSION == "0.8.0"
 
 

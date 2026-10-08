@@ -18,7 +18,7 @@ This module is the single test-owned seam over the live Community adapters:
 * ``open_materialized_board_connection`` yields the plain Core
   ``GraphStatementResult`` without the cursor shim.
 
-Schema-contract constants and the DDL builders are re-exported unchanged.
+Current schema-contract constants are re-exported.
 """
 
 from __future__ import annotations
@@ -27,12 +27,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
-from okto_pulse.community.adapters.graph_ddl import (
-    COMMON_NODE_ATTRIBUTES as _COMMON_NODE_ATTRS,
-    build_multi_rel_ddl as _build_multi_rel_ddl,
-    build_node_ddl as _build_node_ddl,
-    build_rel_ddl as _build_rel_ddl,
-)
+from okto_pulse.community.adapters.graph_ddl import COMMON_NODE_COLUMNS
 from okto_pulse.core.kg.interfaces.graph_errors import GraphError
 from okto_pulse.core.kg.interfaces.graph_transaction import GraphStatementResult
 from okto_pulse.core.kg.schema_contract import (
@@ -57,6 +52,7 @@ from okto_pulse.core.kg.schema_contract import (
 )
 
 __all__ = [
+    "COMMON_NODE_COLUMNS",
     "EDGE_LAYERS",
     "EDGE_METADATA_COLUMNS",
     "HUMAN_CURATED_COLUMNS",
@@ -71,10 +67,6 @@ __all__ = [
     "SCHEMA_VERSION",
     "STABLE_NODE_PROPERTIES",
     "VECTOR_INDEX_TYPES",
-    "_COMMON_NODE_ATTRS",
-    "_build_multi_rel_ddl",
-    "_build_node_ddl",
-    "_build_rel_ddl",
     "board_graph_columns",
     "board_graph_path",
     "board_graph_tables",

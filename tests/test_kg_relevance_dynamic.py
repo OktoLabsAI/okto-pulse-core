@@ -35,7 +35,7 @@ from kg_schema_testing import (
     LAST_RECOMPUTED_COLUMNS,
     NODE_TYPES,
     SCHEMA_VERSION,
-    _COMMON_NODE_ATTRS,
+    COMMON_NODE_COLUMNS,
 )
 from okto_pulse.core.kg.scoring import (
     SEVERITY_BOOST_BY_LEVEL,
@@ -104,29 +104,21 @@ def test_ts29_schema_version_is_current():
 
 
 def test_ts29_last_recomputed_columns_constant_exposes_string_type():
-    """Migration probe constant declares (last_recomputed_at, STRING) only."""
+    """Current schema constant declares (last_recomputed_at, STRING) only."""
     assert LAST_RECOMPUTED_COLUMNS == (("last_recomputed_at", "STRING"),)
 
 
-def test_ts29_common_node_attrs_includes_last_recomputed_at():
-    """Every node type picks up last_recomputed_at via _build_node_ddl."""
-    assert "last_recomputed_at STRING" in _COMMON_NODE_ATTRS
+def test_ts29_common_node_columns_include_last_recomputed_at():
+    assert ("last_recomputed_at", "STRING") in COMMON_NODE_COLUMNS
 
 
-def test_ts29_eleven_node_types_share_common_attrs_block():
-    """All 11 node types declared by the schema reuse _COMMON_NODE_ATTRS,
-    so the new column reaches every table without per-type drift."""
+def test_ts29_eleven_current_node_manifests_declare_recomputed_at():
+    from okto_pulse.community.adapters.grafx_schema_manifest import PULSE_GRAFX_SCHEMA_MANIFEST
     assert len(NODE_TYPES) == 11
-    # The DDL builder substitutes _COMMON_NODE_ATTRS verbatim — covered by the
-    # existing ``_build_node_ddl`` test, but we re-assert here so a future
-    # refactor that splits attrs per node type breaks IMPL-F too.
-    from kg_schema_testing import _build_node_ddl
-
-    for node_type in NODE_TYPES:
-        ddl = _build_node_ddl(node_type)
-        assert "last_recomputed_at STRING" in ddl
-
-
+    for table in PULSE_GRAFX_SCHEMA_MANIFEST.nodes:
+        assert ("last_recomputed_at", "STRING") in {
+            (column.name, column.pulse_type) for column in table.columns
+        }
 
 
 # ---------------------------------------------------------------------------
