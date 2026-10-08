@@ -1,0 +1,56 @@
+{
+  "criteria": [
+    "KG:KG-40",
+    "KG:KG-41"
+  ],
+  "proof_pair": "dist-native-main67",
+  "product_pair": {
+    "core": "eac24f23",
+    "community": "709bd604"
+  },
+  "verified": [
+    "With real SQL authorized source inventory and Grafx, a source deliberately absent from the projection remains in scope while ConsolidationQueue is empty before and after reads.",
+    "Missing projected identity is reported as incomplete and not_found_in_projection; no verification/delivery credit is fabricated.",
+    "After materializing the missing identity and its owned relations, matching graph observations still yield unknown freshness, no projection checkpoint and complete_for_scope=false. Empty queue never substitutes for checkpoint.",
+    "Bug cluster source inventory retains an unprojected Bug in its denominator and withholds exact cluster counts.",
+    "Four curated query reducers/readers preserve source/graph separation, unknown/missing/stale observations and bounded authoritative source results. Source-complete lineage or relational grouping does not assert graph projection completeness."
+  ],
+  "tests": {
+    "core": {
+      "passed": 101,
+      "seconds": 12.18,
+      "suites": [
+        "test_spec_coverage_query.py",
+        "test_spec_coverage_graph.py",
+        "test_bug_clusters.py",
+        "test_decision_impact.py",
+        "test_lineage_query.py"
+      ]
+    },
+    "community1": {
+      "passed": 27,
+      "failed": 1,
+      "seconds": 158.58,
+      "failure": "Two parametrizations reused module-scoped Grafx and created identical keys. Fixture conflict before observations, not product failure."
+    },
+    "community2": {
+      "passed": 1,
+      "seconds": 48.42,
+      "correction": "Use one native graph: observe missing source, then add it and its edges, then observe matching sets."
+    },
+    "final_distinct_cases": 128,
+    "count_basis": "101 Core + 26 unchanged Community + 1 corrected combined Community; replaced passing parametrization is not counted twice."
+  },
+  "limits": [
+    "Simulated lost projection event by committing sources with no queued work and omitting one graph identity; this is not a worker crash/replay test.",
+    "Some relational fixtures use current model metadata or a delimited table set without FK enforcement. No claim of installed schema/FK certification from these suites.",
+    "No transport authorization/UI assertion beyond earlier separate evidence.",
+    "No product/frontend edits; closure67 and installed pair remain unchanged, not rebuilt or reexecuted."
+  ],
+  "artifacts": {
+    "provenance-native-no-llm-guard1.json": "d4dab92e1138a60afba0e26309a04e910ae32825ece4123f3a586050b0017f86",
+    "acceptance-native-projection-completeness-core1.xml": "aa2c4292f9251ddc4b0446849805747cd77b62e494f71b5af792eef291a6ee58",
+    "acceptance-native-projection-completeness1.xml": "e328dee35e1b5f528452586910bd562fee11ec903382eef5e94d5e696e0f822d",
+    "acceptance-native-projection-completeness2.xml": "133429cb9884d09a8f3d0f209b3dddfd51af62d10d81b68d9ba6cbc58a536e1e"
+  }
+}

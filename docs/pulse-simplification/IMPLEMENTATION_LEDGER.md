@@ -2,6 +2,43 @@
 
 ## Estado para retomada
 
+### 2026-10-07 — KG40/KG41 comprovados sem inferir completude pela fila
+Community13753 terminal1:27pass/1fail/158.58s. Duas parametrizações reutilizavam
+grafo module-scoped e IDs; segunda falhava antes da leitura por chave duplicada.
+Corrigido para observar fonte ausente e depois materializá-la no MESMO caso.
+Community41025 terminal0:1pass/48.42s. Core101pass/12.18s já terminal.
+128 casos finais distintos:101Core+26Community inalterados+1caso combinado;
+parametrização antiga substituída não é contada duas vezes.
+SQL/Grafx reais: inventário mantém fonte sem nó, fila vazia antes/depois, incompleto
+com identidade ausente; após completar nós/arestas, freshness unknown sem
+checkpoint e complete_for_scope=false. Nenhum crédito de entrega/verificação.
+Clusters preservam Bug ausente no denominador; reducers/readers das quatro
+capacidades distinguem fonte completa de checkpoint de projeção não disponível.
+Recibo clean-break-native-projection-completeness.json registra limites e falha.
+KG40/KG41 qualificados:77 verificadas/158 pendentes/11 superadas.
+Fixtures não certificam FK/schema instalado, HTTP ou worker crash; prova é
+read-path de inventário/frescor com perda simulada de projeção e fila vazia.
+Produto/SPA main67 inalterados, sem novo build/closure. Ruff F/E9 verde.
+Todos processos terminais. Próximo: KG42 (troca de geração entre páginas),
+preservando escopo fixo e as decisões de autoridade T23/KG10/KG28 pendentes.
+
+### 2026-10-07 — KG40/41: completude com fila vazia em validação
+Publicação KG39 confirmada Coreeac24f23/Community709bd604, pushes0.
+Produto main67 inalterado, prova byte a byte anterior às campanhas deste turno.
+Teste SQL+Grafx de cobertura agora parametriza fonte não projetada (simula evento
+perdido) e observações coincidentes; verifica ConsolidationQueue vazia antes/depois,
+checkpoint ausente, incomplete/unknown respectivamente e nenhum crédito de prova.
+Inventário SQL preserva elemento sem nó. Fonte incompleta/grafo indisponível e
+clusters com Bug ausente também estão nas suites existentes revisadas.
+Core11143 terminal0:101pass/12.18s (coverage/graph/bug clusters/impact/lineage).
+Community13753 ativo: adapters reais das quatro capacidades; não reinstalar.
+Ruff F/E9 verde. Nenhum produto/frontend alterado. Índice75/160/11 inalterado.
+Limites a registrar: algumas fixtures SQL usam metadata.create_all e clusters
+tabelas delimitadas sem enforcement FK; não afirmar teste de schema/FK/HTTP.
+Linhagem/grouping SQL podem ser completos na FONTE sem alegar checkpoint de grafo.
+Próximo: terminal Community, recibo/qualificação conforme escopo efetivamente
+provado e publicação; não qualificar ausência de checkpoint como convergência.
+
 ### 2026-10-07 — KG39: ciclo nativo sem ativação de LLM comprovado
 Turno anterior progresso publicado Core6bbc697e/Communitye3550f89; worktrees
 limpas/sincronizadas confirmadas. Prova main67-no-llm-guard1 terminal0 antes
