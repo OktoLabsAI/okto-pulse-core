@@ -2,6 +2,28 @@
 
 ## Estado para retomada
 
+### 2026-10-08 — AC-ARQ-01/02 adoção e conclusão de refinamento (main87)
+Base7050d2d1/94fbf15a. Proof provenance-native-adoption-review1 terminal0:
+835/317 Python e896/403 payloads byte a byte. Adoção12pass25.98s/session98075:
+review real após derivação confirma candidatos pendentes apenas dos Designs
+adotados, denominador exato e ausência de IR/Card antes/depois da consulta.
+
+Novo witness de refinamento com Design provided, sem Spec derivada, conclui
+pelo serviço real e grava snapshot sem classificação nova ou Card/Spec.
+refinement-adoption1/session38648:11pass/1fail6.36s; adoption2/session98601:
+1fail5.68s. Fixture SQL alterava conteúdo sem selar autoridade atual; chamada
+default após flush não tinha session.new. Corrigido seed explícito do pai,
+revision distinta; adoption3/session28241:1pass4.49s. Nenhum gate relaxado.
+Total24 casos distintos verdes; ruff/diff check verdes, handles terminais.
+
+Recibo clean-break-native-adoption-refinement.json; AC-ARQ-01/02 qualificados.
+Índice182verificados/53pendentes/11superados. Estado approved/Design seedados,
+não alegar autenticação instalada nem autoria completa via UI. Negativos
+existentes de cognição/indisponibilidade continuam aplicados. Sem produto/SPA
+alterado; closure main87 vigente, oito budgets ZERO. WIP KG10 preservado.
+Commit/push testes/evidências. Sem promoção/dados reais. Continuar critérios
+pendentes do índice fixo; decisões BASE:T23/KG10/KG28 continuam pendentes.
+
 ### 2026-10-08 — AC-VER-17 proteção de OR ativo (main87)
 Base8e23ea14/ca013954. Proof provenance-native-operational-authority1
 terminal0:835/317 Python e896/403 payloads byte a byte. Três novos casos

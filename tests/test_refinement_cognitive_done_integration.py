@@ -487,3 +487,50 @@ async def test_non_done_transition_does_not_invoke_guard(
 
     assert invoked["count"] == 0
     assert await _refinement_status(refinement_id) == "review"
+
+
+@pytest.mark.asyncio
+async def test_refinement_with_design_finishes_without_spec_candidate_approval(
+    isolated_kg_dir: Path, seeded_refinement,
+) -> None:
+    """Candidate classification belongs to an adopted Spec, not its source."""
+    from sqlalchemy import func, select
+    from sqlalchemy_test_models import ArchitectureDesign, Card, Spec
+    from test_architecture_repository import _architecture_payload
+
+    board_id, _, refinement_id = seeded_refinement
+    design_id = _id()
+    payload = _architecture_payload(f"refinement:{refinement_id}").model_dump(mode="json")
+    async with get_session_factory()() as db:
+        db.add(ArchitectureDesign(
+            id=design_id, board_id=board_id, parent_type="refinement",
+            refinement_id=refinement_id, created_by=USER_ID,
+            title=payload["title"], global_description=payload["global_description"],
+            entities=payload["entities"], interfaces=payload["interfaces"],
+            diagrams=payload["diagrams"],
+        ))
+        await db.flush()
+        await ResourceGateService(db).clear_not_applicable(
+            board_id, "refinement", refinement_id, "architecture", USER_ID,
+        )
+        summary = await ResourceGateService(db).get_summary(
+            board_id, "refinement", refinement_id, metadata_only=True,
+        )
+        architecture = next(row for row in summary["resources"]
+                            if row["resource_type"] == "architecture")
+        assert architecture["state"] == "provided"
+        assert await db.scalar(select(func.count()).select_from(Spec)) == 0
+        await record_native_subject_authority(
+            db, rows=[await db.get(Refinement, refinement_id)], revision="with-design",
+        )
+        await db.commit()
+
+    result, exc = await _move_to_done(refinement_id)
+    assert exc is None
+    assert result is not None
+    assert await _refinement_status(refinement_id) == "done"
+    assert await _refinement_snapshot_count(refinement_id) == 1
+    async with get_session_factory()() as db:
+        assert await db.scalar(select(func.count()).select_from(Spec)) == 0
+        assert await db.scalar(select(func.count()).select_from(Card)) == 0
+        assert (await db.get(ArchitectureDesign, design_id)).interfaces == payload["interfaces"]

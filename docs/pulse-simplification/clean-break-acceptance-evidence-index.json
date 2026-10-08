@@ -6233,7 +6233,12 @@
           "case_references": []
         }
       ],
-      "current_qualification": "pending_current_pair_review"
+      "current_qualification": "verified_current_pair_review",
+      "current_review": {
+        "artifact": "clean-break-native-adoption-refinement.json",
+        "criterion_key": "ARQVER:AC-ARQ-01",
+        "proof_pair": "dist-native-main87"
+      }
     },
     {
       "key": "ARQVER:AC-ARQ-02",
@@ -6245,7 +6250,12 @@
       "historical_review_status": "not_audited_in_this_inventory",
       "prior_reviewed_execution": null,
       "discovered_artifacts": [],
-      "current_qualification": "pending_current_pair_review"
+      "current_qualification": "verified_current_pair_review",
+      "current_review": {
+        "artifact": "clean-break-native-adoption-refinement.json",
+        "criterion_key": "ARQVER:AC-ARQ-02",
+        "proof_pair": "dist-native-main87"
+      }
     },
     {
       "key": "ARQVER:AC-ARQ-03",
