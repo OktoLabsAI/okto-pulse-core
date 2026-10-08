@@ -2,6 +2,23 @@
 
 ## Estado para retomada
 
+### 2026-10-08 — reinstalação no host do contrato boundaries
+
+Usuário informou que parou o Pulse e autorizou reinstalação. Instalados com
+Python313 `pip --user --force-reinstall --no-deps` os dois wheels validados em
+`dist-architecture-boundaries-20261008`. Código: Core `c3c4cfe4`, Community
+`272e79c6`. Preflight confirmou fonte/wheel; após instalar, confirmação
+byte-a-byte fonte/wheel/site-packages de **903 payloads Core + 403 Community**,
+incluindo frontend. Conjuntos completos de `.py` coincidem: **842+317**.
+Importações resolvem para o site-packages do usuário em Python313.
+`okto-pulse --version` confirmou ambos em0.4.0. Evidência local:
+`PULSE_REFACTOR/.validation-v040/boundaries-host-provenance.json`.
+
+Home e dados preservados; servidor não iniciado pelo agente. Este registro
+substitui a ressalva anterior de build não instalado no host. Permanece a
+necessidade de reautorar explicitamente os boundaries em texto do design de
+teste, sem conversão automática ou alteração dos snapshots históricos.
+
 ### 2026-10-08 — boundaries estruturado — implementação e regressões concluídas
 
 Pedido autorizado após reprodução no teste de refinamento: padronizar boundaries como lista em todo o Pulse. Baseline instalado/source/wheel comprovado byte-a-byte:903 Core+403 Community. Causa: ArchitectureEntity exigia str|null enquanto critique verificava apenas presença via str(value). Contrato novo único: array ordenado de strings não vazias/não whitespace; omissão produz [], lista vazia mantém aviso existente; texto/null/tipos mistos recusados sem conversão. Preservar conteúdo e ordem dos itens, inclusive vírgulas. Escopo: schema/dry-run/persistência/snapshots/cópias/MCP/REST, UI criação/edição/leitura, exports/KG, docs e testes. Nenhuma alteração de autoridade/gate nem migração de dados. Runtime e home atual preservados; instalação no host não integra este recorte.
