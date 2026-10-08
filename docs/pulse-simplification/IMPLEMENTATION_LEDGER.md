@@ -2,6 +2,31 @@
 
 ## Estado para retomada
 
+### 2026-10-08 — ADV-17/18 autoridade atual e revisão independente (main87)
+Base4632a381/d053c09d. Proof provenance-native-review-authority1 terminal0:
+835/317 Python e896/403 payloads byte a byte. Revisados integralmente testes
+atuais de interleaving de policy e handoff executor/revisor. Recibos históricos
+com casos de compatibilidade serviram apenas para localizar testes, não
+qualificam a versão nativa nem reintroduzem caminhos removidos.
+
+review-authority1/session53070:10pass36.15s. Frontend cliente de validação:
+4pass; total14 distintos. Mudança humana off→enforce após leitura inicial
+é respeitada antes de gravar revisão. Recusa conserva Card/histórico e
+preserva a alteração humana. Grants reais e sessões MCP distintas recusam
+self-review mesmo com submit, guardam executor na captura e reviewer na
+revisão, inclusive rejeição/retrabalho sem reescrever registros anteriores.
+
+Credenciais fornecidas in-process ao autenticador real; origem/contexto de
+implementação seedados, skip cognitivo explícito e impact off. Não alegar
+extração de credencial instalada ou validar esses gates independentes aqui.
+Frontend propaga refusas sem retry. Todos handles terminais; diff check verde.
+
+Recibo clean-break-native-review-authority.json; ADV-17/18 qualificados.
+Índice188verificados/47pendentes/11superados. AC-INT-04 permanece separado.
+Sem produto/teste/SPA alterado; closure main87 vigente, oito budgets ZERO.
+WIP KG10 preservado. Commit/push Core de evidências, sem promoção/dados reais.
+Continuar demais critérios do índice fixo, incluindo configuração única/dupla.
+
 ### 2026-10-08 — AC-INT-06 leitura restrita e contratos inertes (main87)
 Base948b71e6/3d49c4cd; proof provenance-native-restricted-read1 terminal0:
 835/317 Python e896/403 payloads byte a byte. Oito novos casos REST:

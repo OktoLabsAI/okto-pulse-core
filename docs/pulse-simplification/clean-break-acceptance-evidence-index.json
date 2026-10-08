@@ -8052,7 +8052,12 @@
           ]
         }
       ],
-      "current_qualification": "pending_current_pair_review"
+      "current_qualification": "verified_current_pair_review",
+      "current_review": {
+        "artifact": "clean-break-native-review-authority.json",
+        "criterion_key": "ARQVER:ADV-17",
+        "proof_pair": "dist-native-main87"
+      }
     },
     {
       "key": "ARQVER:ADV-18",
@@ -8100,7 +8105,12 @@
           ]
         }
       ],
-      "current_qualification": "pending_current_pair_review"
+      "current_qualification": "verified_current_pair_review",
+      "current_review": {
+        "artifact": "clean-break-native-review-authority.json",
+        "criterion_key": "ARQVER:ADV-18",
+        "proof_pair": "dist-native-main87"
+      }
     },
     {
       "key": "ARQVER:ADV-19",

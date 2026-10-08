@@ -1,0 +1,39 @@
+{
+  "scope": "ADV-17/18: current human policy and independent task review",
+  "proof_pair": "dist-native-main87",
+  "criteria": {
+    "ARQVER:ADV-17": [
+      "test_review_rechecks_human_policy_changed_after_board_read"
+    ],
+    "ARQVER:ADV-18": [
+      "test_executor_and_reviewer_handoff_preserves_report_and_grant_boundaries[separation-enforced-approve]",
+      "test_executor_and_reviewer_handoff_preserves_report_and_grant_boundaries[separation-enforced-reject]"
+    ]
+  },
+  "evidence": [
+    "The in-flight request first reads reviewer separation off. A distinct Community semantic session commits the human owner's BoardService policy update to enforce. The original request then refuses self-review with reviewer_separation_required; explicit outer commit still appends no validation/rejection/conclusion, leaves Card state/version intact and preserves only the human policy activity/events.",
+    "Real Agent/AgentBoard/preset grants plus production MCP authenticator/host and separate clients enforce executor/reviewer boundaries. Even an executor granted card.validation.submit cannot self-review under enforce. Refusal returns action_required with request_independent_task_validator and unchanged SQL snapshot.",
+    "Capture records retain executor ownership and report provenance. Independent reviewer can approve/reject; only that reviewer is stored. Reviewer cannot capture as executor or perform executor-only rework. Rejected work can be revised and reviewed again without replacing previous records/history.",
+    "Frontend REST client propagates both reviewer_separation_required and task_validation_policy_conflict without retry. Current native review fields remain representable."
+  ],
+  "tests": {
+    "community_passed": 10,
+    "seconds": 36.15,
+    "frontend_passed": 4,
+    "total_distinct_passed": 14
+  },
+  "limits": [
+    "MCP credentials are supplied in-process; actual auth adapter resolves real fixture Agent/grant rows. This is not a network-installed credential extraction test.",
+    "Accepted external implementation origin/context are fixture facts. Cognitive skip is explicit and impact policy off; those independent gates are not qualified here.",
+    "Policy interleaving is deterministic after the first Board read, not a timing benchmark.",
+    "Historical receipts mentioning removed compatibility cases are discovery references only. Acceptance here relies exclusively on current native tests/main87 proof.",
+    "AC-INT-04 remains separate: these cases do not alone prove its complete paired-configuration initiative.",
+    "No product/test/SPA modification. Main87 closure applicable, all eight budgets zero; no migration, promotion or real-data operation."
+  ],
+  "artifacts": {
+    "provenance-native-review-authority1.json": "573104ba63a242f3d0d67965ef6d81952f9da5821b6b9ce9f844032efef2dc1e",
+    "native-review-authority1.xml": "6a9864fbb66d0cf7563c25fa60dab7ebecb15ac49240ca9cb310c50e6d045217",
+    "native-review-authority-frontend1.json": "6583f68caa4626ec2ef1871cba70a473ecaa57c4bb4bb684135c45c377813dc2",
+    "closure-native-main87.json": "0b9b185c7e16892769af431ffa471141244468db74ccd447dbcf6af474acbfd4"
+  }
+}
