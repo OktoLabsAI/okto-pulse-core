@@ -2,6 +2,26 @@
 
 ## Estado para retomada
 
+### 2026-10-07 — KG48/KG49: capacidades e custo agregado de sessões
+Base9f401914/3a172484 limpa confirmada. Prova main68 antes de campanhas:
+provenance-native-session-measurement1 terminal0 byte-idêntico835/896+317/403.
+Instrumentação existente scripts/measure_mcp_fixture.py reusada sem alterações.
+Medição75103 terminal0:6pass/31.78s (2 avisos pytest anyio rewrite).
+Queries58509 terminal0:71pass/13.44s. Com os2 Learning anteriores:79 distintos,
+contando uma vez os2 fluxos single-agent repetidos.
+28 sessões(2single+26handoff),28 initialize,28 tools/list e85 tools/call;
+6980785bytes,1651840tokens cl100k_base estimados,4211SQL nas janelas seriais,
+8272.0326ms somados de requests. Não tokens faturados nem prova de economia.
+Executor/reviewer autenticados preservam contexto, grants e separação enforce;
+single-agent com policy off usa capacidades sem segundo agente imposto.
+Quatro consultas curadas verificam fonte/autoridade por ator sem orquestrador.
+Recibo clean-break-native-governed-sessions.json e arquivo comprimido integral
+benchmark-native-sessions-main68.json.gz permitem recomputar por sessão/caso.
+KG48/KG49 qualificados:85 verificadas/150 pendentes/11 superadas. T43/KG64
+comparativos continuam pendentes; não equiparar medição corrente a ganhos50/30.
+Sem produto/SPA alterados. Todos processos terminais. Próximo: KG50 (leituras
+health/UI não disparam manutenção) e KG51 superfícies retiradas, escopo fixo.
+
 ### 2026-10-07 — KG48: prova parcial de agente único publicada
 Campanha native-single-agent-learning1 handle29145 terminal0:4pass/69.93s.
 Learning com mesmo reviewer e reviewer distinto; dois fluxos MCP autenticados
