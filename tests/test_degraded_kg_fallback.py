@@ -113,7 +113,7 @@ def test_ts_13ab47d1_degrade_with_warning_not_a_violation():
     )
 
 
-def test_ts_be456c60_ordered_forward_path_and_kuzu_error_expected():
+def test_ts_be456c60_ordered_forward_path_and_graph_unavailable_expected():
     rule = _extract_rule_block(_kg_text())
     low = rule.lower()
     steps = [
@@ -126,9 +126,10 @@ def test_ts_be456c60_ordered_forward_path_and_kuzu_error_expected():
     assert steps == sorted(steps), f"the 4 forward-path steps are not in order: {steps}"
     assert "graph_unavailable" in low, "rule must name the structured graph_unavailable"
     assert "expected" in low, "rule must label the graph_unavailable as EXPECTED on a degraded board"
-    assert "Use the explicit KG Health recovery flow" in rule, (
-        "rule must surface the existing kuzu_error recovery-flow hint"
-    )
+    assert "no public recovery executor" in low
+    assert "okto-pulse://reference/kg-health" in rule
+    assert "Use the explicit KG Health recovery flow" not in rule
+    assert "operator-driven path" not in rule
 
 
 # --- AC3 (ts_bfb501d5) -------------------------------------------------------

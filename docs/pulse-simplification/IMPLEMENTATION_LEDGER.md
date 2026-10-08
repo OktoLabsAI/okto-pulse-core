@@ -2,6 +2,60 @@
 
 ## Estado para retomada
 
+### 2026-10-08 — Orientação obsoleta de recuperação retirada (main84)
+Conferido WIP dos dois repos; retomada sem reset. O turno anterior apenas
+confirmou a retirada do pedido Nexus, sem avanço técnico; esta retomada validou
+e concluiu a correção documental já preparada.
+
+Resources workflows/kg e reference/errors não recomendam mais executor público
+ou fluxo manual de recuperação inexistente. Preservados fallback da tríade,
+gates de conclusão e autoridade humana para controles de Board existentes.
+Teste atualizado conserva ordem dos passos e recusa as instruções retiradas.
+Nenhum Python de runtime ou frontend alterado.
+
+Par main84 construído e instalado; provenance-native-main84/session44846
+terminal0 confirmou 835/317 Python e 896/403 payloads idênticos byte a byte.
+native-recovery-docs1/session56117 terminal0:174 pass em26.93s.
+closure-native-main84/session89426 terminal0:sem findings, oito budgets ZERO.
+Ruff e diff check aprovados. Recibo clean-break-native-recovery-docs.json.
+KG30 permanece pendente: sugestão somente leitura não demonstra hipótese
+interpretativa durável. Não acrescentado subsistema nem creditado aceite.
+Índice permanece99/136/11; KG10/16/24 e reprodução WIP continuam conforme abaixo.
+Commit deste incremento inclui recibo da revisão de famílias e correção do motivo
+obsoleto G6 no índice; não inclui teste Community vermelho. Community permanece
+em59f28230 com esse WIP preservado. Sem promoção ou alteração de dados reais.
+Todos handles terminais. Retomar pelos critérios pendentes do índice, preservando
+as decisões de autoridade ainda não respondidas; não repetir campanhas encerradas.
+
+### 2026-10-08 — Revisão KG16/24: FR/TR e reprodução KG10 atual
+Base7697d25d/59f28230 limpa. Revisada matriz do complementoKG§4.1/4.6 e recibos
+de famílias existentes. Índice ainda dizia que G6 não estava implementado;
+corrigido apenas o motivo: G6 fechado por main57, restante da matriz pendente.
+Não promover16/24 por união automática de recibos parciais.
+
+Novo teste Community tests/test_native_spec_relationship_parity.py cobre sete
+famílias e pares físicos FR/TR explicitamente, com duas instâncias de cada alvo:
+Decision/IR/OR→FR eTR, BR→FR, cenário→AC, OR→IR, API→BR. Fonte nativa, SQL/Grafx
+reais, snapshots completos iguais, multiset completo de relações/proveniência/
+maturidade, remoção, restauração parcial e replay; sem produto alterado.
+Proof provenance-native-spec-family-review1 (main83) terminal0 antes da campanha.
+native-spec-family-review1/session32881 terminal1:1pass/1fail em124.68s.
+[True] passou inclusive remoção seguida de restauração, snapshots e rebuild iguais.
+[False] falhou no replay do estado vazio: primeiro unlink ACK1, repetição ACK0,
+connectivity guard recusa Decision sem julgamento. É a mesma decisãoKG10 pendente,
+não um alvo novo. Não fabricar aresta nem retirar guard silenciosamente.
+
+Recibo clean-break-native-spec-family-review.json separa caso verde e reprodução
+vermelha. Não conta teste falho como aprovação. Índice99/136/11 inalterado.
+Pergunta assíncrona enviada nesta retomada solicitando a proposta KG10 já registrada:
+somente Decision filha da Spec, identidade/dono internos autenticados, provenance
+belongs_to suficiente; julgamento continua obrigatório para Decision cognitiva
+genérica. Aguardando resposta; silêncio não autoriza mudar esse guard.
+Nenhuma alteração no produto/SPA, nenhum runtime/dado real tocado.
+Novo teste permanece WIP com caso explicitamente vermelho até essa decisão.
+Todos handles desta revisão terminais. Próximo trabalho independente pode revisar
+demais famílias/anti-joins ou KG30/KG64; não repetir diagnóstico KG10 do zero.
+
 ### 2026-10-08 — Recuperação sem exceção para tentativas antigas (main83)
 Base8acaf0da/33be82e1 limpa. Investigação do diagnóstico legacy_primary:
 routed_global_graph_composition passa snapshot.anchor_path; bootstrap cria catálogo

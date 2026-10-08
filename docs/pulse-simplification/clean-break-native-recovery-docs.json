@@ -1,0 +1,105 @@
+{
+  "scope": "Retire obsolete public KG recovery instructions from served workflow and error reference",
+  "proof_pair": "dist-native-main84",
+  "changes": [
+    "Workflow no longer advertises a public/operator recovery executor or nonexistent recovery hint.",
+    "Error reference states the existing recovery boundary and preserves degraded triad behavior, completion gates and human-only board controls.",
+    "Regression test preserves step ordering and rejects the obsolete recovery instructions."
+  ],
+  "tests": {
+    "core_passed": 174,
+    "seconds": 26.93,
+    "campaign": "native-recovery-docs1"
+  },
+  "closure": {
+    "ok": true,
+    "findings": [],
+    "documentation_findings": [],
+    "budgets": [
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "import_boundary_baseline",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every import_boundary_baseline allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "singleton_baseline",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every singleton_baseline allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "dependency_temporary_exceptions",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every dependency_temporary_exceptions allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "graph_runtime_compatibility",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every graph_runtime_compatibility allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "rebuild_artifact_compatibility",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every rebuild_artifact_compatibility allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "community_private_reach_ins",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every community_private_reach_ins allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "community_adapter_bridges",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every community_adapter_bridges allowance before F16 completion."
+      },
+      {
+        "current": 0,
+        "expires_on": null,
+        "implementation_card_id": "675c43ee-7d91-4cc3-8f87-44eeb293f90c",
+        "key": "af35_relational_residue",
+        "limit": 0,
+        "ok": true,
+        "removal_criterion": "Remove every af35_relational_residue allowance before F16 completion."
+      }
+    ]
+  },
+  "limits": [
+    "No runtime Python, public tool, frontend or authority change.",
+    "No claim that KG30 durable fallback is implemented; current suggestions remain read-only.",
+    "KG10 reproduction remains pending authority and its failing WIP test is not part of this campaign.",
+    "Acceptance counts remain 99 verified, 136 pending, 11 superseded.",
+    "No real runtime/data touched or promotion performed."
+  ],
+  "artifacts": {
+    "provenance-native-main84.json": "d58f2ae935ac7fe0096ffdcf41684979a83982d8c0d53be11456f8f1921b57a0",
+    "native-recovery-docs1.xml": "b0646cd3b217890dd75782f91a0385fec0715c2770d7290bc678c49f889304b9",
+    "closure-native-main84.json": "c34d8bd862c5a6e5dc99fc0aa968dbfa2b9718d5a4c98ef5bd6f2704885e3249"
+  }
+}

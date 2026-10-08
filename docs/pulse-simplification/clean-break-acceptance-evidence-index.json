@@ -3419,7 +3419,7 @@
       "current_review": {
         "artifact": "clean-break-native-relationship-family-review.json",
         "criterion_key": "KG:KG-16",
-        "reason": "Family evidence consolidated; explicit normative Decision supersedence remains unimplemented."
+        "reason": "G6 resolved by clean-break-native-explicit-decision-parity.json. Complete family qualification remains pending; current Spec FR/TR removal replay reproduces unresolved KG10 connectivity authority decision."
       }
     },
     {
@@ -3711,7 +3711,7 @@
       "current_review": {
         "artifact": "clean-break-native-relationship-family-review.json",
         "criterion_key": "KG:KG-24",
-        "reason": "Family evidence consolidated; explicit normative Decision supersedence remains unimplemented."
+        "reason": "G6 resolved by clean-break-native-explicit-decision-parity.json. Complete family qualification remains pending; current Spec FR/TR removal replay reproduces unresolved KG10 connectivity authority decision."
       }
     },
     {

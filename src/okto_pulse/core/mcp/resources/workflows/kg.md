@@ -117,11 +117,11 @@ follow the caller-owned commit boundary.
 > Before running ANY mandatory KG query set below — and in particular the Stage 1 ideation triad — call `okto_pulse_kg_health(board_id)` **first** and read its `graph_state` field. The graph is **degraded** when `graph_state` is one of exactly `recovery_needed` or `quarantined` (these two values are the `_RISK_STATE_HARD_REJECT` predicate; no other `graph_state` value is a degraded trigger). When the graph is degraded, follow these steps in order:
 >
 > 1. **Call `okto_pulse_kg_health(board_id)` first** and read `graph_state`.
-> 2. **Branch on the degraded `graph_state`** (`recovery_needed` or `quarantined`): the mandatory KG queries are EXPECTED to be unavailable. `okto_pulse_kg_get_learning_from_bugs` in particular returns a structured `graph_unavailable` whose message carries the hint `Use the explicit KG Health recovery flow`; on a degraded board this `graph_unavailable` is the EXPECTED signal — do not retry it in a loop.
+> 2. **Branch on the degraded `graph_state`** (`recovery_needed` or `quarantined`): the mandatory KG queries are EXPECTED to be unavailable. `okto_pulse_kg_get_learning_from_bugs` in particular returns a structured `graph_unavailable` with the affected component and reason; on a degraded board this `graph_unavailable` is the EXPECTED signal — do not retry it in a loop.
 > 3. **Record the degraded `graph_state` in the ideation** — a one-line note such as `KG degraded: graph_state=<recovery_needed|quarantined>; Stage 1 triad skipped under the Degraded-KG Fallback Rule.`
 > 4. **Proceed past `okto_pulse_evaluate_ideation` with a warning** — do not block on the unavailable triad. Skipping the Stage 1 triad on a degraded graph is expected-and-logged and is **not a protocol violation**.
 >
-> This rule keys ONLY on the existing `graph_state` field and the existing structured `graph_unavailable`. Recovering a degraded graph is the separate KG Health recovery flow (an operator-driven path, out of scope for this rule), and this rule does **not** define any new error code or response envelope for the degraded case. When `graph_state` is not one of the two degraded values, run the mandatory query sets normally.
+> This rule keys ONLY on the existing `graph_state` field and the existing structured `graph_unavailable`. There is no public recovery executor; consult `okto-pulse://reference/kg-health` for the recovery boundary. Health grants no maintenance command or gate waiver, and this rule does **not** define any new error code or response envelope for the degraded case. When `graph_state` is not one of the two degraded values, run the mandatory query sets normally.
 
 **Stage 1 — Ideation (before moving to `evaluating` and before answering any Q&A)**
 

@@ -1,0 +1,32 @@
+{
+  "scope": "KG16/24 independent Spec relation endpoint matrix",
+  "proof_pair": "dist-native-main83",
+  "status": "partial_current_evidence_KG10_authority_pending",
+  "test": "tests/test_native_spec_relationship_parity.py",
+  "campaign": "native-spec-family-review1",
+  "passed": [
+    "test_all_spec_fr_tr_relations_match_identical_native_snapshot[True]"
+  ],
+  "failed": [
+    "test_all_spec_fr_tr_relations_match_identical_native_snapshot[False]"
+  ],
+  "verified": [
+    "Seven owned Spec rule families checked with exact typed FR/TR endpoint pairs, including Decision/IR/OR→TR.",
+    "Linked final case passed full removal, partial restoration and replay; native complete source snapshots equal and full relationship multisets including provenance/maturity equal after rebuild."
+  ],
+  "failure": {
+    "phase": "final repeated empty projection",
+    "observed": "Queue ACK0; connectivity guard rejects Decision after all normative links removed. Initial empty projection succeeded; repeating it fails.",
+    "existing_decision": "IMPLEMENTATION_LEDGER.md: Decisão KG-10 pendente",
+    "action": "Requested authorization to permit authentic native Spec Decision provenance without fabricating judgment; no guard changed."
+  },
+  "limits": [
+    "No KG16/24 qualification; failed case is retained as current reproduction, never counted green.",
+    "G6 prior supersedence resolution remains valid; stale index reason corrected.",
+    "No product/frontend change or new wheel required; main83 source/install proof refreshed."
+  ],
+  "artifacts": {
+    "provenance-native-spec-family-review1.json": "210e865372a7584ec013abe71690754b1df96bf98b0fde9ffc29ee258529609d",
+    "native-spec-family-review1.xml": "7e4bd36115d22b912b06c2979a0c0f5d7ebb17c1b1170c3b14456134108d9f30"
+  }
+}
