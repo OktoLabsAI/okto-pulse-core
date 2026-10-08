@@ -2,6 +2,36 @@
 
 ## Estado para retomada
 
+### 2026-10-08 — custo de perfil default e reuso de critério
+Turno anterior foi progresso; base Core4a8bd9c7/Community1d2d0112 conferida,
+WIP KG10 preservado. Mesma iniciativa agora cria publicamente FR/critério,
+lê default funcional e o aceita pelo writer scoped/versionado. BR também
+criada publicamente herda FR/digest/critério; continua um único AC por Spec.
+Segundo agente vê origem/perfil/resolução, porém verification_work_complete
+false e delivery_evaluated false. Nenhum crédito inferido de planejamento.
+
+Proof provenance-native-profile-cost-20261008 terminal0:main90 byte-idêntico
+838/317 Python,899/403 payloads. Primeira campanha/session14026 mostrou perfil
+aceito mas qualificação não resolvida sem critério; fixture passou a declarar
+AC vinculado na criação pública. Campanha2/session60303 terminal0:4pass31.47s.
+Depois adicionada autoria de BR/reuso do AC; medição/session47661 terminal0:
+4pass28.10s,dois warnings anyio conhecidos. Ruff/diff verdes.
+Paridade dos perfis/modos/criteria_paths e decisões classif confirmada nas
+quatro variantes. Cada caso mede10calls de perfil/default/herança/retomada.
+Amplo:79→54tools/call,1085202→1046484bytes,272637→262360tokens.
+Restrito:80→55calls,1086948→1048233bytes,271722→261014tokens.
+Catálogo completo e8resources/read incluídos; variação UUID/time não é ganho.
+Archive benchmark-native-profiles-main90-20261008.json.gz e recibo
+clean-break-native-profile-cost-20261008.json preservam payloads/limites.
+
+Mantidos225/10/11: falta medir execução e reuso de prova autenticada dentro da
+campanha integrada; autoria/profile/default não substituem esse requisito.
+Próximo: incorporar o witness já existente de prova nativa compartilhada
+(FR/BR/AC) à iniciativa medida. Não recriar permissões, default, classificação,
+autoria ou paginação já demonstrados. Comparação integral/50-30 ainda não provada.
+Produto/SPA inalterados; closure main90/oito budgets ZERO. Handles terminais.
+BASE:T23/KG10/KG28 e limite KG30 mantidos; nenhum alvo novo.
+
 ### 2026-10-08 — iniciativa com duas Specs e custo de recusa
 Turno anterior foi progresso; Corebcc9f761/Communitya87851ef conferidos,
 Community somente WIP KG10. test_native_classification_cost agora parte da
