@@ -2,6 +2,32 @@
 
 ## Estado para retomada
 
+### 2026-10-08 — DEI-T20/T21: nota versus mudança material (main86)
+Base16c50b0c/c2441d05. Revisados progress_blocks_execution, população completa
+de checkpoints ativos no adapter e provas SQL de atualidade. Fonte e recibo
+mantêm contrato nativo único; não há inferência de conclusão ou conversão.
+Proof provenance-native-delivery-currentness1 terminal0 antes dos testes,
+835/317 Python e896/403 payloads idênticos no mesmo par main86.
+
+Core currentness-core1/session8573 terminal0:12pass em5.51s.
+Community currentness-community1/session42823 terminal0:7pass em20.53s.
+Fortalecida asserção de que Spec e Targets mantêm suas versões, além do Card,
+durante checkpoint/leitura. Total19backend distintos; ruff/diff check verdes.
+Frontend main86 anterior revisado nos casos de nota, seleção de Targets e
+exibição de mudança; não repetido sem alteração de código.
+
+Nota none conserva prova/gate; targets invalida apenas trabalho afetado;
+unknown não inventa precisão. Resumo de20itens não oculta bloqueio ativo.
+Rebinding/nota clean não renovam observação velha; histórico permanece após
+nova prova ou revogação humana. Recibo clean-break-native-delivery-currentness.json.
+DEI-T20/T21 qualificados; índice115verificados/120pendentes/11superados.
+DEI-T23 permanece pendente da prova integral de teste/base de integração;
+não extrapolar a readiness de implementação independente já demonstrada.
+
+Sem runtime/SPA alterado: closure main86 mantém oito budgets ZERO.
+Todos handles terminais. Sem promoção ou dados reais; WIP KG10 preservado.
+Commit/push do teste e evidências; seguir critérios pendentes do índice.
+
 ### 2026-10-08 — DEI-T13–16: contribuição por obrigação (main86)
 Baseb08a4f63/361647f5 conferida, WIP KG10 preservado. Revisados contratos
 tipados, testes de contribuição/receipt sets e consumidores frontend.

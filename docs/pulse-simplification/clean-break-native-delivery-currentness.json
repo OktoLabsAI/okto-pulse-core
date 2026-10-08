@@ -1,0 +1,58 @@
+{
+  "scope": "DEI-T20/T21: context-only notes preserve proof; material progress invalidates affected old observations without deleting history",
+  "proof_pair": "dist-native-main86",
+  "criteria": {
+    "DEI:DEI-T20": [
+      "test_context_note_does_not_invalidate_earlier_proof_even_with_external_dirty_state",
+      "test_progress_recomputes_exact_sets_candidates_and_pre_done_gate[none]"
+    ],
+    "DEI:DEI-T21": [
+      "test_material_change_is_scoped_and_requires_strictly_later_observation",
+      "test_progress_recomputes_exact_sets_candidates_and_pre_done_gate[targets]",
+      "test_rebinding_old_observation_or_clean_note_cannot_restore_proof",
+      "test_dirty_checkpoint_hidden_by_summary_cap_still_blocks_and_revoke_is_authorized",
+      "test_dirty_then_inline_old_observation_rolls_back_origin_and_checkpoint"
+    ]
+  },
+  "review": [
+    "Core progress_blocks_execution uses explicit change scope and observation time; received time, repeated bindings and clean notes cannot renew old evidence.",
+    "Community reads full active progress population independently of summary caps, honoring only same-scope human revocations.",
+    "Strengthened real SQL test proves Spec and Target revisions unchanged by checkpoint/read in addition to Card version/status and exact ledger/event counts."
+  ],
+  "evidence": [
+    "No-change note leaves both execution candidates and gate readiness intact.",
+    "Target-two change invalidates FR requiring both receipts while independent TR retains its valid receipt; unknown scope conservatively invalidates both.",
+    "Old observation cannot be rebound after dirty checkpoint or a subsequent clean note. Later accepted observation supports a successor while old record remains historical.",
+    "Dirty checkpoint beyond20-item summary still blocks; only authorized human revocation removes its active effect while preserving its record.",
+    "Inline attempt based on old observation rolls back receipt, checkpoint and events."
+  ],
+  "tests": {
+    "core_passed": 12,
+    "community_passed": 7,
+    "distinct_backend_passed": 19,
+    "core_seconds": 5.51,
+    "community_seconds": 20.53
+  },
+  "frontend_review": {
+    "artifact": "native-delivery-envelope-frontend1.json",
+    "cases": [
+      "selects only affected Targets and requires a selection before saving a code change",
+      "can explicitly record a context note without declaring the external dirty work changed",
+      "shows the declared material change after reload"
+    ],
+    "status": "Previously passed on identical main86 frontend; reviewed without unnecessary rerun."
+  },
+  "limits": [
+    "The successor-observation SQL fixture seeds accepted origin facts; it does not authenticate an external repository.",
+    "DEI-T23 is not fully qualified here: independent implementation readiness is covered, complete test/integration-basis behavior remains separate.",
+    "No runtime/frontend change; existing main86 closure with eight ZERO budgets remains applicable.",
+    "No legacy read/conversion, promotion or real-data operation."
+  ],
+  "artifacts": {
+    "provenance-native-delivery-currentness1.json": "e94cf4e729e3495bd511e5bf8a572bb95aabb304165f66f348c1b04d80da254a",
+    "native-delivery-currentness-core1.xml": "4dc83ea92915cbed19a7b3060634692b9504d3613cc1d2899ec82089289130c2",
+    "native-delivery-currentness-community1.xml": "bfa731e496acc7af8482215019730c3cc7614f61c36a5db6ef4f39356c3f3163",
+    "native-delivery-envelope-frontend1.json": "a751880c26e35030dc6efc27dfb79d81a4f937cd3ffa9d2bf7f490e31f2d146d",
+    "closure-native-main86.json": "c34d8bd862c5a6e5dc99fc0aa968dbfa2b9718d5a4c98ef5bd6f2704885e3249"
+  }
+}
