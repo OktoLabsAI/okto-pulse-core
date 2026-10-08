@@ -2,6 +2,30 @@
 
 ## Estado para retomada
 
+### 2026-10-08 — DEI-T59 revisado: instalação limpa e recusa sem conversão
+Base3bb314e2/33b7a4db; turno anterior foi progresso. Reassessment linha181
+substitui upgrade repetido por criação limpa/reinício/integridade/recusa.
+Revisadas integralmente suite test_current_relational_schema.py e implementação
+current_relational_schema.py; lifecycle inicia seeds só após admissão válida.
+DROP de hooks é restrito à transação de criação vazia, não conversão de base.
+
+Proof provenance-native-install-refusal-20261008 terminal0 antes da campanha:
+main88 byte-idêntico838/317 Python,899/403 payloads.
+native-install-refusal-20261008/session66488 terminal0:44pass40.03s.
+Criação/reinício preservam dados/identidade;33 mutações incompatíveis recusam
+sem alterar arquivos/WAL; WAL pendente e corrida após composição conferidos.
+Falha de criação reverte DDL/version e permite retry; seeds não atingem
+incompatível. Arquivo não-SQLite/FK órfã recusam sem reparo/exclusão. Seeds atuais
+repetidos preservam IDs/grants/escolhas. Nenhum suporte a upgrade reintroduzido.
+
+Recibo clean-break-native-install-refusal-20261008.json; DEI-T59 qualificado
+no escopo explicitamente reescrito. Índice213verificados/22pendentes/11superados.
+Nenhuma mudança em produto/teste/SPA; apenas documentação de qualificação.
+Closure main88/oito budgets ZERO; handles terminais. Commit/push Core;
+Community33b7a4db já enviado, WIP KG10 preservado. Sem promoção/dados reais.
+Continuar reabertura/waivers/projeções DEI, VER/KG e benchmarks do índice fixo.
+BASE:T23/KG10/KG28 seguem decisões pendentes. Objetivo integral ativo.
+
 ### 2026-10-08 — DEI-T57 escopo semântico nativo do Card sem vínculos
 Base17416d8b/01ed9e81; turno anterior foi progresso. Proof novo sem colisão,
 provenance-native-card-scope-20261008 terminal0 antes dos testes:
