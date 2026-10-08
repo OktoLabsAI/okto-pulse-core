@@ -2,6 +2,38 @@
 
 ## Estado para retomada
 
+### 2026-10-08 — navegador com leitura real do cenário nativo
+Turno anterior foi progresso: manifesto corrigido e auditoria instalada passou,
+Core23f98cce enviado; Community0714d574 e WIP KG10 preservados.
+Encontrado teste canvas de Delivery obsoleto: tentava gravar pela Spec e passava
+props removidas. Rollup atual é read-only; escrita pertence ao Card.
+Substituído por teste ligado ao mesmo backend nativo do cenário REST/MCP,
+sem respostas API fabricadas. Helper opcional PULSE_NATIVE_BROWSER_TEST=1
+inicia REST loopback próprio e Playwright/Vite isolado, termina ambos no finally.
+Rodar tests/test_native_verification_context.py com essa variável, dependências
+frontend instaladas e Chrome disponível; sem variável, permanece teste REST/MCP.
+O teste canvas isolado sem backend declara skip, não simula resultado verde.
+
+Proof provenance-native-browser-main91.json terminal0 ANTES da campanha,
+838/317Python e899/403payloads idênticos; produto/SPA inalterados.
+Campanha1/session87441 falhou por locator esperando fr:fr em vez de FR (fr).
+Screenshot/DOM mostraram produto correto; expectativa corrigida sem mudar UI.
+Rerun/session71783 terminal0:1pass24.98s, inclui1Playwrightpass9.8s.
+Browser confirma7obrigações,6checkmarks aceitos,8pendentes,Blocked antes/depois
+do refresh,2leituras/zeroescritas/sem formulário antigo. FR/BR/AC satisfeitos;
+IRs/ACs de integração continuam pendentes. Board endpoint ausente neste app
+delimitado aparece Gate Unknown, explicitamente testado. Ruff F/E9/diff verdes.
+Screenshot inspecionado; falha inicial preservada. Sem processos pendentes.
+Recibo clean-break-native-browser-read-main91-20261008.json sela artefatos.
+
+Limite: componente real servido por fixture Vite, não navegação na SPA instalada;
+identidade controlada; browser não gravou pelo Card. DEI64 ainda pendente dessas
+partes, não promover por leitura apenas nem repetir esse recorte novamente.
+Índice226/9/11, decisões BASE:T23/KG10/KG28 e limite KG30 mantidos.
+Próximo: submissão pelo Card no navegador e paridade do resultado no backend,
+aproveitando este cenário/listener; depois comprovação com a SPA empacotada.
+Commit/push dos testes Community e recibo/ledger Core; nenhuma feature nova.
+
 ### 2026-10-08 — auditoria instalada e manifesto de recursos concluída
 Autorização DEI-T33/T41 reiterada pelo usuário: já aplicada/testada em main86,
 conforme seção existente; não reaplicar nem reabrir a decisão.
