@@ -1,0 +1,37 @@
+{
+  "scope": "Reproduced AC-VER-16 gap; not passing qualification",
+  "proof_pair": "dist-native-main86",
+  "status": "reproduced_unfixed",
+  "criterion": "ARQVER:AC-VER-16",
+  "findings": [
+    "Adding only notes to the UI criterion removes its current implementation/test credit although signed condition and ledger payloads are unchanged.",
+    "Changing only the authorization criterion text also removes UI test credit. Isolated cases reproduce independently in campaign2.",
+    "delivery_inventory._collection_obligations binds notes for AC through the generic digest; effective inventory replaces bindings for requirement families but not AC.",
+    "compute_test_scenario_semantic_sha256 binds every Spec acceptance criterion, even when a scenario names only one. Issuance and verification share this function."
+  ],
+  "authority": "PLANO_PULSE_CODEX §10.1 explicitly excepts behavior whose change is defined by the plan; RF-VER-16/AC-VER-16 and RT-12 explicitly require unaffected proof preservation. No new permission, waiver or historical rewrite is proposed. Investigate as §10.2 B and implement prospectively under the authorized fresh-install-only contract.",
+  "next_steps": [
+    "Audit all digest callers: spec_crud execution/report admission; main status/update paths; scenario authentication; Community delivery read verifier; bug cognitive closure.",
+    "Define one native prospective scenario digest binding only exact linked criteria, including qualification/links and all material conditions; refuse missing/ambiguous identities. Do not add a compatibility verifier for previous schemes.",
+    "Exclude proven editorial AC fields from prospective obligation binding while retaining normative content, scope and identity. Do not rewrite historical sealed digests.",
+    "Verify real governed authoring and selective invalidation paths, not only raw persisted fixture mutation; retain changed-condition, link-after-run and signature tampering negatives.",
+    "Build/install new paired wheels, prove byte equality before behavior checks, rerun affected producer/verifier/lifecycle/ledger tests plus frontend and closure budgets."
+  ],
+  "tests": {
+    "campaign1": "2 failed in14.64s; initial combined changes",
+    "campaign2": "2 failed in12.24s; independently isolated notes-only and other-condition changes",
+    "baseline": "Both cases first prove full coverage and unchanged historical payloads after mutation",
+    "wip_test": "okto_labs_pulse_community\\tests\\test_native_criterion_applicability.py",
+    "wip_sha256": "66e03d2c79d3faed8d93887e459c949f9013fe881f936b73c388a92d206558bb"
+  },
+  "limits": [
+    "No product correction applied yet; AC-VER-16 stays pending and counters remain177/58/11.",
+    "Raw persisted mutation isolates applicability; it does not authorize content-lock bypass.",
+    "No live sessions, no real data changed, no promotion. Red regression remains untracked WIP alongside KG10."
+  ],
+  "artifacts": {
+    "provenance-native-criterion-applicability1.json": "a1ba71212e0394d02e5adc52f91de136083b4155bdba36a572e6133ae032dee1",
+    "native-criterion-applicability1.xml": "0d2aef692a81ea08a54c2cd70398c78f5db0b9f82431ae396796087580a2637e",
+    "native-criterion-applicability2.xml": "dc8689557cd2949af0c7c562be0c2b9ac6abdd3ceff42b0021a13bdf54c9bc1a"
+  }
+}

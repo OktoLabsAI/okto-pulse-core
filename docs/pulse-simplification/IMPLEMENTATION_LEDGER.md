@@ -2,6 +2,35 @@
 
 ## Estado para retomada
 
+### 2026-10-08 — Gap reproduzido AC-VER-16, correção ainda não aplicada
+Base3607866c/400740c6; proof provenance-native-criterion-applicability1
+terminal0:835/317 Python e896/403 payloads byte a byte. Novo WIP Community
+tests/test_native_criterion_applicability.py (não commitado por estar vermelho).
+Campanha applicability1/session86839:2fail em14.64s. Separadas as mudanças;
+applicability2/session70747:2fail em12.24s. Ambas começam verdes, conservam
+payloads históricos e perdem indevidamente crédito UI após alteração isolada.
+
+Causas localizadas: delivery_inventory._collection_obligations inclui notes
+no digest genérico de AC; effective inventory não substitui esse binding.
+compute_test_scenario_semantic_sha256 inclui todos ACs da Spec, mesmo os não
+ligados ao cenário. Mudança de autorização invalida assim recibo UI intacto.
+Produtores/consumidores mapeados: spec_crud emissão/report admission, main
+status/atualização, scenario authentication, adapter delivery e bug closure.
+
+RF-VER-16/AC-VER-16 e RT-12 exigem explicitamente conservar prova não afetada;
+§10.1 permite mudança expressa no plano. Tratar investigação como nível B,
+sem nova decisão de produto ou relaxamento inventado. Próxima implementação:
+digest prospectivo único, escopo exato dos critérios ligados; campos editoriais
+fora do binding AC. Nada de verifier legado, backfill ou reescrita de receipts.
+Conferir cadeia completa, writes governados e negativos (condição/links/
+assinatura), rebuild do par e closure antes de qualificar.
+
+Recibo clean-break-native-criterion-applicability-review.json contém hashes,
+cadeia e passos exatos. AC-VER-16 continua pendente; índice177/58/11.
+Nenhum produto/SPA alterado; main86 ainda vigente. Todos handles terminais.
+Commit/push Core somente da investigação; preservar WIP applicability e KG10.
+Sem promoção/dados reais. Retomar diretamente esta correção, sem ampliar escopo.
+
 ### 2026-10-08 — INT responsabilidade herdada e alocação (main86)
 Basece46f84c/400740c6 conferida. Proof provenance-native-responsibility1
 terminal0:835/317 Python e896/403 payloads byte a byte. Core responsibility-
