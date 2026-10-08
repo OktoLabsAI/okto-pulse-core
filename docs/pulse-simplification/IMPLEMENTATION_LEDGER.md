@@ -2,6 +2,30 @@
 
 ## Estado para retomada
 
+### 2026-10-08 — DEI-T40/T47: snapshot concorrente e outcome desconhecido (main86)
+Base19d8c77f/f892cceb conferida; proof provenance-native-delivery-report1
+terminal0 antes dos testes:835/317 Python e896/403 payloads byte a byte.
+Revisados fences, batch+report savepoint, selagem e replay reautorizado.
+Acrescentados dois testes parametrizados (quatro casos): corrida relatório
+versus append em ambas as ordens, e TimeoutError antes/depois do commit.
+Sessões SQL distintas; ordenação por Events e fence real, sem sleep.
+Uma operação vence, outra recusa conflito; commit após exceção não deixa
+snapshot misto. Retry em outra sessão grava ou reproduz exatamente uma vez,
+conservando IDs do manifest/eventos. Não promete recuperar código não enviado.
+
+Core report-core1/session90568:29pass em6.42s. Community report1/session98702:
+22pass em41.45s; report2/session21749:2pass em10.21s. Total53 backend distintos.
+Frontend: revistos testes vigentes de retry, dupla submissão e revisão alterada
+na campanha impact-report-frontend3 (11pass), sem repetição nem dupla contagem.
+Ruff/diff check verdes. Todos handles terminais.
+
+Recibo clean-break-native-delivery-report.json; DEI-T40/T47 qualificados.
+Índice129verificados/106pendentes/11superados. DEI-T42 não inferido de fixture
+de rework: fluxo completo de reabertura autorizada permanece separado.
+Nenhum produto/SPA alterado; closure main86 vigente, oito budgets ZERO.
+Commit/push dos quatro casos e evidências; WIP KG10 preservado fora do commit.
+Sem promoção ou dados reais; continuar critérios pendentes do índice.
+
 ### 2026-10-08 — DEI-T48/T51: impacto líquido e reutilização selada (main86)
 Base767521c6/e8019f11 conferida; proof provenance-native-delivery-impact1
 terminal0 antes dos testes:835/317 Python e896/403 payloads byte a byte.

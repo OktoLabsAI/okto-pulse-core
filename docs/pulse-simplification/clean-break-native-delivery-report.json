@@ -1,0 +1,50 @@
+{
+  "scope": "DEI-T40/T47: atomic native report snapshots and unknown-outcome recovery",
+  "proof_pair": "dist-native-main86",
+  "criteria": {
+    "DEI:DEI-T40": [
+      "test_report_and_new_evidence_serialize_without_mixing_snapshots",
+      "test_report_rejection_cannot_leave_batch_or_outbox_after_outer_commit",
+      "test_seal_rejects_stale_or_foreign_selection_without_writes",
+      "test_record_or_impact_change_is_not_the_sealed_submission"
+    ],
+    "DEI:DEI-T47": [
+      "test_unknown_report_outcome_retries_once_in_fresh_session",
+      "test_atomic_report_manifest_replay_and_later_rework_do_not_resubmit",
+      "submits the last batch once and preserves retry content"
+    ]
+  },
+  "evidence": [
+    "Added deterministic concurrent SQL sessions with real Board write fences: one report and one independent append start from the same revision. Both lock acquisition orders are exercised, with no sleeps used for ordering.",
+    "Only the first operation persists; the second receives a revision, version or frozen-state conflict. Committing after the caught conflict leaves exactly the winning record and no partial report. A winning report pins exactly that record and its manifest hash.",
+    "Added lost-response cases before and after commit. The interrupted caller receives TimeoutError in both cases. A separate session retries: creates once if rolled back, replays if committed, with exactly one record/report and stable event IDs on replay.",
+    "A stored report is not resubmitted by replay after rework. Current permissions are still checked on replay; different report content with the same key conflicts.",
+    "Report gate/selection/late failures roll back batch, inline execution and outbox even if the caller subsequently commits.",
+    "Closed manifest contracts reject old/missing versions, incomplete bases, foreign scopes, altered record hashes and altered impact without conversion.",
+    "Existing current frontend campaign verifies stable retry payloads, changed-input keys, no double submit, preservation of queued entries and rejection of silently rebased revisions."
+  ],
+  "tests": {
+    "core_passed": 29,
+    "community_distinct_passed": 24,
+    "backend_distinct_passed": 53,
+    "core_seconds": 6.42,
+    "community_campaign1_seconds": 41.45,
+    "community_campaign2_seconds": 10.21,
+    "frontend_reused": "11 passed in native-delivery-impact-report-frontend3.json; reviewed relevant report/retry cases, unchanged since f892cceb, no new frontend run or double count"
+  },
+  "limits": [
+    "Concurrency uses the supported Community SQLite engine and actual relational fences; does not claim a different database runtime.",
+    "Transport tests control principal admission; they are not a complete installed-authentication E2E.",
+    "A client without a confirmed append cannot reconstruct unsubmitted external workspace edits. Recovery covers durable records and exact retries, not code recovery.",
+    "No product/SPA change. Current main86 provenance and closure remain applicable, eight budgets zero.",
+    "No legacy conversion, promotion or real-data mutation. DEI-T42 remains separate because raw fixture rework is not proof of the full authorized reopening flow."
+  ],
+  "artifacts": {
+    "provenance-native-delivery-report1.json": "ba892f21a8f8b7a34df389e631cf3c6d98842bf9d143b86e9d0bcf2552943413",
+    "native-delivery-report-core1.xml": "d5fed12b6fdf5e194df0096397e4401bf507567da7ef84c76844fcf77e32d052",
+    "native-delivery-report1.xml": "9da3cafefd832b28f54aa61558b10a826bf2eaa4fbaed852f5bc9f2ea4554377",
+    "native-delivery-report2.xml": "9a419bbd7bc8d775a146a37c992ad4d38179fdfd236cab6ad50864872bb6faa4",
+    "native-delivery-impact-report-frontend3.json": "03988a15110d73aa79f9bd4dab050916d41dd12d9ca62bbd768f12d611b584f0",
+    "closure-native-main86.json": "c34d8bd862c5a6e5dc99fc0aa968dbfa2b9718d5a4c98ef5bd6f2704885e3249"
+  }
+}
