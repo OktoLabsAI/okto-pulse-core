@@ -2,6 +2,33 @@
 
 ## Estado para retomada
 
+### 2026-10-08 — VER vínculos exatos e leitura reversa (main86)
+Base9e48bc87/08659ae2 conferida. Proof provenance-native-criterion-links1
+terminal0 antes dos testes:835/317 Python e896/403 payloads byte a byte.
+Core criterion-links-core1/session29367:21pass em4.45s. Frontend
+CriterionVerificationPanel:15pass. Novos três casos Community REST/SQL:
+criterion-links4/session74833:3pass em16.57s. Total39 distintos.
+
+Campanhas iniciais preservadas: links1/session14931,3fail em15.55s
+(fixture sem architecture_adoption); links2/session49430,3fail em14.97s
+(ID other-spec já existia); links3/session36709,3fail em17.45s
+(comparação anterior à normalização do writer). Preparação corrigida;
+asserção não relaxada: após representação canônica, link-only não muda FR/TR.
+Sem correção de produto motivada por esses erros da fixture.
+
+Critério liga FR/TR distintos e é consultável em ambos sentidos sem cópia
+reversa nos requisitos. ID ausente, FR real de outra Spec e ID TR com tipo
+FR são recusados sem mudar snapshot/histórico/versão. Draft aceita ausência
+de links, mas diagnóstico permanece incompleto. Identidade REST controlada;
+não alegar autenticação instalada ou suficiência semântica deste teste.
+
+Recibo clean-break-native-criterion-links.json; AC-VER-04 qualificado.
+Índice170verificados/65pendentes/11superados. Ruff/diff check verdes,
+todos handles terminais. Nenhum produto/SPA alterado; closure main86 vigente,
+oito budgets ZERO. WIP KG10 preservado fora do commit.
+Commit/push dos testes/evidências; sem promoção/dados reais.
+Continuar os critérios pendentes de método/admissão/aplicabilidade de provas.
+
 ### 2026-10-08 — VER qualificação e admissão de início (main86)
 Base8c727b64/08659ae2 conferida; WIP KG10 preservado. Proof
 provenance-native-verification-start1 terminal0 antes dos testes:835/317 Python

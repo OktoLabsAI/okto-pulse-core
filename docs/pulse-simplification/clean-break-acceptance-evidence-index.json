@@ -6800,7 +6800,12 @@
           "case_references": []
         }
       ],
-      "current_qualification": "pending_current_pair_review"
+      "current_qualification": "verified_current_pair_review",
+      "current_review": {
+        "artifact": "clean-break-native-criterion-links.json",
+        "criterion_key": "ARQVER:AC-VER-04",
+        "proof_pair": "dist-native-main86"
+      }
     },
     {
       "key": "ARQVER:AC-VER-05",
