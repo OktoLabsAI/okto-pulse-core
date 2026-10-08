@@ -3203,6 +3203,11 @@ async def _prepare_deterministic_projection(db, entry, *, persistence=None):
             artifact,
             projection_inputs,
         )
+        if entry.artifact_type == 'spec':
+            from okto_pulse.core.application.processors.architecture_association_projection import prepare_architecture_association_projection
+            worker_result = await prepare_architecture_association_projection(
+                db, board_id=entry.board_id, spec_id=entry.artifact_id, result=worker_result,
+            )
         if entry.artifact_type == 'card':
             from okto_pulse.core.application.processors.card_scenario_projection import prepare_card_scenario_projection
             worker_result = await prepare_card_scenario_projection(db, board_id=entry.board_id,

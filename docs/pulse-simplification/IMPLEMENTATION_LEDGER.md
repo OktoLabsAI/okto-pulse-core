@@ -2,6 +2,66 @@
 
 ## Estado para retomada
 
+### 2026-10-08 — Fechamento do incremento de projeção de associações (main88)
+Todos os handles anteriores terminaram. parity1/session82192 foi interrompida
+(exit1, sem XML terminal qualificável) após recusa de schema da fixture;
+verificação de processos confirmou nenhum pytest com aquele basetemp.
+Corrigidas somente as duas chamadas antigas para native_schema=True; a nova
+fixture de associação também inicializa explicitamente o schema nativo.
+
+parity2/session84339 terminal0:4pass162.84s — associação, extração, churn versus
+rebuild e estabilidade ao reordenar coleções. Frontend/session63908 terminal0:
+69pass em autoria/lista de classificação e seleção do canvas. Avisos jsdom
+getContext registrados; não é prova visual em navegador. Ruff/diff check verdes.
+Somadas sem duplicar:87 Core +4 Community +69 frontend =160 testes distintos.
+Closure final main88 já terminal0, oito budgets ZERO, sem alterações de produto
+desde proof/testes. Sem necessidade de rebuild SPA, pois frontend não mudou.
+
+Recibo clean-break-native-association-projection.json preserva tentativas,
+hashes e limites. Índice permanece189verificados/46pendentes/11superados:
+AC-INT-08/ADV-21 ainda precisam do witness combinado do consumidor/gate com
+grafo atrasado. Correção projetiva é incremento revisável e testado, não entrega
+integral desses critérios. Commit/push nos dois repositórios; WIP KG10 excluído.
+Retomar pelos dois critérios citados, sem recriar reader SQL ou segunda fonte
+de classificação. Autorizações BASE:T23/KG10/KG28 continuam pendentes.
+Sem promoção, migração ou alteração de dados reais.
+
+### 2026-10-08 — AC-INT-08/ADV-21: projeção implementada, validação main88 em curso
+Base Core6fee5134/Community113438cd. A autorização DEI-T33/T41 recebida novamente
+já estava aplicada e comprovada no marco main86; não reabrir essa decisão.
+
+Nova projeção usa implements(APIContract,Requirement), tipo já existente.
+Core resolve decisões atuais pela mesma política de classificação, com fato
+tipado; preparação assíncrona consome as portas públicas existentes. Não foi
+necessário acrescentar reader SQL nem fazer Community importar serviço privado.
+Active set pertence à Spec pelo IR de destino; adapter Grafx executa a mecânica.
+Fontes incompletas recusam substituição; contexto/pending/retired não inventam
+vínculo ou crédito. Mantida sem alteração a política existente de Spec cancelled.
+
+Main88 instalado byte-idêntico:838/317 Python,899/403 payloads.
+Proof provenance-native-association-rebuild1 terminal0, antes dos novos testes.
+Domain1/session91901:48pass4.98s; regressions1/session33583:53pass33.42s
+(inclui19 casos da nova suite, sobrepostos aos14 da primeira campanha).
+Rebuild1/session8417:1pass/1fail47.34s; harness offline não despacha eventos,
+portanto não havia queue após reclassificar. Preparação corrigida com enqueue
+explícito, sem mudar produto. Rebuild2/session51212:2pass37.84s.
+Rebuild3/session8036:2pass37.45s, agora confere IR atual na leitura relacional
+enquanto Grafx ainda contém o vínculo antigo; worker troca destino e context_only
+recolhe vínculo. Não alegar dispatcher nem gate completo com esta fixture.
+
+Closure review/session14591 falhou apenas por matrizes README desatualizadas.
+Ambas regeneradas pelo renderer oficial; closure final/session79276 terminal0,
+sem findings, oito budgets ZERO. Ruff verde.
+Campanha parity1/session82192 ainda ativa nesta anotação: fixture antiga sem
+marcador de schema nativo, rebuild recusa storage_format_incompatible:version.
+Aguardar término e corrigir somente preparação nativa antes de fechar o marco.
+Produto está em working tree; nenhum commit/push deste incremento ainda.
+
+Índice189verificados/46pendentes/11superados permanece. Ainda não qualificar
+AC-INT-08/ADV-21 integralmente: falta prova combinada do consumidor/gate exigido.
+WIP KG10 preservado fora do escopo. Nenhum frontend/SPA alterado; testes deste
+incremento não substituem aceitação frontend. Sem promoção ou dados reais.
+
 ### 2026-10-08 — Gap reproduzido AC-INT-08/ADV-21: associação não chega ao KG
 Base961e05a1/113438cd. Proof provenance-native-association-projection1 terminal0:
 835/317 Python e896/403 payloads byte a byte. Novo WIP Community

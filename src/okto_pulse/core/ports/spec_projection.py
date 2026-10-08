@@ -19,8 +19,15 @@ class SpecRelationshipFamily:
     source_sections: tuple[str, ...]
     target_sections: tuple[tuple[str, str], ...]
     rules: frozenset[str]
+    owner_endpoint: str = 'source'
 
     def owns_endpoints(self, *, owner_id, source_type, target_type, source_ref, target_ref):
+        if self.namespace == 'architecture_associations':
+            parts = source_ref.split(':') if isinstance(source_ref, str) else []
+            return (source_type == 'APIContract' and target_type == 'Requirement'
+                and len(parts) == 4 and parts[0] == 'architecture_design' and parts[2] == 'interface'
+                and all(part and part.strip() == part for part in parts)
+                and is_spec_child_reference(target_ref, owner_id=owner_id, section='integration_requirement'))
         return (source_type == self.source_type
             and any(is_spec_child_reference(source_ref, owner_id=owner_id, section=section)
                 for section in self.source_sections)
@@ -35,6 +42,9 @@ class SpecRelationshipFamily:
 
 
 _FAMILIES = {
+    'architecture_associations': SpecRelationshipFamily('architecture_associations', 'implements',
+        'APIContract', (), (('Requirement', 'integration_requirement'),),
+        frozenset({'implements/architecture_association@v1'}), owner_endpoint='target'),
     'decision_supersedence': SpecRelationshipFamily('decision_supersedence', 'supersedes',
         'Decision', ('decision',), (('Decision', 'decision'),),
         frozenset({'supersedes/explicit_decision@v2.1'})),
