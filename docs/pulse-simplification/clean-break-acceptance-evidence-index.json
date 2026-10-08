@@ -6330,7 +6330,12 @@
           "case_references": []
         }
       ],
-      "current_qualification": "pending_current_pair_review"
+      "current_qualification": "verified_current_pair_review",
+      "current_review": {
+        "artifact": "clean-break-native-installed-delivery-main92-20261008.json",
+        "criterion_key": "DEI:DEI-T64",
+        "proof_pair": "dist-native-main92"
+      }
     },
     {
       "key": "ARQVER:AC-ARQ-01",

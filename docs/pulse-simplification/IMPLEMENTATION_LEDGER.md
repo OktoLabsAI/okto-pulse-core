@@ -2,6 +2,79 @@
 
 ## Estado para retomada
 
+### 2026-10-08 — DEI-T64 fechado na SPA instalada
+Auditoria45001 terminou0:20passed/228.18s. Browser10188 terminou0:
+1pytest/76.29s incluindo1Playwright/13.1s. Runtime isolado Python3.11.14,
+Pydantic2.13.5/Grafx0.0.7; nenhum processo pendente deste milestone.
+SPA empacotada navega Board→Spec→Delivery e Tasks→Test Card→Delivery sem
+interceptação. Test Card apresenta exclusão correta do DoD de implementação;
+POST200/replayed=false, readback real blocked,4registros prévios byte-preservados
+e1novo local-user/human/test/test-card. Screenshot inspecionado; servidor sem
+ERROR/Traceback e shutdown ordenado de ambos listeners. Ruff/diff-check verdes.
+
+Recibo clean-break-native-installed-delivery-main92-20261008.json incorpora
+auditoria instalada completa e hashes de provas/logs/XML/screenshot. Reúne
+paridade REST/MCP/replay da fixture Python inalterada e navegador da SPA nova.
+DEI-T64 verificado; índice227verificados/8pendentes/11superados, universo fixo246.
+Community fb599428 contém exatamente produto/testes da campanha; builds ocorreram
+sobre base1f593e74 com esse diff, não sobre um SHA então limpo. Core5cc9685d
+produto inalterado; só ledger/recibo/índice neste incremento. WIP KG10 preservado.
+Commit/push pareados deste milestone; sem release/tag/deploy ou dados do usuário.
+
+Próximo escopo fixo: BASE:T43/KG64 relatório integral de custo, KG30 limite de
+fallback explicitamente permitido por KG§5.4; decisões BASE:T23/KG10/KG28 ainda
+pendentes (KG16/24 dependem KG10). Não repetir UI instalada nem auditoria sem
+mudança/falha nova. Não declarar entrega integral ou fallback implementado.
+A autorização DEI-T33/T41 já estava aplicada; não reabrir essa decisão.
+
+### 2026-10-08 — validação do par main92 em andamento
+Build3/session76127 terminou0: TypeScript/Vite e sincronização de79arquivos
+concluídos. TreeSHA256 cc8329b568842fe8755cf00c444e02b2eacf7e109f5d3ae44e13c7b962e119dc.
+31testes UI+15relatório aprovados; fixtures de relatório tipadas sem casts any.
+Frontend_dist staged; builds/install main92/session10049 terminaram0.
+Provenance-native-main92.json passou antes dos testes:838/317Python e899/403
+payloads byte-idênticos. Closure12835 terminou0, oito budgets ZERO, sem findings.
+Auditoria isolada release/distribuição session45001 ainda executando; aguardar
+antes do browser instalado e do recibo final. Nenhuma promoção de aceite ainda.
+
+### 2026-10-08 — SPA instalada: apresentação indevida de gate no Test Card (WIP)
+Base Core5cc9685d/Community1f593e74; turno anterior foi progresso.
+Novo test_installed_delivery_browser.py usa Python3.11 instalado/main91,
+prova fonte/wheel/site antes de IO, snapshot SQLite NATIVO descartável e ledger
+assinado copiado, todos diretórios isolados. CLI init/serve reais, SPA do wheel,
+sem interceptar API; identidade local possui apenas o Board da fixture.
+Primeira campanha79176 recusou handoff de credencial nova para base existente;
+retirado argumento indevido. R2/96498 revelou fixture Spec sem title do cenário
+e when/then da BR; completados ANTES de gerar nova prova. Cenário regenerado
+native-browser-public-spec-main91-20261008/session50088 passou1/25.34s,
+inclui2casos Playwright. R3/17436 corrigiu locator button→tab e dimensão
+embeddingstub8→384 (mesma dimensão padrão do runtime; não teste de similaridade).
+
+R4/86523 passou1/55.34s: SPA navega Board→Spec→Delivery, FR/BR/AC6✓/IRs8◌,
+abre Test Card e POST canônico real200. R5/62486 passou1/79.03s com readback
+REST blocked,3resultados no Card,4registros prévios byte-preservados+1novo
+local-user/human/test/test-card. Sem erros/tracebacks no servidor; shutdown
+ordenado de ambos listeners. Todos esses processos terminais.
+Opt-in dedicado acrescentado ao teste browser para não rodar contra URL padrão
+de outra suite. Novos arquivos ainda não enviados; WIP KG10 preservado.
+
+Inspeção visual detectou erro REAL de apresentação: Test Card mostra Blocking
+7of7unproven/obrigações de implementação apesar de require_card_delivery
+excluir tipos diferentes de normal/bug. Spec rollup já dizia Excluded from DoD.
+Correção WIP só frontend: Test Card informa exclusão do gate de implementação,
+mantém requisitos de validação/resultados/autoria/escrita; omite badge/lista
+normal e banner falso de Done rejeitado. Nenhuma mudança de autoridade/gate.
+Regressão UI+editor31pass; lint0erros/316avisos dentro do ratchet.
+Build1/36387 falhou tipagem de teste antigo VerificationReportSubmission.
+Build2/17853 revelou campos required faltantes na mesma fixture; ajustados
+expected/observation_ref e literal failed, mantendo outcome/observações.
+Teste de relatório15pass; build3/session76127 em andamento neste registro.
+
+Antes de aceite: aguardar build3; stage frontend_dist, construir/instalar novo
+par main92 e provar bytes; repetir ensaio instalado contra SPA corrigida,
+distribuição e closure. Main91 NÃO comprova a correção visual ainda.
+DEI64 permanece pendente até resultado novo. Índice226/9/11 inalterado.
+
 ### 2026-10-08 — associação de prova pelo Card no navegador
 Turno anterior foi progresso: leitura nativa no browser enviada
 Coref8888dca/Community892bace2; WIP KG10 preservado.
