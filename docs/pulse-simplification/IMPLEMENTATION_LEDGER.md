@@ -2,6 +2,50 @@
 
 ## Estado para retomada
 
+### 2026-10-08 — correção do contrato do editor de revisões de guideline
+
+Aceitação local: salvar uma métrica customizada retornava `validation_failed / fix_input`.
+Prova anterior ao comportamento: instalação Python313, fontes e wheels idênticos
+(903 Core + 403 Community payloads). Reprodução isolada com o schema instalado
+confirmou ausência de `patch`/`idempotency_key` e recusa dos campos enviados pelo
+editor (`expected_head_revision`, `version_bump`, `content`, `metrics`). Os testes
+mockados de frontend afirmavam esse contrato inexistente e também uma resposta
+de sucesso incompatível com a API.
+
+Frontend passa a enviar patch nativo, versão semântica declarada calculada a
+partir da revisão carregada e chave idempotente reutilizada enquanto o payload
+não mudar. Omite métricas inalteradas, respeitando a autoridade de edição de
+texto; remoção explícita continua enviando lista vazia. Consome `applied/noop`
+e a revisão estruturada. Rascunho é preservado em erro; under-bump mantém a
+orientação sobre o mínimo exigido. Texto da UI deixa de prometer uma fence
+de edição enviada pelo cliente que a API não possui e explica Minor para
+adição de métrica. Não alterados domínio, permissões, gates ou contrato backend.
+
+Regressão compartilhada frontend/REST usa o mesmo JSON de request/response e
+reproduz a rejeição do payload anterior antes da fachada. Frontend23 passaram;
+REST50 passaram; Core14 de revisão/replay/under-bump passaram. TypeScript/build,
+ESLint dos arquivos alterados, Ruff F/E9 e diff-check passaram. Primeiro build
+instalado isoladamente comprovou novamente903+403 byte-idênticos; build final
+inclui somente a correção adicional do texto de ajuda. Wheel final instalado
+no venv isolado:903+403 payloads byte-idênticos,79 arquivos SPA verificados,
+4 testes REST de contrato/under-bump passaram novamente/7.96s. Closure ok=true,
+findings/documentation_findings vazios e oito budgets ZERO (recibo local
+`.validation-v040/closure-guideline-revision-20261008.json`).
+
+Produto Community: `d468213` na feature/v0.4.0. Wheel pronto para reinstalação:
+`.validation-v040/dist-guideline-revision-final-20261008/okto_pulse-0.4.0-py3-none-any.whl`.
+Prova reutilizável: `.validation-v040/verify_guideline_revision.py`.
+Instalação Python313 do usuário ainda pendente: solicitado Ctrl+C para liberar
+o executável do Windows; manter a aba do rascunho aberta sem recarregar.
+Depois da reinstalação, executar a prova também no Python313. A SPA precisa
+ser recarregada para receber o código novo, preservando antes o texto não salvo.
+
+Observação do teste assistido: a rubrica fornecida anteriormente pelo agente
+usava1–5, mas o produto exige score0–100 (limiar escolhido pelo usuário80).
+Esse erro de orientação é separado da falha REST; texto de rubrica não é
+interpretado pelo schema. Não publicar/adotar a guideline nem alterar o
+rascunho/policy do usuário durante a correção. Não limpar o data home atual.
+
 ### 2026-10-08 — init somente com My Board
 
 Pedido explícito: remover o board Demo e seus dados incompatíveis do bootstrap.
