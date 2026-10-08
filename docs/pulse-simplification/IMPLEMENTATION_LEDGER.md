@@ -2,6 +2,31 @@
 
 ## Estado para retomada
 
+### 2026-10-08 — DEI-T44 retomada em checkout compartilhado compatível
+Base739d4247/f5812577; turno anterior foi progresso. Proof novo sem colisão,
+provenance-native-shared-resume-20261008 terminal0 antes dos testes:
+main88 byte-idêntico838/317 Python,899/403 payloads.
+Git descartável com baseline commitado e mudança dirty durável; checkpoint
+nativo descreve source/base/Target/trabalho/pendência. Nota posterior curta não
+apaga contexto. Sessão do writer fechada; sucessor com apenas evidence.read usa
+GetDeliveryEvidenceUseCase em sessão/store novos. Uma resposta resume informa
+path, base, trabalho anterior, obrigações e plano de verificação. Actor externo
+confere HEAD e lê arquivo usando path retornado, sem detail/histórico completo.
+Whole-Spec rollup proibido. Prova velha fica stale e mantém autoria; recovery
+não certificado, acesso desconhecido, sem transferência de receipt ou grant.
+
+native-shared-resume-20261008/session39303:0pass/1fail10.15s, asserção esperava
+progress aninhado (somente detail); manifest tem campos diretos. Corrigido teste,
+sem pedir detail ou alterar produto. Campanha2/session18171 terminal0:1pass9.06s.
+Ruff verde. Recibo clean-break-native-shared-resume-20261008.json.
+Frontend44/closure hashes conferidos, sem produto/SPA alterado; reuso sem contagem.
+Filesystem/Git pertencem ao actor externo da fixture, não ao domínio Pulse.
+
+Índice208verificados/27pendentes/11superados. Oito budgets ZERO, handles terminais.
+Commit/push teste/evidência; WIP KG10 preservado. Sem promoção/dados reais.
+Continuar impacto/reabertura DEI, VER/KG e benchmarks restantes do índice fixo.
+BASE:T23/KG10/KG28 seguem decisões pendentes. Objetivo integral ativo.
+
 ### 2026-10-08 — DEI-T60 progresso/retomada com aquisição do KG indisponível
 Base1ba344a1/7a46ce68; turno anterior foi progresso. Proof novo conferido sem
 colisão, provenance-native-graph-offline-20261008 terminal0 antes da campanha:
