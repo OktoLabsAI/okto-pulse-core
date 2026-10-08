@@ -1,0 +1,45 @@
+{
+  "criteria": [
+    "KG:KG-39"
+  ],
+  "proof_pair": "dist-native-main67",
+  "product_pair": {
+    "core": "6bbc697e",
+    "community": "e3550f89"
+  },
+  "test": "community/tests/test_native_learning_lifecycle.py::test_capture_is_durable_before_actual_review_and_materializes_after_done",
+  "verified": [
+    "Native SQL/FK/Grafx workflow with authored capture, independent review, Done, canonical projection and replay completes with no Board LLM config.",
+    "LLM bridge cache activation is refused and attempts recorded, including swallowed failures. No activation attempted.",
+    "Socket connect, connect_ex and create_connection are refused and attempts recorded. No provider connection attempted, including loopback.",
+    "Only original stdlib socketpair construction is allowed in a ContextVar scope, because Windows asyncio uses it for its internal wakeup channel. No general loopback exemption.",
+    "Health is actually read under the same guards: it reports genuine missing global binding/relational source path in this fixture, without treating absent LLM configuration as a failure."
+  ],
+  "results": {
+    "guard1": {
+      "passed": 10,
+      "failed": 1,
+      "seconds": 58.33,
+      "failure": "Test instrumentation blocked Windows asyncio private socketpair. No product regression; fixed the guard narrowly."
+    },
+    "guard2": {
+      "passed": 1,
+      "failed": 0,
+      "seconds": 46.56
+    },
+    "distinct_passed": 11,
+    "activation_attempts": 0,
+    "provider_connection_attempts": 0,
+    "ruff_F_E9": "passed"
+  },
+  "limits": [
+    "No claim of healthy whole runtime from the incomplete lifecycle health fixture. Prior installed init/health observations separately preserved in clean-break-native-installed-no-llm-investigation.json and clean-break-native-inference-contract-removal.json.",
+    "Independent optional LLM features outside authored Learning are not removed or tested as active in this criterion.",
+    "No product/frontend changes since main67; prior closure67 and frontend proof remain applicable, not reexecuted."
+  ],
+  "artifacts": {
+    "provenance-native-no-llm-guard1.json": "d4dab92e1138a60afba0e26309a04e910ae32825ece4123f3a586050b0017f86",
+    "acceptance-native-no-llm-guard1.xml": "fdc27bc91745953a01f4dd87d47f3b88dc76eacfca29fab57e641efde18703f2",
+    "acceptance-native-no-llm-guard2.xml": "7d13eb74dc91f271a9d08bc65181ee520f329112150d231df753f480e172abbe"
+  }
+}

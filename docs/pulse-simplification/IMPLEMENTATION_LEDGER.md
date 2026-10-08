@@ -2,6 +2,27 @@
 
 ## Estado para retomada
 
+### 2026-10-07 — KG39: ciclo nativo sem ativação de LLM comprovado
+Turno anterior progresso publicado Core6bbc697e/Communitye3550f89; worktrees
+limpas/sincronizadas confirmadas. Prova main67-no-llm-guard1 terminal0 antes
+de comportamento, mesmo835/896+317/403. Produto/SPA inalterados.
+Guard1 (57596) terminal1:10pass/1fail/58.33s. A instrumentação bloqueou o
+socketpair interno de asyncio Windows; nenhuma chamada a provider demonstrada.
+Guard2 (89142) terminal0:1pass/46.56s. Exceção restrita ao construtor original
+socketpair em ContextVar; conexão loopback comum continua proibida.
+Durante captura/revisão/Done/projeção/replay/health, guard registra zero ativações
+de BridgeCacheRegistry e zero conexões externas/locais de provider. Registro de
+tentativas impede falso verde se falha for engolida. SQL/FK/Grafx e gates reais
+preservados; fixture health continua explicitando falta de binding global/path
+relacional, sem apontar ausência de LLM como falha. Não afirmar saúde integral.
+Recibo clean-break-native-no-llm-activation.json:11 casos distintos aprovados,
+limites e falha inicial preservados. KG39 qualificado no par main67.
+Índice75 verificadas/160 pendentes/11 superadas. Ruff F/E9 verde.
+Nenhum processo ativo. Closure67 e frontend anterior preservados, não reexecutados.
+Próximo: KG40/41, sem tratar fila vazia como prova de projeção completa.
+Inventário autoritativo/frescor devem delimitar anti-joins; revisar quatro
+capacidades de consulta curada e seus testes, não presumir por contagem.
+
 ### 2026-10-07 — main67 concluído: contrato histórico e ajuda de inferência removidos
 Todos handles terminais: core43328=42pass/9.09s; community7351=11pass/68.73s;
 catalog22993=5pass/5.82s; frontend41031=51pass/50.72s. Total109 distintos.
