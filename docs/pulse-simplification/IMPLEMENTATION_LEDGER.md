@@ -2,6 +2,48 @@
 
 ## Estado para retomada
 
+### 2026-10-08 — navegação da Spec e candidatos arquiteturais integrados
+
+Solicitação do usuário: Requirements & Decisions com Functional, Business,
+Integration, Observability, Contracts e Decisions; Tests & Verifications com
+Tests e Criterion verification. Editores existentes movidos, preservando
+callbacks de autoria, controle de versão e permissões. Removidas cópias de
+IR/OR/Decisions de Details; FR e critérios movidos para os novos grupos.
+TRs permanece na posição anterior (não incluído na lista solicitada).
+
+Integration apresenta requisitos existentes antes dos candidatos. Uma única
+população de classificação substitui as duas listas; cada candidato tem ações
+Create IR / Associate IR / Context only e Apply decision local, sem outra fila
+de aprovação. Caminho de escrita existente com uma decisão, CAS, edição,
+idempotência e retry exato preservados. Lote existente permanece suportado.
+Contrato exibido com campos, listas e hierarquia; URLs de schema não buscadas
+nem convertidas automaticamente em links. Origem e histórico preservados.
+
+Conferência do plano (§1.1, §2.2–2.3): contrato arquitetural não é APIContract.
+Candidatos originam/reutilizam IR ou permanecem contexto; não há obrigação de
+APIContract intermediário nem derivação automática para Contracts. Nenhuma
+semântica nova de aprovação/rejeição ou conversão de contratos foi introduzida.
+Pendência anterior de contagem BR transitiva no resumo estrutural não alterada
+nesta reorganização; responsabilidade efetiva e prova continuam separadas.
+
+Validação: 161 testes distintos de autoria/classificação, navegação, permissões,
+edição estruturada, qualidade, dependências, atividade e Q&A passaram após
+atualizar expectativas de navegação. TypeScript/Vite e sincronização passaram:
+79 arquivos frontend, SHA256
+`f3fdab09fa327e332fa9ca8aab6b412765090fb3f183d940d3b36d9fdda9c123`.
+Wheels locais reinstalados sob autorização persistente do usuário; comparação
+fonte/wheel/install idêntica para 842 Python Core, 317 Community e frontend.
+Evidência `.validation-v040/spec-navigation-host-provenance.json`. Runtime
+reiniciado para inspeção; dados da iniciativa não editados por esta mudança.
+
+Inspeção no runtime instalado concluída: navegação dos grupos, 13 candidatos
+integrados e contrato expandido com campos estruturados, além de Criterion
+verification. Console sem erros ou avisos; nenhuma classificação foi aplicada.
+Capturas locais em Community `output/playwright/spec-integration-candidate.png`
+e `output/playwright/spec-criterion-verification.png`. Community commit
+`70acee7a`; runtime mantido em execução para o usuário.
+
+
 ### 2026-10-08 — merge consciente de Delivery Evidence em Coverage / Implementation
 
 Community `451e3f08`: removida a aba principal Delivery Evidence e unificada
